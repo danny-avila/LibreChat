@@ -16,6 +16,7 @@ import ChatForm from './Input/ChatForm';
 import Landing from './Landing';
 import Header from './Header';
 import Footer from './Footer';
+import MCPConfirmationDialog from '../MCP/MCPConfirmationDialog';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -111,6 +112,8 @@ function ChatView({ index = 0 }: { index?: number }) {
                 {isLandingPage && <Footer />}
               </>
             </div>
+            {/* Modal portal — null-renders when no pending confirmations. */}
+            <MCPConfirmationDialog />
           </Presentation>
         </AddedChatContext.Provider>
       </ChatContext.Provider>

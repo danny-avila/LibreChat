@@ -32,6 +32,8 @@ import type { ActiveJobsResponse } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
 import { clearAllDrafts, removeConvoFromAllQueries, upsertConvoInAllQueries } from '~/utils';
+import { enqueueMCPConfirmation } from './enqueueMCPConfirmation';
+import { pendingMCPConfirmationsAtom } from '~/store/mcpConfirmation';
 import store from '~/store';
 
 type ChatHelpers = Pick<
@@ -129,6 +131,7 @@ export default function useResumableSSE(
 ) {
   const queryClient = useQueryClient();
   const setActiveRunId = useSetRecoilState(store.activeRunFamily(runIndex));
+  const setPendingMCPConfirmations = useSetRecoilState(pendingMCPConfirmationsAtom);
 
   const { token, isAuthenticated } = useAuthContext();
   const { setMessages, getMessages, setConversation, setIsSubmitting, newConversation } =
@@ -317,6 +320,12 @@ export default function useResumableSSE(
             return;
           }
 
+          if (data.event === 'mcp_confirmation_required') {
+            // Intercept before stepHandler — see useSSE.ts for rationale.
+            setPendingMCPConfirmations((prev) => enqueueMCPConfirmation(prev, data.data));
+            return;
+          }
+
           if (data.event != null) {
             stepHandler(data, { ...currentSubmission, userMessage } as EventSubmission);
             return;
@@ -402,7 +411,11 @@ export default function useResumableSSE(
               console.log(`[ResumableSSE] Replaying ${data.pendingEvents.length} pending events`);
               const submission = { ...currentSubmission, userMessage } as EventSubmission;
               for (const pendingEvent of data.pendingEvents) {
-                if (pendingEvent.event != null) {
+                if (pendingEvent.event === 'mcp_confirmation_required') {
+                  setPendingMCPConfirmations((prev) =>
+                    enqueueMCPConfirmation(prev, pendingEvent.data),
+                  );
+                } else if (pendingEvent.event != null) {
                   stepHandler(pendingEvent, submission);
                 } else if (pendingEvent.type != null) {
                   contentHandler({ data: pendingEvent, submission });
@@ -667,6 +680,7 @@ export default function useResumableSSE(
       setAbortScroll,
       setActiveRunId,
       setShowStopButton,
+      setPendingMCPConfirmations,
       finalHandler,
       createdHandler,
       attachmentHandler,

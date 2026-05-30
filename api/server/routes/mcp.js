@@ -46,6 +46,7 @@ const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { updateMCPServerTools } = require('~/server/services/Config/mcp');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
 const { getLogStores } = require('~/cache');
+const { getConfirmationStore } = require('@librechat/api');
 const db = require('~/models');
 
 const router = Router();
@@ -70,6 +71,47 @@ const checkMCPCreate = generateCheckAccess({
  */
 router.get('/tools', requireJwtAuth, async (req, res) => {
   return getMCPTools(req, res);
+});
+
+/**
+ * Resolve a pending tool-call confirmation. Called by the React modal when the
+ * user clicks Accept or Cancel. The confirmationId is owned by the user who
+ * initiated the call; only that user may resolve it.
+ *
+ * Companion to the optional MCP tool-call confirmation feature: an MCP server
+ * (or a gateway in front of one) may return a `{"confirmationRequired": true,
+ * ...}` envelope as its tool result instead of executing the call. LibreChat
+ * intercepts that envelope, suspends the agent loop, emits an SSE event with a
+ * fresh confirmationId, and awaits the user's decision posted here.
+ *
+ * @route POST /api/mcp/confirm/:confirmationId
+ * @body { decision: 'accept' | 'cancel' }
+ */
+router.post('/confirm/:confirmationId', requireJwtAuth, async (req, res) => {
+  const { confirmationId } = req.params;
+  const { decision } = req.body || {};
+  const userId = req.user?.id;
+
+  if (!userId) {
+    return res.status(401).json({ error: 'Unauthenticated' });
+  }
+  if (decision !== 'accept' && decision !== 'cancel') {
+    return res.status(400).json({ error: 'Invalid decision' });
+  }
+  if (typeof confirmationId !== 'string' || confirmationId.length === 0) {
+    return res.status(400).json({ error: 'Invalid confirmationId' });
+  }
+
+  // resolve() returns a Promise in the Redis-backed store and a plain object
+  // in the in-memory store. Awaiting handles both.
+  const result = await getConfirmationStore().resolve(confirmationId, userId, decision);
+  if (result.ok) {
+    return res.status(204).end();
+  }
+  if (result.reason === 'forbidden') {
+    return res.status(403).json({ error: 'Confirmation does not belong to this user' });
+  }
+  return res.status(404).json({ error: 'Confirmation not found or already resolved' });
 });
 
 /**
