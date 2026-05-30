@@ -3,6 +3,7 @@ const fs = require('fs').promises;
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
 const {
+  isActionTool,
   refreshS3Url,
   agentCreateSchema,
   agentUpdateSchema,
@@ -626,7 +627,8 @@ const updateAgentHandler = async (req, res) => {
     }
 
     if (updateData.tools) {
-      const isMCPTool = (t) => t?.includes(Constants.mcp_delimiter);
+      const isMCPTool = (t) =>
+        typeof t === 'string' && t.includes(Constants.mcp_delimiter) && !isActionTool(t);
       const requestedMCPTools = updateData.tools.filter(isMCPTool);
 
       if (requestedMCPTools.length > 0) {

@@ -651,7 +651,9 @@ function createToolInstance({
 
   /** @type {(toolArguments: Object | string, config?: GraphRunnableConfig) => Promise<unknown>} */
   const _call = async (toolArguments, config) => {
-    const userId = config?.configurable?.user?.id || config?.configurable?.user_id;
+    const permissionUser = config?.configurable?.user ?? capturedUser;
+    const userId =
+      config?.configurable?.user?.id || config?.configurable?.user_id || capturedUser?.id;
     /** @type {ReturnType<typeof createAbortHandler>} */
     let abortHandler = null;
     /** @type {AbortSignal} */
@@ -659,7 +661,7 @@ function createToolInstance({
 
     try {
       const provider = (config?.metadata?.provider || capturedProvider)?.toLowerCase();
-      const canUseMCP = await userCanUseMCPServers(config?.configurable?.user);
+      const canUseMCP = await userCanUseMCPServers(permissionUser);
       if (!canUseMCP) {
         throw new Error('Forbidden: Insufficient MCP server permissions');
       }

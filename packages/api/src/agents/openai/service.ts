@@ -21,7 +21,6 @@
 import { nanoid } from 'nanoid';
 import { AgentCapabilities } from 'librechat-data-provider';
 import type { Response as ServerResponse, Request } from 'express';
-import type { IUser } from '@librechat/data-schemas';
 import type {
   ChatCompletionResponse,
   OpenAIResponseContext,
@@ -502,7 +501,7 @@ export async function createAgentChatCompletion(
 
     // Create and run the agent
     if (deps.createRun) {
-      const reqUser = (req as unknown as { user?: IUser }).user;
+      const reqUser = (req as unknown as { user?: Parameters<typeof createSafeUser>[0] }).user;
       const userId = reqUser?.id ?? 'api-user';
       /**
        * Propagate the full safe user (id + role), matching the in-repo agent

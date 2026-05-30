@@ -587,6 +587,32 @@ describe('MCP Tool Authorization', () => {
       expect(updatedAgent.name).toBe('Renamed After Revocation');
     });
 
+    test('should not strip action tools whose operationId contains the MCP delimiter on revocation', async () => {
+      // `sync_mcp_state_action_...` contains the `_mcp_` substring but is a
+      // genuine OpenAPI action tool (isActionTool === true). Losing
+      // MCP_SERVERS.USE must not drop it — action use is unrelated to MCP.
+      const actionTool = `sync_mcp_state${Constants.actionDelimiter}api---example---com`;
+      await Agent.updateOne(
+        { id: existingAgentId },
+        { $set: { tools: ['web_search', actionTool] } },
+      );
+
+      mockUserCanUseMCPServers.mockResolvedValue(false);
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.body = {
+        name: 'Edited Without MCP Permission',
+        tools: ['web_search', actionTool],
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.json).toHaveBeenCalled();
+      const updatedAgent = mockRes.json.mock.calls[0][0];
+      expect(updatedAgent.tools).toContain(actionTool);
+      expect(updatedAgent.tools).toContain('web_search');
+    });
+
     test('should allow adding authorized MCP tools', async () => {
       mockReq.user.id = existingAgentAuthorId.toString();
       mockReq.params.id = existingAgentId;
