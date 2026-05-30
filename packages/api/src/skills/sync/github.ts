@@ -1097,8 +1097,17 @@ async function syncSource(params: {
       source: PROVIDER,
       sourceId: source.id,
     });
+    // Only mirror-delete skills owned by this source's tenant. With no
+    // configured tenantId under non-strict isolation, listSkillsBySource can
+    // return github skills across tenants, so without this guard an ambient sync
+    // could delete another tenant's mirrored skills. Absent tenantId is its own
+    // (ambient) bucket.
+    const sourceTenantId = source.tenantId ?? undefined;
     for (const skill of existingSyncedSkills) {
       assertNotCancelled();
+      if ((skill.tenantId ?? undefined) !== sourceTenantId) {
+        continue;
+      }
       const upstreamId =
         skill.sourceMetadata && typeof skill.sourceMetadata.upstreamId === 'string'
           ? skill.sourceMetadata.upstreamId
