@@ -337,6 +337,42 @@ describe('createGitHubSkillSyncRunner', () => {
     expect(deps.deleteSkill).toHaveBeenCalledWith(staleId.toString());
   });
 
+  it("does not mirror-delete another tenant's skills from an ambient source run", async () => {
+    const ambientStaleId = new Types.ObjectId();
+    const otherTenantId = new Types.ObjectId();
+    const makeExisting = (
+      upstreamId: string,
+      _id: Types.ObjectId,
+      tenantId?: string,
+    ): ISkill & { _id: Types.ObjectId } => {
+      const skill = makeSkill({
+        name: 'research',
+        description: 'Research things',
+        author: new Types.ObjectId(),
+        authorName: 'GitHub Sync',
+        source: 'github',
+        sourceMetadata: { provider: 'github', sourceId: 'librechat-skills', upstreamId },
+      });
+      skill._id = _id;
+      skill.tenantId = tenantId;
+      return skill;
+    };
+    // The configured source is ambient (no tenantId), but listSkillsBySource
+    // (non-strict) returns a skill owned by tenant-b. It must not be deleted.
+    const listSkillsBySource = jest.fn(async () => [
+      makeExisting('librechat-skills:skills/removed', ambientStaleId, undefined),
+      makeExisting('librechat-skills:skills/removed', otherTenantId, 'tenant-b'),
+    ]);
+    const deps = createDeps({ listSkillsBySource });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('completed');
+    expect(deps.deleteSkill).toHaveBeenCalledTimes(1);
+    expect(deps.deleteSkill).toHaveBeenCalledWith(ambientStaleId.toString());
+    expect(deps.deleteSkill).not.toHaveBeenCalledWith(otherTenantId.toString());
+  });
+
   it('derives distinct synthetic authors for the same source mirrored into different tenants', async () => {
     const authorForTenant = async (tenantId: string): Promise<string> => {
       let author = '';
