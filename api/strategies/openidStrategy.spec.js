@@ -622,6 +622,72 @@ describe('setupOpenId', () => {
     expect(createUser).toHaveBeenCalled();
   });
 
+  it('should allow login when required role is found in userinfo claims', async () => {
+    process.env.OPENID_REQUIRED_ROLE = 'requiredRole';
+    process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'roles';
+    process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND = 'userinfo';
+
+    // The role is intentionally absent from the id_token and only present in
+    // the userinfo response — exercises the userinfo branch of the switch.
+    jwtDecode.mockReturnValue({});
+    require('openid-client').fetchUserInfo.mockResolvedValue({
+      roles: ['requiredRole'],
+    });
+
+    await setupOpenId();
+    verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+
+    const { user } = await validate(tokenset);
+
+    expect(user).toBeTruthy();
+    expect(user.email).toBe(tokenset.claims().email);
+  });
+
+  it('should reject login when required role is missing from userinfo claims', async () => {
+    const { logger } = require('@librechat/data-schemas');
+    process.env.OPENID_REQUIRED_ROLE = 'requiredRole';
+    process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'roles';
+    process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND = 'userinfo';
+
+    jwtDecode.mockReturnValue({});
+    require('openid-client').fetchUserInfo.mockResolvedValue({
+      other_claim: 'value',
+    });
+
+    await setupOpenId();
+    verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+
+    const { user, details } = await validate(tokenset);
+
+    expect(user).toBe(false);
+    expect(details.message).toBe('You must have "requiredRole" role to log in.');
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("Key 'roles' not found in userinfo token!"),
+    );
+  });
+
+  it('should reject login with invalid required role token kind', async () => {
+    const { logger } = require('@librechat/data-schemas');
+    process.env.OPENID_REQUIRED_ROLE = 'requiredRole';
+    process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'roles';
+    process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND = 'invalid';
+
+    jwtDecode.mockReturnValue({
+      roles: ['requiredRole'],
+    });
+
+    await setupOpenId();
+    verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+
+    await expect(validate(tokenset)).rejects.toThrow('Invalid required role token kind');
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "Invalid required role token kind: invalid. Must be one of 'access', 'id', or 'userinfo'",
+      ),
+    );
+  });
+
   describe('group overage and groups handling', () => {
     it.each([
       ['groups array contains required group', ['group-required', 'other-group'], true, undefined],
@@ -2033,5 +2099,63 @@ describe('setupOpenId', () => {
       expect(user).toBe(false);
       expect(details).toEqual({ message: 'Email domain not allowed' });
     });
+  });
+});
+
+describe('getRoleSource', () => {
+  const { getRoleSource } = require('./openidStrategy');
+  const { logger } = require('@librechat/data-schemas');
+
+  const accessClaims = { roles: ['from-access'] };
+  const idClaims = { roles: ['from-id'] };
+  const userinfo = { roles: ['from-userinfo'] };
+  const tokenset = { access_token: 'access.jwt', id_token: 'id.jwt' };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jwtDecode.mockImplementation((token) => {
+      if (token === 'access.jwt') return accessClaims;
+      if (token === 'id.jwt') return idClaims;
+      return {};
+    });
+  });
+
+  it.each([
+    ['access', accessClaims],
+    ['id', idClaims],
+    ['userinfo', userinfo],
+  ])('returns the expected source object for kind=%s', (kind, expected) => {
+    expect(getRoleSource(kind, 'required role', tokenset, userinfo)).toEqual(expected);
+  });
+
+  it.each([
+    ['undefined', undefined],
+    ['empty string', ''],
+    ['unknown kind', 'bogus'],
+  ])('throws and logs for invalid kind: %s', (_name, kind) => {
+    expect(() => getRoleSource(kind, 'required role', tokenset, userinfo)).toThrow(
+      'Invalid required role token kind',
+    );
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining(`Invalid required role token kind: ${kind}`),
+    );
+  });
+
+  it('uses the provided label in the error message and thrown error', () => {
+    expect(() => getRoleSource('bogus', 'admin role', tokenset, userinfo)).toThrow(
+      'Invalid admin role token kind',
+    );
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('Invalid admin role token kind: bogus'),
+    );
+  });
+
+  it('propagates jwtDecode errors when the requested token is missing', () => {
+    jwtDecode.mockImplementation(() => {
+      throw new Error('Invalid token specified');
+    });
+    expect(() => getRoleSource('access', 'required role', {}, userinfo)).toThrow(
+      'Invalid token specified',
+    );
   });
 });
