@@ -215,10 +215,11 @@ const filterAuthorizedTools = async ({
   let loggedMCPDenied = false;
 
   for (const tool of tools) {
-    const isMCPTool = tool?.includes(Constants.mcp_delimiter) && !isActionTool(tool);
+    const isActionToolName = typeof tool === 'string' && isActionTool(tool);
+    const isMCPTool = tool?.includes(Constants.mcp_delimiter) && !isActionToolName;
 
     if (!isMCPTool) {
-      if (availableTools[tool] || systemTools[tool] || isActionTool(tool)) {
+      if (availableTools[tool] || systemTools[tool] || isActionToolName) {
         filteredTools.push(tool);
       }
       continue;

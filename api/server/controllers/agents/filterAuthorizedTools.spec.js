@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
-const { Constants } = require('librechat-data-provider');
+const { Constants, actionDelimiter } = require('librechat-data-provider');
 const { agentSchema } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
@@ -591,7 +591,7 @@ describe('MCP Tool Authorization', () => {
       // `sync_mcp_state_action_...` contains the `_mcp_` substring but is a
       // genuine OpenAPI action tool (isActionTool === true). Losing
       // MCP_SERVERS.USE must not drop it — action use is unrelated to MCP.
-      const actionTool = `sync_mcp_state${Constants.actionDelimiter}api---example---com`;
+      const actionTool = `sync_mcp_state${actionDelimiter}api---example---com`;
       await Agent.updateOne(
         { id: existingAgentId },
         { $set: { tools: ['web_search', actionTool] } },
