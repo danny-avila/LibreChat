@@ -36,7 +36,7 @@ import CodeAnalyze from './CodeAnalyze';
 import Container from './Container';
 import WebSearch from './WebSearch';
 import ToolCall from './ToolCall';
-import Image from './Image';
+import ImageFile from './ImageFile';
 
 type PartProps = {
   part?: TMessageContentParts;
@@ -421,14 +421,7 @@ const Part = memo(function Part({
   } else if (part.type === ContentTypes.IMAGE_FILE) {
     const imageFile = part[ContentTypes.IMAGE_FILE];
     const cached = imageFile.file_id ? getCachedPreview(imageFile.file_id) : undefined;
-    return (
-      <Image
-        imagePath={cached ?? imageFile.filepath}
-        altText={imageFile.filename ?? 'Uploaded Image'}
-        width={imageFile.width}
-        height={imageFile.height}
-      />
-    );
+    return <ImageFile file={imageFile} localPreview={cached} />;
   }
 
   return null;
