@@ -287,6 +287,151 @@ describe('createGitHubSkillSyncRunner', () => {
     );
   });
 
+  it('discovers nested skill roots within the configured discovery depth', async () => {
+    const skillMarkdown = '---\nname: tdd\ndescription: Test-driven development\n---\nBody';
+    const fetchFn = jest.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes('/commits/')) {
+        return response({ sha: 'commit-sha', commit: { tree: { sha: 'tree-sha' } } });
+      }
+      if (url.includes('/git/trees/tree-sha')) {
+        return response({
+          sha: 'tree-sha',
+          truncated: false,
+          tree: [
+            {
+              path: 'skills',
+              mode: '040000',
+              type: 'tree',
+              sha: 'skills-tree-sha',
+              url: 'https://api.github.test/tree/skills',
+            },
+          ],
+        });
+      }
+      if (url.includes('/git/trees/skills-tree-sha')) {
+        return response({
+          sha: 'skills-tree-sha',
+          truncated: false,
+          tree: [
+            {
+              path: 'engineering/tdd/SKILL.md',
+              mode: '100644',
+              type: 'blob',
+              sha: 'skill-md-sha',
+              size: Buffer.byteLength(skillMarkdown),
+              url: 'https://api.github.test/blob/skill',
+            },
+            {
+              path: 'engineering/tdd/tests.md',
+              mode: '100644',
+              type: 'blob',
+              sha: 'tests-md-sha',
+              size: 5,
+              url: 'https://api.github.test/blob/tests',
+            },
+          ],
+        });
+      }
+      if (url.includes('/git/blobs/skill-md-sha')) {
+        return response(blob(skillMarkdown));
+      }
+      if (url.includes('/git/blobs/tests-md-sha')) {
+        return response(blob('tests'));
+      }
+      return response({ message: 'not found' }, 404);
+    }) as unknown as typeof fetch;
+    const deps = createDeps({
+      fetchFn,
+      getConfig: () => ({
+        github: {
+          enabled: true,
+          intervalMinutes: 60,
+          runOnStartup: false,
+          sources: [
+            {
+              id: 'mattpocock-skills',
+              owner: 'mattpocock',
+              repo: 'skills',
+              ref: 'main',
+              paths: ['skills'],
+              skillDiscoveryDepth: 2,
+              credentialKey: 'github-skills-prod',
+            },
+          ],
+        },
+      }),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('completed');
+    expect(deps.createSkill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'tdd',
+        sourceMetadata: expect.objectContaining({
+          sourceId: 'mattpocock-skills',
+          upstreamId: 'mattpocock-skills:skills/engineering/tdd',
+        }),
+      }),
+    );
+    expect(deps.upsertSkillFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        relativePath: 'tests.md',
+        sourceMetadata: expect.objectContaining({
+          path: 'skills/engineering/tdd/tests.md',
+        }),
+      }),
+    );
+  });
+
+  it('uses an env-backed source token without loading a stored credential', async () => {
+    const previousToken = process.env.GITHUB_SKILLS_TOKEN;
+    process.env.GITHUB_SKILLS_TOKEN = 'github_pat_from_env';
+    const getCredentialToken = jest.fn(async () => 'github_pat_from_db');
+    const deps = createDeps({
+      getCredentialToken,
+      getConfig: () => ({
+        github: {
+          enabled: true,
+          intervalMinutes: 60,
+          runOnStartup: false,
+          sources: [
+            {
+              id: 'librechat-skills',
+              owner: 'LibreChat',
+              repo: 'skills',
+              ref: 'main',
+              paths: ['skills'],
+              token: '${GITHUB_SKILLS_TOKEN}',
+            },
+          ],
+        },
+      }),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+
+    try {
+      const status = await runner.getStatus();
+      const result = await runner.runOnce();
+
+      expect(status.sources[0]?.credentialPresent).toBe(true);
+      expect(result.status).toBe('completed');
+      expect(getCredentialToken).not.toHaveBeenCalled();
+      expect(deps.createSkill).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sourceMetadata: expect.objectContaining({ sourceId: 'librechat-skills' }),
+        }),
+      );
+    } finally {
+      if (previousToken == null) {
+        delete process.env.GITHUB_SKILLS_TOKEN;
+      } else {
+        process.env.GITHUB_SKILLS_TOKEN = previousToken;
+      }
+    }
+  });
+
   it('runs a tenant-scoped source inside its tenant context and stamps the skill tenantId', async () => {
     let observedTenantId: string | undefined = 'unset';
     const deps = createDeps({

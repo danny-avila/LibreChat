@@ -255,6 +255,8 @@ const skillSyncIdentifierSchema = z
 
 export const SKILL_SYNC_MIN_INTERVAL_MINUTES = 5;
 export const SKILL_SYNC_MAX_INTERVAL_MINUTES = Math.floor(2147483647 / 60_000);
+export const SKILL_SYNC_DEFAULT_DISCOVERY_DEPTH = 2;
+export const SKILL_SYNC_MAX_DISCOVERY_DEPTH = 10;
 
 const skillSyncGitHubOwnerSchema = z
   .string()
@@ -335,6 +337,13 @@ const skillSyncPathSchema = z
     },
   );
 
+const skillSyncTokenReferenceSchema = z
+  .string()
+  .trim()
+  .regex(/^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/, {
+    message: 'must be an environment variable reference like ${GITHUB_SKILLS_TOKEN}',
+  });
+
 /**
  * Tenant that owns the skills mirrored from a source. When set, the sync runner
  * executes that source's database writes inside the tenant's async context so
@@ -351,15 +360,34 @@ const skillSyncTenantIdSchema = z
     message: 'must not be the reserved system tenant id',
   });
 
-export const skillSyncGitHubSourceSchema = z.object({
-  id: skillSyncIdentifierSchema,
-  owner: skillSyncGitHubOwnerSchema,
-  repo: skillSyncGitHubRepoSchema,
-  ref: skillSyncGitHubRefSchema.default('main'),
-  paths: z.array(skillSyncPathSchema).min(1),
-  credentialKey: skillSyncIdentifierSchema,
-  tenantId: skillSyncTenantIdSchema.optional(),
-});
+export const skillSyncGitHubSourceSchema = z
+  .object({
+    id: skillSyncIdentifierSchema,
+    owner: skillSyncGitHubOwnerSchema,
+    repo: skillSyncGitHubRepoSchema,
+    ref: skillSyncGitHubRefSchema.default('main'),
+    paths: z.array(skillSyncPathSchema).min(1),
+    skillDiscoveryDepth: z.number().int().min(0).max(SKILL_SYNC_MAX_DISCOVERY_DEPTH).optional(),
+    credentialKey: skillSyncIdentifierSchema.optional(),
+    token: skillSyncTokenReferenceSchema.optional(),
+    tenantId: skillSyncTenantIdSchema.optional(),
+  })
+  .superRefine((source, ctx) => {
+    if (!source.credentialKey && !source.token) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['credentialKey'],
+        message: 'Either credentialKey or token is required',
+      });
+    }
+    if (source.credentialKey && source.token) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['token'],
+        message: 'Use either credentialKey or token, not both',
+      });
+    }
+  });
 
 export const skillSyncConfigSchema = z
   .object({

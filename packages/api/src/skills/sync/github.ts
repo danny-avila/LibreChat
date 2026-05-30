@@ -1,7 +1,12 @@
 import crypto from 'crypto';
 import path from 'path';
 import { Types } from 'mongoose';
-import { ResourceType, PrincipalType, AccessRoleIds } from 'librechat-data-provider';
+import {
+  ResourceType,
+  PrincipalType,
+  AccessRoleIds,
+  SKILL_SYNC_DEFAULT_DISCOVERY_DEPTH,
+} from 'librechat-data-provider';
 import { logger, tenantStorage } from '@librechat/data-schemas';
 import type { SkillSyncConfig, SkillSyncGitHubSourceConfig } from 'librechat-data-provider';
 import type {
@@ -619,11 +624,30 @@ async function fetchBlob(params: {
   return Buffer.from(blob.content.replace(/\s/g, ''), 'base64');
 }
 
+function isSkillRootWithinDiscoveryDepth(
+  rootPath: string,
+  basePath: string,
+  maxDepth: number,
+): boolean {
+  if (rootPath === basePath) {
+    return true;
+  }
+  if (basePath && !rootPath.startsWith(`${basePath}/`)) {
+    return false;
+  }
+  const relative = basePath ? rootPath.slice(basePath.length).replace(/^\/+/, '') : rootPath;
+  if (!relative) {
+    return true;
+  }
+  return relative.split('/').length <= maxDepth;
+}
+
 function discoverSkills(
   tree: GitHubTreeEntry[],
   source: SkillSyncGitHubSourceConfig,
 ): DiscoveredSkill[] {
   const basePaths = source.paths.map(normalizeRepoPath);
+  const skillDiscoveryDepth = source.skillDiscoveryDepth ?? SKILL_SYNC_DEFAULT_DISCOVERY_DEPTH;
   const skillMdByRoot = new Map<string, GitHubTreeEntry>();
   for (const entry of tree) {
     if (entry.type !== 'blob') {
@@ -636,13 +660,7 @@ function discoverSkills(
     }
     const parent = normalizeRepoPath(path.posix.dirname(normalized));
     for (const basePath of basePaths) {
-      const relative = basePath ? parent.slice(basePath.length).replace(/^\/+/, '') : parent;
-      const isBaseSkill = parent === basePath;
-      const isOneLevelBelow =
-        parent.startsWith(basePath ? `${basePath}/` : '') &&
-        relative.length > 0 &&
-        !relative.includes('/');
-      if (isBaseSkill || isOneLevelBelow) {
+      if (isSkillRootWithinDiscoveryDepth(parent, basePath, skillDiscoveryDepth)) {
         skillMdByRoot.set(parent, entry);
       }
     }
@@ -1126,6 +1144,33 @@ async function deleteSyncedSkill(
   return deletedFiles;
 }
 
+function getTokenEnvVarName(tokenReference: string | undefined): string | null {
+  const match = tokenReference?.trim().match(/^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/);
+  return match?.[1] ?? null;
+}
+
+async function resolveGitHubToken(
+  deps: GitHubSkillSyncDeps,
+  source: SkillSyncGitHubSourceConfig,
+): Promise<string | null> {
+  const tokenEnvVar = getTokenEnvVarName(source.token);
+  if (tokenEnvVar) {
+    return process.env[tokenEnvVar]?.trim() || null;
+  }
+  if (!source.credentialKey) {
+    return null;
+  }
+  return deps.getCredentialToken(PROVIDER, source.credentialKey);
+}
+
+function getMissingCredentialMessage(source: SkillSyncGitHubSourceConfig): string {
+  const tokenEnvVar = getTokenEnvVarName(source.token);
+  if (tokenEnvVar) {
+    return `Missing GitHub token environment variable "${tokenEnvVar}"`;
+  }
+  return `Missing GitHub credential "${source.credentialKey ?? source.id}"`;
+}
+
 async function syncSource(params: {
   deps: GitHubSkillSyncDeps;
   source: SkillSyncGitHubSourceConfig;
@@ -1137,13 +1182,10 @@ async function syncSource(params: {
   await deps.upsertStatus(makeStatusInput({ source, status: 'running', startedAt }));
   try {
     assertNotCancelled();
-    const token = await deps.getCredentialToken(PROVIDER, source.credentialKey);
+    const token = await resolveGitHubToken(deps, source);
     assertNotCancelled();
     if (!token) {
-      throw new SkillSyncError(
-        'MISSING_CREDENTIAL',
-        `Missing GitHub credential "${source.credentialKey}"`,
-      );
+      throw new SkillSyncError('MISSING_CREDENTIAL', getMissingCredentialMessage(source));
     }
     const commit = await fetchCommit({ fetchFn, token, source });
     assertNotCancelled();
@@ -1386,7 +1428,11 @@ function getGithubConfig(config: SkillSyncConfig | undefined): {
     enabled: config?.github?.enabled ?? false,
     intervalMinutes: config?.github?.intervalMinutes ?? 60,
     runOnStartup: config?.github?.runOnStartup ?? false,
-    sources: config?.github?.sources ?? [],
+    sources:
+      config?.github?.sources.map((source) => ({
+        ...source,
+        skillDiscoveryDepth: source.skillDiscoveryDepth ?? SKILL_SYNC_DEFAULT_DISCOVERY_DEPTH,
+      })) ?? [],
   };
 }
 
@@ -1406,13 +1452,15 @@ export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps) {
     );
     const sources = github.sources.map((source) => {
       const stored = statusBySourceId.get(source.id);
-      const credential = credentialByKey.get(source.credentialKey);
+      const credential = source.credentialKey ? credentialByKey.get(source.credentialKey) : null;
+      const tokenEnvVar = getTokenEnvVarName(source.token);
+      const envTokenPresent = tokenEnvVar ? Boolean(process.env[tokenEnvVar]?.trim()) : false;
       return {
         provider: PROVIDER,
         sourceId: source.id,
         status: stored?.status ?? 'idle',
         credentialKey: source.credentialKey,
-        credentialPresent: Boolean(credential),
+        credentialPresent: envTokenPresent || Boolean(credential),
         owner: source.owner,
         repo: source.repo,
         ref: source.ref,
