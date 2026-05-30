@@ -480,7 +480,7 @@ async function selectOpenIdRoleForOpenIdSync(
     accessClaims: payload,
     decodeToken: () => payload,
   });
-  if (!openIdRoleValues) {
+  if (openIdRoleValues === undefined) {
     logger.warn(
       `[remoteAgentAuth] OpenID role sync skipped; claim '${options.claim}' was not found or invalid`,
     );

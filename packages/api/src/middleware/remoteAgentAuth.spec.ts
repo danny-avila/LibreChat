@@ -1500,6 +1500,22 @@ describe('createRemoteAgentAuth', () => {
       expect(req.user).toMatchObject({ role: 'USER' });
     });
 
+    it('applies fallback when the role claim is present but empty', async () => {
+      enableApiRoleSync();
+      setupOidcMocks({
+        sub: 'sub123',
+        email: 'agent@test.com',
+        roles: '',
+      });
+
+      const deps = makeDeps();
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+      await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
+
+      expect(deps.updateUser).toHaveBeenCalledWith('uid123', { role: 'USER' });
+      expect(req.user).toMatchObject({ role: 'USER' });
+    });
+
     it('preserves an existing ADMIN role because generic role sync cannot manage admin', async () => {
       enableApiRoleSync();
       setupOidcMocks({

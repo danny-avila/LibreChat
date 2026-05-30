@@ -510,7 +510,7 @@ async function applyOpenIdRoleSync({
     decodeToken: jwtDecode,
     resolveGroupOverage,
   });
-  if (!openIdRoleValues) {
+  if (openIdRoleValues === undefined) {
     logger.warn(
       `[openidStrategy] OpenID role sync skipped; claim '${options.claim}' was not found, invalid, or unresolved`,
     );
