@@ -31,6 +31,7 @@ const Image = ({
   args,
   width,
   height,
+  onError,
 }: {
   imagePath: string;
   altText: string;
@@ -44,6 +45,7 @@ const Image = ({
   };
   width?: number;
   height?: number;
+  onError?: React.ReactEventHandler<HTMLImageElement>;
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -123,6 +125,7 @@ const Image = ({
           alt={altText}
           src={absoluteImageUrl}
           onLoad={() => paintedUrls.add(absoluteImageUrl)}
+          onError={onError}
           className={cn(
             'relative block text-transparent',
             hasDimensions

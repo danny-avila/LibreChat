@@ -144,9 +144,11 @@ async function encodeAndFormat(req, files, params, mode) {
         continue;
       } catch (error) {
         logger.error('Error processing image from blob storage:', error);
-        throw new Error(
-          `Failed to encode image from ${source} for vision payload: ${error.message}. Private storage URLs cannot be fetched by remote LLM providers.`,
-        );
+        if (source === FileSources.azure_blob) {
+          throw new Error(
+            `Failed to encode image from ${source} for vision payload: ${error.message}. Private storage URLs cannot be fetched by remote LLM providers.`,
+          );
+        }
       }
     }
     if (source !== FileSources.local && base64Only.has(effectiveEndpoint)) {
