@@ -34,9 +34,9 @@ describe('encodeAndFormat blob storage fail-closed behavior', () => {
     const getDownloadStream = jest.fn().mockRejectedValue(new Error('403 Forbidden'));
     mockGetStrategyFunctions.mockReturnValue({ prepareImagePayload, getDownloadStream });
 
-    await expect(
-      encodeAndFormat(req, [file], { endpoint: 'azureOpenAI' }),
-    ).rejects.toThrow(/Failed to encode image from azure_blob/);
+    await expect(encodeAndFormat(req, [file], { endpoint: 'azureOpenAI' })).rejects.toThrow(
+      /Failed to encode image from azure_blob/,
+    );
 
     expect(getDownloadStream).toHaveBeenCalled();
     expect(prepareImagePayload).not.toHaveBeenCalled();
