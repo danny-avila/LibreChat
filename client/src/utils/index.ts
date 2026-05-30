@@ -26,6 +26,7 @@ export * from './languages';
 export * from './conversation';
 export * from './endpoints';
 export * from './resources';
+export * from './configHtml';
 export * from './downloadFile';
 export * from './scaleImage';
 export * from './timestamps';
