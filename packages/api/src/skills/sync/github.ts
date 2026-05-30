@@ -217,11 +217,14 @@ function makeUpstreamId(source: SkillSyncGitHubSourceConfig, rootPath: string): 
 }
 
 function makeSourceAuthorId(source: SkillSyncGitHubSourceConfig): Types.ObjectId {
-  const digest = crypto
-    .createHash('sha256')
-    .update(`${PROVIDER}:${source.id}`)
-    .digest('hex')
-    .slice(0, 24);
+  // Fold the tenant into the synthetic author so the same source mirrored into
+  // different tenants gets distinct author ids (clearer audits, no cross-tenant
+  // author collisions). The tenant suffix is omitted when absent so single-tenant
+  // author ids stay stable.
+  const seed = source.tenantId
+    ? `${PROVIDER}:${source.id}:${source.tenantId}`
+    : `${PROVIDER}:${source.id}`;
+  const digest = crypto.createHash('sha256').update(seed).digest('hex').slice(0, 24);
   return new Types.ObjectId(digest);
 }
 
@@ -1108,8 +1111,12 @@ async function syncSource(params: {
 /**
  * Runs a source sync inside its tenant's async context when `tenantId` is set,
  * so the tenant-isolation mongoose hooks scope every skill/file/ACL read and
- * write to that tenant (required under strict isolation). Without a configured
+ * write to that tenant (required under strict isolation). Storage writes also
+ * receive the tenant explicitly via `skill.tenantId`. Without a configured
  * tenant the sync runs in the ambient context, preserving single-tenant behavior.
+ *
+ * The callback is `async` per the tenant-context contract so the ALS store
+ * propagates across every awaited Mongoose operation in `syncSource`.
  */
 function syncSourceInTenantContext(params: {
   deps: GitHubSkillSyncDeps;
@@ -1120,7 +1127,7 @@ function syncSourceInTenantContext(params: {
   if (!params.source.tenantId) {
     return syncSource(params);
   }
-  return tenantStorage.run({ tenantId: params.source.tenantId }, () => syncSource(params));
+  return tenantStorage.run({ tenantId: params.source.tenantId }, async () => syncSource(params));
 }
 
 function getGithubConfig(config: SkillSyncConfig | undefined): {
