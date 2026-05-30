@@ -947,7 +947,7 @@ describe('createGitHubSkillSyncRunner', () => {
         source: 'local',
       })),
       deleteFile: jest.fn(async () => undefined),
-      updateSkill: jest.fn(async () => ({ status: 'conflict' as const })),
+      updateSkill: jest.fn(async () => ({ status: 'conflict' as const, current: existing })),
     });
     const runner = createGitHubSkillSyncRunner(deps);
     const result = await runner.runOnce();
