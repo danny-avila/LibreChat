@@ -1051,6 +1051,99 @@ describe('processDeleteRequest', () => {
     expect(db.deleteFiles).toHaveBeenCalledWith(['expired-file']);
     expect(db.removeAgentResourceFilesFromAllAgents).not.toHaveBeenCalled();
   });
+
+  it('deletes vector storage before removing embedded file metadata', async () => {
+    const primaryDelete = jest.fn().mockResolvedValue(undefined);
+    const vectorDelete = jest.fn().mockResolvedValue(undefined);
+    getStrategyFunctions.mockImplementation((source) =>
+      source === FileSources.vectordb
+        ? { deleteFile: vectorDelete }
+        : { deleteFile: primaryDelete },
+    );
+    db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
+    const req = {
+      body: {},
+      config: {},
+      user: { id: 'user-123', tenantId: 'tenant-a' },
+    };
+    const file = {
+      file_id: 'embedded-file',
+      filepath: '/uploads/embedded.txt',
+      source: FileSources.local,
+      embedded: true,
+    };
+
+    const result = await processDeleteRequest({ req, files: [file] });
+
+    expect(primaryDelete).toHaveBeenCalledWith(req, file, undefined);
+    expect(vectorDelete).toHaveBeenCalledWith(req, file);
+    expect(db.deleteFiles).toHaveBeenCalledWith(['embedded-file']);
+    expect(result).toEqual({ deletedFileIds: ['embedded-file'], failedFileIds: [] });
+  });
+
+  it('keeps embedded file metadata when vector deletion fails', async () => {
+    const primaryDelete = jest.fn().mockResolvedValue(undefined);
+    const vectorDelete = jest.fn().mockRejectedValue(new Error('rag unavailable'));
+    getStrategyFunctions.mockImplementation((source) =>
+      source === FileSources.vectordb
+        ? { deleteFile: vectorDelete }
+        : { deleteFile: primaryDelete },
+    );
+    const req = {
+      body: {},
+      config: {},
+      user: { id: 'user-123', tenantId: 'tenant-a' },
+    };
+    const file = {
+      file_id: 'embedded-file',
+      filepath: '/uploads/embedded.txt',
+      source: FileSources.local,
+      embedded: true,
+    };
+
+    const result = await processDeleteRequest({ req, files: [file] });
+
+    expect(primaryDelete).toHaveBeenCalledWith(req, file, undefined);
+    expect(vectorDelete).toHaveBeenCalledWith(req, file);
+    expect(db.deleteFiles).not.toHaveBeenCalled();
+    expect(result).toEqual({ deletedFileIds: [], failedFileIds: ['embedded-file'] });
+  });
+
+  it('deletes code environment storage before removing code resource file metadata', async () => {
+    const primaryDelete = jest.fn().mockResolvedValue(undefined);
+    const codeDelete = jest.fn().mockResolvedValue(undefined);
+    getStrategyFunctions.mockImplementation((source) =>
+      source === FileSources.execute_code
+        ? { deleteFile: codeDelete }
+        : { deleteFile: primaryDelete },
+    );
+    db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
+    const req = {
+      body: {},
+      config: {},
+      user: { id: 'user-123', tenantId: 'tenant-a' },
+    };
+    const file = {
+      file_id: 'code-resource-file',
+      filepath: '/uploads/code-resource.txt',
+      source: FileSources.local,
+      metadata: {
+        codeEnvRef: {
+          kind: 'agent',
+          id: 'agent-abc',
+          storage_session_id: 'sess-1',
+          file_id: 'fid-1',
+        },
+      },
+    };
+
+    const result = await processDeleteRequest({ req, files: [file] });
+
+    expect(primaryDelete).toHaveBeenCalledWith(req, file, undefined);
+    expect(codeDelete).toHaveBeenCalledWith(req, file);
+    expect(db.deleteFiles).toHaveBeenCalledWith(['code-resource-file']);
+    expect(result).toEqual({ deletedFileIds: ['code-resource-file'], failedFileIds: [] });
+  });
 });
 
 describe('sweepExpiredFiles', () => {

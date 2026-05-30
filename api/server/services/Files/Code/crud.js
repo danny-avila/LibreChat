@@ -59,6 +59,50 @@ async function getCodeOutputDownloadStream(fileIdentifier, identity, req) {
 }
 
 /**
+ * Deletes a file from the Code Environment server.
+ *
+ * @param {ServerRequest} req - Current authenticated request, used to mint Code API auth.
+ * @param {MongoFile} file - File metadata containing `metadata.codeEnvRef`.
+ * @returns {Promise<void>}
+ */
+async function deleteCodeEnvFile(req, file) {
+  const ref = file?.metadata?.codeEnvRef;
+  if (!ref) {
+    return;
+  }
+
+  try {
+    const baseURL = getCodeBaseURL();
+    const query = buildCodeEnvDownloadQuery({
+      kind: ref.kind,
+      id: ref.id,
+      ...(ref.kind === 'skill' ? { version: ref.version } : {}),
+    });
+    const authHeaders = await getCodeApiAuthHeaders(req);
+    await axios({
+      method: 'delete',
+      url: `${baseURL}/files/${ref.storage_session_id}/${ref.file_id}${query}`,
+      headers: {
+        'User-Agent': 'LibreChat/1.0',
+        ...authHeaders,
+      },
+      httpAgent: codeServerHttpAgent,
+      httpsAgent: codeServerHttpsAgent,
+      timeout: 15000,
+    });
+  } catch (error) {
+    logAxiosError({
+      error,
+      message: `Error deleting code environment file: ${error.message}`,
+    });
+    if (error.response?.status === 404) {
+      return;
+    }
+    throw new Error(error.message || 'An error occurred during file deletion.');
+  }
+}
+
+/**
  * Uploads a file to the Code Environment server.
  *
  * `kind`/`id`/`version?` are required so codeapi can route the upload to
@@ -209,6 +253,7 @@ async function batchUploadCodeEnvFiles({ req, files, kind, id, version, read_onl
 }
 
 module.exports = {
+  deleteCodeEnvFile,
   getCodeOutputDownloadStream,
   uploadCodeEnvFile,
   batchUploadCodeEnvFiles,

@@ -82,6 +82,8 @@ const getAgentFileRetentionExpiry = async ({ req, messageAttachment, tool_resour
   return await getRetentionExpiry(req);
 };
 
+const hasCodeEnvRef = (file) => file?.metadata?.codeEnvRef != null;
+
 const isMissingStorageError = (err) => {
   const code = err?.code ?? err?.status ?? err?.statusCode ?? err?.response?.status;
   if ([404, '404', 'ENOENT', 'NoSuchKey', 'NotFound', 'ResourceNotFound'].includes(code)) {
@@ -158,6 +160,40 @@ function enqueueDeleteOperation({
     );
   }
 }
+
+const getDeleteMethod = ({ source, deletionMethods }) => {
+  if (deletionMethods[source]) {
+    return deletionMethods[source];
+  }
+
+  const { deleteFile } = getStrategyFunctions(source);
+  if (!deleteFile) {
+    throw new Error(`Delete function not implemented for ${source}`);
+  }
+
+  deletionMethods[source] = deleteFile;
+  return deleteFile;
+};
+
+const createDeleteFileWithSecondaryStorage = ({ source, deleteFile, deletionMethods }) => {
+  return async (req, file, openai) => {
+    await deleteFile(req, file, openai);
+
+    const secondaryDeletes = [];
+    if (file.embedded === true && source !== FileSources.vectordb) {
+      secondaryDeletes.push(
+        getDeleteMethod({ source: FileSources.vectordb, deletionMethods })(req, file),
+      );
+    }
+    if (hasCodeEnvRef(file) && source !== FileSources.execute_code) {
+      secondaryDeletes.push(
+        getDeleteMethod({ source: FileSources.execute_code, deletionMethods })(req, file),
+      );
+    }
+
+    await Promise.all(secondaryDeletes);
+  };
+};
 
 // TODO: refactor as currently only image files can be deleted this way
 // as other filetypes will not reside in public path
@@ -244,29 +280,11 @@ const processDeleteRequest = async ({ req, files }) => {
       promises.push(openai.beta.assistants.files.del(req.body.assistant_id, file.file_id));
     }
 
-    if (deletionMethods[source]) {
-      enqueueDeleteOperation({
-        req,
-        file,
-        deleteFile: deletionMethods[source],
-        promises,
-        resolvedFileIds,
-        failedFileIds,
-        openai,
-      });
-      continue;
-    }
-
-    const { deleteFile } = getStrategyFunctions(source);
-    if (!deleteFile) {
-      throw new Error(`Delete function not implemented for ${source}`);
-    }
-
-    deletionMethods[source] = deleteFile;
+    const deleteFile = getDeleteMethod({ source, deletionMethods });
     enqueueDeleteOperation({
       req,
       file,
-      deleteFile,
+      deleteFile: createDeleteFileWithSecondaryStorage({ source, deleteFile, deletionMethods }),
       promises,
       resolvedFileIds,
       failedFileIds,
