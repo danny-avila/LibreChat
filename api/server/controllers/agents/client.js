@@ -12,6 +12,7 @@ const {
   resolveHeaders,
   createSafeUser,
   initializeAgent,
+  countTokens,
   getBalanceConfig,
   omitTitleOptions,
   getProviderConfig,
@@ -20,6 +21,7 @@ const {
   applyContextToAgent,
   isMemoryAgentEnabled,
   recordCollectedUsage,
+  isDeepSeekReasoningProvider,
   GenerationJobManager,
   getTransactionsConfig,
   resolveRecursionLimit,
@@ -31,6 +33,8 @@ const {
   hydrateMissingIndexTokenCounts,
   injectSkillPrimes,
   isSkillPrimeMessage,
+  collectFileIds,
+  buildAgentScopedContext,
   buildSkillPrimeContentParts,
   buildInitialToolSessions,
 } = require('@librechat/api');
@@ -270,9 +274,14 @@ class AgentClient extends BaseClient {
           }))
         : []),
     ];
+    const sharedRunAttachmentIds = new Set();
     if (this.options.attachments) {
       const attachments = await this.options.attachments;
       const latestMessage = orderedMessages[orderedMessages.length - 1];
+
+      for (const fileId of collectFileIds(attachments)) {
+        sharedRunAttachmentIds.add(fileId);
+      }
 
       if (this.message_file_map) {
         this.message_file_map[latestMessage.messageId] = attachments;
@@ -402,6 +411,14 @@ class AgentClient extends BaseClient {
     const sharedRunContext = sharedRunContextParts.join('\n\n');
     const memoryAgentEnabled = isMemoryAgentEnabled(this.options.req.config?.memory);
 
+    const agentScopedContext = await buildAgentScopedContext({
+      agentIds: allAgents.map(({ agentId }) => agentId),
+      attachmentsByAgentId: this.options.agentContextAttachmentsByAgentId,
+      sharedRunAttachmentIds,
+      req: this.options.req,
+      tokenCountFn: (text) => countTokens(text),
+    });
+
     /** Preserve canonical pre-format token counts for all history entering graph formatting */
     this.indexTokenCountMap = canonicalTokenCountMap;
 
@@ -439,10 +456,14 @@ class AgentClient extends BaseClient {
 
     await Promise.all(
       allAgents.map(({ agent, agentId }) => {
-        const agentRunContext =
-          memoryContext && (agentId === this.options.agent.id || memoryAgentEnabled)
-            ? [sharedRunContext, memoryContext].filter(Boolean).join('\n\n')
-            : sharedRunContext;
+        const agentRunContextParts = [sharedRunContext];
+        if (memoryContext && (agentId === this.options.agent.id || memoryAgentEnabled)) {
+          agentRunContextParts.push(memoryContext);
+        }
+        const scopedContext = agentScopedContext.get(agentId);
+        if (scopedContext) {
+          agentRunContextParts.push(scopedContext);
+        }
 
         return applyContextToAgent({
           agent,
@@ -450,7 +471,7 @@ class AgentClient extends BaseClient {
           logger,
           mcpManager,
           configServers,
-          sharedRunContext: agentRunContext,
+          sharedRunContext: agentRunContextParts.filter(Boolean).join('\n\n'),
           ephemeralAgent: agentId === this.options.agent.id ? ephemeralAgent : undefined,
         });
       }),
@@ -856,12 +877,27 @@ class AgentClient extends BaseClient {
         agents: [this.options.agent, ...(this.agentConfigs ? this.agentConfigs.values() : [])],
       });
 
+      /** Spoof `Providers.DEEPSEEK` so the SDK preserves `reasoning_content` on tool turns (#13366). */
+      const hasDeepSeekAgent = (agent) =>
+        agent != null &&
+        isDeepSeekReasoningProvider(agent.provider, agent.model_parameters?.model ?? agent.model);
+      const needsDeepSeekFormat =
+        hasDeepSeekAgent(this.options.agent) ||
+        (this.agentConfigs != null &&
+          Array.from(this.agentConfigs.values()).some(hasDeepSeekAgent));
+      const formatOptions = needsDeepSeekFormat ? { provider: Providers.DEEPSEEK } : undefined;
       let {
         messages: initialMessages,
         indexTokenCountMap,
         summary: initialSummary,
         boundaryTokenAdjustment,
-      } = formatAgentMessages(payload, this.indexTokenCountMap, toolSet, skillPrimeResult?.skills);
+      } = formatAgentMessages(
+        payload,
+        this.indexTokenCountMap,
+        toolSet,
+        skillPrimeResult?.skills,
+        formatOptions,
+      );
       if (boundaryTokenAdjustment) {
         logger.debug(
           `[AgentClient] Boundary token adjustment: ${boundaryTokenAdjustment.original} → ${boundaryTokenAdjustment.adjusted} (${boundaryTokenAdjustment.remainingChars}/${boundaryTokenAdjustment.totalChars} chars)`,

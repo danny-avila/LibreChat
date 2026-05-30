@@ -19,6 +19,7 @@ const {
   preAuthTenantMiddleware,
   applyAdminRefresh,
   AdminRefreshError,
+  buildOpenIDRefreshParams,
 } = require('@librechat/api');
 const { loginController } = require('~/server/controllers/auth/LoginController');
 const { hasCapability, requireCapability } = require('~/server/middleware/roles/capabilities');
@@ -538,10 +539,20 @@ router.post(
         });
       }
 
-      const refreshParams = process.env.OPENID_SCOPE ? { scope: process.env.OPENID_SCOPE } : {};
+      const refreshParams = buildOpenIDRefreshParams();
+      logger.debug('[admin/oauth/refresh] OpenID refresh params', {
+        has_scope: Boolean(process.env.OPENID_SCOPE),
+        has_refresh_audience: Boolean(process.env.OPENID_REFRESH_AUDIENCE),
+      });
       let tokenset;
       try {
         tokenset = await openIdClient.refreshTokenGrant(openIdConfig, refreshToken, refreshParams);
+        logger.debug('[admin/oauth/refresh] OpenID refresh succeeded', {
+          has_access_token: Boolean(tokenset.access_token),
+          has_id_token: Boolean(tokenset.id_token),
+          has_refresh_token: Boolean(tokenset.refresh_token),
+          expires_in: tokenset.expires_in,
+        });
       } catch (err) {
         logger.warn('[admin/oauth/refresh] IdP refresh grant failed', {
           code: err?.code,

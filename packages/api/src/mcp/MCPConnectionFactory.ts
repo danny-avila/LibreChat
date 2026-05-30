@@ -14,7 +14,7 @@ import {
   resolveOboToken,
 } from '~/mcp/oauth';
 import { PENDING_STALE_MS, normalizeExpiresAt } from '~/flow/manager';
-import { sanitizeUrlForLogging, isClientRejectionMessage } from './utils';
+import { sanitizeUrlForLogging, isClientRejectionMessage, isOAuthServer } from './utils';
 import { withTimeout } from '~/utils/promise';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
@@ -56,7 +56,7 @@ export class MCPConnectionFactory {
   /** Creates a new MCP connection with optional OAuth support */
   static async create(
     basic: t.BasicConnectionOptions,
-    oauth?: t.OAuthConnectionOptions,
+    oauth?: t.OAuthConnectionOptions | t.UserConnectionContext,
   ): Promise<MCPConnection> {
     const factory = new this(basic, oauth);
     return factory.createConnection();
@@ -318,9 +318,23 @@ export class MCPConnectionFactory {
     let cleanupOAuthHandlers: (() => void) | null = null;
     if (this.useOAuth && !this.usesObo) {
       cleanupOAuthHandlers = this.handleOAuthEvents(connection);
+    } else {
+      const nonOAuthHandler = () => {
+        logger.info(
+          `${this.logPrefix} Server does not use OAuth; treating 401/403 as auth failure`,
+        );
+        connection.emit('oauthFailed', new Error('Server does not use OAuth'));
+      };
+      connection.on('oauthRequired', nonOAuthHandler);
+      cleanupOAuthHandlers = () => {
+        connection.removeListener('oauthRequired', nonOAuthHandler);
+      };
     }
 
     try {
+      if (this.shouldInitiateOAuthBeforeConnect(oauthTokens)) {
+        await this.initiateOAuthBeforeConnect(connection);
+      }
       await this.attemptToConnect(connection);
       if (cleanupOAuthHandlers) {
         cleanupOAuthHandlers();
@@ -332,6 +346,77 @@ export class MCPConnectionFactory {
       }
       throw error;
     }
+  }
+
+  private shouldInitiateOAuthBeforeConnect(oauthTokens: MCPOAuthTokens | null): boolean {
+    if (!this.useOAuth || oauthTokens) {
+      return false;
+    }
+    return isOAuthServer(this.serverConfig);
+  }
+
+  private getServerUrl(): string | undefined {
+    return 'url' in this.serverConfig ? this.serverConfig.url : undefined;
+  }
+
+  private async initiateOAuthBeforeConnect(connection: MCPConnection): Promise<void> {
+    const serverUrl = this.getServerUrl();
+    if (!serverUrl) {
+      throw new Error(`${this.logPrefix} OAuth required but server URL is missing from config`);
+    }
+
+    const oauthTimeout = this.connectionTimeout ?? 60000 * 2;
+    logger.info(
+      `${this.logPrefix} No stored tokens, proactively triggering OAuth flow before connecting (timeout: ${oauthTimeout}ms)`,
+    );
+
+    await new Promise<void>((resolve, reject) => {
+      let timeoutId: ReturnType<typeof setTimeout> | null = null;
+      let oauthHandledListener: (() => void) | null = null;
+      let oauthFailedListener: ((error: Error) => void) | null = null;
+
+      const cleanup = () => {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
+        if (oauthHandledListener) {
+          connection.off('oauthHandled', oauthHandledListener);
+        }
+        if (oauthFailedListener) {
+          connection.off('oauthFailed', oauthFailedListener);
+        }
+      };
+
+      oauthHandledListener = () => {
+        cleanup();
+        resolve();
+      };
+
+      oauthFailedListener = (error: Error) => {
+        cleanup();
+        reject(error);
+      };
+
+      timeoutId = setTimeout(() => {
+        cleanup();
+        reject(new Error(`Proactive OAuth flow timeout after ${oauthTimeout}ms`));
+      }, oauthTimeout);
+
+      connection.once('oauthHandled', oauthHandledListener);
+      connection.once('oauthFailed', oauthFailedListener);
+
+      const emitted = connection.emit('oauthRequired', {
+        serverName: this.serverName,
+        error: new Error('OAuth tokens missing before connection'),
+        serverUrl,
+        userId: this.userId,
+      });
+
+      if (!emitted) {
+        cleanup();
+        reject(new Error('OAuth required but no handler is registered'));
+      }
+    });
   }
 
   /** Retrieves existing OAuth tokens from storage or returns null */
@@ -622,8 +707,16 @@ export class MCPConnectionFactory {
       if (message.includes('invalid_token')) {
         return true;
       }
+      // Check for invalid_grant (OAuth servers return this for expired/revoked grants)
+      if (message.includes('invalid_grant')) {
+        return true;
+      }
       // Check for authentication required
       if (message.includes('authentication required') || message.includes('unauthorized')) {
+        return true;
+      }
+      // Check for missing authorization values (e.g., Amazon Ads MCP returns HTTP 400 with this)
+      if (message.includes('no authorization')) {
         return true;
       }
     }

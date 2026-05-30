@@ -18,6 +18,8 @@ const sensitiveKeys = [
 ];
 
 const NUMERIC_KEY_RE = /^\d+$/;
+const LOG_CONTEXT_KEYS = ['tenantId', 'userId', 'requestId'];
+const SYSTEM_TENANT_ID = '__SYSTEM__';
 
 /**
  * Redacts sensitive information from a console message and trims it to a specified length if provided.
@@ -122,6 +124,9 @@ function extractMetaObject(source) {
       continue;
     }
     const value = source[key];
+    if (key === 'tenantId' && value === SYSTEM_TENANT_ID) {
+      continue;
+    }
     if (value === undefined || value === null || value === '') {
       continue;
     }
@@ -197,6 +202,23 @@ function formatConsoleMeta(info) {
   }
 }
 
+function formatRequestContext(info) {
+  if (info == null || typeof info !== 'object') {
+    return '';
+  }
+  const context = {};
+  for (const key of LOG_CONTEXT_KEYS) {
+    const value = info[key];
+    if (key === 'tenantId' && value === SYSTEM_TENANT_ID) {
+      continue;
+    }
+    if (typeof value === 'string' && value) {
+      context[key] = value;
+    }
+  }
+  return Object.keys(context).length > 0 ? JSON.stringify(context) : '';
+}
+
 /**
  * Formats log messages for file and debug-console transports. Three paths:
  * - `warn` / `error`: append a compact single-line JSON metadata trailer
@@ -207,7 +229,7 @@ function formatConsoleMeta(info) {
  *   Redaction on this path is not applied here (debug-file consumers
  *   historically accept raw detail).
  * - Other levels: return the truncated `"<timestamp> <level>: <message>"`
- *   line with no metadata.
+ *   line with request context metadata when present.
  *
  * @param {Object} options - The options for formatting log messages.
  * @param {string} options.level - The log level.
@@ -245,31 +267,41 @@ const debugTraverse = winston.format.printf(({ level, message, timestamp, ...met
 
   try {
     if (level !== 'debug') {
-      return msg;
+      const trailer = formatRequestContext(metadata);
+      return trailer ? `${msg} ${trailer}` : msg;
     }
 
     if (!metadata) {
       return msg;
     }
 
+    const appendMetadataTrailer = (line) => {
+      const trailer = formatRequestContext(metadata);
+      return trailer ? `${line} ${trailer}` : line;
+    };
+
     const debugValue = metadata[SPLAT_SYMBOL]?.[0];
 
     if (!debugValue) {
-      return msg;
+      return appendMetadataTrailer(msg);
     }
 
     if (debugValue && Array.isArray(debugValue)) {
       msg += `\n${JSON.stringify(debugValue.map(condenseArray))}`;
-      return msg;
+      return appendMetadataTrailer(msg);
     }
 
     if (typeof debugValue !== 'object') {
-      return (msg += ` ${debugValue}`);
+      msg += ` ${debugValue}`;
+      return appendMetadataTrailer(msg);
     }
 
     msg += '\n{';
 
     const copy = klona(metadata);
+    if (copy.tenantId === SYSTEM_TENANT_ID) {
+      delete copy.tenantId;
+    }
     traverse(copy).forEach(function (value) {
       if (typeof this?.key === 'symbol') {
         return;

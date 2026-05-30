@@ -14,6 +14,7 @@ import { getBalanceConfig } from '~/app/config';
 export interface BalanceMiddlewareOptions {
   getAppConfig: (options?: {
     role?: string;
+    userId?: string;
     tenantId?: string;
     refresh?: boolean;
   }) => Promise<AppConfig>;
@@ -119,6 +120,7 @@ export function createSetBalanceConfig({
       const user = req.user as IUser & { _id: string | ObjectId };
       const appConfig = await getAppConfig({
         role: user?.role,
+        userId: user?.id,
         tenantId: user?.tenantId,
       });
       const balanceConfig = getBalanceConfig(appConfig);

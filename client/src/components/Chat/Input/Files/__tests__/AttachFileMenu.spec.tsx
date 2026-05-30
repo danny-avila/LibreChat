@@ -95,13 +95,13 @@ const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false 
 
 function setupMocks(overrides: { provider?: string } = {}) {
   const translations: Record<string, string> = {
-    com_ui_upload_provider: 'Upload to Provider',
+    com_files_upload_sharepoint: 'Upload from SharePoint',
+    com_sidepanel_attach_files: 'Attach Files',
+    com_ui_upload_code_environment: 'Upload to Code Environment',
+    com_ui_upload_file_search: 'Upload for File Search',
     com_ui_upload_image_input: 'Upload Image',
     com_ui_upload_ocr_text: 'Upload as Text',
-    com_ui_upload_file_search: 'Upload for File Search',
-    com_ui_upload_code_files: 'Upload Code Files',
-    com_sidepanel_attach_files: 'Attach Files',
-    com_files_upload_sharepoint: 'Upload from SharePoint',
+    com_ui_upload_provider: 'Upload to Provider',
   };
   mockUseLocalize.mockReturnValue((key: string) => translations[key] || key);
   mockUseAgentCapabilities.mockReturnValue({
@@ -320,7 +320,7 @@ describe('AttachFileMenu', () => {
       });
       renderMenu({ endpointType: EModelEndpoint.openAI });
       openMenu();
-      expect(screen.getByText('Upload Code Files')).toBeInTheDocument();
+      expect(screen.getByText('Upload to Code Environment')).toBeInTheDocument();
     });
 
     it('shows all options when all capabilities are enabled', () => {
@@ -340,7 +340,7 @@ describe('AttachFileMenu', () => {
       expect(screen.getByText('Upload to Provider')).toBeInTheDocument();
       expect(screen.getByText('Upload as Text')).toBeInTheDocument();
       expect(screen.getByText('Upload for File Search')).toBeInTheDocument();
-      expect(screen.getByText('Upload Code Files')).toBeInTheDocument();
+      expect(screen.getByText('Upload to Code Environment')).toBeInTheDocument();
     });
 
     it('passes File Search resource when the file input changes before React state commits', () => {

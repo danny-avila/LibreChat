@@ -54,6 +54,7 @@ function makeConfig(overrides: Partial<CloudFrontFullConfig> = {}): CloudFrontFu
     urlExpiry: 3600,
     cookieExpiry: 1800,
     includeRegionInPath: false,
+    requireSignedAccess: false,
     privateKey: null,
     keyPairId: null,
     ...overrides,

@@ -7,6 +7,21 @@ import type { TUser } from 'librechat-data-provider';
 const mockUseHasAccess = jest.fn();
 const mockUseMCPServersQuery = jest.fn();
 const mockUseMCPToolsQuery = jest.fn();
+const mockInstallCloudFrontImageRetry = jest.fn(() => jest.fn());
+const mockGetTokenHeader = jest.fn();
+
+jest.mock('@librechat/client', () => ({
+  installCloudFrontImageRetry: (startupConfig: unknown, options: unknown) =>
+    mockInstallCloudFrontImageRetry(startupConfig, options),
+}));
+
+jest.mock('librechat-data-provider', () => {
+  const actual = jest.requireActual('librechat-data-provider');
+  return {
+    ...actual,
+    getTokenHeader: () => mockGetTokenHeader(),
+  };
+});
 
 jest.mock('~/hooks', () => ({
   useHasAccess: (args: unknown) => mockUseHasAccess(args),
@@ -52,6 +67,7 @@ const wrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 
 describe('useAppStartup — MCP permission gating', () => {
   beforeEach(() => {
+    mockInstallCloudFrontImageRetry.mockClear();
     mockUseMCPServersQuery.mockReturnValue({ data: undefined, isLoading: false });
     mockUseMCPToolsQuery.mockReturnValue({ data: undefined, isLoading: false });
   });
@@ -119,5 +135,28 @@ describe('useAppStartup — MCP permission gating', () => {
     renderHook(() => useAppStartup({ startupConfig: undefined, user: mockUser }), { wrapper });
 
     expect(mockUseMCPToolsQuery).toHaveBeenCalledWith({ enabled: false });
+  });
+
+  it('installs CloudFront image retry from startup config', () => {
+    mockUseHasAccess.mockReturnValue(false);
+    const startupConfig = {
+      cloudFront: {
+        cookieRefresh: {
+          endpoint: '/api/auth/cloudfront/refresh',
+          domain: 'https://cdn.example.com',
+        },
+      },
+    } as never;
+
+    renderHook(() => useAppStartup({ startupConfig, user: mockUser }), { wrapper });
+
+    expect(mockInstallCloudFrontImageRetry).toHaveBeenCalledWith(startupConfig, {
+      getAuthorizationHeader: expect.any(Function),
+    });
+    const [, options] = mockInstallCloudFrontImageRetry.mock.calls[0];
+    mockGetTokenHeader.mockReturnValue('Bearer app-token');
+
+    expect(options.getAuthorizationHeader()).toBe('Bearer app-token');
+    expect(mockGetTokenHeader).toHaveBeenCalledTimes(1);
   });
 });

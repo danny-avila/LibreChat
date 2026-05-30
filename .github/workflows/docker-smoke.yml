@@ -1,0 +1,36 @@
+name: Docker Build Smoke Tests
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/docker-smoke.yml'
+      - '.dockerignore'
+      - 'Dockerfile.multi'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'packages/client/**'
+      - 'packages/data-provider/**'
+
+permissions:
+  contents: read
+
+jobs:
+  client-package-target:
+    name: Build Docker client package target
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build client package target
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.multi
+          platforms: linux/amd64
+          push: false
+          target: client-package-build

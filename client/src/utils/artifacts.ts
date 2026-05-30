@@ -296,6 +296,15 @@ export const TOOL_ARTIFACT_TYPES = {
 
 export type ToolArtifactType = (typeof TOOL_ARTIFACT_TYPES)[keyof typeof TOOL_ARTIFACT_TYPES];
 
+const TOOL_ARTIFACT_TYPE_VALUES: ReadonlySet<string> = new Set(Object.values(TOOL_ARTIFACT_TYPES));
+
+export function isToolArtifactType(type: unknown): type is ToolArtifactType {
+  return typeof type === 'string' && TOOL_ARTIFACT_TYPE_VALUES.has(type);
+}
+
+const lookupOwn = <T>(record: Record<string, T>, key: string): T | undefined =>
+  Object.prototype.hasOwnProperty.call(record, key) ? record[key] : undefined;
+
 /**
  * Artifact types whose preview is server-rendered HTML — there's no
  * source for a "code" view because the underlying file is binary, and
@@ -478,19 +487,21 @@ export function languageForFilename(
 ): string {
   const ext = extensionOf(filename);
   if (ext) {
-    return CODE_EXTENSION_TO_LANGUAGE[ext] ?? ext;
+    return lookupOwn(CODE_EXTENSION_TO_LANGUAGE, ext) ?? ext;
   }
   /* Extensionless filename: try the basename. `Dockerfile` →
    * `dockerfile` → `'dockerfile'` language hint. */
   const bare = bareNameOf(filename);
-  if (bare && Object.prototype.hasOwnProperty.call(CODE_EXTENSION_TO_LANGUAGE, bare)) {
-    return CODE_EXTENSION_TO_LANGUAGE[bare];
+  const bareLanguage = lookupOwn(CODE_EXTENSION_TO_LANGUAGE, bare);
+  if (bareLanguage != null) {
+    return bareLanguage;
   }
   /* MIME fallback for the extensionless-name + useful-MIME case. */
   if (mime) {
     const stripped = baseMime(mime);
-    if (Object.prototype.hasOwnProperty.call(MIME_TO_LANGUAGE, stripped)) {
-      return MIME_TO_LANGUAGE[stripped];
+    const mimeLanguage = lookupOwn(MIME_TO_LANGUAGE, stripped);
+    if (mimeLanguage != null) {
+      return mimeLanguage;
     }
   }
   return '';
@@ -585,7 +596,7 @@ const EXTENSION_TO_TOOL_ARTIFACT_TYPE: Record<string, ToolArtifactType> = {
  * mistake — they ARE source code) shouldn't silently break the React
  * routing path. The explicit map entries above always win. */
 for (const ext of Object.keys(CODE_EXTENSION_TO_LANGUAGE)) {
-  if (ext in EXTENSION_TO_TOOL_ARTIFACT_TYPE) continue;
+  if (lookupOwn(EXTENSION_TO_TOOL_ARTIFACT_TYPE, ext) != null) continue;
   EXTENSION_TO_TOOL_ARTIFACT_TYPE[ext] = TOOL_ARTIFACT_TYPES.CODE;
 }
 
@@ -691,15 +702,15 @@ export function detectArtifactTypeFromFile(
    * `bareNameOf(filename)` would otherwise split path separators
    * twice on the same input. */
   const base = attachment.filename ? basenameOf(attachment.filename) : '';
-  const byExtension = EXTENSION_TO_TOOL_ARTIFACT_TYPE[extensionFromBasename(base)];
   /* Bare-name fallback for extensionless build files (`Dockerfile`,
    * `Makefile`, `Gemfile`, `Rakefile`, `Vagrantfile`, `Brewfile`). Only
    * fires when the extension lookup missed AND the basename is in the
    * routing map; everything else stays on the existing extension/MIME
    * paths. */
+  const byExtension = lookupOwn(EXTENSION_TO_TOOL_ARTIFACT_TYPE, extensionFromBasename(base));
   const byBareName = byExtension
     ? undefined
-    : EXTENSION_TO_TOOL_ARTIFACT_TYPE[bareNameFromBasename(base)];
+    : lookupOwn(EXTENSION_TO_TOOL_ARTIFACT_TYPE, bareNameFromBasename(base));
   /* Exact-match MIME lookup first; for the spreadsheet bucket the
    * backend's `officeHtmlBucket` accepts the broad `excelMimeTypes`
    * regex (covers `application/x-ms-excel`, `application/x-xls`,
@@ -709,10 +720,10 @@ export function detectArtifactTypeFromFile(
    * routed/registered on the panel. */
   const normalizedMime = baseMime(attachment.type);
   const byMime =
-    MIME_TO_TOOL_ARTIFACT_TYPE[normalizedMime] ??
+    lookupOwn(MIME_TO_TOOL_ARTIFACT_TYPE, normalizedMime) ??
     (excelMimeTypes.test(normalizedMime) ? TOOL_ARTIFACT_TYPES.SPREADSHEET : undefined);
   const type = byExtension ?? byBareName ?? byMime ?? null;
-  if (type == null) {
+  if (!isToolArtifactType(type)) {
     return null;
   }
   /* SECURITY GATE: office HTML buckets inject `attachment.text` into
@@ -816,12 +827,22 @@ export function fileToArtifact(
   // fields the function never strictly needs.
   attachment: Partial<
     Pick<TAttachment, 'messageId'> &
-      Pick<TFile, 'file_id' | 'filename' | 'filepath' | 'type' | 'text' | 'updatedAt' | 'createdAt'>
+      Pick<
+        TFile,
+        | 'file_id'
+        | 'filename'
+        | 'filepath'
+        | 'type'
+        | 'text'
+        | 'textFormat'
+        | 'updatedAt'
+        | 'createdAt'
+      >
   >,
   options?: FileToArtifactOptions,
 ): Artifact | null {
   const type = options?.preClassifiedType ?? detectArtifactTypeFromFile(attachment);
-  if (!type) {
+  if (!isToolArtifactType(type)) {
     return null;
   }
   // Mirror the empty-text gate from `detectArtifactTypeFromFile` so a

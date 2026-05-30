@@ -1,7 +1,7 @@
 const express = require('express');
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
-const { isActionDomainAllowed } = require('@librechat/api');
+const { isActionDomainAllowed, validateActionOAuthMetadata } = require('@librechat/api');
 const { actionDelimiter, EModelEndpoint, removeNullishValues } = require('librechat-data-provider');
 const {
   legacyDomainEncode,
@@ -69,6 +69,12 @@ router.post('/:assistant_id', async (req, res) => {
         return res.status(403).json({ message: 'Action does not belong to this assistant' });
       }
       metadata = { ...action.metadata, ...metadata };
+    }
+
+    try {
+      await validateActionOAuthMetadata(metadata.auth, appConfig?.actions?.allowedAddresses);
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
     }
 
     if (!assistant) {

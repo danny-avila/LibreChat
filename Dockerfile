@@ -1,4 +1,4 @@
-# v0.8.5
+# v0.8.6-rc1
 
 # Base node image
 FROM node:20-alpine AS node
@@ -58,6 +58,18 @@ RUN \
     NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}" npm run frontend; \
     npm prune --production; \
     npm cache clean --force
+
+# Optional build metadata surfaced in Settings -> About for support triage.
+# Declared here (after the heavy install/build steps) so that commit/date
+# changing on every CI run does not bust the cache for dependency install
+# and frontend build layers. When unset, the backend falls back to local
+# git resolution (if .git is present), and finally to empty values.
+ARG BUILD_COMMIT=
+ARG BUILD_BRANCH=
+ARG BUILD_DATE=
+ENV BUILD_COMMIT=${BUILD_COMMIT}
+ENV BUILD_BRANCH=${BUILD_BRANCH}
+ENV BUILD_DATE=${BUILD_DATE}
 
 # Node API setup
 EXPOSE 3080

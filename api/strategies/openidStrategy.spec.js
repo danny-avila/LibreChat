@@ -3,9 +3,11 @@ const fetch = require('node-fetch');
 const jwtDecode = require('jsonwebtoken/decode');
 const { ErrorTypes, FileSources } = require('librechat-data-provider');
 const { findUser, createUser, updateUser } = require('~/models');
-const { getOpenIdIssuer, resolveAppConfigForUser } = require('@librechat/api');
+const { getOpenIdIssuer, resolveAppConfigForUser, isEnabled } = require('@librechat/api');
 const { getAppConfig } = require('~/server/services/Config');
 const { setupOpenId } = require('./openidStrategy');
+
+const mockCloudfrontFileSource = FileSources.cloudfront ?? 'cloudfront';
 
 // --- Mocks ---
 jest.mock('node-fetch');
@@ -22,18 +24,68 @@ jest.mock('~/server/services/Files/strategies', () => ({
 jest.mock('~/server/services/Config', () => ({
   getAppConfig: jest.fn().mockResolvedValue({}),
 }));
-jest.mock('@librechat/api', () => ({
-  ...jest.requireActual('@librechat/api'),
-  isEnabled: jest.fn(() => false),
-  isEmailDomainAllowed: jest.fn(() => true),
-  findOpenIDUser: jest.requireActual('@librechat/api').findOpenIDUser,
-  getOpenIdEmail: jest.requireActual('@librechat/api').getOpenIdEmail,
-  getBalanceConfig: jest.fn(() => ({
-    enabled: false,
-  })),
-  getOpenIdIssuer: jest.fn(() => 'https://fake-issuer.com'),
-  resolveAppConfigForUser: jest.fn(async (_getAppConfig, _user) => ({})),
-}));
+jest.mock('@librechat/api', () => {
+  const actual = jest.requireActual('@librechat/api');
+  const getStringClaim = (claims, claim) => {
+    const value = claims[claim];
+    return typeof value === 'string' && value ? value : undefined;
+  };
+
+  return {
+    ...actual,
+    isEnabled: jest.fn(() => false),
+    isEmailDomainAllowed: jest.fn(() => true),
+    findOpenIDUser: actual.findOpenIDUser,
+    getOpenIdEmail: jest.fn((claims, strategyName = 'openidStrategy') => {
+      if (claims == null) {
+        return undefined;
+      }
+
+      const claimKey = process.env.OPENID_EMAIL_CLAIM?.trim();
+      if (claimKey) {
+        const value = claims[claimKey];
+        if (typeof value === 'string' && value) {
+          return value;
+        }
+
+        const { logger } = require('@librechat/data-schemas');
+        if (value != null) {
+          logger.warn(
+            `[${strategyName}] OPENID_EMAIL_CLAIM="${claimKey}" resolved to a non-string value (type: ${typeof value}). Falling back to: email -> preferred_username -> upn.`,
+          );
+        } else {
+          logger.warn(
+            `[${strategyName}] OPENID_EMAIL_CLAIM="${claimKey}" not present in userinfo. Falling back to: email -> preferred_username -> upn.`,
+          );
+        }
+      }
+
+      return (
+        getStringClaim(claims, 'email') ??
+        getStringClaim(claims, 'preferred_username') ??
+        getStringClaim(claims, 'upn')
+      );
+    }),
+    getBalanceConfig: jest.fn(() => ({
+      enabled: false,
+    })),
+    getOpenIdIssuer: jest.fn(() => 'https://fake-issuer.com'),
+    getAvatarFileStrategy: jest.fn((config, fallbackStrategy) => {
+      const { FileSources } = jest.requireActual('librechat-data-provider');
+      if (config?.fileStrategies) {
+        return config.fileStrategies.avatar ?? config.fileStrategies.default ?? config.fileStrategy;
+      }
+      return config?.fileStrategy ?? fallbackStrategy ?? FileSources.local;
+    }),
+    getAvatarSaveParams: jest.fn((strategy, params) => {
+      const { FileSources } = jest.requireActual('librechat-data-provider');
+      return strategy === FileSources.s3 || strategy === mockCloudfrontFileSource
+        ? { ...params, basePath: 'avatars' }
+        : params;
+    }),
+    resolveAppConfigForUser: jest.fn(async (_getAppConfig, _user) => ({})),
+  };
+});
 jest.mock('~/models', () => ({
   findUser: jest.fn(),
   createUser: jest.fn(),
@@ -145,6 +197,7 @@ describe('setupOpenId', () => {
   beforeEach(async () => {
     // Clear previous mock calls and reset implementations
     jest.clearAllMocks();
+    isEnabled.mockImplementation(jest.requireActual('@librechat/api').isEnabled);
 
     // Reset environment variables needed by the strategy
     process.env.OPENID_ISSUER = 'https://fake-issuer.com';
@@ -164,6 +217,7 @@ describe('setupOpenId', () => {
     delete process.env.OPENID_EMAIL_CLAIM;
     delete process.env.PROXY;
     delete process.env.OPENID_USE_PKCE;
+    delete process.env.OPENID_GENERATE_NONCE;
 
     // Default jwtDecode mock returns a token that includes the required role.
     jwtDecode.mockReturnValue({
@@ -193,6 +247,71 @@ describe('setupOpenId', () => {
     // (not 'openidAdmin' which requires existing users)
     await setupOpenId();
     verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+  });
+
+  describe('clientMetadata construction in setupOpenId', () => {
+    let openidClient;
+
+    beforeEach(() => {
+      openidClient = require('openid-client');
+      openidClient.discovery.mockClear();
+    });
+
+    it('sets token_endpoint_auth_method to none for PKCE without a client secret', async () => {
+      process.env.OPENID_USE_PKCE = 'true';
+      delete process.env.OPENID_CLIENT_SECRET;
+
+      await setupOpenId();
+
+      const [, , metadata] = openidClient.discovery.mock.calls.at(-1);
+      expect(metadata.token_endpoint_auth_method).toBe('none');
+      expect(metadata.client_secret).toBeUndefined();
+    });
+
+    it('leaves token_endpoint_auth_method unset for secret-based clients without nonce', async () => {
+      process.env.OPENID_USE_PKCE = 'false';
+      process.env.OPENID_CLIENT_SECRET = 'my-secret';
+
+      await setupOpenId();
+
+      const [, , metadata] = openidClient.discovery.mock.calls.at(-1);
+      expect(metadata.client_secret).toBe('my-secret');
+      expect(metadata.token_endpoint_auth_method).toBeUndefined();
+    });
+
+    it('sets client_secret and client_secret_post when nonce generation is enabled', async () => {
+      process.env.OPENID_USE_PKCE = 'false';
+      process.env.OPENID_GENERATE_NONCE = 'true';
+      process.env.OPENID_CLIENT_SECRET = 'my-secret';
+
+      await setupOpenId();
+
+      const [, , metadata] = openidClient.discovery.mock.calls.at(-1);
+      expect(metadata.client_secret).toBe('my-secret');
+      expect(metadata.token_endpoint_auth_method).toBe('client_secret_post');
+    });
+
+    it('treats whitespace-only secret as absent', async () => {
+      process.env.OPENID_USE_PKCE = 'true';
+      process.env.OPENID_CLIENT_SECRET = '   ';
+
+      await setupOpenId();
+
+      const [, , metadata] = openidClient.discovery.mock.calls.at(-1);
+      expect(metadata.client_secret).toBeUndefined();
+      expect(metadata.token_endpoint_auth_method).toBe('none');
+    });
+
+    it('does not force an auth method when PKCE and a client secret are both configured without nonce', async () => {
+      process.env.OPENID_USE_PKCE = 'true';
+      process.env.OPENID_CLIENT_SECRET = 'my-secret';
+
+      await setupOpenId();
+
+      const [, , metadata] = openidClient.discovery.mock.calls.at(-1);
+      expect(metadata.client_secret).toBe('my-secret');
+      expect(metadata.token_endpoint_auth_method).toBeUndefined();
+    });
   });
 
   it('should create a new user with correct username when preferred_username claim exists', async () => {
@@ -501,6 +620,72 @@ describe('setupOpenId', () => {
     expect(user.email).toBe(tokenset.claims().email);
     expect(user.username).toBe(tokenset.claims().preferred_username);
     expect(createUser).toHaveBeenCalled();
+  });
+
+  it('should allow login when required role is found in userinfo claims', async () => {
+    process.env.OPENID_REQUIRED_ROLE = 'requiredRole';
+    process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'roles';
+    process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND = 'userinfo';
+
+    // The role is intentionally absent from the id_token and only present in
+    // the userinfo response — exercises the userinfo branch of the switch.
+    jwtDecode.mockReturnValue({});
+    require('openid-client').fetchUserInfo.mockResolvedValue({
+      roles: ['requiredRole'],
+    });
+
+    await setupOpenId();
+    verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+
+    const { user } = await validate(tokenset);
+
+    expect(user).toBeTruthy();
+    expect(user.email).toBe(tokenset.claims().email);
+  });
+
+  it('should reject login when required role is missing from userinfo claims', async () => {
+    const { logger } = require('@librechat/data-schemas');
+    process.env.OPENID_REQUIRED_ROLE = 'requiredRole';
+    process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'roles';
+    process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND = 'userinfo';
+
+    jwtDecode.mockReturnValue({});
+    require('openid-client').fetchUserInfo.mockResolvedValue({
+      other_claim: 'value',
+    });
+
+    await setupOpenId();
+    verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+
+    const { user, details } = await validate(tokenset);
+
+    expect(user).toBe(false);
+    expect(details.message).toBe('You must have "requiredRole" role to log in.');
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("Key 'roles' not found in userinfo token!"),
+    );
+  });
+
+  it('should reject login with invalid required role token kind', async () => {
+    const { logger } = require('@librechat/data-schemas');
+    process.env.OPENID_REQUIRED_ROLE = 'requiredRole';
+    process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'roles';
+    process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND = 'invalid';
+
+    jwtDecode.mockReturnValue({
+      roles: ['requiredRole'],
+    });
+
+    await setupOpenId();
+    verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
+
+    await expect(validate(tokenset)).rejects.toThrow('Invalid required role token kind');
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "Invalid required role token kind: invalid. Must be one of 'access', 'id', or 'userinfo'",
+      ),
+    );
   });
 
   describe('group overage and groups handling', () => {
@@ -1122,7 +1307,7 @@ describe('setupOpenId', () => {
 
   it('should save CloudFront IdP avatars under the shared avatar prefix', async () => {
     const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-    getAppConfig.mockResolvedValueOnce({ fileStrategy: FileSources.cloudfront });
+    getAppConfig.mockResolvedValueOnce({ fileStrategy: mockCloudfrontFileSource });
 
     const { user } = await validate(tokenset);
     const strategyResult =
@@ -1130,7 +1315,7 @@ describe('setupOpenId', () => {
     const { saveBuffer } = strategyResult.value;
     const [saveParams] = saveBuffer.mock.calls[0];
 
-    expect(getStrategyFunctions).toHaveBeenLastCalledWith(FileSources.cloudfront);
+    expect(getStrategyFunctions).toHaveBeenLastCalledWith(mockCloudfrontFileSource);
     expect(saveParams).toEqual(
       expect.objectContaining({
         basePath: 'avatars',
@@ -1914,5 +2099,63 @@ describe('setupOpenId', () => {
       expect(user).toBe(false);
       expect(details).toEqual({ message: 'Email domain not allowed' });
     });
+  });
+});
+
+describe('getRoleSource', () => {
+  const { getRoleSource } = require('./openidStrategy');
+  const { logger } = require('@librechat/data-schemas');
+
+  const accessClaims = { roles: ['from-access'] };
+  const idClaims = { roles: ['from-id'] };
+  const userinfo = { roles: ['from-userinfo'] };
+  const tokenset = { access_token: 'access.jwt', id_token: 'id.jwt' };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jwtDecode.mockImplementation((token) => {
+      if (token === 'access.jwt') return accessClaims;
+      if (token === 'id.jwt') return idClaims;
+      return {};
+    });
+  });
+
+  it.each([
+    ['access', accessClaims],
+    ['id', idClaims],
+    ['userinfo', userinfo],
+  ])('returns the expected source object for kind=%s', (kind, expected) => {
+    expect(getRoleSource(kind, 'required role', tokenset, userinfo)).toEqual(expected);
+  });
+
+  it.each([
+    ['undefined', undefined],
+    ['empty string', ''],
+    ['unknown kind', 'bogus'],
+  ])('throws and logs for invalid kind: %s', (_name, kind) => {
+    expect(() => getRoleSource(kind, 'required role', tokenset, userinfo)).toThrow(
+      'Invalid required role token kind',
+    );
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining(`Invalid required role token kind: ${kind}`),
+    );
+  });
+
+  it('uses the provided label in the error message and thrown error', () => {
+    expect(() => getRoleSource('bogus', 'admin role', tokenset, userinfo)).toThrow(
+      'Invalid admin role token kind',
+    );
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('Invalid admin role token kind: bogus'),
+    );
+  });
+
+  it('propagates jwtDecode errors when the requested token is missing', () => {
+    jwtDecode.mockImplementation(() => {
+      throw new Error('Invalid token specified');
+    });
+    expect(() => getRoleSource('access', 'required role', {}, userinfo)).toThrow(
+      'Invalid token specified',
+    );
   });
 });

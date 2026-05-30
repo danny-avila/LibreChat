@@ -217,6 +217,24 @@ describe('parseFrontmatter', () => {
 });
 
 describe('createImportHandler', () => {
+  it('uses request-scoped import limits', async () => {
+    const buffer = await zipWithAdditionalFiles(0, 0);
+    const deps = mockImportDeps(() => ({
+      maxZipBytes: buffer.length - 1,
+    }));
+    const handler = createImportHandler(deps);
+    const res = mockResponse();
+
+    await handler(mockZipRequest(buffer), res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        error: expect.stringContaining('File too large'),
+      }),
+    );
+  });
+
   it('counts rejected oversized zip entries toward the cumulative decompressed limit', async () => {
     const kib = 1024;
     const deps = mockImportDeps({

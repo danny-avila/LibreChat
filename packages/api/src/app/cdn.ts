@@ -25,6 +25,11 @@ function initializeStrategy(strategy: FileSources, appConfig: AppConfig): void {
     }
     const initialized = initializeCloudFront(cloudfrontConfig);
     if (!initialized) {
+      if (cloudfrontConfig.requireSignedAccess === true) {
+        throw new Error(
+          '[initializeFileStorage] CloudFront initialization failed and cloudfront.requireSignedAccess=true; refusing to start.',
+        );
+      }
       logger.error(
         '[initializeFileStorage] CloudFront initialization failed. CloudFront operations will not work.',
       );

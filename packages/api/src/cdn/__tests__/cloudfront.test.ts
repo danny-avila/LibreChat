@@ -22,6 +22,7 @@ function makeConfig(overrides: Partial<RequiredCloudFrontConfig> = {}): Required
     urlExpiry: 3600,
     cookieExpiry: 1800,
     includeRegionInPath: false,
+    requireSignedAccess: false,
     ...overrides,
   };
 }
@@ -135,6 +136,64 @@ describe('CloudFront CDN module', () => {
           '[initializeCloudFront] imageSigning="url" is configured but not yet implemented',
         ),
       );
+    });
+
+    describe('requireSignedAccess (strict mode)', () => {
+      it('logs strict-mode startup info when enabled and keys are present', async () => {
+        process.env.CLOUDFRONT_KEY_PAIR_ID = 'K123';
+        process.env.CLOUDFRONT_PRIVATE_KEY = 'my-private-key';
+        const { initializeCloudFront } = await load();
+        expect(
+          initializeCloudFront(makeConfig({ imageSigning: 'cookies', requireSignedAccess: true })),
+        ).toBe(true);
+        expect(mockLogger.info).toHaveBeenCalledWith(
+          expect.stringContaining('Strict signed CloudFront access enabled at startup'),
+        );
+        expect(mockLogger.info).not.toHaveBeenCalledWith(
+          expect.stringContaining('CloudFront cookie signing enabled'),
+        );
+      });
+
+      it('returns false and logs strict failure when keys are missing', async () => {
+        const { initializeCloudFront } = await load();
+        expect(
+          initializeCloudFront(makeConfig({ imageSigning: 'cookies', requireSignedAccess: true })),
+        ).toBe(false);
+        expect(mockLogger.error).toHaveBeenCalledWith(
+          expect.stringContaining('Strict startup failure'),
+        );
+        expect(mockLogger.error).toHaveBeenCalledWith(
+          expect.stringContaining('CLOUDFRONT_KEY_PAIR_ID'),
+        );
+      });
+
+      it('returns false when imageSigning is "none" even if keys are present', async () => {
+        process.env.CLOUDFRONT_KEY_PAIR_ID = 'K123';
+        process.env.CLOUDFRONT_PRIVATE_KEY = 'my-private-key';
+        const { initializeCloudFront } = await load();
+        expect(
+          initializeCloudFront(makeConfig({ imageSigning: 'none', requireSignedAccess: true })),
+        ).toBe(false);
+        expect(mockLogger.error).toHaveBeenCalledWith(
+          expect.stringContaining(
+            'cloudfront.requireSignedAccess=true requires cloudfront.imageSigning="cookies"',
+          ),
+        );
+      });
+
+      it('returns false when imageSigning is "url" even if keys are present', async () => {
+        process.env.CLOUDFRONT_KEY_PAIR_ID = 'K123';
+        process.env.CLOUDFRONT_PRIVATE_KEY = 'my-private-key';
+        const { initializeCloudFront } = await load();
+        expect(
+          initializeCloudFront(makeConfig({ imageSigning: 'url', requireSignedAccess: true })),
+        ).toBe(false);
+        expect(mockLogger.error).toHaveBeenCalledWith(
+          expect.stringContaining(
+            'cloudfront.requireSignedAccess=true requires cloudfront.imageSigning="cookies"',
+          ),
+        );
+      });
     });
   });
 

@@ -16,6 +16,7 @@ import type {
 import { getCustomEndpointConfig } from '~/app/config';
 
 const { mcp_all, mcp_delimiter } = Constants;
+type ModelParametersWithPromptPrefix = AgentModelParameters & { promptPrefix?: string | null };
 
 export interface LoadAgentDeps {
   getAgent: (searchParameter: { id: string }) => Promise<Agent | null>;
@@ -89,7 +90,11 @@ export async function loadEphemeralAgent(
     }
   }
 
-  const instructions = req.body?.promptPrefix;
+  const requestPromptPrefix = req.body?.promptPrefix;
+  const { promptPrefix: modelPromptPrefix, ...safeModelParameters } =
+    model_parameters as ModelParametersWithPromptPrefix;
+  const instructions =
+    typeof modelPromptPrefix === 'string' ? modelPromptPrefix : requestPromptPrefix;
 
   // Get endpoint config for modelDisplayLabel fallback
   const appConfig = req.config;
@@ -122,7 +127,7 @@ export async function loadEphemeralAgent(
     id: ephemeralId,
     instructions,
     provider: endpoint,
-    model_parameters,
+    model_parameters: safeModelParameters as AgentModelParameters,
     model,
     tools,
   };

@@ -83,8 +83,11 @@ export function createSharedLink(
   return request.post(endpoints.createSharedLink(conversationId), { targetMessageId });
 }
 
-export function updateSharedLink(shareId: string): Promise<t.TSharedLinkResponse> {
-  return request.patch(endpoints.updateSharedLink(shareId));
+export function updateSharedLink(
+  shareId: string,
+  targetMessageId?: string,
+): Promise<t.TSharedLinkResponse> {
+  return request.patch(endpoints.updateSharedLink(shareId), { targetMessageId });
 }
 
 export function deleteSharedLink(shareId: string): Promise<m.TDeleteSharedLinkResponse> {
@@ -225,12 +228,18 @@ export function cancelMCPOAuth(serverName: string): Promise<m.CancelMCPOAuthResp
 
 /* Config */
 
-export const getStartupConfig = (): Promise<
+export type StartupConfigOptions = {
+  context?: config.StartupConfigContext;
+};
+
+export const getStartupConfig = (
+  options?: StartupConfigOptions,
+): Promise<
   config.TStartupConfig & {
     mcpCustomUserVars?: Record<string, { title: string; description: string }>;
   }
 > => {
-  return request.get(endpoints.config());
+  return request.get(endpoints.config(options?.context));
 };
 
 export const getAIEndpoints = (): Promise<t.TEndpointsConfig> => {

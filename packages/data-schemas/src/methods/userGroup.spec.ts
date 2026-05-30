@@ -100,6 +100,7 @@ describe('userGroup methods', () => {
         { name: 'Engineering', source: 'local', description: 'Eng team' },
         { name: 'Design', source: 'local', email: 'design@co.com' },
         { name: 'Entra Eng', source: 'entra', idOnTheSource: 'ext-1' },
+        { name: 'Literal .* Group', source: 'local' },
       ]);
     });
 
@@ -118,6 +119,12 @@ describe('userGroup methods', () => {
       const results = await methods.findGroupsByNamePattern('Eng team');
       expect(results).toHaveLength(1);
       expect(results[0].name).toBe('Engineering');
+    });
+
+    it('treats regex metacharacters as literal text', async () => {
+      const results = await methods.findGroupsByNamePattern('.*');
+      expect(results).toHaveLength(1);
+      expect(results[0].name).toBe('Literal .* Group');
     });
 
     it('filters by source when provided', async () => {
@@ -525,7 +532,7 @@ describe('userGroup methods', () => {
       expect(score).toBe(50);
     });
 
-    it('returns 10 (default) when no substring or exact match — regex fallback', () => {
+    it('returns 10 (default) when no substring or exact match', () => {
       const score = methods.calculateRelevanceScore(
         { type: PrincipalType.USER, name: 'bob', source: 'local' },
         'zzz',
@@ -573,12 +580,12 @@ describe('userGroup methods', () => {
       expect(score).toBe(80);
     });
 
-    it('returns 100 when regex pattern matches exactly via dot wildcard', () => {
+    it('does not treat regex metacharacters as wildcards', () => {
       const score = methods.calculateRelevanceScore(
         { type: PrincipalType.USER, name: 'xYz', source: 'local' },
         'x.z',
       );
-      expect(score).toBe(100);
+      expect(score).toBe(10);
     });
   });
 
@@ -669,6 +676,36 @@ describe('userGroup methods', () => {
     it('returns empty array for whitespace-only pattern', async () => {
       const results = await methods.searchPrincipals('   ');
       expect(results).toEqual([]);
+    });
+
+    it('treats regex metacharacters as literal search text', async () => {
+      await User.create({
+        name: 'Literal .* User',
+        email: 'literal-star@test.com',
+        username: 'literal-star',
+        password: 'password123',
+        provider: 'local',
+      });
+
+      const results = await methods.searchPrincipals('.*', 10, [PrincipalType.USER]);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].name).toBe('Literal .* User');
+    });
+
+    it('handles invalid regex syntax as literal search text', async () => {
+      await User.create({
+        name: 'Regex [invalid User',
+        email: 'regex-invalid@test.com',
+        username: 'regex-invalid',
+        password: 'password123',
+        provider: 'local',
+      });
+
+      const results = await methods.searchPrincipals('[invalid', 10, [PrincipalType.USER]);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].name).toBe('Regex [invalid User');
     });
 
     it('finds matching users', async () => {

@@ -20,7 +20,11 @@ const {
   PermissionTypes,
   MCPServerUserInputSchema,
 } = require('librechat-data-provider');
-const { resolveConfigServers, resolveAllMcpConfigs } = require('~/server/services/MCP');
+const {
+  resolveConfigServers,
+  resolveMcpConfigNames,
+  resolveAllMcpConfigs,
+} = require('~/server/services/MCP');
 const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
 const { getMCPManager, getMCPServersRegistry } = require('~/config');
 const db = require('~/models');
@@ -252,11 +256,13 @@ const createMCPServerController = async (req, res) => {
         .status(403)
         .json({ message: 'Forbidden: Insufficient permissions to configure OBO' });
     }
+    const reservedServerNames = await resolveMcpConfigNames(req);
     const result = await getMCPServersRegistry().addServer(
       'temp_server_name',
       validation.data,
       'DB',
       userId,
+      reservedServerNames,
     );
     res.status(201).json({
       serverName: result.serverName,

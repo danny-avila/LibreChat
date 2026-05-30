@@ -426,6 +426,29 @@ describe('detectArtifactTypeFromFile', () => {
       expect(detectArtifactTypeFromFile({ filename: 'LICENSE', type: '', text: 'MIT' })).toBeNull();
     });
 
+    it.each(['constructor', '__proto__'])(
+      'does not classify inherited Object property "%s" from filename or MIME lookups',
+      (key) => {
+        expect(
+          detectArtifactTypeFromFile({ filename: key, type: '', text: '<script>x</script>' }),
+        ).toBeNull();
+        expect(
+          detectArtifactTypeFromFile({
+            filename: `payload.${key}`,
+            type: '',
+            text: '<script>x</script>',
+          }),
+        ).toBeNull();
+        expect(
+          detectArtifactTypeFromFile({
+            filename: 'payload.bin',
+            type: key,
+            text: '<script>x</script>',
+          }),
+        ).toBeNull();
+      },
+    );
+
     /* Codex review P3 companion: `extensionOf` used to consider the
      * whole path string, so `pkg.v1/Dockerfile` yielded a path-laden
      * "extension" that masked the bare-name fallback. The basename-
@@ -829,6 +852,14 @@ describe('fileToArtifact', () => {
       { preClassifiedType: TOOL_ARTIFACT_TYPES.PLAIN_TEXT },
     );
     expect(artifact!.type).toBe(TOOL_ARTIFACT_TYPES.PLAIN_TEXT);
+  });
+
+  it('rejects a runtime bogus preClassifiedType before constructing an artifact', () => {
+    const artifact = fileToArtifact(
+      { ...baseFile, filename: 'constructor', type: '', text: '<script>x</script>' },
+      { preClassifiedType: Object as unknown as ToolArtifactType },
+    );
+    expect(artifact).toBeNull();
   });
 
   it.each([[TOOL_ARTIFACT_TYPES.HTML], [TOOL_ARTIFACT_TYPES.REACT], [TOOL_ARTIFACT_TYPES.MERMAID]])(

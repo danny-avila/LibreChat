@@ -2,7 +2,12 @@ import { useRef, useCallback, useState } from 'react';
 import { Upload } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { OGDialog, OGDialogContent, Spinner, useToastContext } from '@librechat/client';
-import { useImportSkillMutation } from '~/data-provider';
+import {
+  megabyte,
+  mergeFileConfig,
+  fileConfig as defaultFileConfig,
+} from 'librechat-data-provider';
+import { useGetFileConfig, useImportSkillMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -11,12 +16,30 @@ interface UploadSkillDialogProps {
   setIsOpen: (open: boolean) => void;
 }
 
+function formatMegabytes(bytes: number): string {
+  const value = bytes / megabyte;
+  return Number.isInteger(value) ? `${value}` : value.toFixed(1);
+}
+
 export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDialogProps) {
   const localize = useLocalize();
   const navigate = useNavigate();
   const { showToast } = useToastContext();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const { data: skillFileConfig = { fileConfig: defaultFileConfig } } = useGetFileConfig({
+    select: (data) => ({
+      configuredSizeLimitMb: data?.skills?.fileSizeLimit,
+      fileConfig: mergeFileConfig(data),
+    }),
+  });
+  const { configuredSizeLimitMb, fileConfig } = skillFileConfig;
+  const skillImportSizeLimit =
+    fileConfig.skills?.fileSizeLimit ?? defaultFileConfig.skills?.fileSizeLimit ?? 0;
+  const displayedSizeLimit =
+    configuredSizeLimitMb !== undefined
+      ? `${configuredSizeLimitMb}`
+      : formatMegabytes(skillImportSizeLimit);
 
   const importMutation = useImportSkillMutation({
     onSuccess: (skill) => {
@@ -38,11 +61,18 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
       if (importMutation.isLoading) {
         return;
       }
+      if (file.size > skillImportSizeLimit) {
+        showToast({
+          status: 'error',
+          message: localize('com_ui_skill_upload_size_error', { 0: displayedSizeLimit }),
+        });
+        return;
+      }
       const formData = new FormData();
       formData.append('file', file, file.name);
       importMutation.mutate(formData);
     },
-    [importMutation],
+    [displayedSizeLimit, importMutation, localize, showToast, skillImportSizeLimit],
   );
 
   const handleFileInput = useCallback(
@@ -109,6 +139,7 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
                 <ul className="mt-1 list-inside list-disc">
                   <li>{localize('com_ui_skill_upload_req_md')}</li>
                   <li>{localize('com_ui_skill_upload_req_zip')}</li>
+                  <li>{localize('com_ui_skill_upload_req_size', { 0: displayedSizeLimit })}</li>
                 </ul>
               </div>
             </div>

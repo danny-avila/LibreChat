@@ -11,6 +11,7 @@ module.exports = {
       delete: jest.fn(),
     })),
     logAxiosError: jest.fn(),
+    restoreTenantContextFromReq: jest.fn((req, res, next) => next()),
     ...overrides,
   }),
 

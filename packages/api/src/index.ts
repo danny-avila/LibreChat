@@ -1,4 +1,6 @@
 export * from './app';
+/* Artifacts */
+export * from './artifacts';
 /* Admin */
 export * from './admin';
 export * from './cdn';
@@ -33,6 +35,8 @@ export * from './flow/manager';
 export * from './middleware';
 /* Memory */
 export * from './memory';
+/* Model Specs */
+export * from './modelSpecs';
 /* Agents */
 export * from './agents';
 /* Prompts */

@@ -767,11 +767,15 @@ describe('specsConfigSchema', () => {
         {
           name: 'spec-1',
           label: 'Spec 1',
+          hideBadgeRow: true,
           preset: { endpoint: EModelEndpoint.openAI },
         },
       ],
     });
     expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.list[0].hideBadgeRow).toBe(true);
+    }
   });
 
   it('still rejects null list', () => {

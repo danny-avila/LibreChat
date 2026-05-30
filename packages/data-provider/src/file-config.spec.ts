@@ -836,6 +836,22 @@ describe('getEndpointFileConfig', () => {
       expect(result.fileSizeLimit).toBe(10 * 1024 * 1024);
     });
 
+    it('should convert skills fileSizeLimit from MB to bytes', () => {
+      const merged = mergeFileConfig({
+        skills: {
+          fileSizeLimit: 15,
+        },
+      });
+
+      expect(merged.skills?.fileSizeLimit).toBe(15 * 1024 * 1024);
+    });
+
+    it('should default skills fileSizeLimit to 50 MB', () => {
+      const merged = mergeFileConfig(undefined);
+
+      expect(merged.skills?.fileSizeLimit).toBe(50 * 1024 * 1024);
+    });
+
     it('should preserve disabled: false in merged config', () => {
       const dynamicConfig = {
         endpoints: {

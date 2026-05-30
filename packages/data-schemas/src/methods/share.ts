@@ -4,6 +4,7 @@ import type { FilterQuery, Model } from 'mongoose';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
 import logger from '~/config/winston';
+import { activeExpirationFilter } from '~/utils/retention';
 
 class ShareServiceError extends Error {
   code: string;
@@ -161,7 +162,11 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
   async function getSharedMessages(shareId: string): Promise<t.SharedMessagesResult | null> {
     try {
       const SharedLink = mongoose.models.SharedLink as Model<t.ISharedLink>;
-      const share = (await SharedLink.findOne({ shareId, isPublic: true })
+      const share = (await SharedLink.findOne({
+        shareId,
+        isPublic: true,
+        ...activeExpirationFilter<t.ISharedLink>(),
+      })
         .populate({
           path: 'messages',
           select: '-_id -__v -user',
@@ -215,7 +220,11 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
     try {
       const SharedLink = mongoose.models.SharedLink as Model<t.ISharedLink>;
       const Conversation = mongoose.models.Conversation as SchemaWithMeiliMethods;
-      const query: FilterQuery<t.ISharedLink> = { user, isPublic };
+      const query: FilterQuery<t.ISharedLink> = {
+        user,
+        isPublic,
+        ...activeExpirationFilter<t.ISharedLink>(),
+      };
 
       if (pageParam) {
         if (sortDirection === 'desc') {
@@ -345,6 +354,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
     user: string,
     conversationId: string,
     targetMessageId?: string,
+    expiredAt?: Date,
   ): Promise<t.CreateShareResult> {
     if (!user || !conversationId) {
       throw new ShareServiceError('Missing required parameters', 'INVALID_PARAMS');
@@ -359,6 +369,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
           conversationId,
           user,
           isPublic: true,
+          ...activeExpirationFilter<t.ISharedLink>(),
           ...(targetMessageId && { targetMessageId }),
         })
           .select('-_id -__v -user')
@@ -408,9 +419,10 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
         title,
         user,
         ...(targetMessageId && { targetMessageId }),
+        ...(expiredAt && { expiredAt }),
       });
 
-      return { shareId, conversationId };
+      return { shareId, conversationId, targetMessageId };
     } catch (error) {
       if (error instanceof ShareServiceError) {
         throw error;
@@ -438,15 +450,25 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
 
     try {
       const SharedLink = mongoose.models.SharedLink as Model<t.ISharedLink>;
-      const share = (await SharedLink.findOne({ conversationId, user, isPublic: true })
-        .select('shareId -_id')
-        .lean()) as { shareId?: string } | null;
+      const share = (await SharedLink.findOne({
+        conversationId,
+        user,
+        isPublic: true,
+        ...activeExpirationFilter<t.ISharedLink>(),
+      })
+        .select('shareId targetMessageId -_id')
+        .sort({ updatedAt: -1 })
+        .lean()) as { shareId?: string; targetMessageId?: string } | null;
 
       if (!share) {
         return { shareId: null, success: false };
       }
 
-      return { shareId: share.shareId || null, success: true };
+      return {
+        shareId: share.shareId || null,
+        targetMessageId: share.targetMessageId,
+        success: true,
+      };
     } catch (error) {
       logger.error('[getSharedLink] Error getting shared link', {
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -460,7 +482,12 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
   /**
    * Update a shared link with new messages
    */
-  async function updateSharedLink(user: string, shareId: string): Promise<t.UpdateShareResult> {
+  async function updateSharedLink(
+    user: string,
+    shareId: string,
+    targetMessageId?: string,
+    expiredAt?: Date | null,
+  ): Promise<t.UpdateShareResult> {
     if (!user || !shareId) {
       throw new ShareServiceError('Missing required parameters', 'INVALID_PARAMS');
     }
@@ -481,10 +508,17 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
         .lean();
 
       const newShareId = nanoid();
+      const hasNewExpiration = expiredAt instanceof Date;
+      const resolvedTargetMessageId = targetMessageId ?? share.targetMessageId;
       const update = {
-        messages: updatedMessages,
-        user,
-        shareId: newShareId,
+        $set: {
+          messages: updatedMessages,
+          user,
+          shareId: newShareId,
+          ...(resolvedTargetMessageId && { targetMessageId: resolvedTargetMessageId }),
+          ...(hasNewExpiration && { expiredAt }),
+        },
+        ...(expiredAt === null ? { $unset: { expiredAt: 1 } } : {}),
       };
 
       const updatedShare = (await SharedLink.findOneAndUpdate({ shareId, user }, update, {
@@ -499,7 +533,11 @@ export function createShareMethods(mongoose: typeof import('mongoose')) {
 
       anonymizeConvo(updatedShare);
 
-      return { shareId: newShareId, conversationId: updatedShare.conversationId };
+      return {
+        shareId: newShareId,
+        conversationId: updatedShare.conversationId,
+        targetMessageId: updatedShare.targetMessageId,
+      };
     } catch (error) {
       logger.error('[updateSharedLink] Error updating shared link', {
         error: error instanceof Error ? error.message : 'Unknown error',

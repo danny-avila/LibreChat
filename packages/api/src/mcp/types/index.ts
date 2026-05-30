@@ -213,6 +213,21 @@ export interface OAuthConnectionOptions extends UserConnectionContext {
   oboTrustChecker?: OboTrustChecker;
 }
 
+/** Options accepted by UserConnectionManager.getUserConnection. OAuth fields are optional. */
+export interface UserMCPConnectionOptions extends UserConnectionContext {
+  serverName: string;
+  forceNew?: boolean;
+  serverConfig?: ParsedServerConfig;
+  flowManager?: FlowStateManager<o.MCPOAuthTokens | null>;
+  tokenMethods?: TokenMethods;
+  signal?: AbortSignal;
+  oauthStart?: (authURL: string) => Promise<void>;
+  oauthEnd?: () => Promise<void>;
+  returnOnOAuth?: boolean;
+  oboTokenResolver?: OboTokenResolver;
+  oboTrustChecker?: OboTrustChecker;
+}
+
 export interface ToolDiscoveryOptions {
   serverName: string;
   user?: IUser;

@@ -247,7 +247,7 @@ function getConfigOptions(req: Request): GetAppConfigOptions {
 }
 
 function getUserConfigOptions(user: IUser): GetAppConfigOptions {
-  if (user.tenantId) return { tenantId: user.tenantId };
+  if (user.tenantId) return { role: user.role, userId: user.id, tenantId: user.tenantId };
   return { baseOnly: true };
 }
 
@@ -255,6 +255,8 @@ function isResolvedUserConfigScope(initialOptions: GetAppConfigOptions, user: IU
   const userOptions = getUserConfigOptions(user);
   return (
     initialOptions.tenantId === userOptions.tenantId &&
+    initialOptions.userId === userOptions.userId &&
+    initialOptions.role === userOptions.role &&
     initialOptions.baseOnly === userOptions.baseOnly
   );
 }
