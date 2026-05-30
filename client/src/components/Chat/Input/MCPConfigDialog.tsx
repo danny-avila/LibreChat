@@ -1,7 +1,7 @@
 import DOMPurify from 'dompurify';
 import React, { useEffect, useMemo } from 'react';
 import { useForm, Controller } from 'react-hook-form';
-import { Button, Label, SecretInput, OGDialog, OGDialogTemplate } from '@librechat/client';
+import { Button, Input, Label, SecretInput, OGDialog, OGDialogTemplate } from '@librechat/client';
 import type { ConfigFieldDetail } from '~/common';
 import { useLocalize } from '~/hooks';
 
@@ -90,18 +90,34 @@ export default function MCPConfigDialog({
                   name={key}
                   control={control}
                   defaultValue={initialValues[key] || ''}
-                  render={({ field }) => (
-                    <SecretInput
-                      id={key}
-                      {...field}
-                      autoComplete="new-password"
-                      data-lpignore="true"
-                      data-1p-ignore="true"
-                      controlsOnHover
-                      placeholder={localize('com_ui_mcp_enter_var', { 0: details.title })}
-                      className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white sm:text-sm"
-                    />
-                  )}
+                  render={({ field }) => {
+                    const placeholder = localize('com_ui_mcp_enter_var', { 0: details.title });
+                    const className =
+                      'w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white sm:text-sm';
+                    if (details.sensitive === false) {
+                      return (
+                        <Input
+                          id={key}
+                          {...field}
+                          type="text"
+                          placeholder={placeholder}
+                          className={className}
+                        />
+                      );
+                    }
+                    return (
+                      <SecretInput
+                        id={key}
+                        {...field}
+                        autoComplete="new-password"
+                        data-lpignore="true"
+                        data-1p-ignore="true"
+                        controlsOnHover
+                        placeholder={placeholder}
+                        className={className}
+                      />
+                    );
+                  }}
                 />
                 {details.description && (
                   <p
