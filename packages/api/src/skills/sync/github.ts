@@ -439,6 +439,10 @@ function buildGitHubUrl(pathname: string): string {
   return `${GITHUB_API_BASE}${pathname}`;
 }
 
+function encodeGitHubPath(value: string): string {
+  return value.split('/').map(encodeURIComponent).join('/');
+}
+
 async function readGitHubErrorMessage(response: Response): Promise<string | undefined> {
   try {
     const body = (await response.json()) as { message?: unknown };
@@ -502,7 +506,7 @@ async function fetchCommit(params: {
 }): Promise<GitHubCommitResponse> {
   const owner = encodeURIComponent(params.source.owner);
   const repo = encodeURIComponent(params.source.repo);
-  const ref = encodeURIComponent(params.source.ref);
+  const ref = encodeGitHubPath(params.source.ref);
   return githubJson<GitHubCommitResponse>({
     fetchFn: params.fetchFn,
     token: params.token,
