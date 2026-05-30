@@ -2,7 +2,6 @@ const { isEnabled } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 
 const DEFAULT_RUM_SERVICE_NAME = 'librechat-web';
-let hasWarnedUserJwtAuth = false;
 
 function parseBooleanEnv(value, defaultValue = false) {
   if (value == null || value === '') {
@@ -44,7 +43,7 @@ function isLocalhost(url) {
   return url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
 }
 
-function isSafeRumUrl(url, authMode) {
+function isSafeRumUrl(url) {
   if (url.username || url.password) {
     return false;
   }
@@ -53,7 +52,7 @@ function isSafeRumUrl(url, authMode) {
     return true;
   }
 
-  return authMode === 'publicToken' && url.protocol === 'http:' && isLocalhost(url);
+  return url.protocol === 'http:' && isLocalhost(url);
 }
 
 function isSafeTraceTarget(target) {
@@ -69,18 +68,7 @@ function isSafeTraceTarget(target) {
   return true;
 }
 
-function warnOnceForUserJwtAuth() {
-  if (hasWarnedUserJwtAuth) {
-    return;
-  }
-
-  hasWarnedUserJwtAuth = true;
-  logger.warn(
-    '[config] RUM userJwt mode sends the active LibreChat user JWT to RUM_URL; use only with a trusted HTTPS collector that will not log authorization headers',
-  );
-}
-
-function getRumConfig(user) {
+function getRumConfig() {
   if (!parseBooleanEnv(process.env.RUM_ENABLED)) {
     return undefined;
   }
@@ -91,24 +79,21 @@ function getRumConfig(user) {
     return undefined;
   }
 
-  const authMode = process.env.RUM_AUTH_MODE === 'userJwt' ? 'userJwt' : 'publicToken';
+  const authMode = process.env.RUM_AUTH_MODE || 'publicToken';
+  if (authMode !== 'publicToken') {
+    logger.warn(`[config] Unsupported RUM auth mode "${authMode}", disabling RUM`);
+    return undefined;
+  }
+
   const rumUrl = process.env.RUM_URL;
   const parsedUrl = rumUrl ? parseUrl(rumUrl) : undefined;
 
-  if (!parsedUrl || !isSafeRumUrl(parsedUrl, authMode)) {
+  if (!parsedUrl || !isSafeRumUrl(parsedUrl)) {
     logger.warn('[config] Invalid RUM_URL, disabling RUM');
     return undefined;
   }
 
-  if (authMode === 'userJwt' && !user) {
-    return undefined;
-  }
-
-  if (authMode === 'userJwt') {
-    warnOnceForUserJwtAuth();
-  }
-
-  if (authMode === 'publicToken' && !process.env.RUM_PUBLIC_TOKEN) {
+  if (!process.env.RUM_PUBLIC_TOKEN) {
     logger.warn('[config] RUM publicToken mode requires RUM_PUBLIC_TOKEN, disabling RUM');
     return undefined;
   }
@@ -124,7 +109,6 @@ function getRumConfig(user) {
     configuredSampleRate != null && configuredSampleRate >= 0 && configuredSampleRate <= 1
       ? configuredSampleRate
       : undefined;
-  const authHeaderScheme = process.env.RUM_AUTH_HEADER_SCHEME === 'Basic' ? 'Basic' : 'Bearer';
   const consoleCapture = parseBooleanEnv(process.env.RUM_CONSOLE_CAPTURE);
   const advancedNetworkCapture = parseBooleanEnv(process.env.RUM_ADVANCED_NETWORK_CAPTURE);
 
@@ -142,8 +126,7 @@ function getRumConfig(user) {
     url: parsedUrl.href.replace(/\/$/, ''),
     serviceName: process.env.RUM_SERVICE_NAME || DEFAULT_RUM_SERVICE_NAME,
     authMode,
-    ...(authMode === 'userJwt' ? { authHeaderScheme } : {}),
-    ...(authMode === 'publicToken' ? { publicToken: process.env.RUM_PUBLIC_TOKEN } : {}),
+    publicToken: process.env.RUM_PUBLIC_TOKEN,
     ...(tracePropagationTargets.length > 0 ? { tracePropagationTargets } : {}),
     consoleCapture,
     disableReplay: parseBooleanEnv(process.env.RUM_DISABLE_REPLAY, true),

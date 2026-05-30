@@ -30,6 +30,7 @@ jest.mock('react-router-dom', () => ({
 
 describe('useRum', () => {
   beforeEach(() => {
+    jest.clearAllMocks();
     mockUseLocation.mockReturnValue({ pathname: '/c/conversation-123' });
     mockUseAuthContext.mockReturnValue({
       isAuthenticated: true,
@@ -41,7 +42,6 @@ describe('useRum', () => {
         email: 'user@example.com',
       },
     });
-    delete window.__libreChatRumInterceptor;
   });
 
   it('initializes HyperDX public-token RUM with privacy defaults and safe attributes', async () => {
@@ -85,10 +85,7 @@ describe('useRum', () => {
     );
   });
 
-  it('configures the early interceptor and uses a placeholder api key for userJwt mode', async () => {
-    const configure = jest.fn();
-    const clear = jest.fn();
-    window.__libreChatRumInterceptor = { configure, clear };
+  it('does not initialize RUM for unsupported auth modes', async () => {
     mockUseGetStartupConfig.mockReturnValue({
       data: {
         rum: {
@@ -97,27 +94,13 @@ describe('useRum', () => {
           url: 'https://rum.example.com/ingest',
           serviceName: 'librechat-web',
           authMode: 'userJwt',
-          authHeaderScheme: 'Basic',
+          publicToken: 'public-token',
         },
       },
     });
 
     renderHook(() => useRum());
 
-    expect(configure).toHaveBeenCalledWith({
-      url: 'https://rum.example.com/ingest',
-      authHeaderScheme: 'Basic',
-      tokenProvider: expect.any(Function),
-    });
-    expect(configure.mock.calls[0][0].tokenProvider()).toBe('jwt-token');
-
-    await waitFor(() => {
-      expect(mockInit).toHaveBeenCalledWith(
-        expect.objectContaining({
-          apiKey: 'placeholder',
-          url: 'https://rum.example.com/ingest',
-        }),
-      );
-    });
+    expect(mockInit).not.toHaveBeenCalled();
   });
 });

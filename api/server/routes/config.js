@@ -170,7 +170,7 @@ router.get('/', async function (req, res) {
   try {
     const sharedPayload = buildSharedPayload();
     const cloudFront = buildCloudFrontStartupConfig();
-    const rum = getRumConfig(req.user);
+    const rum = getRumConfig();
 
     if (!req.user) {
       const tenantId = getTenantId();
