@@ -1,8 +1,12 @@
-import DOMPurify from 'dompurify';
 import React, { useEffect, useMemo } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { Button, Input, Label, OGDialog, OGDialogTemplate } from '@librechat/client';
 import type { ConfigFieldDetail } from '~/common';
+import {
+  CONFIG_HTML_BLOCK_TAGS,
+  CONFIG_HTML_CLASS_ATTR,
+  createConfigHtmlSanitizer,
+} from '~/utils/configHtml';
 import { useLocalize } from '~/hooks';
 
 interface MCPConfigDialogProps {
@@ -36,24 +40,14 @@ export default function MCPConfigDialog({
     defaultValues: initialValues,
   });
 
-  const sanitizer = useMemo(() => {
-    const instance = DOMPurify();
-    instance.addHook('afterSanitizeAttributes', (node) => {
-      if (node.tagName === 'A') {
-        node.setAttribute('target', '_blank');
-        node.setAttribute('rel', 'noopener noreferrer');
-      }
-    });
-    return instance;
-  }, []);
-
-  const sanitize = (html: string) =>
-    sanitizer.sanitize(html, {
-      ALLOWED_TAGS: ['a', 'strong', 'b', 'em', 'i', 'br', 'code', 'span', 'p'],
-      ALLOWED_ATTR: ['href', 'class', 'target', 'rel'],
-      ALLOW_DATA_ATTR: false,
-      ALLOW_ARIA_ATTR: false,
-    });
+  const sanitize = useMemo(
+    () =>
+      createConfigHtmlSanitizer({
+        allowedTags: CONFIG_HTML_BLOCK_TAGS,
+        allowedAttr: CONFIG_HTML_CLASS_ATTR,
+      }),
+    [],
+  );
 
   useEffect(() => {
     if (isOpen) {
