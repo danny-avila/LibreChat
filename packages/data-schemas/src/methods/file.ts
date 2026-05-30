@@ -386,7 +386,10 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     }));
 
     const result = await tenantSafeBulkWrite(File, bulkOperations);
-    logger.info(`Updated ${result.modifiedCount} files with new S3 URLs`);
+    // The "S3 URLs" wording dates from when only `refreshS3FileUrls` called
+    // this. The function now also serves `refreshAzureFileUrls`, so the log
+    // was misleading on the Azure path. Strategy-neutral wording.
+    logger.info(`Updated ${result.modifiedCount} files with refreshed signed URLs`);
   }
 
   /**

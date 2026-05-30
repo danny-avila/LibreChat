@@ -1,4 +1,4 @@
-const { FileSources, FileContext } = require('librechat-data-provider');
+const { Time, FileSources, FileContext } = require('librechat-data-provider');
 
 /**
  * Determines the appropriate file storage strategy based on file type and configuration.
@@ -57,4 +57,36 @@ function getFileStrategy(appConfig, { isAvatar = false, isImage = false, context
   return selectedStrategy || FileSources.local; // Final fallback to FileSources.local
 }
 
-module.exports = { getFileStrategy };
+/**
+ * Calculates the cache duration for signed file URL refresh checks.
+ * Uses half the URL expiry time to ensure URLs are refreshed before they expire,
+ * with a minimum of one minute.
+ *
+ * The configured URL TTL is clamped to the same 7-day maximum the signers
+ * enforce (Azure SAS / S3 presign upper bound). Without that clamp, an
+ * oversized `S3_URL_EXPIRY_SECONDS` / `AZURE_URL_EXPIRY_SECONDS` value would
+ * make the refresh-check cache live far longer than the actual signed URL
+ * validity — `/files` and `/Agents` would skip refresh and keep serving
+ * expired URLs.
+ *
+ * @param {string} fileStrategy - The active file storage strategy (e.g. FileSources.s3, FileSources.azure_blob)
+ * @returns {number} Cache duration in milliseconds
+ */
+const MAX_SIGNED_URL_TTL_SECONDS = 7 * 24 * 60 * 60;
+function getFileURLRefreshCacheTime(fileStrategy) {
+  if (fileStrategy === FileSources.s3) {
+    const raw = parseInt(process.env.S3_URL_EXPIRY_SECONDS, 10) || 120;
+    const expirySeconds = Math.min(raw, MAX_SIGNED_URL_TTL_SECONDS);
+    // Check for refresh at half the URL expiry time: (expirySeconds * 1000ms) / 2 => expirySeconds * 500
+    return Math.max(expirySeconds * 500, Time.ONE_MINUTE);
+  }
+  if (fileStrategy === FileSources.azure_blob) {
+    const raw = parseInt(process.env.AZURE_URL_EXPIRY_SECONDS, 10) || 300;
+    const expirySeconds = Math.min(raw, MAX_SIGNED_URL_TTL_SECONDS);
+    // Check for refresh at half the URL expiry time: (expirySeconds * 1000ms) / 2 => expirySeconds * 500
+    return Math.max(expirySeconds * 500, Time.ONE_MINUTE);
+  }
+  return Time.THIRTY_MINUTES;
+}
+
+module.exports = { getFileStrategy, getFileURLRefreshCacheTime };

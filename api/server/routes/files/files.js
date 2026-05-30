@@ -8,7 +8,6 @@ const {
   verifyAgentUploadPermission,
 } = require('@librechat/api');
 const {
-  Time,
   isUUID,
   CacheKeys,
   FileSources,
@@ -29,7 +28,9 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { checkPermission } = require('~/server/services/PermissionService');
+const { refreshAzureFileUrls } = require('~/server/services/Files/Azure/crud');
 const { hasAccessToFilesViaAgent } = require('~/server/services/Files');
+const { getFileURLRefreshCacheTime } = require('~/server/utils/getFileStrategy');
 const { cleanFileName, getContentDisposition } = require('~/server/utils/files');
 const { getLogStores } = require('~/cache');
 const { Readable } = require('stream');
@@ -37,20 +38,41 @@ const db = require('~/models');
 
 const router = express.Router();
 
+/**
+ * Dispatch table for refreshing signed file URLs by storage source.
+ * Adding a new provider only requires another entry here.
+ */
+const fileUrlRefreshBySource = {
+  [FileSources.s3]: {
+    cacheKey: CacheKeys.S3_EXPIRY_INTERVAL,
+    refreshFiles: refreshS3FileUrls,
+  },
+  [FileSources.azure_blob]: {
+    cacheKey: CacheKeys.AZURE_EXPIRY_INTERVAL,
+    refreshFiles: refreshAzureFileUrls,
+  },
+};
+
 router.get('/', async (req, res) => {
   try {
     const appConfig = req.config;
     const files = await db.getFiles({ user: req.user.id });
-    if (appConfig.fileStrategy === FileSources.s3) {
+    const refresher = fileUrlRefreshBySource[appConfig.fileStrategy];
+    if (refresher) {
       try {
-        const cache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
+        const cache = getLogStores(refresher.cacheKey);
         const alreadyChecked = await cache.get(req.user.id);
         if (!alreadyChecked) {
-          await refreshS3FileUrls(files, db.batchUpdateFiles);
-          await cache.set(req.user.id, true, Time.THIRTY_MINUTES);
+          await refresher.refreshFiles(files, db.batchUpdateFiles);
+          const cacheTime = getFileURLRefreshCacheTime(appConfig.fileStrategy);
+          await cache.set(req.user.id, true, cacheTime);
         }
       } catch (error) {
-        logger.warn('[/files] Error refreshing S3 file URLs:', error);
+        logger.warn(
+          '[/files] Error refreshing file URLs for strategy:',
+          appConfig.fileStrategy,
+          error,
+        );
       }
     }
     res.status(200).send(files);

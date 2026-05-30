@@ -9,6 +9,9 @@ export { MAX_AVATAR_REFRESH_AGENTS, AVATAR_REFRESH_BATCH_SIZE };
 
 export type RefreshS3UrlFn = (avatar: AgentAvatar) => Promise<string | undefined>;
 
+/** Generic signed URL refresh function, agnostic to storage provider */
+export type RefreshUrlFn = (avatar: AgentAvatar) => Promise<string | undefined>;
+
 export type UpdateAgentFn = (
   searchParams: { id: string },
   updateData: { avatar: AgentAvatar },
@@ -19,6 +22,8 @@ export type RefreshListAvatarsParams = {
   agents: Agent[];
   userId: string;
   refreshS3Url: RefreshS3UrlFn;
+  /** Optional Azure Blob URL refresher; when provided, Azure-backed avatars are also refreshed */
+  refreshAzureUrl?: RefreshUrlFn;
   updateAgent: UpdateAgentFn;
 };
 
@@ -48,6 +53,7 @@ export const refreshListAvatars = async ({
   agents,
   userId,
   refreshS3Url,
+  refreshAzureUrl,
   updateAgent,
 }: RefreshListAvatarsParams): Promise<RefreshStats> => {
   const stats: RefreshStats = {
@@ -71,23 +77,29 @@ export const refreshListAvatars = async ({
 
     await Promise.all(
       batch.map(async (agent) => {
-        if (agent?.avatar?.source !== FileSources.s3 || !agent?.avatar?.filepath) {
+        const source = agent?.avatar?.source;
+        const isS3 = source === FileSources.s3;
+        const isAzure = source === FileSources.azure_blob && !!refreshAzureUrl;
+
+        if ((!isS3 && !isAzure) || !agent?.avatar?.filepath) {
           stats.not_s3++;
           return;
         }
 
         if (!agent?.id) {
           logger.debug(
-            '[refreshListAvatars] Skipping S3 avatar refresh for agent: %s, ID is not set',
+            '[refreshListAvatars] Skipping avatar refresh for agent: %s, ID is not set',
             agent._id,
           );
           stats.no_id++;
           return;
         }
 
+        const refreshFn = isS3 ? refreshS3Url : refreshAzureUrl!;
+
         try {
-          logger.debug('[refreshListAvatars] Refreshing S3 avatar for agent: %s', agent._id);
-          const newPath = await refreshS3Url(agent.avatar);
+          logger.debug('[refreshListAvatars] Refreshing avatar for agent: %s', agent._id);
+          const newPath = await refreshFn(agent.avatar);
 
           if (!newPath || newPath === agent.avatar.filepath) {
             stats.no_change++;
@@ -108,7 +120,7 @@ export const refreshListAvatars = async ({
             stats.persist_error++;
           }
         } catch (err) {
-          logger.error('[refreshListAvatars] S3 avatar refresh error: %o', err);
+          logger.error('[refreshListAvatars] Avatar refresh error: %o', err);
           stats.s3_error++;
         }
       }),
