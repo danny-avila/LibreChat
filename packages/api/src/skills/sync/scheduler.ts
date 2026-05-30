@@ -79,7 +79,7 @@ export function startGitHubSkillSyncScheduler(params: {
     stop: () => {
       stopped = true;
       if (timer) {
-        clearInterval(timer);
+        clearTimeout(timer);
         timer = undefined;
       }
     },
