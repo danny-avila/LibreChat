@@ -251,6 +251,60 @@ describe('createGitHubSkillSyncRunner', () => {
     );
   });
 
+  it('runs a tenant-scoped source inside its tenant context and stamps the skill tenantId', async () => {
+    let observedTenantId: string | undefined = 'unset';
+    const deps = createDeps({
+      getConfig: () => ({
+        github: {
+          enabled: true,
+          intervalMinutes: 60,
+          runOnStartup: false,
+          sources: [
+            {
+              id: 'librechat-skills',
+              owner: 'LibreChat',
+              repo: 'skills',
+              ref: 'main',
+              paths: ['skills'],
+              credentialKey: 'github-skills-prod',
+              tenantId: 'tenant-a',
+            },
+          ],
+        },
+      }),
+      createSkill: jest.fn(async (input: CreateSkillInput): Promise<CreateSkillResult> => {
+        observedTenantId = getTenantId();
+        return { skill: makeSkill(input), warnings: [] };
+      }),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('completed');
+    expect(observedTenantId).toBe('tenant-a');
+    expect(deps.createSkill).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'research', tenantId: 'tenant-a' }),
+    );
+  });
+
+  it('runs in the ambient context when a source has no configured tenantId', async () => {
+    let observedTenantId: string | undefined = 'unset';
+    const deps = createDeps({
+      createSkill: jest.fn(async (input: CreateSkillInput): Promise<CreateSkillResult> => {
+        observedTenantId = getTenantId();
+        return { skill: makeSkill(input), warnings: [] };
+      }),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('completed');
+    expect(observedTenantId).toBeUndefined();
+    expect(deps.createSkill).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'research', tenantId: undefined }),
+    );
+  });
+
   it('uses distinct synthetic authors so same-named skills can sync from different sources', async () => {
     const seenNamesByAuthor = new Set<string>();
     const deps = createDeps({
