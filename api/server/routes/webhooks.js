@@ -93,20 +93,27 @@ router.post('/notifications', async (req, res) => {
     // const conversationId = message?.conversationId ?? null;
 
     // 🔔 Create in-app notification
-    try {
-      if (type === 'Custom') {
-        await Notification.create({
+   try {
+    const notificationPayload =
+    type === 'COSTUM'
+      ? {
           userId,
           message: customMessage,
           type,
-        });
-      }
-      await Notification.create({
+        }
+      : {
+          userId,
+          originalQuestion: displayQuestion,
+        };
+
+    await Notification.create(notificationPayload);
+
+    } catch (error) {
+      logger.error('Failed to create in-app notification', {
         userId,
-        originalQuestion: displayQuestion,
+        type,
+        error,
       });
-    } catch (notifErr) {
-      logger.error('Failed to create in-app notification:', notifErr);
     }
 
     if (!user.pushSubscriptions || user.pushSubscriptions.length === 0) {
