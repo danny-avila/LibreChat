@@ -463,6 +463,11 @@ describe('createGitHubSkillSyncRunner', () => {
 
     expect(result.status).toBe('completed');
     expect(observedTenantId).toBe('tenant-a');
+    expect(deps.findSkillBySourceIdentity).toHaveBeenCalledWith({
+      source: 'github',
+      upstreamId: 'librechat-skills:skills/research',
+      tenantId: 'tenant-a',
+    });
     expect(deps.createSkill).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'research', tenantId: 'tenant-a' }),
     );
@@ -778,6 +783,7 @@ describe('createGitHubSkillSyncRunner', () => {
     expect(deps.findSkillBySourceIdentity).toHaveBeenCalledWith({
       source: 'github',
       upstreamId: 'librechat-skills:skills/research',
+      tenantId: undefined,
     });
     expect(deps.createSkill).not.toHaveBeenCalled();
     expect(deps.updateSkill).toHaveBeenCalledWith(
