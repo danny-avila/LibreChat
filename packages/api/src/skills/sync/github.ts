@@ -99,6 +99,23 @@ type SaveBufferResult = {
   storageRegion?: string;
 };
 
+type StoredSkillFileRef = {
+  filepath: string;
+  source: string;
+  storageKey?: string;
+  storageRegion?: string;
+  author?: Types.ObjectId | string;
+  tenantId?: string;
+};
+
+type SyncSkillFilesJournal = {
+  staleFiles: StoredSkillFileRef[];
+  savedFiles: StoredSkillFileRef[];
+};
+
+type SyncSkillFilesResult = Pick<SyncCounters, 'syncedFileCount' | 'deletedFileCount'> &
+  SyncSkillFilesJournal;
+
 type MaybePromise<T> = T | Promise<T>;
 
 export type GitHubSkillSyncDeps = {
@@ -828,6 +845,7 @@ function hasExternalSkillEdit(before: ISkill, after: ISkill): boolean {
 async function commitExistingRemoteSkillAfterFileSync(
   deps: GitHubSkillSyncDeps,
   prepared: PreparedExistingRemoteSkill,
+  options: { forceCommit?: boolean } = {},
 ): Promise<UpsertRemoteSkillResult> {
   const refreshed = await deps.getSkillById(prepared.existing._id);
   if (!refreshed) {
@@ -842,13 +860,13 @@ async function commitExistingRemoteSkillAfterFileSync(
       `Skill "${prepared.existing.name}" was modified during sync`,
     );
   }
+  if (!options.forceCommit && !hasRemoteSkillDefinitionChanged(prepared.update, refreshed)) {
+    return { skill: refreshed, created: false };
+  }
   return commitRemoteSkill(deps, { ...prepared, existing: refreshed });
 }
 
-async function cleanupFile(
-  deps: GitHubSkillSyncDeps,
-  file: ISkillFile & { _id: Types.ObjectId },
-): Promise<void> {
+async function cleanupFile(deps: GitHubSkillSyncDeps, file: StoredSkillFileRef): Promise<void> {
   if (!deps.deleteFile) {
     return;
   }
@@ -862,6 +880,105 @@ async function cleanupFile(
   });
 }
 
+function toStoredFileRef(params: {
+  saved: SaveBufferResult;
+  author: Types.ObjectId;
+  tenantId?: string;
+}): StoredSkillFileRef {
+  return {
+    filepath: params.saved.filepath,
+    source: params.saved.source,
+    storageKey: params.saved.storageKey,
+    storageRegion: params.saved.storageRegion,
+    author: params.author,
+    tenantId: params.tenantId,
+  };
+}
+
+function toSkillFileInput(file: ISkillFile & { _id: Types.ObjectId }): UpsertSkillFileInput {
+  return {
+    skillId: file.skillId,
+    relativePath: file.relativePath,
+    file_id: file.file_id,
+    filename: file.filename,
+    filepath: file.filepath,
+    storageKey: file.storageKey,
+    storageRegion: file.storageRegion,
+    source: file.source,
+    sourceMetadata: file.sourceMetadata,
+    mimeType: file.mimeType,
+    bytes: file.bytes,
+    isExecutable: file.isExecutable,
+    author: file.author,
+    tenantId: file.tenantId,
+  };
+}
+
+function getStoredFileKey(file: StoredSkillFileRef): string {
+  return [file.source, file.filepath, file.storageKey ?? '', file.storageRegion ?? ''].join(':');
+}
+
+async function cleanupStoredFiles(params: {
+  deps: GitHubSkillSyncDeps;
+  files: StoredSkillFileRef[];
+  logMessage: string;
+}): Promise<void> {
+  const seen = new Set<string>();
+  for (const file of params.files) {
+    const key = getStoredFileKey(file);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    await cleanupFile(params.deps, file).catch((cleanupError) =>
+      logger.error(params.logMessage, cleanupError),
+    );
+  }
+}
+
+async function restoreExistingSkillFiles(params: {
+  deps: GitHubSkillSyncDeps;
+  skill: ISkill & { _id: Types.ObjectId };
+  previousFiles: Array<ISkillFile & { _id: Types.ObjectId }>;
+  savedFiles: StoredSkillFileRef[];
+}): Promise<void> {
+  const { deps, skill, previousFiles, savedFiles } = params;
+  const previousByPath = new Map(previousFiles.map((file) => [file.relativePath, file]));
+  const currentFiles = await deps.listSkillFiles(skill._id);
+
+  for (const file of currentFiles) {
+    if (previousByPath.has(file.relativePath)) {
+      continue;
+    }
+    await deps.deleteSkillFile(skill._id, file.relativePath);
+  }
+  for (const file of previousFiles) {
+    await deps.upsertSkillFile(toSkillFileInput(file));
+  }
+  await cleanupStoredFiles({
+    deps,
+    files: savedFiles,
+    logMessage: '[GitHubSkillSync] Failed to clean up rolled-back synced file:',
+  });
+}
+
+function comparableSourceMetadata(metadata: Record<string, unknown> | undefined): string {
+  const { commitSha: _commitSha, syncedAt: _syncedAt, ...rest } = metadata ?? {};
+  return JSON.stringify(rest);
+}
+
+function hasRemoteSkillDefinitionChanged(update: UpdateSkillInput, existing: ISkill): boolean {
+  return (
+    update.body !== existing.body ||
+    update.name !== existing.name ||
+    update.description !== existing.description ||
+    (update.alwaysApply ?? false) !== (existing.alwaysApply ?? false) ||
+    JSON.stringify(update.frontmatter ?? {}) !== JSON.stringify(existing.frontmatter ?? {}) ||
+    comparableSourceMetadata(update.sourceMetadata) !==
+      comparableSourceMetadata(existing.sourceMetadata)
+  );
+}
+
 async function syncSkillFiles(params: {
   deps: GitHubSkillSyncDeps;
   token: string;
@@ -871,8 +988,10 @@ async function syncSkillFiles(params: {
   commitSha: string;
   fetchFn: FetchFn;
   assertNotCancelled: AssertNotCancelled;
-}): Promise<Pick<SyncCounters, 'syncedFileCount' | 'deletedFileCount'>> {
+  journal?: SyncSkillFilesJournal;
+}): Promise<SyncSkillFilesResult> {
   const { deps, token, source, skill, discovered, commitSha, fetchFn, assertNotCancelled } = params;
+  const journal = params.journal ?? { staleFiles: [], savedFiles: [] };
   const remotePaths = new Set<string>();
   let syncedFileCount = 0;
   let deletedFileCount = 0;
@@ -887,7 +1006,6 @@ async function syncSkillFiles(params: {
     totalFileBytes += assertGitHubBlobSize(entry, relativePath);
     assertCumulativeGitHubFileSize(totalFileBytes);
     remotePaths.add(relativePath);
-    syncedFileCount++;
     const existing = await deps.getSkillFileByPath(skill._id, relativePath);
     if (existing && getSourceMetadataString(existing, 'blobSha') === entry.sha) {
       continue;
@@ -906,6 +1024,7 @@ async function syncSkillFiles(params: {
       isImage: mimeType.startsWith('image/'),
       tenantId: skill.tenantId,
     });
+    const savedFile = toStoredFileRef({ saved, author: skill.author, tenantId: skill.tenantId });
     try {
       await deps.upsertSkillFile({
         skillId: skill._id,
@@ -931,29 +1050,15 @@ async function syncSkillFiles(params: {
         tenantId: skill.tenantId,
       });
     } catch (error) {
-      if (deps.deleteFile) {
-        await deps
-          .deleteFile({
-            filepath: saved.filepath,
-            source: saved.source,
-            storageKey: saved.storageKey,
-            storageRegion: saved.storageRegion,
-            user: skill.author,
-            tenantId: skill.tenantId,
-          })
-          .catch((cleanupError) =>
-            logger.error(
-              '[GitHubSkillSync] Failed to clean up orphaned synced file:',
-              cleanupError,
-            ),
-          );
-      }
+      await cleanupFile(deps, savedFile).catch((cleanupError) =>
+        logger.error('[GitHubSkillSync] Failed to clean up orphaned synced file:', cleanupError),
+      );
       throw error;
     }
+    syncedFileCount++;
+    journal.savedFiles.push(savedFile);
     if (existing && existing.filepath !== saved.filepath) {
-      await cleanupFile(deps, existing).catch((cleanupError) =>
-        logger.error('[GitHubSkillSync] Failed to clean up replaced synced file:', cleanupError),
-      );
+      journal.staleFiles.push(existing);
     }
   }
 
@@ -963,15 +1068,13 @@ async function syncSkillFiles(params: {
     if (remotePaths.has(file.relativePath)) {
       continue;
     }
-    await cleanupFile(deps, file).catch((cleanupError) =>
-      logger.error('[GitHubSkillSync] Failed to clean up deleted synced file:', cleanupError),
-    );
     const result = await deps.deleteSkillFile(skill._id, file.relativePath);
     if (result.deleted) {
       deletedFileCount++;
+      journal.staleFiles.push(file);
     }
   }
-  return { syncedFileCount, deletedFileCount };
+  return { syncedFileCount, deletedFileCount, ...journal };
 }
 
 async function deleteSyncedSkill(
@@ -1068,21 +1171,50 @@ async function syncSource(params: {
             `Skill "${prepared.existing.name}" was modified during sync`,
           );
         }
-        const fileCounts = await syncSkillFiles({
-          deps,
-          token,
-          source,
-          skill: prepared.existing,
-          discovered,
-          commitSha: commit.sha,
-          fetchFn,
-          assertNotCancelled,
-        });
-        const upserted = await commitExistingRemoteSkillAfterFileSync(deps, {
-          ...prepared,
-          existing: prepared.existing,
-        });
+        const previousFiles = await deps.listSkillFiles(prepared.existing._id);
+        const journal: SyncSkillFilesJournal = { staleFiles: [], savedFiles: [] };
+        let fileCounts: SyncSkillFilesResult;
+        let upserted: UpsertRemoteSkillResult;
+        try {
+          fileCounts = await syncSkillFiles({
+            deps,
+            token,
+            source,
+            skill: prepared.existing,
+            discovered,
+            commitSha: commit.sha,
+            fetchFn,
+            assertNotCancelled,
+            journal,
+          });
+          upserted = await commitExistingRemoteSkillAfterFileSync(
+            deps,
+            {
+              ...prepared,
+              existing: prepared.existing,
+            },
+            { forceCommit: fileCounts.syncedFileCount > 0 || fileCounts.deletedFileCount > 0 },
+          );
+        } catch (error) {
+          await restoreExistingSkillFiles({
+            deps,
+            skill: prepared.existing,
+            previousFiles,
+            savedFiles: journal.savedFiles,
+          }).catch((cleanupError) =>
+            logger.error(
+              '[GitHubSkillSync] Failed to restore existing skill files after sync failure:',
+              cleanupError,
+            ),
+          );
+          throw error;
+        }
         await ensurePublicViewer(deps, upserted.skill._id);
+        await cleanupStoredFiles({
+          deps,
+          files: fileCounts.staleFiles,
+          logMessage: '[GitHubSkillSync] Failed to clean up replaced synced file:',
+        });
         counts.syncedSkillCount++;
         counts.syncedFileCount += fileCounts.syncedFileCount;
         counts.deletedFileCount += fileCounts.deletedFileCount;
@@ -1206,8 +1338,7 @@ function getGithubConfig(config: SkillSyncConfig | undefined): {
 
 export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps) {
   const fetchFn = deps.fetchFn ?? fetch;
-  const lockOwner =
-    deps.lockOwner ?? `${process.pid}:${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
+  const lockOwnerPrefix = deps.lockOwner ?? `${process.pid}`;
 
   async function getStatus() {
     const github = getGithubConfig(await deps.getConfig());
@@ -1261,6 +1392,7 @@ export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps) {
     if (!github.enabled || github.sources.length === 0) {
       return { status: 'skipped', message: 'GitHub skill sync is disabled', sources: [] };
     }
+    const lockOwner = `${lockOwnerPrefix}:${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
     const acquired = await deps.tryAcquireLock({
       provider: PROVIDER,
       lockOwner,
