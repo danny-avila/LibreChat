@@ -7,6 +7,7 @@ import type {
   ISkillSyncStatus,
   SkillSyncStatusInput,
 } from '@librechat/data-schemas';
+import { getTenantId } from '@librechat/data-schemas';
 import { DEFAULT_SKILL_IMPORT_LIMITS } from '../limits';
 import { createGitHubSkillSyncRunner } from './github';
 import type { GitHubSkillSyncDeps } from './github';
