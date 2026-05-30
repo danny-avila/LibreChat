@@ -1,4 +1,5 @@
-import * as t from '~/mcp/types';
+import type * as t from '~/mcp/types';
+import { logger } from '@librechat/data-schemas';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
 
@@ -10,7 +11,10 @@ jest.mock('~/mcp/registry/db/ServerConfigsDB', () => ({
   ServerConfigsDB: jest.fn().mockImplementation(() => ({
     get: jest.fn().mockResolvedValue(undefined),
     getAll: jest.fn().mockResolvedValue({}),
-    add: jest.fn().mockResolvedValue(undefined),
+    add: jest.fn().mockImplementation(async (serverName: string, config: t.ParsedServerConfig) => ({
+      serverName,
+      config,
+    })),
     update: jest.fn().mockResolvedValue(undefined),
     remove: jest.fn().mockResolvedValue(undefined),
     reset: jest.fn().mockResolvedValue(undefined),
@@ -99,6 +103,91 @@ describe('MCPServersRegistry', () => {
       expect(configs).toHaveProperty('app_server');
       expect(configs).toHaveProperty('user_server');
     });
+
+    it('should keep YAML servers authoritative when a DB server has the same name', async () => {
+      const warnSpy = jest.spyOn(logger, 'warn').mockImplementation();
+      const yamlConfig = { ...testParsedConfig, source: 'yaml' as const, title: 'YAML Slack' };
+      const dbConfig = { ...testParsedConfig, source: 'user' as const, title: 'User Slack' };
+      await registry['cacheConfigsRepo'].add('slack', yamlConfig);
+      jest.spyOn(registry['dbConfigsRepo'], 'getAll').mockResolvedValue({
+        slack: dbConfig,
+        user_server: dbConfig,
+      });
+
+      try {
+        const configs = await registry.getAllServerConfigs('user-1');
+
+        expect(configs.slack).toMatchObject({ source: 'yaml', title: 'YAML Slack' });
+        expect(configs.user_server).toMatchObject({ source: 'user', title: 'User Slack' });
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('should warn when operator-managed servers shadow DB servers', async () => {
+      const warnSpy = jest.spyOn(logger, 'warn').mockImplementation();
+      const yamlConfig = { ...testParsedConfig, source: 'yaml' as const, title: 'YAML Slack' };
+      const dbConfig = { ...testParsedConfig, source: 'user' as const, title: 'User Slack' };
+      await registry['cacheConfigsRepo'].add('slack', yamlConfig);
+      jest.spyOn(registry['dbConfigsRepo'], 'getAll').mockResolvedValue({ slack: dbConfig });
+
+      try {
+        await registry.getAllServerConfigs('user-1');
+
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('slack'));
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('shadow DB-backed server'));
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('should preserve the user-tier entry over a config-tier override on the same name without emitting a misleading shadow warning', async () => {
+      const warnSpy = jest.spyOn(logger, 'warn').mockImplementation();
+      const configServer = {
+        ...testParsedConfig,
+        source: 'config' as const,
+        title: 'Config Slack',
+      };
+      const dbConfig = { ...testParsedConfig, source: 'user' as const, title: 'User Slack' };
+      jest.spyOn(registry['dbConfigsRepo'], 'getAll').mockResolvedValue({ slack: dbConfig });
+
+      try {
+        const result = await registry.getAllServerConfigs('user-1', { slack: configServer });
+
+        expect(result.slack.source).toBe('user');
+        expect(result.slack.title).toBe('User Slack');
+        expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('Config MCP server'));
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+  });
+
+  describe('addServer', () => {
+    it('should reserve YAML and current config server names when creating DB servers', async () => {
+      await registry.addServer('slack', { ...testParsedConfig, title: 'Slack' }, 'CACHE');
+      await registry['configCacheRepo'].upsert('other_tenant:hash', {
+        ...testParsedConfig,
+        source: 'config',
+        title: 'Other Tenant Server',
+      });
+      const dbAddSpy = jest.spyOn(registry['dbConfigsRepo'], 'add').mockResolvedValue({
+        serverName: 'slack-2',
+        config: { ...testParsedConfig, source: 'user', title: 'Slack' },
+      });
+
+      await registry.addServer(
+        'temp_server_name',
+        { ...testParsedConfig, title: 'Slack' },
+        'DB',
+        'user-1',
+        ['config_slack'],
+      );
+
+      const reservedServerNames = Array.from(dbAddSpy.mock.calls[0]?.[3] ?? []);
+      expect(reservedServerNames).toEqual(expect.arrayContaining(['slack', 'config_slack']));
+      expect(reservedServerNames).not.toContain('other_tenant');
+    });
   });
 
   describe('reset', () => {
@@ -112,8 +201,8 @@ describe('MCPServersRegistry', () => {
       const userConfigBefore = await registry.getServerConfig('user_server');
       const allConfigsBefore = await registry.getAllServerConfigs();
 
-      expect(appConfigBefore).toEqual(testParsedConfig);
-      expect(userConfigBefore).toEqual(testParsedConfig);
+      expect(appConfigBefore).toEqual(expect.objectContaining(testParsedConfig));
+      expect(userConfigBefore).toEqual(expect.objectContaining(testParsedConfig));
       expect(Object.keys(allConfigsBefore)).toHaveLength(2);
 
       // Reset everything
@@ -193,6 +282,22 @@ describe('MCPServersRegistry', () => {
     });
   });
 
+  describe('reinspectServer', () => {
+    it('should throw when called on a healthy (non-stub) server', async () => {
+      await registry.addServer('healthy_server', testParsedConfig, 'CACHE');
+
+      await expect(registry.reinspectServer('healthy_server', 'CACHE')).rejects.toThrow(
+        'is not in a failed state',
+      );
+    });
+
+    it('should throw when the server does not exist', async () => {
+      await expect(registry.reinspectServer('ghost_server', 'CACHE')).rejects.toThrow(
+        'not found in CACHE',
+      );
+    });
+  });
+
   describe('Read-through cache', () => {
     describe('getServerConfig', () => {
       it('should cache repeated calls for the same server', async () => {
@@ -234,22 +339,18 @@ describe('MCPServersRegistry', () => {
       });
 
       it('should use different cache keys for different userIds', async () => {
-        // Spy on the cache repository get method
+        await registry['cacheConfigsRepo'].add('test_server', testParsedConfig);
         const cacheRepoGetSpy = jest.spyOn(registry['cacheConfigsRepo'], 'get');
 
-        // First call without userId
         await registry.getServerConfig('test_server');
         expect(cacheRepoGetSpy).toHaveBeenCalledTimes(1);
 
-        // Call with userId - should be a different cache key, so hits repository again
         await registry.getServerConfig('test_server', 'user123');
         expect(cacheRepoGetSpy).toHaveBeenCalledTimes(2);
 
-        // Repeat call with same userId - should hit read-through cache
         await registry.getServerConfig('test_server', 'user123');
-        expect(cacheRepoGetSpy).toHaveBeenCalledTimes(2); // Still 2
+        expect(cacheRepoGetSpy).toHaveBeenCalledTimes(2);
 
-        // Call with different userId - should hit repository
         await registry.getServerConfig('test_server', 'user456');
         expect(cacheRepoGetSpy).toHaveBeenCalledTimes(3);
       });
@@ -300,6 +401,314 @@ describe('MCPServersRegistry', () => {
         await registry.getAllServerConfigs('user456');
         expect(cacheRepoGetAllSpy).toHaveBeenCalledTimes(3);
       });
+    });
+  });
+
+  describe('admin-panel overrides for YAML-defined servers', () => {
+    const yamlLangfuseConfig = Object.freeze({
+      type: 'streamable-http',
+      url: 'https://langfuse.com/api/public/mcp',
+      requiresOAuth: false,
+      source: 'yaml',
+      updatedAt: FIXED_TIME,
+    }) as t.ParsedServerConfig;
+
+    it('flows config-tier override on a YAML-defined server through to getAllServerConfigs', async () => {
+      await registry['cacheConfigsRepo'].add('langfuse-docs', yamlLangfuseConfig);
+
+      const overrideRawConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://langfuse.com/api/public/mcp',
+        requiresOAuth: false,
+        iconPath: 'https://example.com/icon.svg',
+      };
+
+      const configServers = await registry.ensureConfigServers({
+        'langfuse-docs': overrideRawConfig,
+      });
+
+      expect(configServers['langfuse-docs']).toBeDefined();
+      expect(configServers['langfuse-docs'].iconPath).toBe('https://example.com/icon.svg');
+
+      const result = await registry.getAllServerConfigs('user-1', configServers);
+
+      expect(result['langfuse-docs']).toBeDefined();
+      expect(result['langfuse-docs'].iconPath).toBe('https://example.com/icon.svg');
+      expect(result['langfuse-docs'].source).toBe('yaml');
+    });
+
+    it('preserves user-DB tier (source: "user") over config-tier overrides', async () => {
+      const userDbEntry: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://user-defined.example.com/mcp',
+        requiresOAuth: false,
+        source: 'user',
+        dbId: 'user-db-id-123',
+        updatedAt: FIXED_TIME,
+      };
+
+      jest
+        .spyOn(registry['dbConfigsRepo'], 'getAll')
+        .mockResolvedValue({ 'shared-server': userDbEntry });
+
+      const configTierOverride: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://admin-override.example.com/mcp',
+        requiresOAuth: false,
+        source: 'config',
+        iconPath: 'https://example.com/admin-icon.svg',
+        updatedAt: FIXED_TIME,
+      };
+
+      const result = await registry.getAllServerConfigs('user-1', {
+        'shared-server': configTierOverride,
+      });
+
+      expect(result['shared-server']).toBeDefined();
+      expect(result['shared-server'].source).toBe('user');
+      expect(result['shared-server'].url).toBe('https://user-defined.example.com/mcp');
+      expect(result['shared-server'].dbId).toBe('user-db-id-123');
+    });
+
+    it('still runs lazy-init for pure config-tier servers not present in YAML', async () => {
+      const configOnlyRawConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://config-only.example.com/mcp',
+        requiresOAuth: false,
+        iconPath: 'https://example.com/config-only-icon.svg',
+      };
+
+      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+      inspectSpy.mockClear();
+
+      const result = await registry.ensureConfigServers({
+        'config-only-server': configOnlyRawConfig,
+      });
+
+      expect(inspectSpy).toHaveBeenCalledTimes(1);
+      expect(inspectSpy).toHaveBeenCalledWith(
+        'config-only-server',
+        configOnlyRawConfig,
+        undefined,
+        undefined,
+        undefined,
+      );
+      expect(result['config-only-server']).toBeDefined();
+      expect(result['config-only-server'].iconPath).toBe(
+        'https://example.com/config-only-icon.svg',
+      );
+      expect(result['config-only-server'].source).toBe('config');
+    });
+
+    it('preserves YAML base entry when config-tier override reports inspectionFailed', async () => {
+      const yamlSeed: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://langfuse.com/api/public/mcp',
+        requiresOAuth: false,
+        headers: { Authorization: 'Bearer yaml-token' },
+        source: 'yaml',
+        tools: 'yaml_tool_a, yaml_tool_b',
+        capabilities: '{"tools":{"listChanged":true}}',
+        updatedAt: FIXED_TIME,
+      };
+      await registry['cacheConfigsRepo'].add('langfuse-docs', yamlSeed);
+
+      const failedOverride: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://langfuse.com/api/public/mcp',
+        requiresOAuth: false,
+        source: 'config',
+        inspectionFailed: true,
+        updatedAt: FIXED_TIME,
+      };
+
+      const result = await registry.getAllServerConfigs('user-1', {
+        'langfuse-docs': failedOverride,
+      });
+
+      expect(result['langfuse-docs']).toBeDefined();
+      expect(result['langfuse-docs'].source).toBe('yaml');
+      expect(result['langfuse-docs'].inspectionFailed).toBeUndefined();
+      expect(result['langfuse-docs'].tools).toBe('yaml_tool_a, yaml_tool_b');
+      expect(result['langfuse-docs'].capabilities).toBe('{"tools":{"listChanged":true}}');
+      expect((result['langfuse-docs'] as t.StreamableHTTPOptions).headers).toEqual({
+        Authorization: 'Bearer yaml-token',
+      });
+    });
+
+    it('healthy YAML entry survives end-to-end when inspect throws for YAML server', async () => {
+      await registry['cacheConfigsRepo'].add('langfuse-docs', yamlLangfuseConfig);
+      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+      inspectSpy.mockClear();
+      inspectSpy.mockRejectedValueOnce(new Error('network timeout'));
+
+      const configServers = await registry.ensureConfigServers({
+        'langfuse-docs': {
+          type: 'streamable-http',
+          url: 'https://langfuse.com/api/public/mcp',
+          iconPath: 'https://example.com/icon.svg',
+        } as t.MCPOptions,
+      });
+      const result = await registry.getAllServerConfigs('user-1', configServers);
+
+      expect(result['langfuse-docs'].source).toBe('yaml');
+      expect(result['langfuse-docs'].inspectionFailed).toBeUndefined();
+      expect(result['langfuse-docs'].url).toBe('https://langfuse.com/api/public/mcp');
+    });
+
+    it('preserves YAML source tag when config-tier override succeeds', async () => {
+      const yamlSeed: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://langfuse.com/api/public/mcp',
+        requiresOAuth: false,
+        source: 'yaml',
+        updatedAt: FIXED_TIME,
+      };
+      await registry['cacheConfigsRepo'].add('langfuse-docs', yamlSeed);
+
+      const successfulOverride: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://langfuse.com/api/public/mcp',
+        requiresOAuth: false,
+        source: 'config',
+        iconPath: 'https://example.com/icon.svg',
+        updatedAt: FIXED_TIME,
+      };
+
+      const result = await registry.getAllServerConfigs('user-1', {
+        'langfuse-docs': successfulOverride,
+      });
+
+      expect(result['langfuse-docs']).toBeDefined();
+      expect(result['langfuse-docs'].source).toBe('yaml');
+      expect(result['langfuse-docs'].iconPath).toBe('https://example.com/icon.svg');
+    });
+
+    it('skips lazy-init for YAML server with no admin override', async () => {
+      const yamlSeed: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://langfuse.com/api/public/mcp',
+        requiresOAuth: false,
+        source: 'yaml',
+        updatedAt: FIXED_TIME,
+      };
+      await registry['cacheConfigsRepo'].add('langfuse-docs', yamlSeed);
+
+      const yamlRawConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://langfuse.com/api/public/mcp',
+        requiresOAuth: false,
+      };
+
+      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+      inspectSpy.mockClear();
+
+      const result = await registry.ensureConfigServers({
+        'langfuse-docs': yamlRawConfig,
+      });
+
+      expect(inspectSpy).not.toHaveBeenCalled();
+      expect(result['langfuse-docs']).toBeUndefined();
+    });
+
+    it('runs lazy-init for YAML server with admin override', async () => {
+      const yamlSeed: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://langfuse.com/api/public/mcp',
+        requiresOAuth: false,
+        source: 'yaml',
+        updatedAt: FIXED_TIME,
+      };
+      await registry['cacheConfigsRepo'].add('langfuse-docs', yamlSeed);
+
+      const overrideRawConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://langfuse.com/api/public/mcp',
+        requiresOAuth: false,
+        iconPath: 'https://x.com/icon.svg',
+      };
+
+      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+      inspectSpy.mockClear();
+
+      await registry.ensureConfigServers({
+        'langfuse-docs': overrideRawConfig,
+      });
+
+      expect(inspectSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('getServerConfig falls through to YAML on failure stub', async () => {
+      const yamlSeed: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://langfuse.com/api/public/mcp',
+        requiresOAuth: false,
+        source: 'yaml',
+        tools: 'yaml_tool_a',
+        updatedAt: FIXED_TIME,
+      };
+      await registry['cacheConfigsRepo'].add('langfuse-docs', yamlSeed);
+
+      const failureStub: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://langfuse.com/api/public/mcp',
+        requiresOAuth: false,
+        source: 'config',
+        inspectionFailed: true,
+        updatedAt: FIXED_TIME,
+      };
+
+      const result = await registry.getServerConfig('langfuse-docs', 'user-1', {
+        'langfuse-docs': failureStub,
+      });
+
+      expect(result).toBeDefined();
+      expect(result?.source).toBe('yaml');
+      expect(result?.inspectionFailed).toBeUndefined();
+      expect(result?.tools).toBe('yaml_tool_a');
+    });
+
+    it('passes a fully merged config to lazy-init when override only adds new fields', async () => {
+      const yamlSeed: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://langfuse.com/api/public/mcp',
+        requiresOAuth: false,
+        headers: { Authorization: 'Bearer yaml-token' },
+        source: 'yaml',
+        updatedAt: FIXED_TIME,
+      };
+      await registry['cacheConfigsRepo'].add('langfuse-docs', yamlSeed);
+
+      const mergedRawConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://langfuse.com/api/public/mcp',
+        requiresOAuth: false,
+        headers: { Authorization: 'Bearer yaml-token' },
+        iconPath: 'https://example.com/icon.svg',
+      };
+
+      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+      inspectSpy.mockClear();
+
+      const result = await registry.ensureConfigServers({
+        'langfuse-docs': mergedRawConfig,
+      });
+
+      expect(inspectSpy).toHaveBeenCalledTimes(1);
+      const firstCallArgs = inspectSpy.mock.calls[0];
+      expect(firstCallArgs[0]).toBe('langfuse-docs');
+      const passedConfig = firstCallArgs[1] as t.StreamableHTTPOptions & {
+        iconPath?: string;
+        requiresOAuth?: boolean;
+      };
+      expect(passedConfig.type).toBe('streamable-http');
+      expect(passedConfig.url).toBe('https://langfuse.com/api/public/mcp');
+      expect(passedConfig.requiresOAuth).toBe(false);
+      expect(passedConfig.headers).toEqual({ Authorization: 'Bearer yaml-token' });
+      expect(passedConfig.iconPath).toBe('https://example.com/icon.svg');
+
+      expect(result['langfuse-docs']).toBeDefined();
+      expect(result['langfuse-docs'].iconPath).toBe('https://example.com/icon.svg');
     });
   });
 });

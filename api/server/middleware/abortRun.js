@@ -1,10 +1,9 @@
 const { sendEvent } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
-const { CacheKeys, RunStatus } = require('librechat-data-provider');
+const { CacheKeys, RunStatus, isUUID } = require('librechat-data-provider');
 const { initializeClient } = require('~/server/services/Endpoints/assistants');
 const { checkMessageGaps, recordUsage } = require('~/server/services/Threads');
-const { deleteMessages } = require('~/models/Message');
-const { getConvo, isLibreChatConversationId } = require('~/models/Conversation');
+const { deleteMessages, getConvo } = require('~/models');
 const getLogStores = require('~/cache/getLogStores');
 
 const three_minutes = 1000 * 60 * 3;
@@ -20,7 +19,7 @@ async function abortRun(req, res) {
     req.body.model = conversation.model;
   }
 
-  if (!isLibreChatConversationId(conversationId)) {
+  if (!isUUID.safeParse(conversationId).success) {
     logger.error('[abortRun] Invalid conversationId', { conversationId });
     return res.status(400).send({ message: 'Invalid conversationId' });
   }

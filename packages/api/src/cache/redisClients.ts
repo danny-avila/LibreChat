@@ -11,8 +11,6 @@ const username = urls?.[0]?.username || cacheConfig.REDIS_USERNAME;
 const password = urls?.[0]?.password || cacheConfig.REDIS_PASSWORD;
 const ca = cacheConfig.REDIS_CA;
 
-let pingInterval: NodeJS.Timeout | null = null;
-
 let ioredisClient: Redis | Cluster | null = null;
 if (cacheConfig.USE_REDIS) {
   const redisOptions: Record<string, unknown> = {
@@ -106,6 +104,7 @@ if (cacheConfig.USE_REDIS) {
   });
 
   /** Ping Interval to keep the Redis server connection alive (if enabled) */
+  let pingInterval: NodeJS.Timeout | null = null;
   const clearPingInterval = () => {
     if (pingInterval) {
       clearInterval(pingInterval);
@@ -221,41 +220,5 @@ if (cacheConfig.USE_REDIS) {
     throw err;
   });
 }
-
-const safeQuit = async (client: {
-  quit?: () => Promise<void>;
-  disconnect?: () => Promise<void>;
-}) => {
-  if (!client) {
-    return;
-  }
-
-  try {
-    if (typeof client.quit === 'function') {
-      await client.quit();
-    } else if (typeof client.disconnect === 'function') {
-      await client.disconnect();
-    }
-  } catch (err) {
-    logger.error('Failed to close Redis client gracefully:', err);
-  }
-};
-
-export const closeRedisClients = async (): Promise<void> => {
-  if (pingInterval) {
-    clearInterval(pingInterval);
-    pingInterval = null;
-  }
-
-  await safeQuit(
-    ioredisClient as unknown as { quit?: () => Promise<void>; disconnect?: () => Promise<void> },
-  );
-  ioredisClient = null;
-
-  await safeQuit(
-    keyvRedisClient as unknown as { quit?: () => Promise<void>; disconnect?: () => Promise<void> },
-  );
-  keyvRedisClient = null;
-};
 
 export { ioredisClient, keyvRedisClient, keyvRedisClientReady };

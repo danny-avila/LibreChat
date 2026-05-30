@@ -14,13 +14,13 @@ on:
         default: 'Manual publish requested'
 
 permissions:
-  id-token: write # Required for OIDC trusted publishing
   contents: read
 
 jobs:
-  build-and-publish:
+  pack:
     runs-on: ubuntu-latest
-    environment: publish # Must match npm trusted publisher config
+    outputs:
+      skip: ${{ steps.check.outputs.skip }}
     steps:
       - uses: actions/checkout@v4
 
@@ -28,10 +28,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20.x'
-          registry-url: 'https://registry.npmjs.org'
-
-      - name: Update npm for OIDC support
-        run: npm install -g npm@latest # Must be 11.5.1+ for provenance
 
       - name: Install dependencies
         run: cd packages/data-schemas && npm ci
@@ -56,9 +52,43 @@ jobs:
       - name: Pack package
         if: steps.check.outputs.skip != 'true'
         working-directory: packages/data-schemas
-        run: npm pack
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/npm-package"
+          npm pack --pack-destination "$GITHUB_WORKSPACE/npm-package"
+
+      - name: Upload package
+        if: steps.check.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: librechat-data-schemas-package
+          path: npm-package/*.tgz
+          if-no-files-found: error
+          retention-days: 2
+
+  publish-npm:
+    needs: pack
+    if: github.ref == 'refs/heads/main' && needs.pack.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    environment: publish  # Must match npm trusted publisher config
+    permissions:
+      contents: read
+      id-token: write  # Required for OIDC trusted publishing
+    steps:
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install npm with OIDC support
+        run: npm install -g npm@11.14.1 --ignore-scripts
+
+      - name: Download package
+        uses: actions/download-artifact@v4
+        with:
+          name: librechat-data-schemas-package
+          path: npm-package
 
       - name: Publish
-        if: steps.check.outputs.skip != 'true'
-        working-directory: packages/data-schemas
+        working-directory: npm-package
         run: npm publish *.tgz --access public --provenance

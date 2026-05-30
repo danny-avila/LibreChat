@@ -1,10 +1,9 @@
 import mcpServerSchema from '~/schema/mcpServer';
+import { applyTenantIsolation } from '~/models/plugins/tenantIsolation';
 import type { MCPServerDocument } from '~/types';
 
-/**
- * Creates or returns the MCPServer model using the provided mongoose instance and schema
- */
 export function createMCPServerModel(mongoose: typeof import('mongoose')) {
+  applyTenantIsolation(mcpServerSchema);
   return (
     mongoose.models.MCPServer || mongoose.model<MCPServerDocument>('MCPServer', mcpServerSchema)
   );

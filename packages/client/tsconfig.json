@@ -2,7 +2,7 @@
   "compilerOptions": {
     "target": "ES2020",
     "module": "ESNext",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "jsx": "react-jsx",
     "jsxImportSource": "react",
     "declaration": true,
@@ -16,11 +16,8 @@
     "forceConsistentCasingInFileNames": true,
     "outDir": "./dist",
     "rootDir": "./src",
-    "baseUrl": "./src",
     "paths": {
-      "~/*": ["./*"],
-      "librechat-data-provider": ["../../data-provider/dist/types/index.d.ts"],
-      "librechat-data-provider/react-query": ["../../data-provider/dist/types/react-query/index.d.ts"]
+      "~/*": ["./src/*"]
     },
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "resolveJsonModule": true

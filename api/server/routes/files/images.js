@@ -2,32 +2,17 @@ const path = require('path');
 const fs = require('fs').promises;
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
+const { verifyAgentUploadPermission, resolveUploadErrorMessage } = require('@librechat/api');
 const { isAssistantsEndpoint } = require('librechat-data-provider');
-const { loginLimiter } = require('~/server/middleware');
 const {
   processAgentFileUpload,
   processImageFile,
   filterFile,
 } = require('~/server/services/Files/process');
+const { checkPermission } = require('~/server/services/PermissionService');
+const db = require('~/models');
 
 const router = express.Router();
-
-router.use(loginLimiter);
-
-const sanitizePathSegment = (value = '') => value.replace(/[^a-zA-Z0-9_-]/g, '');
-
-const createSafeImagePath = (basePath, userId, filename) => {
-  const safeUserId = sanitizePathSegment(userId);
-  const safeFilename = path.basename(filename);
-  const userPath = path.resolve(basePath, safeUserId);
-  const filePath = path.resolve(userPath, safeFilename);
-
-  if (!filePath.startsWith(`${userPath}${path.sep}`) && filePath !== userPath) {
-    return null;
-  }
-
-  return filePath;
-};
 
 router.post('/', async (req, res) => {
   const metadata = req.body;
@@ -40,6 +25,16 @@ router.post('/', async (req, res) => {
     metadata.file_id = req.file_id;
 
     if (!isAssistantsEndpoint(metadata.endpoint) && metadata.tool_resource != null) {
+      const denied = await verifyAgentUploadPermission({
+        req,
+        res,
+        metadata,
+        getAgent: db.getAgent,
+        checkPermission,
+      });
+      if (denied) {
+        return;
+      }
       return await processAgentFileUpload({ req, res, metadata });
     }
 
@@ -48,26 +43,15 @@ router.post('/', async (req, res) => {
     // TODO: delete remote file if it exists
     logger.error('[/files/images] Error processing file:', error);
 
-    let message = 'Error processing file';
-
-    if (
-      error.message?.includes('Invalid file format') ||
-      error.message?.includes('No OCR result') ||
-      error.message?.includes('exceeds token limit')
-    ) {
-      message = error.message;
-    }
+    const message = resolveUploadErrorMessage(error);
 
     try {
-      const filepath = createSafeImagePath(
+      const filepath = path.join(
         appConfig.paths.imageOutput,
-        req.user?.id,
-        req.file?.filename ?? '',
+        req.user.id,
+        path.basename(req.file.filename),
       );
-
-      if (filepath) {
-        await fs.unlink(filepath);
-      }
+      await fs.unlink(filepath);
     } catch (error) {
       logger.error('[/files/images] Error deleting file:', error);
     }

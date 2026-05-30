@@ -1,9 +1,10 @@
 const axios = require('axios');
 const fetch = require('node-fetch');
 const { v4: uuidv4 } = require('uuid');
-const { Tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
+const { Tool } = require('@librechat/agents/langchain/tools');
+const { createMinimalRetentionRequest } = require('@librechat/api');
 const { FileContext, ContentTypes } = require('librechat-data-provider');
 
 const fluxApiJsonSchema = {
@@ -109,10 +110,16 @@ class FluxAPI extends Tool {
     this.override = fields.override ?? false;
 
     this.userId = fields.userId;
+    this.tenantId = fields.req?.user?.tenantId;
+    this.retentionRequest = createMinimalRetentionRequest(fields.req);
     this.fileStrategy = fields.fileStrategy;
 
     /** @type {boolean} **/
     this.isAgent = fields.isAgent;
+    if (this.isAgent) {
+      /** Ensures LangChain maps [content, artifact] tuple to ToolMessage fields instead of serializing it into content. */
+      this.responseFormat = 'content_and_artifact';
+    }
     this.returnMetadata = fields.returnMetadata ?? false;
 
     if (fields.processFileURL) {
@@ -337,6 +344,8 @@ class FluxAPI extends Tool {
         fileName: imageName,
         basePath: 'images',
         context: FileContext.image_generation,
+        tenantId: this.tenantId,
+        req: this.retentionRequest,
       });
 
       logger.debug('[FluxAPI] Image saved to path:', result.filepath);
@@ -524,9 +533,39 @@ class FluxAPI extends Tool {
       return this.returnValue('No image data received from Flux API.');
     }
 
-    // Try saving the image locally
     const imageUrl = resultData.sample;
     const imageName = `img-${uuidv4()}.png`;
+
+    if (this.isAgent) {
+      try {
+        const fetchOptions = {};
+        if (process.env.PROXY) {
+          fetchOptions.agent = new HttpsProxyAgent(process.env.PROXY);
+        }
+        const imageResponse = await fetch(imageUrl, fetchOptions);
+        const arrayBuffer = await imageResponse.arrayBuffer();
+        const base64 = Buffer.from(arrayBuffer).toString('base64');
+        const content = [
+          {
+            type: ContentTypes.IMAGE_URL,
+            image_url: {
+              url: `data:image/png;base64,${base64}`,
+            },
+          },
+        ];
+
+        const response = [
+          {
+            type: ContentTypes.TEXT,
+            text: displayMessage,
+          },
+        ];
+        return [response, { content }];
+      } catch (error) {
+        logger.error('[FluxAPI] Error processing finetuned image for agent:', error);
+        return this.returnValue(`Failed to process the finetuned image. ${error.message}`);
+      }
+    }
 
     try {
       logger.debug('[FluxAPI] Saving finetuned image:', imageUrl);
@@ -537,16 +576,12 @@ class FluxAPI extends Tool {
         fileName: imageName,
         basePath: 'images',
         context: FileContext.image_generation,
+        tenantId: this.tenantId,
+        req: this.retentionRequest,
       });
 
       logger.debug('[FluxAPI] Finetuned image saved to path:', result.filepath);
 
-      // Calculate cost based on endpoint
-      const endpointKey = endpoint.includes('ultra')
-        ? 'FLUX_PRO_1_1_ULTRA_FINETUNED'
-        : 'FLUX_PRO_FINETUNED';
-      const cost = FluxAPI.PRICING[endpointKey] || 0;
-      // Return the result based on returnMetadata flag
       this.result = this.returnMetadata ? result : this.wrapInMarkdown(result.filepath);
       return this.returnValue(this.result);
     } catch (error) {

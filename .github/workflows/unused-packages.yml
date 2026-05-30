@@ -14,6 +14,7 @@ jobs:
   detect-unused-packages:
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       pull-requests: write
 
     steps:
@@ -73,7 +74,7 @@ jobs:
               grep -rEho "require\\(['\"]([a-zA-Z0-9@/._-]+)['\"]\\)" "$folder" \
                 --include='*.js' --include='*.ts' --include='*.tsx' --include='*.jsx' --include='*.mjs' --include='*.cjs' 2>/dev/null | \
                 sed -E "s/require\\(['\"]([a-zA-Z0-9@/._-]+)['\"]\\)/\1/" >> "$output_file" || true
-
+          
               # Extract ES6 imports - import x from 'module'
               grep -rEho "import .* from ['\"]([a-zA-Z0-9@/._-]+)['\"]" "$folder" \
                 --include='*.js' --include='*.ts' --include='*.tsx' --include='*.jsx' --include='*.mjs' --include='*.cjs' 2>/dev/null | \
@@ -93,7 +94,7 @@ jobs:
               grep -rEho "import type .* from ['\"]([a-zA-Z0-9@/._-]+)['\"]" "$folder" \
                 --include='*.ts' --include='*.tsx' 2>/dev/null | \
                 sed -E "s/import type .* from ['\"]([a-zA-Z0-9@/._-]+)['\"]/\1/" >> "$output_file" || true
-
+          
               # Remove subpath imports but keep the base package
               # For scoped packages: '@scope/pkg/subpath' -> '@scope/pkg'
               # For regular packages: 'pkg/subpath' -> 'pkg'
@@ -109,7 +110,7 @@ jobs:
           extract_deps_from_code "." root_used_code.txt
           extract_deps_from_code "client" client_used_code.txt
           extract_deps_from_code "api" api_used_code.txt
-
+          
           # Extract dependencies used by workspace packages
           # These packages are used in the workspace but dependencies are provided by parent package.json
           extract_deps_from_code "packages/client" packages_client_used_code.txt
@@ -196,7 +197,7 @@ jobs:
               touch "$output_file"
             fi
           }
-
+          
           # Get workspace dependencies for each package
           get_workspace_package_deps "package.json" root_workspace_deps.txt
           get_workspace_package_deps "client/package.json" client_workspace_deps.txt
@@ -272,7 +273,7 @@ jobs:
 
           gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
             -f body="$COMMENT_BODY" \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}"
+            -H "Authorization: token $GITHUB_TOKEN"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

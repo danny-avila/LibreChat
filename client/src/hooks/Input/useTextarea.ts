@@ -16,6 +16,7 @@ import useGetSender from '~/hooks/Conversations/useGetSender';
 import useFileHandling from '~/hooks/Files/useFileHandling';
 import { useInteractionHealthCheck } from '~/data-provider';
 import { useChatContext } from '~/Providers/ChatContext';
+import { useLatestMessage } from '~/hooks/Messages/useLatestMessage';
 import { globalAudioId } from '~/common';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -42,8 +43,8 @@ export default function useTextarea({
   const checkHealth = useInteractionHealthCheck();
   const enterToSend = useRecoilValue(store.enterToSend);
 
-  const { index, conversation, isSubmitting, filesLoading, latestMessage, setFilesLoading } =
-    useChatContext();
+  const { index, conversation, isSubmitting, filesLoading, setFilesLoading } = useChatContext();
+  const latestMessage = useLatestMessage(index);
   const [activePrompt, setActivePrompt] = useRecoilState(store.activePromptByIndex(index));
 
   const { endpoint = '' } = conversation || {};

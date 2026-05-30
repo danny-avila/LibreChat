@@ -4,7 +4,7 @@ export default function FileIcon({
   file,
   fileType,
 }: {
-  file?: Partial<TFile & { progress?: number }>;
+  file?: Partial<TFile> & { progress?: number };
   fileType: {
     fill: string;
     paths: React.FC;

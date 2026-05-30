@@ -17,12 +17,15 @@ const require = createRequire(import.meta.url);
  * the shim specifiers to absolute paths via CJS require.resolve anchored to the client directory.
  */
 const NODE_POLYFILL_SHIMS: Record<string, string> = {
-  'vite-plugin-node-polyfills/shims/process':
-    require.resolve('vite-plugin-node-polyfills/shims/process'),
-  'vite-plugin-node-polyfills/shims/buffer':
-    require.resolve('vite-plugin-node-polyfills/shims/buffer'),
-  'vite-plugin-node-polyfills/shims/global':
-    require.resolve('vite-plugin-node-polyfills/shims/global'),
+  'vite-plugin-node-polyfills/shims/process': require.resolve(
+    'vite-plugin-node-polyfills/shims/process',
+  ),
+  'vite-plugin-node-polyfills/shims/buffer': require.resolve(
+    'vite-plugin-node-polyfills/shims/buffer',
+  ),
+  'vite-plugin-node-polyfills/shims/global': require.resolve(
+    'vite-plugin-node-polyfills/shims/global',
+  ),
 };
 
 // https://vitejs.dev/config/
@@ -79,7 +82,7 @@ export default defineConfig(({ command }) => ({
           'assets/maskable-icon.png',
           'manifest.webmanifest',
         ],
-        globIgnores: ['images/**/*', '**/*.map', 'index.html'],
+        globIgnores: ['images/**/*', '**/*.map', 'index.html', 'assets/rum.*.js'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         navigateFallbackDenylist: [/^\/oauth/, /^\/api/],
       },
@@ -136,7 +139,9 @@ export default defineConfig(({ command }) => ({
         manualChunks(id: string) {
           const normalizedId = id.replace(/\\/g, '/');
           if (normalizedId.includes('node_modules')) {
-            // High-impact chunking for large libraries
+            if (normalizedId.includes('@hyperdx/')) {
+              return 'rum';
+            }
 
             // IMPORTANT: mermaid and ALL its dependencies must be in the same chunk
             // to avoid initialization order issues. This includes chevrotain, langium,
@@ -153,6 +158,9 @@ export default defineConfig(({ command }) => ({
 
             if (normalizedId.includes('@codesandbox/sandpack')) {
               return 'sandpack';
+            }
+            if (normalizedId.includes('react-vtree')) {
+              return 'react-vtree';
             }
             if (normalizedId.includes('react-virtualized')) {
               return 'virtualization';
@@ -268,6 +276,10 @@ export default defineConfig(({ command }) => ({
             }
             if (normalizedId.includes('@headlessui')) {
               return 'headlessui';
+            }
+
+            if (normalizedId.includes('@icons-pack/react-simple-icons/icons/')) {
+              return;
             }
 
             // Everything else falls into a generic vendor chunk.

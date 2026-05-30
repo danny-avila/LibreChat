@@ -2,8 +2,45 @@ import { useEffect, useRef } from 'react';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
 import { Constants, tMessageSchema, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessage, TConversation, TSubmission, Agents } from 'librechat-data-provider';
+import type { StreamStatusResponse } from '~/data-provider';
 import { useStreamStatus } from '~/data-provider';
 import store from '~/store';
+
+function hasSubmissionUserMessage(
+  submission: TSubmission | null,
+  messages: TMessage[] | undefined,
+  conversationId: string | undefined,
+): boolean {
+  const userMessageId = submission?.userMessage?.messageId;
+  if (!userMessageId || !conversationId || !messages?.length) {
+    return false;
+  }
+
+  return messages.some(
+    (message) =>
+      message.isCreatedByUser === true &&
+      message.messageId === userMessageId &&
+      message.conversationId === conversationId,
+  );
+}
+
+function resumeStateMatchesSubmission(
+  streamStatus: StreamStatusResponse | undefined,
+  submission: TSubmission | null,
+): boolean {
+  const resumeState = streamStatus?.resumeState;
+  if (!resumeState || !submission) {
+    return false;
+  }
+
+  const userMessageId = submission.userMessage?.messageId;
+  if (userMessageId && resumeState.userMessage?.messageId === userMessageId) {
+    return true;
+  }
+
+  const responseMessageId = submission.initialResponse?.messageId;
+  return !!responseMessageId && resumeState.responseMessageId === responseMessageId;
+}
 
 /**
  * Build a submission object from resume state for reconnected streams.
@@ -14,7 +51,6 @@ function buildSubmissionFromResumeState(
   streamId: string,
   messages: TMessage[],
   conversationId: string,
-  threadId?: string | null,
 ): TSubmission {
   const userMessageData = resumeState.userMessage;
   const responseMessageId =
@@ -71,7 +107,6 @@ function buildSubmissionFromResumeState(
     conversationId,
     title: 'Resumed Chat',
     endpoint: null,
-    thread_id: threadId ?? existingResponseMessage?.thread_id ?? existingUserMessage?.thread_id,
   } as TConversation;
 
   return {
@@ -115,19 +150,30 @@ export default function useResumeOnLoad(
   const processedConvoRef = useRef<string | null>(null);
 
   // Check for active stream when conversation changes
-  // Allow check if no submission OR submission is for a different conversation (stale)
   const submissionConvoId = currentSubmission?.conversation?.conversationId;
-  const hasActiveSubmissionForThisConvo = currentSubmission && submissionConvoId === conversationId;
+  const loadedMessages = messagesLoaded ? getMessages() : undefined;
+  const hasExplicitSubmissionMatch = !!conversationId && submissionConvoId === conversationId;
+  const hasHydratedMessageMatch =
+    submissionConvoId == null &&
+    hasSubmissionUserMessage(currentSubmission, loadedMessages, conversationId);
+  const hasActiveSubmissionForThisConvo =
+    !!currentSubmission && (hasExplicitSubmissionMatch || hasHydratedMessageMatch);
+  const hasStaleSubmissionForDifferentConvo =
+    !!currentSubmission && submissionConvoId != null && submissionConvoId !== conversationId;
 
   const shouldCheck =
     resumableEnabled &&
     messagesLoaded && // Wait for messages to load before checking
-    !hasActiveSubmissionForThisConvo && // Allow if no submission or stale submission
+    !hasActiveSubmissionForThisConvo && // Allow if no submission or a confirmed stale submission
     !!conversationId &&
     conversationId !== Constants.NEW_CONVO &&
     processedConvoRef.current !== conversationId; // Don't re-check processed convos
 
-  const { data: streamStatus, isSuccess } = useStreamStatus(conversationId, shouldCheck);
+  const {
+    data: streamStatus,
+    isSuccess,
+    isFetching,
+  } = useStreamStatus(conversationId, shouldCheck);
 
   useEffect(() => {
     console.log('[ResumeOnLoad] Effect check', {
@@ -137,6 +183,7 @@ export default function useResumeOnLoad(
       hasCurrentSubmission: !!currentSubmission,
       currentSubmissionConvoId: currentSubmission?.conversation?.conversationId,
       isSuccess,
+      isFetching,
       streamStatusActive: streamStatus?.active,
       streamStatusStreamId: streamStatus?.streamId,
       processedConvoRef: processedConvoRef.current,
@@ -163,7 +210,7 @@ export default function useResumeOnLoad(
     }
 
     // If there's a stale submission for a different conversation, log it but continue
-    if (currentSubmission && submissionConvoId !== conversationId) {
+    if (hasStaleSubmissionForDifferentConvo) {
       console.log(
         '[ResumeOnLoad] Found stale submission for different conversation, will check for resume',
         {
@@ -173,9 +220,25 @@ export default function useResumeOnLoad(
       );
     }
 
-    // Wait for stream status query to complete
-    if (!isSuccess || !streamStatus) {
+    // Wait for stream status query to complete (including background refetches
+    // that may replace a stale cached result with fresh data)
+    if (!isSuccess || !streamStatus || isFetching) {
       console.log('[ResumeOnLoad] Waiting for stream status query');
+      return;
+    }
+
+    if (
+      streamStatus.active &&
+      streamStatus.streamId &&
+      submissionConvoId == null &&
+      resumeStateMatchesSubmission(streamStatus, currentSubmission)
+    ) {
+      console.log('[ResumeOnLoad] Skipping - active submission matches stream status', {
+        streamId: streamStatus.streamId,
+        currentConvoId: conversationId,
+        userMessageId: currentSubmission?.userMessage?.messageId,
+      });
+      processedConvoRef.current = conversationId;
       return;
     }
 
@@ -185,15 +248,12 @@ export default function useResumeOnLoad(
       return;
     }
 
-    // Check if there's an active job to resume
-    // DON'T mark as processed here - only mark when we actually create a submission
-    // This prevents stale cache data from blocking subsequent resume attempts
     if (!streamStatus.active || !streamStatus.streamId) {
       console.log('[ResumeOnLoad] No active job to resume for:', conversationId);
+      processedConvoRef.current = conversationId;
       return;
     }
 
-    // Mark as processed NOW - we verified there's an active job and will create submission
     processedConvoRef.current = conversationId;
 
     console.log('[ResumeOnLoad] Found active job, creating submission...', {
@@ -211,7 +271,6 @@ export default function useResumeOnLoad(
         streamStatus.streamId,
         messages,
         conversationId,
-        streamStatus.threadId,
       );
       setSubmission(submission);
     } else {
@@ -234,7 +293,6 @@ export default function useResumeOnLoad(
         // Signal to useResumableSSE to subscribe to existing stream instead of starting new
         resumeStreamId: streamStatus.streamId,
       } as TSubmission & { resumeStreamId: string };
-      submission.conversation.thread_id = streamStatus.threadId ?? undefined;
       setSubmission(submission);
     }
   }, [
@@ -243,8 +301,10 @@ export default function useResumeOnLoad(
     messagesLoaded,
     hasActiveSubmissionForThisConvo,
     submissionConvoId,
+    hasStaleSubmissionForDifferentConvo,
     currentSubmission,
     isSuccess,
+    isFetching,
     streamStatus,
     getMessages,
     setSubmission,

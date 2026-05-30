@@ -8,20 +8,21 @@ name: Detect Unused i18next Strings
 on:
   pull_request:
     paths:
-      - 'client/src/**'
-      - 'api/**'
-      - 'packages/data-provider/src/**'
-      - 'packages/client/**'
-      - 'packages/data-schemas/src/**'
+      - "client/src/**"
+      - "api/**"
+      - "packages/data-provider/src/**"
+      - "packages/client/**"
+      - "packages/data-schemas/src/**"
 
 jobs:
   detect-unused-i18n-keys:
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       pull-requests: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Find unused i18next keys
         id: find-unused
@@ -101,7 +102,7 @@ jobs:
                 fi
               done
             fi
-
+          
             if [[ "$FOUND" == false ]]; then
               UNUSED_KEYS+=("$KEY")
             fi
@@ -140,7 +141,7 @@ jobs:
 
           gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
             -f body="$COMMENT_BODY" \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}"
+            -H "Authorization: token $GITHUB_TOKEN"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

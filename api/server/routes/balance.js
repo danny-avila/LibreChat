@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const controller = require('../controllers/Balance');
-const { requireJwtAuth, loginLimiter } = require('../middleware/');
+const { requireJwtAuth } = require('../middleware/');
 
-router.get('/', loginLimiter, requireJwtAuth, controller);
+router.get('/', requireJwtAuth, controller);
 
 module.exports = router;

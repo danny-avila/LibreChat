@@ -1,4 +1,4 @@
-import { Parser } from 'expr-eval';
+import { evaluate } from 'mathjs';
 
 /**
  * Evaluates a mathematical expression provided as a string and returns the result.
@@ -6,6 +6,8 @@ import { Parser } from 'expr-eval';
  * If the input is already a number, it returns the number as is.
  * If the input is not a string or contains invalid characters, an error is thrown.
  * If the evaluated result is not a number, an error is thrown.
+ *
+ * Uses mathjs for safe expression evaluation instead of eval().
  *
  * @param str - The mathematical expression to evaluate, or a number.
  * @param fallbackValue - The default value to return if the input is not a string or number, or if the evaluated result is not a number.
@@ -34,22 +36,22 @@ export function math(str: string | number | undefined, fallbackValue?: number): 
     throw new Error('Invalid characters in string');
   }
 
-  let value: unknown;
   try {
-    value = Parser.evaluate(str);
+    const value = evaluate(str);
+
+    if (typeof value !== 'number') {
+      if (fallback) {
+        return fallbackValue;
+      }
+      throw new Error(`[math] str did not evaluate to a number but to a ${typeof value}`);
+    }
+
+    return value;
   } catch (error) {
     if (fallback) {
       return fallbackValue;
     }
-    throw error;
+    const originalMessage = error instanceof Error ? error.message : String(error);
+    throw new Error(`[math] Error while evaluating mathematical expression: ${originalMessage}`);
   }
-
-  if (typeof value !== 'number') {
-    if (fallback) {
-      return fallbackValue;
-    }
-    throw new Error(`[math] str did not evaluate to a number but to a ${typeof value}`);
-  }
-
-  return value;
 }

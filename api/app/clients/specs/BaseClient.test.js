@@ -1,5 +1,5 @@
 const { Constants } = require('librechat-data-provider');
-const { initializeFakeClient } = require('./FakeClient');
+const { FakeClient, initializeFakeClient } = require('./FakeClient');
 
 jest.mock('~/db/connect');
 jest.mock('~/server/services/Config', () => ({
@@ -38,7 +38,7 @@ jest.mock('~/models', () => ({
   updateFileUsage: jest.fn(),
 }));
 
-const { getConvo, saveConvo } = require('~/models');
+const { getConvo, getMessages, saveConvo, saveMessage } = require('~/models');
 
 jest.mock('@librechat/agents', () => {
   const actual = jest.requireActual('@librechat/agents');
@@ -355,7 +355,8 @@ describe('BaseClient', () => {
           id: '3',
           parentMessageId: '2',
           role: 'system',
-          text: 'Summary for Message 3',
+          text: 'Message 3',
+          content: [{ type: 'text', text: 'Summary for Message 3' }],
           summary: 'Summary for Message 3',
         },
         { id: '4', parentMessageId: '3', text: 'Message 4' },
@@ -380,7 +381,8 @@ describe('BaseClient', () => {
           id: '4',
           parentMessageId: '3',
           role: 'system',
-          text: 'Summary for Message 4',
+          text: 'Message 4',
+          content: [{ type: 'text', text: 'Summary for Message 4' }],
           summary: 'Summary for Message 4',
         },
         { id: '5', parentMessageId: '4', text: 'Message 5' },
@@ -405,11 +407,122 @@ describe('BaseClient', () => {
           id: '4',
           parentMessageId: '3',
           role: 'system',
-          text: 'Summary for Message 4',
+          text: 'Message 4',
+          content: [{ type: 'text', text: 'Summary for Message 4' }],
           summary: 'Summary for Message 4',
         },
         { id: '5', parentMessageId: '4', text: 'Message 5' },
       ]);
+    });
+
+    it('should detect summary content block and use it over legacy fields (summary mode)', () => {
+      const messagesWithContentBlock = [
+        { id: '3', parentMessageId: '2', text: 'Message 3' },
+        {
+          id: '2',
+          parentMessageId: '1',
+          text: 'Message 2',
+          content: [
+            { type: 'text', text: 'Original text' },
+            { type: 'summary', text: 'Content block summary', tokenCount: 42 },
+          ],
+        },
+        { id: '1', parentMessageId: null, text: 'Message 1' },
+      ];
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: messagesWithContentBlock,
+        parentMessageId: '3',
+        summary: true,
+      });
+      expect(result).toHaveLength(2);
+      expect(result[0].role).toBe('system');
+      expect(result[0].content).toEqual([{ type: 'text', text: 'Content block summary' }]);
+      expect(result[0].tokenCount).toBe(42);
+    });
+
+    it('should prefer content block summary over legacy summary field', () => {
+      const messagesWithBoth = [
+        { id: '2', parentMessageId: '1', text: 'Message 2' },
+        {
+          id: '1',
+          parentMessageId: null,
+          text: 'Message 1',
+          summary: 'Legacy summary',
+          summaryTokenCount: 10,
+          content: [{ type: 'summary', text: 'Content block summary', tokenCount: 20 }],
+        },
+      ];
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: messagesWithBoth,
+        parentMessageId: '2',
+        summary: true,
+      });
+      expect(result).toHaveLength(2);
+      expect(result[0].content).toEqual([{ type: 'text', text: 'Content block summary' }]);
+      expect(result[0].tokenCount).toBe(20);
+    });
+
+    it('should fallback to legacy summary when no content block exists', () => {
+      const messagesWithLegacy = [
+        { id: '2', parentMessageId: '1', text: 'Message 2' },
+        {
+          id: '1',
+          parentMessageId: null,
+          text: 'Message 1',
+          summary: 'Legacy summary only',
+          summaryTokenCount: 15,
+        },
+      ];
+      const result = TestClient.constructor.getMessagesForConversation({
+        messages: messagesWithLegacy,
+        parentMessageId: '2',
+        summary: true,
+      });
+      expect(result).toHaveLength(2);
+      expect(result[0].content).toEqual([{ type: 'text', text: 'Legacy summary only' }]);
+      expect(result[0].tokenCount).toBe(15);
+    });
+  });
+
+  describe('findSummaryContentBlock', () => {
+    it('should find a summary block in the content array', () => {
+      const message = {
+        content: [
+          { type: 'text', text: 'some text' },
+          { type: 'summary', text: 'Summary of conversation', tokenCount: 50 },
+        ],
+      };
+      const result = TestClient.constructor.findSummaryContentBlock(message);
+      expect(result).toBeTruthy();
+      expect(result.text).toBe('Summary of conversation');
+      expect(result.tokenCount).toBe(50);
+    });
+
+    it('should return null when no summary block exists', () => {
+      const message = {
+        content: [
+          { type: 'text', text: 'some text' },
+          { type: 'tool_call', tool_call: {} },
+        ],
+      };
+      expect(TestClient.constructor.findSummaryContentBlock(message)).toBeNull();
+    });
+
+    it('should return null for string content', () => {
+      const message = { content: 'just a string' };
+      expect(TestClient.constructor.findSummaryContentBlock(message)).toBeNull();
+    });
+
+    it('should return null for missing content', () => {
+      expect(TestClient.constructor.findSummaryContentBlock({})).toBeNull();
+      expect(TestClient.constructor.findSummaryContentBlock(null)).toBeNull();
+    });
+
+    it('should skip summary blocks with no text', () => {
+      const message = {
+        content: [{ type: 'summary', tokenCount: 10 }],
+      };
+      expect(TestClient.constructor.findSummaryContentBlock(message)).toBeNull();
     });
   });
 
@@ -507,6 +620,27 @@ describe('BaseClient', () => {
       const chatMessages2 = await TestClient.loadHistory(conversationId, '3');
       expect(TestClient.currentMessages).toHaveLength(3);
       expect(chatMessages2[chatMessages2.length - 1].text).toEqual("What's up");
+    });
+
+    test('loadHistory should scope database reads to the current user', async () => {
+      const user = 'user-123';
+      TestClient = new FakeClient(apiKey, options);
+      TestClient.user = user;
+      getMessages.mockResolvedValueOnce([
+        {
+          role: 'user',
+          isCreatedByUser: true,
+          text: 'Hello',
+          messageId: '1',
+          conversationId,
+        },
+      ]);
+
+      const chatMessages = await TestClient.loadHistory(conversationId, '1');
+
+      expect(getMessages).toHaveBeenCalledWith({ conversationId, user });
+      expect(chatMessages).toHaveLength(1);
+      expect(chatMessages[0].text).toBe('Hello');
     });
 
     /* Most of the new sendMessage logic revolving around edited/continued AI messages
@@ -789,6 +923,91 @@ describe('BaseClient', () => {
           messageId: expect.any(String),
           parentMessageId: expect.any(String),
           conversationId: expect.any(String),
+        }),
+      );
+    });
+
+    test('saveMessageToDatabase returns early when this.options is null (client disposed)', async () => {
+      const savedOptions = TestClient.options;
+      TestClient.options = null;
+      saveMessage.mockClear();
+
+      const result = await TestClient.saveMessageToDatabase(
+        { messageId: 'msg-1', conversationId: 'conv-1', isCreatedByUser: true, text: 'hi' },
+        {},
+        null,
+      );
+
+      expect(result).toEqual({});
+      expect(saveMessage).not.toHaveBeenCalled();
+
+      TestClient.options = savedOptions;
+    });
+
+    test('saveMessageToDatabase uses snapshot of options, immune to mid-await disposal', async () => {
+      const savedOptions = TestClient.options;
+      saveMessage.mockClear();
+      saveConvo.mockClear();
+
+      // Make db.saveMessage yield, simulating I/O suspension during which disposal occurs
+      saveMessage.mockImplementation(async (_reqCtx, msgData) => {
+        // Simulate disposeClient nullifying client.options while awaiting
+        TestClient.options = null;
+        return msgData;
+      });
+      saveConvo.mockResolvedValue({ conversationId: 'conv-1' });
+
+      const result = await TestClient.saveMessageToDatabase(
+        { messageId: 'msg-1', conversationId: 'conv-1', isCreatedByUser: true, text: 'hi' },
+        { endpoint: 'openAI' },
+        null,
+      );
+
+      // Should complete without TypeError, using the snapshotted options
+      expect(result).toHaveProperty('message');
+      expect(result).toHaveProperty('conversation');
+      expect(saveMessage).toHaveBeenCalled();
+
+      TestClient.options = savedOptions;
+      saveMessage.mockReset();
+      saveConvo.mockReset();
+    });
+
+    test('saveMessageToDatabase reuses conversation resolved on the request', async () => {
+      const existingConvo = {
+        conversationId: 'cached-convo-id',
+        endpoint: 'openai',
+        endpointType: 'openai',
+        temperature: 0.7,
+      };
+      const user = { id: 'user-id' };
+      const req = { user, resolvedConversation: existingConvo };
+
+      getConvo.mockClear();
+      saveMessage.mockResolvedValue({ messageId: 'msg-1' });
+      saveConvo.mockResolvedValue(existingConvo);
+
+      TestClient = initializeFakeClient(apiKey, { ...options, endpoint: 'openai', req }, []);
+
+      await TestClient.saveMessageToDatabase(
+        {
+          messageId: 'msg-1',
+          conversationId: existingConvo.conversationId,
+          isCreatedByUser: true,
+          text: 'hi',
+        },
+        { endpoint: 'openai' },
+        user,
+      );
+
+      expect(getConvo).not.toHaveBeenCalled();
+      expect(req).not.toHaveProperty('resolvedConversation');
+      expect(TestClient.fetchedConvo).toBe(true);
+      expect(saveConvo).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({ conversationId: existingConvo.conversationId }),
+        expect.objectContaining({
+          unsetFields: expect.objectContaining({ temperature: 1 }),
         }),
       );
     });

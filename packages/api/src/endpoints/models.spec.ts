@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { EModelEndpoint, defaultModels } from 'librechat-data-provider';
+import { Time, EModelEndpoint, defaultModels, AuthType } from 'librechat-data-provider';
 import {
   fetchModels,
   splitAndTrim,
@@ -11,10 +11,12 @@ import {
 
 jest.mock('axios');
 
+const mockCacheGet = jest.fn().mockResolvedValue(undefined);
+const mockCacheSet = jest.fn().mockResolvedValue(true);
 jest.mock('~/cache', () => ({
   standardCache: jest.fn().mockImplementation(() => ({
-    get: jest.fn().mockResolvedValue(undefined),
-    set: jest.fn().mockResolvedValue(true),
+    get: mockCacheGet,
+    set: mockCacheSet,
   })),
 }));
 
@@ -44,6 +46,11 @@ mockedAxios.get.mockResolvedValue({
   data: {
     data: [{ id: 'model-1' }, { id: 'model-2' }],
   },
+});
+
+beforeEach(() => {
+  mockCacheGet.mockReset().mockResolvedValue(undefined);
+  mockCacheSet.mockReset().mockResolvedValue(true);
 });
 
 describe('fetchModels', () => {
@@ -203,6 +210,51 @@ describe('getOpenAIModels', () => {
   it('returns default models when no environment configurations are provided (and fetch fails)', async () => {
     const models = await getOpenAIModels({ user: 'user456' });
     expect(models).toContain('gpt-4');
+  });
+
+  it('returns default models when OpenAI API key is user provided', async () => {
+    mockedAxios.get.mockResolvedValue({ data: { data: [{ id: 'should-not-appear' }] } });
+    process.env.OPENAI_API_KEY = AuthType.USER_PROVIDED;
+
+    const models = await getOpenAIModels({ user: 'user456' });
+
+    expect(mockedAxios.get).not.toHaveBeenCalled();
+    expect(models).not.toContain('should-not-appear');
+    expect(models).toContain('gpt-4');
+  });
+
+  it('fetches models when OpenAI API key is provided through options', async () => {
+    mockedAxios.get.mockResolvedValue({ data: { data: [{ id: 'gpt-runtime-key' }] } });
+    process.env.OPENAI_API_KEY = AuthType.USER_PROVIDED;
+
+    const models = await getOpenAIModels({ user: 'user456', openAIApiKey: 'sk-runtime' });
+
+    expect(mockedAxios.get).toHaveBeenCalledWith(
+      expect.stringContaining('https://api.openai.com/v1/models'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer sk-runtime',
+        }),
+      }),
+    );
+    expect(models).toEqual(['gpt-runtime-key']);
+  });
+
+  it('falls back to environment OpenAI API key when options key is empty', async () => {
+    mockedAxios.get.mockResolvedValue({ data: { data: [{ id: 'gpt-env-key' }] } });
+    process.env.OPENAI_API_KEY = 'sk-env';
+
+    const models = await getOpenAIModels({ user: 'user456', openAIApiKey: '' });
+
+    expect(mockedAxios.get).toHaveBeenCalledWith(
+      expect.stringContaining('https://api.openai.com/v1/models'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer sk-env',
+        }),
+      }),
+    );
+    expect(models).toEqual(['gpt-env-key']);
   });
 
   it('returns `AZURE_OPENAI_MODELS` with `azure` flag (and fetch fails)', async () => {
@@ -396,6 +448,37 @@ describe('fetchModels with Ollama specific logic', () => {
 
     expect(models).toEqual(['model-1', 'model-2']);
     expect(mockedAxios.get).toHaveBeenCalledWith('https://api.test.com/models', expect.any(Object));
+  });
+
+  it('writes Ollama models to cache with TTL', async () => {
+    mockCacheGet.mockReset().mockResolvedValue(undefined);
+    mockCacheSet.mockReset().mockResolvedValue(true);
+
+    await fetchModels({
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.ollama.test.com',
+      name: 'OllamaAPI',
+    });
+
+    expect(mockCacheSet).toHaveBeenCalledWith(
+      expect.any(String),
+      ['Ollama-Base', 'Ollama-Advanced'],
+      Time.TWO_MINUTES,
+    );
+  });
+
+  it('returns Ollama models from cache without hitting server', async () => {
+    mockCacheGet.mockReset().mockResolvedValue(['cached-ollama-model']);
+    mockCacheSet.mockReset().mockResolvedValue(true);
+
+    const models = await fetchModels({
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.ollama.test.com',
+      name: 'OllamaAPI',
+    });
+
+    expect(models).toEqual(['cached-ollama-model']);
+    expect(mockedAxios.get).not.toHaveBeenCalled();
   });
 });
 
@@ -624,5 +707,75 @@ describe('getBedrockModels', () => {
     process.env.BEDROCK_AWS_MODELS = 'anthropic.claude-v2, ai21.j2-ultra ';
     const models = getBedrockModels();
     expect(models).toEqual(['anthropic.claude-v2', 'ai21.j2-ultra']);
+  });
+});
+
+describe('fetchModels caching behavior', () => {
+  beforeEach(() => {
+    mockCacheGet.mockReset().mockResolvedValue(undefined);
+    mockCacheSet.mockReset().mockResolvedValue(true);
+    mockedAxios.get.mockResolvedValue({
+      data: { data: [{ id: 'cached-model-1' }, { id: 'cached-model-2' }] },
+    });
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('writes fetched models to cache with TTL', async () => {
+    await fetchModels({
+      apiKey: 'key',
+      baseURL: 'https://api.test.com',
+      name: 'TestAPI',
+    });
+
+    expect(mockCacheSet).toHaveBeenCalledWith(
+      expect.any(String),
+      ['cached-model-1', 'cached-model-2'],
+      Time.TWO_MINUTES,
+    );
+  });
+
+  it('returns cached result without making HTTP request', async () => {
+    mockCacheGet.mockResolvedValue(['from-cache']);
+
+    const models = await fetchModels({
+      apiKey: 'key',
+      baseURL: 'https://api.test.com',
+      name: 'TestAPI',
+    });
+
+    expect(models).toEqual(['from-cache']);
+    expect(mockedAxios.get).not.toHaveBeenCalled();
+    expect(mockCacheSet).not.toHaveBeenCalled();
+  });
+
+  it('does not read or write cache when skipCache is true', async () => {
+    await fetchModels({
+      apiKey: 'key',
+      baseURL: 'https://api.test.com',
+      name: 'TestAPI',
+      skipCache: true,
+    });
+
+    expect(mockCacheGet).not.toHaveBeenCalled();
+    expect(mockCacheSet).not.toHaveBeenCalled();
+  });
+
+  it('does not write to cache when fetch returns empty models', async () => {
+    mockedAxios.get.mockResolvedValue({ data: { data: [] } });
+
+    await fetchModels({
+      apiKey: 'key',
+      baseURL: 'https://api.test.com',
+      name: 'TestAPI',
+    });
+
+    expect(mockCacheSet).not.toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(Array),
+      expect.any(Number),
+    );
   });
 });

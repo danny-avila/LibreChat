@@ -54,11 +54,11 @@ export const messages = (params: q.MessagesListParams) => {
   const { conversationId, messageId, ...rest } = params;
 
   if (conversationId && messageId) {
-    return `${messagesRoot}/${encodeURIComponent(conversationId)}/${encodeURIComponent(messageId)}`;
+    return `${messagesRoot}/${conversationId}/${messageId}`;
   }
 
   if (conversationId) {
-    return `${messagesRoot}/${encodeURIComponent(conversationId)}`;
+    return `${messagesRoot}/${conversationId}`;
   }
 
   return `${messagesRoot}${buildQuery(rest)}`;
@@ -107,7 +107,7 @@ export const conversations = (params: q.ConversationListParams) => {
   return `${conversationsRoot}${buildQuery(params)}`;
 };
 
-export const conversationById = (id: string) => `${conversationsRoot}/${encodeURIComponent(id)}`;
+export const conversationById = (id: string) => `${conversationsRoot}/${id}`;
 
 export const genTitle = (conversationId: string) =>
   `${conversationsRoot}/gen_title/${encodeURIComponent(conversationId)}`;
@@ -284,6 +284,11 @@ export const fileUpload = () => `${BASE_URL}/api/files`;
 export const fileDelete = () => `${BASE_URL}/api/files`;
 export const fileDownload = (userId: string, fileId: string) =>
   `${BASE_URL}/api/files/download/${userId}/${fileId}`;
+/* Deferred-preview lifecycle endpoint. Returns
+ * `{ status, text?, textFormat?, previewError? }` so the frontend can
+ * poll while background HTML extraction is in flight. See PR #12957. */
+export const filePreview = (fileId: string) =>
+  `${BASE_URL}/api/files/${encodeURIComponent(fileId)}/preview`;
 export const fileConfig = () => `${BASE_URL}/api/files/config`;
 export const agentFiles = (agentId: string) => `${BASE_URL}/api/files/agent/${agentId}`;
 
@@ -343,6 +348,8 @@ export const postPrompt = prompts;
 
 export const updatePromptGroup = getPromptGroup;
 
+export const recordPromptGroupUsage = (groupId: string) => `${prompts()}/groups/${groupId}/use`;
+
 export const updatePromptLabels = (_id: string) => `${getPrompt(_id)}/labels`;
 
 export const updatePromptTag = (_id: string) => `${getPrompt(_id)}/tags/production`;
@@ -357,9 +364,54 @@ export const getCategories = () => `${BASE_URL}/api/categories`;
 
 export const getAllPromptGroups = () => `${prompts()}/all`;
 
+/* Skills */
+export const skills = () => `${BASE_URL}/api/skills`;
+export const importSkill = () => `${skills()}/import`;
+
+export const getSkill = (id: string) => `${skills()}/${encodeURIComponent(id)}`;
+
+export const listSkillsWithFilters = (
+  filter: Record<string, string | number | undefined | null>,
+) => {
+  const cleaned = Object.entries(filter).reduce(
+    (acc, [key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        acc[key] = String(value);
+      }
+      return acc;
+    },
+    {} as Record<string, string>,
+  );
+  const query =
+    Object.keys(cleaned).length > 0 ? `?${new URLSearchParams(cleaned).toString()}` : '';
+  return `${skills()}${query}`;
+};
+
+export const skillFiles = (id: string) => `${getSkill(id)}/files`;
+
+export const skillFile = (id: string, relativePath: string) =>
+  `${skillFiles(id)}/${encodeURIComponent(relativePath)}`;
+
+/**
+ * Skill filesystem tree (phase 2). URL shape mirrors the original UI PR so
+ * the tree hooks keep their call surface. `path` is pre-encoded by the
+ * caller (e.g. `${nodeId}/content`).
+ */
+export const skillTree = ({ skillId, path = '' }: { skillId: string; path?: string }) => {
+  let url = `${BASE_URL}/api/skills/${encodeURIComponent(skillId)}/tree`;
+  if (path) {
+    url += `/${path}`;
+  }
+  return url;
+};
+
+/* Skill active states (per-user overrides) */
+export const skillStates = () => `${BASE_URL}/api/user/settings/skills/active`;
+
 /* Roles */
 export const roles = () => `${BASE_URL}/api/roles`;
-export const getRole = (roleName: string) => `${roles()}/${roleName.toLowerCase()}`;
+export const adminRoles = () => `${BASE_URL}/api/admin/roles`;
+export const getRole = (roleName: string) => `${roles()}/${encodeURIComponent(roleName)}`;
 export const updatePromptPermissions = (roleName: string) => `${getRole(roleName)}/prompts`;
 export const updateMemoryPermissions = (roleName: string) => `${getRole(roleName)}/memories`;
 export const updateAgentPermissions = (roleName: string) => `${getRole(roleName)}/agents`;
@@ -371,6 +423,7 @@ export const updateRemoteAgentsPermissions = (roleName: string) =>
 
 export const updateMarketplacePermissions = (roleName: string) =>
   `${getRole(roleName)}/marketplace`;
+export const updateSkillPermissions = (roleName: string) => `${getRole(roleName)}/skills`;
 
 /* Conversation Tags */
 export const conversationTags = (tag?: string) =>

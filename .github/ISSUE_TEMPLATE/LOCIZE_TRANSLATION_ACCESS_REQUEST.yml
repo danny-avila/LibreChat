@@ -1,0 +1,42 @@
+name: Locize Translation Access Request
+description: Request access to an additional language in Locize for LibreChat translations.
+title: "Locize Access Request: "
+labels: ["🌍 i18n", "🔑 access request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for your interest in contributing to LibreChat translations!  
+        Please fill out the form below to request access to an additional language in **Locize**.
+
+        **🔗 Available Languages:** [View the list here](https://www.librechat.ai/docs/translation)
+        
+        **📌 Note:** Ensure that the requested language is supported before submitting your request.
+  - type: input
+    id: account_name
+    attributes:
+      label: Locize Account Name
+      description: Please provide your Locize account name (e.g., John Doe).
+      placeholder: e.g., John Doe
+    validations:
+      required: true
+  - type: input
+    id: language_requested
+    attributes:
+      label: Language Code (ISO 639-1)
+      description: |
+        Enter the **ISO 639-1** language code for the language you want to translate into.  
+        Example: `es` for Spanish, `zh-Hant` for Traditional Chinese.
+        
+        **🔗 Reference:** [Available Languages](https://www.librechat.ai/docs/translation)
+      placeholder: e.g., es
+    validations:
+      required: true
+  - type: checkboxes
+    id: agreement
+    attributes:
+      label: Agreement
+      description: By submitting this request, you confirm that you will contribute responsibly and adhere to the project guidelines.
+      options:
+        - label: I agree to use my access solely for contributing to LibreChat translations.
+          required: true

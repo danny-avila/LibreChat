@@ -1,13 +1,21 @@
 import { Dispatcher, ProxyAgent } from 'undici';
 import { logger } from '@librechat/data-schemas';
 import { AnthropicClientOptions } from '@librechat/agents';
-import { anthropicSettings, removeNullishValues, AuthKeys } from 'librechat-data-provider';
+import {
+  anthropicSettings,
+  omitsSamplingParameters,
+  removeNullishValues,
+  ThinkingDisplay,
+  AuthKeys,
+} from 'librechat-data-provider';
 import type {
   AnthropicLLMConfigResult,
   AnthropicConfigOptions,
   AnthropicCredentials,
 } from '~/types/anthropic';
 import {
+  FINE_GRAINED_TOOL_STREAMING_BETA,
+  appendAnthropicBetaHeader,
   supportsAdaptiveThinking,
   checkPromptCacheSupport,
   configureReasoning,
@@ -18,6 +26,8 @@ import {
   isAnthropicVertexCredentials,
   getVertexDeploymentName,
 } from './vertex';
+
+const WEB_SEARCH_BETA = 'web-search-2025-03-05';
 
 /**
  * Parses credentials from string or object format
@@ -83,12 +93,32 @@ function getLLMConfig(
   credentials: string | AnthropicCredentials | undefined,
   options: AnthropicConfigOptions = {},
 ): AnthropicLLMConfigResult {
+  /**
+   * Persisted agent `model_parameters` may round-trip `thinking` as the full
+   * Anthropic object `{ type: 'adaptive', display: 'omitted' }` rather than a
+   * boolean. Pull any `.display` out of it so an explicit user choice is not
+   * silently demoted to `'auto'` (which would then resolve to `'summarized'`
+   * on Opus 4.7+).
+   */
+  const persistedThinking = options.modelOptions?.thinking;
+  const persistedDisplay =
+    typeof persistedThinking === 'object' &&
+    persistedThinking != null &&
+    'display' in persistedThinking &&
+    typeof (persistedThinking as { display?: unknown }).display === 'string'
+      ? ((persistedThinking as { display: string }).display as ThinkingDisplay | string)
+      : undefined;
+
   const systemOptions = {
     thinking: options.modelOptions?.thinking ?? anthropicSettings.thinking.default,
     promptCache: options.modelOptions?.promptCache ?? anthropicSettings.promptCache.default,
     thinkingBudget:
       options.modelOptions?.thinkingBudget ?? anthropicSettings.thinkingBudget.default,
     effort: options.modelOptions?.effort ?? anthropicSettings.effort.default,
+    thinkingDisplay:
+      options.modelOptions?.thinkingDisplay ??
+      persistedDisplay ??
+      anthropicSettings.thinkingDisplay.default,
   };
 
   if (options.modelOptions) {
@@ -96,6 +126,7 @@ function getLLMConfig(
     delete options.modelOptions.promptCache;
     delete options.modelOptions.thinkingBudget;
     delete options.modelOptions.effort;
+    delete options.modelOptions.thinkingDisplay;
   } else {
     throw new Error('No modelOptions provided');
   }
@@ -112,7 +143,7 @@ function getLLMConfig(
   let requestOptions: AnthropicClientOptions & { stream?: boolean } = {
     model: mergedOptions.model,
     stream: mergedOptions.stream,
-    temperature: mergedOptions.temperature,
+    temperature: mergedOptions.temperature ?? undefined,
     stopSequences: mergedOptions.stop,
     maxTokens:
       mergedOptions.maxOutputTokens || anthropicSettings.maxOutputTokens.reset(mergedOptions.model),
@@ -147,9 +178,12 @@ function getLLMConfig(
     );
   }
 
+  const resolvedModel = requestOptions.model ?? mergedOptions.model;
+  const shouldOmitSamplingParameters = omitsSamplingParameters(resolvedModel);
+
   requestOptions = configureReasoning(requestOptions, systemOptions);
 
-  if (supportsAdaptiveThinking(mergedOptions.model)) {
+  if (supportsAdaptiveThinking(resolvedModel)) {
     if (
       systemOptions.effort &&
       (systemOptions.effort as string) !== '' &&
@@ -174,8 +208,8 @@ function getLLMConfig(
 
   const hasActiveThinking = requestOptions.thinking != null;
   const isThinkingModel =
-    /claude-3[-.]7/.test(mergedOptions.model) || supportsAdaptiveThinking(mergedOptions.model);
-  if (!isThinkingModel || !hasActiveThinking) {
+    /claude-3[-.]7/.test(resolvedModel) || supportsAdaptiveThinking(resolvedModel);
+  if (!shouldOmitSamplingParameters && (!isThinkingModel || !hasActiveThinking)) {
     requestOptions.topP = mergedOptions.topP;
     requestOptions.topK = mergedOptions.topK;
   }
@@ -244,6 +278,9 @@ function getLLMConfig(
   }
 
   /** Handle dropParams - only drop from Anthropic config */
+  const shouldDropClientOptions =
+    Array.isArray(options.dropParams) && options.dropParams.includes('clientOptions');
+
   if (options.dropParams && Array.isArray(options.dropParams)) {
     options.dropParams.forEach((param) => {
       if (param === 'web_search') {
@@ -260,6 +297,12 @@ function getLLMConfig(
     });
   }
 
+  if (shouldOmitSamplingParameters) {
+    delete requestOptions.temperature;
+    delete requestOptions.topP;
+    delete requestOptions.topK;
+  }
+
   const tools = [];
 
   if (enableWebSearch) {
@@ -268,16 +311,26 @@ function getLLMConfig(
       name: 'web_search',
     });
 
-    if (isAnthropicVertexCredentials(creds)) {
+    if (isAnthropicVertexCredentials(creds) && !shouldDropClientOptions) {
       if (!requestOptions.clientOptions) {
         requestOptions.clientOptions = {};
       }
 
-      requestOptions.clientOptions.defaultHeaders = {
-        ...requestOptions.clientOptions.defaultHeaders,
-        'anthropic-beta': 'web-search-2025-03-05',
-      };
+      requestOptions.clientOptions.defaultHeaders = appendAnthropicBetaHeader(
+        requestOptions.clientOptions.defaultHeaders as Record<string, string> | undefined,
+        WEB_SEARCH_BETA,
+      );
     }
+  }
+
+  if (!shouldDropClientOptions) {
+    if (!requestOptions.clientOptions) {
+      requestOptions.clientOptions = {};
+    }
+    requestOptions.clientOptions.defaultHeaders = appendAnthropicBetaHeader(
+      requestOptions.clientOptions.defaultHeaders as Record<string, string> | undefined,
+      FINE_GRAINED_TOOL_STREAMING_BETA,
+    );
   }
 
   return {

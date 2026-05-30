@@ -3,7 +3,11 @@ import { render, screen } from '@testing-library/react';
 import Markdown from '../Markdown';
 import { RecoilRoot } from 'recoil';
 import { UI_RESOURCE_MARKER } from '~/components/MCPUIResource/plugin';
-import { useMessageContext, useMessagesConversation, useMessagesOperations } from '~/Providers';
+import {
+  useMessageContext,
+  useOptionalMessagesConversation,
+  useOptionalMessagesOperations,
+} from '~/Providers';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
@@ -12,8 +16,8 @@ import { useLocalize } from '~/hooks';
 jest.mock('~/Providers', () => ({
   ...jest.requireActual('~/Providers'),
   useMessageContext: jest.fn(),
-  useMessagesConversation: jest.fn(),
-  useMessagesOperations: jest.fn(),
+  useOptionalMessagesConversation: jest.fn(),
+  useOptionalMessagesOperations: jest.fn(),
 }));
 jest.mock('~/data-provider');
 jest.mock('~/hooks');
@@ -26,11 +30,11 @@ jest.mock('@mcp-ui/client', () => ({
 }));
 
 const mockUseMessageContext = useMessageContext as jest.MockedFunction<typeof useMessageContext>;
-const mockUseMessagesConversation = useMessagesConversation as jest.MockedFunction<
-  typeof useMessagesConversation
+const mockUseMessagesConversation = useOptionalMessagesConversation as jest.MockedFunction<
+  typeof useOptionalMessagesConversation
 >;
-const mockUseMessagesOperations = useMessagesOperations as jest.MockedFunction<
-  typeof useMessagesOperations
+const mockUseMessagesOperations = useOptionalMessagesOperations as jest.MockedFunction<
+  typeof useOptionalMessagesOperations
 >;
 const mockUseGetMessagesByConvoId = useGetMessagesByConvoId as jest.MockedFunction<
   typeof useGetMessagesByConvoId

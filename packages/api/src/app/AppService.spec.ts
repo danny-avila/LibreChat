@@ -85,7 +85,7 @@ describe('AppService', () => {
   it('should correctly assign process.env and initialize app config based on custom config', async () => {
     const config: Partial<TCustomConfig> = {
       registration: { socialLogins: ['testLogin'] },
-      fileStrategy: 'testStrategy' as FileSources,
+      fileStrategy: FileSources.s3,
       balance: {
         enabled: true,
       },
@@ -93,22 +93,20 @@ describe('AppService', () => {
 
     const result = await AppService({ config, systemTools: mockSystemTools });
 
-    expect(process.env.CDN_PROVIDER).toEqual('testStrategy');
+    expect(process.env.CDN_PROVIDER).toEqual('s3');
 
     expect(result).toEqual(
       expect.objectContaining({
         config: expect.objectContaining({
-          fileStrategy: 'testStrategy',
+          fileStrategy: 's3',
         }),
         registration: expect.objectContaining({
           socialLogins: ['testLogin'],
         }),
-        fileStrategy: 'testStrategy',
+        fileStrategy: 's3',
         interfaceConfig: expect.objectContaining({
-          endpointsMenu: true,
           modelSelect: true,
           parameters: true,
-          sidePanel: true,
           presets: true,
         }),
         mcpConfig: null,
@@ -177,6 +175,43 @@ describe('AppService', () => {
     expect(result).toEqual(
       expect.objectContaining({
         imageOutputType: EImageOutputType.PNG,
+      }),
+    );
+  });
+
+  it('should enable summarization when it is configured without enabled flag', async () => {
+    const config = {
+      summarization: {
+        prompt: 'Summarize with emphasis on next actions',
+      },
+    } as Partial<TCustomConfig> & { summarization: Record<string, unknown> };
+
+    const result = await AppService({ config });
+    expect(result).toEqual(
+      expect.objectContaining({
+        summarization: expect.objectContaining({
+          enabled: true,
+          prompt: 'Summarize with emphasis on next actions',
+        }),
+      }),
+    );
+  });
+
+  it('should preserve explicit summarization disable flag', async () => {
+    const config = {
+      summarization: {
+        enabled: false,
+        prompt: 'Ignored while disabled',
+      },
+    } as Partial<TCustomConfig> & { summarization: Record<string, unknown> };
+
+    const result = await AppService({ config });
+    expect(result).toEqual(
+      expect.objectContaining({
+        summarization: expect.objectContaining({
+          enabled: false,
+          prompt: 'Ignored while disabled',
+        }),
       }),
     );
   });

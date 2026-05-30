@@ -1,6 +1,7 @@
 import {
   QueryKeys,
   Constants,
+  buildTree,
   ContentTypes,
   isEphemeralAgentId,
   appendAgentIdSuffix,
@@ -14,9 +15,72 @@ import type {
 } from 'librechat-data-provider';
 import type { QueryClient } from '@tanstack/react-query';
 import type { LocalizeFunction } from '~/common';
-import _ from 'lodash';
 
 export const TEXT_KEY_DIVIDER = '|||';
+
+type SiblingIndexLookup = (parentMessageId: string | null | undefined) => number;
+
+export const selectActiveBranchTail = (
+  messages: TMessage[] | null | undefined,
+  rootSiblingKey: string | null | undefined,
+  getSiblingIndex: SiblingIndexLookup = () => 0,
+): TMessage | null => {
+  const messagesTree = buildTree({ messages: messages ?? null });
+  if (!messagesTree?.length) {
+    return null;
+  }
+
+  let siblings = messagesTree;
+  let parentMessageId = rootSiblingKey;
+  let tail: TMessage | null = null;
+
+  while (siblings.length > 0) {
+    const siblingIdx = getSiblingIndex(parentMessageId);
+    const normalizedSiblingIdx = siblingIdx >= 0 && siblingIdx < siblings.length ? siblingIdx : 0;
+    const activeSiblingIndex = siblings.length - normalizedSiblingIdx - 1;
+    const message = siblings[activeSiblingIndex] ?? siblings[siblings.length - 1];
+    if (!message) {
+      return tail;
+    }
+
+    tail = message;
+    parentMessageId = message.messageId;
+    siblings = message.children ?? [];
+  }
+
+  return tail;
+};
+
+export const getMessageBranchSiblingParentIds = (
+  messages: TMessage[] | null | undefined,
+  rootSiblingKey: string | null | undefined,
+): (string | null)[] => {
+  const messagesTree = buildTree({ messages: messages ?? null });
+  if (!messagesTree?.length) {
+    return [];
+  }
+
+  const parentIds = new Set<string | null>();
+  const collectBranchParents = (
+    siblings: TMessage[] | undefined,
+    parentMessageId: string | null | undefined,
+  ) => {
+    if (!siblings?.length) {
+      return;
+    }
+
+    if (siblings.length > 1) {
+      parentIds.add(parentMessageId ?? null);
+    }
+
+    for (const message of siblings) {
+      collectBranchParents(message.children, message.messageId);
+    }
+  };
+
+  collectBranchParents(messagesTree, rootSiblingKey);
+  return Array.from(parentIds);
+};
 
 export const getLatestText = (message?: TMessage | null, includeIndex?: boolean): string => {
   if (!message) {
@@ -185,10 +249,34 @@ export const clearMessagesCache = (
   }
 };
 
+/** Returns a 1-based message number, or null if depth is absent or invalid. */
+const getMessageNumber = (message: TMessage): number | null => {
+  if (message.depth == null || message.depth < 0) {
+    return null;
+  }
+  return message.depth + 1;
+};
+
 export const getMessageAriaLabel = (message: TMessage, localize: LocalizeFunction): string => {
-  return !_.isNil(message.depth)
-    ? localize('com_endpoint_message_new', { 0: message.depth + 1 })
+  const number = getMessageNumber(message);
+  return number != null
+    ? localize('com_endpoint_message_new', { 0: number })
     : localize('com_endpoint_message');
+};
+
+/**
+ * Provides a screen-reader-only heading prefix distinguishing prompts from responses,
+ * with an optional 1-based turn number derived from message depth.
+ */
+export const getHeaderPrefixForScreenReader = (
+  message: TMessage,
+  localize: LocalizeFunction,
+): string => {
+  const number = getMessageNumber(message);
+  const suffix = number != null ? ` ${number}` : '';
+  return message.isCreatedByUser
+    ? `${localize('com_ui_prompt')}${suffix}: `
+    : `${localize('com_ui_response')}${suffix}: `;
 };
 
 /**

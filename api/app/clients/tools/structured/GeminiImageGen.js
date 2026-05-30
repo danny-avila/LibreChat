@@ -3,8 +3,8 @@ const sharp = require('sharp');
 const { v4 } = require('uuid');
 const { ProxyAgent } = require('undici');
 const { GoogleGenAI } = require('@google/genai');
-const { tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
+const { tool } = require('@librechat/agents/langchain/tools');
 const { ContentTypes, EImageOutputType } = require('librechat-data-provider');
 const {
   geminiToolkit,
@@ -13,20 +13,7 @@ const {
   getTransactionsConfig,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { spendTokens } = require('~/models/spendTokens');
-const { getFiles } = require('~/models/File');
-
-function isGoogleApisUrl(url) {
-  try {
-    const parsedUrl = new URL(url.toString());
-    return (
-      parsedUrl.protocol === 'https:' &&
-      (parsedUrl.hostname === 'googleapis.com' || parsedUrl.hostname.endsWith('.googleapis.com'))
-    );
-  } catch {
-    return false;
-  }
-}
+const { spendTokens, getFiles } = require('~/models');
 
 /**
  * Configure proxy support for Google APIs
@@ -39,7 +26,7 @@ if (process.env.PROXY) {
 
   globalThis.fetch = function (url, options = {}) {
     const urlString = url.toString();
-    if (isGoogleApisUrl(urlString)) {
+    if (urlString.includes('googleapis.com')) {
       options = { ...options, dispatcher: proxyAgent };
     }
     return originalFetch.call(this, url, options);

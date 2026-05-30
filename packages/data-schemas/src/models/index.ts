@@ -13,20 +13,23 @@ import { createActionModel } from './action';
 import { createAssistantModel } from './assistant';
 import { createFileModel } from './file';
 import { createBannerModel } from './banner';
-import { createProjectModel } from './project';
 import { createKeyModel } from './key';
 import { createPluginAuthModel } from './pluginAuth';
 import { createTransactionModel } from './transaction';
 import { createPresetModel } from './preset';
 import { createPromptModel } from './prompt';
 import { createPromptGroupModel } from './promptGroup';
+import { createSkillModel } from './skill';
+import { createSkillFileModel } from './skillFile';
 import { createConversationTagModel } from './conversationTag';
 import { createSharedLinkModel } from './sharedLink';
 import { createToolCallModel } from './toolCall';
 import { createMemoryModel } from './memory';
 import { createAccessRoleModel } from './accessRole';
 import { createAclEntryModel } from './aclEntry';
+import { createSystemGrantModel } from './systemGrant';
 import { createGroupModel } from './group';
+import { createConfigModel } from './config';
 
 /**
  * Creates all database models for all collections
@@ -48,19 +51,22 @@ export function createModels(mongoose: typeof import('mongoose')) {
     Assistant: createAssistantModel(mongoose),
     File: createFileModel(mongoose),
     Banner: createBannerModel(mongoose),
-    Project: createProjectModel(mongoose),
     Key: createKeyModel(mongoose),
     PluginAuth: createPluginAuthModel(mongoose),
     Transaction: createTransactionModel(mongoose),
     Preset: createPresetModel(mongoose),
     Prompt: createPromptModel(mongoose),
     PromptGroup: createPromptGroupModel(mongoose),
+    Skill: createSkillModel(mongoose),
+    SkillFile: createSkillFileModel(mongoose),
     ConversationTag: createConversationTagModel(mongoose),
     SharedLink: createSharedLinkModel(mongoose),
     ToolCall: createToolCallModel(mongoose),
     MemoryEntry: createMemoryModel(mongoose),
     AccessRole: createAccessRoleModel(mongoose),
     AclEntry: createAclEntryModel(mongoose),
+    SystemGrant: createSystemGrantModel(mongoose),
     Group: createGroupModel(mongoose),
+    Config: createConfigModel(mongoose),
   };
 }

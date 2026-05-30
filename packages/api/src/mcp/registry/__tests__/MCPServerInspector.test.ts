@@ -100,6 +100,54 @@ describe('MCPServerInspector', () => {
       });
     });
 
+    it('should skip capabilities fetch when customUserVars is defined', async () => {
+      const rawConfig: t.MCPOptions = {
+        type: 'stdio',
+        command: 'npx',
+        args: ['-y', '@test/mcp-stdio-server'],
+        env: { API_KEY: '{{MY_KEY}}' },
+        customUserVars: {
+          MY_KEY: { title: 'API Key', description: 'Your API key' },
+        },
+      };
+
+      const result = await MCPServerInspector.inspect('test_server', rawConfig, mockConnection);
+
+      expect(result).toEqual({
+        type: 'stdio',
+        command: 'npx',
+        args: ['-y', '@test/mcp-stdio-server'],
+        env: { API_KEY: '{{MY_KEY}}' },
+        customUserVars: {
+          MY_KEY: { title: 'API Key', description: 'Your API key' },
+        },
+        requiresOAuth: false,
+        initDuration: expect.any(Number),
+      });
+
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+      expect(mockConnection.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('should NOT create a temp connection when customUserVars is defined and no connection is provided', async () => {
+      const rawConfig: t.MCPOptions = {
+        type: 'stdio',
+        command: 'npx',
+        args: ['-y', '@test/mcp-stdio-server'],
+        env: { API_KEY: '{{MY_KEY}}' },
+        customUserVars: {
+          MY_KEY: { title: 'API Key', description: 'Your API key' },
+        },
+      };
+
+      const result = await MCPServerInspector.inspect('test_server', rawConfig);
+
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+      expect(result.requiresOAuth).toBe(false);
+      expect(result.capabilities).toBeUndefined();
+      expect(result.toolFunctions).toBeUndefined();
+    });
+
     it('should keep custom serverInstructions string and not fetch from server', async () => {
       const rawConfig: t.MCPOptions = {
         type: 'stdio',
@@ -273,12 +321,12 @@ describe('MCPServerInspector', () => {
       const result = await MCPServerInspector.inspect('test_server', rawConfig);
 
       // Verify factory was called to create connection
-      expect(MCPConnectionFactory.create).toHaveBeenCalledWith({
-        serverName: 'test_server',
-        serverConfig: expect.objectContaining({ type: 'stdio', command: 'node' }),
-        useSSRFProtection: true,
-        dbSourced: false,
-      });
+      expect(MCPConnectionFactory.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName: 'test_server',
+          serverConfig: expect.objectContaining({ type: 'stdio', command: 'node' }),
+        }),
+      );
 
       // Verify temporary connection was disconnected
       expect(tempMockConnection.disconnect).toHaveBeenCalled();

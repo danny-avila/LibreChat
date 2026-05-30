@@ -56,6 +56,8 @@ const deleteVectors = async (req, file) => {
  * @param {Express.Multer.File} params.file - The file object, which is part of the request. The file object should
  *                                     have a `path` property that points to the location of the uploaded file.
  * @param {string} params.file_id - The file ID.
+ * @param {string} [params.entity_id] - The entity ID for shared resources.
+ * @param {Object} [params.storageMetadata] - Storage metadata for dual storage pattern.
  *
  * @returns {Promise<{ filepath: string, bytes: number }>}
  *          A promise that resolves to an object containing:

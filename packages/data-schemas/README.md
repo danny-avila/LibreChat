@@ -27,7 +27,6 @@ Schema files define the Mongoose schema structure. They follow these conventions
 - **Exports**: Export only the schema as default
 
 **Example:**
-
 ```typescript
 import { Schema } from 'mongoose';
 import type { IUser } from '~/types';
@@ -38,7 +37,7 @@ const userSchema = new Schema<IUser>(
     email: { type: String, required: true },
     // ... other fields
   },
-  { timestamps: true },
+  { timestamps: true }
 );
 
 export default userSchema;
@@ -53,7 +52,6 @@ Type files define TypeScript interfaces and types. They follow these conventions
 - **Enums/Constants**: Place related enums in the type file or `common/` if shared
 
 **Example:**
-
 ```typescript
 import type { Document, Types } from 'mongoose';
 
@@ -78,7 +76,6 @@ Model files create Mongoose models using factory functions. They follow these co
 - **Type Safety**: Use the corresponding interface from types
 
 **Example:**
-
 ```typescript
 import userSchema from '~/schema/user';
 import type * as t from '~/types';
@@ -97,7 +94,6 @@ Method files contain database operations for each entity. They follow these conv
 - **Operations**: Include CRUD operations and entity-specific queries
 
 **Example:**
-
 ```typescript
 import type { Model } from 'mongoose';
 import type { IUser } from '~/types';
@@ -126,7 +122,6 @@ export type UserMethods = ReturnType<typeof createUserMethods>;
 ### 5. Main Exports (`src/index.ts`)
 
 The main index file exports:
-
 - `createModels()` - Factory function for all models
 - `createMethods()` - Factory function for all methods
 - Type exports from `~/types`
@@ -176,7 +171,7 @@ const entityNameSchema = new Schema<IEntityName>(
     fieldName: { type: String, required: true },
     // ... other fields
   },
-  { timestamps: true },
+  { timestamps: true }
 );
 
 export default entityNameSchema;
@@ -192,7 +187,8 @@ import type * as t from '~/types';
 
 export function createEntityNameModel(mongoose: typeof import('mongoose')) {
   return (
-    mongoose.models.EntityName || mongoose.model<t.IEntityName>('EntityName', entityNameSchema)
+    mongoose.models.EntityName || 
+    mongoose.model<t.IEntityName>('EntityName', entityNameSchema)
   );
 }
 ```
@@ -202,13 +198,11 @@ export function createEntityNameModel(mongoose: typeof import('mongoose')) {
 Add to `src/models/index.ts`:
 
 1. Import the factory function:
-
 ```typescript
 import { createEntityNameModel } from './entityName';
 ```
 
 2. Add to the return object in `createModels()`:
-
 ```typescript
 EntityName: createEntityNameModel(mongoose),
 ```
@@ -243,19 +237,16 @@ export type EntityNameMethods = ReturnType<typeof createEntityNameMethods>;
 Add to `src/methods/index.ts`:
 
 1. Import the methods:
-
 ```typescript
 import { createEntityNameMethods, type EntityNameMethods } from './entityName';
 ```
 
 2. Add to the return object in `createMethods()`:
-
 ```typescript
 ...createEntityNameMethods(mongoose),
 ```
 
 3. Add to the `AllMethods` type:
-
 ```typescript
 export type AllMethods = UserMethods &
   // ... other methods
@@ -295,10 +286,10 @@ For complex queries, add compound indexes:
 schema.index({ field1: 1, field2: 1 });
 schema.index(
   { uniqueField: 1 },
-  {
-    unique: true,
-    partialFilterExpression: { uniqueField: { $exists: true } },
-  },
+  { 
+    unique: true, 
+    partialFilterExpression: { uniqueField: { $exists: true } }
+  }
 );
 ```
 
@@ -307,7 +298,7 @@ schema.index(
 Add computed properties using virtuals:
 
 ```typescript
-schema.virtual('fullName').get(function () {
+schema.virtual('fullName').get(function() {
   return `${this.firstName} ${this.lastName}`;
 });
 ```
@@ -315,7 +306,6 @@ schema.virtual('fullName').get(function () {
 ## 🧪 Testing
 
 When adding new entities, ensure:
-
 - Types compile without errors
 - Models can be created successfully
 - Methods handle edge cases (null checks, validation)
@@ -325,4 +315,4 @@ When adding new entities, ensure:
 
 - [Mongoose Documentation](https://mongoosejs.com/docs/)
 - [TypeScript Handbook](https://www.typescriptlang.org/docs/)
-- [MongoDB Indexes](https://docs.mongodb.com/manual/indexes/)
+- [MongoDB Indexes](https://docs.mongodb.com/manual/indexes/) 

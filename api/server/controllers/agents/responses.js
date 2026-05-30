@@ -1,23 +1,29 @@
 const { nanoid } = require('nanoid');
 const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
-const { Callback, ToolEndHandler } = require('@librechat/agents');
+const { Callback, ToolEndHandler, formatAgentMessages } = require('@librechat/agents');
 const {
-  AIMessage,
-  ChatMessage,
-  HumanMessage,
-  SystemMessage,
-  ToolMessage,
-} = require('@langchain/core/messages');
-const { EModelEndpoint, ResourceType, PermissionBits } = require('librechat-data-provider');
+  EModelEndpoint,
+  ResourceType,
+  PermissionBits,
+  hasPermissions,
+  AgentCapabilities,
+} = require('librechat-data-provider');
 const {
   createRun,
+  buildToolSet,
+  loadSkillStates,
+  resolveAgentScopedSkillIds,
   createSafeUser,
   initializeAgent,
   getBalanceConfig,
   recordCollectedUsage,
   getTransactionsConfig,
+  extractManualSkills,
+  injectSkillPrimes,
   createToolExecuteHandler,
+  discoverConnectedAgents,
+  getRemoteAgentPermissions,
   // Responses API
   writeDone,
   buildResponse,
@@ -30,7 +36,6 @@ const {
   emitResponseInProgress,
   convertInputToMessages,
   validateResponseRequest,
-  buildResponseModelParameters,
   buildAggregatedResponse,
   createResponseAggregator,
   sendResponsesErrorResponse,
@@ -39,26 +44,24 @@ const {
 } = require('@librechat/api');
 const {
   createResponsesToolEndCallback,
+  buildSummarizationHandlers,
+  markSummarizationUsage,
   createToolEndCallback,
+  agentLogHandlerObj,
 } = require('~/server/controllers/agents/callbacks');
 const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
-const { findAccessibleResources } = require('~/server/services/PermissionService');
-const { getConvoFiles, saveConvo, getConvo } = require('~/models/Conversation');
-const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
-const { getMultiplier, getCacheMultiplier } = require('~/models/tx');
-const { getAgent, getAgents } = require('~/models/Agent');
+const {
+  findAccessibleResources,
+  getEffectivePermissions,
+} = require('~/server/services/PermissionService');
+const {
+  getSkillToolDeps,
+  enrichWithSkillConfigurable,
+  buildSkillPrimedIdsByName,
+} = require('~/server/services/Endpoints/agents/skillDeps');
+const { getModelsConfig } = require('~/server/controllers/ModelController');
+const { logViolation } = require('~/cache');
 const db = require('~/models');
-
-/** @type {import('@librechat/api').AppConfig | null} */
-let appConfig = null;
-
-/**
- * Set the app config for the controller
- * @param {import('@librechat/api').AppConfig} config
- */
-function setAppConfig(config) {
-  appConfig = config;
-}
 
 /**
  * Creates a tool loader function for the agent.
@@ -101,199 +104,6 @@ function createToolLoader(signal, definitionsOnly = true) {
  */
 function convertToInternalMessages(input) {
   return convertInputToMessages(input);
-}
-
-function parseToolArgs(argumentsString) {
-  try {
-    return JSON.parse(argumentsString);
-  } catch {
-    return {};
-  }
-}
-
-function formatResponseMessages(messages) {
-  return messages.map((message) => {
-    if (message.role === 'user') {
-      return new HumanMessage({
-        content: message.content,
-        ...(message.name ? { name: message.name } : {}),
-      });
-    }
-
-    if (message.role === 'developer') {
-      return new ChatMessage({
-        role: 'developer',
-        content: message.content,
-        ...(message.name ? { name: message.name } : {}),
-      });
-    }
-
-    if (message.role === 'tool') {
-      return new ToolMessage({
-        content:
-          typeof message.content === 'string' ? message.content : JSON.stringify(message.content),
-        tool_call_id: message.tool_call_id ?? '',
-      });
-    }
-
-    if (message.role === 'assistant') {
-      return new AIMessage({
-        content: message.content,
-        ...(Array.isArray(message.tool_calls) && message.tool_calls.length > 0
-          ? {
-              tool_calls: message.tool_calls.map((toolCall) => ({
-                id: toolCall.id,
-                name: toolCall.function.name,
-                args: parseToolArgs(toolCall.function.arguments),
-                type: 'tool_call',
-              })),
-            }
-          : {}),
-        ...(message.response_metadata ? { response_metadata: message.response_metadata } : {}),
-        ...(message.additional_kwargs ? { additional_kwargs: message.additional_kwargs } : {}),
-      });
-    }
-
-    return new SystemMessage({
-      content: message.content,
-      ...(message.name ? { name: message.name } : {}),
-    });
-  });
-}
-
-/**
- * Resolve conversation context from Open Responses request fields.
- * Priority:
- * 1) conversation_id (LibreChat branch identifier)
- * 2) previous_response_id as messageId (legacy chaining fallback)
- * 3) previous_response_id as conversationId (legacy LibreChat behavior)
- * 4) new generated UUID
- * @param {import('@librechat/api').ResponseRequest} request
- * @param {string} userId
- * @returns {Promise<{ conversationId: string; previousMessages: Array; previousResponseId: string | null; openaiConversationId: string | null }>}
- */
-async function resolveConversationContext(request, userId) {
-  const requestedConversationId =
-    typeof request?.conversation_id === 'string' && request.conversation_id.trim().length > 0
-      ? request.conversation_id.trim()
-      : null;
-  const requestedOpenAIConversationId =
-    typeof request?.conversation === 'string' && request.conversation.trim().length > 0
-      ? request.conversation.trim()
-      : typeof request?.openai_conversation_id === 'string' &&
-          request.openai_conversation_id.trim().length > 0
-        ? request.openai_conversation_id.trim()
-        : null;
-
-  if (requestedConversationId) {
-    const existingConversation = await getConvo(userId, requestedConversationId);
-    const persistedOpenAIConversationId =
-      typeof existingConversation?.openaiConversationId === 'string' &&
-      existingConversation.openaiConversationId.trim().length > 0
-        ? existingConversation.openaiConversationId.trim()
-        : null;
-
-    const previousMessages = await loadPreviousMessages(requestedConversationId, userId);
-    return {
-      conversationId: requestedConversationId,
-      previousMessages,
-      previousResponseId: request.previous_response_id ?? null,
-      openaiConversationId: requestedOpenAIConversationId ?? persistedOpenAIConversationId,
-    };
-  }
-
-  if (request.previous_response_id) {
-    const previousResponseId = request.previous_response_id;
-    const previousMessage = await db.getMessage({
-      user: userId,
-      messageId: previousResponseId,
-    });
-
-    if (previousMessage?.conversationId) {
-      return {
-        conversationId: previousMessage.conversationId,
-        previousMessages: [],
-        previousResponseId,
-        openaiConversationId: requestedOpenAIConversationId,
-      };
-    }
-
-    const previousMessages = await loadPreviousMessages(previousResponseId, userId);
-    return {
-      conversationId: previousResponseId,
-      previousMessages,
-      previousResponseId,
-      openaiConversationId: requestedOpenAIConversationId,
-    };
-  }
-
-  return {
-    conversationId: uuidv4(),
-    previousMessages: [],
-    previousResponseId: null,
-    openaiConversationId: requestedOpenAIConversationId,
-  };
-}
-
-function extractOpenAIConversationId(response) {
-  const candidates = [
-    response?.conversation,
-    response?.openai_conversation_id,
-    response?.conversation_id,
-    response?.metadata?.conversation,
-    response?.metadata?.openai_conversation_id,
-    response?.response_metadata?.conversation,
-    response?.response_metadata?.conversation_id,
-    response?.response_metadata?.openai_conversation_id,
-    response?.response_metadata?.thread_id,
-  ];
-
-  for (const value of candidates) {
-    if (typeof value === 'string' && value.trim().length > 0) {
-      return value.trim();
-    }
-  }
-
-  return null;
-}
-
-async function resolveItemReferences(input, userId) {
-  if (!Array.isArray(input)) {
-    return input;
-  }
-
-  const resolvedItems = [];
-
-  for (const item of input) {
-    if (item?.type !== 'item_reference') {
-      resolvedItems.push(item);
-      continue;
-    }
-
-    const referencedMessage = await db.getMessage({
-      user: userId,
-      messageId: item.id,
-    });
-
-    if (!referencedMessage) {
-      continue;
-    }
-
-    const content =
-      typeof referencedMessage.text === 'string'
-        ? referencedMessage.text
-        : Array.isArray(referencedMessage.content)
-          ? referencedMessage.content
-          : String(referencedMessage.text ?? '');
-
-    resolvedItems.push({
-      type: 'message',
-      role: referencedMessage.isCreatedByUser ? 'user' : 'assistant',
-      content,
-    });
-  }
-
-  return resolvedItems;
 }
 
 /**
@@ -344,24 +154,22 @@ async function loadPreviousMessages(conversationId, userId) {
  * @returns {Promise<void>}
  */
 async function saveInputMessages(req, conversationId, inputMessages, agentId) {
-  const user = req.user?.id;
-  if (!user) {
-    throw new Error('User not authenticated');
-  }
-
   for (const msg of inputMessages) {
     if (msg.role === 'user') {
-      await db.recordMessage({
-        user,
-        messageId: msg.messageId || nanoid(),
-        conversationId,
-        parentMessageId: null,
-        isCreatedByUser: true,
-        text: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
-        sender: 'User',
-        endpoint: EModelEndpoint.agents,
-        model: agentId,
-      });
+      await db.saveMessage(
+        req,
+        {
+          messageId: msg.messageId || nanoid(),
+          conversationId,
+          parentMessageId: null,
+          isCreatedByUser: true,
+          text: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
+          sender: 'User',
+          endpoint: EModelEndpoint.agents,
+          model: agentId,
+        },
+        { context: 'Responses API - save user input' },
+      );
     }
   }
 }
@@ -376,11 +184,6 @@ async function saveInputMessages(req, conversationId, inputMessages, agentId) {
  * @returns {Promise<void>}
  */
 async function saveResponseOutput(req, conversationId, responseId, response, agentId) {
-  const user = req.user?.id;
-  if (!user) {
-    throw new Error('User not authenticated');
-  }
-
   // Extract text content from output items
   let responseText = '';
   for (const item of response.output) {
@@ -394,19 +197,22 @@ async function saveResponseOutput(req, conversationId, responseId, response, age
   }
 
   // Save the assistant message
-  await db.recordMessage({
-    user,
-    messageId: responseId,
-    conversationId,
-    parentMessageId: null,
-    isCreatedByUser: false,
-    text: responseText,
-    sender: 'Agent',
-    endpoint: EModelEndpoint.agents,
-    model: agentId,
-    finish_reason: response.status === 'completed' ? 'stop' : response.status,
-    tokenCount: response.usage?.output_tokens,
-  });
+  await db.saveMessage(
+    req,
+    {
+      messageId: responseId,
+      conversationId,
+      parentMessageId: null,
+      isCreatedByUser: false,
+      text: responseText,
+      sender: 'Agent',
+      endpoint: EModelEndpoint.agents,
+      model: agentId,
+      finish_reason: response.status === 'completed' ? 'stop' : response.status,
+      tokenCount: response.usage?.output_tokens,
+    },
+    { context: 'Responses API - save assistant response' },
+  );
 }
 
 /**
@@ -417,16 +223,19 @@ async function saveResponseOutput(req, conversationId, responseId, response, age
  * @param {object} agent
  * @returns {Promise<void>}
  */
-async function saveConversation(req, conversationId, agentId, agent, openaiConversationId = null) {
-  await saveConvo(
-    req,
+async function saveConversation(req, conversationId, agentId, agent) {
+  await db.saveConvo(
+    {
+      userId: req?.user?.id,
+      isTemporary: req?.body?.isTemporary,
+      interfaceConfig: req?.config?.interfaceConfig,
+    },
     {
       conversationId,
       endpoint: EModelEndpoint.agents,
       agentId,
       title: agent?.name || 'Open Responses Conversation',
       model: agent?.model,
-      ...(openaiConversationId ? { openaiConversationId } : {}),
     },
     { context: 'Responses API - save conversation' },
   );
@@ -471,6 +280,7 @@ function convertMessagesToOutputItems(messages) {
  * @param {import('express').Response} res
  */
 const createResponse = async (req, res) => {
+  const appConfig = req.config;
   const requestStartTime = Date.now();
 
   // Validate request
@@ -482,10 +292,10 @@ const createResponse = async (req, res) => {
   const request = validation.request;
   const agentId = request.model;
   const isStreaming = request.stream === true;
-  const shouldStore = request.store !== false;
+  const summarizationConfig = appConfig?.summarization;
 
   // Look up the agent
-  const agent = await getAgent({ id: agentId });
+  const agent = await db.getAgent({ id: agentId });
   if (!agent) {
     return sendResponsesErrorResponse(
       res,
@@ -496,26 +306,9 @@ const createResponse = async (req, res) => {
     );
   }
 
-  const userId = req.user?.id ?? 'api-user';
-
   // Generate IDs
   const responseId = generateResponseId();
-  const { conversationId, previousMessages, previousResponseId, openaiConversationId } =
-    await resolveConversationContext(request, userId);
-  const resolvedInput = await resolveItemReferences(request.input, userId);
-  const parentMessageId = null;
-  const requestWithResolvedState = {
-    ...request,
-    input: resolvedInput,
-    conversation_id: conversationId,
-    previous_response_id: previousResponseId ?? request.previous_response_id,
-    conversation: openaiConversationId ?? request.conversation ?? request.openai_conversation_id,
-    openai_conversation_id:
-      openaiConversationId ?? request.conversation ?? request.openai_conversation_id,
-  };
-
-  // Create response context
-  const context = createResponseContext(requestWithResolvedState, responseId);
+  const context = createResponseContext(request, responseId);
 
   logger.debug(
     `[Responses API] Request ${responseId} started for agent ${agentId}, stream: ${isStreaming}`,
@@ -533,6 +326,23 @@ const createResponse = async (req, res) => {
   });
 
   try {
+    if (request.previous_response_id != null) {
+      if (typeof request.previous_response_id !== 'string') {
+        return sendResponsesErrorResponse(
+          res,
+          400,
+          'previous_response_id must be a string',
+          'invalid_request',
+        );
+      }
+      if (!(await db.getConvo(req.user?.id, request.previous_response_id))) {
+        return sendResponsesErrorResponse(res, 404, 'Conversation not found', 'not_found');
+      }
+    }
+
+    const conversationId = request.previous_response_id ?? uuidv4();
+    const parentMessageId = null;
+
     // Build allowed providers set
     const allowedProviders = new Set(
       appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders,
@@ -544,11 +354,52 @@ const createResponse = async (req, res) => {
     // Initialize the agent first to check for disableStreaming
     const endpointOption = {
       endpoint: agent.provider,
-      model_parameters: buildResponseModelParameters(
-        requestWithResolvedState,
-        agent.model_parameters,
-      ),
+      model_parameters: agent.model_parameters ?? {},
     };
+
+    // `filterFilesByAgentAccess` is intentionally omitted: it calls
+    // `checkPermission` with `resourceType: AGENT`, but this route
+    // authorizes callers through `REMOTE_AGENT` (via
+    // `getRemoteAgentPermissions`), so including it would silently drop
+    // owner-attached context files for any remote user who has
+    // `REMOTE_AGENT_VIEWER` but not direct `AGENT_VIEW`.
+    const dbMethods = {
+      getConvoFiles: db.getConvoFiles,
+      getFiles: db.getFiles,
+      getUserKey: db.getUserKey,
+      getMessages: db.getMessages,
+      updateFilesUsage: db.updateFilesUsage,
+      getUserKeyValues: db.getUserKeyValues,
+      getUserCodeFiles: db.getUserCodeFiles,
+      getToolFilesByIds: db.getToolFilesByIds,
+      getCodeGeneratedFiles: db.getCodeGeneratedFiles,
+      listSkillsByAccess: db.listSkillsByAccess,
+      listAlwaysApplySkills: db.listAlwaysApplySkills,
+      getSkillByName: db.getSkillByName,
+    };
+
+    const enabledCapabilities = new Set(
+      appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities,
+    );
+    const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
+    const ephemeralSkillsToggle = req.body?.ephemeralAgent?.skills === true;
+    const accessibleSkillIds = skillsCapabilityEnabled
+      ? await findAccessibleResources({
+          userId: req.user.id,
+          role: req.user.role,
+          resourceType: ResourceType.SKILL,
+          requiredPermissions: PermissionBits.VIEW,
+        })
+      : [];
+
+    const { skillStates, defaultActiveOnShare } = await loadSkillStates({
+      userId: req.user.id,
+      appConfig,
+      getUserById: db.getUserById,
+      accessibleSkillIds,
+    });
+
+    const manualSkills = extractManualSkills(req.body);
 
     const primaryConfig = await initializeAgent(
       {
@@ -562,31 +413,178 @@ const createResponse = async (req, res) => {
         endpointOption,
         allowedProviders,
         isInitialAgent: true,
+        accessibleSkillIds: resolveAgentScopedSkillIds({
+          agent,
+          accessibleSkillIds,
+          skillsCapabilityEnabled,
+          ephemeralSkillsToggle,
+        }),
+        codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
+        skillStates,
+        defaultActiveOnShare,
+        manualSkills,
       },
-      {
-        getConvoFiles,
-        getFiles: db.getFiles,
-        getUserKey: db.getUserKey,
-        getMessages: db.getMessages,
-        updateFilesUsage: db.updateFilesUsage,
-        getUserKeyValues: db.getUserKeyValues,
-        getUserCodeFiles: db.getUserCodeFiles,
-        getToolFilesByIds: db.getToolFilesByIds,
-        getCodeGeneratedFiles: db.getCodeGeneratedFiles,
-      },
+      dbMethods,
     );
+
+    /**
+     * Per-agent tool-execution context map, keyed by agentId. Ensures the
+     * ON_TOOL_EXECUTE callback routes each sub-agent's tool calls to the
+     * correct toolRegistry / userMCPAuthMap / tool_resources.
+     * @type {Map<string, {
+     *   agent: object,
+     *   toolRegistry?: import('@librechat/agents').LCToolRegistry,
+     *   userMCPAuthMap?: Record<string, Record<string, string>>,
+     *   tool_resources?: object,
+     *   actionsEnabled?: boolean,
+     * }>}
+     */
+    const agentToolContexts = new Map();
+    agentToolContexts.set(primaryConfig.id, {
+      agent,
+      toolRegistry: primaryConfig.toolRegistry,
+      userMCPAuthMap: primaryConfig.userMCPAuthMap,
+      tool_resources: primaryConfig.tool_resources,
+      actionsEnabled: primaryConfig.actionsEnabled,
+      codeEnvAvailable: primaryConfig.codeEnvAvailable,
+    });
+
+    // Only run BFS discovery (and pay `getModelsConfig` upfront) when the
+    // primary has edges to follow — the common API case is single-agent.
+    let handoffAgentConfigs = new Map();
+    let discoveredEdges = [];
+    let discoveredMCPAuthMap;
+    if (primaryConfig.edges?.length) {
+      const modelsConfig = await getModelsConfig(req);
+      ({
+        agentConfigs: handoffAgentConfigs,
+        edges: discoveredEdges,
+        userMCPAuthMap: discoveredMCPAuthMap,
+      } = await discoverConnectedAgents(
+        {
+          req,
+          res,
+          primaryConfig,
+          endpointOption,
+          allowedProviders,
+          modelsConfig,
+          loadTools,
+          requestFiles: [],
+          conversationId,
+          parentMessageId,
+          // The route enforces REMOTE_AGENT on the primary; every discovered
+          // sub-agent must clear the same sharing boundary, not the looser
+          // in-app AGENT one.
+          resourceType: ResourceType.REMOTE_AGENT,
+          /** @see DiscoverConnectedAgentsParams.codeEnvAvailable */
+          codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
+        },
+        {
+          getAgent: db.getAgent,
+          // Use `getRemoteAgentPermissions` so sub-agent authorization
+          // matches what the route's `createCheckRemoteAgentAccess`
+          // middleware does for the primary: AGENT owners with the SHARE
+          // bit are treated as remotely authorized even without an
+          // explicit REMOTE_AGENT grant.
+          checkPermission: async ({ userId, role, resourceId, requiredPermission }) => {
+            const permissions = await getRemoteAgentPermissions(
+              { getEffectivePermissions },
+              userId,
+              role,
+              resourceId,
+            );
+            return hasPermissions(permissions, requiredPermission);
+          },
+          logViolation,
+          db: dbMethods,
+          onAgentInitialized: (agentId, handoffAgent, config) => {
+            agentToolContexts.set(agentId, {
+              agent: handoffAgent,
+              toolRegistry: config.toolRegistry,
+              userMCPAuthMap: config.userMCPAuthMap,
+              tool_resources: config.tool_resources,
+              actionsEnabled: config.actionsEnabled,
+              codeEnvAvailable: config.codeEnvAvailable,
+            });
+          },
+          initializeAgent,
+        },
+      ));
+    }
+
+    primaryConfig.edges = discoveredEdges;
+    const runAgents = [primaryConfig, ...handoffAgentConfigs.values()];
+    const mergedMCPAuthMap = discoveredMCPAuthMap ?? primaryConfig.userMCPAuthMap;
 
     // Determine if streaming is enabled (check both request and agent config)
     const streamingDisabled = !!primaryConfig.model_parameters?.disableStreaming;
     const actuallyStreaming = isStreaming && !streamingDisabled;
+
+    // Load previous messages if previous_response_id is provided
+    let previousMessages = [];
+    if (request.previous_response_id) {
+      const userId = req.user?.id ?? 'api-user';
+      previousMessages = await loadPreviousMessages(request.previous_response_id, userId);
+    }
+
     // Convert input to internal messages
-    const inputMessages = convertToInternalMessages(requestWithResolvedState.input);
+    const inputMessages = convertToInternalMessages(
+      typeof request.input === 'string' ? request.input : request.input,
+    );
 
     // Merge previous messages with new input
     const allMessages = [...previousMessages, ...inputMessages];
 
-    const formattedMessages = formatResponseMessages(allMessages);
-    const indexTokenCountMap = {};
+    const toolSet = buildToolSet(primaryConfig);
+    const formatted = formatAgentMessages(allMessages, {}, toolSet);
+    const formattedMessages = formatted.messages;
+    const initialSummary = formatted.summary;
+    let indexTokenCountMap = formatted.indexTokenCountMap;
+
+    /**
+     * Inject manual + always-apply skill primes so the model sees SKILL.md
+     * bodies for this turn — parity with AgentClient's chat path. The
+     * Responses API uses its own response-builder shape, so LibreChat-
+     * style card SSE events don't apply; only the message-context part
+     * carries over.
+     */
+    const manualSkillPrimes = primaryConfig.manualSkillPrimes;
+    const alwaysApplySkillPrimes = primaryConfig.alwaysApplySkillPrimes;
+    if (
+      (manualSkillPrimes && manualSkillPrimes.length > 0) ||
+      (alwaysApplySkillPrimes && alwaysApplySkillPrimes.length > 0)
+    ) {
+      const primeResult = injectSkillPrimes({
+        initialMessages: formattedMessages,
+        indexTokenCountMap,
+        manualSkillPrimes,
+        alwaysApplySkillPrimes,
+      });
+      indexTokenCountMap = primeResult.indexTokenCountMap;
+      /* Surface the cap-driven always-apply truncation at the controller
+         layer too — `injectSkillPrimes` already logs internally, but the
+         controller-level warn includes endpoint context so operators can
+         tell at a glance which path hit the cap. Mirrors AgentClient's
+         warn in `client.js`. */
+      if (primeResult.alwaysApplyDropped > 0) {
+        logger.warn(
+          `[Responses API] Dropped ${primeResult.alwaysApplyDropped} always-apply prime(s) to stay within MAX_PRIMED_SKILLS_PER_TURN.`,
+        );
+      }
+    }
+
+    /* Stable for the turn: the prime lists are fixed once
+       `initializeAgent` resolves. Hoisted here so both the streaming
+       and non-streaming `loadTools` closures below reuse it without
+       recomputing per tool execution. `codeEnvAvailable` is read
+       per-agent from the stored tool context (admin cap AND that
+       agent's `tools` list includes `execute_code`) — a skills-only
+       agent never gains sandbox access even if the admin enabled the
+       capability globally. */
+    const skillPrimedIdsByName = buildSkillPrimedIdsByName(
+      manualSkillPrimes,
+      alwaysApplySkillPrimes,
+    );
 
     // Create tracker for streaming or aggregator for non-streaming
     const tracker = actuallyStreaming ? createResponseTracker() : null;
@@ -627,19 +625,30 @@ const createResponse = async (req, res) => {
 
       // Create tool execute options for event-driven tool execution
       const toolExecuteOptions = {
-        loadTools: async (toolNames) => {
-          return loadToolsForExecution({
+        loadTools: async (toolNames, agentId) => {
+          const ctx =
+            agentToolContexts.get(agentId) ?? agentToolContexts.get(primaryConfig.id) ?? {};
+          const result = await loadToolsForExecution({
             req,
             res,
-            agent,
             toolNames,
+            agent: ctx.agent ?? agent,
             signal: abortController.signal,
-            toolRegistry: primaryConfig.toolRegistry,
-            userMCPAuthMap: primaryConfig.userMCPAuthMap,
-            tool_resources: primaryConfig.tool_resources,
+            toolRegistry: ctx.toolRegistry,
+            userMCPAuthMap: ctx.userMCPAuthMap,
+            tool_resources: ctx.tool_resources,
+            actionsEnabled: ctx.actionsEnabled,
           });
+          return enrichWithSkillConfigurable(
+            result,
+            req,
+            primaryConfig.accessibleSkillIds,
+            ctx.codeEnvAvailable === true,
+            skillPrimedIdsByName,
+          );
         },
         toolEndCallback,
+        ...getSkillToolDeps(),
       };
 
       // Combine handlers
@@ -649,11 +658,12 @@ const createResponse = async (req, res) => {
         on_run_step: responsesHandlers.on_run_step,
         on_run_step_delta: responsesHandlers.on_run_step_delta,
         on_chat_model_end: {
-          handle: (event, data) => {
+          handle: (event, data, metadata) => {
             responsesHandlers.on_chat_model_end.handle(event, data);
             const usage = data?.output?.usage_metadata;
             if (usage) {
-              collectedUsage.push(usage);
+              const taggedUsage = markSummarizationUsage(usage, metadata);
+              collectedUsage.push(taggedUsage);
             }
           },
         },
@@ -664,16 +674,24 @@ const createResponse = async (req, res) => {
         on_agent_update: { handle: () => {} },
         on_custom_event: { handle: () => {} },
         on_tool_execute: createToolExecuteHandler(toolExecuteOptions),
+        on_agent_log: agentLogHandlerObj,
+        ...(summarizationConfig?.enabled !== false
+          ? buildSummarizationHandlers({ isStreaming: actuallyStreaming, res })
+          : {}),
       };
 
       // Create and run the agent
-      const userMCPAuthMap = primaryConfig.userMCPAuthMap;
+      const userId = req.user?.id ?? 'api-user';
+      const userMCPAuthMap = mergedMCPAuthMap;
 
       const run = await createRun({
-        agents: [primaryConfig],
+        agents: runAgents,
         messages: formattedMessages,
         indexTokenCountMap,
+        initialSummary,
         runId: responseId,
+        summarizationConfig,
+        appConfig,
         signal: abortController.signal,
         customHandlers: handlers,
         requestBody: {
@@ -714,13 +732,13 @@ const createResponse = async (req, res) => {
       });
 
       // Record token usage against balance
-      const balanceConfig = getBalanceConfig(req.config);
-      const transactionsConfig = getTransactionsConfig(req.config);
+      const balanceConfig = getBalanceConfig(appConfig);
+      const transactionsConfig = getTransactionsConfig(appConfig);
       recordCollectedUsage(
         {
-          spendTokens,
-          spendStructuredTokens,
-          pricing: { getMultiplier, getCacheMultiplier },
+          spendTokens: db.spendTokens,
+          spendStructuredTokens: db.spendStructuredTokens,
+          pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
           bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
         },
         {
@@ -744,20 +762,17 @@ const createResponse = async (req, res) => {
       const duration = Date.now() - requestStartTime;
       logger.debug(`[Responses API] Request ${responseId} completed in ${duration}ms (streaming)`);
 
-      if (shouldStore) {
+      // Save to database if store: true
+      if (request.store === true) {
         try {
-          const finalResponse = buildResponse(context, tracker, 'completed');
           // Save conversation
-          const resolvedOpenAIConversationId =
-            extractOpenAIConversationId(finalResponse) ??
-            requestWithResolvedState.conversation ??
-            requestWithResolvedState.openai_conversation_id ??
-            null;
-          await saveConversation(req, conversationId, agentId, agent, resolvedOpenAIConversationId);
+          await saveConversation(req, conversationId, agentId, agent);
 
           // Save input messages
           await saveInputMessages(req, conversationId, inputMessages, agentId);
 
+          // Build response for saving (use tracker with buildResponse for streaming)
+          const finalResponse = buildResponse(context, tracker, 'completed');
           await saveResponseOutput(req, conversationId, responseId, finalResponse, agentId);
 
           logger.debug(
@@ -786,19 +801,30 @@ const createResponse = async (req, res) => {
       const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId: null });
 
       const toolExecuteOptions = {
-        loadTools: async (toolNames) => {
-          return loadToolsForExecution({
+        loadTools: async (toolNames, agentId) => {
+          const ctx =
+            agentToolContexts.get(agentId) ?? agentToolContexts.get(primaryConfig.id) ?? {};
+          const result = await loadToolsForExecution({
             req,
             res,
-            agent,
             toolNames,
+            agent: ctx.agent ?? agent,
             signal: abortController.signal,
-            toolRegistry: primaryConfig.toolRegistry,
-            userMCPAuthMap: primaryConfig.userMCPAuthMap,
-            tool_resources: primaryConfig.tool_resources,
+            toolRegistry: ctx.toolRegistry,
+            userMCPAuthMap: ctx.userMCPAuthMap,
+            tool_resources: ctx.tool_resources,
+            actionsEnabled: ctx.actionsEnabled,
           });
+          return enrichWithSkillConfigurable(
+            result,
+            req,
+            primaryConfig.accessibleSkillIds,
+            ctx.codeEnvAvailable === true,
+            skillPrimedIdsByName,
+          );
         },
         toolEndCallback,
+        ...getSkillToolDeps(),
       };
 
       const handlers = {
@@ -807,11 +833,12 @@ const createResponse = async (req, res) => {
         on_run_step: aggregatorHandlers.on_run_step,
         on_run_step_delta: aggregatorHandlers.on_run_step_delta,
         on_chat_model_end: {
-          handle: (event, data) => {
+          handle: (event, data, metadata) => {
             aggregatorHandlers.on_chat_model_end.handle(event, data);
             const usage = data?.output?.usage_metadata;
             if (usage) {
-              collectedUsage.push(usage);
+              const taggedUsage = markSummarizationUsage(usage, metadata);
+              collectedUsage.push(taggedUsage);
             }
           },
         },
@@ -822,15 +849,23 @@ const createResponse = async (req, res) => {
         on_agent_update: { handle: () => {} },
         on_custom_event: { handle: () => {} },
         on_tool_execute: createToolExecuteHandler(toolExecuteOptions),
+        on_agent_log: agentLogHandlerObj,
+        ...(summarizationConfig?.enabled !== false
+          ? buildSummarizationHandlers({ isStreaming: false, res })
+          : {}),
       };
 
-      const userMCPAuthMap = primaryConfig.userMCPAuthMap;
+      const userId = req.user?.id ?? 'api-user';
+      const userMCPAuthMap = mergedMCPAuthMap;
 
       const run = await createRun({
-        agents: [primaryConfig],
+        agents: runAgents,
         messages: formattedMessages,
         indexTokenCountMap,
+        initialSummary,
         runId: responseId,
+        summarizationConfig,
+        appConfig,
         signal: abortController.signal,
         customHandlers: handlers,
         requestBody: {
@@ -870,13 +905,13 @@ const createResponse = async (req, res) => {
       });
 
       // Record token usage against balance
-      const balanceConfig = getBalanceConfig(req.config);
-      const transactionsConfig = getTransactionsConfig(req.config);
+      const balanceConfig = getBalanceConfig(appConfig);
+      const transactionsConfig = getTransactionsConfig(appConfig);
       recordCollectedUsage(
         {
-          spendTokens,
-          spendStructuredTokens,
-          pricing: { getMultiplier, getCacheMultiplier },
+          spendTokens: db.spendTokens,
+          spendStructuredTokens: db.spendStructuredTokens,
+          pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
           bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
         },
         {
@@ -903,14 +938,9 @@ const createResponse = async (req, res) => {
 
       const response = buildAggregatedResponse(context, aggregator);
 
-      if (shouldStore) {
+      if (request.store === true) {
         try {
-          const resolvedOpenAIConversationId =
-            extractOpenAIConversationId(response) ??
-            requestWithResolvedState.conversation ??
-            requestWithResolvedState.openai_conversation_id ??
-            null;
-          await saveConversation(req, conversationId, agentId, agent, resolvedOpenAIConversationId);
+          await saveConversation(req, conversationId, agentId, agent);
 
           await saveInputMessages(req, conversationId, inputMessages, agentId);
 
@@ -981,7 +1011,7 @@ const listModels = async (req, res) => {
     // Get the accessible agents
     let agents = [];
     if (accessibleAgentIds.length > 0) {
-      agents = await getAgents({ _id: { $in: accessibleAgentIds } });
+      agents = await db.getAgents({ _id: { $in: accessibleAgentIds } });
     }
 
     // Convert to models format
@@ -1029,15 +1059,9 @@ const getResponse = async (req, res) => {
       return sendResponsesErrorResponse(res, 400, 'Response ID is required');
     }
 
-    // responseId may be either a conversation ID or a message/response ID
-    let resolvedConversationId = responseId;
-    const message = await db.getMessage({ user: userId, messageId: responseId });
-
-    if (message?.conversationId) {
-      resolvedConversationId = message.conversationId;
-    }
-
-    const conversation = await getConvo(userId, resolvedConversationId);
+    // The responseId could be either the response ID or the conversation ID
+    // Try to find a conversation with this ID
+    const conversation = await db.getConvo(userId, responseId);
 
     if (!conversation) {
       return sendResponsesErrorResponse(
@@ -1050,7 +1074,7 @@ const getResponse = async (req, res) => {
     }
 
     // Load messages for this conversation
-    const messages = await db.getMessages({ conversationId: resolvedConversationId, user: userId });
+    const messages = await db.getMessages({ conversationId: responseId, user: userId });
 
     if (!messages || messages.length === 0) {
       return sendResponsesErrorResponse(
@@ -1070,7 +1094,7 @@ const getResponse = async (req, res) => {
 
     // Build the response object
     const response = {
-      id: message?.messageId || responseId,
+      id: responseId,
       object: 'response',
       created_at: Math.floor(new Date(conversation.createdAt || Date.now()).getTime() / 1000),
       completed_at: Math.floor(new Date(conversation.updatedAt || Date.now()).getTime() / 1000),
@@ -1105,10 +1129,9 @@ const getResponse = async (req, res) => {
       store: true,
       background: false,
       service_tier: 'default',
-      metadata: { librechat_conversation_id: resolvedConversationId },
+      metadata: {},
       safety_identifier: null,
       prompt_cache_key: null,
-      conversation_id: resolvedConversationId,
     };
 
     res.json(response);
@@ -1127,5 +1150,4 @@ module.exports = {
   createResponse,
   getResponse,
   listModels,
-  setAppConfig,
 };

@@ -2,40 +2,19 @@ import { useEffect, useState } from 'react';
 import { v4 } from 'uuid';
 import { SSE } from 'sse.js';
 import { useSetRecoilState } from 'recoil';
-import {
-  request,
-  Constants,
-  /* @ts-ignore */
-  createPayload,
-  LocalStorageKeys,
-  removeNullishValues,
-} from 'librechat-data-provider';
+import { request, createPayload, removeNullishValues } from 'librechat-data-provider';
 import type { TMessage, TPayload, TSubmission, EventSubmission } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData } from '~/common';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
+import { clearAllDrafts } from '~/utils';
 import store from '~/store';
-
-const clearDraft = (conversationId?: string | null) => {
-  if (conversationId) {
-    localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${conversationId}`);
-    localStorage.removeItem(`${LocalStorageKeys.FILES_DRAFT}${conversationId}`);
-  } else {
-    localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${Constants.NEW_CONVO}`);
-    localStorage.removeItem(`${LocalStorageKeys.FILES_DRAFT}${Constants.NEW_CONVO}`);
-  }
-};
 
 type ChatHelpers = Pick<
   EventHandlerParams,
-  | 'setMessages'
-  | 'getMessages'
-  | 'setConversation'
-  | 'setIsSubmitting'
-  | 'newConversation'
-  | 'resetLatestMessage'
+  'setMessages' | 'getMessages' | 'setConversation' | 'setIsSubmitting' | 'newConversation'
 >;
 
 export default function useSSE(
@@ -51,14 +30,8 @@ export default function useSSE(
   const setAbortScroll = useSetRecoilState(store.abortScrollFamily(runIndex));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(runIndex));
 
-  const {
-    setMessages,
-    getMessages,
-    setConversation,
-    setIsSubmitting,
-    newConversation,
-    resetLatestMessage,
-  } = chatHelpers;
+  const { setMessages, getMessages, setConversation, setIsSubmitting, newConversation } =
+    chatHelpers;
 
   const {
     clearStepMaps,
@@ -80,7 +53,6 @@ export default function useSSE(
     setIsSubmitting,
     newConversation,
     setShowStopButton,
-    resetLatestMessage,
   });
 
   const { data: startupConfig } = useGetStartupConfig();
@@ -120,7 +92,7 @@ export default function useSSE(
       const data = JSON.parse(e.data);
 
       if (data.final != null) {
-        clearDraft(submission.conversation?.conversationId);
+        clearAllDrafts(submission.conversation?.conversationId);
         try {
           finalHandler(data, submission as EventSubmission);
         } catch (error) {

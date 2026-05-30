@@ -108,6 +108,46 @@ describe('recordCollectedUsage', () => {
     });
   });
 
+  describe('summarization usage segregation', () => {
+    it('includes summarization output tokens in total while billing under separate context', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          usage_type: 'message',
+          input_tokens: 120,
+          output_tokens: 40,
+          model: 'gpt-4',
+        },
+        {
+          usage_type: 'summarization',
+          input_tokens: 30,
+          output_tokens: 12,
+          model: 'gpt-4.1-mini',
+        },
+      ];
+
+      const result = await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(result).toEqual({ input_tokens: 120, output_tokens: 52 });
+      expect(mockSpendTokens).toHaveBeenCalledTimes(2);
+      expect(mockSpendTokens).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ context: 'message', model: 'gpt-4' }),
+        expect.any(Object),
+      );
+      expect(mockSpendTokens).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          context: 'summarization',
+          model: 'gpt-4.1-mini',
+        }),
+        expect.any(Object),
+      );
+    });
+  });
+
   describe('parallel execution (multiple agents)', () => {
     it('should handle parallel agents with independent input tokens', async () => {
       const collectedUsage: UsageMetadata[] = [
@@ -157,13 +197,14 @@ describe('recordCollectedUsage', () => {
     });
   });
 
-  describe('cache token handling - OpenAI format', () => {
-    it('should use spendStructuredTokens for cache tokens (input_token_details)', async () => {
+  describe('cache token handling - subset providers (input_tokens already includes cache)', () => {
+    it('subtracts cache from input_tokens for OpenAI to avoid double-counting', async () => {
       const collectedUsage: UsageMetadata[] = [
         {
           input_tokens: 100,
           output_tokens: 50,
           model: 'gpt-4',
+          provider: 'openAI',
           input_token_details: {
             cache_creation: 20,
             cache_read: 10,
@@ -181,11 +222,115 @@ describe('recordCollectedUsage', () => {
       expect(mockSpendStructuredTokens).toHaveBeenCalledWith(
         expect.objectContaining({ model: 'gpt-4' }),
         {
+          promptTokens: { input: 70, write: 20, read: 10 },
+          completionTokens: 50,
+        },
+      );
+      expect(result?.input_tokens).toBe(100);
+    });
+
+    it('does not double-count cache_read for Gemini — issue #12855', async () => {
+      // Real numbers from the issue report
+      const collectedUsage: UsageMetadata[] = [
+        {
+          input_tokens: 11125,
+          output_tokens: 20,
+          model: 'gemini-3-flash-preview',
+          provider: 'google',
+          input_token_details: { cache_read: 7441 },
+        },
+      ];
+
+      const result = await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockSpendStructuredTokens).toHaveBeenCalledTimes(1);
+      expect(mockSpendStructuredTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'gemini-3-flash-preview' }),
+        {
+          promptTokens: { input: 3684, write: 0, read: 7441 },
+          completionTokens: 20,
+        },
+      );
+      expect(result?.input_tokens).toBe(11125);
+    });
+
+    it('also applies to Vertex AI', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          input_tokens: 5000,
+          output_tokens: 100,
+          model: 'gemini-2.5-pro',
+          provider: 'vertexai',
+          input_token_details: { cache_read: 4000 },
+        },
+      ];
+
+      await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockSpendStructuredTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'gemini-2.5-pro' }),
+        {
+          promptTokens: { input: 1000, write: 0, read: 4000 },
+          completionTokens: 100,
+        },
+      );
+    });
+
+    it('handles cache_read >= input_tokens defensively (clamps inputOnly to 0)', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          input_tokens: 1000,
+          output_tokens: 30,
+          model: 'gemini-2.5-pro',
+          provider: 'google',
+          input_token_details: { cache_read: 1000 },
+        },
+      ];
+
+      await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockSpendStructuredTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'gemini-2.5-pro' }),
+        {
+          promptTokens: { input: 0, write: 0, read: 1000 },
+          completionTokens: 30,
+        },
+      );
+    });
+
+    it('falls through to additive (historical default) when provider is missing', async () => {
+      // Defensive: an unclassified or pre-this-PR usage entry should keep old behavior
+      const collectedUsage: UsageMetadata[] = [
+        {
+          input_tokens: 100,
+          output_tokens: 50,
+          model: 'gpt-4',
+          input_token_details: { cache_creation: 20, cache_read: 10 },
+        },
+      ];
+
+      const result = await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockSpendStructuredTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'gpt-4' }),
+        {
           promptTokens: { input: 100, write: 20, read: 10 },
           completionTokens: 50,
         },
       );
-      expect(result?.input_tokens).toBe(130); // 100 + 20 + 10
+      expect(result?.input_tokens).toBe(130);
     });
   });
 
@@ -216,6 +361,128 @@ describe('recordCollectedUsage', () => {
         },
       );
       expect(result?.input_tokens).toBe(140); // 100 + 25 + 15
+    });
+  });
+
+  describe('reasoning token handling - issue #13006', () => {
+    it('uses total - input when output_tokens undercounts (Vertex stream undercount with details present)', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          input_tokens: 80657,
+          output_tokens: 766,
+          total_tokens: 83265,
+          output_token_details: { reasoning: 1842 },
+          model: 'gemini-3-flash-preview',
+          provider: 'vertexai',
+        },
+      ];
+
+      const result = await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockSpendTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'gemini-3-flash-preview' }),
+        { promptTokens: 80657, completionTokens: 2608 },
+      );
+      expect(result?.output_tokens).toBe(2608);
+    });
+
+    it('uses total - input even when output_token_details is missing (raw langchain google-common path)', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          input_tokens: 12,
+          output_tokens: 135,
+          total_tokens: 309,
+          model: 'gemini-3-flash-preview',
+          provider: 'vertexai',
+        },
+      ];
+
+      const result = await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockSpendTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'gemini-3-flash-preview' }),
+        { promptTokens: 12, completionTokens: 297 },
+      );
+      expect(result?.output_tokens).toBe(297);
+    });
+
+    it('does not change output when invariant already holds (OpenAI o-series, reasoning already a subset)', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          input_tokens: 100,
+          output_tokens: 500,
+          total_tokens: 600,
+          output_token_details: { reasoning: 200 },
+          model: 'o1-preview',
+          provider: 'openAI',
+        },
+      ];
+
+      const result = await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockSpendTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'o1-preview' }),
+        { promptTokens: 100, completionTokens: 500 },
+      );
+      expect(result?.output_tokens).toBe(500);
+    });
+
+    it('routes correction through structured spend when cache tokens are present', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          input_tokens: 80657,
+          output_tokens: 766,
+          total_tokens: 83265,
+          output_token_details: { reasoning: 1842 },
+          input_token_details: { cache_read: 30000 },
+          model: 'gemini-3-flash-preview',
+          provider: 'vertexai',
+        },
+      ];
+
+      await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockSpendStructuredTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'gemini-3-flash-preview' }),
+        {
+          promptTokens: { input: 50657, write: 0, read: 30000 },
+          completionTokens: 2608,
+        },
+      );
+    });
+
+    it('no-op when total_tokens is absent or zero', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          input_tokens: 100,
+          output_tokens: 50,
+          model: 'gpt-4',
+          provider: 'openAI',
+        },
+      ];
+
+      const result = await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockSpendTokens).toHaveBeenCalledWith(expect.anything(), {
+        promptTokens: 100,
+        completionTokens: 50,
+      });
+      expect(result?.output_tokens).toBe(50);
     });
   });
 
@@ -357,6 +624,7 @@ describe('recordCollectedUsage', () => {
           input_tokens: 100,
           output_tokens: 50,
           model: 'gpt-4',
+          provider: 'openAI',
           input_token_details: { cache_creation: 20, cache_read: 10 },
         },
       ];
@@ -366,7 +634,8 @@ describe('recordCollectedUsage', () => {
         collectedUsage,
       });
 
-      expect(result).toEqual({ input_tokens: 130, output_tokens: 50 });
+      // openAI is a subset provider → input_tokens already includes cache
+      expect(result).toEqual({ input_tokens: 100, output_tokens: 50 });
     });
   });
 
@@ -716,6 +985,132 @@ describe('recordCollectedUsage', () => {
       });
 
       expect(result).toEqual({ input_tokens: 100, output_tokens: 50 });
+    });
+  });
+
+  describe('bulk write with summarization usage', () => {
+    let mockInsertMany: jest.Mock;
+    let mockUpdateBalance: jest.Mock;
+    let mockPricing: PricingFns;
+    let mockBulkWriteOps: BulkWriteDeps;
+    let bulkDeps: RecordUsageDeps;
+
+    beforeEach(() => {
+      mockInsertMany = jest.fn().mockResolvedValue(undefined);
+      mockUpdateBalance = jest.fn().mockResolvedValue({});
+      mockPricing = {
+        getMultiplier: jest.fn().mockReturnValue(1),
+        getCacheMultiplier: jest.fn().mockReturnValue(null),
+      };
+      mockBulkWriteOps = {
+        insertMany: mockInsertMany,
+        updateBalance: mockUpdateBalance,
+      };
+      bulkDeps = {
+        spendTokens: mockSpendTokens,
+        spendStructuredTokens: mockSpendStructuredTokens,
+        pricing: mockPricing,
+        bulkWriteOps: mockBulkWriteOps,
+      };
+    });
+
+    it('combines message and summarization docs into a single bulk write', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          usage_type: 'message',
+          input_tokens: 200,
+          output_tokens: 80,
+          model: 'gpt-4',
+        },
+        {
+          usage_type: 'summarization',
+          input_tokens: 50,
+          output_tokens: 20,
+          model: 'gpt-4.1-mini',
+        },
+      ];
+
+      const result = await recordCollectedUsage(bulkDeps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockInsertMany).toHaveBeenCalledTimes(1);
+      expect(mockUpdateBalance).toHaveBeenCalledTimes(1);
+      expect(mockSpendTokens).not.toHaveBeenCalled();
+      expect(mockSpendStructuredTokens).not.toHaveBeenCalled();
+
+      const insertedDocs = mockInsertMany.mock.calls[0][0];
+      // 2 docs per entry (prompt + completion) x 2 entries = 4 docs
+      expect(insertedDocs).toHaveLength(4);
+
+      const messageContextDocs = insertedDocs.filter(
+        (d: Record<string, unknown>) => d.context === 'message',
+      );
+      const summarizationContextDocs = insertedDocs.filter(
+        (d: Record<string, unknown>) => d.context === 'summarization',
+      );
+      expect(messageContextDocs).toHaveLength(2);
+      expect(summarizationContextDocs).toHaveLength(2);
+
+      expect(result).toEqual({ input_tokens: 200, output_tokens: 100 });
+    });
+
+    it('handles summarization-only usage in bulk mode', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          usage_type: 'summarization',
+          input_tokens: 60,
+          output_tokens: 25,
+          model: 'gpt-4.1-mini',
+        },
+      ];
+
+      const result = await recordCollectedUsage(bulkDeps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockInsertMany).toHaveBeenCalledTimes(1);
+      expect(mockSpendTokens).not.toHaveBeenCalled();
+      expect(mockSpendStructuredTokens).not.toHaveBeenCalled();
+
+      const insertedDocs = mockInsertMany.mock.calls[0][0];
+      expect(insertedDocs).toHaveLength(2);
+
+      const summarizationContextDocs = insertedDocs.filter(
+        (d: Record<string, unknown>) => d.context === 'summarization',
+      );
+      expect(summarizationContextDocs).toHaveLength(2);
+
+      expect(result).toEqual({ input_tokens: 0, output_tokens: 25 });
+    });
+
+    it('handles message-only usage in bulk mode', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        { input_tokens: 100, output_tokens: 50, model: 'gpt-4' },
+        { input_tokens: 200, output_tokens: 60, model: 'gpt-4' },
+      ];
+
+      const result = await recordCollectedUsage(bulkDeps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockInsertMany).toHaveBeenCalledTimes(1);
+      expect(mockSpendTokens).not.toHaveBeenCalled();
+      expect(mockSpendStructuredTokens).not.toHaveBeenCalled();
+
+      const insertedDocs = mockInsertMany.mock.calls[0][0];
+      // 2 docs per entry x 2 entries = 4 docs
+      expect(insertedDocs).toHaveLength(4);
+
+      const messageContextDocs = insertedDocs.filter(
+        (d: Record<string, unknown>) => d.context === 'message',
+      );
+      expect(messageContextDocs).toHaveLength(4);
+
+      expect(result).toEqual({ input_tokens: 100, output_tokens: 110 });
     });
   });
 });

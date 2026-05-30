@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
 
 export const useKeyDialog = () => {
@@ -15,24 +15,30 @@ export const useKeyDialog = () => {
     [],
   );
 
-  const onOpenChange = (open: boolean) => {
-    if (!open && keyDialogEndpoint) {
-      const button = document.getElementById(`endpoint-${keyDialogEndpoint}-settings`);
-      if (button) {
-        setTimeout(() => {
-          button.focus();
-        }, 5);
+  const onOpenChange = useCallback(
+    (open: boolean) => {
+      if (!open && keyDialogEndpoint) {
+        const button = document.getElementById(`endpoint-${keyDialogEndpoint}-settings`);
+        if (button) {
+          setTimeout(() => {
+            button.focus();
+          }, 5);
+        }
       }
-    }
-    setKeyDialogOpen(open);
-  };
+      setKeyDialogOpen(open);
+    },
+    [keyDialogEndpoint],
+  );
 
-  return {
-    keyDialogOpen,
-    keyDialogEndpoint,
-    onOpenChange,
-    handleOpenKeyDialog,
-  };
+  return useMemo(
+    () => ({
+      keyDialogOpen,
+      keyDialogEndpoint,
+      onOpenChange,
+      handleOpenKeyDialog,
+    }),
+    [keyDialogOpen, keyDialogEndpoint, onOpenChange, handleOpenKeyDialog],
+  );
 };
 
 export default useKeyDialog;

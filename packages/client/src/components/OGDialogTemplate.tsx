@@ -79,18 +79,15 @@ const OGDialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDi
     overlayClassName,
     showCancelButton = true,
   } = props;
-  const selectionProps = isSelectionProps(selection) ? selection : undefined;
-  const selectHandler = selectionProps?.selectHandler;
-  const selectClasses = selectionProps?.selectClasses;
-  const selectText = selectionProps?.selectText;
-  const isLoading = selectionProps?.isLoading;
-  const customSelection = selection != null && !isSelectionProps(selection) ? selection : null;
+  const isLegacySelection = isSelectionProps(selection);
+  const legacySelection = isLegacySelection ? selection : null;
+  const { selectHandler, selectClasses, selectText, isLoading } = legacySelection ?? {};
 
   const defaultSelect =
     'bg-gray-800 text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-200 dark:text-gray-800 dark:hover:bg-gray-200';
 
   let selectionContent = null;
-  if (selectionProps) {
+  if (isLegacySelection) {
     selectionContent = (
       <OGDialogClose
         onClick={selectHandler}
@@ -106,8 +103,8 @@ const OGDialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDi
         )}
       </OGDialogClose>
     );
-  } else if (customSelection) {
-    selectionContent = customSelection;
+  } else if (selection) {
+    selectionContent = selection;
   }
 
   return (

@@ -15,6 +15,9 @@ on:
       - 'redis-config/**'
       - '.github/workflows/cache-integration-tests.yml'
 
+permissions:
+  contents: read
+
 jobs:
   cache_integration_tests:
     name: Integration Tests that use actual Redis Cache
@@ -54,12 +57,8 @@ jobs:
           redis-cli -p 7002 cluster info || exit 1
           redis-cli -p 7003 cluster info || exit 1
 
-      - name: Clean npm environment
-        run: |
-          rm -rf node_modules package-lock.json
-
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build packages
         run: |

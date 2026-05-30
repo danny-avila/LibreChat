@@ -106,6 +106,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE]: false,
         [Permissions.SHARE_PUBLIC]: false,
       },
+      [PermissionTypes.SKILLS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
     };
 
     const expectedPermissionsForAdmin = {
@@ -148,6 +154,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.REMOTE_AGENTS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
+      },
+      [PermissionTypes.SKILLS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
@@ -264,6 +276,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE]: false,
         [Permissions.SHARE_PUBLIC]: false,
       },
+      [PermissionTypes.SKILLS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
     };
 
     const expectedPermissionsForAdmin = {
@@ -306,6 +324,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.REMOTE_AGENTS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
+      },
+      [PermissionTypes.SKILLS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
@@ -398,13 +422,19 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
       [PermissionTypes.MCP_SERVERS]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
+        [Permissions.CREATE]: false,
         [Permissions.SHARE]: false,
         [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.REMOTE_AGENTS]: {
         [Permissions.USE]: false,
         [Permissions.CREATE]: false,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
+      [PermissionTypes.SKILLS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
         [Permissions.SHARE]: false,
         [Permissions.SHARE_PUBLIC]: false,
       },
@@ -450,6 +480,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE_PUBLIC]: true,
       },
       [PermissionTypes.REMOTE_AGENTS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
+      },
+      [PermissionTypes.SKILLS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
@@ -555,13 +591,19 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
       [PermissionTypes.MCP_SERVERS]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
+        [Permissions.CREATE]: false,
         [Permissions.SHARE]: false,
         [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.REMOTE_AGENTS]: {
         [Permissions.USE]: false,
         [Permissions.CREATE]: false,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
+      [PermissionTypes.SKILLS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
         [Permissions.SHARE]: false,
         [Permissions.SHARE_PUBLIC]: false,
       },
@@ -607,6 +649,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE_PUBLIC]: true,
       },
       [PermissionTypes.REMOTE_AGENTS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
+      },
+      [PermissionTypes.SKILLS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
@@ -699,13 +747,19 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
       [PermissionTypes.MCP_SERVERS]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
+        [Permissions.CREATE]: false,
         [Permissions.SHARE]: false,
         [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.REMOTE_AGENTS]: {
         [Permissions.USE]: false,
         [Permissions.CREATE]: false,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
+      [PermissionTypes.SKILLS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
         [Permissions.SHARE]: false,
         [Permissions.SHARE_PUBLIC]: false,
       },
@@ -751,6 +805,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE_PUBLIC]: true,
       },
       [PermissionTypes.REMOTE_AGENTS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
+      },
+      [PermissionTypes.SKILLS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
@@ -848,13 +908,19 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
       [PermissionTypes.MCP_SERVERS]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
+        [Permissions.CREATE]: false,
         [Permissions.SHARE]: false,
         [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.REMOTE_AGENTS]: {
         [Permissions.USE]: false,
         [Permissions.CREATE]: false,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
+      [PermissionTypes.SKILLS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
         [Permissions.SHARE]: false,
         [Permissions.SHARE_PUBLIC]: false,
       },
@@ -888,6 +954,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE_PUBLIC]: true,
       },
       [PermissionTypes.REMOTE_AGENTS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
+      },
+      [PermissionTypes.SKILLS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
@@ -1002,13 +1074,19 @@ describe('updateInterfacePermissions - permissions', () => {
       [PermissionTypes.FILE_CITATIONS]: { [Permissions.USE]: true },
       [PermissionTypes.MCP_SERVERS]: {
         [Permissions.USE]: true,
-        [Permissions.CREATE]: true,
+        [Permissions.CREATE]: false,
         [Permissions.SHARE]: false,
         [Permissions.SHARE_PUBLIC]: false,
       },
       [PermissionTypes.REMOTE_AGENTS]: {
         [Permissions.USE]: false,
         [Permissions.CREATE]: false,
+        [Permissions.SHARE]: false,
+        [Permissions.SHARE_PUBLIC]: false,
+      },
+      [PermissionTypes.SKILLS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
         [Permissions.SHARE]: false,
         [Permissions.SHARE_PUBLIC]: false,
       },
@@ -1046,6 +1124,12 @@ describe('updateInterfacePermissions - permissions', () => {
         [Permissions.SHARE_PUBLIC]: true,
       },
       [PermissionTypes.REMOTE_AGENTS]: {
+        [Permissions.USE]: true,
+        [Permissions.CREATE]: true,
+        [Permissions.SHARE]: true,
+        [Permissions.SHARE_PUBLIC]: true,
+      },
+      [PermissionTypes.SKILLS]: {
         [Permissions.USE]: true,
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
@@ -1693,7 +1777,7 @@ describe('updateInterfacePermissions - permissions', () => {
     });
   });
 
-  it('should re-enable memory permissions when valid memory config exists without disabled field', async () => {
+  it('should re-enable memory permissions when memory config exists without disabled field', async () => {
     // Mock existing memory permissions that are disabled
     mockGetRoleByName.mockResolvedValue({
       permissions: {
@@ -1709,11 +1793,6 @@ describe('updateInterfacePermissions - permissions', () => {
 
     const config = {
       memory: {
-        // No disabled field, but valid config
-        agent: {
-          id: 'test-agent-id',
-          provider: 'openai',
-        },
         personalize: false,
       } as unknown as TCustomConfig['memory'],
     };
@@ -2099,5 +2178,397 @@ describe('updateInterfacePermissions - permissions', () => {
     // MCP_SERVERS: SHARE already exists, only SHARE_PUBLIC should be backfilled
     expect(userCall[1][PermissionTypes.MCP_SERVERS]).toHaveProperty(Permissions.SHARE_PUBLIC);
     expect(userCall[1][PermissionTypes.MCP_SERVERS]).not.toHaveProperty(Permissions.SHARE);
+  });
+
+  it('should apply explicit remoteAgents config to USER permissions (regression: loadDefaultInterface omission)', async () => {
+    const config = {
+      interface: {
+        remoteAgents: { use: true, create: true, share: false, public: false },
+      },
+    };
+    const configDefaults = { interface: {} } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.USER,
+    );
+    const adminCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.ADMIN,
+    );
+
+    expect(userCall[1][PermissionTypes.REMOTE_AGENTS]).toEqual({
+      [Permissions.USE]: true,
+      [Permissions.CREATE]: true,
+      [Permissions.SHARE]: false,
+      [Permissions.SHARE_PUBLIC]: false,
+    });
+
+    expect(adminCall[1][PermissionTypes.REMOTE_AGENTS]).toEqual({
+      [Permissions.USE]: true,
+      [Permissions.CREATE]: true,
+      [Permissions.SHARE]: false,
+      [Permissions.SHARE_PUBLIC]: false,
+    });
+  });
+
+  it('should enable all remoteAgents permissions when fully enabled in config', async () => {
+    const config = {
+      interface: {
+        remoteAgents: { use: true, create: true, share: true, public: true },
+      },
+    };
+    const configDefaults = { interface: {} } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.USER,
+    );
+
+    expect(userCall[1][PermissionTypes.REMOTE_AGENTS]).toEqual({
+      [Permissions.USE]: true,
+      [Permissions.CREATE]: true,
+      [Permissions.SHARE]: true,
+      [Permissions.SHARE_PUBLIC]: true,
+    });
+  });
+
+  it('should use role defaults for remoteAgents when not configured (all false for USER)', async () => {
+    const config = {
+      interface: {
+        bookmarks: true,
+      },
+    };
+    const configDefaults = { interface: {} } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.USER,
+    );
+
+    expect(userCall[1][PermissionTypes.REMOTE_AGENTS]).toEqual({
+      [Permissions.USE]: false,
+      [Permissions.CREATE]: false,
+      [Permissions.SHARE]: false,
+      [Permissions.SHARE_PUBLIC]: false,
+    });
+  });
+
+  it('should populate all default agent permissions on fresh install with object use config (regression: #12306)', async () => {
+    const config = {
+      interface: {
+        agents: { use: true },
+      },
+    };
+    const configDefaults = { interface: {} } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.USER,
+    );
+    const adminCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.ADMIN,
+    );
+
+    expect(userCall[1][PermissionTypes.AGENTS]).toEqual({
+      [Permissions.USE]: true,
+      [Permissions.CREATE]: true,
+      [Permissions.SHARE]: false,
+      [Permissions.SHARE_PUBLIC]: false,
+    });
+
+    expect(adminCall[1][PermissionTypes.AGENTS]).toEqual({
+      [Permissions.USE]: true,
+      [Permissions.CREATE]: true,
+      [Permissions.SHARE]: true,
+      [Permissions.SHARE_PUBLIC]: true,
+    });
+  });
+
+  it('should preserve admin-panel changes to USER agents.CREATE across restart (regression: #12306 restart)', async () => {
+    mockGetRoleByName.mockResolvedValue({
+      permissions: {
+        [PermissionTypes.AGENTS]: {
+          [Permissions.USE]: true,
+          [Permissions.CREATE]: false,
+          [Permissions.SHARE]: false,
+          [Permissions.SHARE_PUBLIC]: false,
+        },
+      },
+    });
+
+    const config = {
+      interface: {
+        agents: { use: true },
+      },
+    };
+    const configDefaults = { interface: {} } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.USER,
+    );
+
+    expect(userCall[1][PermissionTypes.AGENTS]).toEqual({
+      [Permissions.USE]: true,
+    });
+  });
+
+  it('should preserve all admin-panel changes when agents is not in yaml config (regression: #12306 restart)', async () => {
+    mockGetRoleByName.mockResolvedValue({
+      permissions: {
+        [PermissionTypes.AGENTS]: {
+          [Permissions.USE]: false,
+          [Permissions.CREATE]: false,
+          [Permissions.SHARE]: false,
+          [Permissions.SHARE_PUBLIC]: false,
+        },
+        [PermissionTypes.PROMPTS]: {
+          [Permissions.USE]: false,
+          [Permissions.CREATE]: false,
+          [Permissions.SHARE]: false,
+          [Permissions.SHARE_PUBLIC]: false,
+        },
+      },
+    });
+
+    const config = {};
+    const configDefaults = { interface: {} } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.USER,
+    );
+
+    expect(userCall[1]).not.toHaveProperty(PermissionTypes.AGENTS);
+    expect(userCall[1]).not.toHaveProperty(PermissionTypes.PROMPTS);
+  });
+
+  it('should not grant USER share for prompts when only use is configured (regression: #12306)', async () => {
+    const config = {
+      interface: {
+        prompts: { use: true },
+      },
+    };
+    const configDefaults = { interface: {} } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.USER,
+    );
+    const adminCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.ADMIN,
+    );
+
+    expect(userCall[1][PermissionTypes.PROMPTS]).toEqual({
+      [Permissions.USE]: true,
+      [Permissions.CREATE]: true,
+      [Permissions.SHARE]: false,
+      [Permissions.SHARE_PUBLIC]: false,
+    });
+
+    expect(adminCall[1][PermissionTypes.PROMPTS]).toEqual({
+      [Permissions.USE]: true,
+      [Permissions.CREATE]: true,
+      [Permissions.SHARE]: true,
+      [Permissions.SHARE_PUBLIC]: true,
+    });
+  });
+
+  it('should not grant USER create for mcpServers when only use is configured (regression: #12306)', async () => {
+    const config = {
+      interface: {
+        mcpServers: { use: true },
+      },
+    };
+    const configDefaults = { interface: {} } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.USER,
+    );
+    const adminCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.ADMIN,
+    );
+
+    expect(userCall[1][PermissionTypes.MCP_SERVERS]).toEqual({
+      [Permissions.USE]: true,
+      [Permissions.CREATE]: false,
+      [Permissions.SHARE]: false,
+      [Permissions.SHARE_PUBLIC]: false,
+    });
+
+    expect(adminCall[1][PermissionTypes.MCP_SERVERS]).toEqual({
+      [Permissions.USE]: true,
+      [Permissions.CREATE]: true,
+      [Permissions.SHARE]: true,
+      [Permissions.SHARE_PUBLIC]: true,
+    });
+  });
+
+  it('should preserve existing MCP_SERVERS permissions on restart when mcpServers not in yaml config (regression: #12306 restart)', async () => {
+    mockGetRoleByName.mockResolvedValue({
+      permissions: {
+        [PermissionTypes.MCP_SERVERS]: {
+          [Permissions.USE]: true,
+          [Permissions.CREATE]: true,
+          [Permissions.SHARE]: false,
+          [Permissions.SHARE_PUBLIC]: false,
+        },
+      },
+    });
+
+    const config = {};
+    const configDefaults = { interface: {} } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.USER,
+    );
+
+    expect(userCall[1][PermissionTypes.MCP_SERVERS]).toEqual({
+      [Permissions.CREATE]: false,
+    });
+  });
+
+  it('should migrate existing MCP_SERVERS.CREATE=true to false for USER when no explicit config (regression: #12306 migration)', async () => {
+    mockGetRoleByName.mockResolvedValue({
+      permissions: {
+        [PermissionTypes.MCP_SERVERS]: {
+          [Permissions.USE]: true,
+          [Permissions.CREATE]: true,
+          [Permissions.SHARE]: false,
+          [Permissions.SHARE_PUBLIC]: false,
+        },
+        [PermissionTypes.AGENTS]: {
+          [Permissions.USE]: true,
+          [Permissions.CREATE]: true,
+          [Permissions.SHARE]: false,
+          [Permissions.SHARE_PUBLIC]: false,
+        },
+      },
+    });
+
+    const config = {};
+    const configDefaults = { interface: {} } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.USER,
+    );
+    const adminCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.ADMIN,
+    );
+
+    expect(userCall[1][PermissionTypes.MCP_SERVERS]).toEqual({
+      [Permissions.CREATE]: false,
+    });
+    expect(userCall[1]).not.toHaveProperty(PermissionTypes.AGENTS);
+
+    expect(adminCall[1]).not.toHaveProperty(PermissionTypes.MCP_SERVERS);
+    expect(adminCall[1]).not.toHaveProperty(PermissionTypes.AGENTS);
+  });
+
+  it('should NOT migrate MCP_SERVERS.CREATE when yaml explicitly sets create: true (regression: #12306 migration)', async () => {
+    mockGetRoleByName.mockResolvedValue({
+      permissions: {
+        [PermissionTypes.MCP_SERVERS]: {
+          [Permissions.USE]: true,
+          [Permissions.CREATE]: true,
+          [Permissions.SHARE]: false,
+          [Permissions.SHARE_PUBLIC]: false,
+        },
+      },
+    });
+
+    const config = {
+      interface: {
+        mcpServers: { use: true, create: true },
+      },
+    };
+    const configDefaults = { interface: {} } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    const userCall = mockUpdateAccessPermissions.mock.calls.find(
+      (call) => call[0] === SystemRoles.USER,
+    );
+
+    expect(userCall[1][PermissionTypes.MCP_SERVERS][Permissions.CREATE]).toBe(true);
   });
 });

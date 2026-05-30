@@ -1,4 +1,4 @@
-import type { TUser } from 'librechat-data-provider';
+import type { IUser } from '@librechat/data-schemas';
 import type { GraphTokenResolver, GraphTokenOptions } from './graph';
 import {
   containsGraphTokenPlaceholder,
@@ -141,7 +141,7 @@ describe('Graph Token Utilities', () => {
   });
 
   describe('resolveGraphTokenPlaceholder', () => {
-    const mockUser: Partial<TUser> = {
+    const mockUser: Partial<IUser> = {
       id: 'user-123',
       provider: 'openid',
       openidId: 'oidc-sub-456',
@@ -157,7 +157,7 @@ describe('Graph Token Utilities', () => {
     it('should return original value when no placeholder is present', async () => {
       const value = 'Bearer static-token';
       const result = await resolveGraphTokenPlaceholder(value, {
-        user: mockUser as TUser,
+        user: mockUser as Partial<IUser> as IUser,
         graphTokenResolver: mockGraphTokenResolver,
       });
       expect(result).toBe('Bearer static-token');
@@ -174,7 +174,7 @@ describe('Graph Token Utilities', () => {
     it('should return original value when graphTokenResolver is not provided', async () => {
       const value = 'Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}';
       const result = await resolveGraphTokenPlaceholder(value, {
-        user: mockUser as TUser,
+        user: mockUser as Partial<IUser> as IUser,
       });
       expect(result).toBe(value);
     });
@@ -184,7 +184,7 @@ describe('Graph Token Utilities', () => {
 
       const value = 'Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}';
       const result = await resolveGraphTokenPlaceholder(value, {
-        user: mockUser as TUser,
+        user: mockUser as Partial<IUser> as IUser,
         graphTokenResolver: mockGraphTokenResolver,
       });
       expect(result).toBe(value);
@@ -196,7 +196,7 @@ describe('Graph Token Utilities', () => {
 
       const value = 'Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}';
       const result = await resolveGraphTokenPlaceholder(value, {
-        user: mockUser as TUser,
+        user: mockUser as Partial<IUser> as IUser,
         graphTokenResolver: mockGraphTokenResolver,
       });
       expect(result).toBe(value);
@@ -208,7 +208,7 @@ describe('Graph Token Utilities', () => {
 
       const value = 'Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}';
       const result = await resolveGraphTokenPlaceholder(value, {
-        user: mockUser as TUser,
+        user: mockUser as Partial<IUser> as IUser,
         graphTokenResolver: mockGraphTokenResolver,
       });
       expect(result).toBe(value);
@@ -220,7 +220,7 @@ describe('Graph Token Utilities', () => {
 
       const value = 'Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}';
       const result = await resolveGraphTokenPlaceholder(value, {
-        user: mockUser as TUser,
+        user: mockUser as Partial<IUser> as IUser,
         graphTokenResolver: mockGraphTokenResolver,
       });
       expect(result).toBe('Bearer resolved-graph-token');
@@ -233,7 +233,7 @@ describe('Graph Token Utilities', () => {
       const value =
         'Primary: {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}, Secondary: {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}';
       const result = await resolveGraphTokenPlaceholder(value, {
-        user: mockUser as TUser,
+        user: mockUser as Partial<IUser> as IUser,
         graphTokenResolver: mockGraphTokenResolver,
       });
       expect(result).toBe('Primary: resolved-graph-token, Secondary: resolved-graph-token');
@@ -248,7 +248,7 @@ describe('Graph Token Utilities', () => {
 
       const value = 'Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}';
       const result = await resolveGraphTokenPlaceholder(value, {
-        user: mockUser as TUser,
+        user: mockUser as Partial<IUser> as IUser,
         graphTokenResolver: failingResolver,
       });
       expect(result).toBe(value);
@@ -261,7 +261,7 @@ describe('Graph Token Utilities', () => {
 
       const value = 'Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}';
       const result = await resolveGraphTokenPlaceholder(value, {
-        user: mockUser as TUser,
+        user: mockUser as Partial<IUser> as IUser,
         graphTokenResolver: emptyResolver,
       });
       expect(result).toBe(value);
@@ -273,7 +273,7 @@ describe('Graph Token Utilities', () => {
 
       const value = 'Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}';
       await resolveGraphTokenPlaceholder(value, {
-        user: mockUser as TUser,
+        user: mockUser as Partial<IUser> as IUser,
         graphTokenResolver: mockGraphTokenResolver,
         scopes: 'custom-scope',
       });
@@ -288,7 +288,7 @@ describe('Graph Token Utilities', () => {
   });
 
   describe('resolveGraphTokensInRecord', () => {
-    const mockUser: Partial<TUser> = {
+    const mockUser: Partial<IUser> = {
       id: 'user-123',
       provider: 'openid',
     };
@@ -301,7 +301,7 @@ describe('Graph Token Utilities', () => {
     });
 
     const options: GraphTokenOptions = {
-      user: mockUser as TUser,
+      user: mockUser as Partial<IUser> as IUser,
       graphTokenResolver: mockGraphTokenResolver,
     };
 
@@ -350,7 +350,7 @@ describe('Graph Token Utilities', () => {
   });
 
   describe('preProcessGraphTokens', () => {
-    const mockUser: Partial<TUser> = {
+    const mockUser: Partial<IUser> = {
       id: 'user-123',
       provider: 'openid',
     };
@@ -363,7 +363,7 @@ describe('Graph Token Utilities', () => {
     });
 
     const graphOptions: GraphTokenOptions = {
-      user: mockUser as TUser,
+      user: mockUser as Partial<IUser> as IUser,
       graphTokenResolver: mockGraphTokenResolver,
     };
 

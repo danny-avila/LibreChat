@@ -46,27 +46,38 @@ function generateServerNameFromTitle(title: string): string {
 
 export function createMCPServerMethods(mongoose: typeof import('mongoose')) {
   /**
-   * Finds the next available server name by checking for duplicates.
-   * If baseName exists, returns baseName-2, baseName-3, etc.
+   * Finds the next available server name by checking DB and reserved-name collisions.
+   * If baseName is taken or reserved, returns baseName-2, baseName-3, etc.
    */
-  async function findNextAvailableServerName(baseName: string): Promise<string> {
+  async function findNextAvailableServerName(
+    baseName: string,
+    reservedServerNames: Set<string> = new Set(),
+  ): Promise<string> {
     const MCPServer = mongoose.models.MCPServer as Model<MCPServerDocument>;
 
     // Find all servers with matching base name pattern (baseName or baseName-N)
     const escapedBaseName = escapeRegex(baseName);
+    const matchingNamePattern = new RegExp(`^${escapedBaseName}(-\\d+)?$`);
     const existing = await MCPServer.find({
-      serverName: { $regex: `^${escapedBaseName}(-\\d+)?$` },
+      serverName: { $regex: matchingNamePattern },
     })
       .select('serverName')
-      .lean();
+      .lean<Array<{ serverName: string }>>();
 
-    if (existing.length === 0) {
+    const existingNames = new Set([
+      ...existing.map((server) => server.serverName),
+      ...Array.from(reservedServerNames).filter((serverName) =>
+        matchingNamePattern.test(serverName),
+      ),
+    ]);
+
+    if (existingNames.size === 0) {
       return baseName;
     }
 
     // Extract numbers from existing names
-    const numbers = existing.map((s) => {
-      const match = s.serverName.match(/-(\d+)$/);
+    const numbers = Array.from(existingNames).map((serverName) => {
+      const match = serverName.match(/-(\d+)$/);
       return match ? parseInt(match[1], 10) : 1;
     });
 
@@ -86,9 +97,11 @@ export function createMCPServerMethods(mongoose: typeof import('mongoose')) {
   async function createMCPServer(data: {
     config: MCPOptions;
     author: string | Types.ObjectId;
+    reservedServerNames?: Iterable<string>;
   }): Promise<MCPServerDocument> {
     const MCPServer = mongoose.models.MCPServer as Model<MCPServerDocument>;
     let lastError: unknown;
+    const reservedServerNames = new Set(data.reservedServerNames ?? []);
 
     for (let attempt = 0; attempt < MAX_CREATE_RETRIES; attempt++) {
       try {
@@ -97,7 +110,7 @@ export function createMCPServerMethods(mongoose: typeof import('mongoose')) {
         let serverName: string;
         if (data.config.title) {
           const baseSlug = generateServerNameFromTitle(data.config.title);
-          serverName = await findNextAvailableServerName(baseSlug);
+          serverName = await findNextAvailableServerName(baseSlug, reservedServerNames);
         } else {
           serverName = `mcp-${nanoid(16)}`;
         }
@@ -139,7 +152,7 @@ export function createMCPServerMethods(mongoose: typeof import('mongoose')) {
    */
   async function findMCPServerByServerName(serverName: string): Promise<MCPServerDocument | null> {
     const MCPServer = mongoose.models.MCPServer as Model<MCPServerDocument>;
-    return await MCPServer.findOne({ serverName }).lean();
+    return await MCPServer.findOne({ serverName }).lean<MCPServerDocument>();
   }
 
   /**
@@ -151,7 +164,7 @@ export function createMCPServerMethods(mongoose: typeof import('mongoose')) {
     _id: string | Types.ObjectId,
   ): Promise<MCPServerDocument | null> {
     const MCPServer = mongoose.models.MCPServer as Model<MCPServerDocument>;
-    return await MCPServer.findById(_id).lean();
+    return await MCPServer.findById(_id).lean<MCPServerDocument>();
   }
 
   /**
@@ -163,7 +176,9 @@ export function createMCPServerMethods(mongoose: typeof import('mongoose')) {
     authorId: string | Types.ObjectId,
   ): Promise<MCPServerDocument[]> {
     const MCPServer = mongoose.models.MCPServer as Model<MCPServerDocument>;
-    return await MCPServer.find({ author: authorId }).sort({ updatedAt: -1 }).lean();
+    return await MCPServer.find({ author: authorId })
+      .sort({ updatedAt: -1 })
+      .lean<MCPServerDocument[]>();
   }
 
   /**
@@ -229,7 +244,9 @@ export function createMCPServerMethods(mongoose: typeof import('mongoose')) {
 
     if (normalizedLimit === null) {
       // No pagination - return all matching servers
-      const servers = await MCPServer.find(baseQuery).sort({ updatedAt: -1, _id: 1 }).lean();
+      const servers = await MCPServer.find(baseQuery)
+        .sort({ updatedAt: -1, _id: 1 })
+        .lean<MCPServerDocument[]>();
 
       return {
         data: servers,
@@ -242,7 +259,7 @@ export function createMCPServerMethods(mongoose: typeof import('mongoose')) {
     const servers = await MCPServer.find(baseQuery)
       .sort({ updatedAt: -1, _id: 1 })
       .limit(normalizedLimit + 1)
-      .lean();
+      .lean<MCPServerDocument[]>();
 
     const hasMore = servers.length > normalizedLimit;
     const data = hasMore ? servers.slice(0, normalizedLimit) : servers;
@@ -280,7 +297,7 @@ export function createMCPServerMethods(mongoose: typeof import('mongoose')) {
       { serverName },
       { $set: updateData },
       { new: true, runValidators: true },
-    ).lean();
+    ).lean<MCPServerDocument>();
   }
 
   /**
@@ -290,7 +307,7 @@ export function createMCPServerMethods(mongoose: typeof import('mongoose')) {
    */
   async function deleteMCPServer(serverName: string): Promise<MCPServerDocument | null> {
     const MCPServer = mongoose.models.MCPServer as Model<MCPServerDocument>;
-    return await MCPServer.findOneAndDelete({ serverName }).lean();
+    return await MCPServer.findOneAndDelete({ serverName }).lean<MCPServerDocument>();
   }
 
   /**
@@ -305,7 +322,9 @@ export function createMCPServerMethods(mongoose: typeof import('mongoose')) {
       return { data: [] };
     }
     const MCPServer = mongoose.models.MCPServer as Model<MCPServerDocument>;
-    const servers = await MCPServer.find({ serverName: { $in: names } }).lean();
+    const servers = await MCPServer.find({ serverName: { $in: names } }).lean<
+      MCPServerDocument[]
+    >();
     return { data: servers };
   }
 

@@ -55,6 +55,10 @@ const openAIModels = {
   'gpt-5.1': 400000,
   'gpt-5.2': 400000,
   'gpt-5.3': 400000,
+  'gpt-5.4': 272000, // standard context; 1M experimental available via API opt-in (2x rate)
+  'gpt-5.4-pro': 272000, // same window as gpt-5.4
+  'gpt-5.5': 1050000,
+  'gpt-5.5-pro': 1050000,
   'gpt-5-mini': 400000,
   'gpt-5-nano': 400000,
   'gpt-5-pro': 400000,
@@ -70,6 +74,7 @@ const mistralModels = {
   'mistral-large-2402': 127500,
   'mistral-large-2407': 127500,
   'mistral-large': 131000,
+  'mistral-large-3': 255000,
   'mistral-saba': 32000,
   'ministral-3b': 131000,
   'ministral-8b': 131000,
@@ -90,10 +95,19 @@ const cohereModels = {
 
 const googleModels = {
   /* Max I/O is combined so we subtract the amount from max response tokens for actual total */
-  gemma: 8196,
+  gemma: 32768,
   'gemma-2': 32768,
   'gemma-3': 32768,
   'gemma-3-27b': 131072,
+  'gemma4:31b': 256000,
+  'gemma4-31b': 256000,
+  'gemma-4-31b': 256000,
+  'gemma4:26b': 256000,
+  'gemma4-26b': 256000,
+  'gemma-4-26b-a4b': 256000,
+  'gemma-4-26b': 256000,
+  gemma4: 128000,
+  'gemma-4': 128000,
   gemini: 30720, // -2048 from max
   'gemini-pro-vision': 12288,
   'gemini-1.5': 1000000,
@@ -112,6 +126,7 @@ const googleModels = {
   'gemini-3-pro-image': 1000000,
   'gemini-3.1': 1000000,
   'gemini-3.1-flash-lite': 1000000,
+  'gemini-3.5-flash': 1048576,
 };
 
 const anthropicModels = {
@@ -135,9 +150,12 @@ const anthropicModels = {
   'claude-haiku-4-5': 200000,
   'claude-opus-4': 200000,
   'claude-opus-4-5': 200000,
-  'claude-sonnet-4': 1000000,
+  'claude-sonnet-4': 200000,
+  'claude-sonnet-4-5': 200000,
   'claude-sonnet-4-6': 1000000,
   'claude-opus-4-6': 1000000,
+  'claude-opus-4-7': 1000000,
+  'claude-opus-4-8': 1000000,
 };
 
 const deepseekModels = {
@@ -361,6 +379,10 @@ export const modelMaxOutputs = {
   'gpt-5.1': 128000,
   'gpt-5.2': 128000,
   'gpt-5.3': 128000,
+  'gpt-5.4': 128000,
+  'gpt-5.4-pro': 128000,
+  'gpt-5.5': 128000,
+  'gpt-5.5-pro': 128000,
   'gpt-5-mini': 128000,
   'gpt-5-nano': 128000,
   'gpt-5-pro': 128000,
@@ -381,6 +403,8 @@ const anthropicMaxOutputs = {
   'claude-opus-4': 32000,
   'claude-opus-4-5': 64000,
   'claude-opus-4-6': 128000,
+  'claude-opus-4-7': 128000,
+  'claude-opus-4-8': 128000,
   'claude-3.5-sonnet': 8192,
   'claude-3-5-sonnet': 8192,
   'claude-3.7-sonnet': 128000,
@@ -589,42 +613,3 @@ export function processModelData(input: z.infer<typeof inputSchema>): EndpointTo
 
   return tokenConfig;
 }
-
-export const tiktokenModels = new Set([
-  'text-davinci-003',
-  'text-davinci-002',
-  'text-davinci-001',
-  'text-curie-001',
-  'text-babbage-001',
-  'text-ada-001',
-  'davinci',
-  'curie',
-  'babbage',
-  'ada',
-  'code-davinci-002',
-  'code-davinci-001',
-  'code-cushman-002',
-  'code-cushman-001',
-  'davinci-codex',
-  'cushman-codex',
-  'text-davinci-edit-001',
-  'code-davinci-edit-001',
-  'text-embedding-ada-002',
-  'text-similarity-davinci-001',
-  'text-similarity-curie-001',
-  'text-similarity-babbage-001',
-  'text-similarity-ada-001',
-  'text-search-davinci-doc-001',
-  'text-search-curie-doc-001',
-  'text-search-babbage-doc-001',
-  'text-search-ada-doc-001',
-  'code-search-babbage-code-001',
-  'code-search-ada-code-001',
-  'gpt2',
-  'gpt-4',
-  'gpt-4-0314',
-  'gpt-4-32k',
-  'gpt-4-32k-0314',
-  'gpt-3.5-turbo',
-  'gpt-3.5-turbo-0301',
-]);

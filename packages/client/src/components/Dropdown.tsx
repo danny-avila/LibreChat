@@ -74,7 +74,7 @@ const Dropdown: React.FC<DropdownProps> = ({
         store={selectProps}
         className={cn(
           'focus:ring-offset-ring-offset relative inline-flex items-center justify-between rounded-xl border border-input bg-background px-3 py-2 text-sm text-text-primary transition-all duration-200 ease-in-out hover:bg-accent hover:text-accent-foreground focus:ring-ring-primary',
-          iconOnly ? 'h-full w-10' : 'w-fit gap-2',
+          iconOnly ? 'size-10' : 'w-fit gap-2',
           className,
         )}
         data-testid={testId}
@@ -102,7 +102,7 @@ const Dropdown: React.FC<DropdownProps> = ({
         portal={portal}
         store={selectProps}
         className={cn(
-          'popover-ui z-40',
+          'popover-ui z-40 text-sm',
           sizeClasses,
           className,
           'max-h-[80vh] overflow-y-auto',

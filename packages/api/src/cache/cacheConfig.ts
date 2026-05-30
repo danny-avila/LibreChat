@@ -95,6 +95,13 @@ const cacheConfig = {
   REDIS_USE_ALTERNATIVE_DNS_LOOKUP: isEnabled(process.env.REDIS_USE_ALTERNATIVE_DNS_LOOKUP),
   /** Enable redis cluster without the need of multiple URIs */
   USE_REDIS_CLUSTER: isEnabled(process.env.USE_REDIS_CLUSTER ?? 'false'),
+  /**
+   * Force cluster-safe (key-by-key) deletion even when connecting as a single-node Redis instance.
+   * Needed for managed services like ElastiCache Serverless that present a single endpoint
+   * but shard keys internally, causing CROSSSLOT errors on multi-key DEL commands.
+   * Has no effect when USE_REDIS_CLUSTER is already true.
+   */
+  REDIS_CLUSTER_SAFE_DELETE: isEnabled(process.env.REDIS_CLUSTER_SAFE_DELETE ?? 'false'),
   CI: isEnabled(process.env.CI),
   DEBUG_MEMORY_CACHE: isEnabled(process.env.DEBUG_MEMORY_CACHE),
 
@@ -128,8 +135,13 @@ const cacheConfig = {
   REDIS_SCAN_COUNT: math(process.env.REDIS_SCAN_COUNT, 1000),
 
   /**
-   * TTL in milliseconds for MCP registry read-through cache.
-   * This cache reduces redundant lookups within a single request flow.
+   * TTL in milliseconds for MCP registry caches. Used by both:
+   * - `MCPServersRegistry` read-through caches (`readThroughCache`/`readThroughCacheAll`)
+   * - `ServerConfigsCacheRedisAggregateKey` local snapshot (avoids redundant Redis GETs)
+   *
+   * Both layers use this value, so the effective max cross-instance staleness is up
+   * to 2× this value in multi-instance deployments. Set to 0 to disable the local
+   * snapshot entirely (every `getAll()` hits Redis directly).
    * @default 5000 (5 seconds)
    */
   MCP_REGISTRY_CACHE_TTL: math(process.env.MCP_REGISTRY_CACHE_TTL, 5000),

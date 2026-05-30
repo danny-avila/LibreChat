@@ -1,8 +1,9 @@
 const { logger } = require('@librechat/data-schemas');
+const { getMissingCustomUserVars } = require('@librechat/api');
 const { CacheKeys, Constants } = require('librechat-data-provider');
+const { getMCPManager, getMCPServersRegistry, getFlowStateManager } = require('~/config');
 const { findToken, createToken, updateToken, deleteTokens } = require('~/models');
 const { updateMCPServerTools } = require('~/server/services/Config');
-const { getMCPManager, getFlowStateManager } = require('~/config');
 const { getLogStores } = require('~/cache');
 
 /**
@@ -25,11 +26,13 @@ async function reinitMCPServer({
   signal,
   forceNew,
   serverName,
+  configServers,
   userMCPAuthMap,
   connectionTimeout,
   returnOnOAuth = true,
   oauthStart: _oauthStart,
   flowManager: _flowManager,
+  serverConfig: providedConfig,
 }) {
   /** @type {MCPConnection | null} */
   let connection = null;
@@ -41,7 +44,70 @@ async function reinitMCPServer({
   let oauthUrl = null;
 
   try {
+    const registry = getMCPServersRegistry();
+    const serverConfig =
+      providedConfig ?? (await registry.getServerConfig(serverName, user?.id, configServers));
+    if (serverConfig?.inspectionFailed) {
+      if (serverConfig.source === 'config') {
+        logger.info(
+          `[MCP Reinitialize] Config-source server ${serverName} has inspectionFailed — retry handled by config cache`,
+        );
+        return {
+          availableTools: null,
+          success: false,
+          message: `MCP server '${serverName}' is still unreachable`,
+          oauthRequired: false,
+          serverName,
+          oauthUrl: null,
+          tools: null,
+        };
+      }
+      logger.info(
+        `[MCP Reinitialize] Server ${serverName} had failed inspection, attempting reinspection`,
+      );
+      try {
+        const storageLocation = serverConfig.source === 'user' ? 'DB' : 'CACHE';
+        await registry.reinspectServer(serverName, storageLocation, user?.id);
+        logger.info(`[MCP Reinitialize] Reinspection succeeded for server: ${serverName}`);
+      } catch (reinspectError) {
+        logger.error(
+          `[MCP Reinitialize] Reinspection failed for server ${serverName}:`,
+          reinspectError,
+        );
+        return {
+          availableTools: null,
+          success: false,
+          message: `MCP server '${serverName}' is still unreachable`,
+          oauthRequired: false,
+          serverName,
+          oauthUrl: null,
+          tools: null,
+        };
+      }
+    }
+
     const customUserVars = userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
+
+    const missingUserVars = getMissingCustomUserVars(serverConfig ?? {}, customUserVars);
+    if (missingUserVars.length > 0) {
+      logger.warn(
+        `[MCP Reinitialize] Skipping server '${serverName}': required user-provided variable(s) not set: ${missingUserVars.join(
+          ', ',
+        )}. Tools will not be exposed until the user configures them.`,
+      );
+      return {
+        availableTools: null,
+        success: false,
+        message: `MCP server '${serverName}' requires user-provided variable(s) [${missingUserVars.join(
+          ', ',
+        )}] which are not set`,
+        oauthRequired: false,
+        serverName,
+        oauthUrl: null,
+        tools: null,
+      };
+    }
+
     const flowManager = _flowManager ?? getFlowStateManager(getLogStores(CacheKeys.FLOWS));
     const mcpManager = getMCPManager();
     const tokenMethods = { findToken, updateToken, createToken, deleteTokens };
@@ -66,6 +132,7 @@ async function reinitMCPServer({
         returnOnOAuth,
         customUserVars,
         connectionTimeout,
+        serverConfig,
       });
 
       logger.info(`[MCP Reinitialize] Successfully established connection for ${serverName}`);
@@ -98,6 +165,7 @@ async function reinitMCPServer({
             oauthStart,
             customUserVars,
             connectionTimeout,
+            configServers,
           });
 
           if (discoveryResult.tools && discoveryResult.tools.length > 0) {
@@ -152,8 +220,8 @@ async function reinitMCPServer({
       availableTools,
       success: Boolean(
         (connection && !oauthRequired) ||
-        (oauthRequired && oauthUrl) ||
-        (tools && tools.length > 0),
+          (oauthRequired && oauthUrl) ||
+          (tools && tools.length > 0),
       ),
       message: getResponseMessage(),
       oauthRequired,

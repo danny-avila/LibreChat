@@ -13,7 +13,7 @@ services:
       - rag_api
     restart: always
     extra_hosts:
-      - 'host.docker.internal:host-gateway'
+    - "host.docker.internal:host-gateway"
     env_file:
       - .env
     environment:
@@ -46,7 +46,7 @@ services:
     container_name: chat-mongodb
     # ports:  # Uncomment this to access mongodb from outside docker, not safe in deployment
     #   - 27018:27017
-    image: mongo:8.0.17
+    image: mongo:8.0.20
     restart: always
     volumes:
       - ./data-node:/data/db

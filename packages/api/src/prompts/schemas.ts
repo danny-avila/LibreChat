@@ -14,10 +14,6 @@ export const updatePromptGroupSchema = z
     oneliner: z.string().max(500).optional(),
     /** Category for organizing prompt groups */
     category: z.string().max(100).optional(),
-    /** Project IDs to add for sharing */
-    projectIds: z.array(z.string()).optional(),
-    /** Project IDs to remove from sharing */
-    removeProjectIds: z.array(z.string()).optional(),
     /** Command shortcut for the prompt group */
     command: z
       .string()

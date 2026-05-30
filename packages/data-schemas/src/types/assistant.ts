@@ -12,4 +12,5 @@ export interface IAssistant extends Document {
   file_ids?: string[];
   actions?: string[];
   append_current_datetime?: boolean;
+  tenantId?: string;
 }

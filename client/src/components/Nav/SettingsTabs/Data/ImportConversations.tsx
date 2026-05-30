@@ -1,9 +1,9 @@
 import { useState, useRef, useCallback } from 'react';
 import { Import } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, TStartupConfig } from 'librechat-data-provider';
+import type { TStartupConfig } from 'librechat-data-provider';
 import { Spinner, useToastContext, Label, Button } from '@librechat/client';
-import { useUploadConversationsMutation } from '~/data-provider';
+import { startupConfigKey, useUploadConversationsMutation } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
 import { useLocalize } from '~/hooks';
 import { cn, logger } from '~/utils';
@@ -51,7 +51,7 @@ function ImportConversations() {
   const handleFileUpload = useCallback(
     async (file: File) => {
       try {
-        const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
+        const startupConfig = queryClient.getQueryData<TStartupConfig>(startupConfigKey(true));
         const maxFileSize = startupConfig?.conversationImportMaxFileSize;
         if (maxFileSize && file.size > maxFileSize) {
           const size = (maxFileSize / (1024 * 1024)).toFixed(2);

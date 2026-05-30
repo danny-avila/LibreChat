@@ -6,11 +6,16 @@ const { logger, DEFAULT_SESSION_EXPIRY } = require('@librechat/data-schemas');
 const {
   openIdJwtLogin,
   facebookLogin,
+  facebookAdminLogin,
   discordLogin,
+  discordAdminLogin,
   setupOpenId,
   googleLogin,
+  googleAdminLogin,
   githubLogin,
+  githubAdminLogin,
   appleLogin,
+  appleAdminLogin,
   setupSaml,
 } = require('~/strategies');
 const { getLogStores } = require('~/cache');
@@ -58,22 +63,27 @@ const configureSocialLogins = async (app) => {
 
   if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
     passport.use(googleLogin());
+    passport.use('googleAdmin', googleAdminLogin());
   }
   if (process.env.FACEBOOK_CLIENT_ID && process.env.FACEBOOK_CLIENT_SECRET) {
     passport.use(facebookLogin());
+    passport.use('facebookAdmin', facebookAdminLogin());
   }
   if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
     passport.use(githubLogin());
+    passport.use('githubAdmin', githubAdminLogin());
   }
   if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
     passport.use(discordLogin());
+    passport.use('discordAdmin', discordAdminLogin());
   }
   if (process.env.APPLE_CLIENT_ID && process.env.APPLE_PRIVATE_KEY_PATH) {
     passport.use(appleLogin());
+    passport.use('appleAdmin', appleAdminLogin());
   }
   if (
     process.env.OPENID_CLIENT_ID &&
-    process.env.OPENID_CLIENT_SECRET &&
+    (isEnabled(process.env.OPENID_USE_PKCE) || process.env.OPENID_CLIENT_SECRET?.trim()) &&
     process.env.OPENID_ISSUER &&
     process.env.OPENID_SCOPE &&
     process.env.OPENID_SESSION_SECRET

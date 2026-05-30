@@ -4,9 +4,9 @@
     "declarationDir": "./dist/types",
     "module": "esnext",
     "noImplicitAny": true,
-    "outDir": "./dist",
+    "outDir": "./types",
     "target": "es5",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "allowSyntheticDefaultImports": true,
     "lib": ["es2017", "dom", "ES2021.String"],
     "allowJs": true,
@@ -16,11 +16,11 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "noEmit": false,
+    "noEmit": true,
     "sourceMap": true,
-    "baseUrl": ".",
     "paths": {
-      "librechat-data-provider/react-query": ["./src/react-query/index.ts"]
+      "librechat-data-provider/react-query": ["./src/react-query/index.ts"],
+      "src/*": ["./src/*"]
     }
   },
   "exclude": ["node_modules", "dist", "types"],

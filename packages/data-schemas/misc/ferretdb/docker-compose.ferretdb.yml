@@ -1,0 +1,21 @@
+services:
+  ferretdb-postgres:
+    image: ghcr.io/ferretdb/postgres-documentdb:17-0.107.0-ferretdb-2.7.0
+    restart: on-failure
+    environment:
+      - POSTGRES_USER=ferretdb
+      - POSTGRES_PASSWORD=ferretdb
+      - POSTGRES_DB=postgres
+    volumes:
+      - ferretdb_data:/var/lib/postgresql/data
+
+  ferretdb:
+    image: ghcr.io/ferretdb/ferretdb:2.7.0
+    restart: on-failure
+    ports:
+      - "27020:27017"
+    environment:
+      - FERRETDB_POSTGRESQL_URL=postgres://ferretdb:ferretdb@ferretdb-postgres:5432/postgres
+
+volumes:
+  ferretdb_data:

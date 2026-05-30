@@ -1,48 +1,25 @@
-import dedent from 'dedent';
+const SAFE_PROTOCOLS = new Set(['http:', 'https:', 'mailto:', 'tel:']);
 
-const markdownRenderer = dedent(`import React, { useEffect, useState } from 'react';
-import Markdown from 'marked-react';
-
-interface MarkdownRendererProps {
-  content: string;
-}
-
-const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
-  return (
-    <div
-      className="markdown-body"
-      style={{
-        padding: '2rem',        
-        margin: '1rem',
-        minHeight: '100vh'
-      }}
-    >
-      <Markdown gfm={true} breaks={true}>{content}</Markdown>
-    </div>
-  );
-};
-
-export default MarkdownRenderer;`);
-
-const wrapMarkdownRenderer = (content: string) => {
-  // Normalize indentation: convert 2-space indents to 4-space for proper nesting
-  const normalizedContent = content.replace(/^( {2})(-|\d+\.)/gm, '    $2');
-
-  // Escape backticks, backslashes, and dollar signs in the content
-  const escapedContent = normalizedContent
-    .replace(/\\/g, '\\\\')
-    .replace(/`/g, '\\`')
-    .replace(/\$/g, '\\$');
-
-  return dedent(`import React from 'react';
-import MarkdownRenderer from '/components/ui/MarkdownRenderer';
-
-const App = () => {
-  return <MarkdownRenderer content={\`${escapedContent}\`} />;
-};
-
-export default App;
-`);
+/**
+ * Allowlist-based URL validator for markdown artifact rendering.
+ * The logic body is duplicated verbatim into the generated static HTML
+ * template (`EMBEDDED_IS_SAFE_URL` constant below). Any behavioral change
+ * here MUST be applied to both copies. A sync-verification test in
+ * `markdown.test.ts` enforces this.
+ */
+export const isSafeUrl = (url: string): boolean => {
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return false;
+  }
+  if (trimmed.startsWith('/') || trimmed.startsWith('#') || trimmed.startsWith('.')) {
+    return true;
+  }
+  try {
+    return SAFE_PROTOCOLS.has(new URL(trimmed).protocol);
+  } catch {
+    return false;
+  }
 };
 
 const markdownCSS = `
@@ -234,23 +211,97 @@ const markdownCSS = `
     background-color: #21262d;
   }
 }
+
+/* Scrollbar */
+::-webkit-scrollbar { height: 0.1em; width: 0.5rem; }
+::-webkit-scrollbar-thumb { background-color: rgba(0,0,0,0.1); border-radius: 9999px; }
+::-webkit-scrollbar-track { background-color: transparent; border-radius: 9999px; }
+@media (prefers-color-scheme: dark) {
+  ::-webkit-scrollbar-thumb { background-color: hsla(0,0%,100%,0.1); }
+}
+* { scrollbar-width: thin; scrollbar-color: rgba(0,0,0,0.1) transparent; }
+@media (prefers-color-scheme: dark) {
+  * { scrollbar-color: hsla(0,0%,100%,0.1) transparent; }
+}
 `;
 
-export const getMarkdownFiles = (content: string) => {
+/**
+ * Escapes content for safe embedding inside a JS template literal that
+ * lives within an HTML `<script>` block. Prevents the content from
+ * breaking out of the template literal or prematurely closing the
+ * surrounding `<script>` tag (which would allow arbitrary HTML injection).
+ */
+function escapeForTemplateLiteral(content: string): string {
+  return content
+    .replace(/\\/g, '\\\\')
+    .replace(/`/g, '\\`')
+    .replace(/\$/g, '\\$')
+    .replace(/<\/script/gi, '<\\/script');
+}
+
+const MARKED_CDN = 'https://cdn.jsdelivr.net/npm/marked@15.0.12/marked.min.js';
+const MARKED_SRI = 'sha384-948ahk4ZmxYVYOc+rxN1H2gM1EJ2Duhp7uHtZ4WSLkV4Vtx5MUqnV+l7u9B+jFv+';
+
+/**
+ * Embedded JS copy of `isSafeUrl`. Keep in sync with the exported
+ * TypeScript version above — `markdown.test.ts` has a sync-verification
+ * test that will break if the two copies diverge.
+ */
+export const EMBEDDED_IS_SAFE_URL = `const SAFE_PROTOCOLS = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+const isSafeUrl = (url) => {
+  const trimmed = url.trim();
+  if (!trimmed) return false;
+  if (trimmed.startsWith('/') || trimmed.startsWith('#') || trimmed.startsWith('.')) return true;
+  try { return SAFE_PROTOCOLS.has(new URL(trimmed).protocol); } catch(e) { return false; }
+};`;
+
+function generateMarkdownHtml(content: string): string {
+  const normalizedContent = content.replace(/^( {2})(-|\d+\.)/gm, '    $2');
+  const escapedContent = escapeForTemplateLiteral(normalizedContent);
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Markdown Preview</title>
+<style>${markdownCSS}</style>
+</head>
+<body>
+<div class="markdown-body" id="content" style="padding:2rem;margin:1rem;min-height:100vh"></div>
+<script src="${MARKED_CDN}" integrity="${MARKED_SRI}" crossorigin="anonymous"></script>
+<script>
+if (typeof marked === 'undefined') {
+  document.getElementById('content').innerHTML =
+    '<p style="color:#e53e3e;padding:1rem">Markdown renderer failed to load. Check network connectivity.</p>';
+} else {
+${EMBEDDED_IS_SAFE_URL}
+marked.use({
+  gfm: true,
+  breaks: true,
+  renderer: {
+    html() { return ''; },
+    link(token) {
+      if (!isSafeUrl(token.href || '')) return '';
+      return false; // fall through to marked's default link renderer
+    },
+    image(token) {
+      if (!isSafeUrl(token.href || '')) return '';
+      return false; // fall through to marked's default image renderer
+    }
+  }
+});
+document.getElementById('content').innerHTML = marked.parse(\`${escapedContent}\`);
+}
+</script>
+</body>
+</html>`;
+}
+
+export const getMarkdownFiles = (content: string): Record<string, string> => {
+  const md = content || '# No content provided';
   return {
-    'content.md': content || '# No content provided',
-    'App.tsx': wrapMarkdownRenderer(content),
-    'index.tsx': dedent(`import React, { StrictMode } from "react";
-import { createRoot } from "react-dom/client";
-import "./styles.css";
-import "./markdown.css";
-
-import App from "./App";
-
-const root = createRoot(document.getElementById("root"));
-root.render(<App />);
-;`),
-    '/components/ui/MarkdownRenderer.tsx': markdownRenderer,
-    'markdown.css': markdownCSS,
+    'content.md': md,
+    'index.html': generateMarkdownHtml(md),
   };
 };

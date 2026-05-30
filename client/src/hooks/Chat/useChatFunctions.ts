@@ -2,7 +2,7 @@ import { v4 } from 'uuid';
 import { cloneDeep } from 'lodash';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { useSetRecoilState, useResetRecoilState, useRecoilValue } from 'recoil';
+import { useSetRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
 import {
   Constants,
   QueryKeys,
@@ -30,6 +30,7 @@ import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import { logger, createDualMessageContent } from '~/utils';
 import store, { useGetEphemeralAgent } from '~/store';
+import { startupConfigKey } from '~/data-provider';
 import useUserKey from '~/hooks/Input/useUserKey';
 import { useAuthContext } from '~/hooks';
 
@@ -48,7 +49,6 @@ export default function useChatFunctions({
   isSubmitting,
   latestMessage,
   setSubmission,
-  setLatestMessage,
   conversation: immutableConversation,
 }: {
   index?: number;
@@ -61,7 +61,6 @@ export default function useChatFunctions({
   files?: Map<string, ExtendedFile>;
   setFiles?: SetterOrUpdater<Map<string, ExtendedFile>>;
   setSubmission: SetterOrUpdater<TSubmission | null>;
-  setLatestMessage?: SetterOrUpdater<TMessage | null>;
 }) {
   const navigate = useNavigate();
   const getSender = useGetSender();
@@ -73,7 +72,30 @@ export default function useChatFunctions({
   const { getExpiry } = useUserKey(immutableConversation?.endpoint ?? '');
   const setIsSubmitting = useSetRecoilState(store.isSubmittingFamily(index));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
-  const resetLatestMultiMessage = useResetRecoilState(store.latestMessageFamily(index + 1));
+
+  /**
+   * Atomically read + reset the per-conversation queue of manually-invoked
+   * skills from the `$` popover. Reading and resetting in a single Recoil
+   * snapshot guarantees that if the user selects more skills between here and
+   * the next submission, their picks are never silently lost into a reset atom.
+   *
+   * The `hasValue` guard is defensive: this atom has a synchronous default of
+   * `[]` so `.contents` is always the resolved value in practice, but reading
+   * `.contents` on a loading/errored loadable yields a Promise/Error, which
+   * would make the `string[]` cast unsound.
+   */
+  const drainPendingManualSkills = useRecoilCallback(
+    ({ snapshot, reset }) =>
+      (convoId: string): string[] => {
+        const loadable = snapshot.getLoadable(store.pendingManualSkillsByConvoId(convoId));
+        const skills = loadable.state === 'hasValue' ? (loadable.contents as string[]) : [];
+        if (skills.length > 0) {
+          reset(store.pendingManualSkillsByConvoId(convoId));
+        }
+        return skills;
+      },
+    [],
+  );
 
   const ask: TAskFunction = (
     {
@@ -92,11 +114,11 @@ export default function useChatFunctions({
       isEdited = false,
       overrideMessages,
       overrideFiles,
+      overrideManualSkills,
       addedConvo,
     } = {},
   ) => {
     setShowStopButton(false);
-    resetLatestMultiMessage();
 
     text = text.trim();
     if (!!isSubmitting || text === '') {
@@ -123,6 +145,24 @@ export default function useChatFunctions({
     }
 
     const ephemeralAgent = getEphemeralAgent(conversationId ?? Constants.NEW_CONVO);
+    /**
+     * Manual skill selection resolution:
+     *  - Explicit `overrideManualSkills` wins (regenerate / save-and-submit
+     *    pass the original user message's persisted `manualSkills` so the
+     *    resubmitted turn primes the same skills — the pills are still
+     *    visible to the user, it would be strange to quietly drop them).
+     *  - Regenerate / continue / edit without an override → empty, and the
+     *    compose-time atom is deliberately NOT drained (those flows replay
+     *    a prior turn, not compose a new one).
+     *  - Fresh submit → drain the per-convo atom into the message.
+     */
+    let manualSkills = overrideManualSkills;
+    if (manualSkills == null) {
+      manualSkills =
+        isRegenerate || isContinued || isEdited
+          ? []
+          : drainPendingManualSkills(conversationId ?? Constants.NEW_CONVO);
+    }
     const isEditOrContinue = isEdited || isContinued;
 
     let currentMessages: TMessage[] | null = overrideMessages ?? getMessages() ?? [];
@@ -152,7 +192,7 @@ export default function useChatFunctions({
     if (conversationId == Constants.NEW_CONVO) {
       parentMessageId = Constants.NO_PARENT;
       currentMessages = [];
-      conversationId = overrideConvoId ?? v4();
+      conversationId = null;
       navigate('/c/new', { state: { focusChat: true } });
     }
 
@@ -166,14 +206,13 @@ export default function useChatFunctions({
       (msg) => msg.messageId === targetParentMessageId,
     );
 
-    let thread_id =
-      targetParentMessage?.thread_id ?? latestMessage?.thread_id ?? conversation?.thread_id;
+    let thread_id = targetParentMessage?.thread_id ?? latestMessage?.thread_id;
     if (thread_id == null) {
       thread_id = currentMessages.find((message) => message.thread_id)?.thread_id;
     }
 
     const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
-    const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
+    const startupConfig = queryClient.getQueryData<TStartupConfig>(startupConfigKey(true));
     const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
     const iconURL = conversation?.iconURL;
     const defaultParamsEndpoint = getDefaultParamsEndpoint(endpointsConfig, endpoint);
@@ -215,6 +254,13 @@ export default function useChatFunctions({
       messageId: isContinued && messageId != null && messageId ? messageId : intermediateId,
       thread_id,
       error: false,
+      /**
+       * UI-only metadata. Survives reload because the backend persists the
+       * field on the message schema, and `SkillPills` reads straight
+       * off the message so there's no Recoil state to clean up. Runtime
+       * skill resolution reads the top-level `manualSkills` payload field.
+       */
+      manualSkills: manualSkills.length > 0 ? manualSkills : undefined,
     };
 
     const submissionFiles = overrideFiles ?? targetParentMessage?.files;
@@ -261,6 +307,16 @@ export default function useChatFunctions({
       model: convo?.model,
       error: false,
       iconURL,
+      /**
+       * Seed the assistant placeholder with the turn's manually-invoked
+       * skill names so `ContentParts` can render interim `SkillCall` cards
+       * from the very first render — no round-trip through the `created`
+       * SSE event required. Rides along with every subsequent spread
+       * (`useStepHandler` response construction, `updateContent` result
+       * spreads) and drops out naturally at `finalHandler` when the
+       * server-backed `responseMessage` replacement takes over.
+       */
+      manualSkills: manualSkills.length > 0 ? manualSkills : undefined,
     };
 
     if (isAssistantsEndpoint(endpoint)) {
@@ -332,15 +388,13 @@ export default function useChatFunctions({
       ephemeralAgent,
       editedContent,
       addedConvo,
+      manualSkills: manualSkills.length > 0 ? manualSkills : undefined,
     };
 
     if (isRegenerate) {
       setMessages([...submission.messages, initialResponse]);
     } else {
       setMessages([...submission.messages, currentMsg, initialResponse]);
-    }
-    if (index === 0 && setLatestMessage) {
-      setLatestMessage(initialResponse);
     }
 
     setSubmission(submission);
@@ -354,7 +408,16 @@ export default function useChatFunctions({
     if (parentMessage && parentMessage.isCreatedByUser) {
       ask(
         { ...parentMessage },
-        { isRegenerate: true, addedConvo: options?.addedConvo ?? undefined },
+        {
+          isRegenerate: true,
+          addedConvo: options?.addedConvo ?? undefined,
+          /** Carry the original user message's manual skill picks forward
+           *  so the regenerated response is primed with the same skills.
+           *  The compose-time atom was drained on the first submit; without
+           *  this the model sees an unprimed turn even though the pills
+           *  still show on the user bubble. */
+          overrideManualSkills: parentMessage.manualSkills,
+        },
       );
     } else {
       console.error(

@@ -23,6 +23,7 @@ import {
   logger,
 } from '~/utils';
 import { useApplyModelSpecEffects } from '~/hooks/Agents';
+import { startupConfigKey } from '~/data-provider';
 import store from '~/store';
 
 const useNavigateToConvo = (index = 0) => {
@@ -31,7 +32,6 @@ const useNavigateToConvo = (index = 0) => {
   const clearAllConversations = store.useClearConvoState();
   const applyModelSpecEffects = useApplyModelSpecEffects();
   const setSubmission = useSetRecoilState(store.submissionByIndex(index));
-  const clearAllLatestMessages = store.useClearLatestMessages(`useNavigateToConvo ${index}`);
   const { hasSetConversation, setConversation: setConvo } = store.useCreateConversationAtom(index);
 
   const setConversation = useCallback(
@@ -41,7 +41,7 @@ const useNavigateToConvo = (index = 0) => {
         return;
       }
 
-      const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
+      const startupConfig = queryClient.getQueryData<TStartupConfig>(startupConfigKey(true));
       applyModelSpecEffects({
         startupConfig,
         specName: conversation?.spec,
@@ -78,7 +78,6 @@ const useNavigateToConvo = (index = 0) => {
   const navigateToConvo = (
     conversation?: TConversation | null,
     options?: {
-      resetLatestMessage?: boolean;
       currentConvoId?: string;
     },
   ) => {
@@ -86,14 +85,10 @@ const useNavigateToConvo = (index = 0) => {
       logger.warn('conversation', 'Conversation not provided to `navigateToConvo`');
       return;
     }
-    const { resetLatestMessage = true, currentConvoId } = options || {};
+    const { currentConvoId } = options || {};
     logger.log('conversation', 'Navigating to conversation', conversation);
     hasSetConversation.current = true;
     setSubmission(null);
-    if (resetLatestMessage) {
-      logger.log('latest_message', 'Clearing all latest messages');
-      clearAllLatestMessages();
-    }
 
     let convo = { ...conversation };
     const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);

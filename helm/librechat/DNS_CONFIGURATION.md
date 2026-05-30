@@ -34,29 +34,28 @@ The `dnsConfig` field allows you to specify:
 
 ```yaml
 # values.yaml
-dnsPolicy: 'None'
+dnsPolicy: "None"
 dnsConfig:
   nameservers:
-    - '10.0.0.10' # Custom DNS server
+    - "10.0.0.10"  # Custom DNS server
 ```
 
 ### Redirect AI Services to Proxy
 
 ```yaml
 # values.yaml
-dnsPolicy: 'None'
+dnsPolicy: "None"
 dnsConfig:
   nameservers:
-    - '10.96.0.100' # DNS server that redirects AI domains to proxy
+    - "10.96.0.100"  # DNS server that redirects AI domains to proxy
   searches:
-    - 'svc.cluster.local'
+    - "svc.cluster.local"
   options:
     - name: ndots
-      value: '2'
+      value: "2"
 ```
 
 Deploy:
-
 ```bash
 helm upgrade --install librechat ./helm/librechat -f values.yaml
 ```
@@ -65,14 +64,14 @@ helm upgrade --install librechat ./helm/librechat -f values.yaml
 
 ```yaml
 # values.yaml
-dnsPolicy: 'None'
+dnsPolicy: "None"
 dnsConfig:
   nameservers:
-    - '192.168.1.53' # Primary corporate DNS
-    - '192.168.1.54' # Secondary corporate DNS
+    - "192.168.1.53"  # Primary corporate DNS
+    - "192.168.1.54"  # Secondary corporate DNS
   searches:
-    - 'corp.internal'
-    - 'svc.cluster.local'
+    - "corp.internal"
+    - "svc.cluster.local"
 ```
 
 ## Testing
@@ -80,7 +79,6 @@ dnsConfig:
 ### Verify DNS Configuration
 
 1. Deploy with custom DNS settings:
-
 ```bash
 helm install librechat ./helm/librechat \
   --set dnsPolicy="None" \
@@ -88,13 +86,11 @@ helm install librechat ./helm/librechat \
 ```
 
 2. Check pod DNS configuration:
-
 ```bash
 kubectl exec <pod-name> -- cat /etc/resolv.conf
 ```
 
 3. Test DNS resolution:
-
 ```bash
 kubectl exec <pod-name> -- nslookup example.com
 ```
@@ -104,18 +100,15 @@ kubectl exec <pod-name> -- nslookup example.com
 The feature has been tested with the following scenarios:
 
 ✅ **DNS Resolution Test**
-
 - Custom nameservers properly configured in pods
 - Domains resolve to configured proxy IPs
 - Traffic successfully redirected to proxy servers
 
 ✅ **Multiple Nameservers**
-
 - Primary and fallback DNS servers work correctly
 - Failover happens when primary is unavailable
 
 ✅ **Integration Test**
-
 - Works with existing LibreChat configuration
 - No conflicts with cluster DNS when using ClusterFirst policy
 - Compatible with all pod security contexts
@@ -129,14 +122,14 @@ For simple host-to-IP mappings, you can combine DNS configuration with hostAlias
 ```yaml
 # In deployment spec (not directly in values.yaml)
 spec:
-  dnsPolicy: 'None'
+  dnsPolicy: "None"
   dnsConfig:
     nameservers:
-      - '10.0.0.10'
+      - "10.0.0.10"
   hostAliases:
-    - ip: '10.100.50.200'
+    - ip: "10.100.50.200"
       hostnames:
-        - 'api.openai.com'
+        - "api.openai.com"
 ```
 
 ### Dynamic DNS Configuration
@@ -159,13 +152,11 @@ dnsPolicy: "ClusterFirst"  # Use default in dev
 ### DNS Not Resolving
 
 1. Check pod's DNS policy:
-
 ```bash
 kubectl get pod <pod-name> -o yaml | grep -A5 dnsPolicy
 ```
 
 2. Verify nameservers are reachable:
-
 ```bash
 kubectl exec <pod-name> -- ping <nameserver-ip>
 ```
@@ -173,12 +164,11 @@ kubectl exec <pod-name> -- ping <nameserver-ip>
 ### Configuration Not Applied
 
 Ensure values are properly indented in values.yaml:
-
 ```yaml
-dnsPolicy: 'None' # Top level, not under any section
-dnsConfig: # Top level, not under any section
+dnsPolicy: "None"  # Top level, not under any section
+dnsConfig:         # Top level, not under any section
   nameservers:
-    - '10.0.0.10'
+    - "10.0.0.10"
 ```
 
 ## Security Considerations

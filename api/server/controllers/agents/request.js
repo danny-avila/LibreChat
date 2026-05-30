@@ -12,37 +12,7 @@ const {
 const { disposeClient, clientRegistry, requestDataMap } = require('~/server/cleanup');
 const { handleAbortError } = require('~/server/middleware');
 const { logViolation } = require('~/cache');
-const { saveMessage } = require('~/models');
-const {
-  getConvo,
-  saveConvo,
-  isOpenAIConversationId,
-  isLibreChatConversationId,
-} = require('~/models/Conversation');
-
-const readTextValue = (value) => {
-  if (typeof value !== 'string') {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-};
-
-const readPromptValue = (value, field) => {
-  if (value == null || typeof value !== 'object') {
-    return null;
-  }
-
-  return readTextValue(value[field]);
-};
-
-const extractOpenAIConversationId = (response) =>
-  readTextValue(response?.response_metadata?.conversation_id) ??
-  readTextValue(response?.response_metadata?.openai_conversation_id) ??
-  readTextValue(response?.response_metadata?.thread_id) ??
-  readTextValue(response?.conversation_id) ??
-  readTextValue(response?.openai_conversation_id);
+const { saveMessage, getConvo } = require('~/models');
 
 function createCloseHandler(abortController) {
   return function (manual) {
@@ -60,6 +30,48 @@ function createCloseHandler(abortController) {
     abortController.abort();
     logger.debug('[AgentController] Request aborted on close');
   };
+}
+
+function toValidISOString(value) {
+  if (value == null) {
+    return null;
+  }
+
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+async function resolveConversationCreatedAt({ userId, conversationId, isNewConvo }) {
+  if (isNewConvo) {
+    return { createdAt: new Date().toISOString(), conversation: undefined };
+  }
+
+  try {
+    const conversation = await getConvo(userId, conversationId);
+    return {
+      conversation,
+      createdAt: toValidISOString(conversation?.createdAt) ?? new Date().toISOString(),
+    };
+  } catch (error) {
+    logger.warn('[AgentController] Failed to resolve conversation timestamp anchor', {
+      conversationId,
+      error: error?.message ?? error,
+    });
+    return { createdAt: new Date().toISOString(), conversation: undefined };
+  }
+}
+
+async function attachConversationCreatedAt(req, { userId, conversationId, isNewConvo }) {
+  req.body.conversationId = conversationId;
+  const resolved = await resolveConversationCreatedAt({
+    userId,
+    conversationId,
+    isNewConvo,
+  });
+  req.conversationCreatedAt = resolved.createdAt;
+  if (!isNewConvo && resolved.conversation !== undefined) {
+    req.resolvedConversation = resolved.conversation ?? null;
+  }
 }
 
 /**
@@ -80,49 +92,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   } = req.body;
 
   const userId = req.user.id;
-  const requestModelParameters =
-    req.body?.model_parameters != null && typeof req.body.model_parameters === 'object'
-      ? req.body.model_parameters
-      : {};
-  const promptConfig =
-    requestModelParameters.prompt != null && typeof requestModelParameters.prompt === 'object'
-      ? requestModelParameters.prompt
-      : null;
-  const requestedConversationId = readTextValue(reqConversationId);
-  const requestedThreadId =
-    readTextValue(req.body.threadId) ??
-    readTextValue(req.body.thread_id) ??
-    readTextValue(req.body.openai_conversation_id) ??
-    readTextValue(req.body.openaiConversationId) ??
-    readTextValue(requestModelParameters.openai_conversation_id) ??
-    readTextValue(requestModelParameters.openaiConversationId) ??
-    readTextValue(requestModelParameters.conversation);
-  const promptId =
-    readTextValue(req.body.promptId) ??
-    readTextValue(req.body.prompt_id) ??
-    readTextValue(requestModelParameters.prompt_id) ??
-    readPromptValue(promptConfig, 'id');
-  const promptVersion =
-    readTextValue(req.body.promptVersion) ??
-    readTextValue(req.body.prompt_version) ??
-    readTextValue(requestModelParameters.prompt_version) ??
-    readPromptValue(promptConfig, 'version');
-  let openaiConversationId = requestedThreadId;
-  let resolvedConversationId = requestedConversationId;
-  let existingConvo = null;
-
-  if (requestedConversationId && !isLibreChatConversationId(requestedConversationId)) {
-    if (!isOpenAIConversationId(requestedConversationId)) {
-      return res.status(400).json({ error: 'invalid_conversation_reference' });
-    }
-    openaiConversationId = requestedConversationId;
-    resolvedConversationId = null;
-  }
-
-  if (!openaiConversationId && resolvedConversationId) {
-    existingConvo = await getConvo(userId, resolvedConversationId);
-    openaiConversationId = readTextValue(existingConvo?.openaiConversationId);
-  }
 
   const { allowed, pendingRequests, limit } = await checkAndIncrementPendingRequest(userId);
   if (!allowed) {
@@ -131,24 +100,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     return res.status(429).json(violationInfo);
   }
 
-  // Use the frontend-provided internal conversation ID when present.
-  // If the conversation has not been persisted yet, this is the first turn for that thread.
-  const conversationId = resolvedConversationId ?? crypto.randomUUID();
+  // Generate conversationId upfront if not provided - streamId === conversationId always
+  // Treat "new" as a placeholder that needs a real UUID (frontend may send "new" for new convos)
+  const isNewConvo = !reqConversationId || reqConversationId === 'new';
+  const conversationId = isNewConvo ? crypto.randomUUID() : reqConversationId;
   const streamId = conversationId;
-  const isNewConvoRequest = existingConvo == null;
   req.body.conversationId = conversationId;
-  if (openaiConversationId) {
-    req.body.threadId = openaiConversationId;
-    req.body.openai_conversation_id = openaiConversationId;
-  }
-  if (promptId) {
-    req.body.promptId = promptId;
-    req.body.prompt_id = promptId;
-  }
-  if (promptVersion) {
-    req.body.promptVersion = promptVersion;
-    req.body.prompt_version = promptVersion;
-  }
 
   let client = null;
 
@@ -163,20 +120,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     const job = await GenerationJobManager.createJob(streamId, userId, conversationId);
     const jobCreatedAt = job.createdAt; // Capture creation time to detect job replacement
     req._resumableStreamId = streamId;
-    GenerationJobManager.updateMetadata(streamId, {
-      openaiConversationId,
-      promptId,
-      promptVersion,
-    });
 
     // Send JSON response IMMEDIATELY so client can connect to SSE stream
     // This is critical: tool loading (MCP OAuth) may emit events that the client needs to receive
-    res.json({
-      streamId,
-      conversationId,
-      threadId: openaiConversationId ?? null,
-      status: 'started',
-    });
+    res.json({ streamId, conversationId, status: 'started' });
+
+    await attachConversationCreatedAt(req, { userId, conversationId, isNewConvo });
 
     // Note: We no longer use res.on('close') to abort since we send JSON immediately.
     // The response closes normally after res.json(), which is not an abort condition.
@@ -227,9 +176,15 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           partialMessage.agent_id = req.body.agent_id;
         }
 
-        await saveMessage(req, partialMessage, {
-          context: 'api/server/controllers/agents/request.js - partial response on disconnect',
-        });
+        await saveMessage(
+          {
+            userId: req?.user?.id,
+            isTemporary: req?.body?.isTemporary,
+            interfaceConfig: req?.config?.interfaceConfig,
+          },
+          partialMessage,
+          { context: 'api/server/controllers/agents/request.js - partial response on disconnect' },
+        );
 
         logger.debug(
           `[ResumableAgentController] Saved partial response for ${streamId}, content parts: ${aggregatedContent.length}`,
@@ -307,7 +262,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             created: true,
             message: userMessage,
             streamId,
-            threadId: openaiConversationId ?? null,
           });
         };
 
@@ -348,41 +302,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         const conversation = { ...convoData };
         conversation.title =
           conversation && !conversation.title ? null : conversation?.title || 'New Chat';
-        const resolvedOpenAIConversationId =
-          extractOpenAIConversationId(response) ?? openaiConversationId;
-
-        if (
-          resolvedOpenAIConversationId &&
-          conversation?.conversationId &&
-          resolvedOpenAIConversationId !== conversation.openaiConversationId
-        ) {
-          const updatedConversation = await saveConvo(
-            req,
-            {
-              conversationId: conversation.conversationId,
-              openaiConversationId: resolvedOpenAIConversationId,
-            },
-            {
-              context: 'api/server/controllers/agents/request.js - persist OpenAI conversation id',
-            },
-          );
-
-          if (updatedConversation?.openaiConversationId) {
-            conversation.openaiConversationId = updatedConversation.openaiConversationId;
-          } else {
-            conversation.openaiConversationId = resolvedOpenAIConversationId;
-          }
-        }
-
-        if (resolvedOpenAIConversationId) {
-          openaiConversationId = resolvedOpenAIConversationId;
-          req.body.threadId = resolvedOpenAIConversationId;
-          req.body.openai_conversation_id = resolvedOpenAIConversationId;
-          req.body.openaiConversationId = resolvedOpenAIConversationId;
-          GenerationJobManager.updateMetadata(streamId, {
-            openaiConversationId: resolvedOpenAIConversationId,
-          });
-        }
 
         if (req.body.files && Array.isArray(client.options.attachments)) {
           const files = buildMessageFiles(req.body.files, client.options.attachments);
@@ -397,13 +316,19 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         const shouldGenerateTitle =
           addTitle &&
           parentMessageId === Constants.NO_PARENT &&
-          isNewConvoRequest &&
+          isNewConvo &&
           !wasAbortedBeforeComplete;
 
         // Save user message BEFORE sending final event to avoid race condition
         // where client refetch happens before database is updated
+        const reqCtx = {
+          userId: req?.user?.id,
+          isTemporary: req?.body?.isTemporary,
+          interfaceConfig: req?.config?.interfaceConfig,
+        };
+
         if (!client.skipSaveUserMessage && userMessage) {
-          await saveMessage(req, userMessage, {
+          await saveMessage(reqCtx, userMessage, {
             context: 'api/server/controllers/agents/request.js - resumable user message',
           });
         }
@@ -413,7 +338,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         // before the response is saved to the database, causing orphaned parentMessageIds.
         if (client.savedMessageIds && !client.savedMessageIds.has(messageId)) {
           await saveMessage(
-            req,
+            reqCtx,
             { ...response, user: userId, unfinished: wasAbortedBeforeComplete },
             { context: 'api/server/controllers/agents/request.js - resumable response end' },
           );
@@ -439,9 +364,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           const finalEvent = {
             final: true,
             conversation,
-            threadId: openaiConversationId ?? null,
-            promptId: promptId ?? null,
-            promptVersion: promptVersion ?? null,
             title: conversation.title,
             requestMessage: sanitizeMessageForTransmit(userMessage),
             responseMessage: { ...response },
@@ -462,9 +384,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           const finalEvent = {
             final: true,
             conversation,
-            threadId: openaiConversationId ?? null,
-            promptId: promptId ?? null,
-            promptVersion: promptVersion ?? null,
             title: conversation.title,
             requestMessage: sanitizeMessageForTransmit(userMessage),
             responseMessage: { ...response, unfinished: true },
@@ -578,8 +497,8 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
 
   // Generate conversationId upfront if not provided - streamId === conversationId always
   // Treat "new" as a placeholder that needs a real UUID (frontend may send "new" for new convos)
-  const conversationId =
-    !reqConversationId || reqConversationId === 'new' ? crypto.randomUUID() : reqConversationId;
+  const isNewConvo = !reqConversationId || reqConversationId === 'new';
+  const conversationId = isNewConvo ? crypto.randomUUID() : reqConversationId;
   const streamId = conversationId;
 
   let userMessage;
@@ -589,8 +508,9 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
   let cleanupHandlers = [];
 
   // Match the same logic used for conversationId generation above
-  const isNewConvo = !reqConversationId || reqConversationId === 'new';
   const userId = req.user.id;
+
+  await attachConversationCreatedAt(req, { userId, conversationId, isNewConvo });
 
   // Create handler to avoid capturing the entire parent scope
   let getReqData = (data = {}) => {
@@ -798,7 +718,11 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
       // Save the message if needed
       if (client.savedMessageIds && !client.savedMessageIds.has(messageId)) {
         await saveMessage(
-          req,
+          {
+            userId: req?.user?.id,
+            isTemporary: req?.body?.isTemporary,
+            interfaceConfig: req?.config?.interfaceConfig,
+          },
           { ...finalResponse, user: userId },
           { context: 'api/server/controllers/agents/request.js - response end' },
         );
@@ -827,9 +751,15 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
 
     // Save user message if needed
     if (!client.skipSaveUserMessage) {
-      await saveMessage(req, userMessage, {
-        context: "api/server/controllers/agents/request.js - don't skip saving user message",
-      });
+      await saveMessage(
+        {
+          userId: req?.user?.id,
+          isTemporary: req?.body?.isTemporary,
+          interfaceConfig: req?.config?.interfaceConfig,
+        },
+        userMessage,
+        { context: "api/server/controllers/agents/request.js - don't skip saving user message" },
+      );
     }
 
     // Add title if needed - extract minimal data

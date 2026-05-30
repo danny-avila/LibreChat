@@ -8,14 +8,20 @@ export default {
   input: 'src/index.ts',
   output: [
     {
-      file: 'dist/index.es.js',
+      dir: 'dist',
       format: 'es',
       sourcemap: true,
+      preserveModules: true,
+      preserveModulesRoot: 'src',
+      entryFileNames: '[name].es.js',
     },
     {
-      file: 'dist/index.cjs',
+      dir: 'dist',
       format: 'cjs',
       sourcemap: true,
+      preserveModules: true,
+      preserveModulesRoot: 'src',
+      entryFileNames: '[name].cjs',
     },
   ],
   plugins: [
@@ -29,7 +35,7 @@ export default {
     commonjs(),
     // Compile TypeScript files and generate type declarations
     typescript({
-      tsconfig: './tsconfig.json',
+      tsconfig: './tsconfig.build.json',
       declaration: true,
       declarationDir: 'dist/types',
       rootDir: 'src',

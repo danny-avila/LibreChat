@@ -1,5 +1,6 @@
 import type { Model, Types } from 'mongoose';
 import type { IAgentCategory } from '~/types';
+import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 
 export function createAgentCategoryMethods(mongoose: typeof import('mongoose')) {
   /**
@@ -8,7 +9,9 @@ export function createAgentCategoryMethods(mongoose: typeof import('mongoose')) 
    */
   async function getActiveCategories(): Promise<IAgentCategory[]> {
     const AgentCategory = mongoose.models.AgentCategory as Model<IAgentCategory>;
-    return await AgentCategory.find({ isActive: true }).sort({ order: 1, label: 1 }).lean();
+    return await AgentCategory.find({ isActive: true })
+      .sort({ order: 1, label: 1 })
+      .lean<IAgentCategory[]>();
   }
 
   /**
@@ -74,7 +77,7 @@ export function createAgentCategoryMethods(mongoose: typeof import('mongoose')) 
       },
     }));
 
-    return await AgentCategory.bulkWrite(operations);
+    return await tenantSafeBulkWrite(AgentCategory, operations);
   }
 
   /**
@@ -84,7 +87,7 @@ export function createAgentCategoryMethods(mongoose: typeof import('mongoose')) 
    */
   async function findCategoryByValue(value: string): Promise<IAgentCategory | null> {
     const AgentCategory = mongoose.models.AgentCategory as Model<IAgentCategory>;
-    return await AgentCategory.findOne({ value }).lean();
+    return await AgentCategory.findOne({ value }).lean<IAgentCategory>();
   }
 
   /**
@@ -113,7 +116,7 @@ export function createAgentCategoryMethods(mongoose: typeof import('mongoose')) 
       { value },
       { $set: updateData },
       { new: true, runValidators: true },
-    ).lean();
+    ).lean<IAgentCategory>();
   }
 
   /**
@@ -134,7 +137,7 @@ export function createAgentCategoryMethods(mongoose: typeof import('mongoose')) 
    */
   async function findCategoryById(id: string | Types.ObjectId): Promise<IAgentCategory | null> {
     const AgentCategory = mongoose.models.AgentCategory as Model<IAgentCategory>;
-    return await AgentCategory.findById(id).lean();
+    return await AgentCategory.findById(id).lean<IAgentCategory>();
   }
 
   /**
@@ -143,7 +146,7 @@ export function createAgentCategoryMethods(mongoose: typeof import('mongoose')) 
    */
   async function getAllCategories(): Promise<IAgentCategory[]> {
     const AgentCategory = mongoose.models.AgentCategory as Model<IAgentCategory>;
-    return await AgentCategory.find({}).sort({ order: 1, label: 1 }).lean();
+    return await AgentCategory.find({}).sort({ order: 1, label: 1 }).lean<IAgentCategory[]>();
   }
 
   /**
@@ -241,7 +244,7 @@ export function createAgentCategoryMethods(mongoose: typeof import('mongoose')) 
         },
       }));
 
-      await AgentCategory.bulkWrite(bulkOps, { ordered: false });
+      await tenantSafeBulkWrite(AgentCategory, bulkOps, { ordered: false });
     }
 
     return updates.length > 0 || created > 0;

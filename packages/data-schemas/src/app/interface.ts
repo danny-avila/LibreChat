@@ -24,37 +24,39 @@ export async function loadDefaultInterface({
 
   const memoryConfig = config?.memory;
   const memoryEnabled = isMemoryEnabled(memoryConfig);
-  /** Only disable memories if memory config is present but disabled/invalid */
+  /** Only disable memories if memory config is present and explicitly disabled */
   const shouldDisableMemories = memoryConfig && !memoryEnabled;
 
   const loadedInterface: AppConfig['interfaceConfig'] = removeNullishValues({
     // UI elements - use schema defaults
-    endpointsMenu:
-      interfaceConfig?.endpointsMenu ?? (hasModelSpecs ? false : defaults.endpointsMenu),
     modelSelect:
       interfaceConfig?.modelSelect ??
       (hasModelSpecs ? includesAddedEndpoints : defaults.modelSelect),
     parameters: interfaceConfig?.parameters ?? (hasModelSpecs ? false : defaults.parameters),
     presets: interfaceConfig?.presets ?? (hasModelSpecs ? false : defaults.presets),
-    sidePanel: interfaceConfig?.sidePanel ?? defaults.sidePanel,
     privacyPolicy: interfaceConfig?.privacyPolicy ?? defaults.privacyPolicy,
     termsOfService: interfaceConfig?.termsOfService ?? defaults.termsOfService,
     mcpServers: interfaceConfig?.mcpServers ?? defaults.mcpServers,
     customWelcome: interfaceConfig?.customWelcome ?? defaults.customWelcome,
+    autoSubmitFromUrl: interfaceConfig?.autoSubmitFromUrl ?? defaults.autoSubmitFromUrl,
 
-    // Permissions - only include if explicitly configured
+    // Permissions and related settings - only include if explicitly configured
     bookmarks: interfaceConfig?.bookmarks,
     memories: shouldDisableMemories ? false : interfaceConfig?.memories,
     prompts: interfaceConfig?.prompts,
     multiConvo: interfaceConfig?.multiConvo,
     agents: interfaceConfig?.agents,
     temporaryChat: interfaceConfig?.temporaryChat,
+    temporaryChatRetention: interfaceConfig?.temporaryChatRetention,
+    retentionMode: interfaceConfig?.retentionMode,
     runCode: interfaceConfig?.runCode,
     webSearch: interfaceConfig?.webSearch,
     fileSearch: interfaceConfig?.fileSearch,
     fileCitations: interfaceConfig?.fileCitations,
     peoplePicker: interfaceConfig?.peoplePicker,
     marketplace: interfaceConfig?.marketplace,
+    remoteAgents: interfaceConfig?.remoteAgents,
+    skills: interfaceConfig?.skills,
   });
 
   return loadedInterface;

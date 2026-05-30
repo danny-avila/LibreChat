@@ -1,5 +1,7 @@
 import mongoose, { FilterQuery } from 'mongoose';
+import type { RefillIntervalUnit } from 'librechat-data-provider';
 import type { IUser, BalanceConfig, CreateUserRequest, UserDeleteResult } from '~/types';
+import { escapeRegExp } from '~/utils/string';
 import { signPayload } from '~/crypto';
 
 /** Default JWT session expiry: 15 minutes in milliseconds */
@@ -35,13 +37,36 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     searchCriteria: FilterQuery<IUser>,
     fieldsToSelect?: string | string[] | null,
   ): Promise<IUser | null> {
-    const User = mongoose.models.User;
+    const User = mongoose.models.User as mongoose.Model<IUser>;
     const normalizedCriteria = normalizeEmailInCriteria(searchCriteria);
     const query = User.findOne(normalizedCriteria);
     if (fieldsToSelect) {
       query.select(fieldsToSelect);
     }
-    return (await query.lean()) as IUser | null;
+    return await query.lean<IUser>();
+  }
+
+  async function findUsers(
+    searchCriteria: FilterQuery<IUser>,
+    fieldsToSelect?: string | string[] | null,
+    options?: { limit?: number; offset?: number; sort?: Record<string, 1 | -1> },
+  ): Promise<IUser[]> {
+    const User = mongoose.models.User as mongoose.Model<IUser>;
+    const normalizedCriteria = normalizeEmailInCriteria(searchCriteria);
+    const query = User.find(normalizedCriteria);
+    if (fieldsToSelect) {
+      query.select(fieldsToSelect);
+    }
+    if (options?.sort != null) {
+      query.sort(options.sort);
+    }
+    if (options?.offset != null) {
+      query.skip(options.offset);
+    }
+    if (options?.limit != null && options.limit > 0) {
+      query.limit(options.limit);
+    }
+    return await query.lean<IUser[]>();
   }
 
   /**
@@ -82,7 +107,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
         $set?: {
           autoRefillEnabled: boolean;
           refillIntervalValue: number;
-          refillIntervalUnit: string;
+          refillIntervalUnit: RefillIntervalUnit;
           refillAmount: number;
         };
       } = {
@@ -124,10 +149,10 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
       $set: updateData,
       $unset: { expiresAt: '' }, // Remove the expiresAt field to prevent TTL
     };
-    return (await User.findByIdAndUpdate(userId, updateOperation, {
+    return await User.findByIdAndUpdate(userId, updateOperation, {
       new: true,
       runValidators: true,
-    }).lean()) as IUser | null;
+    }).lean<IUser>();
   }
 
   /**
@@ -142,7 +167,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     if (fieldsToSelect) {
       query.select(fieldsToSelect);
     }
-    return (await query.lean()) as IUser | null;
+    return await query.lean<IUser>();
   }
 
   /**
@@ -209,10 +234,10 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
       },
     };
 
-    return (await User.findByIdAndUpdate(userId, updateOperation, {
+    return await User.findByIdAndUpdate(userId, updateOperation, {
       new: true,
       runValidators: true,
-    }).lean()) as IUser | null;
+    }).lean<IUser>();
   }
 
   /**
@@ -235,7 +260,8 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
       return [];
     }
 
-    const regex = new RegExp(searchPattern.trim(), 'i');
+    const trimmedPattern = searchPattern.trim();
+    const regex = new RegExp(escapeRegExp(trimmedPattern), 'i');
     const User = mongoose.models.User;
 
     const query = User.find({
@@ -246,14 +272,15 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
       query.select(fieldsToSelect);
     }
 
-    const users = await query.lean();
+    const users = await query.lean<IUser[]>();
 
     // Score results by relevance
-    const exactRegex = new RegExp(`^${searchPattern.trim()}$`, 'i');
-    const startsWithPattern = searchPattern.trim().toLowerCase();
+    const startsWithPattern = trimmedPattern.toLowerCase();
 
     const scoredUsers = users.map((user) => {
-      const searchableFields = [user.name, user.email, user.username].filter(Boolean);
+      const searchableFields = [user.name, user.email, user.username].filter(
+        (field): field is string => typeof field === 'string' && field.length > 0,
+      );
       let maxScore = 0;
 
       for (const field of searchableFields) {
@@ -261,7 +288,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
         let score = 0;
 
         // Exact match gets highest score
-        if (exactRegex.test(field)) {
+        if (fieldLower === startsWithPattern) {
           score = 100;
         }
         // Starts with query gets high score
@@ -272,7 +299,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
         else if (fieldLower.includes(startsWithPattern)) {
           score = 50;
         }
-        // Default score for regex match
+        // Default score for database match
         else {
           score = 10;
         }
@@ -288,8 +315,6 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
       .sort((a, b) => b._searchScore - a._searchScore)
       .slice(0, limit)
       .map((user) => {
-        // Remove the search score from final results
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { _searchScore, ...userWithoutScore } = user;
         return userWithoutScore;
       });
@@ -323,6 +348,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
 
   return {
     findUser,
+    findUsers,
     countUsers,
     createUser,
     updateUser,

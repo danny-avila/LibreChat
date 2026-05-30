@@ -84,15 +84,22 @@ export function encodeHeaderValue(value: string): string {
  */
 export function createSafeUser(
   user: IUser | null | undefined,
-): Partial<SafeUser> & { federatedTokens?: unknown } {
+): Partial<SafeUser> & { federatedTokens?: IUser['federatedTokens'] } {
   if (!user) {
     return {};
   }
 
-  const safeUser: Partial<SafeUser> & { federatedTokens?: unknown } = {};
+  const safeUser: Partial<SafeUser> & { federatedTokens?: IUser['federatedTokens'] } = {};
   for (const field of ALLOWED_USER_FIELDS) {
     if (field in user) {
-      safeUser[field] = user[field];
+      /**
+       * Indexed write through a union-typed key would otherwise fail strict
+       * checking — TS computes the LHS type as the *intersection* of all
+       * field write types (which collapses to `undefined` when fields have
+       * mixed types). `Object.assign` widens the assignment so each field
+       * preserves its concrete type at runtime.
+       */
+      Object.assign(safeUser, { [field]: user[field] });
     }
   }
 
@@ -226,9 +233,20 @@ function processSingleValue({
 
   let value = originalValue;
 
+  /**
+   * SECURITY INVARIANT — ordering matters:
+   * Resolve env vars on the admin-authored template BEFORE any user-controlled
+   * data is substituted (customUserVars, user fields, OIDC tokens, body placeholders).
+   * This prevents second-order injection where user values containing ${VAR}
+   * patterns would otherwise be expanded against process.env.
+   */
+  if (!dbSourced) {
+    value = extractEnvVariable(value);
+  }
+
+  /** Runs for both dbSourced and non-dbSourced — it is the only resolution DB-stored servers get */
   if (customUserVars) {
     for (const [varName, varVal] of Object.entries(customUserVars)) {
-      /** Escaped varName for use in regex to avoid issues with special characters */
       const escapedVarName = varName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const placeholderRegex = new RegExp(`\\{\\{${escapedVarName}\\}\\}`, 'g');
       value = value.replace(placeholderRegex, varVal);
@@ -250,9 +268,14 @@ function processSingleValue({
     value = processBodyPlaceholders(value, body);
   }
 
-  value = extractEnvVariable(value);
-
   return value;
+}
+
+function processAdminValue(originalValue: string, dbSourced: boolean): string {
+  if (typeof originalValue !== 'string') {
+    return String(originalValue);
+  }
+  return dbSourced ? originalValue : extractEnvVariable(originalValue);
 }
 
 /**
@@ -365,6 +388,11 @@ export function processMCPEnv(params: {
       customUserVars,
       originalValue: newObj.url,
     });
+  }
+
+  // Process outbound proxy if it exists (for SSE and StreamableHTTP types)
+  if ('proxy' in newObj && newObj.proxy) {
+    newObj.proxy = processAdminValue(newObj.proxy, dbSourced);
   }
 
   // Process OAuth configuration if it exists (for all transport types)

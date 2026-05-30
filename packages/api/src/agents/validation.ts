@@ -1,7 +1,14 @@
 import { z } from 'zod';
-import { ViolationTypes, ErrorTypes } from 'librechat-data-provider';
+import { MAX_SUBAGENTS, ViolationTypes, ErrorTypes } from 'librechat-data-provider';
 import type { Agent, TModelsConfig } from 'librechat-data-provider';
 import type { Request, Response } from 'express';
+
+/**
+ * Permissive Request alias used by {@link validateAgentModel}. Accepts either
+ * the default Express `Request` or the project-specific `ServerRequest`
+ * (see `~/types/http`), whose `params` type is widened to `unknown`.
+ */
+type LooseRequest = Request<unknown, unknown, unknown>;
 
 /** Avatar schema shared between create and update */
 export const agentAvatarSchema = z.object({
@@ -44,11 +51,20 @@ export const agentSupportContactSchema = z
 export const graphEdgeSchema = z.object({
   from: z.union([z.string(), z.array(z.string())]),
   to: z.union([z.string(), z.array(z.string())]),
-  description: z.string().optional(),
+  description: z
+    .string()
+    .optional()
+    .transform((v) => (v === '' ? undefined : v)),
   edgeType: z.enum(['handoff', 'direct']).optional(),
-  prompt: z.union([z.string(), z.function()]).optional(),
+  prompt: z
+    .union([z.string(), z.function()])
+    .optional()
+    .transform((v) => (v === '' ? undefined : v)),
   excludeResults: z.boolean().optional(),
-  promptKey: z.string().optional(),
+  promptKey: z
+    .string()
+    .optional()
+    .transform((v) => (v === '' ? undefined : v)),
 });
 
 /** Per-tool options schema (defer_loading, allowed_callers) */
@@ -60,6 +76,20 @@ export const toolOptionsSchema = z.object({
 /** Agent tool options - map of tool_id to tool options */
 export const agentToolOptionsSchema = z.record(z.string(), toolOptionsSchema).optional();
 
+/**
+ * Subagent spawning configuration for an agent. `agent_ids` is capped at
+ * `Constants.MAX_SUBAGENTS` so a crafted API request cannot trigger hundreds
+ * of `processAgent` calls (DB lookup + permission check + tool loading).
+ * The UI enforces the same cap, so legitimate payloads never hit the bound.
+ */
+export const agentSubagentsSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    allowSelf: z.boolean().optional(),
+    agent_ids: z.array(z.string()).max(MAX_SUBAGENTS).optional(),
+  })
+  .optional();
+
 /** Base agent schema with all common fields */
 export const agentBaseSchema = z.object({
   name: z.string().nullable().optional(),
@@ -68,6 +98,8 @@ export const agentBaseSchema = z.object({
   avatar: agentAvatarSchema.nullable().optional(),
   model_parameters: z.record(z.unknown()).optional(),
   tools: z.array(z.string()).optional(),
+  skills: z.array(z.string()).optional(),
+  skills_enabled: z.boolean().optional(),
   /** @deprecated Use edges instead */
   agent_ids: z.array(z.string()).optional(),
   edges: z.array(graphEdgeSchema).optional(),
@@ -78,6 +110,7 @@ export const agentBaseSchema = z.object({
   conversation_starters: z.array(z.string()).optional(),
   tool_resources: agentToolResourcesSchema,
   tool_options: agentToolOptionsSchema,
+  subagents: agentSubagentsSchema,
   support_contact: agentSupportContactSchema,
   category: z.string().optional(),
 });
@@ -94,18 +127,15 @@ export const agentUpdateSchema = agentBaseSchema.extend({
   avatar: z.union([agentAvatarSchema, z.null()]).optional(),
   provider: z.string().optional(),
   model: z.string().nullable().optional(),
-  projectIds: z.array(z.string()).optional(),
-  removeProjectIds: z.array(z.string()).optional(),
-  isCollaborative: z.boolean().optional(),
 });
 
-interface ValidateAgentModelParams {
-  req: Request;
+export interface ValidateAgentModelParams {
+  req: LooseRequest;
   res: Response;
   agent: Agent;
   modelsConfig: TModelsConfig;
   logViolation: (
-    req: Request,
+    req: LooseRequest,
     res: Response,
     type: string,
     errorMessage: Record<string, unknown>,

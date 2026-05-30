@@ -7,7 +7,6 @@ import { updateConvoInAllQueries } from '~/utils';
 export interface StreamStatusResponse {
   active: boolean;
   streamId?: string;
-  threadId?: string | null;
   status?: 'running' | 'complete' | 'error' | 'aborted';
   aggregatedContent?: Array<{ type: string; text?: string }>;
   createdAt?: number;
@@ -18,7 +17,7 @@ export const streamStatusQueryKey = (conversationId: string) => ['streamStatus',
 
 export const fetchStreamStatus = async (conversationId: string): Promise<StreamStatusResponse> => {
   return request.get<StreamStatusResponse>(
-    `${apiBaseUrl()}/api/agents/chat/status/${encodeURIComponent(conversationId)}`,
+    `${apiBaseUrl()}/api/agents/chat/status/${conversationId}`,
   );
 };
 

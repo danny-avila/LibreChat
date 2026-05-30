@@ -13,16 +13,31 @@ jest.mock('@librechat/agents', () => ({
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   checkAccess: jest.fn(),
+  countFormattedMessageTokens: jest.fn(() => 42),
+  countTokens: jest.fn((text) => Math.ceil(String(text ?? '').length / 4)),
   initializeAgent: jest.fn(),
   createMemoryProcessor: jest.fn(),
-}));
-
-jest.mock('~/models/Agent', () => ({
+  isMemoryAgentEnabled: jest.fn((config) => {
+    if (!config || config.disabled === true) return false;
+    const agent = config.agent;
+    if (agent?.enabled !== true) return false;
+    return Boolean(agent.id || (agent.provider && agent.model));
+  }),
   loadAgent: jest.fn(),
 }));
 
-jest.mock('~/models/Role', () => ({
+jest.mock('~/server/services/Config', () => ({
+  getMCPServerTools: jest.fn(),
+}));
+
+jest.mock('~/server/services/MCP', () => ({
+  resolveConfigServers: jest.fn().mockResolvedValue({}),
+}));
+
+jest.mock('~/models', () => ({
+  getAgent: jest.fn(),
   getRoleByName: jest.fn(),
+  getFormattedMemories: jest.fn(),
 }));
 
 // Mock getMCPManager
@@ -1237,7 +1252,7 @@ describe('AgentClient - titleConvo', () => {
         '# MCP Server Instructions\n\nTest MCP instructions here',
       );
 
-      const { DynamicStructuredTool } = require('@langchain/core/tools');
+      const { DynamicStructuredTool } = require('@librechat/agents/langchain/tools');
 
       // Create mock MCP tools with the delimiter pattern
       const mockMCPTool1 = new DynamicStructuredTool({
@@ -1313,7 +1328,7 @@ describe('AgentClient - titleConvo', () => {
       });
 
       // Verify formatInstructionsForContext was called with correct server names
-      expect(mockFormatInstructions).toHaveBeenCalledWith(['server1', 'server2']);
+      expect(mockFormatInstructions).toHaveBeenCalledWith(['server1', 'server2'], {});
 
       // Verify the instructions do NOT contain [object Promise]
       expect(client.options.agent.instructions).not.toContain('[object Promise]');
@@ -1353,10 +1368,10 @@ describe('AgentClient - titleConvo', () => {
       });
 
       // Verify formatInstructionsForContext was called with ephemeral server names
-      expect(mockFormatInstructions).toHaveBeenCalledWith([
-        'ephemeral-server1',
-        'ephemeral-server2',
-      ]);
+      expect(mockFormatInstructions).toHaveBeenCalledWith(
+        ['ephemeral-server1', 'ephemeral-server2'],
+        {},
+      );
 
       // Verify no [object Promise] in instructions
       expect(client.options.agent.instructions).not.toContain('[object Promise]');
@@ -1416,6 +1431,183 @@ describe('AgentClient - titleConvo', () => {
     });
   });
 
+  describe('buildMessages with request and agent-scoped context attachments', () => {
+    let client;
+    let mockReq;
+    let mockRes;
+    let mockAgent;
+
+    const makeTextFile = (file_id, filename, text) => ({
+      user: 'user-123',
+      file_id,
+      filename,
+      filepath: `/uploads/${filename}`,
+      object: 'file',
+      type: 'text/plain',
+      bytes: text.length,
+      embedded: false,
+      usage: 0,
+      source: 'text',
+      text,
+    });
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockFormatInstructions.mockResolvedValue('');
+
+      mockAgent = {
+        id: 'primary-agent',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        instructions: 'Primary instructions',
+        model_parameters: {
+          model: 'gpt-4',
+        },
+        tools: [],
+      };
+
+      mockReq = {
+        user: {
+          id: 'user-123',
+          personalization: {
+            memories: true,
+          },
+        },
+        body: {
+          endpoint: EModelEndpoint.openAI,
+          fileTokenLimit: 1000,
+        },
+        config: {
+          memory: {
+            disabled: true,
+          },
+        },
+      };
+      mockRes = {};
+
+      client = new AgentClient({
+        req: mockReq,
+        res: mockRes,
+        agent: mockAgent,
+        endpoint: EModelEndpoint.agents,
+      });
+      client.conversationId = 'convo-123';
+      client.responseMessageId = 'response-123';
+      client.shouldSummarize = false;
+      client.maxContextTokens = 4096;
+      client.useMemory = jest.fn().mockResolvedValue(undefined);
+    });
+
+    it("applies shared request context plus each agent's own context docs only", async () => {
+      const requestFile = makeTextFile('request-file', 'request.txt', 'Shared request context');
+      const primaryContext = makeTextFile(
+        'primary-context',
+        'primary.txt',
+        'Primary private context',
+      );
+      const handoffContext = makeTextFile(
+        'handoff-context',
+        'handoff.txt',
+        'Handoff private context',
+      );
+      const handoffAgent = {
+        id: 'handoff-agent',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        instructions: 'Handoff instructions',
+        model_parameters: {
+          model: 'gpt-4',
+        },
+        tools: [],
+      };
+
+      client.options.attachments = [requestFile];
+      client.options.agentContextAttachmentsByAgentId = new Map([
+        ['primary-agent', [primaryContext]],
+        ['handoff-agent', [handoffContext]],
+      ]);
+      client.agentConfigs = new Map([['handoff-agent', handoffAgent]]);
+
+      await client.buildMessages(
+        [
+          {
+            messageId: 'msg-1',
+            parentMessageId: null,
+            sender: 'User',
+            text: 'Use the available context.',
+            isCreatedByUser: true,
+          },
+        ],
+        'msg-1',
+        {},
+      );
+
+      expect(mockAgent.additional_instructions).toContain('Shared request context');
+      expect(mockAgent.additional_instructions).toContain('Primary private context');
+      expect(mockAgent.additional_instructions).not.toContain('Handoff private context');
+
+      expect(handoffAgent.additional_instructions).toContain('Shared request context');
+      expect(handoffAgent.additional_instructions).toContain('Handoff private context');
+      expect(handoffAgent.additional_instructions).not.toContain('Primary private context');
+    });
+
+    it('does not duplicate a file that is both request context and scoped context', async () => {
+      const sharedFile = makeTextFile('shared-file', 'shared.txt', 'Shared duplicate context');
+
+      client.options.attachments = [sharedFile];
+      client.options.agentContextAttachmentsByAgentId = new Map([['primary-agent', [sharedFile]]]);
+      client.agentConfigs = new Map();
+
+      await client.buildMessages(
+        [
+          {
+            messageId: 'msg-1',
+            parentMessageId: null,
+            sender: 'User',
+            text: 'Use the available context.',
+            isCreatedByUser: true,
+          },
+        ],
+        'msg-1',
+        {},
+      );
+
+      const occurrences = (
+        mockAgent.additional_instructions.match(/Shared duplicate context/g) ?? []
+      ).length;
+      expect(occurrences).toBe(1);
+    });
+
+    it('keeps direct chats with context-doc agents working without request attachments', async () => {
+      const primaryContext = makeTextFile(
+        'primary-context',
+        'primary.txt',
+        'Direct primary context',
+      );
+
+      client.options.agentContextAttachmentsByAgentId = new Map([
+        ['primary-agent', [primaryContext]],
+      ]);
+      client.agentConfigs = new Map();
+
+      await client.buildMessages(
+        [
+          {
+            messageId: 'msg-1',
+            parentMessageId: null,
+            sender: 'User',
+            text: 'Answer from your context.',
+            isCreatedByUser: true,
+          },
+        ],
+        'msg-1',
+        {},
+      );
+
+      expect(mockAgent.additional_instructions).toContain('Direct primary context');
+    });
+  });
+
   describe('runMemory method', () => {
     let client;
     let mockReq;
@@ -1469,7 +1661,7 @@ describe('AgentClient - titleConvo', () => {
     });
 
     it('should filter out image URLs from message content', async () => {
-      const { HumanMessage, AIMessage } = require('@langchain/core/messages');
+      const { HumanMessage, AIMessage } = require('@librechat/agents/langchain/messages');
       const messages = [
         new HumanMessage({
           content: [
@@ -1525,7 +1717,7 @@ describe('AgentClient - titleConvo', () => {
     });
 
     it('should handle messages with only text content', async () => {
-      const { HumanMessage, AIMessage } = require('@langchain/core/messages');
+      const { HumanMessage, AIMessage } = require('@librechat/agents/langchain/messages');
       const messages = [
         new HumanMessage('Hello, how are you?'),
         new AIMessage('I am doing well, thank you!'),
@@ -1543,7 +1735,7 @@ describe('AgentClient - titleConvo', () => {
     });
 
     it('should handle mixed content types correctly', async () => {
-      const { HumanMessage } = require('@langchain/core/messages');
+      const { HumanMessage } = require('@librechat/agents/langchain/messages');
       const { ContentTypes } = require('librechat-data-provider');
 
       const messages = [
@@ -1580,7 +1772,7 @@ describe('AgentClient - titleConvo', () => {
     });
 
     it('should preserve original messages without mutation', async () => {
-      const { HumanMessage } = require('@langchain/core/messages');
+      const { HumanMessage } = require('@librechat/agents/langchain/messages');
       const originalContent = [
         {
           type: 'text',
@@ -1609,7 +1801,7 @@ describe('AgentClient - titleConvo', () => {
     });
 
     it('should handle message window size correctly', async () => {
-      const { HumanMessage, AIMessage } = require('@langchain/core/messages');
+      const { HumanMessage, AIMessage } = require('@librechat/agents/langchain/messages');
       const messages = [
         new HumanMessage('Message 1'),
         new AIMessage('Response 1'),
@@ -1633,7 +1825,7 @@ describe('AgentClient - titleConvo', () => {
     });
 
     it('should return early if processMemory is not set', async () => {
-      const { HumanMessage } = require('@langchain/core/messages');
+      const { HumanMessage } = require('@librechat/agents/langchain/messages');
       client.processMemory = null;
 
       const result = await client.runMemory([new HumanMessage('Test')]);
@@ -1816,7 +2008,7 @@ describe('AgentClient - titleConvo', () => {
 
       /** Traversal stops at msg-2 (has summary), so we get msg-4 -> msg-3 -> msg-2 */
       expect(result).toHaveLength(3);
-      expect(result[0].text).toBe('Summary of conversation');
+      expect(result[0].content).toEqual([{ type: 'text', text: 'Summary of conversation' }]);
       expect(result[0].role).toBe('system');
       expect(result[0].mapped).toBe(true);
       expect(result[1].mapped).toBe(true);
@@ -1917,7 +2109,7 @@ describe('AgentClient - titleConvo', () => {
       client.maxContextTokens = 4096;
     });
 
-    it('should pass memory context to parallel agents (addedConvo)', async () => {
+    it('should only pass memory context to the primary agent by default', async () => {
       const memoryContent = 'User prefers dark mode. User is a software developer.';
       client.useMemory = jest.fn().mockResolvedValue(memoryContent);
 
@@ -1957,15 +2149,58 @@ describe('AgentClient - titleConvo', () => {
 
       expect(client.useMemory).toHaveBeenCalled();
 
-      // Verify primary agent has its configured instructions (not from buildOptions) and memory context
       expect(client.options.agent.instructions).toContain('Primary agent instructions');
-      expect(client.options.agent.instructions).toContain(memoryContent);
+      expect(client.options.agent.instructions).not.toContain(memoryContent);
+      expect(client.options.agent.additional_instructions).toContain(memoryContent);
 
       expect(parallelAgent1.instructions).toContain('Parallel agent 1 instructions');
-      expect(parallelAgent1.instructions).toContain(memoryContent);
+      expect(parallelAgent1.instructions).not.toContain(memoryContent);
+      expect(parallelAgent1.additional_instructions ?? '').not.toContain(memoryContent);
 
       expect(parallelAgent2.instructions).toContain('Parallel agent 2 instructions');
-      expect(parallelAgent2.instructions).toContain(memoryContent);
+      expect(parallelAgent2.instructions).not.toContain(memoryContent);
+      expect(parallelAgent2.additional_instructions ?? '').not.toContain(memoryContent);
+    });
+
+    it('should pass memory context to parallel agents when automatic memory updates are enabled', async () => {
+      const memoryContent = 'User prefers dark mode. User is a software developer.';
+      client.useMemory = jest.fn().mockResolvedValue(memoryContent);
+      mockReq.config.memory.agent = {
+        enabled: true,
+        id: 'memory-agent',
+      };
+
+      const parallelAgent = {
+        id: 'parallel-agent-1',
+        name: 'Parallel Agent 1',
+        instructions: 'Parallel agent instructions',
+        provider: EModelEndpoint.openAI,
+      };
+
+      client.agentConfigs = new Map([['parallel-agent-1', parallelAgent]]);
+
+      const messages = [
+        {
+          messageId: 'msg-1',
+          parentMessageId: null,
+          sender: 'User',
+          text: 'Hello',
+          isCreatedByUser: true,
+        },
+      ];
+
+      await client.buildMessages(messages, null, {
+        instructions: 'Base instructions',
+        additional_instructions: null,
+      });
+
+      expect(client.options.agent.instructions).toContain('Primary agent instructions');
+      expect(client.options.agent.instructions).not.toContain(memoryContent);
+      expect(client.options.agent.additional_instructions).toContain(memoryContent);
+
+      expect(parallelAgent.instructions).toContain('Parallel agent instructions');
+      expect(parallelAgent.instructions).not.toContain(memoryContent);
+      expect(parallelAgent.additional_instructions).toContain(memoryContent);
     });
 
     it('should not modify parallel agents when no memory context is available', async () => {
@@ -1998,7 +2233,7 @@ describe('AgentClient - titleConvo', () => {
       expect(parallelAgent.instructions).toBe('Original parallel instructions');
     });
 
-    it('should handle parallel agents without existing instructions', async () => {
+    it('should handle parallel agents without existing instructions when memory stays primary-only', async () => {
       const memoryContent = 'User is a data scientist.';
       client.useMemory = jest.fn().mockResolvedValue(memoryContent);
 
@@ -2027,7 +2262,11 @@ describe('AgentClient - titleConvo', () => {
         additional_instructions: null,
       });
 
-      expect(parallelAgentNoInstructions.instructions).toContain(memoryContent);
+      expect(client.options.agent.additional_instructions).toContain(memoryContent);
+      expect(parallelAgentNoInstructions.instructions).toBeUndefined();
+      expect(parallelAgentNoInstructions.additional_instructions ?? '').not.toContain(
+        memoryContent,
+      );
     });
 
     it('should not modify agentConfigs when none exist', async () => {
@@ -2053,7 +2292,7 @@ describe('AgentClient - titleConvo', () => {
         }),
       ).resolves.not.toThrow();
 
-      expect(client.options.agent.instructions).toContain(memoryContent);
+      expect(client.options.agent.additional_instructions).toContain(memoryContent);
     });
 
     it('should handle empty agentConfigs map', async () => {
@@ -2079,7 +2318,7 @@ describe('AgentClient - titleConvo', () => {
         }),
       ).resolves.not.toThrow();
 
-      expect(client.options.agent.instructions).toContain(memoryContent);
+      expect(client.options.agent.additional_instructions).toContain(memoryContent);
     });
   });
 
@@ -2093,6 +2332,7 @@ describe('AgentClient - titleConvo', () => {
     let mockLoadAgent;
     let mockInitializeAgent;
     let mockCreateMemoryProcessor;
+    let mockGetFormattedMemories;
 
     beforeEach(() => {
       jest.clearAllMocks();
@@ -2118,6 +2358,7 @@ describe('AgentClient - titleConvo', () => {
         config: {
           memory: {
             agent: {
+              enabled: true,
               id: 'agent-123',
             },
           },
@@ -2138,9 +2379,15 @@ describe('AgentClient - titleConvo', () => {
       };
 
       mockCheckAccess = require('@librechat/api').checkAccess;
-      mockLoadAgent = require('~/models/Agent').loadAgent;
+      mockLoadAgent = require('@librechat/api').loadAgent;
       mockInitializeAgent = require('@librechat/api').initializeAgent;
       mockCreateMemoryProcessor = require('@librechat/api').createMemoryProcessor;
+      mockGetFormattedMemories = require('~/models').getFormattedMemories;
+      mockGetFormattedMemories.mockResolvedValue({
+        withKeys: '',
+        withoutKeys: '',
+        totalTokens: 0,
+      });
     });
 
     it('should use current agent when memory config agent.id matches current agent id', async () => {
@@ -2195,6 +2442,7 @@ describe('AgentClient - titleConvo', () => {
         expect.objectContaining({
           agent_id: differentAgentId,
         }),
+        expect.any(Object),
       );
       expect(mockInitializeAgent).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -2204,12 +2452,89 @@ describe('AgentClient - titleConvo', () => {
       );
     });
 
-    it('should return early when prelimAgent is undefined (no valid memory agent config)', async () => {
+    it('should return existing memories without auto-processing when memory agent is not enabled', async () => {
       mockReq.config.memory = {
-        agent: {},
+        personalize: true,
       };
 
       mockCheckAccess.mockResolvedValue(true);
+      mockGetFormattedMemories.mockResolvedValue({
+        withKeys: 'food: likes pasta',
+        withoutKeys: 'likes pasta',
+        totalTokens: 3,
+      });
+
+      client = new AgentClient(mockOptions);
+      client.conversationId = 'convo-123';
+      client.responseMessageId = 'response-123';
+
+      const result = await client.useMemory();
+
+      expect(result).toBe('likes pasta');
+      expect(mockGetFormattedMemories).toHaveBeenCalledWith({ userId: 'user-123' });
+      expect(mockInitializeAgent).not.toHaveBeenCalled();
+      expect(mockCreateMemoryProcessor).not.toHaveBeenCalled();
+      expect(client.processMemory).toBeUndefined();
+    });
+
+    it('should not initialize auto-processing when no memories exist', async () => {
+      mockReq.config.memory = {
+        personalize: true,
+      };
+
+      mockCheckAccess.mockResolvedValue(true);
+      mockGetFormattedMemories.mockResolvedValue({
+        withKeys: '',
+        withoutKeys: '',
+        totalTokens: 0,
+      });
+
+      client = new AgentClient(mockOptions);
+      client.conversationId = 'convo-123';
+      client.responseMessageId = 'response-123';
+
+      const result = await client.useMemory();
+
+      expect(result).toBe('');
+      expect(mockGetFormattedMemories).toHaveBeenCalledWith({ userId: 'user-123' });
+      expect(mockInitializeAgent).not.toHaveBeenCalled();
+      expect(mockCreateMemoryProcessor).not.toHaveBeenCalled();
+      expect(client.processMemory).toBeUndefined();
+    });
+
+    it('should return existing memories without auto-processing when memory agent config lacks explicit enablement', async () => {
+      mockReq.config.memory.agent = {
+        id: 'agent-123',
+      };
+
+      mockCheckAccess.mockResolvedValue(true);
+      mockGetFormattedMemories.mockResolvedValue({
+        withKeys: 'tone: concise',
+        withoutKeys: 'prefers concise answers',
+        totalTokens: 4,
+      });
+
+      client = new AgentClient(mockOptions);
+      client.conversationId = 'convo-123';
+      client.responseMessageId = 'response-123';
+
+      const result = await client.useMemory();
+
+      expect(result).toBe('prefers concise answers');
+      expect(mockLoadAgent).not.toHaveBeenCalled();
+      expect(mockInitializeAgent).not.toHaveBeenCalled();
+      expect(mockCreateMemoryProcessor).not.toHaveBeenCalled();
+    });
+
+    it('should return undefined when loading memories fails without auto-processing', async () => {
+      const { logger } = require('@librechat/data-schemas');
+      const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => logger);
+      mockReq.config.memory = {
+        personalize: true,
+      };
+
+      mockCheckAccess.mockResolvedValue(true);
+      mockGetFormattedMemories.mockRejectedValue(new Error('DB connection failed'));
 
       client = new AgentClient(mockOptions);
       client.conversationId = 'convo-123';
@@ -2218,13 +2543,20 @@ describe('AgentClient - titleConvo', () => {
       const result = await client.useMemory();
 
       expect(result).toBeUndefined();
+      expect(mockGetFormattedMemories).toHaveBeenCalledWith({ userId: 'user-123' });
       expect(mockInitializeAgent).not.toHaveBeenCalled();
       expect(mockCreateMemoryProcessor).not.toHaveBeenCalled();
+      expect(client.processMemory).toBeUndefined();
+      expect(errorSpy).toHaveBeenCalledWith(
+        '[api/server/controllers/agents/client.js #useMemory] Error loading memories',
+        expect.any(Error),
+      );
     });
 
     it('should create ephemeral agent when no id but model and provider are specified', async () => {
       mockReq.config.memory = {
         agent: {
+          enabled: true,
           model: 'gpt-4',
           provider: EModelEndpoint.openAI,
         },
@@ -2256,5 +2588,249 @@ describe('AgentClient - titleConvo', () => {
         expect.any(Object),
       );
     });
+  });
+});
+
+describe('AgentClient - finalizeSubagentContent', () => {
+  /** Verifies the backend persistence path: per-subagent
+   *  `createContentAggregator` instances (populated by the callbacks
+   *  ON_SUBAGENT_UPDATE handler) have their `contentParts` harvested
+   *  onto the matching parent `subagent` tool_call at message-save time
+   *  so a page refresh shows the same activity the user saw live. */
+  const { GraphEvents } = jest.requireActual('@librechat/agents');
+  const { getDefaultHandlers } = require('./callbacks');
+
+  const makeClient = (subagentAggregatorsByToolCallId) => {
+    const client = new AgentClient({
+      req: { user: { id: 'u' }, body: {}, config: { endpoints: {} } },
+      res: {},
+      agent: {
+        id: 'agent',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      contentParts: [],
+      subagentAggregatorsByToolCallId,
+    });
+    return client;
+  };
+
+  const event = (phase, data, parentToolCallId = 'call_sub') => ({
+    runId: 'parent-run',
+    subagentRunId: 'child-run',
+    subagentType: 'self',
+    subagentAgentId: 'child',
+    parentToolCallId,
+    phase,
+    data,
+    timestamp: '2026-04-17T00:00:00Z',
+  });
+
+  /** Feeds a SubagentUpdateEvent sequence through the real
+   *  `ON_SUBAGENT_UPDATE` handler so we exercise the same get-or-create
+   *  aggregator logic the live request uses, rather than constructing
+   *  aggregators directly in the test. */
+  const runSubagentEvents = async (events) => {
+    const map = new Map();
+    const handlers = getDefaultHandlers({
+      res: { write: jest.fn(), writableEnded: false },
+      aggregateContent: jest.fn(),
+      toolEndCallback: jest.fn(),
+      collectedUsage: [],
+      subagentAggregatorsByToolCallId: map,
+    });
+    const handler = handlers[GraphEvents.ON_SUBAGENT_UPDATE];
+    for (const e of events) {
+      await handler.handle(GraphEvents.ON_SUBAGENT_UPDATE, e);
+    }
+    return map;
+  };
+
+  it('attaches aggregated subagent_content to the matching subagent tool_call part', async () => {
+    const buffer = await runSubagentEvents([
+      event('run_step', {
+        id: 'step_msg',
+        index: 0,
+        stepDetails: { type: 'message_creation' },
+      }),
+      event('message_delta', {
+        id: 'step_msg',
+        delta: { content: [{ type: 'text', text: 'Hello ' }] },
+      }),
+      event('message_delta', {
+        id: 'step_msg',
+        delta: { content: [{ type: 'text', text: 'world!' }] },
+      }),
+      event('run_step', {
+        id: 'step_tool',
+        index: 1,
+        stepDetails: {
+          type: 'tool_calls',
+          tool_calls: [{ id: 'inner_1', name: 'calculator', args: '{}' }],
+        },
+      }),
+      event('run_step_completed', {
+        id: 'step_tool',
+        index: 1,
+        result: {
+          id: 'step_tool',
+          type: 'tool_call',
+          tool_call: {
+            id: 'inner_1',
+            name: 'calculator',
+            output: '4',
+            progress: 1,
+          },
+        },
+      }),
+    ]);
+
+    const client = makeClient(buffer);
+    client.contentParts = [
+      {
+        type: 'tool_call',
+        tool_call: {
+          id: 'call_sub',
+          name: Constants.SUBAGENT,
+          args: '{}',
+          output: 'final text',
+          progress: 1,
+        },
+      },
+    ];
+
+    client.finalizeSubagentContent();
+
+    const attached = client.contentParts[0].tool_call.subagent_content;
+    expect(Array.isArray(attached)).toBe(true);
+    expect(attached).toHaveLength(2);
+    expect(attached[0].type).toBe('text');
+    expect(attached[0].text).toBe('Hello world!');
+    expect(attached[1].type).toBe('tool_call');
+    expect(attached[1].tool_call.name).toBe('calculator');
+    expect(attached[1].tool_call.output).toBe('4');
+    /** Buffer drained so a second call (e.g. resumable retry) doesn't
+     *  double-append. */
+    expect(buffer.size).toBe(0);
+  });
+
+  it('ignores tool_call parts whose name is not SUBAGENT', async () => {
+    const buffer = await runSubagentEvents([
+      event(
+        'run_step',
+        {
+          id: 'step_msg',
+          index: 0,
+          stepDetails: { type: 'message_creation' },
+        },
+        'call_regular',
+      ),
+      event(
+        'message_delta',
+        {
+          id: 'step_msg',
+          delta: { content: [{ type: 'text', text: 'x' }] },
+        },
+        'call_regular',
+      ),
+    ]);
+    const client = makeClient(buffer);
+    client.contentParts = [
+      {
+        type: 'tool_call',
+        tool_call: { id: 'call_regular', name: 'calculator', args: '{}' },
+      },
+    ];
+    client.finalizeSubagentContent();
+    expect(client.contentParts[0].tool_call.subagent_content).toBeUndefined();
+  });
+
+  it('is a safe no-op when the aggregator map is empty or missing', () => {
+    const client = makeClient(undefined);
+    client.contentParts = [
+      {
+        type: 'tool_call',
+        tool_call: { id: 'call_sub', name: Constants.SUBAGENT, args: '{}' },
+      },
+    ];
+    expect(() => client.finalizeSubagentContent()).not.toThrow();
+    expect(client.contentParts[0].tool_call.subagent_content).toBeUndefined();
+  });
+
+  it('discards aggregators keyed by a tool_call_id not present in contentParts', async () => {
+    const buffer = await runSubagentEvents([
+      event(
+        'run_step',
+        {
+          id: 'step_msg',
+          index: 0,
+          stepDetails: { type: 'message_creation' },
+        },
+        'call_missing',
+      ),
+      event(
+        'message_delta',
+        {
+          id: 'step_msg',
+          delta: { content: [{ type: 'text', text: 'x' }] },
+        },
+        'call_missing',
+      ),
+    ]);
+    const client = makeClient(buffer);
+    client.contentParts = [
+      {
+        type: 'tool_call',
+        tool_call: { id: 'call_other', name: Constants.SUBAGENT, args: '{}' },
+      },
+    ];
+    client.finalizeSubagentContent();
+    expect(client.contentParts[0].tool_call.subagent_content).toBeUndefined();
+  });
+
+  it('keeps per-parent tool_call aggregators isolated for parallel subagents', async () => {
+    const buffer = await runSubagentEvents([
+      event(
+        'run_step',
+        {
+          id: 'step_a',
+          index: 0,
+          stepDetails: { type: 'message_creation' },
+        },
+        'call_a',
+      ),
+      event(
+        'message_delta',
+        { id: 'step_a', delta: { content: [{ type: 'text', text: 'A' }] } },
+        'call_a',
+      ),
+      event(
+        'run_step',
+        {
+          id: 'step_b',
+          index: 0,
+          stepDetails: { type: 'message_creation' },
+        },
+        'call_b',
+      ),
+      event(
+        'message_delta',
+        { id: 'step_b', delta: { content: [{ type: 'text', text: 'B' }] } },
+        'call_b',
+      ),
+    ]);
+    const client = makeClient(buffer);
+    client.contentParts = [
+      { type: 'tool_call', tool_call: { id: 'call_a', name: Constants.SUBAGENT, args: '{}' } },
+      { type: 'tool_call', tool_call: { id: 'call_b', name: Constants.SUBAGENT, args: '{}' } },
+    ];
+    client.finalizeSubagentContent();
+    expect(client.contentParts[0].tool_call.subagent_content).toEqual([
+      expect.objectContaining({ type: 'text', text: 'A' }),
+    ]);
+    expect(client.contentParts[1].tool_call.subagent_content).toEqual([
+      expect.objectContaining({ type: 'text', text: 'B' }),
+    ]);
   });
 });

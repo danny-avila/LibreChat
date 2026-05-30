@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-namespace */
 import { StepTypes, ContentTypes, ToolCallTypes } from './runs';
+import type { FunctionToolCall, SummaryContentPart } from './assistants';
 import type { TAttachment, TPlugin } from 'src/schemas';
-import type { FunctionToolCall } from './assistants';
 
 export namespace Agents {
   export type MessageType = 'human' | 'ai' | 'generic' | 'system' | 'function' | 'tool' | 'remove';
@@ -53,6 +53,8 @@ export namespace Agents {
     | MessageContentImageUrl
     | MessageContentVideoUrl
     | MessageContentInputAudio
+    | SummaryContentPart
+    | ToolCallContent
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     | (Record<string, any> & { type?: ContentTypes | string })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -187,6 +189,7 @@ export namespace Agents {
     /** Group ID for parallel content - parts with same groupId are displayed in columns */
     groupId?: number; // #new
     stepDetails: StepDetails;
+    summary?: SummaryContentPart;
     usage: null | object;
   };
 
@@ -313,6 +316,28 @@ export namespace Agents {
     | ContentTypes.VIDEO_URL
     | ContentTypes.INPUT_AUDIO
     | string;
+
+  export interface SummarizeStartEvent {
+    agentId: string;
+    provider: string;
+    model?: string;
+    messagesToRefineCount: number;
+    summaryVersion: number;
+  }
+
+  export interface SummarizeDeltaEvent {
+    id: string;
+    delta: {
+      summary: SummaryContentPart;
+    };
+  }
+
+  export interface SummarizeCompleteEvent {
+    id: string;
+    agentId: string;
+    summary?: SummaryContentPart;
+    error?: string;
+  }
 }
 
 export type ToolCallResult = {

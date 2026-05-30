@@ -1,7 +1,7 @@
+const { logger } = require('@librechat/data-schemas');
 const { SystemRoles } = require('librechat-data-provider');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
-const { getUserById, updateUser, createUser } = require('~/models');
-const { logger } = require('~/config');
+const { getUserById, updateUser } = require('~/models');
 
 // JWT strategy
 const jwtLogin = () =>
@@ -12,38 +12,17 @@ const jwtLogin = () =>
     },
     async (payload, done) => {
       try {
-        let user = await getUserById(payload?.id, '-password -__v');
+        const user = await getUserById(payload?.id, '-password -__v -totpSecret -backupCodes');
         if (user) {
-          logger.info(
-            'JwtStrategy => User exists, so nothing to do just attend the request: ' + user._id,
-          );
           user.id = user._id.toString();
           if (!user.role) {
-            logger.info('JwtStrategy => User had no role, so lets set it as USER: ' + user._id);
             user.role = SystemRoles.USER;
             await updateUser(user.id, { role: user.role });
           }
           done(null, user);
-          return;
-        }
-
-        logger.warn('JwtStrategy => no user found, creating new user: ' + payload?.email);
-
-        const newUser = {
-          _id: payload.id,
-          email: payload.email,
-          role: SystemRoles.USER,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
-
-        try {
-          user = await createUser(newUser);
-          logger.info('JwtStrategy => New user created: ' + user._id);
-          done(null, user);
-        } catch (createError) {
-          logger.error('JwtStrategy => Error creating new user: ', createError);
-          done(createError, false);
+        } else {
+          logger.warn('[jwtLogin] JwtStrategy => no user found: ' + payload?.id);
+          done(null, false);
         }
       } catch (err) {
         done(err, false);

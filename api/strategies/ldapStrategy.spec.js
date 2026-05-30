@@ -9,10 +9,10 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
-  // isEnabled used for TLS flags
   isEnabled: jest.fn(() => false),
   isEmailDomainAllowed: jest.fn(() => true),
   getBalanceConfig: jest.fn(() => ({ enabled: false })),
+  resolveAppConfigForUser: jest.fn(async (_getAppConfig, _user) => ({})),
 }));
 
 jest.mock('~/models', () => ({
@@ -30,14 +30,15 @@ jest.mock('~/server/services/Config', () => ({
 let verifyCallback;
 jest.mock('passport-ldapauth', () => {
   return jest.fn().mockImplementation((options, verify) => {
-    verifyCallback = verify; // capture the strategy verify function
+    verifyCallback = verify;
     return { name: 'ldap', options, verify };
   });
 });
 
 const { ErrorTypes } = require('librechat-data-provider');
-const { isEmailDomainAllowed } = require('@librechat/api');
+const { isEmailDomainAllowed, resolveAppConfigForUser } = require('@librechat/api');
 const { findUser, createUser, updateUser, countUsers } = require('~/models');
+const { getAppConfig } = require('~/server/services/Config');
 
 // Helper to call the verify callback and wrap in a Promise for convenience
 const callVerify = (userinfo) =>
@@ -117,6 +118,7 @@ describe('ldapStrategy', () => {
     expect(user).toBe(false);
     expect(info).toEqual({ message: ErrorTypes.AUTH_FAILED });
     expect(createUser).not.toHaveBeenCalled();
+    expect(resolveAppConfigForUser).not.toHaveBeenCalled();
   });
 
   it('updates an existing ldap user with current LDAP info', async () => {
@@ -158,7 +160,6 @@ describe('ldapStrategy', () => {
       uid: 'uid999',
       givenName: 'John',
       cn: 'John Doe',
-      // no mail and no custom LDAP_EMAIL
     };
 
     const { user } = await callVerify(userinfo);
@@ -177,6 +178,68 @@ describe('ldapStrategy', () => {
     };
 
     const { user, info } = await callVerify(userinfo);
+    expect(user).toBe(false);
+    expect(info).toEqual({ message: 'Email domain not allowed' });
+  });
+
+  it('passes getAppConfig and found user to resolveAppConfigForUser', async () => {
+    const existing = {
+      _id: 'u3',
+      provider: 'ldap',
+      email: 'tenant@example.com',
+      ldapId: 'uid-tenant',
+      username: 'tenantuser',
+      name: 'Tenant User',
+      tenantId: 'tenant-a',
+      role: 'USER',
+    };
+    findUser.mockResolvedValue(existing);
+
+    const userinfo = {
+      uid: 'uid-tenant',
+      mail: 'tenant@example.com',
+      givenName: 'Tenant',
+      cn: 'Tenant User',
+    };
+
+    await callVerify(userinfo);
+
+    expect(resolveAppConfigForUser).toHaveBeenCalledWith(getAppConfig, existing);
+  });
+
+  it('uses baseConfig for new user without calling resolveAppConfigForUser', async () => {
+    findUser.mockResolvedValue(null);
+
+    const userinfo = {
+      uid: 'uid-new',
+      mail: 'newuser@example.com',
+      givenName: 'New',
+      cn: 'New User',
+    };
+
+    await callVerify(userinfo);
+
+    expect(resolveAppConfigForUser).not.toHaveBeenCalled();
+    expect(getAppConfig).toHaveBeenCalledWith({ baseOnly: true });
+  });
+
+  it('should block login when tenant config restricts the domain', async () => {
+    const existing = {
+      _id: 'u-blocked',
+      provider: 'ldap',
+      ldapId: 'uid-tenant',
+      tenantId: 'tenant-strict',
+      role: 'USER',
+    };
+    findUser.mockResolvedValue(existing);
+    resolveAppConfigForUser.mockResolvedValue({
+      registration: { allowedDomains: ['other.com'] },
+    });
+    isEmailDomainAllowed.mockReturnValueOnce(true).mockReturnValueOnce(false);
+
+    const userinfo = { uid: 'uid-tenant', mail: 'user@example.com', givenName: 'Test', cn: 'Test' };
+    const { user, info } = await callVerify(userinfo);
+
     expect(user).toBe(false);
     expect(info).toEqual({ message: 'Email domain not allowed' });
   });

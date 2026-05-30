@@ -566,26 +566,94 @@ describe('Token Methods - Detailed Tests', () => {
       expect(remainingTokens).toHaveLength(3);
     });
 
-    test('should delete multiple tokens when they match OR conditions', async () => {
-      // Create tokens that will match multiple conditions
+    test('should only delete tokens matching ALL provided fields (AND semantics)', async () => {
       await Token.create({
-        token: 'multi-match',
-        userId: user2Id, // Will match userId condition
+        token: 'extra-user2-token',
+        userId: user2Id,
         email: 'different@example.com',
         createdAt: new Date(),
         expiresAt: new Date(Date.now() + 3600000),
       });
 
       const result = await methods.deleteTokens({
-        token: 'verify-token-1',
+        token: 'verify-token-2',
         userId: user2Id.toString(),
       });
 
-      // Should delete: verify-token-1 (by token) + verify-token-2 (by userId) + multi-match (by userId)
-      expect(result.deletedCount).toBe(3);
+      expect(result.deletedCount).toBe(1);
 
       const remainingTokens = await Token.find({});
-      expect(remainingTokens).toHaveLength(2);
+      expect(remainingTokens).toHaveLength(4);
+      expect(remainingTokens.find((t) => t.token === 'verify-token-1')).toBeDefined();
+      expect(remainingTokens.find((t) => t.token === 'extra-user2-token')).toBeDefined();
+    });
+
+    test('should delete tokens by type and userId together', async () => {
+      await Token.create([
+        {
+          token: 'mcp-oauth-token',
+          userId: oauthUserId,
+          type: 'mcp_oauth',
+          identifier: 'mcp:test-server',
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+        {
+          token: 'mcp-refresh-token',
+          userId: oauthUserId,
+          type: 'mcp_oauth_refresh',
+          identifier: 'mcp:test-server:refresh',
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+      ]);
+
+      const result = await methods.deleteTokens({
+        userId: oauthUserId.toString(),
+        type: 'mcp_oauth',
+        identifier: 'mcp:test-server',
+      });
+
+      expect(result.deletedCount).toBe(1);
+
+      const remaining = await Token.find({ userId: oauthUserId });
+      expect(remaining).toHaveLength(2);
+      expect(remaining.find((t) => t.type === 'mcp_oauth')).toBeUndefined();
+      expect(remaining.find((t) => t.type === 'mcp_oauth_refresh')).toBeDefined();
+    });
+
+    test('should not delete cross-user tokens with matching identifier', async () => {
+      const userAId = new mongoose.Types.ObjectId();
+      const userBId = new mongoose.Types.ObjectId();
+
+      await Token.create([
+        {
+          token: 'user-a-mcp',
+          userId: userAId,
+          type: 'mcp_oauth',
+          identifier: 'mcp:shared-server',
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+        {
+          token: 'user-b-mcp',
+          userId: userBId,
+          type: 'mcp_oauth',
+          identifier: 'mcp:shared-server',
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+      ]);
+
+      await methods.deleteTokens({
+        userId: userAId.toString(),
+        type: 'mcp_oauth',
+        identifier: 'mcp:shared-server',
+      });
+
+      const userBTokens = await Token.find({ userId: userBId });
+      expect(userBTokens).toHaveLength(1);
+      expect(userBTokens[0].token).toBe('user-b-mcp');
     });
 
     test('should throw error when no query parameters provided', async () => {

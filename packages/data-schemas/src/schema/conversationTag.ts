@@ -6,6 +6,7 @@ export interface IConversationTag extends Document {
   description?: string;
   count?: number;
   position?: number;
+  tenantId?: string;
 }
 
 const conversationTag = new Schema<IConversationTag>(
@@ -31,11 +32,15 @@ const conversationTag = new Schema<IConversationTag>(
       default: 0,
       index: true,
     },
+    tenantId: {
+      type: String,
+      index: true,
+    },
   },
   { timestamps: true },
 );
 
 // Create a compound index on tag and user with unique constraint.
-conversationTag.index({ tag: 1, user: 1 }, { unique: true });
+conversationTag.index({ tag: 1, user: 1, tenantId: 1 }, { unique: true });
 
 export default conversationTag;

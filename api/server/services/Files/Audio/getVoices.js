@@ -18,6 +18,8 @@ async function getVoices(req, res) {
       req.config ??
       (await getAppConfig({
         role: req.user?.role,
+        userId: req.user?.id,
+        tenantId: req.user?.tenantId,
       }));
 
     const ttsSchema = appConfig?.speech?.tts;

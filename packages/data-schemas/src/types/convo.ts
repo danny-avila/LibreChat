@@ -6,6 +6,7 @@ export interface IConversation extends Document {
   title?: string;
   user?: string;
   messages?: Types.ObjectId[];
+  isTemporary?: boolean;
   // Fields provided by conversationPreset (adjust types as needed)
   endpoint?: string;
   endpointType?: string;
@@ -48,9 +49,6 @@ export interface IConversation extends Document {
   reasoning_summary?: string;
   verbosity?: string;
   useResponsesApi?: boolean;
-  openaiConversationId?: string;
-  promptId?: string;
-  promptVersion?: string;
   web_search?: boolean;
   disableStreaming?: boolean;
   fileTokenLimit?: number;
@@ -59,4 +57,5 @@ export interface IConversation extends Document {
   expiredAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
+  tenantId?: string;
 }

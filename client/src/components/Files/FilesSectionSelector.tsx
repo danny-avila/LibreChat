@@ -1,13 +1,10 @@
-import React from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { useLocalize } from '~/hooks';
+import React, { useState } from 'react';
 import { Button } from '../ui';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 export default function FilesSectionSelector() {
   const navigate = useNavigate();
   const location = useLocation();
-  const localize = useLocalize();
-
   let selectedPage = '/vector-stores';
 
   if (location.pathname.includes('vector-stores')) {
@@ -31,7 +28,7 @@ export default function FilesSectionSelector() {
             navigate('/d/vector-stores');
           }}
         >
-          {localize('com_files_vector_stores')}
+          Vector Stores
         </Button>
       </div>
       <div className="flex w-1/3 items-center">
@@ -43,7 +40,7 @@ export default function FilesSectionSelector() {
             navigate('/d/files');
           }}
         >
-          {localize('com_ui_files')}
+          Files
         </Button>
       </div>
     </div>

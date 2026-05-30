@@ -1,4 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
+const { isAssistantsEndpoint, ErrorTypes } = require('librechat-data-provider');
 const {
   isEnabled,
   sendEvent,
@@ -7,14 +8,11 @@ const {
   recordCollectedUsage,
   sanitizeMessageForTransmit,
 } = require('@librechat/api');
-const { isAssistantsEndpoint, ErrorTypes } = require('librechat-data-provider');
-const { saveMessage, getConvo, updateBalance, bulkInsertTransactions } = require('~/models');
-const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { truncateText, smartTruncateText } = require('~/app/clients/prompts');
-const { getMultiplier, getCacheMultiplier } = require('~/models/tx');
 const clearPendingReq = require('~/cache/clearPendingReq');
 const { sendError } = require('~/server/middleware/error');
 const { abortRun } = require('./abortRun');
+const db = require('~/models');
 
 /**
  * Spend tokens for all models from collected usage.
@@ -44,10 +42,10 @@ async function spendCollectedUsage({
 
   await recordCollectedUsage(
     {
-      spendTokens,
-      spendStructuredTokens,
-      pricing: { getMultiplier, getCacheMultiplier },
-      bulkWriteOps: { insertMany: bulkInsertTransactions, updateBalance },
+      spendTokens: db.spendTokens,
+      spendStructuredTokens: db.spendStructuredTokens,
+      pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
+      bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
     },
     {
       user: userId,
@@ -123,20 +121,24 @@ async function abortMessage(req, res) {
     });
   } else {
     // Fallback: no collected usage, use text-based token counting for primary model only
-    await spendTokens(
+    await db.spendTokens(
       { ...responseMessage, context: 'incomplete', user: userId },
       { promptTokens, completionTokens },
     );
   }
 
-  await saveMessage(
-    req,
+  await db.saveMessage(
+    {
+      userId: req?.user?.id,
+      isTemporary: req?.body?.isTemporary,
+      interfaceConfig: req?.config?.interfaceConfig,
+    },
     { ...responseMessage, user: userId },
     { context: 'api/server/middleware/abortMiddleware.js' },
   );
 
   // Get conversation for title
-  const conversation = await getConvo(userId, conversationId);
+  const conversation = await db.getConvo(userId, conversationId);
 
   const finalEvent = {
     title: conversation && !conversation.title ? null : conversation?.title || 'New Chat',

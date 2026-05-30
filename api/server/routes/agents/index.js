@@ -1,5 +1,6 @@
 const express = require('express');
 const { isEnabled, GenerationJobManager } = require('@librechat/api');
+const { createSseStreamTelemetry } = require('@librechat/api/telemetry');
 const { logger } = require('@librechat/data-schemas');
 const {
   uaParser,
@@ -10,79 +11,17 @@ const {
   messageUserLimiter,
 } = require('~/server/middleware');
 const { saveMessage } = require('~/models');
-const {
-  getLatestConvoByOpenAIConversationId,
-  extractThreadIdFromConversationId,
-  isLibreChatConversationId,
-  isOpenAIConversationId,
-} = require('~/models/Conversation');
-const openai = require('./openai');
 const responses = require('./responses');
+const openai = require('./openai');
 const { v1 } = require('./v1');
 const chat = require('./chat');
 
 const { LIMIT_MESSAGE_IP, LIMIT_MESSAGE_USER } = process.env ?? {};
 
-const readTextValue = (value) => {
-  if (typeof value !== 'string') {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-};
-
-const findJobByThreadId = async (userId, threadId) => {
-  if (!userId || !threadId) {
-    return null;
-  }
-
-  const activeJobIds = await GenerationJobManager.getActiveJobIdsForUser(userId);
-  for (const jobId of activeJobIds) {
-    const job = await GenerationJobManager.getJob(jobId);
-    if (job?.metadata?.openaiConversationId === threadId) {
-      return { job, streamId: jobId };
-    }
-  }
-
-  return null;
-};
-
-const resolveConversationReference = async (userId, rawConversationId, rawThreadId) => {
-  const conversationId = readTextValue(rawConversationId);
-  const threadId =
-    readTextValue(rawThreadId) ??
-    (conversationId != null ? extractThreadIdFromConversationId(conversationId) : null);
-
-  if (threadId && isOpenAIConversationId(threadId)) {
-    const activeJob = await findJobByThreadId(userId, threadId);
-    if (activeJob) {
-      return {
-        conversationId: activeJob.streamId,
-        threadId,
-        activeJob: activeJob.job,
-      };
-    }
-
-    const conversation = await getLatestConvoByOpenAIConversationId(userId, threadId);
-    return {
-      conversationId: conversation?.conversationId ?? null,
-      threadId,
-      activeJob: null,
-    };
-  }
-
-  if (conversationId && isOpenAIConversationId(conversationId)) {
-    return resolveConversationReference(userId, null, conversationId);
-  }
-
-  return {
-    conversationId:
-      conversationId && isLibreChatConversationId(conversationId) ? conversationId : null,
-    threadId,
-    activeJob: null,
-  };
-};
+/** Untenanted jobs (pre-multi-tenancy) remain accessible if the userId check passes. */
+function hasTenantMismatch(job, user) {
+  return job.metadata?.tenantId != null && job.metadata.tenantId !== user.tenantId;
+}
 
 const router = express.Router();
 
@@ -134,64 +73,83 @@ router.get('/chat/stream/:streamId', async (req, res) => {
     return res.status(403).json({ error: 'Unauthorized' });
   }
 
+  if (hasTenantMismatch(job, req.user)) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  const streamTelemetry = createSseStreamTelemetry({ req, res, streamId, isResume });
+
   res.setHeader('Content-Encoding', 'identity');
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
+  streamTelemetry.recordHeadersFlushed();
 
   logger.debug(`[AgentStream] Client subscribed to ${streamId}, resume: ${isResume}`);
 
-  // Send sync event with resume state for ALL reconnecting clients
-  // This supports multi-tab scenarios where each tab needs run step data
-  if (isResume) {
-    const resumeState = await GenerationJobManager.getResumeState(streamId);
-    if (resumeState && !res.writableEnded) {
-      // Send sync event with run steps AND aggregatedContent
-      // Client will use aggregatedContent to initialize message state
-      res.write(`event: message\ndata: ${JSON.stringify({ sync: true, resumeState })}\n\n`);
+  const writeEvent = (event, options = {}) => {
+    if (!res.writableEnded) {
+      const eventName = options.eventName ?? 'message';
+      const payload = `event: ${eventName}\ndata: ${JSON.stringify(event)}\n\n`;
+      res.write(payload);
+      streamTelemetry.recordWrite(payload, { final: options.final });
       if (typeof res.flush === 'function') {
         res.flush();
       }
-      logger.debug(
-        `[AgentStream] Sent sync event for ${streamId} with ${resumeState.runSteps.length} run steps`,
-      );
+      return true;
     }
+
+    return false;
+  };
+
+  const onDone = (event) => {
+    streamTelemetry.recordFinalEventEmitted();
+    writeEvent(event, { final: true });
+    res.end();
+  };
+
+  const onError = (error) => {
+    if (!res.writableEnded) {
+      streamTelemetry.recordErrorEventEmitted();
+      writeEvent({ error }, { eventName: 'error' });
+      res.end();
+    }
+  };
+
+  let result;
+
+  if (isResume) {
+    const { subscription, resumeState, pendingEvents } =
+      await GenerationJobManager.subscribeWithResume(streamId, writeEvent, onDone, onError);
+
+    if (!res.writableEnded) {
+      if (resumeState) {
+        writeEvent({ sync: true, resumeState, pendingEvents });
+        GenerationJobManager.markSyncSent(streamId);
+        logger.debug(
+          `[AgentStream] Sent sync event for ${streamId} with ${resumeState.runSteps.length} run steps, ${pendingEvents.length} pending events`,
+        );
+      } else if (pendingEvents.length > 0) {
+        for (const event of pendingEvents) {
+          writeEvent(event);
+        }
+        logger.warn(
+          `[AgentStream] Resume state null for ${streamId}, replayed ${pendingEvents.length} gap events directly`,
+        );
+      }
+    }
+
+    result = subscription;
+  } else {
+    result = await GenerationJobManager.subscribe(streamId, writeEvent, onDone, onError);
   }
 
-  const result = await GenerationJobManager.subscribe(
-    streamId,
-    (event) => {
-      if (!res.writableEnded) {
-        res.write(`event: message\ndata: ${JSON.stringify(event)}\n\n`);
-        if (typeof res.flush === 'function') {
-          res.flush();
-        }
-      }
-    },
-    (event) => {
-      if (!res.writableEnded) {
-        res.write(`event: message\ndata: ${JSON.stringify(event)}\n\n`);
-        if (typeof res.flush === 'function') {
-          res.flush();
-        }
-        res.end();
-      }
-    },
-    (error) => {
-      if (!res.writableEnded) {
-        res.write(`event: error\ndata: ${JSON.stringify({ error })}\n\n`);
-        if (typeof res.flush === 'function') {
-          res.flush();
-        }
-        res.end();
-      }
-    },
-  );
-
   if (!result) {
-    return res.status(404).json({ error: 'Failed to subscribe to stream' });
+    streamTelemetry.recordSubscribeFailed();
+    onError('Failed to subscribe to stream');
+    return;
   }
 
   req.on('close', () => {
@@ -207,7 +165,10 @@ router.get('/chat/stream/:streamId', async (req, res) => {
  * @returns { activeJobIds: string[] }
  */
 router.get('/chat/active', async (req, res) => {
-  const activeJobIds = await GenerationJobManager.getActiveJobIdsForUser(req.user.id);
+  const activeJobIds = await GenerationJobManager.getActiveJobIdsForUser(
+    req.user.id,
+    req.user.tenantId,
+  );
   res.json({ activeJobIds });
 });
 
@@ -218,29 +179,20 @@ router.get('/chat/active', async (req, res) => {
  * @returns { active, streamId, status, aggregatedContent, createdAt, resumeState }
  */
 router.get('/chat/status/:conversationId', async (req, res) => {
-  const resolvedReference = await resolveConversationReference(
-    req.user.id,
-    req.params.conversationId,
-    req.query.threadId,
-  );
-  const conversationId = resolvedReference.conversationId;
-
-  if (!conversationId) {
-    return res.json({ active: false, threadId: resolvedReference.threadId });
-  }
+  const { conversationId } = req.params;
 
   // streamId === conversationId, so we can use getJob directly
-  const job = resolvedReference.activeJob ?? (await GenerationJobManager.getJob(conversationId));
+  const job = await GenerationJobManager.getJob(conversationId);
 
   if (!job) {
-    return res.json({
-      active: false,
-      conversationId,
-      threadId: resolvedReference.threadId,
-    });
+    return res.json({ active: false });
   }
 
   if (job.metadata.userId !== req.user.id) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  if (hasTenantMismatch(job, req.user)) {
     return res.status(403).json({ error: 'Unauthorized' });
   }
 
@@ -252,8 +204,6 @@ router.get('/chat/status/:conversationId', async (req, res) => {
   res.json({
     active: isActive,
     streamId: conversationId,
-    conversationId,
-    threadId: resolvedReference.threadId ?? job.metadata?.openaiConversationId ?? null,
     status: job.status,
     aggregatedContent: resumeState?.aggregatedContent ?? [],
     createdAt: job.createdAt,
@@ -272,29 +222,23 @@ router.post('/chat/abort', async (req, res) => {
   logger.debug(`[AgentStream] Method: ${req.method}, Path: ${req.path}`);
   logger.debug(`[AgentStream] Body:`, req.body);
 
-  const { streamId, conversationId, abortKey, threadId } = req.body;
+  const { streamId, conversationId, abortKey } = req.body;
   const userId = req.user?.id;
 
   // streamId === conversationId, so try any of the provided IDs
   // Skip "new" as it's a placeholder for new conversations, not an actual ID
-  let jobStreamId = streamId;
-  if (!jobStreamId) {
-    const resolvedReference = await resolveConversationReference(userId, conversationId, threadId);
-    jobStreamId = resolvedReference.conversationId;
-  }
-  if (!jobStreamId) {
-    jobStreamId = conversationId !== 'new' ? conversationId : null;
-  }
-  if (!jobStreamId) {
-    jobStreamId = abortKey?.split(':')[0];
-  }
+  let jobStreamId =
+    streamId || (conversationId !== 'new' ? conversationId : null) || abortKey?.split(':')[0];
   let job = jobStreamId ? await GenerationJobManager.getJob(jobStreamId) : null;
 
   // Fallback: if job not found and we have a userId, look up active jobs for user
   // This handles the case where frontend sends "new" but job was created with a UUID
   if (!job && userId) {
     logger.debug(`[AgentStream] Job not found by ID, checking active jobs for user: ${userId}`);
-    const activeJobIds = await GenerationJobManager.getActiveJobIdsForUser(userId);
+    const activeJobIds = await GenerationJobManager.getActiveJobIdsForUser(
+      userId,
+      req.user.tenantId,
+    );
     if (activeJobIds.length > 0) {
       // Abort the most recent active job for this user
       jobStreamId = activeJobIds[0];
@@ -308,6 +252,10 @@ router.post('/chat/abort', async (req, res) => {
   if (job && jobStreamId) {
     if (job.metadata?.userId && job.metadata.userId !== userId) {
       logger.warn(`[AgentStream] Unauthorized abort attempt for ${jobStreamId} by user ${userId}`);
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    if (hasTenantMismatch(job, req.user)) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
@@ -344,20 +292,22 @@ router.post('/chat/abort', async (req, res) => {
       };
 
       try {
-        await saveMessage(req, responseMessage, {
-          context: 'api/server/routes/agents/index.js - abort endpoint',
-        });
+        await saveMessage(
+          {
+            userId: req?.user?.id,
+            isTemporary: req?.body?.isTemporary,
+            interfaceConfig: req?.config?.interfaceConfig,
+          },
+          responseMessage,
+          { context: 'api/server/routes/agents/index.js - abort endpoint' },
+        );
         logger.debug(`[AgentStream] Saved partial response for: ${jobStreamId}`);
       } catch (saveError) {
         logger.error(`[AgentStream] Failed to save partial response: ${saveError.message}`);
       }
     }
 
-    return res.json({
-      success: true,
-      aborted: jobStreamId,
-      threadId: job.metadata?.openaiConversationId ?? readTextValue(threadId) ?? null,
-    });
+    return res.json({ success: true, aborted: jobStreamId });
   }
 
   logger.warn(`[AgentStream] Job not found for streamId: ${jobStreamId}`);

@@ -84,98 +84,11 @@ export function validateResponseRequest(body: unknown): RequestValidationResult 
     }
   }
 
-  if (request.include !== undefined) {
-    if (
-      !Array.isArray(request.include) ||
-      request.include.some((field) => typeof field !== 'string')
-    ) {
-      return { valid: false, error: 'include must be an array of strings' };
-    }
-  }
-
-  const interopStringFields: Array<keyof ResponseRequest> = [
-    'conversation_id',
-    'openai_conversation_id',
-    'prompt_id',
-    'prompt_version',
-  ];
-  for (const field of interopStringFields) {
-    const value = request[field];
-    if (value !== undefined && (typeof value !== 'string' || value.trim().length === 0)) {
-      return { valid: false, error: `${field} must be a non-empty string` };
-    }
-  }
-
-  if (request.conversation !== undefined) {
-    if (typeof request.conversation !== 'string' || request.conversation.trim().length === 0) {
-      return { valid: false, error: 'conversation must be a non-empty string' };
-    }
-  }
-
-  if (request.prompt !== undefined) {
-    if (typeof request.prompt !== 'object' || request.prompt == null) {
-      return { valid: false, error: 'prompt must be an object' };
-    }
-
-    const prompt = request.prompt as { id?: unknown; version?: unknown };
-    if (typeof prompt.id !== 'string' || prompt.id.trim().length === 0) {
-      return { valid: false, error: 'prompt.id must be a non-empty string' };
-    }
-
-    if (
-      prompt.version !== undefined &&
-      (typeof prompt.version !== 'string' || prompt.version.trim().length === 0)
-    ) {
-      return { valid: false, error: 'prompt.version must be a non-empty string' };
-    }
-  }
-
-  const conversation =
-    typeof request.conversation === 'string' && request.conversation.trim() !== ''
-      ? request.conversation.trim()
-      : typeof request.openai_conversation_id === 'string' &&
-          request.openai_conversation_id.trim() !== ''
-        ? request.openai_conversation_id.trim()
-        : null;
-
-  if (conversation && request.previous_response_id) {
-    return {
-      valid: false,
-      error: 'conversation cannot be used together with previous_response_id',
-    };
-  }
-
   if (
-    typeof request.conversation === 'string' &&
-    typeof request.openai_conversation_id === 'string' &&
-    request.conversation.trim() !== request.openai_conversation_id.trim()
+    request.previous_response_id !== undefined &&
+    typeof request.previous_response_id !== 'string'
   ) {
-    return {
-      valid: false,
-      error: 'conversation and openai_conversation_id must match when both are provided',
-    };
-  }
-
-  const prompt = request.prompt as { id?: string; version?: string } | undefined;
-  if (
-    prompt &&
-    typeof request.prompt_id === 'string' &&
-    typeof prompt.id === 'string' &&
-    prompt.id.trim() !== request.prompt_id.trim()
-  ) {
-    return { valid: false, error: 'prompt.id and prompt_id must match when both are provided' };
-  }
-
-  if (
-    prompt &&
-    prompt.version !== undefined &&
-    typeof request.prompt_version === 'string' &&
-    prompt.version.trim() !== request.prompt_version.trim()
-  ) {
-    return {
-      valid: false,
-      error: 'prompt.version and prompt_version must match when both are provided',
-    };
+    return { valid: false, error: 'previous_response_id must be a string' };
   }
 
   return { valid: true, request: request as unknown as ResponseRequest };
@@ -190,124 +103,16 @@ export function isValidationFailure(
   return !result.valid;
 }
 
-const responseModelParameterKeys: Array<keyof ResponseRequest> = [
-  'frequency_penalty',
-  'instructions',
-  'include',
-  'max_output_tokens',
-  'max_tool_calls',
-  'metadata',
-  'parallel_tool_calls',
-  'presence_penalty',
-  'reasoning',
-  'service_tier',
-  'stream',
-  'temperature',
-  'text',
-  'tool_choice',
-  'tools',
-  'top_p',
-  'truncation',
-  'user',
-];
-
-function getOpenAIConversationId(request: ResponseRequest): string | undefined {
-  if (typeof request.conversation === 'string' && request.conversation.trim() !== '') {
-    return request.conversation.trim();
-  }
-
-  if (
-    typeof request.openai_conversation_id === 'string' &&
-    request.openai_conversation_id.trim() !== ''
-  ) {
-    return request.openai_conversation_id.trim();
-  }
-
-  return undefined;
-}
-
-function getPromptConfig(request: ResponseRequest): { id: string; version?: string } | undefined {
-  if (request.prompt?.id) {
-    return {
-      id: request.prompt.id,
-      ...(request.prompt.version ? { version: request.prompt.version } : {}),
-    };
-  }
-
-  if (request.prompt_id) {
-    return {
-      id: request.prompt_id,
-      ...(request.prompt_version ? { version: request.prompt_version } : {}),
-    };
-  }
-
-  return undefined;
-}
-
-export function buildResponseModelParameters(
-  request: ResponseRequest,
-  baseModelParameters: Record<string, unknown> = {},
-): Record<string, unknown> {
-  const modelParameters: Record<string, unknown> = {
-    ...baseModelParameters,
-    useResponsesApi: true,
-  };
-
-  for (const key of responseModelParameterKeys) {
-    const value = request[key];
-    if (value !== undefined) {
-      modelParameters[key] = value;
-    }
-  }
-
-  if (request.previous_response_id) {
-    modelParameters.previous_response_id = request.previous_response_id;
-  }
-
-  const openAIConversationId = getOpenAIConversationId(request);
-  if (openAIConversationId) {
-    modelParameters.conversation = openAIConversationId;
-  }
-
-  const prompt = getPromptConfig(request);
-  if (prompt) {
-    modelParameters.prompt = prompt;
-  }
-
-  const metadata: Record<string, string> = {
-    ...(request.metadata ?? {}),
-  };
-  if (request.conversation_id) {
-    metadata.librechat_conversation_id = request.conversation_id;
-  }
-  if (openAIConversationId) {
-    metadata.openai_conversation_id = openAIConversationId;
-  }
-  if (prompt) {
-    metadata.prompt_id = prompt.id;
-    if (prompt.version) {
-      metadata.prompt_version = prompt.version;
-    }
-  }
-  if (Object.keys(metadata).length > 0) {
-    modelParameters.metadata = metadata;
-  }
-
-  return modelParameters;
-}
-
 /* =============================================================================
  * INPUT CONVERSION
  * ============================================================================= */
 
 /** Internal message format (LibreChat-compatible) */
 export interface InternalMessage {
-  role: 'system' | 'developer' | 'user' | 'assistant' | 'tool';
-  content: string | Array<Record<string, unknown>>;
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string | Array<{ type: string; text?: string; image_url?: unknown }>;
   name?: string;
   tool_call_id?: string;
-  response_metadata?: Record<string, unknown>;
-  additional_kwargs?: Record<string, unknown>;
   tool_calls?: Array<{
     id: string;
     type: 'function';
@@ -328,12 +133,15 @@ export function convertInputToMessages(input: string | InputItem[]): InternalMes
   const messages: InternalMessage[] = [];
 
   for (const item of input) {
+    if (item.type === 'item_reference') {
+      // Skip item references - they're handled by previous_response_id
+      continue;
+    }
+
     if (item.type === 'message') {
       const messageItem = item as {
         type: 'message';
-        role: 'system' | 'developer' | 'user' | 'assistant';
-        id?: string;
-        phase?: 'commentary' | 'final_answer';
+        role: string;
         content: string | (InputContent | ModelContent)[];
       };
 
@@ -345,35 +153,24 @@ export function convertInputToMessages(input: string | InputItem[]): InternalMes
         content = messageItem.content
           .filter((part): part is InputContent | ModelContent => part != null)
           .map((part) => {
-            if (part.type === 'input_text') {
-              return { type: 'input_text', text: (part as { text?: string }).text ?? '' };
-            }
-            if (part.type === 'output_text') {
-              return {
-                type: 'output_text',
-                text: (part as { text?: string }).text ?? '',
-                annotations: (part as { annotations?: unknown[] }).annotations ?? [],
-                logprobs: (part as { logprobs?: unknown[] }).logprobs ?? [],
-              };
+            if (part.type === 'input_text' || part.type === 'output_text') {
+              return { type: 'text', text: (part as { text?: string }).text ?? '' };
             }
             if (part.type === 'refusal') {
-              return { type: 'refusal', refusal: (part as { refusal?: string }).refusal ?? '' };
+              return { type: 'text', text: (part as { refusal?: string }).refusal ?? '' };
             }
             if (part.type === 'input_image') {
               return {
-                type: 'input_image',
-                image_url: (part as { image_url?: string }).image_url,
-                file_id: (part as { file_id?: string }).file_id,
-                detail: (part as { detail?: string }).detail,
+                type: 'image_url',
+                image_url: {
+                  url: (part as { image_url?: string }).image_url,
+                  detail: (part as { detail?: string }).detail,
+                },
               };
             }
             if (part.type === 'input_file') {
-              return {
-                type: 'input_file',
-                file_id: (part as { file_id?: string }).file_id,
-                file_data: (part as { file_data?: string }).file_data,
-                filename: (part as { filename?: string }).filename,
-              };
+              const filePart = part as { filename?: string };
+              return { type: 'text', text: `[File: ${filePart.filename ?? 'unknown'}]` };
             }
             return null;
           })
@@ -382,9 +179,10 @@ export function convertInputToMessages(input: string | InputItem[]): InternalMes
         content = '';
       }
 
+      // Map developer role to system (LibreChat convention)
       let role: InternalMessage['role'];
       if (messageItem.role === 'developer') {
-        role = 'developer';
+        role = 'system';
       } else if (messageItem.role === 'user') {
         role = 'user';
       } else if (messageItem.role === 'assistant') {
@@ -393,47 +191,6 @@ export function convertInputToMessages(input: string | InputItem[]): InternalMes
         role = 'system';
       } else {
         role = 'user';
-      }
-
-      if (role === 'assistant') {
-        const outputContent =
-          typeof messageItem.content === 'string'
-            ? [{ type: 'output_text', text: messageItem.content, annotations: [], logprobs: [] }]
-            : (content as Array<Record<string, unknown>>).filter(
-                (part) => part.type === 'output_text' || part.type === 'refusal',
-              );
-
-        const textContent =
-          typeof messageItem.content === 'string'
-            ? messageItem.content
-            : outputContent
-                .map((part) => {
-                  if (part.type === 'output_text') {
-                    return String(part.text ?? '');
-                  }
-                  if (part.type === 'refusal') {
-                    return String(part.refusal ?? '');
-                  }
-                  return '';
-                })
-                .join('');
-
-        messages.push({
-          role,
-          content: textContent,
-          response_metadata: {
-            output: [
-              {
-                type: 'message',
-                ...(messageItem.id ? { id: messageItem.id } : {}),
-                ...(messageItem.phase ? { phase: messageItem.phase } : {}),
-                role: 'assistant',
-                content: outputContent,
-              },
-            ],
-          },
-        });
-        continue;
       }
 
       messages.push({ role, content });
@@ -532,33 +289,12 @@ export function createResponseContext(
   request: ResponseRequest,
   responseId?: string,
 ): ResponseContext {
-  const metadata: Record<string, string> = {
-    ...(request.metadata ?? {}),
-  };
-  const openAIConversationId = getOpenAIConversationId(request);
-  if (openAIConversationId) {
-    metadata.openai_conversation_id = openAIConversationId;
-  }
-  const prompt = getPromptConfig(request);
-  if (prompt) {
-    metadata.prompt_id = prompt.id;
-    if (prompt.version) {
-      metadata.prompt_version = prompt.version;
-    }
-  }
-
   return {
     responseId: responseId ?? generateResponseId(),
     model: request.model,
     createdAt: Math.floor(Date.now() / 1000),
     previousResponseId: request.previous_response_id,
     instructions: request.instructions,
-    store: request.store !== false,
-    conversationId: request.conversation_id,
-    openaiConversationId: openAIConversationId,
-    promptId: prompt?.id,
-    promptVersion: prompt?.version,
-    metadata,
   };
 }
 
@@ -709,26 +445,12 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
     on_reasoning_delta: {
       handle: (_event: string, data: unknown): void => {
         const deltaData = data as {
-          delta?: {
-            content?: Array<{
-              type: string;
-              text?: string;
-              think?: string;
-              encrypted_content?: string;
-            }>;
-          };
+          delta?: { content?: Array<{ type: string; text?: string; think?: string }> };
         };
         const content = deltaData?.delta?.content;
 
         if (Array.isArray(content)) {
           for (const part of content) {
-            if (part.encrypted_content) {
-              ensureReasoningStarted();
-              if (config.tracker.currentReasoning) {
-                config.tracker.currentReasoning.encrypted_content = part.encrypted_content;
-              }
-            }
-
             const text = part.think || part.text;
             if (text) {
               ensureReasoningContentStarted();
@@ -877,7 +599,6 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
 export interface ResponseAggregator {
   textChunks: string[];
   reasoningChunks: string[];
-  encryptedReasoningContent?: string;
   toolCalls: Map<
     string,
     {
@@ -906,7 +627,6 @@ export function createResponseAggregator(): ResponseAggregator {
   const aggregator: ResponseAggregator = {
     textChunks: [],
     reasoningChunks: [],
-    encryptedReasoningContent: undefined,
     toolCalls: new Map(),
     toolOutputs: new Map(),
     usage: {
@@ -946,9 +666,6 @@ export function buildAggregatedResponse(
       status: 'completed',
       content: [{ type: 'reasoning_text', text: reasoningText }],
       summary: [],
-      ...(aggregator.encryptedReasoningContent != null
-        ? { encrypted_content: aggregator.encryptedReasoningContent }
-        : {}),
     });
   }
 
@@ -1021,23 +738,12 @@ export function buildAggregatedResponse(
     },
     max_output_tokens: null,
     max_tool_calls: null,
-    store: context.store,
+    store: false,
     background: false,
     service_tier: 'default',
-    metadata: context.metadata,
+    metadata: {},
     safety_identifier: null,
     prompt_cache_key: null,
-    conversation_id: context.conversationId,
-    conversation: context.openaiConversationId ?? null,
-    openai_conversation_id: context.openaiConversationId,
-    prompt: context.promptId
-      ? {
-          id: context.promptId,
-          ...(context.promptVersion ? { version: context.promptVersion } : {}),
-        }
-      : null,
-    prompt_id: context.promptId,
-    prompt_version: context.promptVersion,
   };
 }
 
@@ -1071,23 +777,12 @@ export function createAggregatorEventHandlers(aggregator: ResponseAggregator): R
     on_reasoning_delta: {
       handle: (_event: string, data: unknown): void => {
         const deltaData = data as {
-          delta?: {
-            content?: Array<{
-              type: string;
-              text?: string;
-              think?: string;
-              encrypted_content?: string;
-            }>;
-          };
+          delta?: { content?: Array<{ type: string; text?: string; think?: string }> };
         };
         const content = deltaData?.delta?.content;
 
         if (Array.isArray(content)) {
           for (const part of content) {
-            if (part.encrypted_content) {
-              aggregator.encryptedReasoningContent = part.encrypted_content;
-            }
-
             const text = part.think || part.text;
             if (text) {
               aggregator.addReasoning(text);

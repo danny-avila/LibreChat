@@ -62,6 +62,14 @@ describe('initializeS3', () => {
     );
   });
 
+  it('should only calculate request checksums when S3 requires them', async () => {
+    const { MockS3Client, initializeS3 } = await load();
+    initializeS3();
+    expect(MockS3Client).toHaveBeenCalledWith(
+      expect.objectContaining({ requestChecksumCalculation: 'WHEN_REQUIRED' }),
+    );
+  });
+
   it('should not include endpoint when AWS_ENDPOINT_URL is not set', async () => {
     const { MockS3Client, initializeS3 } = await load();
     initializeS3();
@@ -98,6 +106,14 @@ describe('initializeS3', () => {
     expect(result).toBeNull();
     expect(mockLogger.error).toHaveBeenCalledWith(
       '[initializeS3] AWS_REGION is not set. Cannot initialize S3.',
+    );
+  });
+
+  it('should throw when AWS_BUCKET_NAME is not set', async () => {
+    delete process.env.AWS_BUCKET_NAME;
+    const { initializeS3 } = await load();
+    expect(() => initializeS3()).toThrow(
+      '[S3] AWS_BUCKET_NAME environment variable is required for S3 operations.',
     );
   });
 

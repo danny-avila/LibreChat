@@ -326,7 +326,7 @@ describe('Memory Agent Header Resolution', () => {
       model: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
     };
 
-    const { HumanMessage } = await import('@langchain/core/messages');
+    const { HumanMessage } = await import('@librechat/agents/langchain/messages');
     const testMessage = new HumanMessage('test chat content');
 
     await processMemory({

@@ -6,20 +6,22 @@ import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import type { TPreset } from 'librechat-data-provider';
 import {
-  useNewConvo,
-  useAppStartup,
+  mergeQuerySettingsWithSpec,
+  processValidSettings,
+  getDefaultModelSpec,
+  getModelSpecPreset,
+  isNotFoundError,
+  isTemporaryConversation,
+  logger,
+} from '~/utils';
+import {
   useAssistantListMap,
   useIdChangeEffect,
+  useAppStartup,
+  useNewConvo,
   useLocalize,
 } from '~/hooks';
 import { useGetConvoIdQuery, useGetStartupConfig, useGetEndpointsQuery } from '~/data-provider';
-import {
-  getDefaultModelSpec,
-  getModelSpecPreset,
-  processValidSettings,
-  logger,
-  isNotFoundError,
-} from '~/utils';
 import { ToolCallsMapProvider } from '~/Providers';
 import ChatView from '~/components/Chat/ChatView';
 import { NotificationSeverity } from '~/common';
@@ -61,7 +63,7 @@ export default function ChatRoute() {
   const endpointsQuery = useGetEndpointsQuery({ enabled: isAuthenticated });
   const assistantListMap = useAssistantListMap();
 
-  const isTemporaryChat = conversation && conversation.expiredAt ? true : false;
+  const isTemporaryChat = isTemporaryConversation(conversation);
 
   useEffect(() => {
     if (conversationId === Constants.NEW_CONVO) {
@@ -102,9 +104,10 @@ export default function ChatRoute() {
       });
       const querySettings = processValidSettings(queryParams);
 
-      return Object.keys(querySettings).length > 0
-        ? { ...specPreset, ...querySettings }
-        : specPreset;
+      if (Object.keys(querySettings).length > 0) {
+        return mergeQuerySettingsWithSpec(specPreset, querySettings);
+      }
+      return specPreset;
     };
 
     if (isNewConvo && endpointsQuery.data && modelsQuery.data) {
@@ -125,7 +128,6 @@ export default function ChatRoute() {
         /* this is necessary to load all existing settings */
         preset: initialConvoQuery.data as TPreset,
         modelsData: modelsQuery.data,
-        keepLatestMessage: true,
       });
       hasSetConversation.current = true;
     } else if (
@@ -174,7 +176,6 @@ export default function ChatRoute() {
         template: initialConvoQuery.data,
         preset: initialConvoQuery.data as TPreset,
         modelsData: modelsQuery.data,
-        keepLatestMessage: true,
       });
       hasSetConversation.current = true;
     }

@@ -1,14 +1,25 @@
 import { replaceSpecialVars, parseConvo, parseCompactConvo, parseTextParts } from '../src/parsers';
 import { specialVariables } from '../src/config';
-import { EModelEndpoint } from '../src/schemas';
+import { EModelEndpoint, Providers } from '../src/schemas';
 import { ContentTypes } from '../src/types/runs';
 import type { TMessageContentParts } from '../src/types/assistants';
 import type { TUser, TConversation } from '../src/types';
 
 // Mock dayjs module with consistent date/time values regardless of environment
 jest.mock('dayjs', () => {
-  const mockDayjs = () => ({
+  const mockDayjs = (input?: unknown) => ({
     format: (format: string) => {
+      if (input === '2023-12-31T23:59:58.000Z') {
+        if (format === 'YYYY-MM-DD') {
+          return '2023-12-31';
+        }
+        if (format === 'YYYY-MM-DD HH:mm:ss Z') {
+          return '2023-12-31 23:59:58 +00:00';
+        }
+        if (format === 'dddd') {
+          return 'Sunday';
+        }
+      }
       if (format === 'YYYY-MM-DD') {
         return '2024-04-29';
       }
@@ -22,7 +33,10 @@ jest.mock('dayjs', () => {
         `Unhandled dayjs().format() call in mock: "${format}". Update the mock in parsers.spec.ts`,
       );
     },
-    toISOString: () => '2024-04-29T16:34:56.000Z',
+    toISOString: () =>
+      input === '2023-12-31T23:59:58.000Z'
+        ? '2023-12-31T23:59:58.000Z'
+        : '2024-04-29T16:34:56.000Z',
   });
 
   mockDayjs.extend = jest.fn();
@@ -60,6 +74,25 @@ describe('replaceSpecialVars', () => {
   test('should replace {{iso_datetime}} with the ISO datetime', () => {
     const result = replaceSpecialVars({ text: 'ISO time: {{iso_datetime}}' });
     expect(result).toBe('ISO time: 2024-04-29T16:34:56.000Z');
+  });
+
+  test('should use supplied anchor time for date variables', () => {
+    const result = replaceSpecialVars({
+      text: '{{current_date}} | {{current_datetime}} | {{iso_datetime}}',
+      now: '2023-12-31T23:59:58.000Z',
+    });
+    expect(result).toBe(
+      '2023-12-31 (Sunday) | 2023-12-31 23:59:58 +00:00 (Sunday) | 2023-12-31T23:59:58.000Z',
+    );
+  });
+
+  test('should replace special variables with surrounding whitespace', () => {
+    const result = replaceSpecialVars({
+      text: '{{ current_date }} | {{ current_user }}',
+      user: mockUser,
+    });
+
+    expect(result).toBe('2024-04-29 (Monday) | Test User');
   });
 
   test('should replace {{current_user}} with the user name if provided', () => {
@@ -376,6 +409,26 @@ describe('parseConvo - defaultParamsEndpoint', () => {
     expect(result?.topK).toBe(40);
   });
 
+  test('should preserve promptCache when defaultParamsEndpoint is openrouter', () => {
+    const conversation: Partial<TConversation> = {
+      model: 'anthropic/claude-sonnet-4.6',
+      temperature: 0.7,
+      max_tokens: 8192,
+      promptCache: true,
+    };
+
+    const result = parseConvo({
+      endpoint: 'OpenRouter' as EModelEndpoint,
+      endpointType: EModelEndpoint.custom,
+      conversation,
+      defaultParamsEndpoint: Providers.OPENROUTER,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.max_tokens).toBe(8192);
+    expect(result?.promptCache).toBe(true);
+  });
+
   test('should not strip fields from non-custom endpoints that already have a schema', () => {
     const conversation: Partial<TConversation> = {
       model: 'gpt-4o',
@@ -492,6 +545,25 @@ describe('parseCompactConvo - defaultParamsEndpoint', () => {
     expect(result).not.toBeNull();
     expect(result?.['iconURL']).toBeUndefined();
     expect(result?.maxOutputTokens).toBe(8192);
+  });
+
+  test('should preserve promptCache when compacting OpenRouter custom endpoints', () => {
+    const conversation: Partial<TConversation> = {
+      model: 'anthropic/claude-sonnet-4.6',
+      promptCache: true,
+      iconURL: 'https://example.com/icon.png',
+    };
+
+    const result = parseCompactConvo({
+      endpoint: 'OpenRouter' as EModelEndpoint,
+      endpointType: EModelEndpoint.custom,
+      conversation,
+      defaultParamsEndpoint: Providers.OPENROUTER,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.promptCache).toBe(true);
+    expect(result?.['iconURL']).toBeUndefined();
   });
 
   test('should fall back to endpointType when defaultParamsEndpoint is null', () => {

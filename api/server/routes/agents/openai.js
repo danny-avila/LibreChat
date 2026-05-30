@@ -1,15 +1,14 @@
 /**
  * OpenAI-compatible API routes for LibreChat agents.
  *
- * Provides a compatibility /v1/chat/completions interface for
+ * Provides a /v1/chat/completions compatible interface for
  * interacting with LibreChat agents remotely via API.
  *
- * NOTE: /v1/responses is the primary Agents API interface.
- *
  * Usage:
- *   POST /v1/chat/completions - Compatibility chat interface
+ *   POST /v1/chat/completions - Chat with an agent
  *   GET /v1/models - List available agents
  *   GET /v1/models/:model - Get agent details
+ *
  * Request format:
  *   {
  *     "model": "agent_id_here",
@@ -18,42 +17,23 @@
  *   }
  */
 const express = require('express');
-const { PermissionTypes, Permissions } = require('librechat-data-provider');
-const {
-  generateCheckAccess,
-  createRequireApiKeyAuth,
-  createCheckRemoteAgentAccess,
-} = require('@librechat/api');
 const {
   OpenAIChatCompletionController,
   ListModelsController,
   GetModelController,
 } = require('~/server/controllers/agents/openai');
-const { getEffectivePermissions } = require('~/server/services/PermissionService');
-const { validateAgentApiKey, findUser } = require('~/models');
 const { configMiddleware } = require('~/server/middleware');
-const { getRoleByName } = require('~/models/Role');
-const { getAgent } = require('~/models/Agent');
+const {
+  checkAgentPermission,
+  preAuthTenantMiddleware,
+  requireRemoteAgentAuth,
+  checkRemoteAgentsFeature,
+} = require('./middleware');
 
 const router = express.Router();
 
-const requireApiKeyAuth = createRequireApiKeyAuth({
-  validateAgentApiKey,
-  findUser,
-});
-
-const checkRemoteAgentsFeature = generateCheckAccess({
-  permissionType: PermissionTypes.REMOTE_AGENTS,
-  permissions: [Permissions.USE],
-  getRoleByName,
-});
-
-const checkAgentPermission = createCheckRemoteAgentAccess({
-  getAgent,
-  getEffectivePermissions,
-});
-
-router.use(requireApiKeyAuth);
+router.use(preAuthTenantMiddleware);
+router.use(requireRemoteAgentAuth);
 router.use(configMiddleware);
 router.use(checkRemoteAgentsFeature);
 

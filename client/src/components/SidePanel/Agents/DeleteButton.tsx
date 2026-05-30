@@ -1,4 +1,6 @@
+import { memo } from 'react';
 import { useFormContext } from 'react-hook-form';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import {
   Label,
   Button,
@@ -11,12 +13,12 @@ import {
 import type { Agent, AgentCreateParams } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import { logger, getDefaultAgentFormValues } from '~/utils';
-import { useLocalize, useSetIndexOptions } from '~/hooks';
 import { useDeleteAgentMutation } from '~/data-provider';
-import { useChatContext } from '~/Providers';
 import { isEphemeralAgent } from '~/common';
+import { useLocalize } from '~/hooks';
+import store from '~/store';
 
-export default function DeleteButton({
+function DeleteButton({
   agent_id,
   setCurrentAgentId,
   createMutation,
@@ -28,8 +30,8 @@ export default function DeleteButton({
   const localize = useLocalize();
   const { reset } = useFormContext();
   const { showToast } = useToastContext();
-  const { conversation } = useChatContext();
-  const { setOption } = useSetIndexOptions();
+  const setConversation = useSetRecoilState(store.conversationByIndex(0));
+  const conversationAgentId = useRecoilValue(store.conversationAgentIdByIndex(0));
 
   const deleteAgent = useDeleteAgentMutation({
     onSuccess: (_, vars, context) => {
@@ -52,15 +54,16 @@ export default function DeleteButton({
       if (!firstAgent) {
         setCurrentAgentId(undefined);
         reset(getDefaultAgentFormValues());
-        return setOption('agent_id')('');
+        setConversation((prev) => (prev ? { ...prev, agent_id: '' } : prev));
+        return;
       }
 
-      if (vars.agent_id === conversation?.agent_id) {
-        setOption('model')('');
-        return setOption('agent_id')(firstAgent.id);
+      if (vars.agent_id === conversationAgentId) {
+        setConversation((prev) => (prev ? { ...prev, model: '', agent_id: firstAgent.id } : prev));
+        return;
       }
 
-      const currentAgent = updatedList.find((agent) => agent.id === conversation?.agent_id);
+      const currentAgent = updatedList.find((agent) => agent.id === conversationAgentId);
 
       if (currentAgent) {
         setCurrentAgentId(currentAgent.id);
@@ -119,3 +122,15 @@ export default function DeleteButton({
     </OGDialog>
   );
 }
+
+const MemoizedDeleteButton = memo(
+  DeleteButton,
+  (prevProps, nextProps) =>
+    prevProps.agent_id === nextProps.agent_id &&
+    prevProps.setCurrentAgentId === nextProps.setCurrentAgentId &&
+    prevProps.createMutation.data?.id === nextProps.createMutation.data?.id &&
+    prevProps.createMutation.isLoading === nextProps.createMutation.isLoading,
+);
+MemoizedDeleteButton.displayName = 'DeleteButton';
+
+export default MemoizedDeleteButton;

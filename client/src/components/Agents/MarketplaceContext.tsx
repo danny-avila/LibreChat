@@ -13,5 +13,5 @@ interface MarketplaceProviderProps {
 export const MarketplaceProvider: React.FC<MarketplaceProviderProps> = ({ children }) => {
   const chatHelpers = useChatHelpers(0, 'new');
 
-  return <ChatContext.Provider value={chatHelpers as any}>{children}</ChatContext.Provider>;
+  return <ChatContext.Provider value={chatHelpers}>{children}</ChatContext.Provider>;
 };

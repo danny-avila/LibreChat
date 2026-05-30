@@ -111,12 +111,12 @@ describe('encodeHeaderValue', () => {
 describe('resolveHeaders', () => {
   beforeEach(() => {
     process.env.TEST_API_KEY = 'test-api-key-value';
-    process.env.ANOTHER_SECRET = 'another-secret-value';
+    process.env.ANOTHER_VALUE = 'another-test-value';
   });
 
   afterEach(() => {
     delete process.env.TEST_API_KEY;
-    delete process.env.ANOTHER_SECRET;
+    delete process.env.ANOTHER_VALUE;
   });
 
   it('should return empty object when headers is undefined', () => {
@@ -139,7 +139,7 @@ describe('resolveHeaders', () => {
   it('should process environment variables in headers', () => {
     const headers = {
       Authorization: '${TEST_API_KEY}',
-      'X-Secret': '${ANOTHER_SECRET}',
+      'X-Secret': '${ANOTHER_VALUE}',
       'Content-Type': 'application/json',
     };
 
@@ -147,7 +147,7 @@ describe('resolveHeaders', () => {
 
     expect(result).toEqual({
       Authorization: 'test-api-key-value',
-      'X-Secret': 'another-secret-value',
+      'X-Secret': 'another-test-value',
       'Content-Type': 'application/json',
     });
   });
@@ -526,6 +526,40 @@ describe('resolveHeaders', () => {
     expect(result['X-Conversation']).toBe('conv-123');
   });
 
+  it('should not resolve env vars introduced via LIBRECHAT_BODY placeholders', () => {
+    const body = {
+      conversationId: '${TEST_API_KEY}',
+      parentMessageId: '${TEST_API_KEY}',
+      messageId: '${TEST_API_KEY}',
+    };
+    const headers = {
+      'X-Conv': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+      'X-Parent': '{{LIBRECHAT_BODY_PARENTMESSAGEID}}',
+      'X-Msg': '{{LIBRECHAT_BODY_MESSAGEID}}',
+    };
+    const result = resolveHeaders({ headers, body });
+
+    expect(result['X-Conv']).toBe('${TEST_API_KEY}');
+    expect(result['X-Parent']).toBe('${TEST_API_KEY}');
+    expect(result['X-Msg']).toBe('${TEST_API_KEY}');
+  });
+
+  it('should not resolve env vars introduced via LIBRECHAT_USER placeholders', () => {
+    const user = createTestUser({ name: '${TEST_API_KEY}' });
+    const headers = { 'X-Name': '{{LIBRECHAT_USER_NAME}}' };
+    const result = resolveHeaders({ headers, user });
+
+    expect(result['X-Name']).toBe('${TEST_API_KEY}');
+  });
+
+  it('should not resolve env vars introduced via customUserVars', () => {
+    const customUserVars = { MY_TOKEN: '${TEST_API_KEY}' };
+    const headers = { Authorization: 'Bearer {{MY_TOKEN}}' };
+    const result = resolveHeaders({ headers, customUserVars });
+
+    expect(result.Authorization).toBe('Bearer ${TEST_API_KEY}');
+  });
+
   describe('non-string header values (type guard tests)', () => {
     it('should handle numeric header values without crashing', () => {
       const headers = {
@@ -657,12 +691,12 @@ describe('resolveHeaders', () => {
 describe('resolveNestedObject', () => {
   beforeEach(() => {
     process.env.TEST_API_KEY = 'test-api-key-value';
-    process.env.ANOTHER_SECRET = 'another-secret-value';
+    process.env.ANOTHER_VALUE = 'another-test-value';
   });
 
   afterEach(() => {
     delete process.env.TEST_API_KEY;
-    delete process.env.ANOTHER_SECRET;
+    delete process.env.ANOTHER_VALUE;
   });
 
   it('should preserve nested object structure', () => {
@@ -952,18 +986,20 @@ describe('resolveNestedObject', () => {
 describe('processMCPEnv', () => {
   beforeEach(() => {
     process.env.TEST_API_KEY = 'test-api-key-value';
-    process.env.ANOTHER_SECRET = 'another-secret-value';
+    process.env.ANOTHER_VALUE = 'another-test-value';
     process.env.OAUTH_CLIENT_ID = 'oauth-client-id-value';
     process.env.OAUTH_CLIENT_SECRET = 'oauth-client-secret-value';
     process.env.MCP_SERVER_URL = 'https://mcp.example.com';
+    process.env.MCP_PROXY_URL = 'http://proxy.example.com:8080';
   });
 
   afterEach(() => {
     delete process.env.TEST_API_KEY;
-    delete process.env.ANOTHER_SECRET;
+    delete process.env.ANOTHER_VALUE;
     delete process.env.OAUTH_CLIENT_ID;
     delete process.env.OAUTH_CLIENT_SECRET;
     delete process.env.MCP_SERVER_URL;
+    delete process.env.MCP_PROXY_URL;
   });
 
   it('should return null/undefined as-is', () => {
@@ -977,7 +1013,7 @@ describe('processMCPEnv', () => {
       command: 'mcp-server',
       env: {
         API_KEY: '${TEST_API_KEY}',
-        SECRET: '${ANOTHER_SECRET}',
+        SECRET: '${ANOTHER_VALUE}',
         PLAIN_VALUE: 'plain-text',
       },
       args: ['--key', '${TEST_API_KEY}', '--url', '${MCP_SERVER_URL}'],
@@ -990,7 +1026,7 @@ describe('processMCPEnv', () => {
       command: 'mcp-server',
       env: {
         API_KEY: 'test-api-key-value',
-        SECRET: 'another-secret-value',
+        SECRET: 'another-test-value',
         PLAIN_VALUE: 'plain-text',
       },
       args: ['--key', 'test-api-key-value', '--url', 'https://mcp.example.com'],
@@ -1008,6 +1044,47 @@ describe('processMCPEnv', () => {
     expect(result).toEqual({
       type: 'websocket',
       url: 'https://mcp.example.com/ws',
+    });
+  });
+
+  it('should process outbound proxy for remote MCP options', () => {
+    const options: MCPOptions = {
+      type: 'sse',
+      url: '${MCP_SERVER_URL}/sse',
+      proxy: '${MCP_PROXY_URL}',
+    };
+
+    const result = processMCPEnv({ options });
+
+    expect(result).toEqual({
+      type: 'sse',
+      url: 'https://mcp.example.com/sse',
+      proxy: 'http://proxy.example.com:8080',
+    });
+  });
+
+  it('should not process user-controlled placeholders in outbound proxy', () => {
+    const user = createTestUser({ id: 'user-proxy-target' });
+    const body = { conversationId: 'conv-1', parentMessageId: 'parent-1', messageId: 'msg-1' };
+    const options: MCPOptions = {
+      type: 'sse',
+      url: '${MCP_SERVER_URL}/sse',
+      proxy:
+        'http://proxy.example.com/{{CUSTOM_PROXY_PATH}}/{{LIBRECHAT_USER_ID}}/{{LIBRECHAT_BODY_MESSAGEID}}',
+    };
+
+    const result = processMCPEnv({
+      options,
+      user,
+      body,
+      customUserVars: { CUSTOM_PROXY_PATH: 'tenant-proxy' },
+    });
+
+    expect(result).toEqual({
+      type: 'sse',
+      url: 'https://mcp.example.com/sse',
+      proxy:
+        'http://proxy.example.com/{{CUSTOM_PROXY_PATH}}/{{LIBRECHAT_USER_ID}}/{{LIBRECHAT_BODY_MESSAGEID}}',
     });
   });
 
@@ -1135,6 +1212,49 @@ describe('processMCPEnv', () => {
         'X-Message-Id': 'msg-789',
       },
     });
+  });
+
+  it('should not resolve env vars introduced via body placeholders in MCP headers', () => {
+    const body = {
+      conversationId: '${TEST_API_KEY}',
+      parentMessageId: '${TEST_API_KEY}',
+      messageId: '${TEST_API_KEY}',
+    };
+
+    const options: MCPOptions = {
+      type: 'streamable-http',
+      url: 'https://api.example.com',
+      headers: {
+        'X-Conv': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+        'X-Parent': '{{LIBRECHAT_BODY_PARENTMESSAGEID}}',
+      },
+    };
+
+    const result = processMCPEnv({ options, body });
+
+    if (!isStreamableHTTPOptions(result)) {
+      throw new Error('Expected streamable-http options');
+    }
+    expect(result.headers?.['X-Conv']).toBe('${TEST_API_KEY}');
+    expect(result.headers?.['X-Parent']).toBe('${TEST_API_KEY}');
+  });
+
+  it('should not resolve env vars introduced via customUserVars in MCP headers', () => {
+    const customUserVars = { MY_TOKEN: '${TEST_API_KEY}' };
+    const options: MCPOptions = {
+      type: 'streamable-http',
+      url: 'https://api.example.com',
+      headers: {
+        Authorization: 'Bearer {{MY_TOKEN}}',
+      },
+    };
+
+    const result = processMCPEnv({ options, customUserVars });
+
+    if (!isStreamableHTTPOptions(result)) {
+      throw new Error('Expected streamable-http options');
+    }
+    expect(result.headers?.Authorization).toBe('Bearer ${TEST_API_KEY}');
   });
 
   it('should handle mixed placeholders in OAuth configuration', () => {

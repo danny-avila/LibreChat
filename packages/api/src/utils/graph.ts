@@ -11,9 +11,7 @@ import {
  * Pre-computed regex for matching the Graph token placeholder.
  * Escapes curly braces in the placeholder string for safe regex use.
  */
-const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-const GRAPH_TOKEN_REGEX = new RegExp(escapeRegex(GRAPH_TOKEN_PLACEHOLDER), 'g');
+const GRAPH_TOKEN_REGEX = new RegExp(GRAPH_TOKEN_PLACEHOLDER.replace(/[{}]/g, '\\$&'), 'g');
 
 /**
  * Response from a Graph API token exchange.

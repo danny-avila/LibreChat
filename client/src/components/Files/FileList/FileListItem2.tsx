@@ -1,4 +1,3 @@
-/* eslint-disable i18next/no-literal-string */
 import React from 'react';
 import { FileIcon, PlusIcon } from 'lucide-react';
 import { Button, DotsIcon, TrashIcon } from '@librechat/client';

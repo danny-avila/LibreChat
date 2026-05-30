@@ -158,12 +158,28 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')) {
     }
   }
 
+  /**
+   * Deletes all memory entries for a user
+   */
+  async function deleteAllUserMemories(userId: string | Types.ObjectId): Promise<number> {
+    try {
+      const MemoryEntry = mongoose.models.MemoryEntry;
+      const result = await MemoryEntry.deleteMany({ userId });
+      return result.deletedCount;
+    } catch (error) {
+      throw new Error(
+        `Failed to delete all user memories: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  }
+
   return {
     setMemory,
     createMemory,
     deleteMemory,
     getAllUserMemories,
     getFormattedMemories,
+    deleteAllUserMemories,
   };
 }
 
