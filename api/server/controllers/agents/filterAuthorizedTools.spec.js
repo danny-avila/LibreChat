@@ -358,6 +358,43 @@ describe('MCP Tool Authorization', () => {
       expect(result).not.toContain(malformedTool);
     });
 
+    test('should gate app-level MCP tools present in the global tool cache', async () => {
+      const appMcpTool = `appTool${d}authorizedServer`;
+      const forbiddenAppMcpTool = `appTool${d}forbiddenServer`;
+      const cacheWithMCPTools = {
+        ...availableTools,
+        [appMcpTool]: true,
+        [forbiddenAppMcpTool]: true,
+      };
+
+      const result = await filterAuthorizedTools({
+        tools: [appMcpTool, forbiddenAppMcpTool, 'web_search'],
+        userId,
+        user: testUser,
+        availableTools: cacheWithMCPTools,
+      });
+
+      expect(result).toContain(appMcpTool);
+      expect(result).toContain('web_search');
+      expect(result).not.toContain(forbiddenAppMcpTool);
+    });
+
+    test('should strip app-level MCP tools from the cache when user lacks MCP server use permission', async () => {
+      mockUserCanUseMCPServers.mockResolvedValue(false);
+      const appMcpTool = `appTool${d}authorizedServer`;
+      const cacheWithMCPTools = { ...availableTools, [appMcpTool]: true };
+
+      const result = await filterAuthorizedTools({
+        tools: [appMcpTool, 'web_search'],
+        userId,
+        user: testUser,
+        availableTools: cacheWithMCPTools,
+      });
+
+      expect(result).toEqual(['web_search']);
+      expect(mockGetAllServerConfigs).not.toHaveBeenCalled();
+    });
+
     test('should reject malformed MCP tool keys with multiple delimiters', async () => {
       const result = await filterAuthorizedTools({
         tools: [

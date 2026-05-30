@@ -34,8 +34,12 @@ function estimateBase64ImageBytes(data: string): number {
   return Math.max(0, Math.floor((data.length * 3) / 4) - padding);
 }
 
+function isRemoteImageUrl(data: string): boolean {
+  return data.startsWith('http://') || data.startsWith('https://');
+}
+
 function assertImageDataWithinLimit(item: t.ImageContent): void {
-  if (item.data.startsWith('http')) {
+  if (isRemoteImageUrl(item.data)) {
     return;
   }
 
@@ -81,7 +85,7 @@ const imageFormatters: Record<string, undefined | t.ImageFormatter> = {
   default: (item) => ({
     type: 'image_url',
     image_url: {
-      url: item.data.startsWith('http') ? item.data : `data:${item.mimeType};base64,${item.data}`,
+      url: isRemoteImageUrl(item.data) ? item.data : `data:${item.mimeType};base64,${item.data}`,
     },
   }),
 };

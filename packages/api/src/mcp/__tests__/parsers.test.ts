@@ -209,6 +209,31 @@ describe('formatToolContent', () => {
         image_url: { url: 'https://example.com/large.png' },
       });
     });
+
+    it('should enforce the image cap on base64 data that merely starts with "http"', () => {
+      process.env.MCP_IMAGE_DATA_MAX_BYTES = '3';
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'image', data: 'httpAAAAAAAA', mimeType: 'image/png' }],
+      };
+
+      expect(() => formatToolContent(result, 'openai')).toThrow(
+        'MCP image result exceeds maximum size of 3 bytes',
+      );
+    });
+
+    it('should treat base64 starting with "http" as inline data, not a remote URL', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'image', data: 'httpAAAA', mimeType: 'image/png' }],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai');
+
+      expect(content).toBe('');
+      expect(artifacts?.content?.[0]).toEqual({
+        type: 'image_url',
+        image_url: { url: 'data:image/png;base64,httpAAAA' },
+      });
+    });
   });
 
   describe('resource handling', () => {
