@@ -50,6 +50,11 @@ const TermsAndConditionsModal = ({
   };
 
   const content = useMemo(() => {
+    const localizedContent = localize('com_ui_terms_modal_content_markdown');
+    if (localizedContent && localizedContent !== 'com_ui_terms_modal_content_markdown') {
+      return localizedContent;
+    }
+
     if (typeof modalContent === 'string') {
       return modalContent;
     }
@@ -59,7 +64,7 @@ const TermsAndConditionsModal = ({
     }
 
     return '';
-  }, [modalContent]);
+  }, [modalContent, localize]);
 
   return (
     <OGDialog open={open} onOpenChange={handleOpenChange}>
