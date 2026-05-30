@@ -613,6 +613,7 @@ async function createMCPTool({
 
   return createToolInstance({
     res,
+    user,
     provider,
     toolName,
     serverName,
@@ -624,6 +625,7 @@ async function createMCPTool({
 
 function createToolInstance({
   res,
+  user: capturedUser = null,
   toolName,
   serverName,
   serverConfig: capturedServerConfig,
