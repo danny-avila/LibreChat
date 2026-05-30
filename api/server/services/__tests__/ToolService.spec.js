@@ -77,6 +77,7 @@ jest.mock('~/config', () => ({
 }));
 jest.mock('~/server/services/MCP', () => ({
   resolveConfigServers: (...args) => mockResolveConfigServers(...args),
+  userCanUseMCPServers: jest.fn().mockResolvedValue(true),
 }));
 jest.mock('~/cache', () => ({
   getLogStores: jest.fn(() => ({})),
@@ -253,6 +254,28 @@ describe('ToolService - Action Capability Gating', () => {
       const [callArgs] = mockLoadToolDefinitions.mock.calls[0];
       expect(callArgs.tools).toContain(mcpToolWithAction);
       expect(callArgs.tools).toContain(regularTool);
+    });
+
+    it('should filter MCP tool definitions when user lacks MCP server use permission', async () => {
+      const { userCanUseMCPServers } = require('~/server/services/MCP');
+      userCanUseMCPServers.mockResolvedValueOnce(false);
+
+      const mcpTool = `search${Constants.mcp_delimiter}myserver`;
+      const capabilities = [AgentCapabilities.tools];
+      const req = createMockReq(capabilities);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+
+      await loadAgentTools({
+        req,
+        res: {},
+        agent: { id: 'agent_123', tools: [regularTool, mcpTool] },
+        definitionsOnly: true,
+      });
+
+      expect(mockLoadToolDefinitions).toHaveBeenCalledTimes(1);
+      const [callArgs] = mockLoadToolDefinitions.mock.calls[0];
+      expect(callArgs.tools).toContain(regularTool);
+      expect(callArgs.tools).not.toContain(mcpTool);
     });
 
     it('should return actionsEnabled in the result', async () => {

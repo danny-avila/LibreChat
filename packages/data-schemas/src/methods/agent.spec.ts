@@ -8,6 +8,8 @@ import {
   PrincipalModel,
   PermissionBits,
   EToolResources,
+  Constants,
+  actionDelimiter,
 } from 'librechat-data-provider';
 import type {
   UpdateWithAggregationPipeline,
@@ -518,6 +520,42 @@ describe('Agent Methods', () => {
       expect(retrievedAgent!.id).toBe(agentId);
       expect(retrievedAgent!.name).toBe('Test Agent');
       expect(retrievedAgent!.description).toBe('Test description');
+    });
+
+    test('should derive mcpServerNames only from MCP tools on create', async () => {
+      const { agentId, authorId } = createTestIds();
+      const actionTool = `sync${Constants.mcp_delimiter}state${actionDelimiter}api---example---com`;
+      const mcpTool = `search${Constants.mcp_delimiter}authorizedServer`;
+
+      const newAgent = await createAgent({
+        id: agentId,
+        name: 'MCP Names Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        tools: [actionTool, mcpTool],
+      });
+
+      expect(newAgent.mcpServerNames).toEqual(['authorizedServer']);
+    });
+
+    test('should derive mcpServerNames only from MCP tools on update', async () => {
+      const { agentId, authorId } = createTestIds();
+      const actionTool = `sync${Constants.mcp_delimiter}state${actionDelimiter}api---example---com`;
+      const mcpTool = `search${Constants.mcp_delimiter}authorizedServer`;
+
+      await createAgent({
+        id: agentId,
+        name: 'MCP Names Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        tools: [],
+      });
+
+      const updatedAgent = await updateAgent({ id: agentId }, { tools: [actionTool, mcpTool] });
+
+      expect(updatedAgent!.mcpServerNames).toEqual(['authorizedServer']);
     });
 
     test('should delete an agent', async () => {

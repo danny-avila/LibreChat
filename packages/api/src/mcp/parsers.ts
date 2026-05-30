@@ -3,8 +3,55 @@ import { Tools } from 'librechat-data-provider';
 import type { UIResource } from 'librechat-data-provider';
 import type * as t from './types';
 
+export const DEFAULT_MCP_IMAGE_DATA_MAX_BYTES = 10 * 1024 * 1024;
+
 function generateResourceId(text: string): string {
   return crypto.createHash('sha256').update(text).digest('hex').substring(0, 10);
+}
+
+function getMCPImageDataMaxBytes(): number {
+  const raw = process.env.MCP_IMAGE_DATA_MAX_BYTES;
+  if (!raw) {
+    return DEFAULT_MCP_IMAGE_DATA_MAX_BYTES;
+  }
+
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : DEFAULT_MCP_IMAGE_DATA_MAX_BYTES;
+}
+
+function getBase64Padding(data: string): number {
+  if (data.endsWith('==')) {
+    return 2;
+  }
+  if (data.endsWith('=')) {
+    return 1;
+  }
+  return 0;
+}
+
+function estimateBase64ImageBytes(data: string): number {
+  const padding = getBase64Padding(data);
+  return Math.max(0, Math.floor((data.length * 3) / 4) - padding);
+}
+
+function isRemoteImageUrl(data: string): boolean {
+  return data.startsWith('http://') || data.startsWith('https://');
+}
+
+function assertImageDataWithinLimit(item: t.ImageContent): void {
+  if (isRemoteImageUrl(item.data)) {
+    return;
+  }
+
+  const maxBytes = getMCPImageDataMaxBytes();
+  const estimatedBytes = estimateBase64ImageBytes(item.data);
+  if (estimatedBytes <= maxBytes) {
+    return;
+  }
+
+  throw new Error(
+    `MCP image result exceeds maximum size of ${maxBytes} bytes: ${estimatedBytes} bytes`,
+  );
 }
 
 const RECOGNIZED_PROVIDERS = new Set([
@@ -38,7 +85,7 @@ const imageFormatters: Record<string, undefined | t.ImageFormatter> = {
   default: (item) => ({
     type: 'image_url',
     image_url: {
-      url: item.data.startsWith('http') ? item.data : `data:${item.mimeType};base64,${item.data}`,
+      url: isRemoteImageUrl(item.data) ? item.data : `data:${item.mimeType};base64,${item.data}`,
     },
   }),
 };
@@ -70,6 +117,9 @@ function parseAsString(result: t.MCPToolCallResponse): string {
           resourceText.push(`Type: ${item.resource.mimeType}`);
         }
         return resourceText.join('\n');
+      }
+      if (isImageContent(item)) {
+        assertImageDataWithinLimit(item);
       }
       return JSON.stringify(item, null, 2);
     })
@@ -120,6 +170,7 @@ export function formatToolContent(
       if (!isImageContent(item)) {
         return;
       }
+      assertImageDataWithinLimit(item);
       const formatter = imageFormatters.default as t.ImageFormatter;
       const formattedImage = formatter(item);
 
