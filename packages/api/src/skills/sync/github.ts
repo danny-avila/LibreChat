@@ -785,7 +785,12 @@ async function prepareRemoteSkill(params: {
     source: PROVIDER,
     sourceMetadata,
   };
-  const existing = await deps.findSkillBySourceIdentity({ source: PROVIDER, upstreamId });
+  const foundExisting = await deps.findSkillBySourceIdentity({ source: PROVIDER, upstreamId });
+  const sourceTenantId = source.tenantId ?? undefined;
+  const existing =
+    foundExisting && (foundExisting.tenantId ?? undefined) === sourceTenantId
+      ? foundExisting
+      : null;
   const createInput: CreateSkillInput = {
     ...(update as Omit<UpdateSkillInput, 'source'>),
     name: update.name ?? fallbackName,
@@ -838,7 +843,8 @@ function hasExternalSkillEdit(before: ISkill, after: ISkill): boolean {
     before.body !== after.body ||
     before.name !== after.name ||
     before.description !== after.description ||
-    (before.alwaysApply ?? false) !== (after.alwaysApply ?? false)
+    (before.alwaysApply ?? false) !== (after.alwaysApply ?? false) ||
+    JSON.stringify(before.frontmatter ?? {}) !== JSON.stringify(after.frontmatter ?? {})
   );
 }
 
