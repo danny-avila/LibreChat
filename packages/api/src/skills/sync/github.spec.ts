@@ -228,7 +228,7 @@ describe('createGitHubSkillSyncRunner', () => {
         sourceMetadata: expect.objectContaining({
           provider: 'github',
           sourceId: 'librechat-skills',
-          upstreamId: 'librechat-skills:LibreChat/skills:skills/research',
+          upstreamId: 'librechat-skills:skills/research',
           skillBlobSha: 'skill-md-sha',
         }),
       }),
@@ -237,7 +237,7 @@ describe('createGitHubSkillSyncRunner', () => {
       expect.objectContaining({
         relativePath: 'scripts/run.sh',
         sourceMetadata: expect.objectContaining({
-          upstreamId: 'librechat-skills:LibreChat/skills:skills/research',
+          upstreamId: 'librechat-skills:skills/research',
           blobSha: 'file-sha',
           commitSha: 'commit-sha',
         }),
@@ -321,8 +321,8 @@ describe('createGitHubSkillSyncRunner', () => {
       return skill;
     };
     const listSkillsBySource = jest.fn(async () => [
-      existingSkill('librechat-skills:LibreChat/skills:skills/research', keptId),
-      existingSkill('librechat-skills:LibreChat/skills:skills/removed', staleId),
+      existingSkill('librechat-skills:skills/research', keptId),
+      existingSkill('librechat-skills:skills/removed', staleId),
     ]);
     const deps = createDeps({ listSkillsBySource });
     const runner = createGitHubSkillSyncRunner(deps);
@@ -516,7 +516,7 @@ describe('createGitHubSkillSyncRunner', () => {
       sourceMetadata: {
         provider: 'github',
         sourceId: 'librechat-skills',
-        upstreamId: 'librechat-skills:LibreChat/skills:skills/research',
+        upstreamId: 'librechat-skills:skills/research',
         owner: 'LibreChat',
         repo: 'skills',
         ref: 'main',
@@ -560,7 +560,7 @@ describe('createGitHubSkillSyncRunner', () => {
     expect(result.status).toBe('completed');
     expect(deps.findSkillBySourceIdentity).toHaveBeenCalledWith({
       source: 'github',
-      upstreamId: 'librechat-skills:LibreChat/skills:skills/research',
+      upstreamId: 'librechat-skills:skills/research',
     });
     expect(deps.createSkill).not.toHaveBeenCalled();
     expect(deps.updateSkill).toHaveBeenCalledWith(
@@ -568,7 +568,7 @@ describe('createGitHubSkillSyncRunner', () => {
         update: expect.objectContaining({
           sourceMetadata: expect.objectContaining({
             ref: 'release',
-            upstreamId: 'librechat-skills:LibreChat/skills:skills/research',
+            upstreamId: 'librechat-skills:skills/research',
           }),
           frontmatter: {},
         }),
@@ -586,7 +586,7 @@ describe('createGitHubSkillSyncRunner', () => {
       sourceMetadata: {
         provider: 'github',
         sourceId: 'librechat-skills',
-        upstreamId: 'librechat-skills:LibreChat/skills:skills/research',
+        upstreamId: 'librechat-skills:skills/research',
         owner: 'LibreChat',
         repo: 'skills',
         ref: 'main',
@@ -752,13 +752,13 @@ describe('createGitHubSkillSyncRunner', () => {
         expect.objectContaining({
           relativePath: 'parent.txt',
           sourceMetadata: expect.objectContaining({
-            upstreamId: 'librechat-skills:LibreChat/skills:skills',
+            upstreamId: 'librechat-skills:skills',
           }),
         }),
         expect.objectContaining({
           relativePath: 'child.txt',
           sourceMetadata: expect.objectContaining({
-            upstreamId: 'librechat-skills:LibreChat/skills:skills/child',
+            upstreamId: 'librechat-skills:skills/child',
           }),
         }),
       ]),
@@ -768,13 +768,13 @@ describe('createGitHubSkillSyncRunner', () => {
         expect.objectContaining({
           relativePath: 'child/SKILL.md',
           sourceMetadata: expect.objectContaining({
-            upstreamId: 'librechat-skills:LibreChat/skills:skills',
+            upstreamId: 'librechat-skills:skills',
           }),
         }),
         expect.objectContaining({
           relativePath: 'child/child.txt',
           sourceMetadata: expect.objectContaining({
-            upstreamId: 'librechat-skills:LibreChat/skills:skills',
+            upstreamId: 'librechat-skills:skills',
           }),
         }),
       ]),
