@@ -1067,6 +1067,67 @@ export class MCPOAuthHandler {
   }
 
   /**
+   * Posts a `refresh_token` grant, transparently retrying without the `scope`
+   * parameter when — and only when — the authorization server rejects the request
+   * because of that parameter.
+   *
+   * RFC 6749 §6 makes `scope` optional on refresh (the server reuses the originally
+   * granted scope when it is omitted). LibreChat sends it by default because some
+   * servers expect it, but others — notably Salesforce — reject any `scope` on the
+   * refresh grant with HTTP 400 "scope parameter not supported". A failed refresh
+   * forces a full re-authentication, which on multi-replica deployments amplifies the
+   * PKCE retry storm, so we recover automatically instead of surfacing the failure.
+   */
+  private static async postRefreshRequest(
+    oauthFetch: ReturnType<typeof createHardenedOAuthFetch>,
+    tokenUrl: string | URL,
+    headers: HeadersInit,
+    body: URLSearchParams,
+    serverName: string,
+  ): Promise<Response> {
+    const response = await oauthFetch(tokenUrl, { method: 'POST', headers, body });
+    if (response.ok || !body.has('scope')) {
+      return response;
+    }
+
+    /** Body is consumed here, so this branch must either retry or throw — never fall through. */
+    const errorText = await response.text();
+    if (!this.isScopeParameterRejection(response.status, errorText)) {
+      throw new Error(
+        `Token refresh failed: ${response.status} ${response.statusText} - ${errorText}`,
+      );
+    }
+
+    logger.warn(
+      `[MCPOAuth] ${serverName} rejected the scope parameter on token refresh (HTTP ${response.status}); retrying without scope per RFC 6749 §6`,
+    );
+    body.delete('scope');
+    return oauthFetch(tokenUrl, { method: 'POST', headers, body });
+  }
+
+  /**
+   * Narrowly detects "this server does not accept a `scope` parameter on the refresh
+   * grant" so the retry-without-scope fallback can never mask unrelated refresh
+   * failures (e.g. `invalid_grant` for an expired/revoked refresh token). Matches the
+   * RFC 6749 `invalid_scope` error and Salesforce's "scope parameter not supported".
+   */
+  private static isScopeParameterRejection(status: number, body: string): boolean {
+    if (status < 400 || status >= 500) {
+      return false;
+    }
+    const lower = body.toLowerCase();
+    if (!lower.includes('scope')) {
+      return false;
+    }
+    return (
+      lower.includes('invalid_scope') ||
+      lower.includes('not supported') ||
+      lower.includes('unsupported') ||
+      lower.includes('not allowed')
+    );
+  }
+
+  /**
    * Refreshes OAuth tokens using a refresh token
    */
   static async refreshOAuthTokens(
@@ -1215,11 +1276,13 @@ export class MCPOAuthHandler {
         });
 
         const oauthFetch = createHardenedOAuthFetch({ allowedDomains, allowedAddresses });
-        const response = await oauthFetch(tokenUrl, {
-          method: 'POST',
+        const response = await this.postRefreshRequest(
+          oauthFetch,
+          tokenUrl,
           headers,
           body,
-        });
+          metadata.serverName,
+        );
 
         if (!response.ok) {
           const errorText = await response.text();
@@ -1299,11 +1362,13 @@ export class MCPOAuthHandler {
         }
 
         const oauthFetch = createHardenedOAuthFetch({ allowedDomains, allowedAddresses });
-        const response = await oauthFetch(tokenUrl, {
-          method: 'POST',
+        const response = await this.postRefreshRequest(
+          oauthFetch,
+          tokenUrl,
           headers,
           body,
-        });
+          metadata.serverName,
+        );
 
         if (!response.ok) {
           const errorText = await response.text();
