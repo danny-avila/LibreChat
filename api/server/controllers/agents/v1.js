@@ -629,27 +629,17 @@ const updateAgentHandler = async (req, res) => {
 
     const isMCPTool = (t) =>
       typeof t === 'string' && t.includes(Constants.mcp_delimiter) && !isActionTool(t);
-    /**
-     * Agent updates are partial: a PATCH may omit `tools`, leaving the
-     * persisted tools in place. A user who lost `MCP_SERVERS.USE` must not be
-     * able to retain stale MCP bindings through such an unrelated edit, so we
-     * evaluate the effective tool set (incoming `tools` when provided,
-     * otherwise the existing persisted tools) rather than gating only on the
-     * presence of `tools` in the payload. Create, duplicate, and revert
-     * already strip every MCP tool on revocation; this mirrors that.
-     */
-    const effectiveTools = updateData.tools ?? existingAgent.tools ?? [];
+    const hasToolUpdate = updateData.tools !== undefined;
+    const editingOwnAgent = existingAgent.author?.toString() === req.user.id;
+    const effectiveTools = (hasToolUpdate ? updateData.tools : existingAgent.tools) ?? [];
     const requestedMCPTools = effectiveTools.filter(isMCPTool);
 
     if (requestedMCPTools.length > 0) {
       if (!(await userCanUseMCPServers(req.user))) {
-        /** Strip every MCP tool, even when the request didn't include `tools`
-         *  (mcpServerNames is re-derived from tools by the agent model). */
-        updateData.tools = effectiveTools.filter((t) => !isMCPTool(t));
-      } else if (updateData.tools) {
-        /** Permission intact: keep the narrower behavior — only newly added
-         *  MCP tools are gated against server access, so existing bindings
-         *  survive transient registry/server unavailability. */
+        if (hasToolUpdate || editingOwnAgent) {
+          updateData.tools = effectiveTools.filter((t) => !isMCPTool(t));
+        }
+      } else if (hasToolUpdate) {
         const existingToolSet = new Set(existingAgent.tools ?? []);
         const newMCPTools = requestedMCPTools.filter((t) => !existingToolSet.has(t));
 

@@ -1,5 +1,11 @@
 import crypto from 'node:crypto';
-import { Constants, EToolResources, ResourceType, actionDelimiter } from 'librechat-data-provider';
+import {
+  Constants,
+  EToolResources,
+  ResourceType,
+  actionDelimiter,
+  isActionTool,
+} from 'librechat-data-provider';
 import type { AgentToolResources } from 'librechat-data-provider';
 import type { FilterQuery, Model, Types } from 'mongoose';
 import type { IAgent, IAclEntry } from '~/types';
@@ -46,7 +52,7 @@ function extractMCPServerNames(tools: string[] | undefined | null): string[] {
   }
   const serverNames = new Set<string>();
   for (const tool of tools) {
-    if (!tool || !tool.includes(mcp_delimiter)) {
+    if (!tool || !tool.includes(mcp_delimiter) || isActionTool(tool)) {
       continue;
     }
     const parts = tool.split(mcp_delimiter);

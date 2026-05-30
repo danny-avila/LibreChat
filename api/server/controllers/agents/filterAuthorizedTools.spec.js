@@ -569,14 +569,12 @@ describe('MCP Tool Authorization', () => {
       expect(mockGetAllServerConfigs).not.toHaveBeenCalled();
     });
 
-    test('should strip retained MCP tools on an unrelated edit after permission revocation', async () => {
+    test('should strip retained MCP tools on an unrelated owner edit after permission revocation', async () => {
       mockUserCanUseMCPServers.mockResolvedValue(false);
       mockReq.user.id = existingAgentAuthorId.toString();
       mockReq.params.id = existingAgentId;
-      // Edit keeps the existing MCP tool and only renames the agent.
       mockReq.body = {
         name: 'Renamed After Revocation',
-        tools: ['web_search', `existingTool${d}authorizedServer`],
       };
 
       await updateAgentHandler(mockReq, mockRes);
@@ -585,6 +583,25 @@ describe('MCP Tool Authorization', () => {
       const updatedAgent = mockRes.json.mock.calls[0][0];
       expect(updatedAgent.tools).toEqual(['web_search']);
       expect(updatedAgent.name).toBe('Renamed After Revocation');
+    });
+
+    test('should not strip shared agent MCP tools on unrelated editor changes after revocation', async () => {
+      mockUserCanUseMCPServers.mockResolvedValue(false);
+      mockReq.user.id = new mongoose.Types.ObjectId().toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.body = {
+        name: 'Shared Rename After Revocation',
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.json).toHaveBeenCalled();
+      const updatedAgent = mockRes.json.mock.calls[0][0];
+      const agentInDb = await Agent.findOne({ id: existingAgentId });
+      expect(updatedAgent.tools).toContain(`existingTool${d}authorizedServer`);
+      expect(updatedAgent.name).toBe('Shared Rename After Revocation');
+      expect(agentInDb.tools).toContain(`existingTool${d}authorizedServer`);
+      expect(agentInDb.mcpServerNames).toEqual(['authorizedServer']);
     });
 
     test('should not strip action tools whose operationId contains the MCP delimiter on revocation', async () => {
@@ -609,8 +626,10 @@ describe('MCP Tool Authorization', () => {
 
       expect(mockRes.json).toHaveBeenCalled();
       const updatedAgent = mockRes.json.mock.calls[0][0];
+      const agentInDb = await Agent.findOne({ id: existingAgentId });
       expect(updatedAgent.tools).toContain(actionTool);
       expect(updatedAgent.tools).toContain('web_search');
+      expect(agentInDb.mcpServerNames).toEqual([]);
     });
 
     test('should allow adding authorized MCP tools', async () => {
