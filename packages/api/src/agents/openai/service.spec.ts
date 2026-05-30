@@ -26,15 +26,15 @@ function createMockReq(user?: Record<string, unknown>) {
 }
 
 function createMockRes() {
-  const res = {
+  const res: Record<string, unknown> = {
     setHeader: jest.fn(),
     flushHeaders: jest.fn(),
     write: jest.fn(),
     end: jest.fn(),
-    status: jest.fn(() => res),
-    json: jest.fn(() => res),
     headersSent: false,
   };
+  res.status = jest.fn(() => res);
+  res.json = jest.fn(() => res);
   return res as unknown as Parameters<typeof createAgentChatCompletion>[1];
 }
 
