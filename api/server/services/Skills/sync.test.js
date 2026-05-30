@@ -1,6 +1,8 @@
 const mockGetAppConfig = jest.fn();
 const mockGetStrategyFunctions = jest.fn();
 const mockGetFileStrategy = jest.fn();
+const mockFindRoleByIdentifier = jest.fn();
+const mockGrantPermission = jest.fn();
 let mockRunnerDeps;
 
 jest.mock('~/server/services/Config', () => ({
@@ -23,8 +25,10 @@ jest.mock('@librechat/data-schemas', () => ({
   runAsSystem: jest.fn((fn) => fn()),
 }));
 
-jest.mock('~/models', () => ({}));
-jest.mock('~/server/services/PermissionService', () => ({ grantPermission: jest.fn() }));
+jest.mock('~/models', () => ({
+  findRoleByIdentifier: mockFindRoleByIdentifier,
+  grantPermission: mockGrantPermission,
+}));
 jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: mockGetStrategyFunctions,
 }));
@@ -36,6 +40,8 @@ describe('GitHub skill sync service', () => {
     mockGetAppConfig.mockReset();
     mockGetStrategyFunctions.mockReset();
     mockGetFileStrategy.mockReset();
+    mockFindRoleByIdentifier.mockReset();
+    mockGrantPermission.mockReset();
     mockRunnerDeps = undefined;
   });
 
@@ -132,5 +138,60 @@ describe('GitHub skill sync service', () => {
     await runner.runOnce();
 
     expect(runAsSystem).not.toHaveBeenCalled();
+  });
+
+  it('resolves the access role outside tenant isolation but writes the ACL in context', async () => {
+    const { runAsSystem } = require('@librechat/data-schemas');
+    mockGetAppConfig.mockResolvedValue({ skillSync: undefined, paths: {} });
+    mockFindRoleByIdentifier.mockResolvedValue({
+      _id: 'role-object-id',
+      resourceType: 'skill',
+      permBits: 1,
+    });
+    mockGrantPermission.mockResolvedValue({ _id: 'acl-entry-id' });
+
+    const service = require('./sync');
+    service.initializeGitHubSkillSync({ skillSync: undefined });
+    await mockRunnerDeps.grantPermission({
+      principalType: 'public',
+      principalId: null,
+      resourceType: 'skill',
+      resourceId: 'skill-id',
+      accessRoleId: 'skill_viewer',
+      grantedBy: 'system',
+    });
+
+    expect(runAsSystem).toHaveBeenCalledTimes(1);
+    expect(mockFindRoleByIdentifier).toHaveBeenCalledWith('skill_viewer');
+    expect(mockGrantPermission).toHaveBeenCalledWith(
+      'public',
+      null,
+      'skill',
+      'skill-id',
+      1,
+      'system',
+      undefined,
+      'role-object-id',
+    );
+  });
+
+  it('fails the grant when the access role does not exist', async () => {
+    mockGetAppConfig.mockResolvedValue({ skillSync: undefined, paths: {} });
+    mockFindRoleByIdentifier.mockResolvedValue(null);
+
+    const service = require('./sync');
+    service.initializeGitHubSkillSync({ skillSync: undefined });
+
+    await expect(
+      mockRunnerDeps.grantPermission({
+        principalType: 'public',
+        principalId: null,
+        resourceType: 'skill',
+        resourceId: 'skill-id',
+        accessRoleId: 'skill_viewer',
+        grantedBy: 'system',
+      }),
+    ).rejects.toThrow('Role skill_viewer not found');
+    expect(mockGrantPermission).not.toHaveBeenCalled();
   });
 });
