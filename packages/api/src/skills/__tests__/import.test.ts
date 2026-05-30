@@ -121,6 +121,16 @@ describe('parseFrontmatter', () => {
     });
   });
 
+  it('coerces non-string scalar name and description to strings', () => {
+    const raw = `---\nname: 123\ndescription: 2024\n---\n\n# Body`;
+    expect(parseFrontmatter(raw)).toEqual({
+      name: '123',
+      description: '2024',
+      alwaysApply: undefined,
+      invalidBooleans: [],
+    });
+  });
+
   it('extracts always-apply: true', () => {
     const raw = `---\nname: legal\ndescription: Legal rules.\nalways-apply: true\n---\n\n# Legal body`;
     expect(parseFrontmatter(raw)).toEqual({
