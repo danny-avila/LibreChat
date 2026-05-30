@@ -305,6 +305,76 @@ describe('createGitHubSkillSyncRunner', () => {
     );
   });
 
+  it('scopes mirror cleanup to the current source and deletes only its absent upstream skills', async () => {
+    const keptId = new Types.ObjectId();
+    const staleId = new Types.ObjectId();
+    const existingSkill = (upstreamId: string, _id: Types.ObjectId) =>
+      ({
+        ...makeSkill({
+          name: 'research',
+          description: 'Research things',
+          author: new Types.ObjectId(),
+          source: 'github',
+          sourceMetadata: { provider: 'github', sourceId: 'librechat-skills', upstreamId },
+        } as CreateSkillInput),
+        _id,
+      }) as ISkill & { _id: Types.ObjectId };
+    const listSkillsBySource = jest.fn(async () => [
+      existingSkill('librechat-skills:LibreChat/skills:skills/research', keptId),
+      existingSkill('librechat-skills:LibreChat/skills:skills/removed', staleId),
+    ]);
+    const deps = createDeps({ listSkillsBySource });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('completed');
+    expect(listSkillsBySource).toHaveBeenCalledWith({
+      source: 'github',
+      sourceId: 'librechat-skills',
+    });
+    expect(deps.deleteSkill).toHaveBeenCalledTimes(1);
+    expect(deps.deleteSkill).toHaveBeenCalledWith(staleId.toString());
+  });
+
+  it('derives distinct synthetic authors for the same source mirrored into different tenants', async () => {
+    const authorForTenant = async (tenantId: string): Promise<string> => {
+      let author = '';
+      const deps = createDeps({
+        getConfig: () => ({
+          github: {
+            enabled: true,
+            intervalMinutes: 60,
+            runOnStartup: false,
+            sources: [
+              {
+                id: 'librechat-skills',
+                owner: 'LibreChat',
+                repo: 'skills',
+                ref: 'main',
+                paths: ['skills'],
+                credentialKey: 'github-skills-prod',
+                tenantId,
+              },
+            ],
+          },
+        }),
+        createSkill: jest.fn(async (input: CreateSkillInput): Promise<CreateSkillResult> => {
+          author = input.author.toString();
+          return { skill: makeSkill(input), warnings: [] };
+        }),
+      });
+      await createGitHubSkillSyncRunner(deps).runOnce();
+      return author;
+    };
+
+    const [authorA, authorB] = [
+      await authorForTenant('tenant-a'),
+      await authorForTenant('tenant-b'),
+    ];
+    expect(authorA).not.toBe('');
+    expect(authorA).not.toBe(authorB);
+  });
+
   it('uses distinct synthetic authors so same-named skills can sync from different sources', async () => {
     const seenNamesByAuthor = new Set<string>();
     const deps = createDeps({
