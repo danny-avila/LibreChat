@@ -29,7 +29,7 @@ import store from '~/store';
 
 function SharedView() {
   const localize = useLocalize();
-  const { data: config } = useGetStartupConfig();
+  const { data: config } = useGetStartupConfig(undefined, { context: 'share' });
   const { theme, setTheme } = useContext(ThemeContext);
   const { shareId } = useParams();
   const { data, isLoading } = useGetSharedMessages(shareId ?? '');

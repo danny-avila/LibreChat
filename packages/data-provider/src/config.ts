@@ -1081,6 +1081,8 @@ export type TRumConfig = {
   environment?: string;
 };
 
+export type StartupConfigContext = 'share';
+
 export type TStartupConfig = {
   appTitle: string;
   socialLogins?: string[];
