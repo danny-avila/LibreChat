@@ -219,6 +219,7 @@ describe('setupOpenId', () => {
     delete process.env.OPENID_USERNAME_CLAIM;
     delete process.env.OPENID_NAME_CLAIM;
     delete process.env.OPENID_EMAIL_CLAIM;
+    delete process.env.OPENID_AVATAR_AUTHORIZED_ORIGINS;
     delete process.env.PROXY;
     delete process.env.OPENID_USE_PKCE;
     delete process.env.OPENID_GENERATE_NONCE;
@@ -1312,6 +1313,23 @@ describe('setupOpenId', () => {
     expect(resizeAvatar).toHaveBeenCalledWith({
       userId: 'newUserId',
       input: 'https://example.com/avatar.png',
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('adds auth headers for configured OpenID avatar origins', async () => {
+    process.env.OPENID_AVATAR_AUTHORIZED_ORIGINS = 'https://example.com';
+
+    await validate(tokenset);
+
+    expect(resizeAvatar).toHaveBeenCalledWith({
+      userId: 'newUserId',
+      input: 'https://example.com/avatar.png',
+      fetchOptions: {
+        headers: {
+          Authorization: 'Bearer fake_access_token',
+        },
+      },
     });
     expect(fetch).not.toHaveBeenCalled();
   });

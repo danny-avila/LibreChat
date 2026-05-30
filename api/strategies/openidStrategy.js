@@ -199,13 +199,61 @@ const getUserInfo = async (config, accessToken, sub) => {
   }
 };
 
-const resizeIdentityProviderAvatar = async (url, userId) => {
+function getUrlOrigin(value) {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
+
+function getOpenIDAvatarAuthorizedOrigins(config) {
+  const metadata = config?.serverMetadata?.() ?? {};
+  const metadataOrigins = [metadata.issuer, metadata.userinfo_endpoint]
+    .map(getUrlOrigin)
+    .filter(Boolean);
+  const configuredOrigins = (process.env.OPENID_AVATAR_AUTHORIZED_ORIGINS ?? '')
+    .split(/[\s,]+/)
+    .map(getUrlOrigin)
+    .filter(Boolean);
+
+  return new Set([...metadataOrigins, ...configuredOrigins]);
+}
+
+function shouldAuthorizeOpenIDAvatar(url, config) {
+  const origin = getUrlOrigin(url);
+  if (!origin) {
+    return false;
+  }
+
+  return getOpenIDAvatarAuthorizedOrigins(config).has(origin);
+}
+
+async function getOpenIDAvatarFetchOptions(url, config, accessToken, sub) {
+  if (!shouldAuthorizeOpenIDAvatar(url, config)) {
+    return undefined;
+  }
+
+  const exchangedAccessToken = await exchangeAccessTokenIfNeeded(config, accessToken, sub, true);
+  return {
+    headers: {
+      Authorization: `Bearer ${exchangedAccessToken}`,
+    },
+  };
+}
+
+const resizeIdentityProviderAvatar = async (url, userId, config, accessToken, sub) => {
   if (!url) {
     return '';
   }
 
   try {
-    return await resizeAvatar({ userId, input: url });
+    const fetchOptions = await getOpenIDAvatarFetchOptions(url, config, accessToken, sub);
+    const avatarParams = { userId, input: url };
+    if (fetchOptions) {
+      avatarParams.fetchOptions = fetchOptions;
+    }
+    return await resizeAvatar(avatarParams);
   } catch (error) {
     logger.error(
       `[openidStrategy] resizeIdentityProviderAvatar: Error processing avatar at URL "${url}": ${error}`,
@@ -635,7 +683,13 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     }
 
     const userId = user._id.toString();
-    const imageBuffer = await resizeIdentityProviderAvatar(imageUrl, userId);
+    const imageBuffer = await resizeIdentityProviderAvatar(
+      imageUrl,
+      userId,
+      openidConfig,
+      tokenset.access_token,
+      userinfo.sub,
+    );
     if (imageBuffer) {
       const fileStrategy = getAvatarFileStrategy(appConfig, process.env.CDN_PROVIDER);
       const { saveBuffer } = getStrategyFunctions(fileStrategy);
