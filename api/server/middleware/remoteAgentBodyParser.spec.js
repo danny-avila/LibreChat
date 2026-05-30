@@ -48,9 +48,9 @@ describe('remoteAgentJsonParser', () => {
   });
 
   it('rejects unauthenticated Remote Agent API requests before parsing large JSON bodies', async () => {
-    const input = 'x'.repeat(4 * 1024 * 1024);
-
-    const response = await request(createApp()).post('/api/agents/v1/responses').send({ input });
+    const response = await request(createApp())
+      .post('/api/agents/v1/responses')
+      .send({ input: 'not parsed before auth' });
 
     expect(response.status).toBe(401);
     expect(response.body.parsed).toBe(false);

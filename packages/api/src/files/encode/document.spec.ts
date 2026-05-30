@@ -2,7 +2,7 @@ import { Providers } from '@librechat/agents';
 import { mbToBytes } from 'librechat-data-provider';
 import type { AppConfig, IMongoFile } from '@librechat/data-schemas';
 import type { ServerRequest } from '~/types';
-import { remoteInlineFileSource } from '~/agents/files';
+import { RemoteAgentFileError, remoteInlineFileSource } from '~/agents/files';
 import { encodeAndFormatDocuments } from './document';
 
 /** Mock the validation module */
@@ -375,6 +375,44 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
           mockStrategyFunctions,
         ),
       ).rejects.toThrow('PDF validation failed: PDF file size (12MB) exceeds the 10MB limit');
+    });
+
+    it('should throw a 400 error when inline PDF validation fails', async () => {
+      const req = createMockRequest(10) as ServerRequest;
+      const file = createInlineFile('application/pdf', 'bad.pdf', 'not-a-pdf');
+
+      mockedValidatePdf.mockResolvedValue({
+        isValid: false,
+        error: 'Invalid PDF file: missing PDF header',
+      });
+
+      await expect(
+        encodeAndFormatDocuments(
+          req,
+          [file],
+          { provider: Providers.ANTHROPIC },
+          mockStrategyFunctions,
+        ),
+      ).rejects.toMatchObject({
+        name: 'RemoteAgentFileError',
+        statusCode: 400,
+        code: 'invalid_file_input',
+        message: 'PDF validation failed: Invalid PDF file: missing PDF header',
+      });
+    });
+
+    it('should throw a 400 error when inline generic document validation fails', async () => {
+      const req = createMockRequest(1, Providers.ANTHROPIC) as ServerRequest;
+      const file = createInlineFile('text/plain', 'large.txt', 'x'.repeat(2 * 1024 * 1024));
+
+      await expect(
+        encodeAndFormatDocuments(
+          req,
+          [file],
+          { provider: Providers.ANTHROPIC },
+          mockStrategyFunctions,
+        ),
+      ).rejects.toBeInstanceOf(RemoteAgentFileError);
     });
 
     it('should not call validatePdf for non-PDF files', async () => {
