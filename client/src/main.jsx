@@ -1,4 +1,3 @@
-import './lib/rum/early';
 import 'regenerator-runtime/runtime';
 import { createRoot } from 'react-dom/client';
 import './locales/i18n';
