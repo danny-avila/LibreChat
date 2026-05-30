@@ -15,8 +15,7 @@ export const activeExpirationFilter = <
 
 export const legacyPermanentExpirationFilter = <
   T extends RetentionFilterDocument = RetentionFilterDocument,
->(): FilterQuery<T> =>
-  ({ expiredAt: null }) as FilterQuery<T>;
+>(): FilterQuery<T> => ({ expiredAt: null }) as FilterQuery<T>;
 
 export const buildRetentionVisibilityFilter = <
   T extends RetentionFilterDocument = RetentionFilterDocument,

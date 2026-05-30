@@ -1,7 +1,7 @@
 import { ParsedServerConfig, AddServerResult } from '~/mcp/types';
 
 /**
- * Interface for future DB implementation
+ * Contract for MCP server configuration storage, whether cache-backed or DB-backed.
  */
 export interface IServerConfigsRepositoryInterface {
   add(serverName: string, config: ParsedServerConfig, userId?: string): Promise<AddServerResult>;

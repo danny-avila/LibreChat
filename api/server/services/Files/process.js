@@ -67,6 +67,17 @@ const createSanitizedUploadWrapper = (uploadFunction) => {
   };
 };
 
+const isPersistentAgentResourceUpload = ({ messageAttachment, tool_resource }) =>
+  !messageAttachment && !!tool_resource;
+
+const getAgentFileRetentionExpiry = async ({ req, messageAttachment, tool_resource }) => {
+  if (isPersistentAgentResourceUpload({ messageAttachment, tool_resource })) {
+    return {};
+  }
+
+  return await getRetentionExpiry(req);
+};
+
 const isMissingStorageError = (err) => {
   const code = err?.code ?? err?.status ?? err?.statusCode ?? err?.response?.status;
   if ([404, '404', 'ENOENT', 'NoSuchKey', 'NotFound', 'ResourceNotFound'].includes(code)) {
@@ -727,7 +738,11 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
           `Extracted text from "${file.originalname}" exceeds the 15MB storage limit (${Math.round(textBytes / megabyte)}MB). Try a shorter document.`,
         );
       }
-      const retentionExpiry = await getRetentionExpiry(req);
+      const retentionExpiry = await getAgentFileRetentionExpiry({
+        req,
+        messageAttachment,
+        tool_resource,
+      });
       const fileInfo = {
         ...removeNullishValues({
           text,
@@ -925,7 +940,11 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     });
   }
 
-  const retentionExpiry = await getRetentionExpiry(req);
+  const retentionExpiry = await getAgentFileRetentionExpiry({
+    req,
+    messageAttachment,
+    tool_resource,
+  });
   const fileInfo = {
     ...removeNullishValues({
       user: req.user.id,

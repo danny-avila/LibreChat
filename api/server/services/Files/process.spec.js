@@ -21,6 +21,14 @@ jest.mock('librechat-data-provider', () => {
   return {
     ...actual,
     Providers: actual.Providers,
+    RetentionMode: actual.RetentionMode ?? { ALL: 'all', TEMPORARY: 'temporary' },
+    documentParserMimeTypes: actual.documentParserMimeTypes ?? [
+      /^application\/pdf$/,
+      /^application\/vnd\.openxmlformats-officedocument\./,
+      /^application\/vnd\.ms-excel$/,
+      /^application\/vnd\.oasis\.opendocument\./,
+      /^application\/(?:x-)?msexcel$/,
+    ],
     mergeFileConfig: jest.fn(),
   };
 });
@@ -84,6 +92,16 @@ jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: jest.fn(),
 }));
 
+jest.mock('./VectorDB/crud', () => ({
+  uploadVectors: jest.fn().mockResolvedValue({
+    bytes: 42,
+    filename: 'upload.bin',
+    filepath: 'vectordb',
+    embedded: true,
+  }),
+  deleteVectors: jest.fn(),
+}));
+
 jest.mock('~/server/utils', () => ({
   determineFileType: jest.fn(),
 }));
@@ -107,6 +125,7 @@ const {
 const { mergeFileConfig } = require('librechat-data-provider');
 const { checkCapability } = require('~/server/services/Config');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { uploadVectors } = require('./VectorDB/crud');
 const db = require('~/models');
 const {
   processAgentFileUpload,
@@ -158,6 +177,17 @@ const makeFileConfig = ({ ocrSupportedMimeTypes = [] } = {}) => ({
   stt: { supportedMimeTypes: [] },
   text: { supportedMimeTypes: [] },
 });
+
+const setupStoredFileUpload = (result = {}) => {
+  const handleFileUpload = jest.fn().mockResolvedValue({
+    bytes: 42,
+    filename: 'upload.bin',
+    filepath: '/uploads/upload.bin',
+    ...result,
+  });
+  getStrategyFunctions.mockReturnValue({ handleFileUpload });
+  return handleFileUpload;
+};
 
 describe('processAgentFileUpload', () => {
   beforeEach(() => {
@@ -382,6 +412,71 @@ describe('processAgentFileUpload', () => {
     });
   });
 
+  describe('retention for agent resource uploads', () => {
+    test('does not apply retention metadata to persistent agent context files', async () => {
+      const expiredAt = new Date('2030-01-01T00:00:00.000Z');
+      getRetentionExpiry.mockResolvedValueOnce({ expiredAt });
+      const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(getRetentionExpiry).not.toHaveBeenCalled();
+      expect(db.createFile).toHaveBeenCalledWith(expect.not.objectContaining({ expiredAt }), true);
+      expect(db.addAgentResourceFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agent_id: 'agent-abc',
+          tool_resource: EToolResources.context,
+        }),
+      );
+    });
+
+    test('applies retention metadata to context files uploaded as message attachments', async () => {
+      const expiredAt = new Date('2030-01-01T00:00:00.000Z');
+      getRetentionExpiry.mockResolvedValueOnce({ expiredAt });
+      const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
+
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: { ...makeMetadata(), message_file: true },
+      });
+
+      expect(getRetentionExpiry).toHaveBeenCalledTimes(1);
+      expect(getRetentionExpiry.mock.calls[0][0]).toBe(req);
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          expiredAt,
+          context: FileContext.message_attachment,
+        }),
+        true,
+      );
+      expect(db.addAgentResourceFile).not.toHaveBeenCalled();
+    });
+
+    test('does not apply retention metadata to persistent agent file-search files', async () => {
+      const expiredAt = new Date('2030-01-01T00:00:00.000Z');
+      getRetentionExpiry.mockResolvedValueOnce({ expiredAt });
+      setupStoredFileUpload();
+      const req = makeReq({ mimetype: 'text/plain', ocrConfig: null });
+
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: { ...makeMetadata(), tool_resource: EToolResources.file_search },
+      });
+
+      expect(uploadVectors).toHaveBeenCalled();
+      expect(getRetentionExpiry).not.toHaveBeenCalled();
+      expect(db.createFile).toHaveBeenCalledWith(expect.not.objectContaining({ expiredAt }), true);
+      expect(db.addAgentResourceFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agent_id: 'agent-abc',
+          tool_resource: EToolResources.file_search,
+        }),
+      );
+    });
+  });
+
   /* Phase C / option α regression: the upload must persist its sandbox
    * pointer under `metadata.codeEnvRef` (the post-cutover schema). The
    * legacy `metadata.fileIdentifier` key is silently stripped by mongoose
@@ -482,6 +577,32 @@ describe('processAgentFileUpload', () => {
           },
         }),
         true,
+      );
+    });
+
+    it('does not apply retention metadata to persistent agent execute_code files', async () => {
+      const expiredAt = new Date('2030-01-01T00:00:00.000Z');
+      getRetentionExpiry.mockResolvedValueOnce({ expiredAt });
+      setupCodeEnvUpload({ storage_session_id: 'sess-4', file_id: 'fid-4' });
+      const req = makeReq();
+
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: {
+          agent_id: 'agent-abc',
+          tool_resource: EToolResources.execute_code,
+          file_id: 'file-uuid',
+        },
+      });
+
+      expect(getRetentionExpiry).not.toHaveBeenCalled();
+      expect(db.createFile).toHaveBeenCalledWith(expect.not.objectContaining({ expiredAt }), true);
+      expect(db.addAgentResourceFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agent_id: 'agent-abc',
+          tool_resource: EToolResources.execute_code,
+        }),
       );
     });
 

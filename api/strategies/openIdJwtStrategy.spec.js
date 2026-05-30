@@ -119,6 +119,52 @@ describe('openIdJwtStrategy – token validation', () => {
     });
   });
 
+  it('uses a single OPENID_AUDIENCE value when no client ID is configured', () => {
+    withEnv({ OPENID_CLIENT_ID: undefined, OPENID_AUDIENCE: 'librechat' }, () => {
+      openIdJwtLogin(mockOpenIdConfig);
+    });
+
+    expect(capturedStrategyOptions.audience).toBe('librechat');
+  });
+
+  it('splits comma-separated OPENID_AUDIENCE values into multiple accepted audiences', () => {
+    withEnv({ OPENID_CLIENT_ID: undefined, OPENID_AUDIENCE: 'librechat,control-plane-web' }, () => {
+      openIdJwtLogin(mockOpenIdConfig);
+    });
+
+    expect(capturedStrategyOptions.audience).toEqual(['librechat', 'control-plane-web']);
+  });
+
+  it('trims whitespace around comma-separated OPENID_AUDIENCE values', () => {
+    withEnv(
+      { OPENID_CLIENT_ID: undefined, OPENID_AUDIENCE: ' librechat , control-plane-web ' },
+      () => {
+        openIdJwtLogin(mockOpenIdConfig);
+      },
+    );
+
+    expect(capturedStrategyOptions.audience).toEqual(['librechat', 'control-plane-web']);
+  });
+
+  it('falls back to OPENID_CLIENT_ID when OPENID_AUDIENCE is empty', () => {
+    withEnv({ OPENID_CLIENT_ID: 'client-id-only', OPENID_AUDIENCE: '' }, () => {
+      openIdJwtLogin(mockOpenIdConfig);
+    });
+
+    expect(capturedStrategyOptions.audience).toBe('client-id-only');
+  });
+
+  it('combines OPENID_CLIENT_ID with comma-separated OPENID_AUDIENCE values and deduplicates', () => {
+    withEnv(
+      { OPENID_CLIENT_ID: 'librechat', OPENID_AUDIENCE: 'librechat,control-plane-web' },
+      () => {
+        openIdJwtLogin(mockOpenIdConfig);
+      },
+    );
+
+    expect(capturedStrategyOptions.audience).toEqual(['librechat', 'control-plane-web']);
+  });
+
   it('rejects OpenID JWTs whose issuer does not match the configured issuer', async () => {
     findOpenIDUser.mockResolvedValue({ user: null, error: null, migration: false });
     openIdJwtLogin(mockOpenIdConfig);
@@ -339,7 +385,7 @@ describe('openIdJwtStrategy – OPENID_EMAIL_CLAIM', () => {
       role: SystemRoles.USER,
     };
     findUser.mockImplementation(async (query) => {
-      if (query.$or && query.$or.some((c) => c.openidId === payload.sub)) {
+      if (query.openidId === payload.sub && query.openidIssuer === 'https://issuer.example.com') {
         return existingUser;
       }
       return null;
@@ -348,13 +394,10 @@ describe('openIdJwtStrategy – OPENID_EMAIL_CLAIM', () => {
     const req = { headers: { authorization: 'Bearer tok' }, session: {} };
     await invokeVerify(req, payload);
 
-    expect(findUser).toHaveBeenCalledWith(
-      expect.objectContaining({
-        $or: expect.arrayContaining([
-          { openidId: payload.sub, openidIssuer: 'https://issuer.example.com' },
-        ]),
-      }),
-    );
+    expect(findUser).toHaveBeenCalledWith({
+      openidId: payload.sub,
+      openidIssuer: 'https://issuer.example.com',
+    });
   });
 
   it('should use OPENID_EMAIL_CLAIM when set for email lookup', async () => {
@@ -365,12 +408,13 @@ describe('openIdJwtStrategy – OPENID_EMAIL_CLAIM', () => {
     const { user } = await invokeVerify(req, payload);
 
     expect(findUser).toHaveBeenCalledTimes(2);
-    expect(findUser.mock.calls[0][0]).toMatchObject({
-      $or: expect.arrayContaining([
-        { openidId: payload.sub, openidIssuer: 'https://issuer.example.com' },
-      ]),
+    expect(findUser.mock.calls[0][0]).toEqual({
+      openidId: payload.sub,
+      openidIssuer: 'https://issuer.example.com',
     });
-    expect(findUser.mock.calls[1][0]).toEqual({ email: 'test@corp.example.com' });
+    expect(findUser.mock.calls[1][0]).toEqual({
+      email: 'test@corp.example.com',
+    });
     expect(user).toBe(false);
   });
 

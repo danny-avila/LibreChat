@@ -95,6 +95,13 @@ const cacheConfig = {
   REDIS_USE_ALTERNATIVE_DNS_LOOKUP: isEnabled(process.env.REDIS_USE_ALTERNATIVE_DNS_LOOKUP),
   /** Enable redis cluster without the need of multiple URIs */
   USE_REDIS_CLUSTER: isEnabled(process.env.USE_REDIS_CLUSTER ?? 'false'),
+  /**
+   * Force cluster-safe (key-by-key) deletion even when connecting as a single-node Redis instance.
+   * Needed for managed services like ElastiCache Serverless that present a single endpoint
+   * but shard keys internally, causing CROSSSLOT errors on multi-key DEL commands.
+   * Has no effect when USE_REDIS_CLUSTER is already true.
+   */
+  REDIS_CLUSTER_SAFE_DELETE: isEnabled(process.env.REDIS_CLUSTER_SAFE_DELETE ?? 'false'),
   CI: isEnabled(process.env.CI),
   DEBUG_MEMORY_CACHE: isEnabled(process.env.DEBUG_MEMORY_CACHE),
 

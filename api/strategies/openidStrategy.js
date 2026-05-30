@@ -426,6 +426,32 @@ async function resolveGroupsFromOverage(accessToken, sub) {
 }
 
 /**
+ * Resolve the source object (decoded token or userinfo) for a role check
+ * based on the configured token kind. Throws on invalid configuration so
+ * misconfiguration surfaces loudly instead of silently denying every login.
+ *
+ * @param {string} kind - One of 'access', 'id', or 'userinfo'
+ * @param {string} label - Human-readable label for error messages (e.g. 'required role')
+ * @param {Object} tokenset - The OpenID tokenset
+ * @param {Object} userinfo - Merged userinfo (id-token claims + UserInfo endpoint response)
+ */
+function getRoleSource(kind, label, tokenset, userinfo) {
+  if (kind === 'access') {
+    return jwtDecode(tokenset.access_token);
+  }
+  if (kind === 'id') {
+    return jwtDecode(tokenset.id_token);
+  }
+  if (kind === 'userinfo') {
+    return userinfo;
+  }
+  logger.error(
+    `[openidStrategy] Invalid ${label} token kind: ${kind}. Must be one of 'access', 'id', or 'userinfo'.`,
+  );
+  throw new Error(`Invalid ${label} token kind`);
+}
+
+/**
  * Process OpenID authentication tokenset and userinfo
  * This is the core logic extracted from the passport strategy callback
  * Can be reused by both the passport strategy and proxy authentication
@@ -493,12 +519,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     const requiredRoleParameterPath = process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH;
     const requiredRoleTokenKind = process.env.OPENID_REQUIRED_ROLE_TOKEN_KIND;
 
-    let decodedToken = '';
-    if (requiredRoleTokenKind === 'access' && tokenset.access_token) {
-      decodedToken = jwtDecode(tokenset.access_token);
-    } else if (requiredRoleTokenKind === 'id' && tokenset.id_token) {
-      decodedToken = jwtDecode(tokenset.id_token);
-    }
+    const decodedToken = getRoleSource(requiredRoleTokenKind, 'required role', tokenset, userinfo);
 
     let roles = get(decodedToken, requiredRoleParameterPath);
 
@@ -591,23 +612,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
   const adminRoleTokenKind = process.env.OPENID_ADMIN_ROLE_TOKEN_KIND;
 
   if (adminRole && adminRoleParameterPath && adminRoleTokenKind) {
-    let adminRoleObject;
-    switch (adminRoleTokenKind) {
-      case 'access':
-        adminRoleObject = jwtDecode(tokenset.access_token);
-        break;
-      case 'id':
-        adminRoleObject = jwtDecode(tokenset.id_token);
-        break;
-      case 'userinfo':
-        adminRoleObject = userinfo;
-        break;
-      default:
-        logger.error(
-          `[openidStrategy] Invalid admin role token kind: ${adminRoleTokenKind}. Must be one of 'access', 'id', or 'userinfo'.`,
-        );
-        throw new Error('Invalid admin role token kind');
-    }
+    const adminRoleObject = getRoleSource(adminRoleTokenKind, 'admin role', tokenset, userinfo);
 
     let adminRoles = get(adminRoleObject, adminRoleParameterPath);
 
@@ -767,18 +772,25 @@ const setupOpenIdAdmin = (openidConfig) => {
  */
 async function setupOpenId() {
   try {
+    const usePKCE = isEnabled(process.env.OPENID_USE_PKCE);
     const shouldGenerateNonce = isEnabled(process.env.OPENID_GENERATE_NONCE);
 
     /** @type {ClientMetadata} */
     const clientMetadata = {
       client_id: process.env.OPENID_CLIENT_ID,
-      client_secret: process.env.OPENID_CLIENT_SECRET,
+      response_types: ['code'],
+      grant_types: ['authorization_code'],
     };
 
-    if (shouldGenerateNonce) {
-      clientMetadata.response_types = ['code'];
-      clientMetadata.grant_types = ['authorization_code'];
-      clientMetadata.token_endpoint_auth_method = 'client_secret_post';
+    const clientSecret = process.env.OPENID_CLIENT_SECRET?.trim();
+
+    if (clientSecret) {
+      clientMetadata.client_secret = clientSecret;
+      if (shouldGenerateNonce) {
+        clientMetadata.token_endpoint_auth_method = 'client_secret_post';
+      }
+    } else if (usePKCE) {
+      clientMetadata.token_endpoint_auth_method = 'none';
     }
 
     /** @type {Configuration} */
@@ -793,10 +805,10 @@ async function setupOpenId() {
     );
 
     logger.info(`[openidStrategy] OpenID authentication configuration`, {
+      usePKCE,
+      hasClientSecret: !!clientSecret,
+      tokenEndpointAuthMethod: clientMetadata.token_endpoint_auth_method ?? '(library default)',
       generateNonce: shouldGenerateNonce,
-      reason: shouldGenerateNonce
-        ? 'OPENID_GENERATE_NONCE=true - Will generate nonce and use explicit metadata for federated providers'
-        : 'OPENID_GENERATE_NONCE=false - Standard flow without explicit nonce or metadata',
     });
 
     const openidLogin = new CustomOpenIDStrategy(
@@ -805,7 +817,7 @@ async function setupOpenId() {
         scope: process.env.OPENID_SCOPE,
         callbackURL: process.env.DOMAIN_SERVER + process.env.OPENID_CALLBACK_URL,
         clockTolerance: process.env.OPENID_CLOCK_TOLERANCE || 300,
-        usePKCE: isEnabled(process.env.OPENID_USE_PKCE),
+        usePKCE,
       },
       createOpenIDCallback(),
     );
@@ -835,4 +847,5 @@ module.exports = {
   setupOpenId,
   getOpenIdConfig,
   getOpenIdEmail,
+  getRoleSource,
 };

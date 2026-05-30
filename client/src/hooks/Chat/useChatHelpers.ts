@@ -1,12 +1,14 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { QueryKeys, isAssistantsEndpoint } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
-import { useRecoilState, useResetRecoilState, useSetRecoilState } from 'recoil';
+import { useRecoilState, useSetRecoilState } from 'recoil';
 import type { TMessage } from 'librechat-data-provider';
 import type { ActiveJobsResponse } from '~/data-provider';
 import useChatFunctions from '~/hooks/Chat/useChatFunctions';
 import { useAbortStreamMutation } from '~/data-provider';
 import useNewConvo from '~/hooks/useNewConvo';
+import { useLatestMessage, useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
+import { getMessageCacheIds } from './cache';
 import store from '~/store';
 
 // this to be set somewhere else
@@ -27,11 +29,10 @@ export default function useChatHelpers(index = 0, paramId?: string) {
   Falling back to conversationId (Recoil) only if paramId is not available */
   const queryParam = paramId === 'new' ? paramId : (paramId ?? conversationId ?? '');
 
-  const resetLatestMessage = useResetRecoilState(store.latestMessageFamily(index));
   const [isSubmitting, setIsSubmitting] = useRecoilState(store.isSubmittingFamily(index));
-  const [latestMessage, setLatestMessage] = useRecoilState(store.latestMessageFamily(index));
+  const latestMessage = useLatestMessage(index, queryParam);
 
-  const latestMessageId = latestMessage?.messageId;
+  const latestMessageId = useLatestMessageId(index, queryParam) ?? undefined;
   const latestMessageDepth = latestMessage?.depth;
   const latestMessageRef = useRef(latestMessage);
   latestMessageRef.current = latestMessage;
@@ -42,9 +43,9 @@ export default function useChatHelpers(index = 0, paramId?: string) {
 
   const setMessages = useCallback(
     (messages: TMessage[]) => {
-      queryClient.setQueryData<TMessage[]>([QueryKeys.messages, queryParam], messages);
-      if (queryParam === 'new' && conversationId && conversationId !== 'new') {
-        queryClient.setQueryData<TMessage[]>([QueryKeys.messages, conversationId], messages);
+      const messageCacheIds = getMessageCacheIds({ queryParam, conversationId, messages });
+      for (const messageCacheId of messageCacheIds) {
+        queryClient.setQueryData<TMessage[]>([QueryKeys.messages, messageCacheId], messages);
       }
     },
     [queryParam, queryClient, conversationId],
@@ -85,7 +86,6 @@ export default function useChatHelpers(index = 0, paramId?: string) {
     conversation,
     latestMessage,
     setSubmission,
-    setLatestMessage,
   });
 
   const askRef = useRef(_ask);
@@ -210,8 +210,6 @@ export default function useChatHelpers(index = 0, paramId?: string) {
       setSiblingIdx,
       latestMessageId,
       latestMessageDepth,
-      setLatestMessage,
-      resetLatestMessage,
       ask,
       index,
       regenerate,
@@ -243,8 +241,6 @@ export default function useChatHelpers(index = 0, paramId?: string) {
       setSiblingIdx,
       latestMessageId,
       latestMessageDepth,
-      setLatestMessage,
-      resetLatestMessage,
       ask,
       index,
       regenerate,

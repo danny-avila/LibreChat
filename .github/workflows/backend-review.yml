@@ -367,7 +367,11 @@ jobs:
     name: 'Tests: @librechat/api'
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Suite typically completes in ~5 min on a warm runner, but tail-latency
+    # cancellations have started showing up: tests are actively passing right
+    # up to the timeout, then the job is killed mid-suite. Bump headroom to
+    # absorb GitHub Actions runner variance.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
