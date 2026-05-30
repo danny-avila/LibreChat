@@ -1,12 +1,20 @@
 const express = require('express');
 const request = require('supertest');
 
-const mockRequireJwtAuth = jest.fn((req, res, next) => next());
+const mockRequireJwtAuth = jest.fn((req, res, next) => {
+  req.user = { id: 'user-1', role: 'ADMIN', tenantId: 'tenant-a' };
+  next();
+});
 const mockCapabilityMiddleware = jest.fn((req, res, next) => next());
 const mockRequireCapability = jest.fn(() => mockCapabilityMiddleware);
+const mockHasCapability = jest.fn().mockResolvedValue(true);
 
 jest.mock('@librechat/data-schemas', () => ({
-  SystemCapabilities: { ACCESS_ADMIN: 'access:admin', MANAGE_SKILLS: 'manage:skills' },
+  SystemCapabilities: {
+    ACCESS_ADMIN: 'access:admin',
+    READ_SKILLS: 'read:skills',
+    MANAGE_SKILLS: 'manage:skills',
+  },
 }));
 
 jest.mock('@librechat/api', () => ({
@@ -19,6 +27,7 @@ jest.mock('@librechat/api', () => ({
 }));
 
 jest.mock('~/server/middleware/roles/capabilities', () => ({
+  hasCapability: mockHasCapability,
   requireCapability: mockRequireCapability,
 }));
 
@@ -51,8 +60,13 @@ describe('admin skills sync routes', () => {
     await request(app).delete('/api/admin/skills/sync/credentials/default').expect(200);
 
     expect(mockRequireCapability).toHaveBeenCalledWith('access:admin');
-    expect(mockRequireCapability).toHaveBeenCalledWith('manage:skills');
     expect(mockRequireJwtAuth).toHaveBeenCalled();
     expect(mockCapabilityMiddleware).toHaveBeenCalled();
+    expect(mockHasCapability).toHaveBeenCalledTimes(4);
+    expect(mockHasCapability).toHaveBeenCalledWith({ id: 'user-1', role: 'ADMIN' }, 'read:skills');
+    expect(mockHasCapability).toHaveBeenCalledWith(
+      { id: 'user-1', role: 'ADMIN' },
+      'manage:skills',
+    );
   });
 });
