@@ -120,7 +120,6 @@ function parseAsString(result: t.MCPToolCallResponse): string {
       }
       if (isImageContent(item)) {
         assertImageDataWithinLimit(item);
-        return `Image result: ${item.mimeType}`;
       }
       return JSON.stringify(item, null, 2);
     })

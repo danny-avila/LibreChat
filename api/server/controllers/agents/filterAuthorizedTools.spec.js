@@ -551,7 +551,7 @@ describe('MCP Tool Authorization', () => {
       expect(updatedAgent.tools).not.toContain(`attack${d}forbiddenServer`);
     });
 
-    test('should reject newly added MCP tools when user lacks MCP server use permission', async () => {
+    test('should strip all MCP tools, including retained ones, when user lacks MCP server use permission', async () => {
       mockUserCanUseMCPServers.mockResolvedValue(false);
       mockReq.user.id = existingAgentAuthorId.toString();
       mockReq.params.id = existingAgentId;
@@ -563,9 +563,28 @@ describe('MCP Tool Authorization', () => {
 
       expect(mockRes.json).toHaveBeenCalled();
       const updatedAgent = mockRes.json.mock.calls[0][0];
-      expect(updatedAgent.tools).toContain('web_search');
-      expect(updatedAgent.tools).toContain(`existingTool${d}authorizedServer`);
-      expect(updatedAgent.tools).not.toContain(`newTool${d}anotherServer`);
+      // Permission revoked: update must not preserve stale MCP bindings, matching
+      // the create/duplicate/revert paths.
+      expect(updatedAgent.tools).toEqual(['web_search']);
+      expect(mockGetAllServerConfigs).not.toHaveBeenCalled();
+    });
+
+    test('should strip retained MCP tools on an unrelated edit after permission revocation', async () => {
+      mockUserCanUseMCPServers.mockResolvedValue(false);
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      // Edit keeps the existing MCP tool and only renames the agent.
+      mockReq.body = {
+        name: 'Renamed After Revocation',
+        tools: ['web_search', `existingTool${d}authorizedServer`],
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.json).toHaveBeenCalled();
+      const updatedAgent = mockRes.json.mock.calls[0][0];
+      expect(updatedAgent.tools).toEqual(['web_search']);
+      expect(updatedAgent.name).toBe('Renamed After Revocation');
     });
 
     test('should allow adding authorized MCP tools', async () => {

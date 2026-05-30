@@ -626,27 +626,43 @@ const updateAgentHandler = async (req, res) => {
     }
 
     if (updateData.tools) {
-      const existingToolSet = new Set(existingAgent.tools ?? []);
-      const newMCPTools = updateData.tools.filter(
-        (t) => !existingToolSet.has(t) && t?.includes(Constants.mcp_delimiter),
-      );
+      const isMCPTool = (t) => t?.includes(Constants.mcp_delimiter);
+      const requestedMCPTools = updateData.tools.filter(isMCPTool);
 
-      if (newMCPTools.length > 0) {
-        const [availableTools, configServers] = await Promise.all([
-          getCachedTools().then((t) => t ?? {}),
-          resolveConfigServers(req),
-        ]);
-        const approvedNew = await filterAuthorizedTools({
-          tools: newMCPTools,
-          userId: req.user.id,
-          role: req.user.role,
-          user: req.user,
-          availableTools,
-          configServers,
-        });
-        const rejectedSet = new Set(newMCPTools.filter((t) => !approvedNew.includes(t)));
-        if (rejectedSet.size > 0) {
-          updateData.tools = updateData.tools.filter((t) => !rejectedSet.has(t));
+      if (requestedMCPTools.length > 0) {
+        /**
+         * A user who has lost `MCP_SERVERS.USE` must not be able to retain
+         * existing MCP bindings through an unrelated edit. Create, duplicate,
+         * and revert already strip every MCP tool in that case; mirror that
+         * here by dropping all MCP tools when the permission is revoked.
+         * When the permission is intact, keep the narrower behavior: only
+         * newly added MCP tools are gated against server access, so existing
+         * bindings survive transient registry/server unavailability.
+         */
+        if (!(await userCanUseMCPServers(req.user))) {
+          updateData.tools = updateData.tools.filter((t) => !isMCPTool(t));
+        } else {
+          const existingToolSet = new Set(existingAgent.tools ?? []);
+          const newMCPTools = requestedMCPTools.filter((t) => !existingToolSet.has(t));
+
+          if (newMCPTools.length > 0) {
+            const [availableTools, configServers] = await Promise.all([
+              getCachedTools().then((t) => t ?? {}),
+              resolveConfigServers(req),
+            ]);
+            const approvedNew = await filterAuthorizedTools({
+              tools: newMCPTools,
+              userId: req.user.id,
+              role: req.user.role,
+              user: req.user,
+              availableTools,
+              configServers,
+            });
+            const rejectedSet = new Set(newMCPTools.filter((t) => !approvedNew.includes(t)));
+            if (rejectedSet.size > 0) {
+              updateData.tools = updateData.tools.filter((t) => !rejectedSet.has(t));
+            }
+          }
         }
       }
     }

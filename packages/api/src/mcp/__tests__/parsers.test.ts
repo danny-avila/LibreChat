@@ -29,6 +29,18 @@ describe('formatToolContent', () => {
       expect(content).toBe('(No response)');
       expect(artifacts).toBeUndefined();
     });
+
+    it('should preserve the image payload in the string for unrecognized providers', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'image', data: 'iVBORw0KGgoAAAA...', mimeType: 'image/png' }],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'unknown' as t.Provider);
+
+      expect(artifacts).toBeUndefined();
+      expect(content).toContain('iVBORw0KGgoAAAA...');
+      expect(content).toContain('image/png');
+    });
   });
 
   describe('recognized providers', () => {
