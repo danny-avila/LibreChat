@@ -63,35 +63,6 @@ async function userCanUseMCPServers(user) {
   }
 }
 
-/**
- * Resolves a role-bearing user for the runtime MCP permission check. The main
- * agent path attaches a safe user (id + role) to `configurable.user`, but some
- * callers only propagate `configurable.user_id` (e.g. the OpenAI-compatible API
- * path in `packages/api/src/agents/openai/service.ts`). In that case load the
- * user by id so `MCP_SERVERS.USE` is enforced from the authenticated identity
- * rather than rejecting every call for a missing role.
- * @param {{ id?: string, role?: string } | undefined} user
- * @param {string | undefined} userId
- * @returns {Promise<{ id?: string, role?: string } | undefined>}
- */
-async function resolveMCPPermissionUser(user, userId) {
-  if (user?.id && user?.role) {
-    return user;
-  }
-  if (!userId) {
-    return user;
-  }
-  try {
-    const loaded = await db.getUserById(userId, 'role');
-    if (loaded?.role) {
-      return { id: userId, role: loaded.role };
-    }
-  } catch (error) {
-    logger.warn(`[MCP][User: ${userId}] Failed to resolve user for permission check`, error);
-  }
-  return user;
-}
-
 function evictStale(map, ttl) {
   if (map.size <= MAX_CACHE_SIZE) {
     return;
@@ -688,8 +659,7 @@ function createToolInstance({
 
     try {
       const provider = (config?.metadata?.provider || capturedProvider)?.toLowerCase();
-      const permissionUser = await resolveMCPPermissionUser(config?.configurable?.user, userId);
-      const canUseMCP = await userCanUseMCPServers(permissionUser);
+      const canUseMCP = await userCanUseMCPServers(config?.configurable?.user);
       if (!canUseMCP) {
         throw new Error('Forbidden: Insufficient MCP server permissions');
       }
