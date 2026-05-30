@@ -55,7 +55,7 @@ router.post('/notifications', async (req, res) => {
       return res.status(403).json({ message: 'Forbidden: Invalid API key' });
     }
 
-    const { messageId, question, originalQuestion, customMessage, userid } = req.body;
+    const { messageId, question, originalQuestion, customMessage, userid, type } = req.body;
 
     let message;
     let userId;
@@ -66,17 +66,20 @@ router.post('/notifications', async (req, res) => {
     if (!messageId && userId) {
       userId = new ObjectId(userid);
     }
-    // 🔍 Find message
-    message = await Message.findOne({ messageId }).lean();
-    if (!message || !message.user) {
-      return res.status(404).json({
-        message: 'Message not found or missing user',
-        messageId,
-      });
-    }
 
-    //  const userId = "69cd061cd64d4be60a4d6575"; // ⚠️ hardcoded (be careful)
-    userId = message.user;
+    if (messageId) {
+      // 🔍 Find message
+      message = await Message.findOne({ messageId }).lean();
+      if (!message || !message.user) {
+        return res.status(404).json({
+          message: 'Message not found or missing user',
+          messageId,
+        });
+      }
+
+      //  const userId = "69cd061cd64d4be60a4d6575"; // ⚠️ hardcoded (be careful)
+      userId = message.user;
+    }
 
     const user = await User.findById(userId).lean();
     if (!user) {
@@ -91,10 +94,16 @@ router.post('/notifications', async (req, res) => {
 
     // 🔔 Create in-app notification
     try {
+      if (type === 'Custom') {
+        await Notification.create({
+          userId,
+          message: customMessage,
+          type,
+        });
+      }
       await Notification.create({
         userId,
         originalQuestion: displayQuestion,
-        message: customMessage,
       });
     } catch (notifErr) {
       logger.error('Failed to create in-app notification:', notifErr);

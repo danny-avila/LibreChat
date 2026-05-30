@@ -10,11 +10,15 @@ const notificationSchema = new mongoose.Schema(
     },
     originalQuestion: {
       type: String,
-      required: true,
     },
     message: {
       type: String,
     },
+
+    type: {
+      type: String,
+    },
+
     isVisited: {
       type: Boolean,
       default: false,
