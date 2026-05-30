@@ -88,6 +88,16 @@ function hasBooleanPlaceholder(rawValue?: string): boolean {
   return rawValue !== undefined && stripInlineComment(rawValue).length === 0;
 }
 
+function toScalarString(value: unknown): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return '';
+}
+
 export function parseSkillMarkdown(raw: string): ParsedSkillMarkdown {
   const block = extractFrontmatterBlock(raw);
   if (!block) {
@@ -110,12 +120,12 @@ export function parseSkillMarkdown(raw: string): ParsedSkillMarkdown {
   const whenToUseValue = getCaseInsensitive(frontmatter, 'when-to-use');
   const alwaysApplyValue = getCaseInsensitive(frontmatter, 'always-apply');
   const rawAlwaysApplyValue = getRawFrontmatterValue(block, 'always-apply');
-  const name = typeof nameValue === 'string' ? nameValue : '';
+  const name = toScalarString(nameValue);
   let description = '';
-  if (typeof descriptionValue === 'string') {
-    description = descriptionValue;
-  } else if (typeof whenToUseValue === 'string') {
-    description = whenToUseValue;
+  if (descriptionValue !== undefined) {
+    description = toScalarString(descriptionValue);
+  } else if (whenToUseValue !== undefined) {
+    description = toScalarString(whenToUseValue);
   }
   let alwaysApply: boolean | undefined;
   const invalidBooleans: string[] = [];
