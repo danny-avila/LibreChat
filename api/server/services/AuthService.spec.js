@@ -82,7 +82,6 @@ const {
   createSession,
 } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
-const { registerSchema } = require('~/strategies/validators');
 const {
   setOpenIDAuthTokens,
   requestPasswordReset,
