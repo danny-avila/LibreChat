@@ -647,6 +647,31 @@ describe('configSchema skillSync', () => {
     });
     expect(result.success).toBe(true);
     expect(result.data?.skillSync?.github?.sources[0]?.paths).toEqual(['skills', '']);
+    expect(result.data?.skillSync?.github?.sources[0]?.skillDiscoveryDepth).toBeUndefined();
+  });
+
+  it('accepts a GitHub skill sync source with an env-backed token and discovery depth', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.11',
+      skillSync: {
+        github: {
+          enabled: true,
+          sources: [
+            {
+              id: 'mattpocock-skills',
+              owner: 'mattpocock',
+              repo: 'skills',
+              paths: ['skills'],
+              skillDiscoveryDepth: 3,
+              token: '${GITHUB_SKILLS_TOKEN}',
+            },
+          ],
+        },
+      },
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.skillSync?.github?.sources[0]?.token).toBe('${GITHUB_SKILLS_TOKEN}');
+    expect(result.data?.skillSync?.github?.sources[0]?.skillDiscoveryDepth).toBe(3);
   });
 
   it('accepts an optional tenantId on a GitHub skill sync source', () => {
@@ -764,6 +789,85 @@ describe('configSchema skillSync', () => {
               repo: 'skills',
               paths: ['../skills'],
               credentialKey: '../token',
+            },
+          ],
+        },
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects GitHub skill sync sources without credentials or with literal tokens', () => {
+    const missingCredential = configSchema.safeParse({
+      version: '1.3.11',
+      skillSync: {
+        github: {
+          enabled: true,
+          sources: [
+            {
+              id: 'librechat-skills',
+              owner: 'LibreChat',
+              repo: 'skills',
+              paths: ['skills'],
+            },
+          ],
+        },
+      },
+    });
+    const literalToken = configSchema.safeParse({
+      version: '1.3.11',
+      skillSync: {
+        github: {
+          enabled: true,
+          sources: [
+            {
+              id: 'librechat-skills',
+              owner: 'LibreChat',
+              repo: 'skills',
+              paths: ['skills'],
+              token: 'github_pat_secret',
+            },
+          ],
+        },
+      },
+    });
+    const duplicateCredentialSources = configSchema.safeParse({
+      version: '1.3.11',
+      skillSync: {
+        github: {
+          enabled: true,
+          sources: [
+            {
+              id: 'librechat-skills',
+              owner: 'LibreChat',
+              repo: 'skills',
+              paths: ['skills'],
+              credentialKey: 'github-skills-prod',
+              token: '${GITHUB_SKILLS_TOKEN}',
+            },
+          ],
+        },
+      },
+    });
+    expect(missingCredential.success).toBe(false);
+    expect(literalToken.success).toBe(false);
+    expect(duplicateCredentialSources.success).toBe(false);
+  });
+
+  it('rejects GitHub skill sync discovery depths outside the allowed range', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.11',
+      skillSync: {
+        github: {
+          enabled: true,
+          sources: [
+            {
+              id: 'librechat-skills',
+              owner: 'LibreChat',
+              repo: 'skills',
+              paths: ['skills'],
+              credentialKey: 'github-skills-prod',
+              skillDiscoveryDepth: 11,
             },
           ],
         },
