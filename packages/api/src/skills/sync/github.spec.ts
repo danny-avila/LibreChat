@@ -109,6 +109,35 @@ function makeSkill(input: CreateSkillInput): ISkill & { _id: Types.ObjectId } {
   };
 }
 
+function makeSkillFile(
+  skill: ISkill & { _id: Types.ObjectId },
+  overrides: Partial<ISkillFile> = {},
+): ISkillFile & { _id: Types.ObjectId } {
+  return {
+    _id: new Types.ObjectId(),
+    skillId: skill._id,
+    relativePath: 'scripts/run.sh',
+    file_id: 'old-file-id',
+    filename: 'run.sh',
+    filepath: '/uploads/old-file-id__run.sh',
+    source: 'local',
+    sourceMetadata: {
+      provider: 'github',
+      sourceId: 'librechat-skills',
+      upstreamId: 'librechat-skills:skills/research',
+      commitSha: 'old-commit-sha',
+      blobSha: 'old-file-sha',
+      path: 'skills/research/scripts/run.sh',
+    },
+    mimeType: 'application/x-sh',
+    bytes: 7,
+    category: 'script',
+    isExecutable: false,
+    author: skill.author,
+    ...overrides,
+  };
+}
+
 function createDeps(
   overrides: Partial<GitHubSkillSyncDeps> = {},
 ): GitHubSkillSyncDeps & { statuses: ISkillSyncStatus[] } {
@@ -657,6 +686,146 @@ describe('createGitHubSkillSyncRunner', () => {
     );
   });
 
+  it('skips existing skill updates when the upstream package is unchanged', async () => {
+    const skillMarkdown = '---\nname: research\ndescription: Research things\n---\nBody';
+    const existing = makeSkill({
+      name: 'research',
+      description: 'Research things',
+      body: skillMarkdown,
+      frontmatter: {},
+      author: new Types.ObjectId(),
+      authorName: 'GitHub Sync',
+      source: 'github',
+      sourceMetadata: {
+        provider: 'github',
+        sourceId: 'librechat-skills',
+        upstreamId: 'librechat-skills:skills/research',
+        owner: 'LibreChat',
+        repo: 'skills',
+        ref: 'main',
+        skillPath: 'skills/research',
+        commitSha: 'old-commit-sha',
+        skillBlobSha: 'skill-md-sha',
+        syncedAt: '2026-05-30T00:00:00.000Z',
+        syncStatus: 'synced',
+      },
+    }) as ISkill & { _id: Types.ObjectId };
+    const unchangedFile = makeSkillFile(existing, {
+      sourceMetadata: {
+        provider: 'github',
+        sourceId: 'librechat-skills',
+        upstreamId: 'librechat-skills:skills/research',
+        commitSha: 'old-commit-sha',
+        blobSha: 'file-sha',
+        path: 'skills/research/scripts/run.sh',
+      },
+    });
+    const deps = createDeps({
+      fetchFn: githubFetch(skillMarkdown),
+      findSkillBySourceIdentity: jest.fn(async () => existing),
+      getSkillById: jest.fn(async () => existing),
+      getSkillFileByPath: jest.fn(async () => unchangedFile),
+      listSkillFiles: jest.fn(async () => [unchangedFile]),
+      updateSkill: jest.fn(),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('completed');
+    expect(deps.saveBuffer).not.toHaveBeenCalled();
+    expect(deps.upsertSkillFile).not.toHaveBeenCalled();
+    expect(deps.updateSkill).not.toHaveBeenCalled();
+    expect(deps.grantPermission).toHaveBeenCalled();
+  });
+
+  it('restores existing skill files when the skill update fails after file sync', async () => {
+    const existing = makeSkill({
+      name: 'research',
+      description: 'Old description',
+      body: 'Old body',
+      author: new Types.ObjectId(),
+      authorName: 'GitHub Sync',
+      source: 'github',
+      sourceMetadata: {
+        provider: 'github',
+        sourceId: 'librechat-skills',
+        upstreamId: 'librechat-skills:skills/research',
+        owner: 'LibreChat',
+        repo: 'skills',
+        ref: 'main',
+        skillPath: 'skills/research',
+      },
+    }) as ISkill & { _id: Types.ObjectId };
+    const oldFile = makeSkillFile(existing);
+    const files = new Map<string, ISkillFile & { _id: Types.ObjectId }>([
+      [oldFile.relativePath, oldFile],
+    ]);
+    const upsertSkillFile = jest.fn(
+      async (
+        row: Parameters<GitHubSkillSyncDeps['upsertSkillFile']>[0],
+      ): Promise<ISkillFile & { _id: Types.ObjectId }> => {
+        const current = files.get(row.relativePath);
+        const next = {
+          _id: current?._id ?? new Types.ObjectId(),
+          skillId: row.skillId as Types.ObjectId,
+          relativePath: row.relativePath,
+          file_id: row.file_id,
+          filename: row.filename,
+          filepath: row.filepath,
+          storageKey: row.storageKey,
+          storageRegion: row.storageRegion,
+          source: row.source,
+          sourceMetadata: row.sourceMetadata,
+          mimeType: row.mimeType,
+          bytes: row.bytes,
+          category: 'script' as const,
+          isExecutable: row.isExecutable ?? false,
+          author: row.author,
+          tenantId: row.tenantId,
+        };
+        files.set(row.relativePath, next);
+        return next;
+      },
+    );
+    const deps = createDeps({
+      findSkillBySourceIdentity: jest.fn(async () => existing),
+      getSkillById: jest.fn(async () => ({ ...existing, version: existing.version + 1 })),
+      getSkillFileByPath: jest.fn(
+        async (_skillId, relativePath) => files.get(relativePath) ?? null,
+      ),
+      listSkillFiles: jest.fn(async () => Array.from(files.values())),
+      upsertSkillFile,
+      deleteSkillFile: jest.fn(async (_skillId, relativePath) => ({
+        deleted: files.delete(relativePath),
+      })),
+      saveBuffer: jest.fn(async () => ({
+        filepath: '/uploads/new-file-id__run.sh',
+        source: 'local',
+      })),
+      deleteFile: jest.fn(async () => undefined),
+      updateSkill: jest.fn(async () => ({ status: 'conflict' as const })),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('failed');
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'failed',
+        errorCode: 'SKILL_CONFLICT',
+      }),
+    );
+    expect(files.get('scripts/run.sh')).toEqual(
+      expect.objectContaining({ filepath: oldFile.filepath }),
+    );
+    expect(deps.deleteFile).toHaveBeenCalledWith(
+      expect.objectContaining({ filepath: '/uploads/new-file-id__run.sh' }),
+    );
+    expect(deps.deleteFile).not.toHaveBeenCalledWith(
+      expect.objectContaining({ filepath: oldFile.filepath }),
+    );
+  });
+
   it('preserves credential presence when a manual run is skipped by an active lock', async () => {
     const deps = createDeps({
       tryAcquireLock: jest.fn(async () => false),
@@ -696,6 +865,26 @@ describe('createGitHubSkillSyncRunner', () => {
         credentialPresent: true,
       }),
     ]);
+  });
+
+  it('uses a fresh lock owner for each sync run', async () => {
+    const deps = createDeps({ lockOwner: 'worker-a' });
+    const runner = createGitHubSkillSyncRunner(deps);
+
+    await runner.runOnce();
+    await runner.runOnce();
+
+    const lockOwners = (deps.tryAcquireLock as jest.Mock).mock.calls.map(
+      ([params]: [Parameters<GitHubSkillSyncDeps['tryAcquireLock']>[0]]) => params.lockOwner,
+    );
+    const releasedOwners = (deps.releaseLock as jest.Mock).mock.calls.map(
+      ([params]: [Parameters<GitHubSkillSyncDeps['releaseLock']>[0]]) => params.lockOwner,
+    );
+
+    expect(lockOwners).toHaveLength(2);
+    expect(lockOwners[0]).not.toBe(lockOwners[1]);
+    expect(lockOwners.every((owner) => owner.startsWith('worker-a:'))).toBe(true);
+    expect(releasedOwners).toEqual(lockOwners);
   });
 
   it('excludes child skill packages from parent synced files', async () => {
