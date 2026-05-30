@@ -649,6 +649,51 @@ describe('configSchema skillSync', () => {
     expect(result.data?.skillSync?.github?.sources[0]?.paths).toEqual(['skills', '']);
   });
 
+  it('accepts an optional tenantId on a GitHub skill sync source', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.11',
+      skillSync: {
+        github: {
+          enabled: true,
+          sources: [
+            {
+              id: 'librechat-skills',
+              owner: 'LibreChat',
+              repo: 'skills',
+              paths: ['skills'],
+              credentialKey: 'github-skills-prod',
+              tenantId: 'tenant-a',
+            },
+          ],
+        },
+      },
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.skillSync?.github?.sources[0]?.tenantId).toBe('tenant-a');
+  });
+
+  it('rejects the reserved system tenant id on a GitHub skill sync source', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.11',
+      skillSync: {
+        github: {
+          enabled: true,
+          sources: [
+            {
+              id: 'librechat-skills',
+              owner: 'LibreChat',
+              repo: 'skills',
+              paths: ['skills'],
+              credentialKey: 'github-skills-prod',
+              tenantId: '__SYSTEM__',
+            },
+          ],
+        },
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
   it('rejects enabled GitHub skill sync without sources', () => {
     const result = configSchema.safeParse({
       version: '1.3.11',
