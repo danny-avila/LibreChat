@@ -157,6 +157,7 @@ export type GitHubSkillSyncDeps = {
   findSkillBySourceIdentity: (params: {
     source: 'github' | 'notion';
     upstreamId: string;
+    tenantId?: string;
   }) => Promise<(ISkill & { _id: Types.ObjectId }) | null>;
   listSkillsBySource: (params: {
     source: 'github' | 'notion';
@@ -803,8 +804,12 @@ async function prepareRemoteSkill(params: {
     source: PROVIDER,
     sourceMetadata,
   };
-  const foundExisting = await deps.findSkillBySourceIdentity({ source: PROVIDER, upstreamId });
   const sourceTenantId = source.tenantId ?? undefined;
+  const foundExisting = await deps.findSkillBySourceIdentity({
+    source: PROVIDER,
+    upstreamId,
+    tenantId: sourceTenantId,
+  });
   const existing =
     foundExisting && (foundExisting.tenantId ?? undefined) === sourceTenantId
       ? foundExisting
