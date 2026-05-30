@@ -62,10 +62,10 @@ cache: true
 #   # with X-Content-Type-Options: nosniff and CSP default-src 'none'.
 
 # Skill sync configuration (optional)
-# GitHub tokens are not stored in this file. Configure credentialKey here, then
-# set the token through the admin API. Use a GitHub fine-grained personal access
-# token scoped to the selected repository with read-only Contents and Metadata
-# permissions.
+# GitHub tokens are referenced from environment variables. Put the token in
+# `.env`, then reference it here with `token: '${GITHUB_SKILLS_TOKEN}'`. Use a
+# GitHub fine-grained personal access token scoped to the selected repository
+# with read-only Contents and Metadata permissions.
 # skillSync:
 #   github:
 #     enabled: false
@@ -78,7 +78,10 @@ cache: true
 #         ref: main
 #         paths:
 #           - skills
-#         credentialKey: github-skills-prod
+#         # Number of directory levels below each configured path to scan for
+#         # `SKILL.md`. Use 2 for repos shaped like `skills/<category>/<skill>`.
+#         skillDiscoveryDepth: 2
+#         token: '${GITHUB_SKILLS_TOKEN}'
 #         # Optional. Owns the mirrored skills under the given tenant so they are
 #         # created and shared within that tenant. Required for visibility when
 #         # tenant isolation is enabled. Omit for single-tenant deployments.
