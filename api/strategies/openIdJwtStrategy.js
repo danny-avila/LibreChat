@@ -73,7 +73,7 @@ const openIdJwtLogin = (openIdConfig) => {
             updateData.openidId = payload?.sub;
           }
           if (!user.role) {
-            user.role = SystemRoles.USER;
+            user.role = SystemRoles.FARMER;
             updateData.role = user.role;
           }
 
