@@ -286,6 +286,13 @@ function toCleanFrontmatter(
   const clean = { ...frontmatter };
   delete clean.name;
   delete clean.description;
+  // Drop a placeholder/non-boolean always-apply (e.g. `always-apply:` or
+  // `always-apply: # TODO`, which js-yaml yields as null). The boolean is
+  // already captured in the dedicated alwaysApply field, and persisting a
+  // null here would leave ambiguous/invalid frontmatter on the synced skill.
+  if ('always-apply' in clean && typeof clean['always-apply'] !== 'boolean') {
+    delete clean['always-apply'];
+  }
   return clean;
 }
 
@@ -1044,6 +1051,23 @@ async function syncSource(params: {
       });
       seenUpstreamIds.add(makeUpstreamId(source, discovered.rootPath));
       if (prepared.existing) {
+        // Check for an external edit before mutating files, so a concurrently
+        // edited skill fails fast without leaving its bundled files partially
+        // rewritten to the upstream version. The post-file-sync check below
+        // still guards edits that land during the file sync itself.
+        const beforeFileSync = await deps.getSkillById(prepared.existing._id);
+        if (!beforeFileSync) {
+          throw new SkillSyncError(
+            'SKILL_NOT_FOUND',
+            `Previously synced skill "${prepared.existing.name}" was removed`,
+          );
+        }
+        if (hasExternalSkillEdit(prepared.existing, beforeFileSync)) {
+          throw new SkillSyncError(
+            'SKILL_CONFLICT',
+            `Skill "${prepared.existing.name}" was modified during sync`,
+          );
+        }
         const fileCounts = await syncSkillFiles({
           deps,
           token,
