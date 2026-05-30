@@ -4,9 +4,9 @@ const {
   createGitHubSkillSyncRunner,
   startGitHubSkillSyncScheduler,
 } = require('@librechat/api');
+const { runAsSystem } = require('@librechat/data-schemas');
 const db = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
-const { grantPermission } = require('~/server/services/PermissionService');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 
@@ -77,7 +77,38 @@ function createRunner() {
     upsertSkillFile: db.upsertSkillFile,
     deleteSkillFile: db.deleteSkillFile,
     deleteSkill: db.deleteSkill,
-    grantPermission,
+    grantPermission: async ({
+      principalType,
+      principalId,
+      resourceType,
+      resourceId,
+      accessRoleId,
+      grantedBy,
+    }) => {
+      // Default access roles are seeded globally (no tenantId) under runAsSystem,
+      // but the runner may execute inside a source's tenant context. Resolve the
+      // role outside tenant isolation so the global role matches, then write the
+      // ACL entry in the active (tenant) context so tenant users can see it.
+      const role = await runAsSystem(() => db.findRoleByIdentifier(accessRoleId));
+      if (!role) {
+        throw new Error(`Role ${accessRoleId} not found`);
+      }
+      if (role.resourceType !== resourceType) {
+        throw new Error(
+          `Role ${accessRoleId} is for ${role.resourceType} resources, not ${resourceType}`,
+        );
+      }
+      return db.grantPermission(
+        principalType,
+        principalId,
+        resourceType,
+        resourceId,
+        role.permBits,
+        grantedBy,
+        undefined,
+        role._id,
+      );
+    },
     saveBuffer: async ({ userId, buffer, fileName, basePath, isImage, tenantId }) => {
       const storage = await resolveSkillStorage({ isImage });
       const filepath = await storage.saveBuffer({
