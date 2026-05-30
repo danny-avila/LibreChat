@@ -308,17 +308,18 @@ describe('createGitHubSkillSyncRunner', () => {
   it('scopes mirror cleanup to the current source and deletes only its absent upstream skills', async () => {
     const keptId = new Types.ObjectId();
     const staleId = new Types.ObjectId();
-    const existingSkill = (upstreamId: string, _id: Types.ObjectId) =>
-      ({
-        ...makeSkill({
-          name: 'research',
-          description: 'Research things',
-          author: new Types.ObjectId(),
-          source: 'github',
-          sourceMetadata: { provider: 'github', sourceId: 'librechat-skills', upstreamId },
-        } as CreateSkillInput),
-        _id,
-      }) as ISkill & { _id: Types.ObjectId };
+    const existingSkill = (upstreamId: string, _id: Types.ObjectId) => {
+      const skill = makeSkill({
+        name: 'research',
+        description: 'Research things',
+        author: new Types.ObjectId(),
+        authorName: 'GitHub Sync',
+        source: 'github',
+        sourceMetadata: { provider: 'github', sourceId: 'librechat-skills', upstreamId },
+      });
+      skill._id = _id;
+      return skill;
+    };
     const listSkillsBySource = jest.fn(async () => [
       existingSkill('librechat-skills:LibreChat/skills:skills/research', keptId),
       existingSkill('librechat-skills:LibreChat/skills:skills/removed', staleId),
