@@ -255,4 +255,88 @@ describe('OboTokenService', () => {
       expect(mockTokensCache.get).toHaveBeenCalledWith('oidc-sub-456:api://scope');
     });
   });
+
+  describe('single-flight coalescing', () => {
+    /** Yields long enough for both pending callers to advance past their cache lookup. */
+    const flushMicrotasks = () => new Promise((resolve) => setImmediate(resolve));
+
+    it('coalesces concurrent exchanges for the same key into one IdP call', async () => {
+      let resolveGrant;
+      client.genericGrantRequest.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveGrant = resolve;
+        }),
+      );
+
+      const callA = exchangeOboToken(mockUser, 'access-token', 'api://shared');
+      const callB = exchangeOboToken(mockUser, 'access-token', 'api://shared');
+
+      await flushMicrotasks();
+      expect(client.genericGrantRequest).toHaveBeenCalledTimes(1);
+
+      resolveGrant({ access_token: 'shared-obo-token', expires_in: 3600 });
+
+      const [resultA, resultB] = await Promise.all([callA, callB]);
+      expect(resultA).toEqual(resultB);
+      expect(resultA.access_token).toBe('shared-obo-token');
+      expect(client.genericGrantRequest).toHaveBeenCalledTimes(1);
+      expect(mockTokensCache.set).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not coalesce exchanges for different keys', async () => {
+      await Promise.all([
+        exchangeOboToken(mockUser, 'access-token', 'api://scope-a'),
+        exchangeOboToken(mockUser, 'access-token', 'api://scope-b'),
+      ]);
+
+      expect(client.genericGrantRequest).toHaveBeenCalledTimes(2);
+    });
+
+    it('clears the in-flight slot after a successful exchange', async () => {
+      await exchangeOboToken(mockUser, 'access-token', 'api://scope');
+      expect(client.genericGrantRequest).toHaveBeenCalledTimes(1);
+
+      await exchangeOboToken(mockUser, 'access-token', 'api://scope');
+      expect(client.genericGrantRequest).toHaveBeenCalledTimes(2);
+    });
+
+    it('clears the in-flight slot after a failed exchange', async () => {
+      client.genericGrantRequest
+        .mockRejectedValueOnce(
+          new Error('invalid_grant: AADSTS50013: Assertion failed signature validation'),
+        )
+        .mockResolvedValueOnce({ access_token: 'fresh-token', expires_in: 3600 });
+
+      await expect(exchangeOboToken(mockUser, 'access-token', 'api://scope')).rejects.toThrow(
+        'invalid_grant',
+      );
+
+      const result = await exchangeOboToken(mockUser, 'access-token', 'api://scope');
+      expect(result.access_token).toBe('fresh-token');
+      expect(client.genericGrantRequest).toHaveBeenCalledTimes(2);
+    });
+
+    it('bypasses in-flight coalescing when fromCache is false', async () => {
+      let resolveFirst;
+      client.genericGrantRequest
+        .mockReturnValueOnce(
+          new Promise((resolve) => {
+            resolveFirst = resolve;
+          }),
+        )
+        .mockResolvedValueOnce({ access_token: 'forced-fresh-token', expires_in: 3600 });
+
+      const callA = exchangeOboToken(mockUser, 'access-token', 'api://scope', true);
+      await flushMicrotasks();
+
+      const callB = exchangeOboToken(mockUser, 'access-token', 'api://scope', false);
+      expect(client.genericGrantRequest).toHaveBeenCalledTimes(2);
+
+      resolveFirst({ access_token: 'in-flight-token', expires_in: 3600 });
+
+      const [resultA, resultB] = await Promise.all([callA, callB]);
+      expect(resultA.access_token).toBe('in-flight-token');
+      expect(resultB.access_token).toBe('forced-fresh-token');
+    });
+  });
 });
