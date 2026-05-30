@@ -949,6 +949,43 @@ describe('getGoogleConfig', () => {
       expect(config).toMatchObject({ includeThoughts: true });
     });
 
+    it('should use thinkingLevel for Gemma 4 models', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemma-4-31b-it',
+          thinking: true,
+          thinkingLevel: ThinkingLevel.high,
+        },
+      });
+
+      expect((result.llmConfig as Record<string, unknown>).thinkingConfig).toMatchObject({
+        includeThoughts: true,
+        thinkingLevel: 'HIGH',
+      });
+    });
+
+    it('should ignore thinkingBudget for Gemma 4 models', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemma-4-31b-it',
+          thinking: true,
+          thinkingBudget: 5000,
+        },
+      });
+
+      const config = (result.llmConfig as Record<string, unknown>).thinkingConfig;
+      expect(config).not.toHaveProperty('thinkingBudget');
+      expect(config).toMatchObject({ includeThoughts: true });
+    });
+
     it('should NOT classify gemini-2.9-flash as Gemini 3+', () => {
       const credentials = {
         [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',

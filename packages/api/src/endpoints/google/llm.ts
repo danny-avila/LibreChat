@@ -398,18 +398,18 @@ export function getGoogleConfig(
   const modelName = (modelOptions?.model ?? '') as string;
 
   /**
-   * Gemini 3+ uses a qualitative `thinkingLevel` ('minimal'|'low'|'medium'|'high')
-   * instead of the numeric `thinkingBudget` used by Gemini 2.5 and earlier.
+   * Gemini 3+ and Gemma 4+ use a qualitative `thinkingLevel` ('minimal'|'low'|'medium'|'high')
+   * instead of the numeric `thinkingBudget` used by earlier models.
    * When `thinking` is enabled (default: true), we always send `thinkingConfig`
-   * with `includeThoughts: true`. The `thinkingBudget` param is ignored for Gemini 3+.
+   * with `includeThoughts: true`. The `thinkingBudget` param is ignored for these models.
    *
    * For Vertex AI, top-level `includeThoughts` is still required because
    * `@librechat/agents/langchain/google-common`'s `formatGenerationConfig` reads it separately
    * from `thinkingConfig` — they serve different purposes in the request pipeline.
    */
-  const isGemini3Plus = /gemini-([3-9]|\d{2,})/i.test(modelName);
+  const supportsThinkingLevel = /gemini-([3-9]|\d{2,})|gemma-([4-9]|\d{2,})/i.test(modelName);
 
-  if (isGemini3Plus && thinking) {
+  if (supportsThinkingLevel && thinking) {
     const thinkingConfig: GoogleThinkingConfig = {
       includeThoughts: true,
     };
@@ -423,7 +423,7 @@ export function getGoogleConfig(
       (llmConfig as { thinkingConfig?: GoogleThinkingConfig }).thinkingConfig = thinkingConfig;
       (llmConfig as VertexAIClientOptions).includeThoughts = true;
     }
-  } else if (!isGemini3Plus) {
+  } else if (!supportsThinkingLevel) {
     const shouldEnableThinking =
       thinking && thinkingBudget != null && (thinkingBudget > 0 || thinkingBudget === -1);
 
