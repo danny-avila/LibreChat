@@ -59,7 +59,7 @@ router.post('/notifications', async (req, res) => {
 
     let message;
     let userId;
-    if (!messageId && !userid) {
+    if (originalQuestion && !messageId && !userid) {
       return res.status(400).json({ message: 'Missing messageId' });
     }
 
