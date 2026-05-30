@@ -1508,11 +1508,16 @@ export function createSkillMethods(
   async function findSkillBySourceIdentity(params: {
     source: 'github' | 'notion';
     upstreamId: string;
+    tenantId?: string;
   }): Promise<(ISkill & { _id: Types.ObjectId }) | null> {
     const Skill = mongoose.models.Skill as Model<ISkillDocument>;
+    const tenantFilter: FilterQuery<ISkillDocument> = params.tenantId
+      ? { tenantId: params.tenantId }
+      : { $or: [{ tenantId: { $exists: false } }, { tenantId: null }] };
     const doc = await Skill.findOne({
       source: params.source,
       'sourceMetadata.upstreamId': params.upstreamId,
+      ...tenantFilter,
     }).lean();
     return (doc as unknown as (ISkill & { _id: Types.ObjectId }) | null) ?? null;
   }
