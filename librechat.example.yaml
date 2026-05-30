@@ -82,6 +82,11 @@ cache: true
 #         # Optional. Owns the mirrored skills under the given tenant so they are
 #         # created and shared within that tenant. Required for visibility when
 #         # tenant isolation is enabled. Omit for single-tenant deployments.
+#         # Treat as immutable per source id: changing (or adding/removing) the
+#         # tenantId later leaves previously mirrored skills in the old tenant,
+#         # where this source's sync can no longer see or clean them up. To move a
+#         # source between tenants, delete its mirrored skills in the old tenant
+#         # first, or use a new source id for the new tenant.
 #         # tenantId: your-tenant-id
 
 # Custom interface configuration
