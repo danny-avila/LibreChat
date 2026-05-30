@@ -107,6 +107,7 @@ function makeSkill(input: CreateSkillInput): ISkill & { _id: Types.ObjectId } {
     sourceMetadata: input.sourceMetadata,
     fileCount: 0,
     alwaysApply: input.alwaysApply ?? false,
+    tenantId: input.tenantId,
   };
 }
 
@@ -647,6 +648,43 @@ describe('createGitHubSkillSyncRunner', () => {
     );
   });
 
+  it('ignores source identity matches from a different tenant bucket', async () => {
+    const otherTenantSkill = makeSkill({
+      name: 'research',
+      description: 'Tenant skill',
+      author: makeSourceAuthorId('librechat-skills', 'tenant-b'),
+      authorName: 'GitHub Sync',
+      frontmatter: {},
+      source: 'github',
+      tenantId: 'tenant-b',
+      sourceMetadata: {
+        provider: 'github',
+        sourceId: 'librechat-skills',
+        upstreamId: 'librechat-skills:skills/research',
+        owner: 'LibreChat',
+        repo: 'skills',
+        ref: 'main',
+        skillPath: 'skills/research',
+      },
+    }) as ISkill & { _id: Types.ObjectId };
+    const deps = createDeps({
+      findSkillBySourceIdentity: jest.fn(async () => otherTenantSkill),
+      listSkillsBySource: jest.fn(async () => [otherTenantSkill]),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('completed');
+    expect(deps.createSkill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'research',
+        tenantId: undefined,
+      }),
+    );
+    expect(deps.updateSkill).not.toHaveBeenCalled();
+    expect(deps.deleteSkill).not.toHaveBeenCalledWith(otherTenantSkill._id.toString());
+  });
+
   it('reuses a same-named source mirror when a skill moves configured paths', async () => {
     const existing = makeSkill({
       name: 'research',
@@ -746,6 +784,48 @@ describe('createGitHubSkillSyncRunner', () => {
       expect.objectContaining({
         id: existing._id.toString(),
         expectedVersion: afterFileSync.version,
+      }),
+    );
+  });
+
+  it('treats frontmatter-only edits during sync as conflicts', async () => {
+    const existing = makeSkill({
+      name: 'research',
+      description: 'Old description',
+      body: 'Old body',
+      frontmatter: { 'allowed-tools': ['old-tool'] },
+      author: new Types.ObjectId(),
+      authorName: 'GitHub Sync',
+      source: 'github',
+      sourceMetadata: {
+        provider: 'github',
+        sourceId: 'librechat-skills',
+        upstreamId: 'librechat-skills:skills/research',
+        owner: 'LibreChat',
+        repo: 'skills',
+        ref: 'main',
+        skillPath: 'skills/research',
+      },
+    }) as ISkill & { _id: Types.ObjectId };
+    const edited = {
+      ...existing,
+      version: existing.version + 1,
+      frontmatter: { 'allowed-tools': ['user-tool'] },
+    };
+    const deps = createDeps({
+      findSkillBySourceIdentity: jest.fn(async () => existing),
+      getSkillById: jest.fn(async () => edited),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('failed');
+    expect(deps.upsertSkillFile).not.toHaveBeenCalled();
+    expect(deps.updateSkill).not.toHaveBeenCalled();
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'failed',
+        errorCode: 'SKILL_CONFLICT',
       }),
     );
   });
