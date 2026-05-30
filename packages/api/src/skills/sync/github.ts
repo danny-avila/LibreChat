@@ -213,7 +213,12 @@ function isSafeRelativePath(value: string): boolean {
 }
 
 function makeUpstreamId(source: SkillSyncGitHubSourceConfig, rootPath: string): string {
-  return `${source.id}:${source.owner}/${source.repo}:${rootPath}`;
+  // Identity is keyed on the stable, admin-controlled source id and the skill's
+  // root path only — never owner/repo/ref. Repointing a source to a renamed or
+  // replacement repository (or rotating its ref) keeps the same upstream id, so
+  // existing mirrors are updated in place instead of being treated as new and
+  // colliding on the (name, author, tenantId) uniqueness constraint.
+  return `${source.id}:${rootPath}`;
 }
 
 function makeSourceAuthorId(source: SkillSyncGitHubSourceConfig): Types.ObjectId {
