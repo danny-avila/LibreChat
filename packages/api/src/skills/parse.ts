@@ -20,10 +20,11 @@ function extractFrontmatterBlock(raw: string): string | null {
     return null;
   }
   const content = normalized.slice(firstContentIndex);
-  if (!content.startsWith('---\n')) {
+  const opening = /^---[ \t]*\n/.exec(content);
+  if (!opening) {
     return null;
   }
-  const body = content.slice(4);
+  const body = content.slice(opening[0].length);
   const closingFence = /(?:^|\n)---[ \t]*(?:\n|$)/.exec(body);
   if (!closingFence) {
     return null;
