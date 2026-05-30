@@ -43,6 +43,7 @@ const D = Constants.mcp_delimiter;
 const {
   createMCPTool,
   createMCPTools,
+  createMCPPermissionContext,
   getMCPSetupData,
   checkOAuthFlowStatus,
   getServerConnectionStatus,
@@ -863,6 +864,78 @@ describe('User parameter passing tests', () => {
         '[MCP][test-server][test-tool] tool call failed: Forbidden: Insufficient MCP server permissions',
       );
       expect(mockGetMCPManager).not.toHaveBeenCalled();
+    });
+
+    it('should reuse request-scoped MCP permission checks across tool executions', async () => {
+      const mockUser = { id: 'mcp-allowed-user', role: 'USER' };
+      const mockReq = { user: mockUser };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const { getRoleByName } = require('~/models');
+      getRoleByName.mockResolvedValue({
+        permissions: {
+          [PermissionTypes.MCP_SERVERS]: {
+            [Permissions.USE]: true,
+          },
+        },
+      });
+
+      const mockCallTool = jest.fn().mockResolvedValue(['ok', null]);
+      mockGetMCPManager.mockReturnValue({
+        callTool: mockCallTool,
+      });
+
+      const availableTools = {
+        [`search${D}test-server`]: {
+          function: {
+            description: 'Search tool',
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+        [`fetch${D}test-server`]: {
+          function: {
+            description: 'Fetch tool',
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+      };
+      const mcpPermissionContext = createMCPPermissionContext(mockReq);
+
+      const searchTool = await createMCPTool({
+        mcpPermissionContext,
+        res: mockRes,
+        user: mockUser,
+        toolKey: `search${D}test-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools,
+      });
+      const fetchTool = await createMCPTool({
+        mcpPermissionContext,
+        res: mockRes,
+        user: mockUser,
+        toolKey: `fetch${D}test-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools,
+      });
+
+      const invocationConfig = {
+        configurable: {
+          user: mockUser,
+        },
+        metadata: {
+          provider: 'openai',
+          thread_id: 'thread-1',
+          run_id: 'run-1',
+        },
+        toolCall: {},
+      };
+
+      await expect(searchTool.invoke({}, invocationConfig)).resolves.toBe('ok');
+      await expect(fetchTool.invoke({}, invocationConfig)).resolves.toBe('ok');
+
+      expect(getRoleByName).toHaveBeenCalledTimes(1);
+      expect(mockCallTool).toHaveBeenCalledTimes(2);
     });
   });
 

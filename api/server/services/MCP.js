@@ -7,7 +7,6 @@ const {
   Constants: AgentConstants,
 } = require('@librechat/agents');
 const {
-  checkAccess,
   sendEvent,
   MCPOAuthHandler,
   isMCPDomainAllowed,
@@ -16,6 +15,7 @@ const {
   GenerationJobManager,
   resolveJsonSchemaRefs,
   buildOAuthToolCallName,
+  checkAccessWithRequestCache,
 } = require('@librechat/api');
 const {
   Time,
@@ -45,13 +45,14 @@ const RECONNECT_THROTTLE_MS = 10_000;
 const missingToolCache = new Map();
 const MISSING_TOOL_TTL_MS = 10_000;
 
-async function userCanUseMCPServers(user) {
+async function userCanUseMCPServers(user, req) {
   if (!user?.id || !user?.role) {
     return false;
   }
 
   try {
-    return await checkAccess({
+    return await checkAccessWithRequestCache({
+      req,
       user,
       permissionType: PermissionTypes.MCP_SERVERS,
       permissions: [Permissions.USE],
@@ -61,6 +62,12 @@ async function userCanUseMCPServers(user) {
     logger.error(`[MCP][User: ${user.id}] Failed MCP permission check`, error);
     return false;
   }
+}
+
+function createMCPPermissionContext(req) {
+  return {
+    canUseServers: (user = req?.user) => userCanUseMCPServers(user, req),
+  };
 }
 
 function evictStale(map, ttl) {
@@ -436,6 +443,7 @@ async function reconnectServer({
  *
  * @param {Object} params
  * @param {ServerResponse} params.res - The Express response object for sending events.
+ * @param {{ canUseServers: (user?: IUser) => Promise<boolean> }} [params.mcpPermissionContext] - Request-scoped MCP permission context.
  * @param {IUser} params.user - The user from the request object.
  * @param {string} params.serverName
  * @param {string} params.model
@@ -449,6 +457,7 @@ async function reconnectServer({
  */
 async function createMCPTools({
   res,
+  mcpPermissionContext,
   user,
   index,
   signal,
@@ -503,6 +512,7 @@ async function createMCPTools({
   for (const tool of result.tools) {
     const toolInstance = await createMCPTool({
       res,
+      mcpPermissionContext,
       user,
       provider,
       userMCPAuthMap,
@@ -524,6 +534,7 @@ async function createMCPTools({
  * Creates a single tool from the specified MCP Server via `toolKey`.
  * @param {Object} params
  * @param {ServerResponse} params.res - The Express response object for sending events.
+ * @param {{ canUseServers: (user?: IUser) => Promise<boolean> }} [params.mcpPermissionContext] - Request-scoped MCP permission context.
  * @param {IUser} params.user - The user from the request object.
  * @param {string} params.toolKey - The toolKey for the tool.
  * @param {string} params.model - The model for the tool.
@@ -538,6 +549,7 @@ async function createMCPTools({
  */
 async function createMCPTool({
   res,
+  mcpPermissionContext,
   user,
   index,
   signal,
@@ -613,6 +625,7 @@ async function createMCPTool({
 
   return createToolInstance({
     res,
+    mcpPermissionContext,
     user,
     provider,
     toolName,
@@ -625,6 +638,7 @@ async function createMCPTool({
 
 function createToolInstance({
   res,
+  mcpPermissionContext,
   user: capturedUser = null,
   toolName,
   serverName,
@@ -663,7 +677,9 @@ function createToolInstance({
 
     try {
       const provider = (config?.metadata?.provider || capturedProvider)?.toLowerCase();
-      const canUseMCP = await userCanUseMCPServers(permissionUser);
+      const canUseMCP = mcpPermissionContext
+        ? await mcpPermissionContext.canUseServers(permissionUser)
+        : await userCanUseMCPServers(permissionUser);
       if (!canUseMCP) {
         throw new Error('Forbidden: Insufficient MCP server permissions');
       }
@@ -923,6 +939,7 @@ async function getServerConnectionStatus(
 module.exports = {
   createMCPTool,
   createMCPTools,
+  createMCPPermissionContext,
   userCanUseMCPServers,
   getMCPSetupData,
   resolveConfigServers,
