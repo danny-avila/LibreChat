@@ -18,20 +18,16 @@ type HyperDXBrowser = {
   setGlobalAttributes: (attributes: Record<string, string>) => void;
 };
 
-function shouldInitializeRum(config: TRumConfig | undefined, token: string | undefined): boolean {
+function shouldInitializeRum(config: TRumConfig | undefined): boolean {
   if (!config?.enabled || config.provider !== 'hyperdx' || !config.url || !config.serviceName) {
     return false;
   }
 
-  if (config.authMode === 'publicToken') {
-    return !!config.publicToken;
-  }
-
-  return !!token;
+  return config.authMode === 'publicToken' && !!config.publicToken;
 }
 
 function getApiKey(config: TRumConfig): string {
-  return config.authMode === 'publicToken' ? (config.publicToken ?? '') : 'placeholder';
+  return config.publicToken ?? '';
 }
 
 function buildGlobalAttributes(
@@ -60,51 +56,26 @@ async function loadHyperDX(): Promise<HyperDXBrowser> {
 
 export default function useRum(): void {
   const { data: startupConfig } = useGetStartupConfig();
-  const { isAuthenticated, token, user } = useAuthContext();
+  const { user } = useAuthContext();
   const location = useLocation();
   const initializedKeyRef = useRef<string | undefined>(undefined);
   const sampledInitKeyRef = useRef<string | undefined>(undefined);
   const sampledInRef = useRef<boolean>(true);
   const hyperDxRef = useRef<HyperDXBrowser | undefined>(undefined);
-  const tokenRef = useRef<string | undefined>(token);
   const rumConfig = startupConfig?.rum;
   const route = useMemo(() => normalizeRumPath(location.pathname), [location.pathname]);
   const routeRef = useRef<string>(route);
-
-  useEffect(() => {
-    tokenRef.current = token;
-  }, [token]);
 
   useEffect(() => {
     routeRef.current = route;
   }, [route]);
 
   useEffect(() => {
-    if (!rumConfig || rumConfig.authMode !== 'userJwt') {
-      window.__libreChatRumInterceptor?.clear();
-      return;
-    }
-
-    window.__libreChatRumInterceptor?.configure({
-      url: rumConfig.url,
-      authHeaderScheme: rumConfig.authHeaderScheme,
-      tokenProvider: () => tokenRef.current,
-    });
-
-    return () => {
-      window.__libreChatRumInterceptor?.clear();
-    };
-  }, [rumConfig]);
-
-  useEffect(() => {
     if (!rumConfig) {
       return;
     }
 
-    if (
-      !shouldInitializeRum(rumConfig, token) ||
-      (rumConfig.authMode === 'userJwt' && !isAuthenticated)
-    ) {
+    if (!shouldInitializeRum(rumConfig)) {
       return;
     }
 
@@ -153,7 +124,7 @@ export default function useRum(): void {
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, rumConfig, token, user]);
+  }, [rumConfig, user]);
 
   useEffect(() => {
     hyperDxRef.current?.setGlobalAttributes(

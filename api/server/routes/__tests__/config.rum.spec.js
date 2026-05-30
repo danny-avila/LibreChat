@@ -60,7 +60,6 @@ afterEach(() => {
   delete process.env.RUM_URL;
   delete process.env.RUM_SERVICE_NAME;
   delete process.env.RUM_AUTH_MODE;
-  delete process.env.RUM_AUTH_HEADER_SCHEME;
   delete process.env.RUM_PUBLIC_TOKEN;
   delete process.env.RUM_TRACE_PROPAGATION_TARGETS;
   delete process.env.RUM_CONSOLE_CAPTURE;
@@ -136,30 +135,19 @@ describe('GET /api/config RUM config', () => {
     expect(response.body.rum?.url).toBe('http://[::1]:4318');
   });
 
-  it('includes userJwt RUM config for authenticated users', async () => {
+  it('omits unsupported userJwt RUM config for authenticated users', async () => {
     mockGetAppConfig.mockResolvedValue(baseAppConfig);
     process.env.RUM_ENABLED = 'true';
     process.env.RUM_URL = 'https://rum.example.com';
     process.env.RUM_AUTH_MODE = 'userJwt';
-    process.env.RUM_AUTH_HEADER_SCHEME = 'Basic';
     const app = createApp(mockUser);
 
     const response = await request(app).get('/api/config');
 
-    expect(response.body.rum).toEqual({
-      provider: 'hyperdx',
-      enabled: true,
-      url: 'https://rum.example.com',
-      serviceName: 'librechat-web',
-      authMode: 'userJwt',
-      authHeaderScheme: 'Basic',
-      consoleCapture: false,
-      disableReplay: true,
-      advancedNetworkCapture: false,
-    });
+    expect(response.body).not.toHaveProperty('rum');
   });
 
-  it('omits userJwt RUM config for unauthenticated users', async () => {
+  it('omits unsupported userJwt RUM config for unauthenticated users', async () => {
     mockGetAppConfig.mockResolvedValue(baseAppConfig);
     process.env.RUM_ENABLED = 'true';
     process.env.RUM_URL = 'https://rum.example.com';
