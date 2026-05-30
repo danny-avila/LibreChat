@@ -35,7 +35,6 @@ const {
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
 const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
-const { remoteAgentJsonParser } = require('./middleware/remoteAgentBodyParser');
 const { startExpiredFileSweep } = require('./services/Files/process');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { checkMigrations } = require('./services/start/migration');
@@ -127,8 +126,13 @@ const startServer = async () => {
   /* Middleware */
   app.use(metricsMiddleware);
   app.use(noIndex);
-  app.use('/api/agents/v1', remoteAgentJsonParser);
-  app.use(express.json({ limit: '3mb' }));
+  const jsonParser = express.json({ limit: '3mb' });
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api/agents/v1')) {
+      return next();
+    }
+    return jsonParser(req, res, next);
+  });
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
   app.use(handleJsonParseError);
 

@@ -20,12 +20,13 @@
  * @see https://openresponses.org/specification
  */
 const express = require('express');
+const { handleJsonParseError } = require('@librechat/api');
 const {
   createResponse,
   getResponse,
   listModels,
 } = require('~/server/controllers/agents/responses');
-const { configMiddleware } = require('~/server/middleware');
+const { configMiddleware, remoteAgentJsonParser } = require('~/server/middleware');
 const {
   checkAgentPermission,
   preAuthTenantMiddleware,
@@ -37,6 +38,8 @@ const router = express.Router();
 
 router.use(preAuthTenantMiddleware);
 router.use(requireRemoteAgentAuth);
+router.use(remoteAgentJsonParser);
+router.use(handleJsonParseError);
 router.use(configMiddleware);
 router.use(checkRemoteAgentsFeature);
 

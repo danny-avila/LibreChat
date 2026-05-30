@@ -5,8 +5,20 @@ const { remoteAgentJsonLimit, remoteAgentJsonParser } = require('./remoteAgentBo
 describe('remoteAgentJsonParser', () => {
   function createApp() {
     const app = express();
+    const jsonParser = express.json({ limit: '3mb' });
+    app.use((req, res, next) => {
+      if (req.path.startsWith('/api/agents/v1')) {
+        return next();
+      }
+      return jsonParser(req, res, next);
+    });
+    app.use('/api/agents/v1', (req, res, next) => {
+      if (req.get('authorization') === 'Bearer valid') {
+        return next();
+      }
+      return res.status(401).json({ parsed: req.body != null });
+    });
     app.use('/api/agents/v1', remoteAgentJsonParser);
-    app.use(express.json({ limit: '3mb' }));
     app.post('/api/agents/v1/responses', (req, res) => {
       res.json({ length: req.body.input.length });
     });
@@ -26,10 +38,22 @@ describe('remoteAgentJsonParser', () => {
   it('allows Remote Agent API JSON bodies above the global parser limit', async () => {
     const input = 'x'.repeat(4 * 1024 * 1024);
 
-    const response = await request(createApp()).post('/api/agents/v1/responses').send({ input });
+    const response = await request(createApp())
+      .post('/api/agents/v1/responses')
+      .set('authorization', 'Bearer valid')
+      .send({ input });
 
     expect(response.status).toBe(200);
     expect(response.body.length).toBe(input.length);
+  });
+
+  it('rejects unauthenticated Remote Agent API requests before parsing large JSON bodies', async () => {
+    const input = 'x'.repeat(4 * 1024 * 1024);
+
+    const response = await request(createApp()).post('/api/agents/v1/responses').send({ input });
+
+    expect(response.status).toBe(401);
+    expect(response.body.parsed).toBe(false);
   });
 
   it('keeps the global JSON limit for other routes', async () => {
