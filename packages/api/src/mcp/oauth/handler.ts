@@ -577,6 +577,16 @@ export class MCPOAuthHandler {
         authorizationUrl.searchParams.set('state', state);
         logger.debug(`[MCPOAuth] Added state parameter to authorization URL`);
 
+        /**
+         * Auth0/Cognito-style `audience` parameter. Forwarded as-is; the provider
+         * decides whether it accepts RFC 8707 `resource`, the legacy `audience`,
+         * or both. See `OAuthOptionsSchema.audience`.
+         */
+        if (config?.audience) {
+          authorizationUrl.searchParams.set('audience', config.audience);
+          logger.debug(`[MCPOAuth] Added audience parameter (pre-configured): ${config.audience}`);
+        }
+
         const flowMetadata: MCPOAuthFlowMetadata = {
           serverName,
           userId,
@@ -728,6 +738,7 @@ export class MCPOAuthHandler {
             `[MCPOAuth] Added resource parameter to authorization URL: ${canonicalResource}`,
           );
         } else {
+          // resource omitted on purpose — see comment below in the `else` branch.
           /**
            * Reachable only when `discoverOAuthProtectedResourceMetadata` did not return a
            * document (404 / network error / server does not implement RFC 9728). If a PRM
@@ -739,6 +750,16 @@ export class MCPOAuthHandler {
             `[MCPOAuth] No protected resource metadata available for ${serverName}. ` +
               'This can cause issues with some Authorization Servers that expect a "resource" parameter.',
           );
+        }
+
+        /**
+         * Auth0/Cognito-style `audience` parameter. Independent of `resource` (RFC 8707):
+         * some authorization servers ignore `resource` and only mint API-scoped tokens
+         * when `audience` is supplied. See `OAuthOptionsSchema.audience`.
+         */
+        if (config?.audience) {
+          authorizationUrl.searchParams.set('audience', config.audience);
+          logger.debug(`[MCPOAuth] Added audience parameter (discovered flow): ${config.audience}`);
         }
       } catch (error) {
         logger.error(`[MCPOAuth] startAuthorization failed:`, error);
@@ -1229,6 +1250,25 @@ export class MCPOAuthHandler {
         /** Add scope if available */
         if (metadata.clientInfo.scope) {
           body.append('scope', metadata.clientInfo.scope);
+        }
+
+        /**
+         * Forward Auth0-style `audience` on refresh by default — Auth0 strips the
+         * API audience from refreshed access tokens unless it is re-supplied on
+         * every refresh, otherwise the next MCP call 401s once the initial token
+         * expires.
+         *
+         * Operators with strict OAuth 2.0 token endpoints (Cognito and similar)
+         * that documents refresh requests as `grant_type` + `client_id` +
+         * `refresh_token` only, and that maintain the original `aud` claim on
+         * refresh, can opt out by setting `forward_audience_on_refresh: false`.
+         * See `OAuthOptionsSchema.forward_audience_on_refresh`.
+         */
+        if (config?.audience && config?.forward_audience_on_refresh !== false) {
+          body.append('audience', config.audience);
+          logger.debug(
+            `[MCPOAuth] Added audience parameter to refresh request: ${config.audience}`,
+          );
         }
 
         const headers: HeadersInit = {
