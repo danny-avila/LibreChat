@@ -13,7 +13,7 @@ jest.mock('@librechat/api', () => ({
   checkEmailConfig: jest.fn(),
   isEmailDomainAllowed: jest.fn(),
   math: jest.fn((val, fallback) => (val ? Number(val) : fallback)),
-  shouldUseSecureCookie: jest.fn(() => false),
+  getAuthCookieOptions: jest.fn(() => ({ secure: false, sameSite: 'strict' })),
   resolveAppConfigForUser: jest.fn(async (_getAppConfig, _user) => ({})),
   setCloudFrontCookies: jest.fn(() => true),
   getCloudFrontConfig: jest.fn(() => ({
@@ -47,7 +47,7 @@ jest.mock('~/server/services/Config', () => ({ getAppConfig: jest.fn() }));
 jest.mock('~/server/utils', () => ({ sendEmail: jest.fn() }));
 
 const {
-  shouldUseSecureCookie,
+  getAuthCookieOptions,
   isEmailDomainAllowed,
   resolveAppConfigForUser,
   setCloudFrontCookies,
@@ -271,7 +271,7 @@ describe('setOpenIDAuthTokens', () => {
   });
 
   describe('cookie secure flag', () => {
-    it('should call shouldUseSecureCookie for every cookie set', () => {
+    it('should apply getAuthCookieOptions to every cookie set', () => {
       const tokenset = {
         id_token: 'the-id-token',
         access_token: 'the-access-token',
@@ -283,17 +283,17 @@ describe('setOpenIDAuthTokens', () => {
       setOpenIDAuthTokens(tokenset, req, res, 'user-123');
 
       // token_provider + openid_user_id (session path, so no refreshToken/openid_access_token cookies)
-      const secureCalls = shouldUseSecureCookie.mock.calls.length;
-      expect(secureCalls).toBeGreaterThanOrEqual(2);
+      expect(getAuthCookieOptions.mock.calls.length).toBeGreaterThanOrEqual(1);
 
-      // Verify all cookies use the result of shouldUseSecureCookie
+      // Default mock returns { secure: false, sameSite: 'strict' }; every cookie should carry it.
       for (const [, cookie] of Object.entries(res._cookies)) {
         expect(cookie.options.secure).toBe(false);
+        expect(cookie.options.sameSite).toBe('strict');
       }
     });
 
-    it('should set secure: true when shouldUseSecureCookie returns true', () => {
-      shouldUseSecureCookie.mockReturnValue(true);
+    it('should set secure: true when getAuthCookieOptions returns secure=true', () => {
+      getAuthCookieOptions.mockReturnValue({ secure: true, sameSite: 'strict' });
 
       const tokenset = {
         id_token: 'the-id-token',
@@ -307,11 +307,12 @@ describe('setOpenIDAuthTokens', () => {
 
       for (const [, cookie] of Object.entries(res._cookies)) {
         expect(cookie.options.secure).toBe(true);
+        expect(cookie.options.sameSite).toBe('strict');
       }
     });
 
-    it('should use shouldUseSecureCookie for cookie fallback path (no session)', () => {
-      shouldUseSecureCookie.mockReturnValue(false);
+    it('should propagate getAuthCookieOptions to the cookie fallback path (no session)', () => {
+      getAuthCookieOptions.mockReturnValue({ secure: false, sameSite: 'strict' });
 
       const tokenset = {
         id_token: 'the-id-token',
@@ -327,18 +328,43 @@ describe('setOpenIDAuthTokens', () => {
       expect(res.cookie).toHaveBeenCalledWith(
         'refreshToken',
         expect.any(String),
-        expect.objectContaining({ secure: false }),
+        expect.objectContaining({ secure: false, sameSite: 'strict' }),
       );
       expect(res.cookie).toHaveBeenCalledWith(
         'openid_access_token',
         expect.any(String),
-        expect.objectContaining({ secure: false }),
+        expect.objectContaining({ secure: false, sameSite: 'strict' }),
       );
       expect(res.cookie).toHaveBeenCalledWith(
         'token_provider',
         'openid',
-        expect.objectContaining({ secure: false }),
+        expect.objectContaining({ secure: false, sameSite: 'strict' }),
       );
+    });
+
+    it.each([
+      ['strict', false],
+      ['lax', false],
+      ['none', true],
+    ])('should apply sameSite=%s (secure=%s) to every cookie set', (sameSite, secure) => {
+      getAuthCookieOptions.mockReturnValue({ secure, sameSite });
+
+      const tokenset = {
+        id_token: 'the-id-token',
+        access_token: 'the-access-token',
+        refresh_token: 'the-refresh-token',
+      };
+      const req = { session: null };
+      const res = mockResponse();
+
+      setOpenIDAuthTokens(tokenset, req, res, 'user-123');
+
+      // 4 cookies on the fallback path. Each must carry the configured options.
+      expect(Object.keys(res._cookies).length).toBeGreaterThanOrEqual(4);
+      for (const [, cookie] of Object.entries(res._cookies)) {
+        expect(cookie.options.secure).toBe(secure);
+        expect(cookie.options.sameSite).toBe(sameSite);
+      }
     });
   });
 
@@ -814,5 +840,30 @@ describe('CloudFront cookie integration', () => {
 
       expect(result).toBe('mock-access-token');
     });
+
+    it.each([
+      ['strict', false],
+      ['lax', false],
+      ['none', true],
+    ])(
+      'applies sameSite=%s (secure=%s) to refreshToken and token_provider',
+      async (sameSite, secure) => {
+        getAuthCookieOptions.mockReturnValue({ secure, sameSite });
+        const res = mockResponse();
+
+        await setAuthTokens('user-123', res);
+
+        expect(res.cookie).toHaveBeenCalledWith(
+          'refreshToken',
+          expect.any(String),
+          expect.objectContaining({ secure, sameSite }),
+        );
+        expect(res.cookie).toHaveBeenCalledWith(
+          'token_provider',
+          'librechat',
+          expect.objectContaining({ secure, sameSite }),
+        );
+      },
+    );
   });
 });

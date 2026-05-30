@@ -16,7 +16,7 @@ const {
   parseCloudFrontCookieScope,
   CLOUDFRONT_SCOPE_COOKIE,
   isEmailDomainAllowed,
-  shouldUseSecureCookie,
+  getAuthCookieOptions,
   resolveAppConfigForUser,
 } = require('@librechat/api');
 const {
@@ -536,17 +536,16 @@ const setAuthTokens = async (userId, res, _session = null, req = null) => {
     const sessionExpiry = math(process.env.SESSION_EXPIRY, DEFAULT_SESSION_EXPIRY);
     const token = await generateToken(user, sessionExpiry);
 
+    const cookieOptions = getAuthCookieOptions();
     res.cookie('refreshToken', refreshToken, {
       expires: new Date(refreshTokenExpires),
       httpOnly: true,
-      secure: shouldUseSecureCookie(),
-      sameSite: 'strict',
+      ...cookieOptions,
     });
     res.cookie('token_provider', 'librechat', {
       expires: new Date(refreshTokenExpires),
       httpOnly: true,
-      secure: shouldUseSecureCookie(),
-      sameSite: 'strict',
+      ...cookieOptions,
     });
 
     setCloudFrontAuthCookies(req, res, user, { userId: user?._id ?? userId });
@@ -648,11 +647,11 @@ const setOpenIDAuthTokens = (
      * The refresh token is small (opaque string) so it doesn't hit the HTTP/2 header
      * size limits that motivated session storage for the larger access_token/id_token.
      */
+    const cookieOptions = getAuthCookieOptions();
     res.cookie('refreshToken', refreshToken, {
       expires: expirationDate,
       httpOnly: true,
-      secure: shouldUseSecureCookie(),
-      sameSite: 'strict',
+      ...cookieOptions,
     });
 
     /** Store tokens server-side in session to avoid large cookies */
@@ -669,15 +668,13 @@ const setOpenIDAuthTokens = (
       res.cookie('openid_access_token', tokenset.access_token, {
         expires: expirationDate,
         httpOnly: true,
-        secure: shouldUseSecureCookie(),
-        sameSite: 'strict',
+        ...cookieOptions,
       });
       if (tokenset.id_token) {
         res.cookie('openid_id_token', tokenset.id_token, {
           expires: expirationDate,
           httpOnly: true,
-          secure: shouldUseSecureCookie(),
-          sameSite: 'strict',
+          ...cookieOptions,
         });
       }
     }
@@ -686,8 +683,7 @@ const setOpenIDAuthTokens = (
     res.cookie('token_provider', 'openid', {
       expires: expirationDate,
       httpOnly: true,
-      secure: shouldUseSecureCookie(),
-      sameSite: 'strict',
+      ...cookieOptions,
     });
     if (userId && isEnabled(process.env.OPENID_REUSE_TOKENS)) {
       /** JWT-signed user ID cookie for image path validation when OPENID_REUSE_TOKENS is enabled */
@@ -697,8 +693,7 @@ const setOpenIDAuthTokens = (
       res.cookie('openid_user_id', signedUserId, {
         expires: expirationDate,
         httpOnly: true,
-        secure: shouldUseSecureCookie(),
-        sameSite: 'strict',
+        ...cookieOptions,
       });
     }
 
