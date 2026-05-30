@@ -12,6 +12,8 @@ import { REFILL_INTERVAL_UNITS } from './balance';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
+export const BASE_ONLY_CONFIG_SECTIONS = ['skillSync'] as const;
+
 export const defaultRetrievalModels = [
   'gpt-4o',
   'o1-preview-2024-09-12',

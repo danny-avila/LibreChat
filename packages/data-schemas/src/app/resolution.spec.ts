@@ -342,6 +342,57 @@ describe('mergeConfigOverrides', () => {
     expect(iface.parameters).toBe(true);
   });
 
+  it('ignores base-only config sections from DB overrides', () => {
+    const base = {
+      skillSync: {
+        github: {
+          enabled: true,
+          intervalMinutes: 60,
+          runOnStartup: false,
+          sources: [
+            {
+              id: 'base-source',
+              owner: 'LibreChat',
+              repo: 'skills',
+              ref: 'main',
+              paths: ['skills'],
+              token: '${GITHUB_SKILLS_TOKEN}',
+            },
+          ],
+        },
+      },
+      interfaceConfig: { modelSelect: true },
+    } as unknown as AppConfig;
+
+    const configs = [
+      fakeConfig(
+        {
+          skillSync: {
+            github: {
+              enabled: false,
+              sources: [
+                {
+                  id: 'override-source',
+                  owner: 'other',
+                  repo: 'skills',
+                  paths: ['skills'],
+                  token: '${OTHER_TOKEN}',
+                },
+              ],
+            },
+          },
+          interface: { modelSelect: false },
+        },
+        10,
+      ),
+    ];
+
+    const result = mergeConfigOverrides(base, configs);
+
+    expect(result.skillSync).toEqual(base.skillSync);
+    expect(result.interfaceConfig?.modelSelect).toBe(false);
+  });
+
   it('preserves UI sub-keys in composite permission fields like mcpServers', () => {
     const base = {
       interfaceConfig: {},
