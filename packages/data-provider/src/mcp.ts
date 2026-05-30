@@ -2,90 +2,130 @@ import { z } from 'zod';
 import { TokenExchangeMethodEnum } from './types/agents';
 import { extractEnvVariable } from './utils';
 
-const OAuthOptionsSchema = z
-  .object({
-    /** OAuth authorization endpoint (optional - can be auto-discovered) */
-    authorization_url: z.string().url().optional(),
-    /** OAuth token endpoint (optional - can be auto-discovered) */
-    token_url: z.string().url().optional(),
-    /** OAuth client ID (optional - can use dynamic registration) */
-    client_id: z.string().optional(),
-    /** OAuth client secret (requires explicit authorization and token endpoints) */
-    client_secret: z.string().optional(),
-    /** OAuth scopes to request */
-    scope: z.string().optional(),
-    /** OAuth redirect URI (defaults to /api/mcp/{serverName}/oauth/callback) */
-    redirect_uri: z.string().url().optional(),
-    /** Token exchange method */
-    token_exchange_method: z.nativeEnum(TokenExchangeMethodEnum).optional(),
-    /** Supported grant types (defaults to ['authorization_code', 'refresh_token']) */
-    grant_types_supported: z.array(z.string()).optional(),
-    /** Supported token endpoint authentication methods (defaults to ['client_secret_basic', 'client_secret_post']) */
-    token_endpoint_auth_methods_supported: z.array(z.string()).optional(),
-    /** Supported response types (defaults to ['code']) */
-    response_types_supported: z.array(z.string()).optional(),
-    /** Supported code challenge methods (defaults to ['S256', 'plain']) */
-    code_challenge_methods_supported: z.array(z.string()).optional(),
-    /** Skip code challenge validation and force S256 (useful for providers like AWS Cognito that support S256 but don't advertise it) */
-    skip_code_challenge_check: z.boolean().optional(),
-    /**
-     * Auth0/Cognito-style `audience` parameter. Authorization servers that pre-date
-     * RFC 8707 — most prominently Auth0 — issue API-scoped access tokens only when
-     * the `/authorize` request advertises an `audience`. RFC 8707 `resource` (set
-     * automatically from Protected Resource Metadata) is the standards-conformant
-     * route; `audience` covers the providers that ignore it.
-     *
-     * When set, the value is forwarded as-is on `/authorize` (both pre-configured
-     * and DCR-discovered paths). Whether it is also forwarded on the
-     * `refresh_token` grant is controlled by `forward_audience_on_refresh` below.
-     *
-     * The `authorization_code` exchange intentionally never receives `audience` —
-     * Auth0 binds audience from the original `/authorize` request and embeds it
-     * in the issued access token; sending it again is redundant.
-     *
-     * No canonicalization is applied — the audience identifier is provider-defined
-     * and may differ from the MCP server URL.
-     */
-    audience: z.string().min(1).optional(),
-    /**
-     * Whether to also forward `audience` on the `refresh_token` grant body.
-     *
-     * Default: `true`. Required for Auth0, which strips the API audience from
-     * refreshed access tokens unless `audience` is re-supplied on every refresh
-     * — without it the next MCP call 401s once the initial access token expires.
-     *
-     * Set to `false` for providers that document refresh requests as
-     * `grant_type` + `client_id` + `refresh_token` only (Cognito and other
-     * strict OAuth 2.0 token endpoints). Those providers maintain the original
-     * `aud` claim across refreshes when the initial token was resource-bound,
-     * so the extra parameter is redundant and may be rejected as
-     * `invalid_request`.
-     *
-     * Ignored when `audience` itself is not configured.
-     */
-    forward_audience_on_refresh: z.boolean().optional(),
-    /** OAuth revocation endpoint (optional - can be auto-discovered) */
-    revocation_endpoint: z.string().url().optional(),
-    /** OAuth revocation endpoint authentication methods supported (optional - can be auto-discovered) */
-    revocation_endpoint_auth_methods_supported: z.array(z.string()).optional(),
-  })
-  .superRefine((oauth, ctx) => {
-    if (oauth.client_secret && !oauth.client_id) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['client_secret'],
-        message: 'OAuth client_secret requires client_id',
-      });
-    }
+const validateOAuthClientCredentials = (
+  oauth: {
+    client_id?: string;
+    client_secret?: string;
+    authorization_url?: string;
+    token_url?: string;
+  },
+  ctx: z.RefinementCtx,
+): void => {
+  if (oauth.client_secret && !oauth.client_id) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['client_secret'],
+      message: 'OAuth client_secret requires client_id',
+    });
+  }
 
-    if (oauth.client_id && oauth.client_secret && (!oauth.authorization_url || !oauth.token_url)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['client_secret'],
-        message: 'OAuth client_secret with client_id requires both authorization_url and token_url',
-      });
-    }
-  });
+  if (oauth.client_id && oauth.client_secret && (!oauth.authorization_url || !oauth.token_url)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['client_secret'],
+      message: 'OAuth client_secret with client_id requires both authorization_url and token_url',
+    });
+  }
+};
+
+const OAuthOptionsBaseSchema = z.object({
+  /** OAuth authorization endpoint (optional - can be auto-discovered) */
+  authorization_url: z.string().url().optional(),
+  /** OAuth token endpoint (optional - can be auto-discovered) */
+  token_url: z.string().url().optional(),
+  /** OAuth client ID (optional - can use dynamic registration) */
+  client_id: z.string().optional(),
+  /** OAuth client secret (requires explicit authorization and token endpoints) */
+  client_secret: z.string().optional(),
+  /** OAuth scopes to request */
+  scope: z.string().optional(),
+  /** OAuth redirect URI (defaults to /api/mcp/{serverName}/oauth/callback) */
+  redirect_uri: z.string().url().optional(),
+  /** Token exchange method */
+  token_exchange_method: z.nativeEnum(TokenExchangeMethodEnum).optional(),
+  /** Supported grant types (defaults to ['authorization_code', 'refresh_token']) */
+  grant_types_supported: z.array(z.string()).optional(),
+  /** Supported token endpoint authentication methods (defaults to ['client_secret_basic', 'client_secret_post']) */
+  token_endpoint_auth_methods_supported: z.array(z.string()).optional(),
+  /** Supported response types (defaults to ['code']) */
+  response_types_supported: z.array(z.string()).optional(),
+  /** Supported code challenge methods (defaults to ['S256', 'plain']) */
+  code_challenge_methods_supported: z.array(z.string()).optional(),
+  /** Skip code challenge validation and force S256 (useful for providers like AWS Cognito that support S256 but don't advertise it) */
+  skip_code_challenge_check: z.boolean().optional(),
+  /**
+   * Auth0/Cognito-style `audience` parameter. Authorization servers that pre-date
+   * RFC 8707 — most prominently Auth0 — issue API-scoped access tokens only when
+   * the `/authorize` request advertises an `audience`. RFC 8707 `resource` (set
+   * automatically from Protected Resource Metadata) is the standards-conformant
+   * route; `audience` covers the providers that ignore it.
+   *
+   * When set, the value is forwarded as-is on `/authorize` (both pre-configured
+   * and DCR-discovered paths). Whether it is also forwarded on the
+   * `refresh_token` grant is controlled by `forward_audience_on_refresh` below.
+   *
+   * The `authorization_code` exchange intentionally never receives `audience` —
+   * Auth0 binds audience from the original `/authorize` request and embeds it
+   * in the issued access token; sending it again is redundant.
+   *
+   * No canonicalization is applied — the audience identifier is provider-defined
+   * and may differ from the MCP server URL. This field is only accepted from
+   * trusted/admin MCP configuration and is rejected from user-managed servers.
+   */
+  audience: z.string().min(1).optional(),
+  /**
+   * Whether to also forward `audience` on the `refresh_token` grant body.
+   *
+   * Default: `true`. Required for Auth0, which strips the API audience from
+   * refreshed access tokens unless `audience` is re-supplied on every refresh
+   * — without it the next MCP call 401s once the initial access token expires.
+   *
+   * Set to `false` for providers that document refresh requests as
+   * `grant_type` + `client_id` + `refresh_token` only (Cognito and other
+   * strict OAuth 2.0 token endpoints). Those providers maintain the original
+   * `aud` claim across refreshes when the initial token was resource-bound,
+   * so the extra parameter is redundant and may be rejected as
+   * `invalid_request`.
+   *
+   * Ignored when `audience` itself is not configured.
+   */
+  forward_audience_on_refresh: z.boolean().optional(),
+  /** OAuth revocation endpoint (optional - can be auto-discovered) */
+  revocation_endpoint: z.string().url().optional(),
+  /** OAuth revocation endpoint authentication methods supported (optional - can be auto-discovered) */
+  revocation_endpoint_auth_methods_supported: z.array(z.string()).optional(),
+});
+
+const OAuthOptionsSchema = OAuthOptionsBaseSchema.superRefine(validateOAuthClientCredentials);
+
+const BLOCKED_USER_OAUTH_ENDPOINT_PARAMS = ['audience', 'resource'] as const;
+
+const userOAuthEndpointUrlSchema = z
+  .string()
+  .url()
+  .refine(
+    (value) => {
+      try {
+        const { searchParams } = new URL(value);
+        return BLOCKED_USER_OAUTH_ENDPOINT_PARAMS.every((param) => !searchParams.has(param));
+      } catch {
+        return true;
+      }
+    },
+    { message: 'OAuth endpoint URLs cannot include audience or resource query parameters' },
+  );
+
+const UserOAuthOptionsSchema = OAuthOptionsBaseSchema.omit({
+  audience: true,
+  forward_audience_on_refresh: true,
+})
+  .extend({
+    authorization_url: userOAuthEndpointUrlSchema.optional(),
+    token_url: userOAuthEndpointUrlSchema.optional(),
+    audience: z.never().optional(),
+    forward_audience_on_refresh: z.never().optional(),
+  })
+  .superRefine(validateOAuthClientCredentials);
 
 const BaseOptionsSchema = z.object({
   /** Display name for the MCP server - only letters, numbers, and spaces allowed */
@@ -300,6 +340,11 @@ const omitServerManagedFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T
     oauth_headers: true,
   });
 
+const userManagedServerFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T) =>
+  omitServerManagedFields(schema).extend({
+    oauth: UserOAuthOptionsSchema.optional(),
+  });
+
 const envVarPattern = /\$\{[^}]+\}/;
 const isWsProtocol = (val: string): boolean => /^wss?:/i.test(val);
 const isHttpProtocol = (val: string): boolean => /^https?:/i.test(val);
@@ -320,7 +365,8 @@ const userUrlSchema = (protocolCheck: (val: string) => boolean, message: string)
 /**
  * MCP Server configuration that comes from UI/API input only.
  * Omits server-managed fields like startup, timeout, customUserVars, etc.
- * Allows: title, description, url, iconPath, oauth (user credentials)
+ * Allows: title, description, url, iconPath, oauth (user credentials).
+ * Admin-only OAuth audience fields are rejected for user-managed servers.
  *
  * SECURITY: Stdio transport is intentionally excluded from user input.
  * Stdio allows arbitrary command execution and should only be configured
@@ -334,14 +380,14 @@ const userUrlSchema = (protocolCheck: (val: string) => boolean, message: string)
  * file://, ftp://, javascript:, and other non-network schemes.
  */
 export const MCPServerUserInputSchema = z.union([
-  omitServerManagedFields(WebSocketOptionsSchema).extend({
+  userManagedServerFields(WebSocketOptionsSchema).extend({
     url: userUrlSchema(isWsProtocol, 'WebSocket URL must use ws:// or wss://'),
   }),
-  omitServerManagedFields(SSEOptionsSchema).extend({
+  userManagedServerFields(SSEOptionsSchema).extend({
     proxy: z.never().optional(),
     url: userUrlSchema(isHttpProtocol, 'SSE URL must use http:// or https://'),
   }),
-  omitServerManagedFields(StreamableHTTPOptionsSchema).extend({
+  userManagedServerFields(StreamableHTTPOptionsSchema).extend({
     proxy: z.never().optional(),
     url: userUrlSchema(isHttpProtocol, 'Streamable HTTP URL must use http:// or https://'),
   }),
