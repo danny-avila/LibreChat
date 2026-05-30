@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import path from 'path';
 import { Types } from 'mongoose';
 import { ResourceType, PrincipalType, AccessRoleIds } from 'librechat-data-provider';
-import { logger } from '@librechat/data-schemas';
+import { logger, tenantStorage } from '@librechat/data-schemas';
 import type { SkillSyncConfig, SkillSyncGitHubSourceConfig } from 'librechat-data-provider';
 import type {
   ISkill,
@@ -761,6 +761,7 @@ async function prepareRemoteSkill(params: {
     author: makeSourceAuthorId(source),
     authorName: SYSTEM_AUTHOR_NAME,
     source: PROVIDER,
+    tenantId: source.tenantId,
   };
   return { existing, update, createInput };
 }
@@ -1104,6 +1105,24 @@ async function syncSource(params: {
   }
 }
 
+/**
+ * Runs a source sync inside its tenant's async context when `tenantId` is set,
+ * so the tenant-isolation mongoose hooks scope every skill/file/ACL read and
+ * write to that tenant (required under strict isolation). Without a configured
+ * tenant the sync runs in the ambient context, preserving single-tenant behavior.
+ */
+function syncSourceInTenantContext(params: {
+  deps: GitHubSkillSyncDeps;
+  source: SkillSyncGitHubSourceConfig;
+  fetchFn: FetchFn;
+  assertNotCancelled: AssertNotCancelled;
+}): Promise<ISkillSyncStatus> {
+  if (!params.source.tenantId) {
+    return syncSource(params);
+  }
+  return tenantStorage.run({ tenantId: params.source.tenantId }, () => syncSource(params));
+}
+
 function getGithubConfig(config: SkillSyncConfig | undefined): {
   enabled: boolean;
   intervalMinutes: number;
@@ -1218,7 +1237,9 @@ export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps) {
         if (lockLost) {
           break;
         }
-        sources.push(await syncSource({ deps, source, fetchFn, assertNotCancelled }));
+        sources.push(
+          await syncSourceInTenantContext({ deps, source, fetchFn, assertNotCancelled }),
+        );
       }
       const failed = sources.some((source) => source.status === 'failed');
       return {
