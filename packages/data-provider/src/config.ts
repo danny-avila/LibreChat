@@ -334,6 +334,22 @@ const skillSyncPathSchema = z
     },
   );
 
+/**
+ * Tenant that owns the skills mirrored from a source. When set, the sync runner
+ * executes that source's database writes inside the tenant's async context so
+ * synced skills are created, listed, and shared within the tenant under strict
+ * tenant isolation. Mirrors the request tenant-id contract: no reserved system id.
+ */
+const skillSyncTenantIdSchema = z
+  .string()
+  .max(128)
+  .refine((value) => /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(value), {
+    message: 'must be a valid tenant id',
+  })
+  .refine((value) => value !== '__SYSTEM__', {
+    message: 'must not be the reserved system tenant id',
+  });
+
 export const skillSyncGitHubSourceSchema = z.object({
   id: skillSyncIdentifierSchema,
   owner: skillSyncGitHubOwnerSchema,
@@ -341,6 +357,7 @@ export const skillSyncGitHubSourceSchema = z.object({
   ref: skillSyncGitHubRefSchema.default('main'),
   paths: z.array(skillSyncPathSchema).min(1),
   credentialKey: skillSyncIdentifierSchema,
+  tenantId: skillSyncTenantIdSchema.optional(),
 });
 
 export const skillSyncConfigSchema = z
