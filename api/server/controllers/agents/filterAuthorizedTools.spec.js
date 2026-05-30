@@ -604,6 +604,48 @@ describe('MCP Tool Authorization', () => {
       expect(agentInDb.mcpServerNames).toEqual(['authorizedServer']);
     });
 
+    test('should not strip shared agent MCP tools on frontend-style full tools save after revocation', async () => {
+      mockUserCanUseMCPServers.mockResolvedValue(false);
+      mockReq.user.id = new mongoose.Types.ObjectId().toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.body = {
+        name: 'Shared Full Save After Revocation',
+        tools: ['web_search', `existingTool${d}authorizedServer`],
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.json).toHaveBeenCalled();
+      const updatedAgent = mockRes.json.mock.calls[0][0];
+      const agentInDb = await Agent.findOne({ id: existingAgentId });
+      expect(updatedAgent.tools).toContain(`existingTool${d}authorizedServer`);
+      expect(updatedAgent.name).toBe('Shared Full Save After Revocation');
+      expect(agentInDb.tools).toContain(`existingTool${d}authorizedServer`);
+      expect(agentInDb.mcpServerNames).toEqual(['authorizedServer']);
+      expect(mockGetAllServerConfigs).not.toHaveBeenCalled();
+    });
+
+    test('should reject new shared-agent MCP tools after revocation while retaining existing MCP tools', async () => {
+      mockUserCanUseMCPServers.mockResolvedValue(false);
+      mockReq.user.id = new mongoose.Types.ObjectId().toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.body = {
+        tools: ['web_search', `existingTool${d}authorizedServer`, `newTool${d}anotherServer`],
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.json).toHaveBeenCalled();
+      const updatedAgent = mockRes.json.mock.calls[0][0];
+      const agentInDb = await Agent.findOne({ id: existingAgentId });
+      expect(updatedAgent.tools).toContain(`existingTool${d}authorizedServer`);
+      expect(updatedAgent.tools).not.toContain(`newTool${d}anotherServer`);
+      expect(agentInDb.tools).toContain(`existingTool${d}authorizedServer`);
+      expect(agentInDb.tools).not.toContain(`newTool${d}anotherServer`);
+      expect(agentInDb.mcpServerNames).toEqual(['authorizedServer']);
+      expect(mockGetAllServerConfigs).not.toHaveBeenCalled();
+    });
+
     test('should not strip action tools whose operationId contains the MCP delimiter on revocation', async () => {
       // `sync_mcp_state_action_...` contains the `_mcp_` substring but is a
       // genuine OpenAPI action tool (isActionTool === true). Losing

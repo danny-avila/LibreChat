@@ -631,16 +631,30 @@ const updateAgentHandler = async (req, res) => {
       typeof t === 'string' && t.includes(Constants.mcp_delimiter) && !isActionTool(t);
     const hasToolUpdate = updateData.tools !== undefined;
     const editingOwnAgent = existingAgent.author?.toString() === req.user.id;
+    const existingTools = existingAgent.tools ?? [];
     const effectiveTools = (hasToolUpdate ? updateData.tools : existingAgent.tools) ?? [];
     const requestedMCPTools = effectiveTools.filter(isMCPTool);
+    const existingMCPTools = existingTools.filter(isMCPTool);
 
-    if (requestedMCPTools.length > 0) {
+    if (requestedMCPTools.length > 0 || (hasToolUpdate && existingMCPTools.length > 0)) {
       if (!(await userCanUseMCPServers(req.user))) {
-        if (hasToolUpdate || editingOwnAgent) {
+        if (editingOwnAgent) {
           updateData.tools = effectiveTools.filter((t) => !isMCPTool(t));
+        } else if (hasToolUpdate) {
+          const existingMCPToolSet = new Set(existingMCPTools);
+          const nextTools = updateData.tools.filter(
+            (t) => !isMCPTool(t) || existingMCPToolSet.has(t),
+          );
+          const nextToolSet = new Set(nextTools);
+          for (const existingMCPTool of existingMCPTools) {
+            if (!nextToolSet.has(existingMCPTool)) {
+              nextTools.push(existingMCPTool);
+            }
+          }
+          updateData.tools = nextTools;
         }
       } else if (hasToolUpdate) {
-        const existingToolSet = new Set(existingAgent.tools ?? []);
+        const existingToolSet = new Set(existingTools);
         const newMCPTools = requestedMCPTools.filter((t) => !existingToolSet.has(t));
 
         if (newMCPTools.length > 0) {
