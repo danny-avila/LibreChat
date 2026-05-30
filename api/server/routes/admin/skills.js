@@ -8,6 +8,7 @@ const { getGitHubSkillSyncRunner } = require('~/server/services/Skills/sync');
 
 const router = express.Router();
 const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
+const requireManageSkills = requireCapability(SystemCapabilities.MANAGE_SKILLS);
 
 const handlers = createAdminSkillsSyncHandlers({
   runner: getGitHubSkillSyncRunner(),
@@ -18,8 +19,8 @@ const handlers = createAdminSkillsSyncHandlers({
 router.use(requireJwtAuth, requireAdminAccess);
 
 router.get('/sync/status', handlers.getSyncStatus);
-router.post('/sync/run', handlers.runSync);
-router.put('/sync/credentials/:credentialKey', handlers.setCredential);
-router.delete('/sync/credentials/:credentialKey', handlers.deleteCredential);
+router.post('/sync/run', requireManageSkills, handlers.runSync);
+router.put('/sync/credentials/:credentialKey', requireManageSkills, handlers.setCredential);
+router.delete('/sync/credentials/:credentialKey', requireManageSkills, handlers.deleteCredential);
 
 module.exports = router;
