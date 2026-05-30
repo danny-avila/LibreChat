@@ -432,6 +432,42 @@ describe('createGitHubSkillSyncRunner', () => {
     }
   });
 
+  it('preserves slash-delimited refs when fetching the GitHub commit', async () => {
+    const baseFetch = githubFetch();
+    const fetchFn = jest.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes('/commits/')) {
+        expect(url).toContain('/commits/heads/release/2026-05');
+        expect(url).not.toContain('heads%2Frelease%2F2026-05');
+      }
+      return baseFetch(input);
+    }) as unknown as typeof fetch;
+    const deps = createDeps({
+      fetchFn,
+      getConfig: () => ({
+        github: {
+          enabled: true,
+          intervalMinutes: 60,
+          runOnStartup: false,
+          sources: [
+            {
+              id: 'librechat-skills',
+              owner: 'LibreChat',
+              repo: 'skills',
+              ref: 'heads/release/2026-05',
+              paths: ['skills'],
+              credentialKey: 'github-skills-prod',
+            },
+          ],
+        },
+      }),
+    });
+    const result = await createGitHubSkillSyncRunner(deps).runOnce();
+
+    expect(result.status).toBe('completed');
+    expect(fetchFn).toHaveBeenCalled();
+  });
+
   it('runs a tenant-scoped source inside its tenant context and stamps the skill tenantId', async () => {
     let observedTenantId: string | undefined = 'unset';
     const deps = createDeps({
