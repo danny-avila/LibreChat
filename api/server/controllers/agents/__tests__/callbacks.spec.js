@@ -364,10 +364,17 @@ describe('createToolEndCallback', () => {
 
     const { processCodeOutput } = require('~/server/services/Files/Code/process');
 
-    function makeCodeExecutionEvent({ runId, threadId, toolCallId, fileId, name }) {
+    function makeCodeExecutionEvent({
+      runId,
+      threadId,
+      toolCallId,
+      fileId,
+      name,
+      toolName = 'execute_code',
+    }) {
       return {
         output: {
-          name: 'execute_code',
+          name: toolName,
           tool_call_id: toolCallId,
           artifact: {
             session_id: 'sess-1',
@@ -571,6 +578,45 @@ describe('createToolEndCallback', () => {
       await Promise.all(artifactPromises);
       await new Promise((resolve) => setImmediate(resolve));
 
+      expect(res.write).toHaveBeenCalledTimes(1);
+    });
+
+    it('processes create_file sandbox artifacts like code execution outputs', async () => {
+      res.headersSent = true;
+      processCodeOutput.mockResolvedValue({
+        file: {
+          file_id: 'fid-created',
+          filename: 'created.txt',
+          filepath: '/uploads/created.txt',
+          type: 'text/plain',
+          conversationId: 'thread789',
+          messageId: 'run-create',
+          toolCallId: 'tool-create',
+          status: 'ready',
+        },
+      });
+
+      const toolEndCallback = createToolEndCallback({ req, res, artifactPromises });
+      const event = makeCodeExecutionEvent({
+        runId: 'run-create',
+        threadId: 'thread789',
+        toolCallId: 'tool-create',
+        fileId: 'fid-created',
+        name: 'created.txt',
+        toolName: 'create_file',
+      });
+      await toolEndCallback({ output: event.output }, event.metadata);
+      await Promise.all(artifactPromises);
+
+      expect(processCodeOutput).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'fid-created',
+          name: 'created.txt',
+          messageId: 'run-create',
+          toolCallId: 'tool-create',
+          conversationId: 'thread789',
+        }),
+      );
       expect(res.write).toHaveBeenCalledTimes(1);
     });
   });

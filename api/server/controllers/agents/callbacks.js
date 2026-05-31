@@ -18,6 +18,10 @@ const { processFileCitations } = require('~/server/services/Files/Citations');
 const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
 const { saveBase64Image } = require('~/server/services/Files/process');
 
+function isCodeArtifactToolName(name) {
+  return CODE_EXECUTION_TOOLS.has(name) || name === 'create_file' || name === 'edit_file';
+}
+
 class ModelEndHandler {
   /**
    * @param {Array<UsageMetadata>} collectedUsage
@@ -623,7 +627,7 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
       return;
     }
 
-    if (!CODE_EXECUTION_TOOLS.has(output.name)) {
+    if (!isCodeArtifactToolName(output.name)) {
       return;
     }
 
@@ -890,7 +894,7 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
       return;
     }
 
-    if (!CODE_EXECUTION_TOOLS.has(output.name)) {
+    if (!isCodeArtifactToolName(output.name)) {
       return;
     }
 

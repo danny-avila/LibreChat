@@ -18,6 +18,7 @@ import { logAxiosError, runOutsideTracing } from '~/utils';
 import { buildSkillPrimeMessage } from './skills';
 import { cleanCodeToolOutput } from './cleanup';
 import { primeSkillFiles } from './skillFiles';
+import { parseFrontmatter } from '../skills/import';
 
 export interface ToolEndCallbackData {
   output: {
@@ -82,6 +83,65 @@ export interface ToolExecuteOptions {
      */
     disableModelInvocation?: boolean;
   } | null>;
+  /** Creates a skill from a tool-authored SKILL.md body. */
+  createSkill?: (data: {
+    name: string;
+    description: string;
+    body: string;
+    author: Types.ObjectId;
+    authorName: string;
+    alwaysApply?: boolean;
+    tenantId?: string;
+  }) => Promise<{
+    skill: {
+      _id: Types.ObjectId;
+      name: string;
+      body: string;
+      version: number;
+    };
+  }>;
+  /** Updates a skill body and derived metadata from a tool-authored SKILL.md body. */
+  updateSkill?: (params: {
+    id: string;
+    expectedVersion: number;
+    update: {
+      body?: string;
+      description?: string;
+      alwaysApply?: boolean;
+    };
+  }) => Promise<
+    | {
+        status: 'updated';
+        skill: { _id: Types.ObjectId; name: string; body: string; version: number };
+      }
+    | { status: 'conflict'; current: { _id: Types.ObjectId; name: string; version: number } }
+    | { status: 'not_found' }
+  >;
+  /** Checks role-level skill creation permission for the current user. */
+  canCreateSkill?: (params: { req: ServerRequest }) => Promise<boolean>;
+  /** Checks resource-level edit permission for an existing skill. */
+  canEditSkill?: (params: {
+    req: ServerRequest;
+    skillId: Types.ObjectId | string;
+  }) => Promise<boolean>;
+  /** Grants SKILL_OWNER to the current user after a tool-created skill is inserted. */
+  grantSkillOwner?: (params: {
+    req: ServerRequest;
+    skillId: Types.ObjectId | string;
+  }) => Promise<void>;
+  /** Deletes a freshly-created skill if owner-permission setup fails. */
+  deleteSkill?: (id: string) => Promise<{ deleted: boolean }>;
+  /** Saves or replaces a bundled skill file in configured storage and metadata. */
+  saveSkillFileContent?: (params: {
+    req: ServerRequest;
+    skillId: Types.ObjectId | string;
+    relativePath: string;
+    content: string;
+    mimeType: string;
+  }) => Promise<{
+    bytes: number;
+    relativePath: string;
+  }>;
   /** Lists files bundled with a skill (for code env priming) */
   listSkillFiles?: (skillId: Types.ObjectId | string) => Promise<SkillFileRecord[]>;
   /** Storage strategy resolver for skill file streaming */
@@ -149,13 +209,36 @@ export interface ToolExecuteOptions {
     files?: Array<{ id: string; name: string; session_id?: string }>;
     req?: ServerRequest;
   }) => Promise<{ content: string } | null>;
+  /**
+   * Writes a UTF-8 text file into the code-execution sandbox via the
+   * sandbox `/exec` endpoint. Mirrors `readSandboxFile` session forwarding
+   * so host-side file-authoring tools can operate in the same sandbox
+   * session as `bash_tool` / `read_file`.
+   */
+  writeSandboxFile?: (params: {
+    file_path: string;
+    content: string;
+    session_id?: string;
+    files?: Array<{ id: string; name: string; session_id?: string }>;
+    req?: ServerRequest;
+  }) => Promise<{
+    stdout?: string;
+    stderr?: string;
+    session_id?: string;
+    files?: Array<{ id: string; name: string; storage_session_id?: string; session_id?: string }>;
+  } | null>;
 }
 
 const MAX_READABLE_BYTES = 262_144;
 const MAX_BINARY_BYTES = 5 * 1024 * 1024;
 const MAX_CACHE_BYTES = 512 * 1024;
+const MAX_AUTHORING_BYTES = 10 * 1024 * 1024;
 const MAX_TOOL_ERROR_MESSAGE_CHARS = 12_000;
 const MAX_TOOL_ERROR_STACK_CHARS = 4_000;
+const CREATE_FILE_TOOL_NAME = 'create_file';
+const EDIT_FILE_TOOL_NAME = 'edit_file';
+const SKILL_FILE_PREFIX = 'skills/';
+const SKILL_MD = 'SKILL.md';
 
 const IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
 
@@ -350,6 +433,444 @@ function addLineNumbers(content: string): string {
   return lines.map((l, i) => `${String(i + 1).padStart(w, ' ')} | ${l}`).join('\n');
 }
 
+type AuthoringSkill = NonNullable<
+  Awaited<ReturnType<NonNullable<ToolExecuteOptions['getSkillByName']>>>
+>;
+
+type AuthoringResult = Promise<ToolExecuteResult>;
+
+type ParsedSkillAuthoringPath = {
+  skillName: string;
+  relativePath: string;
+  displayPath: string;
+};
+
+type TextEdit = {
+  old_text: string;
+  new_text: string;
+};
+
+type MatchStatus =
+  | { status: 'matched'; index: number; length: number; strategy: string }
+  | { status: 'none' }
+  | { status: 'ambiguous'; strategy: string; count: number };
+
+type LoadedSkillText =
+  | { status: 'loaded'; content: string; bytes: number }
+  | { status: 'missing' }
+  | { status: 'error'; message: string };
+
+type LoadedSandboxText = LoadedSkillText;
+
+type SandboxSessionContext = {
+  session_id?: string;
+  files?: Array<{ id: string; name: string; session_id?: string }>;
+};
+
+const MIME_MAP: Readonly<Record<string, string>> = Object.freeze({
+  '.md': 'text/markdown',
+  '.txt': 'text/plain',
+  '.json': 'application/json',
+  '.js': 'application/javascript',
+  '.mjs': 'application/javascript',
+  '.cjs': 'application/javascript',
+  '.ts': 'application/typescript',
+  '.tsx': 'application/typescript',
+  '.jsx': 'application/javascript',
+  '.py': 'text/x-python',
+  '.sh': 'application/x-sh',
+  '.yaml': 'application/yaml',
+  '.yml': 'application/yaml',
+  '.css': 'text/css',
+  '.html': 'text/html',
+  '.xml': 'application/xml',
+  '.csv': 'text/csv',
+  '.toml': 'text/toml',
+  '.ini': 'text/ini',
+  '.svg': 'image/svg+xml',
+});
+
+function errorResult(tc: ToolCallRequest, errorMessage: string): ToolExecuteResult {
+  return {
+    toolCallId: tc.id,
+    status: 'error',
+    content: '',
+    errorMessage,
+  };
+}
+
+function successResult(
+  tc: ToolCallRequest,
+  content: string,
+  artifact?: unknown,
+): ToolExecuteResult {
+  const result: ToolExecuteResult = {
+    toolCallId: tc.id,
+    status: 'success',
+    content,
+  };
+  if (artifact !== undefined) {
+    result.artifact = artifact;
+  }
+  return result;
+}
+
+function guessMimeType(filename: string): string {
+  return MIME_MAP[lowercaseExtension(filename)] ?? 'application/octet-stream';
+}
+
+function isValidSkillName(value: string): boolean {
+  return /^[a-z0-9][a-z0-9-]*$/.test(value);
+}
+
+function isValidSkillFileRelativePath(value: string): boolean {
+  if (!value || value.length > 500) {
+    return false;
+  }
+  if (value.startsWith('/') || value.startsWith('\\')) {
+    return false;
+  }
+  if (!/^[a-zA-Z0-9._\-/]+$/.test(value)) {
+    return false;
+  }
+  const segments = value.split('/');
+  if (segments.some((segment) => segment === '' || segment === '.' || segment === '..')) {
+    return false;
+  }
+  return value !== SKILL_MD && segments[0] !== SKILL_MD;
+}
+
+function parseSkillAuthoringPath(filePath: string): ParsedSkillAuthoringPath | string {
+  if (!filePath.startsWith(SKILL_FILE_PREFIX)) {
+    return `Only skill file paths are supported. Use "skills/{skillName}/SKILL.md" or "skills/{skillName}/{path}".`;
+  }
+
+  const rest = filePath.slice(SKILL_FILE_PREFIX.length);
+  const slashIdx = rest.indexOf('/');
+  const skillName = slashIdx === -1 ? rest : rest.slice(0, slashIdx);
+  const relativePath = slashIdx === -1 ? SKILL_MD : rest.slice(slashIdx + 1) || SKILL_MD;
+
+  if (!isValidSkillName(skillName)) {
+    return `Invalid skill name "${skillName}". Skill names must be kebab-case.`;
+  }
+  if (relativePath !== SKILL_MD && !isValidSkillFileRelativePath(relativePath)) {
+    return (
+      `Invalid skill file path "${relativePath}". ` +
+      'Paths must be relative and cannot contain empty, "." or ".." segments.'
+    );
+  }
+
+  return {
+    skillName,
+    relativePath,
+    displayPath: `${SKILL_FILE_PREFIX}${skillName}/${relativePath}`,
+  };
+}
+
+function validateSkillMdContent(content: string, skillName: string): string | null {
+  const parsed = parseFrontmatter(content);
+  if (!parsed.name || !parsed.description) {
+    return `${SKILL_MD} must include YAML frontmatter with "name" and "description".`;
+  }
+  if (parsed.name !== skillName) {
+    return `${SKILL_MD} frontmatter name "${parsed.name}" must match path skill name "${skillName}".`;
+  }
+  if (parsed.invalidBooleans.length > 0) {
+    return parsed.invalidBooleans
+      .map((key) => `"${key}" in ${SKILL_MD} frontmatter must be a boolean`)
+      .join('; ');
+  }
+  return null;
+}
+
+function parseSkillMdUpdate(content: string): {
+  description: string;
+  alwaysApply?: boolean;
+} {
+  const parsed = parseFrontmatter(content);
+  return {
+    description: parsed.description,
+    ...(parsed.alwaysApply !== undefined ? { alwaysApply: parsed.alwaysApply } : {}),
+  };
+}
+
+function getAuthorInfo(req: ServerRequest): {
+  author: Types.ObjectId;
+  authorName: string;
+  tenantId?: string;
+} | null {
+  const user = req.user as
+    | {
+        id?: string;
+        _id?: Types.ObjectId | string;
+        name?: string;
+        username?: string;
+        tenantId?: string;
+      }
+    | undefined;
+  if (!user?.id) {
+    return null;
+  }
+  return {
+    author: (user._id ?? user.id) as Types.ObjectId,
+    authorName: user.name ?? user.username ?? 'Unknown',
+    ...(user.tenantId ? { tenantId: user.tenantId } : {}),
+  };
+}
+
+function normalizeEditArgs(args: {
+  old_text?: unknown;
+  new_text?: unknown;
+  edits?: unknown;
+}): TextEdit[] | string {
+  if (Array.isArray(args.edits) && args.edits.length > 0) {
+    const edits: TextEdit[] = [];
+    for (const edit of args.edits) {
+      if (!edit || typeof edit !== 'object') {
+        return 'Each edit must be an object with old_text and new_text.';
+      }
+      const entry = edit as { old_text?: unknown; new_text?: unknown };
+      if (typeof entry.old_text !== 'string' || typeof entry.new_text !== 'string') {
+        return 'Each edit requires string old_text and new_text.';
+      }
+      if (entry.old_text.length === 0) {
+        return 'old_text cannot be empty.';
+      }
+      edits.push({ old_text: entry.old_text, new_text: entry.new_text });
+    }
+    return edits;
+  }
+
+  if (typeof args.old_text !== 'string' || typeof args.new_text !== 'string') {
+    return 'Provide old_text and new_text, or a non-empty edits array.';
+  }
+  if (args.old_text.length === 0) {
+    return 'old_text cannot be empty.';
+  }
+  return [{ old_text: args.old_text, new_text: args.new_text }];
+}
+
+function countExactOccurrences(content: string, needle: string): number[] {
+  const indexes: number[] = [];
+  let start = 0;
+  while (start <= content.length) {
+    const index = content.indexOf(needle, start);
+    if (index === -1) {
+      break;
+    }
+    indexes.push(index);
+    start = index + Math.max(1, needle.length);
+  }
+  return indexes;
+}
+
+function findExactMatch(content: string, needle: string): MatchStatus {
+  const matches = countExactOccurrences(content, needle);
+  if (matches.length === 1) {
+    return { status: 'matched', index: matches[0], length: needle.length, strategy: 'exact' };
+  }
+  if (matches.length > 1) {
+    return { status: 'ambiguous', strategy: 'exact', count: matches.length };
+  }
+  return { status: 'none' };
+}
+
+function lineStarts(content: string): number[] {
+  const starts = [0];
+  for (let i = 0; i < content.length; i++) {
+    if (content[i] === '\n') {
+      starts.push(i + 1);
+    }
+  }
+  return starts;
+}
+
+function commonIndent(lines: string[]): number {
+  const indents = lines
+    .filter((line) => line.trim().length > 0)
+    .map((line) => {
+      const match = /^(\s*)/.exec(line);
+      return match ? match[1].length : 0;
+    });
+  return indents.length > 0 ? Math.min(...indents) : 0;
+}
+
+function stripCommonIndent(text: string): string {
+  const lines = text.split('\n');
+  const indent = commonIndent(lines);
+  if (indent === 0) {
+    return text;
+  }
+  return lines.map((line) => line.slice(Math.min(indent, line.length))).join('\n');
+}
+
+function findLineWindowMatch(
+  content: string,
+  needle: string,
+  strategy: 'line-trimmed' | 'indentation-flexible',
+): MatchStatus {
+  const contentLines = content.split('\n');
+  const needleLines = needle.split('\n');
+  if (needleLines.length > contentLines.length) {
+    return { status: 'none' };
+  }
+
+  const starts = lineStarts(content);
+  const normalizedNeedle =
+    strategy === 'line-trimmed'
+      ? needleLines.map((line) => line.trimEnd()).join('\n')
+      : stripCommonIndent(needle);
+  const matches: Array<{ index: number; length: number }> = [];
+
+  for (let i = 0; i <= contentLines.length - needleLines.length; i++) {
+    const windowLines = contentLines.slice(i, i + needleLines.length);
+    const candidate =
+      strategy === 'line-trimmed'
+        ? windowLines.map((line) => line.trimEnd()).join('\n')
+        : stripCommonIndent(windowLines.join('\n'));
+    if (candidate !== normalizedNeedle) {
+      continue;
+    }
+    const index = starts[i];
+    const endLine = i + needleLines.length;
+    const end = endLine < starts.length ? starts[endLine] - 1 : content.length;
+    matches.push({ index, length: end - index });
+  }
+
+  if (matches.length === 1) {
+    return { status: 'matched', ...matches[0], strategy };
+  }
+  if (matches.length > 1) {
+    return { status: 'ambiguous', strategy, count: matches.length };
+  }
+  return { status: 'none' };
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function findWhitespaceNormalizedMatch(content: string, needle: string): MatchStatus {
+  const tokens = needle.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length < 2) {
+    return { status: 'none' };
+  }
+  const pattern = tokens.map(escapeRegExp).join('\\s+');
+  const regex = new RegExp(pattern, 'g');
+  const matches: Array<{ index: number; length: number }> = [];
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(content)) != null) {
+    matches.push({ index: match.index, length: match[0].length });
+    if (match[0].length === 0) {
+      regex.lastIndex += 1;
+    }
+  }
+  if (matches.length === 1) {
+    return { status: 'matched', ...matches[0], strategy: 'whitespace-normalized' };
+  }
+  if (matches.length > 1) {
+    return { status: 'ambiguous', strategy: 'whitespace-normalized', count: matches.length };
+  }
+  return { status: 'none' };
+}
+
+function findReplacementMatch(content: string, needle: string): MatchStatus {
+  const exact = findExactMatch(content, needle);
+  if (exact.status !== 'none') {
+    return exact;
+  }
+  const lineTrimmed = findLineWindowMatch(content, needle, 'line-trimmed');
+  if (lineTrimmed.status !== 'none') {
+    return lineTrimmed;
+  }
+  const whitespaceNormalized = findWhitespaceNormalizedMatch(content, needle);
+  if (whitespaceNormalized.status !== 'none') {
+    return whitespaceNormalized;
+  }
+  return findLineWindowMatch(content, needle, 'indentation-flexible');
+}
+
+function applyTextEdits(
+  content: string,
+  edits: TextEdit[],
+): { content: string; strategies: string[] } {
+  let working = content;
+  const strategies: string[] = [];
+
+  for (const edit of edits) {
+    const match = findReplacementMatch(working, edit.old_text);
+    if (match.status === 'none') {
+      throw new Error('old_text did not match the file content.');
+    }
+    if (match.status === 'ambiguous') {
+      throw new Error(
+        `old_text matched ${match.count} locations with ${match.strategy}; make it unique before retrying.`,
+      );
+    }
+    working =
+      working.slice(0, match.index) +
+      edit.new_text +
+      working.slice(match.index + match.length);
+    strategies.push(match.strategy);
+  }
+
+  return { content: working, strategies };
+}
+
+function formatRange(start: number, count: number): string {
+  return count === 1 ? String(start) : `${start},${count}`;
+}
+
+function createUnifiedDiff(filePath: string, oldContent: string, newContent: string): string {
+  if (oldContent === newContent) {
+    return '';
+  }
+
+  const oldLines = oldContent.split('\n');
+  const newLines = newContent.split('\n');
+  let prefix = 0;
+  while (
+    prefix < oldLines.length &&
+    prefix < newLines.length &&
+    oldLines[prefix] === newLines[prefix]
+  ) {
+    prefix += 1;
+  }
+
+  let oldSuffix = oldLines.length - 1;
+  let newSuffix = newLines.length - 1;
+  while (oldSuffix >= prefix && newSuffix >= prefix && oldLines[oldSuffix] === newLines[newSuffix]) {
+    oldSuffix -= 1;
+    newSuffix -= 1;
+  }
+
+  const contextStart = Math.max(0, prefix - 3);
+  const oldContextEnd = Math.min(oldLines.length - 1, oldSuffix + 3);
+  const newContextEnd = Math.min(newLines.length - 1, newSuffix + 3);
+  const oldCount = oldContextEnd >= contextStart ? oldContextEnd - contextStart + 1 : 0;
+  const newCount = newContextEnd >= contextStart ? newContextEnd - contextStart + 1 : 0;
+  const lines = [
+    `--- a/${filePath}`,
+    `+++ b/${filePath}`,
+    `@@ -${formatRange(contextStart + 1, oldCount)} +${formatRange(contextStart + 1, newCount)} @@`,
+  ];
+
+  for (let i = contextStart; i < prefix; i++) {
+    lines.push(` ${oldLines[i]}`);
+  }
+  for (let i = prefix; i <= oldSuffix; i++) {
+    lines.push(`-${oldLines[i]}`);
+  }
+  for (let i = prefix; i <= newSuffix; i++) {
+    lines.push(`+${newLines[i]}`);
+  }
+  for (let i = oldSuffix + 1; i <= oldContextEnd; i++) {
+    lines.push(` ${oldLines[i]}`);
+  }
+
+  return lines.join('\n');
+}
+
 /**
  * Extensions whose contents `read_file` must never serialize as text. `cat`
  * on a PNG inside the sandbox returns the raw bytes as stdout, JSON-encoded
@@ -542,9 +1063,7 @@ async function handleSandboxFileFallback(
     };
   }
 
-  const ctx = tc.codeSessionContext as
-    | { session_id?: string; files?: Array<{ id: string; name: string; session_id?: string }> }
-    | undefined;
+  const ctx = tc.codeSessionContext as SandboxSessionContext | undefined;
   try {
     const result = await readSandboxFile({
       file_path: filePath,
@@ -602,6 +1121,766 @@ async function handleSandboxFileFallback(
       errorMessage: `Error reading "${filePath}" from the code-execution sandbox: ${message}. Try \`bash_tool\` (e.g. \`cat ${filePath}\`).`,
     };
   }
+}
+
+function sandboxSessionContext(tc: ToolCallRequest): SandboxSessionContext | undefined {
+  return tc.codeSessionContext as SandboxSessionContext | undefined;
+}
+
+function isSandboxMissingFileError(error: unknown): boolean {
+  const message = getThrownValueMessage(error).toLowerCase();
+  return (
+    message.includes('no such file or directory') ||
+    message.includes('cannot access') ||
+    message.includes('not found')
+  );
+}
+
+function invalidSandboxAuthoringPath(filePath: string): string | null {
+  if (filePath.length === 0) {
+    return 'file_path is required';
+  }
+  if (filePath.includes('\0')) {
+    return 'file_path cannot contain NUL bytes';
+  }
+  if (filePath.endsWith('/')) {
+    return `File path "${filePath}" points to a directory. Provide a file path.`;
+  }
+  return null;
+}
+
+async function loadSandboxTextForAuthoring({
+  filePath,
+  tc,
+  options,
+  req,
+}: {
+  filePath: string;
+  tc: ToolCallRequest;
+  options: ToolExecuteOptions;
+  req?: ServerRequest;
+}): Promise<LoadedSandboxText> {
+  const ext = lowercaseExtension(filePath);
+  if (BINARY_EXTENSIONS_NEVER_READABLE.has(ext)) {
+    return { status: 'error', message: buildBinaryFileError(filePath, ext) };
+  }
+  if (!options.readSandboxFile) {
+    return {
+      status: 'error',
+      message: `Sandbox file reading is not configured. Use \`bash_tool\` to inspect "${filePath}".`,
+    };
+  }
+
+  const ctx = sandboxSessionContext(tc);
+  try {
+    const result = await options.readSandboxFile({
+      file_path: filePath,
+      session_id: ctx?.session_id,
+      files: ctx?.files,
+      ...(req ? { req } : {}),
+    });
+    if (!result || result.content == null) {
+      return {
+        status: 'error',
+        message: `Failed to read "${filePath}" from the code-execution sandbox.`,
+      };
+    }
+    if (looksBinary(result.content)) {
+      return {
+        status: 'error',
+        message: `"${filePath}" appears to be binary and cannot be edited as text.`,
+      };
+    }
+    if (Buffer.byteLength(result.content, 'utf8') > MAX_AUTHORING_BYTES) {
+      return {
+        status: 'error',
+        message: `File "${filePath}" is too large to edit directly (${Buffer.byteLength(
+          result.content,
+          'utf8',
+        )} bytes, limit: ${MAX_AUTHORING_BYTES}).`,
+      };
+    }
+    return {
+      status: 'loaded',
+      content: result.content,
+      bytes: Buffer.byteLength(result.content, 'utf8'),
+    };
+  } catch (error) {
+    if (isSandboxMissingFileError(error)) {
+      return { status: 'missing' };
+    }
+    const message = getThrownValueMessage(error);
+    logger.warn(`[file_authoring] Sandbox read failed for "${filePath}": ${message}`);
+    return {
+      status: 'error',
+      message: `Error reading "${filePath}" from the code-execution sandbox: ${message}.`,
+    };
+  }
+}
+
+async function writeSandboxTextForAuthoring({
+  tc,
+  options,
+  req,
+  filePath,
+  content,
+  oldContent,
+  created,
+}: {
+  tc: ToolCallRequest;
+  options: ToolExecuteOptions;
+  req?: ServerRequest;
+  filePath: string;
+  content: string;
+  oldContent?: string;
+  created: boolean;
+}): AuthoringResult {
+  if (!options.writeSandboxFile) {
+    return errorResult(
+      tc,
+      `Sandbox file writing is not configured. Use \`bash_tool\` to write "${filePath}".`,
+    );
+  }
+  const ctx = sandboxSessionContext(tc);
+  let writeResult: Awaited<ReturnType<NonNullable<ToolExecuteOptions['writeSandboxFile']>>>;
+  try {
+    writeResult = await options.writeSandboxFile({
+      file_path: filePath,
+      content,
+      session_id: ctx?.session_id,
+      files: ctx?.files,
+      ...(req ? { req } : {}),
+    });
+  } catch (error) {
+    const message = getThrownValueMessage(error);
+    logger.warn(`[file_authoring] Sandbox write failed for "${filePath}": ${message}`);
+    return errorResult(
+      tc,
+      `Error writing "${filePath}" to the code-execution sandbox: ${message}.`,
+    );
+  }
+  if (!writeResult) {
+    return errorResult(tc, `Failed to write "${filePath}" to the code-execution sandbox.`);
+  }
+
+  const diff =
+    oldContent !== undefined ? createUnifiedDiff(filePath, oldContent, content) : undefined;
+  const action = created ? 'Created' : 'Updated';
+  const summary = `${action} ${filePath} (${content.length} chars).`;
+  return successResult(tc, diff ? `${summary}\n\n${diff}` : summary, {
+    path: filePath,
+    bytes_written: Buffer.byteLength(content, 'utf8'),
+    created,
+    ...(diff ? { diff } : {}),
+    ...(writeResult.session_id ? { session_id: writeResult.session_id } : {}),
+    ...(writeResult.files ? { files: writeResult.files } : {}),
+  });
+}
+
+async function resolveSkillForAuthoring(
+  skillName: string,
+  mergedConfigurable: Record<string, unknown>,
+  options: ToolExecuteOptions,
+): Promise<AuthoringSkill | null> {
+  const { getSkillByName } = options;
+  if (!getSkillByName) {
+    return null;
+  }
+
+  const accessibleIds = (mergedConfigurable?.accessibleSkillIds as Types.ObjectId[]) ?? [];
+  if (accessibleIds.length === 0) {
+    return null;
+  }
+
+  const skillPrimedIdsByName =
+    (mergedConfigurable?.skillPrimedIdsByName as Record<string, string> | undefined) ?? {};
+  const primedIdString = skillPrimedIdsByName[skillName];
+  if (primedIdString) {
+    return await getSkillByName(skillName, [new Types.ObjectId(primedIdString)], {});
+  }
+
+  return await getSkillByName(skillName, accessibleIds, { preferModelInvocable: true });
+}
+
+async function ensureCanEditSkill(
+  tc: ToolCallRequest,
+  options: ToolExecuteOptions,
+  req: ServerRequest | undefined,
+  skillId: Types.ObjectId | string,
+): Promise<ToolExecuteResult | null> {
+  if (!req) {
+    return errorResult(tc, 'Skill file editing is not configured for this request.');
+  }
+  if (!options.canEditSkill) {
+    return errorResult(tc, 'Skill file editing is not configured.');
+  }
+  const allowed = await options.canEditSkill({ req, skillId });
+  return allowed ? null : errorResult(tc, 'Insufficient permissions to edit this skill.');
+}
+
+async function ensureCanCreateSkill(
+  tc: ToolCallRequest,
+  options: ToolExecuteOptions,
+  req: ServerRequest | undefined,
+): Promise<ToolExecuteResult | null> {
+  if (!req) {
+    return errorResult(tc, 'Skill creation is not configured for this request.');
+  }
+  if (!options.canCreateSkill) {
+    return errorResult(tc, 'Skill creation is not configured.');
+  }
+  const allowed = await options.canCreateSkill({ req });
+  return allowed ? null : errorResult(tc, 'Insufficient permissions to create skills.');
+}
+
+async function loadSkillFileTextForAuthoring({
+  skill,
+  relativePath,
+  options,
+  req,
+}: {
+  skill: AuthoringSkill;
+  relativePath: string;
+  options: ToolExecuteOptions;
+  req?: ServerRequest;
+}): Promise<LoadedSkillText> {
+  if (relativePath === SKILL_MD) {
+    return {
+      status: 'loaded',
+      content: skill.body ?? '',
+      bytes: Buffer.byteLength(skill.body ?? '', 'utf8'),
+    };
+  }
+
+  const { getSkillFileByPath, getStrategyFunctions, updateSkillFileContent } = options;
+  if (!getSkillFileByPath) {
+    return { status: 'error', message: 'Skill file reading is not configured.' };
+  }
+
+  const file = await getSkillFileByPath(skill._id, relativePath);
+  if (!file) {
+    return { status: 'missing' };
+  }
+  if (file.isBinary === true) {
+    return { status: 'error', message: `File "${relativePath}" is binary and cannot be edited.` };
+  }
+  if (file.content != null && file.content !== '') {
+    return {
+      status: 'loaded',
+      content: file.content,
+      bytes: Buffer.byteLength(file.content, 'utf8'),
+    };
+  }
+  if (file.bytes > MAX_CACHE_BYTES) {
+    return {
+      status: 'error',
+      message: `File "${relativePath}" is too large to edit directly (${file.bytes} bytes, limit: ${MAX_CACHE_BYTES}).`,
+    };
+  }
+  if (!getStrategyFunctions || !req) {
+    return { status: 'error', message: 'Storage access is not configured.' };
+  }
+
+  const strategy = getStrategyFunctions(file.source);
+  if (!strategy.getDownloadStream) {
+    return { status: 'error', message: 'Download is not supported for this storage backend.' };
+  }
+
+  const stream = await strategy.getDownloadStream(req, file.filepath);
+  const chunks: Uint8Array[] = [];
+  let streamedBytes = 0;
+  for await (const chunk of stream as AsyncIterable<Uint8Array>) {
+    streamedBytes += chunk.byteLength;
+    if (streamedBytes > MAX_CACHE_BYTES) {
+      if (
+        'destroy' in stream &&
+        typeof (stream as NodeJS.ReadableStream & { destroy?: () => void }).destroy === 'function'
+      ) {
+        (stream as NodeJS.ReadableStream & { destroy: () => void }).destroy();
+      }
+      return {
+        status: 'error',
+        message: `File "${relativePath}" exceeded edit limit (${MAX_CACHE_BYTES} bytes).`,
+      };
+    }
+    chunks.push(chunk);
+  }
+
+  const buffer = Buffer.concat(chunks);
+  const checkLen = Math.min(buffer.length, 8192);
+  for (let i = 0; i < checkLen; i++) {
+    if (buffer[i] === 0) {
+      if (updateSkillFileContent) {
+        updateSkillFileContent(skill._id, relativePath, { isBinary: true }).catch(
+          (err: unknown) => {
+            logAxiosError({
+              message: '[loadSkillFileTextForAuthoring] cache write failed',
+              error: err,
+            });
+          },
+        );
+      }
+      return { status: 'error', message: `File "${relativePath}" is binary and cannot be edited.` };
+    }
+  }
+
+  const text = buffer.toString('utf-8');
+  if (updateSkillFileContent) {
+    updateSkillFileContent(skill._id, relativePath, { content: text, isBinary: false }).catch(
+      (err: unknown) => {
+        logAxiosError({
+          message: '[loadSkillFileTextForAuthoring] cache write failed',
+          error: err,
+        });
+      },
+    );
+  }
+  return { status: 'loaded', content: text, bytes: buffer.length };
+}
+
+async function writeSkillMd({
+  tc,
+  options,
+  req,
+  skill,
+  skillName,
+  content,
+}: {
+  tc: ToolCallRequest;
+  options: ToolExecuteOptions;
+  req?: ServerRequest;
+  skill: AuthoringSkill | null;
+  skillName: string;
+  content: string;
+}): AuthoringResult {
+  const validationError = validateSkillMdContent(content, skillName);
+  if (validationError) {
+    return errorResult(tc, validationError);
+  }
+
+  if (!skill) {
+    const createDenied = await ensureCanCreateSkill(tc, options, req);
+    if (createDenied) {
+      return createDenied;
+    }
+    if (!req || !options.createSkill || !options.grantSkillOwner) {
+      return errorResult(tc, 'Skill creation is not configured.');
+    }
+    const author = getAuthorInfo(req);
+    if (!author) {
+      return errorResult(tc, 'Authentication required to create a skill.');
+    }
+    const parsed = parseFrontmatter(content);
+    const result = await options.createSkill({
+      name: parsed.name,
+      description: parsed.description,
+      body: content,
+      author: author.author,
+      authorName: author.authorName,
+      ...(parsed.alwaysApply !== undefined ? { alwaysApply: parsed.alwaysApply } : {}),
+      ...(author.tenantId ? { tenantId: author.tenantId } : {}),
+    });
+    try {
+      await options.grantSkillOwner({ req, skillId: result.skill._id });
+    } catch (error) {
+      if (options.deleteSkill) {
+        await options.deleteSkill(result.skill._id.toString()).catch((rollbackError: unknown) => {
+          logger.error('[create_file] Failed to roll back skill after permission error', {
+            rollbackError,
+          });
+        });
+      }
+      throw error;
+    }
+    return successResult(
+      tc,
+      `Created ${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD} (${content.length} chars).`,
+      {
+        path: `${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD}`,
+        bytes_written: Buffer.byteLength(content, 'utf8'),
+        created: true,
+      },
+    );
+  }
+
+  const editDenied = await ensureCanEditSkill(tc, options, req, skill._id);
+  if (editDenied) {
+    return editDenied;
+  }
+  if (!options.updateSkill) {
+    return errorResult(tc, 'Skill updating is not configured.');
+  }
+  const parsedUpdate = parseSkillMdUpdate(content);
+  const result = await options.updateSkill({
+    id: skill._id.toString(),
+    expectedVersion: skill.version,
+    update: {
+      body: content,
+      description: parsedUpdate.description,
+      ...(parsedUpdate.alwaysApply !== undefined ? { alwaysApply: parsedUpdate.alwaysApply } : {}),
+    },
+  });
+  if (result.status === 'conflict') {
+    return errorResult(
+      tc,
+      `Skill "${skillName}" changed while editing. Re-read ${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD} and retry.`,
+    );
+  }
+  if (result.status === 'not_found') {
+    return errorResult(tc, `Skill "${skillName}" not found or not accessible.`);
+  }
+
+  const diff = createUnifiedDiff(
+    `${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD}`,
+    skill.body,
+    content,
+  );
+  const summary = `Updated ${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD} (${content.length} chars).`;
+  return successResult(tc, diff ? `${summary}\n\n${diff}` : summary, {
+    path: `${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD}`,
+    bytes_written: Buffer.byteLength(content, 'utf8'),
+    created: false,
+    ...(diff ? { diff } : {}),
+  });
+}
+
+async function writeBundledSkillFile({
+  tc,
+  options,
+  req,
+  skill,
+  relativePath,
+  displayPath,
+  content,
+  oldContent,
+  created,
+}: {
+  tc: ToolCallRequest;
+  options: ToolExecuteOptions;
+  req?: ServerRequest;
+  skill: AuthoringSkill;
+  relativePath: string;
+  displayPath: string;
+  content: string;
+  oldContent?: string;
+  created: boolean;
+}): AuthoringResult {
+  const editDenied = await ensureCanEditSkill(tc, options, req, skill._id);
+  if (editDenied) {
+    return editDenied;
+  }
+  if (!req || !options.saveSkillFileContent) {
+    return errorResult(tc, 'Skill file writing is not configured.');
+  }
+
+  await options.saveSkillFileContent({
+    req,
+    skillId: skill._id,
+    relativePath,
+    content,
+    mimeType: guessMimeType(relativePath),
+  });
+  const diff =
+    oldContent !== undefined ? createUnifiedDiff(displayPath, oldContent, content) : undefined;
+  const action = created ? 'Created' : 'Updated';
+  const summary = `${action} ${displayPath} (${content.length} chars).`;
+  return successResult(tc, diff ? `${summary}\n\n${diff}` : summary, {
+    path: displayPath,
+    bytes_written: Buffer.byteLength(content, 'utf8'),
+    created,
+    ...(diff ? { diff } : {}),
+  });
+}
+
+async function handleSandboxCreateFileCall({
+  tc,
+  options,
+  req,
+  filePath,
+  content,
+  overwrite,
+}: {
+  tc: ToolCallRequest;
+  options: ToolExecuteOptions;
+  req?: ServerRequest;
+  filePath: string;
+  content: string;
+  overwrite: boolean;
+}): AuthoringResult {
+  const pathError = invalidSandboxAuthoringPath(filePath);
+  if (pathError) {
+    return errorResult(tc, pathError);
+  }
+
+  const current = await loadSandboxTextForAuthoring({ filePath, tc, options, req });
+  if (current.status === 'error') {
+    return errorResult(tc, current.message);
+  }
+  if (current.status === 'loaded' && !overwrite) {
+    return errorResult(tc, 'File already exists. Pass overwrite: true to replace.');
+  }
+
+  return await writeSandboxTextForAuthoring({
+    tc,
+    options,
+    req,
+    filePath,
+    content,
+    oldContent: current.status === 'loaded' ? current.content : undefined,
+    created: current.status === 'missing',
+  });
+}
+
+async function handleSandboxEditFileCall({
+  tc,
+  options,
+  req,
+  filePath,
+  edits,
+}: {
+  tc: ToolCallRequest;
+  options: ToolExecuteOptions;
+  req?: ServerRequest;
+  filePath: string;
+  edits: TextEdit[];
+}): AuthoringResult {
+  const pathError = invalidSandboxAuthoringPath(filePath);
+  if (pathError) {
+    return errorResult(tc, pathError);
+  }
+
+  const current = await loadSandboxTextForAuthoring({ filePath, tc, options, req });
+  if (current.status === 'missing') {
+    return errorResult(tc, `File not found: "${filePath}"`);
+  }
+  if (current.status === 'error') {
+    return errorResult(tc, current.message);
+  }
+
+  let edited: { content: string; strategies: string[] };
+  try {
+    edited = applyTextEdits(current.content, edits);
+  } catch (error) {
+    return errorResult(tc, error instanceof Error ? error.message : 'Failed to edit file');
+  }
+  if (Buffer.byteLength(edited.content, 'utf8') > MAX_AUTHORING_BYTES) {
+    return errorResult(tc, `edited content exceeds ${MAX_AUTHORING_BYTES} byte limit`);
+  }
+
+  const result = await writeSandboxTextForAuthoring({
+    tc,
+    options,
+    req,
+    filePath,
+    content: edited.content,
+    oldContent: current.content,
+    created: false,
+  });
+  if (result.status === 'success') {
+    result.artifact = {
+      ...(typeof result.artifact === 'object' && result.artifact ? result.artifact : {}),
+      edits: edits.length,
+      strategies: edited.strategies,
+    };
+    result.content = `${String(result.content)}\n\nStrategies: ${edited.strategies.join(', ')}`;
+  }
+  return result;
+}
+
+async function handleCreateFileCall(
+  tc: ToolCallRequest,
+  mergedConfigurable: Record<string, unknown>,
+  options: ToolExecuteOptions,
+  req?: ServerRequest,
+): AuthoringResult {
+  const args = tc.args as { file_path?: unknown; content?: unknown; overwrite?: unknown };
+  if (typeof args.file_path !== 'string' || args.file_path.length === 0) {
+    return errorResult(tc, 'file_path is required');
+  }
+  if (typeof args.content !== 'string') {
+    return errorResult(tc, 'content is required');
+  }
+  if (Buffer.byteLength(args.content, 'utf8') > MAX_AUTHORING_BYTES) {
+    return errorResult(tc, `content exceeds ${MAX_AUTHORING_BYTES} byte limit`);
+  }
+
+  const overwrite = args.overwrite === true;
+  if (!args.file_path.startsWith(SKILL_FILE_PREFIX)) {
+    if (mergedConfigurable?.codeEnvAvailable !== true) {
+      return errorResult(
+        tc,
+        `Path "${args.file_path}" is not a skill file, and this agent does not have code execution enabled.`,
+      );
+    }
+    return await handleSandboxCreateFileCall({
+      tc,
+      options,
+      req,
+      filePath: args.file_path,
+      content: args.content,
+      overwrite,
+    });
+  }
+
+  const parsed = parseSkillAuthoringPath(args.file_path);
+  if (typeof parsed === 'string') {
+    return errorResult(tc, parsed);
+  }
+
+  const skill = await resolveSkillForAuthoring(parsed.skillName, mergedConfigurable, options);
+  if (parsed.relativePath === SKILL_MD) {
+    if (skill && !overwrite) {
+      return errorResult(tc, 'File already exists. Pass overwrite: true to replace.');
+    }
+    return await writeSkillMd({
+      tc,
+      options,
+      req,
+      skill,
+      skillName: parsed.skillName,
+      content: args.content,
+    });
+  }
+
+  if (!skill) {
+    return errorResult(tc, `Skill "${parsed.skillName}" not found or not accessible.`);
+  }
+
+  const current = await loadSkillFileTextForAuthoring({
+    skill,
+    relativePath: parsed.relativePath,
+    options,
+    req,
+  });
+  if (current.status === 'error') {
+    return errorResult(tc, current.message);
+  }
+  if (current.status === 'loaded' && !overwrite) {
+    return errorResult(tc, 'File already exists. Pass overwrite: true to replace.');
+  }
+  return await writeBundledSkillFile({
+    tc,
+    options,
+    req,
+    skill,
+    relativePath: parsed.relativePath,
+    displayPath: parsed.displayPath,
+    content: args.content,
+    oldContent: current.status === 'loaded' ? current.content : undefined,
+    created: current.status === 'missing',
+  });
+}
+
+async function handleEditFileCall(
+  tc: ToolCallRequest,
+  mergedConfigurable: Record<string, unknown>,
+  options: ToolExecuteOptions,
+  req?: ServerRequest,
+): AuthoringResult {
+  const args = tc.args as {
+    file_path?: unknown;
+    old_text?: unknown;
+    new_text?: unknown;
+    edits?: unknown;
+  };
+  if (typeof args.file_path !== 'string' || args.file_path.length === 0) {
+    return errorResult(tc, 'file_path is required');
+  }
+
+  const edits = normalizeEditArgs(args);
+  if (typeof edits === 'string') {
+    return errorResult(tc, edits);
+  }
+
+  if (!args.file_path.startsWith(SKILL_FILE_PREFIX)) {
+    if (mergedConfigurable?.codeEnvAvailable !== true) {
+      return errorResult(
+        tc,
+        `Path "${args.file_path}" is not a skill file, and this agent does not have code execution enabled.`,
+      );
+    }
+    return await handleSandboxEditFileCall({
+      tc,
+      options,
+      req,
+      filePath: args.file_path,
+      edits,
+    });
+  }
+
+  const parsed = parseSkillAuthoringPath(args.file_path);
+  if (typeof parsed === 'string') {
+    return errorResult(tc, parsed);
+  }
+
+  const skill = await resolveSkillForAuthoring(parsed.skillName, mergedConfigurable, options);
+  if (!skill) {
+    return errorResult(tc, `Skill "${parsed.skillName}" not found or not accessible.`);
+  }
+
+  const current = await loadSkillFileTextForAuthoring({
+    skill,
+    relativePath: parsed.relativePath,
+    options,
+    req,
+  });
+  if (current.status === 'missing') {
+    return errorResult(tc, `File not found: "${parsed.relativePath}" in skill "${parsed.skillName}"`);
+  }
+  if (current.status === 'error') {
+    return errorResult(tc, current.message);
+  }
+
+  let edited: { content: string; strategies: string[] };
+  try {
+    edited = applyTextEdits(current.content, edits);
+  } catch (error) {
+    return errorResult(tc, error instanceof Error ? error.message : 'Failed to edit file');
+  }
+  if (Buffer.byteLength(edited.content, 'utf8') > MAX_AUTHORING_BYTES) {
+    return errorResult(tc, `edited content exceeds ${MAX_AUTHORING_BYTES} byte limit`);
+  }
+
+  if (parsed.relativePath === SKILL_MD) {
+    const result = await writeSkillMd({
+      tc,
+      options,
+      req,
+      skill,
+      skillName: parsed.skillName,
+      content: edited.content,
+    });
+    if (result.status === 'success') {
+      result.artifact = {
+        ...(typeof result.artifact === 'object' && result.artifact ? result.artifact : {}),
+        edits: edits.length,
+        strategies: edited.strategies,
+      };
+      result.content = `${String(result.content)}\n\nStrategies: ${edited.strategies.join(', ')}`;
+    }
+    return result;
+  }
+
+  const result = await writeBundledSkillFile({
+    tc,
+    options,
+    req,
+    skill,
+    relativePath: parsed.relativePath,
+    displayPath: parsed.displayPath,
+    content: edited.content,
+    oldContent: current.content,
+    created: false,
+  });
+  if (result.status === 'success') {
+    result.artifact = {
+      ...(typeof result.artifact === 'object' && result.artifact ? result.artifact : {}),
+      edits: edits.length,
+      strategies: edited.strategies,
+    };
+    result.content = `${String(result.content)}\n\nStrategies: ${edited.strategies.join(', ')}`;
+  }
+  return result;
 }
 
 async function handleReadFileCall(
@@ -1195,12 +2474,57 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
 
             const results: ToolExecuteResult[] = await Promise.all(
               toolCalls.map(async (tc: ToolCallRequest) => {
-                if (tc.name === Constants.SKILL_TOOL || tc.name === Constants.READ_FILE) {
+                if (
+                  tc.name === Constants.SKILL_TOOL ||
+                  tc.name === Constants.READ_FILE ||
+                  tc.name === CREATE_FILE_TOOL_NAME ||
+                  tc.name === EDIT_FILE_TOOL_NAME
+                ) {
                   const req = mergedConfigurable?.req as ServerRequest | undefined;
-                  const handlerResult =
-                    tc.name === Constants.SKILL_TOOL
-                      ? await handleSkillToolCall(tc, mergedConfigurable, options, req)
-                      : await handleReadFileCall(tc, mergedConfigurable, options, req);
+                  let handlerResult: ToolExecuteResult;
+                  try {
+                    if (tc.name === Constants.SKILL_TOOL) {
+                      handlerResult = await handleSkillToolCall(
+                        tc,
+                        mergedConfigurable,
+                        options,
+                        req,
+                      );
+                    } else if (tc.name === Constants.READ_FILE) {
+                      handlerResult = await handleReadFileCall(
+                        tc,
+                        mergedConfigurable,
+                        options,
+                        req,
+                      );
+                    } else if (tc.name === CREATE_FILE_TOOL_NAME) {
+                      handlerResult = await handleCreateFileCall(
+                        tc,
+                        mergedConfigurable,
+                        options,
+                        req,
+                      );
+                    } else {
+                      handlerResult = await handleEditFileCall(
+                        tc,
+                        mergedConfigurable,
+                        options,
+                        req,
+                      );
+                    }
+                  } catch (toolError) {
+                    const { message, logContext } = getSafeToolError(toolError);
+                    logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
+                      ...logContext,
+                      toolCallArgsShape: getValueShape(tc.args),
+                    });
+                    return {
+                      toolCallId: tc.id,
+                      status: 'error' as const,
+                      content: '',
+                      errorMessage: message,
+                    };
+                  }
 
                   if (toolEndCallback && handlerResult.artifact) {
                     await toolEndCallback(

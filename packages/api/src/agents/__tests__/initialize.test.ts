@@ -1374,6 +1374,8 @@ describe('initializeAgent — execute_code capability expansion', () => {
     const names = (result.toolDefinitions ?? []).map((d) => d.name);
     expect(names).toContain('bash_tool');
     expect(names).toContain('read_file');
+    expect(names).toContain('create_file');
+    expect(names).toContain('edit_file');
     /* The legacy `execute_code` tool def is no longer registered by this
        path — the string stays in `agent.tools` as the capability trigger
        but never appears in the tool definitions the LLM sees. */
@@ -1382,6 +1384,10 @@ describe('initializeAgent — execute_code capability expansion', () => {
     expect(readFile?.description).toContain('code-execution sandbox');
     expect(readFile?.description).not.toContain('{skillName}');
     expect(readFile?.description).not.toContain('SKILL.md');
+    const createFile = result.toolDefinitions?.find((d) => d.name === 'create_file');
+    expect(createFile?.description).toContain('code-execution sandbox');
+    expect(createFile?.description).toContain('/mnt/data/');
+    expect(createFile?.description).not.toContain('skills/');
   });
 
   it('upgrades read_file to the skill-aware description when active skills are in scope', async () => {
@@ -1423,7 +1429,10 @@ describe('initializeAgent — execute_code capability expansion', () => {
     const readFile = result.toolDefinitions?.find((d) => d.name === 'read_file');
     expect(readFile?.description).toContain('{skillName}/{filePath}');
     expect(readFile?.description).toContain('SKILL.md');
-    expect(result.toolDefinitions?.map((d) => d.name)).toContain('skill');
+    const names = result.toolDefinitions?.map((d) => d.name) ?? [];
+    expect(names).toContain('skill');
+    expect(names).toContain('create_file');
+    expect(names).toContain('edit_file');
   });
 
   it('does not register bash_tool + read_file when codeEnvAvailable=false', async () => {
@@ -1447,6 +1456,8 @@ describe('initializeAgent — execute_code capability expansion', () => {
     const names = (result.toolDefinitions ?? []).map((d) => d.name);
     expect(names).not.toContain('bash_tool');
     expect(names).not.toContain('read_file');
+    expect(names).not.toContain('create_file');
+    expect(names).not.toContain('edit_file');
   });
 
   it('does not register bash_tool + read_file when agent does not request execute_code', async () => {
@@ -1470,6 +1481,8 @@ describe('initializeAgent — execute_code capability expansion', () => {
     const names = (result.toolDefinitions ?? []).map((d) => d.name);
     expect(names).not.toContain('bash_tool');
     expect(names).not.toContain('read_file');
+    expect(names).not.toContain('create_file');
+    expect(names).not.toContain('edit_file');
   });
 
   it('narrows codeEnvAvailable on InitializedAgent to the per-agent effective value', async () => {

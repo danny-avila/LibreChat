@@ -1,9 +1,26 @@
 import {
+  CODE_EXECUTION_TOOLS,
   BashExecutionToolDefinition,
   ReadFileToolDefinition,
   buildBashExecutionToolDescription,
 } from '@librechat/agents';
 import type { LCTool, LCToolRegistry } from '@librechat/agents';
+
+export const CREATE_FILE_TOOL_NAME = 'create_file';
+export const EDIT_FILE_TOOL_NAME = 'edit_file';
+
+/**
+ * `@librechat/agents` v3.2.x only treats the built-in code tools, `skill`,
+ * and `read_file` as code-session-aware event tools. LibreChat owns these
+ * host-side file-authoring definitions, so widen the shared runtime set here
+ * until the agents package exports first-class definitions/constants for
+ * `create_file`.
+ */
+const mutableCodeExecutionTools = CODE_EXECUTION_TOOLS as unknown as
+  | { add?: (name: string) => unknown }
+  | undefined;
+mutableCodeExecutionTools?.add?.(CREATE_FILE_TOOL_NAME);
+mutableCodeExecutionTools?.add?.(EDIT_FILE_TOOL_NAME);
 
 interface ToolDefLike {
   name: string;
@@ -86,6 +103,19 @@ export interface RegisterCodeExecutionToolsResult {
   registered: string[];
 }
 
+export type RegisterFileAuthoringToolsResult = RegisterCodeExecutionToolsResult;
+
+export interface RegisterFileAuthoringToolsParams {
+  toolRegistry: LCToolRegistry | undefined;
+  toolDefinitions: LCTool[] | undefined;
+  /**
+   * When true, descriptions point the model at the skill file namespace
+   * (`skills/{skillName}/...`) in addition to sandbox paths. When false,
+   * descriptions stay focused on code-execution sandbox files.
+   */
+  includeSkillFileInstructions?: boolean;
+}
+
 /**
  * Hoisted module-level definition for skill-aware `read_file` so
  * `registerCodeExecutionTools` doesn't re-allocate on every call. The
@@ -123,14 +153,141 @@ const CODE_READ_FILE_DEF: LCTool = Object.freeze({
   responseFormat: ReadFileToolDefinition.responseFormat,
 }) as LCTool;
 
+const CREATE_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
+  type: 'object',
+  properties: {
+    file_path: {
+      type: 'string',
+      description:
+        'Path to write. Use "skills/{skillName}/..." for skill files when available, or a code-execution sandbox path such as "/mnt/data/result.txt" when code execution is enabled.',
+    },
+    content: {
+      type: 'string',
+      description: 'Complete file contents.',
+    },
+    overwrite: {
+      type: 'boolean',
+      description: 'Must be true to replace an existing file. Refuses otherwise.',
+      default: false,
+    },
+  },
+  required: ['file_path', 'content'],
+}) as LCTool['parameters'];
+
+const EDIT_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
+  type: 'object',
+  properties: {
+    file_path: {
+      type: 'string',
+      description:
+        'Path to edit. Use "skills/{skillName}/..." for skill files when available, or a code-execution sandbox path such as "/mnt/data/result.txt" when code execution is enabled.',
+    },
+    old_text: {
+      type: 'string',
+      description: 'Exact text to find. Must match exactly one location in the file.',
+    },
+    new_text: {
+      type: 'string',
+      description: 'Replacement text.',
+    },
+    edits: {
+      type: 'array',
+      description: 'Optional batch of replacements. Each old_text must match exactly once.',
+      items: {
+        type: 'object',
+        properties: {
+          old_text: { type: 'string' },
+          new_text: { type: 'string' },
+        },
+        required: ['old_text', 'new_text'],
+      },
+    },
+  },
+  required: ['file_path'],
+}) as LCTool['parameters'];
+
+const SKILL_CREATE_FILE_DESCRIPTION = `Create a new file, or overwrite an existing file with explicit intent.
+
+Use for new files and full rewrites where the change is larger than half the file. Requires overwrite: true to replace existing files. Refuses otherwise.
+
+Paths starting with "skills/" target the skill file system:
+- skills/{skillName}/SKILL.md - the skill's main instruction file
+- skills/{skillName}/references/{file} - supporting reference files
+- skills/{skillName}/scripts/{file} - helper scripts
+- skills/{skillName}/templates/{file} - output templates
+
+When code execution is enabled, non-skills paths target the code-execution sandbox. Prefer /mnt/data/{file} for files that should remain available to later sandbox calls.`;
+
+const CODE_CREATE_FILE_DESCRIPTION = `Create a new file, or overwrite an existing file with explicit intent.
+
+Use for new files and full rewrites where the change is larger than half the file. Requires overwrite: true to replace existing files. Refuses otherwise.
+
+Targets code-execution sandbox paths. Prefer /mnt/data/{file} for files that should remain available to later sandbox calls.`;
+
+const SKILL_EDIT_FILE_DESCRIPTION = `Apply targeted text replacements to an existing file.
+
+Use for small, precise changes. Each old_text must match exactly one location. Tries exact match first; falls back to whitespace-tolerant matching if needed. Reports which matching strategy was used. Returns a unified diff.
+
+Paths starting with "skills/" target the skill file system. When code execution is enabled, non-skills paths target the code-execution sandbox.`;
+
+const CODE_EDIT_FILE_DESCRIPTION = `Apply targeted text replacements to an existing file.
+
+Use for small, precise changes. Each old_text must match exactly one location. Tries exact match first; falls back to whitespace-tolerant matching if needed. Reports which matching strategy was used. Returns a unified diff.
+
+Targets code-execution sandbox paths, such as /mnt/data/result.txt.`;
+
+const SKILL_CREATE_FILE_DEF: LCTool = Object.freeze({
+  name: CREATE_FILE_TOOL_NAME,
+  description: SKILL_CREATE_FILE_DESCRIPTION,
+  parameters: CREATE_FILE_PARAMETERS,
+  responseFormat: 'content_and_artifact' as LCTool['responseFormat'],
+}) as LCTool;
+
+const CODE_CREATE_FILE_DEF: LCTool = Object.freeze({
+  name: CREATE_FILE_TOOL_NAME,
+  description: CODE_CREATE_FILE_DESCRIPTION,
+  parameters: CREATE_FILE_PARAMETERS,
+  responseFormat: 'content_and_artifact' as LCTool['responseFormat'],
+}) as LCTool;
+
+const SKILL_EDIT_FILE_DEF: LCTool = Object.freeze({
+  name: EDIT_FILE_TOOL_NAME,
+  description: SKILL_EDIT_FILE_DESCRIPTION,
+  parameters: EDIT_FILE_PARAMETERS,
+  responseFormat: 'content_and_artifact' as LCTool['responseFormat'],
+}) as LCTool;
+
+const CODE_EDIT_FILE_DEF: LCTool = Object.freeze({
+  name: EDIT_FILE_TOOL_NAME,
+  description: CODE_EDIT_FILE_DESCRIPTION,
+  parameters: EDIT_FILE_PARAMETERS,
+  responseFormat: 'content_and_artifact' as LCTool['responseFormat'],
+}) as LCTool;
+
 function buildReadFileDef(includeSkillFileInstructions: boolean): LCTool {
   return includeSkillFileInstructions ? READ_FILE_DEF : CODE_READ_FILE_DEF;
+}
+
+function buildFileAuthoringDefs(includeSkillFileInstructions: boolean): LCTool[] {
+  return includeSkillFileInstructions
+    ? [SKILL_CREATE_FILE_DEF, SKILL_EDIT_FILE_DEF]
+    : [CODE_CREATE_FILE_DEF, CODE_EDIT_FILE_DEF];
 }
 
 function isCodeOnlyReadFileDef(def: LCTool | undefined): boolean {
   return (
     def?.name === ReadFileToolDefinition.name && def?.description === CODE_READ_FILE_DESCRIPTION
   );
+}
+
+function isCodeOnlyFileAuthoringDef(def: LCTool | undefined): boolean {
+  if (def?.name === CREATE_FILE_TOOL_NAME) {
+    return def.description === CODE_CREATE_FILE_DESCRIPTION;
+  }
+  if (def?.name === EDIT_FILE_TOOL_NAME) {
+    return def.description === CODE_EDIT_FILE_DESCRIPTION;
+  }
+  return false;
 }
 
 /**
@@ -231,6 +388,57 @@ export function registerCodeExecutionTools(
    * newly registered. Returns the input array by reference unless an existing
    * code-only `read_file` definition was upgraded above.
    */
+  if (newDefs.length === 0) {
+    return { toolDefinitions: workingDefinitions, registered };
+  }
+  return {
+    toolDefinitions: [...workingDefinitions, ...newDefs],
+    registered,
+  };
+}
+
+export function registerFileAuthoringTools(
+  params: RegisterFileAuthoringToolsParams,
+): RegisterFileAuthoringToolsResult {
+  const { toolRegistry, toolDefinitions, includeSkillFileInstructions = true } = params;
+
+  const candidates = buildFileAuthoringDefs(includeSkillFileInstructions);
+  const inputDefinitions = toolDefinitions ?? [];
+  let workingDefinitions = inputDefinitions;
+
+  const registered: string[] = [];
+  const newDefs: LCTool[] = [];
+  for (const def of candidates) {
+    const existingIndex = workingDefinitions.findIndex((d) => d.name === def.name);
+    const existingDef = existingIndex >= 0 ? workingDefinitions[existingIndex] : undefined;
+    const registryDef = toolRegistry?.get(def.name);
+
+    if (
+      includeSkillFileInstructions &&
+      (isCodeOnlyFileAuthoringDef(existingDef) || isCodeOnlyFileAuthoringDef(registryDef))
+    ) {
+      if (isCodeOnlyFileAuthoringDef(existingDef)) {
+        workingDefinitions =
+          workingDefinitions === inputDefinitions ? [...inputDefinitions] : workingDefinitions;
+        workingDefinitions[existingIndex] = def;
+      }
+      if (isCodeOnlyFileAuthoringDef(registryDef)) {
+        toolRegistry?.set(def.name, def);
+      }
+      continue;
+    }
+
+    const inRegistry = toolRegistry?.has(def.name) === true;
+    const inDefs = existingIndex >= 0;
+    if (inRegistry || inDefs) {
+      continue;
+    }
+
+    toolRegistry?.set(def.name, def);
+    newDefs.push(def);
+    registered.push(def.name);
+  }
+
   if (newDefs.length === 0) {
     return { toolDefinitions: workingDefinitions, registered };
   }

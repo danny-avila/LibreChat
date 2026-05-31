@@ -40,7 +40,7 @@ import {
   unionPrimeAllowedTools,
   MAX_PRIMED_SKILLS_PER_TURN,
 } from './skills';
-import { registerCodeExecutionTools } from './tools';
+import { registerCodeExecutionTools, registerFileAuthoringTools } from './tools';
 import { primeResources } from './resources';
 import type { ResolvedManualSkill, ResolvedAlwaysApplySkill } from './skills';
 import type { TFilterFilesByAgentAccess } from './resources';
@@ -906,6 +906,15 @@ export async function initializeAgent(
     logger.debug(
       `[initializeAgent] Agent "${agent.id}" requests execute_code but codeEnvAvailable=${String(params.codeEnvAvailable)}; skipping bash_tool + read_file registration.`,
     );
+  }
+
+  if (effectiveCodeEnvAvailable || hasSkillAccess) {
+    const fileAuthoringResult = registerFileAuthoringTools({
+      toolRegistry,
+      toolDefinitions,
+      includeSkillFileInstructions: hasSkillAccess,
+    });
+    toolDefinitions = fileAuthoringResult.toolDefinitions;
   }
 
   /** Check for tool presence from either full instances or definitions (event-driven mode) */
