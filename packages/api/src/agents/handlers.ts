@@ -807,7 +807,8 @@ function applyTextEdits(
         `old_text matched ${match.count} locations with ${match.strategy}; make it unique before retrying.`,
       );
     }
-    working = working.slice(0, match.index) + edit.new_text + working.slice(match.index + match.length);
+    working =
+      working.slice(0, match.index) + edit.new_text + working.slice(match.index + match.length);
     strategies.push(match.strategy);
   }
 
