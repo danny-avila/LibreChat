@@ -1072,6 +1072,7 @@ describe('createToolExecuteHandler', () => {
         {
           getSkillByName,
           createSkill: createSkill as unknown as ToolExecuteOptions['createSkill'],
+          getSkillFileByPath: jest.fn(async () => null),
           saveSkillFileContent,
         },
         {
