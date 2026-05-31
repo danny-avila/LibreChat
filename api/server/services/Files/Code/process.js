@@ -1081,7 +1081,7 @@ async function writeSandboxFile({ file_path, content, session_id, files, req }) 
     '    os.makedirs(parent, exist_ok=True)',
     "with open(path, 'wb') as f:",
     '    f.write(content)',
-    "print(f\"WROTE {len(content)} bytes to {path}\")",
+    'print(f"WROTE {len(content)} bytes to {path}")',
     'PY',
   ].join('\n');
 
