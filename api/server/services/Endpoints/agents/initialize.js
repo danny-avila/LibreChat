@@ -93,6 +93,30 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false) {
   };
 }
 
+function isAgentSkillsEnabledForRun({ agent, skillsCapabilityEnabled, ephemeralSkillsToggle }) {
+  if (!skillsCapabilityEnabled) {
+    return false;
+  }
+  if (isEphemeralAgentId(agent.id)) {
+    return ephemeralSkillsToggle === true;
+  }
+  return agent.skills_enabled === true;
+}
+
+function canAuthorSkillFiles({
+  agent,
+  scopedSkillIds,
+  skillCreateAllowed,
+  skillsCapabilityEnabled,
+  ephemeralSkillsToggle,
+}) {
+  return (
+    scopedSkillIds.length > 0 ||
+    (skillCreateAllowed === true &&
+      isAgentSkillsEnabledForRun({ agent, skillsCapabilityEnabled, ephemeralSkillsToggle }))
+  );
+}
+
 /**
  * Initializes the AgentClient for a given request/response cycle.
  * @param {Object} params
@@ -149,6 +173,9 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         requiredPermissions: PermissionBits.VIEW,
       })
     : [];
+  const skillCreateAllowed = skillsCapabilityEnabled
+    ? await getSkillToolDeps().canCreateSkill({ req })
+    : false;
 
   const { skillStates, defaultActiveOnShare } = await loadSkillStates({
     userId: req.user.id,
@@ -285,6 +312,13 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     skillsCapabilityEnabled,
     ephemeralSkillsToggle,
   });
+  const primarySkillAuthoringAvailable = canAuthorSkillFiles({
+    agent: primaryAgent,
+    scopedSkillIds: primaryScopedSkillIds,
+    skillCreateAllowed,
+    skillsCapabilityEnabled,
+    ephemeralSkillsToggle,
+  });
 
   const primaryConfig = await initializeAgent(
     {
@@ -299,6 +333,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       allowedProviders,
       isInitialAgent: true,
       accessibleSkillIds: primaryScopedSkillIds,
+      skillAuthoringAvailable: primarySkillAuthoringAvailable,
       codeEnvAvailable,
       skillStates,
       defaultActiveOnShare,
@@ -330,10 +365,11 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
    *  same-name collision lookups to the resolver's chosen doc AND relax
    *  the disable-model-invocation gate for skills whose body is already
    *  in this turn's context. */
-  const skillPrimedIdsByName = buildSkillPrimedIdsByName(
-    primaryConfig.manualSkillPrimes,
-    primaryConfig.alwaysApplySkillPrimes,
-  );
+  const skillPrimedIdsByName =
+    buildSkillPrimedIdsByName(
+      primaryConfig.manualSkillPrimes,
+      primaryConfig.alwaysApplySkillPrimes,
+    ) ?? {};
   agentToolContexts.set(primaryConfig.id, {
     agent: primaryAgent,
     toolRegistry: primaryConfig.toolRegistry,
@@ -368,6 +404,14 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         resolveAgentScopedSkillIds({
           agent,
           accessibleSkillIds,
+          skillsCapabilityEnabled,
+          ephemeralSkillsToggle,
+        }),
+      computeSkillAuthoringAvailable: (agent, scopedSkillIds = []) =>
+        canAuthorSkillFiles({
+          agent,
+          scopedSkillIds,
+          skillCreateAllowed,
           skillsCapabilityEnabled,
           ephemeralSkillsToggle,
         }),
@@ -417,10 +461,9 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
           accessibleSkillIds: config.accessibleSkillIds,
           activeSkillNames: config.activeSkillNames,
           codeEnvAvailable: config.codeEnvAvailable,
-          skillPrimedIdsByName: buildSkillPrimedIdsByName(
-            config.manualSkillPrimes,
-            config.alwaysApplySkillPrimes,
-          ),
+          skillPrimedIdsByName:
+            buildSkillPrimedIdsByName(config.manualSkillPrimes, config.alwaysApplySkillPrimes) ??
+            {},
         });
       },
       // Pass through the `@librechat/api` exports so that tests which
@@ -565,6 +608,12 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         skippedAgentIds.add(agentId);
         return null;
       }
+      const scopedSkillIds = resolveAgentScopedSkillIds({
+        agent,
+        accessibleSkillIds,
+        skillsCapabilityEnabled,
+        ephemeralSkillsToggle,
+      });
       const config = await initializeAgent(
         {
           req,
@@ -576,9 +625,11 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
           parentMessageId,
           endpointOption: { ...endpointOption, endpoint: EModelEndpoint.agents },
           allowedProviders,
-          accessibleSkillIds: resolveAgentScopedSkillIds({
+          accessibleSkillIds: scopedSkillIds,
+          skillAuthoringAvailable: canAuthorSkillFiles({
             agent,
-            accessibleSkillIds,
+            scopedSkillIds,
+            skillCreateAllowed,
             skillsCapabilityEnabled,
             ephemeralSkillsToggle,
           }),
@@ -620,10 +671,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         accessibleSkillIds: config.accessibleSkillIds,
         activeSkillNames: config.activeSkillNames,
         codeEnvAvailable: config.codeEnvAvailable,
-        skillPrimedIdsByName: buildSkillPrimedIdsByName(
-          config.manualSkillPrimes,
-          config.alwaysApplySkillPrimes,
-        ),
+        skillPrimedIdsByName:
+          buildSkillPrimedIdsByName(config.manualSkillPrimes, config.alwaysApplySkillPrimes) ?? {},
       });
       return config;
     } catch (err) {

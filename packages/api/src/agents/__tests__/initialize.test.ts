@@ -1434,6 +1434,35 @@ describe('initializeAgent — execute_code capability expansion', () => {
     expect(names).toContain('edit_file');
   });
 
+  it('registers skill authoring tools for first-time skill creators', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = [];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [],
+        skillAuthoringAvailable: true,
+        codeEnvAvailable: false,
+      },
+      db,
+    );
+
+    const names = (result.toolDefinitions ?? []).map((d) => d.name);
+    expect(names).toContain('create_file');
+    expect(names).toContain('edit_file');
+    expect(names).not.toContain('bash_tool');
+    expect(names).not.toContain('read_file');
+    const createFile = result.toolDefinitions?.find((d) => d.name === 'create_file');
+    expect(createFile?.description).toContain('skills/');
+  });
+
   it('does not register bash_tool + read_file when codeEnvAvailable=false', async () => {
     const { agent, req, res, loadTools, db } = createMocks();
     agent.tools = ['execute_code'];

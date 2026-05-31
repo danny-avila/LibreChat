@@ -8,6 +8,7 @@ const {
   PermissionBits,
   hasPermissions,
   AgentCapabilities,
+  isEphemeralAgentId,
 } = require('librechat-data-provider');
 const {
   createRun,
@@ -95,6 +96,30 @@ function createToolLoader(signal, definitionsOnly = true) {
       logger.error('Error loading tools for agent ' + agentId, error);
     }
   };
+}
+
+function isAgentSkillsEnabledForRun({ agent, skillsCapabilityEnabled, ephemeralSkillsToggle }) {
+  if (!skillsCapabilityEnabled) {
+    return false;
+  }
+  if (isEphemeralAgentId(agent.id)) {
+    return ephemeralSkillsToggle === true;
+  }
+  return agent.skills_enabled === true;
+}
+
+function canAuthorSkillFiles({
+  agent,
+  scopedSkillIds,
+  skillCreateAllowed,
+  skillsCapabilityEnabled,
+  ephemeralSkillsToggle,
+}) {
+  return (
+    scopedSkillIds.length > 0 ||
+    (skillCreateAllowed === true &&
+      isAgentSkillsEnabledForRun({ agent, skillsCapabilityEnabled, ephemeralSkillsToggle }))
+  );
 }
 
 /**
@@ -391,6 +416,9 @@ const createResponse = async (req, res) => {
           requiredPermissions: PermissionBits.VIEW,
         })
       : [];
+    const skillCreateAllowed = skillsCapabilityEnabled
+      ? await getSkillToolDeps().canCreateSkill({ req })
+      : false;
 
     const { skillStates, defaultActiveOnShare } = await loadSkillStates({
       userId: req.user.id,
@@ -400,6 +428,13 @@ const createResponse = async (req, res) => {
     });
 
     const manualSkills = extractManualSkills(req.body);
+
+    const primaryScopedSkillIds = resolveAgentScopedSkillIds({
+      agent,
+      accessibleSkillIds,
+      skillsCapabilityEnabled,
+      ephemeralSkillsToggle,
+    });
 
     const primaryConfig = await initializeAgent(
       {
@@ -413,9 +448,11 @@ const createResponse = async (req, res) => {
         endpointOption,
         allowedProviders,
         isInitialAgent: true,
-        accessibleSkillIds: resolveAgentScopedSkillIds({
+        accessibleSkillIds: primaryScopedSkillIds,
+        skillAuthoringAvailable: canAuthorSkillFiles({
           agent,
-          accessibleSkillIds,
+          scopedSkillIds: primaryScopedSkillIds,
+          skillCreateAllowed,
           skillsCapabilityEnabled,
           ephemeralSkillsToggle,
         }),
@@ -476,6 +513,23 @@ const createResponse = async (req, res) => {
           // sub-agent must clear the same sharing boundary, not the looser
           // in-app AGENT one.
           resourceType: ResourceType.REMOTE_AGENT,
+          computeAccessibleSkillIds: (handoffAgent) =>
+            resolveAgentScopedSkillIds({
+              agent: handoffAgent,
+              accessibleSkillIds,
+              skillsCapabilityEnabled,
+              ephemeralSkillsToggle,
+            }),
+          computeSkillAuthoringAvailable: (handoffAgent, scopedSkillIds = []) =>
+            canAuthorSkillFiles({
+              agent: handoffAgent,
+              scopedSkillIds,
+              skillCreateAllowed,
+              skillsCapabilityEnabled,
+              ephemeralSkillsToggle,
+            }),
+          skillStates,
+          defaultActiveOnShare,
           /** @see DiscoverConnectedAgentsParams.codeEnvAvailable */
           codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
         },
@@ -581,10 +635,8 @@ const createResponse = async (req, res) => {
        agent's `tools` list includes `execute_code`) — a skills-only
        agent never gains sandbox access even if the admin enabled the
        capability globally. */
-    const skillPrimedIdsByName = buildSkillPrimedIdsByName(
-      manualSkillPrimes,
-      alwaysApplySkillPrimes,
-    );
+    const skillPrimedIdsByName =
+      buildSkillPrimedIdsByName(manualSkillPrimes, alwaysApplySkillPrimes) ?? {};
 
     // Create tracker for streaming or aggregator for non-streaming
     const tracker = actuallyStreaming ? createResponseTracker() : null;

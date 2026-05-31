@@ -460,6 +460,11 @@ type LoadedSkillText =
   | { status: 'missing' }
   | { status: 'error'; message: string };
 
+type ExistingSkillFile =
+  | { status: 'present'; oldContent?: string }
+  | { status: 'missing' }
+  | { status: 'error'; message: string };
+
 type LoadedSandboxText = LoadedSkillText;
 
 type SandboxSessionContext = {
@@ -1289,11 +1294,6 @@ async function resolveSkillForAuthoring(
     return null;
   }
 
-  const accessibleIds = (mergedConfigurable?.accessibleSkillIds as Types.ObjectId[]) ?? [];
-  if (accessibleIds.length === 0) {
-    return null;
-  }
-
   const skillPrimedIdsByName =
     (mergedConfigurable?.skillPrimedIdsByName as Record<string, string> | undefined) ?? {};
   const primedIdString = skillPrimedIdsByName[skillName];
@@ -1301,7 +1301,46 @@ async function resolveSkillForAuthoring(
     return await getSkillByName(skillName, [new Types.ObjectId(primedIdString)], {});
   }
 
+  const accessibleIds = (mergedConfigurable?.accessibleSkillIds as Types.ObjectId[]) ?? [];
+  if (accessibleIds.length === 0) {
+    return null;
+  }
+
   return await getSkillByName(skillName, accessibleIds, { preferModelInvocable: true });
+}
+
+function rememberAuthoredSkill(
+  configurables: Array<Record<string, unknown> | undefined>,
+  skill: { _id: Types.ObjectId; name: string },
+): void {
+  const idString = skill._id.toString();
+  for (const configurable of configurables) {
+    if (!configurable) {
+      continue;
+    }
+
+    const accessibleIds = Array.isArray(configurable.accessibleSkillIds)
+      ? (configurable.accessibleSkillIds as Types.ObjectId[])
+      : [];
+    if (!Array.isArray(configurable.accessibleSkillIds)) {
+      configurable.accessibleSkillIds = accessibleIds;
+    }
+    if (!accessibleIds.some((id) => id.toString() === idString)) {
+      accessibleIds.push(skill._id);
+    }
+
+    const primedIds =
+      (configurable.skillPrimedIdsByName as Record<string, string> | undefined) ?? {};
+    primedIds[skill.name] = idString;
+    configurable.skillPrimedIdsByName = primedIds;
+
+    const activeSkillNames = configurable.activeSkillNames as Set<string> | undefined;
+    if (activeSkillNames) {
+      activeSkillNames.add(skill.name);
+    } else {
+      configurable.activeSkillNames = new Set([skill.name]);
+    }
+  }
 }
 
 async function ensureCanEditSkill(
@@ -1440,10 +1479,57 @@ async function loadSkillFileTextForAuthoring({
   return { status: 'loaded', content: text, bytes: buffer.length };
 }
 
+async function inspectBundledSkillFileForCreate({
+  skill,
+  relativePath,
+  options,
+  req,
+}: {
+  skill: AuthoringSkill;
+  relativePath: string;
+  options: ToolExecuteOptions;
+  req?: ServerRequest;
+}): Promise<ExistingSkillFile> {
+  const { getSkillFileByPath } = options;
+  if (!getSkillFileByPath) {
+    return { status: 'error', message: 'Skill file reading is not configured.' };
+  }
+
+  const file = await getSkillFileByPath(skill._id, relativePath);
+  if (!file) {
+    return { status: 'missing' };
+  }
+  if (file.isBinary === true || file.bytes > MAX_CACHE_BYTES) {
+    return { status: 'present' };
+  }
+  if (file.content != null && file.content !== '') {
+    return { status: 'present', oldContent: file.content };
+  }
+  if (!options.getStrategyFunctions || !req) {
+    return { status: 'present' };
+  }
+
+  const loaded = await loadSkillFileTextForAuthoring({
+    skill,
+    relativePath,
+    options,
+    req,
+  });
+  if (loaded.status === 'missing') {
+    return { status: 'missing' };
+  }
+  if (loaded.status === 'error') {
+    return { status: 'present' };
+  }
+  return { status: 'present', oldContent: loaded.content };
+}
+
 async function writeSkillMd({
   tc,
   options,
   req,
+  mergedConfigurable,
+  sourceConfigurable,
   skill,
   skillName,
   content,
@@ -1451,6 +1537,8 @@ async function writeSkillMd({
   tc: ToolCallRequest;
   options: ToolExecuteOptions;
   req?: ServerRequest;
+  mergedConfigurable: Record<string, unknown>;
+  sourceConfigurable?: Record<string, unknown>;
   skill: AuthoringSkill | null;
   skillName: string;
   content: string;
@@ -1494,6 +1582,7 @@ async function writeSkillMd({
       }
       throw error;
     }
+    rememberAuthoredSkill([mergedConfigurable, sourceConfigurable], result.skill);
     return successResult(
       tc,
       `Created ${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD} (${content.length} chars).`,
@@ -1694,6 +1783,7 @@ async function handleCreateFileCall(
   mergedConfigurable: Record<string, unknown>,
   options: ToolExecuteOptions,
   req?: ServerRequest,
+  sourceConfigurable?: Record<string, unknown>,
 ): AuthoringResult {
   const args = tc.args as { file_path?: unknown; content?: unknown; overwrite?: unknown };
   if (typeof args.file_path !== 'string' || args.file_path.length === 0) {
@@ -1738,6 +1828,8 @@ async function handleCreateFileCall(
       tc,
       options,
       req,
+      mergedConfigurable,
+      sourceConfigurable,
       skill,
       skillName: parsed.skillName,
       content: args.content,
@@ -1748,7 +1840,7 @@ async function handleCreateFileCall(
     return errorResult(tc, `Skill "${parsed.skillName}" not found or not accessible.`);
   }
 
-  const current = await loadSkillFileTextForAuthoring({
+  const current = await inspectBundledSkillFileForCreate({
     skill,
     relativePath: parsed.relativePath,
     options,
@@ -1757,7 +1849,7 @@ async function handleCreateFileCall(
   if (current.status === 'error') {
     return errorResult(tc, current.message);
   }
-  if (current.status === 'loaded' && !overwrite) {
+  if (current.status === 'present' && !overwrite) {
     return errorResult(tc, 'File already exists. Pass overwrite: true to replace.');
   }
   return await writeBundledSkillFile({
@@ -1768,7 +1860,7 @@ async function handleCreateFileCall(
     relativePath: parsed.relativePath,
     displayPath: parsed.displayPath,
     content: args.content,
-    oldContent: current.status === 'loaded' ? current.content : undefined,
+    oldContent: current.status === 'present' ? current.oldContent : undefined,
     created: current.status === 'missing',
   });
 }
@@ -1908,14 +2000,6 @@ async function handleReadFileCall(
 
   const codeEnvAvailable = mergedConfigurable?.codeEnvAvailable === true;
   const accessibleIds = (mergedConfigurable?.accessibleSkillIds as Types.ObjectId[]) ?? [];
-  /**
-   * `accessibleSkillIds` is the resolver's authoritative output (admin
-   * capability AND ACL access AND ephemeral badge / persisted
-   * `skills_enabled`). Empty ⇒ skills are not effectively in scope, so we
-   * skip skill resolution entirely and route to the sandbox fallback when
-   * the agent has code-execution available.
-   */
-  const skillsEffectivelyEnabled = accessibleIds.length > 0;
 
   /**
    * Short-circuit absolute code-env paths: the path can never be a skill
@@ -1967,6 +2051,19 @@ async function handleReadFileCall(
     };
   }
 
+  const skillPrimedIdsByName =
+    (mergedConfigurable?.skillPrimedIdsByName as Record<string, string> | undefined) ?? {};
+  const primedIdString = skillPrimedIdsByName[skillName];
+  const isPrimedThisTurn = primedIdString != null;
+  /**
+   * `accessibleSkillIds` is the resolver's normal output (admin
+   * capability AND ACL access AND ephemeral badge / persisted
+   * `skills_enabled`). A skill authored earlier in this run is also
+   * resolvable through `skillPrimedIdsByName`, even when the run started
+   * with an empty accessible set for a first-time creator.
+   */
+  const skillsEffectivelyEnabled = accessibleIds.length > 0 || isPrimedThisTurn;
+
   /**
    * Skills not in scope (admin capability off, ephemeral badge off, or
    * persisted `skills_enabled !== true` — all already collapsed into
@@ -2002,11 +2099,6 @@ async function handleReadFileCall(
    * shortcut would misroute `read_file("primed-skill/references/foo.md")`
    * to the sandbox even though the primed skill is in scope.
    */
-  const skillPrimedIdsByName =
-    (mergedConfigurable?.skillPrimedIdsByName as Record<string, string> | undefined) ?? {};
-  const primedIdString = skillPrimedIdsByName[skillName];
-  const isPrimedThisTurn = primedIdString != null;
-
   /**
    * Skills are in scope, but the first segment isn't a name we know.
    * Use the catalog-derived `activeSkillNames` Set (no DB read) to detect
@@ -2454,6 +2546,24 @@ async function handleSkillToolCall(
   };
 }
 
+function getFileAuthoringQueueKey(tc: ToolCallRequest): string | undefined {
+  if (tc.name !== CREATE_FILE_TOOL_NAME && tc.name !== EDIT_FILE_TOOL_NAME) {
+    return undefined;
+  }
+  const args = tc.args as { file_path?: unknown };
+  if (typeof args.file_path !== 'string' || args.file_path.length === 0) {
+    return undefined;
+  }
+  if (!args.file_path.startsWith(SKILL_FILE_PREFIX)) {
+    return `sandbox:${args.file_path}`;
+  }
+  const parsed = parseSkillAuthoringPath(args.file_path);
+  if (typeof parsed === 'string') {
+    return `skill:${args.file_path}`;
+  }
+  return `skill:${parsed.skillName}`;
+}
+
 /**
  * Creates the ON_TOOL_EXECUTE handler for event-driven tool execution.
  * This handler receives batched tool calls, loads the required tools,
@@ -2476,52 +2586,254 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
             );
             const toolMap = new Map(loadedTools.map((t) => [t.name, t]));
             const mergedConfigurable = { ...configurable, ...toolConfigurable };
+            const sourceConfigurable = configurable as Record<string, unknown> | undefined;
+            const authoringQueues = new Map<string, Promise<void>>();
 
             const results: ToolExecuteResult[] = await Promise.all(
               toolCalls.map(async (tc: ToolCallRequest) => {
-                if (
-                  tc.name === Constants.SKILL_TOOL ||
-                  tc.name === Constants.READ_FILE ||
-                  tc.name === CREATE_FILE_TOOL_NAME ||
-                  tc.name === EDIT_FILE_TOOL_NAME
-                ) {
-                  const req = mergedConfigurable?.req as ServerRequest | undefined;
-                  let handlerResult: ToolExecuteResult;
-                  try {
-                    if (tc.name === Constants.SKILL_TOOL) {
-                      handlerResult = await handleSkillToolCall(
-                        tc,
-                        mergedConfigurable,
-                        options,
-                        req,
-                      );
-                    } else if (tc.name === Constants.READ_FILE) {
-                      handlerResult = await handleReadFileCall(
-                        tc,
-                        mergedConfigurable,
-                        options,
-                        req,
-                      );
-                    } else if (tc.name === CREATE_FILE_TOOL_NAME) {
-                      handlerResult = await handleCreateFileCall(
-                        tc,
-                        mergedConfigurable,
-                        options,
-                        req,
-                      );
-                    } else {
-                      handlerResult = await handleEditFileCall(
-                        tc,
-                        mergedConfigurable,
-                        options,
-                        req,
+                const execute = async (): Promise<ToolExecuteResult> => {
+                  if (
+                    tc.name === Constants.SKILL_TOOL ||
+                    tc.name === Constants.READ_FILE ||
+                    tc.name === CREATE_FILE_TOOL_NAME ||
+                    tc.name === EDIT_FILE_TOOL_NAME
+                  ) {
+                    const req = mergedConfigurable?.req as ServerRequest | undefined;
+                    let handlerResult: ToolExecuteResult;
+                    try {
+                      if (tc.name === Constants.SKILL_TOOL) {
+                        handlerResult = await handleSkillToolCall(
+                          tc,
+                          mergedConfigurable,
+                          options,
+                          req,
+                        );
+                      } else if (tc.name === Constants.READ_FILE) {
+                        handlerResult = await handleReadFileCall(
+                          tc,
+                          mergedConfigurable,
+                          options,
+                          req,
+                        );
+                      } else if (tc.name === CREATE_FILE_TOOL_NAME) {
+                        handlerResult = await handleCreateFileCall(
+                          tc,
+                          mergedConfigurable,
+                          options,
+                          req,
+                          sourceConfigurable,
+                        );
+                      } else {
+                        handlerResult = await handleEditFileCall(
+                          tc,
+                          mergedConfigurable,
+                          options,
+                          req,
+                        );
+                      }
+                    } catch (toolError) {
+                      const { message, logContext } = getSafeToolError(toolError);
+                      logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
+                        ...logContext,
+                        toolCallArgsShape: getValueShape(tc.args),
+                      });
+                      return {
+                        toolCallId: tc.id,
+                        status: 'error' as const,
+                        content: '',
+                        errorMessage: message,
+                      };
+                    }
+
+                    if (toolEndCallback && handlerResult.artifact) {
+                      await toolEndCallback(
+                        {
+                          output: {
+                            name: tc.name,
+                            tool_call_id: tc.id,
+                            content: handlerResult.content,
+                            artifact: handlerResult.artifact,
+                          },
+                        },
+                        {
+                          run_id: (metadata as Record<string, unknown>)?.run_id as
+                            | string
+                            | undefined,
+                          thread_id: (metadata as Record<string, unknown>)?.thread_id as
+                            | string
+                            | undefined,
+                          ...metadata,
+                        },
                       );
                     }
+
+                    return handlerResult;
+                  }
+
+                  const tool = toolMap.get(tc.name);
+
+                  if (!tool) {
+                    logger.warn(
+                      `[ON_TOOL_EXECUTE] Tool "${tc.name}" not found. Available: ${[...toolMap.keys()].map((k) => `"${k}"`).join(', ')}`,
+                    );
+                    return {
+                      toolCallId: tc.id,
+                      status: 'error' as const,
+                      content: '',
+                      errorMessage: `Tool ${tc.name} not found`,
+                    };
+                  }
+
+                  try {
+                    const toolCallConfig: Record<string, unknown> = {
+                      id: tc.id,
+                      stepId: tc.stepId,
+                      turn: tc.turn,
+                    };
+
+                    if (tc.codeSessionContext && CODE_EXECUTION_TOOLS.has(tc.name)) {
+                      toolCallConfig.session_id = tc.codeSessionContext.session_id;
+                      if (tc.codeSessionContext.files && tc.codeSessionContext.files.length > 0) {
+                        toolCallConfig._injected_files = tc.codeSessionContext.files;
+                        /* Last LC-controlled point before the wire. Mirrors
+                         * codeapi's validator context so the two log sides
+                         * correlate on a single grep. */
+                        const refs = tc.codeSessionContext.files as Array<{
+                          id?: unknown;
+                          resource_id?: unknown;
+                          storage_session_id?: unknown;
+                          kind?: unknown;
+                          version?: unknown;
+                          name?: unknown;
+                        }>;
+                        const summary = refs.map((f) => ({
+                          kind: f.kind,
+                          hasResourceId: typeof f.resource_id === 'string' && !!f.resource_id,
+                          hasStorageSessionId:
+                            typeof f.storage_session_id === 'string' && !!f.storage_session_id,
+                          hasVersion: typeof f.version === 'number',
+                        }));
+                        let missingResourceId = 0;
+                        let missingStorageSessionId = 0;
+                        let missingVersion = 0;
+                        const kindCounts: Record<string, number> = {};
+                        for (const s of summary) {
+                          if (!s.hasResourceId) missingResourceId++;
+                          if (!s.hasStorageSessionId) missingStorageSessionId++;
+                          if (!s.hasVersion) missingVersion++;
+                          const k = typeof s.kind === 'string' ? s.kind : 'unknown';
+                          kindCounts[k] = (kindCounts[k] ?? 0) + 1;
+                        }
+                        logger.debug(
+                          `[code-env:inject] tool=${tc.name} files=${refs.length} ` +
+                            `missingResourceId=${missingResourceId} ` +
+                            `missingStorageSessionId=${missingStorageSessionId} ` +
+                            `missingVersion=${missingVersion} ` +
+                            `kinds=${JSON.stringify(kindCounts)}`,
+                        );
+                        if (missingResourceId > 0) {
+                          logger.warn(
+                            `[code-env:inject] ${missingResourceId}/${refs.length} files missing resource_id ` +
+                              `for tool=${tc.name} — codeapi will reject with 400`,
+                            { summary },
+                          );
+                        }
+                      } else {
+                        /* Empty `_injected_files` on a code-execution tool
+                         * call. Almost always means the seeding chain
+                         * (primeCodeFiles → initialSessions →
+                         * CodeSessionContext) dropped the file upstream.
+                         * `session_id` is still emitted for continuity, but
+                         * concrete file refs must arrive through
+                         * `_injected_files`; agents no longer falls back to
+                         * `/files/<sid>`. Pair with `[primeCodeFiles]`
+                         * traces below to locate the layer that lost the ref. */
+                        logger.warn(
+                          `[code-env:inject] tool=${tc.name} _injected_files=0 — sandbox will see no input files`,
+                          {
+                            tool: tc.name,
+                            session_id: tc.codeSessionContext.session_id,
+                            codeSessionContextHasFiles: tc.codeSessionContext.files !== undefined,
+                            codeSessionContextFileCount: tc.codeSessionContext.files?.length ?? 0,
+                          },
+                        );
+                      }
+                    }
+
+                    if (
+                      tc.name === Constants.BASH_PROGRAMMATIC_TOOL_CALLING ||
+                      tc.name === Constants.PROGRAMMATIC_TOOL_CALLING
+                    ) {
+                      const toolRegistry = mergedConfigurable?.toolRegistry as
+                        | LCToolRegistry
+                        | undefined;
+                      const ptcToolMap = mergedConfigurable?.ptcToolMap as
+                        | Map<string, StructuredToolInterface>
+                        | undefined;
+                      if (toolRegistry) {
+                        const toolDefs: LCTool[] = Array.from(toolRegistry.values()).filter(
+                          (t) =>
+                            t.name !== Constants.PROGRAMMATIC_TOOL_CALLING &&
+                            t.name !== Constants.BASH_PROGRAMMATIC_TOOL_CALLING &&
+                            t.name !== Constants.TOOL_SEARCH,
+                        );
+                        toolCallConfig.toolDefs = toolDefs;
+                        toolCallConfig.toolMap = ptcToolMap ?? toolMap;
+                      }
+                    }
+
+                    const result = await tool.invoke(normalizeToolInvokeArgs(tc.args, tool), {
+                      toolCall: toolCallConfig,
+                      configurable: mergedConfigurable,
+                      metadata,
+                    } as Record<string, unknown>);
+
+                    // Code-execution tools emit per-call boilerplate
+                    // ("Note: ..." paragraphs and `| <annotation>` per-file
+                    // suffixes) that wastes tokens when re-injected into
+                    // every subsequent model turn. Strip it here, *after*
+                    // the tool resolved but *before* downstream consumers
+                    // (model context, SSE forwarding, persistence) see it.
+                    // Non-code-execution tools pass through unchanged.
+                    const cleanedContent =
+                      CODE_EXECUTION_TOOLS.has(tc.name) && typeof result.content === 'string'
+                        ? cleanCodeToolOutput(result.content)
+                        : result.content;
+
+                    if (toolEndCallback) {
+                      await toolEndCallback(
+                        {
+                          output: {
+                            name: tc.name,
+                            tool_call_id: tc.id,
+                            content: cleanedContent,
+                            artifact: result.artifact,
+                          },
+                        },
+                        {
+                          run_id: (metadata as Record<string, unknown>)?.run_id as
+                            | string
+                            | undefined,
+                          thread_id: (metadata as Record<string, unknown>)?.thread_id as
+                            | string
+                            | undefined,
+                          ...metadata,
+                        },
+                      );
+                    }
+
+                    return {
+                      toolCallId: tc.id,
+                      content: cleanedContent,
+                      artifact: result.artifact,
+                      status: 'success' as const,
+                    };
                   } catch (toolError) {
                     const { message, logContext } = getSafeToolError(toolError);
                     logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
                       ...logContext,
                       toolCallArgsShape: getValueShape(tc.args),
+                      toolInputSchemaKind: getToolInputSchemaKind(tool),
                     });
                     return {
                       toolCallId: tc.id,
@@ -2530,200 +2842,22 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       errorMessage: message,
                     };
                   }
+                };
 
-                  if (toolEndCallback && handlerResult.artifact) {
-                    await toolEndCallback(
-                      {
-                        output: {
-                          name: tc.name,
-                          tool_call_id: tc.id,
-                          content: handlerResult.content,
-                          artifact: handlerResult.artifact,
-                        },
-                      },
-                      {
-                        run_id: (metadata as Record<string, unknown>)?.run_id as string | undefined,
-                        thread_id: (metadata as Record<string, unknown>)?.thread_id as
-                          | string
-                          | undefined,
-                        ...metadata,
-                      },
-                    );
-                  }
-
-                  return handlerResult;
+                const queueKey = getFileAuthoringQueueKey(tc);
+                if (!queueKey) {
+                  return await execute();
                 }
-
-                const tool = toolMap.get(tc.name);
-
-                if (!tool) {
-                  logger.warn(
-                    `[ON_TOOL_EXECUTE] Tool "${tc.name}" not found. Available: ${[...toolMap.keys()].map((k) => `"${k}"`).join(', ')}`,
-                  );
-                  return {
-                    toolCallId: tc.id,
-                    status: 'error' as const,
-                    content: '',
-                    errorMessage: `Tool ${tc.name} not found`,
-                  };
-                }
-
-                try {
-                  const toolCallConfig: Record<string, unknown> = {
-                    id: tc.id,
-                    stepId: tc.stepId,
-                    turn: tc.turn,
-                  };
-
-                  if (tc.codeSessionContext && CODE_EXECUTION_TOOLS.has(tc.name)) {
-                    toolCallConfig.session_id = tc.codeSessionContext.session_id;
-                    if (tc.codeSessionContext.files && tc.codeSessionContext.files.length > 0) {
-                      toolCallConfig._injected_files = tc.codeSessionContext.files;
-                      /* Last LC-controlled point before the wire. Mirrors
-                       * codeapi's validator context so the two log sides
-                       * correlate on a single grep. */
-                      const refs = tc.codeSessionContext.files as Array<{
-                        id?: unknown;
-                        resource_id?: unknown;
-                        storage_session_id?: unknown;
-                        kind?: unknown;
-                        version?: unknown;
-                        name?: unknown;
-                      }>;
-                      const summary = refs.map((f) => ({
-                        kind: f.kind,
-                        hasResourceId: typeof f.resource_id === 'string' && !!f.resource_id,
-                        hasStorageSessionId:
-                          typeof f.storage_session_id === 'string' && !!f.storage_session_id,
-                        hasVersion: typeof f.version === 'number',
-                      }));
-                      let missingResourceId = 0;
-                      let missingStorageSessionId = 0;
-                      let missingVersion = 0;
-                      const kindCounts: Record<string, number> = {};
-                      for (const s of summary) {
-                        if (!s.hasResourceId) missingResourceId++;
-                        if (!s.hasStorageSessionId) missingStorageSessionId++;
-                        if (!s.hasVersion) missingVersion++;
-                        const k = typeof s.kind === 'string' ? s.kind : 'unknown';
-                        kindCounts[k] = (kindCounts[k] ?? 0) + 1;
-                      }
-                      logger.debug(
-                        `[code-env:inject] tool=${tc.name} files=${refs.length} ` +
-                          `missingResourceId=${missingResourceId} ` +
-                          `missingStorageSessionId=${missingStorageSessionId} ` +
-                          `missingVersion=${missingVersion} ` +
-                          `kinds=${JSON.stringify(kindCounts)}`,
-                      );
-                      if (missingResourceId > 0) {
-                        logger.warn(
-                          `[code-env:inject] ${missingResourceId}/${refs.length} files missing resource_id ` +
-                            `for tool=${tc.name} — codeapi will reject with 400`,
-                          { summary },
-                        );
-                      }
-                    } else {
-                      /* Empty `_injected_files` on a code-execution tool
-                       * call. Almost always means the seeding chain
-                       * (primeCodeFiles → initialSessions →
-                       * CodeSessionContext) dropped the file upstream.
-                       * `session_id` is still emitted for continuity, but
-                       * concrete file refs must arrive through
-                       * `_injected_files`; agents no longer falls back to
-                       * `/files/<sid>`. Pair with `[primeCodeFiles]`
-                       * traces below to locate the layer that lost the ref. */
-                      logger.warn(
-                        `[code-env:inject] tool=${tc.name} _injected_files=0 — sandbox will see no input files`,
-                        {
-                          tool: tc.name,
-                          session_id: tc.codeSessionContext.session_id,
-                          codeSessionContextHasFiles: tc.codeSessionContext.files !== undefined,
-                          codeSessionContextFileCount: tc.codeSessionContext.files?.length ?? 0,
-                        },
-                      );
-                    }
-                  }
-
-                  if (
-                    tc.name === Constants.BASH_PROGRAMMATIC_TOOL_CALLING ||
-                    tc.name === Constants.PROGRAMMATIC_TOOL_CALLING
-                  ) {
-                    const toolRegistry = mergedConfigurable?.toolRegistry as
-                      | LCToolRegistry
-                      | undefined;
-                    const ptcToolMap = mergedConfigurable?.ptcToolMap as
-                      | Map<string, StructuredToolInterface>
-                      | undefined;
-                    if (toolRegistry) {
-                      const toolDefs: LCTool[] = Array.from(toolRegistry.values()).filter(
-                        (t) =>
-                          t.name !== Constants.PROGRAMMATIC_TOOL_CALLING &&
-                          t.name !== Constants.BASH_PROGRAMMATIC_TOOL_CALLING &&
-                          t.name !== Constants.TOOL_SEARCH,
-                      );
-                      toolCallConfig.toolDefs = toolDefs;
-                      toolCallConfig.toolMap = ptcToolMap ?? toolMap;
-                    }
-                  }
-
-                  const result = await tool.invoke(normalizeToolInvokeArgs(tc.args, tool), {
-                    toolCall: toolCallConfig,
-                    configurable: mergedConfigurable,
-                    metadata,
-                  } as Record<string, unknown>);
-
-                  // Code-execution tools emit per-call boilerplate
-                  // ("Note: ..." paragraphs and `| <annotation>` per-file
-                  // suffixes) that wastes tokens when re-injected into
-                  // every subsequent model turn. Strip it here, *after*
-                  // the tool resolved but *before* downstream consumers
-                  // (model context, SSE forwarding, persistence) see it.
-                  // Non-code-execution tools pass through unchanged.
-                  const cleanedContent =
-                    CODE_EXECUTION_TOOLS.has(tc.name) && typeof result.content === 'string'
-                      ? cleanCodeToolOutput(result.content)
-                      : result.content;
-
-                  if (toolEndCallback) {
-                    await toolEndCallback(
-                      {
-                        output: {
-                          name: tc.name,
-                          tool_call_id: tc.id,
-                          content: cleanedContent,
-                          artifact: result.artifact,
-                        },
-                      },
-                      {
-                        run_id: (metadata as Record<string, unknown>)?.run_id as string | undefined,
-                        thread_id: (metadata as Record<string, unknown>)?.thread_id as
-                          | string
-                          | undefined,
-                        ...metadata,
-                      },
-                    );
-                  }
-
-                  return {
-                    toolCallId: tc.id,
-                    content: cleanedContent,
-                    artifact: result.artifact,
-                    status: 'success' as const,
-                  };
-                } catch (toolError) {
-                  const { message, logContext } = getSafeToolError(toolError);
-                  logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
-                    ...logContext,
-                    toolCallArgsShape: getValueShape(tc.args),
-                    toolInputSchemaKind: getToolInputSchemaKind(tool),
-                  });
-                  return {
-                    toolCallId: tc.id,
-                    status: 'error' as const,
-                    content: '',
-                    errorMessage: message,
-                  };
-                }
+                const previous = authoringQueues.get(queueKey) ?? Promise.resolve();
+                const resultPromise = previous.then(execute, execute);
+                authoringQueues.set(
+                  queueKey,
+                  resultPromise.then(
+                    () => undefined,
+                    () => undefined,
+                  ),
+                );
+                return await resultPromise;
               }),
             );
 
