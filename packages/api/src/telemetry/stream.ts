@@ -1,6 +1,6 @@
 import { performance } from 'node:perf_hooks';
 import { context, SpanKind, SpanStatusCode, trace } from '@opentelemetry/api';
-import type { Attributes, Span } from '@opentelemetry/api';
+import type { Attributes, Context, Span } from '@opentelemetry/api';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types';
 
@@ -10,6 +10,7 @@ const STREAM_ROUTE = '/api/agents/chat/stream/:streamId';
 type StreamEndReason = 'done' | 'client_aborted' | 'server_error' | 'subscribe_failed';
 
 export interface SseStreamTelemetry {
+  runWithContext: <T>(fn: () => T) => T;
   recordHeadersFlushed: () => void;
   recordWrite: (payload: string, options?: { final?: boolean }) => void;
   recordFinalEventEmitted: () => void;
@@ -26,6 +27,7 @@ interface SseStreamTelemetryOptions {
 
 class SseStreamSpanTelemetry implements SseStreamTelemetry {
   private readonly span: Span;
+  private readonly streamContext: Context;
   private readonly startTimeMs = performance.now();
   private bytesSent = 0;
   private chunksCount = 0;
@@ -51,6 +53,7 @@ class SseStreamSpanTelemetry implements SseStreamTelemetry {
       },
       context.active(),
     );
+    this.streamContext = trace.setSpan(context.active(), this.span);
 
     res.once('finish', () => {
       this.end(this.plannedEndReason ?? (this.errorEventEmitted ? 'server_error' : 'done'));
@@ -65,6 +68,10 @@ class SseStreamSpanTelemetry implements SseStreamTelemetry {
       this.span.addEvent('client_aborted');
       this.end('client_aborted');
     });
+  }
+
+  runWithContext<T>(fn: () => T): T {
+    return context.with(this.streamContext, fn);
   }
 
   recordHeadersFlushed(): void {

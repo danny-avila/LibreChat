@@ -16,6 +16,7 @@ import {
   recordGenerationStreamSubscription,
   setGenerationJobsInFlight,
 } from '~/app/metrics';
+import { withTelemetrySpan } from '~/telemetry/tracer';
 import type { GenerationJobStore } from '~/app/metrics';
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
@@ -225,98 +226,118 @@ class GenerationJobManagerClass {
   ): Promise<t.GenerationJob> {
     const tenantId = getTenantId();
     const safeTenantId = tenantId && tenantId !== SYSTEM_TENANT_ID ? tenantId : undefined;
-    const jobData = await this.jobStore.createJob(streamId, userId, conversationId, safeTenantId);
+    return await withTelemetrySpan(
+      'librechat.generation.job.create',
+      {
+        attributes: {
+          'librechat.stream.store': this.storeLabel,
+          'librechat.generation.new_conversation': !conversationId || conversationId === 'new',
+          'librechat.tenant.present': safeTenantId != null,
+        },
+      },
+      async () => {
+        const jobData = await this.jobStore.createJob(
+          streamId,
+          userId,
+          conversationId,
+          safeTenantId,
+        );
 
-    /**
-     * Create runtime state with readyPromise.
-     *
-     * With the resumable stream architecture, we no longer need to wait for the
-     * first subscriber before starting generation:
-     * - Redis mode: Events are persisted and can be replayed via sync
-     * - In-memory mode: Content is aggregated and sent via sync on connect
-     *
-     * We resolve readyPromise immediately to eliminate startup latency.
-     * The sync mechanism handles late-connecting clients.
-     */
-    let resolveReady: () => void;
-    const readyPromise = new Promise<void>((resolve) => {
-      resolveReady = resolve;
-    });
-
-    const runtime: RuntimeJobState = {
-      abortController: new AbortController(),
-      readyPromise,
-      resolveReady: resolveReady!,
-      syncSent: false,
-      earlyEventBuffer: [],
-      hasSubscriber: false,
-    };
-    this.runtimeState.set(streamId, runtime);
-    this.runningJobs.add(streamId);
-    this.syncRunningJobMetrics();
-    recordGenerationJob(this.storeLabel, 'created');
-
-    // Resolve immediately - early event buffer handles late subscribers
-    resolveReady!();
-
-    /**
-     * Set up all-subscribers-left callback.
-     * When all SSE clients disconnect, this:
-     * 1. Resets syncSent so reconnecting clients get sync event (persisted to Redis)
-     * 2. Calls any registered allSubscribersLeft handlers (e.g., to save partial responses)
-     */
-    this.eventTransport.onAllSubscribersLeft(streamId, () => {
-      const currentRuntime = this.runtimeState.get(streamId);
-      if (currentRuntime) {
-        currentRuntime.syncSent = false;
-        currentRuntime.hasSubscriber = false;
-        // Persist syncSent=false to Redis for cross-replica consistency
-        this.jobStore.updateJob(streamId, { syncSent: false }).catch((err) => {
-          logger.error(`[GenerationJobManager] Failed to persist syncSent=false:`, err);
+        /**
+         * Create runtime state with readyPromise.
+         *
+         * With the resumable stream architecture, we no longer need to wait for the
+         * first subscriber before starting generation:
+         * - Redis mode: Events are persisted and can be replayed via sync
+         * - In-memory mode: Content is aggregated and sent via sync on connect
+         *
+         * We resolve readyPromise immediately to eliminate startup latency.
+         * The sync mechanism handles late-connecting clients.
+         */
+        let resolveReady: () => void;
+        const readyPromise = new Promise<void>((resolve) => {
+          resolveReady = resolve;
         });
-        // Call registered handlers (from job.emitter.on('allSubscribersLeft', ...))
-        if (currentRuntime.allSubscribersLeftHandlers) {
-          this.jobStore
-            .getContentParts(streamId)
-            .then((result) => {
-              const parts = result?.content ?? [];
-              for (const handler of currentRuntime.allSubscribersLeftHandlers ?? []) {
-                try {
-                  handler(parts);
-                } catch (err) {
-                  logger.error(`[GenerationJobManager] Error in allSubscribersLeft handler:`, err);
-                }
-              }
-            })
-            .catch((err) => {
-              logger.error(
-                `[GenerationJobManager] Failed to get content parts for allSubscribersLeft handlers:`,
-                err,
-              );
+
+        const runtime: RuntimeJobState = {
+          abortController: new AbortController(),
+          readyPromise,
+          resolveReady: resolveReady!,
+          syncSent: false,
+          earlyEventBuffer: [],
+          hasSubscriber: false,
+        };
+        this.runtimeState.set(streamId, runtime);
+        this.runningJobs.add(streamId);
+        this.syncRunningJobMetrics();
+        recordGenerationJob(this.storeLabel, 'created');
+
+        // Resolve immediately - early event buffer handles late subscribers
+        resolveReady!();
+
+        /**
+         * Set up all-subscribers-left callback.
+         * When all SSE clients disconnect, this:
+         * 1. Resets syncSent so reconnecting clients get sync event (persisted to Redis)
+         * 2. Calls any registered allSubscribersLeft handlers (e.g., to save partial responses)
+         */
+        this.eventTransport.onAllSubscribersLeft(streamId, () => {
+          const currentRuntime = this.runtimeState.get(streamId);
+          if (currentRuntime) {
+            currentRuntime.syncSent = false;
+            currentRuntime.hasSubscriber = false;
+            // Persist syncSent=false to Redis for cross-replica consistency
+            this.jobStore.updateJob(streamId, { syncSent: false }).catch((err) => {
+              logger.error(`[GenerationJobManager] Failed to persist syncSent=false:`, err);
             });
+            // Call registered handlers (from job.emitter.on('allSubscribersLeft', ...))
+            if (currentRuntime.allSubscribersLeftHandlers) {
+              this.jobStore
+                .getContentParts(streamId)
+                .then((result) => {
+                  const parts = result?.content ?? [];
+                  for (const handler of currentRuntime.allSubscribersLeftHandlers ?? []) {
+                    try {
+                      handler(parts);
+                    } catch (err) {
+                      logger.error(
+                        `[GenerationJobManager] Error in allSubscribersLeft handler:`,
+                        err,
+                      );
+                    }
+                  }
+                })
+                .catch((err) => {
+                  logger.error(
+                    `[GenerationJobManager] Failed to get content parts for allSubscribersLeft handlers:`,
+                    err,
+                  );
+                });
+            }
+          }
+        });
+
+        /**
+         * Set up cross-replica abort listener (Redis mode only).
+         * When abort is triggered on ANY replica, this replica receives the signal
+         * and aborts its local AbortController (if it's the one running generation).
+         */
+        if (this.eventTransport.onAbort) {
+          this.eventTransport.onAbort(streamId, () => {
+            const currentRuntime = this.runtimeState.get(streamId);
+            if (currentRuntime && !currentRuntime.abortController.signal.aborted) {
+              logger.debug(`[GenerationJobManager] Received cross-replica abort for ${streamId}`);
+              currentRuntime.abortController.abort();
+            }
+          });
         }
-      }
-    });
 
-    /**
-     * Set up cross-replica abort listener (Redis mode only).
-     * When abort is triggered on ANY replica, this replica receives the signal
-     * and aborts its local AbortController (if it's the one running generation).
-     */
-    if (this.eventTransport.onAbort) {
-      this.eventTransport.onAbort(streamId, () => {
-        const currentRuntime = this.runtimeState.get(streamId);
-        if (currentRuntime && !currentRuntime.abortController.signal.aborted) {
-          logger.debug(`[GenerationJobManager] Received cross-replica abort for ${streamId}`);
-          currentRuntime.abortController.abort();
-        }
-      });
-    }
+        logger.debug(`[GenerationJobManager] Created job: ${streamId}`);
 
-    logger.debug(`[GenerationJobManager] Created job: ${streamId}`);
-
-    // Return facade for backwards compatibility
-    return this.buildJobFacade(streamId, jobData, runtime);
+        // Return facade for backwards compatibility
+        return this.buildJobFacade(streamId, jobData, runtime);
+      },
+    );
   }
 
   /**
@@ -622,115 +643,137 @@ class GenerationJobManagerClass {
    * - The replica running generation receives signal and aborts its AbortController
    */
   async abortJob(streamId: string): Promise<AbortResult> {
-    const jobData = await this.jobStore.getJob(streamId);
-    const runtime = this.runtimeState.get(streamId);
+    return await withTelemetrySpan(
+      'librechat.generation.job.abort',
+      {
+        attributes: {
+          'librechat.stream.store': this.storeLabel,
+        },
+      },
+      async (span) => {
+        const jobData = await this.jobStore.getJob(streamId);
+        const runtime = this.runtimeState.get(streamId);
 
-    if (!jobData) {
-      logger.warn(`[GenerationJobManager] Cannot abort - job not found: ${streamId}`);
-      recordGenerationJob(this.storeLabel, 'abort_failed');
-      return {
-        text: '',
-        content: [],
-        jobData: null,
-        success: false,
-        finalEvent: null,
-        collectedUsage: [],
-      };
-    }
+        if (!jobData) {
+          logger.warn(`[GenerationJobManager] Cannot abort - job not found: ${streamId}`);
+          recordGenerationJob(this.storeLabel, 'abort_failed');
+          span.setAttributes({
+            'librechat.job.status': 'not_found',
+            'librechat.job.abort.success': false,
+          });
+          return {
+            text: '',
+            content: [],
+            jobData: null,
+            success: false,
+            finalEvent: null,
+            collectedUsage: [],
+          };
+        }
 
-    // Emit abort signal for cross-replica support (Redis mode)
-    // This ensures the generating replica receives the abort signal
-    if (this.eventTransport.emitAbort) {
-      this.eventTransport.emitAbort(streamId);
-    }
+        // Emit abort signal for cross-replica support (Redis mode)
+        // This ensures the generating replica receives the abort signal
+        if (this.eventTransport.emitAbort) {
+          this.eventTransport.emitAbort(streamId);
+        }
 
-    // Also abort local controller if we have it (same-replica abort)
-    if (runtime) {
-      runtime.abortController.abort();
-    }
+        // Also abort local controller if we have it (same-replica abort)
+        if (runtime) {
+          runtime.abortController.abort();
+        }
 
-    /** Content before clearing state */
-    const result = await this.jobStore.getContentParts(streamId);
-    const content = result?.content ?? [];
+        /** Content before clearing state */
+        const result = await this.jobStore.getContentParts(streamId);
+        const content = result?.content ?? [];
 
-    /** Collected usage for all models */
-    const collectedUsage = this.jobStore.getCollectedUsage(streamId);
+        /** Collected usage for all models */
+        const collectedUsage = this.jobStore.getCollectedUsage(streamId);
 
-    /** Text from content parts for fallback token counting */
-    const text = parseTextParts(content as TMessageContentParts[]);
+        /** Text from content parts for fallback token counting */
+        const text = parseTextParts(content as TMessageContentParts[]);
 
-    /** Detect "early abort" - aborted before any generation happened (e.g., during tool loading)
-    In this case, no messages were saved to DB, so frontend shouldn't navigate to conversation */
-    const isEarlyAbort = content.length === 0 && !jobData.responseMessageId;
+        /**
+         * Detect "early abort" - aborted before any generation happened (e.g., during tool loading).
+         * In this case, no messages were saved to DB, so frontend shouldn't navigate to conversation.
+         */
+        const isEarlyAbort = content.length === 0 && !jobData.responseMessageId;
+        span.setAttributes({
+          'librechat.job.abort.early': isEarlyAbort,
+          'librechat.stream.content_parts.count': content.length,
+          'librechat.usage.records.count': collectedUsage.length,
+        });
 
-    /** Final event for abort */
-    const userMessageId = jobData.userMessage?.messageId;
+        /** Final event for abort */
+        const userMessageId = jobData.userMessage?.messageId;
 
-    const abortFinalEvent: t.ServerSentEvent = {
-      final: true,
-      // Don't include conversation for early aborts - it doesn't exist in DB
-      conversation: isEarlyAbort ? null : { conversationId: jobData.conversationId },
-      title: 'New Chat',
-      requestMessage: jobData.userMessage
-        ? {
-            messageId: userMessageId,
-            parentMessageId: jobData.userMessage.parentMessageId,
-            conversationId: jobData.conversationId,
-            text: jobData.userMessage.text ?? '',
-            isCreatedByUser: true,
-          }
-        : null,
-      responseMessage: isEarlyAbort
-        ? null
-        : {
-            messageId: jobData.responseMessageId ?? `${userMessageId ?? 'aborted'}_`,
-            parentMessageId: userMessageId,
-            conversationId: jobData.conversationId,
-            content,
-            sender: jobData.sender ?? 'AI',
-            unfinished: true,
-            error: false,
-            isCreatedByUser: false,
-          },
-      aborted: true,
-      // Flag for early abort - no messages saved, frontend should go to new chat
-      earlyAbort: isEarlyAbort,
-    } satisfies t.FinalEvent as t.ServerSentEvent;
+        const abortFinalEvent: t.ServerSentEvent = {
+          final: true,
+          // Don't include conversation for early aborts - it doesn't exist in DB
+          conversation: isEarlyAbort ? null : { conversationId: jobData.conversationId },
+          title: 'New Chat',
+          requestMessage: jobData.userMessage
+            ? {
+                messageId: userMessageId,
+                parentMessageId: jobData.userMessage.parentMessageId,
+                conversationId: jobData.conversationId,
+                text: jobData.userMessage.text ?? '',
+                isCreatedByUser: true,
+              }
+            : null,
+          responseMessage: isEarlyAbort
+            ? null
+            : {
+                messageId: jobData.responseMessageId ?? `${userMessageId ?? 'aborted'}_`,
+                parentMessageId: userMessageId,
+                conversationId: jobData.conversationId,
+                content,
+                sender: jobData.sender ?? 'AI',
+                unfinished: true,
+                error: false,
+                isCreatedByUser: false,
+              },
+          aborted: true,
+          // Flag for early abort - no messages saved, frontend should go to new chat
+          earlyAbort: isEarlyAbort,
+        } satisfies t.FinalEvent as t.ServerSentEvent;
 
-    if (runtime) {
-      runtime.finalEvent = abortFinalEvent;
-    }
+        if (runtime) {
+          runtime.finalEvent = abortFinalEvent;
+        }
 
-    await this.eventTransport.emitDone(streamId, abortFinalEvent);
-    this.jobStore.clearContentState(streamId);
-    this.runStepBuffers?.delete(streamId);
+        await this.eventTransport.emitDone(streamId, abortFinalEvent);
+        this.jobStore.clearContentState(streamId);
+        this.runStepBuffers?.delete(streamId);
 
-    // Immediate cleanup if configured (default: true)
-    if (this._cleanupOnComplete) {
-      this.runtimeState.delete(streamId);
-      // Don't cleanup eventTransport here - let the abort event fully transmit first.
-      await this.jobStore.deleteJob(streamId);
-    } else {
-      // Only update status if keeping the job around
-      await this.jobStore.updateJob(streamId, {
-        status: 'aborted',
-        completedAt: Date.now(),
-      });
-    }
+        // Immediate cleanup if configured (default: true)
+        if (this._cleanupOnComplete) {
+          this.runtimeState.delete(streamId);
+          // Don't cleanup eventTransport here - let the abort event fully transmit first.
+          await this.jobStore.deleteJob(streamId);
+        } else {
+          // Only update status if keeping the job around
+          await this.jobStore.updateJob(streamId, {
+            status: 'aborted',
+            completedAt: Date.now(),
+          });
+        }
 
-    this.runningJobs.delete(streamId);
-    this.syncRunningJobMetrics();
-    recordGenerationJob(this.storeLabel, 'aborted');
-    logger.debug(`[GenerationJobManager] Job aborted: ${streamId}`);
+        this.runningJobs.delete(streamId);
+        this.syncRunningJobMetrics();
+        recordGenerationJob(this.storeLabel, 'aborted');
+        span.setAttribute('librechat.job.abort.success', true);
+        logger.debug(`[GenerationJobManager] Job aborted: ${streamId}`);
 
-    return {
-      success: true,
-      jobData,
-      content,
-      finalEvent: abortFinalEvent,
-      text,
-      collectedUsage,
-    };
+        return {
+          success: true,
+          jobData,
+          content,
+          finalEvent: abortFinalEvent,
+          text,
+          collectedUsage,
+        };
+      },
+    );
   }
 
   /**
@@ -906,37 +949,56 @@ class GenerationJobManagerClass {
     onDone?: t.DoneHandler,
     onError?: t.ErrorHandler,
   ): Promise<t.SubscribeWithResumeResult> {
-    const bufferLengthAtSnapshot = !this._isRedis
-      ? (this.runtimeState.get(streamId)?.earlyEventBuffer.length ?? 0)
-      : 0;
+    return await withTelemetrySpan(
+      'librechat.stream.resume',
+      {
+        attributes: {
+          'librechat.stream.store': this.storeLabel,
+          'librechat.stream.resume': true,
+        },
+      },
+      async (span) => {
+        const bufferLengthAtSnapshot = !this._isRedis
+          ? (this.runtimeState.get(streamId)?.earlyEventBuffer.length ?? 0)
+          : 0;
 
-    const resumeState = await this.getResumeState(streamId);
-    recordGenerationStreamSubscription(
-      this.storeLabel,
-      'resume_state',
-      resumeState ? 'found' : 'missing',
-    );
+        const resumeState = await this.getResumeState(streamId);
+        recordGenerationStreamSubscription(
+          this.storeLabel,
+          'resume_state',
+          resumeState ? 'found' : 'missing',
+        );
 
-    let pendingEvents: t.ServerSentEvent[] = [];
-    if (!this._isRedis) {
-      const runtime = this.runtimeState.get(streamId);
-      if (runtime) {
-        pendingEvents = runtime.earlyEventBuffer.slice(bufferLengthAtSnapshot);
-        runtime.earlyEventBuffer = [];
-        if (pendingEvents.length > 0) {
-          recordGenerationStreamResumePendingEvents(this.storeLabel, pendingEvents.length);
-          logger.debug(
-            `[GenerationJobManager] Captured ${pendingEvents.length} gap events for ${streamId}`,
-          );
+        let pendingEvents: t.ServerSentEvent[] = [];
+        if (!this._isRedis) {
+          const runtime = this.runtimeState.get(streamId);
+          if (runtime) {
+            pendingEvents = runtime.earlyEventBuffer.slice(bufferLengthAtSnapshot);
+            runtime.earlyEventBuffer = [];
+            if (pendingEvents.length > 0) {
+              recordGenerationStreamResumePendingEvents(this.storeLabel, pendingEvents.length);
+              logger.debug(
+                `[GenerationJobManager] Captured ${pendingEvents.length} gap events for ${streamId}`,
+              );
+            }
+          }
         }
-      }
-    }
 
-    const subscription = await this.subscribe(streamId, onChunk, onDone, onError, {
-      skipBufferReplay: true,
-    });
+        const subscription = await this.subscribe(streamId, onChunk, onDone, onError, {
+          skipBufferReplay: true,
+        });
 
-    return { subscription, resumeState, pendingEvents };
+        span.setAttributes({
+          'librechat.stream.resume_state_found': resumeState != null,
+          'librechat.stream.pending_events.count': pendingEvents.length,
+          'librechat.stream.run_steps.count': resumeState?.runSteps?.length ?? 0,
+          'librechat.stream.aggregated_content.count': resumeState?.aggregatedContent?.length ?? 0,
+          'librechat.stream.subscribed': subscription != null,
+        });
+
+        return { subscription, resumeState, pendingEvents };
+      },
+    );
   }
 
   /**
