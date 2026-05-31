@@ -807,10 +807,7 @@ function applyTextEdits(
         `old_text matched ${match.count} locations with ${match.strategy}; make it unique before retrying.`,
       );
     }
-    working =
-      working.slice(0, match.index) +
-      edit.new_text +
-      working.slice(match.index + match.length);
+    working = working.slice(0, match.index) + edit.new_text + working.slice(match.index + match.length);
     strategies.push(match.strategy);
   }
 
@@ -839,7 +836,11 @@ function createUnifiedDiff(filePath: string, oldContent: string, newContent: str
 
   let oldSuffix = oldLines.length - 1;
   let newSuffix = newLines.length - 1;
-  while (oldSuffix >= prefix && newSuffix >= prefix && oldLines[oldSuffix] === newLines[newSuffix]) {
+  while (
+    oldSuffix >= prefix &&
+    newSuffix >= prefix &&
+    oldLines[oldSuffix] === newLines[newSuffix]
+  ) {
     oldSuffix -= 1;
     newSuffix -= 1;
   }
@@ -1825,7 +1826,10 @@ async function handleEditFileCall(
     req,
   });
   if (current.status === 'missing') {
-    return errorResult(tc, `File not found: "${parsed.relativePath}" in skill "${parsed.skillName}"`);
+    return errorResult(
+      tc,
+      `File not found: "${parsed.relativePath}" in skill "${parsed.skillName}"`,
+    );
   }
   if (current.status === 'error') {
     return errorResult(tc, current.message);

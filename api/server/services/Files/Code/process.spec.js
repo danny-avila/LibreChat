@@ -1715,9 +1715,9 @@ describe('Code Process', () => {
         data: { stdout: '', stderr: 'Permission denied\n' },
       });
 
-      await expect(
-        writeSandboxFile({ file_path: '/root/nope.txt', content: 'x' }),
-      ).rejects.toThrow('Permission denied');
+      await expect(writeSandboxFile({ file_path: '/root/nope.txt', content: 'x' })).rejects.toThrow(
+        'Permission denied',
+      );
     });
   });
 
