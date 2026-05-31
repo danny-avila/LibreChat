@@ -24,6 +24,7 @@ const {
   extractManualSkills,
   injectSkillPrimes,
   extractRemoteAgentResponseFiles,
+  attachDocumentsToMessageContent,
   createToolExecuteHandler,
   discoverConnectedAgents,
   getRemoteAgentPermissions,
@@ -99,53 +100,6 @@ function createToolLoader(signal, definitionsOnly = true) {
       logger.error('Error loading tools for agent ' + agentId, error);
     }
   };
-}
-
-/**
- * Convert Open Responses input items to internal messages
- * @param {import('@librechat/api').InputItem[]} input
- * @returns {Array} Internal messages
- */
-function convertToInternalMessages(input) {
-  return convertInputToMessages(input);
-}
-
-function attachDocumentsToMessageContent(message, documents, fallbackText) {
-  const content = [];
-  let documentIndex = 0;
-  let hasText = false;
-
-  if (Array.isArray(message?.content)) {
-    for (const part of message.content) {
-      if (part?.type === 'text') {
-        const text = part.text ?? '';
-        if (!text.trim()) {
-          continue;
-        }
-        if (/^\[File: .+\]$/.test(text.trim()) && documentIndex < documents.length) {
-          content.push(documents[documentIndex]);
-          documentIndex += 1;
-          continue;
-        }
-        hasText = true;
-        content.push(part);
-      } else if (part?.type === 'image_url') {
-        content.push(part);
-      }
-    }
-  } else if (typeof message?.content === 'string' && message.content.trim()) {
-    hasText = true;
-    content.push({ type: 'text', text: message.content });
-  }
-
-  content.push(...documents.slice(documentIndex));
-  if (!hasText) {
-    content.unshift({ type: 'text', text: fallbackText });
-  }
-
-  message.content = content;
-  delete message.documents;
-  delete message.image_urls;
 }
 
 function cloneMessagesForStorage(messages) {
@@ -592,9 +546,7 @@ const createResponse = async (req, res) => {
     }
 
     // Convert input to internal messages
-    const inputMessages = convertToInternalMessages(
-      typeof remoteInput === 'string' ? remoteInput : remoteInput,
-    );
+    const inputMessages = convertInputToMessages(remoteInput);
     const inputMessagesForStorage = cloneMessagesForStorage(inputMessages);
 
     if (inlineProviderFiles.length > 0) {

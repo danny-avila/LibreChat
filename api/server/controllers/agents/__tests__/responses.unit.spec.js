@@ -15,6 +15,41 @@ const mockExtractRemoteAgentResponseFiles = jest
   .mockImplementation((input) => ({ value: input, files: [] }));
 const mockEncodeAndFormatDocuments = jest.fn().mockResolvedValue({ documents: [], files: [] });
 const mockFilterFilesByEndpointConfig = jest.fn((_, { files }) => files ?? []);
+const mockAttachDocumentsToMessageContent = jest.fn((message, documents, fallbackText) => {
+  const content = [];
+  let documentIndex = 0;
+  let hasText = false;
+
+  if (Array.isArray(message?.content)) {
+    for (const part of message.content) {
+      if (part?.type === 'text') {
+        const text = part.text ?? '';
+        if (!text.trim()) {
+          continue;
+        }
+        if (/^\[File: .+\]$/.test(text.trim()) && documentIndex < documents.length) {
+          content.push(documents[documentIndex]);
+          documentIndex += 1;
+          continue;
+        }
+        hasText = true;
+        content.push(part);
+      } else if (part?.type === 'image_url') {
+        content.push(part);
+      }
+    }
+  } else if (typeof message?.content === 'string' && message.content.trim()) {
+    hasText = true;
+    content.push({ type: 'text', text: message.content });
+  }
+
+  content.push(...documents.slice(documentIndex));
+  if (!hasText) {
+    content.unshift({ type: 'text', text: fallbackText });
+  }
+
+  message.content = content;
+});
 
 jest.mock('nanoid', () => ({
   nanoid: jest.fn(() => 'mock-nanoid-123'),
@@ -72,6 +107,7 @@ jest.mock('@librechat/api', () => ({
   getTransactionsConfig: mockGetTransactionsConfig,
   recordCollectedUsage: mockRecordCollectedUsage,
   extractRemoteAgentResponseFiles: mockExtractRemoteAgentResponseFiles,
+  attachDocumentsToMessageContent: mockAttachDocumentsToMessageContent,
   extractManualSkills: jest.fn().mockReturnValue(undefined),
   injectSkillPrimes: jest.fn().mockReturnValue({
     initialMessages: [],

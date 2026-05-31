@@ -26,6 +26,7 @@ const {
   createErrorResponse,
   extractRemoteAgentChatFiles,
   recordCollectedUsage,
+  attachDocumentsToMessageContent,
   getTransactionsConfig,
   resolveRecursionLimit,
   discoverConnectedAgents,
@@ -131,44 +132,6 @@ function convertMessages(messages) {
       ...(msg.tool_call_id && { tool_call_id: msg.tool_call_id }),
     };
   });
-}
-
-function attachDocumentsToMessageContent(message, documents, fallbackText) {
-  const content = [];
-  let documentIndex = 0;
-  let hasText = false;
-
-  if (Array.isArray(message?.content)) {
-    for (const part of message.content) {
-      if (part?.type === 'text') {
-        const text = part.text ?? '';
-        if (!text.trim()) {
-          continue;
-        }
-        if (/^\[File: .+\]$/.test(text.trim()) && documentIndex < documents.length) {
-          content.push(documents[documentIndex]);
-          documentIndex += 1;
-          continue;
-        }
-        hasText = true;
-        content.push(part);
-      } else if (part?.type === 'image_url') {
-        content.push(part);
-      }
-    }
-  } else if (typeof message?.content === 'string' && message.content.trim()) {
-    hasText = true;
-    content.push({ type: 'text', text: message.content });
-  }
-
-  content.push(...documents.slice(documentIndex));
-  if (!hasText) {
-    content.unshift({ type: 'text', text: fallbackText });
-  }
-
-  message.content = content;
-  delete message.documents;
-  delete message.image_urls;
 }
 
 /**

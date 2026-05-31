@@ -3,6 +3,7 @@ import {
   remoteInlineFileSource,
   extractRemoteAgentChatFiles,
   extractRemoteAgentResponseFiles,
+  attachDocumentsToMessageContent,
 } from './files';
 
 const pdfData = 'data:application/pdf;base64,SGVsbG8=';
@@ -227,6 +228,44 @@ describe('remote agent file extraction', () => {
 
     it('returns string input unchanged', () => {
       expect(extractRemoteAgentResponseFiles('Hello')).toEqual({ value: 'Hello', files: [] });
+    });
+  });
+
+  describe('attachDocumentsToMessageContent', () => {
+    it('replaces file markers with documents while preserving text and image order', () => {
+      const image = { type: 'image_url', image_url: { url: 'https://example.com/image.png' } };
+      const document = { type: 'document', source: { type: 'base64', data: 'abc' } };
+      const message = {
+        content: [
+          { type: 'text', text: 'Look at this image first.' },
+          image,
+          { type: 'text', text: 'Then compare this file.' },
+          { type: 'text', text: '[File: document.pdf]' },
+        ],
+      };
+
+      attachDocumentsToMessageContent(message, [document], 'Attached file(s): document.pdf');
+
+      expect(message.content).toEqual([
+        { type: 'text', text: 'Look at this image first.' },
+        image,
+        { type: 'text', text: 'Then compare this file.' },
+        document,
+      ]);
+    });
+
+    it('adds fallback text when the message has no real text', () => {
+      const document = { type: 'document', source: { type: 'base64', data: 'abc' } };
+      const message = {
+        content: [{ type: 'text', text: '[File: document.pdf]' }],
+      };
+
+      attachDocumentsToMessageContent(message, [document], 'Attached file(s): document.pdf');
+
+      expect(message.content).toEqual([
+        { type: 'text', text: 'Attached file(s): document.pdf' },
+        document,
+      ]);
     });
   });
 });
