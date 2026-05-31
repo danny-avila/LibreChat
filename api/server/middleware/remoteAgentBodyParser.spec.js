@@ -7,9 +7,10 @@ describe('remoteAgentJsonParser', () => {
     const app = express();
     const jsonParser = express.json({ limit: '3mb' });
     app.use((req, res, next) => {
+      const pathname = new URL(req.originalUrl, 'http://localhost').pathname;
       const isRemoteAgentJsonRequest =
         req.method === 'POST' &&
-        (req.path === '/api/agents/v1/responses' || req.path === '/api/agents/v1/chat/completions');
+        /(?:^|\/)api\/agents\/v1\/(?:responses|chat\/completions)\/?$/.test(pathname);
       if (isRemoteAgentJsonRequest) {
         return next();
       }
@@ -23,6 +24,9 @@ describe('remoteAgentJsonParser', () => {
     });
     app.use('/api/agents/v1', remoteAgentJsonParser);
     app.post('/api/agents/v1/responses', (req, res) => {
+      res.json({ length: req.body.input.length });
+    });
+    app.post('/api/agents/v1/responses/', (req, res) => {
       res.json({ length: req.body.input.length });
     });
     app.post('/api/agents/v1', (req, res) => {
@@ -46,6 +50,18 @@ describe('remoteAgentJsonParser', () => {
 
     const response = await request(createApp())
       .post('/api/agents/v1/responses')
+      .set('authorization', 'Bearer valid')
+      .send({ input });
+
+    expect(response.status).toBe(200);
+    expect(response.body.length).toBe(input.length);
+  });
+
+  it('allows Remote Agent API JSON bodies above the global parser limit with a trailing slash', async () => {
+    const input = 'x'.repeat(4 * 1024 * 1024);
+
+    const response = await request(createApp())
+      .post('/api/agents/v1/responses/')
       .set('authorization', 'Bearer valid')
       .send({ input });
 
