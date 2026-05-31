@@ -6,6 +6,7 @@
  */
 jest.mock('@librechat/agents', () => ({
   ...jest.requireActual('@librechat/agents'),
+  CODE_EXECUTION_TOOLS: new Set(['execute_code', 'bash_tool']),
   ReadFileToolDefinition: {
     name: 'read_file',
     description: 'read skill files using {skillName}/{filePath} and SKILL.md',
@@ -38,8 +39,14 @@ jest.mock('@librechat/agents', () => ({
     enableToolOutputReferences === true ? 'bash {{tool<idx>turn<turn>}}' : 'bash',
 }));
 
+import { CODE_EXECUTION_TOOLS } from '@librechat/agents';
 import type { LCTool, LCToolRegistry } from '@librechat/agents';
-import { buildToolSet, BuildToolSetConfig, registerCodeExecutionTools } from './tools';
+import {
+  buildToolSet,
+  BuildToolSetConfig,
+  registerCodeExecutionTools,
+  registerFileAuthoringTools,
+} from './tools';
 
 describe('buildToolSet', () => {
   describe('event-driven mode (toolDefinitions)', () => {
@@ -419,5 +426,84 @@ describe('registerCodeExecutionTools', () => {
       expect(a?.description).toContain('{{tool<idx>turn<turn>}}');
       expect(b?.description).not.toContain('{{tool<idx>turn<turn>}}');
     });
+  });
+});
+
+describe('registerFileAuthoringTools', () => {
+  const makeRegistry = (): LCToolRegistry => new Map() as unknown as LCToolRegistry;
+
+  it('marks host-side file authoring tools as code-session-aware', () => {
+    expect(CODE_EXECUTION_TOOLS.has('create_file')).toBe(true);
+    expect(CODE_EXECUTION_TOOLS.has('edit_file')).toBe(true);
+  });
+
+  it('registers create_file and edit_file with skill-aware descriptions', () => {
+    const toolRegistry = makeRegistry();
+    const result = registerFileAuthoringTools({
+      toolRegistry,
+      toolDefinitions: [],
+      includeSkillFileInstructions: true,
+    });
+
+    const names = result.toolDefinitions.map((d) => d.name).sort();
+    expect(names).toEqual(['create_file', 'edit_file']);
+    expect(result.registered.sort()).toEqual(['create_file', 'edit_file']);
+    expect(toolRegistry.has('create_file')).toBe(true);
+    expect(toolRegistry.has('edit_file')).toBe(true);
+    expect(result.toolDefinitions[0].responseFormat).toBe('content_and_artifact');
+    expect(result.toolDefinitions.map((d) => d.description).join('\n')).toContain('skills/');
+  });
+
+  it('registers code-only descriptions for code-exec-only agents', () => {
+    const toolRegistry = makeRegistry();
+    const result = registerFileAuthoringTools({
+      toolRegistry,
+      toolDefinitions: [],
+      includeSkillFileInstructions: false,
+    });
+
+    const createFile = result.toolDefinitions.find((d) => d.name === 'create_file');
+    const editFile = result.toolDefinitions.find((d) => d.name === 'edit_file');
+    expect(createFile?.description).toContain('code-execution sandbox');
+    expect(createFile?.description).toContain('/mnt/data/');
+    expect(createFile?.description).not.toContain('skills/');
+    expect(editFile?.description).toContain('code-execution sandbox');
+    expect(editFile?.description).toContain('/mnt/data/');
+    expect(editFile?.description).not.toContain('skills/');
+  });
+
+  it('is idempotent across repeated registration calls', () => {
+    const toolRegistry = makeRegistry();
+    const first = registerFileAuthoringTools({
+      toolRegistry,
+      toolDefinitions: [],
+    });
+    const second = registerFileAuthoringTools({
+      toolRegistry,
+      toolDefinitions: first.toolDefinitions,
+    });
+
+    expect(second.registered).toEqual([]);
+    expect(second.toolDefinitions).toHaveLength(2);
+  });
+
+  it('upgrades code-only definitions to skill-aware definitions', () => {
+    const toolRegistry = makeRegistry();
+    const codeOnly = registerFileAuthoringTools({
+      toolRegistry,
+      toolDefinitions: [],
+      includeSkillFileInstructions: false,
+    });
+    const upgraded = registerFileAuthoringTools({
+      toolRegistry,
+      toolDefinitions: codeOnly.toolDefinitions,
+      includeSkillFileInstructions: true,
+    });
+
+    expect(upgraded.registered).toEqual([]);
+    expect(upgraded.toolDefinitions.find((d) => d.name === 'create_file')?.description).toContain(
+      'skills/',
+    );
+    expect(toolRegistry.get('edit_file')?.description).toContain('skills/');
   });
 });

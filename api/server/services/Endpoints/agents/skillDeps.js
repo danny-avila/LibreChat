@@ -1,12 +1,132 @@
+const crypto = require('crypto');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { batchUploadCodeEnvFiles } = require('~/server/services/Files/Code/crud');
 const {
   getSessionInfo,
   checkIfActive,
   readSandboxFile,
+  writeSandboxFile,
 } = require('~/server/services/Files/Code/process');
-const { enrichWithSkillConfigurable } = require('@librechat/api');
+const {
+  checkAccess,
+  getStorageMetadata,
+  resolveRequestTenantId,
+  enrichWithSkillConfigurable,
+} = require('@librechat/api');
+const {
+  Permissions,
+  FileContext,
+  ResourceType,
+  PermissionBits,
+  AccessRoleIds,
+  PrincipalType,
+  PermissionTypes,
+} = require('librechat-data-provider');
+const { checkPermission, grantPermission } = require('~/server/services/PermissionService');
+const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 const db = require('~/models');
+
+function resolveSkillStorage(req, { isImage = false } = {}) {
+  const source = getFileStrategy(req.config, { context: FileContext.skill_file, isImage });
+  const strategy = getStrategyFunctions(source);
+  if (!strategy.saveBuffer) {
+    throw new Error(`Storage backend "${source}" does not support file writes`);
+  }
+  return { saveBuffer: strategy.saveBuffer, source };
+}
+
+function basename(relativePath) {
+  const slash = relativePath.lastIndexOf('/');
+  return slash === -1 ? relativePath : relativePath.slice(slash + 1);
+}
+
+async function saveSkillFileContent({ req, skillId, relativePath, content, mimeType }) {
+  const existingFile = await db.getSkillFileByPath(skillId, relativePath);
+  const tenantId = resolveRequestTenantId(req);
+  const fileId = crypto.randomUUID();
+  const filename = basename(relativePath);
+  const storageFileName = `${fileId}__${filename}`;
+  const buffer = Buffer.from(content, 'utf8');
+  const storage = resolveSkillStorage(req, { isImage: mimeType.startsWith('image/') });
+  const filepath = await storage.saveBuffer({
+    userId: req.user.id,
+    buffer,
+    fileName: storageFileName,
+    basePath: 'uploads',
+    tenantId,
+  });
+  const storageMetadata = getStorageMetadata({ filepath, source: storage.source });
+
+  let result;
+  try {
+    result = await db.upsertSkillFile({
+      skillId,
+      relativePath,
+      file_id: fileId,
+      filename,
+      filepath,
+      ...storageMetadata,
+      source: storage.source,
+      mimeType,
+      bytes: buffer.length,
+      isExecutable: false,
+      author: req.user._id ?? req.user.id,
+      tenantId,
+    });
+  } catch (error) {
+    const { deleteFile } = getStrategyFunctions(storage.source);
+    if (deleteFile) {
+      await deleteFile(req, { filepath, user: req.user.id, tenantId }).catch(() => undefined);
+    }
+    throw error;
+  }
+
+  if (existingFile && existingFile.filepath !== filepath) {
+    const { deleteFile } = getStrategyFunctions(existingFile.source);
+    if (deleteFile) {
+      deleteFile(req, {
+        filepath: existingFile.filepath,
+        storageKey: existingFile.storageKey,
+        storageRegion: existingFile.storageRegion,
+        user: existingFile.author ?? req.user.id,
+        tenantId: existingFile.tenantId ?? tenantId,
+      }).catch(() => undefined);
+    }
+  }
+
+  return { bytes: result.bytes, relativePath: result.relativePath };
+}
+
+function canCreateSkill({ req }) {
+  return checkAccess({
+    req,
+    user: req.user,
+    permissionType: PermissionTypes.SKILLS,
+    permissions: [Permissions.USE, Permissions.CREATE],
+    getRoleByName: db.getRoleByName,
+  });
+}
+
+function canEditSkill({ req, skillId }) {
+  return checkPermission({
+    userId: req.user.id,
+    role: req.user.role,
+    resourceType: ResourceType.SKILL,
+    resourceId: skillId,
+    requiredPermission: PermissionBits.EDIT,
+  });
+}
+
+function grantSkillOwner({ req, skillId }) {
+  return grantPermission({
+    principalType: PrincipalType.USER,
+    principalId: req.user.id,
+    resourceType: ResourceType.SKILL,
+    resourceId: skillId,
+    accessRoleId: AccessRoleIds.SKILL_OWNER,
+    grantedBy: req.user.id,
+  });
+}
 
 /**
  * Builds the `skillPrimedIdsByName` map passed through to
@@ -62,6 +182,13 @@ function buildSkillPrimedIdsByName(manualSkillPrimes, alwaysApplySkillPrimes) {
 /** Skill-related properties for ToolExecuteOptions (stable references, allocated once). */
 const skillToolDeps = {
   getSkillByName: db.getSkillByName,
+  createSkill: db.createSkill,
+  updateSkill: db.updateSkill,
+  deleteSkill: db.deleteSkill,
+  canCreateSkill,
+  canEditSkill,
+  grantSkillOwner,
+  saveSkillFileContent,
   listSkillFiles: db.listSkillFiles,
   getStrategyFunctions,
   batchUploadCodeEnvFiles,
@@ -79,6 +206,7 @@ const skillToolDeps = {
    * the agents-side `ToolNode` via `tc.codeSessionContext`.
    */
   readSandboxFile,
+  writeSandboxFile,
 };
 
 function getSkillToolDeps() {
