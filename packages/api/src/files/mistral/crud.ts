@@ -17,7 +17,7 @@ import type {
   MistralOCRUploadResult,
   MistralOCRError,
   OCRResultPage,
-  ServerRequest,
+  OCRContext,
   OCRResult,
   OCRImage,
 } from '~/types';
@@ -40,17 +40,6 @@ interface GoogleServiceAccount {
   client_email?: string;
   private_key?: string;
   project_id?: string;
-}
-
-/** Helper type for OCR request context */
-interface OCRContext {
-  req: ServerRequest;
-  file: Express.Multer.File;
-  loadAuthValues: (params: {
-    userId: string;
-    authFields: string[];
-    optional?: Set<string>;
-  }) => Promise<Record<string, string | undefined>>;
 }
 
 /**

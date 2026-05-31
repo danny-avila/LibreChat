@@ -1295,6 +1295,7 @@ export const ocrSchema = z.object({
   apiKey: z.string().optional().default('${OCR_API_KEY}'),
   baseURL: z.string().optional().default('${OCR_BASEURL}'),
   strategy: z.nativeEnum(OCRStrategy).default(OCRStrategy.MISTRAL_OCR),
+  customStrategyModule: z.string().optional().default('${OCR_CUSTOM_STRATEGY_MODULE}'),
 });
 
 export const balanceSchema = z.object({

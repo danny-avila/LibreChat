@@ -14,6 +14,7 @@ export enum FileSources {
   mistral_ocr = 'mistral_ocr',
   azure_mistral_ocr = 'azure_mistral_ocr',
   vertexai_mistral_ocr = 'vertexai_mistral_ocr',
+  custom_ocr = 'custom_ocr',
   text = 'text',
   document_parser = 'document_parser',
 }

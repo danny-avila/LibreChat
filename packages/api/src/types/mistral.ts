@@ -3,6 +3,8 @@
  * Based on https://docs.mistral.ai/api/#tag/ocr/operation/ocr_v1_ocr_post
  */
 
+import type { OCRUploadResult } from './ocr';
+
 export interface MistralFileUploadResponse {
   id: string;
   object: string;
@@ -73,10 +75,4 @@ export interface MistralOCRError {
   };
 }
 
-export interface MistralOCRUploadResult {
-  filename: string;
-  bytes: number;
-  filepath: string;
-  text: string;
-  images: string[];
-}
+export type MistralOCRUploadResult = OCRUploadResult;
