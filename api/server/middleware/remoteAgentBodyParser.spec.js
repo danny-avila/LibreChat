@@ -7,7 +7,10 @@ describe('remoteAgentJsonParser', () => {
     const app = express();
     const jsonParser = express.json({ limit: '3mb' });
     app.use((req, res, next) => {
-      if (req.path.startsWith('/api/agents/v1')) {
+      const isRemoteAgentJsonRequest =
+        req.method === 'POST' &&
+        (req.path === '/api/agents/v1/responses' || req.path === '/api/agents/v1/chat/completions');
+      if (isRemoteAgentJsonRequest) {
         return next();
       }
       return jsonParser(req, res, next);
@@ -21,6 +24,9 @@ describe('remoteAgentJsonParser', () => {
     app.use('/api/agents/v1', remoteAgentJsonParser);
     app.post('/api/agents/v1/responses', (req, res) => {
       res.json({ length: req.body.input.length });
+    });
+    app.post('/api/agents/v1', (req, res) => {
+      res.json({ parsed: req.body != null, name: req.body.name });
     });
     app.post('/api/other', (req, res) => {
       res.json({ length: req.body.input.length });
@@ -54,6 +60,16 @@ describe('remoteAgentJsonParser', () => {
 
     expect(response.status).toBe(401);
     expect(response.body.parsed).toBe(false);
+  });
+
+  it('keeps regular agent v1 JSON routes on the global parser', async () => {
+    const response = await request(createApp())
+      .post('/api/agents/v1')
+      .set('authorization', 'Bearer valid')
+      .send({ name: 'Agent' });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ parsed: true, name: 'Agent' });
   });
 
   it('keeps the global JSON limit for other routes', async () => {

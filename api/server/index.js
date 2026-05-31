@@ -128,7 +128,10 @@ const startServer = async () => {
   app.use(noIndex);
   const jsonParser = express.json({ limit: '3mb' });
   app.use((req, res, next) => {
-    if (req.path.startsWith('/api/agents/v1')) {
+    const isRemoteAgentJsonRequest =
+      req.method === 'POST' &&
+      (req.path === '/api/agents/v1/responses' || req.path === '/api/agents/v1/chat/completions');
+    if (isRemoteAgentJsonRequest) {
       return next();
     }
     return jsonParser(req, res, next);
