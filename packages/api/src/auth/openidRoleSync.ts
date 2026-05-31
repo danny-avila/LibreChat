@@ -131,7 +131,15 @@ export async function getOpenIdRolesForOpenIdSync({
     return;
   }
 
-  if (options.claimSource === 'id' && options.claim === 'groups') {
+  /**
+   * Azure AD/Entra moves an oversized `groups` claim into `_claim_names`/`_claim_sources`
+   * for both ID and access tokens, so overage resolution must cover both sources — not
+   * just the ID token — or `access`-sourced syncs silently see no groups for those users.
+   */
+  const supportsGroupOverage =
+    options.claim === 'groups' &&
+    (options.claimSource === 'id' || options.claimSource === 'access');
+  if (supportsGroupOverage) {
     const claimsData = source as {
       hasgroups?: unknown;
       _claim_names?: { groups?: string };
@@ -151,6 +159,13 @@ export async function getOpenIdRolesForOpenIdSync({
   if (Array.isArray(openIdRoleValues) || typeof openIdRoleValues === 'string') {
     return openIdRoleValues;
   }
+  /**
+   * The source is available but carries no usable value for the configured claim
+   * (absent, null, or a non-string/array type). Return an empty list rather than
+   * `undefined` so callers still run selection and apply the configured fallback,
+   * instead of leaving a stale elevated role in place.
+   */
+  return [];
 }
 
 /**
@@ -184,6 +199,18 @@ export async function getLibreChatRolesForOpenIdSync(
       .filter((role): role is { name: string } => typeof role?.name === 'string')
       .map((role) => [role.name.trim().toLowerCase(), role.name.trim()]),
   );
+  /**
+   * System roles (e.g. USER) are provisioned globally at startup without a tenant
+   * context, so a tenant-scoped lookup may not return them even though they exist.
+   * Treat them as always-available canonical names so a documented system fallback
+   * role does not fail validation for tenant users.
+   */
+  for (const systemRole of Object.values(SystemRoles)) {
+    const key = systemRole.toLowerCase();
+    if (!existingRoleNames.has(key)) {
+      existingRoleNames.set(key, systemRole);
+    }
+  }
   const missingRoleNames = uniqueRoleNames.filter(
     (roleName) => !existingRoleNames.has(roleName.toLowerCase()),
   );

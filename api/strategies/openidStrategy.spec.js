@@ -1670,6 +1670,23 @@ describe('setupOpenId', () => {
       );
     });
 
+    it('applies fallback when the role claim is absent from the token', async () => {
+      // Required-role gate reads the same `roles` claim; disable it to model an IdP
+      // that authenticates the user but stops emitting the role claim entirely.
+      delete process.env.OPENID_REQUIRED_ROLE;
+      jwtDecode.mockReturnValue({
+        permissions: ['not-admin'],
+      });
+
+      const { user } = await validate(tokenset);
+
+      expect(user.role).toBe('USER');
+      expect(updateUser).toHaveBeenCalledWith(
+        'newUserId',
+        expect.objectContaining({ role: 'USER' }),
+      );
+    });
+
     it('rejects login when configured sync roles do not exist', async () => {
       findRolesByNames.mockImplementation(async (roleNames) =>
         roleNames

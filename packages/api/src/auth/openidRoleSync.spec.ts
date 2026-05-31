@@ -94,12 +94,21 @@ describe('getOpenIdRolesForOpenIdSync', () => {
     ).resolves.toEqual(['STANDARD-USER']);
   });
 
-  it('returns undefined for missing or invalid claim values', async () => {
+  it('returns an empty list when the source lacks a usable claim value (applies fallback)', async () => {
     await expect(
       getOpenIdRolesForOpenIdSync({
         options,
         idToken: 'id-token',
         decodeToken: () => ({ roles: { STANDARD_USER: true } }),
+      }),
+    ).resolves.toEqual([]);
+  });
+
+  it('returns undefined when no token source is available (skips sync)', async () => {
+    await expect(
+      getOpenIdRolesForOpenIdSync({
+        options,
+        decodeToken: () => ({ roles: ['STANDARD-USER'] }),
       }),
     ).resolves.toBeUndefined();
   });
@@ -125,8 +134,22 @@ describe('getOpenIdRolesForOpenIdSync', () => {
         idToken: 'id-token',
         decodeToken,
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual([]);
     expect(decodeToken).toHaveBeenCalledTimes(1);
+  });
+
+  it('resolves group overage from an access token source (not just id)', async () => {
+    await expect(
+      getOpenIdRolesForOpenIdSync({
+        options: { ...options, claimSource: 'access', claim: 'groups' },
+        accessClaims: {
+          _claim_names: { groups: 'src1' },
+          _claim_sources: { src1: { endpoint: 'https://graph' } },
+        },
+        decodeToken: () => ({}),
+        resolveGroupOverage: async () => ['group-a'],
+      }),
+    ).resolves.toEqual(['group-a']);
   });
 
   it('uses claims for the id source when no id token is available', async () => {
@@ -192,6 +215,27 @@ describe('getLibreChatRolesForOpenIdSync', () => {
         logPrefix: '[openidStrategy]',
       }),
     ).rejects.toThrow('[openidStrategy] OpenID role sync configured roles do not exist: MISSING');
+  });
+
+  it('accepts a system fallback role even when a tenant-scoped lookup omits it', async () => {
+    // Tenant-scoped getRolesByNames returns only the tenant's own roles, not the
+    // globally-provisioned system USER role.
+    const getRolesByNames = jest.fn(async (roleNames: string[]) =>
+      roleNames
+        .filter((roleName) => roleName === 'STANDARD-USER')
+        .map((roleName) => ({ name: roleName })),
+    );
+
+    await expect(
+      getLibreChatRolesForOpenIdSync({
+        getRolesByNames,
+        rolePriority: ['STANDARD-USER'],
+        fallbackRole: SystemRoles.USER,
+      }),
+    ).resolves.toEqual({
+      rolePriority: ['STANDARD-USER'],
+      fallbackRole: SystemRoles.USER,
+    });
   });
 });
 
