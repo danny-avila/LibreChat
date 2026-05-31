@@ -134,29 +134,39 @@ function convertMessages(messages) {
 }
 
 function attachDocumentsToMessageContent(message, documents, fallbackText) {
-  let text = '';
-  let imageUrls = [];
+  const content = [];
+  let documentIndex = 0;
+  let hasText = false;
 
   if (Array.isArray(message?.content)) {
-    text = message.content
-      .map((part) => {
-        if (part?.type === 'text') {
-          return part.text ?? '';
+    for (const part of message.content) {
+      if (part?.type === 'text') {
+        const text = part.text ?? '';
+        if (!text.trim()) {
+          continue;
         }
-        return '';
-      })
-      .filter(Boolean)
-      .join('\n');
-    imageUrls = message.content.filter((part) => part?.type === 'image_url');
-  } else if (typeof message?.content === 'string') {
-    text = message.content;
+        if (/^\[File: .+\]$/.test(text.trim()) && documentIndex < documents.length) {
+          content.push(documents[documentIndex]);
+          documentIndex += 1;
+          continue;
+        }
+        hasText = true;
+        content.push(part);
+      } else if (part?.type === 'image_url') {
+        content.push(part);
+      }
+    }
+  } else if (typeof message?.content === 'string' && message.content.trim()) {
+    hasText = true;
+    content.push({ type: 'text', text: message.content });
   }
 
-  message.content = [
-    { type: 'text', text: text.trim() ? text : fallbackText },
-    ...documents,
-    ...imageUrls,
-  ];
+  content.push(...documents.slice(documentIndex));
+  if (!hasText) {
+    content.unshift({ type: 'text', text: fallbackText });
+  }
+
+  message.content = content;
   delete message.documents;
   delete message.image_urls;
 }

@@ -431,7 +431,7 @@ describe('OpenAIChatCompletionController', () => {
           {
             role: 'user',
             content: [
-              { type: 'text', text: '[File: document.pdf]' },
+              { type: 'text', text: 'Attached file(s): document.pdf' },
               { type: 'file', file: { filename: 'document.pdf', file_data: 'data' } },
             ],
           },
@@ -474,7 +474,7 @@ describe('OpenAIChatCompletionController', () => {
           {
             role: 'user',
             content: [
-              { type: 'text', text: '[File: document.pdf]' },
+              { type: 'text', text: 'Attached file(s): document.pdf' },
               { type: 'file', file: { filename: 'document.pdf', file_data: 'data' } },
             ],
           },
@@ -549,6 +549,50 @@ describe('OpenAIChatCompletionController', () => {
               { type: 'document', document: { name: 'document', source: { bytes: [] } } },
             ],
           }),
+        ],
+        {},
+        expect.any(Set),
+      );
+    });
+
+    it('should preserve text and image order when attaching inline documents', async () => {
+      const { formatAgentMessages } = require('@librechat/agents');
+      const imagePart = {
+        type: 'image_url',
+        image_url: { url: 'https://example.com/image.png' },
+      };
+      mockExtractRemoteAgentChatFiles.mockReturnValueOnce({
+        value: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Look at this image first.' },
+              imagePart,
+              { type: 'text', text: 'Now compare it with the file.' },
+              { type: 'text', text: '[File: document.pdf]' },
+            ],
+          },
+        ],
+        files: [inlineFile],
+      });
+      mockEncodeAndFormatDocuments.mockResolvedValueOnce({
+        documents: [{ type: 'file', file: { filename: 'document.pdf', file_data: 'data' } }],
+        files: [],
+      });
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(formatAgentMessages).toHaveBeenCalledWith(
+        [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Look at this image first.' },
+              imagePart,
+              { type: 'text', text: 'Now compare it with the file.' },
+              { type: 'file', file: { filename: 'document.pdf', file_data: 'data' } },
+            ],
+          },
         ],
         {},
         expect.any(Set),

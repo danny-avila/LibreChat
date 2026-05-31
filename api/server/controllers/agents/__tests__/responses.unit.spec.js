@@ -534,7 +534,7 @@ describe('createResponse controller', () => {
           {
             role: 'user',
             content: [
-              { type: 'text', text: '[File: document.pdf]' },
+              { type: 'text', text: 'Attached file(s): document.pdf' },
               { type: 'document', source: { type: 'base64', data: 'JVBERi0x' } },
             ],
           },
@@ -577,7 +577,7 @@ describe('createResponse controller', () => {
           {
             role: 'user',
             content: [
-              { type: 'text', text: '[File: document.pdf]' },
+              { type: 'text', text: 'Attached file(s): document.pdf' },
               { type: 'document', source: { type: 'base64', data: 'JVBERi0x' } },
             ],
           },
@@ -672,7 +672,7 @@ describe('createResponse controller', () => {
           {
             role: 'user',
             content: [
-              { type: 'text', text: 'Extract this PDF.\n[File: document.pdf]' },
+              { type: 'text', text: 'Extract this PDF.' },
               { type: 'document', source: { type: 'base64', data: 'JVBERi0x' } },
             ],
           },
