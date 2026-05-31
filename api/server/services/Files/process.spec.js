@@ -1109,6 +1109,34 @@ describe('processDeleteRequest', () => {
     expect(result).toEqual({ deletedFileIds: [], failedFileIds: ['embedded-file'] });
   });
 
+  it('does not delete vector storage when primary embedded file deletion fails', async () => {
+    const primaryDelete = jest.fn().mockRejectedValue(new Error('permission denied'));
+    const vectorDelete = jest.fn().mockResolvedValue(undefined);
+    getStrategyFunctions.mockImplementation((source) =>
+      source === FileSources.vectordb
+        ? { deleteFile: vectorDelete }
+        : { deleteFile: primaryDelete },
+    );
+    const req = {
+      body: {},
+      config: {},
+      user: { id: 'user-123', tenantId: 'tenant-a' },
+    };
+    const file = {
+      file_id: 'embedded-file',
+      filepath: '/uploads/embedded.txt',
+      source: FileSources.local,
+      embedded: true,
+    };
+
+    const result = await processDeleteRequest({ req, files: [file] });
+
+    expect(primaryDelete).toHaveBeenCalledWith(req, file, undefined);
+    expect(vectorDelete).not.toHaveBeenCalled();
+    expect(db.deleteFiles).not.toHaveBeenCalled();
+    expect(result).toEqual({ deletedFileIds: [], failedFileIds: ['embedded-file'] });
+  });
+
   it('still deletes vector storage when primary embedded file storage is already missing', async () => {
     const missingError = Object.assign(new Error('no such file'), { code: 'ENOENT' });
     const primaryDelete = jest.fn().mockRejectedValue(missingError);
