@@ -13,6 +13,23 @@ export function isOAuthServer(
   return config.requiresOAuth === true || config.oauth != null;
 }
 
+/**
+ * Whether a server needs the OAuth-style connection wiring (flow manager,
+ * token methods, OBO/OAuth resolvers). Distinct from `isOAuthServer`: OBO
+ * servers reuse the same wiring even though they don't run an OAuth handshake,
+ * because the runtime needs `oboTokenResolver`/`oboTrustChecker` plumbed through.
+ *
+ * Without this, an OBO server with `requiresOAuth: false` would land in the
+ * non-OAuth branch of MCPManager.discoverServerTools / UserConnectionManager,
+ * which omits the OBO resolver — `usesObo` then evaluates to false in the
+ * factory and the connection sends a bare request that the upstream rejects.
+ */
+export function requiresOAuthMachinery(
+  config: Pick<ParsedServerConfig, 'requiresOAuth' | 'oauth' | 'obo'>,
+): boolean {
+  return isOAuthServer(config) || config.obo != null;
+}
+
 /** Checks that `customUserVars` is present AND non-empty (guards against truthy `{}`) */
 export function hasCustomUserVars(config: Pick<ParsedServerConfig, 'customUserVars'>): boolean {
   return !!config.customUserVars && Object.keys(config.customUserVars).length > 0;

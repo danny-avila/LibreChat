@@ -21,7 +21,7 @@ import { preProcessGraphTokens } from '~/utils/graph';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils/env';
-import { isUserSourced, isOAuthServer, requiresUserScopedConnection } from './utils';
+import { isUserSourced, requiresOAuthMachinery, requiresUserScopedConnection } from './utils';
 
 function createOboToolCallErrorMessage(
   logPrefix: string,
@@ -138,7 +138,7 @@ export class MCPManager extends UserConnectionManager {
       return { tools: null, oauthRequired: false, oauthUrl: null };
     }
 
-    const useOAuth = isOAuthServer(serverConfig);
+    const useOAuth = requiresOAuthMachinery(serverConfig);
 
     const registry = MCPServersRegistry.getInstance();
     const useSSRFProtection = registry.shouldEnableSSRFProtection();
@@ -183,6 +183,8 @@ export class MCPManager extends UserConnectionManager {
       customUserVars: args.customUserVars,
       requestBody: args.requestBody,
       connectionTimeout: args.connectionTimeout,
+      oboTokenResolver: args.oboTokenResolver,
+      oboTrustChecker: args.oboTrustChecker,
     });
 
     return { tools: result.tools, oauthRequired: result.oauthRequired, oauthUrl: result.oauthUrl };

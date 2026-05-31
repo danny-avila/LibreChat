@@ -170,6 +170,8 @@ async function reinitMCPServer({
             customUserVars,
             connectionTimeout,
             configServers,
+            oboTokenResolver: exchangeOboToken,
+            oboTrustChecker: createOboTrustChecker(),
           });
 
           if (discoveryResult.tools && discoveryResult.tools.length > 0) {
