@@ -20,6 +20,7 @@ const {
   initializeAgent,
   encodeAndFormatDocuments,
   filterFilesByEndpointConfig,
+  getEndpointFileLimit,
   getBalanceConfig,
   injectSkillPrimes,
   extractManualSkills,
@@ -457,10 +458,23 @@ const OpenAIChatCompletionController = async (req, res) => {
     const openaiMessages = convertMessages(remoteMessages);
 
     if (inlineProviderFiles.length > 0) {
+      const endpoint = primaryConfig.endpoint ?? agent.provider;
+      const endpointType = primaryConfig.provider ?? agent.provider;
+      const fileLimit = getEndpointFileLimit(req, { endpoint, endpointType });
+      if (Number.isFinite(fileLimit) && inlineProviderFiles.length > fileLimit) {
+        return sendErrorResponse(
+          res,
+          400,
+          'Too many file inputs were provided for the configured file upload settings.',
+          'invalid_request_error',
+          'too_many_files',
+        );
+      }
+
       const filteredInlineProviderFiles = filterFilesByEndpointConfig(req, {
         files: inlineProviderFiles,
-        endpoint: primaryConfig.endpoint ?? agent.provider,
-        endpointType: primaryConfig.provider ?? agent.provider,
+        endpoint,
+        endpointType,
       });
       if (filteredInlineProviderFiles.length !== inlineProviderFiles.length) {
         return sendErrorResponse(

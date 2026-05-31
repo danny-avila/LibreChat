@@ -3,7 +3,7 @@ import { Providers } from '@librechat/agents';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { ServerRequest } from '~/types';
-import { filterFilesByEndpointConfig } from './filter';
+import { filterFilesByEndpointConfig, getEndpointFileLimit } from './filter';
 
 describe('filterFilesByEndpointConfig', () => {
   /** Helper to create a mock file */
@@ -22,6 +22,29 @@ describe('filterFilesByEndpointConfig', () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     }) as unknown as IMongoFile;
+
+  describe('getEndpointFileLimit', () => {
+    it('should resolve the configured endpoint file limit', () => {
+      const req = {
+        config: {
+          fileConfig: {
+            endpoints: {
+              [Providers.OPENAI]: {
+                fileLimit: 2,
+              },
+            },
+          },
+        },
+      } as unknown as ServerRequest;
+
+      const result = getEndpointFileLimit(req, {
+        endpoint: Providers.OPENAI,
+        endpointType: Providers.OPENAI,
+      });
+
+      expect(result).toBe(2);
+    });
+  });
 
   describe('when files are disabled for endpoint', () => {
     it('should return empty array when endpoint has disabled: true', () => {

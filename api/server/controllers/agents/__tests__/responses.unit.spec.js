@@ -15,6 +15,7 @@ const mockExtractRemoteAgentResponseFiles = jest
   .mockImplementation((input) => ({ value: input, files: [] }));
 const mockEncodeAndFormatDocuments = jest.fn().mockResolvedValue({ documents: [], files: [] });
 const mockFilterFilesByEndpointConfig = jest.fn((_, { files }) => files ?? []);
+const mockGetEndpointFileLimit = jest.fn().mockReturnValue(10);
 const remoteInlineFileMarkerPrefix = '__LIBRECHAT_REMOTE_INLINE_FILE__:';
 const mockAttachDocumentsToMessageContent = jest.fn((message, documents, fallbackText) => {
   const content = [];
@@ -101,6 +102,7 @@ jest.mock('@librechat/api', () => ({
   }),
   encodeAndFormatDocuments: mockEncodeAndFormatDocuments,
   filterFilesByEndpointConfig: mockFilterFilesByEndpointConfig,
+  getEndpointFileLimit: mockGetEndpointFileLimit,
   discoverConnectedAgents: jest.fn().mockResolvedValue({
     agentConfigs: new Map(),
     edges: [],
@@ -827,6 +829,38 @@ describe('createResponse controller', () => {
         'invalid_request',
         'unsupported_file',
       );
+      expect(mockEncodeAndFormatDocuments).not.toHaveBeenCalled();
+      expect(createRun).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when inline files exceed the configured file limit', async () => {
+      const {
+        createRun,
+        convertInputToMessages,
+        sendResponsesErrorResponse,
+      } = require('@librechat/api');
+      const secondFile = { ...inlineFile, file_id: 'remote-file-2', filename: 'notes.txt' };
+      mockExtractRemoteAgentResponseFiles.mockReturnValueOnce({
+        value: [{ role: 'user', content: [{ type: 'input_text', text: 'Files attached' }] }],
+        files: [inlineFile, secondFile],
+      });
+      convertInputToMessages.mockReturnValueOnce([{ role: 'user', content: 'Files attached' }]);
+      mockGetEndpointFileLimit.mockReturnValueOnce(1);
+
+      await createResponse(req, res);
+
+      expect(mockGetEndpointFileLimit).toHaveBeenCalledWith(req, {
+        endpoint: 'anthropic',
+        endpointType: 'anthropic',
+      });
+      expect(sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        'Too many file inputs were provided for the configured file upload settings.',
+        'invalid_request',
+        'too_many_files',
+      );
+      expect(mockFilterFilesByEndpointConfig).not.toHaveBeenCalled();
       expect(mockEncodeAndFormatDocuments).not.toHaveBeenCalled();
       expect(createRun).not.toHaveBeenCalled();
     });

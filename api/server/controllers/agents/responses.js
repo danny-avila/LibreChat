@@ -18,6 +18,7 @@ const {
   initializeAgent,
   encodeAndFormatDocuments,
   filterFilesByEndpointConfig,
+  getEndpointFileLimit,
   getBalanceConfig,
   recordCollectedUsage,
   getTransactionsConfig,
@@ -572,10 +573,23 @@ const createResponse = async (req, res) => {
     const inputMessagesForStorage = cloneMessagesForStorage(inputMessages, inlineProviderFiles);
 
     if (inlineProviderFiles.length > 0) {
+      const endpoint = primaryConfig.endpoint ?? agent.provider;
+      const endpointType = primaryConfig.provider ?? agent.provider;
+      const fileLimit = getEndpointFileLimit(req, { endpoint, endpointType });
+      if (Number.isFinite(fileLimit) && inlineProviderFiles.length > fileLimit) {
+        return sendResponsesErrorResponse(
+          res,
+          400,
+          'Too many file inputs were provided for the configured file upload settings.',
+          'invalid_request',
+          'too_many_files',
+        );
+      }
+
       const filteredInlineProviderFiles = filterFilesByEndpointConfig(req, {
         files: inlineProviderFiles,
-        endpoint: primaryConfig.endpoint ?? agent.provider,
-        endpointType: primaryConfig.provider ?? agent.provider,
+        endpoint,
+        endpointType,
       });
       if (filteredInlineProviderFiles.length !== inlineProviderFiles.length) {
         return sendResponsesErrorResponse(

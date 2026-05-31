@@ -16,6 +16,7 @@ const mockExtractRemoteAgentChatFiles = jest
   .mockImplementation((messages) => ({ value: messages, files: [] }));
 const mockEncodeAndFormatDocuments = jest.fn().mockResolvedValue({ documents: [], files: [] });
 const mockFilterFilesByEndpointConfig = jest.fn((_, { files }) => files ?? []);
+const mockGetEndpointFileLimit = jest.fn().mockReturnValue(10);
 const remoteInlineFileMarkerPrefix = '__LIBRECHAT_REMOTE_INLINE_FILE__:';
 const mockAttachDocumentsToMessageContent = jest.fn((message, documents, fallbackText) => {
   const content = [];
@@ -104,6 +105,7 @@ jest.mock('@librechat/api', () => ({
   }),
   encodeAndFormatDocuments: mockEncodeAndFormatDocuments,
   filterFilesByEndpointConfig: mockFilterFilesByEndpointConfig,
+  getEndpointFileLimit: mockGetEndpointFileLimit,
   getBalanceConfig: mockGetBalanceConfig,
   createErrorResponse: jest.fn(),
   extractRemoteAgentChatFiles: mockExtractRemoteAgentChatFiles,
@@ -668,6 +670,26 @@ describe('OpenAIChatCompletionController', () => {
         endpointType: 'openAI',
       });
       expect(res.status).toHaveBeenCalledWith(400);
+      expect(mockEncodeAndFormatDocuments).not.toHaveBeenCalled();
+      expect(mockProcessStream).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when inline files exceed the configured file limit', async () => {
+      const secondFile = { ...inlineFile, file_id: 'remote-file-2', filename: 'notes.txt' };
+      mockExtractRemoteAgentChatFiles.mockReturnValueOnce({
+        value: [{ role: 'user', content: 'Files attached' }],
+        files: [inlineFile, secondFile],
+      });
+      mockGetEndpointFileLimit.mockReturnValueOnce(1);
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(mockGetEndpointFileLimit).toHaveBeenCalledWith(req, {
+        endpoint: 'openAI',
+        endpointType: 'openAI',
+      });
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(mockFilterFilesByEndpointConfig).not.toHaveBeenCalled();
       expect(mockEncodeAndFormatDocuments).not.toHaveBeenCalled();
       expect(mockProcessStream).not.toHaveBeenCalled();
     });
