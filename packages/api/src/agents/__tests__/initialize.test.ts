@@ -1251,13 +1251,11 @@ describe('initializeAgent — skill `allowed-tools` union (Phase 6)', () => {
     expect(definedNames).not.toContain('mcp__broken__tool');
   });
 
-  it('falls through to empty toolDefinitions when BOTH the union and base-only loadTools calls return undefined', async () => {
+  it('falls back to host-provided skill authoring tools when BOTH loadTools calls return undefined', async () => {
     /* Worst-case silent-failure path: production loaders catch errors
        and return undefined. If the agent's own tools fail to load AND
-       the retry without extras also fails, we have nothing to give the
-       LLM. The current behavior is to fall through to the `?? {}`
-       fallback rather than throw — pinning that contract here so the
-       turn doesn't crash hard but the agent simply has no tools. */
+       the retry without extras also fails, loaded registry tools drop out,
+       but host-provided file authoring remains available for skill access. */
     const { agent, req, res, loadTools, db } = createMocks();
     agent.tools = ['web_search'];
     const { Types } = await import('mongoose');
@@ -1288,11 +1286,12 @@ describe('initializeAgent — skill `allowed-tools` union (Phase 6)', () => {
       { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
     );
 
-    /* Two attempts (initial + retry), both undefined → empty fallback.
-       The agent gets no tool definitions for the turn but does NOT
-       crash; downstream code handles the empty case. */
+    /* Two attempts (initial + retry), both undefined. Registry-backed tools
+       fall away, but create/edit_file are registered by the initializer so
+       skill authoring still works. */
     expect(loadTools).toHaveBeenCalledTimes(2);
-    expect(result.toolDefinitions).toEqual([]);
+    const definedNames = result.toolDefinitions?.map((d) => d.name) ?? [];
+    expect(definedNames).toEqual(['create_file', 'edit_file']);
   });
 
   it('propagates the error when loadTools fails AND there are no skill-added extras to drop', async () => {

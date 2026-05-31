@@ -607,7 +607,7 @@ export async function initializeAgent(
    * go first so their names win on dedup (primes earlier in the list
    * contribute before the same name gets deduped on a later prime).
    */
-  const hasSkillAccess = params.accessibleSkillIds && params.accessibleSkillIds.length > 0;
+  const hasSkillAccess = (params.accessibleSkillIds?.length ?? 0) > 0;
   let manualSkillPrimes: ResolvedManualSkill[] | undefined;
   let alwaysApplySkillPrimes: ResolvedAlwaysApplySkill[] | undefined;
   let extraAllowedToolNames: string[] = [];
