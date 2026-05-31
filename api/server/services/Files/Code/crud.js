@@ -71,6 +71,8 @@ async function deleteCodeEnvFile(req, file) {
     return;
   }
 
+  let lastError;
+  const missingOrUnsupportedStatuses = new Set([404, 405]);
   try {
     const baseURL = getCodeBaseURL();
     const query = buildCodeEnvDownloadQuery({
@@ -79,9 +81,8 @@ async function deleteCodeEnvFile(req, file) {
       ...(ref.kind === 'skill' ? { version: ref.version } : {}),
     });
     const authHeaders = await getCodeApiAuthHeaders(req);
-    await axios({
+    const baseRequest = {
       method: 'delete',
-      url: `${baseURL}/files/${ref.storage_session_id}/${ref.file_id}${query}`,
       headers: {
         'User-Agent': 'LibreChat/1.0',
         ...authHeaders,
@@ -89,16 +90,36 @@ async function deleteCodeEnvFile(req, file) {
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,
       timeout: 15000,
-    });
+    };
+    const urls = [
+      `${baseURL}/sessions/${ref.storage_session_id}/objects/${ref.file_id}${query}`,
+      `${baseURL}/files/${ref.storage_session_id}/${ref.file_id}${query}`,
+    ];
+
+    for (const url of urls) {
+      try {
+        await axios({ ...baseRequest, url });
+        return;
+      } catch (error) {
+        lastError = error;
+        if (!missingOrUnsupportedStatuses.has(error.response?.status)) {
+          throw error;
+        }
+      }
+    }
   } catch (error) {
+    lastError = error;
+  }
+
+  if (lastError) {
     logAxiosError({
-      error,
-      message: `Error deleting code environment file: ${error.message}`,
+      error: lastError,
+      message: `Error deleting code environment file: ${lastError.message}`,
     });
-    if (error.response?.status === 404) {
+    if (lastError.response?.status === 404) {
       return;
     }
-    throw new Error(error.message || 'An error occurred during file deletion.');
+    throw new Error(lastError.message || 'An error occurred during file deletion.');
   }
 }
 

@@ -178,7 +178,7 @@ describe('Code CRUD', () => {
       expect(mockAxios).toHaveBeenCalledWith(
         expect.objectContaining({
           method: 'delete',
-          url: 'https://code-api.example.com/files/session-1/file-1?kind=agent&id=agent-abc',
+          url: 'https://code-api.example.com/sessions/session-1/objects/file-1?kind=agent&id=agent-abc',
           headers: expect.objectContaining({
             Authorization: 'Bearer codeapi-token',
             'User-Agent': 'LibreChat/1.0',
@@ -190,6 +190,34 @@ describe('Code CRUD', () => {
       );
     });
 
+    it.each([404, 405])(
+      'falls back to the legacy code environment delete route after a %s',
+      async (status) => {
+        mockAxios
+          .mockRejectedValueOnce(
+            Object.assign(new Error('missing route'), { response: { status } }),
+          )
+          .mockResolvedValueOnce({ status: 204 });
+
+        await deleteCodeEnvFile(req, file);
+
+        expect(mockAxios).toHaveBeenNthCalledWith(
+          1,
+          expect.objectContaining({
+            method: 'delete',
+            url: 'https://code-api.example.com/sessions/session-1/objects/file-1?kind=agent&id=agent-abc',
+          }),
+        );
+        expect(mockAxios).toHaveBeenNthCalledWith(
+          2,
+          expect.objectContaining({
+            method: 'delete',
+            url: 'https://code-api.example.com/files/session-1/file-1?kind=agent&id=agent-abc',
+          }),
+        );
+      },
+    );
+
     it('skips files without a code environment ref', async () => {
       await deleteCodeEnvFile(req, {});
 
@@ -198,11 +226,12 @@ describe('Code CRUD', () => {
     });
 
     it('treats missing code environment objects as already deleted', async () => {
-      mockAxios.mockRejectedValue(
-        Object.assign(new Error('missing'), { response: { status: 404 } }),
-      );
+      mockAxios
+        .mockRejectedValueOnce(Object.assign(new Error('missing'), { response: { status: 404 } }))
+        .mockRejectedValueOnce(Object.assign(new Error('missing'), { response: { status: 404 } }));
 
       await expect(deleteCodeEnvFile(req, file)).resolves.toBeUndefined();
+      expect(mockAxios).toHaveBeenCalledTimes(2);
     });
 
     it('throws when code environment deletion fails', async () => {
