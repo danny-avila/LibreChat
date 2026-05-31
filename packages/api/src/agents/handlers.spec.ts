@@ -988,13 +988,18 @@ describe('createToolExecuteHandler', () => {
       config: {},
     } as never;
 
-    function makeAuthoringHandler(params: Partial<ToolExecuteOptions>) {
+    function makeAuthoringHandler(
+      params: Partial<ToolExecuteOptions>,
+      configurable?: Record<string, unknown>,
+    ) {
+      const toolConfigurable = {
+        req,
+        accessibleSkillIds: skillsInScope(),
+        ...(configurable ?? {}),
+      };
       const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
         loadedTools: [],
-        configurable: {
-          req,
-          accessibleSkillIds: skillsInScope(),
-        },
+        configurable: toolConfigurable,
       }));
       return createToolExecuteHandler({
         loadTools,
@@ -1045,6 +1050,64 @@ describe('createToolExecuteHandler', () => {
         }),
       );
       expect(grantSkillOwner).toHaveBeenCalledWith({ req, skillId: SKILL_ID });
+    });
+
+    it('can add bundled files to a newly created skill in the same tool batch', async () => {
+      const createdSkill = {
+        _id: SKILL_ID,
+        name: 'new-skill',
+        body: '# New skill',
+        fileCount: 0,
+        version: 1,
+      };
+      const createSkill = jest.fn(async () => ({
+        skill: createdSkill,
+      }));
+      const getSkillByName = jest.fn(async () => createdSkill);
+      const saveSkillFileContent = jest.fn(async () => ({
+        bytes: 12,
+        relativePath: 'references/a.md',
+      }));
+      const handler = makeAuthoringHandler(
+        {
+          getSkillByName,
+          createSkill: createSkill as unknown as ToolExecuteOptions['createSkill'],
+          saveSkillFileContent,
+        },
+        {
+          accessibleSkillIds: [],
+          skillPrimedIdsByName: {},
+          activeSkillNames: new Set<string>(),
+        },
+      );
+
+      const results = await invokeHandler(handler, [
+        {
+          id: 'call_create_skill',
+          name: 'create_file',
+          args: {
+            file_path: 'skills/new-skill/SKILL.md',
+            content: '---\nname: new-skill\ndescription: Use for tests\n---\n# New skill\n',
+          },
+        },
+        {
+          id: 'call_create_reference',
+          name: 'create_file',
+          args: {
+            file_path: 'skills/new-skill/references/a.md',
+            content: 'reference text',
+          },
+        },
+      ]);
+
+      expect(results.map((r) => r.status)).toEqual(['success', 'success']);
+      expect(saveSkillFileContent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          skillId: SKILL_ID,
+          relativePath: 'references/a.md',
+          content: 'reference text',
+        }),
+      );
     });
 
     it('refuses to overwrite an existing SKILL.md without overwrite: true', async () => {
@@ -1168,6 +1231,110 @@ describe('createToolExecuteHandler', () => {
       expect(result.status).toBe('error');
       expect(result.errorMessage).toContain('matched 2 locations');
       expect(saveSkillFileContent).not.toHaveBeenCalled();
+    });
+
+    it('overwrites large bundled skill files without reading the old content', async () => {
+      const saveSkillFileContent = jest.fn(async () => ({
+        bytes: 11,
+        relativePath: 'references/large.md',
+      }));
+      const getStrategyFunctions = jest.fn();
+      const handler = makeAuthoringHandler({
+        getSkillByName: jest.fn(async () => ({
+          _id: SKILL_ID,
+          name: 'large-skill',
+          body: '# Existing',
+          fileCount: 1,
+          version: 1,
+        })),
+        getSkillFileByPath: jest.fn(async () => ({
+          isBinary: false,
+          mimeType: 'text/markdown',
+          bytes: 600 * 1024,
+          filepath: '/tmp/large.md',
+          source: 'local',
+          relativePath: 'references/large.md',
+        })),
+        getStrategyFunctions,
+        saveSkillFileContent,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_overwrite_large',
+          name: 'create_file',
+          args: {
+            file_path: 'skills/large-skill/references/large.md',
+            content: 'replacement',
+            overwrite: true,
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(result.content).toContain('Updated skills/large-skill/references/large.md');
+      expect(saveSkillFileContent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          relativePath: 'references/large.md',
+          content: 'replacement',
+        }),
+      );
+      expect(getStrategyFunctions).not.toHaveBeenCalled();
+    });
+
+    it('serializes same-file authoring calls so later edits see prior writes', async () => {
+      let storedContent = 'one\n';
+      const saveSkillFileContent = jest.fn(async ({ content }: { content: string }) => {
+        storedContent = content;
+        return {
+          bytes: Buffer.byteLength(content, 'utf8'),
+          relativePath: 'references/a.md',
+        };
+      });
+      const handler = makeAuthoringHandler({
+        getSkillByName: jest.fn(async () => ({
+          _id: SKILL_ID,
+          name: 'serial-skill',
+          body: '# Existing',
+          fileCount: 1,
+          version: 1,
+        })),
+        getSkillFileByPath: jest.fn(async () => ({
+          content: storedContent,
+          isBinary: false,
+          mimeType: 'text/markdown',
+          bytes: Buffer.byteLength(storedContent, 'utf8'),
+          filepath: '/tmp/a.md',
+          source: 'local',
+          relativePath: 'references/a.md',
+        })),
+        saveSkillFileContent,
+      });
+
+      const results = await invokeHandler(handler, [
+        {
+          id: 'call_edit_one',
+          name: 'edit_file',
+          args: {
+            file_path: 'skills/serial-skill/references/a.md',
+            old_text: 'one',
+            new_text: 'two',
+          },
+        },
+        {
+          id: 'call_edit_two',
+          name: 'edit_file',
+          args: {
+            file_path: 'skills/serial-skill/references/a.md',
+            old_text: 'two',
+            new_text: 'three',
+          },
+        },
+      ]);
+
+      expect(results.map((r) => r.status)).toEqual(['success', 'success']);
+      expect(storedContent).toBe('three\n');
+      expect(saveSkillFileContent).toHaveBeenCalledTimes(2);
     });
   });
 

@@ -279,6 +279,8 @@ export interface InitializeAgentParams {
   isInitialAgent?: boolean;
   /** Accessible skill IDs for this user (pre-computed by the caller via ACL query) */
   accessibleSkillIds?: import('mongoose').Types.ObjectId[];
+  /** Whether skill file authoring should be exposed even before a user has viewable skills. */
+  skillAuthoringAvailable?: boolean;
   /** Whether the code execution environment is available (execute_code capability enabled) */
   codeEnvAvailable?: boolean;
   /** Per-user skill active/inactive overrides for filtering the skill catalog. */
@@ -605,6 +607,7 @@ export async function initializeAgent(
    * contribute before the same name gets deduped on a later prime).
    */
   const hasSkillAccess = (params.accessibleSkillIds?.length ?? 0) > 0;
+  const skillAuthoringAvailable = hasSkillAccess || params.skillAuthoringAvailable === true;
   let manualSkillPrimes: ResolvedManualSkill[] | undefined;
   let alwaysApplySkillPrimes: ResolvedAlwaysApplySkill[] | undefined;
   let extraAllowedToolNames: string[] = [];
@@ -905,11 +908,11 @@ export async function initializeAgent(
     );
   }
 
-  if (effectiveCodeEnvAvailable || hasSkillAccess) {
+  if (effectiveCodeEnvAvailable || skillAuthoringAvailable) {
     const fileAuthoringResult = registerFileAuthoringTools({
       toolRegistry,
       toolDefinitions,
-      includeSkillFileInstructions: hasSkillAccess,
+      includeSkillFileInstructions: skillAuthoringAvailable,
     });
     toolDefinitions = fileAuthoringResult.toolDefinitions;
   }
