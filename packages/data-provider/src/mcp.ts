@@ -417,3 +417,28 @@ export const MCPServerUserInputSchema = z.union([
 ]);
 
 export type MCPServerUserInput = z.infer<typeof MCPServerUserInputSchema>;
+
+/**
+ * Set of every field name that may appear in a user-submitted MCP server config,
+ * derived from `MCPServerUserInputSchema`'s union members. Used as the comparison
+ * surface for the OBO lockdown check in `updateMCPServerController` so that
+ * server-managed fields on the existing config (`dbId`, `source`, `author`,
+ * `requiresOAuth`, `oauthMetadata`, etc.) don't show up as differences and
+ * cause spurious 403s on legitimate saves.
+ *
+ * Schema-derived rather than hand-maintained: when a new field is added to
+ * `BaseOptionsSchema` or any transport variant, it flows into this set
+ * automatically. The OBO lockdown then locks the new field by default
+ * (since it won't be in the hand-curated `OBO_USER_EDITABLE_FIELDS`
+ * allowlist), preventing a silent privilege regression.
+ */
+export const MCP_USER_INPUT_FIELDS: ReadonlySet<string> = (() => {
+  const fields = new Set<string>();
+  for (const variant of MCPServerUserInputSchema.options) {
+    const shape = (variant as unknown as { shape: Record<string, unknown> }).shape;
+    for (const key of Object.keys(shape)) {
+      fields.add(key);
+    }
+  }
+  return fields;
+})();

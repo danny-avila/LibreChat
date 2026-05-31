@@ -49,11 +49,14 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
 
   /**
    * Show OBO as a selectable auth option only when the caller has the permission.
-   * If the form is loaded in edit mode for a server that already uses OBO and the
-   * caller has since lost the permission, we still surface the OBO row so the user
-   * understands why the field is locked — but mark it disabled.
+   * Edit-mode carve-out: if the form was loaded for a server that already uses OBO
+   * and the caller has since lost the permission, surface OBO in the radio so the
+   * current auth state is visible — but mark every OBO control disabled (and
+   * disable the radio itself, so the user can't switch away) since the backend
+   * also rejects modifying OBO without the permission.
    */
   const showOboOption = canConfigureObo || authType === AuthTypeEnum.OBO;
+  const isOboLockedReadOnly = !canConfigureObo && authType === AuthTypeEnum.OBO;
 
   const authTypeOptions = useMemo(() => {
     const options = [
@@ -93,6 +96,7 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
           value={authType || AuthTypeEnum.None}
           onChange={(val) => setValue('auth.auth_type', val as AuthTypeEnum)}
           fullWidth
+          disabled={isOboLockedReadOnly}
           aria-labelledby="auth-type-label"
         />
       </fieldset>
@@ -291,7 +295,7 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
             <Input
               id="obo_scopes"
               placeholder="api://<client-id>/Mcp.Tools.ReadWrite"
-              readOnly={!canConfigureObo}
+              disabled={!canConfigureObo}
               aria-invalid={errors.auth?.obo_scopes ? 'true' : 'false'}
               aria-describedby={
                 canConfigureObo ? 'obo-scopes-description' : 'obo-scopes-readonly-description'
