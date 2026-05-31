@@ -1109,6 +1109,36 @@ describe('processDeleteRequest', () => {
     expect(result).toEqual({ deletedFileIds: [], failedFileIds: ['embedded-file'] });
   });
 
+  it('still deletes vector storage when primary embedded file storage is already missing', async () => {
+    const missingError = Object.assign(new Error('no such file'), { code: 'ENOENT' });
+    const primaryDelete = jest.fn().mockRejectedValue(missingError);
+    const vectorDelete = jest.fn().mockResolvedValue(undefined);
+    getStrategyFunctions.mockImplementation((source) =>
+      source === FileSources.vectordb
+        ? { deleteFile: vectorDelete }
+        : { deleteFile: primaryDelete },
+    );
+    db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
+    const req = {
+      body: {},
+      config: {},
+      user: { id: 'user-123', tenantId: 'tenant-a' },
+    };
+    const file = {
+      file_id: 'embedded-file',
+      filepath: '/uploads/embedded.txt',
+      source: FileSources.local,
+      embedded: true,
+    };
+
+    const result = await processDeleteRequest({ req, files: [file] });
+
+    expect(primaryDelete).toHaveBeenCalledWith(req, file, undefined);
+    expect(vectorDelete).toHaveBeenCalledWith(req, file);
+    expect(db.deleteFiles).toHaveBeenCalledWith(['embedded-file']);
+    expect(result).toEqual({ deletedFileIds: ['embedded-file'], failedFileIds: [] });
+  });
+
   it('deletes code environment storage before removing code resource file metadata', async () => {
     const primaryDelete = jest.fn().mockResolvedValue(undefined);
     const codeDelete = jest.fn().mockResolvedValue(undefined);

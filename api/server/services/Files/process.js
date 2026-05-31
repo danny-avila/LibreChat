@@ -177,8 +177,6 @@ const getDeleteMethod = ({ source, deletionMethods }) => {
 
 const createDeleteFileWithSecondaryStorage = ({ source, deleteFile, deletionMethods }) => {
   return async (req, file, openai) => {
-    await deleteFile(req, file, openai);
-
     const secondaryDeletes = [];
     if (file.embedded === true && source !== FileSources.vectordb) {
       secondaryDeletes.push(
@@ -189,6 +187,15 @@ const createDeleteFileWithSecondaryStorage = ({ source, deleteFile, deletionMeth
       secondaryDeletes.push(
         getDeleteMethod({ source: FileSources.execute_code, deletionMethods })(req, file),
       );
+    }
+
+    try {
+      await deleteFile(req, file, openai);
+    } catch (err) {
+      if (!isMissingStorageError(err)) {
+        throw err;
+      }
+      logger.warn('Primary file storage was already missing during delete', err);
     }
 
     await Promise.all(secondaryDeletes);
