@@ -24,6 +24,7 @@ const {
   AccessRoleIds,
   PrincipalType,
   EToolResources,
+  isActionTool,
   PermissionBits,
   actionDelimiter,
   AgentCapabilities,
@@ -42,7 +43,11 @@ const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 const { filterFile } = require('~/server/services/Files/process');
 const { getCachedTools } = require('~/server/services/Config');
-const { resolveConfigServers } = require('~/server/services/MCP');
+const {
+  createMCPPermissionContext,
+  resolveConfigServers,
+  userCanUseMCPServers,
+} = require('~/server/services/MCP');
 const { getMCPServersRegistry } = require('~/config');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
@@ -190,6 +195,8 @@ const isSubagentsCapabilityEnabled = (req) => {
  * @param {string[]} params.tools - Raw tool strings from the request
  * @param {string} params.userId - Requesting user ID for MCP server access check
  * @param {string} [params.role] - Requesting user's role for ACL principal resolution
+ * @param {object} [params.user] - Requesting user for MCP server use permission checks
+ * @param {{ canUseServers: (user?: object) => Promise<boolean> }} [params.mcpPermissionContext] - Request-scoped MCP permission context
  * @param {Record<string, unknown>} params.availableTools - Global non-MCP tool cache
  * @param {string[]} [params.existingTools] - Tools already persisted on the agent document
  * @param {Record<string, unknown>} [params.configServers] - Config-source MCP servers resolved from appConfig overrides
@@ -199,6 +206,8 @@ const filterAuthorizedTools = async ({
   tools,
   userId,
   role,
+  user,
+  mcpPermissionContext,
   availableTools,
   existingTools,
   configServers,
@@ -207,14 +216,30 @@ const filterAuthorizedTools = async ({
   let mcpServerConfigs;
   let registryUnavailable = false;
   const existingToolSet = existingTools?.length ? new Set(existingTools) : null;
+  const hasMCPTools = tools.some((tool) => tool?.includes(Constants.mcp_delimiter));
+  const canUseMCP = hasMCPTools
+    ? await (mcpPermissionContext
+        ? mcpPermissionContext.canUseServers(user)
+        : userCanUseMCPServers(user))
+    : true;
+  let loggedMCPDenied = false;
 
   for (const tool of tools) {
-    if (availableTools[tool] || systemTools[tool]) {
-      filteredTools.push(tool);
+    const isActionToolName = typeof tool === 'string' && isActionTool(tool);
+    const isMCPTool = tool?.includes(Constants.mcp_delimiter) && !isActionToolName;
+
+    if (!isMCPTool) {
+      if (availableTools[tool] || systemTools[tool] || isActionToolName) {
+        filteredTools.push(tool);
+      }
       continue;
     }
 
-    if (!tool?.includes(Constants.mcp_delimiter)) {
+    if (!canUseMCP) {
+      if (!loggedMCPDenied) {
+        logger.warn(`[filterAuthorizedTools] User ${userId} lacks MCP server use permission`);
+        loggedMCPDenied = true;
+      }
       continue;
     }
 
@@ -388,10 +413,13 @@ const createAgentHandler = async (req, res) => {
       getCachedTools().then((t) => t ?? {}),
       hasMCPTools ? resolveConfigServers(req) : Promise.resolve(undefined),
     ]);
+    const mcpPermissionContext = createMCPPermissionContext(req);
     agentData.tools = await filterAuthorizedTools({
       tools,
       userId,
       role: req.user.role,
+      user: req.user,
+      mcpPermissionContext,
       availableTools,
       configServers,
     });
@@ -611,27 +639,55 @@ const updateAgentHandler = async (req, res) => {
       });
     }
 
-    if (updateData.tools) {
-      const existingToolSet = new Set(existingAgent.tools ?? []);
-      const newMCPTools = updateData.tools.filter(
-        (t) => !existingToolSet.has(t) && t?.includes(Constants.mcp_delimiter),
-      );
+    const isMCPTool = (t) =>
+      typeof t === 'string' && t.includes(Constants.mcp_delimiter) && !isActionTool(t);
+    const hasToolUpdate = updateData.tools !== undefined;
+    const editingOwnAgent = existingAgent.author?.toString() === req.user.id;
+    const existingTools = existingAgent.tools ?? [];
+    const effectiveTools = (hasToolUpdate ? updateData.tools : existingAgent.tools) ?? [];
+    const requestedMCPTools = effectiveTools.filter(isMCPTool);
+    const existingMCPTools = existingTools.filter(isMCPTool);
 
-      if (newMCPTools.length > 0) {
-        const [availableTools, configServers] = await Promise.all([
-          getCachedTools().then((t) => t ?? {}),
-          resolveConfigServers(req),
-        ]);
-        const approvedNew = await filterAuthorizedTools({
-          tools: newMCPTools,
-          userId: req.user.id,
-          role: req.user.role,
-          availableTools,
-          configServers,
-        });
-        const rejectedSet = new Set(newMCPTools.filter((t) => !approvedNew.includes(t)));
-        if (rejectedSet.size > 0) {
-          updateData.tools = updateData.tools.filter((t) => !rejectedSet.has(t));
+    if (requestedMCPTools.length > 0 || (hasToolUpdate && existingMCPTools.length > 0)) {
+      const mcpPermissionContext = createMCPPermissionContext(req);
+      if (!(await mcpPermissionContext.canUseServers(req.user))) {
+        if (editingOwnAgent) {
+          updateData.tools = effectiveTools.filter((t) => !isMCPTool(t));
+        } else if (hasToolUpdate) {
+          const existingMCPToolSet = new Set(existingMCPTools);
+          const nextTools = updateData.tools.filter(
+            (t) => !isMCPTool(t) || existingMCPToolSet.has(t),
+          );
+          const nextToolSet = new Set(nextTools);
+          for (const existingMCPTool of existingMCPTools) {
+            if (!nextToolSet.has(existingMCPTool)) {
+              nextTools.push(existingMCPTool);
+            }
+          }
+          updateData.tools = nextTools;
+        }
+      } else if (hasToolUpdate) {
+        const existingToolSet = new Set(existingTools);
+        const newMCPTools = requestedMCPTools.filter((t) => !existingToolSet.has(t));
+
+        if (newMCPTools.length > 0) {
+          const [availableTools, configServers] = await Promise.all([
+            getCachedTools().then((t) => t ?? {}),
+            resolveConfigServers(req),
+          ]);
+          const approvedNew = await filterAuthorizedTools({
+            tools: newMCPTools,
+            userId: req.user.id,
+            role: req.user.role,
+            user: req.user,
+            mcpPermissionContext,
+            availableTools,
+            configServers,
+          });
+          const rejectedSet = new Set(newMCPTools.filter((t) => !approvedNew.includes(t)));
+          if (rejectedSet.size > 0) {
+            updateData.tools = updateData.tools.filter((t) => !rejectedSet.has(t));
+          }
         }
       }
     }
@@ -784,10 +840,13 @@ const duplicateAgentHandler = async (req, res) => {
         getCachedTools().then((t) => t ?? {}),
         resolveConfigServers(req),
       ]);
+      const mcpPermissionContext = createMCPPermissionContext(req);
       newAgentData.tools = await filterAuthorizedTools({
         tools: newAgentData.tools,
         userId,
         role: req.user.role,
+        user: req.user,
+        mcpPermissionContext,
         availableTools,
         existingTools: newAgentData.tools,
         configServers,
@@ -1159,10 +1218,13 @@ const revertAgentVersionHandler = async (req, res) => {
         getCachedTools().then((t) => t ?? {}),
         resolveConfigServers(req),
       ]);
+      const mcpPermissionContext = createMCPPermissionContext(req);
       const filteredTools = await filterAuthorizedTools({
         tools: updatedAgent.tools,
         userId: req.user.id,
         role: req.user.role,
+        user: req.user,
+        mcpPermissionContext,
         availableTools,
         existingTools: updatedAgent.tools,
         configServers,
