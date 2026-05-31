@@ -25,6 +25,7 @@ const {
   injectSkillPrimes,
   extractRemoteAgentResponseFiles,
   attachDocumentsToMessageContent,
+  remoteInlineFileMarkerPrefix,
   createToolExecuteHandler,
   discoverConnectedAgents,
   getRemoteAgentPermissions,
@@ -102,13 +103,34 @@ function createToolLoader(signal, definitionsOnly = true) {
   };
 }
 
-function cloneMessagesForStorage(messages) {
+function cloneMessagesForStorage(messages, inlineProviderFiles = []) {
+  const inlineFileNamesById = new Map(
+    inlineProviderFiles.map((file) => [file.file_id, file.filename]),
+  );
+
   return messages.map((message) => {
     if (!Array.isArray(message?.content)) {
       return { ...message };
     }
 
-    const content = message.content.filter((part) => part?.type !== 'document');
+    const content = message.content
+      .filter((part) => part?.type !== 'document')
+      .map((part) => {
+        if (part?.type !== 'text' || typeof part.text !== 'string') {
+          return part;
+        }
+
+        const text = part.text.trim();
+        if (!text.startsWith(remoteInlineFileMarkerPrefix)) {
+          return part;
+        }
+
+        const fileId = text.slice(remoteInlineFileMarkerPrefix.length);
+        const filename = inlineFileNamesById.get(fileId);
+        return { ...part, text: filename ? `[File: ${filename}]` : '' };
+      })
+      .filter((part) => !(part?.type === 'text' && part.text === ''));
+
     return { ...message, content };
   });
 }
@@ -547,7 +569,7 @@ const createResponse = async (req, res) => {
 
     // Convert input to internal messages
     const inputMessages = convertInputToMessages(remoteInput);
-    const inputMessagesForStorage = cloneMessagesForStorage(inputMessages);
+    const inputMessagesForStorage = cloneMessagesForStorage(inputMessages, inlineProviderFiles);
 
     if (inlineProviderFiles.length > 0) {
       const filteredInlineProviderFiles = filterFilesByEndpointConfig(req, {

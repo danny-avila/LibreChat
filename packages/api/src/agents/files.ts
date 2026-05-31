@@ -2,6 +2,7 @@ import { nanoid } from 'nanoid';
 import type { Types } from 'mongoose';
 
 export const remoteInlineFileSource = 'remote_inline' as const;
+export const remoteInlineFileMarkerPrefix = '__LIBRECHAT_REMOTE_INLINE_FILE__:';
 
 type MessageRole = 'system' | 'user' | 'assistant' | 'tool' | 'developer';
 
@@ -164,7 +165,7 @@ export function extractRemoteAgentChatFiles(
       const filePart = part as ChatFilePart;
       const file = createInlineFile(filePart.file?.filename, filePart.file?.file_data, userId);
       files.push(file);
-      return { type: 'text', text: `[File: ${file.filename}]` };
+      return { type: 'text', text: `${remoteInlineFileMarkerPrefix}${file.file_id}` };
     });
 
     return { ...message, content };
@@ -189,7 +190,10 @@ export function attachDocumentsToMessageContent(
         if (!text.trim()) {
           continue;
         }
-        if (/^\[File: .+\]$/.test(text.trim()) && documentIndex < documents.length) {
+        if (
+          text.trim().startsWith(remoteInlineFileMarkerPrefix) &&
+          documentIndex < documents.length
+        ) {
           content.push(documents[documentIndex]);
           documentIndex += 1;
           continue;
@@ -258,7 +262,7 @@ export function extractRemoteAgentResponseFiles(
       const filePart = part as ResponseInputFilePart;
       const file = createInlineFile(filePart.filename, filePart.file_data, userId);
       files.push(file);
-      return { type: 'input_text', text: `[File: ${file.filename}]` };
+      return { type: 'input_text', text: `${remoteInlineFileMarkerPrefix}${file.file_id}` };
     });
 
     return { ...item, type: 'message', content };

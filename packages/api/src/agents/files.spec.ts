@@ -1,6 +1,7 @@
 import {
   RemoteAgentFileError,
   remoteInlineFileSource,
+  remoteInlineFileMarkerPrefix,
   extractRemoteAgentChatFiles,
   extractRemoteAgentResponseFiles,
   attachDocumentsToMessageContent,
@@ -49,7 +50,7 @@ describe('remote agent file extraction', () => {
       expect(result.files[0].temp_file_id).toBe(result.files[0].file_id);
       expect(result.value[0].content).toEqual([
         { type: 'text', text: 'Read this.' },
-        { type: 'text', text: '[File: document.pdf]' },
+        { type: 'text', text: `${remoteInlineFileMarkerPrefix}${result.files[0].file_id}` },
       ]);
     });
 
@@ -68,8 +69,8 @@ describe('remote agent file extraction', () => {
       expect(result.files.map((file) => file.filename)).toEqual(['a.pdf', 'b.txt']);
       expect(result.value[0].content).toEqual([
         { type: 'text', text: 'Compare these.' },
-        { type: 'text', text: '[File: a.pdf]' },
-        { type: 'text', text: '[File: b.txt]' },
+        { type: 'text', text: `${remoteInlineFileMarkerPrefix}${result.files[0].file_id}` },
+        { type: 'text', text: `${remoteInlineFileMarkerPrefix}${result.files[1].file_id}` },
       ]);
     });
 
@@ -180,7 +181,7 @@ describe('remote agent file extraction', () => {
         expect(result.value[0].type).toBe('message');
         expect(result.value[0].content).toEqual([
           { type: 'input_text', text: 'Read this.' },
-          { type: 'input_text', text: '[File: document.pdf]' },
+          { type: 'input_text', text: `${remoteInlineFileMarkerPrefix}${result.files[0].file_id}` },
         ]);
       }
     });
@@ -203,8 +204,8 @@ describe('remote agent file extraction', () => {
       if (Array.isArray(result.value)) {
         expect(result.value[0].content).toEqual([
           { type: 'input_text', text: 'Compare these.' },
-          { type: 'input_text', text: '[File: a.pdf]' },
-          { type: 'input_text', text: '[File: b.txt]' },
+          { type: 'input_text', text: `${remoteInlineFileMarkerPrefix}${result.files[0].file_id}` },
+          { type: 'input_text', text: `${remoteInlineFileMarkerPrefix}${result.files[1].file_id}` },
         ]);
       }
     });
@@ -240,7 +241,7 @@ describe('remote agent file extraction', () => {
           { type: 'text', text: 'Look at this image first.' },
           image,
           { type: 'text', text: 'Then compare this file.' },
-          { type: 'text', text: '[File: document.pdf]' },
+          { type: 'text', text: `${remoteInlineFileMarkerPrefix}remote_file_1` },
         ],
       };
 
@@ -257,7 +258,7 @@ describe('remote agent file extraction', () => {
     it('adds fallback text when the message has no real text', () => {
       const document = { type: 'document', source: { type: 'base64', data: 'abc' } };
       const message = {
-        content: [{ type: 'text', text: '[File: document.pdf]' }],
+        content: [{ type: 'text', text: `${remoteInlineFileMarkerPrefix}remote_file_1` }],
       };
 
       attachDocumentsToMessageContent(message, [document], 'Attached file(s): document.pdf');

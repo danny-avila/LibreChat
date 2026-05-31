@@ -16,6 +16,7 @@ const mockExtractRemoteAgentChatFiles = jest
   .mockImplementation((messages) => ({ value: messages, files: [] }));
 const mockEncodeAndFormatDocuments = jest.fn().mockResolvedValue({ documents: [], files: [] });
 const mockFilterFilesByEndpointConfig = jest.fn((_, { files }) => files ?? []);
+const remoteInlineFileMarkerPrefix = '__LIBRECHAT_REMOTE_INLINE_FILE__:';
 const mockAttachDocumentsToMessageContent = jest.fn((message, documents, fallbackText) => {
   const content = [];
   let documentIndex = 0;
@@ -28,7 +29,10 @@ const mockAttachDocumentsToMessageContent = jest.fn((message, documents, fallbac
         if (!text.trim()) {
           continue;
         }
-        if (/^\[File: .+\]$/.test(text.trim()) && documentIndex < documents.length) {
+        if (
+          text.trim().startsWith(remoteInlineFileMarkerPrefix) &&
+          documentIndex < documents.length
+        ) {
           content.push(documents[documentIndex]);
           documentIndex += 1;
           continue;
@@ -438,7 +442,7 @@ describe('OpenAIChatCompletionController', () => {
       const cleanedMessages = [
         {
           role: 'user',
-          content: [{ type: 'text', text: '[File: document.pdf]' }],
+          content: [{ type: 'text', text: `${remoteInlineFileMarkerPrefix}remote-file-1` }],
         },
       ];
       mockExtractRemoteAgentChatFiles.mockReturnValueOnce({
@@ -487,7 +491,7 @@ describe('OpenAIChatCompletionController', () => {
       const cleanedMessages = [
         {
           role: 'user',
-          content: [{ type: 'text', text: '[File: document.pdf]' }],
+          content: [{ type: 'text', text: `${remoteInlineFileMarkerPrefix}remote-file-1` }],
         },
       ];
       validateRequest.mockReturnValueOnce({
@@ -605,7 +609,7 @@ describe('OpenAIChatCompletionController', () => {
               { type: 'text', text: 'Look at this image first.' },
               imagePart,
               { type: 'text', text: 'Now compare it with the file.' },
-              { type: 'text', text: '[File: document.pdf]' },
+              { type: 'text', text: `${remoteInlineFileMarkerPrefix}remote-file-1` },
             ],
           },
         ],

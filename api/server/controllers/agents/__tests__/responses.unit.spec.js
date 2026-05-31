@@ -15,6 +15,7 @@ const mockExtractRemoteAgentResponseFiles = jest
   .mockImplementation((input) => ({ value: input, files: [] }));
 const mockEncodeAndFormatDocuments = jest.fn().mockResolvedValue({ documents: [], files: [] });
 const mockFilterFilesByEndpointConfig = jest.fn((_, { files }) => files ?? []);
+const remoteInlineFileMarkerPrefix = '__LIBRECHAT_REMOTE_INLINE_FILE__:';
 const mockAttachDocumentsToMessageContent = jest.fn((message, documents, fallbackText) => {
   const content = [];
   let documentIndex = 0;
@@ -27,7 +28,10 @@ const mockAttachDocumentsToMessageContent = jest.fn((message, documents, fallbac
         if (!text.trim()) {
           continue;
         }
-        if (/^\[File: .+\]$/.test(text.trim()) && documentIndex < documents.length) {
+        if (
+          text.trim().startsWith(remoteInlineFileMarkerPrefix) &&
+          documentIndex < documents.length
+        ) {
           content.push(documents[documentIndex]);
           documentIndex += 1;
           continue;
@@ -108,6 +112,7 @@ jest.mock('@librechat/api', () => ({
   recordCollectedUsage: mockRecordCollectedUsage,
   extractRemoteAgentResponseFiles: mockExtractRemoteAgentResponseFiles,
   attachDocumentsToMessageContent: mockAttachDocumentsToMessageContent,
+  remoteInlineFileMarkerPrefix,
   extractManualSkills: jest.fn().mockReturnValue(undefined),
   injectSkillPrimes: jest.fn().mockReturnValue({
     initialMessages: [],
@@ -533,13 +538,13 @@ describe('createResponse controller', () => {
         {
           type: 'message',
           role: 'user',
-          content: [{ type: 'input_text', text: '[File: document.pdf]' }],
+          content: [{ type: 'input_text', text: `${remoteInlineFileMarkerPrefix}remote-file-1` }],
         },
       ];
       const convertedMessages = [
         {
           role: 'user',
-          content: [{ type: 'text', text: '[File: document.pdf]' }],
+          content: [{ type: 'text', text: `${remoteInlineFileMarkerPrefix}remote-file-1` }],
         },
       ];
       mockExtractRemoteAgentResponseFiles.mockReturnValueOnce({
@@ -590,7 +595,7 @@ describe('createResponse controller', () => {
       const convertedMessages = [
         {
           role: 'user',
-          content: [{ type: 'text', text: '[File: document.pdf]' }],
+          content: [{ type: 'text', text: `${remoteInlineFileMarkerPrefix}remote-file-1` }],
         },
       ];
       validateResponseRequest.mockReturnValueOnce({
@@ -674,7 +679,7 @@ describe('createResponse controller', () => {
           role: 'user',
           content: [
             { type: 'input_text', text: 'Extract this PDF.' },
-            { type: 'input_text', text: '[File: document.pdf]' },
+            { type: 'input_text', text: `${remoteInlineFileMarkerPrefix}remote-file-1` },
           ],
         },
       ];
@@ -690,7 +695,7 @@ describe('createResponse controller', () => {
           role: 'user',
           content: [
             { type: 'text', text: 'Extract this PDF.' },
-            { type: 'text', text: '[File: document.pdf]' },
+            { type: 'text', text: `${remoteInlineFileMarkerPrefix}remote-file-1` },
           ],
         },
       ]);
@@ -839,7 +844,7 @@ describe('createResponse controller', () => {
       convertInputToMessages.mockReturnValueOnce([
         {
           role: 'user',
-          content: [{ type: 'text', text: '[File: document.pdf]' }],
+          content: [{ type: 'text', text: `${remoteInlineFileMarkerPrefix}remote-file-1` }],
         },
       ]);
       mockEncodeAndFormatDocuments.mockResolvedValueOnce({
@@ -863,6 +868,13 @@ describe('createResponse controller', () => {
         expect.objectContaining({
           isCreatedByUser: true,
           text: JSON.stringify([{ type: 'text', text: '[File: document.pdf]' }]),
+        }),
+        expect.any(Object),
+      );
+      expect(saveMessage).not.toHaveBeenCalledWith(
+        req,
+        expect.objectContaining({
+          text: expect.stringContaining(remoteInlineFileMarkerPrefix),
         }),
         expect.any(Object),
       );
