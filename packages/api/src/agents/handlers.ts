@@ -1943,6 +1943,7 @@ async function handleEditFileCall(
       tc,
       options,
       req,
+      mergedConfigurable,
       skill,
       skillName: parsed.skillName,
       content: edited.content,
