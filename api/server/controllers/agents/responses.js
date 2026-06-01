@@ -104,6 +104,11 @@ function createToolLoader(signal, definitionsOnly = true) {
   };
 }
 
+/**
+ * Builds the Responses `store: true` input-message copy.
+ * Provider document blocks and internal inline-file markers are request-scoped;
+ * only a readable placeholder should be persisted for conversation replay.
+ */
 function cloneMessagesForStorage(messages, inlineProviderFiles = []) {
   const inlineFileNamesById = new Map(
     inlineProviderFiles.map((file) => [file.file_id, file.filename]),
@@ -128,8 +133,10 @@ function cloneMessagesForStorage(messages, inlineProviderFiles = []) {
 
         const fileId = text.slice(remoteInlineFileMarkerPrefix.length);
         const filename = inlineFileNamesById.get(fileId);
+        /** Store a stable user-facing reference instead of leaking the private marker. */
         return { ...part, text: filename ? `[File: ${filename}]` : '' };
       })
+      /** Drop unmatched markers rather than saving implementation details. */
       .filter((part) => !(part?.type === 'text' && part.text === ''));
 
     return { ...message, content };
@@ -356,6 +363,11 @@ const createResponse = async (req, res) => {
   });
 
   try {
+    /**
+     * Pull request-scoped `input_file` parts into transient LibreChat-style file
+     * records. The returned input keeps private placeholders so conversion to
+     * internal messages can preserve file positions.
+     */
     const { value: remoteInput, files: inlineProviderFiles } = extractRemoteAgentResponseFiles(
       request.input,
       req.user?.id,
@@ -570,11 +582,14 @@ const createResponse = async (req, res) => {
 
     // Convert input to internal messages
     const inputMessages = convertInputToMessages(remoteInput);
+    /** Keep storage separate from provider attachment to avoid saving transient document payloads. */
     const inputMessagesForStorage = cloneMessagesForStorage(inputMessages, inlineProviderFiles);
 
     if (inlineProviderFiles.length > 0) {
       const endpoint = primaryConfig.endpoint ?? agent.provider;
       const endpointType = primaryConfig.provider ?? agent.provider;
+
+      /** Enforce the UI-facing count limit here because the shared file filter does not. */
       const fileLimit = getEndpointFileLimit(req, { endpoint, endpointType });
       if (Number.isFinite(fileLimit) && inlineProviderFiles.length > fileLimit) {
         return sendResponsesErrorResponse(
@@ -586,6 +601,11 @@ const createResponse = async (req, res) => {
         );
       }
 
+      /**
+       * Reuse LibreChat's endpoint file policy for disabled, MIME, per-file size,
+       * and total-size checks. Remote inline files are rejected as a whole instead
+       * of silently dropping any requested file.
+       */
       const filteredInlineProviderFiles = filterFilesByEndpointConfig(req, {
         files: inlineProviderFiles,
         endpoint,
@@ -601,6 +621,7 @@ const createResponse = async (req, res) => {
         );
       }
 
+      /** Attach provider document blocks to the same latest user message that carried the file parts. */
       let latestUserMessage;
       for (let i = inputMessages.length - 1; i >= 0; i--) {
         if (inputMessages[i]?.role === 'user') {
@@ -609,6 +630,7 @@ const createResponse = async (req, res) => {
         }
       }
 
+      /** Format before stream setup so validation failures can still return a JSON 400. */
       const documentResult = await encodeAndFormatDocuments(
         req,
         inlineProviderFiles,

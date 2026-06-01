@@ -6,6 +6,11 @@ export const remoteInlineFileMarkerPrefix = '__LIBRECHAT_REMOTE_INLINE_FILE__:';
 
 type MessageRole = 'system' | 'user' | 'assistant' | 'tool' | 'developer';
 
+/**
+ * Request validation error for Remote Agent API inline file inputs.
+ * Controllers map this to a 400 response instead of treating malformed
+ * request-owned file data as a server failure.
+ */
 export class RemoteAgentFileError extends Error {
   statusCode = 400;
   code = 'invalid_file_input';
@@ -16,6 +21,11 @@ export class RemoteAgentFileError extends Error {
   }
 }
 
+/**
+ * In-memory file record used for provider-native Remote Agent API uploads.
+ * It intentionally mirrors the fields consumed by existing LibreChat file
+ * encoding helpers, while keeping the base64 payload transient in metadata.
+ */
 export interface RemoteAgentInlineFile {
   file_id: string;
   temp_file_id: string;
@@ -32,6 +42,10 @@ export interface RemoteAgentInlineFile {
   };
 }
 
+/**
+ * Returns the input with remote file parts replaced by internal placeholders,
+ * plus the transient file records that should be validated and provider-formatted.
+ */
 export interface RemoteAgentFileExtractionResult<T> {
   value: T;
   files: RemoteAgentInlineFile[];
@@ -133,6 +147,11 @@ function createInlineFile(
   };
 }
 
+/**
+ * Extracts OpenAI-compatible `file` content parts from the latest user message.
+ * File parts in older messages or non-user messages are rejected because remote
+ * inline uploads are request-scoped and should only apply to the current turn.
+ */
 export function extractRemoteAgentChatFiles(
   messages: ChatMessage[],
   userId?: string | Types.ObjectId,
@@ -165,6 +184,11 @@ export function extractRemoteAgentChatFiles(
       const filePart = part as ChatFilePart;
       const file = createInlineFile(filePart.file?.filename, filePart.file?.file_data, userId);
       files.push(file);
+      /**
+       * Keep a private text marker in the content stream so LibreChat's existing
+       * message conversion can run unchanged. The marker is replaced with the
+       * provider document block after `encodeAndFormatDocuments` returns.
+       */
       return { type: 'text', text: `${remoteInlineFileMarkerPrefix}${file.file_id}` };
     });
 
@@ -174,6 +198,12 @@ export function extractRemoteAgentChatFiles(
   return { value, files };
 }
 
+/**
+ * Replaces internal remote inline file placeholders in an internal message with
+ * provider document blocks, preserving surrounding text and image_url part order.
+ * If the message would otherwise have no text, a nonblank fallback text block is
+ * inserted for providers that reject document-only content.
+ */
 export function attachDocumentsToMessageContent(
   message: MessageWithContent,
   documents: MessageContentPart[],
@@ -190,6 +220,7 @@ export function attachDocumentsToMessageContent(
         if (!text.trim()) {
           continue;
         }
+        /** Marker order mirrors extraction order, so the next document belongs here. */
         if (
           text.trim().startsWith(remoteInlineFileMarkerPrefix) &&
           documentIndex < documents.length
@@ -209,8 +240,10 @@ export function attachDocumentsToMessageContent(
     content.push({ type: 'text', text: message.content });
   }
 
+  /** If conversion dropped or moved a marker unexpectedly, avoid losing the document. */
   content.push(...documents.slice(documentIndex));
   if (!hasText) {
+    /** Bedrock and Anthropic reject a blank first text block before document content. */
     content.unshift({ type: 'text', text: fallbackText });
   }
 
@@ -219,6 +252,12 @@ export function attachDocumentsToMessageContent(
   delete message.image_urls;
 }
 
+/**
+ * Extracts Open Responses `input_file` parts from the latest user message item.
+ * The returned input remains compatible with `convertInputToMessages`, while
+ * the extracted file records are passed through LibreChat's provider document
+ * formatting path.
+ */
 export function extractRemoteAgentResponseFiles(
   input: string | ResponseMessageItem[],
   userId?: string | Types.ObjectId,
@@ -230,6 +269,7 @@ export function extractRemoteAgentResponseFiles(
   let latestUserIndex = -1;
   for (let i = input.length - 1; i >= 0; i--) {
     const item = input[i];
+    /** Responses accepts message items both with and without an explicit `type`. */
     const messageLike =
       item?.type === 'message' ||
       (item?.type == null && typeof item?.role === 'string' && item.content != null);
@@ -242,6 +282,7 @@ export function extractRemoteAgentResponseFiles(
   const files: RemoteAgentInlineFile[] = [];
 
   const value = input.map((item, itemIndex) => {
+    /** Keep this in sync with the latest-user lookup above. */
     const messageLike =
       item?.type === 'message' ||
       (item?.type == null && typeof item?.role === 'string' && item.content != null);
@@ -262,9 +303,14 @@ export function extractRemoteAgentResponseFiles(
       const filePart = part as ResponseInputFilePart;
       const file = createInlineFile(filePart.filename, filePart.file_data, userId);
       files.push(file);
+      /**
+       * `convertInputToMessages` maps `input_text` to internal `text`, preserving
+       * the marker position until document attachment replaces it.
+       */
       return { type: 'input_text', text: `${remoteInlineFileMarkerPrefix}${file.file_id}` };
     });
 
+    /** Normalize implicit message-like items to the explicit Responses message shape. */
     return { ...item, type: 'message', content };
   });
 

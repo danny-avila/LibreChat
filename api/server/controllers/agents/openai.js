@@ -206,6 +206,11 @@ const OpenAIChatCompletionController = async (req, res) => {
   });
 
   try {
+    /**
+     * Pull request-scoped `file` content parts into transient LibreChat-style
+     * file records. The returned messages keep private placeholders so the
+     * existing message conversion pipeline can preserve file positions.
+     */
     const { value: remoteMessages, files: inlineProviderFiles } = extractRemoteAgentChatFiles(
       request.messages,
       req.user?.id,
@@ -460,6 +465,8 @@ const OpenAIChatCompletionController = async (req, res) => {
     if (inlineProviderFiles.length > 0) {
       const endpoint = primaryConfig.endpoint ?? agent.provider;
       const endpointType = primaryConfig.provider ?? agent.provider;
+
+      /** Enforce the UI-facing count limit here because the shared file filter does not. */
       const fileLimit = getEndpointFileLimit(req, { endpoint, endpointType });
       if (Number.isFinite(fileLimit) && inlineProviderFiles.length > fileLimit) {
         return sendErrorResponse(
@@ -471,6 +478,11 @@ const OpenAIChatCompletionController = async (req, res) => {
         );
       }
 
+      /**
+       * Reuse LibreChat's endpoint file policy for disabled, MIME, per-file size,
+       * and total-size checks. Remote inline files are rejected as a whole instead
+       * of silently dropping any requested file.
+       */
       const filteredInlineProviderFiles = filterFilesByEndpointConfig(req, {
         files: inlineProviderFiles,
         endpoint,
@@ -486,6 +498,7 @@ const OpenAIChatCompletionController = async (req, res) => {
         );
       }
 
+      /** Attach provider document blocks to the same latest user message that carried the file parts. */
       let latestUserMessage;
       for (let i = openaiMessages.length - 1; i >= 0; i--) {
         if (openaiMessages[i]?.role === 'user') {
@@ -494,6 +507,7 @@ const OpenAIChatCompletionController = async (req, res) => {
         }
       }
 
+      /** Format before stream setup so validation failures can still return a JSON 400. */
       const documentResult = await encodeAndFormatDocuments(
         req,
         inlineProviderFiles,
