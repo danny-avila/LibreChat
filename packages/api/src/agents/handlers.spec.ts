@@ -1237,8 +1237,11 @@ describe('createToolExecuteHandler', () => {
       expect(createResult.status).toBe('success');
       expect(readResult.status).toBe('success');
       expect(readResult.content).toContain('Round skill');
-      const lastLookup = getSkillByName.mock.calls.at(-1);
-      const lookupIds = lastLookup?.[1] as import('mongoose').Types.ObjectId[] | undefined;
+      const lookupCalls = getSkillByName.mock.calls as unknown as Array<
+        [string, import('mongoose').Types.ObjectId[], Record<string, unknown>]
+      >;
+      const lastLookup = lookupCalls.at(-1);
+      const lookupIds = lastLookup?.[1];
       expect(lastLookup?.[0]).toBe('round-skill');
       expect(lookupIds?.[0].toString()).toBe(SKILL_ID.toString());
       expect(lastLookup?.[2]).toEqual({});
