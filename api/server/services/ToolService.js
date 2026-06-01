@@ -596,11 +596,15 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
   const flowManager = getFlowStateManager(flowsCache);
   const configServers = await resolveConfigServers(req);
   const pendingOAuthServers = new Set();
+  const oauthToolCallIds = new Map();
+  const oauthStepIndexes = new Map();
 
   const createOAuthEmitter = (serverName, index) => {
     return async (authURL) => {
       const flowId = `${req.user.id}:${serverName}:${Date.now()}`;
       const stepId = 'step_oauth_login_' + serverName;
+      oauthToolCallIds.set(serverName, flowId);
+      oauthStepIndexes.set(serverName, index);
       const toolCall = {
         id: flowId,
         name: buildOAuthToolCallName(serverName),
@@ -649,25 +653,28 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     return async () => {
       const stepId = 'step_oauth_login_' + serverName;
       const toolCall = {
+        id: oauthToolCallIds.get(serverName),
         name: buildOAuthToolCallName(serverName),
-        type: 'tool_call_chunk',
+        args: '',
+        output: 'OAuth authentication completed',
+        type: 'tool_call',
       };
 
-      const runStepDeltaEvent = {
-        event: GraphEvents.ON_RUN_STEP_DELTA,
+      const runStepCompletedEvent = {
+        event: GraphEvents.ON_RUN_STEP_COMPLETED,
         data: {
-          id: stepId,
-          delta: {
-            type: StepTypes.TOOL_CALLS,
-            tool_calls: [toolCall],
+          result: {
+            id: stepId,
+            index: oauthStepIndexes.get(serverName) ?? 0,
+            tool_call: toolCall,
           },
         },
       };
 
       if (streamId) {
-        await GenerationJobManager.emitChunk(streamId, runStepDeltaEvent);
+        await GenerationJobManager.emitChunk(streamId, runStepCompletedEvent);
       } else if (res && !res.writableEnded) {
-        sendEvent(res, runStepDeltaEvent);
+        sendEvent(res, runStepCompletedEvent);
       } else {
         logger.warn(
           `[Tool Definitions] Cannot emit OAuth completion for ${serverName}: no streamId and res not available`,
