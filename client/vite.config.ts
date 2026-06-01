@@ -82,9 +82,10 @@ export default defineConfig(({ command }) => ({
           'assets/maskable-icon.png',
           'manifest.webmanifest',
         ],
-        globIgnores: ['images/**/*', '**/*.map', 'assets/rum.*.js'],
+        globIgnores: ['images/**/*', '**/*.map', 'index.html', 'assets/rum.*.js'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
-        navigateFallbackDenylist: [/^\/oauth/, /^\/api/],
+        /** LibreChat mutates index.html per request for subpath and language support. */
+        navigateFallback: null,
       },
       includeAssets: [],
       manifest: {
