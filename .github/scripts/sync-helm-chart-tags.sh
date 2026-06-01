@@ -17,9 +17,14 @@ fail() {
   exit 1
 }
 
+git_auth_header() {
+  token="$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+  printf 'AUTHORIZATION: basic %s' "$token"
+}
+
 git_with_auth() {
   if [ -n "${GITHUB_TOKEN:-}" ]; then
-    git -c "http.${GITHUB_SERVER_URL}/.extraheader=AUTHORIZATION: bearer ${GITHUB_TOKEN}" "$@"
+    git -c "http.extraheader=$(git_auth_header)" "$@"
     return
   fi
 
