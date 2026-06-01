@@ -51,6 +51,22 @@ function invokeHandler(
   });
 }
 
+function invokeHandlerWithConfig(
+  handler: ReturnType<typeof createToolExecuteHandler>,
+  toolCalls: ToolCallRequest[],
+  configurable: Record<string, unknown>,
+): Promise<ToolExecuteResult[]> {
+  return new Promise((resolve, reject) => {
+    const request: ToolExecuteBatchRequest = {
+      toolCalls,
+      configurable,
+      resolve,
+      reject,
+    };
+    handler.handle('on_tool_execute', request);
+  });
+}
+
 /**
  * Sentinel non-empty `accessibleSkillIds` for fixtures that need to opt
  * into "skills are effectively in scope". The `read_file` handler short-
@@ -334,6 +350,7 @@ describe('createToolExecuteHandler', () => {
       const legacyPtcTool = createMockTool(Constants.PROGRAMMATIC_TOOL_CALLING, capturedConfigs);
       const toolRegistry = new Map([
         ['custom_tool', { name: 'custom_tool' }],
+        ['create_file', { name: 'create_file' }],
         [Constants.PROGRAMMATIC_TOOL_CALLING, { name: Constants.PROGRAMMATIC_TOOL_CALLING }],
         [
           Constants.BASH_PROGRAMMATIC_TOOL_CALLING,
@@ -344,7 +361,11 @@ describe('createToolExecuteHandler', () => {
       const ptcToolMap = new Map([['custom_tool', createMockTool('custom_tool', [])]]);
       const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
         loadedTools: [legacyPtcTool] as never[],
-        configurable: { toolRegistry, ptcToolMap },
+        configurable: {
+          toolRegistry,
+          ptcToolMap,
+          fileAuthoringToolNames: new Set(['create_file']),
+        },
       }));
       const handler = createToolExecuteHandler({ loadTools });
 
@@ -1142,6 +1163,85 @@ describe('createToolExecuteHandler', () => {
           content: 'reference text',
         }),
       );
+    });
+
+    it('preserves newly authored skills across later tool execution rounds', async () => {
+      const createdSkill = {
+        _id: SKILL_ID,
+        name: 'round-skill',
+        body: '---\nname: round-skill\ndescription: Use for tests\n---\n# Round skill\n',
+        fileCount: 0,
+        version: 1,
+      };
+      const runtimeConfigurable = {
+        req,
+        accessibleSkillIds: [],
+        skillPrimedIdsByName: {},
+        activeSkillNames: new Set<string>(),
+        skillAuthoringAvailable: true,
+        fileAuthoringToolNames: new Set(['create_file', 'edit_file']),
+      };
+      const staleLoadedConfigurable = {
+        req,
+        accessibleSkillIds: [],
+        skillPrimedIdsByName: {},
+        activeSkillNames: new Set<string>(),
+        skillAuthoringAvailable: true,
+        fileAuthoringToolNames: new Set(['create_file', 'edit_file']),
+      };
+      let created = false;
+      const createSkill = jest.fn(async () => {
+        created = true;
+        return { skill: createdSkill };
+      });
+      const getSkillByName = jest.fn(async () => (created ? createdSkill : null));
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [],
+        configurable: staleLoadedConfigurable,
+      }));
+      const handler = createToolExecuteHandler({
+        loadTools,
+        canCreateSkill: jest.fn(async () => true),
+        canEditSkill: jest.fn(async () => true),
+        grantSkillOwner: jest.fn(async () => undefined),
+        getSkillByName,
+        createSkill: createSkill as unknown as ToolExecuteOptions['createSkill'],
+      });
+
+      const [createResult] = await invokeHandlerWithConfig(
+        handler,
+        [
+          {
+            id: 'call_create_round_skill',
+            name: 'create_file',
+            args: {
+              file_path: 'skills/round-skill/SKILL.md',
+              content: createdSkill.body,
+            },
+          },
+        ],
+        runtimeConfigurable,
+      );
+      const [readResult] = await invokeHandlerWithConfig(
+        handler,
+        [
+          {
+            id: 'call_read_round_skill',
+            name: Constants.READ_FILE,
+            args: { file_path: 'skills/round-skill/SKILL.md' },
+          },
+        ],
+        runtimeConfigurable,
+      );
+
+      expect(createResult.status).toBe('success');
+      expect(readResult.status).toBe('success');
+      expect(readResult.content).toContain('Round skill');
+      const lastLookup = getSkillByName.mock.calls.at(-1);
+      const lookupIds = lastLookup?.[1] as import('mongoose').Types.ObjectId[] | undefined;
+      expect(lastLookup?.[0]).toBe('round-skill');
+      expect(lookupIds?.[0].toString()).toBe(SKILL_ID.toString());
+      expect(lastLookup?.[2]).toEqual({});
     });
 
     it('refuses to overwrite an existing SKILL.md without overwrite: true', async () => {

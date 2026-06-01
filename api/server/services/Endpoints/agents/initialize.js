@@ -679,6 +679,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         accessibleSkillIds: config.accessibleSkillIds,
         activeSkillNames: config.activeSkillNames,
         codeEnvAvailable: config.codeEnvAvailable,
+        skillAuthoringAvailable: config.skillAuthoringAvailable,
+        fileAuthoringToolNames: config.fileAuthoringToolNames,
         skillPrimedIdsByName:
           buildSkillPrimedIdsByName(config.manualSkillPrimes, config.alwaysApplySkillPrimes) ?? {},
       });

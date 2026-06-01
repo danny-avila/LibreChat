@@ -1394,6 +1394,84 @@ function hiddenSkillAuthoringDenied(
   return errorResult(tc, `Skill "${skillName}" cannot be authored by the model`);
 }
 
+function mergeAccessibleSkillIds(
+  base: Record<string, unknown> | undefined,
+  loaded: Record<string, unknown> | undefined,
+): Types.ObjectId[] | undefined {
+  const values = [
+    ...(Array.isArray(loaded?.accessibleSkillIds)
+      ? (loaded.accessibleSkillIds as Types.ObjectId[])
+      : []),
+    ...(Array.isArray(base?.accessibleSkillIds)
+      ? (base.accessibleSkillIds as Types.ObjectId[])
+      : []),
+  ];
+  if (values.length === 0) {
+    return undefined;
+  }
+  const seen = new Set<string>();
+  const merged: Types.ObjectId[] = [];
+  for (const value of values) {
+    const key = value.toString();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    merged.push(value);
+  }
+  return merged;
+}
+
+function mergeSkillPrimedIdsByName(
+  base: Record<string, unknown> | undefined,
+  loaded: Record<string, unknown> | undefined,
+): Record<string, string> | undefined {
+  const loadedPrimed = loaded?.skillPrimedIdsByName as Record<string, string> | undefined;
+  const basePrimed = base?.skillPrimedIdsByName as Record<string, string> | undefined;
+  const merged = { ...(loadedPrimed ?? {}), ...(basePrimed ?? {}) };
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
+function mergeActiveSkillNames(
+  base: Record<string, unknown> | undefined,
+  loaded: Record<string, unknown> | undefined,
+): Set<string> | undefined {
+  const names = new Set<string>();
+  const loadedNames = loaded?.activeSkillNames;
+  if (loadedNames instanceof Set) {
+    for (const name of loadedNames) {
+      names.add(name);
+    }
+  }
+  const baseNames = base?.activeSkillNames;
+  if (baseNames instanceof Set) {
+    for (const name of baseNames) {
+      names.add(name);
+    }
+  }
+  return names.size > 0 ? names : undefined;
+}
+
+function mergeToolConfigurables(
+  base: Record<string, unknown> | undefined,
+  loaded: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const merged = { ...base, ...loaded };
+  const accessibleSkillIds = mergeAccessibleSkillIds(base, loaded);
+  if (accessibleSkillIds) {
+    merged.accessibleSkillIds = accessibleSkillIds;
+  }
+  const skillPrimedIdsByName = mergeSkillPrimedIdsByName(base, loaded);
+  if (skillPrimedIdsByName) {
+    merged.skillPrimedIdsByName = skillPrimedIdsByName;
+  }
+  const activeSkillNames = mergeActiveSkillNames(base, loaded);
+  if (activeSkillNames) {
+    merged.activeSkillNames = activeSkillNames;
+  }
+  return merged;
+}
+
 function rememberAuthoredSkill(
   configurables: Array<Record<string, unknown> | undefined>,
   skill: { _id: Types.ObjectId; name: string },
@@ -2711,8 +2789,12 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               agentId,
             );
             const toolMap = new Map(loadedTools.map((t) => [t.name, t]));
-            const mergedConfigurable = { ...configurable, ...toolConfigurable };
             const sourceConfigurable = configurable as Record<string, unknown> | undefined;
+            const loadedConfigurable = toolConfigurable as Record<string, unknown> | undefined;
+            const mergedConfigurable = mergeToolConfigurables(
+              sourceConfigurable,
+              loadedConfigurable,
+            );
             const authoringQueues = new Map<string, Promise<void>>();
 
             const results: ToolExecuteResult[] = await Promise.all(
@@ -2902,11 +2984,14 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         | Map<string, StructuredToolInterface>
                         | undefined;
                       if (toolRegistry) {
+                        const fileAuthoringToolNames =
+                          getFileAuthoringToolNames(mergedConfigurable) ?? new Set<string>();
                         const toolDefs: LCTool[] = Array.from(toolRegistry.values()).filter(
                           (t) =>
                             t.name !== Constants.PROGRAMMATIC_TOOL_CALLING &&
                             t.name !== Constants.BASH_PROGRAMMATIC_TOOL_CALLING &&
-                            t.name !== Constants.TOOL_SEARCH,
+                            t.name !== Constants.TOOL_SEARCH &&
+                            !fileAuthoringToolNames.has(t.name),
                         );
                         toolCallConfig.toolDefs = toolDefs;
                         toolCallConfig.toolMap = ptcToolMap ?? toolMap;
