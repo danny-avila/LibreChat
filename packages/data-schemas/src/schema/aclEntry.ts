@@ -79,5 +79,7 @@ aclEntrySchema.index({
 });
 aclEntrySchema.index({ resourceId: 1, principalType: 1, principalId: 1, tenantId: 1 });
 aclEntrySchema.index({ principalId: 1, permBits: 1, resourceType: 1, tenantId: 1 });
+/** Covers `findPublicResourceIds` and the public branch of `findAccessibleResources`. */
+aclEntrySchema.index({ principalType: 1, resourceType: 1, permBits: 1, resourceId: 1 });
 
 export default aclEntrySchema;

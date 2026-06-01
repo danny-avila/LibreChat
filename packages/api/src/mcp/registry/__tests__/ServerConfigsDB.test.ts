@@ -1314,6 +1314,34 @@ describe('ServerConfigsDB', () => {
       expect(typeof created.config.updatedAt).toBe('number');
       expect(created.config.updatedAt).toBeLessThanOrEqual(Date.now());
     });
+
+    it('should strip admin-only OAuth audience fields from existing DB-backed user configs', async () => {
+      const config = createSSEConfig('Legacy Audience Test', undefined, {
+        client_id: 'public-client-id',
+      });
+      const created = await serverConfigsDB.add('temp', config, userId);
+
+      await mongoose.models.MCPServer.updateOne(
+        { serverName: created.serverName },
+        {
+          $set: {
+            'config.oauth.audience': 'https://api.example.com',
+            'config.oauth.forward_audience_on_refresh': false,
+            'config.oauth.authorization_url':
+              'https://auth.example.com/authorize?audience=https%3A%2F%2Fapi.example.com&client=ok',
+            'config.oauth.token_url':
+              'https://auth.example.com/token?resource=https%3A%2F%2Fapi.example.com&foo=bar',
+          },
+        },
+      );
+
+      const result = await serverConfigsDB.get(created.serverName, userId);
+      expect(result?.oauth?.client_id).toBe('public-client-id');
+      expect(result?.oauth?.authorization_url).toBe('https://auth.example.com/authorize?client=ok');
+      expect(result?.oauth?.token_url).toBe('https://auth.example.com/token?foo=bar');
+      expect(result?.oauth?.audience).toBeUndefined();
+      expect(result?.oauth?.forward_audience_on_refresh).toBeUndefined();
+    });
   });
 
   describe('edge cases', () => {

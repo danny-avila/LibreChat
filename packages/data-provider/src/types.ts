@@ -213,6 +213,7 @@ export type TUser = {
   avatar: string;
   role: string;
   provider: string;
+  tenantId?: string;
   plugins?: string[];
   twoFactorEnabled?: boolean;
   backupCodes?: TBackupCode[];

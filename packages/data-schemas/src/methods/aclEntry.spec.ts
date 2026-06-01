@@ -1194,6 +1194,42 @@ describe('AclEntry Model Tests', () => {
       expect(agentIds).toHaveLength(1);
       expect(agentIds[0].toString()).toBe(agentRes.toString());
     });
+
+    test('should have a public-principal compound index available for the planner', async () => {
+      await AclEntry.syncIndexes();
+      const indexes = await AclEntry.collection.indexes();
+      const publicIndex = indexes.find(
+        (idx) =>
+          idx.key?.principalType === 1 &&
+          idx.key?.resourceType === 1 &&
+          idx.key?.permBits === 1 &&
+          idx.key?.resourceId === 1,
+      );
+      expect(publicIndex).toBeDefined();
+
+      await methods.grantPermission(
+        PrincipalType.PUBLIC,
+        null,
+        ResourceType.AGENT,
+        new mongoose.Types.ObjectId(),
+        PermissionBits.VIEW,
+        grantedById,
+      );
+
+      const explain = (await AclEntry.find({
+        principalType: PrincipalType.PUBLIC,
+        resourceType: ResourceType.AGENT,
+        permBits: { $in: [PermissionBits.VIEW] },
+      })
+        .hint(publicIndex!.name as string)
+        .explain('queryPlanner')) as unknown as {
+        queryPlanner?: { winningPlan?: Record<string, unknown> };
+      };
+
+      const planString = JSON.stringify(explain?.queryPlanner?.winningPlan ?? {});
+      expect(planString).toContain('IXSCAN');
+      expect(planString).not.toContain('COLLSCAN');
+    });
   });
 
   describe('aggregateAclEntries', () => {
