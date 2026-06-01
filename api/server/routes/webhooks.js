@@ -91,7 +91,7 @@ router.post('/notifications', async (req, res) => {
     // 🔔 Create in-app notification
    try {
     const notificationPayload =
-    type === 'COSTUM'
+    type === 'CUSTOM'
       ? {
           userId,
           message: customMessage,

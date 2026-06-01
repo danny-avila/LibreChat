@@ -69,54 +69,70 @@ function NotificationBell() {
   const dropdown = open
     ? createPortal(
         <div
-          ref={dropdownRef}
-          style={dropdownStyle}
-          className="rounded-xl border border-border-light bg-surface-primary shadow-lg"
-        >
-          <div className="flex items-center justify-between border-b border-border-light px-4 py-3">
-            <span className="text-sm font-semibold text-text-primary">Notifications</span>
-            {unreadCount > 0 && (
-              <button onClick={markAllVisited} className="text-xs text-blue-500 hover:underline">
-                Mark all read
-              </button>
-            )}
-          </div>
-          <div className="max-h-80 overflow-y-auto">
-            {notifications.length === 0 ? (
-              <div className="px-4 py-6 text-center text-sm text-text-secondary">
-                No notifications yet
-              </div>
-            ) : (
-              notifications.map((n) => (
-                <div
-                  key={n._id}
-                  onClick={() => {
-                    markAsVisited(n._id);
-                    setOpen(false);
-                    clearMessagesCache(queryClient, conversation?.conversationId);
-                    queryClient.invalidateQueries([QueryKeys.messages]);
-                    newConvo();
-                    navigate('/c/new', { state: { autoQuestion: n.originalQuestion } });
-                  }}
-                  className={`cursor-pointer border-b border-border-light px-4 py-3 last:border-0 hover:bg-surface-active-alt ${
-                    !n.isVisited ? 'bg-surface-secondary' : ''
-                  }`}
-                >
-                  <div className="flex items-start gap-2">
-                    {!n.isVisited && (
-                      <span className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full bg-blue-500" />
-                    )}
-                    <div className={!n.isVisited ? '' : 'ml-4'}>
-                      <p className="line-clamp-2 text-sm text-text-primary" title={n.originalQuestion}>{n.originalQuestion}</p>
-                      <p className="mt-1 text-xs text-text-secondary">
-                        {new Date(n.createdAt).toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
+            ref={dropdownRef}
+            style={dropdownStyle}
+            className="rounded-xl border border-border-light bg-surface-primary shadow-lg"
+          >
+            <div className="flex items-center justify-between border-b border-border-light px-4 py-3">
+              <span className="text-sm font-semibold text-text-primary">Notifications</span>
+              {unreadCount > 0 && (
+                <button onClick={markAllVisited} className="text-xs text-blue-500 hover:underline">
+                  Mark all read
+                </button>
+              )}
+            </div>
+            <div className="max-h-80 overflow-y-auto">
+              {notifications.length === 0 ? (
+                <div className="px-4 py-6 text-center text-sm text-text-secondary">
+                  No notifications yet
                 </div>
-              ))
-            )}
-          </div>
+              ) : (
+                notifications.map((n) => {
+                  const isClickable = !!n.originalQuestion;
+                  const displayText = n.message ?? n.originalQuestion ?? '';
+
+                  return (
+                    <div
+                      key={n._id}
+                      onClick={() => {
+                        if (!isClickable) return;
+                        markAsVisited(n._id);
+                        setOpen(false);
+                        clearMessagesCache(queryClient, conversation?.conversationId);
+                        queryClient.invalidateQueries([QueryKeys.messages]);
+                        newConvo();
+                        navigate('/c/new', { state: { autoQuestion: n.originalQuestion } });
+                      }}
+                      className={`border-b border-border-light px-4 py-3 last:border-0 ${
+                        isClickable ? 'cursor-pointer hover:bg-surface-active-alt' : 'cursor-default'
+                      } ${!n.isVisited ? 'bg-surface-secondary' : ''}`}
+                    >
+                      <div className="flex items-start gap-2">
+                        {!n.isVisited && (
+                          <span className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full bg-blue-500" />
+                        )}
+                        <div className={!n.isVisited ? '' : 'ml-4'}>
+                          {n.message && (
+                            <p className="mb-0.5 text-xs font-medium text-blue-500">
+                              {n.type === "CUSTOM" ? "Alert" : "Info"}                         
+                            </p>
+                          )}
+                          <p
+                            className="line-clamp-2 text-sm text-text-primary"
+                            title={displayText}
+                          >
+                            {displayText}
+                          </p>
+                          <p className="mt-1 text-xs text-text-secondary">
+                            {new Date(n.createdAt).toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
         </div>,
         document.body,
       )
