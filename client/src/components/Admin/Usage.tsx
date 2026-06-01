@@ -1,12 +1,18 @@
 import { memo, useMemo, useState } from 'react';
-import { Spinner } from '@librechat/client';
+import { Spinner, useToastContext } from '@librechat/client';
+import {
+  useAdminUsageQuery,
+  useAdminBudgetsQuery,
+  useResetMonthBudgetsMutation,
+} from '~/data-provider';
+import { NotificationSeverity } from '~/common';
 import { useLocalize } from '~/hooks';
-import { useAdminUsageQuery } from '~/data-provider';
 
 function formatTokens(value: number): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(value);
 }
 
+/** Converts a tokenCredits amount (1 USD = 1_000_000) to a "$X.XX" string. */
 function formatUSD(valueInCredits: number): string {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -16,9 +22,27 @@ function formatUSD(valueInCredits: number): string {
   }).format(valueInCredits / 1_000_000);
 }
 
+/** Whole days from now until the 1st of next month (UTC). */
+function daysUntilNextMonth(): number {
+  const now = new Date();
+  const firstOfNextMonth = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
+  const msPerDay = 24 * 60 * 60 * 1000;
+  return Math.ceil((firstOfNextMonth - now.getTime()) / msPerDay);
+}
+
 type TabKey = 'analytics' | 'thresholds';
 
 type BUFilter = 'all' | 'POP' | 'BETC' | 'Other';
+
+function matchesBuFilter(bu: string | null, filter: BUFilter): boolean {
+  if (filter === 'all') {
+    return true;
+  }
+  if (filter === 'Other') {
+    return bu === null;
+  }
+  return bu === filter;
+}
 
 const BU_FILTERS = [
   { key: 'all', labelKey: 'com_usage_filter_all' },
@@ -81,23 +105,33 @@ function KpiCard({
   );
 }
 
+/** Spend-vs-budget progress bar: green <60%, amber 60–80%, red >80%. */
+function BudgetProgress({ spent, budget }: { spent: number; budget: number }) {
+  const ratio = budget > 0 ? spent / budget : spent > 0 ? 1 : 0;
+  const percent = Math.min(100, Math.round(ratio * 100));
+  const color = ratio > 0.8 ? 'bg-red-500' : ratio >= 0.6 ? 'bg-amber-500' : 'bg-green-500';
+  return (
+    <div className="flex items-center gap-2">
+      <div className="h-2 w-24 overflow-hidden rounded-full bg-surface-tertiary">
+        <div className={`h-full ${color}`} style={{ width: `${percent}%` }} />
+      </div>
+      <span className="w-10 text-right text-xs tabular-nums text-text-secondary">{percent}%</span>
+    </div>
+  );
+}
+
 function Usage() {
   const localize = useLocalize();
+  const { showToast } = useToastContext();
   const { data, isLoading, isError } = useAdminUsageQuery();
+  const { data: budgetData, isLoading: isBudgetLoading } = useAdminBudgetsQuery();
+  const resetMonthMutation = useResetMonthBudgetsMutation();
   const [activeTab, setActiveTab] = useState<TabKey>('analytics');
   const [activeBU, setActiveBU] = useState<BUFilter>('all');
 
   const rows = data?.rows ?? [];
   const { filteredRows, totals, segments } = useMemo(() => {
-    const filtered = rows.filter((row) => {
-      if (activeBU === 'all') {
-        return true;
-      }
-      if (activeBU === 'Other') {
-        return row.bu === null;
-      }
-      return row.bu === activeBU;
-    });
+    const filtered = rows.filter((row) => matchesBuFilter(row.bu, activeBU));
     const aggregated = filtered.reduce(
       (acc, row) => {
         acc.tokens += row.totalTokens;
@@ -127,6 +161,42 @@ function Usage() {
       segments: aggregated.segments,
     };
   }, [rows, activeBU]);
+
+  const { filteredBudgetRows, budgetTotals } = useMemo(() => {
+    const source = budgetData?.rows ?? [];
+    const filtered = source.filter((row) => matchesBuFilter(row.bu, activeBU));
+    const aggregated = filtered.reduce(
+      (acc, row) => {
+        acc.totalBudget += row.monthlyBudget;
+        acc.totalSpent += row.currentMonthSpend;
+        if (row.currentMonthSpend > 0.8 * row.monthlyBudget) {
+          acc.usersOver80Percent += 1;
+        }
+        return acc;
+      },
+      { totalBudget: 0, totalSpent: 0, totalRemaining: 0, usersOver80Percent: 0 },
+    );
+    aggregated.totalRemaining = aggregated.totalBudget - aggregated.totalSpent;
+    return { filteredBudgetRows: filtered, budgetTotals: aggregated };
+  }, [budgetData?.rows, activeBU]);
+
+  const handleResetMonth = () => {
+    if (!window.confirm(localize('com_budget_reset_confirm'))) {
+      return;
+    }
+    resetMonthMutation.mutate(undefined, {
+      onSuccess: () =>
+        showToast({
+          message: localize('com_budget_reset_success'),
+          severity: NotificationSeverity.SUCCESS,
+        }),
+      onError: () =>
+        showToast({
+          message: localize('com_budget_reset_error'),
+          severity: NotificationSeverity.ERROR,
+        }),
+    });
+  };
 
   if (isLoading) {
     return (
@@ -178,24 +248,25 @@ function Usage() {
         </button>
       </div>
 
+      <div className="flex gap-2">
+        {BU_FILTERS.map((filter) => (
+          <button
+            key={filter.key}
+            type="button"
+            onClick={() => setActiveBU(filter.key)}
+            className={`rounded-md px-3 py-1.5 text-xs transition-colors ${
+              activeBU === filter.key
+                ? 'bg-surface-tertiary text-text-primary'
+                : 'text-text-secondary hover:bg-surface-secondary'
+            }`}
+          >
+            {localize(filter.labelKey)}
+          </button>
+        ))}
+      </div>
+
       {activeTab === 'analytics' && (
         <>
-          <div className="flex gap-2">
-            {BU_FILTERS.map((filter) => (
-              <button
-                key={filter.key}
-                type="button"
-                onClick={() => setActiveBU(filter.key)}
-                className={`rounded-md px-3 py-1.5 text-xs transition-colors ${
-                  activeBU === filter.key
-                    ? 'bg-surface-tertiary text-text-primary'
-                    : 'text-text-secondary hover:bg-surface-secondary'
-                }`}
-              >
-                {localize(filter.labelKey)}
-              </button>
-            ))}
-          </div>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <KpiCard
               label={localize('com_usage_kpi_users')}
@@ -276,16 +347,115 @@ function Usage() {
         </>
       )}
 
-      {activeTab === 'thresholds' && (
-        <div className="rounded-lg border border-border-light p-12 text-center">
-          <p className="text-sm text-text-secondary">
-            {localize('com_usage_thresholds_placeholder')}
-          </p>
-          <p className="mt-2 text-xs text-text-tertiary">
-            {localize('com_usage_thresholds_coming_soon')}
-          </p>
-        </div>
-      )}
+      {activeTab === 'thresholds' &&
+        (isBudgetLoading ? (
+          <div className="flex w-full items-center justify-center py-12 text-text-secondary">
+            <Spinner />
+          </div>
+        ) : (
+          <>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleResetMonth}
+                disabled={resetMonthMutation.isLoading}
+                className="rounded-md bg-surface-tertiary px-3 py-1.5 text-xs text-text-primary transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                {localize('com_budget_reset_button')}
+              </button>
+            </div>
+
+            {budgetTotals.usersOver80Percent > 0 && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
+                {localize('com_budget_alert_over_threshold', {
+                  count: budgetTotals.usersOver80Percent,
+                })}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <KpiCard
+                label={localize('com_budget_kpi_total')}
+                value={formatUSD(budgetTotals.totalBudget)}
+                sublabel={localize('com_usage_kpi_this_month')}
+              />
+              <KpiCard
+                label={localize('com_budget_kpi_spent')}
+                value={formatUSD(budgetTotals.totalSpent)}
+                sublabel={localize('com_usage_kpi_this_month')}
+              />
+              <KpiCard
+                label={localize('com_budget_kpi_remaining')}
+                value={formatUSD(budgetTotals.totalRemaining)}
+                sublabel={localize('com_usage_kpi_this_month')}
+              />
+              <KpiCard
+                label={localize('com_budget_kpi_reset')}
+                value={formatTokens(daysUntilNextMonth())}
+                sublabel={localize('com_budget_kpi_reset_days')}
+              />
+            </div>
+
+            {filteredBudgetRows.length === 0 ? (
+              <div className="rounded-lg border border-border-light p-8 text-center text-text-secondary">
+                {localize('com_budget_empty')}
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-lg border border-border-light">
+                <table className="w-full border-collapse text-left text-sm">
+                  <thead className="bg-surface-secondary text-text-secondary">
+                    <tr>
+                      <th className="px-4 py-3 font-medium">{localize('com_usage_col_user')}</th>
+                      <th className="px-4 py-3 font-medium">{localize('com_usage_col_bu')}</th>
+                      <th className="px-4 py-3 text-right font-medium">
+                        {localize('com_budget_col_spent')}
+                      </th>
+                      <th className="px-4 py-3 text-right font-medium">
+                        {localize('com_budget_col_threshold')}
+                      </th>
+                      <th className="px-4 py-3 font-medium">
+                        {localize('com_budget_col_progress')}
+                      </th>
+                      <th className="px-4 py-3 text-right font-medium">
+                        {localize('com_budget_col_action')}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredBudgetRows.map((row) => (
+                      <tr key={row.user} className="border-t border-border-light text-text-primary">
+                        <td className="px-4 py-3">
+                          <div>{row.name ?? '—'}</div>
+                          <div className="text-xs text-text-secondary">{row.email ?? '—'}</div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <BuBadge bu={row.bu} />
+                        </td>
+                        <td className="px-4 py-3 text-right tabular-nums">
+                          {formatUSD(row.currentMonthSpend)}
+                        </td>
+                        <td className="px-4 py-3 text-right tabular-nums">
+                          {formatUSD(row.monthlyBudget)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <BudgetProgress spent={row.currentMonthSpend} budget={row.monthlyBudget} />
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            type="button"
+                            className="rounded-md px-3 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-secondary hover:text-text-primary"
+                          >
+                            {localize('com_budget_action_edit')}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        ))}
     </div>
   );
 }
