@@ -1240,7 +1240,7 @@ describe('createToolExecuteHandler', () => {
       const lookupCalls = getSkillByName.mock.calls as unknown as Array<
         [string, import('mongoose').Types.ObjectId[], Record<string, unknown>]
       >;
-      const lastLookup = lookupCalls.at(-1);
+      const lastLookup = lookupCalls[lookupCalls.length - 1];
       const lookupIds = lastLookup?.[1];
       expect(lastLookup?.[0]).toBe('round-skill');
       expect(lookupIds?.[0].toString()).toBe(SKILL_ID.toString());
