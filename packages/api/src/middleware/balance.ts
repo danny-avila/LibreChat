@@ -22,6 +22,10 @@ export interface BalanceMiddlewareOptions {
   upsertBalanceFields: (userId: string, fields: IBalanceUpdate) => Promise<IBalance | null>;
 }
 
+type BalanceRequest = ServerRequest & {
+  balanceData?: IBalance | null;
+};
+
 const balanceUpdateLocks = new Map<string, Promise<void>>();
 
 async function runBalanceUpdate(userId: string, task: () => Promise<void>): Promise<void> {
@@ -117,6 +121,7 @@ export function createSetBalanceConfig({
 ) => Promise<void> {
   return async (req: ServerRequest, res: ServerResponse, next: NextFunction): Promise<void> => {
     try {
+      const balanceReq = req as BalanceRequest;
       const user = req.user as IUser & { _id: string | ObjectId };
       const appConfig = await getAppConfig({
         role: user?.role,
@@ -140,10 +145,11 @@ export function createSetBalanceConfig({
         const updateFields = buildUpdateFields(balanceConfig, userBalanceRecord, userId);
 
         if (Object.keys(updateFields).length === 0) {
+          balanceReq.balanceData = userBalanceRecord;
           return;
         }
 
-        await upsertBalanceFields(userId, updateFields);
+        balanceReq.balanceData = await upsertBalanceFields(userId, updateFields);
       });
 
       next();

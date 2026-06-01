@@ -93,6 +93,9 @@ describe('createSetBalanceConfig', () => {
       expect(balanceRecord?.refillIntervalUnit).toBe('days');
       expect(balanceRecord?.refillAmount).toBe(500);
       expect(balanceRecord?.lastRefill).toBeInstanceOf(Date);
+      expect((req as ServerRequest & { balanceData?: IBalance }).balanceData?.tokenCredits).toBe(
+        1000,
+      );
     });
 
     test('should skip if balance config is not enabled', async () => {
@@ -495,6 +498,9 @@ describe('createSetBalanceConfig', () => {
 
       expect(mockNext).toHaveBeenCalled();
       expect(upsertSpy).not.toHaveBeenCalled();
+      expect((req as ServerRequest & { balanceData?: IBalance }).balanceData?.tokenCredits).toBe(
+        1000,
+      );
     });
 
     test('should set tokenCredits for user with null tokenCredits', async () => {

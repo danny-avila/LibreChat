@@ -87,7 +87,10 @@ function warnDeniedCapabilityOnce(key: string, message: string): void {
   }
 
   if (recentDenialWarnings.size >= MAX_DENIAL_WARN_KEYS) {
-    recentDenialWarnings.clear();
+    const oldestKey = recentDenialWarnings.keys().next().value;
+    if (oldestKey !== undefined) {
+      recentDenialWarnings.delete(oldestKey);
+    }
   }
 
   recentDenialWarnings.set(key, now);
