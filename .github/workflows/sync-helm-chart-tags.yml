@@ -1,0 +1,73 @@
+name: Sync Helm Chart Tags
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      release_existing_tag:
+        description: "Existing chart-* tag to dispatch if tag creation succeeded but release dispatch failed"
+        required: false
+        type: string
+
+permissions:
+  actions: write
+  contents: write
+
+concurrency:
+  group: sync-helm-chart-tags
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync chart tags
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE_REF: refs/remotes/origin/main
+      BACKFILL_FROM_VERSION: 1.9.0
+      CHART_PATH: helm/librechat/Chart.yaml
+      DEFAULT_BRANCH: main
+      DISPATCH_WORKFLOW: helmcharts.yml
+      GITHUB_SERVER_URL: ${{ github.server_url }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      RELEASE_EXISTING_TAG: ${{ inputs.release_existing_tag || '' }}
+      REPO_DIR: ${{ runner.temp }}/librechat
+      TAG_PREFIX: chart-
+    steps:
+      - name: Fetch main and tags
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$GITHUB_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+            echo "::error::Unexpected repository name: $GITHUB_REPOSITORY"
+            exit 1
+          fi
+
+          if [[ "$GITHUB_SERVER_URL" != "https://github.com" ]]; then
+            echo "::error::Unexpected GitHub server URL: $GITHUB_SERVER_URL"
+            exit 1
+          fi
+
+          rm -rf "$REPO_DIR"
+          git init "$REPO_DIR"
+          cd "$REPO_DIR"
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git -c "http.${GITHUB_SERVER_URL}/.extraheader=AUTHORIZATION: bearer ${GITHUB_TOKEN}" \
+            fetch --prune --force --tags origin \
+            "+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}"
+          git checkout --detach "$BASE_REF"
+
+      - name: Create missing chart tags
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PUSH_TAGS: "true"
+        run: |
+          set -euo pipefail
+          cd "$REPO_DIR"
+          .github/scripts/sync-helm-chart-tags.sh
