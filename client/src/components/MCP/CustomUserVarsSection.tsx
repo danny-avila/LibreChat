@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { useForm, Controller } from 'react-hook-form';
-import { Input, Label, Button } from '@librechat/client';
+import { Label, Input, Button, SecretInput } from '@librechat/client';
+import type { Control, FieldErrors } from 'react-hook-form';
 import { useMCPAuthValuesQuery } from '~/data-provider/Tools/queries';
 import {
   CONFIG_HTML_INLINE_TAGS,
@@ -12,6 +13,8 @@ import { useLocalize } from '~/hooks';
 export interface CustomUserVarConfig {
   title: string;
   description?: string;
+  /** Whether the field holds a secret and should be masked (defaults to masked when omitted). */
+  sensitive?: boolean;
 }
 
 interface CustomUserVarsSectionProps {
@@ -25,8 +28,8 @@ interface AuthFieldProps {
   name: string;
   config: CustomUserVarConfig;
   hasValue: boolean;
-  control: any;
-  errors: any;
+  control: Control<Record<string, string>>;
+  errors: FieldErrors<Record<string, string>>;
   autoFocus?: boolean;
 }
 
@@ -70,29 +73,30 @@ function AuthField({ name, config, hasValue, control, errors, autoFocus }: AuthF
         name={name}
         control={control}
         defaultValue=""
-        render={({ field }) => (
-          <Input
-            id={name}
-            // Prevent autofill: browser DOM mutations bypass React's synthetic
-            // onChange, silently emptying react-hook-form state on submit.
-            type="new-password"
-            autoComplete="new-password"
-            data-lpignore="true"
-            data-1p-ignore="true"
-            /* autoFocus is generally disabled due to the fact that it can disorient users,
-             * but in this case, the required field would logically be immediately navigated to anyways, and the component's
-             * functionality emulates that of a new modal opening, where users would expect focus to be shifted to the new content */
-            // eslint-disable-next-line jsx-a11y/no-autofocus
-            autoFocus={autoFocus}
-            {...field}
-            placeholder={
-              hasValue
-                ? localize('com_ui_mcp_update_var', { 0: config.title })
-                : localize('com_ui_mcp_enter_var', { 0: config.title })
-            }
-            className="w-full rounded border border-border-medium bg-transparent px-2 py-1 text-text-primary placeholder:text-text-secondary focus:outline-none sm:text-sm"
-          />
-        )}
+        render={({ field }) => {
+          const placeholder = hasValue
+            ? localize('com_ui_mcp_update_var', { 0: config.title })
+            : localize('com_ui_mcp_enter_var', { 0: config.title });
+          const className =
+            'w-full rounded border border-border-medium bg-transparent px-2 py-1 text-text-primary placeholder:text-text-secondary focus:outline-none sm:text-sm';
+          // Prevent autofill: browser DOM mutations bypass React's synthetic
+          // onChange, silently emptying react-hook-form state on submit.
+          const sharedProps = {
+            id: name,
+            'data-lpignore': 'true',
+            'data-1p-ignore': 'true',
+            /* autoFocus is generally disorienting, but here the required field is navigated to
+             * anyway, and the section emulates a modal opening where users expect focus to shift. */
+            autoFocus,
+            ...field,
+            placeholder,
+            className,
+          };
+          if (config.sensitive === false) {
+            return <Input {...sharedProps} type="text" autoComplete="off" />;
+          }
+          return <SecretInput {...sharedProps} autoComplete="new-password" controlsOnHover />;
+        }}
       />
       {sanitizedDescription && (
         <p

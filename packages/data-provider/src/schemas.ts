@@ -629,6 +629,8 @@ export const tPluginAuthConfigSchema = z.object({
   label: z.string(),
   description: z.string(),
   optional: z.boolean().optional(),
+  /** Whether the field holds a secret and should be masked in the UI (defaults to masked when omitted). */
+  sensitive: z.boolean().optional(),
 });
 
 export type TPluginAuthConfig = z.infer<typeof tPluginAuthConfigSchema>;
