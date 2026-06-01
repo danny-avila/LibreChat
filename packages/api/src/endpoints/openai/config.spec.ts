@@ -237,6 +237,29 @@ describe('getOpenAIConfig', () => {
     expect((result.llmConfig as Record<string, unknown>).reasoning_effort).toBeUndefined();
   });
 
+  it('should apply Vercel reasoning format to custom default params', () => {
+    const result = getOpenAIConfig(
+      mockApiKey,
+      {
+        reverseProxyUrl: 'https://ai-gateway.vercel.sh/v1',
+        customParams: {
+          paramDefinitions: [{ key: 'reasoning_effort', default: ReasoningEffort.low }],
+        },
+        modelOptions: {
+          model: 'openai/gpt-5-mini',
+        },
+      },
+      'Vercel',
+    );
+
+    expect(result.llmConfig.modelKwargs).toEqual({
+      reasoning: {
+        effort: ReasoningEffort.low,
+      },
+    });
+    expect((result.llmConfig as Record<string, unknown>).reasoning_effort).toBeUndefined();
+  });
+
   it('should allow Vercel reasoning format override', () => {
     const result = getOpenAIConfig(
       mockApiKey,

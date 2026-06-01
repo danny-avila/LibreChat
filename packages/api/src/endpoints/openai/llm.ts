@@ -441,6 +441,8 @@ export function getOpenAILLMConfig({
 
   const modelKwargs: Record<string, unknown> = {};
   let hasModelKwargs = false;
+  let reasoningEffort = reasoning_effort;
+  let reasoningSummary = reasoning_summary;
 
   if (verbosity != null && verbosity !== '' && useOpenRouter) {
     llmConfig.verbosity = verbosity;
@@ -464,6 +466,18 @@ export function getOpenAILLMConfig({
       if (key === 'promptCache') {
         if (enablePromptCache === undefined && typeof value === 'boolean') {
           enablePromptCache = value;
+        }
+        continue;
+      }
+      if (key === 'reasoning_effort') {
+        if (!reasoningEffort && typeof value === 'string') {
+          reasoningEffort = value as OpenAILLMConfig['reasoning_effort'];
+        }
+        continue;
+      }
+      if (key === 'reasoning_summary') {
+        if (!reasoningSummary && typeof value === 'string') {
+          reasoningSummary = value as OpenAILLMConfig['reasoning_summary'];
         }
         continue;
       }
@@ -506,6 +520,18 @@ export function getOpenAILLMConfig({
         }
         continue;
       }
+      if (key === 'reasoning_effort') {
+        if (typeof value === 'string' || value == null) {
+          reasoningEffort = value as OpenAILLMConfig['reasoning_effort'];
+        }
+        continue;
+      }
+      if (key === 'reasoning_summary') {
+        if (typeof value === 'string' || value == null) {
+          reasoningSummary = value as OpenAILLMConfig['reasoning_summary'];
+        }
+        continue;
+      }
       if (key === 'verbosity') {
         hasModelKwargs =
           applyVerbosityParam({
@@ -535,7 +561,7 @@ export function getOpenAILLMConfig({
      */
     hasModelKwargs =
       applyOpenRouterReasoningConfig({
-        reasoningEffort: reasoning_effort,
+        reasoningEffort,
         model: modelOptions.model,
         modelKwargs,
         llmConfig,
@@ -577,8 +603,8 @@ export function getOpenAILLMConfig({
         llmConfig,
         modelKwargs,
         reasoningFormat,
-        reasoningEffort: reasoning_effort,
-        reasoningSummary: reasoning_summary,
+        reasoningEffort,
+        reasoningSummary,
       }) || hasModelKwargs;
   }
 

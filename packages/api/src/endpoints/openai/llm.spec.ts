@@ -501,6 +501,51 @@ describe('getOpenAILLMConfig', () => {
       expect(result.llmConfig).not.toHaveProperty('reasoning_effort');
     });
 
+    it('should apply reasoning format to default reasoning params', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: 'custom',
+        reasoningFormat: ReasoningParameterFormat.reasoningObject,
+        defaultParams: {
+          reasoning_effort: ReasoningEffort.low,
+          reasoning_summary: ReasoningSummary.concise,
+        },
+        modelOptions: {
+          model: 'provider/reasoning-model',
+        },
+      });
+
+      expect(result.llmConfig.modelKwargs).toHaveProperty('reasoning', {
+        effort: ReasoningEffort.low,
+        summary: ReasoningSummary.concise,
+      });
+      expect(result.llmConfig.modelKwargs).not.toHaveProperty('reasoning_effort');
+    });
+
+    it('should let addParams reasoning override default reasoning params before formatting', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: 'custom',
+        reasoningFormat: ReasoningParameterFormat.reasoningObject,
+        defaultParams: {
+          reasoning_effort: ReasoningEffort.low,
+        },
+        addParams: {
+          reasoning_effort: ReasoningEffort.high,
+        },
+        modelOptions: {
+          model: 'provider/reasoning-model',
+        },
+      });
+
+      expect(result.llmConfig.modelKwargs).toHaveProperty('reasoning', {
+        effort: ReasoningEffort.high,
+      });
+      expect(result.llmConfig.modelKwargs).not.toHaveProperty('reasoning_effort');
+    });
+
     it('should allow custom endpoints to disable reasoning passthrough', () => {
       const result = getOpenAILLMConfig({
         apiKey: 'test-api-key',
