@@ -38,9 +38,9 @@ const router = express.Router();
 
 router.use(preAuthTenantMiddleware);
 router.use(requireRemoteAgentAuth);
+router.use(configMiddleware);
 router.use(remoteAgentJsonParser);
 router.use(handleJsonParseError);
-router.use(configMiddleware);
 router.use(checkRemoteAgentsFeature);
 
 /**

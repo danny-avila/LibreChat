@@ -57,6 +57,27 @@ describe('bedrockEndpointSchema', () => {
   });
 });
 
+describe('agentsEndpointSchema', () => {
+  it('preserves Remote Agent API request body limit from configSchema parsing', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        agents: {
+          remoteApi: {
+            requestBodyLimit: '64mb',
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
+    }
+    expect(result.data.endpoints?.agents?.remoteApi?.requestBodyLimit).toBe('64mb');
+  });
+});
+
 describe('resolveEndpointType', () => {
   describe('non-agents endpoints', () => {
     it('returns the config type for a custom endpoint', () => {

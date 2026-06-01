@@ -1,6 +1,10 @@
 const express = require('express');
 const request = require('supertest');
-const { remoteAgentJsonLimit, remoteAgentJsonParser } = require('./remoteAgentBodyParser');
+const {
+  getRemoteAgentJsonLimit,
+  remoteAgentJsonLimit,
+  remoteAgentJsonParser,
+} = require('./remoteAgentBodyParser');
 
 describe('remoteAgentJsonParser', () => {
   function createApp() {
@@ -18,6 +22,10 @@ describe('remoteAgentJsonParser', () => {
     });
     app.use('/api/agents/v1', (req, res, next) => {
       if (req.get('authorization') === 'Bearer valid') {
+        const requestBodyLimit = req.get('x-request-body-limit');
+        if (requestBodyLimit) {
+          req.config = { endpoints: { agents: { remoteApi: { requestBodyLimit } } } };
+        }
         return next();
       }
       return res.status(401).json({ parsed: req.body != null });
@@ -45,6 +53,14 @@ describe('remoteAgentJsonParser', () => {
     expect(remoteAgentJsonLimit).toBe(process.env.REMOTE_AGENT_API_JSON_LIMIT || '64mb');
   });
 
+  it('resolves the Remote Agent API JSON limit from request config', () => {
+    const req = {
+      config: { endpoints: { agents: { remoteApi: { requestBodyLimit: '8mb' } } } },
+    };
+
+    expect(getRemoteAgentJsonLimit(req)).toBe('8mb');
+  });
+
   it('allows Remote Agent API JSON bodies above the global parser limit', async () => {
     const input = 'x'.repeat(4 * 1024 * 1024);
 
@@ -55,6 +71,19 @@ describe('remoteAgentJsonParser', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.length).toBe(input.length);
+  });
+
+  it('uses the configured Remote Agent API request body limit', async () => {
+    const input = 'x'.repeat(4 * 1024 * 1024);
+
+    const response = await request(createApp())
+      .post('/api/agents/v1/responses')
+      .set('authorization', 'Bearer valid')
+      .set('x-request-body-limit', '1mb')
+      .send({ input });
+
+    expect(response.status).toBe(413);
+    expect(response.body.type).toBe('entity.too.large');
   });
 
   it('allows Remote Agent API JSON bodies above the global parser limit with a trailing slash', async () => {

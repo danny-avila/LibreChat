@@ -539,6 +539,7 @@ const remoteApiAuthSchema = z.object({
 });
 
 const remoteApiSchema = z.object({
+  requestBodyLimit: z.union([z.string().min(1), z.number().positive()]).optional(),
   auth: remoteApiAuthSchema.optional(),
 });
 
