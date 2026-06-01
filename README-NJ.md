@@ -103,9 +103,15 @@ In order to be able to continue merging upstream LibreChat changes, we need to m
 ### Branching Strategy
 
 We use trunk-based development with a focus on merging changes from upstream. We have one branch, `newjersey`,
-which is where our version of LibreChat lives & deploys from.
+which is where our version of LibreChat lives & deploys from. Releases are done via tagging commits on the `newjersey`
+branch.
 
-Changes should use pull requests, with squash & rebase as the merge method.
+### Pull Requests
+
+Changes should use pull requests targeting `newjersey`, with squash & rebase as the merge method.
+
+Keep in mind that, by default, GitHub opens pull requests targeting upstream (NOT our repo). Make sure to change all PRs
+so they target New Jersey's fork.
 
 ### Merging Upstream Changes
 
