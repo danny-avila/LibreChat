@@ -9,6 +9,13 @@ type ImageFileProps = {
   file: Partial<TFile>;
   localPreview?: string;
   className?: string;
+  args?: {
+    prompt?: string;
+    quality?: 'low' | 'medium' | 'high';
+    size?: string;
+    style?: string;
+    [key: string]: unknown;
+  };
 };
 
 /**
@@ -17,7 +24,7 @@ type ImageFileProps = {
  * the container is public; when the direct load fails, the bytes are fetched through
  * the authenticated download proxy and rendered from a local `blob:` URL.
  */
-const ImageFile = ({ file, localPreview, className }: ImageFileProps) => {
+const ImageFile = ({ file, localPreview, className, args }: ImageFileProps) => {
   const user = useRecoilValue(store.user);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const canProxy = !localPreview && !!file.file_id && isProxyImageSource(file.source);
@@ -49,6 +56,7 @@ const ImageFile = ({ file, localPreview, className }: ImageFileProps) => {
       width={file.width ?? undefined}
       height={file.height ?? undefined}
       className={className}
+      args={args}
       onError={canProxy && !blobUrl ? loadViaProxy : undefined}
     />
   );
