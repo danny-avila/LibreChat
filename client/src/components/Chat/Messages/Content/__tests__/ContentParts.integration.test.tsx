@@ -290,4 +290,31 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
       'false',
     );
   });
+
+  it('keeps id-backed expansion state across transient message id changes', () => {
+    const content = [makeMcpToolCall('t1'), makeMcpToolCall('t2')];
+
+    const { rerender } = render(
+      <RecoilRoot>
+        <ContentParts {...baseProps} messageId="placeholder-msg" content={content} />
+      </RecoilRoot>,
+    );
+
+    const toggle = screen.getByRole('button', { name: 'Used 2 tools' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+    rerender(
+      <RecoilRoot>
+        <ContentParts {...baseProps} messageId="server-msg" content={content} />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Used 2 tools' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+  });
 });

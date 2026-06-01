@@ -20,16 +20,17 @@ import Part from './Part';
 const getToolCallId = (part: TMessageContentParts): string =>
   (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
 
-const getToolGroupId = (parts: PartWithIndex[]): string => {
+const getToolGroupId = (parts: PartWithIndex[], fallbackScope: number): string => {
   const firstPart = parts[0];
   if (!firstPart) {
     return 'empty';
   }
-  return getToolCallId(firstPart.part) || String(firstPart.idx);
+  const toolCallId = getToolCallId(firstPart.part);
+  if (toolCallId) {
+    return `tool:${toolCallId}`;
+  }
+  return `fallback:${fallbackScope}:${firstPart.idx}`;
 };
-
-const getScopedToolGroupId = (messageId: string, parts: PartWithIndex[]): string =>
-  `${messageId}:${getToolGroupId(parts)}`;
 
 type PartWithContextProps = {
   part: TMessageContentParts;
@@ -142,6 +143,15 @@ const ContentParts = memo(function ContentParts({
   const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
   const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
   const toolGroupExpansionRef = useRef(new Map<string, ToolCallGroupExpansionState>());
+  const fallbackScopeRef = useRef({ messageId, scope: 0 });
+  if (fallbackScopeRef.current.messageId !== messageId) {
+    if (!effectiveIsSubmitting) {
+      fallbackScopeRef.current.scope += 1;
+      toolGroupExpansionRef.current.clear();
+    }
+    fallbackScopeRef.current.messageId = messageId;
+  }
+  const fallbackScope = fallbackScopeRef.current.scope;
 
   const handleGroupExpansionChange = useCallback(
     (groupId: string, state: ToolCallGroupExpansionState) => {
@@ -293,13 +303,13 @@ const ContentParts = memo(function ContentParts({
         if (group.type === 'single') {
           return group;
         }
-        const groupId = getScopedToolGroupId(messageId, group.parts);
+        const groupId = getToolGroupId(group.parts, fallbackScope);
         const groupAttachments = group.parts.flatMap(
           ({ part }) => attachmentMap[getToolCallId(part)] ?? [],
         );
         return { ...group, groupId, groupAttachments };
       }),
-    [sequentialParts, attachmentMap, messageId],
+    [sequentialParts, attachmentMap, fallbackScope],
   );
 
   // Early return: no content to render AND no pending skill cards

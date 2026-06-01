@@ -200,6 +200,18 @@ describe('useMessageScrolling resize reconciliation', () => {
     expect(mockScrollToBottom).not.toHaveBeenCalled();
   });
 
+  it('does not follow the next resize after user interaction inside message content', () => {
+    renderScrolling();
+
+    fireEvent.pointerDown(screen.getByTestId('content'));
+
+    act(() => {
+      MockResizeObserver.last()?.trigger();
+    });
+
+    expect(mockScrollToBottom).not.toHaveBeenCalled();
+  });
+
   it('clamps the scroll position back to content after a resize shrink', () => {
     renderScrolling({ contextOverrides: { abortScroll: true } });
 

@@ -17,6 +17,7 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
   const contentRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const isNearBottomRef = useRef(true);
+  const suppressNextResizeFollowRef = useRef(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const { conversation, conversationId } = useMessagesConversation();
   const { setAbortScroll, isSubmitting, abortScroll } = useMessagesSubmission();
@@ -102,6 +103,12 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
       return;
     }
 
+    if (suppressNextResizeFollowRef.current) {
+      suppressNextResizeFollowRef.current = false;
+      isNearBottomRef.current = getIsNearBottom();
+      return;
+    }
+
     if (isSubmitting && abortScroll !== true && isNearBottomRef.current) {
       scrollToBottom?.();
     }
@@ -117,6 +124,24 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
     observer.observe(contentEl);
     return () => observer.disconnect();
   }, [reconcileContentResize]);
+
+  useEffect(() => {
+    const contentEl = contentRef.current;
+    if (!contentEl) {
+      return;
+    }
+
+    const suppressNextResizeFollow = () => {
+      suppressNextResizeFollowRef.current = true;
+    };
+
+    contentEl.addEventListener('pointerdown', suppressNextResizeFollow, true);
+    contentEl.addEventListener('keydown', suppressNextResizeFollow, true);
+    return () => {
+      contentEl.removeEventListener('pointerdown', suppressNextResizeFollow, true);
+      contentEl.removeEventListener('keydown', suppressNextResizeFollow, true);
+    };
+  }, []);
 
   useEffect(() => {
     if (!messagesTree || messagesTree.length === 0) {
