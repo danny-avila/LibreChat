@@ -18,6 +18,32 @@ function formatUSD(valueInCredits: number): string {
 
 type TabKey = 'analytics' | 'thresholds';
 
+type BUFilter = 'all' | 'POP' | 'BETC' | 'Other';
+
+const BU_FILTERS = [
+  { key: 'all', labelKey: 'com_usage_filter_all' },
+  { key: 'POP', labelKey: 'com_usage_filter_bu_pop' },
+  { key: 'BETC', labelKey: 'com_usage_filter_bu_betc' },
+  { key: 'Other', labelKey: 'com_usage_filter_bu_other' },
+] as const;
+
+function BuBadge({ bu }: { bu: string | null }) {
+  const localize = useLocalize();
+  const config =
+    bu === 'POP'
+      ? { className: 'bg-blue-500/15 text-blue-300', label: localize('com_usage_filter_bu_pop') }
+      : bu === 'BETC'
+        ? { className: 'bg-pink-500/15 text-pink-300', label: localize('com_usage_filter_bu_betc') }
+        : { className: 'bg-gray-500/15 text-gray-300', label: localize('com_usage_filter_bu_other') };
+  return (
+    <span
+      className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${config.className}`}
+    >
+      {config.label}
+    </span>
+  );
+}
+
 function KpiCard({
   label,
   value,
@@ -40,21 +66,30 @@ function Usage() {
   const localize = useLocalize();
   const { data, isLoading, isError } = useAdminUsageQuery();
   const [activeTab, setActiveTab] = useState<TabKey>('analytics');
+  const [activeBU, setActiveBU] = useState<BUFilter>('all');
 
   const rows = data?.rows ?? [];
-  const totals = useMemo(
-    () =>
-      rows.reduce(
-        (acc, row) => {
-          acc.tokens += row.totalTokens;
-          acc.credits += row.totalCredits;
-          acc.messages += row.messageCount;
-          return acc;
-        },
-        { tokens: 0, credits: 0, messages: 0 },
-      ),
-    [rows],
-  );
+  const { filteredRows, totals } = useMemo(() => {
+    const filtered = rows.filter((row) => {
+      if (activeBU === 'all') {
+        return true;
+      }
+      if (activeBU === 'Other') {
+        return row.bu === null;
+      }
+      return row.bu === activeBU;
+    });
+    const aggregated = filtered.reduce(
+      (acc, row) => {
+        acc.tokens += row.totalTokens;
+        acc.credits += row.totalCredits;
+        acc.messages += row.messageCount;
+        return acc;
+      },
+      { tokens: 0, credits: 0, messages: 0 },
+    );
+    return { filteredRows: filtered, totals: aggregated };
+  }, [rows, activeBU]);
 
   if (isLoading) {
     return (
@@ -111,7 +146,7 @@ function Usage() {
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <KpiCard
               label={localize('com_usage_kpi_users')}
-              value={formatTokens(rows.length)}
+              value={formatTokens(filteredRows.length)}
               sublabel={localize('com_usage_kpi_this_month')}
             />
             <KpiCard
@@ -130,7 +165,23 @@ function Usage() {
               sublabel={localize('com_usage_kpi_this_month')}
             />
           </div>
-          {rows.length === 0 ? (
+          <div className="flex gap-2">
+            {BU_FILTERS.map((filter) => (
+              <button
+                key={filter.key}
+                type="button"
+                onClick={() => setActiveBU(filter.key)}
+                className={`rounded-md px-3 py-1.5 text-xs transition-colors ${
+                  activeBU === filter.key
+                    ? 'bg-surface-tertiary text-text-primary'
+                    : 'text-text-secondary hover:bg-surface-secondary'
+                }`}
+              >
+                {localize(filter.labelKey)}
+              </button>
+            ))}
+          </div>
+          {filteredRows.length === 0 ? (
             <div className="rounded-lg border border-border-light p-8 text-center text-text-secondary">
               {localize('com_usage_empty')}
             </div>
@@ -154,11 +205,13 @@ function Usage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((row) => (
+                  {filteredRows.map((row) => (
                     <tr key={row.user} className="border-t border-border-light text-text-primary">
                       <td className="px-4 py-3">{row.name ?? '—'}</td>
                       <td className="px-4 py-3 text-text-secondary">{row.email ?? '—'}</td>
-                      <td className="px-4 py-3 text-text-secondary">{row.bu ?? '—'}</td>
+                      <td className="px-4 py-3">
+                        <BuBadge bu={row.bu} />
+                      </td>
                       <td className="px-4 py-3 text-right tabular-nums">
                         {formatTokens(row.totalTokens)}
                       </td>
