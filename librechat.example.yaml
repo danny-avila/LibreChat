@@ -368,6 +368,11 @@ endpoints:
   #   minRelevanceScore: 0.45
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["deferred_tools", "execute_code", "file_search", "actions", "tools"]
+  #   # (optional) Remote Agent API settings
+  #   remoteApi:
+  #     # Max JSON body size for authenticated Remote Agent API requests with inline provider files.
+  #     # Uses Express size syntax. Defaults to 64mb.
+  #     requestBodyLimit: 64mb
 
   # Anthropic endpoint configuration with Vertex AI support
   # Use this to run Anthropic Claude models through Google Cloud Vertex AI
