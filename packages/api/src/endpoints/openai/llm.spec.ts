@@ -518,6 +518,44 @@ describe('getOpenAILLMConfig', () => {
       expect(result.llmConfig.modelKwargs).toBeUndefined();
     });
 
+    it('should use Responses API reasoning when web_search enables Responses API', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: 'custom',
+        modelOptions: {
+          model: 'provider/reasoning-model',
+          reasoning_effort: ReasoningEffort.high,
+          reasoning_summary: ReasoningSummary.concise,
+          web_search: true,
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('useResponsesApi', true);
+      expect(result.llmConfig).not.toHaveProperty('reasoning');
+      expect(result.llmConfig.modelKwargs).toHaveProperty('reasoning', {
+        effort: ReasoningEffort.high,
+        summary: ReasoningSummary.concise,
+      });
+      expect(result.tools).toContainEqual({ type: 'web_search' });
+    });
+
+    it('should remove reasoning kwargs for GPT-4o search models', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: 'custom',
+        modelOptions: {
+          model: 'gpt-4o-search',
+          reasoning_effort: ReasoningEffort.high,
+        },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('reasoning');
+      expect(result.llmConfig).not.toHaveProperty('reasoning_effort');
+      expect(result.llmConfig.modelKwargs).toBeUndefined();
+    });
+
     it('should use reasoning object when useResponsesApi is true', () => {
       const result = getOpenAILLMConfig({
         apiKey: 'test-api-key',

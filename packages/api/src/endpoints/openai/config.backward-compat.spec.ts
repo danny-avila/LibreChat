@@ -10,7 +10,7 @@ describe('getOpenAIConfig - Backward Compatibility', () => {
   describe('OpenAI endpoint', () => {
     it('should handle GPT-5 model with reasoning and web search', () => {
       const apiKey = 'sk-proj-somekey';
-      const endpoint = undefined;
+      const endpoint = EModelEndpoint.openAI;
       const options = {
         modelOptions: {
           model: 'gpt-5-nano',
@@ -138,7 +138,7 @@ describe('getOpenAIConfig - Backward Compatibility', () => {
 
     it('should handle Azure OpenAI with Responses API and reasoning', () => {
       const apiKey = 'some_azure_key';
-      const endpoint = undefined;
+      const endpoint = EModelEndpoint.azureOpenAI;
       const options = {
         modelOptions: {
           model: 'gpt-5',

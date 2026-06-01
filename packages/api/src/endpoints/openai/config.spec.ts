@@ -80,7 +80,7 @@ describe('getOpenAIConfig', () => {
     expect(result.llmConfig.modelKwargs).toBeUndefined();
   });
 
-  it('should handle reasoning params for `useResponsesApi`', () => {
+  it('should pass custom endpoint reasoning object through modelKwargs for `useResponsesApi`', () => {
     const modelOptions = {
       reasoning_effort: ReasoningEffort.high,
       reasoning_summary: ReasoningSummary.detailed,
@@ -90,9 +90,12 @@ describe('getOpenAIConfig', () => {
       modelOptions: { ...modelOptions, useResponsesApi: true },
     });
 
-    expect(result.llmConfig.reasoning).toEqual({
-      effort: ReasoningEffort.high,
-      summary: ReasoningSummary.detailed,
+    expect(result.llmConfig.reasoning).toBeUndefined();
+    expect(result.llmConfig.modelKwargs).toEqual({
+      reasoning: {
+        effort: ReasoningEffort.high,
+        summary: ReasoningSummary.detailed,
+      },
     });
     expect((result.llmConfig as Record<string, unknown>).reasoning_effort).toBeUndefined();
     expect((result.llmConfig as Record<string, unknown>).reasoning_summary).toBeUndefined();
@@ -1072,11 +1075,12 @@ describe('getOpenAIConfig', () => {
         const result = getOpenAIConfig(mockApiKey, {
           modelOptions: { ...modelOptions, useResponsesApi: true } as Partial<OpenAIParameters>,
         });
+        const reasoning = result.llmConfig?.reasoning ?? result.llmConfig?.modelKwargs?.reasoning;
 
         if (shouldHaveReasoning) {
-          expect(result.llmConfig?.reasoning).toBeDefined();
+          expect(reasoning).toBeDefined();
         } else {
-          expect(result.llmConfig?.reasoning).toBeUndefined();
+          expect(reasoning).toBeUndefined();
         }
       });
     });
@@ -1154,6 +1158,7 @@ describe('getOpenAIConfig', () => {
           frequency_penalty: 0.5,
           presence_penalty: 0.6,
           max_tokens: 1000,
+          reasoning_effort: ReasoningEffort.high,
           custom_param: 'should-remain',
         };
 
@@ -1168,6 +1173,7 @@ describe('getOpenAIConfig', () => {
         /** `presence_penalty` is converted to `presencePenalty` */
         expect(result.llmConfig.maxTokens).toBe(1000); // max_tokens is allowed
         expect((result.llmConfig as Record<string, unknown>).custom_param).toBe('should-remain');
+        expect(result.llmConfig.modelKwargs).toBeUndefined();
       });
     });
 
@@ -1275,10 +1281,11 @@ describe('getOpenAIConfig', () => {
         streaming: false,
         useResponsesApi: true, // From web_search
       });
+      expect(result.llmConfig.reasoning).toBeUndefined();
       expect(result.llmConfig.maxTokens).toBe(2000);
       expect(result.llmConfig.modelKwargs).toEqual({
         text: { verbosity: Verbosity.medium },
-        reasoning_effort: ReasoningEffort.high,
+        reasoning: { effort: ReasoningEffort.high },
         customParam: 'custom-value',
       });
       expect(result.tools).toEqual([{ type: 'web_search' }]);

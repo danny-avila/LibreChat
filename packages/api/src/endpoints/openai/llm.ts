@@ -107,6 +107,23 @@ function isOpenAIEndpoint(endpoint?: EModelEndpoint | string | null): boolean {
   return endpoint === EModelEndpoint.openAI || endpoint === EModelEndpoint.azureOpenAI;
 }
 
+function deleteConfigParam({
+  param,
+  llmConfig,
+  modelKwargs,
+}: {
+  param: string;
+  llmConfig: OpenAILLMConfig;
+  modelKwargs: Record<string, unknown>;
+}) {
+  if (param in llmConfig) {
+    delete llmConfig[param as keyof t.OAIClientOptions];
+  }
+  if (param in modelKwargs) {
+    delete modelKwargs[param];
+  }
+}
+
 const openRouterAnthropicVerbosityByEffort: Record<
   string,
   NonNullable<OpenAILLMConfig['verbosity']>
@@ -250,20 +267,24 @@ function applyReasoningConfig({
   }
 
   const reasoning = getReasoningObject({ reasoningEffort, reasoningSummary });
-  if (llmConfig.useResponsesApi === true) {
-    llmConfig.reasoning = reasoning;
+  if (reasoningFormat === ReasoningParameterFormat.disabled) {
     return false;
   }
 
   if (isOpenAIEndpoint(endpoint)) {
+    if (llmConfig.useResponsesApi === true) {
+      llmConfig.reasoning = reasoning;
+      return false;
+    }
     if (reasoningEffort) {
       llmConfig.reasoning_effort = reasoningEffort;
     }
     return false;
   }
 
-  if (reasoningFormat === ReasoningParameterFormat.disabled) {
-    return false;
+  if (llmConfig.useResponsesApi === true) {
+    modelKwargs.reasoning = reasoning;
+    return true;
   }
 
   if (reasoningFormat === ReasoningParameterFormat.reasoningObject) {
@@ -519,16 +540,6 @@ export function getOpenAILLMConfig({
         modelKwargs,
         llmConfig,
       }) || hasModelKwargs;
-  } else {
-    hasModelKwargs =
-      applyReasoningConfig({
-        endpoint,
-        llmConfig,
-        modelKwargs,
-        reasoningFormat,
-        reasoningEffort: reasoning_effort,
-        reasoningSummary: reasoning_summary,
-      }) || hasModelKwargs;
   }
 
   if (llmConfig.max_tokens != null) {
@@ -557,6 +568,18 @@ export function getOpenAILLMConfig({
   }
   if (useOpenRouter && enablePromptCache === true) {
     llmConfig.promptCache = true;
+  }
+
+  if (!useOpenRouter) {
+    hasModelKwargs =
+      applyReasoningConfig({
+        endpoint,
+        llmConfig,
+        modelKwargs,
+        reasoningFormat,
+        reasoningEffort: reasoning_effort,
+        reasoningSummary: reasoning_summary,
+      }) || hasModelKwargs;
   }
 
   /** DeepSeek thinking-mode requires `reasoning_content` replay on tool turns (#13366). */
@@ -588,11 +611,7 @@ export function getOpenAILLMConfig({
     const updatedDropParams = dropParams || [];
     const combinedDropParams = [...new Set([...updatedDropParams, ...reasoningExcludeParams])];
 
-    combinedDropParams.forEach((param) => {
-      if (param in llmConfig) {
-        delete llmConfig[param as keyof t.OAIClientOptions];
-      }
-    });
+    combinedDropParams.forEach((param) => deleteConfigParam({ param, llmConfig, modelKwargs }));
   } else if (modelOptions.model && /gpt-4o.*search/.test(modelOptions.model as string)) {
     /**
      * Note: OpenAI Web Search models do not support any known parameters besides `max_tokens`
@@ -617,17 +636,9 @@ export function getOpenAILLMConfig({
     const updatedDropParams = dropParams || [];
     const combinedDropParams = [...new Set([...updatedDropParams, ...searchExcludeParams])];
 
-    combinedDropParams.forEach((param) => {
-      if (param in llmConfig) {
-        delete llmConfig[param as keyof t.OAIClientOptions];
-      }
-    });
+    combinedDropParams.forEach((param) => deleteConfigParam({ param, llmConfig, modelKwargs }));
   } else if (dropParams && Array.isArray(dropParams)) {
-    dropParams.forEach((param) => {
-      if (param in llmConfig) {
-        delete llmConfig[param as keyof t.OAIClientOptions];
-      }
-    });
+    dropParams.forEach((param) => deleteConfigParam({ param, llmConfig, modelKwargs }));
   }
 
   hasModelKwargs =
@@ -649,7 +660,7 @@ export function getOpenAILLMConfig({
     hasModelKwargs = true;
   }
 
-  if (hasModelKwargs) {
+  if (hasModelKwargs && Object.keys(modelKwargs).length > 0) {
     llmConfig.modelKwargs = modelKwargs;
   }
 
