@@ -1,0 +1,134 @@
+# Build OUR LibreChat fork from source and (on merge only) push it to ECR
+# (WorkloadsProduction account A, alloy/ namespace) over GitHub OIDC.
+#
+# This fork produces ONE image:
+#   - alloy/argonauts-ui   (Dockerfile, target `node` - full app: API + bundled client)
+#
+# No semver bump: the fork carries upstream's version line (v0.8.x), so it is
+# tagged sha-based + a moving alias only.
+#
+# PR-GATED model (images are only ever pushed by an APPROVED, merged PR):
+#   - pull_request -> develop|main : BUILD-ONLY validation. No AWS, no push.
+#   - push -> develop  (= a merged PR): build + push  sha-<short>, move `dev`
+#   - push -> main     (= a merged PR): build + push  sha-<short>, move `staging`. NO deploy.
+#   - workflow_dispatch            : BUILD-ONLY no-push manual sanity build.
+#   `prod` / `latest` aliases + any deploy are deferred to Phase 4 (not done here).
+#
+# The fork's upstream ghcr.io / Docker Hub / Azure publish + deploy workflows were
+# deleted, so only THIS workflow pushes images. Direct pushes are blocked by branch
+# protection (require PR + 1 approval) on develop + main.
+#
+# Auth: assumes arm OIDC role gha-arg-prod in account 988221507777 (no static keys).
+# Runner: ubuntu-24.04-arm -> builds linux/arm64 natively (no QEMU).
+# (Upstream already builds linux/arm64, so arm64 is known-safe for this image.)
+
+name: build-push-ecr
+
+on:
+  pull_request:
+    branches: [develop, main]
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [develop, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read    # no git tag is created for the fork; read is enough
+  id-token: write   # mint the OIDC JWT used to assume the AWS role (push events only)
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  AWS_REGION: eu-west-1
+  ECR_REGISTRY: 988221507777.dkr.ecr.eu-west-1.amazonaws.com   # account A, public identifier
+  GHA_ROLE_ARN: arn:aws:iam::988221507777:role/gha-arg-prod    # OIDC build+push role, public identifier
+  IMAGE: alloy/argonauts-ui
+
+jobs:
+  meta:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04-arm
+    outputs:
+      alias: ${{ steps.compute.outputs.alias }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Compute moving alias (fork = sha-based, no semver)
+        id: compute
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          alias=""
+          if [ "$REF" = "refs/heads/develop" ]; then
+            alias="dev"
+          elif [ "$REF" = "refs/heads/main" ]; then
+            alias="staging"
+          fi
+          echo "alias=$alias" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: meta
+    if: ${{ !cancelled() && needs.meta.result != 'failure' }}
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Configure AWS credentials (OIDC)
+        if: github.event_name == 'push'
+        uses: aws-actions/configure-aws-credentials@99214aa6889fcddfa57764031d71add364327e59  # v6.1.3
+        with:
+          role-to-assume: ${{ env.GHA_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        if: github.event_name == 'push'
+        uses: aws-actions/amazon-ecr-login@fa648b43de3d4d023bcb3f89ed6940096949c419  # v2.1.5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5  # v4.1.0
+
+      - name: Build metadata
+        id: stamp
+        run: echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Assemble image tags
+        id: imgtags
+        env:
+          EVENT: ${{ github.event_name }}
+          ALIAS: ${{ needs.meta.outputs.alias }}
+        run: |
+          set -euo pipefail
+          SHORT_SHA=$(git rev-parse --short=7 HEAD)
+          {
+            echo 'tags<<EOF'
+            if [ "$EVENT" = "push" ]; then
+              IMG="${ECR_REGISTRY}/${IMAGE}"
+              echo "${IMG}:sha-${SHORT_SHA}"
+              [ -n "$ALIAS" ] && echo "${IMG}:${ALIAS}"
+            else
+              echo "build-check:${SHORT_SHA}"
+            fi
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build (push only on a merge to develop / main)
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf  # v7.2.0
+        with:
+          context: .
+          file: Dockerfile
+          target: node
+          push: ${{ github.event_name == 'push' }}
+          platforms: linux/arm64
+          provenance: false
+          tags: ${{ steps.imgtags.outputs.tags }}
+          build-args: |
+            BUILD_COMMIT=${{ github.sha }}
+            BUILD_BRANCH=${{ github.ref_name }}
+            BUILD_DATE=${{ steps.stamp.outputs.date }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.created=${{ steps.stamp.outputs.date }}
