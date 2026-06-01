@@ -82,6 +82,8 @@ export enum QueryKeys {
   favorites = 'favorites',
   /* Admin Usage (V1 MVP — monthly consumption table) */
   adminUsage = 'adminUsage',
+  /* Admin Budgets (monthly spend thresholds per user) */
+  adminBudgets = 'adminBudgets',
 }
 
 // Dynamic query keys that require parameters

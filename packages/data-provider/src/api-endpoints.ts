@@ -415,6 +415,12 @@ export const adminRoles = () => `${BASE_URL}/api/admin/roles`;
 /* Admin Usage (V1 MVP — monthly consumption table for ADMIN) */
 export const adminUsage = () => `${BASE_URL}/api/admin/usage`;
 
+/* Admin Budgets (monthly spend thresholds per user — ADMIN) */
+export const adminBudgets = () => `${BASE_URL}/api/admin/usage/budgets`;
+export const adminBudgetByUser = (userId: string) =>
+  `${BASE_URL}/api/admin/usage/budgets/${encodeURIComponent(userId)}`;
+export const adminBudgetsResetMonth = () => `${BASE_URL}/api/admin/usage/budgets/reset-month`;
+
 export const getRole = (roleName: string) => `${roles()}/${encodeURIComponent(roleName)}`;
 export const updatePromptPermissions = (roleName: string) => `${getRole(roleName)}/prompts`;
 export const updateMemoryPermissions = (roleName: string) => `${getRole(roleName)}/memories`;

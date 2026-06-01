@@ -243,3 +243,34 @@ export interface AdminUsageResponse {
   period: 'current-month';
   rows: AdminUsageRow[];
 }
+
+/* Admin Budgets (monthly spend thresholds per user — all amounts in tokenCredits, 1 USD = 1_000_000) */
+export interface AdminBudgetRow {
+  user: string;
+  name: string | null;
+  email: string | null;
+  bu: string | null;
+  monthlyBudget: number;
+  monthlyBudgetBaseline: number;
+  currentMonthSpend: number;
+}
+
+export interface AdminBudgetsResponse {
+  period: 'current-month';
+  rows: AdminBudgetRow[];
+}
+
+export interface UpdateBudgetRequest {
+  monthlyBudget?: number;
+  monthlyBudgetBaseline?: number;
+}
+
+export interface UpdateBudgetResponse {
+  user: string;
+  monthlyBudget: number;
+  monthlyBudgetBaseline: number;
+}
+
+export interface ResetMonthResponse {
+  modifiedCount: number;
+}

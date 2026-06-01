@@ -1276,3 +1276,19 @@ export const getActiveJobs = (): Promise<ActiveJobsResponse> => {
 export const getAdminUsage = (): Promise<q.AdminUsageResponse> => {
   return request.get(endpoints.adminUsage());
 };
+
+/* Admin Budgets (monthly spend thresholds per user) */
+export const getAdminBudgets = (): Promise<q.AdminBudgetsResponse> => {
+  return request.get(endpoints.adminBudgets());
+};
+
+export const updateBudget = (
+  userId: string,
+  body: q.UpdateBudgetRequest,
+): Promise<q.UpdateBudgetResponse> => {
+  return request.patch(endpoints.adminBudgetByUser(userId), body);
+};
+
+export const resetMonthBudgets = (): Promise<q.ResetMonthResponse> => {
+  return request.post(endpoints.adminBudgetsResetMonth());
+};
