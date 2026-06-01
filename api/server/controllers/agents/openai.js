@@ -346,6 +346,12 @@ const OpenAIChatCompletionController = async (req, res) => {
      *   actionsEnabled?: boolean,
      * }>}
      */
+    const skillPrimedIdsByName =
+      buildSkillPrimedIdsByName(
+        primaryConfig.manualSkillPrimes,
+        primaryConfig.alwaysApplySkillPrimes,
+      ) ?? {};
+
     const agentToolContexts = new Map();
     agentToolContexts.set(primaryConfig.id, {
       agent,
@@ -358,6 +364,7 @@ const OpenAIChatCompletionController = async (req, res) => {
       codeEnvAvailable: primaryConfig.codeEnvAvailable,
       skillAuthoringAvailable: primaryConfig.skillAuthoringAvailable,
       fileAuthoringToolNames: primaryConfig.fileAuthoringToolNames,
+      skillPrimedIdsByName,
     });
 
     // Only run BFS discovery (and pay `getModelsConfig` upfront) when the
@@ -437,6 +444,11 @@ const OpenAIChatCompletionController = async (req, res) => {
               codeEnvAvailable: config.codeEnvAvailable,
               skillAuthoringAvailable: config.skillAuthoringAvailable,
               fileAuthoringToolNames: config.fileAuthoringToolNames,
+              skillPrimedIdsByName:
+                buildSkillPrimedIdsByName(
+                  config.manualSkillPrimes,
+                  config.alwaysApplySkillPrimes,
+                ) ?? {},
             });
           },
           initializeAgent,
@@ -482,19 +494,13 @@ const OpenAIChatCompletionController = async (req, res) => {
 
     const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId: null });
 
-    /* Stable for the turn: the prime lists are fixed once
-       `initializeAgent` resolves. Hoisted out of `loadTools` so tool
-       execution doesn't recompute them. `codeEnvAvailable` is read
+    /* Stable for the turn: the primary prime list is fixed once
+       `initializeAgent` resolves and is used as the fallback when a
+       specific agent context is unavailable. `codeEnvAvailable` is read
        per-agent from the stored tool context (admin cap AND that
        agent's `tools` list includes `execute_code`) — a skills-only
        agent never gains sandbox access even if the admin enabled the
        capability globally. */
-    const skillPrimedIdsByName =
-      buildSkillPrimedIdsByName(
-        primaryConfig.manualSkillPrimes,
-        primaryConfig.alwaysApplySkillPrimes,
-      ) ?? {};
-
     const toolExecuteOptions = {
       loadTools: async (toolNames, agentId) => {
         const ctx = agentToolContexts.get(agentId) ?? agentToolContexts.get(primaryConfig.id) ?? {};
@@ -514,7 +520,7 @@ const OpenAIChatCompletionController = async (req, res) => {
           req,
           ctx.accessibleSkillIds ?? primaryConfig.accessibleSkillIds,
           ctx.codeEnvAvailable === true,
-          skillPrimedIdsByName,
+          ctx.skillPrimedIdsByName ?? skillPrimedIdsByName,
           ctx.activeSkillNames ?? primaryConfig.activeSkillNames,
           ctx.skillAuthoringAvailable === true,
           ctx.fileAuthoringToolNames ?? primaryConfig.fileAuthoringToolNames,
