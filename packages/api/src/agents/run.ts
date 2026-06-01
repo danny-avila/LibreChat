@@ -26,6 +26,7 @@ import type {
   Agent,
   AgentModelParameters,
   AgentSubagentsConfig,
+  ReasoningResponseKey,
   SummarizationConfig,
 } from 'librechat-data-provider';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
@@ -212,6 +213,8 @@ const customProviders = new Set([
   KnownEndpoints.ollama,
 ]);
 
+type AgentReasoningKey = 'reasoning_content' | 'reasoning';
+
 function includesOpenRouter(value?: string | null): boolean {
   return typeof value === 'string' && value.toLowerCase().includes(KnownEndpoints.openrouter);
 }
@@ -220,8 +223,13 @@ export function getReasoningKey(
   provider: Providers,
   llmConfig: t.RunLLMConfig,
   agentEndpoint?: string | null,
-): 'reasoning_content' | 'reasoning' {
-  let reasoningKey: 'reasoning_content' | 'reasoning' = 'reasoning_content';
+  customReasoningKey?: ReasoningResponseKey,
+): AgentReasoningKey {
+  if (customReasoningKey) {
+    return customReasoningKey as AgentReasoningKey;
+  }
+
+  let reasoningKey: AgentReasoningKey = 'reasoning_content';
   if (provider === Providers.GOOGLE) {
     reasoningKey = 'reasoning';
   } else if (
@@ -293,6 +301,8 @@ type RunAgent = Omit<Agent, 'tools'> & {
   codeEnvAvailable?: boolean;
   /** Optional per-agent summarization overrides */
   summarization?: SummarizationConfig;
+  /** Response field to read model reasoning from for custom OpenAI-compatible endpoints. */
+  reasoningKey?: ReasoningResponseKey;
   /**
    * Maximum characters allowed in a single tool result before truncation.
    * Overrides the default computed from maxContextTokens.
@@ -946,7 +956,7 @@ export async function createRun({
       agent.maxContextTokens,
     );
 
-    const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint);
+    const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint, agent.reasoningKey);
     return {
       provider,
       reasoningKey,

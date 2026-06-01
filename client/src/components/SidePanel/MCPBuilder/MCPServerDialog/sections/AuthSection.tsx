@@ -105,7 +105,12 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
               <Label htmlFor="api_key" className="text-sm font-medium">
                 {localize('com_ui_api_key')}
               </Label>
-              <SecretInput id="api_key" placeholder="sk-..." {...register('auth.api_key')} />
+              <SecretInput
+                id="api_key"
+                placeholder="sk-..."
+                controlsOnHover
+                {...register('auth.api_key')}
+              />
             </div>
           )}
 
@@ -160,9 +165,12 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
                   </>
                 )}
               </Label>
-              <Input
+              <SecretInput
                 id="oauth_client_id"
-                autoComplete="off"
+                autoComplete="new-password"
+                data-lpignore="true"
+                data-1p-ignore="true"
+                controlsOnHover
                 placeholder={isEditMode ? localize('com_ui_leave_blank_to_keep') : ''}
                 aria-invalid={errors.auth?.oauth_client_id ? 'true' : 'false'}
                 aria-describedby={
@@ -188,6 +196,7 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
               <SecretInput
                 id="oauth_client_secret"
                 placeholder={isEditMode ? localize('com_ui_leave_blank_to_keep') : ''}
+                controlsOnHover
                 {...register('auth.oauth_client_secret')}
               />
             </div>

@@ -25,6 +25,9 @@ jest.mock('~/config', () => ({
 
 jest.mock('~/server/services/MCP', () => ({
   resolveConfigServers: jest.fn().mockResolvedValue({}),
+  createMCPPermissionContext: jest.fn((req) => ({
+    canUseServers: (user) => mockUserCanUseMCPServers(user, req),
+  })),
   userCanUseMCPServers: (...args) => mockUserCanUseMCPServers(...args),
 }));
 

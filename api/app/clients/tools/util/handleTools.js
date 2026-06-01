@@ -38,8 +38,8 @@ const {
 const {
   createMCPTool,
   createMCPTools,
+  createMCPPermissionContext,
   resolveConfigServers,
-  userCanUseMCPServers,
 } = require('~/server/services/MCP');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
@@ -233,7 +233,11 @@ const loadTools = async ({
 
   const requestedTools = {};
   const hasMCPTools = tools.some((toolName) => toolName && mcpToolPattern.test(toolName));
-  const canUseMCP = hasMCPTools ? await userCanUseMCPServers(options.req?.user) : true;
+  const mcpPermissionContext =
+    options.mcpPermissionContext ?? createMCPPermissionContext(options.req);
+  const canUseMCP = hasMCPTools
+    ? await mcpPermissionContext.canUseServers(options.req?.user)
+    : true;
   let loggedMCPDenied = false;
 
   if (functions === true) {
@@ -458,6 +462,7 @@ const loadTools = async ({
           continue;
         }
         const mcpParams = {
+          mcpPermissionContext,
           index,
           signal,
           user: safeUser,
