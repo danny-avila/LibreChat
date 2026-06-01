@@ -39,6 +39,7 @@ import {
   createChunk,
   writeSSE,
 } from './handlers';
+import { createSafeUser } from '~/utils';
 import type { ToolExecuteOptions } from '../handlers';
 
 /**
@@ -500,7 +501,17 @@ export async function createAgentChatCompletion(
 
     // Create and run the agent
     if (deps.createRun) {
-      const userId = (req as unknown as { user?: { id?: string } }).user?.id ?? 'api-user';
+      const reqUser = (req as unknown as { user?: Parameters<typeof createSafeUser>[0] }).user;
+      const userId = reqUser?.id ?? 'api-user';
+      /**
+       * Propagate the full safe user (id + role), matching the in-repo agent
+       * controllers (responses.js / openai.js). The runtime MCP permission
+       * check reads `configurable.user`; passing only `user_id` would make
+       * every MCP tool call fail closed for an authenticated caller. When the
+       * host app didn't attach a user, this falls back to a bare id, which
+       * correctly leaves MCP gated.
+       */
+      const safeUser: Record<string, unknown> = { ...createSafeUser(reqUser), id: userId };
 
       const run = await deps.createRun({
         agents: [initializedAgent],
@@ -512,7 +523,7 @@ export async function createAgentChatCompletion(
           messageId: requestId,
           conversationId,
         },
-        user: { id: userId },
+        user: safeUser,
       });
 
       if (run) {
@@ -523,6 +534,7 @@ export async function createAgentChatCompletion(
             configurable: {
               thread_id: conversationId,
               user_id: userId,
+              user: safeUser,
             },
             signal: abortController.signal,
             streamMode: 'values',

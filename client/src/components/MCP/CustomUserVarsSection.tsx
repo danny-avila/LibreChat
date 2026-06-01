@@ -1,8 +1,12 @@
 import React, { useMemo } from 'react';
-import DOMPurify from 'dompurify';
 import { useForm, Controller } from 'react-hook-form';
 import { Input, Label, Button } from '@librechat/client';
 import { useMCPAuthValuesQuery } from '~/data-provider/Tools/queries';
+import {
+  CONFIG_HTML_INLINE_TAGS,
+  CONFIG_HTML_CLASS_ATTR,
+  createConfigHtmlSanitizer,
+} from '~/utils/configHtml';
 import { useLocalize } from '~/hooks';
 
 export interface CustomUserVarConfig {
@@ -29,34 +33,18 @@ interface AuthFieldProps {
 function AuthField({ name, config, hasValue, control, errors, autoFocus }: AuthFieldProps) {
   const localize = useLocalize();
   const statusText = hasValue ? localize('com_ui_set') : localize('com_ui_unset');
-
-  const sanitizer = useMemo(() => {
-    const instance = DOMPurify();
-    instance.addHook('afterSanitizeAttributes', (node) => {
-      if (node.tagName && node.tagName === 'A') {
-        node.setAttribute('target', '_blank');
-        node.setAttribute('rel', 'noopener noreferrer');
-      }
-    });
-    return instance;
-  }, []);
+  const sanitize = useMemo(
+    () =>
+      createConfigHtmlSanitizer({
+        allowedTags: CONFIG_HTML_INLINE_TAGS,
+        allowedAttr: CONFIG_HTML_CLASS_ATTR,
+      }),
+    [],
+  );
 
   const sanitizedDescription = useMemo(() => {
-    if (!config.description) {
-      return '';
-    }
-    try {
-      return sanitizer.sanitize(config.description, {
-        ALLOWED_TAGS: ['a', 'strong', 'b', 'em', 'i', 'br', 'code'],
-        ALLOWED_ATTR: ['href', 'class', 'target', 'rel'],
-        ALLOW_DATA_ATTR: false,
-        ALLOW_ARIA_ATTR: false,
-      });
-    } catch (error) {
-      console.error('Sanitization failed', error);
-      return config.description;
-    }
-  }, [config.description, sanitizer]);
+    return sanitize(config.description);
+  }, [config.description, sanitize]);
 
   return (
     <div className="space-y-2">

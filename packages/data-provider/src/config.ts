@@ -1067,6 +1067,23 @@ export const turnstileSchema = z.object({
 
 export type TTurnstileConfig = z.infer<typeof turnstileSchema>;
 
+export type TRumConfig = {
+  provider: 'hyperdx';
+  enabled: boolean;
+  url: string;
+  serviceName: string;
+  authMode: 'publicToken';
+  publicToken?: string;
+  tracePropagationTargets?: string[];
+  consoleCapture?: boolean;
+  disableReplay?: boolean;
+  advancedNetworkCapture?: boolean;
+  sampleRate?: number;
+  environment?: string;
+};
+
+export type StartupConfigContext = 'share';
+
 export type TStartupConfig = {
   appTitle: string;
   socialLogins?: string[];
@@ -1107,6 +1124,7 @@ export type TStartupConfig = {
   sharedLinksEnabled: boolean;
   publicSharedLinksEnabled: boolean;
   analyticsGtmId?: string;
+  rum?: TRumConfig;
   bundlerURL?: string;
   staticBundlerURL?: string;
   sharePointFilePickerEnabled?: boolean;
@@ -2174,7 +2192,7 @@ export enum Constants {
    */
   VERSION = '__LIBRECHAT_VERSION__',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.3.11',
+  CONFIG_VERSION = '1.3.12',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value to use whatever the submission prelim. `responseMessageId` is */
