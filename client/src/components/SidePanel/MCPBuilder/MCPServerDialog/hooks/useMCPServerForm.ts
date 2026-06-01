@@ -53,11 +53,17 @@ export interface MCPServerFormData {
 
 interface UseMCPServerFormProps {
   server?: MCPServerDefinition | null;
+  initialValues?: Partial<MCPServerFormData>;
   onSuccess?: (serverName: string, isOAuth: boolean) => void;
   onClose?: () => void;
 }
 
-export function useMCPServerForm({ server, onSuccess, onClose }: UseMCPServerFormProps) {
+export function useMCPServerForm({
+  server,
+  initialValues,
+  onSuccess,
+  onClose,
+}: UseMCPServerFormProps) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
 
@@ -111,11 +117,11 @@ export function useMCPServerForm({ server, onSuccess, onClose }: UseMCPServerFor
     }
 
     return {
-      title: '',
-      description: '',
-      url: '',
-      type: 'streamable-http',
-      icon: '',
+      title: initialValues?.title ?? '',
+      description: initialValues?.description ?? '',
+      url: initialValues?.url ?? '',
+      type: initialValues?.type ?? 'streamable-http',
+      icon: initialValues?.icon ?? '',
       auth: {
         auth_type: AuthTypeEnum.None,
         api_key: '',
@@ -130,7 +136,7 @@ export function useMCPServerForm({ server, onSuccess, onClose }: UseMCPServerFor
       },
       trust: false,
     };
-  }, [server]);
+  }, [server, initialValues]);
 
   // Form instance
   const methods = useForm<MCPServerFormData>({
@@ -142,8 +148,6 @@ export function useMCPServerForm({ server, onSuccess, onClose }: UseMCPServerFor
 
   // Watch URL for auto-fill
   const watchedUrl = watch('url');
-  const watchedTitle = watch('title');
-
   // Auto-fill title from URL when title is empty
   const handleUrlChange = useCallback(
     (url: string) => {
