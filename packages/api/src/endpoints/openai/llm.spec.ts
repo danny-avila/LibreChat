@@ -601,6 +601,24 @@ describe('getOpenAILLMConfig', () => {
       expect(result.llmConfig.modelKwargs).toBeUndefined();
     });
 
+    it('should honor dropParams after reasoning object conversion', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: 'custom',
+        reasoningFormat: ReasoningParameterFormat.reasoningObject,
+        dropParams: ['reasoning_effort'],
+        modelOptions: {
+          model: 'provider/reasoning-model',
+          reasoning_effort: ReasoningEffort.high,
+        },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('reasoning');
+      expect(result.llmConfig).not.toHaveProperty('reasoning_effort');
+      expect(result.llmConfig.modelKwargs).toBeUndefined();
+    });
+
     it('should use reasoning object when useResponsesApi is true', () => {
       const result = getOpenAILLMConfig({
         apiKey: 'test-api-key',

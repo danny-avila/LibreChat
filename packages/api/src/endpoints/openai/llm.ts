@@ -107,6 +107,27 @@ function isOpenAIEndpoint(endpoint?: EModelEndpoint | string | null): boolean {
   return endpoint === EModelEndpoint.openAI || endpoint === EModelEndpoint.azureOpenAI;
 }
 
+function removeReasoningSummary(target: Record<string, unknown>) {
+  const { reasoning } = target;
+  if (reasoning == null || typeof reasoning !== 'object' || Array.isArray(reasoning)) {
+    return;
+  }
+
+  const rest = { ...(reasoning as Record<string, unknown>) };
+  delete rest.summary;
+  if (Object.keys(rest).length === 0) {
+    delete target.reasoning;
+    return;
+  }
+
+  target.reasoning = rest;
+}
+
+function removeReasoningPayload(target: Record<string, unknown>) {
+  delete target.reasoning;
+  delete target.reasoning_effort;
+}
+
 function deleteConfigParam({
   param,
   llmConfig,
@@ -116,6 +137,20 @@ function deleteConfigParam({
   llmConfig: OpenAILLMConfig;
   modelKwargs: Record<string, unknown>;
 }) {
+  if (param === 'reasoning_effort') {
+    removeReasoningPayload(llmConfig as Record<string, unknown>);
+    removeReasoningPayload(modelKwargs);
+    return;
+  }
+
+  if (param === 'reasoning_summary') {
+    delete (llmConfig as Record<string, unknown>).reasoning_summary;
+    delete modelKwargs.reasoning_summary;
+    removeReasoningSummary(llmConfig as Record<string, unknown>);
+    removeReasoningSummary(modelKwargs);
+    return;
+  }
+
   if (param in llmConfig) {
     delete llmConfig[param as keyof t.OAIClientOptions];
   }
