@@ -391,8 +391,15 @@ function Usage() {
             </div>
 
             {filteredBudgetRows.length === 0 ? (
-              <div className="rounded-lg border border-border-light p-8 text-center text-text-secondary">
-                {localize('com_budget_empty')}
+              <div className="rounded-lg border border-border-light p-8 text-center">
+                <p className="text-text-secondary">{localize('com_budget_empty')}</p>
+                <p className="mt-1 text-xs text-text-tertiary">
+                  {localize(
+                    (budgetData?.rows?.length ?? 0) === 0
+                      ? 'com_budget_empty_tracking'
+                      : 'com_budget_empty_filter',
+                  )}
+                </p>
               </div>
             ) : (
               <div className="overflow-hidden rounded-lg border border-border-light">

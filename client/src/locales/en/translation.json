@@ -231,6 +231,8 @@
   "com_budget_col_spent": "Consumed",
   "com_budget_col_threshold": "Threshold",
   "com_budget_empty": "No budgets to display.",
+  "com_budget_empty_filter": "No users in the selected BU — try a different BU filter.",
+  "com_budget_empty_tracking": "No data yet — make sure balance tracking is enabled in librechat.yaml.",
   "com_budget_kpi_remaining": "Remaining this month",
   "com_budget_kpi_reset": "Next reset",
   "com_budget_kpi_reset_days": "days",
