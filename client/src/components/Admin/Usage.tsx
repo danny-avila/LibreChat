@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { Spinner } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 import { useAdminUsageQuery } from '~/data-provider';
@@ -18,10 +18,43 @@ function formatUSD(valueInCredits: number): string {
 
 type TabKey = 'analytics' | 'thresholds';
 
+function KpiCard({
+  label,
+  value,
+  sublabel,
+}: {
+  label: string;
+  value: string;
+  sublabel?: string;
+}) {
+  return (
+    <div className="rounded-lg bg-surface-secondary p-4">
+      <p className="text-sm text-text-secondary">{label}</p>
+      <p className="text-2xl font-semibold text-text-primary">{value}</p>
+      {sublabel && <p className="text-xs text-text-tertiary">{sublabel}</p>}
+    </div>
+  );
+}
+
 function Usage() {
   const localize = useLocalize();
   const { data, isLoading, isError } = useAdminUsageQuery();
   const [activeTab, setActiveTab] = useState<TabKey>('analytics');
+
+  const rows = data?.rows ?? [];
+  const totals = useMemo(
+    () =>
+      rows.reduce(
+        (acc, row) => {
+          acc.tokens += row.totalTokens;
+          acc.credits += row.totalCredits;
+          acc.messages += row.messageCount;
+          return acc;
+        },
+        { tokens: 0, credits: 0, messages: 0 },
+      ),
+    [rows],
+  );
 
   if (isLoading) {
     return (
@@ -38,8 +71,6 @@ function Usage() {
       </div>
     );
   }
-
-  const rows = data?.rows ?? [];
 
   return (
     <div className="flex h-full w-full flex-col gap-4 overflow-y-auto bg-surface-primary px-8 py-6">
@@ -77,6 +108,28 @@ function Usage() {
 
       {activeTab === 'analytics' && (
         <>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <KpiCard
+              label={localize('com_usage_kpi_users')}
+              value={formatTokens(rows.length)}
+              sublabel={localize('com_usage_kpi_this_month')}
+            />
+            <KpiCard
+              label={localize('com_usage_kpi_tokens')}
+              value={formatTokens(totals.tokens)}
+              sublabel={localize('com_usage_kpi_this_month')}
+            />
+            <KpiCard
+              label={localize('com_usage_kpi_credits')}
+              value={formatUSD(totals.credits)}
+              sublabel={localize('com_usage_kpi_this_month')}
+            />
+            <KpiCard
+              label={localize('com_usage_kpi_messages')}
+              value={formatTokens(totals.messages)}
+              sublabel={localize('com_usage_kpi_this_month')}
+            />
+          </div>
           {rows.length === 0 ? (
             <div className="rounded-lg border border-border-light p-8 text-center text-text-secondary">
               {localize('com_usage_empty')}
