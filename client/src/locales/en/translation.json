@@ -223,7 +223,7 @@
   "com_endpoint_agent": "Agent",
   "com_endpoint_agent_placeholder": "Please select an Agent",
   "com_endpoint_ai": "AI",
-  "com_endpoint_anthropic_effort": "Controls how much computational effort Claude applies. Lower effort saves tokens and reduces latency; higher effort produces more thorough responses. 'Max' enables the deepest reasoning (Opus 4.6 only).",
+  "com_endpoint_anthropic_effort": "Controls how much computational effort Claude applies. Lower effort saves tokens and reduces latency; higher effort produces more thorough responses. 'Max' enables the deepest reasoning on supported adaptive-thinking models.",
   "com_endpoint_anthropic_maxoutputtokens": "Maximum number of tokens that can be generated in the response. Specify a lower value for shorter responses and a higher value for longer responses. Note: models may stop before reaching this maximum.",
   "com_endpoint_anthropic_prompt_cache": "Prompt caching allows reusing large context or instructions across API calls, reducing costs and latency",
   "com_endpoint_anthropic_temp": "Ranges from 0 to 1. Use temp closer to 0 for analytical / multiple choice, and closer to 1 for creative and generative tasks. We recommend altering this or Top P but not both.",

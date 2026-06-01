@@ -25,6 +25,37 @@ const { getAppConfig } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
 
+const PUBLIC_USER_RESPONSE_FIELDS = [
+  '_id',
+  'id',
+  'name',
+  'username',
+  'email',
+  'emailVerified',
+  'avatar',
+  'provider',
+  'role',
+  'plugins',
+  'twoFactorEnabled',
+  'termsAccepted',
+  'personalization',
+  'favorites',
+  'skillStates',
+  'createdAt',
+  'updatedAt',
+  'tenantId',
+];
+
+const sanitizeUserForResponse = (user) => {
+  const source = user.toObject != null ? user.toObject() : user;
+  return PUBLIC_USER_RESPONSE_FIELDS.reduce((userData, field) => {
+    if (source[field] !== undefined) {
+      userData[field] = source[field];
+    }
+    return userData;
+  }, {});
+};
+
 const getUserController = async (req, res) => {
   const appConfig =
     req.config ??
@@ -34,14 +65,7 @@ const getUserController = async (req, res) => {
       tenantId: req.user?.tenantId,
     }));
   /** @type {IUser} */
-  const userData = req.user.toObject != null ? req.user.toObject() : { ...req.user };
-  /**
-   * These fields should not exist due to secure field selection, but deletion
-   * is done in case of alternate database incompatibility with Mongo API
-   * */
-  delete userData.password;
-  delete userData.totpSecret;
-  delete userData.backupCodes;
+  const userData = sanitizeUserForResponse(req.user);
   if (appConfig.fileStrategy === FileSources.s3 && userData.avatar) {
     const avatarNeedsRefresh = needsRefresh(userData.avatar, 3600);
     if (!avatarNeedsRefresh) {

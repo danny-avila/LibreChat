@@ -15,6 +15,31 @@ export const defaultAgentParams: t.AgentListParams = {
   limit: 10,
   requiredPermission: PermissionBits.EDIT,
 };
+
+/** Walk the cursor pagination and return all pages flattened into one `AgentListResponse`. */
+async function fetchAllAgentPages(params: t.AgentListParams): Promise<t.AgentListResponse> {
+  const pages: t.AgentListResponse[] = [];
+  let cursor: string | null | undefined = params.cursor;
+  do {
+    const page = await dataService.listAgents({
+      ...params,
+      ...(cursor ? { cursor } : {}),
+    });
+    pages.push(page);
+    cursor = page.after;
+  } while (cursor);
+
+  const lastPage = pages[pages.length - 1];
+  return {
+    object: 'list',
+    data: pages.flatMap((p) => p.data),
+    has_more: false,
+    after: null,
+    first_id: pages[0]?.first_id ?? null,
+    last_id: lastPage?.last_id ?? null,
+  };
+}
+
 /**
  * Hook for getting all available tools for A
  */
@@ -32,7 +57,9 @@ export const useAvailableAgentToolsQuery = (): QueryObserverResult<t.TPlugin[]> 
 };
 
 /**
- * Hook for listing all Agents, with optional parameters provided for pagination and sorting
+ * Hook for listing all Agents the user has access to. Follows cursor
+ * pagination internally and resolves with every page concatenated.
+ * Cache key shape matches `allAgentViewAndEditQueryKeys` in `./mutations.ts`.
  */
 export const useListAgentsQuery = <TData = t.AgentListResponse>(
   params: t.AgentListParams = defaultAgentParams,
@@ -44,12 +71,8 @@ export const useListAgentsQuery = <TData = t.AgentListResponse>(
   const enabled = !!endpointsConfig?.[EModelEndpoint.agents];
   return useQuery<t.AgentListResponse, unknown, TData>(
     [QueryKeys.agents, params],
-    () => dataService.listAgents(params),
+    () => fetchAllAgentPages(params),
     {
-      // Example selector to sort them by created_at
-      // select: (res) => {
-      //   return res.data.sort((a, b) => a.created_at - b.created_at);
-      // },
       staleTime: 1000 * 5,
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
