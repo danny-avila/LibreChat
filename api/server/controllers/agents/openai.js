@@ -465,6 +465,8 @@ const OpenAIChatCompletionController = async (req, res) => {
     if (inlineProviderFiles.length > 0) {
       const endpoint = primaryConfig.endpoint ?? agent.provider;
       const endpointType = primaryConfig.provider ?? agent.provider;
+      const provider = primaryConfig.provider ?? agent.provider;
+      const modelUsesResponsesApi = primaryConfig.model_parameters?.useResponsesApi === true;
 
       /** Enforce the UI-facing count limit here because the shared file filter does not. */
       const fileLimit = getEndpointFileLimit(req, { endpoint, endpointType });
@@ -498,6 +500,19 @@ const OpenAIChatCompletionController = async (req, res) => {
         );
       }
 
+      if (
+        (provider === EModelEndpoint.openAI || provider === EModelEndpoint.azureOpenAI) &&
+        !modelUsesResponsesApi
+      ) {
+        return sendErrorResponse(
+          res,
+          400,
+          'File inputs with OpenAI or Azure OpenAI agent backends require the agent configuration to have Use Responses API enabled.',
+          'invalid_request_error',
+          'responses_api_required',
+        );
+      }
+
       /** Attach provider document blocks to the same latest user message that carried the file parts. */
       let latestUserMessage;
       for (let i = openaiMessages.length - 1; i >= 0; i--) {
@@ -512,9 +527,9 @@ const OpenAIChatCompletionController = async (req, res) => {
         req,
         inlineProviderFiles,
         {
-          provider: primaryConfig.provider ?? agent.provider,
-          endpoint: primaryConfig.endpoint ?? agent.provider,
-          useResponsesApi: primaryConfig.model_parameters?.useResponsesApi,
+          provider,
+          endpoint,
+          useResponsesApi: modelUsesResponsesApi,
           model: primaryConfig.model || agent.model_parameters?.model,
         },
         getStrategyFunctions,

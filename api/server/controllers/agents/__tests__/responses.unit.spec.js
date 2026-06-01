@@ -744,6 +744,40 @@ describe('createResponse controller', () => {
       expect(mockEncodeAndFormatDocuments).not.toHaveBeenCalled();
     });
 
+    it('should return a clear 400 when an OpenAI agent backend has Use Responses API disabled', async () => {
+      const {
+        createRun,
+        convertInputToMessages,
+        initializeAgent,
+        sendResponsesErrorResponse,
+      } = require('@librechat/api');
+      initializeAgent.mockResolvedValueOnce({
+        id: 'agent-123',
+        model: 'gpt-4',
+        provider: 'openAI',
+        model_parameters: {},
+        toolRegistry: {},
+        edges: [],
+      });
+      mockExtractRemoteAgentResponseFiles.mockReturnValueOnce({
+        value: [{ role: 'user', content: [{ type: 'input_text', text: 'Files attached' }] }],
+        files: [inlineFile],
+      });
+      convertInputToMessages.mockReturnValueOnce([{ role: 'user', content: 'Files attached' }]);
+
+      await createResponse(req, res);
+
+      expect(sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        'File inputs with OpenAI or Azure OpenAI agent backends require the agent configuration to have Use Responses API enabled.',
+        'invalid_request',
+        'responses_api_required',
+      );
+      expect(mockEncodeAndFormatDocuments).not.toHaveBeenCalled();
+      expect(createRun).not.toHaveBeenCalled();
+    });
+
     it('should use a nonblank fallback text block when document message text is empty', async () => {
       const { formatAgentMessages } = require('@librechat/agents');
       const { convertInputToMessages } = require('@librechat/api');

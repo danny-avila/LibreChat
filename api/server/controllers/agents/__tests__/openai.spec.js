@@ -437,6 +437,18 @@ describe('OpenAIChatCompletionController', () => {
       metadata: { inlineBase64: 'JVBERi0x' },
     };
 
+    beforeEach(() => {
+      const { initializeAgent } = require('@librechat/api');
+      initializeAgent.mockResolvedValue({
+        id: 'agent-123',
+        model: 'gpt-4',
+        provider: 'openAI',
+        model_parameters: { useResponsesApi: true },
+        toolRegistry: {},
+        edges: [],
+      });
+    });
+
     it('should attach encoded documents before formatting non-streaming messages', async () => {
       const { formatAgentMessages } = require('@librechat/agents');
       const { encodeAndFormatDocuments, initializeAgent } = require('@librechat/api');
@@ -651,6 +663,33 @@ describe('OpenAIChatCompletionController', () => {
       await OpenAIChatCompletionController(req, res);
 
       expect(res.status).toHaveBeenCalledWith(400);
+      expect(mockProcessStream).not.toHaveBeenCalled();
+    });
+
+    it('should return a clear 400 when an OpenAI agent backend has Use Responses API disabled', async () => {
+      const { createErrorResponse, initializeAgent } = require('@librechat/api');
+      initializeAgent.mockResolvedValueOnce({
+        id: 'agent-123',
+        model: 'gpt-4',
+        provider: 'openAI',
+        model_parameters: {},
+        toolRegistry: {},
+        edges: [],
+      });
+      mockExtractRemoteAgentChatFiles.mockReturnValueOnce({
+        value: [{ role: 'user', content: 'Files attached' }],
+        files: [inlineFile],
+      });
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(createErrorResponse).toHaveBeenCalledWith(
+        'File inputs with OpenAI or Azure OpenAI agent backends require the agent configuration to have Use Responses API enabled.',
+        'invalid_request_error',
+        'responses_api_required',
+      );
+      expect(mockEncodeAndFormatDocuments).not.toHaveBeenCalled();
       expect(mockProcessStream).not.toHaveBeenCalled();
     });
 
