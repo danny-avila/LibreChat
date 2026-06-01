@@ -1781,6 +1781,10 @@
   "com_usage_empty": "No consumption recorded for the current month.",
   "com_usage_error": "Failed to load usage data.",
   "com_usage_subtitle": "Top users by token credits consumed this month.",
+  "com_usage_tab_analytics": "Analytics",
+  "com_usage_tab_thresholds": "Thresholds & management",
+  "com_usage_thresholds_coming_soon": "Feature coming soon.",
+  "com_usage_thresholds_placeholder": "Monthly threshold management per user.",
   "com_usage_title": "Consumption",
   "com_user_message": "You"
 }
