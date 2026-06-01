@@ -1,10 +1,8 @@
 const undici = require('undici');
 const { get } = require('lodash');
-const fetch = require('node-fetch');
 const passport = require('passport');
 const client = require('openid-client');
 const jwtDecode = require('jsonwebtoken/decode');
-const { HttpsProxyAgent } = require('https-proxy-agent');
 const { hashToken, logger } = require('@librechat/data-schemas');
 const { Strategy: OpenIDStrategy } = require('openid-client/passport');
 const { CacheKeys, ErrorTypes, SystemRoles } = require('librechat-data-provider');
@@ -22,6 +20,7 @@ const {
   resolveAppConfigForUser,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { findUser, createUser, updateUser } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 const getLogStores = require('~/cache/getLogStores');
@@ -200,43 +199,64 @@ const getUserInfo = async (config, accessToken, sub) => {
   }
 };
 
-/**
- * Downloads an image from a URL using an access token.
- * @param {string} url
- * @param {Configuration} config
- * @param {string} accessToken access token
- * @param {string} sub - The subject identifier of the user. usually found as "sub" in the claims of the token
- * @returns {Promise<Buffer | string>} The image buffer or an empty string if the download fails.
- */
-const downloadImage = async (url, config, accessToken, sub) => {
+function getUrlOrigin(value) {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
+
+function getOpenIDAvatarAuthorizedOrigins(config) {
+  const metadata = config?.serverMetadata?.() ?? {};
+  const metadataOrigins = [metadata.issuer, metadata.userinfo_endpoint]
+    .map(getUrlOrigin)
+    .filter(Boolean);
+  const configuredOrigins = (process.env.OPENID_AVATAR_AUTHORIZED_ORIGINS ?? '')
+    .split(/[\s,]+/)
+    .map(getUrlOrigin)
+    .filter(Boolean);
+
+  return new Set([...metadataOrigins, ...configuredOrigins]);
+}
+
+function shouldAuthorizeOpenIDAvatar(url, config) {
+  const origin = getUrlOrigin(url);
+  if (!origin) {
+    return false;
+  }
+
+  return getOpenIDAvatarAuthorizedOrigins(config).has(origin);
+}
+
+async function getOpenIDAvatarFetchOptions(url, config, accessToken, sub) {
+  if (!shouldAuthorizeOpenIDAvatar(url, config)) {
+    return undefined;
+  }
+
   const exchangedAccessToken = await exchangeAccessTokenIfNeeded(config, accessToken, sub, true);
+  return {
+    headers: {
+      Authorization: `Bearer ${exchangedAccessToken}`,
+    },
+  };
+}
+
+const resizeIdentityProviderAvatar = async (url, userId, config, accessToken, sub) => {
   if (!url) {
     return '';
   }
 
   try {
-    const options = {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${exchangedAccessToken}`,
-      },
-    };
-
-    if (process.env.PROXY) {
-      options.agent = new HttpsProxyAgent(process.env.PROXY);
+    const fetchOptions = await getOpenIDAvatarFetchOptions(url, config, accessToken, sub);
+    const avatarParams = { userId, input: url };
+    if (fetchOptions) {
+      avatarParams.fetchOptions = fetchOptions;
     }
-
-    const response = await fetch(url, options);
-
-    if (response.ok) {
-      const buffer = await response.buffer();
-      return buffer;
-    } else {
-      throw new Error(`${response.statusText} (HTTP ${response.status})`);
-    }
+    return await resizeAvatar(avatarParams);
   } catch (error) {
     logger.error(
-      `[openidStrategy] downloadImage: Error downloading image at URL "${url}": ${error}`,
+      `[openidStrategy] resizeIdentityProviderAvatar: Error processing avatar at URL "${url}": ${error}`,
     );
     return '';
   }
@@ -662,8 +682,10 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
       fileName = userinfo.sub + '.png';
     }
 
-    const imageBuffer = await downloadImage(
+    const userId = user._id.toString();
+    const imageBuffer = await resizeIdentityProviderAvatar(
       imageUrl,
+      userId,
       openidConfig,
       tokenset.access_token,
       userinfo.sub,
@@ -674,7 +696,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
       const imagePath = await saveBuffer(
         getAvatarSaveParams(fileStrategy, {
           fileName,
-          userId: user._id.toString(),
+          userId,
           buffer: imageBuffer,
           tenantId: user.tenantId,
         }),

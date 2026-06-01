@@ -4,6 +4,7 @@ const jwtDecode = require('jsonwebtoken/decode');
 const { ErrorTypes, FileSources } = require('librechat-data-provider');
 const { findUser, createUser, updateUser } = require('~/models');
 const { getOpenIdIssuer, resolveAppConfigForUser, isEnabled } = require('@librechat/api');
+const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { getAppConfig } = require('~/server/services/Config');
 const { setupOpenId } = require('./openidStrategy');
 
@@ -20,6 +21,9 @@ jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: jest.fn(() => ({
     saveBuffer: jest.fn().mockResolvedValue('/fake/path/to/avatar.png'),
   })),
+}));
+jest.mock('~/server/services/Files/images/avatar', () => ({
+  resizeAvatar: jest.fn().mockResolvedValue(Buffer.from('safe avatar')),
 }));
 jest.mock('~/server/services/Config', () => ({
   getAppConfig: jest.fn().mockResolvedValue({}),
@@ -215,6 +219,7 @@ describe('setupOpenId', () => {
     delete process.env.OPENID_USERNAME_CLAIM;
     delete process.env.OPENID_NAME_CLAIM;
     delete process.env.OPENID_EMAIL_CLAIM;
+    delete process.env.OPENID_AVATAR_AUTHORIZED_ORIGINS;
     delete process.env.PROXY;
     delete process.env.OPENID_USE_PKCE;
     delete process.env.OPENID_GENERATE_NONCE;
@@ -235,13 +240,7 @@ describe('setupOpenId', () => {
       return { _id: id, ...userData };
     });
 
-    // For image download, simulate a successful response
-    const fakeBuffer = Buffer.from('fake image');
-    const fakeResponse = {
-      ok: true,
-      buffer: jest.fn().mockResolvedValue(fakeBuffer),
-    };
-    fetch.mockResolvedValue(fakeResponse);
+    resizeAvatar.mockResolvedValue(Buffer.from('safe avatar'));
 
     // Call the setup function and capture the verify callback for the regular 'openid' strategy
     // (not 'openidAdmin' which requires existing users)
@@ -1281,7 +1280,7 @@ describe('setupOpenId', () => {
     });
   });
 
-  it('should attempt to download and save the avatar if picture is provided', async () => {
+  it('should process and save the avatar through the shared avatar path if picture is provided', async () => {
     const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 
     // Act
@@ -1291,8 +1290,11 @@ describe('setupOpenId', () => {
     const { saveBuffer } = strategyResult.value;
     const [saveParams] = saveBuffer.mock.calls[0];
 
-    // Assert – verify that download was attempted and the avatar field was set via updateUser
-    expect(fetch).toHaveBeenCalled();
+    expect(resizeAvatar).toHaveBeenCalledWith({
+      userId: 'newUserId',
+      input: 'https://example.com/avatar.png',
+    });
+    expect(fetch).not.toHaveBeenCalled();
     expect(saveParams).toEqual(
       expect.objectContaining({
         fileName: 'hashed-token.png',
@@ -1303,6 +1305,44 @@ describe('setupOpenId', () => {
     expect(saveParams).not.toHaveProperty('basePath');
     // Our mock getStrategyFunctions.saveBuffer returns '/fake/path/to/avatar.png'
     expect(user.avatar).toBe('/fake/path/to/avatar.png');
+  });
+
+  it('uses only the shared avatar processor for OpenID picture URLs', async () => {
+    await validate(tokenset);
+
+    expect(resizeAvatar).toHaveBeenCalledWith({
+      userId: 'newUserId',
+      input: 'https://example.com/avatar.png',
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('adds auth headers for configured OpenID avatar origins', async () => {
+    process.env.OPENID_AVATAR_AUTHORIZED_ORIGINS = 'https://example.com';
+
+    await validate(tokenset);
+
+    expect(resizeAvatar).toHaveBeenCalledWith({
+      userId: 'newUserId',
+      input: 'https://example.com/avatar.png',
+      fetchOptions: {
+        headers: {
+          Authorization: 'Bearer fake_access_token',
+        },
+      },
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('continues login when shared avatar processing rejects the picture URL', async () => {
+    const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+    resizeAvatar.mockRejectedValueOnce(new Error('avatar processing failed'));
+
+    const { user } = await validate(tokenset);
+
+    expect(user).toBeTruthy();
+    expect(user.avatar).toBeUndefined();
+    expect(getStrategyFunctions).not.toHaveBeenCalled();
   });
 
   it('should save CloudFront IdP avatars under the shared avatar prefix', async () => {
@@ -1316,6 +1356,11 @@ describe('setupOpenId', () => {
     const [saveParams] = saveBuffer.mock.calls[0];
 
     expect(getStrategyFunctions).toHaveBeenLastCalledWith(mockCloudfrontFileSource);
+    expect(resizeAvatar).toHaveBeenCalledWith({
+      userId: 'newUserId',
+      input: 'https://example.com/avatar.png',
+    });
+    expect(fetch).not.toHaveBeenCalled();
     expect(saveParams).toEqual(
       expect.objectContaining({
         basePath: 'avatars',
@@ -1336,6 +1381,7 @@ describe('setupOpenId', () => {
 
     // Assert – fetch should not be called and avatar should remain undefined or empty
     expect(fetch).not.toHaveBeenCalled();
+    expect(resizeAvatar).not.toHaveBeenCalled();
     // Depending on your implementation, user.avatar may be undefined or an empty string.
   });
 

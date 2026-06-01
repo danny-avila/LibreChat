@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const { webcrypto } = require('node:crypto');
 const {
   logger,
+  getTenantId,
   DEFAULT_SESSION_EXPIRY,
   DEFAULT_REFRESH_TOKEN_EXPIRY,
 } = require('@librechat/data-schemas');
@@ -212,7 +213,8 @@ const registerUser = async (user, additionalData = {}) => {
 
   let newUserId;
   try {
-    const appConfig = await getAppConfig({ baseOnly: true });
+    const tenantId = getTenantId();
+    const appConfig = await getAppConfig(tenantId ? { tenantId } : {});
     if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
       const errorMessage =
         'The email address provided cannot be used. Please use a different email address.';
