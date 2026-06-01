@@ -7,6 +7,7 @@ import type {
   TAttachment,
   TMessage,
   TBanner,
+  ReasoningResponseKey,
   ReasoningParameterFormat,
 } from './schemas';
 import type { RefillIntervalUnit } from './balance';
@@ -400,6 +401,7 @@ export type TConfig = {
   customParams?: {
     defaultParamsEndpoint?: string;
     reasoningFormat?: ReasoningParameterFormat;
+    reasoningKey?: ReasoningResponseKey;
     paramDefinitions?: Partial<SettingDefinition>[];
   };
 };

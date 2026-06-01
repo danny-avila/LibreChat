@@ -59,7 +59,7 @@ jest.mock('@librechat/data-schemas', () => {
 const axios = require('axios');
 const { loadYaml } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
-const { ReasoningParameterFormat } = require('librechat-data-provider');
+const { ReasoningParameterFormat, ReasoningResponseKey } = require('librechat-data-provider');
 const loadCustomConfig = require('./loadCustomConfig');
 
 describe('loadCustomConfig', () => {
@@ -316,6 +316,18 @@ describe('loadCustomConfig', () => {
       expect(parsedConfig.endpoints.custom[0].customParams).toEqual({
         defaultParamsEndpoint: 'custom',
         reasoningFormat: ReasoningParameterFormat.reasoningObject,
+        paramDefinitions: [],
+      });
+    });
+
+    it('defaults defaultParamsEndpoint when only reasoningKey is provided', async () => {
+      const parsedConfig = await loadCustomParams({
+        reasoningKey: ReasoningResponseKey.reasoning,
+      });
+
+      expect(parsedConfig.endpoints.custom[0].customParams).toEqual({
+        defaultParamsEndpoint: 'custom',
+        reasoningKey: ReasoningResponseKey.reasoning,
         paramDefinitions: [],
       });
     });

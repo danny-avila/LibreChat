@@ -10,7 +10,12 @@ import {
   summarizationTriggerSchema,
   summarizationConfigSchema,
 } from '../src/config';
-import { tModelSpecPresetSchema, EModelEndpoint, ReasoningParameterFormat } from '../src/schemas';
+import {
+  tModelSpecPresetSchema,
+  EModelEndpoint,
+  ReasoningParameterFormat,
+  ReasoningResponseKey,
+} from '../src/schemas';
 import { specsConfigSchema } from '../src/models';
 import { FileSources } from '../src/types/files';
 
@@ -326,6 +331,31 @@ describe('endpointSchema addParams validation', () => {
       ...validEndpoint,
       customParams: {
         reasoningFormat: 'provider_magic',
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts custom reasoning response key config', () => {
+    const result = endpointSchema.safeParse({
+      ...validEndpoint,
+      customParams: {
+        reasoningKey: ReasoningResponseKey.reasoning,
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.customParams?.reasoningKey).toBe(ReasoningResponseKey.reasoning);
+    }
+  });
+
+  it('rejects invalid custom reasoning response key config', () => {
+    const result = endpointSchema.safeParse({
+      ...validEndpoint,
+      customParams: {
+        reasoningKey: 'reasoning_text',
       },
     });
 

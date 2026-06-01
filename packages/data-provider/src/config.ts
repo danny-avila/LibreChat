@@ -6,6 +6,7 @@ import {
   eModelEndpointSchema,
   isAgentsEndpoint,
   eReasoningParameterFormatSchema,
+  eReasoningResponseKeySchema,
 } from './schemas';
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { specsConfigSchema, TSpecsConfig } from './models';
@@ -636,6 +637,7 @@ export const endpointSchema = baseEndpointSchema.merge(
       .object({
         defaultParamsEndpoint: z.string().default('custom'),
         reasoningFormat: eReasoningParameterFormatSchema.optional(),
+        reasoningKey: eReasoningResponseKeySchema.optional(),
         paramDefinitions: z.array(paramDefinitionSchema).optional(),
       })
       .strict()
