@@ -318,7 +318,7 @@ export default function AgentConfig() {
         <p className="mt-1 text-sm text-text-secondary">
           Read example instructions in the{' '}
           <a
-            href="https://innovation.nj.gov/skills/ai-how-tos/"
+            href="https://innovation.nj.gov/skills/ai-how-tos/prompts-and-context"
             className="text-blue-500 underline hover:text-blue-600"
             target="_blank"
             rel="noreferrer"

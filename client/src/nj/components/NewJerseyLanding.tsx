@@ -91,7 +91,7 @@ export function NewJerseyLanding() {
                     <p>
                       Check out these resources on how to use AI tools —{' '}
                       <a
-                        href="https://innovation.nj.gov/skills/ai-how-tos/"
+                        href="https://innovation.nj.gov/skills/ai-how-tos/prompts-and-context"
                         className="inline-flex items-center gap-1 underline hover:decoration-2"
                         target="_blank"
                         rel="noreferrer"

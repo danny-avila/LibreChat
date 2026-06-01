@@ -26,7 +26,7 @@ export default function NewJerseyAboutPage() {
     },
     {
       title: 'Guidelines on Generative AI use for Public Professionals',
-      href: 'https://innovation.nj.gov/skills/ai-how-tos/',
+      href: 'https://innovation.nj.gov/skills/ai-how-tos/public-sector-tips',
       icon: 'launch',
       isInternal: false,
     },
