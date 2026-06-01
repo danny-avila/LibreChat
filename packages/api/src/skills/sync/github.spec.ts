@@ -1069,6 +1069,44 @@ describe('createGitHubSkillSyncRunner', () => {
     expect(deps.grantPermission).toHaveBeenCalled();
   });
 
+  it('does not mutate existing skill files when permission grant fails', async () => {
+    const existing = makeSkill({
+      name: 'research',
+      description: 'Old description',
+      body: 'Old body',
+      author: new Types.ObjectId(),
+      authorName: 'GitHub Sync',
+      source: 'github',
+      sourceMetadata: {
+        provider: 'github',
+        sourceId: 'librechat-skills',
+        upstreamId: 'librechat-skills:skills/research',
+        owner: 'LibreChat',
+        repo: 'skills',
+        ref: 'main',
+        skillPath: 'skills/research',
+      },
+    }) as ISkill & { _id: Types.ObjectId };
+    const deps = createDeps({
+      findSkillBySourceIdentity: jest.fn(async () => existing),
+      getSkillById: jest.fn(async () => existing),
+      grantPermission: jest.fn(async () => {
+        throw new Error('permission unavailable');
+      }),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('failed');
+    expect(deps.grantPermission).toHaveBeenCalledWith(
+      expect.objectContaining({ resourceId: existing._id }),
+    );
+    expect(deps.listSkillFiles).not.toHaveBeenCalled();
+    expect(deps.saveBuffer).not.toHaveBeenCalled();
+    expect(deps.upsertSkillFile).not.toHaveBeenCalled();
+    expect(deps.updateSkill).not.toHaveBeenCalled();
+  });
+
   it('restores existing skill files when the skill update fails after file sync', async () => {
     const existing = makeSkill({
       name: 'research',

@@ -1276,10 +1276,10 @@ async function syncSource(params: {
             `Skill "${effectivePrepared.existing.name}" was modified during sync`,
           );
         }
+        await ensurePublicViewer(deps, effectivePrepared.existing._id);
         const previousFiles = await deps.listSkillFiles(effectivePrepared.existing._id);
         const journal: SyncSkillFilesJournal = { staleFiles: [], savedFiles: [] };
         let fileCounts: SyncSkillFilesResult;
-        let upserted: UpsertRemoteSkillResult;
         try {
           fileCounts = await syncSkillFiles({
             deps,
@@ -1292,7 +1292,7 @@ async function syncSource(params: {
             assertNotCancelled,
             journal,
           });
-          upserted = await commitExistingRemoteSkillAfterFileSync(
+          await commitExistingRemoteSkillAfterFileSync(
             deps,
             {
               ...effectivePrepared,
@@ -1314,7 +1314,6 @@ async function syncSource(params: {
           );
           throw error;
         }
-        await ensurePublicViewer(deps, upserted.skill._id);
         await cleanupStoredFiles({
           deps,
           files: fileCounts.staleFiles,
