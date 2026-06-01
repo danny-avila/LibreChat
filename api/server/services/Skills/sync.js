@@ -1,20 +1,22 @@
-const { FileContext } = require('librechat-data-provider');
+const { FileContext, skillSyncConfigSchema } = require('librechat-data-provider');
 const {
   getStorageMetadata,
   createGitHubSkillSyncRunner,
   startGitHubSkillSyncScheduler,
 } = require('@librechat/api');
-const { runAsSystem } = require('@librechat/data-schemas');
+const { logger, runAsSystem } = require('@librechat/data-schemas');
 const db = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 
 const SYSTEM_USER_ID = '000000000000000000000000';
+const REQUEST_SYNC_MIN_INTERVAL_MS = 5 * 60 * 1000;
 
 let appConfigRef;
 let runner;
 let scheduler;
+const requestSyncsInFlight = new Set();
 
 async function loadCurrentAppConfig() {
   try {
@@ -29,13 +31,13 @@ async function loadCurrentAppConfig() {
   }
 }
 
-async function getSyncConfig() {
-  const appConfig = await loadCurrentAppConfig();
+async function getSyncConfig(loadAppConfig = loadCurrentAppConfig) {
+  const appConfig = await loadAppConfig();
   return appConfig?.skillSync;
 }
 
-async function resolveSkillStorage({ isImage = false } = {}) {
-  const appConfig = await loadCurrentAppConfig();
+async function resolveSkillStorage({ isImage = false, loadAppConfig = loadCurrentAppConfig } = {}) {
+  const appConfig = await loadAppConfig();
   const source = getFileStrategy(appConfig, { context: FileContext.skill_file, isImage });
   const strategy = getStrategyFunctions(source);
   if (!strategy.saveBuffer) {
@@ -44,8 +46,8 @@ async function resolveSkillStorage({ isImage = false } = {}) {
   return { source, saveBuffer: strategy.saveBuffer };
 }
 
-async function getSyntheticReq({ userId = SYSTEM_USER_ID, tenantId } = {}) {
-  const appConfig = await loadCurrentAppConfig();
+async function getSyntheticReq({ userId = SYSTEM_USER_ID, tenantId, loadAppConfig } = {}) {
+  const appConfig = await (loadAppConfig ?? loadCurrentAppConfig)();
   return {
     config: appConfig,
     user: {
@@ -56,9 +58,11 @@ async function getSyntheticReq({ userId = SYSTEM_USER_ID, tenantId } = {}) {
   };
 }
 
-function createRunner() {
+function createRunner({ getConfig, loadAppConfig } = {}) {
+  const resolveAppConfig = loadAppConfig ?? loadCurrentAppConfig;
+  const resolveConfig = getConfig ?? (() => getSyncConfig(resolveAppConfig));
   const createdRunner = createGitHubSkillSyncRunner({
-    getConfig: getSyncConfig,
+    getConfig: resolveConfig,
     getCredentialToken: db.getSkillSyncCredentialToken,
     getCredentialSummary: db.getSkillSyncCredentialSummary,
     listCredentials: db.listSkillSyncCredentials,
@@ -110,7 +114,7 @@ function createRunner() {
       );
     },
     saveBuffer: async ({ userId, buffer, fileName, basePath, isImage, tenantId }) => {
-      const storage = await resolveSkillStorage({ isImage });
+      const storage = await resolveSkillStorage({ isImage, loadAppConfig: resolveAppConfig });
       const filepath = await storage.saveBuffer({
         userId: userId ?? SYSTEM_USER_ID,
         buffer,
@@ -133,6 +137,7 @@ function createRunner() {
         await getSyntheticReq({
           userId: file.user?.toString?.() ?? file.user ?? SYSTEM_USER_ID,
           tenantId: file.tenantId,
+          loadAppConfig: resolveAppConfig,
         }),
         file,
       );
@@ -142,6 +147,126 @@ function createRunner() {
     getStatus: createdRunner.getStatus,
     runOnce: createdRunner.runOnce,
   };
+}
+
+function parseSkillSyncConfig(raw) {
+  if (!raw || typeof raw !== 'object') {
+    return undefined;
+  }
+  const parsed = skillSyncConfigSchema.safeParse(raw);
+  if (!parsed.success) {
+    logger.warn('[GitHubSkillSync] Ignoring invalid request-scoped skill sync config', {
+      issues: parsed.error.flatten(),
+    });
+    return undefined;
+  }
+  return parsed.data;
+}
+
+function isSameSkillSyncConfig(left, right) {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
+function getRequestSkillSyncConfig(appConfig, user) {
+  const resolved = parseSkillSyncConfig(appConfig?.skillSync);
+  if (!resolved?.github?.enabled || resolved.github.sources.length === 0) {
+    return undefined;
+  }
+
+  const base = parseSkillSyncConfig(appConfig?.config?.skillSync);
+  if (isSameSkillSyncConfig(resolved, base)) {
+    return undefined;
+  }
+
+  const tenantId = typeof user?.tenantId === 'string' && user.tenantId ? user.tenantId : undefined;
+  return {
+    ...resolved,
+    github: {
+      ...resolved.github,
+      runOnStartup: false,
+      sources: resolved.github.sources.map((source) => ({
+        ...source,
+        tenantId,
+      })),
+    },
+  };
+}
+
+function toTimestamp(value) {
+  if (!value) {
+    return 0;
+  }
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+  const parsed = Date.parse(String(value));
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function getLastAttemptAt(source) {
+  return Math.max(
+    toTimestamp(source.finishedAt),
+    toTimestamp(source.startedAt),
+    toTimestamp(source.updatedAt),
+    toTimestamp(source.lastSuccessAt),
+    toTimestamp(source.lastFailureAt),
+  );
+}
+
+function shouldRunRequestSync(status) {
+  if (!status.enabled || status.sources.length === 0) {
+    return false;
+  }
+  const intervalMs = Math.max(
+    REQUEST_SYNC_MIN_INTERVAL_MS,
+    (status.intervalMinutes ?? 60) * 60 * 1000,
+  );
+  const now = Date.now();
+  return status.sources.some((source) => {
+    if (source.status === 'running') {
+      return false;
+    }
+    const lastAttemptAt = getLastAttemptAt(source);
+    return !lastAttemptAt || now - lastAttemptAt >= intervalMs;
+  });
+}
+
+function getRequestSyncKey(config, user) {
+  const tenantId = user?.tenantId ?? '';
+  const sources = config.github.sources
+    .map((source) => source.id)
+    .sort()
+    .join(',');
+  return `${tenantId}:${sources}`;
+}
+
+async function maybeRunGitHubSkillSyncForRequest(req) {
+  const config = getRequestSkillSyncConfig(req.config, req.user);
+  if (!config) {
+    return false;
+  }
+
+  const syncKey = getRequestSyncKey(config, req.user);
+  if (requestSyncsInFlight.has(syncKey)) {
+    return false;
+  }
+
+  const loadAppConfig = async () => req.config;
+  const requestRunner = createRunner({
+    getConfig: async () => config,
+    loadAppConfig,
+  });
+  const status = await requestRunner.getStatus();
+  if (!shouldRunRequestSync(status)) {
+    return false;
+  }
+
+  requestSyncsInFlight.add(syncKey);
+  void requestRunner
+    .runOnce()
+    .catch((error) => logger.error('[GitHubSkillSync] Request-scoped sync failed:', error))
+    .finally(() => requestSyncsInFlight.delete(syncKey));
+  return true;
 }
 
 function initializeGitHubSkillSync(appConfig) {
@@ -171,5 +296,6 @@ function stopGitHubSkillSyncScheduler() {
 module.exports = {
   initializeGitHubSkillSync,
   getGitHubSkillSyncRunner,
+  maybeRunGitHubSkillSyncForRequest,
   stopGitHubSkillSyncScheduler,
 };
