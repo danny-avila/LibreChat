@@ -82,7 +82,7 @@ export default defineConfig(({ command }) => ({
           'assets/maskable-icon.png',
           'manifest.webmanifest',
         ],
-        globIgnores: ['images/**/*', '**/*.map', 'index.html', 'assets/rum.*.js'],
+        globIgnores: ['images/**/*', '**/*.map', 'assets/rum.*.js'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         navigateFallbackDenylist: [/^\/oauth/, /^\/api/],
       },
@@ -142,6 +142,10 @@ export default defineConfig(({ command }) => ({
               name(id: string) {
                 const normalizedId = id.replace(/\\/g, '/');
                 if (normalizedId.includes('node_modules')) {
+                  if (normalizedId.includes('/node_modules/regenerator-runtime/')) {
+                    return 'polyfills';
+                  }
+
                   if (normalizedId.includes('@hyperdx/')) {
                     return 'rum';
                   }
@@ -296,6 +300,9 @@ export default defineConfig(({ command }) => ({
 
                   // Everything else falls into a generic vendor chunk.
                   return 'vendor';
+                }
+                if (normalizedId.includes('/src/polyfills/')) {
+                  return 'polyfills';
                 }
                 // Create a separate chunk for all locale files under src/locales.
                 if (normalizedId.includes('/src/locales/')) {
