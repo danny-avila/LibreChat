@@ -10,6 +10,18 @@ const mockRecordCollectedUsage = jest
   .mockResolvedValue({ input_tokens: 100, output_tokens: 50 });
 const mockGetBalanceConfig = jest.fn().mockReturnValue({ enabled: true });
 const mockGetTransactionsConfig = jest.fn().mockReturnValue({ enabled: true });
+const mockBuildSkillPrimedIdsByName = jest.fn((manualSkillPrimes, alwaysApplySkillPrimes) => {
+  const primed = {};
+  for (const skill of alwaysApplySkillPrimes ?? []) {
+    primed[skill.name] = skill._id.toString();
+  }
+  for (const skill of manualSkillPrimes ?? []) {
+    primed[skill.name] = skill._id.toString();
+  }
+  return Object.keys(primed).length > 0 ? primed : undefined;
+});
+const mockEnrichWithSkillConfigurable = jest.fn((result) => result);
+const mockGetSkillToolDeps = jest.fn(() => ({}));
 
 jest.mock('nanoid', () => ({
   nanoid: jest.fn(() => 'mock-nanoid-123'),
@@ -152,6 +164,12 @@ jest.mock('~/server/controllers/ModelController', () => ({
 
 jest.mock('~/server/services/Files/permissions', () => ({
   filterFilesByAgentAccess: jest.fn(),
+}));
+
+jest.mock('~/server/services/Endpoints/agents/skillDeps', () => ({
+  getSkillToolDeps: mockGetSkillToolDeps,
+  enrichWithSkillConfigurable: mockEnrichWithSkillConfigurable,
+  buildSkillPrimedIdsByName: mockBuildSkillPrimedIdsByName,
 }));
 
 jest.mock('~/cache', () => ({
@@ -455,6 +473,87 @@ describe('createResponse controller', () => {
             }),
           ]),
         }),
+      );
+    });
+  });
+
+  describe('sub-agent skill priming', () => {
+    it('passes the sub-agent primed skill IDs into non-streaming tool execution', async () => {
+      const {
+        initializeAgent,
+        discoverConnectedAgents,
+        createToolExecuteHandler,
+      } = require('@librechat/api');
+      const { loadToolsForExecution } = require('~/server/services/ToolService');
+      const subAgent = { id: 'agent-sub', name: 'Sub Agent' };
+      const subConfig = {
+        id: 'agent-sub',
+        model: 'claude-3',
+        model_parameters: {},
+        toolRegistry: new Map(),
+        userMCPAuthMap: { sub: { token: 'sub-token' } },
+        tool_resources: { code_interpreter: { file_ids: ['sub-file'] } },
+        actionsEnabled: true,
+        accessibleSkillIds: ['sub-skill-id'],
+        activeSkillNames: ['sub-hidden-skill'],
+        codeEnvAvailable: true,
+        skillAuthoringAvailable: true,
+        fileAuthoringToolNames: ['create_file', 'edit_file'],
+        manualSkillPrimes: [{ name: 'sub-hidden-skill', _id: { toString: () => 'sub-manual-id' } }],
+        alwaysApplySkillPrimes: [
+          { name: 'sub-always-skill', _id: { toString: () => 'sub-always-id' } },
+        ],
+      };
+
+      initializeAgent.mockResolvedValueOnce({
+        id: 'agent-123',
+        model: 'claude-3',
+        model_parameters: {},
+        toolRegistry: new Map(),
+        edges: [{ source: 'agent-123', target: 'agent-sub' }],
+        accessibleSkillIds: ['primary-skill-id'],
+        activeSkillNames: ['primary-skill'],
+        codeEnvAvailable: false,
+        skillAuthoringAvailable: false,
+        fileAuthoringToolNames: [],
+        manualSkillPrimes: [{ name: 'primary-skill', _id: { toString: () => 'primary-skill-id' } }],
+      });
+      discoverConnectedAgents.mockImplementationOnce(async (_params, deps) => {
+        deps.onAgentInitialized('agent-sub', subAgent, subConfig);
+        return {
+          agentConfigs: new Map([['agent-sub', subConfig]]),
+          edges: [],
+          skippedAgentIds: new Set(),
+          userMCPAuthMap: undefined,
+        };
+      });
+
+      await createResponse(req, res);
+
+      const toolExecuteOptions = createToolExecuteHandler.mock.calls.at(-1)[0];
+      await toolExecuteOptions.loadTools(['read_file'], 'agent-sub');
+
+      expect(loadToolsForExecution).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          agent: subAgent,
+          toolRegistry: subConfig.toolRegistry,
+          userMCPAuthMap: subConfig.userMCPAuthMap,
+          tool_resources: subConfig.tool_resources,
+          actionsEnabled: true,
+        }),
+      );
+      expect(mockEnrichWithSkillConfigurable).toHaveBeenLastCalledWith(
+        expect.anything(),
+        req,
+        ['sub-skill-id'],
+        true,
+        {
+          'sub-always-skill': 'sub-always-id',
+          'sub-hidden-skill': 'sub-manual-id',
+        },
+        ['sub-hidden-skill'],
+        true,
+        ['create_file', 'edit_file'],
       );
     });
   });
