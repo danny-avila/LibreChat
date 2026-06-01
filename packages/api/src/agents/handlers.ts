@@ -1,3 +1,5 @@
+import yaml from 'js-yaml';
+import { Types } from 'mongoose';
 import { logger } from '@librechat/data-schemas';
 import { GraphEvents, Constants, CODE_EXECUTION_TOOLS } from '@librechat/agents';
 import type {
@@ -9,9 +11,8 @@ import type {
   ToolExecuteResult,
   ToolExecuteBatchRequest,
 } from '@librechat/agents';
-import { Types } from 'mongoose';
-import type { CodeEnvRef } from 'librechat-data-provider';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
+import type { CodeEnvRef } from 'librechat-data-provider';
 import type { SkillFileRecord } from './skillFiles';
 import type { ServerRequest } from '~/types';
 import { logAxiosError, runOutsideTracing } from '~/utils';
@@ -88,6 +89,7 @@ export interface ToolExecuteOptions {
     name: string;
     description: string;
     body: string;
+    frontmatter?: Record<string, unknown>;
     author: Types.ObjectId;
     authorName: string;
     alwaysApply?: boolean;
@@ -107,6 +109,7 @@ export interface ToolExecuteOptions {
     update: {
       body?: string;
       description?: string;
+      frontmatter?: Record<string, unknown>;
       alwaysApply?: boolean;
     };
   }) => Promise<
@@ -588,13 +591,53 @@ function validateSkillMdContent(content: string, skillName: string): string | nu
   return null;
 }
 
+function extractSkillFrontmatterBlock(content: string): string | null {
+  const trimmed = content.trim();
+  if (!trimmed.startsWith('---')) {
+    return null;
+  }
+  const afterOpening = trimmed.slice(3);
+  const closingIdx = afterOpening.indexOf('\n---');
+  if (closingIdx === -1) {
+    return null;
+  }
+  return afterOpening.slice(0, closingIdx);
+}
+
+function parseStructuredSkillFrontmatter(
+  content: string,
+):
+  | { frontmatter?: Record<string, unknown>; error?: undefined }
+  | { frontmatter?: undefined; error: string } {
+  const block = extractSkillFrontmatterBlock(content);
+  if (block == null) {
+    return {};
+  }
+  try {
+    const parsed = yaml.load(block);
+    if (parsed == null) {
+      return { frontmatter: {} };
+    }
+    if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { error: `${SKILL_MD} frontmatter must be a YAML mapping.` };
+    }
+    return { frontmatter: parsed as Record<string, unknown> };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { error: `Invalid ${SKILL_MD} frontmatter: ${message}` };
+  }
+}
+
 function parseSkillMdUpdate(content: string): {
   description: string;
+  frontmatter?: Record<string, unknown>;
   alwaysApply?: boolean;
 } {
   const parsed = parseFrontmatter(content);
+  const structured = parseStructuredSkillFrontmatter(content);
   return {
     description: parsed.description,
+    ...(structured.frontmatter !== undefined ? { frontmatter: structured.frontmatter } : {}),
     ...(parsed.alwaysApply !== undefined ? { alwaysApply: parsed.alwaysApply } : {}),
   };
 }
@@ -1309,6 +1352,48 @@ async function resolveSkillForAuthoring(
   return await getSkillByName(skillName, accessibleIds, { preferModelInvocable: true });
 }
 
+function isSkillAuthoringAvailable(mergedConfigurable: Record<string, unknown>): boolean {
+  return mergedConfigurable.skillAuthoringAvailable === true;
+}
+
+function getFileAuthoringToolNames(
+  mergedConfigurable: Record<string, unknown>,
+): Set<string> | undefined {
+  const names = mergedConfigurable.fileAuthoringToolNames;
+  return names instanceof Set ? (names as Set<string>) : undefined;
+}
+
+function isHostFileAuthoringToolCall(
+  toolName: string,
+  mergedConfigurable: Record<string, unknown>,
+): boolean {
+  return getFileAuthoringToolNames(mergedConfigurable)?.has(toolName) === true;
+}
+
+function isSkillPrimedForAuthoring(
+  skillName: string,
+  mergedConfigurable: Record<string, unknown>,
+): boolean {
+  const skillPrimedIdsByName =
+    (mergedConfigurable.skillPrimedIdsByName as Record<string, string> | undefined) ?? {};
+  return typeof skillPrimedIdsByName[skillName] === 'string';
+}
+
+function hiddenSkillAuthoringDenied(
+  tc: ToolCallRequest,
+  skill: AuthoringSkill | null,
+  skillName: string,
+  mergedConfigurable: Record<string, unknown>,
+): ToolExecuteResult | null {
+  if (
+    skill?.disableModelInvocation !== true ||
+    isSkillPrimedForAuthoring(skillName, mergedConfigurable)
+  ) {
+    return null;
+  }
+  return errorResult(tc, `Skill "${skillName}" cannot be authored by the model`);
+}
+
 function rememberAuthoredSkill(
   configurables: Array<Record<string, unknown> | undefined>,
   skill: { _id: Types.ObjectId; name: string },
@@ -1547,6 +1632,10 @@ async function writeSkillMd({
   if (validationError) {
     return errorResult(tc, validationError);
   }
+  const structured = parseStructuredSkillFrontmatter(content);
+  if (structured.error) {
+    return errorResult(tc, structured.error);
+  }
 
   if (!skill) {
     const createDenied = await ensureCanCreateSkill(tc, options, req);
@@ -1565,6 +1654,7 @@ async function writeSkillMd({
       name: parsed.name,
       description: parsed.description,
       body: content,
+      ...(structured.frontmatter !== undefined ? { frontmatter: structured.frontmatter } : {}),
       author: author.author,
       authorName: author.authorName,
       ...(parsed.alwaysApply !== undefined ? { alwaysApply: parsed.alwaysApply } : {}),
@@ -1608,6 +1698,7 @@ async function writeSkillMd({
     update: {
       body: content,
       description: parsedUpdate.description,
+      ...(parsedUpdate.frontmatter !== undefined ? { frontmatter: parsedUpdate.frontmatter } : {}),
       ...(parsedUpdate.alwaysApply !== undefined ? { alwaysApply: parsedUpdate.alwaysApply } : {}),
     },
   });
@@ -1818,8 +1909,15 @@ async function handleCreateFileCall(
   if (typeof parsed === 'string') {
     return errorResult(tc, parsed);
   }
+  if (!isSkillAuthoringAvailable(mergedConfigurable)) {
+    return errorResult(tc, 'Skill file authoring is not available for this agent.');
+  }
 
   const skill = await resolveSkillForAuthoring(parsed.skillName, mergedConfigurable, options);
+  const hiddenDenied = hiddenSkillAuthoringDenied(tc, skill, parsed.skillName, mergedConfigurable);
+  if (hiddenDenied) {
+    return hiddenDenied;
+  }
   if (parsed.relativePath === SKILL_MD) {
     if (skill && !overwrite) {
       return errorResult(tc, 'File already exists. Pass overwrite: true to replace.');
@@ -1906,10 +2004,17 @@ async function handleEditFileCall(
   if (typeof parsed === 'string') {
     return errorResult(tc, parsed);
   }
+  if (!isSkillAuthoringAvailable(mergedConfigurable)) {
+    return errorResult(tc, 'Skill file authoring is not available for this agent.');
+  }
 
   const skill = await resolveSkillForAuthoring(parsed.skillName, mergedConfigurable, options);
   if (!skill) {
     return errorResult(tc, `Skill "${parsed.skillName}" not found or not accessible.`);
+  }
+  const hiddenDenied = hiddenSkillAuthoringDenied(tc, skill, parsed.skillName, mergedConfigurable);
+  if (hiddenDenied) {
+    return hiddenDenied;
   }
 
   const current = await loadSkillFileTextForAuthoring({
@@ -2019,37 +2124,54 @@ async function handleReadFileCall(
     };
   }
 
-  const slashIdx = args.file_path.indexOf('/');
-  if (slashIdx < 1) {
-    if (codeEnvAvailable) {
-      return handleSandboxFileFallback(tc, args.file_path, options, req);
+  let skillName: string;
+  let relativePath: string;
+  const explicitSkillNamespace = args.file_path.startsWith(SKILL_FILE_PREFIX);
+  if (explicitSkillNamespace) {
+    const parsed = parseSkillAuthoringPath(args.file_path);
+    if (typeof parsed === 'string') {
+      return {
+        toolCallId: tc.id,
+        status: 'error',
+        content: '',
+        errorMessage: parsed,
+      };
     }
-    return {
-      toolCallId: tc.id,
-      status: 'error',
-      content: '',
-      errorMessage: `Invalid file path "${args.file_path}". Use format: {skillName}/{path}`,
-    };
-  }
+    skillName = parsed.skillName;
+    relativePath = parsed.relativePath;
+  } else {
+    const slashIdx = args.file_path.indexOf('/');
+    if (slashIdx < 1) {
+      if (codeEnvAvailable) {
+        return handleSandboxFileFallback(tc, args.file_path, options, req);
+      }
+      return {
+        toolCallId: tc.id,
+        status: 'error',
+        content: '',
+        errorMessage: `Invalid file path "${args.file_path}". Use format: {skillName}/{path}`,
+      };
+    }
 
-  const skillName = args.file_path.slice(0, slashIdx);
-  const relativePath = args.file_path.slice(slashIdx + 1);
-  if (!relativePath) {
-    /**
-     * `read_file("output/")`: a malformed-but-unambiguously-not-a-skill
-     * path. Stay consistent with the other malformed-path branches and
-     * route to the sandbox when code execution is available, instead of
-     * dead-ending with a skill-centric error message.
-     */
-    if (codeEnvAvailable) {
-      return handleSandboxFileFallback(tc, args.file_path, options, req);
+    skillName = args.file_path.slice(0, slashIdx);
+    relativePath = args.file_path.slice(slashIdx + 1);
+    if (!relativePath) {
+      /**
+       * `read_file("output/")`: a malformed-but-unambiguously-not-a-skill
+       * path. Stay consistent with the other malformed-path branches and
+       * route to the sandbox when code execution is available, instead of
+       * dead-ending with a skill-centric error message.
+       */
+      if (codeEnvAvailable) {
+        return handleSandboxFileFallback(tc, args.file_path, options, req);
+      }
+      return {
+        toolCallId: tc.id,
+        status: 'error',
+        content: '',
+        errorMessage: 'Missing file path after skill name',
+      };
     }
-    return {
-      toolCallId: tc.id,
-      status: 'error',
-      content: '',
-      errorMessage: 'Missing file path after skill name',
-    };
   }
 
   const skillPrimedIdsByName =
@@ -2073,7 +2195,7 @@ async function handleReadFileCall(
    * the lookup truly has nowhere to go.
    */
   if (!skillsEffectivelyEnabled) {
-    if (codeEnvAvailable) {
+    if (codeEnvAvailable && !explicitSkillNamespace) {
       return handleSandboxFileFallback(tc, args.file_path, options, req);
     }
     return {
@@ -2110,7 +2232,7 @@ async function handleReadFileCall(
    */
   const activeSkillNames = mergedConfigurable?.activeSkillNames as Set<string> | undefined;
   if (activeSkillNames && !activeSkillNames.has(skillName) && !isPrimedThisTurn) {
-    if (codeEnvAvailable) {
+    if (codeEnvAvailable && !explicitSkillNamespace) {
       return handleSandboxFileFallback(tc, args.file_path, options, req);
     }
     return {
@@ -2547,8 +2669,11 @@ async function handleSkillToolCall(
   };
 }
 
-function getFileAuthoringQueueKey(tc: ToolCallRequest): string | undefined {
-  if (tc.name !== CREATE_FILE_TOOL_NAME && tc.name !== EDIT_FILE_TOOL_NAME) {
+function getFileAuthoringQueueKey(
+  tc: ToolCallRequest,
+  mergedConfigurable: Record<string, unknown>,
+): string | undefined {
+  if (!isHostFileAuthoringToolCall(tc.name, mergedConfigurable)) {
     return undefined;
   }
   const args = tc.args as { file_path?: unknown };
@@ -2593,11 +2718,14 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
             const results: ToolExecuteResult[] = await Promise.all(
               toolCalls.map(async (tc: ToolCallRequest) => {
                 const execute = async (): Promise<ToolExecuteResult> => {
+                  const isFileAuthoringCall = isHostFileAuthoringToolCall(
+                    tc.name,
+                    mergedConfigurable,
+                  );
                   if (
                     tc.name === Constants.SKILL_TOOL ||
                     tc.name === Constants.READ_FILE ||
-                    tc.name === CREATE_FILE_TOOL_NAME ||
-                    tc.name === EDIT_FILE_TOOL_NAME
+                    isFileAuthoringCall
                   ) {
                     const req = mergedConfigurable?.req as ServerRequest | undefined;
                     let handlerResult: ToolExecuteResult;
@@ -2616,7 +2744,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           options,
                           req,
                         );
-                      } else if (tc.name === CREATE_FILE_TOOL_NAME) {
+                      } else if (tc.name === CREATE_FILE_TOOL_NAME && isFileAuthoringCall) {
                         handlerResult = await handleCreateFileCall(
                           tc,
                           mergedConfigurable,
@@ -2624,13 +2752,15 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           req,
                           sourceConfigurable,
                         );
-                      } else {
+                      } else if (tc.name === EDIT_FILE_TOOL_NAME && isFileAuthoringCall) {
                         handlerResult = await handleEditFileCall(
                           tc,
                           mergedConfigurable,
                           options,
                           req,
                         );
+                      } else {
+                        handlerResult = errorResult(tc, `Tool ${tc.name} not found`);
                       }
                     } catch (toolError) {
                       const { message, logContext } = getSafeToolError(toolError);
@@ -2845,7 +2975,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   }
                 };
 
-                const queueKey = getFileAuthoringQueueKey(tc);
+                const queueKey = getFileAuthoringQueueKey(tc, mergedConfigurable);
                 if (!queueKey) {
                   return await execute();
                 }

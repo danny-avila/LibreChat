@@ -18,6 +18,8 @@ describe('enrichWithSkillConfigurable', () => {
       codeEnvAvailable: true,
       accessibleSkillIds,
       skillPrimedIdsByName: undefined,
+      skillAuthoringAvailable: undefined,
+      fileAuthoringToolNames: undefined,
     });
   });
 
@@ -43,6 +45,23 @@ describe('enrichWithSkillConfigurable', () => {
     );
 
     expect(result.configurable.skillPrimedIdsByName).toBe(primed);
+  });
+
+  it('threads skill authoring gates through unchanged', () => {
+    const fileAuthoringToolNames = new Set(['create_file', 'edit_file']);
+    const result = enrichWithSkillConfigurable(
+      { loadedTools: [], configurable: {} },
+      req,
+      accessibleSkillIds,
+      true,
+      undefined,
+      undefined,
+      true,
+      fileAuthoringToolNames,
+    );
+
+    expect(result.configurable.skillAuthoringAvailable).toBe(true);
+    expect(result.configurable.fileAuthoringToolNames).toBe(fileAuthoringToolNames);
   });
 
   it('preserves loadedTools unchanged', () => {
