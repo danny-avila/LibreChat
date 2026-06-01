@@ -1,25 +1,18 @@
 import { memo, useMemo, useState } from 'react';
 import { Spinner, useToastContext } from '@librechat/client';
+import type { AdminBudgetRow } from 'librechat-data-provider';
 import {
   useAdminUsageQuery,
   useAdminBudgetsQuery,
   useResetMonthBudgetsMutation,
 } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
+import EditBudgetModal from './EditBudgetModal';
 import { useLocalize } from '~/hooks';
+import { formatUSD } from './credits';
 
 function formatTokens(value: number): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(value);
-}
-
-/** Converts a tokenCredits amount (1 USD = 1_000_000) to a "$X.XX" string. */
-function formatUSD(valueInCredits: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(valueInCredits / 1_000_000);
 }
 
 /** Whole days from now until the 1st of next month (UTC). */
@@ -128,6 +121,7 @@ function Usage() {
   const resetMonthMutation = useResetMonthBudgetsMutation();
   const [activeTab, setActiveTab] = useState<TabKey>('analytics');
   const [activeBU, setActiveBU] = useState<BUFilter>('all');
+  const [editingRow, setEditingRow] = useState<AdminBudgetRow | null>(null);
 
   const rows = data?.rows ?? [];
   const { filteredRows, totals, segments } = useMemo(() => {
@@ -443,6 +437,7 @@ function Usage() {
                         <td className="px-4 py-3 text-right">
                           <button
                             type="button"
+                            onClick={() => setEditingRow(row)}
                             className="rounded-md px-3 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-secondary hover:text-text-primary"
                           >
                             {localize('com_budget_action_edit')}
@@ -456,6 +451,8 @@ function Usage() {
             )}
           </>
         ))}
+
+      <EditBudgetModal row={editingRow} onClose={() => setEditingRow(null)} />
     </div>
   );
 }
