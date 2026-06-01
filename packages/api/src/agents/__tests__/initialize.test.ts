@@ -1387,6 +1387,8 @@ describe('initializeAgent — execute_code capability expansion', () => {
     expect(createFile?.description).toContain('code-execution sandbox');
     expect(createFile?.description).toContain('/mnt/data/');
     expect(createFile?.description).not.toContain('skills/');
+    expect(result.skillAuthoringAvailable).toBe(false);
+    expect(result.fileAuthoringToolNames).toEqual(new Set(['create_file', 'edit_file']));
   });
 
   it('upgrades read_file to the skill-aware description when active skills are in scope', async () => {
@@ -1427,6 +1429,7 @@ describe('initializeAgent — execute_code capability expansion', () => {
 
     const readFile = result.toolDefinitions?.find((d) => d.name === 'read_file');
     expect(readFile?.description).toContain('{skillName}/{filePath}');
+    expect(readFile?.description).toContain('skills/{skillName}/');
     expect(readFile?.description).toContain('SKILL.md');
     const names = result.toolDefinitions?.map((d) => d.name) ?? [];
     expect(names).toContain('skill');
@@ -1461,6 +1464,8 @@ describe('initializeAgent — execute_code capability expansion', () => {
     expect(names).not.toContain('read_file');
     const createFile = result.toolDefinitions?.find((d) => d.name === 'create_file');
     expect(createFile?.description).toContain('skills/');
+    expect(result.skillAuthoringAvailable).toBe(true);
+    expect(result.fileAuthoringToolNames).toEqual(new Set(['create_file', 'edit_file']));
   });
 
   it('does not register bash_tool + read_file when codeEnvAvailable=false', async () => {

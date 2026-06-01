@@ -40,7 +40,11 @@ import {
   unionPrimeAllowedTools,
   MAX_PRIMED_SKILLS_PER_TURN,
 } from './skills';
-import { registerCodeExecutionTools, registerFileAuthoringTools } from './tools';
+import {
+  registerCodeExecutionTools,
+  registerFileAuthoringTools,
+  isFileAuthoringToolDefinition,
+} from './tools';
 import { primeResources } from './resources';
 import type { ResolvedManualSkill, ResolvedAlwaysApplySkill } from './skills';
 import type { TFilterFilesByAgentAccess } from './resources';
@@ -184,6 +188,10 @@ export type InitializedAgent = Agent & {
    * (`packages/api/src/agents/added.ts`), so the check is uniform.
    */
   codeEnvAvailable: boolean;
+  /** Whether host-side skill file authoring is available for this agent/run. */
+  skillAuthoringAvailable: boolean;
+  /** Host-side file authoring tool names registered for this run. */
+  fileAuthoringToolNames?: Set<string>;
   /** Accessible skill IDs for ACL checking at execute time */
   accessibleSkillIds?: import('mongoose').Types.ObjectId[];
   /**
@@ -1038,6 +1046,11 @@ export async function initializeAgent(
       : undefined;
   const maxToolResultCharsResolved =
     providerMaxToolResultChars ?? endpointConfigs?.all?.maxToolResultChars;
+  const fileAuthoringToolNames = new Set(
+    (toolDefinitions ?? [])
+      .filter((toolDefinition) => isFileAuthoringToolDefinition(toolDefinition))
+      .map((toolDefinition) => toolDefinition.name),
+  );
 
   const initializedAgent: InitializedAgent = {
     ...agent,
@@ -1051,6 +1064,8 @@ export async function initializeAgent(
     baseContextTokens,
     codeEnvAvailable: effectiveCodeEnvAvailable,
     reasoningKey: customEndpointConfig?.customParams?.reasoningKey,
+    skillAuthoringAvailable,
+    fileAuthoringToolNames: fileAuthoringToolNames.size > 0 ? fileAuthoringToolNames : undefined,
     skillCount,
     accessibleSkillIds: executableSkillIds,
     activeSkillNames,

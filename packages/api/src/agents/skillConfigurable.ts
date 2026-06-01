@@ -46,6 +46,10 @@ export function enrichWithSkillConfigurable(
    * which is the same signal as `accessibleSkillIds.length === 0`.
    */
   activeSkillNames?: Set<string>,
+  /** True when skills/{skillName}/... write paths are enabled for this run. */
+  skillAuthoringAvailable?: boolean,
+  /** Host file-authoring names registered by initializeAgent for this run. */
+  fileAuthoringToolNames?: Set<string>,
 ): { loadedTools: unknown[]; configurable: Record<string, unknown> } {
   return {
     ...result,
@@ -56,6 +60,8 @@ export function enrichWithSkillConfigurable(
       accessibleSkillIds,
       skillPrimedIdsByName,
       activeSkillNames,
+      skillAuthoringAvailable,
+      fileAuthoringToolNames,
     },
   };
 }

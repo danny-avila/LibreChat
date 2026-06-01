@@ -362,6 +362,30 @@ describe('createToolExecuteHandler', () => {
     });
   });
 
+  describe('host file authoring collisions', () => {
+    it('invokes a loaded user tool named create_file when host file authoring is not active', async () => {
+      const capturedArgs: unknown[] = [];
+      const tool = createMockTool('create_file', [], { capturedArgs });
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [tool] as never[],
+        configurable: { fileAuthoringToolNames: new Set<string>() },
+      }));
+      const handler = createToolExecuteHandler({ loadTools });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_user_create_file',
+          name: 'create_file',
+          args: { custom: true },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(result.content).toContain('create_file executed');
+      expect(capturedArgs).toEqual([{ custom: true }]);
+    });
+  });
+
   describe('tool error handling', () => {
     it('truncates oversized tool errors in the result and log context', async () => {
       const oversizedMessage = `tool failed: ${'x'.repeat(15_000)}`;
@@ -995,6 +1019,8 @@ describe('createToolExecuteHandler', () => {
       const toolConfigurable = {
         req,
         accessibleSkillIds: skillsInScope(),
+        skillAuthoringAvailable: true,
+        fileAuthoringToolNames: new Set(['create_file', 'edit_file']),
         ...(configurable ?? {}),
       };
       const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
@@ -1032,7 +1058,8 @@ describe('createToolExecuteHandler', () => {
           name: 'create_file',
           args: {
             file_path: 'skills/new-skill/SKILL.md',
-            content: '---\nname: new-skill\ndescription: Use for tests\n---\n# New skill\n',
+            content:
+              '---\nname: new-skill\ndescription: Use for tests\ndisable-model-invocation: true\nallowed-tools:\n  - execute_code\n---\n# New skill\n',
           },
         },
       ]);
@@ -1047,6 +1074,12 @@ describe('createToolExecuteHandler', () => {
         expect.objectContaining({
           name: 'new-skill',
           description: 'Use for tests',
+          frontmatter: expect.objectContaining({
+            name: 'new-skill',
+            description: 'Use for tests',
+            'disable-model-invocation': true,
+            'allowed-tools': ['execute_code'],
+          }),
         }),
       );
       expect(grantSkillOwner).toHaveBeenCalledWith({ req, skillId: SKILL_ID });
@@ -1195,6 +1228,62 @@ describe('createToolExecuteHandler', () => {
       );
     });
 
+    it('passes structured frontmatter when editing SKILL.md', async () => {
+      const oldBody =
+        '---\nname: runtime-skill\ndescription: Use before\naction: ignored\n---\n# Body\n';
+      const currentBody =
+        '---\nname: runtime-skill\ndescription: Use before\nuser-invocable: true\ndisable-model-invocation: false\nallowed-tools:\n  - web_search\nalways-apply: true\n---\n# Body\n';
+      const updateSkill = jest.fn(async () => ({
+        status: 'updated',
+        skill: {
+          _id: SKILL_ID,
+          name: 'runtime-skill',
+          body: currentBody,
+          version: 2,
+        },
+      }));
+      const handler = makeAuthoringHandler({
+        getSkillByName: jest.fn(async () => ({
+          _id: SKILL_ID,
+          name: 'runtime-skill',
+          body: oldBody,
+          fileCount: 0,
+          version: 1,
+        })),
+        updateSkill: updateSkill as unknown as ToolExecuteOptions['updateSkill'],
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_edit_skill_md_frontmatter',
+          name: 'edit_file',
+          args: {
+            file_path: 'skills/runtime-skill/SKILL.md',
+            old_text: 'description: Use before\naction: ignored',
+            new_text:
+              'description: Use before\nuser-invocable: false\ndisable-model-invocation: true\nallowed-tools:\n  - execute_code\nalways-apply: true',
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(updateSkill).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({
+            alwaysApply: true,
+            frontmatter: expect.objectContaining({
+              name: 'runtime-skill',
+              description: 'Use before',
+              'user-invocable': false,
+              'disable-model-invocation': true,
+              'allowed-tools': ['execute_code'],
+              'always-apply': true,
+            }),
+          }),
+        }),
+      );
+    });
+
     it('fails loudly when edit_file old_text is ambiguous', async () => {
       const saveSkillFileContent = jest.fn();
       const handler = makeAuthoringHandler({
@@ -1232,6 +1321,87 @@ describe('createToolExecuteHandler', () => {
       expect(result.status).toBe('error');
       expect(result.errorMessage).toContain('matched 2 locations');
       expect(saveSkillFileContent).not.toHaveBeenCalled();
+    });
+
+    it('blocks authoring hidden skills unless they were primed this turn', async () => {
+      const updateSkill = jest.fn();
+      const handler = makeAuthoringHandler(
+        {
+          getSkillByName: jest.fn(async () => ({
+            _id: SKILL_ID,
+            name: 'hidden-skill',
+            body: '---\nname: hidden-skill\ndescription: Hidden\n---\n# Hidden\n',
+            fileCount: 0,
+            version: 1,
+            disableModelInvocation: true,
+          })),
+          updateSkill: updateSkill as unknown as ToolExecuteOptions['updateSkill'],
+        },
+        {
+          skillPrimedIdsByName: {},
+          activeSkillNames: new Set(['hidden-skill']),
+        },
+      );
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_edit_hidden_skill',
+          name: 'edit_file',
+          args: {
+            file_path: 'skills/hidden-skill/SKILL.md',
+            old_text: '# Hidden',
+            new_text: '# Changed',
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('cannot be authored by the model');
+      expect(updateSkill).not.toHaveBeenCalled();
+    });
+
+    it('allows authoring a hidden skill that was primed this turn', async () => {
+      const updateSkill = jest.fn(async () => ({
+        status: 'updated',
+        skill: {
+          _id: SKILL_ID,
+          name: 'primed-hidden-skill',
+          body: '---\nname: primed-hidden-skill\ndescription: Hidden\n---\n# Changed\n',
+          version: 2,
+        },
+      }));
+      const handler = makeAuthoringHandler(
+        {
+          getSkillByName: jest.fn(async () => ({
+            _id: SKILL_ID,
+            name: 'primed-hidden-skill',
+            body: '---\nname: primed-hidden-skill\ndescription: Hidden\n---\n# Hidden\n',
+            fileCount: 0,
+            version: 1,
+            disableModelInvocation: true,
+          })),
+          updateSkill: updateSkill as unknown as ToolExecuteOptions['updateSkill'],
+        },
+        {
+          skillPrimedIdsByName: { 'primed-hidden-skill': SKILL_ID.toString() },
+          activeSkillNames: new Set(['primed-hidden-skill']),
+        },
+      );
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_edit_primed_hidden_skill',
+          name: 'edit_file',
+          args: {
+            file_path: 'skills/primed-hidden-skill/SKILL.md',
+            old_text: '# Hidden',
+            new_text: '# Changed',
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(updateSkill).toHaveBeenCalled();
     });
 
     it('overwrites large bundled skill files without reading the old content', async () => {
@@ -1352,6 +1522,8 @@ describe('createToolExecuteHandler', () => {
           req,
           codeEnvAvailable: true,
           accessibleSkillIds: [],
+          skillAuthoringAvailable: false,
+          fileAuthoringToolNames: new Set(['create_file', 'edit_file']),
         },
       }));
       return createToolExecuteHandler({
@@ -1478,6 +1650,8 @@ describe('createToolExecuteHandler', () => {
           req,
           codeEnvAvailable: false,
           accessibleSkillIds: [],
+          skillAuthoringAvailable: false,
+          fileAuthoringToolNames: new Set(['create_file', 'edit_file']),
         },
       }));
       const handler = createToolExecuteHandler({
@@ -1498,6 +1672,32 @@ describe('createToolExecuteHandler', () => {
 
       expect(result.status).toBe('error');
       expect(result.errorMessage).toContain('code execution enabled');
+      expect(writeSandboxFile).not.toHaveBeenCalled();
+    });
+
+    it('rejects skills/ paths for code-exec-only agents', async () => {
+      const createSkill = jest.fn();
+      const writeSandboxFile = jest.fn();
+      const handler = makeSandboxAuthoringHandler({
+        getSkillByName: jest.fn(async () => null),
+        createSkill: createSkill as unknown as ToolExecuteOptions['createSkill'],
+        writeSandboxFile,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_code_only_skill_path',
+          name: 'create_file',
+          args: {
+            file_path: 'skills/nope/SKILL.md',
+            content: '---\nname: nope\ndescription: Nope\n---\n# Nope\n',
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('Skill file authoring is not available');
+      expect(createSkill).not.toHaveBeenCalled();
       expect(writeSandboxFile).not.toHaveBeenCalled();
     });
   });
@@ -1745,6 +1945,66 @@ describe('createToolExecuteHandler', () => {
       expect(readSandboxFile).not.toHaveBeenCalled();
       expect(result.status).toBe('success');
       expect(result.content).toContain('Real Body');
+    });
+
+    it('resolves authored skills/{skillName}/... paths without falling back to sandbox', async () => {
+      const getSkillByName = jest.fn(async () => ({
+        _id: 'real-skill-id' as unknown as never,
+        name: 'real-skill',
+        body: '# Real Body',
+        fileCount: 0,
+        version: 1,
+      }));
+      const readSandboxFile = jest.fn();
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        accessibleSkillIds: skillsInScope(),
+        activeSkillNames: new Set(['real-skill']),
+        readSandboxFile,
+        getSkillByName,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_real_skill_namespace',
+          name: Constants.READ_FILE,
+          args: { file_path: 'skills/real-skill/SKILL.md' },
+        },
+      ]);
+
+      expect(getSkillByName).toHaveBeenCalledWith(
+        'real-skill',
+        expect.any(Array),
+        expect.objectContaining({ preferModelInvocable: true }),
+      );
+      expect(readSandboxFile).not.toHaveBeenCalled();
+      expect(result.status).toBe('success');
+      expect(result.content).toContain('File: skills/real-skill/SKILL.md');
+      expect(result.content).toContain('Real Body');
+    });
+
+    it('does not route explicit skills/ paths to the sandbox when skills are unavailable', async () => {
+      const readSandboxFile = jest.fn(async () => ({ content: 'sandbox-content' }));
+      const getSkillByName = jest.fn();
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        accessibleSkillIds: [],
+        readSandboxFile,
+        getSkillByName,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_explicit_skill_namespace_off',
+          name: Constants.READ_FILE,
+          args: { file_path: 'skills/whatever/SKILL.md' },
+        },
+      ]);
+
+      expect(getSkillByName).not.toHaveBeenCalled();
+      expect(readSandboxFile).not.toHaveBeenCalled();
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('Skill files are not available');
     });
 
     it('falls back to sandbox for trailing-slash paths (empty relativePath, codeEnv on)', async () => {

@@ -229,6 +229,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         ctx.codeEnvAvailable === true,
         ctx.skillPrimedIdsByName,
         ctx.activeSkillNames,
+        ctx.skillAuthoringAvailable === true,
+        ctx.fileAuthoringToolNames,
       );
     },
     toolEndCallback,
@@ -379,6 +381,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     accessibleSkillIds: primaryConfig.accessibleSkillIds,
     activeSkillNames: primaryConfig.activeSkillNames,
     codeEnvAvailable: primaryConfig.codeEnvAvailable,
+    skillAuthoringAvailable: primaryConfig.skillAuthoringAvailable,
+    fileAuthoringToolNames: primaryConfig.fileAuthoringToolNames,
     skillPrimedIdsByName,
   });
 
@@ -461,6 +465,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
           accessibleSkillIds: config.accessibleSkillIds,
           activeSkillNames: config.activeSkillNames,
           codeEnvAvailable: config.codeEnvAvailable,
+          skillAuthoringAvailable: config.skillAuthoringAvailable,
+          fileAuthoringToolNames: config.fileAuthoringToolNames,
           skillPrimedIdsByName:
             buildSkillPrimedIdsByName(config.manualSkillPrimes, config.alwaysApplySkillPrimes) ??
             {},
@@ -520,6 +526,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       accessibleSkillIds: config.accessibleSkillIds,
       activeSkillNames: config.activeSkillNames,
       codeEnvAvailable: config.codeEnvAvailable,
+      skillAuthoringAvailable: config.skillAuthoringAvailable,
+      fileAuthoringToolNames: config.fileAuthoringToolNames,
     });
   }
 

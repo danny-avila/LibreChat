@@ -353,7 +353,11 @@ const OpenAIChatCompletionController = async (req, res) => {
       userMCPAuthMap: primaryConfig.userMCPAuthMap,
       tool_resources: primaryConfig.tool_resources,
       actionsEnabled: primaryConfig.actionsEnabled,
+      accessibleSkillIds: primaryConfig.accessibleSkillIds,
+      activeSkillNames: primaryConfig.activeSkillNames,
       codeEnvAvailable: primaryConfig.codeEnvAvailable,
+      skillAuthoringAvailable: primaryConfig.skillAuthoringAvailable,
+      fileAuthoringToolNames: primaryConfig.fileAuthoringToolNames,
     });
 
     // Only run BFS discovery (and pay `getModelsConfig` upfront) when the
@@ -428,7 +432,11 @@ const OpenAIChatCompletionController = async (req, res) => {
               userMCPAuthMap: config.userMCPAuthMap,
               tool_resources: config.tool_resources,
               actionsEnabled: config.actionsEnabled,
+              accessibleSkillIds: config.accessibleSkillIds,
+              activeSkillNames: config.activeSkillNames,
               codeEnvAvailable: config.codeEnvAvailable,
+              skillAuthoringAvailable: config.skillAuthoringAvailable,
+              fileAuthoringToolNames: config.fileAuthoringToolNames,
             });
           },
           initializeAgent,
@@ -504,9 +512,12 @@ const OpenAIChatCompletionController = async (req, res) => {
         return enrichWithSkillConfigurable(
           result,
           req,
-          primaryConfig.accessibleSkillIds,
+          ctx.accessibleSkillIds ?? primaryConfig.accessibleSkillIds,
           ctx.codeEnvAvailable === true,
           skillPrimedIdsByName,
+          ctx.activeSkillNames ?? primaryConfig.activeSkillNames,
+          ctx.skillAuthoringAvailable === true,
+          ctx.fileAuthoringToolNames ?? primaryConfig.fileAuthoringToolNames,
         );
       },
       toolEndCallback,

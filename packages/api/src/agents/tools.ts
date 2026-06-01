@@ -123,9 +123,13 @@ export interface RegisterFileAuthoringToolsParams {
  * per-request state — so a single frozen object is safe to share across
  * every agent init.
  */
+const SKILL_READ_FILE_DESCRIPTION = `${ReadFileToolDefinition.description}
+
+Also accepts authored skill file paths using "skills/{skillName}/...", including "skills/{skillName}/SKILL.md".`;
+
 const READ_FILE_DEF: LCTool = Object.freeze({
   name: ReadFileToolDefinition.name,
-  description: ReadFileToolDefinition.description,
+  description: SKILL_READ_FILE_DESCRIPTION,
   parameters: ReadFileToolDefinition.parameters as unknown as LCTool['parameters'],
   responseFormat: ReadFileToolDefinition.responseFormat,
 }) as LCTool;
@@ -286,6 +290,22 @@ function isCodeOnlyFileAuthoringDef(def: LCTool | undefined): boolean {
   }
   if (def?.name === EDIT_FILE_TOOL_NAME) {
     return def.description === CODE_EDIT_FILE_DESCRIPTION;
+  }
+  return false;
+}
+
+export function isFileAuthoringToolDefinition(def: LCTool | undefined): boolean {
+  if (def?.name === CREATE_FILE_TOOL_NAME) {
+    return (
+      def.description === CODE_CREATE_FILE_DESCRIPTION ||
+      def.description === SKILL_CREATE_FILE_DESCRIPTION
+    );
+  }
+  if (def?.name === EDIT_FILE_TOOL_NAME) {
+    return (
+      def.description === CODE_EDIT_FILE_DESCRIPTION ||
+      def.description === SKILL_EDIT_FILE_DESCRIPTION
+    );
   }
   return false;
 }

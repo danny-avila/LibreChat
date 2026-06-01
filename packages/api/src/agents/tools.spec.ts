@@ -46,6 +46,7 @@ import {
   BuildToolSetConfig,
   registerCodeExecutionTools,
   registerFileAuthoringTools,
+  isFileAuthoringToolDefinition,
 } from './tools';
 
 describe('buildToolSet', () => {
@@ -245,6 +246,7 @@ describe('registerCodeExecutionTools', () => {
       const readFile = upgraded.toolDefinitions.find((d) => d.name === 'read_file');
       expect(upgraded.registered).toEqual([]);
       expect(readFile?.description).toContain('{skillName}/{filePath}');
+      expect(readFile?.description).toContain('skills/{skillName}/');
       expect(readFile?.description).toContain('SKILL.md');
       expect(toolRegistry.get('read_file')?.description).toBe(readFile?.description);
     });
@@ -505,5 +507,23 @@ describe('registerFileAuthoringTools', () => {
       'skills/',
     );
     expect(toolRegistry.get('edit_file')?.description).toContain('skills/');
+  });
+
+  it('distinguishes host file authoring definitions from user tools with matching names', () => {
+    const result = registerFileAuthoringTools({
+      toolRegistry: makeRegistry(),
+      toolDefinitions: [],
+      includeSkillFileInstructions: true,
+    });
+    const createFile = result.toolDefinitions.find((d) => d.name === 'create_file');
+
+    expect(isFileAuthoringToolDefinition(createFile)).toBe(true);
+    expect(
+      isFileAuthoringToolDefinition({
+        name: 'create_file',
+        description: 'A user-defined create_file action',
+        parameters: { type: 'object', properties: {} } as LCTool['parameters'],
+      }),
+    ).toBe(false);
   });
 });
