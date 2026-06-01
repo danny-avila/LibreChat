@@ -5,6 +5,11 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      release_existing_tag:
+        description: "Existing chart-* tag to dispatch if tag creation succeeded but release dispatch failed"
+        required: false
+        type: string
 
 permissions:
   actions: write
@@ -22,12 +27,14 @@ jobs:
     timeout-minutes: 10
     env:
       BASE_REF: refs/remotes/origin/main
+      BACKFILL_FROM_VERSION: 1.9.0
       CHART_PATH: helm/librechat/Chart.yaml
       DEFAULT_BRANCH: main
       DISPATCH_WORKFLOW: helmcharts.yml
       GITHUB_SERVER_URL: ${{ github.server_url }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GITHUB_REPOSITORY: ${{ github.repository }}
+      RELEASE_EXISTING_TAG: ${{ inputs.release_existing_tag || '' }}
       REPO_DIR: ${{ runner.temp }}/librechat
       TAG_PREFIX: chart-
     steps:

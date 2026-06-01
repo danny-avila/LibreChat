@@ -4,10 +4,12 @@ set -euo pipefail
 CHART_PATH="${CHART_PATH:-helm/librechat/Chart.yaml}"
 DEFAULT_BRANCH="${DEFAULT_BRANCH:-main}"
 BASE_REF="${BASE_REF:-refs/remotes/origin/${DEFAULT_BRANCH}}"
+BACKFILL_FROM_VERSION="${BACKFILL_FROM_VERSION:-1.9.0}"
 PUSH_TAGS="${PUSH_TAGS:-false}"
 TAG_PREFIX="${TAG_PREFIX:-chart-}"
 GITHUB_SERVER_URL="${GITHUB_SERVER_URL:-https://github.com}"
 DISPATCH_WORKFLOW="${DISPATCH_WORKFLOW:-}"
+RELEASE_EXISTING_TAG="${RELEASE_EXISTING_TAG:-}"
 SEMVER_REGEX='^(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)(-[0-9A-Za-z-]+([.][0-9A-Za-z-]+)*)?([+][0-9A-Za-z-]+([.][0-9A-Za-z-]+)*)?$'
 
 fail() {
@@ -57,6 +59,60 @@ dispatch_release() {
     -f "chart_tag=${tag}"
 }
 
+version_less_than() {
+  left="${1%%[-+]*}"
+  right="${2%%[-+]*}"
+
+  IFS=. read -r left_major left_minor left_patch <<<"$left"
+  IFS=. read -r right_major right_minor right_patch <<<"$right"
+
+  if (( left_major != right_major )); then
+    (( left_major < right_major ))
+    return
+  fi
+
+  if (( left_minor != right_minor )); then
+    (( left_minor < right_minor ))
+    return
+  fi
+
+  (( left_patch < right_patch ))
+}
+
+validate_chart_tag() {
+  tag="$1"
+  version="${tag#${TAG_PREFIX}}"
+
+  git check-ref-format "refs/tags/${tag}" >/dev/null ||
+    fail "Refusing to use invalid tag ${tag}"
+
+  if [[ "$tag" != "${TAG_PREFIX}"* || ! "$version" =~ $SEMVER_REGEX ]]; then
+    fail "Chart tags must use the form ${TAG_PREFIX}<semver>, for example ${TAG_PREFIX}2.0.5"
+  fi
+}
+
+dispatch_existing_tag() {
+  tag="$1"
+
+  if [ -z "$tag" ]; then
+    return
+  fi
+
+  validate_chart_tag "$tag"
+
+  if [ "$PUSH_TAGS" != "true" ]; then
+    printf 'Would dispatch release workflow for existing %s.\n' "$tag"
+    return
+  fi
+
+  if ! git_with_auth ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+    fail "Remote tag ${tag} does not exist"
+  fi
+
+  printf 'Dispatching release workflow for existing %s.\n' "$tag"
+  dispatch_release "$tag"
+}
+
 chart_version_at() {
   git show "${1}:${CHART_PATH}" 2>/dev/null | awk '
     /^version:[[:space:]]*/ {
@@ -74,6 +130,10 @@ case "$PUSH_TAGS" in
   true | false) ;;
   *) fail "PUSH_TAGS must be true or false" ;;
 esac
+
+if [[ ! "$BACKFILL_FROM_VERSION" =~ $SEMVER_REGEX ]]; then
+  fail "BACKFILL_FROM_VERSION must be a valid SemVer value"
+fi
 
 git rev-parse --verify "${BASE_REF}^{commit}" >/dev/null ||
   fail "Unable to resolve ${BASE_REF}; fetch ${DEFAULT_BRANCH} before running this script"
@@ -104,6 +164,10 @@ while IFS= read -r commit; do
     fail "${CHART_PATH} has invalid SemVer '${version}' at ${commit}"
   fi
 
+  if version_less_than "$version" "$BACKFILL_FROM_VERSION"; then
+    continue
+  fi
+
   if grep -Fqx "$version" "$seen_file"; then
     continue
   fi
@@ -116,24 +180,12 @@ if [ ! -s "$versions_file" ]; then
   fail "No chart versions found in ${CHART_PATH}"
 fi
 
-release_started=false
-if [ -z "$(git tag --list "${TAG_PREFIX}*")" ]; then
-  release_started=true
-fi
-
 while IFS="$(printf '\t')" read -r version commit; do
   tag="${TAG_PREFIX}${version}"
 
-  git check-ref-format "refs/tags/${tag}" >/dev/null ||
-    fail "Refusing to create invalid tag ${tag}"
+  validate_chart_tag "$tag"
 
   if git rev-parse --quiet --verify "refs/tags/${tag}" >/dev/null; then
-    release_started=true
-    continue
-  fi
-
-  if [ "$release_started" != "true" ]; then
-    printf 'Skipping %s because no earlier %s tag exists in chart history.\n' "$tag" "$TAG_PREFIX"
     continue
   fi
 
@@ -142,6 +194,7 @@ done <"$versions_file"
 
 if [ ! -s "$missing_file" ]; then
   printf 'All chart versions on %s already have %s tags.\n' "$BASE_REF" "$TAG_PREFIX"
+  dispatch_existing_tag "$RELEASE_EXISTING_TAG"
   exit 0
 fi
 
@@ -154,7 +207,8 @@ while IFS="$(printf '\t')" read -r tag commit; do
   fi
 
   if git_with_auth ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
-    printf 'Remote tag %s already exists; skipping.\n' "$tag"
+    printf 'Remote tag %s already exists; dispatching release workflow.\n' "$tag"
+    dispatch_release "$tag"
     continue
   fi
 
@@ -167,9 +221,12 @@ while IFS="$(printf '\t')" read -r tag commit; do
   fi
 
   if git_with_auth ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
-    printf 'Remote tag %s was created concurrently; continuing.\n' "$tag"
+    printf 'Remote tag %s was created concurrently; dispatching release workflow.\n' "$tag"
+    dispatch_release "$tag"
     continue
   fi
 
   fail "Failed to push ${tag}"
 done <"$missing_file"
+
+dispatch_existing_tag "$RELEASE_EXISTING_TAG"
