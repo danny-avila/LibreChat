@@ -342,7 +342,7 @@ describe('mergeConfigOverrides', () => {
     expect(iface.parameters).toBe(true);
   });
 
-  it('ignores base-only config sections from DB overrides', () => {
+  it('merges skillSync config sections from DB overrides', () => {
     const base = {
       skillSync: {
         github: {
@@ -389,7 +389,16 @@ describe('mergeConfigOverrides', () => {
 
     const result = mergeConfigOverrides(base, configs);
 
-    expect(result.skillSync).toEqual(base.skillSync);
+    expect(result.skillSync?.github?.enabled).toBe(false);
+    expect(result.skillSync?.github?.sources).toEqual([
+      {
+        id: 'override-source',
+        owner: 'other',
+        repo: 'skills',
+        paths: ['skills'],
+        token: '${OTHER_TOKEN}',
+      },
+    ]);
     expect(result.interfaceConfig?.modelSelect).toBe(false);
   });
 

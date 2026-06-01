@@ -191,7 +191,7 @@ describe('createAdminConfigHandlers', () => {
       expect(savedOverrides.interface).toEqual({ modelSelect: false });
     });
 
-    it('strips base-only sections from admin overrides', async () => {
+    it('preserves skillSync sections in admin overrides', async () => {
       const { handlers, deps } = createHandlers({
         upsertConfig: jest.fn().mockResolvedValue({ _id: 'c1', configVersion: 1 }),
       });
@@ -210,7 +210,7 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(201);
       const savedOverrides = deps.upsertConfig.mock.calls[0][3];
-      expect(savedOverrides.skillSync).toBeUndefined();
+      expect(savedOverrides.skillSync).toEqual({ github: { enabled: true } });
       expect(savedOverrides.interface).toEqual({ modelSelect: false });
     });
 
@@ -358,7 +358,7 @@ describe('createAdminConfigHandlers', () => {
       expect(deps.unsetConfigField).not.toHaveBeenCalled();
     });
 
-    it('returns 200 no-op for base-only field path', async () => {
+    it('allows deleting skillSync field paths', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
@@ -369,8 +369,11 @@ describe('createAdminConfigHandlers', () => {
       await handlers.deleteConfigField(req, res);
 
       expect(res.statusCode).toBe(200);
-      expect(res.body!.message).toBeDefined();
-      expect(deps.unsetConfigField).not.toHaveBeenCalled();
+      expect(deps.unsetConfigField).toHaveBeenCalledWith(
+        'role',
+        'admin',
+        'skillSync.github.enabled',
+      );
     });
 
     it('allows deleting interface UI field paths', async () => {
@@ -452,7 +455,7 @@ describe('createAdminConfigHandlers', () => {
       expect(patchedFields['interface.prompts']).toBeUndefined();
     });
 
-    it('strips base-only field entries from patches', async () => {
+    it('preserves skillSync field entries in patches', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
         params: { principalType: 'role', principalId: 'admin' },
@@ -469,7 +472,7 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(200);
       const patchedFields = deps.patchConfigFields.mock.calls[0][3];
-      expect(patchedFields['skillSync.github.enabled']).toBeUndefined();
+      expect(patchedFields['skillSync.github.enabled']).toBe(true);
       expect(patchedFields['interface.modelSelect']).toBe(false);
     });
 

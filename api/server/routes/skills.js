@@ -40,6 +40,7 @@ const {
 } = require('~/server/services/PermissionService');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { createFileLimiters } = require('~/server/middleware/limiters/uploadLimiters');
+const { maybeRunGitHubSkillSyncForRequest } = require('~/server/services/Skills/sync');
 const configMiddleware = require('~/server/middleware/config/app');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 
@@ -272,6 +273,14 @@ async function uploadFileHandler(req, res) {
 // ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
+async function maybeStartRequestSkillSync(req, _res, next) {
+  try {
+    await maybeRunGitHubSkillSyncForRequest(req);
+  } catch (error) {
+    logger.error('[GET /skills] Failed to start request-scoped skill sync:', error);
+  }
+  next();
+}
 
 // Import: accepts .md / .zip / .skill via multipart
 router.post(
@@ -284,7 +293,7 @@ router.post(
   importHandler,
 );
 
-router.get('/', handlers.list);
+router.get('/', maybeStartRequestSkillSync, handlers.list);
 router.post('/', checkSkillCreate, handlers.create);
 
 router.get(
