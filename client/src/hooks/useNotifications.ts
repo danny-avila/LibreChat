@@ -4,7 +4,9 @@ import { useAuthContext } from './AuthContext';
 export interface AppNotification {
   _id: string;
   userId: string;
-  originalQuestion: string;
+  originalQuestion?: string;
+  message?: string;
+  type?: string;
   isVisited: boolean;
   createdAt: string;
   updatedAt: string;
