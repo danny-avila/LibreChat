@@ -19,7 +19,7 @@ export { MAX_SUBAGENTS } from './limits';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
-export const BASE_ONLY_CONFIG_SECTIONS = ['skillSync'] as const;
+export const BASE_ONLY_CONFIG_SECTIONS = [] as const;
 
 export const defaultRetrievalModels = [
   'gpt-4o',
