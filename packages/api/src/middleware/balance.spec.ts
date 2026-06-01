@@ -93,6 +93,9 @@ describe('createSetBalanceConfig', () => {
       expect(balanceRecord?.refillIntervalUnit).toBe('days');
       expect(balanceRecord?.refillAmount).toBe(500);
       expect(balanceRecord?.lastRefill).toBeInstanceOf(Date);
+      expect((req as ServerRequest & { balanceConfigEnabled?: boolean }).balanceConfigEnabled).toBe(
+        true,
+      );
       expect((req as ServerRequest & { balanceData?: IBalance }).balanceData?.tokenCredits).toBe(
         1000,
       );
@@ -118,6 +121,9 @@ describe('createSetBalanceConfig', () => {
       await middleware(req as ServerRequest, res as ServerResponse, mockNext);
 
       expect(mockNext).toHaveBeenCalled();
+      expect((req as ServerRequest & { balanceConfigEnabled?: boolean }).balanceConfigEnabled).toBe(
+        false,
+      );
 
       const balanceRecord = await Balance.findOne({ user: userId });
       expect(balanceRecord).toBeNull();

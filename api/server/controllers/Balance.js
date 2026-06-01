@@ -1,6 +1,10 @@
 const { findBalanceByUser } = require('~/models');
 
 async function balanceController(req, res) {
+  if (req.balanceConfigEnabled === false) {
+    return res.sendStatus(204);
+  }
+
   const balanceData = req.balanceData ?? (await findBalanceByUser(req.user.id));
 
   if (!balanceData) {

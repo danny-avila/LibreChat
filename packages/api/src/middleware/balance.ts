@@ -24,6 +24,7 @@ export interface BalanceMiddlewareOptions {
 
 type BalanceRequest = ServerRequest & {
   balanceData?: IBalance | null;
+  balanceConfigEnabled?: boolean;
 };
 
 const balanceUpdateLocks = new Map<string, Promise<void>>();
@@ -129,6 +130,7 @@ export function createSetBalanceConfig({
         tenantId: user?.tenantId,
       });
       const balanceConfig = getBalanceConfig(appConfig);
+      balanceReq.balanceConfigEnabled = balanceConfig?.enabled === true;
       if (!balanceConfig?.enabled) {
         return next();
       }
