@@ -295,7 +295,8 @@ export default function useStepHandler({
       Partial<TMessageContentParts> | undefined
     >;
 
-    if (!incomingOAuthToolCall) {
+    const oauthPromptOccupiesSlot = isOAuthToolCallContent(updatedContent[index]);
+    if (!incomingOAuthToolCall && oauthPromptOccupiesSlot) {
       updatedContent = updatedContent.filter((part) => !isOAuthToolCallContent(part));
     }
 

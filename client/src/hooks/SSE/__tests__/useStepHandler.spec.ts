@@ -297,7 +297,7 @@ describe('useStepHandler', () => {
       );
     });
 
-    it('should clear OAuth prompt slots before applying real response content', () => {
+    it('should clear OAuth prompt slots when one occupies the real response slot', () => {
       const responseMessage = createResponseMessage();
       let currentMessages = [responseMessage];
       mockGetMessages.mockImplementation(() => currentMessages);
