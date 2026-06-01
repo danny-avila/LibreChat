@@ -1,7 +1,12 @@
 import { z } from 'zod';
 import type { ZodError } from 'zod';
 import type { TEndpointsConfig, TModelsConfig, TConfig } from './types';
-import { EModelEndpoint, eModelEndpointSchema, isAgentsEndpoint } from './schemas';
+import {
+  EModelEndpoint,
+  eModelEndpointSchema,
+  isAgentsEndpoint,
+  eReasoningParameterFormatSchema,
+} from './schemas';
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { specsConfigSchema, TSpecsConfig } from './models';
 import { fileConfigSchema } from './file-config';
@@ -630,6 +635,7 @@ export const endpointSchema = baseEndpointSchema.merge(
     customParams: z
       .object({
         defaultParamsEndpoint: z.string().default('custom'),
+        reasoningFormat: eReasoningParameterFormatSchema.optional(),
         paramDefinitions: z.array(paramDefinitionSchema).optional(),
       })
       .strict()

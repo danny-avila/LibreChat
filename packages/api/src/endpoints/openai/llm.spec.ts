@@ -3,6 +3,7 @@ import {
   EModelEndpoint,
   ReasoningEffort,
   ReasoningSummary,
+  ReasoningParameterFormat,
 } from 'librechat-data-provider';
 import { getOpenAILLMConfig, extractDefaultParams, applyDefaultParams } from './llm';
 import type * as t from '~/types';
@@ -463,23 +464,58 @@ describe('getOpenAILLMConfig', () => {
       expect(result.llmConfig).toHaveProperty('reasoning_effort', ReasoningEffort.high);
     });
 
-    it('should use reasoning object for non-OpenAI endpoints', () => {
+    it('should pass reasoning_effort through modelKwargs for custom endpoints', () => {
       const result = getOpenAILLMConfig({
         apiKey: 'test-api-key',
         streaming: true,
         endpoint: 'custom',
         modelOptions: {
-          model: 'o1',
+          model: 'provider/reasoning-model',
+          reasoning_effort: ReasoningEffort.high,
+        },
+      });
+
+      expect(result.llmConfig.modelKwargs).toHaveProperty('reasoning_effort', ReasoningEffort.high);
+      expect(result.llmConfig).not.toHaveProperty('reasoning');
+      expect(result.llmConfig).not.toHaveProperty('reasoning_effort');
+    });
+
+    it('should support reasoning object passthrough for custom endpoints', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: 'custom',
+        reasoningFormat: ReasoningParameterFormat.reasoningObject,
+        modelOptions: {
+          model: 'provider/reasoning-model',
           reasoning_effort: ReasoningEffort.high,
           reasoning_summary: ReasoningSummary.concise,
         },
       });
 
-      expect(result.llmConfig).toHaveProperty('reasoning');
-      expect(result.llmConfig.reasoning).toEqual({
+      expect(result.llmConfig.modelKwargs).toHaveProperty('reasoning', {
         effort: ReasoningEffort.high,
         summary: ReasoningSummary.concise,
       });
+      expect(result.llmConfig).not.toHaveProperty('reasoning');
+      expect(result.llmConfig).not.toHaveProperty('reasoning_effort');
+    });
+
+    it('should allow custom endpoints to disable reasoning passthrough', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: 'custom',
+        reasoningFormat: ReasoningParameterFormat.disabled,
+        modelOptions: {
+          model: 'provider/reasoning-model',
+          reasoning_effort: ReasoningEffort.high,
+        },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('reasoning');
+      expect(result.llmConfig).not.toHaveProperty('reasoning_effort');
+      expect(result.llmConfig.modelKwargs).toBeUndefined();
     });
 
     it('should use reasoning object when useResponsesApi is true', () => {

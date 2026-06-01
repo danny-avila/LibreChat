@@ -1,5 +1,6 @@
 import {
   EModelEndpoint,
+  ReasoningParameterFormat,
   removeNullishValues,
   supportsAdaptiveThinking,
 } from 'librechat-data-provider';
@@ -84,6 +85,26 @@ function hasReasoningParams({
     (reasoning_effort != null && reasoning_effort !== '') ||
     (reasoning_summary != null && reasoning_summary !== '')
   );
+}
+
+function getReasoningObject({
+  reasoningEffort,
+  reasoningSummary,
+}: {
+  reasoningEffort?: OpenAILLMConfig['reasoning_effort'];
+  reasoningSummary?: OpenAILLMConfig['reasoning_summary'];
+}): OpenAI.Reasoning {
+  return removeNullishValues(
+    {
+      effort: reasoningEffort,
+      summary: reasoningSummary,
+    },
+    true,
+  ) as OpenAI.Reasoning;
+}
+
+function isOpenAIEndpoint(endpoint?: EModelEndpoint | string | null): boolean {
+  return endpoint === EModelEndpoint.openAI || endpoint === EModelEndpoint.azureOpenAI;
 }
 
 const openRouterAnthropicVerbosityByEffort: Record<
@@ -204,6 +225,60 @@ function applyOpenRouterReasoningConfig({
   return true;
 }
 
+function applyReasoningConfig({
+  endpoint,
+  llmConfig,
+  modelKwargs,
+  reasoningEffort,
+  reasoningFormat,
+  reasoningSummary,
+}: {
+  endpoint?: EModelEndpoint | string | null;
+  llmConfig: OpenAILLMConfig;
+  modelKwargs: Record<string, unknown>;
+  reasoningEffort?: OpenAILLMConfig['reasoning_effort'];
+  reasoningFormat?: ReasoningParameterFormat;
+  reasoningSummary?: OpenAILLMConfig['reasoning_summary'];
+}): boolean {
+  if (
+    !hasReasoningParams({
+      reasoning_effort: reasoningEffort,
+      reasoning_summary: reasoningSummary,
+    })
+  ) {
+    return false;
+  }
+
+  const reasoning = getReasoningObject({ reasoningEffort, reasoningSummary });
+  if (llmConfig.useResponsesApi === true) {
+    llmConfig.reasoning = reasoning;
+    return false;
+  }
+
+  if (isOpenAIEndpoint(endpoint)) {
+    if (reasoningEffort) {
+      llmConfig.reasoning_effort = reasoningEffort;
+    }
+    return false;
+  }
+
+  if (reasoningFormat === ReasoningParameterFormat.disabled) {
+    return false;
+  }
+
+  if (reasoningFormat === ReasoningParameterFormat.reasoningObject) {
+    modelKwargs.reasoning = reasoning;
+    return true;
+  }
+
+  if (reasoningEffort) {
+    modelKwargs.reasoning_effort = reasoningEffort;
+    return true;
+  }
+
+  return false;
+}
+
 function getModelKwargsText(modelKwargs: Record<string, unknown>): Record<string, unknown> {
   const { text } = modelKwargs;
   if (text == null || typeof text !== 'object' || Array.isArray(text)) {
@@ -294,6 +369,7 @@ export function getOpenAILLMConfig({
   dropParams,
   defaultParams,
   useOpenRouter,
+  reasoningFormat = ReasoningParameterFormat.reasoningEffort,
   modelOptions: _modelOptions,
 }: {
   apiKey: string;
@@ -305,6 +381,7 @@ export function getOpenAILLMConfig({
   dropParams?: string[];
   defaultParams?: Record<string, unknown>;
   useOpenRouter?: boolean;
+  reasoningFormat?: ReasoningParameterFormat;
   azure?: false | t.AzureOptions;
 }): Pick<t.LLMConfigResult, 'llmConfig' | 'tools'> & {
   azure?: t.AzureOptions;
@@ -442,20 +519,16 @@ export function getOpenAILLMConfig({
         modelKwargs,
         llmConfig,
       }) || hasModelKwargs;
-  } else if (
-    hasReasoningParams({ reasoning_effort, reasoning_summary }) &&
-    (llmConfig.useResponsesApi === true ||
-      (endpoint !== EModelEndpoint.openAI && endpoint !== EModelEndpoint.azureOpenAI))
-  ) {
-    llmConfig.reasoning = removeNullishValues(
-      {
-        effort: reasoning_effort,
-        summary: reasoning_summary,
-      },
-      true,
-    ) as OpenAI.Reasoning;
-  } else if (hasReasoningParams({ reasoning_effort })) {
-    llmConfig.reasoning_effort = reasoning_effort;
+  } else {
+    hasModelKwargs =
+      applyReasoningConfig({
+        endpoint,
+        llmConfig,
+        modelKwargs,
+        reasoningFormat,
+        reasoningEffort: reasoning_effort,
+        reasoningSummary: reasoning_summary,
+      }) || hasModelKwargs;
   }
 
   if (llmConfig.max_tokens != null) {

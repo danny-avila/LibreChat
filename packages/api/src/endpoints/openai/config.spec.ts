@@ -3,6 +3,7 @@ import {
   EModelEndpoint,
   ReasoningEffort,
   ReasoningSummary,
+  ReasoningParameterFormat,
 } from 'librechat-data-provider';
 import type { RequestInit } from 'undici';
 import type { OpenAIParameters, AzureOptions } from '~/types';
@@ -97,19 +98,18 @@ describe('getOpenAIConfig', () => {
     expect((result.llmConfig as Record<string, unknown>).reasoning_summary).toBeUndefined();
   });
 
-  it('should handle reasoning params without `useResponsesApi`', () => {
+  it('should pass custom endpoint reasoning through modelKwargs without `useResponsesApi`', () => {
     const modelOptions = {
       reasoning_effort: ReasoningEffort.high,
       reasoning_summary: ReasoningSummary.detailed,
     };
 
-    const result = getOpenAIConfig(mockApiKey, { modelOptions });
+    const result = getOpenAIConfig(mockApiKey, { modelOptions }, 'custom-endpoint');
 
-    /** When no endpoint is specified, it's treated as non-openAI/azureOpenAI, so uses reasoning object */
-    expect(result.llmConfig.reasoning).toEqual({
-      effort: ReasoningEffort.high,
-      summary: ReasoningSummary.detailed,
+    expect(result.llmConfig.modelKwargs).toEqual({
+      reasoning_effort: ReasoningEffort.high,
     });
+    expect(result.llmConfig.reasoning).toBeUndefined();
     expect((result.llmConfig as Record<string, unknown>).reasoning_effort).toBeUndefined();
   });
 
@@ -173,7 +173,7 @@ describe('getOpenAIConfig', () => {
     expect((result.llmConfig as Record<string, unknown>).reasoning_effort).toBeUndefined();
   });
 
-  it('should use reasoning object for non-openAI/azureOpenAI endpoints', () => {
+  it('should pass reasoning_effort through modelKwargs for non-openAI/azureOpenAI endpoints', () => {
     const modelOptions = {
       reasoning_effort: ReasoningEffort.high,
       reasoning_summary: ReasoningSummary.detailed,
@@ -181,11 +181,77 @@ describe('getOpenAIConfig', () => {
 
     const result = getOpenAIConfig(mockApiKey, { modelOptions }, 'custom-endpoint');
 
-    expect(result.llmConfig.reasoning).toEqual({
-      effort: ReasoningEffort.high,
-      summary: ReasoningSummary.detailed,
+    expect(result.llmConfig.modelKwargs).toEqual({
+      reasoning_effort: ReasoningEffort.high,
     });
+    expect(result.llmConfig.reasoning).toBeUndefined();
     expect((result.llmConfig as Record<string, unknown>).reasoning_effort).toBeUndefined();
+  });
+
+  it('should support custom endpoint reasoning object format', () => {
+    const result = getOpenAIConfig(
+      mockApiKey,
+      {
+        customParams: {
+          reasoningFormat: ReasoningParameterFormat.reasoningObject,
+        },
+        modelOptions: {
+          reasoning_effort: ReasoningEffort.high,
+          reasoning_summary: ReasoningSummary.detailed,
+        },
+      },
+      'custom-endpoint',
+    );
+
+    expect(result.llmConfig.modelKwargs).toEqual({
+      reasoning: {
+        effort: ReasoningEffort.high,
+        summary: ReasoningSummary.detailed,
+      },
+    });
+    expect(result.llmConfig.reasoning).toBeUndefined();
+    expect((result.llmConfig as Record<string, unknown>).reasoning_effort).toBeUndefined();
+  });
+
+  it('should default Vercel custom endpoints to reasoning object format', () => {
+    const result = getOpenAIConfig(
+      mockApiKey,
+      {
+        reverseProxyUrl: 'https://ai-gateway.vercel.sh/v1',
+        modelOptions: {
+          reasoning_effort: ReasoningEffort.high,
+        },
+      },
+      'Vercel',
+    );
+
+    expect(result.llmConfig.modelKwargs).toEqual({
+      reasoning: {
+        effort: ReasoningEffort.high,
+      },
+    });
+    expect(result.llmConfig.reasoning).toBeUndefined();
+    expect((result.llmConfig as Record<string, unknown>).reasoning_effort).toBeUndefined();
+  });
+
+  it('should allow Vercel reasoning format override', () => {
+    const result = getOpenAIConfig(
+      mockApiKey,
+      {
+        reverseProxyUrl: 'https://ai-gateway.vercel.sh/v1',
+        customParams: {
+          reasoningFormat: ReasoningParameterFormat.reasoningEffort,
+        },
+        modelOptions: {
+          reasoning_effort: ReasoningEffort.high,
+        },
+      },
+      'Vercel',
+    );
+
+    expect(result.llmConfig.modelKwargs).toEqual({
+      reasoning_effort: ReasoningEffort.high,
+    });
   });
 
   it('should handle OpenRouter configuration', () => {
@@ -1212,6 +1278,7 @@ describe('getOpenAIConfig', () => {
       expect(result.llmConfig.maxTokens).toBe(2000);
       expect(result.llmConfig.modelKwargs).toEqual({
         text: { verbosity: Verbosity.medium },
+        reasoning_effort: ReasoningEffort.high,
         customParam: 'custom-value',
       });
       expect(result.tools).toEqual([{ type: 'web_search' }]);

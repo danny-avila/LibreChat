@@ -395,6 +395,7 @@ describe('getOpenAIConfig - Backward Compatibility', () => {
         modelOptions: {
           model: '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
           user: 'some-user',
+          reasoning_effort: ReasoningEffort.high,
         },
         reverseProxyUrl:
           'https://gateway.ai.cloudflare.com/v1/${CF_ACCOUNT_ID}/${CF_GATEWAY_ID}/workers-ai/v1',
@@ -419,6 +420,9 @@ describe('getOpenAIConfig - Backward Compatibility', () => {
           user: 'some-user',
           disableStreaming: true,
           apiKey: 'someKey',
+          modelKwargs: {
+            reasoning_effort: ReasoningEffort.high,
+          },
         },
         configOptions: {
           baseURL:
