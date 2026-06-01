@@ -25,7 +25,7 @@ jobs:
         id: chart-version
         env:
           EVENT_NAME: ${{ github.event_name }}
-          INPUT_CHART_TAG: ${{ inputs.chart_tag || '' }}
+          INPUT_CHART_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.chart_tag || '' }}
           REF_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
@@ -41,9 +41,11 @@ jobs:
             exit 1
           fi
 
-          printf 'CHART_REF=refs/tags/%s\n' "$CHART_TAG" >> "$GITHUB_OUTPUT"
-          printf 'CHART_TAG=%s\n' "$CHART_TAG" >> "$GITHUB_OUTPUT"
-          printf 'CHART_VERSION=%s\n' "$CHART_VERSION" >> "$GITHUB_OUTPUT"
+          {
+            printf 'CHART_REF=refs/tags/%s\n' "$CHART_TAG"
+            printf 'CHART_TAG=%s\n' "$CHART_TAG"
+            printf 'CHART_VERSION=%s\n' "$CHART_VERSION"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Checkout
         uses: actions/checkout@v4
