@@ -177,6 +177,17 @@ export enum ReasoningEffort {
   xhigh = 'xhigh',
 }
 
+export enum ReasoningParameterFormat {
+  disabled = 'disabled',
+  reasoningEffort = 'reasoning_effort',
+  reasoningObject = 'reasoning_object',
+}
+
+export enum ReasoningResponseKey {
+  reasoning = 'reasoning',
+  reasoningContent = 'reasoning_content',
+}
+
 export enum AnthropicEffort {
   unset = '',
   low = 'low',
@@ -250,6 +261,8 @@ export const imageDetailValue = {
 
 export const eImageDetailSchema = z.nativeEnum(ImageDetail);
 export const eReasoningEffortSchema = z.nativeEnum(ReasoningEffort);
+export const eReasoningParameterFormatSchema = z.nativeEnum(ReasoningParameterFormat);
+export const eReasoningResponseKeySchema = z.nativeEnum(ReasoningResponseKey);
 export const eAnthropicEffortSchema = z.nativeEnum(AnthropicEffort);
 export const eThinkingDisplaySchema = z.nativeEnum(ThinkingDisplay);
 export const eReasoningSummarySchema = z.nativeEnum(ReasoningSummary);

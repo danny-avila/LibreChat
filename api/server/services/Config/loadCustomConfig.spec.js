@@ -11,7 +11,7 @@ jest.mock('librechat-data-provider', () => {
     paramSettings: {
       foo: {},
       bar: {},
-      custom: {},
+      custom: [],
       openrouter: [
         {
           key: 'promptCache',
@@ -59,6 +59,7 @@ jest.mock('@librechat/data-schemas', () => {
 const axios = require('axios');
 const { loadYaml } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
+const { ReasoningParameterFormat, ReasoningResponseKey } = require('librechat-data-provider');
 const loadCustomConfig = require('./loadCustomConfig');
 
 describe('loadCustomConfig', () => {
@@ -307,11 +308,28 @@ describe('loadCustomConfig', () => {
       );
     });
 
-    it('throws an error when defaultParamsEndpoint is not provided', async () => {
-      const malformedCustomParams = { defaultParamsEndpoint: undefined };
-      await expect(loadCustomParams(malformedCustomParams)).rejects.toThrow(
-        'defaultParamsEndpoint of "Google" endpoint is invalid. Valid options are foo, bar, custom, openrouter, google',
-      );
+    it('defaults defaultParamsEndpoint when only reasoningFormat is provided', async () => {
+      const parsedConfig = await loadCustomParams({
+        reasoningFormat: ReasoningParameterFormat.reasoningObject,
+      });
+
+      expect(parsedConfig.endpoints.custom[0].customParams).toEqual({
+        defaultParamsEndpoint: 'custom',
+        reasoningFormat: ReasoningParameterFormat.reasoningObject,
+        paramDefinitions: [],
+      });
+    });
+
+    it('defaults defaultParamsEndpoint when only reasoningKey is provided', async () => {
+      const parsedConfig = await loadCustomParams({
+        reasoningKey: ReasoningResponseKey.reasoning,
+      });
+
+      expect(parsedConfig.endpoints.custom[0].customParams).toEqual({
+        defaultParamsEndpoint: 'custom',
+        reasoningKey: ReasoningResponseKey.reasoning,
+        paramDefinitions: [],
+      });
     });
 
     it('fills the paramDefinitions with missing values', async () => {
