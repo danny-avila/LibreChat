@@ -2,7 +2,7 @@ import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { ContentTypes } from 'librechat-data-provider';
 import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import ContentParts from '../ContentParts';
 
 jest.mock('~/hooks', () => ({
@@ -126,6 +126,9 @@ const makeMcpToolCall = (id: string, hasOutput = true): TMessageContentParts =>
     },
   }) as unknown as TMessageContentParts;
 
+const makeTextPart = (text: string): TMessageContentParts =>
+  ({ type: ContentTypes.TEXT, text }) as unknown as TMessageContentParts;
+
 const imageAttachment = (toolCallId: string, name = 'tiny.png'): TAttachment =>
   ({
     filename: name,
@@ -221,5 +224,33 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     });
 
     expect(screen.queryByTestId('attachment-group')).not.toBeInTheDocument();
+  });
+
+  it('keeps a manually expanded completed tool group open when its content index shifts', () => {
+    const content = [makeMcpToolCall('t1'), makeMcpToolCall('t2')];
+    const nextContent = [makeTextPart('streamed preface'), ...content];
+
+    const { rerender } = render(
+      <RecoilRoot>
+        <ContentParts {...baseProps} content={content} />
+      </RecoilRoot>,
+    );
+
+    const toggle = screen.getByRole('button', { name: 'Used 2 tools' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+    rerender(
+      <RecoilRoot>
+        <ContentParts {...baseProps} content={nextContent} />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Used 2 tools' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
   });
 });

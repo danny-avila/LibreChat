@@ -1,4 +1,4 @@
-import { memo, useMemo, useCallback } from 'react';
+import { memo, useRef, useMemo, useCallback } from 'react';
 import { ContentTypes } from 'librechat-data-provider';
 import type {
   TMessageContentParts,
@@ -13,11 +13,20 @@ import { EditTextPart, EmptyText } from './Parts';
 import PendingSkillCall from './Parts/PendingSkillCall';
 import MemoryArtifacts from './MemoryArtifacts';
 import ToolCallGroup from './ToolCallGroup';
+import type { ToolCallGroupExpansionState } from './ToolCallGroup';
 import Container from './Container';
 import Part from './Part';
 
 const getToolCallId = (part: TMessageContentParts): string =>
   (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
+
+const getToolGroupId = (parts: PartWithIndex[]): string => {
+  const firstPart = parts[0];
+  if (!firstPart) {
+    return 'empty';
+  }
+  return getToolCallId(firstPart.part) || String(firstPart.idx);
+};
 
 type PartWithContextProps = {
   part: TMessageContentParts;
@@ -129,6 +138,18 @@ const ContentParts = memo(function ContentParts({
 }: ContentPartsProps) {
   const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
   const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
+  const toolGroupExpansionRef = useRef(new Map<string, ToolCallGroupExpansionState>());
+
+  const handleGroupExpansionChange = useCallback(
+    (groupId: string, state: ToolCallGroupExpansionState) => {
+      if (!state.userOverride) {
+        toolGroupExpansionRef.current.delete(groupId);
+        return;
+      }
+      toolGroupExpansionRef.current.set(groupId, state);
+    },
+    [],
+  );
 
   /**
    * Interim skill cards — rendered in a separate slot ABOVE the Parts
@@ -269,10 +290,11 @@ const ContentParts = memo(function ContentParts({
         if (group.type === 'single') {
           return group;
         }
+        const groupId = getToolGroupId(group.parts);
         const groupAttachments = group.parts.flatMap(
           ({ part }) => attachmentMap[getToolCallId(part)] ?? [],
         );
-        return { ...group, groupAttachments };
+        return { ...group, groupId, groupAttachments };
       }),
     [sequentialParts, attachmentMap],
   );
@@ -361,15 +383,18 @@ const ContentParts = memo(function ContentParts({
           const { part, idx } = group.part;
           return renderPart(part, idx, idx === lastContentIdx);
         }
+        const { groupId } = group;
         return (
           <ToolCallGroup
-            key={`tool-group-${group.parts[0].idx}`}
+            key={`tool-group-${groupId}`}
             parts={group.parts}
             isSubmitting={effectiveIsSubmitting}
             isLast={group.parts.some((p) => p.idx === lastContentIdx)}
             renderPart={renderGroupedPart}
             lastContentIdx={lastContentIdx}
             groupAttachments={group.groupAttachments}
+            initialExpansionState={toolGroupExpansionRef.current.get(groupId)}
+            onExpansionChange={(state) => handleGroupExpansionChange(groupId, state)}
           />
         );
       })}

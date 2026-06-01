@@ -13,6 +13,7 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
   const autoScroll = useRecoilValue(store.autoScroll);
 
   const scrollableRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const { conversation, conversationId } = useMessagesConversation();
@@ -71,6 +72,34 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
     },
   });
 
+  const reconcileContentResize = useCallback(() => {
+    const scrollEl = scrollableRef.current;
+    if (!scrollEl) {
+      return;
+    }
+
+    const maxScrollTop = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
+    if (scrollEl.scrollTop > maxScrollTop) {
+      scrollEl.scrollTop = maxScrollTop;
+      return;
+    }
+
+    if (isSubmitting && abortScroll !== true) {
+      scrollToBottom?.();
+    }
+  }, [abortScroll, isSubmitting, scrollToBottom]);
+
+  useEffect(() => {
+    const contentEl = contentRef.current;
+    if (!contentEl || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const observer = new ResizeObserver(reconcileContentResize);
+    observer.observe(contentEl);
+    return () => observer.disconnect();
+  }, [reconcileContentResize]);
+
   useEffect(() => {
     if (!messagesTree || messagesTree.length === 0) {
       return;
@@ -103,6 +132,7 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
 
   return {
     conversation,
+    contentRef,
     scrollableRef,
     messagesEndRef,
     scrollToBottom,

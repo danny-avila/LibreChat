@@ -78,7 +78,14 @@ interface ToolCallGroupProps {
   renderPart: (part: TMessageContentParts, idx: number, isLastPart: boolean) => React.ReactNode;
   lastContentIdx: number;
   groupAttachments?: TAttachment[];
+  initialExpansionState?: ToolCallGroupExpansionState;
+  onExpansionChange?: (state: ToolCallGroupExpansionState) => void;
 }
+
+export type ToolCallGroupExpansionState = {
+  isExpanded: boolean;
+  userOverride: boolean;
+};
 
 export default function ToolCallGroup({
   parts,
@@ -87,6 +94,8 @@ export default function ToolCallGroup({
   renderPart,
   lastContentIdx,
   groupAttachments,
+  initialExpansionState,
+  onExpansionChange,
 }: ToolCallGroupProps) {
   const localize = useLocalize();
   const mcpIconMap = useMCPIconMap();
@@ -136,8 +145,11 @@ export default function ToolCallGroup({
 
   const autoExpand = useRecoilValue(store.autoExpandTools);
   const autoCollapse = !autoExpand && count >= 2 && allCompleted;
-  const [isExpanded, setIsExpanded] = useState(autoExpand || !autoCollapse);
-  const [userOverride, setUserOverride] = useState(false);
+  const initialState = initialExpansionState?.userOverride === true ? initialExpansionState : null;
+  const [isExpanded, setIsExpanded] = useState(
+    initialState?.isExpanded ?? (autoExpand || !autoCollapse),
+  );
+  const [userOverride, setUserOverride] = useState(initialState != null);
   const { style: expandStyle, ref: expandRef } = useExpandCollapse(isExpanded);
 
   useEffect(() => {
@@ -148,8 +160,12 @@ export default function ToolCallGroup({
 
   const handleToggle = useCallback(() => {
     setUserOverride(true);
-    setIsExpanded((prev) => !prev);
-  }, []);
+    setIsExpanded((prev) => {
+      const nextExpanded = !prev;
+      onExpansionChange?.({ isExpanded: nextExpanded, userOverride: true });
+      return nextExpanded;
+    });
+  }, [onExpansionChange]);
 
   const getSubagentLabel = () =>
     subagentsDone
@@ -165,10 +181,10 @@ export default function ToolCallGroup({
   );
 
   useEffect(() => {
-    if (hasActiveToolCall) {
+    if (hasActiveToolCall && !userOverride) {
       setIsExpanded(true);
     }
-  }, [hasActiveToolCall]);
+  }, [hasActiveToolCall, userOverride]);
 
   return (
     <div className="mb-2 mt-1">
