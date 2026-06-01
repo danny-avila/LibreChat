@@ -27,6 +27,21 @@ const BU_FILTERS = [
   { key: 'Other', labelKey: 'com_usage_filter_bu_other' },
 ] as const;
 
+const USER_SEGMENTS = [
+  { key: 'power', labelKey: 'com_usage_segment_power', rangeKey: 'com_usage_segment_power_range' },
+  {
+    key: 'regular',
+    labelKey: 'com_usage_segment_regular',
+    rangeKey: 'com_usage_segment_regular_range',
+  },
+  {
+    key: 'occasional',
+    labelKey: 'com_usage_segment_occasional',
+    rangeKey: 'com_usage_segment_occasional_range',
+  },
+  { key: 'light', labelKey: 'com_usage_segment_light', rangeKey: 'com_usage_segment_light_range' },
+] as const;
+
 function BuBadge({ bu }: { bu: string | null }) {
   const localize = useLocalize();
   const config =
@@ -48,16 +63,20 @@ function KpiCard({
   label,
   value,
   sublabel,
+  muted,
 }: {
   label: string;
   value: string;
   sublabel?: string;
+  muted?: boolean;
 }) {
   return (
     <div className="rounded-lg bg-surface-secondary p-4">
       <p className="text-sm text-text-secondary">{label}</p>
       <p className="text-2xl font-semibold text-text-primary">{value}</p>
-      {sublabel && <p className="text-xs text-text-tertiary">{sublabel}</p>}
+      {sublabel && (
+        <p className={`text-xs text-text-tertiary${muted ? ' opacity-70' : ''}`}>{sublabel}</p>
+      )}
     </div>
   );
 }
@@ -69,7 +88,7 @@ function Usage() {
   const [activeBU, setActiveBU] = useState<BUFilter>('all');
 
   const rows = data?.rows ?? [];
-  const { filteredRows, totals } = useMemo(() => {
+  const { filteredRows, totals, segments } = useMemo(() => {
     const filtered = rows.filter((row) => {
       if (activeBU === 'all') {
         return true;
@@ -84,11 +103,29 @@ function Usage() {
         acc.tokens += row.totalTokens;
         acc.credits += row.totalCredits;
         acc.messages += row.messageCount;
+        if (row.messageCount > 100) {
+          acc.segments.power += 1;
+        } else if (row.messageCount >= 30) {
+          acc.segments.regular += 1;
+        } else if (row.messageCount >= 10) {
+          acc.segments.occasional += 1;
+        } else if (row.messageCount >= 1) {
+          acc.segments.light += 1;
+        }
         return acc;
       },
-      { tokens: 0, credits: 0, messages: 0 },
+      {
+        tokens: 0,
+        credits: 0,
+        messages: 0,
+        segments: { power: 0, regular: 0, occasional: 0, light: 0 },
+      },
     );
-    return { filteredRows: filtered, totals: aggregated };
+    return {
+      filteredRows: filtered,
+      totals: aggregated,
+      segments: aggregated.segments,
+    };
   }, [rows, activeBU]);
 
   if (isLoading) {
@@ -143,6 +180,22 @@ function Usage() {
 
       {activeTab === 'analytics' && (
         <>
+          <div className="flex gap-2">
+            {BU_FILTERS.map((filter) => (
+              <button
+                key={filter.key}
+                type="button"
+                onClick={() => setActiveBU(filter.key)}
+                className={`rounded-md px-3 py-1.5 text-xs transition-colors ${
+                  activeBU === filter.key
+                    ? 'bg-surface-tertiary text-text-primary'
+                    : 'text-text-secondary hover:bg-surface-secondary'
+                }`}
+              >
+                {localize(filter.labelKey)}
+              </button>
+            ))}
+          </div>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <KpiCard
               label={localize('com_usage_kpi_users')}
@@ -165,20 +218,15 @@ function Usage() {
               sublabel={localize('com_usage_kpi_this_month')}
             />
           </div>
-          <div className="flex gap-2">
-            {BU_FILTERS.map((filter) => (
-              <button
-                key={filter.key}
-                type="button"
-                onClick={() => setActiveBU(filter.key)}
-                className={`rounded-md px-3 py-1.5 text-xs transition-colors ${
-                  activeBU === filter.key
-                    ? 'bg-surface-tertiary text-text-primary'
-                    : 'text-text-secondary hover:bg-surface-secondary'
-                }`}
-              >
-                {localize(filter.labelKey)}
-              </button>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {USER_SEGMENTS.map((segment) => (
+              <KpiCard
+                key={segment.key}
+                label={localize(segment.labelKey)}
+                value={formatTokens(segments[segment.key])}
+                sublabel={localize(segment.rangeKey)}
+                muted
+              />
             ))}
           </div>
           {filteredRows.length === 0 ? (
