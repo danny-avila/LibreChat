@@ -12,7 +12,7 @@ const require = createRequire(import.meta.url);
 /**
  * vite-plugin-node-polyfills uses @rollup/plugin-inject to replace bare globals (e.g. `process`)
  * with imports like `import process from 'vite-plugin-node-polyfills/shims/process'`. When the
- * consuming module (e.g. recoil) is hoisted to the monorepo root, Vite 7's ESM resolver walks up
+ * consuming module (e.g. recoil) is hoisted to the monorepo root, Vite's ESM resolver walks up
  * from there and never finds the shims (installed only in client/node_modules). This map resolves
  * the shim specifiers to absolute paths via CJS require.resolve anchored to the client directory.
  */
@@ -84,7 +84,8 @@ export default defineConfig(({ command }) => ({
         ],
         globIgnores: ['images/**/*', '**/*.map', 'index.html', 'assets/rum.*.js'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
-        navigateFallbackDenylist: [/^\/oauth/, /^\/api/],
+        /** LibreChat mutates index.html per request for subpath and language support. */
+        navigateFallback: null,
       },
       includeAssets: [],
       manifest: {
@@ -133,164 +134,186 @@ export default defineConfig(({ command }) => ({
     sourcemap: process.env.NODE_ENV === 'development',
     outDir: './dist',
     minify: 'terser',
-    rollupOptions: {
+    rolldownOptions: {
       preserveEntrySignatures: 'strict',
       output: {
-        manualChunks(id: string) {
-          const normalizedId = id.replace(/\\/g, '/');
-          if (normalizedId.includes('node_modules')) {
-            if (normalizedId.includes('@hyperdx/')) {
-              return 'rum';
-            }
+        codeSplitting: {
+          groups: [
+            {
+              name(id: string) {
+                const normalizedId = id.replace(/\\/g, '/');
+                if (normalizedId.includes('node_modules')) {
+                  if (normalizedId.includes('/node_modules/regenerator-runtime/')) {
+                    return 'polyfills';
+                  }
 
-            // IMPORTANT: mermaid and ALL its dependencies must be in the same chunk
-            // to avoid initialization order issues. This includes chevrotain, langium,
-            // dagre-d3-es, and their nested lodash-es dependencies.
-            if (
-              normalizedId.includes('mermaid') ||
-              normalizedId.includes('dagre-d3-es') ||
-              normalizedId.includes('chevrotain') ||
-              normalizedId.includes('langium') ||
-              normalizedId.includes('lodash-es')
-            ) {
-              return 'mermaid';
-            }
+                  if (normalizedId.includes('@hyperdx/')) {
+                    return 'rum';
+                  }
 
-            if (normalizedId.includes('@codesandbox/sandpack')) {
-              return 'sandpack';
-            }
-            if (normalizedId.includes('react-vtree')) {
-              return 'react-vtree';
-            }
-            if (normalizedId.includes('react-virtualized')) {
-              return 'virtualization';
-            }
-            if (normalizedId.includes('i18next') || normalizedId.includes('react-i18next')) {
-              return 'i18n';
-            }
-            // Only regular lodash (not lodash-es which goes to mermaid chunk)
-            if (normalizedId.includes('/lodash/')) {
-              return 'utilities';
-            }
-            if (normalizedId.includes('date-fns')) {
-              return 'date-utils';
-            }
-            if (normalizedId.includes('@dicebear')) {
-              return 'avatars';
-            }
-            if (
-              normalizedId.includes('react-dnd') ||
-              normalizedId.includes('dnd-core') ||
-              normalizedId.includes('react-flip-toolkit') ||
-              normalizedId.includes('flip-toolkit')
-            ) {
-              return 'react-interactions';
-            }
-            if (normalizedId.includes('react-hook-form')) {
-              return 'forms';
-            }
-            if (normalizedId.includes('react-router-dom')) {
-              return 'routing';
-            }
-            if (
-              normalizedId.includes('qrcode.react') ||
-              normalizedId.includes('@marsidev/react-turnstile')
-            ) {
-              return 'security-ui';
-            }
+                  // IMPORTANT: mermaid and ALL its dependencies must be in the same chunk
+                  // to avoid initialization order issues. This includes chevrotain, langium,
+                  // dagre-d3-es, and their nested lodash-es dependencies.
+                  if (
+                    normalizedId.includes('mermaid') ||
+                    normalizedId.includes('dagre-d3-es') ||
+                    normalizedId.includes('chevrotain') ||
+                    normalizedId.includes('langium') ||
+                    normalizedId.includes('lodash-es')
+                  ) {
+                    return 'mermaid';
+                  }
 
-            if (normalizedId.includes('@codemirror/view')) {
-              return 'codemirror-view';
-            }
-            if (normalizedId.includes('@codemirror/state')) {
-              return 'codemirror-state';
-            }
-            if (normalizedId.includes('@codemirror/language')) {
-              return 'codemirror-language';
-            }
-            if (normalizedId.includes('@codemirror')) {
-              return 'codemirror-core';
-            }
+                  if (normalizedId.includes('@codesandbox/sandpack')) {
+                    return 'sandpack';
+                  }
+                  if (normalizedId.includes('react-vtree')) {
+                    return 'react-vtree';
+                  }
+                  if (normalizedId.includes('react-virtualized')) {
+                    return 'virtualization';
+                  }
+                  if (normalizedId.includes('i18next') || normalizedId.includes('react-i18next')) {
+                    return 'i18n';
+                  }
+                  // Only regular lodash (not lodash-es which goes to mermaid chunk)
+                  if (normalizedId.includes('/lodash/')) {
+                    return 'utilities';
+                  }
+                  if (normalizedId.includes('date-fns')) {
+                    return 'date-utils';
+                  }
+                  if (normalizedId.includes('@dicebear')) {
+                    return 'avatars';
+                  }
+                  if (
+                    normalizedId.includes('react-dnd') ||
+                    normalizedId.includes('dnd-core') ||
+                    normalizedId.includes('react-flip-toolkit') ||
+                    normalizedId.includes('flip-toolkit')
+                  ) {
+                    return 'react-interactions';
+                  }
+                  if (normalizedId.includes('react-hook-form')) {
+                    return 'forms';
+                  }
+                  if (normalizedId.includes('react-router-dom')) {
+                    return 'routing';
+                  }
+                  if (
+                    normalizedId.includes('qrcode.react') ||
+                    normalizedId.includes('@marsidev/react-turnstile')
+                  ) {
+                    return 'security-ui';
+                  }
 
-            if (
-              normalizedId.includes('react-markdown') ||
-              normalizedId.includes('remark-') ||
-              normalizedId.includes('rehype-')
-            ) {
-              return 'markdown-processing';
-            }
-            if (normalizedId.includes('monaco-editor') || normalizedId.includes('@monaco-editor')) {
-              return 'code-editor';
-            }
-            if (normalizedId.includes('react-window') || normalizedId.includes('react-virtual')) {
-              return 'virtualization';
-            }
-            if (
-              normalizedId.includes('zod') ||
-              normalizedId.includes('yup') ||
-              normalizedId.includes('joi')
-            ) {
-              return 'validation';
-            }
-            if (
-              normalizedId.includes('axios') ||
-              normalizedId.includes('ky') ||
-              normalizedId.includes('fetch')
-            ) {
-              return 'http-client';
-            }
-            if (
-              normalizedId.includes('react-spring') ||
-              normalizedId.includes('react-transition-group')
-            ) {
-              return 'animations';
-            }
-            if (normalizedId.includes('react-select') || normalizedId.includes('downshift')) {
-              return 'advanced-inputs';
-            }
-            if (normalizedId.includes('heic-to')) {
-              return 'heic-converter';
-            }
+                  if (normalizedId.includes('@codemirror/view')) {
+                    return 'codemirror-view';
+                  }
+                  if (normalizedId.includes('@codemirror/state')) {
+                    return 'codemirror-state';
+                  }
+                  if (normalizedId.includes('@codemirror/language')) {
+                    return 'codemirror-language';
+                  }
+                  if (normalizedId.includes('@codemirror')) {
+                    return 'codemirror-core';
+                  }
 
-            // Existing chunks
-            if (normalizedId.includes('@radix-ui')) {
-              return 'radix-ui';
-            }
-            if (normalizedId.includes('framer-motion')) {
-              return 'framer-motion';
-            }
-            if (
-              normalizedId.includes('node_modules/highlight.js') ||
-              normalizedId.includes('node_modules/lowlight')
-            ) {
-              return 'markdown_highlight';
-            }
-            if (normalizedId.includes('katex') || normalizedId.includes('node_modules/katex')) {
-              return 'math-katex';
-            }
-            if (normalizedId.includes('node_modules/hast-util-raw')) {
-              return 'markdown_large';
-            }
-            if (normalizedId.includes('@tanstack')) {
-              return 'tanstack-vendor';
-            }
-            if (normalizedId.includes('@headlessui')) {
-              return 'headlessui';
-            }
+                  if (
+                    normalizedId.includes('react-markdown') ||
+                    normalizedId.includes('remark-') ||
+                    normalizedId.includes('rehype-')
+                  ) {
+                    return 'markdown-processing';
+                  }
+                  if (
+                    normalizedId.includes('monaco-editor') ||
+                    normalizedId.includes('@monaco-editor')
+                  ) {
+                    return 'code-editor';
+                  }
+                  if (
+                    normalizedId.includes('react-window') ||
+                    normalizedId.includes('react-virtual')
+                  ) {
+                    return 'virtualization';
+                  }
+                  if (
+                    normalizedId.includes('zod') ||
+                    normalizedId.includes('yup') ||
+                    normalizedId.includes('joi')
+                  ) {
+                    return 'validation';
+                  }
+                  if (
+                    normalizedId.includes('axios') ||
+                    normalizedId.includes('ky') ||
+                    normalizedId.includes('fetch')
+                  ) {
+                    return 'http-client';
+                  }
+                  if (
+                    normalizedId.includes('react-spring') ||
+                    normalizedId.includes('react-transition-group')
+                  ) {
+                    return 'animations';
+                  }
+                  if (normalizedId.includes('react-select') || normalizedId.includes('downshift')) {
+                    return 'advanced-inputs';
+                  }
+                  if (normalizedId.includes('heic-to')) {
+                    return 'heic-converter';
+                  }
 
-            if (normalizedId.includes('@icons-pack/react-simple-icons/icons/')) {
-              return;
-            }
+                  // Existing chunks
+                  if (normalizedId.includes('@radix-ui')) {
+                    return 'radix-ui';
+                  }
+                  if (normalizedId.includes('framer-motion')) {
+                    return 'framer-motion';
+                  }
+                  if (
+                    normalizedId.includes('node_modules/highlight.js') ||
+                    normalizedId.includes('node_modules/lowlight')
+                  ) {
+                    return 'markdown_highlight';
+                  }
+                  if (
+                    normalizedId.includes('katex') ||
+                    normalizedId.includes('node_modules/katex')
+                  ) {
+                    return 'math-katex';
+                  }
+                  if (normalizedId.includes('node_modules/hast-util-raw')) {
+                    return 'markdown_large';
+                  }
+                  if (normalizedId.includes('@tanstack')) {
+                    return 'tanstack-vendor';
+                  }
+                  if (normalizedId.includes('@headlessui')) {
+                    return 'headlessui';
+                  }
 
-            // Everything else falls into a generic vendor chunk.
-            return 'vendor';
-          }
-          // Create a separate chunk for all locale files under src/locales.
-          if (normalizedId.includes('/src/locales/')) {
-            return 'locales';
-          }
-          // Let Rollup decide automatically for any other files.
-          return null;
+                  if (normalizedId.includes('@icons-pack/react-simple-icons/icons/')) {
+                    return null;
+                  }
+
+                  // Everything else falls into a generic vendor chunk.
+                  return 'vendor';
+                }
+                if (normalizedId.includes('/src/polyfills/')) {
+                  return 'polyfills';
+                }
+                // Create a separate chunk for all locale files under src/locales.
+                if (normalizedId.includes('/src/locales/')) {
+                  return 'locales';
+                }
+                // Let Rolldown decide automatically for any other files.
+                return null;
+              },
+            },
+          ],
         },
         entryFileNames: 'assets/[name].[hash].js',
         chunkFileNames: 'assets/[name].[hash].js',

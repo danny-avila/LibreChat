@@ -192,6 +192,12 @@ const BaseOptionsSchema = z.object({
       z.object({
         title: z.string(),
         description: z.string(),
+        /**
+         * Whether the field holds a secret and should be masked in the UI.
+         * Defaults to masked when omitted; set to `false` for non-secret setup
+         * values (e.g. username, project key, base URL) to render as plain text.
+         */
+        sensitive: z.boolean().optional(),
       }),
     )
     .optional(),

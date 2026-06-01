@@ -1,6 +1,6 @@
 import { ProxyAgent } from 'undici';
 import { Providers } from '@librechat/agents';
-import { KnownEndpoints, EModelEndpoint } from 'librechat-data-provider';
+import { KnownEndpoints, EModelEndpoint, ReasoningParameterFormat } from 'librechat-data-provider';
 import type * as t from '~/types';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { getOpenAILLMConfig, extractDefaultParams } from './llm';
@@ -32,6 +32,22 @@ function getDefaultParams({
     ...OPENROUTER_DEFAULT_PARAMS,
     ...customDefaultParams,
   };
+}
+
+function getReasoningFormat({
+  customFormat,
+  isVercel,
+}: {
+  customFormat?: ReasoningParameterFormat;
+  isVercel: boolean;
+}): ReasoningParameterFormat | undefined {
+  if (customFormat) {
+    return customFormat;
+  }
+  if (isVercel) {
+    return ReasoningParameterFormat.reasoningObject;
+  }
+  return undefined;
 }
 
 function mergeHeadersPreservingAnthropicBeta(
@@ -159,6 +175,10 @@ export function getOpenAIConfig(
       defaultParams,
       modelOptions,
       useOpenRouter,
+      reasoningFormat: getReasoningFormat({
+        customFormat: options.customParams?.reasoningFormat,
+        isVercel: Boolean(isVercel),
+      }),
     });
     llmConfig = openaiResult.llmConfig;
     azure = openaiResult.azure;
