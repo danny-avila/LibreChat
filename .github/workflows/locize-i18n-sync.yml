@@ -6,6 +6,9 @@ on:
   repository_dispatch:
     types: [locize/versionPublished]
 
+permissions:
+  contents: read
+
 jobs:
   sync-translations:
     name: Sync Translation Keys with Locize
@@ -13,6 +16,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set Up Node.js
         uses: actions/setup-node@v4
@@ -25,9 +30,12 @@ jobs:
       # Sync translations (Push missing keys & remove deleted ones)
       - name: Sync Locize with Repository
         if: ${{ github.event_name == 'push' }}
+        env:
+          LOCIZE_API_KEY: ${{ secrets.LOCIZE_API_KEY }}
+          LOCIZE_PROJECT_ID: ${{ secrets.LOCIZE_PROJECT_ID }}
         run: |
           cd client/src/locales
-          locize sync --api-key ${{ secrets.LOCIZE_API_KEY }} --project-id ${{ secrets.LOCIZE_PROJECT_ID }} --language en
+          locize sync --api-key "$LOCIZE_API_KEY" --project-id "$LOCIZE_PROJECT_ID" --language en
 
       # When triggered by repository_dispatch, skip sync step.
       - name: Skip sync step on non-push events
@@ -39,12 +47,13 @@ jobs:
     runs-on: ubuntu-latest
     needs: sync-translations
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
     steps:
       # 1. Check out the repository.
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       # 2. Download translation files from locize.
       - name: Download Translations from locize
@@ -53,16 +62,18 @@ jobs:
           project-id: ${{ secrets.LOCIZE_PROJECT_ID }}
           path: "client/src/locales"
 
-      # 3. Create a Pull Request using built-in functionality.
+      # 3. Create a Pull Request using a dedicated fine-grained PAT so this
+      # workflow does not depend on the global GITHUB_TOKEN PR-creation setting.
       - name: Create Pull Request
+        id: create-pull-request
         uses: peter-evans/create-pull-request@v7
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          sign-commits: true
+          token: ${{ secrets.LOCIZE_PR_TOKEN }}
+          add-paths: |
+            client/src/locales/**
           commit-message: "🌍 i18n: Update translation.json with latest translations"
           base: main
           branch: i18n/locize-translation-update
-          reviewers: danny-avila
           title: "🌍 i18n: Update translation.json with latest translations"
           body: |
             **Description**:
@@ -70,3 +81,19 @@ jobs:
             - 🔍 **Details**: This PR is automatically generated upon receiving a versionPublished event with version "latest". It reflects the newest translations provided by locize.
             - ✅ **Status**: Ready for review.
           labels: "🌍 i18n"
+
+      - name: Request Reviewer
+        if: ${{ steps.create-pull-request.outputs.pull-request-number != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.LOCIZE_PR_TOKEN }}
+          PR_NUMBER: ${{ steps.create-pull-request.outputs.pull-request-number }}
+          REVIEWER: danny-avila
+        run: |
+          author="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json author --jq '.author.login')"
+
+          if [ "$author" = "$REVIEWER" ]; then
+            echo "Skipping reviewer request because $REVIEWER authored PR #$PR_NUMBER."
+            exit 0
+          fi
+
+          gh pr edit "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --add-reviewer "$REVIEWER"

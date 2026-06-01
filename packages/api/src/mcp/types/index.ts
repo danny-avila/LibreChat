@@ -180,6 +180,8 @@ export interface BasicConnectionOptions {
   serverConfig: MCPOptions;
   useSSRFProtection?: boolean;
   allowedDomains?: string[] | null;
+  /** Admin exemption list of host:port pairs that bypass the SSRF private-IP block */
+  allowedAddresses?: string[] | null;
   /** When true, only resolve customUserVars in processMCPEnv (for DB-stored servers) */
   dbSourced?: boolean;
 }
@@ -195,6 +197,19 @@ export interface UserConnectionContext {
 export interface OAuthConnectionOptions extends UserConnectionContext {
   useOAuth: true;
   flowManager: FlowStateManager<o.MCPOAuthTokens | null>;
+  tokenMethods?: TokenMethods;
+  signal?: AbortSignal;
+  oauthStart?: (authURL: string) => Promise<void>;
+  oauthEnd?: () => Promise<void>;
+  returnOnOAuth?: boolean;
+}
+
+/** Options accepted by UserConnectionManager.getUserConnection. OAuth fields are optional. */
+export interface UserMCPConnectionOptions extends UserConnectionContext {
+  serverName: string;
+  forceNew?: boolean;
+  serverConfig?: ParsedServerConfig;
+  flowManager?: FlowStateManager<o.MCPOAuthTokens | null>;
   tokenMethods?: TokenMethods;
   signal?: AbortSignal;
   oauthStart?: (authURL: string) => Promise<void>;

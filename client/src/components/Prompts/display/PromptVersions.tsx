@@ -52,9 +52,9 @@ const getTimelineConnectorClasses = (isSelected: boolean, isProduction: boolean)
     return 'border-green-500 bg-green-500 text-white';
   }
   if (isProduction) {
-    return 'border-green-400 bg-surface-primary text-green-500';
+    return 'border-green-400 bg-transparent text-green-500';
   }
-  return 'border-border-medium bg-surface-primary text-text-secondary';
+  return 'border-border-medium bg-transparent text-text-secondary';
 };
 
 const VersionCard = ({
@@ -107,7 +107,7 @@ const VersionCard = ({
           'group mb-2 ml-2 flex flex-1 flex-col rounded-lg border p-3 text-left',
           isSelected
             ? 'border-green-500/50 bg-green-50/50 dark:bg-green-950/20'
-            : 'border-border-light bg-surface-primary hover:border-border-medium hover:bg-surface-hover',
+            : 'border-border-medium bg-transparent hover:border-border-heavy hover:bg-surface-hover',
         )}
         onClick={onClick}
         aria-label={localize('com_ui_version_var', { 0: `${versionNumber}` })}

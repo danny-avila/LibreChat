@@ -85,76 +85,81 @@ export default function ActionsPanel() {
   return (
     <FormProvider {...methods}>
       <form className="h-full grow overflow-hidden">
-        <div className="h-full overflow-auto px-2 pb-12 text-sm">
-          <div className="relative flex flex-col items-center px-16 py-6 text-center">
-            <div className="absolute left-0 top-6">
-              <button
-                type="button"
-                className="btn btn-neutral relative"
-                onClick={() => {
-                  setActivePanel(Panel.builder);
-                  setAction(undefined);
-                }}
-              >
-                <div className="flex w-full items-center justify-center gap-2">
-                  <ChevronLeft />
+        <div className="h-full overflow-auto px-2 text-sm">
+          <div className="flex min-h-full flex-col pb-3">
+            <div>
+              <div className="relative flex flex-col items-center px-16 pt-2 text-center">
+                <div className="absolute left-0 top-6">
+                  <button
+                    type="button"
+                    className="btn btn-neutral relative"
+                    onClick={() => {
+                      setActivePanel(Panel.builder);
+                      setAction(undefined);
+                    }}
+                  >
+                    <div className="flex w-full items-center justify-center gap-2">
+                      <ChevronLeft />
+                    </div>
+                  </button>
                 </div>
-              </button>
-            </div>
 
-            {!!action && (
-              <OGDialog>
-                <OGDialogTrigger asChild>
-                  <div className="absolute right-0 top-6">
-                    <button
-                      type="button"
-                      disabled={isEphemeralAgent(agent_id) || !action.action_id}
-                      className="btn btn-neutral border-token-border-light relative h-9 rounded-lg font-medium"
-                    >
-                      <TrashIcon className="text-red-500" />
-                    </button>
-                  </div>
-                </OGDialogTrigger>
-                <OGDialogTemplate
-                  showCloseButton={false}
-                  title={localize('com_ui_delete_action')}
-                  className="max-w-[450px]"
-                  main={
-                    <Label className="text-left text-sm font-medium">
-                      {localize('com_ui_delete_action_confirm')}
-                    </Label>
-                  }
-                  selection={{
-                    selectHandler: () => {
-                      if (isEphemeralAgent(agent_id)) {
-                        return showToast({
-                          message: localize('com_agents_no_agent_id_error'),
-                          status: 'error',
-                        });
+                {!!action && (
+                  <OGDialog>
+                    <OGDialogTrigger asChild>
+                      <div className="absolute right-0 top-6">
+                        <button
+                          type="button"
+                          disabled={isEphemeralAgent(agent_id) || !action.action_id}
+                          className="btn btn-neutral border-token-border-light relative h-9 rounded-lg font-medium"
+                        >
+                          <TrashIcon className="text-red-500" />
+                        </button>
+                      </div>
+                    </OGDialogTrigger>
+                    <OGDialogTemplate
+                      showCloseButton={false}
+                      title={localize('com_ui_delete_action')}
+                      className="max-w-[450px]"
+                      main={
+                        <Label className="text-left text-sm font-medium">
+                          {localize('com_ui_delete_action_confirm')}
+                        </Label>
                       }
-                      deleteAgentAction.mutate({
-                        action_id: action.action_id,
-                        agent_id: agent_id || '',
-                      });
-                    },
-                    selectClasses:
-                      'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 transition-color duration-200 text-white',
-                    selectText: localize('com_ui_delete'),
-                  }}
-                />
-              </OGDialog>
-            )}
+                      selection={{
+                        selectHandler: () => {
+                          if (isEphemeralAgent(agent_id)) {
+                            return showToast({
+                              message: localize('com_agents_no_agent_id_error'),
+                              status: 'error',
+                            });
+                          }
+                          deleteAgentAction.mutate({
+                            action_id: action.action_id,
+                            agent_id: agent_id || '',
+                          });
+                        },
+                        selectClasses:
+                          'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 transition-color duration-200 text-white',
+                        selectText: localize('com_ui_delete'),
+                      }}
+                    />
+                  </OGDialog>
+                )}
 
-            <div className="text-xl font-medium">{(action ? 'Edit' : 'Add') + ' ' + 'actions'}</div>
-            <div className="text-xs text-text-secondary">
-              {localize('com_assistants_actions_info')}
+                <div className="text-xl font-medium">
+                  {(action ? 'Edit' : 'Add') + ' ' + 'actions'}
+                </div>
+                <div className="text-xs text-text-secondary">
+                  {localize('com_assistants_actions_info')}
+                </div>
+              </div>
+              <ActionsAuth />
             </div>
-            {/* <div className="text-sm text-text-secondary">
-            <a href="https://help.openai.com/en/articles/8554397-creating-a-gpt" target="_blank" rel="noreferrer" className="font-medium">Learn more.</a>
-          </div> */}
+            <div className="flex flex-1 flex-col">
+              <ActionsInput action={action} agent_id={agent_id} setAction={setAction} />
+            </div>
           </div>
-          <ActionsAuth />
-          <ActionsInput action={action} agent_id={agent_id} setAction={setAction} />
         </div>
       </form>
     </FormProvider>

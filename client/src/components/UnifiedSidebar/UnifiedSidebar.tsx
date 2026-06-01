@@ -144,7 +144,7 @@ function UnifiedSidebar() {
             width: 'min(85vw, 380px)',
             transition: `transform ${TRANSITION_MS}ms ${EASING}`,
           }}
-          {...{ inert: !expanded ? '' : undefined }}
+          inert={!expanded ? '' : undefined}
         >
           <SidebarChatProvider>
             <ActivePanelProvider>

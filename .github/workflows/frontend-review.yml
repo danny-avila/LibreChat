@@ -2,14 +2,12 @@ name: Frontend Unit Tests
 
 on:
   pull_request:
-    branches:
-      - main
-      - dev
-      - dev-staging
-      - release/*
     paths:
       - 'client/**'
       - 'packages/data-provider/**'
+
+permissions:
+  contents: read
 
 env:
   NODE_OPTIONS: '--max-old-space-size=${{ secrets.NODE_MAX_OLD_SPACE_SIZE || 6144 }}'

@@ -41,15 +41,37 @@ jest.mock('@librechat/api', () => ({
     processStream: jest.fn().mockResolvedValue(undefined),
   }),
   buildToolSet: jest.fn().mockReturnValue(new Set()),
+  scopeSkillIds: jest.fn().mockImplementation((ids) => ids),
+  resolveAgentScopedSkillIds: jest
+    .fn()
+    .mockImplementation(({ accessibleSkillIds }) => accessibleSkillIds),
+  loadSkillStates: jest.fn().mockResolvedValue({ skillStates: {}, defaultActiveOnShare: false }),
   createSafeUser: jest.fn().mockReturnValue({ id: 'user-123' }),
   initializeAgent: jest.fn().mockResolvedValue({
+    id: 'agent-123',
     model: 'claude-3',
     model_parameters: {},
     toolRegistry: {},
+    edges: [],
+  }),
+  discoverConnectedAgents: jest.fn().mockResolvedValue({
+    agentConfigs: new Map(),
+    edges: [],
+    skippedAgentIds: new Set(),
+    userMCPAuthMap: undefined,
   }),
   getBalanceConfig: mockGetBalanceConfig,
   getTransactionsConfig: mockGetTransactionsConfig,
   recordCollectedUsage: mockRecordCollectedUsage,
+  extractManualSkills: jest.fn().mockReturnValue(undefined),
+  injectSkillPrimes: jest.fn().mockReturnValue({
+    initialMessages: [],
+    indexTokenCountMap: {},
+    inserted: 0,
+    insertIdx: -1,
+    alwaysApplyDropped: 0,
+    alwaysApplyDedupedFromManual: 0,
+  }),
   createToolExecuteHandler: jest.fn().mockReturnValue({ handle: jest.fn() }),
   // Responses API
   writeDone: jest.fn(),
@@ -121,6 +143,32 @@ jest.mock('~/server/controllers/agents/callbacks', () => {
 
 jest.mock('~/server/services/PermissionService', () => ({
   findAccessibleResources: jest.fn().mockResolvedValue([]),
+  checkPermission: jest.fn().mockResolvedValue(true),
+}));
+
+jest.mock('~/server/controllers/ModelController', () => ({
+  getModelsConfig: jest.fn().mockResolvedValue({}),
+}));
+
+jest.mock('~/server/services/Files/permissions', () => ({
+  filterFilesByAgentAccess: jest.fn(),
+}));
+
+jest.mock('~/cache', () => ({
+  logViolation: jest.fn(),
+}));
+
+jest.mock('~/server/services/Files/strategies', () => ({
+  getStrategyFunctions: jest.fn().mockReturnValue({}),
+}));
+
+jest.mock('~/server/services/Files/Code/crud', () => ({
+  batchUploadCodeEnvFiles: jest.fn().mockResolvedValue({ session_id: '', files: [] }),
+}));
+
+jest.mock('~/server/services/Files/Code/process', () => ({
+  getSessionInfo: jest.fn().mockResolvedValue(null),
+  checkIfActive: jest.fn().mockReturnValue(false),
 }));
 
 const mockUpdateBalance = jest.fn().mockResolvedValue({});

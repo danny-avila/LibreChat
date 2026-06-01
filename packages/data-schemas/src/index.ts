@@ -14,6 +14,7 @@ export {
   cacheTokenValues,
   premiumTokenValues,
   defaultRate,
+  permissionBitSupersets,
 } from './methods';
 export type * from './types';
 export type * from './methods';
@@ -22,6 +23,8 @@ export { default as meiliLogger } from './config/meiliLogger';
 export {
   tenantStorage,
   getTenantId,
+  getUserId,
+  getRequestId,
   runAsSystem,
   scopedCacheKey,
   SYSTEM_TENANT_ID,

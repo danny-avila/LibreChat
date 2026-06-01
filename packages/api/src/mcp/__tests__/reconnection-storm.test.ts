@@ -8,6 +8,7 @@
 import http from 'http';
 import { randomUUID } from 'crypto';
 import express from 'express';
+import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -62,7 +63,7 @@ function startMCPServer(): Promise<TestServer> {
 
   function createServer(): McpServer {
     const server = new McpServer({ name: 'test-server', version: '1.0.0' });
-    server.tool('echo', 'echoes input', { message: { type: 'string' } as never }, async (args) => {
+    server.tool('echo', 'echoes input', { message: z.string() }, async (args) => {
       const msg = (args as Record<string, string>).message ?? '';
       return { content: [{ type: 'text', text: msg }] };
     });

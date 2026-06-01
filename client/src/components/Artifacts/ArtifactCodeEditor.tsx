@@ -49,11 +49,52 @@ const TYPE_MAP: Record<string, string> = {
   'application/vnd.mermaid': 'markdown',
 };
 
+type ArtifactEditTarget = {
+  artifactId: string;
+  messageId: string;
+  index: number;
+};
+
+type PendingUpdate = ArtifactEditTarget & {
+  code: string;
+  original: string;
+};
+
+type ArtifactMutationVars = {
+  messageId: string;
+  index: number;
+  updated: string;
+};
+
 function getMonacoLanguage(type?: string, language?: string): string {
   if (language && LANG_MAP[language]) {
     return LANG_MAP[language];
   }
   return TYPE_MAP[type ?? ''] ?? 'plaintext';
+}
+
+function getArtifactEditTarget(artifact: Artifact): ArtifactEditTarget | null {
+  if (artifact.index == null) {
+    return null;
+  }
+
+  return {
+    artifactId: artifact.id,
+    messageId: artifact.messageId ?? '',
+    index: artifact.index,
+  };
+}
+
+function isSameArtifactTarget(left: ArtifactEditTarget, right: ArtifactEditTarget): boolean {
+  return (
+    left.artifactId === right.artifactId &&
+    left.messageId === right.messageId &&
+    left.index === right.index
+  );
+}
+
+function isSameMutationTarget(target: ArtifactEditTarget, vars: ArtifactMutationVars): boolean {
+  return target.messageId === vars.messageId && target.index === vars.index;
 }
 
 export const ArtifactCodeEditor = function ArtifactCodeEditor({
@@ -70,25 +111,68 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
   const { setCurrentCode } = useCodeState();
   const [currentUpdate, setCurrentUpdate] = useState<string | null>(null);
   const { isMutating, setIsMutating } = useMutationState();
-  const editArtifact = useEditArtifact({
-    onMutate: (vars) => {
-      setIsMutating(true);
-      setCurrentUpdate(vars.updated);
-    },
-    onSuccess: () => {
-      setIsMutating(false);
-      setCurrentUpdate(null);
-    },
-    onError: () => {
-      setIsMutating(false);
-    },
-  });
-
   const artifactRef = useRef(artifact);
   const isMutatingRef = useRef(isMutating);
   const currentUpdateRef = useRef(currentUpdate);
-  const editArtifactRef = useRef(editArtifact);
   const setCurrentCodeRef = useRef(setCurrentCode);
+  const pendingUpdateRef = useRef<PendingUpdate | null>(null);
+  const runMutationRef = useRef<(code: string, original?: string) => void>(() => {});
+
+  const editArtifact = useEditArtifact({
+    onMutate: (vars) => {
+      isMutatingRef.current = true;
+      currentUpdateRef.current = vars.updated;
+      setIsMutating(true);
+      setCurrentUpdate(vars.updated);
+    },
+    onSuccess: (_data, vars) => {
+      isMutatingRef.current = false;
+      currentUpdateRef.current = null;
+      setIsMutating(false);
+      setCurrentUpdate(null);
+
+      const pending = pendingUpdateRef.current;
+      pendingUpdateRef.current = null;
+      const currentTarget = getArtifactEditTarget(artifactRef.current);
+      if (
+        pending == null ||
+        currentTarget == null ||
+        !isSameArtifactTarget(pending, currentTarget)
+      ) {
+        return;
+      }
+
+      const original = isSameMutationTarget(pending, vars) ? vars.updated : pending.original;
+      if (pending.code.trim() !== original.trim()) {
+        setCurrentCodeRef.current(pending.code);
+        runMutationRef.current(pending.code, original);
+      }
+    },
+    onError: () => {
+      const pending = pendingUpdateRef.current;
+      pendingUpdateRef.current = null;
+      isMutatingRef.current = false;
+      currentUpdateRef.current = null;
+      setIsMutating(false);
+      setCurrentUpdate(null);
+
+      const currentTarget = getArtifactEditTarget(artifactRef.current);
+      if (
+        pending == null ||
+        currentTarget == null ||
+        !isSameArtifactTarget(pending, currentTarget)
+      ) {
+        return;
+      }
+
+      if (pending.code.trim() !== pending.original.trim()) {
+        setCurrentCodeRef.current(pending.code);
+        runMutationRef.current(pending.code, pending.original);
+      }
+    },
+  });
+
+  const editArtifactRef = useRef(editArtifact);
   const prevContentRef = useRef(artifact.content ?? '');
   const prevArtifactId = useRef(artifact.id);
   const prevReadOnly = useRef(readOnly);
@@ -99,28 +183,51 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
   editArtifactRef.current = editArtifact;
   setCurrentCodeRef.current = setCurrentCode;
 
+  const runMutation = useCallback(
+    (code: string, originalOverride?: string) => {
+      const art = artifactRef.current;
+      const target = getArtifactEditTarget(art);
+      if (readOnly || target == null) {
+        return;
+      }
+
+      const original = originalOverride ?? art.content ?? '';
+      if (isMutatingRef.current) {
+        pendingUpdateRef.current = {
+          ...target,
+          code,
+          original,
+        };
+        return;
+      }
+
+      const isNotOriginal = code.trim() !== original.trim();
+      const isNotRepeated =
+        currentUpdateRef.current == null ? true : code.trim() !== currentUpdateRef.current.trim();
+
+      if (!isNotOriginal || !isNotRepeated) {
+        return;
+      }
+
+      setCurrentCodeRef.current(code);
+      editArtifactRef.current.mutate({
+        index: target.index,
+        messageId: target.messageId,
+        original,
+        updated: code,
+      });
+    },
+    [readOnly],
+  );
+
+  runMutationRef.current = runMutation;
+
   const debouncedMutation = useMemo(
     () =>
       debounce((code: string) => {
-        if (readOnly || isMutatingRef.current || artifactRef.current.index == null) {
-          return;
-        }
-        const art = artifactRef.current;
-        const isNotOriginal = art.content != null && code.trim() !== art.content.trim();
-        const isNotRepeated =
-          currentUpdateRef.current == null ? true : code.trim() !== currentUpdateRef.current.trim();
-
-        if (art.content != null && isNotOriginal && isNotRepeated && art.index != null) {
-          setCurrentCodeRef.current(code);
-          editArtifactRef.current.mutate({
-            index: art.index,
-            messageId: art.messageId ?? '',
-            original: art.content,
-            updated: code,
-          });
-        }
+        runMutationRef.current(code);
       }, 500),
-    [readOnly],
+    [],
   );
 
   useEffect(() => {
@@ -176,6 +283,7 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
       return;
     }
     prevArtifactId.current = artifact.id;
+    pendingUpdateRef.current = null;
     prevContentRef.current = artifact.content ?? '';
     const ed = monacoRef.current;
     if (ed && artifact.content != null) {

@@ -1,21 +1,16 @@
-import { useEffect } from 'react';
+import { useCallback } from 'react';
 import { TOptions } from 'i18next';
-import { useAtomValue } from 'jotai';
 import { useTranslation } from 'react-i18next';
 import { resources } from '~/locales/i18n';
-import { langAtom } from '~/store';
 
 export type TranslationKeys = keyof typeof resources.en.translation;
 
+/** Language lifecycle is managed by the host app — do not add i18n.changeLanguage() calls here. */
 export default function useLocalize() {
-  const lang = useAtomValue(langAtom);
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
 
-  useEffect(() => {
-    if (i18n.language !== lang) {
-      i18n.changeLanguage(lang);
-    }
-  }, [lang, i18n]);
-
-  return (phraseKey: TranslationKeys, options?: TOptions) => t(phraseKey, options);
+  return useCallback(
+    (phraseKey: TranslationKeys, options?: TOptions) => t(phraseKey, options),
+    [t],
+  );
 }

@@ -27,7 +27,7 @@ export default function CreatePromptButton() {
           className="size-9 shrink-0 bg-transparent"
           aria-label={localize('com_ui_create_prompt')}
         >
-          <Link to="/d/prompts/new">
+          <Link to="/prompts/new">
             <Plus className="size-4" aria-hidden="true" />
           </Link>
         </Button>

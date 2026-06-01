@@ -1,8 +1,8 @@
-import { useMemo, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { ShieldEllipsis } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
-import { Permissions, SystemRoles, roleDefaults, PermissionTypes } from 'librechat-data-provider';
+import { Permissions, SystemRoles, PermissionTypes } from 'librechat-data-provider';
 import {
   Button,
   Switch,
@@ -15,7 +15,7 @@ import {
 } from '@librechat/client';
 import type { Control, UseFormSetValue, UseFormGetValues } from 'react-hook-form';
 import { useUpdatePeoplePickerPermissionsMutation } from '~/data-provider';
-import { useLocalize, useAuthContext } from '~/hooks';
+import { useLocalize, useAuthContext, useRoleSelector } from '~/hooks';
 
 type FormValues = {
   [Permissions.VIEW_USERS]: boolean;
@@ -70,7 +70,7 @@ const LabelController: React.FC<LabelControllerProps> = ({
 const PeoplePickerAdminSettings = () => {
   const localize = useLocalize();
   const { showToast } = useToastContext();
-  const { user, roles } = useAuthContext();
+  const { user } = useAuthContext();
   const { mutate, isLoading } = useUpdatePeoplePickerPermissionsMutation({
     onSuccess: () => {
       showToast({ status: 'success', message: localize('com_ui_saved') });
@@ -81,15 +81,14 @@ const PeoplePickerAdminSettings = () => {
   });
 
   const [isRoleMenuOpen, setIsRoleMenuOpen] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<SystemRoles>(SystemRoles.USER);
-
-  const defaultValues = useMemo(() => {
-    const rolePerms = roles?.[selectedRole]?.permissions;
-    if (rolePerms) {
-      return rolePerms[PermissionTypes.PEOPLE_PICKER];
-    }
-    return roleDefaults[selectedRole].permissions[PermissionTypes.PEOPLE_PICKER];
-  }, [roles, selectedRole]);
+  const {
+    selectedRole,
+    isSelectedCustomRole,
+    isCustomRoleLoading,
+    isCustomRoleError,
+    defaultValues,
+    roleDropdownItems,
+  } = useRoleSelector(PermissionTypes.PEOPLE_PICKER);
 
   const {
     reset,
@@ -100,17 +99,15 @@ const PeoplePickerAdminSettings = () => {
     formState: { isSubmitting },
   } = useForm<FormValues>({
     mode: 'onChange',
-    defaultValues,
+    defaultValues: defaultValues as FormValues,
   });
 
   useEffect(() => {
-    const value = roles?.[selectedRole]?.permissions?.[PermissionTypes.PEOPLE_PICKER];
-    if (value) {
-      reset(value);
-    } else {
-      reset(roleDefaults[selectedRole].permissions[PermissionTypes.PEOPLE_PICKER]);
+    if (isSelectedCustomRole && (isCustomRoleLoading || isCustomRoleError)) {
+      return;
     }
-  }, [roles, selectedRole, reset]);
+    reset(defaultValues as FormValues);
+  }, [isSelectedCustomRole, isCustomRoleLoading, isCustomRoleError, defaultValues, reset]);
 
   if (user?.role !== SystemRoles.ADMIN) {
     return null;
@@ -138,21 +135,6 @@ const PeoplePickerAdminSettings = () => {
     mutate({ roleName: selectedRole, updates: data });
   };
 
-  const roleDropdownItems = [
-    {
-      label: SystemRoles.USER,
-      onClick: () => {
-        setSelectedRole(SystemRoles.USER);
-      },
-    },
-    {
-      label: SystemRoles.ADMIN,
-      onClick: () => {
-        setSelectedRole(SystemRoles.ADMIN);
-      },
-    },
-  ];
-
   return (
     <OGDialog>
       <OGDialogTrigger asChild>
@@ -179,7 +161,7 @@ const PeoplePickerAdminSettings = () => {
               isOpen={isRoleMenuOpen}
               setIsOpen={setIsRoleMenuOpen}
               trigger={
-                <Ariakit.MenuButton className="inline-flex w-1/4 items-center justify-center rounded-lg border border-border-light bg-transparent px-2 py-1 text-text-primary transition-all ease-in-out hover:bg-surface-tertiary">
+                <Ariakit.MenuButton className="inline-flex min-w-[6rem] items-center justify-center rounded-lg border border-border-light bg-transparent px-2 py-1 text-text-primary transition-all ease-in-out hover:bg-surface-tertiary">
                   {selectedRole}
                 </Ariakit.MenuButton>
               }
@@ -207,7 +189,11 @@ const PeoplePickerAdminSettings = () => {
               <button
                 type="button"
                 onClick={handleSubmit(onSubmit)}
-                disabled={isSubmitting || isLoading}
+                disabled={
+                  isSubmitting ||
+                  isLoading ||
+                  (isSelectedCustomRole && (isCustomRoleLoading || isCustomRoleError))
+                }
                 className="btn rounded bg-green-500 font-bold text-white transition-all hover:bg-green-600"
               >
                 {localize('com_ui_save')}

@@ -1,4 +1,4 @@
-export { PromptsView } from './layouts';
+export { InlinePromptsView } from './layouts';
 export { CategoryIcon, SkeletonForm } from './utils';
 export { PromptName, Command, Description, CategorySelector } from './fields';
 export { PreviewPrompt, DeleteVersion, VariableDialog, SharePrompt } from './dialogs';
@@ -11,19 +11,5 @@ export {
   FilterPrompts,
   PanelNavigation,
 } from './sidebar';
-export {
-  List as PromptGroupsList,
-  DashGroupItem,
-  ChatGroupItem,
-  ListCard,
-  NoPromptGroup,
-} from './lists';
-export {
-  CreatePromptButton,
-  AdminSettings,
-  AdvancedSwitch,
-  AlwaysMakeProd,
-  AutoSendPrompt,
-  BackToChat,
-  ManagePrompts,
-} from './buttons';
+export { List as PromptGroupsList, ChatGroupItem, ListCard, NoPromptGroup } from './lists';
+export { CreatePromptButton, AdminSettings, AlwaysMakeProd, AutoSendPrompt } from './buttons';

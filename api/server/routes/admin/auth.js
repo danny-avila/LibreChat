@@ -1,13 +1,36 @@
 const express = require('express');
 const passport = require('passport');
 const crypto = require('node:crypto');
+const openIdClient = require('openid-client');
 const { CacheKeys } = require('librechat-data-provider');
-const { logger, SystemCapabilities } = require('@librechat/data-schemas');
-const { getAdminPanelUrl, exchangeAdminCode, createSetBalanceConfig } = require('@librechat/api');
+const {
+  logger,
+  DEFAULT_SESSION_EXPIRY,
+  SystemCapabilities,
+  getTenantId,
+} = require('@librechat/data-schemas');
+const {
+  isEnabled,
+  getAdminPanelUrl,
+  exchangeAdminCode,
+  createSetBalanceConfig,
+  storeAndStripChallenge,
+  tenantContextMiddleware,
+  preAuthTenantMiddleware,
+  applyAdminRefresh,
+  AdminRefreshError,
+  buildOpenIDRefreshParams,
+} = require('@librechat/api');
 const { loginController } = require('~/server/controllers/auth/LoginController');
-const { requireCapability } = require('~/server/middleware/roles/capabilities');
+const { hasCapability, requireCapability } = require('~/server/middleware/roles/capabilities');
 const { createOAuthHandler } = require('~/server/controllers/auth/oauth');
-const { findBalanceByUser, upsertBalanceFields } = require('~/models');
+const {
+  findBalanceByUser,
+  findUsers,
+  generateToken,
+  getUserById,
+  upsertBalanceFields,
+} = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 const getLogStores = require('~/cache/getLogStores');
 const { getOpenIdConfig } = require('~/strategies');
@@ -51,6 +74,7 @@ router.post(
   middleware.loginLimiter,
   middleware.checkBan,
   middleware.requireLocalAuth,
+  tenantContextMiddleware,
   requireAdminAccess,
   setBalanceConfig,
   loginController,
@@ -73,38 +97,12 @@ router.get('/oauth/openid/check', (req, res) => {
   res.status(200).json({ message: 'OpenID check successful' });
 });
 
-/** PKCE challenge cache TTL: 5 minutes (enough for user to authenticate with IdP) */
-const PKCE_CHALLENGE_TTL = 5 * 60 * 1000;
-/** Regex pattern for valid PKCE challenges: 64 hex characters (SHA-256 hex digest) */
-const PKCE_CHALLENGE_PATTERN = /^[a-f0-9]{64}$/;
-
 /**
  * Generates a random hex state string for OAuth flows.
  * @returns {string} A 32-byte random hex string.
  */
 function generateState() {
   return crypto.randomBytes(32).toString('hex');
-}
-
-/**
- * Stores a PKCE challenge in cache keyed by state.
- * @param {string} state - The OAuth state value.
- * @param {string | undefined} codeChallenge - The PKCE code_challenge from query params.
- * @param {string} provider - Provider name for logging.
- * @returns {Promise<boolean>} True if stored successfully or no challenge provided.
- */
-async function storePkceChallenge(state, codeChallenge, provider) {
-  if (typeof codeChallenge !== 'string' || !PKCE_CHALLENGE_PATTERN.test(codeChallenge)) {
-    return true;
-  }
-  try {
-    const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
-    await cache.set(`pkce:${state}`, codeChallenge, PKCE_CHALLENGE_TTL);
-    return true;
-  } catch (err) {
-    logger.error(`[admin/oauth/${provider}] Failed to store PKCE challenge:`, err);
-    return false;
-  }
 }
 
 /**
@@ -148,7 +146,8 @@ function retrievePkceChallenge(provider) {
 
 router.get('/oauth/openid', async (req, res, next) => {
   const state = generateState();
-  const stored = await storePkceChallenge(state, req.query.code_challenge, 'openid');
+  const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
+  const stored = await storeAndStripChallenge(cache, req, state, 'openid');
   if (!stored) {
     return res.redirect(
       `${getAdminPanelUrl()}/auth/openid/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
@@ -172,6 +171,7 @@ router.get(
     failureMessage: true,
     session: false,
   }),
+  tenantContextMiddleware,
   retrievePkceChallenge('openid'),
   requireAdminAccess,
   setBalanceConfig,
@@ -185,7 +185,8 @@ router.get(
 
 router.get('/oauth/saml', async (req, res, next) => {
   const state = generateState();
-  const stored = await storePkceChallenge(state, req.query.code_challenge, 'saml');
+  const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
+  const stored = await storeAndStripChallenge(cache, req, state, 'saml');
   if (!stored) {
     return res.redirect(
       `${getAdminPanelUrl()}/auth/saml/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
@@ -209,6 +210,7 @@ router.post(
     failureMessage: true,
     session: false,
   }),
+  tenantContextMiddleware,
   retrievePkceChallenge('saml'),
   requireAdminAccess,
   setBalanceConfig,
@@ -222,7 +224,8 @@ router.post(
 
 router.get('/oauth/google', async (req, res, next) => {
   const state = generateState();
-  const stored = await storePkceChallenge(state, req.query.code_challenge, 'google');
+  const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
+  const stored = await storeAndStripChallenge(cache, req, state, 'google');
   if (!stored) {
     return res.redirect(
       `${getAdminPanelUrl()}/auth/google/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
@@ -247,6 +250,7 @@ router.get(
     failureMessage: true,
     session: false,
   }),
+  tenantContextMiddleware,
   retrievePkceChallenge('google'),
   requireAdminAccess,
   setBalanceConfig,
@@ -260,7 +264,8 @@ router.get(
 
 router.get('/oauth/github', async (req, res, next) => {
   const state = generateState();
-  const stored = await storePkceChallenge(state, req.query.code_challenge, 'github');
+  const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
+  const stored = await storeAndStripChallenge(cache, req, state, 'github');
   if (!stored) {
     return res.redirect(
       `${getAdminPanelUrl()}/auth/github/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
@@ -285,6 +290,7 @@ router.get(
     failureMessage: true,
     session: false,
   }),
+  tenantContextMiddleware,
   retrievePkceChallenge('github'),
   requireAdminAccess,
   setBalanceConfig,
@@ -298,7 +304,8 @@ router.get(
 
 router.get('/oauth/discord', async (req, res, next) => {
   const state = generateState();
-  const stored = await storePkceChallenge(state, req.query.code_challenge, 'discord');
+  const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
+  const stored = await storeAndStripChallenge(cache, req, state, 'discord');
   if (!stored) {
     return res.redirect(
       `${getAdminPanelUrl()}/auth/discord/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
@@ -323,6 +330,7 @@ router.get(
     failureMessage: true,
     session: false,
   }),
+  tenantContextMiddleware,
   retrievePkceChallenge('discord'),
   requireAdminAccess,
   setBalanceConfig,
@@ -336,7 +344,8 @@ router.get(
 
 router.get('/oauth/facebook', async (req, res, next) => {
   const state = generateState();
-  const stored = await storePkceChallenge(state, req.query.code_challenge, 'facebook');
+  const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
+  const stored = await storeAndStripChallenge(cache, req, state, 'facebook');
   if (!stored) {
     return res.redirect(
       `${getAdminPanelUrl()}/auth/facebook/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
@@ -361,6 +370,7 @@ router.get(
     failureMessage: true,
     session: false,
   }),
+  tenantContextMiddleware,
   retrievePkceChallenge('facebook'),
   requireAdminAccess,
   setBalanceConfig,
@@ -374,7 +384,8 @@ router.get(
 
 router.get('/oauth/apple', async (req, res, next) => {
   const state = generateState();
-  const stored = await storePkceChallenge(state, req.query.code_challenge, 'apple');
+  const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
+  const stored = await storeAndStripChallenge(cache, req, state, 'apple');
   if (!stored) {
     return res.redirect(
       `${getAdminPanelUrl()}/auth/apple/callback?error=pkce_store_failed&error_description=Failed+to+store+PKCE+challenge`,
@@ -398,6 +409,7 @@ router.post(
     failureMessage: true,
     session: false,
   }),
+  tenantContextMiddleware,
   retrievePkceChallenge('apple'),
   requireAdminAccess,
   setBalanceConfig,
@@ -468,5 +480,143 @@ router.post('/oauth/exchange', middleware.loginLimiter, async (req, res) => {
     });
   }
 });
+
+/**
+ * Admin-panel-shaped token refresh.
+ *
+ * The standard `/api/auth/refresh` controller reads the refresh token from
+ * cookies, which a cross-origin admin panel can't set. This endpoint accepts
+ * the refresh token in the request body, exchanges it at the IdP, mints a
+ * fresh LibreChat JWT, and returns the same response shape as
+ * `/api/admin/oauth/exchange`.
+ *
+ * POST /api/admin/oauth/refresh
+ * Body:     { refresh_token: string, user_id?: string }
+ * Response: { token: string, refreshToken?: string, user: object, expiresAt: number }
+ *
+ * Errors (all responses are `{ error: string, error_code: string }`):
+ *   400 MISSING_REFRESH_TOKEN  — refresh_token absent or empty
+ *   401 REFRESH_FAILED         — IdP rejected the refresh grant
+ *   401 USER_NOT_FOUND         — no LibreChat user matches the refreshed sub
+ *   401 USER_ID_MISMATCH       — supplied user_id resolves to a user with a different openidId
+ *   401 ISSUER_MISMATCH        — refreshed tokenset was issued by an unexpected issuer
+ *   401 TENANT_MISMATCH        — resolved user belongs to a different tenant than the request
+ *   403 FORBIDDEN              — resolved user no longer holds ACCESS_ADMIN
+ *   403 TOKEN_REUSE_DISABLED   — OPENID_REUSE_TOKENS is not enabled on the server
+ *   502 IDP_INCOMPLETE         — IdP returned a tokenset missing access_token
+ *   502 CLAIMS_INCOMPLETE      — IdP tokenset has no readable claims or no sub
+ *   503 OPENID_NOT_CONFIGURED  — OpenID is not configured on this server
+ *   500 INTERNAL_ERROR         — anything else (logged server-side)
+ */
+router.post(
+  '/oauth/refresh',
+  middleware.loginLimiter,
+  preAuthTenantMiddleware,
+  async (req, res) => {
+    try {
+      const { refresh_token: refreshToken, user_id: userId } = req.body ?? {};
+      if (typeof refreshToken !== 'string' || refreshToken.length === 0) {
+        return res.status(400).json({
+          error: 'Missing refresh_token',
+          error_code: 'MISSING_REFRESH_TOKEN',
+        });
+      }
+
+      if (!isEnabled(process.env.OPENID_REUSE_TOKENS)) {
+        return res.status(403).json({
+          error: 'OpenID token reuse is not enabled',
+          error_code: 'TOKEN_REUSE_DISABLED',
+        });
+      }
+
+      let openIdConfig;
+      try {
+        openIdConfig = getOpenIdConfig();
+      } catch {
+        return res.status(503).json({
+          error: 'OpenID is not configured',
+          error_code: 'OPENID_NOT_CONFIGURED',
+        });
+      }
+
+      const refreshParams = buildOpenIDRefreshParams();
+      logger.debug('[admin/oauth/refresh] OpenID refresh params', {
+        has_scope: Boolean(process.env.OPENID_SCOPE),
+        has_refresh_audience: Boolean(process.env.OPENID_REFRESH_AUDIENCE),
+      });
+      let tokenset;
+      try {
+        tokenset = await openIdClient.refreshTokenGrant(openIdConfig, refreshToken, refreshParams);
+        logger.debug('[admin/oauth/refresh] OpenID refresh succeeded', {
+          has_access_token: Boolean(tokenset.access_token),
+          has_id_token: Boolean(tokenset.id_token),
+          has_refresh_token: Boolean(tokenset.refresh_token),
+          expires_in: tokenset.expires_in,
+        });
+      } catch (err) {
+        logger.warn('[admin/oauth/refresh] IdP refresh grant failed', {
+          code: err?.code,
+          name: err?.name,
+        });
+        return res.status(401).json({
+          error: 'Refresh failed',
+          error_code: 'REFRESH_FAILED',
+        });
+      }
+
+      const sessionExpiry = Number(process.env.SESSION_EXPIRY) || DEFAULT_SESSION_EXPIRY;
+      const expectedIssuer = openIdConfig.serverMetadata?.()?.issuer;
+
+      try {
+        const result = await applyAdminRefresh(
+          tokenset,
+          {
+            findUsers,
+            getUserById,
+            canAccessAdmin: async (user) => {
+              try {
+                return await hasCapability(
+                  {
+                    id: user.id ?? user._id?.toString(),
+                    role: user.role ?? '',
+                    tenantId: user.tenantId,
+                  },
+                  SystemCapabilities.ACCESS_ADMIN,
+                );
+              } catch (err) {
+                logger.warn(
+                  `[admin/oauth/refresh] capability check failed, denying: ${err?.message}`,
+                );
+                return false;
+              }
+            },
+            mintToken: async (user) => ({
+              token: await generateToken(user, sessionExpiry),
+              expiresAt: Date.now() + sessionExpiry,
+            }),
+          },
+          {
+            userId: typeof userId === 'string' && userId.length > 0 ? userId : undefined,
+            previousRefreshToken: refreshToken,
+            expectedIssuer,
+            tenantId: getTenantId(),
+          },
+        );
+        return res.json(result);
+      } catch (err) {
+        if (err instanceof AdminRefreshError) {
+          return res.status(err.status).json({ error: err.message, error_code: err.code });
+        }
+        throw err;
+      }
+    } catch (error) {
+      logger.error('[admin/oauth/refresh] Error:', error);
+      res.status(500).json({
+        error: 'Internal server error',
+        error_code: 'INTERNAL_ERROR',
+      });
+    }
+  },
+);
 
 module.exports = router;

@@ -63,7 +63,7 @@ function Files({
     <div className="mb-2 w-full">
       <div className="flex flex-col gap-3">
         <div className="rounded-lg text-xs text-text-secondary">
-          {localize('com_assistants_code_interpreter_files')}
+          {localize('com_agents_run_code_files')}
         </div>
         <FileRow
           files={files}
@@ -91,7 +91,7 @@ function Files({
                 onChange={handleFileChange}
               />
               <AttachmentIcon className="text-token-text-primary h-4 w-4" />
-              {localize('com_ui_upload_code_files')}
+              {localize('com_ui_upload_code_environment')}
             </div>
           </button>
         </div>

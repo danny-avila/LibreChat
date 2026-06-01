@@ -6,6 +6,7 @@ const {
   entraIdPrincipalFeatureEnabled,
   getUserOwnedEntraGroups,
   getUserEntraGroups,
+  getEntraGroupDetailsBatch,
   getGroupMembers,
   getGroupOwners,
 } = require('~/server/services/GraphApiService');
@@ -461,9 +462,16 @@ const ensureGroupPrincipalExists = async function (principal, authContext = null
 };
 
 /**
- * Synchronize user's Entra ID group memberships on sign-in
- * Gets user's group IDs from GraphAPI and updates memberships only for existing groups in database
- * Optionally includes groups the user owns if ENTRA_ID_INCLUDE_OWNERS_AS_MEMBERS is enabled
+ * Sync user's Entra ID group memberships with auto-creation of missing groups
+ * Optimized approach:
+ * 1. Get all group IDs user should be member of from Entra
+ * 2. Try to add user to existing groups (fast, no Graph API calls)
+ * 3. Query DB to identify which groups don't exist (indexed query, fast)
+ * 4. For missing groups only, fetch details from Graph API in batches
+ * 5. Upsert missing groups using upsertGroupByExternalId (race-safe)
+ * 6. Add user to newly created/upserted groups via bulkUpdate
+ * 7. Remove user from groups they're no longer member of
+ *
  * @param {Object} user - User object with authentication context
  * @param {string} user.openidId - User's OpenID subject identifier
  * @param {string} user.idOnTheSource - User's Entra ID (oid from token claims)
@@ -478,6 +486,7 @@ const syncUserEntraGroupMemberships = async (user, accessToken, session = null) 
       return;
     }
 
+    // Step 1: Get all group IDs user should be member of
     const memberGroupIds = await getUserEntraGroups(accessToken, user.openidId);
     let allGroupIds = [...(memberGroupIds || [])];
 
@@ -491,13 +500,22 @@ const syncUserEntraGroupMemberships = async (user, accessToken, session = null) 
       }
     }
 
-    if (!allGroupIds || allGroupIds.length === 0) {
+    const sessionOptions = session ? { session } : {};
+
+    // Early return if no groups found (protects against temporary API failures)
+    if (allGroupIds.length === 0) {
+      logger.debug(
+        `[PermissionService.syncUserEntraGroupMemberships] No groups found for user ${user._id}`,
+      );
       return;
     }
 
-    const sessionOptions = session ? { session } : {};
+    logger.info(
+      `[PermissionService.syncUserEntraGroupMemberships] Syncing ${allGroupIds.length} groups for user ${user._id}`,
+    );
 
-    await db.bulkUpdateGroups(
+    // Step 2: Try to add user to existing groups (fast operation)
+    const addResult = await db.bulkUpdateGroups(
       {
         idOnTheSource: { $in: allGroupIds },
         source: 'entra',
@@ -507,7 +525,77 @@ const syncUserEntraGroupMemberships = async (user, accessToken, session = null) 
       sessionOptions,
     );
 
-    await db.bulkUpdateGroups(
+    logger.debug(
+      `[PermissionService.syncUserEntraGroupMemberships] Added user to ${addResult.modifiedCount || 0} existing groups`,
+    );
+
+    // Step 3: Find which groups don't exist in DB using db layer
+    const existingGroups = await db.findGroupsByExternalIds(allGroupIds, 'entra', session);
+    const existingGroupIds = new Set(existingGroups.map((g) => g.idOnTheSource));
+
+    const missingGroupIds = allGroupIds.filter((id) => !existingGroupIds.has(id));
+
+    if (missingGroupIds.length > 0) {
+      logger.info(
+        `[PermissionService.syncUserEntraGroupMemberships] Found ${missingGroupIds.length} groups that don't exist, fetching details...`,
+      );
+
+      // Step 4: Fetch details only for missing groups (optimized batch request)
+      const groupDetails = await getEntraGroupDetailsBatch(
+        accessToken,
+        user.openidId,
+        missingGroupIds,
+      );
+
+      if (groupDetails.length > 0) {
+        logger.info(
+          `[PermissionService.syncUserEntraGroupMemberships] Creating ${groupDetails.length} new groups`,
+        );
+
+        // Step 5: Upsert missing groups (race-safe by design)
+        // Use upsertGroupByExternalId for each group to handle concurrent creates gracefully
+        const upsertPromises = groupDetails.map((group) =>
+          db.upsertGroupByExternalId(
+            group.id,
+            'entra',
+            {
+              name: group.name,
+              email: group.email,
+              description: group.description,
+            },
+            session,
+          ),
+        );
+
+        await Promise.all(upsertPromises);
+
+        // Step 6: Add user to all newly created/upserted groups
+        await db.bulkUpdateGroups(
+          {
+            idOnTheSource: { $in: missingGroupIds },
+            source: 'entra',
+            memberIds: { $ne: user.idOnTheSource },
+          },
+          { $addToSet: { memberIds: user.idOnTheSource } },
+          sessionOptions,
+        );
+
+        logger.info(
+          `[PermissionService.syncUserEntraGroupMemberships] Successfully created/updated ${groupDetails.length} groups`,
+        );
+      } else {
+        logger.warn(
+          `[PermissionService.syncUserEntraGroupMemberships] Could not fetch details for ${missingGroupIds.length} missing groups`,
+        );
+      }
+    } else {
+      logger.debug(
+        `[PermissionService.syncUserEntraGroupMemberships] All ${allGroupIds.length} groups already exist in database`,
+      );
+    }
+
+    // Step 7: Remove user from Entra groups they're no longer member of
+    const removeResult = await db.bulkUpdateGroups(
       {
         source: 'entra',
         memberIds: user.idOnTheSource,
@@ -516,7 +604,17 @@ const syncUserEntraGroupMemberships = async (user, accessToken, session = null) 
       { $pullAll: { memberIds: [user.idOnTheSource] } },
       sessionOptions,
     );
+
+    logger.debug(
+      `[PermissionService.syncUserEntraGroupMemberships] Removed user from ${removeResult.modifiedCount || 0} groups`,
+    );
+
+    logger.info(
+      `[PermissionService.syncUserEntraGroupMemberships] Successfully synced groups for user ${user._id}`,
+    );
   } catch (error) {
+    // Log error but don't re-throw: group sync is best-effort operation
+    // and should not block authentication even if temporary API/DB issues occur
     logger.error(`[PermissionService.syncUserEntraGroupMemberships] Error syncing groups:`, error);
   }
 };

@@ -1,4 +1,13 @@
 import { lookup } from 'node:dns/promises';
+import {
+  normalizePort,
+  isAddressInAllowedSet,
+  normalizeAllowedAddressesSet,
+} from './allowedAddresses';
+import { isPrivateIP } from './ip';
+
+/** Re-exported here for backward compatibility; canonical location is `./ip`. */
+export { isPrivateIP };
 
 /**
  * @param email
@@ -24,140 +33,23 @@ export function isEmailDomainAllowed(email: string, allowedDomains?: string[] | 
   return allowedDomains.some((allowedDomain) => allowedDomain?.toLowerCase() === domain);
 }
 
-/** Checks if IPv4 octets fall within private, reserved, or non-routable ranges */
-function isPrivateIPv4(a: number, b: number, c: number): boolean {
-  if (a === 0) {
-    return true;
-  }
-  if (a === 10) {
-    return true;
-  }
-  if (a === 127) {
-    return true;
-  }
-  if (a === 100 && b >= 64 && b <= 127) {
-    return true;
-  }
-  if (a === 169 && b === 254) {
-    return true;
-  }
-  if (a === 172 && b >= 16 && b <= 31) {
-    return true;
-  }
-  if (a === 192 && b === 168) {
-    return true;
-  }
-  if (a === 192 && b === 0 && c === 0) {
-    return true;
-  }
-  if (a === 198 && (b === 18 || b === 19)) {
-    return true;
-  }
-  if (a >= 224) {
-    return true;
-  }
-  return false;
-}
-
-/** Checks if a pre-normalized (lowercase, bracket-stripped) IPv6 address falls within fe80::/10 */
-function isIPv6LinkLocal(ipv6: string): boolean {
-  if (!ipv6.includes(':')) {
-    return false;
-  }
-  const firstHextet = ipv6.split(':', 1)[0];
-  if (!firstHextet || !/^[0-9a-f]{1,4}$/.test(firstHextet)) {
-    return false;
-  }
-  const hextet = parseInt(firstHextet, 16);
-  // /10 mask (0xffc0) preserves top 10 bits: fe80 = 1111_1110_10xx_xxxx
-  return (hextet & 0xffc0) === 0xfe80;
-}
-
-/** Checks if an IPv6 address embeds a private IPv4 via 6to4, NAT64, or Teredo */
-function hasPrivateEmbeddedIPv4(ipv6: string): boolean {
-  if (!ipv6.startsWith('2002:') && !ipv6.startsWith('64:ff9b::') && !ipv6.startsWith('2001::')) {
-    return false;
-  }
-  const segments = ipv6.split(':').filter((s) => s !== '');
-
-  if (ipv6.startsWith('2002:') && segments.length >= 3) {
-    const hi = parseInt(segments[1], 16);
-    const lo = parseInt(segments[2], 16);
-    if (!isNaN(hi) && !isNaN(lo)) {
-      return isPrivateIPv4((hi >> 8) & 0xff, hi & 0xff, (lo >> 8) & 0xff);
-    }
-  }
-
-  if (ipv6.startsWith('64:ff9b::')) {
-    const lastTwo = segments.slice(-2);
-    if (lastTwo.length === 2) {
-      const hi = parseInt(lastTwo[0], 16);
-      const lo = parseInt(lastTwo[1], 16);
-      if (!isNaN(hi) && !isNaN(lo)) {
-        return isPrivateIPv4((hi >> 8) & 0xff, hi & 0xff, (lo >> 8) & 0xff);
-      }
-    }
-  }
-
-  // RFC 4380: Teredo stores external IPv4 as bitwise complement in last 32 bits
-  if (ipv6.startsWith('2001::')) {
-    const lastTwo = segments.slice(-2);
-    if (lastTwo.length === 2) {
-      const hi = parseInt(lastTwo[0], 16);
-      const lo = parseInt(lastTwo[1], 16);
-      if (!isNaN(hi) && !isNaN(lo)) {
-        return isPrivateIPv4((~hi >> 8) & 0xff, ~hi & 0xff, (~lo >> 8) & 0xff);
-      }
-    }
-  }
-
-  return false;
-}
-
 /**
- * Checks if an IP address belongs to a private, reserved, or link-local range.
- * Handles IPv4, IPv6, and IPv4-mapped IPv6 addresses (::ffff:A.B.C.D).
+ * Checks whether a hostname/IP literal and port appear in an admin-supplied
+ * exemption list. Address match is case-insensitive and bracket-stripped, so
+ * `[::1]` matches `::1` and `LOCALHOST` matches `localhost` when the port
+ * also matches.
+ *
+ * The normalization and scoping rules live in `./allowedAddresses` so the
+ * connect-time DNS lookup in `agent.ts` and this preflight helper share a
+ * single implementation. See that module for the security invariants.
  */
-export function isPrivateIP(ip: string): boolean {
-  const normalized = ip
-    .toLowerCase()
-    .trim()
-    .replace(/^\[|\]$/g, '');
-
-  const mappedMatch = normalized.match(/^::ffff:(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (mappedMatch) {
-    const [, a, b, c] = mappedMatch.map(Number);
-    return isPrivateIPv4(a, b, c);
-  }
-
-  const hexMappedMatch = normalized.match(/^(?:::ffff:|::)([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
-  if (hexMappedMatch) {
-    const hi = parseInt(hexMappedMatch[1], 16);
-    const lo = parseInt(hexMappedMatch[2], 16);
-    return isPrivateIPv4((hi >> 8) & 0xff, hi & 0xff, (lo >> 8) & 0xff);
-  }
-
-  const ipv4Match = normalized.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (ipv4Match) {
-    const [, a, b, c] = ipv4Match.map(Number);
-    return isPrivateIPv4(a, b, c);
-  }
-
-  if (
-    normalized === '::1' ||
-    normalized === '::' ||
-    normalized.startsWith('fc') || // fc00::/7 — exactly prefixes 'fc' and 'fd'
-    normalized.startsWith('fd') ||
-    isIPv6LinkLocal(normalized) // fe80::/10 — spans 0xfe80–0xfebf; bitwise check required
-  ) {
-    return true;
-  }
-
-  if (hasPrivateEmbeddedIPv4(normalized)) {
-    return true;
-  }
-
-  return false;
+export function isAddressAllowed(
+  hostnameOrIP: string,
+  allowedAddresses?: string[] | null,
+  port?: string | number | null,
+): boolean {
+  const set = normalizeAllowedAddressesSet(allowedAddresses);
+  return isAddressInAllowedSet(hostnameOrIP, set, port);
 }
 
 /**
@@ -165,9 +57,21 @@ export function isPrivateIP(ip: string): boolean {
  * Directly validates literal IPv4 and IPv6 addresses without DNS lookup.
  * For hostnames, resolves via DNS and checks all returned addresses.
  * Fails open on DNS errors (returns false), since the HTTP request would also fail.
+ *
+ * When `allowedAddresses` is provided, the hostname/port and any resolved
+ * IP/port are matched against the list — a match short-circuits to `false`
+ * so admin-exempted private services bypass the SSRF block.
  */
-export async function resolveHostnameSSRF(hostname: string): Promise<boolean> {
+export async function resolveHostnameSSRF(
+  hostname: string,
+  allowedAddresses?: string[] | null,
+  port?: string | number | null,
+): Promise<boolean> {
   const normalizedHost = hostname.toLowerCase().trim();
+
+  if (isAddressAllowed(normalizedHost, allowedAddresses, port)) {
+    return false;
+  }
 
   if (/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.test(normalizedHost)) {
     return isPrivateIP(normalizedHost);
@@ -180,7 +84,10 @@ export async function resolveHostnameSSRF(hostname: string): Promise<boolean> {
 
   try {
     const addresses = await lookup(hostname, { all: true });
-    return addresses.some((entry) => isPrivateIP(entry.address));
+    return addresses.some(
+      (entry) =>
+        isPrivateIP(entry.address) && !isAddressAllowed(entry.address, allowedAddresses, port),
+    );
   } catch {
     return false;
   }
@@ -189,11 +96,26 @@ export async function resolveHostnameSSRF(hostname: string): Promise<boolean> {
 /**
  * SSRF Protection: Checks if a hostname/IP is a potentially dangerous internal target.
  * Blocks private IPs, localhost, cloud metadata IPs, and common internal hostnames.
+ *
+ * When `allowedAddresses` is provided, a literal host:port match exempts the
+ * target — used by admins to permit known-good internal services (self-hosted
+ * Ollama, Docker host, etc.) without disabling SSRF protection for every port
+ * on the same host.
+ *
  * @param hostname - The hostname or IP to check
+ * @param allowedAddresses - Optional admin exemption list of host:port pairs
  * @returns true if the target is blocked (SSRF risk), false if safe
  */
-export function isSSRFTarget(hostname: string): boolean {
+export function isSSRFTarget(
+  hostname: string,
+  allowedAddresses?: string[] | null,
+  port?: string | number | null,
+): boolean {
   const normalizedHost = hostname.toLowerCase().trim();
+
+  if (isAddressAllowed(normalizedHost, allowedAddresses, port)) {
+    return false;
+  }
 
   if (
     normalizedHost === 'localhost' ||
@@ -348,17 +270,33 @@ function hostnameMatches(inputHostname: string, allowedSpec: ParsedDomainSpec): 
 const HTTP_PROTOCOLS: SupportedProtocol[] = ['http:', 'https:'];
 const MCP_PROTOCOLS: SupportedProtocol[] = ['http:', 'https:', 'ws:', 'wss:'];
 
+function defaultPortForProtocol(protocol: SupportedProtocol | string | null): string {
+  if (protocol === 'http:' || protocol === 'ws:') return '80';
+  if (protocol === 'https:' || protocol === 'wss:') return '443';
+  return '';
+}
+
+function getEffectivePort(
+  protocol: SupportedProtocol | string | null,
+  port?: string | null,
+): string {
+  return normalizePort(port ? port : defaultPortForProtocol(protocol));
+}
+
 /**
  * Core domain validation logic with configurable protocol support.
  * SECURITY: When no allowedDomains is configured, blocks SSRF-prone targets.
  * @param domain - The domain to check (can include protocol/port)
  * @param allowedDomains - List of allowed domain patterns
  * @param supportedProtocols - Protocols to accept (others are rejected)
+ * @param allowedAddresses - Optional admin exemption list of host:port pairs
+ *   that bypass the private-IP block when no allowedDomains whitelist is active
  */
 async function isDomainAllowedCore(
   domain: string,
   allowedDomains: string[] | null | undefined,
   supportedProtocols: SupportedProtocol[],
+  allowedAddresses?: string[] | null,
 ): Promise<boolean> {
   const inputSpec = parseDomainSpec(domain);
   if (!inputSpec) {
@@ -372,12 +310,13 @@ async function isDomainAllowedCore(
 
   /** If no domain restrictions configured, block SSRF targets but allow all else */
   if (!Array.isArray(allowedDomains) || !allowedDomains.length) {
+    const effectivePort = getEffectivePort(inputSpec.protocol, inputSpec.port);
     /** SECURITY: Block SSRF-prone targets when no allowlist is configured */
-    if (isSSRFTarget(inputSpec.hostname)) {
+    if (isSSRFTarget(inputSpec.hostname, allowedAddresses, effectivePort)) {
       return false;
     }
     /** SECURITY: Resolve hostname and block if it points to a private/reserved IP */
-    if (await resolveHostnameSSRF(inputSpec.hostname)) {
+    if (await resolveHostnameSSRF(inputSpec.hostname, allowedAddresses, effectivePort)) {
       return false;
     }
     return true;
@@ -428,15 +367,17 @@ async function isDomainAllowedCore(
  * SECURITY: WebSocket protocols are NOT allowed per OpenAPI specification.
  * @param domain - The domain to check (can include protocol/port)
  * @param allowedDomains - List of allowed domain patterns
+ * @param allowedAddresses - Optional admin exemption list of host:port pairs
  */
 export async function isActionDomainAllowed(
   domain?: string | null,
   allowedDomains?: string[] | null,
+  allowedAddresses?: string[] | null,
 ): Promise<boolean> {
   if (!domain || typeof domain !== 'string') {
     return false;
   }
-  return isDomainAllowedCore(domain, allowedDomains, HTTP_PROTOCOLS);
+  return isDomainAllowedCore(domain, allowedDomains, HTTP_PROTOCOLS, allowedAddresses);
 }
 
 /**
@@ -480,6 +421,7 @@ export function extractMCPServerDomain(config: Record<string, unknown>): string 
 export async function isMCPDomainAllowed(
   config: Record<string, unknown>,
   allowedDomains?: string[] | null,
+  allowedAddresses?: string[] | null,
 ): Promise<boolean> {
   const domain = extractMCPServerDomain(config);
   const hasAllowlist = Array.isArray(allowedDomains) && allowedDomains.length > 0;
@@ -499,7 +441,7 @@ export async function isMCPDomainAllowed(
   }
 
   // Use MCP_PROTOCOLS (HTTP/HTTPS/WS/WSS) for MCP server validation
-  return isDomainAllowedCore(domain, allowedDomains, MCP_PROTOCOLS);
+  return isDomainAllowedCore(domain, allowedDomains, MCP_PROTOCOLS, allowedAddresses);
 }
 
 /**
@@ -514,8 +456,22 @@ export async function isMCPDomainAllowed(
  * @remarks `parseDomainSpec` normalizes `www.` prefixes, so both the input URL
  * and allowedDomains entries starting with `www.` are matched without that prefix.
  */
-export function isOAuthUrlAllowed(url: string, allowedDomains?: string[] | null): boolean {
-  if (!Array.isArray(allowedDomains) || allowedDomains.length === 0) {
+export function isOAuthUrlAllowed(
+  url: string,
+  allowedDomains?: string[] | null,
+  allowedAddresses?: string[] | null,
+): boolean {
+  /**
+   * Require an absolute URL with an explicit scheme. `parseDomainSpec` is
+   * lenient: it prepends `https://` to schemeless inputs so a value like
+   * `10.0.0.5/oauth` would otherwise short-circuit the trust-bypass via
+   * `allowedAddresses` and skip `validateOAuthUrl`'s strict `new URL(url)`
+   * parse-or-throw check, only to fail later in OAuth discovery with a less
+   * clear error. Falling through here lets the caller's strict parse run.
+   */
+  try {
+    new URL(url);
+  } catch {
     return false;
   }
 
@@ -524,28 +480,48 @@ export function isOAuthUrlAllowed(url: string, allowedDomains?: string[] | null)
     return false;
   }
 
-  for (const allowedDomain of allowedDomains) {
-    const allowedSpec = parseDomainSpec(allowedDomain);
-    if (!allowedSpec) {
-      continue;
-    }
-    if (!hostnameMatches(inputSpec.hostname, allowedSpec)) {
-      continue;
-    }
-    if (allowedSpec.protocol !== null) {
-      if (inputSpec.protocol === null || inputSpec.protocol !== allowedSpec.protocol) {
+  /**
+   * When `allowedDomains` is configured, treat it as the authoritative bound
+   * on which OAuth URLs may bypass the SSRF/DNS check. `allowedAddresses` is
+   * an SSRF-private-IP exemption, not a domain allowlist — letting it
+   * short-circuit here would broaden a strict admin-configured OAuth scope
+   * (e.g. an MCP server could advertise OAuth endpoints at any address the
+   * admin permitted for an unrelated reason like a self-hosted LLM).
+   */
+  if (Array.isArray(allowedDomains) && allowedDomains.length > 0) {
+    for (const allowedDomain of allowedDomains) {
+      const allowedSpec = parseDomainSpec(allowedDomain);
+      if (!allowedSpec) {
         continue;
       }
-    }
-    if (allowedSpec.explicitPort) {
-      if (!inputSpec.explicitPort || inputSpec.port !== allowedSpec.port) {
+      if (!hostnameMatches(inputSpec.hostname, allowedSpec)) {
         continue;
       }
+      if (allowedSpec.protocol !== null) {
+        if (inputSpec.protocol === null || inputSpec.protocol !== allowedSpec.protocol) {
+          continue;
+        }
+      }
+      if (allowedSpec.explicitPort) {
+        if (!inputSpec.explicitPort || inputSpec.port !== allowedSpec.port) {
+          continue;
+        }
+      }
+      return true;
     }
-    return true;
+    return false;
   }
 
-  return false;
+  /**
+   * No `allowedDomains` configured: the address exemption may permit specific
+   * private host:port pairs (matches the semantics of `validateOAuthUrl`'s
+   * downstream SSRF checks, which also consult `allowedAddresses`).
+   */
+  return isAddressAllowed(
+    inputSpec.hostname,
+    allowedAddresses,
+    getEffectivePort(inputSpec.protocol, inputSpec.port),
+  );
 }
 
 /** Matches ErrorTypes.INVALID_BASE_URL — string literal avoids build-time dependency on data-provider */
@@ -560,19 +536,30 @@ function throwInvalidBaseURL(message: string): never {
  * Throws if the URL is unparseable, uses a non-HTTP(S) scheme, targets a known SSRF hostname,
  * or DNS-resolves to a private IP.
  *
+ * When `allowedAddresses` is provided, hostname/IP + port pairs are matched
+ * against the list — admin-exempted private services bypass the SSRF block.
+ * This lets operators permit known-good private services (self-hosted Ollama,
+ * Docker host, etc.) without disabling protection for every port on the same host.
+ *
  * @note DNS rebinding: validation performs a single DNS lookup. An adversary controlling
  *   DNS with TTL=0 could respond with a public IP at validation time and a private IP
  *   at request time. This is an accepted limitation of point-in-time DNS checks.
  * @note Fail-open on DNS errors: a resolution failure here implies a failure at request
  *   time as well, matching {@link resolveHostnameSSRF} semantics.
  */
-export async function validateEndpointURL(url: string, endpoint: string): Promise<void> {
+export async function validateEndpointURL(
+  url: string,
+  endpoint: string,
+  allowedAddresses?: string[] | null,
+): Promise<void> {
   let hostname: string;
   let protocol: string;
+  let port: string;
   try {
     const parsed = new URL(url);
     hostname = parsed.hostname;
     protocol = parsed.protocol;
+    port = getEffectivePort(protocol, parsed.port);
   } catch {
     throwInvalidBaseURL(`Invalid base URL for ${endpoint}: unable to parse URL.`);
   }
@@ -581,11 +568,11 @@ export async function validateEndpointURL(url: string, endpoint: string): Promis
     throwInvalidBaseURL(`Invalid base URL for ${endpoint}: only HTTP and HTTPS are permitted.`);
   }
 
-  if (isSSRFTarget(hostname)) {
+  if (isSSRFTarget(hostname, allowedAddresses, port)) {
     throwInvalidBaseURL(`Base URL for ${endpoint} targets a restricted address.`);
   }
 
-  if (await resolveHostnameSSRF(hostname)) {
+  if (await resolveHostnameSSRF(hostname, allowedAddresses, port)) {
     throwInvalidBaseURL(`Base URL for ${endpoint} resolves to a restricted address.`);
   }
 }

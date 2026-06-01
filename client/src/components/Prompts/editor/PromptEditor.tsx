@@ -5,7 +5,7 @@ import rehypeKatex from 'rehype-katex';
 import supersub from 'remark-supersub';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
-import { EditIcon, FileText, Check } from 'lucide-react';
+import { EditIcon, Check } from 'lucide-react';
 import { Controller, useFormContext } from 'react-hook-form';
 import { TextareaAutosize, Button, TooltipAnchor } from '@librechat/client';
 import type { PluggableList } from 'unified';
@@ -44,14 +44,13 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
   return (
     <div className="flex max-h-[85vh] flex-col sm:max-h-[85vh]">
       <h2 className="sr-only">{localize('com_ui_control_bar')}</h2>
-      <header className="flex items-center justify-between rounded-t-xl border border-border-light bg-transparent p-2">
-        <div className="ml-1 flex items-center gap-2">
-          <FileText className="size-4 text-text-secondary" aria-hidden="true" />
-          <h3 className="text-sm font-semibold text-text-primary">
-            {localize('com_ui_prompt_text')}
-          </h3>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
+      <div
+        className={cn(
+          'relative w-full flex-1 overflow-auto rounded-xl border border-border-medium p-3 text-left transition-all duration-200 sm:p-4',
+          isEditing ? '' : 'cursor-pointer hover:bg-surface-tertiary',
+        )}
+      >
+        <div className="absolute right-2 top-2 z-10 flex items-center gap-1">
           <VariablesDropdown fieldName={name} />
           <TooltipAnchor
             description={isEditing ? localize('com_ui_save') : localize('com_ui_edit')}
@@ -70,20 +69,11 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
             }
           />
         </div>
-      </header>
-      <div
-        className={cn(
-          'relative w-full flex-1 overflow-auto rounded-b-xl border border-t-0 border-border-light p-3 text-left transition-all duration-200 sm:p-4',
-          isEditing
-            ? 'bg-surface-primary'
-            : 'cursor-pointer bg-surface-primary hover:bg-surface-secondary',
-        )}
-      >
         {!isEditing && (
           <button
             type="button"
             aria-label={localize('com_ui_edit')}
-            className="absolute inset-0 z-0 rounded-b-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+            className="absolute inset-0 z-0 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
             onClick={() => setIsEditing(true)}
           />
         )}
@@ -134,10 +124,10 @@ const PromptEditor: React.FC<Props> = ({ name, isEditing, setIsEditing }) => {
                     {field.value}
                   </ReactMarkdown>
                 )}
-                <div className="bg-surface-secondary/0 group-hover/preview:bg-surface-secondary/50 pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-all duration-200 group-hover/preview:opacity-100">
-                  <div className="flex items-center gap-2 rounded-lg bg-surface-primary px-3 py-1.5 shadow-md">
+                <div className="pointer-events-none sticky bottom-1/2 z-10 flex translate-y-1/2 items-center justify-center opacity-0 transition-all duration-200 group-hover/preview:opacity-100">
+                  <div className="flex items-center gap-2 rounded-lg border border-border-light bg-surface-primary px-3 py-1.5 shadow-md">
                     <EditIcon className="size-4 text-text-secondary" aria-hidden="true" />
-                    <span className="text-sm font-medium text-text-secondary">
+                    <span className="text-sm font-medium text-text-primary">
                       {localize('com_ui_click_to_edit')}
                     </span>
                   </div>

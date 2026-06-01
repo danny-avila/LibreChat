@@ -1,7 +1,12 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { Button, Input, Label, OGDialog, OGDialogTemplate } from '@librechat/client';
 import type { ConfigFieldDetail } from '~/common';
+import {
+  CONFIG_HTML_BLOCK_TAGS,
+  CONFIG_HTML_CLASS_ATTR,
+  createConfigHtmlSanitizer,
+} from '~/utils/configHtml';
 import { useLocalize } from '~/hooks';
 
 interface MCPConfigDialogProps {
@@ -34,6 +39,15 @@ export default function MCPConfigDialog({
   } = useForm<Record<string, string>>({
     defaultValues: initialValues,
   });
+
+  const sanitize = useMemo(
+    () =>
+      createConfigHtmlSanitizer({
+        allowedTags: CONFIG_HTML_BLOCK_TAGS,
+        allowedAttr: CONFIG_HTML_CLASS_ATTR,
+      }),
+    [],
+  );
 
   useEffect(() => {
     if (isOpen) {
@@ -83,7 +97,7 @@ export default function MCPConfigDialog({
                 {details.description && (
                   <p
                     className="text-xs text-text-secondary [&_a]:text-blue-500 [&_a]:hover:text-blue-600 dark:[&_a]:text-blue-400 dark:[&_a]:hover:text-blue-300"
-                    dangerouslySetInnerHTML={{ __html: details.description }}
+                    dangerouslySetInnerHTML={{ __html: sanitize(details.description) }}
                   />
                 )}
                 {errors[key] && <p className="text-xs text-red-500">{errors[key]?.message}</p>}

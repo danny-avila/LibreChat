@@ -11,6 +11,7 @@ import {
   LocalStorageKeys,
   SettingDefinition,
   agentParamSettings,
+  applyModelAwareDefaults,
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { AgentForm, AgentModelPanelProps, StringOption } from '~/common';
@@ -82,9 +83,14 @@ export default function ModelPanel({
       agentParamSettings[combinedKey] ?? agentParamSettings[overriddenEndpointKey] ?? [];
     const overriddenParams = endpointsConfig[provider]?.customParams?.paramDefinitions ?? [];
     const overriddenParamsMap = keyBy(overriddenParams, 'key');
-    return defaultParams
-      .filter((param) => param != null)
-      .map((param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param);
+    const modelAwareParams = applyModelAwareDefaults(
+      defaultParams.filter((param) => param != null),
+      overriddenEndpointKey,
+      model ?? '',
+    );
+    return modelAwareParams.map(
+      (param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param,
+    );
   }, [endpointType, endpointsConfig, model, provider]);
 
   const setOption = (optionKey: keyof t.AgentModelParameters) => (value: t.AgentParameterValue) => {
@@ -97,8 +103,8 @@ export default function ModelPanel({
   };
 
   return (
-    <div className="mb-1 flex h-full min-h-[50vh] w-full flex-col gap-2 text-sm">
-      <div className="model-panel relative flex flex-col items-center px-16 py-4 text-center">
+    <div className="mb-1 flex w-full flex-col gap-2 text-sm">
+      <div className="model-panel relative flex flex-col items-center px-16 pt-2 text-center">
         <div className="absolute left-0 top-4">
           <button
             type="button"

@@ -206,7 +206,9 @@ const AgentHandoffs: React.FC<AgentHandoffsProps> = ({ field, currentAgentId }) 
                         placeholder={localize('com_ui_agent_handoff_description_placeholder')}
                         value={edge.description || ''}
                         onChange={(e) =>
-                          updateHandoffDetailsAt(idx, { description: e.target.value })
+                          updateHandoffDetailsAt(idx, {
+                            description: e.target.value === '' ? undefined : e.target.value,
+                          })
                         }
                         className="mt-1 h-8 text-sm"
                       />
@@ -223,7 +225,11 @@ const AgentHandoffs: React.FC<AgentHandoffsProps> = ({ field, currentAgentId }) 
                         id={`handoff-prompt-${idx}`}
                         placeholder={localize('com_ui_agent_handoff_prompt_placeholder')}
                         value={typeof edge.prompt === 'string' ? edge.prompt : ''}
-                        onChange={(e) => updateHandoffDetailsAt(idx, { prompt: e.target.value })}
+                        onChange={(e) =>
+                          updateHandoffDetailsAt(idx, {
+                            prompt: e.target.value === '' ? undefined : e.target.value,
+                          })
+                        }
                         className="mt-1 h-20 resize-none text-sm"
                       />
                     </div>
@@ -241,7 +247,9 @@ const AgentHandoffs: React.FC<AgentHandoffsProps> = ({ field, currentAgentId }) 
                           placeholder={localize('com_ui_agent_handoff_prompt_key_placeholder')}
                           value={edge.promptKey || ''}
                           onChange={(e) =>
-                            updateHandoffDetailsAt(idx, { promptKey: e.target.value })
+                            updateHandoffDetailsAt(idx, {
+                              promptKey: e.target.value === '' ? undefined : e.target.value,
+                            })
                           }
                           className="mt-1 h-8 text-sm"
                         />

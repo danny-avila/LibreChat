@@ -128,6 +128,51 @@ describe('AttachFileChat', () => {
       renderComponent({ endpoint: EModelEndpoint.agents, agent_id: 'agent-2' });
       expect(mockAttachFileMenuProps.endpointType).toBe(EModelEndpoint.custom);
     });
+
+    it('falls back to agentsMap provider when fetched agent omits provider', () => {
+      mockAgentsMap = {
+        'agent-1': { provider: EModelEndpoint.openAI, model_parameters: {} } as Partial<Agent>,
+      };
+      mockAgentQueryData = {} as Partial<Agent>;
+      renderComponent({ endpoint: EModelEndpoint.agents, agent_id: 'agent-1' });
+      expect(mockAttachFileMenuProps.endpointType).toBe(EModelEndpoint.openAI);
+    });
+  });
+
+  describe('useResponsesApi resolution for agents', () => {
+    it('passes useResponsesApi from fetched agent model parameters', () => {
+      mockAgentQueryData = {
+        provider: EModelEndpoint.azureOpenAI,
+        model_parameters: { useResponsesApi: true },
+      } as Partial<Agent>;
+      renderComponent({ endpoint: EModelEndpoint.agents, agent_id: 'agent-1' });
+      expect(mockAttachFileMenuProps.useResponsesApi).toBe(true);
+    });
+
+    it('falls back to agentsMap model parameters when fetched agent omits them', () => {
+      mockAgentsMap = {
+        'agent-1': {
+          provider: EModelEndpoint.azureOpenAI,
+          model_parameters: { useResponsesApi: true },
+        } as Partial<Agent>,
+      };
+      mockAgentQueryData = { provider: EModelEndpoint.azureOpenAI } as Partial<Agent>;
+      renderComponent({ endpoint: EModelEndpoint.agents, agent_id: 'agent-1' });
+      expect(mockAttachFileMenuProps.useResponsesApi).toBe(true);
+    });
+
+    it('preserves an explicit conversation useResponsesApi false override', () => {
+      mockAgentQueryData = {
+        provider: EModelEndpoint.azureOpenAI,
+        model_parameters: { useResponsesApi: true },
+      } as Partial<Agent>;
+      renderComponent({
+        endpoint: EModelEndpoint.agents,
+        agent_id: 'agent-1',
+        useResponsesApi: false,
+      });
+      expect(mockAttachFileMenuProps.useResponsesApi).toBe(false);
+    });
   });
 
   describe('endpointType resolution for non-agents', () => {

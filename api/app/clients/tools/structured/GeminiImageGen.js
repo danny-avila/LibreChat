@@ -3,8 +3,8 @@ const sharp = require('sharp');
 const { v4 } = require('uuid');
 const { ProxyAgent } = require('undici');
 const { GoogleGenAI } = require('@google/genai');
-const { tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
+const { tool } = require('@librechat/agents/langchain/tools');
 const { ContentTypes, EImageOutputType } = require('librechat-data-provider');
 const {
   geminiToolkit,

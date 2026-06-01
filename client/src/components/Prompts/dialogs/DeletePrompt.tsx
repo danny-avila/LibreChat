@@ -31,13 +31,14 @@ const DeleteConfirmDialog = ({
             <Button
               variant="destructive"
               size="icon"
+              className="size-9"
               aria-label={localize('com_ui_delete')}
               disabled={disabled}
               onClick={(e) => {
                 e.stopPropagation();
               }}
             >
-              <Trash2 className="size-4" aria-hidden="true" />
+              <Trash2 className="size-5" aria-hidden="true" />
             </Button>
           }
         />

@@ -2,9 +2,11 @@ import {
   Verbosity,
   ImageDetail,
   ThinkingLevel,
+  ThinkingDisplay,
   EModelEndpoint,
   openAISettings,
   googleSettings,
+  Providers,
   ReasoningEffort,
   AnthropicEffort,
   ReasoningSummary,
@@ -462,7 +464,26 @@ const anthropic: Record<string, SettingDefinition> = {
       [AnthropicEffort.low]: 'com_ui_low',
       [AnthropicEffort.medium]: 'com_ui_medium',
       [AnthropicEffort.high]: 'com_ui_high',
+      [AnthropicEffort.xhigh]: 'com_ui_xhigh',
       [AnthropicEffort.max]: 'com_ui_max',
+    },
+    optionType: 'model',
+    columnSpan: 4,
+  },
+  thinkingDisplay: {
+    key: 'thinkingDisplay',
+    label: 'com_endpoint_anthropic_thinking_display',
+    labelCode: true,
+    description: 'com_endpoint_anthropic_thinking_display_desc',
+    descriptionCode: true,
+    type: 'enum',
+    default: anthropicSettings.thinkingDisplay.default,
+    component: 'slider',
+    options: anthropicSettings.thinkingDisplay.options,
+    enumMappings: {
+      [ThinkingDisplay.auto]: 'com_ui_auto',
+      [ThinkingDisplay.summarized]: 'com_ui_summarized',
+      [ThinkingDisplay.omitted]: 'com_ui_omitted',
     },
     optionType: 'model',
     columnSpan: 4,
@@ -771,6 +792,8 @@ const openAI: SettingsConfiguration = [
   librechat.fileTokenLimit,
 ];
 
+const openRouter: SettingsConfiguration = [...openAI, anthropic.promptCache];
+
 const openAICol1: SettingsConfiguration = [
   baseDefinitions.model as SettingDefinition,
   librechat.modelLabel,
@@ -809,6 +832,7 @@ const anthropicConfig: SettingsConfiguration = [
   anthropic.thinking,
   anthropic.thinkingBudget,
   anthropic.effort,
+  anthropic.thinkingDisplay,
   anthropic.web_search,
   librechat.fileTokenLimit,
 ];
@@ -830,6 +854,7 @@ const anthropicCol2: SettingsConfiguration = [
   anthropic.thinking,
   anthropic.thinkingBudget,
   anthropic.effort,
+  anthropic.thinkingDisplay,
   anthropic.web_search,
   librechat.fileTokenLimit,
 ];
@@ -849,6 +874,7 @@ const bedrockAnthropic: SettingsConfiguration = [
   anthropic.thinking,
   anthropic.thinkingBudget,
   anthropic.effort,
+  anthropic.thinkingDisplay,
   librechat.fileTokenLimit,
 ];
 
@@ -907,6 +933,7 @@ const bedrockAnthropicCol2: SettingsConfiguration = [
   anthropic.thinking,
   anthropic.thinkingBudget,
   anthropic.effort,
+  anthropic.thinkingDisplay,
   librechat.fileTokenLimit,
 ];
 
@@ -1026,6 +1053,7 @@ export const paramSettings: Record<string, SettingsConfiguration | undefined> = 
   [EModelEndpoint.openAI]: openAI,
   [EModelEndpoint.azureOpenAI]: openAI,
   [EModelEndpoint.custom]: openAI,
+  [Providers.OPENROUTER]: openRouter,
   [EModelEndpoint.anthropic]: anthropicConfig,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Anthropic}`]: bedrockAnthropic,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.MistralAI}`]: bedrockMistral,
@@ -1062,6 +1090,10 @@ export const presetSettings: Record<
   [EModelEndpoint.openAI]: openAIColumns,
   [EModelEndpoint.azureOpenAI]: openAIColumns,
   [EModelEndpoint.custom]: openAIColumns,
+  [Providers.OPENROUTER]: {
+    col1: openAICol1,
+    col2: [...openAICol2, anthropic.promptCache],
+  },
   [EModelEndpoint.anthropic]: {
     col1: anthropicCol1,
     col2: anthropicCol2,
@@ -1109,3 +1141,23 @@ export const agentParamSettings: Record<string, SettingsConfiguration | undefine
   }
   return acc;
 }, {});
+
+/**
+ * Resolves model-aware defaults for a settings configuration before rendering.
+ * Google's `maxOutputTokens` default depends on the selected Gemini model so that
+ * current models (2.5 and 3+) surface their 64K output limit instead of the legacy 8K value.
+ */
+export function applyModelAwareDefaults(
+  settings: SettingsConfiguration,
+  endpoint: string,
+  model?: string,
+): SettingsConfiguration {
+  if (endpoint !== EModelEndpoint.google || !model) {
+    return settings;
+  }
+  return settings.map((setting) =>
+    setting.key === 'maxOutputTokens'
+      ? { ...setting, default: googleSettings.maxOutputTokens.reset(model) }
+      : setting,
+  );
+}

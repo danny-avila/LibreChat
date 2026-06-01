@@ -1,14 +1,18 @@
+import jwt from 'jsonwebtoken';
 import { logger, encryptV2, decryptV2 } from '@librechat/data-schemas';
 import type { OAuthTokens, OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { TokenMethods, IToken } from '@librechat/data-schemas';
 import type { MCPOAuthTokens, ExtendedOAuthTokens, OAuthMetadata } from './types';
+import { isInvalidClientMessage } from '~/mcp/utils';
 import { isSystemUserId } from '~/mcp/enum';
 
 export class ReauthenticationRequiredError extends Error {
-  constructor(serverName: string, reason: 'expired' | 'missing') {
-    super(
-      `Re-authentication required for "${serverName}": access token ${reason} and no refresh token available`,
-    );
+  constructor(serverName: string, reason: 'expired' | 'missing' | 'invalid_client') {
+    const detail =
+      reason === 'invalid_client'
+        ? 'stored client registration is no longer valid'
+        : `access token ${reason} and no refresh token available`;
+    super(`Re-authentication required for "${serverName}": ${detail}`);
     this.name = 'ReauthenticationRequiredError';
   }
 }
@@ -47,6 +51,35 @@ interface GetTokensParams {
   ) => Promise<MCPOAuthTokens>;
   createToken?: TokenMethods['createToken'];
   updateToken?: TokenMethods['updateToken'];
+  /** Enables cleanup of stale client registration and refresh token on invalid_client errors during refresh. */
+  deleteTokens?: TokenMethods['deleteTokens'];
+}
+
+/**
+ * Reads the `exp` claim (RFC 7519 §4.1.4 / RFC 9068) from a JWT-format access
+ * token, returned as epoch milliseconds. Returns null for opaque (non-JWT)
+ * tokens or when no usable `exp` is present. The signature is intentionally
+ * not verified — the protected resource server validates the token; here we
+ * only read its self-declared expiry to avoid a lossy default.
+ */
+function getJwtAccessTokenExpiry(accessToken?: string): number | null {
+  if (!accessToken) {
+    return null;
+  }
+  try {
+    const decoded = jwt.decode(accessToken);
+    if (
+      decoded != null &&
+      typeof decoded !== 'string' &&
+      typeof decoded.exp === 'number' &&
+      Number.isFinite(decoded.exp)
+    ) {
+      return decoded.exp * 1000;
+    }
+  } catch {
+    /* Not a JWT or malformed — fall through to other expiry sources. */
+  }
+  return null;
 }
 
 export class MCPTokenStorage {
@@ -100,9 +133,23 @@ export class MCPTokenStorage {
         expiresInSeconds = tokens.expires_in;
         accessTokenExpiry = new Date(Date.now() + tokens.expires_in * 1000);
       } else {
-        logger.debug(`${logPrefix} No expiry provided, using default`);
-        expiresInSeconds = defaultTTL;
-        accessTokenExpiry = new Date(Date.now() + defaultTTL * 1000);
+        /**
+         * RFC 6749 §5.1 makes `expires_in` only RECOMMENDED, so some providers
+         * (e.g. Salesforce) omit it. When the access token is a JWT (RFC 9068),
+         * its `exp` claim is the authoritative lifetime — prefer it over the
+         * 365-day default so the token is refreshed on time rather than being
+         * treated as valid for a year and never refreshed.
+         */
+        const jwtExpiryMs = getJwtAccessTokenExpiry(tokens.access_token);
+        if (jwtExpiryMs != null && jwtExpiryMs > Date.now()) {
+          logger.debug(`${logPrefix} Using JWT exp claim: ${new Date(jwtExpiryMs).toISOString()}`);
+          accessTokenExpiry = new Date(jwtExpiryMs);
+          expiresInSeconds = Math.floor((jwtExpiryMs - Date.now()) / 1000);
+        } else {
+          logger.debug(`${logPrefix} No expiry provided, using default`);
+          expiresInSeconds = defaultTTL;
+          accessTokenExpiry = new Date(Date.now() + defaultTTL * 1000);
+        }
       }
 
       logger.debug(`${logPrefix} Calculated expiry date: ${accessTokenExpiry.toISOString()}`);
@@ -254,6 +301,7 @@ export class MCPTokenStorage {
     findToken,
     createToken,
     updateToken,
+    deleteTokens,
     refreshTokens,
   }: GetTokensParams): Promise<MCPOAuthTokens | null> {
     const logPrefix = this.getLogPrefix(userId, serverName);
@@ -385,9 +433,32 @@ export class MCPTokenStorage {
           // Check if it's an unauthorized_client error (refresh not supported)
           const errorMessage =
             refreshError instanceof Error ? refreshError.message : String(refreshError);
-          if (errorMessage.includes('unauthorized_client')) {
+          if (errorMessage.toLowerCase().includes('unauthorized_client')) {
             logger.info(
               `${logPrefix} Server does not support refresh tokens for this client. New authentication required.`,
+            );
+          } else if (isInvalidClientMessage(errorMessage)) {
+            if (deleteTokens) {
+              logger.info(
+                `${logPrefix} Client registration rejected during token refresh, attempting to clear stale registration and refresh token`,
+              );
+              const results = await Promise.allSettled([
+                MCPTokenStorage.deleteClientRegistration({ userId, serverName, deleteTokens }),
+                deleteTokens({
+                  userId,
+                  type: 'mcp_oauth_refresh',
+                  identifier: `${identifier}:refresh`,
+                }),
+              ]);
+              for (const r of results) {
+                if (r.status === 'rejected') {
+                  logger.warn(`${logPrefix} Failed to clear stale token data`, r.reason);
+                }
+              }
+              throw new ReauthenticationRequiredError(serverName, 'invalid_client');
+            }
+            logger.warn(
+              `${logPrefix} Client registration rejected during token refresh but deleteTokens not available — stale registration cannot be cleared`,
             );
           }
           return null;
@@ -474,6 +545,26 @@ export class MCPTokenStorage {
       clientInfo,
       clientMetadata,
     };
+  }
+
+  /** Deletes only the stored client registration for a specific user and server */
+  static async deleteClientRegistration({
+    userId,
+    serverName,
+    deleteTokens,
+  }: {
+    userId: string;
+    serverName: string;
+    deleteTokens: TokenMethods['deleteTokens'];
+  }): Promise<void> {
+    const identifier = `mcp:${serverName}`;
+    await deleteTokens({
+      userId,
+      type: 'mcp_oauth_client',
+      identifier: `${identifier}:client`,
+    });
+    const logPrefix = this.getLogPrefix(userId, serverName);
+    logger.debug(`${logPrefix} Cleared stored client registration`);
   }
 
   /**

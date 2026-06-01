@@ -14,7 +14,11 @@ const {
   isMCPInspectionFailedError,
 } = require('@librechat/api');
 const { Constants, MCPServerUserInputSchema } = require('librechat-data-provider');
-const { resolveConfigServers, resolveAllMcpConfigs } = require('~/server/services/MCP');
+const {
+  resolveConfigServers,
+  resolveMcpConfigNames,
+  resolveAllMcpConfigs,
+} = require('~/server/services/MCP');
 const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
 const { getMCPManager, getMCPServersRegistry } = require('~/config');
 
@@ -78,12 +82,20 @@ const getMCPTools = async (req, res) => {
     const mcpManager = getMCPManager();
     const mcpServers = {};
 
-    const cachePromises = configuredServers.map((serverName) =>
-      getMCPServerTools(userId, serverName).then((tools) => ({ serverName, tools })),
-    );
-    const cacheResults = await Promise.all(cachePromises);
-
     const serverToolsMap = new Map();
+    const cacheResults = await Promise.all(
+      configuredServers.map(async (serverName) => {
+        try {
+          return {
+            serverName,
+            tools: await getMCPServerTools(userId, serverName),
+          };
+        } catch (error) {
+          logger.error(`[getMCPTools] Error fetching cached tools for ${serverName}:`, error);
+          return { serverName, tools: null };
+        }
+      }),
+    );
     for (const { serverName, tools } of cacheResults) {
       if (tools) {
         serverToolsMap.set(serverName, tools);
@@ -205,11 +217,13 @@ const createMCPServerController = async (req, res) => {
         errors: validation.error.errors,
       });
     }
+    const reservedServerNames = await resolveMcpConfigNames(req);
     const result = await getMCPServersRegistry().addServer(
       'temp_server_name',
       validation.data,
       'DB',
       userId,
+      reservedServerNames,
     );
     res.status(201).json({
       serverName: result.serverName,

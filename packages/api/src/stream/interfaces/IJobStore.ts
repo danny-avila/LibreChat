@@ -98,6 +98,16 @@ export interface UsageMetadata {
    * Present for Claude models. Mutually exclusive with input_token_details.
    */
   cache_read_input_tokens?: number;
+  /**
+   * Breakdown of output token counts. Per the LangChain core contract,
+   * `output_tokens` is the sum of all output token types — these fields
+   * are subsets of `output_tokens`, *not* additional charges.
+   */
+  output_token_details?: {
+    /** Reasoning/thinking tokens generated as chain-of-thought (o1, Gemini thinking, etc.) */
+    reasoning?: number;
+    audio?: number;
+  };
 }
 
 /**
@@ -170,6 +180,18 @@ export interface IJobStore {
 
   /** Cleanup expired jobs */
   cleanup(): Promise<number>;
+
+  /**
+   * Record generation activity for a job (e.g. a chunk was emitted), refreshing
+   * its "last active" timestamp so the stale-running-job failsafe does not reap a
+   * stream that is still producing output.
+   *
+   * In-memory: updates an internal last-activity timestamp used by cleanup().
+   * Redis: no-op — the running-job TTL is already refreshed on each appendChunk.
+   *
+   * @param streamId - The stream identifier
+   */
+  recordActivity?(streamId: string): void;
 
   /** Get total job count */
   getJobCount(): Promise<number>;
@@ -337,11 +359,14 @@ export interface IEventTransport {
   /** Listen for all subscribers leaving */
   onAllSubscribersLeft(streamId: string, callback: () => void): void;
 
-  /** Reset publish sequence counter for a stream (used during full stream cleanup) */
-  resetSequence?(streamId: string): void;
-
-  /** Advance subscriber reorder buffer to match publisher sequence (cross-replica safe: doesn't reset publisher counter) */
-  syncReorderBuffer?(streamId: string): void;
+  /**
+   * Advance subscriber reorder buffer to match publisher sequence (cross-replica safe).
+   * @param earlyReplayCount - Number of events replayed from earlyEventBuffer (same-replica).
+   *   Pending entries with seq < earlyReplayCount are duplicates and are pruned; entries at or
+   *   above are live chunks that arrived during the async GET window and are preserved.
+   *   When 0/undefined (cross-replica), all pending entries are treated as live.
+   */
+  syncReorderBuffer?(streamId: string, earlyReplayCount?: number): void | Promise<void>;
 
   /** Cleanup transport resources for a specific stream */
   cleanup(streamId: string): void;

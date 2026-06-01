@@ -7,9 +7,9 @@ import {
   estimateOpenAIImageTokens,
   estimateAnthropicImageTokens,
 } from '@librechat/agents';
+import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { MessageContentComplex } from '@librechat/agents';
 import type { Agent, TMessage } from 'librechat-data-provider';
-import type { BaseMessage } from '@langchain/core/messages';
 import type { ServerRequest } from '~/types';
 import Tokenizer from '~/utils/tokenizer';
 import { logAxiosError } from '~/utils';

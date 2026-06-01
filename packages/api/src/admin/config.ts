@@ -40,7 +40,7 @@ export function getTopLevelSection(fieldPath: string): string {
  * - `"interface.mcpServers.use"` → true (permission sub-key)
  * - `"interface.mcpServers.placeholder"` → false (UI-only sub-key)
  * - `"interface.peoplePicker.users"` → true (all peoplePicker sub-keys are permissions)
- * - `"interface.endpointsMenu"` → false (UI-only field)
+ * - `"interface.modelSelect"` → false (UI-only field)
  */
 function isInterfacePermissionPath(fieldPath: string): boolean {
   const parts = fieldPath.split('.');
@@ -108,6 +108,7 @@ export interface AdminConfigDeps {
     role?: string;
     userId?: string;
     tenantId?: string;
+    baseOnly?: boolean;
   }) => Promise<AppConfig>;
   /** Invalidate all config-related caches after a mutation. */
   invalidateConfigCaches?: (tenantId?: string) => Promise<void>;
@@ -211,8 +212,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         return res.status(501).json({ error: 'Base config endpoint not configured' });
       }
 
+      const baseOnly = (req.query as Record<string, unknown>).baseOnly === 'true';
       const appConfig = await getAppConfig({
         tenantId: user.tenantId,
+        baseOnly,
       });
       return res.status(200).json({ config: appConfig });
     } catch (error) {

@@ -12,6 +12,7 @@ import { MarketplaceProvider } from '~/components/Agents/MarketplaceContext';
 import AgentMarketplace from '~/components/Agents/Marketplace';
 import { OAuthSuccess, OAuthError } from '~/components/OAuth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
+import WithRum from '~/lib/rum/WithRum';
 import RouteErrorBoundary from './RouteErrorBoundary';
 import StartupLayout from './Layouts/Startup';
 import LoginLayout from './Layouts/Login';
@@ -23,10 +24,22 @@ import Root from './Root';
 
 const AuthLayout = () => (
   <AuthContextProvider>
-    <Outlet />
+    <WithRum>
+      <Outlet />
+    </WithRum>
     <ApiErrorWatcher />
   </AuthContextProvider>
 );
+
+const loadInlinePromptsView = () =>
+  import('~/components/Prompts/layouts/InlinePromptsView').then((m) => ({
+    Component: m.default,
+  }));
+
+const loadSkillsView = () =>
+  import('~/components/Skills/layouts/SkillsView').then((m) => ({
+    Component: m.default,
+  }));
 
 const baseEl = document.querySelector('base');
 const baseHref = baseEl?.getAttribute('href') || '/';
@@ -110,6 +123,34 @@ export const router = createBrowserRouter(
             {
               path: 'search',
               element: <Search />,
+            },
+            {
+              path: 'prompts',
+              element: <Navigate to="/prompts/new" replace={true} />,
+            },
+            {
+              path: 'prompts/new',
+              lazy: loadInlinePromptsView,
+            },
+            {
+              path: 'prompts/:promptId',
+              lazy: loadInlinePromptsView,
+            },
+            {
+              path: 'skills',
+              lazy: loadSkillsView,
+            },
+            {
+              path: 'skills/new',
+              lazy: loadSkillsView,
+            },
+            {
+              path: 'skills/:skillId',
+              lazy: loadSkillsView,
+            },
+            {
+              path: 'skills/:skillId/edit',
+              lazy: loadSkillsView,
             },
             {
               path: 'agents',

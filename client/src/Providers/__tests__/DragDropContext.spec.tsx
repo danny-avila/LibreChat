@@ -100,6 +100,55 @@ describe('DragDropContext endpointType resolution', () => {
       const { result } = renderHook(() => useDragDropContext(), { wrapper });
       expect(result.current.endpointType).toBe(EModelEndpoint.custom);
     });
+
+    it('falls back to agentsMap provider when agentData omits provider', () => {
+      mockConversation = { endpoint: EModelEndpoint.agents, agent_id: 'agent-1' };
+      mockAgentsMap = {
+        'agent-1': { provider: EModelEndpoint.openAI, model_parameters: {} } as Partial<Agent>,
+      };
+      mockAgentQueryData = {} as Partial<Agent>;
+      const { result } = renderHook(() => useDragDropContext(), { wrapper });
+      expect(result.current.endpointType).toBe(EModelEndpoint.openAI);
+    });
+  });
+
+  describe('useResponsesApi resolution for agents', () => {
+    it('uses fetched agent model parameters when conversation does not override them', () => {
+      mockConversation = { endpoint: EModelEndpoint.agents, agent_id: 'agent-1' };
+      mockAgentQueryData = {
+        provider: EModelEndpoint.azureOpenAI,
+        model_parameters: { useResponsesApi: true },
+      } as Partial<Agent>;
+      const { result } = renderHook(() => useDragDropContext(), { wrapper });
+      expect(result.current.useResponsesApi).toBe(true);
+    });
+
+    it('falls back to agentsMap model parameters when fetched agent omits them', () => {
+      mockConversation = { endpoint: EModelEndpoint.agents, agent_id: 'agent-1' };
+      mockAgentsMap = {
+        'agent-1': {
+          provider: EModelEndpoint.azureOpenAI,
+          model_parameters: { useResponsesApi: true },
+        } as Partial<Agent>,
+      };
+      mockAgentQueryData = { provider: EModelEndpoint.azureOpenAI } as Partial<Agent>;
+      const { result } = renderHook(() => useDragDropContext(), { wrapper });
+      expect(result.current.useResponsesApi).toBe(true);
+    });
+
+    it('preserves an explicit conversation useResponsesApi false override', () => {
+      mockConversation = {
+        endpoint: EModelEndpoint.agents,
+        agent_id: 'agent-1',
+        useResponsesApi: false,
+      };
+      mockAgentQueryData = {
+        provider: EModelEndpoint.azureOpenAI,
+        model_parameters: { useResponsesApi: true },
+      } as Partial<Agent>;
+      const { result } = renderHook(() => useDragDropContext(), { wrapper });
+      expect(result.current.useResponsesApi).toBe(false);
+    });
   });
 
   describe('agents endpoint without provider', () => {

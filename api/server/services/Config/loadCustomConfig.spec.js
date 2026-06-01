@@ -8,7 +8,19 @@ jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
   return {
     ...actual,
-    paramSettings: { foo: {}, bar: {}, custom: {} },
+    paramSettings: {
+      foo: {},
+      bar: {},
+      custom: {},
+      openrouter: [
+        {
+          key: 'promptCache',
+          type: 'boolean',
+          component: 'switch',
+          default: true,
+        },
+      ],
+    },
     agentParamSettings: {
       custom: [],
       google: [
@@ -195,7 +207,8 @@ describe('loadCustomConfig', () => {
     };
     process.env.CONFIG_PATH = 'validConfig.yaml';
     loadYaml.mockReturnValueOnce(mockConfig);
-    await loadCustomConfig();
+    const result = await loadCustomConfig();
+    expect(result).toEqual(mockConfig);
   });
 
   it('should log the loaded custom config', async () => {
@@ -297,7 +310,7 @@ describe('loadCustomConfig', () => {
     it('throws an error when defaultParamsEndpoint is not provided', async () => {
       const malformedCustomParams = { defaultParamsEndpoint: undefined };
       await expect(loadCustomParams(malformedCustomParams)).rejects.toThrow(
-        'defaultParamsEndpoint of "Google" endpoint is invalid. Valid options are foo, bar, custom, google',
+        'defaultParamsEndpoint of "Google" endpoint is invalid. Valid options are foo, bar, custom, openrouter, google',
       );
     });
 
@@ -337,6 +350,110 @@ describe('loadCustomConfig', () => {
           optionType: 'custom',
           placeholder: '',
           type: 'string',
+        },
+      ]);
+    });
+
+    it('adds OpenRouter promptCache defaults when custom endpoint name is OpenRouter', async () => {
+      const openRouterConfig = {
+        version: '1.0',
+        cache: false,
+        endpoints: {
+          custom: [
+            {
+              name: 'OpenRouter',
+              apiKey: 'user_provided',
+              baseURL: 'https://proxy.example.com/v1',
+              models: {
+                default: ['anthropic/claude-sonnet-4.6'],
+              },
+            },
+          ],
+        },
+      };
+      loadYaml.mockReturnValue(openRouterConfig);
+
+      const parsedConfig = await loadCustomConfig();
+      expect(parsedConfig.endpoints.custom[0].customParams).toEqual({
+        defaultParamsEndpoint: 'openrouter',
+        paramDefinitions: [
+          {
+            columnSpan: 1,
+            component: 'switch',
+            default: true,
+            key: 'promptCache',
+            label: 'promptCache',
+            optionType: 'custom',
+            type: 'boolean',
+          },
+        ],
+      });
+    });
+
+    it('adds OpenRouter promptCache defaults when custom endpoint URL is OpenRouter', async () => {
+      const openRouterConfig = {
+        version: '1.0',
+        cache: false,
+        endpoints: {
+          custom: [
+            {
+              name: 'Company Gateway',
+              apiKey: 'user_provided',
+              baseURL: 'https://openrouter.ai/api/v1',
+              models: {
+                default: ['anthropic/claude-sonnet-4.6'],
+              },
+            },
+          ],
+        },
+      };
+      loadYaml.mockReturnValue(openRouterConfig);
+
+      const parsedConfig = await loadCustomConfig();
+      expect(parsedConfig.endpoints.custom[0].customParams).toMatchObject({
+        defaultParamsEndpoint: 'openrouter',
+        paramDefinitions: [
+          {
+            default: true,
+            key: 'promptCache',
+          },
+        ],
+      });
+    });
+
+    it('preserves explicit OpenRouter promptCache defaults', async () => {
+      const openRouterConfig = {
+        version: '1.0',
+        cache: false,
+        endpoints: {
+          custom: [
+            {
+              name: 'OpenRouter',
+              apiKey: 'user_provided',
+              baseURL: 'https://openrouter.ai/api/v1',
+              models: {
+                default: ['anthropic/claude-sonnet-4.6'],
+              },
+              customParams: {
+                defaultParamsEndpoint: 'openrouter',
+                paramDefinitions: [{ key: 'promptCache', default: false }],
+              },
+            },
+          ],
+        },
+      };
+      loadYaml.mockReturnValue(openRouterConfig);
+
+      const parsedConfig = await loadCustomConfig();
+      expect(parsedConfig.endpoints.custom[0].customParams.paramDefinitions).toEqual([
+        {
+          columnSpan: 1,
+          component: 'switch',
+          default: false,
+          key: 'promptCache',
+          label: 'promptCache',
+          optionType: 'custom',
+          type: 'boolean',
         },
       ]);
     });

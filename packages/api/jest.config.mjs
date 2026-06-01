@@ -37,6 +37,7 @@ export default {
   //     lines: 57,
   //   },
   // },
+  setupFiles: ['<rootDir>/jest.setup.cjs'],
   maxWorkers: '50%',
   restoreMocks: true,
   testTimeout: 15000,
