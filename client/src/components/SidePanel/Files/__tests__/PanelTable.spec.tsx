@@ -91,6 +91,12 @@ jest.mock('../PanelFileCell', () => ({ row }: { row: { original: TFile } }) => (
   <span>{row.original?.filename}</span>
 ));
 
+// NJ: We added Recoil to our side panel, but we want to ignore it for these LC tests
+jest.mock('recoil', () => ({
+  atom: jest.fn(),
+  useRecoilState: () => [false, jest.fn()],
+}));
+
 function makeFile(overrides: Partial<TFile> = {}): TFile {
   return {
     user: 'user-1',

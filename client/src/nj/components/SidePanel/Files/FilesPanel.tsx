@@ -6,6 +6,9 @@ import type { TFile } from 'librechat-data-provider';
 import icons from '@uswds/uswds/img/sprite.svg';
 import { groupFiles } from '~/nj/components/SidePanel/Files/filesLogic';
 import FilesSection from '~/nj/components/SidePanel/Files/FilesSection';
+import { useRecoilState } from 'recoil';
+import { atomWithLocalStorage } from '~/store/utils';
+import FilesPanelSplash from '~/nj/components/SidePanel/Files/FilesPanelSplash';
 
 /**
  * Our replacement for the built-in LibreChat files panel.
@@ -20,6 +23,9 @@ export default function FilesPanel({
   files: TFile[];
   handleFileClick: (file: TFile) => void;
 }) {
+  const [showSplashPage, setShowSplashPage] = useRecoilState(
+    atomWithLocalStorage('filesPanelSplashPage', true),
+  );
   const [filenameFilter, setFilenameFilter] = useState('');
 
   const filteredFiles = filenameFilter
@@ -32,6 +38,10 @@ export default function FilesPanel({
   const hasTodayFiles = groupedFiles.today.length > 0;
   const hasYesterdayFiles = groupedFiles.yesterday.length > 0;
   const hasPreviousFiles = groupedFiles.previous.length > 0;
+
+  if (showSplashPage) {
+    return <FilesPanelSplash setShowSplashPage={setShowSplashPage} />;
+  }
 
   return (
     <div className="flex flex-col gap-4">

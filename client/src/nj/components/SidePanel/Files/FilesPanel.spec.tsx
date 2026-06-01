@@ -42,136 +42,164 @@ function section(name: string) {
 }
 
 describe('FilesPanel', () => {
-  beforeAll(() => {
-    jest.useFakeTimers({ now: new Date('2025-05-21T12:00:00Z') });
-  });
-
-  afterAll(() => {
-    jest.useRealTimers();
-  });
-
-  // userEvent needs advanceTimers so it can work with fake timers
-  const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime.bind(jest) });
-
-  describe('filename filter', () => {
-    test('shows all files when filter is empty', () => {
-      const files = [
-        makeFile({ file_id: 'a', filename: 'alpha.pdf' }),
-        makeFile({ file_id: 'b', filename: 'beta.pdf' }),
-      ];
-
-      render(<FilesPanel files={files} handleFileClick={jest.fn()} />);
-
-      expect(screen.getByText('alpha.pdf')).toBeInTheDocument();
-      expect(screen.getByText('beta.pdf')).toBeInTheDocument();
+  describe('splash page', () => {
+    beforeEach(() => {
+      localStorage.removeItem('filesPanelSplashPage');
     });
 
-    test('filters files by filename substring (case insensitive)', async () => {
-      const files = [
-        makeFile({ file_id: 'a', filename: 'alpha.pdf' }),
-        makeFile({ file_id: 'b', filename: 'beta.pdf' }),
-      ];
-
-      render(<FilesPanel files={files} handleFileClick={jest.fn()} />);
-
-      const input = screen.getByRole('textbox', { name: /filter files/i });
-      await user.type(input, 'Alp');
-
-      expect(screen.getByText('alpha.pdf')).toBeInTheDocument();
-      expect(screen.queryByText('beta.pdf')).not.toBeInTheDocument();
-    });
-  });
-
-  describe('pinned section', () => {
-    test('always renders pinned section, even when empty', () => {
+    test('shows splash page when recoil value is not set', () => {
       render(<FilesPanel files={[]} handleFileClick={jest.fn()} />);
 
-      expect(screen.getByText('Pinned')).toBeInTheDocument();
-      expect(screen.getByText(/nothing pinned yet/i)).toBeInTheDocument();
+      expect(screen.getByText('Your personal file library')).toBeInTheDocument();
+      expect(screen.queryByText('Saved files')).not.toBeInTheDocument();
     });
 
-    test('pinned files appear in Pinned section, not in date sections', () => {
-      const files = [
-        makeFile({ file_id: 'p1', filename: 'pinned.pdf', pinned: true }),
-        makeFile({ file_id: 't1', filename: 'today.pdf' }),
-      ];
+    test('clicking "Go to your files" sets localStorage and shows files view', async () => {
+      const user = userEvent.setup();
+      render(<FilesPanel files={[]} handleFileClick={jest.fn()} />);
 
-      render(<FilesPanel files={files} handleFileClick={jest.fn()} />);
+      await user.click(screen.getByRole('button', { name: /go to your files/i }));
 
-      expect(section('Pinned').getByText('pinned.pdf')).toBeInTheDocument();
-      expect(screen.getAllByText('pinned.pdf')).toHaveLength(1);
-    });
-  });
-
-  describe('isLastVisibleSection logic', () => {
-    function expectEndIn(name: string) {
-      expect(screen.queryAllByText(/you've reached the end/i)).toHaveLength(1);
-      expect(section(name).getByText(/you've reached the end/i)).toBeInTheDocument();
-    }
-
-    test.each([
-      [
-        'Previous',
-        [
-          makeFile({ file_id: 'p1', filename: 'pinned.pdf', pinned: true, updatedAt: TODAY }),
-          makeFile({ file_id: 'a', filename: 'today.pdf', createdAt: TODAY }),
-          makeFile({ file_id: 'b', filename: 'yesterday.pdf', createdAt: YESTERDAY }),
-          makeFile({ file_id: 'c', filename: 'old.pdf', createdAt: PREVIOUS }),
-        ],
-      ],
-      [
-        'Yesterday',
-        [
-          makeFile({ file_id: 'p1', filename: 'pinned.pdf', pinned: true, updatedAt: TODAY }),
-          makeFile({ file_id: 'a', filename: 'today.pdf', createdAt: TODAY }),
-          makeFile({ file_id: 'b', filename: 'yesterday.pdf', createdAt: YESTERDAY }),
-        ],
-      ],
-      [
-        'Today',
-        [
-          makeFile({ file_id: 'p1', filename: 'pinned.pdf', pinned: true, updatedAt: TODAY }),
-          makeFile({ file_id: 'a', filename: 'today.pdf', createdAt: TODAY }),
-        ],
-      ],
-      [
-        'Pinned',
-        [makeFile({ file_id: 'p1', filename: 'pinned.pdf', pinned: true, updatedAt: TODAY })],
-      ],
-    ])('%s section shows end indicator when it is last', (lastSection, files) => {
-      render(<FilesPanel files={files} handleFileClick={jest.fn()} />);
-      expectEndIn(lastSection);
-    });
-
-    test('filter shifts the end indicator to the new last visible section', async () => {
-      const files = [
-        makeFile({ file_id: 'a', filename: 'today.pdf', createdAt: TODAY }),
-        makeFile({ file_id: 'b', filename: 'old.pdf', createdAt: PREVIOUS }),
-      ];
-
-      render(<FilesPanel files={files} handleFileClick={jest.fn()} />);
-      expectEndIn('Previous');
-
-      await user.type(screen.getByRole('textbox', { name: /filter files/i }), 'today');
-      expectEndIn('Today');
+      expect(localStorage.getItem('filesPanelSplashPage')).toBe('false');
+      expect(screen.getByText('Saved files')).toBeInTheDocument();
+      expect(screen.queryByText('Your personal file library')).not.toBeInTheDocument();
     });
   });
 
-  describe('handleFileClick', () => {
-    test('calls handleFileClick with the correct file', async () => {
-      const handleFileClick = jest.fn();
-      const fileA = makeFile({ file_id: 'a', filename: 'alpha.pdf', createdAt: TODAY });
-      const fileB = makeFile({ file_id: 'b', filename: 'beta.pdf', createdAt: YESTERDAY });
+  describe('files mode', () => {
+    beforeAll(() => {
+      jest.useFakeTimers({ now: new Date('2025-05-21T12:00:00Z') });
+      localStorage.setItem('filesPanelSplashPage', 'false');
+    });
 
-      render(<FilesPanel files={[fileA, fileB]} handleFileClick={handleFileClick} />);
+    afterAll(() => {
+      jest.useRealTimers();
+      localStorage.removeItem('filesPanelSplashPage');
+    });
 
-      await user.click(screen.getByTestId('file-b'));
-      expect(handleFileClick).toHaveBeenCalledWith(fileB);
+    // userEvent needs advanceTimers so it can work with fake timers
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime.bind(jest) });
 
-      await user.click(screen.getByTestId('file-a'));
-      expect(handleFileClick).toHaveBeenCalledWith(fileA);
+    describe('filename filter', () => {
+      test('shows all files when filter is empty', () => {
+        const files = [
+          makeFile({ file_id: 'a', filename: 'alpha.pdf' }),
+          makeFile({ file_id: 'b', filename: 'beta.pdf' }),
+        ];
 
-      expect(handleFileClick).toHaveBeenCalledTimes(2);
+        render(<FilesPanel files={files} handleFileClick={jest.fn()} />);
+
+        expect(screen.getByText('alpha.pdf')).toBeInTheDocument();
+        expect(screen.getByText('beta.pdf')).toBeInTheDocument();
+      });
+
+      test('filters files by filename substring (case insensitive)', async () => {
+        const files = [
+          makeFile({ file_id: 'a', filename: 'alpha.pdf' }),
+          makeFile({ file_id: 'b', filename: 'beta.pdf' }),
+        ];
+
+        render(<FilesPanel files={files} handleFileClick={jest.fn()} />);
+
+        const input = screen.getByRole('textbox', { name: /filter files/i });
+        await user.type(input, 'Alp');
+
+        expect(screen.getByText('alpha.pdf')).toBeInTheDocument();
+        expect(screen.queryByText('beta.pdf')).not.toBeInTheDocument();
+      });
+    });
+
+    describe('pinned section', () => {
+      test('always renders pinned section, even when empty', () => {
+        render(<FilesPanel files={[]} handleFileClick={jest.fn()} />);
+
+        expect(screen.getByText('Pinned')).toBeInTheDocument();
+        expect(screen.getByText(/nothing pinned yet/i)).toBeInTheDocument();
+      });
+
+      test('pinned files appear in Pinned section, not in date sections', () => {
+        const files = [
+          makeFile({ file_id: 'p1', filename: 'pinned.pdf', pinned: true }),
+          makeFile({ file_id: 't1', filename: 'today.pdf' }),
+        ];
+
+        render(<FilesPanel files={files} handleFileClick={jest.fn()} />);
+
+        expect(section('Pinned').getByText('pinned.pdf')).toBeInTheDocument();
+        expect(screen.getAllByText('pinned.pdf')).toHaveLength(1);
+      });
+    });
+
+    describe('isLastVisibleSection logic', () => {
+      function expectEndIn(name: string) {
+        expect(screen.queryAllByText(/you've reached the end/i)).toHaveLength(1);
+        expect(section(name).getByText(/you've reached the end/i)).toBeInTheDocument();
+      }
+
+      test.each([
+        [
+          'Previous',
+          [
+            makeFile({ file_id: 'p1', filename: 'pinned.pdf', pinned: true, updatedAt: TODAY }),
+            makeFile({ file_id: 'a', filename: 'today.pdf', createdAt: TODAY }),
+            makeFile({ file_id: 'b', filename: 'yesterday.pdf', createdAt: YESTERDAY }),
+            makeFile({ file_id: 'c', filename: 'old.pdf', createdAt: PREVIOUS }),
+          ],
+        ],
+        [
+          'Yesterday',
+          [
+            makeFile({ file_id: 'p1', filename: 'pinned.pdf', pinned: true, updatedAt: TODAY }),
+            makeFile({ file_id: 'a', filename: 'today.pdf', createdAt: TODAY }),
+            makeFile({ file_id: 'b', filename: 'yesterday.pdf', createdAt: YESTERDAY }),
+          ],
+        ],
+        [
+          'Today',
+          [
+            makeFile({ file_id: 'p1', filename: 'pinned.pdf', pinned: true, updatedAt: TODAY }),
+            makeFile({ file_id: 'a', filename: 'today.pdf', createdAt: TODAY }),
+          ],
+        ],
+        [
+          'Pinned',
+          [makeFile({ file_id: 'p1', filename: 'pinned.pdf', pinned: true, updatedAt: TODAY })],
+        ],
+      ])('%s section shows end indicator when it is last', (lastSection, files) => {
+        render(<FilesPanel files={files} handleFileClick={jest.fn()} />);
+        expectEndIn(lastSection);
+      });
+
+      test('filter shifts the end indicator to the new last visible section', async () => {
+        const files = [
+          makeFile({ file_id: 'a', filename: 'today.pdf', createdAt: TODAY }),
+          makeFile({ file_id: 'b', filename: 'old.pdf', createdAt: PREVIOUS }),
+        ];
+
+        render(<FilesPanel files={files} handleFileClick={jest.fn()} />);
+        expectEndIn('Previous');
+
+        await user.type(screen.getByRole('textbox', { name: /filter files/i }), 'today');
+        expectEndIn('Today');
+      });
+    });
+
+    describe('handleFileClick', () => {
+      test('calls handleFileClick with the correct file', async () => {
+        const handleFileClick = jest.fn();
+        const fileA = makeFile({ file_id: 'a', filename: 'alpha.pdf', createdAt: TODAY });
+        const fileB = makeFile({ file_id: 'b', filename: 'beta.pdf', createdAt: YESTERDAY });
+
+        render(<FilesPanel files={[fileA, fileB]} handleFileClick={handleFileClick} />);
+
+        await user.click(screen.getByTestId('file-b'));
+        expect(handleFileClick).toHaveBeenCalledWith(fileB);
+
+        await user.click(screen.getByTestId('file-a'));
+        expect(handleFileClick).toHaveBeenCalledWith(fileA);
+
+        expect(handleFileClick).toHaveBeenCalledTimes(2);
+      });
     });
   });
 });

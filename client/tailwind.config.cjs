@@ -153,6 +153,8 @@ module.exports = {
           foreground: 'hsl(var(--card-foreground))',
         },
         'jersey-blue': 'var(--jersey-blue)',
+        'jersey-button': 'var(--jersey-button)',
+        'jersey-button-hover': 'var(--jersey-button-hover)',
         info: 'var(--info)',
         'info-lighter': 'var(--info-lighter)',
       },
