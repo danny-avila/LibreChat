@@ -33,6 +33,7 @@ const backendPort = (process.env.BACKEND_PORT && Number(process.env.BACKEND_PORT
 const backendURL = process.env.HOST
   ? `http://${process.env.HOST}:${backendPort}`
   : `http://localhost:${backendPort}`;
+const buildSourceMap = process.env.NODE_ENV === 'development';
 
 export default defineConfig(({ command }) => ({
   base: '',
@@ -124,14 +125,14 @@ export default defineConfig(({ command }) => ({
         ],
       },
     }),
-    sourcemapExclude({ excludeNodeModules: true }),
+    ...(buildSourceMap ? [sourcemapExclude({ excludeNodeModules: true })] : []),
     compression({
       threshold: 10240,
     }),
   ],
   publicDir: command === 'serve' ? './public' : false,
   build: {
-    sourcemap: process.env.NODE_ENV === 'development',
+    sourcemap: buildSourceMap,
     outDir: './dist',
     minify: 'terser',
     rolldownOptions: {

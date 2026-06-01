@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import mermaid from 'mermaid';
 import { Button } from '@librechat/client';
 import { ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
@@ -11,6 +10,16 @@ interface MermaidDiagramProps {
   isDarkMode?: boolean;
 }
 
+let mermaidPromise: Promise<typeof import('mermaid').default> | null = null;
+
+const loadMermaid = () => {
+  if (!mermaidPromise) {
+    mermaidPromise = import('mermaid').then((mod) => mod.default);
+  }
+
+  return mermaidPromise;
+};
+
 const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content, isDarkMode = true }) => {
   const mermaidRef = useRef<HTMLDivElement>(null);
   const transformRef = useRef<ReactZoomPanPinchRef>(null);
@@ -19,19 +28,23 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content, isDarkMode = t
   const bgColor = isDarkMode ? '#212121' : '#FFFFFF';
 
   useEffect(() => {
-    mermaid.initialize({
-      startOnLoad: false,
-      theme,
-      securityLevel: 'sandbox',
-      flowchart: artifactFlowchartConfig,
-    });
+    let isMounted = true;
 
     const renderDiagram = async () => {
-      if (!mermaidRef.current) {
-        return;
-      }
-
       try {
+        const mermaid = await loadMermaid();
+
+        mermaid.initialize({
+          startOnLoad: false,
+          theme,
+          securityLevel: 'sandbox',
+          flowchart: artifactFlowchartConfig,
+        });
+
+        if (!mermaidRef.current) {
+          return;
+        }
+
         const { svg } = await mermaid.render('mermaid-diagram', content);
         mermaidRef.current.innerHTML = svg;
 
@@ -40,7 +53,9 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content, isDarkMode = t
           svgElement.style.width = '100%';
           svgElement.style.height = '100%';
         }
-        setIsRendered(true);
+        if (isMounted) {
+          setIsRendered(true);
+        }
       } catch (error) {
         console.error('Mermaid rendering error:', error);
         if (mermaidRef.current) {
@@ -50,6 +65,10 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content, isDarkMode = t
     };
 
     renderDiagram();
+
+    return () => {
+      isMounted = false;
+    };
   }, [content, theme]);
 
   const centerAndFitDiagram = useCallback(() => {
