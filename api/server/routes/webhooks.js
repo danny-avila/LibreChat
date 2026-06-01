@@ -55,16 +55,12 @@ router.post('/notifications', async (req, res) => {
       return res.status(403).json({ message: 'Forbidden: Invalid API key' });
     }
 
-    const { messageId, question, originalQuestion, customMessage, userid, type } = req.body;
+    let { messageId, question, originalQuestion, customMessage, userId, type } = req.body;
 
     let message;
-    let userId;
-    if (originalQuestion && !messageId && !userid) {
-      return res.status(400).json({ message: 'Missing messageId' });
-    }
 
-    if (!messageId && userId) {
-      userId = new ObjectId(userid);
+    if (originalQuestion && !messageId && !userId) {
+      return res.status(400).json({ message: 'Missing messageId' });
     }
 
     if (messageId) {
