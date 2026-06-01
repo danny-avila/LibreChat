@@ -4,6 +4,8 @@ const mockGetFileStrategy = jest.fn();
 const mockFindRoleByIdentifier = jest.fn();
 const mockGrantPermission = jest.fn();
 let mockRunnerDeps;
+let mockRunnerStatus;
+const mockCreatedRunners = [];
 
 jest.mock('~/server/services/Config', () => ({
   getAppConfig: mockGetAppConfig,
@@ -12,22 +14,71 @@ jest.mock('~/server/services/Config', () => ({
 jest.mock('@librechat/api', () => ({
   createGitHubSkillSyncRunner: jest.fn((deps) => {
     mockRunnerDeps = deps;
-    return {
-      getStatus: jest.fn(async () => deps.getConfig()),
+    const runner = {
+      getStatus: jest.fn(async () => {
+        if (mockRunnerStatus) {
+          return mockRunnerStatus;
+        }
+        const config = await deps.getConfig();
+        const github = config?.github ?? {};
+        return {
+          enabled: github.enabled ?? false,
+          intervalMinutes: github.intervalMinutes ?? 60,
+          runOnStartup: github.runOnStartup ?? false,
+          sources: (github.sources ?? []).map((source) => ({
+            provider: 'github',
+            sourceId: source.id,
+            status: 'idle',
+            owner: source.owner,
+            repo: source.repo,
+            ref: source.ref,
+            paths: source.paths,
+            syncedSkillCount: 0,
+            syncedFileCount: 0,
+            deletedSkillCount: 0,
+            deletedFileCount: 0,
+          })),
+          credentials: [],
+        };
+      }),
       runOnce: jest.fn(async () => deps.getConfig()),
     };
+    mockCreatedRunners.push({ deps, runner });
+    return runner;
   }),
   getStorageMetadata: jest.fn(() => ({})),
   startGitHubSkillSyncScheduler: jest.fn(() => ({ stop: jest.fn() })),
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
+  logger: {
+    error: jest.fn(),
+    warn: jest.fn(),
+  },
   runAsSystem: jest.fn((fn) => fn()),
 }));
 
 jest.mock('~/models', () => ({
   findRoleByIdentifier: mockFindRoleByIdentifier,
   grantPermission: mockGrantPermission,
+  getSkillSyncCredentialToken: jest.fn(),
+  getSkillSyncCredentialSummary: jest.fn(),
+  listSkillSyncCredentials: jest.fn(async () => []),
+  listSkillSyncStatuses: jest.fn(async () => []),
+  upsertSkillSyncStatus: jest.fn(),
+  tryAcquireSkillSyncLock: jest.fn(),
+  refreshSkillSyncLock: jest.fn(),
+  releaseSkillSyncLock: jest.fn(),
+  createSkill: jest.fn(),
+  updateSkill: jest.fn(),
+  getSkillById: jest.fn(),
+  findSkillBySourceIdentity: jest.fn(),
+  listSkillsBySource: jest.fn(),
+  listSkillFiles: jest.fn(),
+  getSkillFileByPath: jest.fn(),
+  upsertSkillFile: jest.fn(),
+  deleteSkillFile: jest.fn(),
+  deleteSkill: jest.fn(),
 }));
 jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: mockGetStrategyFunctions,
@@ -43,6 +94,8 @@ describe('GitHub skill sync service', () => {
     mockFindRoleByIdentifier.mockReset();
     mockGrantPermission.mockReset();
     mockRunnerDeps = undefined;
+    mockRunnerStatus = undefined;
+    mockCreatedRunners.length = 0;
   });
 
   it('resolves sync config from fresh base app config for runner operations', async () => {
@@ -97,6 +150,125 @@ describe('GitHub skill sync service', () => {
 
     expect(result).toBeUndefined();
     expect(mockGetAppConfig).toHaveBeenCalledWith({ baseOnly: true });
+  });
+
+  it('starts a request-scoped sync for resolved admin skillSync config', async () => {
+    const skillSync = {
+      github: {
+        enabled: true,
+        intervalMinutes: 60,
+        runOnStartup: true,
+        sources: [
+          {
+            id: 'tenant-skills',
+            owner: 'LibreChat',
+            repo: 'skills',
+            ref: 'main',
+            paths: ['skills'],
+            token: '${GITHUB_SKILLS_TOKEN}',
+            tenantId: 'other-tenant',
+          },
+        ],
+      },
+    };
+
+    const service = require('./sync');
+    const started = await service.maybeRunGitHubSkillSyncForRequest({
+      config: { skillSync, config: {} },
+      user: { id: 'user-1', tenantId: 'tenant-a' },
+    });
+
+    const requestRunner = mockCreatedRunners[0].runner;
+    const requestConfig = await mockCreatedRunners[0].deps.getConfig();
+    expect(started).toBe(true);
+    expect(requestRunner.runOnce).toHaveBeenCalledTimes(1);
+    expect(requestConfig.github.runOnStartup).toBe(false);
+    expect(requestConfig.github.sources[0]).toEqual(
+      expect.objectContaining({
+        id: 'tenant-skills',
+        tenantId: 'tenant-a',
+      }),
+    );
+  });
+
+  it('does not start a request-scoped sync for base YAML skillSync config', async () => {
+    const skillSync = {
+      github: {
+        enabled: true,
+        intervalMinutes: 60,
+        runOnStartup: true,
+        sources: [
+          {
+            id: 'base-skills',
+            owner: 'LibreChat',
+            repo: 'skills',
+            ref: 'main',
+            paths: ['skills'],
+            token: '${GITHUB_SKILLS_TOKEN}',
+          },
+        ],
+      },
+    };
+
+    const service = require('./sync');
+    const started = await service.maybeRunGitHubSkillSyncForRequest({
+      config: { skillSync, config: { skillSync } },
+      user: { id: 'user-1', tenantId: 'tenant-a' },
+    });
+
+    expect(started).toBe(false);
+    expect(mockCreatedRunners).toHaveLength(0);
+  });
+
+  it('does not start a request-scoped sync when the configured source is already running', async () => {
+    const skillSync = {
+      github: {
+        enabled: true,
+        intervalMinutes: 60,
+        runOnStartup: false,
+        sources: [
+          {
+            id: 'tenant-skills',
+            owner: 'LibreChat',
+            repo: 'skills',
+            ref: 'main',
+            paths: ['skills'],
+            token: '${GITHUB_SKILLS_TOKEN}',
+          },
+        ],
+      },
+    };
+    mockRunnerStatus = {
+      enabled: true,
+      intervalMinutes: 60,
+      runOnStartup: false,
+      sources: [
+        {
+          provider: 'github',
+          sourceId: 'tenant-skills',
+          status: 'running',
+          owner: 'LibreChat',
+          repo: 'skills',
+          ref: 'main',
+          paths: ['skills'],
+          startedAt: new Date(),
+          syncedSkillCount: 0,
+          syncedFileCount: 0,
+          deletedSkillCount: 0,
+          deletedFileCount: 0,
+        },
+      ],
+      credentials: [],
+    };
+
+    const service = require('./sync');
+    const started = await service.maybeRunGitHubSkillSyncForRequest({
+      config: { skillSync, config: {} },
+      user: { id: 'user-1', tenantId: 'tenant-a' },
+    });
+
+    expect(started).toBe(false);
+    expect(mockCreatedRunners[0].runner.runOnce).not.toHaveBeenCalled();
   });
 
   it('uses the file owner when deleting synced files from storage', async () => {
