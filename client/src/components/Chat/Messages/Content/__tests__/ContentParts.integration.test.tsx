@@ -126,6 +126,16 @@ const makeMcpToolCall = (id: string, hasOutput = true): TMessageContentParts =>
     },
   }) as unknown as TMessageContentParts;
 
+const makeMcpToolCallWithoutId = (name: string, hasOutput = true): TMessageContentParts =>
+  ({
+    type: ContentTypes.TOOL_CALL,
+    [ContentTypes.TOOL_CALL]: {
+      name: `${name}${MCP_DELIMITER}Everything`,
+      args: '{}',
+      output: hasOutput ? 'image_returned' : '',
+    },
+  }) as unknown as TMessageContentParts;
+
 const makeTextPart = (text: string): TMessageContentParts =>
   ({ type: ContentTypes.TEXT, text }) as unknown as TMessageContentParts;
 
@@ -251,6 +261,33 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     expect(screen.getByRole('button', { name: 'Used 2 tools' })).toHaveAttribute(
       'aria-expanded',
       'true',
+    );
+  });
+
+  it('does not reuse fallback-index expansion state across message ids', () => {
+    const content = [makeMcpToolCallWithoutId('first'), makeMcpToolCallWithoutId('second')];
+
+    const { rerender } = render(
+      <RecoilRoot>
+        <ContentParts {...baseProps} messageId="msg1" content={content} />
+      </RecoilRoot>,
+    );
+
+    const toggle = screen.getByRole('button', { name: 'Used 2 tools' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+    rerender(
+      <RecoilRoot>
+        <ContentParts {...baseProps} messageId="msg2" content={content} />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Used 2 tools' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
     );
   });
 });

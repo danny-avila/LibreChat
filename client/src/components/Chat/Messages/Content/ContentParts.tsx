@@ -28,6 +28,9 @@ const getToolGroupId = (parts: PartWithIndex[]): string => {
   return getToolCallId(firstPart.part) || String(firstPart.idx);
 };
 
+const getScopedToolGroupId = (messageId: string, parts: PartWithIndex[]): string =>
+  `${messageId}:${getToolGroupId(parts)}`;
+
 type PartWithContextProps = {
   part: TMessageContentParts;
   idx: number;
@@ -290,13 +293,13 @@ const ContentParts = memo(function ContentParts({
         if (group.type === 'single') {
           return group;
         }
-        const groupId = getToolGroupId(group.parts);
+        const groupId = getScopedToolGroupId(messageId, group.parts);
         const groupAttachments = group.parts.flatMap(
           ({ part }) => attachmentMap[getToolCallId(part)] ?? [],
         );
         return { ...group, groupId, groupAttachments };
       }),
-    [sequentialParts, attachmentMap],
+    [sequentialParts, attachmentMap, messageId],
   );
 
   // Early return: no content to render AND no pending skill cards

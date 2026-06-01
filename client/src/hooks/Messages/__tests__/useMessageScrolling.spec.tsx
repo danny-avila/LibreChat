@@ -1,6 +1,6 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { TConversation, TMessage } from 'librechat-data-provider';
 import {
   MessagesViewContext,
@@ -109,10 +109,11 @@ function createContextValue(
 }
 
 function ScrollingHarness({ messagesTree }: { messagesTree?: TMessage[] | null }) {
-  const { contentRef, scrollableRef, messagesEndRef } = useMessageScrolling(messagesTree);
+  const { contentRef, scrollableRef, messagesEndRef, debouncedHandleScroll } =
+    useMessageScrolling(messagesTree);
 
   return (
-    <div ref={scrollableRef} data-testid="scrollable">
+    <div ref={scrollableRef} onScroll={debouncedHandleScroll} data-testid="scrollable">
       <div ref={contentRef} data-testid="content">
         <div ref={messagesEndRef} data-testid="end" />
       </div>
@@ -174,6 +175,23 @@ describe('useMessageScrolling resize reconciliation', () => {
 
   it('does not follow resizes after the user aborts streaming auto-scroll', () => {
     renderScrolling({ contextOverrides: { abortScroll: true } });
+
+    act(() => {
+      MockResizeObserver.last()?.trigger();
+    });
+
+    expect(mockScrollToBottom).not.toHaveBeenCalled();
+  });
+
+  it('does not follow resizes after the user scrolls away from the bottom', () => {
+    renderScrolling();
+
+    const scrollable = screen.getByTestId('scrollable');
+    Object.defineProperty(scrollable, 'scrollHeight', { value: 1000, configurable: true });
+    Object.defineProperty(scrollable, 'clientHeight', { value: 200, configurable: true });
+    scrollable.scrollTop = 100;
+
+    fireEvent.scroll(scrollable);
 
     act(() => {
       MockResizeObserver.last()?.trigger();
