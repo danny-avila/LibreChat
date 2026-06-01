@@ -428,6 +428,81 @@ describe('mergeConfigOverrides', () => {
   });
 });
 
+describe('mergeConfigOverrides — mcpServers tombstones', () => {
+  const baseWithMcp = {
+    interfaceConfig: { modelSelect: true },
+    mcpConfig: {
+      inherited: { type: 'sse', url: 'https://base.example.com' },
+      other: { type: 'sse', url: 'https://other.example.com', title: 'Other' },
+    },
+  } as unknown as AppConfig;
+
+  it('drops an inherited mcpServers entry when the override sets it to null', () => {
+    const configs = [fakeConfig({ mcpServers: { inherited: null } }, 10)];
+    const result = mergeConfigOverrides(baseWithMcp, configs) as unknown as Record<string, unknown>;
+    const mcpConfig = result.mcpConfig as Record<string, unknown>;
+    expect(mcpConfig.inherited).toBeUndefined();
+    expect(mcpConfig.other).toEqual({
+      type: 'sse',
+      url: 'https://other.example.com',
+      title: 'Other',
+    });
+  });
+
+  it('preserves other inherited entries and applies partial overrides alongside a tombstone', () => {
+    const configs = [
+      fakeConfig({ mcpServers: { inherited: null, other: { title: 'Edited' } } }, 10),
+    ];
+    const result = mergeConfigOverrides(baseWithMcp, configs) as unknown as Record<string, unknown>;
+    const mcpConfig = result.mcpConfig as Record<string, unknown>;
+    expect(mcpConfig.inherited).toBeUndefined();
+    expect(mcpConfig.other).toEqual({
+      type: 'sse',
+      url: 'https://other.example.com',
+      title: 'Edited',
+    });
+  });
+
+  it('lets a higher-priority override re-assert an entry tombstoned at lower priority', () => {
+    const configs = [
+      fakeConfig({ mcpServers: { inherited: null } }, 5),
+      fakeConfig(
+        { mcpServers: { inherited: { type: 'sse', url: 'https://reassert.example.com' } } },
+        10,
+      ),
+    ];
+    const result = mergeConfigOverrides(baseWithMcp, configs) as unknown as Record<string, unknown>;
+    const mcpConfig = result.mcpConfig as Record<string, unknown>;
+    expect(mcpConfig.inherited).toEqual({ type: 'sse', url: 'https://reassert.example.com' });
+  });
+
+  it('treats null at the section root as a normal merge replacement, not a tombstone', () => {
+    const configs = [fakeConfig({ mcpServers: null }, 10)];
+    const result = mergeConfigOverrides(baseWithMcp, configs) as unknown as Record<string, unknown>;
+    expect(result.mcpConfig).toBeNull();
+  });
+
+  it('does not tombstone null values nested beneath an entry key', () => {
+    const configs = [fakeConfig({ mcpServers: { other: { title: null } } }, 10)];
+    const result = mergeConfigOverrides(baseWithMcp, configs) as unknown as Record<string, unknown>;
+    const mcpConfig = result.mcpConfig as Record<string, unknown>;
+    expect(mcpConfig.other).toEqual({
+      type: 'sse',
+      url: 'https://other.example.com',
+      title: null,
+    });
+  });
+
+  it('is a no-op tombstone for an entry that does not exist in base', () => {
+    const configs = [fakeConfig({ mcpServers: { neverExisted: null } }, 10)];
+    const result = mergeConfigOverrides(baseWithMcp, configs) as unknown as Record<string, unknown>;
+    const mcpConfig = result.mcpConfig as Record<string, unknown>;
+    expect('neverExisted' in mcpConfig).toBe(false);
+    expect(mcpConfig.inherited).toBeDefined();
+    expect(mcpConfig.other).toBeDefined();
+  });
+});
+
 describe('INTERFACE_PERMISSION_FIELDS', () => {
   it('contains all expected permission fields', () => {
     const expected = [

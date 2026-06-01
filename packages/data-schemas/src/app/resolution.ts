@@ -21,6 +21,16 @@ const ARRAY_MERGE_KEYS: Record<string, string> = {
 };
 
 /**
+ * Record-type sections whose override layer interprets a `null` value at a child
+ * key as a tombstone: the entry inherited from base (or a lower-priority layer)
+ * is removed from the effective config for this scope. Without this, a scope
+ * can only add or amend entries, never subtract inherited ones, because the
+ * per-field PATCH path has no way to express "for this scope, pretend the
+ * inherited entry does not exist."
+ */
+const TOMBSTONE_SUPPORTED_PARENTS = new Set<string>(['mcpConfig']);
+
+/**
  * Maps YAML-level override keys (TCustomConfig) to their AppConfig equivalents.
  * Overrides are stored with YAML keys but merged into the already-processed AppConfig
  * where some fields have been renamed by AppService.
@@ -122,6 +132,8 @@ function deepMerge<T extends AnyObject>(target: T, source: AnyObject, depth = 0,
         depth,
         currentPath,
       );
+    } else if (sourceVal === null && TOMBSTONE_SUPPORTED_PARENTS.has(path)) {
+      delete result[key];
     } else {
       result[key] = sourceVal;
     }
