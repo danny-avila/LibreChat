@@ -65,7 +65,7 @@
     "@types/jest": "^29.5.2",
     "@types/jsonwebtoken": "^9.0.0",
     "@types/multer": "^1.4.13",
-    "@types/node": "^20.3.0",
+    "@types/node": "^24.12.4",
     "@types/node-fetch": "^2.6.13",
     "@types/react": "^18.2.18",
     "@types/sanitize-html": "^2.13.0",
