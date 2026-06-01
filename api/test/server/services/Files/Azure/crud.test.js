@@ -4,6 +4,7 @@ const {
   getNewAzureURL,
   getSignedAzureURL,
   getAzureURL,
+  getAzureFileStream,
   deleteFileFromAzure,
   refreshAzureFileUrls,
   refreshAzureUrl,
@@ -661,6 +662,65 @@ describe('Azure crud.js - URL refresh tests', () => {
       } finally {
         process.env.NODE_ENV = originalNodeEnv;
       }
+    });
+  });
+
+  describe('getAzureFileStream', () => {
+    const download = jest.fn();
+    const getBlockBlobClient = jest.fn().mockReturnValue({ download });
+
+    beforeEach(() => {
+      download.mockReset();
+      getBlockBlobClient.mockClear();
+      getAzureContainerClient.mockResolvedValue({ getBlockBlobClient });
+      process.env.AZURE_CONTAINER_NAME = 'files';
+    });
+
+    it('downloads via the authenticated SDK, stripping any SAS query from the blob path', async () => {
+      const fakeStream = { pipe: jest.fn() };
+      download.mockResolvedValue({ readableStreamBody: fakeStream });
+      const url =
+        'https://test.blob.core.windows.net/files/images/user123/a.png?sv=2023&sig=abc&se=2026-01-01T00:00:00Z';
+      const result = await getAzureFileStream({}, url);
+      expect(getBlockBlobClient).toHaveBeenCalledWith('images/user123/a.png');
+      expect(download).toHaveBeenCalledTimes(1);
+      expect(result).toBe(fakeStream);
+    });
+
+    it('works on a plain (unsigned) URL', async () => {
+      download.mockResolvedValue({ readableStreamBody: { pipe: jest.fn() } });
+      await getAzureFileStream({}, 'https://test.blob.core.windows.net/files/images/user123/a.png');
+      expect(getBlockBlobClient).toHaveBeenCalledWith('images/user123/a.png');
+    });
+
+    it('works on a path-style / Azurite URL', async () => {
+      download.mockResolvedValue({ readableStreamBody: { pipe: jest.fn() } });
+      await getAzureFileStream(
+        {},
+        'http://127.0.0.1:10000/devstoreaccount1/files/images/user123/a.png',
+      );
+      expect(getBlockBlobClient).toHaveBeenCalledWith('images/user123/a.png');
+    });
+
+    it('throws when the blob path cannot be extracted from the URL', async () => {
+      await expect(getAzureFileStream({}, 'not-a-url')).rejects.toThrow(
+        /Unable to extract blob path/,
+      );
+      expect(download).not.toHaveBeenCalled();
+    });
+
+    it('throws when the container client is unavailable (Azure unconfigured)', async () => {
+      getAzureContainerClient.mockResolvedValue(null);
+      await expect(
+        getAzureFileStream({}, 'https://test.blob.core.windows.net/files/images/user123/a.png'),
+      ).rejects.toThrow(/not initialized/);
+    });
+
+    it('throws when the SDK returns no readable body', async () => {
+      download.mockResolvedValue({ readableStreamBody: undefined });
+      await expect(
+        getAzureFileStream({}, 'https://test.blob.core.windows.net/files/images/user123/a.png'),
+      ).rejects.toThrow(/Empty download body/);
     });
   });
 });

@@ -144,6 +144,14 @@ async function encodeAndFormat(req, files, params, mode) {
         continue;
       } catch (error) {
         logger.error('Error processing image from blob storage:', error);
+        // Fail closed for azure_blob: a private container serves no
+        // anonymously-fetchable URL, so falling through to preparePayload would
+        // hand the model an unfetchable blob URL (a silent vision failure). S3
+        // and Firebase keep the fall-through (their URLs are presigned /
+        // publicly fetchable).
+        if (source === FileSources.azure_blob) {
+          throw error;
+        }
       }
     } else if (source !== FileSources.local && base64Only.has(effectiveEndpoint)) {
       const [_file, imageURL] = await preparePayload(req, file);

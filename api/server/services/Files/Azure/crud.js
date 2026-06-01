@@ -1,7 +1,6 @@
 const fs = require('fs');
 const path = require('path');
 const mime = require('mime');
-const axios = require('axios');
 const fetch = require('node-fetch');
 const { logger } = require('@librechat/data-schemas');
 const { FileSources } = require('librechat-data-provider');
@@ -446,18 +445,33 @@ async function uploadFileToAzure({
 /**
  * Retrieves a readable stream for a blob from Azure Blob Storage.
  *
+ * Downloads through the authenticated SDK client (Account Key / Managed
+ * Identity) rather than an anonymous HTTP GET, so it works on a private
+ * container (anonymous access disabled) — fixing vision and file
+ * preview/download, which previously 403/409'd. Mirrors `getS3FileStream` and
+ * `deleteFileFromAzure`: strip any SAS query, derive the blob path with
+ * `extractBlobPathFromAzureUrl`, and read via `getAzureContainerClient`.
+ *
  * @param {object} _req - The Express request object.
- * @param {string} fileURL - The URL of the blob.
- * @returns {Promise<ReadableStream>} A readable stream of the blob.
+ * @param {string} fileURL - The URL of the blob (may carry a SAS query string).
+ * @returns {Promise<NodeJS.ReadableStream>} A readable stream of the blob.
  */
 async function getAzureFileStream(_req, fileURL) {
   try {
-    const response = await axios({
-      method: 'get',
-      url: fileURL,
-      responseType: 'stream',
-    });
-    return response.data;
+    const blobPath = extractBlobPathFromAzureUrl(fileURL, AZURE_CONTAINER_NAME);
+    if (!blobPath) {
+      throw new Error(`[getAzureFileStream] Unable to extract blob path from: ${fileURL}`);
+    }
+    const containerClient = await getAzureContainerClient(AZURE_CONTAINER_NAME);
+    if (!containerClient) {
+      throw new Error('[getAzureFileStream] Azure Blob Service not initialized');
+    }
+    const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
+    const downloadResponse = await blockBlobClient.download();
+    if (!downloadResponse.readableStreamBody) {
+      throw new Error(`[getAzureFileStream] Empty download body for blob: ${blobPath}`);
+    }
+    return downloadResponse.readableStreamBody;
   } catch (error) {
     logger.error('[getAzureFileStream] Error getting blob stream:', error);
     throw error;

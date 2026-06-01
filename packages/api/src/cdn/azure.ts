@@ -32,7 +32,11 @@ export const initializeAzureBlobService = async (): Promise<BlobServiceClient | 
       }
       return null;
     }
-    const url = `https://${accountName}.blob.core.windows.net`;
+    // Allow a full blob-endpoint override (sovereign clouds / custom domains),
+    // matching the SAS-signing path so the authenticated download client targets
+    // the right endpoint instead of the hardcoded public-cloud suffix.
+    const url =
+      process.env.AZURE_STORAGE_BLOB_ENDPOINT || `https://${accountName}.blob.core.windows.net`;
     const credential = new DefaultAzureCredential();
     const { BlobServiceClient } = await import('@azure/storage-blob');
     blobServiceClient = new BlobServiceClient(url, credential);
