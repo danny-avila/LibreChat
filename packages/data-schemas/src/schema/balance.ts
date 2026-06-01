@@ -36,6 +36,17 @@ const balanceSchema = new Schema<t.IBalance>({
     type: Number,
     default: 0,
   },
+  // Monthly budget settings (Vermeer "Seuils & gestion") — stored in tokenCredits (1 USD = 1_000_000)
+  // monthlyBudget is the current threshold (admin-editable for the ongoing month);
+  // monthlyBudgetBaseline is the reference value restored on monthly reset.
+  monthlyBudget: {
+    type: Number,
+    default: 10_000_000,
+  },
+  monthlyBudgetBaseline: {
+    type: Number,
+    default: 10_000_000,
+  },
   tenantId: {
     type: String,
     index: true,

@@ -9,6 +9,9 @@ export interface IBalance extends Document {
   refillIntervalUnit: 'seconds' | 'minutes' | 'hours' | 'days' | 'weeks' | 'months';
   lastRefill: Date;
   refillAmount: number;
+  // Monthly budget settings (stored in tokenCredits, 1 USD = 1_000_000)
+  monthlyBudget?: number;
+  monthlyBudgetBaseline?: number;
   tenantId?: string;
 }
 
@@ -21,4 +24,6 @@ export interface IBalanceUpdate {
   refillIntervalUnit?: string;
   refillAmount?: number;
   lastRefill?: Date;
+  monthlyBudget?: number;
+  monthlyBudgetBaseline?: number;
 }
