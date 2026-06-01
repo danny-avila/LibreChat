@@ -5,6 +5,50 @@ import type { ITransaction } from '~/schema/transaction';
 
 const cancelRate = 1.15;
 
+/** A MongoDB aggregation expression (JSON-like tree of operators, literals and field paths). */
+type AggExpr = string | number | boolean | null | RegExp | AggExpr[] | { [key: string]: AggExpr };
+
+/**
+ * Aggregation expression deriving a user's Business Unit (single source of truth).
+ * An explicit `tenantId` wins; otherwise the email domain maps to POP / BETC / Vermeer;
+ * otherwise the raw email domain is used; `null` when there is no email.
+ * @param emailPath field path to the user email (e.g. '$userDoc.email')
+ * @param tenantIdPath field path to the user tenantId (e.g. '$userDoc.tenantId')
+ */
+export function buExpression(emailPath: string, tenantIdPath: string): AggExpr {
+  return {
+    $cond: {
+      if: { $ne: [{ $ifNull: [tenantIdPath, null] }, null] },
+      then: tenantIdPath,
+      else: {
+        $switch: {
+          branches: [
+            {
+              case: { $regexMatch: { input: { $ifNull: [emailPath, ''] }, regex: /@proseonpixels\.com$/i } },
+              then: 'POP',
+            },
+            {
+              case: { $regexMatch: { input: { $ifNull: [emailPath, ''] }, regex: /@betc\.com$/i } },
+              then: 'BETC',
+            },
+            {
+              case: { $regexMatch: { input: { $ifNull: [emailPath, ''] }, regex: /@vermeer\.cloud$/i } },
+              then: 'Vermeer',
+            },
+          ],
+          default: {
+            $cond: {
+              if: { $or: [{ $eq: [emailPath, null] }, { $not: [emailPath] }] },
+              then: null,
+              else: { $arrayElemAt: [{ $split: [emailPath, '@'] }, 1] },
+            },
+          },
+        },
+      },
+    },
+  };
+}
+
 type MultiplierParams = {
   model?: string;
   valueKey?: string;
@@ -473,59 +517,7 @@ export function createTransactionMethods(
           user: { $toString: '$_id' },
           name: { $ifNull: ['$userDoc.name', null] },
           email: { $ifNull: ['$userDoc.email', null] },
-          bu: {
-            $cond: {
-              if: { $ne: [{ $ifNull: ['$userDoc.tenantId', null] }, null] },
-              then: '$userDoc.tenantId',
-              else: {
-                $switch: {
-                  branches: [
-                    {
-                      case: {
-                        $regexMatch: {
-                          input: { $ifNull: ['$userDoc.email', ''] },
-                          regex: /@proseonpixels\.com$/i,
-                        },
-                      },
-                      then: 'POP',
-                    },
-                    {
-                      case: {
-                        $regexMatch: {
-                          input: { $ifNull: ['$userDoc.email', ''] },
-                          regex: /@betc\.com$/i,
-                        },
-                      },
-                      then: 'BETC',
-                    },
-                    {
-                      case: {
-                        $regexMatch: {
-                          input: { $ifNull: ['$userDoc.email', ''] },
-                          regex: /@vermeer\.cloud$/i,
-                        },
-                      },
-                      then: 'Vermeer',
-                    },
-                  ],
-                  default: {
-                    $cond: {
-                      if: {
-                        $or: [
-                          { $eq: ['$userDoc.email', null] },
-                          { $not: ['$userDoc.email'] },
-                        ],
-                      },
-                      then: null,
-                      else: {
-                        $arrayElemAt: [{ $split: ['$userDoc.email', '@'] }, 1],
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
+          bu: buExpression('$userDoc.email', '$userDoc.tenantId'),
           totalCredits: 1,
           totalTokens: 1,
           messageCount: {

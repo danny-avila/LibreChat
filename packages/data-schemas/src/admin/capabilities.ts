@@ -30,6 +30,7 @@ export const SystemCapabilities = {
   MANAGE_CONFIGS: 'manage:configs',
   ASSIGN_CONFIGS: 'assign:configs',
   READ_USAGE: 'read:usage',
+  MANAGE_USAGE: 'manage:usage',
   READ_AGENTS: 'read:agents',
   MANAGE_AGENTS: 'manage:agents',
   MANAGE_MCP_SERVERS: 'manage:mcpservers',
@@ -51,6 +52,7 @@ export const CapabilityImplications: Partial<Record<BaseSystemCapability, BaseSy
     [SystemCapabilities.MANAGE_USERS]: [SystemCapabilities.READ_USERS],
     [SystemCapabilities.MANAGE_GROUPS]: [SystemCapabilities.READ_GROUPS],
     [SystemCapabilities.MANAGE_ROLES]: [SystemCapabilities.READ_ROLES],
+    [SystemCapabilities.MANAGE_USAGE]: [SystemCapabilities.READ_USAGE],
     [SystemCapabilities.MANAGE_CONFIGS]: [SystemCapabilities.READ_CONFIGS],
     [SystemCapabilities.MANAGE_AGENTS]: [SystemCapabilities.READ_AGENTS],
     [SystemCapabilities.MANAGE_PROMPTS]: [SystemCapabilities.READ_PROMPTS],
@@ -218,6 +220,10 @@ export const CAPABILITY_CATEGORIES: CapabilityCategory[] = [
   {
     key: 'system',
     labelKey: 'com_cap_cat_system',
-    capabilities: [SystemCapabilities.ACCESS_ADMIN, SystemCapabilities.READ_USAGE],
+    capabilities: [
+      SystemCapabilities.ACCESS_ADMIN,
+      SystemCapabilities.READ_USAGE,
+      SystemCapabilities.MANAGE_USAGE,
+    ],
   },
 ];
