@@ -36,21 +36,18 @@ function BudgetCard() {
   return (
     <div
       title={localize('com_budget_badge_tooltip', { percent, spent, budget })}
-      className="mx-auto mt-3 flex w-full max-w-3xl flex-col gap-1.5 rounded-xl border border-border-light bg-surface-secondary px-4 py-3"
+      className="mx-auto mt-2 flex w-full max-w-3xl items-center gap-3 rounded-lg border border-border-light bg-surface-secondary px-3 py-1.5 text-xs"
     >
-      <div className="flex items-center justify-between">
-        <span className="flex items-center gap-2 text-sm font-medium text-text-primary">
-          <Gauge size={16} className="text-text-secondary" aria-hidden="true" />
-          {localize('com_budget_card_title')}
-        </span>
-        <span className={`text-sm font-semibold ${text}`}>{percent}%</span>
+      <div className="flex flex-1 items-center gap-2 text-text-primary">
+        <Gauge size={14} className="text-text-secondary" aria-hidden="true" />
+        {localize('com_budget_card_summary', { spent, budget })}
       </div>
-      <div className="h-2 w-full overflow-hidden rounded-full bg-surface-tertiary">
-        <div className={`h-full transition-all ${bar}`} style={{ width: `${percent}%` }} />
+      <div className="flex items-center gap-2">
+        <div className="h-1.5 w-24 overflow-hidden rounded-full bg-surface-tertiary">
+          <div className={`h-full transition-all ${bar}`} style={{ width: `${percent}%` }} />
+        </div>
+        <span className={`font-semibold ${text}`}>{percent}%</span>
       </div>
-      <p className="text-xs text-text-secondary">
-        {localize('com_budget_card_consumption', { spent, budget })}
-      </p>
     </div>
   );
 }

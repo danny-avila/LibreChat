@@ -216,6 +216,8 @@
   "com_auth_username_min_length": "Le nom d'utilisateur doit comporter au moins 3 caractères",
   "com_auth_verify_your_identity": "Vérifiez votre identité",
   "com_auth_welcome_back": "Content de te revoir",
+  "com_budget_badge_tooltip": "{{percent}}% de votre budget mensuel — {{spent}} sur {{budget}} ce mois",
+  "com_budget_card_summary": "Mon budget : {{spent}} / {{budget}}",
   "com_citation_more_details": "Plus d'informations sur {{label}}",
   "com_citation_source": "Source",
   "com_click_to_download": "(cliquez ici pour télécharger)",
