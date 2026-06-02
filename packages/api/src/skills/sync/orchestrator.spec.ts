@@ -124,6 +124,7 @@ describe('createSkillSyncTriggerOrchestrator', () => {
 
     const requestConfig = await runners[0].input.getConfig();
     expect(started).toBe(true);
+    expect(runners[0].input.allowServerCredentials).toBe(false);
     expect(runners[0].runner.runOnce).toHaveBeenCalledTimes(1);
     expect(requestConfig?.github?.runOnStartup).toBe(false);
     expect(requestConfig?.github?.sources[0]).toEqual(
@@ -151,14 +152,28 @@ describe('createSkillSyncTriggerOrchestrator', () => {
     const runner = orchestrator.getRunnerForAdminRequest({
       config: { skillSync: config, config: {} },
       user: { tenantId: 'tenant-a' },
+      skillSyncAllowServerCredentials: true,
     });
     const runnerConfig = await runners[0].input.getConfig();
 
     expect(runner).toBe(runners[0].runner);
+    expect(runners[0].input.allowServerCredentials).toBe(true);
     expect(runnerConfig?.github?.runOnStartup).toBe(true);
     expect(runnerConfig?.github?.sources[0]).toEqual(
       expect.objectContaining({ id: 'tenant-skills', tenantId: 'tenant-a' }),
     );
+  });
+
+  it('does not allow admin override runners to use server credentials by default', async () => {
+    const config = skillSync();
+    const { orchestrator, runners } = createHarness();
+
+    orchestrator.getRunnerForAdminRequest({
+      config: { skillSync: config, config: {} },
+      user: { tenantId: 'tenant-a' },
+    });
+
+    expect(runners[0].input.allowServerCredentials).toBe(false);
   });
 
   it('does not start request sync when the configured source is already running', async () => {
