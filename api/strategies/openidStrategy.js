@@ -6,7 +6,7 @@ const client = require('openid-client');
 const jwtDecode = require('jsonwebtoken/decode');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { hashToken, logger } = require('@librechat/data-schemas');
-const { CacheKeys, ErrorTypes, SystemRoles } = require('librechat-data-provider');
+const { CacheKeys, ErrorTypes } = require('librechat-data-provider');
 const { Strategy: OpenIDStrategy } = require('openid-client/passport');
 const {
   isEnabled,
@@ -492,12 +492,12 @@ async function setupOpenId() {
                 adminRoles === adminRole ||
                 (Array.isArray(adminRoles) && adminRoles.includes(adminRole)))
             ) {
-              user.role = SystemRoles.ADMIN;
+              user.role = 'ADMIN';
               logger.info(
                 `[openidStrategy] User ${username} is an admin based on role: ${adminRole}`,
               );
-            } else if (user.role === SystemRoles.ADMIN) {
-              user.role = SystemRoles.FARMER;
+            } else if (user.role === 'ADMIN') {
+              user.role = 'USER';
               logger.info(
                 `[openidStrategy] User ${username} demoted from admin - role no longer present in token`,
               );

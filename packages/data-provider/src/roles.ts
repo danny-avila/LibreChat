@@ -26,17 +26,9 @@ export enum SystemRoles {
    */
   ADMIN = 'ADMIN',
   /**
-   * The default farmer role
+   * The default user role
    */
-  FARMER = 'FARMER',
-  /**
-   * Internal role
-   */
-  INTERNAL = 'INTERNAL',
-  /**
-   * Coordinator role
-   */
-  COORDINATOR = 'COORDINATOR',
+  USER = 'USER',
 }
 
 export const roleSchema = z.object({
@@ -105,16 +97,8 @@ const defaultRolesSchema = z.object({
       }),
     }),
   }),
-  [SystemRoles.FARMER]: roleSchema.extend({
-    name: z.literal(SystemRoles.FARMER),
-    permissions: permissionsSchema,
-  }),
-  [SystemRoles.INTERNAL]: roleSchema.extend({
-    name: z.literal(SystemRoles.INTERNAL),
-    permissions: permissionsSchema,
-  }),
-  [SystemRoles.COORDINATOR]: roleSchema.extend({
-    name: z.literal(SystemRoles.COORDINATOR),
+  [SystemRoles.USER]: roleSchema.extend({
+    name: z.literal(SystemRoles.USER),
     permissions: permissionsSchema,
   }),
 });
@@ -176,56 +160,8 @@ export const roleDefaults = defaultRolesSchema.parse({
       },
     },
   },
-  [SystemRoles.FARMER]: {
-    name: SystemRoles.FARMER,
-    permissions: {
-      [PermissionTypes.PROMPTS]: {},
-      [PermissionTypes.BOOKMARKS]: {},
-      [PermissionTypes.MEMORIES]: {},
-      [PermissionTypes.AGENTS]: {},
-      [PermissionTypes.MULTI_CONVO]: {},
-      [PermissionTypes.TEMPORARY_CHAT]: {},
-      [PermissionTypes.RUN_CODE]: {},
-      [PermissionTypes.WEB_SEARCH]: {},
-      [PermissionTypes.PEOPLE_PICKER]: {
-        [Permissions.VIEW_USERS]: false,
-        [Permissions.VIEW_GROUPS]: false,
-        [Permissions.VIEW_ROLES]: false,
-      },
-      [PermissionTypes.MARKETPLACE]: {
-        [Permissions.USE]: false,
-      },
-      [PermissionTypes.FILE_SEARCH]: {},
-      [PermissionTypes.FILE_CITATIONS]: {},
-      [PermissionTypes.MCP_SERVERS]: {},
-    },
-  },
-  [SystemRoles.INTERNAL]: {
-    name: SystemRoles.INTERNAL,
-    permissions: {
-      [PermissionTypes.PROMPTS]: {},
-      [PermissionTypes.BOOKMARKS]: {},
-      [PermissionTypes.MEMORIES]: {},
-      [PermissionTypes.AGENTS]: {},
-      [PermissionTypes.MULTI_CONVO]: {},
-      [PermissionTypes.TEMPORARY_CHAT]: {},
-      [PermissionTypes.RUN_CODE]: {},
-      [PermissionTypes.WEB_SEARCH]: {},
-      [PermissionTypes.PEOPLE_PICKER]: {
-        [Permissions.VIEW_USERS]: false,
-        [Permissions.VIEW_GROUPS]: false,
-        [Permissions.VIEW_ROLES]: false,
-      },
-      [PermissionTypes.MARKETPLACE]: {
-        [Permissions.USE]: false,
-      },
-      [PermissionTypes.FILE_SEARCH]: {},
-      [PermissionTypes.FILE_CITATIONS]: {},
-      [PermissionTypes.MCP_SERVERS]: {},
-    },
-  },
-  [SystemRoles.COORDINATOR]: {
-    name: SystemRoles.COORDINATOR,
+  [SystemRoles.USER]: {
+    name: SystemRoles.USER,
     permissions: {
       [PermissionTypes.PROMPTS]: {},
       [PermissionTypes.BOOKMARKS]: {},

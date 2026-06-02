@@ -112,13 +112,13 @@ const AdminSettingsDialog: React.FC<AdminSettingsDialogProps> = ({
   const { mutate, isLoading } = mutation;
 
   const [isRoleMenuOpen, setIsRoleMenuOpen] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<SystemRoles>(SystemRoles.FARMER);
+  const [selectedRole, setSelectedRole] = useState<SystemRoles>(SystemRoles.USER);
 
   const defaultValues = useMemo(() => {
     if (roles?.[selectedRole]?.permissions) {
       return roles[selectedRole]?.permissions[permissionType];
     }
-    return roleDefaults[selectedRole]?.permissions?.[permissionType] ?? {};
+    return roleDefaults[selectedRole].permissions[permissionType];
   }, [roles, selectedRole, permissionType]);
 
   const {
@@ -137,7 +137,7 @@ const AdminSettingsDialog: React.FC<AdminSettingsDialogProps> = ({
     if (roles?.[selectedRole]?.permissions?.[permissionType]) {
       reset(roles[selectedRole]?.permissions[permissionType]);
     } else {
-      reset(roleDefaults[selectedRole]?.permissions?.[permissionType] ?? {});
+      reset(roleDefaults[selectedRole].permissions[permissionType]);
     }
   }, [roles, selectedRole, reset, permissionType]);
 
@@ -151,21 +151,9 @@ const AdminSettingsDialog: React.FC<AdminSettingsDialogProps> = ({
 
   const roleDropdownItems = [
     {
-      label: SystemRoles.FARMER,
+      label: SystemRoles.USER,
       onClick: () => {
-        setSelectedRole(SystemRoles.FARMER);
-      },
-    },
-    {
-      label: SystemRoles.INTERNAL,
-      onClick: () => {
-        setSelectedRole(SystemRoles.INTERNAL);
-      },
-    },
-    {
-      label: SystemRoles.COORDINATOR,
-      onClick: () => {
-        setSelectedRole(SystemRoles.COORDINATOR);
+        setSelectedRole(SystemRoles.USER);
       },
     },
     {

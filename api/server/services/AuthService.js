@@ -216,7 +216,7 @@ const registerUser = async (user, additionalData = {}) => {
       username,
       name,
       avatar: null,
-      role: isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.FARMER,
+      role: isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER,
       password: bcrypt.hashSync(password, salt),
       ...additionalData,
     };

@@ -132,7 +132,7 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
 
     if (!user) {
       const isFirstRegisteredUser = (await countUsers()) === 0;
-      const role = isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.FARMER;
+      const role = isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER;
 
       user = {
         provider: 'ldap',
