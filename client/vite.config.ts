@@ -134,7 +134,7 @@ export default defineConfig(({ command }) => ({
   build: {
     sourcemap: buildSourceMap,
     outDir: './dist',
-    minify: 'terser',
+    minify: 'oxc',
     rolldownOptions: {
       preserveEntrySignatures: 'strict',
       output: {
