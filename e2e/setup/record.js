@@ -257,7 +257,7 @@ async function waitForURL(url, timeoutMs) {
     const timeout = setTimeout(() => controller.abort(), 1000);
     try {
       const response = await fetch(url, { signal: controller.signal });
-      if (response.status < 500) {
+      if (response.ok) {
         return true;
       }
     } catch {
