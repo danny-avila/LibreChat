@@ -7,8 +7,9 @@ jest.mock('nanoid', () => ({
 
 jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
+  HOST_FILE_AUTHORING_ARTIFACT_KEY: '__librechat_file_authoring',
   isCodeSessionToolName: jest.fn((name) =>
-    ['execute_code', 'bash_tool', 'read_file', 'create_file', 'edit_file'].includes(name),
+    ['execute_code', 'bash_tool', 'read_file'].includes(name),
   ),
 }));
 
@@ -374,12 +375,14 @@ describe('createToolEndCallback', () => {
       fileId,
       name,
       toolName = 'execute_code',
+      hostFileAuthoring = false,
     }) {
       return {
         output: {
           name: toolName,
           tool_call_id: toolCallId,
           artifact: {
+            ...(hostFileAuthoring ? { __librechat_file_authoring: true } : {}),
             session_id: 'sess-1',
             files: [{ id: fileId, name, session_id: 'sess-1' }],
           },
@@ -607,6 +610,7 @@ describe('createToolEndCallback', () => {
         fileId: 'fid-created',
         name: 'created.txt',
         toolName: 'create_file',
+        hostFileAuthoring: true,
       });
       await toolEndCallback({ output: event.output }, event.metadata);
       await Promise.all(artifactPromises);
@@ -621,6 +625,25 @@ describe('createToolEndCallback', () => {
         }),
       );
       expect(res.write).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not process arbitrary user tool artifacts named create_file as code outputs', async () => {
+      res.headersSent = true;
+      const toolEndCallback = createToolEndCallback({ req, res, artifactPromises });
+      const event = makeCodeExecutionEvent({
+        runId: 'run-user-create',
+        threadId: 'thread789',
+        toolCallId: 'tool-user-create',
+        fileId: 'fid-user-created',
+        name: 'created.txt',
+        toolName: 'create_file',
+      });
+
+      await toolEndCallback({ output: event.output }, event.metadata);
+      await Promise.all(artifactPromises);
+
+      expect(processCodeOutput).not.toHaveBeenCalled();
+      expect(res.write).not.toHaveBeenCalled();
     });
   });
 });
