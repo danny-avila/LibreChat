@@ -8,19 +8,14 @@ import type { LCTool, LCToolRegistry } from '@librechat/agents';
 
 export const CREATE_FILE_TOOL_NAME = 'create_file';
 export const EDIT_FILE_TOOL_NAME = 'edit_file';
+export const FILE_AUTHORING_TOOL_NAMES: ReadonlySet<string> = new Set([
+  CREATE_FILE_TOOL_NAME,
+  EDIT_FILE_TOOL_NAME,
+]);
 
-/**
- * `@librechat/agents` v3.2.x only treats the built-in code tools, `skill`,
- * and `read_file` as code-session-aware event tools. LibreChat owns these
- * host-side file-authoring definitions, so widen the shared runtime set here
- * until the agents package exports first-class definitions/constants for
- * `create_file`.
- */
-const mutableCodeExecutionTools = CODE_EXECUTION_TOOLS as unknown as
-  | { add?: (name: string) => unknown }
-  | undefined;
-mutableCodeExecutionTools?.add?.(CREATE_FILE_TOOL_NAME);
-mutableCodeExecutionTools?.add?.(EDIT_FILE_TOOL_NAME);
+export function isCodeSessionToolName(name: string): boolean {
+  return CODE_EXECUTION_TOOLS.has(name) || FILE_AUTHORING_TOOL_NAMES.has(name);
+}
 
 interface ToolDefLike {
   name: string;

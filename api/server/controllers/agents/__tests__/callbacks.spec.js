@@ -7,6 +7,9 @@ jest.mock('nanoid', () => ({
 
 jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
+  isCodeSessionToolName: jest.fn((name) =>
+    ['execute_code', 'bash_tool', 'read_file', 'create_file', 'edit_file'].includes(name),
+  ),
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
