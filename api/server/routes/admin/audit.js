@@ -7,6 +7,7 @@ const db = require('~/models');
 
 const router = express.Router();
 
+const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
 const requireAuditLogRead = requireCapability(SystemCapabilities.READ_AUDIT_LOG);
 
 const handlers = createAdminAuditLogHandlers({
@@ -15,7 +16,14 @@ const handlers = createAdminAuditLogHandlers({
   streamAuditLogEntries: db.streamAuditLogEntries,
 });
 
-router.use(requireJwtAuth, requireAuditLogRead);
+/**
+ * `ACCESS_ADMIN` gates entry to the admin surface; `READ_AUDIT_LOG` then gates
+ * this specific feature within that surface. The two capabilities are
+ * independent in `CapabilityImplications`, so a role delegated only
+ * `READ_AUDIT_LOG` without `ACCESS_ADMIN` would otherwise bypass the admin
+ * boundary on this router — every other admin router enforces the same pair.
+ */
+router.use(requireJwtAuth, requireAdminAccess, requireAuditLogRead);
 
 router.get('/', handlers.listAuditLog);
 /** `/export.csv` MUST precede `/:id` so it isn't matched as `{ id: 'export.csv' }`. */
