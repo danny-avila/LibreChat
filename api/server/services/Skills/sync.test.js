@@ -185,6 +185,7 @@ describe('GitHub skill sync service', () => {
     const requestRunner = mockCreatedRunners[0].runner;
     const requestConfig = await mockCreatedRunners[0].deps.getConfig();
     expect(started).toBe(true);
+    expect(mockCreatedRunners[0].deps.allowServerCredentials).toBe(false);
     expect(requestRunner.runOnce).toHaveBeenCalledTimes(1);
     expect(requestConfig.github.runOnStartup).toBe(false);
     expect(requestConfig.github.sources[0]).toEqual(
@@ -248,15 +249,45 @@ describe('GitHub skill sync service', () => {
     const runner = service.getGitHubSkillSyncRunnerForRequest({
       config: { skillSync, config: {} },
       user: { id: 'user-1', tenantId: 'tenant-a' },
+      skillSyncAllowServerCredentials: true,
     });
     const config = await mockCreatedRunners[0].deps.getConfig();
 
     expect(runner.runOnce).toBe(mockCreatedRunners[0].runner.runOnce);
     expect(runner.getStatus).toBe(mockCreatedRunners[0].runner.getStatus);
+    expect(mockCreatedRunners[0].deps.allowServerCredentials).toBe(true);
     expect(config.github.runOnStartup).toBe(true);
     expect(config.github.sources[0]).toEqual(
       expect.objectContaining({ id: 'tenant-skills', tenantId: 'tenant-a' }),
     );
+  });
+
+  it('does not allow request-built admin override runners to use server credentials by default', async () => {
+    const skillSync = {
+      github: {
+        enabled: true,
+        intervalMinutes: 60,
+        runOnStartup: true,
+        sources: [
+          {
+            id: 'tenant-skills',
+            owner: 'LibreChat',
+            repo: 'skills',
+            ref: 'main',
+            paths: ['skills'],
+            token: '${GITHUB_SKILLS_TOKEN}',
+          },
+        ],
+      },
+    };
+
+    const service = require('./sync');
+    service.getGitHubSkillSyncRunnerForRequest({
+      config: { skillSync, config: {} },
+      user: { id: 'user-1', tenantId: 'tenant-a' },
+    });
+
+    expect(mockCreatedRunners[0].deps.allowServerCredentials).toBe(false);
   });
 
   it('does not start a request-scoped sync when the configured source is already running', async () => {
