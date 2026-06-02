@@ -52,6 +52,44 @@ describe('retention helpers', () => {
     expect(dependencies.getConvo).not.toHaveBeenCalled();
   });
 
+  it('applies file retention when requested and configured', async () => {
+    const result = await getRetentionExpiry(
+      request({
+        config: { interfaceConfig: { retentionMode: RetentionMode.TEMPORARY, fileRetention: 24 } },
+        body: { isTemporary: false },
+      }),
+      dependencies,
+      { applyFileRetention: true },
+    );
+
+    expect(result).toEqual({ expiredAt: expirationDate });
+    expect(dependencies.getConvo).not.toHaveBeenCalled();
+  });
+
+  it('does not apply file retention when requested but not configured', async () => {
+    const result = await getRetentionExpiry(
+      request({ body: { isTemporary: false } }),
+      dependencies,
+      { applyFileRetention: true },
+    );
+
+    expect(result).toEqual({});
+  });
+
+  it('uses a distinct cache entry for file retention mode', async () => {
+    const req = request({
+      config: { interfaceConfig: { retentionMode: RetentionMode.TEMPORARY, fileRetention: 24 } },
+      body: { isTemporary: false },
+    });
+
+    const normalResult = await getRetentionExpiry(req, dependencies);
+    const fileResult = await getRetentionExpiry(req, dependencies, { applyFileRetention: true });
+
+    expect(normalResult).toEqual({});
+    expect(fileResult).toEqual({ expiredAt: expirationDate });
+    expect(dependencies.createExpirationDate).toHaveBeenCalledTimes(1);
+  });
+
   it('returns a fresh expiry when the conversation has an active expiration', async () => {
     dependencies.getConvo.mockResolvedValue({
       expiredAt: new Date(Date.now() + 60 * 60 * 1000),
@@ -234,6 +272,29 @@ describe('retention helpers', () => {
     expect(result).toEqual({});
     expect(dependencies.getConvo).not.toHaveBeenCalled();
     expect(dependencies.createExpirationDate).not.toHaveBeenCalled();
+  });
+
+  it('applies configured file retention to persistent agent files', async () => {
+    const result = await getAgentFileRetentionExpiry(
+      {
+        req: request({
+          config: {
+            interfaceConfig: {
+              retentionMode: RetentionMode.TEMPORARY,
+              retainAgentFiles: true,
+              fileRetention: 12,
+            },
+          },
+        }),
+        messageAttachment: false,
+        toolResource: 'context',
+      },
+      dependencies,
+    );
+
+    expect(result).toEqual({ expiredAt: expirationDate });
+    expect(dependencies.getConvo).not.toHaveBeenCalled();
+    expect(dependencies.createExpirationDate).toHaveBeenCalledTimes(1);
   });
 
   it('applies all-data retention to persistent agent files when retainAgentFiles is disabled', async () => {
