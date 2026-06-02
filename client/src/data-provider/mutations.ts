@@ -123,6 +123,9 @@ export const useArchiveConvoMutation = (
           [QueryKeys.conversation, vars.conversationId],
           isArchived ? null : _data,
         );
+        if (_data.chatProjectId) {
+          queryClient.invalidateQueries([QueryKeys.project, _data.chatProjectId]);
+        }
 
         onSuccess?.(_data, vars, context);
       },
@@ -553,6 +556,9 @@ export const useDuplicateConversationMutation = (
         refetchPage: (_, index) => index === 0,
       });
       queryClient.invalidateQueries([QueryKeys.projects]);
+      if (duplicatedConversation.chatProjectId) {
+        queryClient.invalidateQueries([QueryKeys.project, duplicatedConversation.chatProjectId]);
+      }
 
       if (duplicatedConversation.tags && duplicatedConversation.tags.length > 0) {
         queryClient.setQueryData<t.TConversationTag[]>([QueryKeys.conversationTags], (oldTags) => {
@@ -597,6 +603,9 @@ export const useForkConvoMutation = (
         refetchPage: (_, index) => index === 0,
       });
       queryClient.invalidateQueries([QueryKeys.projects]);
+      if (forkedConversation.chatProjectId) {
+        queryClient.invalidateQueries([QueryKeys.project, forkedConversation.chatProjectId]);
+      }
 
       if (forkedConversation.tags && forkedConversation.tags.length > 0) {
         queryClient.setQueryData<t.TConversationTag[]>([QueryKeys.conversationTags], (oldTags) => {

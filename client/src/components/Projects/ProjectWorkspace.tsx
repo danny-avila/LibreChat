@@ -16,6 +16,7 @@ export default function ProjectWorkspace() {
   const { newConversation } = useNewConvo();
   const [sortBy, setSortBy] = useState<ChatSortField>('updatedAt');
   const { data: project, isLoading: isProjectLoading } = useProjectQuery(projectId);
+  const activeProjectId = project?._id;
 
   const {
     data,
@@ -24,12 +25,12 @@ export default function ProjectWorkspace() {
     isLoading: isConversationsLoading,
   } = useConversationsInfiniteQuery(
     {
-      projectId,
+      projectId: activeProjectId,
       sortBy,
       sortDirection: 'desc',
     },
     {
-      enabled: Boolean(projectId),
+      enabled: Boolean(activeProjectId),
       staleTime: 30000,
       cacheTime: 300000,
     },
@@ -52,15 +53,15 @@ export default function ProjectWorkspace() {
   const startProjectChat = useCallback(
     (event?: FormEvent<HTMLFormElement>) => {
       event?.preventDefault();
-      if (!projectId) {
+      if (!activeProjectId) {
         return;
       }
-      newConversation({ template: { chatProjectId: projectId } });
-      navigate(`/c/new?projectId=${encodeURIComponent(projectId)}`, {
+      newConversation({ template: { chatProjectId: activeProjectId } });
+      navigate(`/c/new?projectId=${encodeURIComponent(activeProjectId)}`, {
         state: { focusChat: true },
       });
     },
-    [navigate, newConversation, projectId],
+    [activeProjectId, navigate, newConversation],
   );
 
   if (isProjectLoading) {

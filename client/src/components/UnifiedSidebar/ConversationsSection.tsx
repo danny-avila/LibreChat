@@ -182,6 +182,7 @@ const ConversationsSection = memo(() => {
           <ProjectConversations
             mode={organizationMode}
             chatSortBy={chatSortBy}
+            tags={tags}
             toggleNav={toggleNav}
             isAuthenticated={isAuthenticated}
             containerRef={conversationsRef}

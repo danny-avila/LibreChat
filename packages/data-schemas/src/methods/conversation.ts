@@ -302,13 +302,21 @@ export function createConversationMethods(
       }
 
       if (conversation.chatProjectId) {
-        await updateChatProjectLastConversationForUser(
-          mongoose,
-          userId,
-          conversation.chatProjectId,
-          conversation,
-          conversationResult.lastErrorObject?.updatedExisting === false,
-        );
+        const shouldRefreshProjectStats =
+          typeof update.isArchived === 'boolean' ||
+          Object.prototype.hasOwnProperty.call(metadata?.unsetFields ?? {}, 'isArchived');
+
+        if (shouldRefreshProjectStats) {
+          await refreshChatProjectStatsForUser(mongoose, userId, conversation.chatProjectId);
+        } else {
+          await updateChatProjectLastConversationForUser(
+            mongoose,
+            userId,
+            conversation.chatProjectId,
+            conversation,
+            conversationResult.lastErrorObject?.updatedExisting === false,
+          );
+        }
       }
 
       return conversation.toObject();
@@ -327,6 +335,7 @@ export function createConversationMethods(
   async function bulkSaveConvos(conversations: Array<Record<string, unknown>>) {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
+      const affectedProjectStats = new Map<string, { user: string; projectId: string }>();
       const bulkOps = conversations.map((convo) => ({
         updateOne: {
           filter: {
@@ -339,7 +348,22 @@ export function createConversationMethods(
         },
       }));
 
+      for (const convo of conversations) {
+        if (typeof convo.user !== 'string' || typeof convo.chatProjectId !== 'string') {
+          continue;
+        }
+        affectedProjectStats.set(`${convo.user}:${convo.chatProjectId}`, {
+          user: convo.user,
+          projectId: convo.chatProjectId,
+        });
+      }
+
       const result = await tenantSafeBulkWrite(Conversation, bulkOps);
+      await Promise.all(
+        [...affectedProjectStats.values()].map(({ user, projectId }) =>
+          refreshChatProjectStatsForUser(mongoose, user, projectId),
+        ),
+      );
       return result;
     } catch (error) {
       logger.error('[bulkSaveConvos] Error saving conversations in bulk', error);

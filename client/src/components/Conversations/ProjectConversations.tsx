@@ -42,6 +42,7 @@ type FlattenedItem =
 interface ProjectConversationsProps {
   mode: SidebarProjectMode;
   chatSortBy: SidebarChatSort;
+  tags: string[];
   toggleNav: () => void;
   isAuthenticated: boolean;
   containerRef: React.RefObject<List>;
@@ -134,6 +135,7 @@ EmptyRow.displayName = 'ProjectEmptyRow';
 const ProjectConversations: FC<ProjectConversationsProps> = ({
   mode,
   chatSortBy,
+  tags,
   toggleNav,
   isAuthenticated,
   containerRef,
@@ -172,6 +174,7 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
   } = useConversationsInfiniteQuery(
     {
       projectId: expandedSectionId ?? undefined,
+      tags: tags.length === 0 ? undefined : tags,
       sortBy: chatSortBy,
       sortDirection: 'desc',
       search: search.debouncedQuery || undefined,
@@ -313,7 +316,7 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
       }
     });
     return () => cancelAnimationFrame(frameId);
-  }, [cache, chatSortBy, expandedSectionId, mode, search.query, containerRef]);
+  }, [cache, chatSortBy, expandedSectionId, mode, search.query, tags, containerRef]);
 
   const retainView = useCallback(() => {
     containerRef.current?.scrollToPosition(0);

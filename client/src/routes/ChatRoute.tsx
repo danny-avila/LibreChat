@@ -21,7 +21,12 @@ import {
   useNewConvo,
   useLocalize,
 } from '~/hooks';
-import { useGetConvoIdQuery, useGetStartupConfig, useGetEndpointsQuery } from '~/data-provider';
+import {
+  useGetConvoIdQuery,
+  useGetStartupConfig,
+  useGetEndpointsQuery,
+  useProjectQuery,
+} from '~/data-provider';
 import { ToolCallsMapProvider } from '~/Providers';
 import ChatView from '~/components/Chat/ChatView';
 import { NotificationSeverity } from '~/common';
@@ -56,6 +61,13 @@ export default function ChatRoute() {
   const { newConversation } = useNewConvo();
   const { showToast } = useToastContext();
   const localize = useLocalize();
+  const projectQuery = useProjectQuery(chatProjectId, {
+    enabled: isAuthenticated && Boolean(chatProjectId),
+    retry: false,
+    staleTime: 30000,
+    cacheTime: 300000,
+  });
+  const verifiedChatProjectId = projectQuery.data?._id === chatProjectId ? chatProjectId : null;
 
   const modelsQuery = useGetModelsQuery({
     enabled: isAuthenticated,
@@ -95,6 +107,9 @@ export default function ChatRoute() {
     }
 
     const isNewConvo = conversationId === Constants.NEW_CONVO;
+    if (isNewConvo && chatProjectId && projectQuery.isLoading) {
+      return;
+    }
 
     const getNewConvoPreset = () => {
       const result = getDefaultModelSpec(startupConfig);
@@ -123,7 +138,7 @@ export default function ChatRoute() {
         modelsData: modelsQuery.data,
         template: {
           ...(conversation ?? {}),
-          ...(chatProjectId ? { chatProjectId } : {}),
+          ...(verifiedChatProjectId ? { chatProjectId: verifiedChatProjectId } : {}),
         },
         ...(preset ? { preset } : {}),
       });
@@ -173,7 +188,7 @@ export default function ChatRoute() {
         modelsData: modelsQuery.data,
         template: {
           ...(conversation ?? {}),
-          ...(chatProjectId ? { chatProjectId } : {}),
+          ...(verifiedChatProjectId ? { chatProjectId: verifiedChatProjectId } : {}),
         },
         ...(preset ? { preset } : {}),
       });
@@ -200,6 +215,9 @@ export default function ChatRoute() {
     endpointsQuery.data,
     modelsQuery.data,
     assistantListMap,
+    chatProjectId,
+    projectQuery.data?._id,
+    projectQuery.isLoading,
   ]);
 
   if (endpointsQuery.isLoading || modelsQuery.isLoading) {

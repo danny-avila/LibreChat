@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { EModelEndpoint, RetentionMode } from 'librechat-data-provider';
-import type { IConversation } from '../types';
+import type { IChatProject, IConversation } from '../types';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { ConversationMethods, createConversationMethods } from './conversation';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
@@ -16,6 +16,7 @@ jest.mock('~/config/winston', () => ({
 
 let mongoServer: InstanceType<typeof MongoMemoryServer>;
 let Conversation: mongoose.Model<IConversation>;
+let ChatProject: mongoose.Model<IChatProject>;
 let modelsToCleanup: string[] = [];
 
 // Mock message methods (same as original test mocking ./Message)
@@ -32,6 +33,7 @@ beforeAll(async () => {
   modelsToCleanup = Object.keys(models);
   Object.assign(mongoose.models, models);
   Conversation = mongoose.models.Conversation as mongoose.Model<IConversation>;
+  ChatProject = mongoose.models.ChatProject as mongoose.Model<IChatProject>;
 
   methods = createConversationMethods(mongoose, { getMessages, deleteMessages });
 
@@ -91,6 +93,7 @@ describe('Conversation Operations', () => {
   beforeEach(async () => {
     // Clear database
     await Conversation.deleteMany({});
+    await ChatProject.deleteMany({});
 
     // Reset mocks
     jest.clearAllMocks();
@@ -151,6 +154,41 @@ describe('Conversation Operations', () => {
       });
 
       expect(result?.conversationId).toBe(newConversationId);
+    });
+
+    it('refreshes project stats when archiving a project conversation', async () => {
+      const project = await ChatProject.create({
+        user: mockCtx.userId,
+        name: 'Project Stats',
+        conversationCount: 0,
+        lastConversationAt: null,
+        lastConversationId: null,
+      });
+      const firstConversationId = uuidv4();
+      const secondConversationId = uuidv4();
+      const chatProjectId = project._id!.toString();
+
+      await saveConvo(mockCtx, {
+        conversationId: firstConversationId,
+        title: 'First',
+        endpoint: EModelEndpoint.openAI,
+        chatProjectId,
+      });
+      await saveConvo(mockCtx, {
+        conversationId: secondConversationId,
+        title: 'Second',
+        endpoint: EModelEndpoint.openAI,
+        chatProjectId,
+      });
+
+      await saveConvo(mockCtx, {
+        conversationId: secondConversationId,
+        isArchived: true,
+      });
+
+      const refreshedProject = await ChatProject.findById(project._id).lean<IChatProject>();
+      expect(refreshedProject?.conversationCount).toBe(1);
+      expect(refreshedProject?.lastConversationId).toBe(firstConversationId);
     });
 
     it('should not create a conversation when noUpsert is true and conversation does not exist', async () => {
@@ -1169,6 +1207,35 @@ describe('Conversation Operations', () => {
       expect(doc).not.toBeNull();
       expect(doc?.title).toBe('Updated');
       expect(doc?.tenantId).toBe('real-tenant');
+    });
+
+    it('bulkSaveConvos refreshes stats for cloned project conversations', async () => {
+      const project = await ChatProject.create({
+        user: 'user123',
+        name: 'Bulk Project',
+        conversationCount: 0,
+        lastConversationAt: null,
+        lastConversationId: null,
+      });
+      const conversationId = uuidv4();
+      const createdAt = new Date('2026-01-01T00:00:00.000Z');
+
+      await methods.bulkSaveConvos([
+        {
+          conversationId,
+          user: 'user123',
+          title: 'Cloned Project Chat',
+          endpoint: EModelEndpoint.openAI,
+          chatProjectId: project._id!.toString(),
+          createdAt,
+          updatedAt: createdAt,
+        },
+      ]);
+
+      const refreshedProject = await ChatProject.findById(project._id).lean<IChatProject>();
+      expect(refreshedProject?.conversationCount).toBe(1);
+      expect(refreshedProject?.lastConversationId).toBe(conversationId);
+      expect(refreshedProject?.lastConversationAt?.toISOString()).toBe(createdAt.toISOString());
     });
   });
 });

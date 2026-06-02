@@ -71,6 +71,11 @@ export const useAssignConversationToProjectMutation = (): UseMutationResult<
           [QueryKeys.conversation, result.conversation.conversationId],
           result.conversation,
         );
+        [result.previousProjectId, result.projectId].forEach((projectId) => {
+          if (projectId) {
+            queryClient.invalidateQueries([QueryKeys.project, projectId]);
+          }
+        });
         queryClient.invalidateQueries([QueryKeys.projects]);
         queryClient.invalidateQueries([QueryKeys.allConversations]);
       },
