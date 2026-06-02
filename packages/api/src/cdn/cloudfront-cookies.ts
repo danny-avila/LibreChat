@@ -520,10 +520,6 @@ export function setCloudFrontCookies(
       path: '/',
     });
 
-    logger.debug(
-      `[setCloudFrontCookies] Issued signed CloudFront cookies (paths=${signedCookieSets.length}, expiresInSec=${cookieExpiry}).`,
-    );
-
     return true;
   } catch (error) {
     logger.error('[setCloudFrontCookies] Failed to generate signed cookies:', error);
@@ -571,12 +567,6 @@ export function maybeRefreshCloudFrontAuthCookies(
       : getScopeRefreshReason(previousScope, effectiveScope, refreshWindowSec);
 
     if (!refreshReason) {
-      logger.debug('[maybeRefreshCloudFrontAuthCookies] CloudFront auth cookies still fresh', {
-        attempted: false,
-        refreshed: false,
-        reason: 'fresh',
-        refresh_window_sec: refreshWindowSec,
-      });
       return {
         enabled: true,
         attempted: false,
@@ -599,10 +589,14 @@ export function maybeRefreshCloudFrontAuthCookies(
     };
 
     if (cookiesSet) {
-      logger.debug(
-        '[maybeRefreshCloudFrontAuthCookies] CloudFront auth cookies refreshed',
-        logPayload,
-      );
+      return {
+        enabled: true,
+        attempted: true,
+        refreshed: true,
+        reason: refreshReason,
+        expiresInSec: timing.expiresInSec,
+        refreshAfterSec: timing.refreshAfterSec,
+      };
     } else {
       logger.warn(
         '[maybeRefreshCloudFrontAuthCookies] CloudFront auth cookie refresh failed',
@@ -613,8 +607,8 @@ export function maybeRefreshCloudFrontAuthCookies(
     return {
       enabled: true,
       attempted: true,
-      refreshed: cookiesSet,
-      reason: cookiesSet ? refreshReason : 'set_failed',
+      refreshed: false,
+      reason: 'set_failed',
       expiresInSec: timing.expiresInSec,
       refreshAfterSec: timing.refreshAfterSec,
     };

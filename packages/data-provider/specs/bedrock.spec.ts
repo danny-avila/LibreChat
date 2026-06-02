@@ -2,6 +2,7 @@ import { ThinkingDisplay } from '../src/schemas';
 import {
   BEDROCK_OUTPUT_128K_BETA,
   supportsAdaptiveThinking,
+  omitsSamplingParameters,
   omitsThinkingByDefault,
   resolveThinkingDisplay,
   bedrockOutputParser,
@@ -222,7 +223,7 @@ describe('omitsThinkingByDefault', () => {
     expect(omitsThinkingByDefault('us.anthropic.claude-opus-4-7')).toBe(true);
   });
 
-  test('returns true for claude-opus-4-8 (future Opus 4.x)', () => {
+  test('returns true for claude-opus-4-8', () => {
     expect(omitsThinkingByDefault('claude-opus-4-8')).toBe(true);
   });
 
@@ -236,6 +237,11 @@ describe('omitsThinkingByDefault', () => {
 
   test('returns false for claude-opus-4-6 (adaptive but pre-4.7)', () => {
     expect(omitsThinkingByDefault('claude-opus-4-6')).toBe(false);
+  });
+
+  test('returns false for base Opus 4 snapshot IDs', () => {
+    expect(omitsThinkingByDefault('claude-opus-4-20250514')).toBe(false);
+    expect(omitsThinkingByDefault('anthropic.claude-opus-4-20250514-v1:0')).toBe(false);
   });
 
   test('returns false for claude-opus-4-5', () => {
@@ -261,6 +267,36 @@ describe('omitsThinkingByDefault', () => {
   test('returns false for unrelated models', () => {
     expect(omitsThinkingByDefault('gpt-4o')).toBe(false);
     expect(omitsThinkingByDefault('')).toBe(false);
+  });
+});
+
+describe('omitsSamplingParameters', () => {
+  test('returns true for Opus 4.7+ models', () => {
+    const models = [
+      'claude-opus-4-7',
+      'claude-opus-4-8',
+      'anthropic.claude-opus-4-8',
+      'us.anthropic.claude-opus-4-8',
+      'claude-opus-5',
+    ];
+
+    models.forEach((model) => {
+      expect(omitsSamplingParameters(model)).toBe(true);
+    });
+  });
+
+  test('returns false for older Opus and non-Opus models', () => {
+    const models = [
+      'claude-opus-4-20250514',
+      'anthropic.claude-opus-4-20250514-v1:0',
+      'claude-opus-4-1-20250805',
+      'claude-opus-4-6',
+      'claude-sonnet-4-7',
+    ];
+
+    models.forEach((model) => {
+      expect(omitsSamplingParameters(model)).toBe(false);
+    });
   });
 });
 
@@ -539,6 +575,47 @@ describe('bedrockInputParser', () => {
       expect(additionalFields.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
       expect(additionalFields.output_config).toEqual({ effort: 'xhigh' });
       expect(additionalFields.effort).toBeUndefined();
+    });
+
+    test('should strip sampling parameters for Opus 4.8 Bedrock models', () => {
+      const input = {
+        model: 'anthropic.claude-opus-4-8',
+        temperature: 0.7,
+        topP: 0.9,
+        topK: 40,
+        top_p: 0.8,
+        additionalModelRequestFields: {
+          custom_flag: true,
+          temperature: 0.5,
+          topP: 0.95,
+          top_k: 20,
+        },
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(result.temperature).toBeUndefined();
+      expect(result.topP).toBeUndefined();
+      expect(additionalFields.temperature).toBeUndefined();
+      expect(additionalFields.topP).toBeUndefined();
+      expect(additionalFields.top_p).toBeUndefined();
+      expect(additionalFields.top_k).toBeUndefined();
+      expect(additionalFields.custom_flag).toBe(true);
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
+      expect(additionalFields.anthropic_beta).toEqual(BEDROCK_CLAUDE_4_BETAS);
+    });
+
+    test('should preserve sampling parameters for Opus 4.6 Bedrock models', () => {
+      const input = {
+        model: 'anthropic.claude-opus-4-6-v1',
+        temperature: 0.7,
+        topP: 0.9,
+        topK: 40,
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(result.temperature).toBe(0.7);
+      expect(result.topP).toBe(0.9);
+      expect(additionalFields.top_k).toBe(40);
     });
 
     test('should set thinking.display to "summarized" so Opus 4.7 returns reasoning blocks', () => {

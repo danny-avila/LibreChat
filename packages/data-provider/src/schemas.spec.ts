@@ -1,4 +1,10 @@
-import { AnthropicEffort, anthropicSettings, eAnthropicEffortSchema } from './schemas';
+import {
+  AnthropicEffort,
+  googleSettings,
+  anthropicSettings,
+  compactGoogleSchema,
+  eAnthropicEffortSchema,
+} from './schemas';
 
 describe('anthropicSettings', () => {
   describe('maxOutputTokens.reset()', () => {
@@ -350,6 +356,112 @@ describe('anthropicSettings', () => {
       it('should allow 128K exactly', () => {
         expect(set(128000, 'claude-3-opus')).toBe(128000);
       });
+    });
+  });
+});
+
+describe('googleSettings', () => {
+  describe('maxOutputTokens.reset()', () => {
+    const { reset } = googleSettings.maxOutputTokens;
+
+    describe('current Gemini text models (64K, Vertex-safe)', () => {
+      it.each([
+        'gemini-2.5-pro',
+        'gemini-2.5-flash',
+        'gemini-2.5-flash-lite',
+        'gemini-2.5-pro-preview-05-06',
+        'gemini-3',
+        'gemini-3-pro',
+        'gemini-3.1',
+        'gemini-3.1-flash-lite',
+        'gemini-3.5-flash',
+        'models/gemini-3.5-flash',
+        'gemini-4-pro',
+        'gemini-10-flash',
+      ])('returns 65535 for %s', (model) => {
+        expect(reset(model)).toBe(65535);
+      });
+    });
+
+    describe('Gemini image models (32K)', () => {
+      it.each(['gemini-2.5-flash-image', 'gemini-3-pro-image'])('returns 32768 for %s', (model) => {
+        expect(reset(model)).toBe(32768);
+      });
+    });
+
+    describe('legacy/deprecated Gemini and Gemma models (8K)', () => {
+      it.each([
+        'gemini',
+        'gemini-pro',
+        'gemini-pro-vision',
+        'gemini-1.0-pro',
+        'gemini-1.5-pro',
+        'gemini-1.5-flash',
+        'gemini-1.5-flash-latest',
+        'gemini-1.5-flash-8b',
+        'gemini-2.0-flash',
+        'gemini-2.0-flash-lite',
+        'gemini-2.0-flash-preview-image-generation',
+        'gemini-exp-1206',
+        'gemma-3-27b',
+      ])('returns 8192 for %s', (model) => {
+        expect(reset(model)).toBe(8192);
+      });
+    });
+  });
+
+  describe('maxOutputTokens.set()', () => {
+    const { set } = googleSettings.maxOutputTokens;
+
+    it('caps current Gemini models at 65535', () => {
+      expect(set(100000, 'gemini-2.5-pro')).toBe(65535);
+      expect(set(100000, 'gemini-3.5-flash')).toBe(65535);
+    });
+
+    it('allows values within the current 64K limit', () => {
+      expect(set(32000, 'gemini-2.5-flash')).toBe(32000);
+      expect(set(65535, 'gemini-3.5-flash')).toBe(65535);
+    });
+
+    it('caps Gemini image models at 32768', () => {
+      expect(set(65535, 'gemini-2.5-flash-image')).toBe(32768);
+      expect(set(32768, 'gemini-2.5-flash-image')).toBe(32768);
+    });
+
+    it('caps legacy Gemini models at 8192', () => {
+      expect(set(65535, 'gemini-2.0-flash')).toBe(8192);
+      expect(set(20000, 'gemini-1.5-flash')).toBe(8192);
+    });
+
+    it('allows values within the legacy 8K limit', () => {
+      expect(set(4096, 'gemini-1.5-flash')).toBe(4096);
+      expect(set(8192, 'gemini-2.0-flash')).toBe(8192);
+    });
+  });
+
+  describe('compactGoogleSchema (model-aware maxOutputTokens)', () => {
+    it('strips the model default for current Gemini models', () => {
+      const result = compactGoogleSchema.parse({
+        model: 'gemini-2.5-pro',
+        maxOutputTokens: 65535,
+      });
+      expect(result.maxOutputTokens).toBeUndefined();
+    });
+
+    it('preserves a deliberate below-default value for current Gemini models', () => {
+      const result = compactGoogleSchema.parse({
+        model: 'gemini-2.5-pro',
+        maxOutputTokens: 8192,
+      });
+      expect(result.maxOutputTokens).toBe(8192);
+    });
+
+    it('strips the legacy default for legacy Gemini models', () => {
+      const result = compactGoogleSchema.parse({
+        model: 'gemini-1.5-flash',
+        maxOutputTokens: 8192,
+      });
+      expect(result.maxOutputTokens).toBeUndefined();
     });
   });
 });

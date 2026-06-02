@@ -43,6 +43,12 @@ jest.mock('~/models', () => ({
 jest.mock('~/server/services/GraphTokenService', () => ({
   getGraphApiToken: jest.fn(),
 }));
+jest.mock('~/server/services/OboTokenService', () => ({
+  exchangeOboToken: jest.fn(),
+}));
+jest.mock('~/server/services/OboPolicyService', () => ({
+  createOboTrustChecker: jest.fn(() => async () => true),
+}));
 jest.mock('~/server/services/Tools/mcp', () => ({
   reinitMCPServer: jest.fn(),
 }));
