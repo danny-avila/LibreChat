@@ -111,17 +111,17 @@ export default function useTextarea({
       })}`;
     };
 
-    const placeholder = getPlaceholderText();
+    const placeholderText = getPlaceholderText();
 
-    if (textAreaRef.current?.getAttribute('placeholder') === placeholder) {
+    if (textAreaRef.current?.getAttribute('placeholder') === placeholderText) {
       return;
     }
 
     const setPlaceholder = () => {
-      const placeholder = getPlaceholderText();
+      const placeholderText = getPlaceholderText();
 
-      if (textAreaRef.current?.getAttribute('placeholder') !== placeholder) {
-        textAreaRef.current?.setAttribute('placeholder', placeholder);
+      if (textAreaRef.current?.getAttribute('placeholder') !== placeholderText) {
+        textAreaRef.current?.setAttribute('placeholder', placeholderText);
         forceResize(textAreaRef.current);
       }
     };
