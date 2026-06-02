@@ -1,4 +1,5 @@
 import type { Document, Types } from 'mongoose';
+import type { UserRoles } from 'librechat-data-provider';
 import { CursorPaginationParams } from '~/common';
 
 export interface IFarmerProfile {
@@ -38,6 +39,7 @@ export interface IUser extends Document {
   avatar?: string;
   provider: string;
   role?: string;
+  userRole?: UserRoles;
   googleId?: string;
   facebookId?: string;
   openidId?: string;
@@ -101,6 +103,7 @@ export interface UpdateUserRequest {
   username?: string;
   email?: string;
   role?: string;
+  userRole?: UserRoles;
   emailVerified?: boolean;
   avatar?: string;
   plugins?: string[];
@@ -121,6 +124,7 @@ export interface UserFilterOptions extends CursorPaginationParams {
   // Includes email, username and name
   search?: string;
   role?: string;
+  userRole?: UserRoles;
   emailVerified?: boolean;
   provider?: string;
   twoFactorEnabled?: boolean;

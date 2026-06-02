@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
 const passport = require('passport');
-const { ErrorTypes } = require('librechat-data-provider');
+const { ErrorTypes, UserRoles } = require('librechat-data-provider');
 const { hashToken, logger } = require('@librechat/data-schemas');
 const { Strategy: SamlStrategy } = require('@node-saml/passport-saml');
 const { getBalanceConfig, isEmailDomainAllowed } = require('@librechat/api');
@@ -237,6 +237,7 @@ async function setupSaml() {
               email: userEmail,
               emailVerified: true,
               name: fullName,
+              userRole: UserRoles.FARMER,
             };
             const balanceConfig = getBalanceConfig(appConfig);
             user = await createUser(user, balanceConfig, true, true);
@@ -245,6 +246,7 @@ async function setupSaml() {
             user.samlId = profile.nameID;
             user.username = username;
             user.name = fullName;
+            user.userRole = user.userRole || UserRoles.FARMER;
           }
 
           const picture = getPicture(profile);

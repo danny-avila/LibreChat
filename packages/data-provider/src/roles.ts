@@ -30,6 +30,11 @@ export enum SystemRoles {
    */
   USER = 'USER',
 }
+export enum UserRoles {
+  FARMER = 'FARMER',
+  INTERNAL = 'INTERNAL',
+  COORDINATOR = 'COORDINATOR',
+}
 
 export const roleSchema = z.object({
   name: z.string(),

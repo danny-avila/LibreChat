@@ -6,7 +6,7 @@ const {
   DEFAULT_SESSION_EXPIRY,
   DEFAULT_REFRESH_TOKEN_EXPIRY,
 } = require('@librechat/data-schemas');
-const { ErrorTypes, SystemRoles, errorsToString } = require('librechat-data-provider');
+const { ErrorTypes, SystemRoles, UserRoles, errorsToString } = require('librechat-data-provider');
 const { isEnabled, checkEmailConfig, isEmailDomainAllowed, math } = require('@librechat/api');
 const {
   findUser,
@@ -217,6 +217,7 @@ const registerUser = async (user, additionalData = {}) => {
       name,
       avatar: null,
       role: isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER,
+      userRole: UserRoles.FARMER,
       password: bcrypt.hashSync(password, salt),
       ...additionalData,
     };
