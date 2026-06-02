@@ -22,10 +22,22 @@ const { saveConvo } = require('~/models');
  * @param {AbortSignal} [params.signal] - When aborted (e.g. the user stops an
  *   immediate-mode generation), cancels the in-flight title model call so a
  *   cancelled turn neither consumes the title model nor surfaces a title.
+ * @param {(params: { conversationId: string, title: string }) => Promise<void>|void} [params.onTitleGenerated]
+ *   Called after the title is cached and before persistence waits for the
+ *   conversation row. Used by live streams to push the title immediately.
  */
 const addTitle = async (
   req,
-  { text, response, client, conversationId, immediate = false, convoReady, signal },
+  {
+    text,
+    response,
+    client,
+    conversationId,
+    immediate = false,
+    convoReady,
+    signal,
+    onTitleGenerated,
+  },
 ) => {
   const { TITLE_CONVO = true } = process.env ?? {};
   if (!isEnabled(TITLE_CONVO)) {
@@ -100,6 +112,14 @@ const addTitle = async (
     }
 
     await titleCache.set(key, title, 120000);
+
+    if (!signal?.aborted && typeof onTitleGenerated === 'function') {
+      try {
+        await onTitleGenerated({ conversationId: convoId, title });
+      } catch (error) {
+        logger.error('Error emitting generated title:', error);
+      }
+    }
 
     /** In immediate mode the title is generated in parallel with the response,
      *  so the conversation row may not exist yet. `saveConvo` with `noUpsert`

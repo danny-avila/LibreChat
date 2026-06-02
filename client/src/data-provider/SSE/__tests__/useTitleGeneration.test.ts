@@ -62,7 +62,12 @@ jest.mock('librechat-data-provider', () => ({
 }));
 
 import { renderHook, act } from '@testing-library/react';
-import { useTitleGeneration, queueTitleGeneration, genTitleQueryKey } from '../queries';
+import {
+  useTitleGeneration,
+  genTitleQueryKey,
+  queueTitleGeneration,
+  markTitleGenerationProcessed,
+} from '../queries';
 
 const notFound = { response: { status: 404 } };
 
@@ -101,6 +106,20 @@ describe('useTitleGeneration — eligibility', () => {
     mockActiveJobIds = [];
     rerender();
     expect(isEligible('conv-fin')).toBe(true);
+  });
+
+  it('stops polling when a title is completed by an SSE event', () => {
+    mockTiming = 'immediate';
+    mockActiveJobIds = ['conv-sse-title'];
+
+    const { rerender } = renderHook(() => useTitleGeneration(true));
+    act(() => queueTitleGeneration('conv-sse-title'));
+    expect(isEligible('conv-sse-title')).toBe(true);
+
+    act(() => markTitleGenerationProcessed('conv-sse-title'));
+    rerender();
+
+    expect(isEligible('conv-sse-title')).toBe(false);
   });
 });
 

@@ -33,7 +33,11 @@ import {
   removeConvoFromAllQueries,
   findConversationInInfinite,
 } from '~/utils';
-import { startupConfigKey, queueTitleGeneration } from '~/data-provider';
+import {
+  startupConfigKey,
+  queueTitleGeneration,
+  markTitleGenerationProcessed,
+} from '~/data-provider';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
@@ -52,6 +56,17 @@ type TSyncData = {
   responseMessage: TMessage;
   conversationId: string;
 };
+
+type TTitleEvent = {
+  event: 'title';
+  data?: {
+    conversationId?: string;
+    title?: string;
+  };
+};
+
+const hasRealTitle = (title?: string | null): title is string =>
+  title != null && title !== '' && title !== 'New Chat';
 
 export type EventHandlerParams = {
   isAddedRequest?: boolean;
@@ -467,6 +482,43 @@ export default function useEventHandlers({
     ],
   );
 
+  const titleHandler = useCallback(
+    (event: TTitleEvent) => {
+      const { conversationId, title } = event.data ?? {};
+      if (!conversationId || !hasRealTitle(title)) {
+        return;
+      }
+
+      queryClient.setQueryData<TConversation>(
+        [QueryKeys.conversation, conversationId],
+        (convo) => (convo ? { ...convo, title } : convo),
+      );
+      updateConvoInAllQueries(queryClient, conversationId, (convo) => ({ ...convo, title }));
+      markTitleGenerationProcessed(conversationId);
+
+      if (location.pathname.includes(conversationId)) {
+        document.title = title;
+      }
+
+      if (setConversation && !isAddedRequest) {
+        setConversation((prevState) => {
+          if (!prevState) {
+            return prevState;
+          }
+          if (prevState.conversationId && prevState.conversationId !== conversationId) {
+            return prevState;
+          }
+          return {
+            ...prevState,
+            conversationId,
+            title,
+          };
+        });
+      }
+    },
+    [queryClient, location.pathname, setConversation, isAddedRequest],
+  );
+
   const finalHandler = useCallback(
     (data: TFinalResData, submission: EventSubmission) => {
       const { requestMessage, responseMessage, conversation, runMessages } = data;
@@ -608,8 +660,6 @@ export default function useEventHandlers({
            *  title yet — otherwise the chat reverts to "New Chat" until reload.
            *  Skip preservation for a stopped (unfinished) turn: the server cancels
            *  and discards that title, so the local one would diverge from server state. */
-          const hasRealTitle = (title?: string | null): title is string =>
-            title != null && title !== '' && title !== 'New Chat';
           const titlePreservable = responseMessage?.unfinished !== true;
           setConversation((prevState) => {
             const update = {
@@ -914,6 +964,7 @@ export default function useEventHandlers({
     messageHandler,
     contentHandler,
     createdHandler,
+    titleHandler,
     syncStepMessage,
     attachmentHandler,
     abortConversation,

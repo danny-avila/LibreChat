@@ -264,6 +264,8 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
        *  gating the title's `saveConvo`. Declared here so both the success tail
        *  and the catch block can settle it and gate `disposeClient` on the title. */
       let immediateTitlePromise = null;
+      let titleEventPromise = null;
+      let acceptsTitleEvents = true;
       let resolveConvoReady;
       const convoReady = new Promise((resolve) => {
         resolveConvoReady = resolve;
@@ -273,8 +275,38 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
        *  `completeJob` also aborts on *successful* completion and would otherwise
        *  cancel a title that is merely slower than a short response. */
       const titleAbortController = new AbortController();
+      const abortTitleOnJobAbort = () => titleAbortController.abort();
+      if (job.abortController.signal.aborted) {
+        titleAbortController.abort();
+      } else {
+        job.abortController.signal.addEventListener('abort', abortTitleOnJobAbort, { once: true });
+      }
       const titleEligible =
         addTitle && parentMessageId === Constants.NO_PARENT && isNewConvo && !req.body?.isTemporary;
+      const emitTitleEvent = ({ conversationId: titleConversationId, title }) => {
+        titleEventPromise = (async () => {
+          if (!acceptsTitleEvents || titleAbortController.signal.aborted) {
+            return;
+          }
+          const currentJob = await GenerationJobManager.getJob(streamId);
+          if (!currentJob || currentJob.createdAt !== jobCreatedAt) {
+            return;
+          }
+          if (titleAbortController.signal.aborted) {
+            return;
+          }
+          await GenerationJobManager.emitChunk(streamId, {
+            event: 'title',
+            data: {
+              conversationId: titleConversationId,
+              title,
+            },
+          });
+        })().catch((err) => {
+          logger.error('[ResumableAgentController] Error emitting title event', err);
+        });
+        return titleEventPromise;
+      };
 
       try {
         const onStart = (userMsg, respMsgId, _isNewConvo) => {
@@ -332,6 +364,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             immediate: true,
             convoReady,
             signal: titleAbortController.signal,
+            onTitleGenerated: emitTitleEvent,
           }).catch((err) => {
             logger.error('[ResumableAgentController] Error in immediate title generation', err);
           });
@@ -407,6 +440,8 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           // unblock its persistence wait without letting it save (the newer job
           // owns the conversation now).
           titleAbortController.abort();
+          job.abortController.signal.removeEventListener('abort', abortTitleOnJobAbort);
+          acceptsTitleEvents = false;
           resolveConvoReady();
           // Still decrement pending request since we incremented at start
           await decrementPendingRequest(userId);
@@ -427,11 +462,18 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         // resume and save before the later abort runs.
         if (wasAbortedBeforeComplete) {
           titleAbortController.abort();
+        } else {
+          job.abortController.signal.removeEventListener('abort', abortTitleOnJobAbort);
         }
 
         // The conversation row now exists and this stream is authoritative; allow
         // any in-flight immediate title generation to persist (saveConvo uses noUpsert).
         resolveConvoReady();
+        acceptsTitleEvents = false;
+
+        if (titleEventPromise) {
+          await titleEventPromise;
+        }
 
         if (!wasAbortedBeforeComplete) {
           const finalEvent = {
@@ -513,6 +555,8 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         // `_waitForRun` would otherwise never resolve, deferring client disposal
         // until the 45s title timeout, and no title should persist for a failed turn.
         titleAbortController.abort();
+        job.abortController.signal.removeEventListener('abort', abortTitleOnJobAbort);
+        acceptsTitleEvents = false;
         resolveConvoReady();
 
         // Check if this was an abort (not a real error)

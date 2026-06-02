@@ -63,6 +63,13 @@ export function queueTitleGeneration(conversationId: string) {
   }
 }
 
+export function markTitleGenerationProcessed(conversationId: string) {
+  processedTitles.add(conversationId);
+  titleQueue.delete(conversationId);
+  deferredTitles.delete(conversationId);
+  queueListeners.forEach((listener) => listener());
+}
+
 /**
  * Hook to process the title generation queue.
  *
@@ -117,6 +124,13 @@ export function useTitleGeneration(enabled = true) {
     }
   }, [activeJobIds, queueVersion, timing]);
 
+  useEffect(() => {
+    setReadyToFetch((prev) => {
+      const next = prev.filter((id) => !processedTitles.has(id));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [queueVersion]);
+
   // Fetch titles for ready conversations.
   const titleQueries = useQueries({
     queries: readyToFetch.map((conversationId) => ({
@@ -153,9 +167,7 @@ export function useTitleGeneration(enabled = true) {
         if (window.location.pathname.includes(conversationId)) {
           document.title = title;
         }
-        processedTitles.add(conversationId);
-        titleQueue.delete(conversationId);
-        deferredTitles.delete(conversationId);
+        markTitleGenerationProcessed(conversationId);
         setReadyToFetch((prev) => prev.filter((id) => id !== conversationId));
       } else if (titleQuery.isError) {
         // Retries are exhausted here (the query only retries on 404). A title may
@@ -177,9 +189,7 @@ export function useTitleGeneration(enabled = true) {
           queryClient.resetQueries(genTitleQueryKey(conversationId));
         } else {
           // The post-completion fetch also failed — the title is genuinely absent.
-          processedTitles.add(conversationId);
-          titleQueue.delete(conversationId);
-          deferredTitles.delete(conversationId);
+          markTitleGenerationProcessed(conversationId);
           setReadyToFetch((prev) => prev.filter((id) => id !== conversationId));
         }
       }

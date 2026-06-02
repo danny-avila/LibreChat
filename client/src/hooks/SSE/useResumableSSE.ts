@@ -211,6 +211,7 @@ export default function useResumableSSE(
     messageHandler,
     contentHandler,
     createdHandler,
+    titleHandler,
     syncStepMessage,
     attachmentHandler,
     resetContentHandler,
@@ -317,6 +318,11 @@ export default function useResumableSSE(
             return;
           }
 
+          if (data.event === 'title') {
+            titleHandler(data);
+            return;
+          }
+
           if (data.event != null) {
             stepHandler(data, { ...currentSubmission, userMessage } as EventSubmission);
             return;
@@ -402,7 +408,9 @@ export default function useResumableSSE(
               console.log(`[ResumableSSE] Replaying ${data.pendingEvents.length} pending events`);
               const submission = { ...currentSubmission, userMessage } as EventSubmission;
               for (const pendingEvent of data.pendingEvents) {
-                if (pendingEvent.event != null) {
+                if (pendingEvent.event === 'title') {
+                  titleHandler(pendingEvent);
+                } else if (pendingEvent.event != null) {
                   stepHandler(pendingEvent, submission);
                 } else if (pendingEvent.type != null) {
                   contentHandler({ data: pendingEvent, submission });
@@ -670,6 +678,7 @@ export default function useResumableSSE(
       finalHandler,
       createdHandler,
       attachmentHandler,
+      titleHandler,
       stepHandler,
       contentHandler,
       resetContentHandler,

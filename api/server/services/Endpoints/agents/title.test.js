@@ -138,6 +138,49 @@ describe('agents addTitle', () => {
     );
   });
 
+  it('notifies when the title is cached before waiting for convoReady', async () => {
+    const order = [];
+    const client = makeClient('Streamed Title');
+    const onTitleGenerated = jest.fn(async () => {
+      order.push('title-event');
+    });
+    let resolveConvo;
+    const convoReady = new Promise((resolve) => {
+      resolveConvo = resolve;
+    });
+
+    mockCache.set.mockImplementationOnce((key, value) => {
+      order.push('cache');
+      mockCacheStore.set(key, value);
+    });
+    mockSaveConvo.mockImplementationOnce(async () => {
+      order.push('save');
+    });
+
+    const pending = addTitle(makeReq(), {
+      text: 'hello',
+      client,
+      conversationId: 'cid-stream',
+      immediate: true,
+      convoReady,
+      onTitleGenerated,
+    });
+
+    await flush();
+
+    expect(onTitleGenerated).toHaveBeenCalledWith({
+      conversationId: 'cid-stream',
+      title: 'Streamed Title',
+    });
+    expect(order).toEqual(['cache', 'title-event']);
+    expect(mockSaveConvo).not.toHaveBeenCalled();
+
+    resolveConvo();
+    await pending;
+
+    expect(order).toEqual(['cache', 'title-event', 'save']);
+  });
+
   it('skips generation when the endpoint disables titleConvo', async () => {
     const client = makeClient();
     client.options.titleConvo = false;
@@ -172,6 +215,7 @@ describe('agents addTitle', () => {
   it('propagates an aborted request signal and discards the title without persisting', async () => {
     const client = makeClient();
     const ac = new AbortController();
+    const onTitleGenerated = jest.fn();
     ac.abort();
 
     await addTitle(makeReq(), {
@@ -181,10 +225,12 @@ describe('agents addTitle', () => {
       immediate: true,
       convoReady: Promise.resolve(),
       signal: ac.signal,
+      onTitleGenerated,
     });
 
     const { abortController } = client.titleConvo.mock.calls[0][0];
     expect(abortController.signal.aborted).toBe(true);
+    expect(onTitleGenerated).not.toHaveBeenCalled();
     expect(mockSaveConvo).not.toHaveBeenCalled();
     expect(mockCache.delete).toHaveBeenCalledWith('user-1-cid');
   });
