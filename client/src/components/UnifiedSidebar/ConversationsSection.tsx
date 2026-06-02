@@ -1,38 +1,39 @@
 import { useCallback, useEffect, useState, useMemo, memo, lazy, Suspense, useRef } from 'react';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
 import { useNavigate } from 'react-router-dom';
-import { FolderPlus } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useMediaQuery } from '@librechat/client';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
+import { QueryKeys, PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import type { List } from 'react-virtualized';
+import type { SidebarChatSort, SidebarOrganizationMode } from '~/components/Conversations/types';
 import {
   useLocalize,
+  useNewConvo,
   useHasAccess,
   useAuthContext,
   useLocalStorage,
   useNavScrolling,
 } from '~/hooks';
 import { useConversationsInfiniteQuery, useTitleGeneration } from '~/data-provider';
+import type { ChatsHeaderControls } from '~/components/Conversations/Header';
 import { Conversations } from '~/components/Conversations';
-import ProjectConversations, {
-  type SidebarChatSort,
-  type SidebarProjectMode,
-} from '~/components/Conversations/ProjectConversations';
 import SearchBar from '~/components/Nav/SearchBar';
+import ProjectConversations from '~/components/Conversations/ProjectConversations';
+import { clearMessagesCache } from '~/utils';
 import store from '~/store';
 
 const BookmarkNav = lazy(() => import('~/components/Nav/Bookmarks/BookmarkNav'));
 
-type SidebarOrganizationMode = 'chronological' | SidebarProjectMode;
-
 const ConversationsSection = memo(() => {
   const localize = useLocalize();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const setSidebarExpanded = useSetRecoilState(store.sidebarExpanded);
   const { isAuthenticated } = useAuthContext();
+  const { newConversation } = useNewConvo();
   useTitleGeneration(isAuthenticated);
 
   const [isChatsExpanded, setIsChatsExpanded] = useLocalStorage('chatsExpanded', true);
@@ -53,6 +54,7 @@ const ConversationsSection = memo(() => {
   });
 
   const search = useRecoilValue(store.search);
+  const conversation = useRecoilValue(store.conversationByIndex(0));
 
   const { data, fetchNextPage, isFetchingNextPage, isLoading, isFetching } =
     useConversationsInfiniteQuery(
@@ -100,6 +102,53 @@ const ConversationsSection = memo(() => {
     }
   }, [isSmallScreen, setSidebarExpanded]);
 
+  const handleOrganizationModeChange = useCallback(
+    (mode: SidebarOrganizationMode) => {
+      setOrganizationMode(mode);
+      conversationsRef.current?.scrollToPosition(0);
+    },
+    [setOrganizationMode],
+  );
+
+  const handleChatSortByChange = useCallback(
+    (sortBy: SidebarChatSort) => {
+      setChatSortBy(sortBy);
+      conversationsRef.current?.scrollToPosition(0);
+    },
+    [setChatSortBy],
+  );
+
+  const handleNewProject = useCallback(() => {
+    navigate('/projects?new=1');
+    toggleNav();
+  }, [navigate, toggleNav]);
+
+  const handleNewChat = useCallback(() => {
+    clearMessagesCache(queryClient, conversation?.conversationId);
+    queryClient.invalidateQueries([QueryKeys.messages]);
+    newConversation();
+    toggleNav();
+  }, [conversation?.conversationId, newConversation, queryClient, toggleNav]);
+
+  const chatsHeaderControls = useMemo<ChatsHeaderControls>(
+    () => ({
+      organizationMode,
+      chatSortBy,
+      onOrganizationModeChange: handleOrganizationModeChange,
+      onChatSortByChange: handleChatSortByChange,
+      onNewProject: handleNewProject,
+      onNewChat: handleNewChat,
+    }),
+    [
+      organizationMode,
+      chatSortBy,
+      handleOrganizationModeChange,
+      handleChatSortByChange,
+      handleNewProject,
+      handleNewChat,
+    ],
+  );
+
   const loadMoreConversations = useCallback(() => {
     if (isFetchingNextPage || !computedHasNextPage) {
       return;
@@ -135,35 +184,6 @@ const ConversationsSection = memo(() => {
         )}
         {search.enabled && <SearchBar isSmallScreen={isSmallScreen} />}
       </div>
-      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-1 px-3 pb-1 pt-2">
-        <select
-          aria-label={localize('com_ui_sidebar_organization_label')}
-          className="min-w-0 rounded-md border border-border-light bg-surface-primary px-2 py-1 text-xs text-text-primary outline-none focus:ring-2 focus:ring-ring-primary"
-          value={organizationMode}
-          onChange={(event) => setOrganizationMode(event.target.value as SidebarOrganizationMode)}
-        >
-          <option value="chronological">{localize('com_ui_sidebar_mode_chronological')}</option>
-          <option value="byProject">{localize('com_ui_sidebar_mode_by_project')}</option>
-          <option value="recentProjects">{localize('com_ui_sidebar_mode_recent_projects')}</option>
-        </select>
-        <select
-          aria-label={localize('com_ui_sort_chats_by')}
-          className="min-w-0 rounded-md border border-border-light bg-surface-primary px-2 py-1 text-xs text-text-primary outline-none focus:ring-2 focus:ring-ring-primary"
-          value={chatSortBy}
-          onChange={(event) => setChatSortBy(event.target.value as SidebarChatSort)}
-        >
-          <option value="updatedAt">{localize('com_ui_sort_updated')}</option>
-          <option value="createdAt">{localize('com_ui_sort_created')}</option>
-        </select>
-        <button
-          type="button"
-          aria-label={localize('com_ui_new_project')}
-          className="flex h-8 w-8 items-center justify-center rounded-md border border-border-light text-text-secondary outline-none hover:bg-surface-hover focus:ring-2 focus:ring-ring-primary"
-          onClick={() => navigate('/projects?new=1')}
-        >
-          <FolderPlus className="h-4 w-4" aria-hidden="true" />
-        </button>
-      </div>
       <div className="flex min-h-0 flex-grow flex-col overflow-hidden">
         {organizationMode === 'chronological' ? (
           <Conversations
@@ -177,6 +197,7 @@ const ConversationsSection = memo(() => {
             isChatsExpanded={isChatsExpanded}
             dateField={chatSortBy}
             setIsChatsExpanded={setIsChatsExpanded}
+            chatsHeaderControls={chatsHeaderControls}
           />
         ) : (
           <ProjectConversations
@@ -186,6 +207,9 @@ const ConversationsSection = memo(() => {
             toggleNav={toggleNav}
             isAuthenticated={isAuthenticated}
             containerRef={conversationsRef}
+            isChatsExpanded={isChatsExpanded}
+            setIsChatsExpanded={setIsChatsExpanded}
+            chatsHeaderControls={chatsHeaderControls}
           />
         )}
       </div>

@@ -1,7 +1,14 @@
 import { useCallback, useMemo, useState, type FormEvent } from 'react';
-import { ArrowLeft, Folder, Plus, Send } from 'lucide-react';
+import { ArrowLeft, ArrowUpDown, Check, Folder, Plus, Send } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Spinner } from '@librechat/client';
+import {
+  Button,
+  Spinner,
+  DropdownMenu,
+  DropdownMenuItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from '@librechat/client';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import { useConversationsInfiniteQuery, useProjectQuery } from '~/data-provider';
 import { useLocalize, useNewConvo } from '~/hooks';
@@ -17,6 +24,15 @@ export default function ProjectWorkspace() {
   const [sortBy, setSortBy] = useState<ChatSortField>('updatedAt');
   const { data: project, isLoading: isProjectLoading } = useProjectQuery(projectId);
   const activeProjectId = project?._id;
+  const sortOptions = useMemo(
+    () => [
+      { value: 'updatedAt' as const, label: localize('com_ui_sort_updated') },
+      { value: 'createdAt' as const, label: localize('com_ui_sort_created') },
+    ],
+    [localize],
+  );
+  const selectedSortLabel =
+    sortOptions.find((option) => option.value === sortBy)?.label ?? localize('com_ui_sort_updated');
 
   const {
     data,
@@ -81,16 +97,18 @@ export default function ProjectWorkspace() {
   }
 
   return (
-    <main className="flex h-full min-h-0 flex-col overflow-auto bg-surface-primary text-text-primary">
-      <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-6 py-8">
-        <button
+    <main className="flex h-full min-h-0 flex-col overflow-auto bg-presentation text-text-primary">
+      <div className="container mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-8 md:px-6">
+        <Button
           type="button"
-          className="inline-flex w-fit items-center gap-2 rounded-lg px-2 py-1 text-sm text-text-secondary hover:bg-surface-hover"
+          variant="ghost"
+          size="sm"
+          className="w-fit text-text-secondary"
           onClick={() => navigate('/projects')}
         >
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
           {localize('com_ui_all_projects')}
-        </button>
+        </Button>
 
         <header className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-3">
@@ -102,19 +120,15 @@ export default function ProjectWorkspace() {
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            className="inline-flex h-10 items-center gap-2 rounded-lg bg-black px-4 text-sm font-medium text-white hover:bg-black/80 dark:bg-white dark:text-black dark:hover:bg-white/80"
-            onClick={() => startProjectChat()}
-          >
+          <Button type="button" variant="submit" size="sm" onClick={() => startProjectChat()}>
             <Plus className="h-4 w-4" aria-hidden="true" />
             {localize('com_ui_new_chat')}
-          </button>
+          </Button>
         </header>
 
         <form
           onSubmit={startProjectChat}
-          className="rounded-lg border border-border-light p-4 shadow-sm"
+          className="rounded-2xl border border-border-medium bg-surface-primary p-4 shadow-sm"
         >
           <div className="flex min-h-24 items-start gap-3">
             <Plus className="mt-1 h-5 w-5 shrink-0 text-text-secondary" aria-hidden="true" />
@@ -124,13 +138,15 @@ export default function ProjectWorkspace() {
               readOnly
               onFocus={() => startProjectChat()}
             />
-            <button
+            <Button
               type="submit"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-black text-white hover:bg-black/80 dark:bg-white dark:text-black dark:hover:bg-white/80"
+              variant="submit"
+              size="icon"
+              className="h-9 w-9 shrink-0"
               aria-label={localize('com_ui_new_chat')}
             >
               <Send className="h-4 w-4" aria-hidden="true" />
-            </button>
+            </Button>
           </div>
         </form>
 
@@ -139,22 +155,35 @@ export default function ProjectWorkspace() {
             <div className="inline-flex rounded-lg border border-border-light p-1">
               <button
                 type="button"
-                className="rounded-md bg-surface-secondary px-3 py-1.5 text-sm font-medium"
+                className="rounded-md bg-surface-secondary px-3 py-1.5 text-sm font-medium text-text-primary"
               >
                 {localize('com_ui_chats')}
               </button>
             </div>
-            <label className="text-sm text-text-secondary">
-              <span className="sr-only">{localize('com_ui_sort_chats_by')}</span>
-              <select
-                value={sortBy}
-                onChange={(event) => setSortBy(event.target.value as ChatSortField)}
-                className="rounded-lg border border-border-light bg-surface-primary px-3 py-2 text-sm text-text-primary outline-none focus:ring-2 focus:ring-ring-primary"
-              >
-                <option value="updatedAt">{localize('com_ui_sort_updated')}</option>
-                <option value="createdAt">{localize('com_ui_sort_created')}</option>
-              </select>
-            </label>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="border-border-medium bg-transparent"
+                  aria-label={localize('com_ui_sort_chats_by')}
+                >
+                  <ArrowUpDown className="h-4 w-4 text-text-secondary" aria-hidden="true" />
+                  {selectedSortLabel}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                {sortOptions.map((option) => (
+                  <DropdownMenuItem key={option.value} onSelect={() => setSortBy(option.value)}>
+                    <span>{option.label}</span>
+                    {sortBy === option.value && (
+                      <Check className="ml-auto h-4 w-4 text-text-primary" aria-hidden="true" />
+                    )}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
           <ProjectChatList
             conversations={conversations}

@@ -92,6 +92,15 @@ jest.mock('~/components/Nav/Favorites/FavoritesList', () => ({
   default: () => <div data-testid="favorites-list" />,
 }));
 
+jest.mock('../Header', () => ({
+  __esModule: true,
+  default: ({ isExpanded, onToggle }: { isExpanded: boolean; onToggle: () => void }) => (
+    <button type="button" aria-expanded={isExpanded} onClick={onToggle}>
+      chats
+    </button>
+  ),
+}));
+
 jest.mock('../Convo', () => ({
   __esModule: true,
   default: () => <div data-testid="convo" />,
@@ -121,6 +130,14 @@ describe('Conversations – favorites CellMeasurerCache key invalidation', () =>
         isSearchLoading={false}
         isChatsExpanded={true}
         setIsChatsExpanded={jest.fn()}
+        chatsHeaderControls={{
+          organizationMode: 'chronological',
+          chatSortBy: 'updatedAt',
+          onOrganizationModeChange: jest.fn(),
+          onChatSortByChange: jest.fn(),
+          onNewProject: jest.fn(),
+          onNewChat: jest.fn(),
+        }}
       />
     </RecoilRoot>
   );

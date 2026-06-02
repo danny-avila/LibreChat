@@ -11,6 +11,8 @@ import type {
   ProjectListResponse,
 } from 'librechat-data-provider';
 import type { MeasuredCellParent } from './Conversations';
+import type { ChatsHeaderControls } from './Header';
+import type { SidebarChatSort, SidebarProjectMode } from './types';
 import {
   useActiveJobs,
   useConversationsInfiniteQuery,
@@ -19,11 +21,9 @@ import {
 import { useLocalize } from '~/hooks';
 import { groupConversationsByDate, cn } from '~/utils';
 import { DateLabel } from './Conversations';
+import ChatsHeader from './Header';
 import Convo from './Convo';
 import store from '~/store';
-
-export type SidebarProjectMode = 'byProject' | 'recentProjects';
-export type SidebarChatSort = 'updatedAt' | 'createdAt';
 
 type Section = {
   id: string;
@@ -33,6 +33,7 @@ type Section = {
 };
 
 type FlattenedItem =
+  | { type: 'chats-header' }
   | { type: 'section'; section: Section; isExpanded: boolean }
   | { type: 'date'; groupName: string }
   | { type: 'convo'; convo: TConversation }
@@ -46,6 +47,9 @@ interface ProjectConversationsProps {
   toggleNav: () => void;
   isAuthenticated: boolean;
   containerRef: React.RefObject<List>;
+  isChatsExpanded: boolean;
+  setIsChatsExpanded: (expanded: boolean) => void;
+  chatsHeaderControls: ChatsHeaderControls;
 }
 
 interface MeasuredRowProps {
@@ -139,6 +143,9 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
   toggleNav,
   isAuthenticated,
   containerRef,
+  isChatsExpanded,
+  setIsChatsExpanded,
+  chatsHeaderControls,
 }) => {
   const localize = useLocalize();
   const search = useRecoilValue(store.search);
@@ -159,7 +166,7 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
       sortDirection: projectSortDirection,
     },
     {
-      enabled: isAuthenticated,
+      enabled: isAuthenticated && isChatsExpanded,
       staleTime: 30000,
       cacheTime: 300000,
     },
@@ -179,7 +186,7 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
       search: search.debouncedQuery || undefined,
     },
     {
-      enabled: isAuthenticated && expandedSectionId != null,
+      enabled: isAuthenticated && isChatsExpanded && expandedSectionId != null,
       staleTime: 30000,
       cacheTime: 300000,
     },
@@ -223,7 +230,12 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
   );
 
   const flattenedItems = useMemo(() => {
-    const items: FlattenedItem[] = [];
+    const items: FlattenedItem[] = [{ type: 'chats-header' }];
+
+    if (!isChatsExpanded) {
+      return items;
+    }
+
     sections.forEach((section) => {
       const isExpanded = expandedSectionId === section.id;
       items.push({ type: 'section', section, isExpanded });
@@ -265,6 +277,7 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
     return items;
   }, [
     sections,
+    isChatsExpanded,
     expandedSectionId,
     isConversationsLoading,
     conversations.length,
@@ -292,6 +305,9 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
           if (item.type === 'section') {
             return `project-section-${item.section.id}-${item.isExpanded ? 'open' : 'closed'}`;
           }
+          if (item.type === 'chats-header') {
+            return 'project-chats-header';
+          }
           if (item.type === 'date') {
             return `project-date-${expandedSectionId}-${item.groupName}`;
           }
@@ -315,7 +331,16 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
       }
     });
     return () => cancelAnimationFrame(frameId);
-  }, [cache, chatSortBy, expandedSectionId, mode, search.query, tags, containerRef]);
+  }, [
+    cache,
+    chatSortBy,
+    expandedSectionId,
+    isChatsExpanded,
+    mode,
+    search.query,
+    tags,
+    containerRef,
+  ]);
 
   const retainView = useCallback(() => {
     containerRef.current?.scrollToPosition(0);
@@ -344,6 +369,9 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
   }, [conversationsData?.pages]);
 
   const loadMoreRows = useCallback(() => {
+    if (!isChatsExpanded) {
+      return;
+    }
     if (expandedSectionId && conversationHasNextPage && !isFetchingNextConversationPage) {
       fetchNextConversationPage();
       return;
@@ -359,6 +387,7 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
     projectHasNextPage,
     isFetchingNextProjectPage,
     fetchNextProjectPage,
+    isChatsExpanded,
   ]);
 
   const throttledLoadMore = useMemo(() => throttle(loadMoreRows, 300), [loadMoreRows]);
@@ -372,6 +401,18 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
         return (
           <MeasuredRow key={key} {...rowProps}>
             <SidebarLoading />
+          </MeasuredRow>
+        );
+      }
+
+      if (item.type === 'chats-header') {
+        return (
+          <MeasuredRow key={key} {...rowProps}>
+            <ChatsHeader
+              isExpanded={isChatsExpanded}
+              onToggle={() => setIsChatsExpanded(!isChatsExpanded)}
+              {...chatsHeaderControls}
+            />
           </MeasuredRow>
         );
       }
@@ -419,7 +460,17 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
 
       return null;
     },
-    [activeJobIds, cache, flattenedItems, retainView, toggleNav, toggleSection],
+    [
+      activeJobIds,
+      cache,
+      flattenedItems,
+      retainView,
+      toggleNav,
+      toggleSection,
+      isChatsExpanded,
+      setIsChatsExpanded,
+      chatsHeaderControls,
+    ],
   );
 
   const getRowHeight = useCallback(
@@ -429,11 +480,14 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
 
   const handleRowsRendered = useCallback(
     ({ stopIndex }: { stopIndex: number }) => {
+      if (!isChatsExpanded) {
+        return;
+      }
       if (stopIndex >= flattenedItems.length - 8) {
         throttledLoadMore();
       }
     },
-    [flattenedItems.length, throttledLoadMore],
+    [flattenedItems.length, isChatsExpanded, throttledLoadMore],
   );
 
   return (
