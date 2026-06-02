@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, dataService } from 'librechat-data-provider';
 import type { UseQueryOptions, QueryObserverResult } from '@tanstack/react-query';
 import type {
+  AnalyticsPeriod,
   AdminUsageResponse,
   ModelUsageResponse,
   AdminBudgetsResponse,
@@ -35,6 +36,22 @@ export const useAdminModelUsageQuery = (
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       retry: false,
+      ...config,
+    },
+  );
+};
+
+export const useAdminPeriodsQuery = (
+  config?: UseQueryOptions<{ periods: AnalyticsPeriod[] }>,
+): QueryObserverResult<{ periods: AnalyticsPeriod[] }> => {
+  return useQuery<{ periods: AnalyticsPeriod[] }>(
+    [QueryKeys.adminPeriods],
+    () => dataService.getAdminPeriods(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      retry: false,
+      staleTime: 5 * 60 * 1000,
       ...config,
     },
   );

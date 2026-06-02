@@ -228,6 +228,18 @@ export type GraphTokenResponse = {
   scope: string;
 };
 
+/* Selected analytics window: 'overall', 'current-month', a 'YYYY-MM' month, or a custom range. */
+export interface AnalyticsPeriod {
+  /** 'overall' | 'current-month' | 'YYYY-MM' | 'custom'. */
+  key: string;
+  /** Raw label (UI may reformat). */
+  label: string;
+  /** Inclusive lower bound, ISO UTC, or null (Overall). */
+  start: string | null;
+  /** Exclusive upper bound, ISO UTC, or null (open-ended / Overall). */
+  end: string | null;
+}
+
 /* Admin Usage (V1 MVP — monthly consumption table for ADMIN) */
 export interface AdminUsageRow {
   user: string;
@@ -240,7 +252,7 @@ export interface AdminUsageRow {
 }
 
 export interface AdminUsageResponse {
-  period: 'current-month';
+  period: AnalyticsPeriod;
   rows: AdminUsageRow[];
 }
 
@@ -253,7 +265,7 @@ export interface ModelUsageRow {
 }
 
 export interface ModelUsageResponse {
-  period: 'current-month';
+  period: AnalyticsPeriod;
   rows: ModelUsageRow[];
 }
 

@@ -20,33 +20,94 @@ const parseDateUTC = (value) => {
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
+/** Start of the current UTC month as an ISO string (mirrors data-schemas currentMonthStartUTC). */
+const currentMonthStartISO = () => {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+};
+
+/** Default AnalyticsPeriod: the current month, open-ended (end = null = "until now"). */
+const currentMonthPeriod = () => ({
+  key: 'current-month',
+  label: 'Current month',
+  start: currentMonthStartISO(),
+  end: null,
+});
+
+/** If [start, end[ spans exactly one calendar month (UTC), returns its 'YYYY-MM' key; else null. */
+const monthKeyIfMonthWindow = (start, end) => {
+  const isMonthStart =
+    start.getUTCDate() === 1 &&
+    start.getUTCHours() === 0 &&
+    start.getUTCMinutes() === 0 &&
+    start.getUTCSeconds() === 0 &&
+    start.getUTCMilliseconds() === 0;
+  if (!isMonthStart) {
+    return null;
+  }
+  const nextMonth = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1));
+  if (end.getTime() !== nextMonth.getTime()) {
+    return null;
+  }
+  return `${start.getUTCFullYear()}-${String(start.getUTCMonth() + 1).padStart(2, '0')}`;
+};
+
 router.use(requireJwtAuth, requireAdminAccess);
 
 router.get('/', requireReadUsage, async (req, res) => {
-  const { start, end, bu } = req.query;
+  const { start, end, bu, overall } = req.query;
   const params = {};
+  let period;
 
-  if (start !== undefined) {
-    const parsed = parseDateUTC(start);
-    if (!parsed) {
-      return res.status(400).json({ message: 'Invalid start date (expected YYYY-MM-DD)' });
+  if (overall === 'true') {
+    params.start = new Date(0);
+    params.end = new Date();
+    period = { key: 'overall', label: 'Overall', start: null, end: null };
+  } else {
+    if (start !== undefined) {
+      const parsed = parseDateUTC(start);
+      if (!parsed) {
+        return res.status(400).json({ message: 'Invalid start date (expected YYYY-MM-DD)' });
+      }
+      params.start = parsed;
     }
-    params.start = parsed;
-  }
-  if (end !== undefined) {
-    const parsed = parseDateUTC(end);
-    if (!parsed) {
-      return res.status(400).json({ message: 'Invalid end date (expected YYYY-MM-DD)' });
+    if (end !== undefined) {
+      const parsed = parseDateUTC(end);
+      if (!parsed) {
+        return res.status(400).json({ message: 'Invalid end date (expected YYYY-MM-DD)' });
+      }
+      params.end = parsed;
     }
-    params.end = parsed;
+
+    if (params.start && params.end) {
+      const monthKey = monthKeyIfMonthWindow(params.start, params.end);
+      period = monthKey
+        ? { key: monthKey, label: monthKey, start: params.start.toISOString(), end: params.end.toISOString() }
+        : {
+            key: 'custom',
+            label: 'Custom range',
+            start: params.start.toISOString(),
+            end: params.end.toISOString(),
+          };
+    } else if (params.start || params.end) {
+      period = {
+        key: 'custom',
+        label: 'Custom range',
+        start: params.start ? params.start.toISOString() : null,
+        end: params.end ? params.end.toISOString() : null,
+      };
+    } else {
+      period = currentMonthPeriod();
+    }
   }
+
   if (typeof bu === 'string' && ALLOWED_BU.has(bu)) {
     params.bu = bu;
   }
 
   try {
     const rows = await db.aggregateMonthlyUsage(params);
-    res.json({ period: 'current-month', rows });
+    res.json({ period, rows });
   } catch (error) {
     logger.error('[GET /api/admin/usage] aggregation failed:', error);
     res.status(500).json({ message: 'Internal Server Error' });
@@ -66,7 +127,7 @@ router.get('/periods', requireReadUsage, async (req, res) => {
 router.get('/models', requireReadUsage, async (req, res) => {
   try {
     const rows = await db.aggregateUsageByModel();
-    res.json({ period: 'current-month', rows });
+    res.json({ period: currentMonthPeriod(), rows });
   } catch (error) {
     logger.error('[GET /api/admin/usage/models] aggregation failed:', error);
     res.status(500).json({ message: 'Internal Server Error' });

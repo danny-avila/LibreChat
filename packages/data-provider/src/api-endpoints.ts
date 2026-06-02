@@ -418,6 +418,9 @@ export const adminUsage = () => `${BASE_URL}/api/admin/usage`;
 /* Admin Model Mix (current-month consumption per model — ADMIN) */
 export const adminModelUsage = () => `${BASE_URL}/api/admin/usage/models`;
 
+/* Admin available periods (months with activity, for the period selector — ADMIN) */
+export const adminPeriods = () => `${BASE_URL}/api/admin/usage/periods`;
+
 /* Admin Budgets (monthly spend thresholds per user — ADMIN) */
 export const adminBudgets = () => `${BASE_URL}/api/admin/usage/budgets`;
 export const adminBudgetByUser = (userId: string) =>

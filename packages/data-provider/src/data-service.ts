@@ -1282,6 +1282,11 @@ export const getAdminModelUsage = (): Promise<q.ModelUsageResponse> => {
   return request.get(endpoints.adminModelUsage());
 };
 
+/* Admin available periods (months with activity, for the period selector) */
+export const getAdminPeriods = (): Promise<{ periods: q.AnalyticsPeriod[] }> => {
+  return request.get(endpoints.adminPeriods());
+};
+
 /* Admin Budgets (monthly spend thresholds per user) */
 export const getAdminBudgets = (): Promise<q.AdminBudgetsResponse> => {
   return request.get(endpoints.adminBudgets());
