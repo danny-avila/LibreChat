@@ -1,4 +1,4 @@
-const { findBalanceByUser } = require('~/models');
+const { findBalanceByUser, getUserBudget } = require('~/models');
 
 async function balanceController(req, res) {
   const balanceData = await findBalanceByUser(req.user.id);
@@ -15,6 +15,9 @@ async function balanceController(req, res) {
     delete result.lastRefill;
     delete result.refillAmount;
   }
+
+  const { currentMonthSpend } = await getUserBudget(req.user.id);
+  result.currentMonthSpend = currentMonthSpend;
 
   res.status(200).json(result);
 }

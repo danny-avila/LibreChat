@@ -1,7 +1,7 @@
 import { Types } from 'mongoose';
 import type { Model } from 'mongoose';
 import type { IBalance } from '~/types';
-import { buExpression } from './transaction';
+import { buExpression, currentMonthStartUTC } from './transaction';
 
 /** Default monthly budget, in tokenCredits (1 USD = 1_000_000 tokenCredits) → $10. */
 export const DEFAULT_MONTHLY_BUDGET = 10_000_000;
@@ -24,6 +24,13 @@ export interface AdminBudgetRow {
 export interface UpdateBudgetInput {
   monthlyBudget?: number;
   monthlyBudgetBaseline?: number;
+}
+
+/** A single user's budget thresholds and current-month spend (all in tokenCredits). */
+export interface UserBudget {
+  monthlyBudget: number;
+  monthlyBudgetBaseline: number;
+  currentMonthSpend: number;
 }
 
 export function createBudgetMethods(mongoose: typeof import('mongoose')) {
@@ -135,7 +142,42 @@ export function createBudgetMethods(mongoose: typeof import('mongoose')) {
     return result.modifiedCount ?? 0;
   }
 
-  return { getAllBudgets, updateBudget, resetMonthBudgets };
+  /**
+   * Returns a single user's budget thresholds and current-month spend.
+   * Thresholds fall back to DEFAULT_MONTHLY_BUDGET when the user has no Balance record;
+   * spend is derived live from current-month prompt + completion transactions (0 if none).
+   */
+  async function getUserBudget(userId: string): Promise<UserBudget> {
+    const Balance = mongoose.models.Balance as Model<IBalance>;
+    const Transaction = mongoose.models.Transaction;
+    const objectId = new Types.ObjectId(userId);
+
+    const balance = await Balance.findOne({ user: objectId }).lean<IBalance>();
+
+    const spendResult = await Transaction.aggregate<{ spend: number }>([
+      {
+        $match: {
+          user: objectId,
+          createdAt: { $gte: currentMonthStartUTC() },
+          tokenType: { $in: ['prompt', 'completion'] },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          spend: { $sum: { $abs: { $ifNull: ['$tokenValue', 0] } } },
+        },
+      },
+    ]);
+
+    return {
+      monthlyBudget: balance?.monthlyBudget ?? DEFAULT_MONTHLY_BUDGET,
+      monthlyBudgetBaseline: balance?.monthlyBudgetBaseline ?? DEFAULT_MONTHLY_BUDGET,
+      currentMonthSpend: spendResult[0]?.spend ?? 0,
+    };
+  }
+
+  return { getAllBudgets, updateBudget, resetMonthBudgets, getUserBudget };
 }
 
 export type BudgetMethods = ReturnType<typeof createBudgetMethods>;

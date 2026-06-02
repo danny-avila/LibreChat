@@ -6,7 +6,7 @@ import type { ITransaction } from '~/schema/transaction';
 const cancelRate = 1.15;
 
 /** Start of the current calendar month, in UTC — single source for the monthly usage window. */
-function currentMonthStartUTC(): Date {
+export function currentMonthStartUTC(): Date {
   const now = new Date();
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 }

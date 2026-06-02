@@ -686,6 +686,8 @@ export type TBalanceResponse = {
   refillIntervalUnit?: 'seconds' | 'minutes' | 'hours' | 'days' | 'weeks' | 'months';
   lastRefill?: Date;
   refillAmount?: number;
+  /** Month-to-date spend in tokenCredits (Vermeer budget badge). Optional: absent until backend rebuilt. */
+  currentMonthSpend?: number;
 };
 
 /* -------------------------------------------------------------------------- */
