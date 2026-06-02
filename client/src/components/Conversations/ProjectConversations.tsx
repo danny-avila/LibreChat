@@ -39,7 +39,7 @@ type FlattenedItem =
   | { type: 'favorites' }
   | { type: 'chats-header' }
   | { type: 'section'; section: Section; isExpanded: boolean }
-  | { type: 'date'; sectionId?: string; groupName: string }
+  | { type: 'date'; sectionId?: string; groupName: string; isFirst?: boolean }
   | { type: 'convo'; sectionId?: string; convo: TConversation }
   | { type: 'empty'; sectionId?: string; title: string }
   | { type: 'loading'; sectionId?: string; key: string };
@@ -131,16 +131,15 @@ const SectionHeader = memo(
         aria-expanded={isExpanded}
         onClick={onToggle}
         className={cn(
-          'group flex h-8 w-full items-center gap-2 rounded-lg px-1 text-left text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white',
-          isExpanded
-            ? 'text-text-primary hover:bg-surface-hover'
-            : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
+          'group flex h-8 w-full items-center gap-2 rounded-lg px-1 text-left text-sm outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white',
+          isExpanded ? 'text-text-primary' : 'text-text-secondary',
+          'hover:bg-surface-active-alt hover:text-text-primary',
         )}
       >
         <Icon
           className={cn(
-            'h-4 w-4 shrink-0',
-            isExpanded ? 'text-text-primary' : 'text-text-secondary',
+            'h-4 w-4 shrink-0 transition-colors duration-150',
+            isExpanded ? 'text-text-primary' : 'text-text-secondary group-hover:text-text-primary',
           )}
           aria-hidden="true"
         />
@@ -273,11 +272,6 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
     [expandedSectionIds, sections],
   );
 
-  const expandedSectionIdsKey = useMemo(
-    () => expandedSectionIdsList.join('\u0000'),
-    [expandedSectionIdsList],
-  );
-
   useEffect(() => {
     setSectionCursors({});
   }, [sectionParamsKey]);
@@ -374,8 +368,9 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
     [chatSortBy, searchConversations],
   );
 
-  const { flattenedItems, sectionEndIndexes } = useMemo(() => {
+  const { flattenedItems, sectionStartIndexes, sectionEndIndexes } = useMemo(() => {
     const items: FlattenedItem[] = [];
+    const startIndexes: Record<string, number> = {};
     const endIndexes: Record<string, number> = {};
 
     if (shouldShowFavorites) {
@@ -385,22 +380,34 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
     items.push({ type: 'chats-header' });
 
     if (!isChatsExpanded) {
-      return items;
+      return {
+        flattenedItems: items,
+        sectionStartIndexes: startIndexes,
+        sectionEndIndexes: endIndexes,
+      };
     }
 
     if (isSearching) {
       if (isSearchConversationsLoading) {
         items.push({ type: 'loading', key: 'loading-search-conversations' });
-        return { flattenedItems: items, sectionEndIndexes: endIndexes };
+        return {
+          flattenedItems: items,
+          sectionStartIndexes: startIndexes,
+          sectionEndIndexes: endIndexes,
+        };
       }
 
       if (searchConversations.length === 0) {
         items.push({ type: 'empty', title: localize('com_ui_no_results_found') });
-        return { flattenedItems: items, sectionEndIndexes: endIndexes };
+        return {
+          flattenedItems: items,
+          sectionStartIndexes: startIndexes,
+          sectionEndIndexes: endIndexes,
+        };
       }
 
-      groupedSearchConversations.forEach(([groupName, convos]) => {
-        items.push({ type: 'date', groupName });
+      groupedSearchConversations.forEach(([groupName, convos], groupIndex) => {
+        items.push({ type: 'date', groupName, isFirst: groupIndex === 0 });
         convos.forEach((convo) => items.push({ type: 'convo', convo }));
       });
 
@@ -408,11 +415,16 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
         items.push({ type: 'loading', key: 'loading-more-search-conversations' });
       }
 
-      return { flattenedItems: items, sectionEndIndexes: endIndexes };
+      return {
+        flattenedItems: items,
+        sectionStartIndexes: startIndexes,
+        sectionEndIndexes: endIndexes,
+      };
     }
 
     sections.forEach((section) => {
       const isExpanded = expandedSectionIds.has(section.id);
+      startIndexes[section.id] = items.length;
       items.push({ type: 'section', section, isExpanded });
 
       if (!isExpanded) {
@@ -441,8 +453,8 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
         return;
       }
 
-      sectionState.groupedConversations.forEach(([groupName, convos]) => {
-        items.push({ type: 'date', sectionId: section.id, groupName });
+      sectionState.groupedConversations.forEach(([groupName, convos], groupIndex) => {
+        items.push({ type: 'date', sectionId: section.id, groupName, isFirst: groupIndex === 0 });
         convos.forEach((convo) => items.push({ type: 'convo', sectionId: section.id, convo }));
       });
 
@@ -461,7 +473,11 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
       items.push({ type: 'loading', key: 'loading-projects' });
     }
 
-    return { flattenedItems: items, sectionEndIndexes: endIndexes };
+    return {
+      flattenedItems: items,
+      sectionStartIndexes: startIndexes,
+      sectionEndIndexes: endIndexes,
+    };
   }, [
     sections,
     isChatsExpanded,
@@ -502,7 +518,9 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
             return 'project-chats-header';
           }
           if (item.type === 'date') {
-            return `project-date-${item.sectionId ?? 'search'}-${item.groupName}`;
+            return `project-date-${item.sectionId ?? 'search'}-${item.groupName}-${
+              item.isFirst ? 'first' : 'next'
+            }`;
           }
           if (item.type === 'convo') {
             return `project-convo-${item.sectionId ?? 'search'}-${item.convo.conversationId}`;
@@ -527,7 +545,6 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
   }, [
     cache,
     chatSortBy,
-    expandedSectionIdsKey,
     isChatsExpanded,
     mode,
     search.query,
@@ -600,7 +617,7 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
   );
 
   const loadMoreRows = useCallback(
-    (stopIndex: number) => {
+    (startIndex: number, stopIndex: number) => {
       if (!isChatsExpanded) {
         return;
       }
@@ -612,8 +629,11 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
       if (!isSearching) {
         const sectionToLoad = Object.entries(sectionEndIndexes).find(([sectionId, endIndex]) => {
           const sectionState = sectionConversationsById[sectionId];
+          const sectionStartIndex = sectionStartIndexes[sectionId] ?? endIndex;
           return (
+            startIndex <= endIndex &&
             stopIndex >= endIndex - 8 &&
+            stopIndex >= sectionStartIndex &&
             Boolean(sectionState?.hasNextPage) &&
             !sectionState?.isFetchingNextPage
           );
@@ -637,6 +657,7 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
       conversationHasNextPage,
       isFetchingNextSearchConversationPage,
       fetchNextSearchConversationPage,
+      sectionStartIndexes,
       sectionEndIndexes,
       sectionConversationsById,
       fetchNextSectionPage,
@@ -698,7 +719,7 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
       if (item.type === 'date') {
         return (
           <MeasuredRow key={key} {...rowProps}>
-            <DateLabel groupName={item.groupName} />
+            <DateLabel groupName={item.groupName} isFirst={item.isFirst} />
           </MeasuredRow>
         );
       }
@@ -746,11 +767,11 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
   );
 
   const handleRowsRendered = useCallback(
-    ({ stopIndex }: { stopIndex: number }) => {
+    ({ startIndex, stopIndex }: { startIndex: number; stopIndex: number }) => {
       if (!isChatsExpanded) {
         return;
       }
-      throttledLoadMore(stopIndex);
+      throttledLoadMore(startIndex, stopIndex);
     },
     [isChatsExpanded, throttledLoadMore],
   );
