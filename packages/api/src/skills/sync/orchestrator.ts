@@ -21,6 +21,7 @@ type SkillSyncRequestUser = {
 type SkillSyncRequestLike = {
   config?: SkillSyncAppConfigLike;
   user?: SkillSyncRequestUser;
+  skillSyncAllowServerCredentials?: boolean;
 };
 
 type ResolvedSkillSyncConfig = NonNullable<SkillSyncConfig>;
@@ -39,6 +40,7 @@ type SkillSyncTriggerLogger = {
 export type SkillSyncTriggerRunnerFactoryInput = {
   getConfig: () => MaybePromise<SkillSyncConfig | undefined>;
   loadAppConfig: () => MaybePromise<SkillSyncAppConfigLike | undefined>;
+  allowServerCredentials?: boolean;
 };
 
 export type SkillSyncTriggerOrchestratorDeps = {
@@ -202,6 +204,7 @@ export function createSkillSyncTriggerOrchestrator(deps: SkillSyncTriggerOrchest
     return deps.createRunner({
       getConfig: async () => config,
       loadAppConfig: async () => request.config,
+      allowServerCredentials: Boolean(request.skillSyncAllowServerCredentials),
     });
   }
 
@@ -219,6 +222,7 @@ export function createSkillSyncTriggerOrchestrator(deps: SkillSyncTriggerOrchest
     const requestRunner = deps.createRunner({
       getConfig: async () => config,
       loadAppConfig: async () => request.config,
+      allowServerCredentials: false,
     });
     const status = await requestRunner.getStatus();
     if (!shouldRunRequestSync(status, { minIntervalMs, staleRunningMs })) {
