@@ -11,6 +11,7 @@ import {
   logger,
   /* Conversations */
   addConvoToAllQueries,
+  findConversationInInfinite,
   updateConvoInAllQueries,
   removeConvoFromAllQueries,
 } from '~/utils';
@@ -479,6 +480,26 @@ export const useDeleteConversationMutation = (
         // TODO: CHECK THIS, no-op; restore if needed
       },
       onSuccess: (data, vars, context) => {
+        const deletedConversation = vars.conversationId
+          ? queryClient.getQueryData<t.TConversation>([QueryKeys.conversation, vars.conversationId])
+          : undefined;
+        let deletedProjectId = deletedConversation?.chatProjectId;
+        if (!deletedProjectId && vars.conversationId) {
+          const queries = queryClient
+            .getQueryCache()
+            .findAll([QueryKeys.allConversations], { exact: false });
+          for (const query of queries) {
+            const found = findConversationInInfinite(
+              queryClient.getQueryData<InfiniteData<ConversationListResponse>>(query.queryKey),
+              vars.conversationId,
+            );
+            if (found?.chatProjectId) {
+              deletedProjectId = found.chatProjectId;
+              break;
+            }
+          }
+        }
+
         if (vars.conversationId) {
           removeConvoFromAllQueries(queryClient, vars.conversationId);
         }
@@ -524,6 +545,9 @@ export const useDeleteConversationMutation = (
           refetchPage: (_, index) => index === 0,
         });
         queryClient.invalidateQueries([QueryKeys.projects]);
+        if (deletedProjectId) {
+          queryClient.invalidateQueries([QueryKeys.project, deletedProjectId]);
+        }
 
         options?.onSuccess?.(data, vars, context);
       },

@@ -1,6 +1,7 @@
 import type { FilterQuery, Model, SortOrder, Types } from 'mongoose';
 import logger from '~/config/winston';
 import { isValidObjectIdString } from '~/utils/objectId';
+import { buildRetentionVisibilityFilter } from '~/utils/retention';
 import { escapeRegExp } from '~/utils/string';
 import type { IChatProject, IChatProjectDocument, IConversation } from '~/types';
 
@@ -168,9 +169,11 @@ function visibleProjectConversationFilter(
   projectId: string,
 ): FilterQuery<IConversation> {
   return {
-    user,
-    chatProjectId: projectId,
-    $or: [{ isArchived: false }, { isArchived: { $exists: false } }],
+    $and: [
+      { user, chatProjectId: projectId },
+      { $or: [{ isArchived: false }, { isArchived: { $exists: false } }] },
+      buildRetentionVisibilityFilter<IConversation>(),
+    ],
   } as FilterQuery<IConversation>;
 }
 

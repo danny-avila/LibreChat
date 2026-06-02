@@ -157,7 +157,6 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
     {
       sortBy: projectSortBy,
       sortDirection: projectSortDirection,
-      search: search.debouncedQuery || undefined,
     },
     {
       enabled: isAuthenticated,

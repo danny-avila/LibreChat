@@ -150,6 +150,55 @@ describe('ChatProject methods', () => {
     expect(refreshedProject?.lastConversationId).toBeDefined();
   });
 
+  it('excludes retention-hidden conversations from project stats', async () => {
+    const project = await methods.createChatProject(user, { name: 'Visible Stats' });
+    const chatProjectId = project._id!.toString();
+    const visibleDate = new Date('2026-01-01T00:00:00.000Z');
+    const hiddenDate = new Date('2026-02-01T00:00:00.000Z');
+
+    await Conversation.collection.insertMany([
+      {
+        conversationId: 'visible-convo',
+        title: 'Visible',
+        user,
+        endpoint: 'openAI',
+        chatProjectId,
+        isTemporary: false,
+        expiredAt: null,
+        createdAt: visibleDate,
+        updatedAt: visibleDate,
+      },
+      {
+        conversationId: 'temporary-convo',
+        title: 'Temporary',
+        user,
+        endpoint: 'openAI',
+        chatProjectId,
+        isTemporary: true,
+        expiredAt: new Date('2027-03-01T00:00:00.000Z'),
+        createdAt: hiddenDate,
+        updatedAt: hiddenDate,
+      },
+      {
+        conversationId: 'expired-convo',
+        title: 'Expired',
+        user,
+        endpoint: 'openAI',
+        chatProjectId,
+        isTemporary: false,
+        expiredAt: new Date('2025-12-01T00:00:00.000Z'),
+        createdAt: hiddenDate,
+        updatedAt: hiddenDate,
+      },
+    ]);
+
+    const refreshedProject = await methods.refreshChatProjectStats(user, chatProjectId);
+
+    expect(refreshedProject?.conversationCount).toBe(1);
+    expect(refreshedProject?.lastConversationId).toBe('visible-convo');
+    expect(refreshedProject?.lastConversationAt?.toISOString()).toBe(visibleDate.toISOString());
+  });
+
   it('enforces one project per chat when moving conversations', async () => {
     const firstProject = await methods.createChatProject(user, { name: 'First' });
     const secondProject = await methods.createChatProject(user, { name: 'Second' });
