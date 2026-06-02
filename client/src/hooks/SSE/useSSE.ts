@@ -112,7 +112,7 @@ export default function useSSE(
           setIsSubmitting(false);
           setShowStopButton(false);
         }
-        (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
+        balanceQuery.refetch();
         console.log('final', data);
         return;
       } else if (data.created != null) {
@@ -214,7 +214,7 @@ export default function useSSE(
       }
 
       console.log('error in server stream.');
-      (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
+      balanceQuery.refetch();
 
       let data: TResData | undefined = undefined;
       try {
