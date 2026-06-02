@@ -57,7 +57,7 @@ async function getSyntheticReq({ userId = SYSTEM_USER_ID, tenantId, loadAppConfi
   };
 }
 
-function createRunner({ getConfig, loadAppConfig } = {}) {
+function createRunner({ getConfig, loadAppConfig, allowServerCredentials = true } = {}) {
   const resolveAppConfig = loadAppConfig ?? loadCurrentAppConfig;
   const resolveConfig = getConfig ?? (() => getSyncConfig(resolveAppConfig));
   const createdRunner = createGitHubSkillSyncRunner({
@@ -141,6 +141,7 @@ function createRunner({ getConfig, loadAppConfig } = {}) {
         file,
       );
     },
+    allowServerCredentials,
   });
   return {
     getStatus: createdRunner.getStatus,

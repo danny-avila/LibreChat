@@ -1,4 +1,5 @@
 const express = require('express');
+const { skillSyncConfigSchema } = require('librechat-data-provider');
 const { createAdminSkillsSyncHandlers } = require('@librechat/api');
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const { hasCapability, requireCapability } = require('~/server/middleware/roles/capabilities');
@@ -10,18 +11,51 @@ const configMiddleware = require('~/server/middleware/config/app');
 const router = express.Router();
 const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
 
+function getCapabilityUser(req, { platformOnly = false } = {}) {
+  const id = req.user?.id ?? req.user?._id?.toString?.();
+  if (!id) {
+    return null;
+  }
+  return {
+    id,
+    role: req.user?.role ?? '',
+    ...(platformOnly ? {} : { tenantId: req.user?.tenantId }),
+  };
+}
+
+function parseSkillSyncConfig(raw) {
+  if (!raw || typeof raw !== 'object') {
+    return undefined;
+  }
+  const parsed = skillSyncConfigSchema.safeParse(raw);
+  return parsed.success ? parsed.data : undefined;
+}
+
+function isSameSkillSyncConfig(left, right) {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
+function hasResolvedSkillSyncOverride(req) {
+  const resolved = parseSkillSyncConfig(req.config?.skillSync);
+  const base = parseSkillSyncConfig(req.config?.config?.skillSync);
+  return Boolean(resolved?.github && !isSameSkillSyncConfig(resolved, base));
+}
+
+async function hasSkillCapability(req, capability, { platformOnly = false } = {}) {
+  const user = getCapabilityUser(req, { platformOnly });
+  if (!user) {
+    return false;
+  }
+  return hasCapability(user, capability);
+}
+
 function requireSkillCapability(capability, { platformOnly = false } = {}) {
   return async (req, res, next) => {
     try {
-      const id = req.user?.id ?? req.user?._id?.toString?.();
-      if (!id) {
+      const user = getCapabilityUser(req, { platformOnly });
+      if (!user) {
         return res.status(401).json({ message: 'Authentication required' });
       }
-      const user = {
-        id,
-        role: req.user?.role ?? '',
-        ...(platformOnly ? {} : { tenantId: req.user?.tenantId }),
-      };
       if (await hasCapability(user, capability)) {
         return next();
       }
@@ -32,8 +66,42 @@ function requireSkillCapability(capability, { platformOnly = false } = {}) {
   };
 }
 
+async function attachCredentialReadAccess(req, res, next) {
+  try {
+    const canReadCredentials = await hasSkillCapability(req, SystemCapabilities.READ_SKILLS, {
+      platformOnly: true,
+    });
+    req.skillSyncCanReadCredentials = canReadCredentials;
+    req.skillSyncAllowServerCredentials = canReadCredentials;
+    return next();
+  } catch {
+    return res.status(500).json({ message: 'Internal Server Error' });
+  }
+}
+
+async function requireSyncRunCapability(req, res, next) {
+  try {
+    const canManagePlatform = await hasSkillCapability(req, SystemCapabilities.MANAGE_SKILLS, {
+      platformOnly: true,
+    });
+    if (canManagePlatform) {
+      req.skillSyncAllowServerCredentials = true;
+      return next();
+    }
+    if (
+      hasResolvedSkillSyncOverride(req) &&
+      (await hasSkillCapability(req, SystemCapabilities.MANAGE_SKILLS))
+    ) {
+      req.skillSyncAllowServerCredentials = false;
+      return next();
+    }
+    return res.status(403).json({ message: 'Forbidden' });
+  } catch {
+    return res.status(500).json({ message: 'Internal Server Error' });
+  }
+}
+
 const requireReadSkills = requireSkillCapability(SystemCapabilities.READ_SKILLS);
-const requireManageSkills = requireSkillCapability(SystemCapabilities.MANAGE_SKILLS);
 const requirePlatformManageSkills = requireSkillCapability(SystemCapabilities.MANAGE_SKILLS, {
   platformOnly: true,
 });
@@ -46,8 +114,8 @@ const handlers = createAdminSkillsSyncHandlers({
 
 router.use(requireJwtAuth, requireAdminAccess, configMiddleware);
 
-router.get('/sync/status', requireReadSkills, handlers.getSyncStatus);
-router.post('/sync/run', requireManageSkills, handlers.runSync);
+router.get('/sync/status', requireReadSkills, attachCredentialReadAccess, handlers.getSyncStatus);
+router.post('/sync/run', requireSyncRunCapability, handlers.runSync);
 router.put('/sync/credentials/:credentialKey', requirePlatformManageSkills, handlers.setCredential);
 router.delete(
   '/sync/credentials/:credentialKey',
