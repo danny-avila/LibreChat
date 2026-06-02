@@ -26,7 +26,6 @@ jest.mock('~/hooks/useScrollToRef', () => ({
 }));
 
 import useMessageScrolling from '../useMessageScrolling';
-import { MESSAGE_CONTENT_LAYOUT_CHANGE_EVENT } from '../messageLayout';
 
 class MockResizeObserver {
   static instances: MockResizeObserver[] = [];
@@ -75,6 +74,23 @@ class MockIntersectionObserver {
 
 const originalResizeObserver = global.ResizeObserver;
 const originalIntersectionObserver = global.IntersectionObserver;
+
+function setRect(element: HTMLElement, rect: Partial<DOMRect>): void {
+  element.getBoundingClientRect = jest.fn(
+    () =>
+      ({
+        x: rect.x ?? 0,
+        y: rect.y ?? 0,
+        top: rect.top ?? 0,
+        left: rect.left ?? 0,
+        right: rect.right ?? 0,
+        bottom: rect.bottom ?? 0,
+        width: rect.width ?? 0,
+        height: rect.height ?? 0,
+        toJSON: () => ({}),
+      }) as DOMRect,
+  );
+}
 
 const conversation = {
   conversationId: 'conversation-1',
@@ -229,18 +245,20 @@ describe('useMessageScrolling resize reconciliation', () => {
     expect(mockScrollToBottom).not.toHaveBeenCalled();
   });
 
-  it('clamps explicit layout-change shrinks without following the bottom', () => {
-    renderScrolling();
+  it('clamps to the rendered content bottom when scrollHeight stays oversized', () => {
+    renderScrolling({ contextOverrides: { abortScroll: true } });
 
     const scrollable = screen.getByTestId('scrollable');
-    Object.defineProperty(scrollable, 'scrollHeight', { value: 500, configurable: true });
+    const content = screen.getByTestId('content');
+    Object.defineProperty(scrollable, 'scrollHeight', { value: 1000, configurable: true });
     Object.defineProperty(scrollable, 'clientHeight', { value: 200, configurable: true });
-    scrollable.scrollTop = 450;
+    scrollable.scrollTop = 700;
+    setRect(scrollable, { top: 0, bottom: 200, height: 200 });
+    setRect(content, { top: -700, bottom: -200, height: 500 });
 
-    fireEvent(
-      screen.getByTestId('content'),
-      new CustomEvent(MESSAGE_CONTENT_LAYOUT_CHANGE_EVENT, { bubbles: true }),
-    );
+    act(() => {
+      MockResizeObserver.last()?.trigger();
+    });
 
     expect(scrollable.scrollTop).toBe(300);
     expect(mockScrollToBottom).not.toHaveBeenCalled();

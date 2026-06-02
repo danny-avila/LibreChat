@@ -9,7 +9,7 @@ import type {
   FunctionToolCall,
 } from 'librechat-data-provider';
 import type { PartWithIndex } from './ParallelContent';
-import { useLocalize, useExpandCollapse, dispatchMessageContentLayoutChange } from '~/hooks';
+import { useLocalize, useExpandCollapse, scheduleMessageContentLayoutReconcile } from '~/hooks';
 import { cn, getToolDisplayLabel } from '~/utils';
 import { StackedToolIcons } from './ToolOutput';
 import { useMCPIconMap } from '~/hooks/MCP';
@@ -105,6 +105,7 @@ export default function ToolCallGroup({
   const localize = useLocalize();
   const mcpIconMap = useMCPIconMap();
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const cancelLayoutReconcileRef = useRef<(() => void) | null>(null);
   const count = parts.length;
 
   const toolMetadata = useMemo(() => parts.map((p) => getToolMeta(p.part)), [parts]);
@@ -158,8 +159,16 @@ export default function ToolCallGroup({
   const [userOverride, setUserOverride] = useState(initialState != null);
   const { style: expandStyle, ref: expandRef } = useExpandCollapse(isExpanded);
   const notifyLayoutChange = useCallback(() => {
-    dispatchMessageContentLayoutChange(rootRef.current);
+    cancelLayoutReconcileRef.current?.();
+    cancelLayoutReconcileRef.current = scheduleMessageContentLayoutReconcile(rootRef.current);
   }, []);
+
+  useEffect(
+    () => () => {
+      cancelLayoutReconcileRef.current?.();
+    },
+    [],
+  );
 
   useEffect(() => {
     if (autoCollapse && !userOverride) {

@@ -17,7 +17,7 @@ jest.mock('~/hooks', () => ({
     ref: { current: null },
   }),
   useProgress: (initial: number) => (initial >= 1 ? 1 : initial),
-  dispatchMessageContentLayoutChange: jest.fn(),
+  scheduleMessageContentLayoutReconcile: jest.fn(() => jest.fn()),
 }));
 
 jest.mock('~/hooks/MCP', () => ({

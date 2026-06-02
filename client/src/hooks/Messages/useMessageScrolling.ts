@@ -4,7 +4,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import type { TMessage } from 'librechat-data-provider';
 import { useMessagesConversation, useMessagesSubmission } from '~/Providers';
 import useScrollToRef from '~/hooks/useScrollToRef';
-import { MESSAGE_CONTENT_LAYOUT_CHANGE_EVENT } from './messageLayout';
+import { getRenderedContentMaxScrollTop } from './messageLayout';
 import store from '~/store';
 
 const threshold = 0.85;
@@ -97,7 +97,7 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
       return false;
     }
 
-    const maxScrollTop = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
+    const maxScrollTop = getRenderedContentMaxScrollTop(scrollEl);
     if (scrollEl.scrollTop <= maxScrollTop) {
       return false;
     }
@@ -135,33 +135,6 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
     const observer = new ResizeObserver(() => reconcileContentResize());
     observer.observe(contentEl);
     return () => observer.disconnect();
-  }, [reconcileContentResize]);
-
-  useEffect(() => {
-    const contentEl = contentRef.current;
-    if (!contentEl) {
-      return;
-    }
-
-    let animationFrameId: number | undefined;
-    const reconcileWithoutFollowing = () => {
-      reconcileContentResize(false);
-      if (typeof window === 'undefined') {
-        return;
-      }
-      animationFrameId = window.requestAnimationFrame(() => {
-        reconcileContentResize(false);
-        animationFrameId = undefined;
-      });
-    };
-
-    contentEl.addEventListener(MESSAGE_CONTENT_LAYOUT_CHANGE_EVENT, reconcileWithoutFollowing);
-    return () => {
-      contentEl.removeEventListener(MESSAGE_CONTENT_LAYOUT_CHANGE_EVENT, reconcileWithoutFollowing);
-      if (animationFrameId !== undefined && typeof window !== 'undefined') {
-        window.cancelAnimationFrame(animationFrameId);
-      }
-    };
   }, [reconcileContentResize]);
 
   useEffect(() => {

@@ -22,7 +22,7 @@ jest.mock('~/hooks', () => ({
     },
     ref: { current: null },
   }),
-  dispatchMessageContentLayoutChange: jest.fn(),
+  scheduleMessageContentLayoutReconcile: jest.fn(() => jest.fn()),
 }));
 
 jest.mock('~/hooks/MCP', () => ({
