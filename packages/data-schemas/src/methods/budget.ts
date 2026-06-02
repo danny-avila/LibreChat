@@ -28,10 +28,11 @@ export interface UpdateBudgetInput {
 
 export function createBudgetMethods(mongoose: typeof import('mongoose')) {
   /**
-   * Returns one row per user who either has a Balance record or has consumed this month
-   * (outer join Users ⟕ Balance ⟕ current-month spend). Spend is derived live from
-   * transactions; budgets fall back to the schema default when no Balance exists yet.
-   * Sorted by descending month-to-date spend.
+   * Returns one row per user in the User collection (outer join Users ⟕ Balance ⟕
+   * current-month spend), so an admin can set a threshold proactively before a user's
+   * first consumption. Spend is derived live from transactions; budgets fall back to the
+   * schema default when no Balance exists yet. Sorted by descending month-to-date spend,
+   * then name/email/id ascending for a deterministic order between users at $0.
    */
   async function getAllBudgets(): Promise<AdminBudgetRow[]> {
     const User = mongoose.models.User;
@@ -76,16 +77,6 @@ export function createBudgetMethods(mongoose: typeof import('mongoose')) {
       },
       { $unwind: { path: '$spendDoc', preserveNullAndEmptyArrays: true } },
       {
-        $match: {
-          $expr: {
-            $or: [
-              { $ne: [{ $ifNull: ['$balanceDoc', null] }, null] },
-              { $gt: [{ $ifNull: ['$spendDoc.spend', 0] }, 0] },
-            ],
-          },
-        },
-      },
-      {
         $project: {
           _id: 0,
           user: { $toString: '$_id' },
@@ -99,7 +90,7 @@ export function createBudgetMethods(mongoose: typeof import('mongoose')) {
           currentMonthSpend: { $ifNull: ['$spendDoc.spend', 0] },
         },
       },
-      { $sort: { currentMonthSpend: -1 } },
+      { $sort: { currentMonthSpend: -1, name: 1, email: 1, user: 1 } },
     ]);
   }
 
