@@ -489,9 +489,8 @@ export default function useEventHandlers({
         return;
       }
 
-      queryClient.setQueryData<TConversation>(
-        [QueryKeys.conversation, conversationId],
-        (convo) => (convo ? { ...convo, title } : convo),
+      queryClient.setQueryData<TConversation>([QueryKeys.conversation, conversationId], (convo) =>
+        convo ? { ...convo, title } : convo,
       );
       updateConvoInAllQueries(queryClient, conversationId, (convo) => ({ ...convo, title }));
       markTitleGenerationProcessed(conversationId);
