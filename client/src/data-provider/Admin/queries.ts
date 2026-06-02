@@ -3,6 +3,7 @@ import { QueryKeys, dataService } from 'librechat-data-provider';
 import type { UseQueryOptions, QueryObserverResult } from '@tanstack/react-query';
 import type {
   AdminUsageResponse,
+  ModelUsageResponse,
   AdminBudgetsResponse,
   UpdateBudgetRequest,
   UpdateBudgetResponse,
@@ -15,6 +16,21 @@ export const useAdminUsageQuery = (
   return useQuery<AdminUsageResponse>(
     [QueryKeys.adminUsage],
     () => dataService.getAdminUsage(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      retry: false,
+      ...config,
+    },
+  );
+};
+
+export const useAdminModelUsageQuery = (
+  config?: UseQueryOptions<ModelUsageResponse>,
+): QueryObserverResult<ModelUsageResponse> => {
+  return useQuery<ModelUsageResponse>(
+    [QueryKeys.adminModelUsage],
+    () => dataService.getAdminModelUsage(),
     {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,

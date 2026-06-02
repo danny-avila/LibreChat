@@ -21,4 +21,14 @@ router.get('/', requireReadUsage, async (req, res) => {
   }
 });
 
+router.get('/models', requireReadUsage, async (req, res) => {
+  try {
+    const rows = await db.aggregateUsageByModel();
+    res.json({ period: 'current-month', rows });
+  } catch (error) {
+    logger.error('[GET /api/admin/usage/models] aggregation failed:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
 module.exports = router;

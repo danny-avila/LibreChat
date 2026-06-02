@@ -5,6 +5,12 @@ import type { ITransaction } from '~/schema/transaction';
 
 const cancelRate = 1.15;
 
+/** Start of the current calendar month, in UTC — single source for the monthly usage window. */
+function currentMonthStartUTC(): Date {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+}
+
 /** A MongoDB aggregation expression (JSON-like tree of operators, literals and field paths). */
 type AggExpr = string | number | boolean | null | RegExp | AggExpr[] | { [key: string]: AggExpr };
 
@@ -484,8 +490,7 @@ export function createTransactionMethods(
    */
   async function aggregateMonthlyUsage(): Promise<MonthlyUsageRow[]> {
     const Transaction = mongoose.models.Transaction;
-    const now = new Date();
-    const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const startOfMonth = currentMonthStartUTC();
 
     return Transaction.aggregate<MonthlyUsageRow>([
       {
@@ -535,6 +540,70 @@ export function createTransactionMethods(
     ]);
   }
 
+  /** Row returned by aggregateUsageByModel — one per model used in the period. */
+  interface ModelUsageRow {
+    model: string;
+    messageCount: number;
+    totalCredits: number;
+    avgCreditsPerMessage: number;
+  }
+
+  /**
+   * Aggregates current-month token consumption per model (global, all users).
+   * Sums absolute `tokenValue` over prompt + completion transactions of the current
+   * calendar month (UTC); messageCount counts DISTINCT messageIds (a message spans a
+   * prompt + a completion transaction). Sorted by descending total, then model ascending.
+   * Used by GET /api/admin/usage/models.
+   */
+  async function aggregateUsageByModel(): Promise<ModelUsageRow[]> {
+    const Transaction = mongoose.models.Transaction;
+    const startOfMonth = currentMonthStartUTC();
+
+    return Transaction.aggregate<ModelUsageRow>([
+      {
+        $match: {
+          createdAt: { $gte: startOfMonth },
+          tokenType: { $in: ['prompt', 'completion'] },
+        },
+      },
+      {
+        $group: {
+          _id: '$model',
+          totalCredits: { $sum: { $abs: { $ifNull: ['$tokenValue', 0] } } },
+          messageIds: { $addToSet: '$messageId' },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          model: { $ifNull: ['$_id', 'unknown'] },
+          totalCredits: 1,
+          messageCount: {
+            $size: {
+              $filter: {
+                input: '$messageIds',
+                as: 'm',
+                cond: { $and: [{ $ne: ['$$m', null] }, { $ne: ['$$m', undefined] }] },
+              },
+            },
+          },
+        },
+      },
+      {
+        $addFields: {
+          avgCreditsPerMessage: {
+            $cond: [
+              { $gt: ['$messageCount', 0] },
+              { $divide: ['$totalCredits', '$messageCount'] },
+              0,
+            ],
+          },
+        },
+      },
+      { $sort: { totalCredits: -1, model: 1 } },
+    ]);
+  }
+
   return {
     updateBalance,
     bulkInsertTransactions,
@@ -547,6 +616,7 @@ export function createTransactionMethods(
     createAutoRefillTransaction,
     createStructuredTransaction,
     aggregateMonthlyUsage,
+    aggregateUsageByModel,
   };
 }
 

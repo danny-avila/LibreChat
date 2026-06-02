@@ -84,6 +84,8 @@ export enum QueryKeys {
   adminUsage = 'adminUsage',
   /* Admin Budgets (monthly spend thresholds per user) */
   adminBudgets = 'adminBudgets',
+  /* Admin Model Mix (current-month consumption per model) */
+  adminModelUsage = 'adminModelUsage',
 }
 
 // Dynamic query keys that require parameters

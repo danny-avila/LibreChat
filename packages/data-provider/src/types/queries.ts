@@ -244,6 +244,19 @@ export interface AdminUsageResponse {
   rows: AdminUsageRow[];
 }
 
+/* Admin Model Mix (current-month consumption per model — all amounts in tokenCredits, 1 USD = 1_000_000) */
+export interface ModelUsageRow {
+  model: string;
+  messageCount: number;
+  totalCredits: number;
+  avgCreditsPerMessage: number;
+}
+
+export interface ModelUsageResponse {
+  period: 'current-month';
+  rows: ModelUsageRow[];
+}
+
 /* Admin Budgets (monthly spend thresholds per user — all amounts in tokenCredits, 1 USD = 1_000_000) */
 export interface AdminBudgetRow {
   user: string;

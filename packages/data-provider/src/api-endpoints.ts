@@ -415,6 +415,9 @@ export const adminRoles = () => `${BASE_URL}/api/admin/roles`;
 /* Admin Usage (V1 MVP — monthly consumption table for ADMIN) */
 export const adminUsage = () => `${BASE_URL}/api/admin/usage`;
 
+/* Admin Model Mix (current-month consumption per model — ADMIN) */
+export const adminModelUsage = () => `${BASE_URL}/api/admin/usage/models`;
+
 /* Admin Budgets (monthly spend thresholds per user — ADMIN) */
 export const adminBudgets = () => `${BASE_URL}/api/admin/usage/budgets`;
 export const adminBudgetByUser = (userId: string) =>

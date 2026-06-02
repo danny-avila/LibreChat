@@ -1277,6 +1277,11 @@ export const getAdminUsage = (): Promise<q.AdminUsageResponse> => {
   return request.get(endpoints.adminUsage());
 };
 
+/* Admin Model Mix (current-month consumption per model) */
+export const getAdminModelUsage = (): Promise<q.ModelUsageResponse> => {
+  return request.get(endpoints.adminModelUsage());
+};
+
 /* Admin Budgets (monthly spend thresholds per user) */
 export const getAdminBudgets = (): Promise<q.AdminBudgetsResponse> => {
   return request.get(endpoints.adminBudgets());
