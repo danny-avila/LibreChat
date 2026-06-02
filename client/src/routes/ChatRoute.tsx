@@ -106,12 +106,12 @@ export default function ChatRoute() {
     // Wait for roles to load so hasAgentAccess has a definitive value in useNewConvo
     const rolesLoaded = roles?.USER != null;
     const isNewConvo = conversationId === Constants.NEW_CONVO;
+    const isDraftNewConvo = conversation?.conversationId === Constants.NEW_CONVO;
+    const draftProjectMismatch = verifiedChatProjectId
+      ? conversation?.chatProjectId !== verifiedChatProjectId
+      : conversation?.chatProjectId != null;
     const newConvoNeedsInit =
-      isNewConvo &&
-      (conversation?.conversationId !== Constants.NEW_CONVO ||
-        (verifiedChatProjectId
-          ? conversation?.chatProjectId !== verifiedChatProjectId
-          : conversation?.chatProjectId != null));
+      isNewConvo && (!conversation || (isDraftNewConvo && draftProjectMismatch));
     const shouldSetConvo =
       (startupConfig &&
         rolesLoaded &&
