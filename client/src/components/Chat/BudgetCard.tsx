@@ -34,16 +34,14 @@ function BudgetCard() {
   const budget = formatUSD(monthlyBudget);
 
   return (
-    <div
-      title={localize('com_budget_badge_tooltip', { percent, spent, budget })}
-      className="mx-auto mt-2 flex w-full max-w-3xl items-center gap-3 rounded-lg border border-border-light bg-surface-secondary px-3 py-1.5 text-xs"
-    >
-      <div className="flex flex-1 items-center gap-2 text-text-primary">
+    <div className="mx-auto mt-2 flex w-full max-w-3xl px-4">
+      <div
+        title={localize('com_budget_badge_tooltip', { percent, spent, budget })}
+        className="inline-flex items-center gap-2.5 rounded-md border border-border-light bg-surface-secondary px-2.5 py-1 text-xs text-text-primary"
+      >
         <Gauge size={14} className="text-text-secondary" aria-hidden="true" />
         {localize('com_budget_card_summary', { spent, budget })}
-      </div>
-      <div className="flex items-center gap-2">
-        <div className="h-1.5 w-24 overflow-hidden rounded-full bg-surface-tertiary">
+        <div className="h-1.5 w-20 overflow-hidden rounded-full bg-surface-tertiary">
           <div className={`h-full transition-all ${bar}`} style={{ width: `${percent}%` }} />
         </div>
         <span className={`font-semibold ${text}`}>{percent}%</span>

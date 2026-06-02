@@ -104,7 +104,11 @@ function ChatView({ index = 0 }: { index?: number }) {
                     <ChatForm index={index} />
                     <BudgetCard />
                     {isLandingPage && <SuggestionGrid index={index} />}
-                    {isLandingPage ? <ConversationStarters /> : <Footer />}
+                    {isLandingPage ? (
+                      <ConversationStarters />
+                    ) : (
+                      <Footer className="flex flex-wrap items-center justify-center gap-2 px-2 py-2 text-center text-xs text-text-primary" />
+                    )}
                   </div>
                 </div>
                 {isLandingPage && <Footer />}
