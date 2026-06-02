@@ -71,11 +71,17 @@ const createSanitizedUploadWrapper = (uploadFunction) => {
 const isPersistentAgentResourceUpload = ({ messageAttachment, tool_resource }) =>
   !messageAttachment && !!tool_resource;
 
-const getAgentFileRetentionExpiry = async ({ req, messageAttachment, tool_resource }) => {
-  if (
+const shouldRetainPersistentAgentFile = ({ req, messageAttachment, tool_resource }) => {
+  const interfaceConfig = req?.config?.interfaceConfig;
+  return (
     isPersistentAgentResourceUpload({ messageAttachment, tool_resource }) &&
-    req?.config?.interfaceConfig?.retentionMode !== RetentionMode.ALL
-  ) {
+    (interfaceConfig?.retentionMode !== RetentionMode.ALL ||
+      interfaceConfig?.retainAgentFiles === true)
+  );
+};
+
+const getAgentFileRetentionExpiry = async ({ req, messageAttachment, tool_resource }) => {
+  if (shouldRetainPersistentAgentFile({ req, messageAttachment, tool_resource })) {
     return {};
   }
 
