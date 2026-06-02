@@ -1,9 +1,10 @@
 import { memo, useMemo, useState } from 'react';
 import { Spinner, useToastContext } from '@librechat/client';
-import type { AdminBudgetRow } from 'librechat-data-provider';
+import type { AdminBudgetRow, ModelUsageRow } from 'librechat-data-provider';
 import {
   useAdminUsageQuery,
   useAdminBudgetsQuery,
+  useAdminModelUsageQuery,
   useResetMonthBudgetsMutation,
 } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
@@ -113,11 +114,161 @@ function BudgetProgress({ spent, budget }: { spent: number; budget: number }) {
   );
 }
 
+/** Categorical palette for the Model Mix donut — fixed shades readable in dark mode. */
+const MODEL_PALETTE = ['#E5384A', '#3B82F6', '#EC4899', '#10B981', '#F59E0B', '#8B5CF6'];
+const MODEL_OTHER_COLOR = '#9CA3AF';
+const DONUT_TOP_N = 6;
+
+interface DonutSegment {
+  label: string;
+  share: number;
+  color: string;
+  offset: number;
+}
+
+/** Builds donut segments: top N models by spend + an aggregated "Other" slice. */
+function buildDonutSegments(rows: ModelUsageRow[], otherLabel: string): DonutSegment[] {
+  const total = rows.reduce((sum, row) => sum + row.totalCredits, 0);
+  if (total <= 0) {
+    return [];
+  }
+  const slices = rows.slice(0, DONUT_TOP_N).map((row, index) => ({
+    label: row.model,
+    credits: row.totalCredits,
+    color: MODEL_PALETTE[index % MODEL_PALETTE.length],
+  }));
+  const restCredits = rows.slice(DONUT_TOP_N).reduce((sum, row) => sum + row.totalCredits, 0);
+  if (restCredits > 0) {
+    slices.push({ label: otherLabel, credits: restCredits, color: MODEL_OTHER_COLOR });
+  }
+  const segments: DonutSegment[] = [];
+  let offset = 0;
+  for (const slice of slices) {
+    const share = slice.credits / total;
+    segments.push({ label: slice.label, share, color: slice.color, offset });
+    offset += share;
+  }
+  return segments;
+}
+
+function ModelDonut({ segments }: { segments: DonutSegment[] }) {
+  const radius = 60;
+  const circumference = 2 * Math.PI * radius;
+  return (
+    <svg viewBox="0 0 160 160" className="h-40 w-40" role="img" aria-hidden="true">
+      <g transform="rotate(-90 80 80)">
+        {segments.map((seg) => {
+          const length = seg.share * circumference;
+          return (
+            <circle
+              key={seg.label}
+              cx={80}
+              cy={80}
+              r={radius}
+              fill="none"
+              stroke={seg.color}
+              strokeWidth={22}
+              strokeDasharray={`${length} ${circumference - length}`}
+              strokeDashoffset={-(seg.offset * circumference)}
+            />
+          );
+        })}
+      </g>
+    </svg>
+  );
+}
+
+/** Model Mix section: spend-share donut (top 6 + Other) + full per-model table. Global, all BUs. */
+function ModelMixSection({ rows, isLoading }: { rows: ModelUsageRow[]; isLoading: boolean }) {
+  const localize = useLocalize();
+  const totalCredits = rows.reduce((sum, row) => sum + row.totalCredits, 0);
+  const segments = buildDonutSegments(rows, localize('com_usage_model_other'));
+
+  return (
+    <section className="flex flex-col gap-3">
+      <div>
+        <h2 className="text-lg font-semibold text-text-primary">
+          {localize('com_usage_model_title')}
+        </h2>
+        <p className="text-xs text-text-tertiary">{localize('com_usage_model_caption')}</p>
+      </div>
+
+      {isLoading ? (
+        <div className="flex w-full items-center justify-center py-12 text-text-secondary">
+          <Spinner />
+        </div>
+      ) : rows.length === 0 || totalCredits <= 0 ? (
+        <div className="rounded-lg border border-border-light p-8 text-center text-text-secondary">
+          {localize('com_usage_model_empty')}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-6 md:flex-row">
+          <div className="flex flex-col items-center gap-4 md:w-1/3">
+            <ModelDonut segments={segments} />
+            <ul className="w-full space-y-1.5">
+              {segments.map((seg) => (
+                <li key={seg.label} className="flex items-center gap-2 text-xs">
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: seg.color }}
+                  />
+                  <span className="flex-1 truncate text-text-primary" title={seg.label}>
+                    {seg.label}
+                  </span>
+                  <span className="tabular-nums text-text-secondary">
+                    {(seg.share * 100).toFixed(1)}%
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="flex-1 overflow-hidden rounded-lg border border-border-light">
+            <table className="w-full border-collapse text-left text-sm">
+              <thead className="bg-surface-secondary text-text-secondary">
+                <tr>
+                  <th className="px-4 py-3 font-medium">{localize('com_usage_model_col_model')}</th>
+                  <th className="px-4 py-3 text-right font-medium">
+                    {localize('com_usage_col_messages')}
+                  </th>
+                  <th className="px-4 py-3 text-right font-medium">
+                    {localize('com_usage_model_col_total')}
+                  </th>
+                  <th className="px-4 py-3 text-right font-medium">
+                    {localize('com_usage_model_col_avg')}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.model} className="border-t border-border-light text-text-primary">
+                    <td className="px-4 py-3">{row.model}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">
+                      {formatTokens(row.messageCount)}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums">
+                      {formatUSD(row.totalCredits)}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums">
+                      {formatUSD(row.avgCreditsPerMessage)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function Usage() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { data, isLoading, isError } = useAdminUsageQuery();
   const { data: budgetData, isLoading: isBudgetLoading } = useAdminBudgetsQuery();
+  const { data: modelData, isLoading: isModelLoading } = useAdminModelUsageQuery();
   const resetMonthMutation = useResetMonthBudgetsMutation();
   const [activeTab, setActiveTab] = useState<TabKey>('analytics');
   const [activeBU, setActiveBU] = useState<BUFilter>('all');
@@ -338,6 +489,7 @@ function Usage() {
               </table>
             </div>
           )}
+          <ModelMixSection rows={modelData?.rows ?? []} isLoading={isModelLoading} />
         </>
       )}
 
