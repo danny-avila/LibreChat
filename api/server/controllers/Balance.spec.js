@@ -7,6 +7,7 @@ const balanceController = require('./Balance');
 
 describe('balanceController', () => {
   const createResponse = () => ({
+    locals: {},
     status: jest.fn().mockReturnThis(),
     json: jest.fn().mockReturnThis(),
     sendStatus: jest.fn().mockReturnThis(),
@@ -19,9 +20,9 @@ describe('balanceController', () => {
   it('returns no content without reading balance when balance config is disabled', async () => {
     const req = {
       user: { id: 'user-1' },
-      balanceConfigEnabled: false,
     };
     const res = createResponse();
+    res.locals.balanceConfigEnabled = false;
 
     await balanceController(req, res);
 
@@ -33,15 +34,15 @@ describe('balanceController', () => {
   it('uses balance data attached by middleware without a second read', async () => {
     const req = {
       user: { id: 'user-1' },
-      balanceConfigEnabled: true,
-      balanceData: {
-        _id: 'balance-1',
-        user: 'user-1',
-        tokenCredits: 100,
-        autoRefillEnabled: false,
-      },
     };
     const res = createResponse();
+    res.locals.balanceConfigEnabled = true;
+    res.locals.balanceData = {
+      _id: 'balance-1',
+      user: 'user-1',
+      tokenCredits: 100,
+      autoRefillEnabled: false,
+    };
 
     await balanceController(req, res);
 
@@ -58,9 +59,9 @@ describe('balanceController', () => {
     findBalanceByUser.mockResolvedValue(null);
     const req = {
       user: { id: 'user-1' },
-      balanceConfigEnabled: true,
     };
     const res = createResponse();
+    res.locals.balanceConfigEnabled = true;
 
     await balanceController(req, res);
 

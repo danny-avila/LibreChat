@@ -1,11 +1,13 @@
 const { findBalanceByUser } = require('~/models');
 
 async function balanceController(req, res) {
-  if (req.balanceConfigEnabled === false) {
+  const balanceLocals = res.locals || {};
+
+  if (balanceLocals.balanceConfigEnabled === false) {
     return res.sendStatus(204);
   }
 
-  const balanceData = req.balanceData ?? (await findBalanceByUser(req.user.id));
+  const balanceData = balanceLocals.balanceData ?? (await findBalanceByUser(req.user.id));
 
   if (!balanceData) {
     return res.status(404).json({ error: 'Balance not found' });
