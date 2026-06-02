@@ -79,7 +79,7 @@ function neutralizeDotenvSecrets(envFile: string, keep: Set<string>) {
       continue;
     }
     const key = match[1];
-    if (key in keep) {
+    if (keep.has(key)) {
       continue;
     }
     if (SECRET_KEY_PATTERN.test(key)) {
