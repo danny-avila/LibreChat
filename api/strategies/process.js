@@ -1,5 +1,5 @@
 const { getBalanceConfig } = require('@librechat/api');
-const { FileSources } = require('librechat-data-provider');
+const { FileSources, UserRoles } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { updateUser, createUser, getUserById } = require('~/models');
@@ -95,6 +95,7 @@ const createSocialUser = async ({
     username,
     name,
     emailVerified,
+    userRole: UserRoles.FARMER,
   };
 
   const balanceConfig = getBalanceConfig(appConfig);

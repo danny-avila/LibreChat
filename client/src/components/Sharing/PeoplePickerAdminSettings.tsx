@@ -81,14 +81,14 @@ const PeoplePickerAdminSettings = () => {
   });
 
   const [isRoleMenuOpen, setIsRoleMenuOpen] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<SystemRoles>(SystemRoles.FARMER);
+  const [selectedRole, setSelectedRole] = useState<SystemRoles>(SystemRoles.USER);
 
   const defaultValues = useMemo(() => {
     const rolePerms = roles?.[selectedRole]?.permissions;
     if (rolePerms) {
       return rolePerms[PermissionTypes.PEOPLE_PICKER];
     }
-    return roleDefaults[selectedRole]?.permissions?.[PermissionTypes.PEOPLE_PICKER] ?? {};
+    return roleDefaults[selectedRole].permissions[PermissionTypes.PEOPLE_PICKER];
   }, [roles, selectedRole]);
 
   const {
@@ -108,7 +108,7 @@ const PeoplePickerAdminSettings = () => {
     if (value) {
       reset(value);
     } else {
-      reset(roleDefaults[selectedRole]?.permissions?.[PermissionTypes.PEOPLE_PICKER] ?? {});
+      reset(roleDefaults[selectedRole].permissions[PermissionTypes.PEOPLE_PICKER]);
     }
   }, [roles, selectedRole, reset]);
 
@@ -140,21 +140,9 @@ const PeoplePickerAdminSettings = () => {
 
   const roleDropdownItems = [
     {
-      label: SystemRoles.FARMER,
+      label: SystemRoles.USER,
       onClick: () => {
-        setSelectedRole(SystemRoles.FARMER);
-      },
-    },
-    {
-      label: SystemRoles.INTERNAL,
-      onClick: () => {
-        setSelectedRole(SystemRoles.INTERNAL);
-      },
-    },
-    {
-      label: SystemRoles.COORDINATOR,
-      onClick: () => {
-        setSelectedRole(SystemRoles.COORDINATOR);
+        setSelectedRole(SystemRoles.USER);
       },
     },
     {

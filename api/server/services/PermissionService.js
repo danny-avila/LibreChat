@@ -1,7 +1,12 @@
 const mongoose = require('mongoose');
 const { isEnabled } = require('@librechat/api');
 const { getTransactionSupport, logger } = require('@librechat/data-schemas');
-const { ResourceType, PrincipalType, PrincipalModel } = require('librechat-data-provider');
+const {
+  ResourceType,
+  PrincipalType,
+  PrincipalModel,
+  UserRoles,
+} = require('librechat-data-provider');
 const {
   entraIdPrincipalFeatureEnabled,
   getUserOwnedEntraGroups,
@@ -355,6 +360,7 @@ const ensurePrincipalExists = async function (principal) {
       emailVerified: false,
       provider: 'openid',
       idOnTheSource: principal.idOnTheSource,
+      userRole: UserRoles.FARMER,
     };
 
     const userId = await createUser(userData, true, true);

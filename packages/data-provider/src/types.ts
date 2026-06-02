@@ -13,6 +13,7 @@ import type { TMinimalFeedback } from './feedback';
 import type { ContentTypes } from './types/runs';
 import type { Agent } from './types/assistants';
 import type { IFarmerProfile } from './types/mutations';
+import type { UserRoles } from './roles';
 
 
 export * from './schemas';
@@ -199,6 +200,7 @@ export type TUser = {
   name: string;
   avatar: string;
   role: string;
+  userRole?: UserRoles;
   provider: string;
   plugins?: string[];
   twoFactorEnabled?: boolean;

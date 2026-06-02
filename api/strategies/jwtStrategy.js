@@ -1,5 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
-const { SystemRoles } = require('librechat-data-provider');
+const { SystemRoles, UserRoles } = require('librechat-data-provider');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
 const { getUserById, updateUser } = require('~/models');
 
@@ -16,8 +16,12 @@ const jwtLogin = () =>
         if (user) {
           user.id = user._id.toString();
           if (!user.role) {
-            user.role = SystemRoles.FARMER;
+            user.role = SystemRoles.USER;
             await updateUser(user.id, { role: user.role });
+          }
+          if (!user.userRole) {
+            user.userRole = UserRoles.FARMER;
+            await updateUser(user.id, { userRole: user.userRole });
           }
           done(null, user);
         } else {

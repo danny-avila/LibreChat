@@ -2,7 +2,7 @@ const cookies = require('cookie');
 const jwksRsa = require('jwks-rsa');
 const { logger } = require('@librechat/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { SystemRoles } = require('librechat-data-provider');
+const { SystemRoles, UserRoles } = require('librechat-data-provider');
 const { isEnabled, findOpenIDUser, math } = require('@librechat/api');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
 const { updateUser, findUser } = require('~/models');
@@ -73,8 +73,12 @@ const openIdJwtLogin = (openIdConfig) => {
             updateData.openidId = payload?.sub;
           }
           if (!user.role) {
-            user.role = SystemRoles.FARMER;
+            user.role = SystemRoles.USER;
             updateData.role = user.role;
+          }
+          if (!user.userRole) {
+            user.userRole = UserRoles.FARMER;
+            updateData.userRole = user.userRole;
           }
 
           if (Object.keys(updateData).length > 0) {
