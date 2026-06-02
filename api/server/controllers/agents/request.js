@@ -220,12 +220,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
     client = result.client;
 
-    // Resolve title timing from the agent's actual endpoint (known only after
-    // initialization) so a per-endpoint `final` override on a custom/provider
-    // endpoint backing the agent is honored, not just the `agents` endpoint.
+    // Resolve title timing from the public agents endpoint first, then fall
+    // back to the agent's actual backing provider/custom endpoint.
     titleTiming = resolveTitleTiming({
       appConfig: req.config,
-      endpoint: client?.options?.agent?.endpoint ?? endpointOption?.endpoint,
+      endpoint: [endpointOption?.endpoint, client?.options?.agent?.endpoint],
     });
 
     if (client?.sender) {

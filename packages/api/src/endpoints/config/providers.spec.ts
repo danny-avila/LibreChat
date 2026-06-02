@@ -133,6 +133,40 @@ describe('resolveTitleTiming', () => {
     expect(resolveTitleTiming({ appConfig, endpoint: EModelEndpoint.agents })).toBe('immediate');
   });
 
+  it('does not let unrelated `all` config block a per-endpoint value', () => {
+    const appConfig = withEndpoints({
+      all: { titleConvo: true },
+      [EModelEndpoint.agents]: { titleTiming: 'final' },
+    });
+    expect(resolveTitleTiming({ appConfig, endpoint: EModelEndpoint.agents })).toBe('final');
+  });
+
+  it('checks endpoint candidates in order before provider fallback', () => {
+    const appConfig = withEndpoints({
+      [EModelEndpoint.agents]: { titleTiming: 'final' },
+      [EModelEndpoint.openAI]: { titleTiming: 'immediate' },
+    });
+    expect(
+      resolveTitleTiming({
+        appConfig,
+        endpoint: [EModelEndpoint.agents, EModelEndpoint.openAI],
+      }),
+    ).toBe('final');
+  });
+
+  it('falls back to backing provider timing when agents has no titleTiming', () => {
+    const appConfig = withEndpoints({
+      [EModelEndpoint.agents]: { titleConvo: true },
+      [EModelEndpoint.openAI]: { titleTiming: 'final' },
+    });
+    expect(
+      resolveTitleTiming({
+        appConfig,
+        endpoint: [EModelEndpoint.agents, EModelEndpoint.openAI],
+      }),
+    ).toBe('final');
+  });
+
   it("returns 'immediate' for an endpoint with no override and no `all`", () => {
     const appConfig = withEndpoints({ [EModelEndpoint.openAI]: { titleTiming: 'final' } });
     expect(resolveTitleTiming({ appConfig, endpoint: EModelEndpoint.agents })).toBe('immediate');

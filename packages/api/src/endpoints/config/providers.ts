@@ -54,11 +54,10 @@ export type TitleTiming = 'immediate' | 'final';
 /**
  * Resolves when conversation titles are generated for a given endpoint.
  *
- * Mirrors the endpoint-config resolution in `AgentClient#titleConvo`
- * (`endpoints.all ?? endpoints[endpoint] ?? getProviderConfig().customEndpointConfig`)
- * so the timing decision matches the config the title generation actually uses.
- * `endpoints.all` is the intended global override. Resolving custom providers via
- * `getProviderConfig` (rather than `getCustomEndpointConfig` directly) picks up its
+ * `endpoints.all.titleTiming`, when present, is the global override. Otherwise,
+ * endpoint candidates are checked in order so the public endpoint (for example
+ * `agents`) can override the backing provider, with provider/custom config used
+ * as a fallback. Resolving custom providers via `getProviderConfig` picks up its
  * case-insensitive fallback for normalized provider names (e.g. `openrouter` →
  * `OpenRouter`). Defaults to `immediate`.
  */
@@ -67,24 +66,50 @@ export function resolveTitleTiming({
   endpoint,
 }: {
   appConfig?: AppConfig;
-  endpoint?: string;
+  endpoint?: string | Array<string | undefined>;
 }): TitleTiming {
   const endpoints = appConfig?.endpoints;
-  let endpointConfig: Partial<TEndpoint> | undefined =
-    endpoints?.all ??
-    (endpoint
-      ? (endpoints?.[endpoint as keyof NonNullable<typeof endpoints>] as
-          | Partial<TEndpoint>
-          | undefined)
-      : undefined);
-  if (!endpointConfig && endpoint && appConfig) {
-    try {
-      endpointConfig = getProviderConfig({ provider: endpoint, appConfig }).customEndpointConfig;
-    } catch {
-      endpointConfig = undefined;
+  const resolveConfiguredTiming = (config?: Partial<TEndpoint>): TitleTiming | undefined =>
+    config?.titleTiming === 'final' || config?.titleTiming === 'immediate'
+      ? config.titleTiming
+      : undefined;
+
+  const globalTiming = resolveConfiguredTiming(endpoints?.all);
+  if (globalTiming) {
+    return globalTiming;
+  }
+
+  const endpointCandidates = (Array.isArray(endpoint) ? endpoint : [endpoint]).filter(
+    (value): value is string => !!value,
+  );
+
+  for (const endpointCandidate of endpointCandidates) {
+    const endpointConfig = endpoints?.[
+      endpointCandidate as keyof NonNullable<typeof endpoints>
+    ] as Partial<TEndpoint> | undefined;
+    const endpointTiming = resolveConfiguredTiming(endpointConfig);
+    if (endpointTiming) {
+      return endpointTiming;
     }
   }
-  return endpointConfig?.titleTiming === 'final' ? 'final' : 'immediate';
+
+  for (const endpointCandidate of endpointCandidates) {
+    if (!appConfig) {
+      continue;
+    }
+    try {
+      const providerTiming = resolveConfiguredTiming(
+        getProviderConfig({ provider: endpointCandidate, appConfig }).customEndpointConfig,
+      );
+      if (providerTiming) {
+        return providerTiming;
+      }
+    } catch {
+      // Unsupported providers fall back to the default timing.
+    }
+  }
+
+  return 'immediate';
 }
 
 /**

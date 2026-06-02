@@ -670,6 +670,10 @@ export default function useEventHandlers({
             ...convo,
             title: null,
           }));
+          if (location.pathname.includes(finalConversationId)) {
+            const startupConfig = queryClient.getQueryData<TStartupConfig>(startupConfigKey(true));
+            document.title = startupConfig?.appTitle ?? 'LibreChat';
+          }
         }
 
         if (setConversation && isAddedRequest !== true) {
