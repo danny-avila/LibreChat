@@ -8,13 +8,17 @@ import type { LCTool, LCToolRegistry } from '@librechat/agents';
 
 export const CREATE_FILE_TOOL_NAME = 'create_file';
 export const EDIT_FILE_TOOL_NAME = 'edit_file';
+export const HOST_FILE_AUTHORING_ARTIFACT_KEY = '__librechat_file_authoring';
 export const FILE_AUTHORING_TOOL_NAMES: ReadonlySet<string> = new Set([
   CREATE_FILE_TOOL_NAME,
   EDIT_FILE_TOOL_NAME,
 ]);
 
-export function isCodeSessionToolName(name: string): boolean {
-  return CODE_EXECUTION_TOOLS.has(name) || FILE_AUTHORING_TOOL_NAMES.has(name);
+export function isCodeSessionToolName(
+  name: string,
+  hostFileAuthoringToolNames?: ReadonlySet<string>,
+): boolean {
+  return CODE_EXECUTION_TOOLS.has(name) || hostFileAuthoringToolNames?.has(name) === true;
 }
 
 interface ToolDefLike {

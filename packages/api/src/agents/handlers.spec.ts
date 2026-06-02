@@ -386,7 +386,8 @@ describe('createToolExecuteHandler', () => {
   describe('host file authoring collisions', () => {
     it('invokes a loaded user tool named create_file when host file authoring is not active', async () => {
       const capturedArgs: unknown[] = [];
-      const tool = createMockTool('create_file', [], { capturedArgs });
+      const capturedConfigs: Record<string, unknown>[] = [];
+      const tool = createMockTool('create_file', capturedConfigs, { capturedArgs });
       const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
         loadedTools: [tool] as never[],
         configurable: { fileAuthoringToolNames: new Set<string>() },
@@ -398,12 +399,18 @@ describe('createToolExecuteHandler', () => {
           id: 'call_user_create_file',
           name: 'create_file',
           args: { custom: true },
+          codeSessionContext: {
+            session_id: 'ignored-session',
+            files: [{ id: 'ignored-file', name: 'ignored.txt', session_id: 'ignored-session' }],
+          },
         },
       ]);
 
       expect(result.status).toBe('success');
       expect(result.content).toContain('create_file executed');
       expect(capturedArgs).toEqual([{ custom: true }]);
+      expect(capturedConfigs[0].session_id).toBeUndefined();
+      expect(capturedConfigs[0]._injected_files).toBeUndefined();
     });
   });
 
@@ -1331,6 +1338,56 @@ describe('createToolExecuteHandler', () => {
       );
     });
 
+    it('rejects bundled skill file writes when the skill version changed after reading', async () => {
+      const getSkillByName = jest
+        .fn()
+        .mockResolvedValueOnce({
+          _id: SKILL_ID,
+          name: 'edit-skill',
+          body: '# Existing',
+          fileCount: 1,
+          version: 1,
+        })
+        .mockResolvedValueOnce({
+          _id: SKILL_ID,
+          name: 'edit-skill',
+          body: '# Existing changed elsewhere',
+          fileCount: 1,
+          version: 2,
+        });
+      const saveSkillFileContent = jest.fn();
+      const handler = makeAuthoringHandler({
+        getSkillByName,
+        getSkillFileByPath: jest.fn(async () => ({
+          content: 'hello old\n',
+          isBinary: false,
+          mimeType: 'text/markdown',
+          bytes: 10,
+          filepath: '/tmp/a.md',
+          source: 'local',
+          relativePath: 'references/a.md',
+        })),
+        saveSkillFileContent,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_edit_stale_bundled_file',
+          name: 'edit_file',
+          args: {
+            file_path: 'skills/edit-skill/references/a.md',
+            old_text: 'hello old',
+            new_text: 'hello new',
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('changed while editing');
+      expect(result.errorMessage).toContain('skills/edit-skill/references/a.md');
+      expect(saveSkillFileContent).not.toHaveBeenCalled();
+    });
+
     it('passes structured frontmatter when editing SKILL.md', async () => {
       const oldBody =
         '---\nname: runtime-skill\ndescription: Use before\naction: ignored\n---\n# Body\n';
@@ -1743,6 +1800,87 @@ describe('createToolExecuteHandler', () => {
           content: 'alpha new\n',
         }),
       );
+    });
+
+    it('propagates newly created sandbox sessions to queued same-path authoring calls', async () => {
+      let readCount = 0;
+      let writeCount = 0;
+      const sandboxFiles = [
+        { id: 'file-queued', name: 'queued.txt', storage_session_id: 'sess-new' },
+      ];
+      const readSandboxFile = jest.fn(
+        async ({
+          session_id,
+          files,
+        }: {
+          session_id?: string;
+          files?: Array<{ id: string; name: string; storage_session_id?: string }>;
+        }) => {
+          readCount++;
+          if (readCount === 1) {
+            throw new Error('cat: /mnt/data/queued.txt: No such file or directory');
+          }
+
+          expect(session_id).toBe('sess-new');
+          expect(files).toEqual(sandboxFiles);
+          return { content: 'hello world\n' };
+        },
+      );
+      const writeSandboxFile = jest.fn(
+        async ({
+          session_id,
+          files,
+          content,
+        }: {
+          session_id?: string;
+          files?: Array<{ id: string; name: string; storage_session_id?: string }>;
+          content: string;
+        }) => {
+          writeCount++;
+          if (writeCount === 1) {
+            expect(session_id).toBeUndefined();
+            expect(files).toBeUndefined();
+            expect(content).toBe('hello world\n');
+          } else {
+            expect(session_id).toBe('sess-new');
+            expect(files).toEqual(sandboxFiles);
+            expect(content).toBe('goodbye world\n');
+          }
+          return {
+            stdout: `WROTE ${content.length} bytes to /mnt/data/queued.txt\n`,
+            session_id: 'sess-new',
+            files: sandboxFiles,
+          };
+        },
+      );
+      const handler = makeSandboxAuthoringHandler({
+        readSandboxFile,
+        writeSandboxFile,
+      });
+
+      const results = await invokeHandler(handler, [
+        {
+          id: 'call_create_queued_sandbox',
+          name: 'create_file',
+          args: {
+            file_path: '/mnt/data/queued.txt',
+            content: 'hello world\n',
+          },
+        },
+        {
+          id: 'call_edit_queued_sandbox',
+          name: 'edit_file',
+          args: {
+            file_path: '/mnt/data/queued.txt',
+            old_text: 'hello world',
+            new_text: 'goodbye world',
+          },
+        },
+      ]);
+
+      expect(results.map((result) => result.status)).toEqual(['success', 'success']);
+      expect(readSandboxFile).toHaveBeenCalledTimes(2);
+      expect(writeSandboxFile).toHaveBeenCalledTimes(2);
     });
 
     it('rejects non-skill paths when code execution is unavailable', async () => {

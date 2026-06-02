@@ -12,14 +12,19 @@ const {
   GenerationJobManager,
   writeAttachmentEvent,
   createToolExecuteHandler,
+  HOST_FILE_AUTHORING_ARTIFACT_KEY,
   isCodeSessionToolName,
 } = require('@librechat/api');
 const { processFileCitations } = require('~/server/services/Files/Citations');
 const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
 const { saveBase64Image } = require('~/server/services/Files/process');
 
-function isCodeArtifactToolName(name) {
-  return isCodeSessionToolName(name);
+function isHostFileAuthoringArtifact(artifact) {
+  return artifact?.[HOST_FILE_AUTHORING_ARTIFACT_KEY] === true;
+}
+
+function isCodeArtifactToolOutput(output) {
+  return isCodeSessionToolName(output.name) || isHostFileAuthoringArtifact(output.artifact);
 }
 
 class ModelEndHandler {
@@ -627,7 +632,7 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
       return;
     }
 
-    if (!isCodeArtifactToolName(output.name)) {
+    if (!isCodeArtifactToolOutput(output)) {
       return;
     }
 
@@ -894,7 +899,7 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
       return;
     }
 
-    if (!isCodeArtifactToolName(output.name)) {
+    if (!isCodeArtifactToolOutput(output)) {
       return;
     }
 

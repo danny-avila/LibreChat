@@ -46,6 +46,7 @@ import {
   BuildToolSetConfig,
   registerCodeExecutionTools,
   registerFileAuthoringTools,
+  FILE_AUTHORING_TOOL_NAMES,
   isFileAuthoringToolDefinition,
   isCodeSessionToolName,
 } from './tools';
@@ -437,8 +438,10 @@ describe('registerFileAuthoringTools', () => {
 
   it('recognizes host-side file authoring tools as code-session-aware without mutating the shared set', () => {
     expect(isCodeSessionToolName('bash_tool')).toBe(true);
-    expect(isCodeSessionToolName('create_file')).toBe(true);
-    expect(isCodeSessionToolName('edit_file')).toBe(true);
+    expect(isCodeSessionToolName('create_file')).toBe(false);
+    expect(isCodeSessionToolName('edit_file')).toBe(false);
+    expect(isCodeSessionToolName('create_file', FILE_AUTHORING_TOOL_NAMES)).toBe(true);
+    expect(isCodeSessionToolName('edit_file', FILE_AUTHORING_TOOL_NAMES)).toBe(true);
     expect(CODE_EXECUTION_TOOLS.has('create_file')).toBe(false);
     expect(CODE_EXECUTION_TOOLS.has('edit_file')).toBe(false);
   });

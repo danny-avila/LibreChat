@@ -19,7 +19,12 @@ import { logAxiosError, runOutsideTracing } from '~/utils';
 import { buildSkillPrimeMessage } from './skills';
 import { cleanCodeToolOutput } from './cleanup';
 import { primeSkillFiles } from './skillFiles';
-import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME, isCodeSessionToolName } from './tools';
+import {
+  CREATE_FILE_TOOL_NAME,
+  EDIT_FILE_TOOL_NAME,
+  HOST_FILE_AUTHORING_ARTIFACT_KEY,
+  isCodeSessionToolName,
+} from './tools';
 import { parseFrontmatter } from '../skills/import';
 
 export interface ToolEndCallbackData {
@@ -210,7 +215,7 @@ export interface ToolExecuteOptions {
   readSandboxFile?: (params: {
     file_path: string;
     session_id?: string;
-    files?: Array<{ id: string; name: string; session_id?: string }>;
+    files?: Array<{ id: string; name: string; session_id?: string; storage_session_id?: string }>;
     req?: ServerRequest;
   }) => Promise<{ content: string } | null>;
   /**
@@ -223,7 +228,7 @@ export interface ToolExecuteOptions {
     file_path: string;
     content: string;
     session_id?: string;
-    files?: Array<{ id: string; name: string; session_id?: string }>;
+    files?: Array<{ id: string; name: string; session_id?: string; storage_session_id?: string }>;
     req?: ServerRequest;
   }) => Promise<{
     stdout?: string;
@@ -471,7 +476,7 @@ type LoadedSandboxText = LoadedSkillText;
 
 type SandboxSessionContext = {
   session_id?: string;
-  files?: Array<{ id: string; name: string; session_id?: string }>;
+  files?: Array<{ id: string; name: string; session_id?: string; storage_session_id?: string }>;
 };
 
 const MIME_MAP: Readonly<Record<string, string>> = Object.freeze({
@@ -1172,8 +1177,66 @@ async function handleSandboxFileFallback(
   }
 }
 
-function sandboxSessionContext(tc: ToolCallRequest): SandboxSessionContext | undefined {
-  return tc.codeSessionContext as SandboxSessionContext | undefined;
+function sandboxSessionContext(
+  tc: ToolCallRequest,
+  override?: SandboxSessionContext,
+): SandboxSessionContext | undefined {
+  return override ?? (tc.codeSessionContext as SandboxSessionContext | undefined);
+}
+
+function cloneSandboxSessionContext(
+  context: SandboxSessionContext | undefined,
+): SandboxSessionContext {
+  return {
+    ...(context?.session_id ? { session_id: context.session_id } : {}),
+    ...(context?.files ? { files: context.files.map((file) => ({ ...file })) } : {}),
+  };
+}
+
+function mergeSandboxSessionArtifact(
+  context: SandboxSessionContext,
+  artifact: ToolExecuteResult['artifact'],
+): void {
+  if (!artifact || typeof artifact !== 'object') {
+    return;
+  }
+  const value = artifact as {
+    session_id?: unknown;
+    files?: unknown;
+  };
+  if (typeof value.session_id === 'string' && value.session_id.length > 0) {
+    context.session_id = value.session_id;
+  }
+  if (!Array.isArray(value.files)) {
+    return;
+  }
+
+  const files: SandboxSessionContext['files'] = [];
+  for (const file of value.files) {
+    if (!file || typeof file !== 'object') {
+      continue;
+    }
+    const ref = file as {
+      id?: unknown;
+      name?: unknown;
+      session_id?: unknown;
+      storage_session_id?: unknown;
+    };
+    if (typeof ref.id !== 'string' || typeof ref.name !== 'string') {
+      continue;
+    }
+    files.push({
+      id: ref.id,
+      name: ref.name,
+      ...(typeof ref.session_id === 'string' ? { session_id: ref.session_id } : {}),
+      ...(typeof ref.storage_session_id === 'string'
+        ? { storage_session_id: ref.storage_session_id }
+        : {}),
+    });
+  }
+  if (files.length > 0) {
+    context.files = files;
+  }
 }
 
 function isSandboxMissingFileError(error: unknown): boolean {
@@ -1203,11 +1266,13 @@ async function loadSandboxTextForAuthoring({
   tc,
   options,
   req,
+  sandboxContext,
 }: {
   filePath: string;
   tc: ToolCallRequest;
   options: ToolExecuteOptions;
   req?: ServerRequest;
+  sandboxContext?: SandboxSessionContext;
 }): Promise<LoadedSandboxText> {
   const ext = lowercaseExtension(filePath);
   if (BINARY_EXTENSIONS_NEVER_READABLE.has(ext)) {
@@ -1220,7 +1285,7 @@ async function loadSandboxTextForAuthoring({
     };
   }
 
-  const ctx = sandboxSessionContext(tc);
+  const ctx = sandboxSessionContext(tc, sandboxContext);
   try {
     const result = await options.readSandboxFile({
       file_path: filePath,
@@ -1275,6 +1340,7 @@ async function writeSandboxTextForAuthoring({
   content,
   oldContent,
   created,
+  sandboxContext,
 }: {
   tc: ToolCallRequest;
   options: ToolExecuteOptions;
@@ -1283,6 +1349,7 @@ async function writeSandboxTextForAuthoring({
   content: string;
   oldContent?: string;
   created: boolean;
+  sandboxContext?: SandboxSessionContext;
 }): AuthoringResult {
   if (!options.writeSandboxFile) {
     return errorResult(
@@ -1290,7 +1357,7 @@ async function writeSandboxTextForAuthoring({
       `Sandbox file writing is not configured. Use \`bash_tool\` to write "${filePath}".`,
     );
   }
-  const ctx = sandboxSessionContext(tc);
+  const ctx = sandboxSessionContext(tc, sandboxContext);
   let writeResult: Awaited<ReturnType<NonNullable<ToolExecuteOptions['writeSandboxFile']>>>;
   try {
     writeResult = await options.writeSandboxFile({
@@ -1318,6 +1385,7 @@ async function writeSandboxTextForAuthoring({
   const summary = `${action} ${filePath} (${content.length} chars).`;
   return successResult(tc, diff ? `${summary}\n\n${diff}` : summary, {
     path: filePath,
+    [HOST_FILE_AUTHORING_ARTIFACT_KEY]: true,
     bytes_written: Buffer.byteLength(content, 'utf8'),
     created,
     ...(diff ? { diff } : {}),
@@ -1367,6 +1435,13 @@ function isHostFileAuthoringToolCall(
   mergedConfigurable: Record<string, unknown>,
 ): boolean {
   return getFileAuthoringToolNames(mergedConfigurable)?.has(toolName) === true;
+}
+
+function isCodeSessionAwareToolCall(
+  toolName: string,
+  mergedConfigurable: Record<string, unknown>,
+): boolean {
+  return isCodeSessionToolName(toolName, getFileAuthoringToolNames(mergedConfigurable));
 }
 
 function isSkillPrimedForAuthoring(
@@ -1686,6 +1761,34 @@ async function inspectBundledSkillFileForCreate({
   return { status: 'present', oldContent: loaded.content };
 }
 
+async function ensureBundledSkillVersionCurrent({
+  tc,
+  options,
+  skill,
+  displayPath,
+}: {
+  tc: ToolCallRequest;
+  options: ToolExecuteOptions;
+  skill: AuthoringSkill;
+  displayPath: string;
+}): Promise<ToolExecuteResult | null> {
+  if (!options.getSkillByName) {
+    return null;
+  }
+
+  const current = await options.getSkillByName(skill.name, [skill._id], {});
+  if (!current) {
+    return errorResult(tc, `Skill "${skill.name}" not found or not accessible.`);
+  }
+  if (current.version !== skill.version) {
+    return errorResult(
+      tc,
+      `Skill "${skill.name}" changed while editing. Re-read ${displayPath} and retry.`,
+    );
+  }
+  return null;
+}
+
 async function writeSkillMd({
   tc,
   options,
@@ -1831,6 +1934,15 @@ async function writeBundledSkillFile({
   if (!req || !options.saveSkillFileContent) {
     return errorResult(tc, 'Skill file writing is not configured.');
   }
+  const staleDenied = await ensureBundledSkillVersionCurrent({
+    tc,
+    options,
+    skill,
+    displayPath,
+  });
+  if (staleDenied) {
+    return staleDenied;
+  }
 
   await options.saveSkillFileContent({
     req,
@@ -1858,6 +1970,7 @@ async function handleSandboxCreateFileCall({
   filePath,
   content,
   overwrite,
+  sandboxContext,
 }: {
   tc: ToolCallRequest;
   options: ToolExecuteOptions;
@@ -1865,13 +1978,20 @@ async function handleSandboxCreateFileCall({
   filePath: string;
   content: string;
   overwrite: boolean;
+  sandboxContext?: SandboxSessionContext;
 }): AuthoringResult {
   const pathError = invalidSandboxAuthoringPath(filePath);
   if (pathError) {
     return errorResult(tc, pathError);
   }
 
-  const current = await loadSandboxTextForAuthoring({ filePath, tc, options, req });
+  const current = await loadSandboxTextForAuthoring({
+    filePath,
+    tc,
+    options,
+    req,
+    sandboxContext,
+  });
   if (current.status === 'error') {
     return errorResult(tc, current.message);
   }
@@ -1887,6 +2007,7 @@ async function handleSandboxCreateFileCall({
     content,
     oldContent: current.status === 'loaded' ? current.content : undefined,
     created: current.status === 'missing',
+    sandboxContext,
   });
 }
 
@@ -1896,19 +2017,27 @@ async function handleSandboxEditFileCall({
   req,
   filePath,
   edits,
+  sandboxContext,
 }: {
   tc: ToolCallRequest;
   options: ToolExecuteOptions;
   req?: ServerRequest;
   filePath: string;
   edits: TextEdit[];
+  sandboxContext?: SandboxSessionContext;
 }): AuthoringResult {
   const pathError = invalidSandboxAuthoringPath(filePath);
   if (pathError) {
     return errorResult(tc, pathError);
   }
 
-  const current = await loadSandboxTextForAuthoring({ filePath, tc, options, req });
+  const current = await loadSandboxTextForAuthoring({
+    filePath,
+    tc,
+    options,
+    req,
+    sandboxContext,
+  });
   if (current.status === 'missing') {
     return errorResult(tc, `File not found: "${filePath}"`);
   }
@@ -1934,6 +2063,7 @@ async function handleSandboxEditFileCall({
     content: edited.content,
     oldContent: current.content,
     created: false,
+    sandboxContext,
   });
   if (result.status === 'success') {
     result.artifact = {
@@ -1952,6 +2082,7 @@ async function handleCreateFileCall(
   options: ToolExecuteOptions,
   req?: ServerRequest,
   sourceConfigurable?: Record<string, unknown>,
+  sandboxContext?: SandboxSessionContext,
 ): AuthoringResult {
   const args = tc.args as { file_path?: unknown; content?: unknown; overwrite?: unknown };
   if (typeof args.file_path !== 'string' || args.file_path.length === 0) {
@@ -1979,6 +2110,7 @@ async function handleCreateFileCall(
       filePath: args.file_path,
       content: args.content,
       overwrite,
+      sandboxContext,
     });
   }
 
@@ -2045,6 +2177,7 @@ async function handleEditFileCall(
   mergedConfigurable: Record<string, unknown>,
   options: ToolExecuteOptions,
   req?: ServerRequest,
+  sandboxContext?: SandboxSessionContext,
 ): AuthoringResult {
   const args = tc.args as {
     file_path?: unknown;
@@ -2074,6 +2207,7 @@ async function handleEditFileCall(
       req,
       filePath: args.file_path,
       edits,
+      sandboxContext,
     });
   }
 
@@ -2795,14 +2929,21 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               loadedConfigurable,
             );
             const authoringQueues = new Map<string, Promise<void>>();
+            const sandboxAuthoringContexts = new Map<string, SandboxSessionContext>();
 
             const results: ToolExecuteResult[] = await Promise.all(
               toolCalls.map(async (tc: ToolCallRequest) => {
-                const execute = async (): Promise<ToolExecuteResult> => {
+                const execute = async (
+                  sandboxContext?: SandboxSessionContext,
+                ): Promise<ToolExecuteResult> => {
                   const isFileAuthoringCall = isHostFileAuthoringToolCall(
                     tc.name,
                     mergedConfigurable,
                   );
+                  const isSandboxFileAuthoringCall =
+                    isFileAuthoringCall &&
+                    typeof (tc.args as { file_path?: unknown }).file_path === 'string' &&
+                    !(tc.args as { file_path: string }).file_path.startsWith(SKILL_FILE_PREFIX);
                   if (
                     tc.name === Constants.SKILL_TOOL ||
                     tc.name === Constants.READ_FILE ||
@@ -2832,6 +2973,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           options,
                           req,
                           sourceConfigurable,
+                          sandboxContext,
                         );
                       } else if (tc.name === EDIT_FILE_TOOL_NAME && isFileAuthoringCall) {
                         handlerResult = await handleEditFileCall(
@@ -2839,6 +2981,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           mergedConfigurable,
                           options,
                           req,
+                          sandboxContext,
                         );
                       } else {
                         handlerResult = errorResult(tc, `Tool ${tc.name} not found`);
@@ -2855,6 +2998,14 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         content: '',
                         errorMessage: message,
                       };
+                    }
+
+                    if (
+                      isSandboxFileAuthoringCall &&
+                      handlerResult.status === 'success' &&
+                      sandboxContext
+                    ) {
+                      mergeSandboxSessionArtifact(sandboxContext, handlerResult.artifact);
                     }
 
                     if (toolEndCallback && handlerResult.artifact) {
@@ -2903,7 +3054,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       turn: tc.turn,
                     };
 
-                    if (tc.codeSessionContext && isCodeSessionToolName(tc.name)) {
+                    if (
+                      tc.codeSessionContext &&
+                      isCodeSessionAwareToolCall(tc.name, mergedConfigurable)
+                    ) {
                       toolCallConfig.session_id = tc.codeSessionContext.session_id;
                       if (tc.codeSessionContext.files && tc.codeSessionContext.files.length > 0) {
                         toolCallConfig._injected_files = tc.codeSessionContext.files;
@@ -3011,7 +3165,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     // (model context, SSE forwarding, persistence) see it.
                     // Non-code-execution tools pass through unchanged.
                     const cleanedContent =
-                      isCodeSessionToolName(tc.name) && typeof result.content === 'string'
+                      isCodeSessionAwareToolCall(tc.name, mergedConfigurable) &&
+                      typeof result.content === 'string'
                         ? cleanCodeToolOutput(result.content)
                         : result.content;
 
@@ -3063,8 +3218,18 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                 if (!queueKey) {
                   return await execute();
                 }
+                let sandboxContext: SandboxSessionContext | undefined;
+                if (queueKey.startsWith('sandbox:')) {
+                  sandboxContext =
+                    sandboxAuthoringContexts.get(queueKey) ??
+                    cloneSandboxSessionContext(sandboxSessionContext(tc));
+                  sandboxAuthoringContexts.set(queueKey, sandboxContext);
+                }
                 const previous = authoringQueues.get(queueKey) ?? Promise.resolve();
-                const resultPromise = previous.then(execute, execute);
+                const resultPromise = previous.then(
+                  () => execute(sandboxContext),
+                  () => execute(sandboxContext),
+                );
                 authoringQueues.set(
                   queueKey,
                   resultPromise.then(
