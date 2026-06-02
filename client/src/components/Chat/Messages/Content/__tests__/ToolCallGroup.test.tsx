@@ -154,6 +154,52 @@ describe('ToolCallGroup image hoisting', () => {
     expect(mockScheduleMessageContentLayoutReconcile).not.toHaveBeenCalled();
   });
 
+  it('does not render tool bodies for an initially collapsed large completed group', () => {
+    const largeParts = Array.from({ length: 59 }, (_, idx) => ({
+      part: makePart(`t${idx}`),
+      idx,
+    }));
+    const renderPart = jest.fn((_p: TMessageContentParts, idx: number) => (
+      <div data-testid={`inner-${idx}`} key={idx}>
+        {'inner'}
+      </div>
+    ));
+
+    renderGroup({
+      ...baseProps,
+      parts: largeParts,
+      lastContentIdx: largeParts.length - 1,
+      renderPart,
+    });
+
+    expect(screen.getByRole('button', { name: 'Used 59 tools' })).toBeInTheDocument();
+    expect(renderPart).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('inner-0')).not.toBeInTheDocument();
+  });
+
+  it('mounts tool bodies when a collapsed group is expanded', () => {
+    renderGroup(baseProps);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Used 2 tools' }));
+
+    expect(screen.getByTestId('inner-0')).toBeInTheDocument();
+    expect(screen.getByTestId('inner-1')).toBeInTheDocument();
+  });
+
+  it('unmounts tool bodies after a collapsed group finishes transitioning', () => {
+    renderGroup(baseProps);
+
+    const button = screen.getByRole('button', { name: 'Used 2 tools' });
+    const collapsible = button.nextElementSibling as HTMLElement;
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(screen.getByTestId('inner-0')).toBeInTheDocument();
+
+    fireEvent.transitionEnd(collapsible);
+
+    expect(screen.queryByTestId('inner-0')).not.toBeInTheDocument();
+  });
+
   it('reconciles layout after the group collapses from an expanded state', async () => {
     renderGroup(baseProps);
 

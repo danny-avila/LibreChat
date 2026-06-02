@@ -157,6 +157,7 @@ export default function ToolCallGroup({
     initialState?.isExpanded ?? (autoExpand || !autoCollapse),
   );
   const [userOverride, setUserOverride] = useState(initialState != null);
+  const [shouldRenderBody, setShouldRenderBody] = useState(isExpanded);
   const previousIsExpandedRef = useRef(isExpanded);
   const { style: expandStyle, ref: expandRef } = useExpandCollapse(isExpanded);
   const notifyLayoutChange = useCallback(() => {
@@ -186,16 +187,18 @@ export default function ToolCallGroup({
   }, [autoCollapse, userOverride]);
 
   const handleToggle = useCallback(() => {
+    const nextExpanded = !isExpanded;
     setUserOverride(true);
-    setIsExpanded((prev) => {
-      const nextExpanded = !prev;
-      onExpansionChange?.({ isExpanded: nextExpanded, userOverride: true });
-      return nextExpanded;
-    });
-  }, [onExpansionChange]);
+    if (nextExpanded) {
+      setShouldRenderBody(true);
+    }
+    setIsExpanded(nextExpanded);
+    onExpansionChange?.({ isExpanded: nextExpanded, userOverride: true });
+  }, [isExpanded, onExpansionChange]);
 
   const handleToolExpand = useCallback(() => {
     setUserOverride(true);
+    setShouldRenderBody(true);
     setIsExpanded(true);
     onExpansionChange?.({ isExpanded: true, userOverride: true });
   }, [onExpansionChange]);
@@ -208,6 +211,7 @@ export default function ToolCallGroup({
       if (isExpanded) {
         return;
       }
+      setShouldRenderBody(false);
       notifyLayoutChange();
     },
     [isExpanded, notifyLayoutChange],
@@ -228,6 +232,7 @@ export default function ToolCallGroup({
 
   useEffect(() => {
     if (hasActiveToolCall && !userOverride) {
+      setShouldRenderBody(true);
       setIsExpanded(true);
     }
   }, [hasActiveToolCall, userOverride]);
@@ -278,14 +283,16 @@ export default function ToolCallGroup({
           aria-hidden="true"
         />
       </button>
-      <div style={expandStyle} onTransitionEnd={handleTransitionEnd}>
-        <div className="overflow-hidden" ref={expandRef}>
-          <div className="py-0.5 pl-4">
-            {parts.map(({ part, idx }) =>
-              renderPart(part, idx, isLast && idx === lastContentIdx, handleToolExpand),
-            )}
+      <div style={expandStyle} onTransitionEnd={handleTransitionEnd} aria-hidden={!isExpanded}>
+        {shouldRenderBody && (
+          <div className="overflow-hidden" ref={expandRef}>
+            <div className="py-0.5 pl-4">
+              {parts.map(({ part, idx }) =>
+                renderPart(part, idx, isLast && idx === lastContentIdx, handleToolExpand),
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
       {groupAttachments && groupAttachments.length > 0 && (
         <AttachmentGroup attachments={groupAttachments} />
