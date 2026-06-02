@@ -63,23 +63,18 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('librechat-data-provider', () => ({
-  ...jest.requireActual('librechat-data-provider'),
   ErrorTypes: {
     AUTH_FAILED: 'auth_failed',
   },
 }));
 
-jest.mock(
-  '@librechat/api',
-  () => ({
-    buildOAuthFailureLog: (...args) => mockBuildOAuthFailureLog(...args),
-    createOpenIDCallbackAuthenticator: (...args) => mockCreateOpenIDCallbackAuthenticator(...args),
-    createSetBalanceConfig: jest.fn(() => (_req, _res, next) => next()),
-    getOAuthFailureMessage: (...args) => mockGetOAuthFailureMessage(...args),
-    redirectToAuthFailure: (...args) => mockRedirectToAuthFailure(...args),
-  }),
-  { virtual: true },
-);
+jest.mock('@librechat/api', () => ({
+  buildOAuthFailureLog: (...args) => mockBuildOAuthFailureLog(...args),
+  createOpenIDCallbackAuthenticator: (...args) => mockCreateOpenIDCallbackAuthenticator(...args),
+  createSetBalanceConfig: jest.fn(() => (_req, _res, next) => next()),
+  getOAuthFailureMessage: (...args) => mockGetOAuthFailureMessage(...args),
+  redirectToAuthFailure: (...args) => mockRedirectToAuthFailure(...args),
+}));
 
 jest.mock('~/server/middleware', () => ({
   checkDomainAllowed: jest.fn((_req, _res, next) => next()),
@@ -137,6 +132,7 @@ describe('OAuth route failure logging', () => {
     mockGetOAuthFailureMessage.mockClear();
     mockRedirectToAuthFailure.mockClear();
     mockPassportAuthenticate.mockClear();
+    mockOpenIDCallbackAuthenticatorOptions = undefined;
     mockPassportAuthenticate.mockImplementation(() => (_req, _res, next) => next());
     mockOpenIDCallbackMiddleware.mockImplementation((_req, _res, next) => next());
   });
