@@ -57,8 +57,8 @@ const {
 } = require('~/server/services/PermissionService');
 const {
   getSkillToolDeps,
-  enrichWithSkillConfigurable,
-  buildSkillPrimedIdsByName,
+  buildAgentToolContext,
+  enrichLoadedToolsWithAgentContext,
 } = require('~/server/services/Endpoints/agents/skillDeps');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { logViolation } = require('~/cache');
@@ -476,26 +476,11 @@ const createResponse = async (req, res) => {
      *   actionsEnabled?: boolean,
      * }>}
      */
-    const skillPrimedIdsByName =
-      buildSkillPrimedIdsByName(
-        primaryConfig.manualSkillPrimes,
-        primaryConfig.alwaysApplySkillPrimes,
-      ) ?? {};
-
     const agentToolContexts = new Map();
-    agentToolContexts.set(primaryConfig.id, {
-      agent,
-      toolRegistry: primaryConfig.toolRegistry,
-      userMCPAuthMap: primaryConfig.userMCPAuthMap,
-      tool_resources: primaryConfig.tool_resources,
-      actionsEnabled: primaryConfig.actionsEnabled,
-      accessibleSkillIds: primaryConfig.accessibleSkillIds,
-      activeSkillNames: primaryConfig.activeSkillNames,
-      codeEnvAvailable: primaryConfig.codeEnvAvailable,
-      skillAuthoringAvailable: primaryConfig.skillAuthoringAvailable,
-      fileAuthoringToolNames: primaryConfig.fileAuthoringToolNames,
-      skillPrimedIdsByName,
-    });
+    agentToolContexts.set(
+      primaryConfig.id,
+      buildAgentToolContext({ agent, config: primaryConfig }),
+    );
 
     // Only run BFS discovery (and pay `getModelsConfig` upfront) when the
     // primary has edges to follow — the common API case is single-agent.
@@ -563,23 +548,7 @@ const createResponse = async (req, res) => {
           logViolation,
           db: dbMethods,
           onAgentInitialized: (agentId, handoffAgent, config) => {
-            agentToolContexts.set(agentId, {
-              agent: handoffAgent,
-              toolRegistry: config.toolRegistry,
-              userMCPAuthMap: config.userMCPAuthMap,
-              tool_resources: config.tool_resources,
-              actionsEnabled: config.actionsEnabled,
-              accessibleSkillIds: config.accessibleSkillIds,
-              activeSkillNames: config.activeSkillNames,
-              codeEnvAvailable: config.codeEnvAvailable,
-              skillAuthoringAvailable: config.skillAuthoringAvailable,
-              fileAuthoringToolNames: config.fileAuthoringToolNames,
-              skillPrimedIdsByName:
-                buildSkillPrimedIdsByName(
-                  config.manualSkillPrimes,
-                  config.alwaysApplySkillPrimes,
-                ) ?? {},
-            });
+            agentToolContexts.set(agentId, buildAgentToolContext({ agent: handoffAgent, config }));
           },
           initializeAgent,
         },
@@ -707,16 +676,11 @@ const createResponse = async (req, res) => {
             tool_resources: ctx.tool_resources,
             actionsEnabled: ctx.actionsEnabled,
           });
-          return enrichWithSkillConfigurable(
+          return enrichLoadedToolsWithAgentContext({
             result,
             req,
-            ctx.accessibleSkillIds ?? primaryConfig.accessibleSkillIds,
-            ctx.codeEnvAvailable === true,
-            ctx.skillPrimedIdsByName ?? skillPrimedIdsByName,
-            ctx.activeSkillNames ?? primaryConfig.activeSkillNames,
-            ctx.skillAuthoringAvailable === true,
-            ctx.fileAuthoringToolNames ?? primaryConfig.fileAuthoringToolNames,
-          );
+            ctx,
+          });
         },
         toolEndCallback,
         ...getSkillToolDeps(),
@@ -886,16 +850,11 @@ const createResponse = async (req, res) => {
             tool_resources: ctx.tool_resources,
             actionsEnabled: ctx.actionsEnabled,
           });
-          return enrichWithSkillConfigurable(
+          return enrichLoadedToolsWithAgentContext({
             result,
             req,
-            ctx.accessibleSkillIds ?? primaryConfig.accessibleSkillIds,
-            ctx.codeEnvAvailable === true,
-            ctx.skillPrimedIdsByName ?? skillPrimedIdsByName,
-            ctx.activeSkillNames ?? primaryConfig.activeSkillNames,
-            ctx.skillAuthoringAvailable === true,
-            ctx.fileAuthoringToolNames ?? primaryConfig.fileAuthoringToolNames,
-          );
+            ctx,
+          });
         },
         toolEndCallback,
         ...getSkillToolDeps(),

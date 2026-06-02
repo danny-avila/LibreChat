@@ -5,7 +5,6 @@ const {
   GraphEvents,
   GraphNodeKeys,
   ToolEndHandler,
-  CODE_EXECUTION_TOOLS,
   createContentAggregator,
 } = require('@librechat/agents');
 const {
@@ -13,13 +12,14 @@ const {
   GenerationJobManager,
   writeAttachmentEvent,
   createToolExecuteHandler,
+  isCodeSessionToolName,
 } = require('@librechat/api');
 const { processFileCitations } = require('~/server/services/Files/Citations');
 const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
 const { saveBase64Image } = require('~/server/services/Files/process');
 
 function isCodeArtifactToolName(name) {
-  return CODE_EXECUTION_TOOLS.has(name) || name === 'create_file' || name === 'edit_file';
+  return isCodeSessionToolName(name);
 }
 
 class ModelEndHandler {

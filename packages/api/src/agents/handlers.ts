@@ -1,7 +1,7 @@
 import yaml from 'js-yaml';
 import { Types } from 'mongoose';
 import { logger } from '@librechat/data-schemas';
-import { GraphEvents, Constants, CODE_EXECUTION_TOOLS } from '@librechat/agents';
+import { GraphEvents, Constants } from '@librechat/agents';
 import type {
   LCTool,
   EventHandler,
@@ -19,6 +19,7 @@ import { logAxiosError, runOutsideTracing } from '~/utils';
 import { buildSkillPrimeMessage } from './skills';
 import { cleanCodeToolOutput } from './cleanup';
 import { primeSkillFiles } from './skillFiles';
+import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME, isCodeSessionToolName } from './tools';
 import { parseFrontmatter } from '../skills/import';
 
 export interface ToolEndCallbackData {
@@ -238,8 +239,6 @@ const MAX_CACHE_BYTES = 512 * 1024;
 const MAX_AUTHORING_BYTES = 10 * 1024 * 1024;
 const MAX_TOOL_ERROR_MESSAGE_CHARS = 12_000;
 const MAX_TOOL_ERROR_STACK_CHARS = 4_000;
-const CREATE_FILE_TOOL_NAME = 'create_file';
-const EDIT_FILE_TOOL_NAME = 'edit_file';
 const SKILL_FILE_PREFIX = 'skills/';
 const SKILL_MD = 'SKILL.md';
 
@@ -2904,7 +2903,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       turn: tc.turn,
                     };
 
-                    if (tc.codeSessionContext && CODE_EXECUTION_TOOLS.has(tc.name)) {
+                    if (tc.codeSessionContext && isCodeSessionToolName(tc.name)) {
                       toolCallConfig.session_id = tc.codeSessionContext.session_id;
                       if (tc.codeSessionContext.files && tc.codeSessionContext.files.length > 0) {
                         toolCallConfig._injected_files = tc.codeSessionContext.files;
@@ -3012,7 +3011,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     // (model context, SSE forwarding, persistence) see it.
                     // Non-code-execution tools pass through unchanged.
                     const cleanedContent =
-                      CODE_EXECUTION_TOOLS.has(tc.name) && typeof result.content === 'string'
+                      isCodeSessionToolName(tc.name) && typeof result.content === 'string'
                         ? cleanCodeToolOutput(result.content)
                         : result.content;
 

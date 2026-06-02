@@ -21,6 +21,34 @@ const mockBuildSkillPrimedIdsByName = jest.fn((manualSkillPrimes, alwaysApplySki
   return Object.keys(primed).length > 0 ? primed : undefined;
 });
 const mockEnrichWithSkillConfigurable = jest.fn((result) => result);
+const mockBuildAgentToolContext = jest.fn(({ agent, config }) => ({
+  agent,
+  toolRegistry: config.toolRegistry,
+  userMCPAuthMap: config.userMCPAuthMap,
+  tool_resources: config.tool_resources,
+  actionsEnabled: config.actionsEnabled,
+  accessibleSkillIds: config.accessibleSkillIds,
+  activeSkillNames: config.activeSkillNames,
+  codeEnvAvailable: config.codeEnvAvailable,
+  skillAuthoringAvailable: config.skillAuthoringAvailable,
+  fileAuthoringToolNames: config.fileAuthoringToolNames,
+  skillPrimedIdsByName:
+    mockBuildSkillPrimedIdsByName(config.manualSkillPrimes, config.alwaysApplySkillPrimes) ?? {},
+}));
+const mockEnrichLoadedToolsWithAgentContext = jest.fn(({ result, req, ctx }) =>
+  mockEnrichWithSkillConfigurable({
+    result,
+    context: {
+      req,
+      accessibleSkillIds: ctx.accessibleSkillIds,
+      codeEnvAvailable: ctx.codeEnvAvailable === true,
+      skillPrimedIdsByName: ctx.skillPrimedIdsByName,
+      activeSkillNames: ctx.activeSkillNames,
+      skillAuthoringAvailable: ctx.skillAuthoringAvailable === true,
+      fileAuthoringToolNames: ctx.fileAuthoringToolNames,
+    },
+  }),
+);
 const mockGetSkillToolDeps = jest.fn(() => ({}));
 
 jest.mock('nanoid', () => ({
@@ -170,6 +198,8 @@ jest.mock('~/server/services/Endpoints/agents/skillDeps', () => ({
   getSkillToolDeps: mockGetSkillToolDeps,
   enrichWithSkillConfigurable: mockEnrichWithSkillConfigurable,
   buildSkillPrimedIdsByName: mockBuildSkillPrimedIdsByName,
+  buildAgentToolContext: mockBuildAgentToolContext,
+  enrichLoadedToolsWithAgentContext: mockEnrichLoadedToolsWithAgentContext,
 }));
 
 jest.mock('~/cache', () => ({
@@ -542,19 +572,21 @@ describe('createResponse controller', () => {
           actionsEnabled: true,
         }),
       );
-      expect(mockEnrichWithSkillConfigurable).toHaveBeenLastCalledWith(
-        expect.anything(),
-        req,
-        ['sub-skill-id'],
-        true,
-        {
-          'sub-always-skill': 'sub-always-id',
-          'sub-hidden-skill': 'sub-manual-id',
+      expect(mockEnrichWithSkillConfigurable).toHaveBeenLastCalledWith({
+        result: expect.anything(),
+        context: {
+          req,
+          accessibleSkillIds: ['sub-skill-id'],
+          codeEnvAvailable: true,
+          skillPrimedIdsByName: {
+            'sub-always-skill': 'sub-always-id',
+            'sub-hidden-skill': 'sub-manual-id',
+          },
+          activeSkillNames: ['sub-hidden-skill'],
+          skillAuthoringAvailable: true,
+          fileAuthoringToolNames: ['create_file', 'edit_file'],
         },
-        ['sub-hidden-skill'],
-        true,
-        ['create_file', 'edit_file'],
-      );
+      });
     });
   });
 });

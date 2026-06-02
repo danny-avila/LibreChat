@@ -129,10 +129,9 @@ function grantSkillOwner({ req, skillId }) {
 }
 
 /**
- * Builds the `skillPrimedIdsByName` map passed through to
- * `enrichWithSkillConfigurable`. Centralized here so the four CJS call
- * sites (`initialize.js`, `responses.js` x2, `openai.js`) share one
- * source of truth — if `ResolvedManualSkill` ever renames `_id` or
+ * Builds the `skillPrimedIdsByName` map threaded through
+ * `buildAgentToolContext`. Centralized here so every runtime route shares
+ * one source of truth — if `ResolvedManualSkill` ever renames `_id` or
  * gains new identifying fields, only this helper changes.
  *
  * Combines both manual (`$`-popover) primes AND always-apply primes so
@@ -179,6 +178,69 @@ function buildSkillPrimedIdsByName(manualSkillPrimes, alwaysApplySkillPrimes) {
   return out;
 }
 
+/**
+ * Builds the per-agent context consumed by ON_TOOL_EXECUTE. Keeping this
+ * shape in one Adapter gives every runtime path the same configurable
+ * fields and the same primed-skill pinning behavior.
+ *
+ * @param {object} params
+ * @param {object} params.agent
+ * @param {object} params.config
+ * @returns {object}
+ */
+function buildAgentToolContext({ agent, config }) {
+  return {
+    agent,
+    toolRegistry: config.toolRegistry,
+    userMCPAuthMap: config.userMCPAuthMap,
+    tool_resources: config.tool_resources,
+    actionsEnabled: config.actionsEnabled,
+    accessibleSkillIds: config.accessibleSkillIds,
+    activeSkillNames: config.activeSkillNames,
+    codeEnvAvailable: config.codeEnvAvailable,
+    skillAuthoringAvailable: config.skillAuthoringAvailable,
+    fileAuthoringToolNames: config.fileAuthoringToolNames,
+    skillPrimedIdsByName:
+      buildSkillPrimedIdsByName(config.manualSkillPrimes, config.alwaysApplySkillPrimes) ?? {},
+  };
+}
+
+function hasOwn(value, key) {
+  return Object.prototype.hasOwnProperty.call(value ?? {}, key);
+}
+
+/**
+ * Applies per-agent runtime context to a loadToolsForExecution result.
+ *
+ * @param {object} params
+ * @param {{ loadedTools: unknown[], configurable?: Record<string, unknown> }} params.result
+ * @param {object} params.req
+ * @param {object | undefined} params.ctx
+ * @param {object | undefined} [params.fallback]
+ * @returns {{ loadedTools: unknown[], configurable: Record<string, unknown> }}
+ */
+function enrichLoadedToolsWithAgentContext({ result, req, ctx = {}, fallback = {} }) {
+  const codeEnvAvailable = hasOwn(ctx, 'codeEnvAvailable')
+    ? ctx.codeEnvAvailable === true
+    : fallback.codeEnvAvailable === true;
+  const skillAuthoringAvailable = hasOwn(ctx, 'skillAuthoringAvailable')
+    ? ctx.skillAuthoringAvailable === true
+    : fallback.skillAuthoringAvailable === true;
+
+  return enrichWithSkillConfigurable({
+    result,
+    context: {
+      req,
+      codeEnvAvailable,
+      accessibleSkillIds: ctx.accessibleSkillIds ?? fallback.accessibleSkillIds,
+      skillPrimedIdsByName: ctx.skillPrimedIdsByName ?? fallback.skillPrimedIdsByName,
+      activeSkillNames: ctx.activeSkillNames ?? fallback.activeSkillNames,
+      skillAuthoringAvailable,
+      fileAuthoringToolNames: ctx.fileAuthoringToolNames ?? fallback.fileAuthoringToolNames,
+    },
+  });
+}
+
 /** Skill-related properties for ToolExecuteOptions (stable references, allocated once). */
 const skillToolDeps = {
   getSkillByName: db.getSkillByName,
@@ -217,4 +279,6 @@ module.exports = {
   getSkillToolDeps,
   enrichWithSkillConfigurable,
   buildSkillPrimedIdsByName,
+  buildAgentToolContext,
+  enrichLoadedToolsWithAgentContext,
 };

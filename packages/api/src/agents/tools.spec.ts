@@ -47,6 +47,7 @@ import {
   registerCodeExecutionTools,
   registerFileAuthoringTools,
   isFileAuthoringToolDefinition,
+  isCodeSessionToolName,
 } from './tools';
 
 describe('buildToolSet', () => {
@@ -434,9 +435,12 @@ describe('registerCodeExecutionTools', () => {
 describe('registerFileAuthoringTools', () => {
   const makeRegistry = (): LCToolRegistry => new Map() as unknown as LCToolRegistry;
 
-  it('marks host-side file authoring tools as code-session-aware', () => {
-    expect(CODE_EXECUTION_TOOLS.has('create_file')).toBe(true);
-    expect(CODE_EXECUTION_TOOLS.has('edit_file')).toBe(true);
+  it('recognizes host-side file authoring tools as code-session-aware without mutating the shared set', () => {
+    expect(isCodeSessionToolName('bash_tool')).toBe(true);
+    expect(isCodeSessionToolName('create_file')).toBe(true);
+    expect(isCodeSessionToolName('edit_file')).toBe(true);
+    expect(CODE_EXECUTION_TOOLS.has('create_file')).toBe(false);
+    expect(CODE_EXECUTION_TOOLS.has('edit_file')).toBe(false);
   });
 
   it('registers create_file and edit_file with skill-aware descriptions', () => {
