@@ -43,8 +43,7 @@ export function createBudgetMethods(mongoose: typeof import('mongoose')) {
    */
   async function getAllBudgets(): Promise<AdminBudgetRow[]> {
     const User = mongoose.models.User;
-    const now = new Date();
-    const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const startOfMonth = currentMonthStartUTC();
 
     return User.aggregate<AdminBudgetRow>([
       {
