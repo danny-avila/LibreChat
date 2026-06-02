@@ -750,6 +750,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
   }
 
   if (!adminRoleGranted) {
+    const roleBeforeSync = user.role;
     await applyOpenIdRoleSync({
       user,
       username,
@@ -758,6 +759,21 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
       userinfo,
       resolvedOverageGroups,
     });
+    /**
+     * The earlier login-policy check ran with the pre-sync role. If role sync moved a
+     * tenant user into a different role, re-resolve the tenant config and re-enforce
+     * `allowedDomains` so role-scoped overrides for the new role are honored and a token
+     * cannot complete login under the previous role's looser policy.
+     */
+    if (user?.tenantId && user.role !== roleBeforeSync) {
+      const postSyncConfig = await resolveAppConfigForUser(getAppConfig, user);
+      if (!isEmailDomainAllowed(email, postSyncConfig?.registration?.allowedDomains)) {
+        logger.error(
+          `[OpenID Strategy] Authentication blocked after role sync - email domain not allowed [Identifier: ${email}]`,
+        );
+        throw new Error('Email domain not allowed');
+      }
+    }
   }
 
   if (!!userinfo && userinfo.picture && !user.avatar?.includes('manual=true')) {

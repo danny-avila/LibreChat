@@ -1767,6 +1767,41 @@ describe('setupOpenId', () => {
       );
     });
 
+    it('re-enforces tenant login policy after role sync changes the role', async () => {
+      const existingUser = {
+        _id: 'existingTenantUserId',
+        provider: 'openid',
+        email: tokenset.claims().email,
+        openidId: tokenset.claims().sub,
+        username: 'tenantuser',
+        name: 'Tenant User',
+        tenantId: 'tenant-a',
+        role: 'USER',
+      };
+      const { isEmailDomainAllowed } = require('@librechat/api');
+
+      findUser.mockImplementation(async (query) => {
+        if (query.openidId === tokenset.claims().sub || query.email === tokenset.claims().email) {
+          return existingUser;
+        }
+        return null;
+      });
+      jwtDecode.mockReturnValue({
+        roles: ['requiredRole', 'BASIC-USER'],
+        permissions: ['not-admin'],
+      });
+      // Pre-sync domain check passes; the post-sync re-resolved config rejects the domain.
+      isEmailDomainAllowed.mockReturnValueOnce(true).mockReturnValueOnce(false);
+      resolveAppConfigForUser.mockResolvedValue({
+        registration: { allowedDomains: ['restricted.com'] },
+      });
+
+      const { user, details } = await validate(tokenset);
+
+      expect(user).toBe(false);
+      expect(details).toEqual({ message: 'Email domain not allowed' });
+    });
+
     it('reuses required-role overage groups for role sync', async () => {
       process.env.OPENID_REQUIRED_ROLE = 'group-required';
       process.env.OPENID_REQUIRED_ROLE_PARAMETER_PATH = 'groups';

@@ -7,7 +7,7 @@ import {
 } from 'librechat-data-provider';
 import type { Model } from 'mongoose';
 import type { IRole, IUser } from '~/types';
-import { scopedCacheKey } from '~/config/tenantContext';
+import { scopedCacheKey, getTenantId, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { escapeRegExp } from '~/utils/string';
 import logger from '~/config/winston';
 
@@ -127,6 +127,11 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
   /**
    * Find roles by name without using or populating the shared role-name cache.
    * Use this for tenant-scoped authorization lookups where the active ALS tenant context must control the query.
+   *
+   * When a non-system tenant context is active, the tenant-isolation plugin scopes the
+   * query to that tenant. When no tenant context is active (base/global users), the lookup
+   * is constrained to base roles (`tenantId` unset) so a base user cannot match — and be
+   * assigned — a role that only exists within some tenant.
    */
   async function findRolesByNames(
     roleNames: string[],
@@ -141,11 +146,16 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
       }
 
       const Role = mongoose.models.Role;
-      let query = Role.find({
+      const filter: Record<string, unknown> = {
         $or: uniqueRoleNames.map((roleName) => ({
           name: new RegExp(`^${escapeRegExp(roleName)}$`, 'i'),
         })),
-      });
+      };
+      const tenantId = getTenantId();
+      if (!tenantId || tenantId === SYSTEM_TENANT_ID) {
+        filter.tenantId = { $in: [null, undefined] };
+      }
+      let query = Role.find(filter);
       if (fieldsToSelect) {
         query = query.select(fieldsToSelect);
       }

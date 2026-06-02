@@ -125,6 +125,21 @@ describe('findRolesByNames', () => {
       expect.objectContaining({ name: 'TENANT-ROLE', tenantId: 'tenant-b' }),
     ]);
   });
+
+  it('matches only base roles when no tenant context is active', async () => {
+    await Role.create({ name: 'SCOPED-ROLE', permissions: {} });
+    await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+      await Role.create({ name: 'TENANT-ONLY-ROLE', permissions: {} });
+    });
+
+    const baseMatches = await findRolesByNames(
+      ['SCOPED-ROLE', 'TENANT-ONLY-ROLE'],
+      'name tenantId',
+    );
+
+    expect(baseMatches).toEqual([expect.objectContaining({ name: 'SCOPED-ROLE' })]);
+    expect(baseMatches).toHaveLength(1);
+  });
 });
 
 describe('updateAccessPermissions', () => {

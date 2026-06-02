@@ -70,21 +70,30 @@ export function getOpenIdRoleSyncOptions(
       .filter(Boolean) ?? [];
   const fallbackRole = env.OPENID_ROLE_SYNC_FALLBACK_ROLE?.trim() || undefined;
 
+  if (apiEnabled && !enabled) {
+    throw new Error(
+      '[openidRoleSync] OPENID_ROLE_SYNC_API_ENABLED requires OPENID_ROLE_SYNC_ENABLED=true',
+    );
+  }
+
+  /**
+   * Only validate role-sync-specific settings once the feature is enabled. A
+   * disabled deployment must not fail OpenID login just because a stale or
+   * mistyped OPENID_ROLE_SYNC_* value is left in the environment.
+   */
+  if (!enabled) {
+    return { enabled, apiEnabled, claimSource, claim, rolePriority, fallbackRole };
+  }
+
   if (!['access', 'id', 'userinfo'].includes(claimSource)) {
     throw new Error(
       `[openidRoleSync] OPENID_ROLE_SYNC_SOURCE must be one of: access, id, userinfo`,
     );
   }
 
-  if (enabled && !claim) {
+  if (!claim) {
     throw new Error(
       '[openidRoleSync] OPENID_ROLE_SYNC_CLAIM is required when role sync is enabled',
-    );
-  }
-
-  if (apiEnabled && !enabled) {
-    throw new Error(
-      '[openidRoleSync] OPENID_ROLE_SYNC_API_ENABLED requires OPENID_ROLE_SYNC_ENABLED=true',
     );
   }
 

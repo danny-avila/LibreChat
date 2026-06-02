@@ -44,12 +44,24 @@ describe('getOpenIdRoleSyncOptions', () => {
     );
   });
 
-  it('rejects invalid claim sources', () => {
+  it('rejects invalid claim sources when enabled', () => {
     expect(() =>
       getOpenIdRoleSyncOptions({
+        OPENID_ROLE_SYNC_ENABLED: 'true',
+        OPENID_ROLE_SYNC_CLAIM: 'roles',
         OPENID_ROLE_SYNC_SOURCE: 'profile',
       }),
     ).toThrow('OPENID_ROLE_SYNC_SOURCE must be one of');
+  });
+
+  it('ignores role-sync-specific settings when the feature is disabled', () => {
+    expect(
+      getOpenIdRoleSyncOptions({
+        OPENID_ROLE_SYNC_SOURCE: 'profile',
+        OPENID_ROLE_SYNC_ROLE_PRIORITY: SystemRoles.ADMIN,
+        OPENID_ROLE_SYNC_FALLBACK_ROLE: SystemRoles.ADMIN,
+      }),
+    ).toMatchObject({ enabled: false, apiEnabled: false });
   });
 
   it('rejects API role sync when global role sync is disabled', () => {
@@ -60,15 +72,19 @@ describe('getOpenIdRoleSyncOptions', () => {
     ).toThrow('OPENID_ROLE_SYNC_API_ENABLED requires OPENID_ROLE_SYNC_ENABLED=true');
   });
 
-  it('rejects ADMIN in role priority and fallback role', () => {
+  it('rejects ADMIN in role priority and fallback role when enabled', () => {
     expect(() =>
       getOpenIdRoleSyncOptions({
+        OPENID_ROLE_SYNC_ENABLED: 'true',
+        OPENID_ROLE_SYNC_CLAIM: 'roles',
         OPENID_ROLE_SYNC_ROLE_PRIORITY: `STANDARD-USER,${SystemRoles.ADMIN}`,
       }),
     ).toThrow('OPENID_ROLE_SYNC_ROLE_PRIORITY cannot include ADMIN');
 
     expect(() =>
       getOpenIdRoleSyncOptions({
+        OPENID_ROLE_SYNC_ENABLED: 'true',
+        OPENID_ROLE_SYNC_CLAIM: 'roles',
         OPENID_ROLE_SYNC_FALLBACK_ROLE: SystemRoles.ADMIN,
       }),
     ).toThrow('OPENID_ROLE_SYNC_FALLBACK_ROLE cannot be ADMIN');
