@@ -176,6 +176,9 @@ interface:
   # such as "_meiliIndex_1_expiredAt_1" can be dropped from conversations/messages once the new
   # "_meiliIndex_1_isTemporary_1_expiredAt_1" indexes exist.
   # retentionMode: "temporary"
+  # Set retainAgentFiles to true to keep persistent agent resource files from expiring under
+  # retentionMode: "all"; non-agent files still expire.
+  # retainAgentFiles: false
 
 # Example Cloudflare turnstile (optional)
 #turnstile:
