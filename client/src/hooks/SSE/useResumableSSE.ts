@@ -404,6 +404,10 @@ export default function useResumableSSE(
               }
             }
 
+            if (data.resumeState?.titleEvent) {
+              titleHandler(data.resumeState.titleEvent);
+            }
+
             if (data.pendingEvents?.length > 0) {
               console.log(`[ResumableSSE] Replaying ${data.pendingEvents.length} pending events`);
               const submission = { ...currentSubmission, userMessage } as EventSubmission;

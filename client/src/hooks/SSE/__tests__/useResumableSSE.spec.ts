@@ -462,6 +462,40 @@ describe('useResumableSSE - 404 error path', () => {
     unmount();
   });
 
+  it('replays title events from resume state sync', async () => {
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const titleEvent = {
+      event: 'title',
+      data: {
+        conversationId: CONV_ID,
+        title: 'Resumed Title',
+      },
+    };
+    const sse = getLastSSE();
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          sync: true,
+          resumeState: {
+            runSteps: [],
+            titleEvent,
+          },
+        }),
+      });
+    });
+
+    expect(mockTitleHandler).toHaveBeenCalledWith(titleEvent);
+    unmount();
+  });
+
   it.each([undefined, 500, 503])(
     'does not call errorHandler for responseCode %s (reconnect path)',
     async (responseCode) => {

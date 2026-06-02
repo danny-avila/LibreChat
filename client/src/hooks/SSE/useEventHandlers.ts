@@ -652,14 +652,27 @@ export default function useEventHandlers({
           removeConvoFromAllQueries(queryClient, submissionConvo.conversationId);
         }
 
+        /** A title applied locally (e.g. an immediate-mode title fetched while the
+         *  response was still streaming) must survive the final event, whose
+         *  `conversation` was built before the title was saved and so carries no
+         *  title yet — otherwise the chat reverts to "New Chat" until reload.
+         *  Skip preservation for a stopped (unfinished) turn: the server cancels
+         *  and discards that title, so the local one would diverge from server state. */
+        const titlePreservable = responseMessage?.unfinished !== true;
+        const finalConversationId = conversation.conversationId;
+        const shouldRollbackStreamedTitle =
+          !titlePreservable &&
+          finalConversationId &&
+          !hasRealTitle(serverConversation.title);
+
+        if (shouldRollbackStreamedTitle && finalConversationId) {
+          updateConvoInAllQueries(queryClient, finalConversationId, (convo) => ({
+            ...convo,
+            title: null,
+          }));
+        }
+
         if (setConversation && isAddedRequest !== true) {
-          /** A title applied locally (e.g. an immediate-mode title fetched while the
-           *  response was still streaming) must survive the final event, whose
-           *  `conversation` was built before the title was saved and so carries no
-           *  title yet — otherwise the chat reverts to "New Chat" until reload.
-           *  Skip preservation for a stopped (unfinished) turn: the server cancels
-           *  and discards that title, so the local one would diverge from server state. */
-          const titlePreservable = responseMessage?.unfinished !== true;
           setConversation((prevState) => {
             const update = {
               ...prevState,
