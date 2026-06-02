@@ -1807,6 +1807,7 @@
   "com_usage_col_user": "User",
   "com_usage_empty": "No consumption recorded for the current month.",
   "com_usage_error": "Failed to load usage data.",
+  "com_usage_export_csv": "Export CSV",
   "com_usage_filter_all": "All",
   "com_usage_filter_bu_betc": "BETC",
   "com_usage_filter_bu_other": "Other",
@@ -1837,5 +1838,6 @@
   "com_usage_thresholds_coming_soon": "Feature coming soon.",
   "com_usage_thresholds_placeholder": "Monthly threshold management per user.",
   "com_usage_title": "Consumption",
+  "com_usage_user_details": "User details ({{count}})",
   "com_user_message": "You"
 }

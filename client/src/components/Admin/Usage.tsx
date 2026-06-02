@@ -1,6 +1,7 @@
 import { memo, useMemo, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { Spinner, useToastContext } from '@librechat/client';
-import type { AdminBudgetRow, ModelUsageRow } from 'librechat-data-provider';
+import type { AdminUsageRow, AdminBudgetRow, ModelUsageRow } from 'librechat-data-provider';
 import {
   useAdminUsageQuery,
   useAdminBudgetsQuery,
@@ -10,7 +11,7 @@ import {
 import { NotificationSeverity } from '~/common';
 import EditBudgetModal from './EditBudgetModal';
 import { useLocalize } from '~/hooks';
-import { formatUSD } from './credits';
+import { formatUSD, creditsToUsdInput } from './credits';
 
 function formatTokens(value: number): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(value);
@@ -22,6 +23,50 @@ function daysUntilNextMonth(): number {
   const firstOfNextMonth = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
   const msPerDay = 24 * 60 * 60 * 1000;
   return Math.ceil((firstOfNextMonth - now.getTime()) / msPerDay);
+}
+
+/** Current month as YYYY-MM (UTC), for export filenames. */
+function currentMonthYYYYMM(): string {
+  const now = new Date();
+  const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+  return `${now.getUTCFullYear()}-${month}`;
+}
+
+/** Wraps a CSV field in quotes (doubling inner quotes) when it contains a comma, quote, or newline. */
+function csvEscape(value: string): string {
+  if (/[",\n\r]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+/** Builds a UTF-8 (BOM) CSV of the given user rows. Numbers are raw; USD is 2 decimals, no symbol. */
+function buildUsersCsv(rows: AdminUsageRow[]): string {
+  const header = ['User', 'Email', 'BU', 'Tokens', 'USD consumed', 'Messages'];
+  const lines = [header.join(',')];
+  for (const row of rows) {
+    const cells = [
+      row.name ?? '',
+      row.email ?? '',
+      row.bu ?? 'Other',
+      String(row.totalTokens),
+      creditsToUsdInput(row.totalCredits),
+      String(row.messageCount),
+    ];
+    lines.push(cells.map(csvEscape).join(','));
+  }
+  return '\uFEFF' + lines.join('\r\n');
+}
+
+/** Triggers a client-side download of CSV content with no dependency. */
+function downloadCsv(filename: string, content: string): void {
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 type TabKey = 'analytics' | 'thresholds';
@@ -273,6 +318,7 @@ function Usage() {
   const [activeTab, setActiveTab] = useState<TabKey>('analytics');
   const [activeBU, setActiveBU] = useState<BUFilter>('all');
   const [editingRow, setEditingRow] = useState<AdminBudgetRow | null>(null);
+  const [isUserDetailsOpen, setIsUserDetailsOpen] = useState(false);
 
   const rows = data?.rows ?? [];
   const { filteredRows, totals, segments } = useMemo(() => {
@@ -341,6 +387,11 @@ function Usage() {
           severity: NotificationSeverity.ERROR,
         }),
     });
+  };
+
+  const handleExportCsv = () => {
+    const filename = `vermeer-users-${activeBU.toLowerCase()}-${currentMonthYYYYMM()}.csv`;
+    downloadCsv(filename, buildUsersCsv(filteredRows));
   };
 
   if (isLoading) {
@@ -445,51 +496,91 @@ function Usage() {
               />
             ))}
           </div>
-          {filteredRows.length === 0 ? (
-            <div className="rounded-lg border border-border-light p-8 text-center text-text-secondary">
-              {localize('com_usage_empty')}
-            </div>
-          ) : (
-            <div className="overflow-hidden rounded-lg border border-border-light">
-              <table className="w-full border-collapse text-left text-sm">
-                <thead className="bg-surface-secondary text-text-secondary">
-                  <tr>
-                    <th className="px-4 py-3 font-medium">{localize('com_usage_col_user')}</th>
-                    <th className="px-4 py-3 font-medium">{localize('com_usage_col_email')}</th>
-                    <th className="px-4 py-3 font-medium">{localize('com_usage_col_bu')}</th>
-                    <th className="px-4 py-3 text-right font-medium">
-                      {localize('com_usage_col_tokens')}
-                    </th>
-                    <th className="px-4 py-3 text-right font-medium">
-                      {localize('com_usage_col_credits')}
-                    </th>
-                    <th className="px-4 py-3 text-right font-medium">
-                      {localize('com_usage_col_messages')}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredRows.map((row) => (
-                    <tr key={row.user} className="border-t border-border-light text-text-primary">
-                      <td className="px-4 py-3">{row.name ?? '—'}</td>
-                      <td className="px-4 py-3 text-text-secondary">{row.email ?? '—'}</td>
-                      <td className="px-4 py-3">
-                        <BuBadge bu={row.bu} />
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums">
-                        {formatTokens(row.totalTokens)}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums">
-                        {formatUSD(row.totalCredits)}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums">{row.messageCount}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
           <ModelMixSection rows={modelData?.rows ?? []} isLoading={isModelLoading} />
+
+          <div className="overflow-hidden rounded-lg border border-border-light">
+            <div
+              role="button"
+              tabIndex={0}
+              aria-expanded={isUserDetailsOpen}
+              onClick={() => setIsUserDetailsOpen((open) => !open)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setIsUserDetailsOpen((open) => !open);
+                }
+              }}
+              className="flex cursor-pointer items-center gap-2 bg-surface-secondary px-4 py-3 text-sm font-medium text-text-primary"
+            >
+              <ChevronDown
+                className={`h-4 w-4 shrink-0 transition-transform ${
+                  isUserDetailsOpen ? '' : '-rotate-90'
+                }`}
+              />
+              <span className="flex-1">
+                {localize('com_usage_user_details', { count: filteredRows.length })}
+              </span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleExportCsv();
+                }}
+                disabled={filteredRows.length === 0}
+                className="rounded-md px-3 py-1.5 text-xs text-text-secondary transition-colors hover:bg-surface-tertiary hover:text-text-primary disabled:opacity-50"
+              >
+                {localize('com_usage_export_csv')}
+              </button>
+            </div>
+            {isUserDetailsOpen &&
+              (filteredRows.length === 0 ? (
+                <div className="border-t border-border-light p-8 text-center text-text-secondary">
+                  {localize('com_usage_empty')}
+                </div>
+              ) : (
+                <div className="overflow-x-auto border-t border-border-light">
+                  <table className="w-full border-collapse text-left text-sm">
+                    <thead className="bg-surface-secondary text-text-secondary">
+                      <tr>
+                        <th className="px-4 py-3 font-medium">{localize('com_usage_col_user')}</th>
+                        <th className="px-4 py-3 font-medium">{localize('com_usage_col_email')}</th>
+                        <th className="px-4 py-3 font-medium">{localize('com_usage_col_bu')}</th>
+                        <th className="px-4 py-3 text-right font-medium">
+                          {localize('com_usage_col_tokens')}
+                        </th>
+                        <th className="px-4 py-3 text-right font-medium">
+                          {localize('com_usage_col_credits')}
+                        </th>
+                        <th className="px-4 py-3 text-right font-medium">
+                          {localize('com_usage_col_messages')}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredRows.map((row) => (
+                        <tr
+                          key={row.user}
+                          className="border-t border-border-light text-text-primary"
+                        >
+                          <td className="px-4 py-3">{row.name ?? '—'}</td>
+                          <td className="px-4 py-3 text-text-secondary">{row.email ?? '—'}</td>
+                          <td className="px-4 py-3">
+                            <BuBadge bu={row.bu} />
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums">
+                            {formatTokens(row.totalTokens)}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums">
+                            {formatUSD(row.totalCredits)}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums">{row.messageCount}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+          </div>
         </>
       )}
 
