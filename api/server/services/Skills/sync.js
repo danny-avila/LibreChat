@@ -12,6 +12,7 @@ const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 
 const SYSTEM_USER_ID = '000000000000000000000000';
 const REQUEST_SYNC_MIN_INTERVAL_MS = 5 * 60 * 1000;
+const REQUEST_SYNC_STALE_RUNNING_MS = 35 * 60 * 1000;
 
 let appConfigRef;
 let runner;
@@ -167,6 +168,25 @@ function isSameSkillSyncConfig(left, right) {
   return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
 }
 
+function getRequestTenantId(user) {
+  return typeof user?.tenantId === 'string' && user.tenantId ? user.tenantId : undefined;
+}
+
+function withRequestTenant(config, user, { disableRunOnStartup = false } = {}) {
+  const tenantId = getRequestTenantId(user);
+  return {
+    ...config,
+    github: {
+      ...config.github,
+      ...(disableRunOnStartup ? { runOnStartup: false } : {}),
+      sources: config.github.sources.map((source) => ({
+        ...source,
+        tenantId,
+      })),
+    },
+  };
+}
+
 function getRequestSkillSyncConfig(appConfig, user) {
   const resolved = parseSkillSyncConfig(appConfig?.skillSync);
   if (!resolved?.github?.enabled || resolved.github.sources.length === 0) {
@@ -178,18 +198,21 @@ function getRequestSkillSyncConfig(appConfig, user) {
     return undefined;
   }
 
-  const tenantId = typeof user?.tenantId === 'string' && user.tenantId ? user.tenantId : undefined;
-  return {
-    ...resolved,
-    github: {
-      ...resolved.github,
-      runOnStartup: false,
-      sources: resolved.github.sources.map((source) => ({
-        ...source,
-        tenantId,
-      })),
-    },
-  };
+  return withRequestTenant(resolved, user, { disableRunOnStartup: true });
+}
+
+function getAdminRequestSkillSyncConfig(appConfig, user) {
+  const resolved = parseSkillSyncConfig(appConfig?.skillSync);
+  if (!resolved?.github) {
+    return resolved;
+  }
+
+  const base = parseSkillSyncConfig(appConfig?.config?.skillSync);
+  if (isSameSkillSyncConfig(resolved, base)) {
+    return resolved;
+  }
+
+  return withRequestTenant(resolved, user);
 }
 
 function toTimestamp(value) {
@@ -224,10 +247,19 @@ function shouldRunRequestSync(status) {
   const now = Date.now();
   return status.sources.some((source) => {
     if (source.status === 'running') {
-      return false;
+      const startedAt = toTimestamp(source.startedAt);
+      return Boolean(startedAt && now - startedAt >= REQUEST_SYNC_STALE_RUNNING_MS);
     }
     const lastAttemptAt = getLastAttemptAt(source);
     return !lastAttemptAt || now - lastAttemptAt >= intervalMs;
+  });
+}
+
+function getGitHubSkillSyncRunnerForRequest(req) {
+  const config = getAdminRequestSkillSyncConfig(req.config, req.user);
+  return createRunner({
+    getConfig: async () => config,
+    loadAppConfig: async () => req.config,
   });
 }
 
@@ -296,6 +328,7 @@ function stopGitHubSkillSyncScheduler() {
 module.exports = {
   initializeGitHubSkillSync,
   getGitHubSkillSyncRunner,
+  getGitHubSkillSyncRunnerForRequest,
   maybeRunGitHubSkillSyncForRequest,
   stopGitHubSkillSyncScheduler,
 };

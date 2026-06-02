@@ -19,6 +19,7 @@ export interface ISkillSyncCredentialDocument extends ISkillSyncCredential, Docu
 export interface ISkillSyncStatus {
   provider: SkillSyncProvider;
   sourceId: string;
+  tenantId?: string;
   status: SkillSyncRunStatus;
   credentialKey?: string;
   owner?: string;
