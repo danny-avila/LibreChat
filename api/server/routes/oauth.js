@@ -9,6 +9,11 @@ const { checkDomainAllowed, loginLimiter, logHeaders } = require('~/server/middl
 const { createOAuthHandler } = require('~/server/controllers/auth/oauth');
 const { findBalanceByUser, upsertBalanceFields } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
+const {
+  buildOAuthFailureLog,
+  getOAuthFailureMessage,
+  isOAuthProtocolFailure,
+} = require('./oauthFailure');
 
 const setBalanceConfig = createSetBalanceConfig({
   getAppConfig,
@@ -28,14 +33,78 @@ router.use(loginLimiter);
 
 const oauthHandler = createOAuthHandler();
 
+function redirectToAuthFailure(res) {
+  return res.redirect(`${domains.client}/login?redirect=false&error=${ErrorTypes.AUTH_FAILED}`);
+}
+
+function logOpenIDCallbackFailure(req, err, info, level = 'warn') {
+  logger[level](
+    level === 'error'
+      ? '[OpenID OAuth] Callback authentication error'
+      : '[OpenID OAuth] Callback authentication failed',
+    buildOAuthFailureLog({
+      provider: 'openid',
+      req,
+      err,
+      info,
+      defaultMessage: 'OpenID authentication failed',
+    }),
+  );
+}
+
+function authenticateOpenIDCallback(req, res, next) {
+  return passport.authenticate(
+    'openid',
+    {
+      failureMessage: true,
+      session: false,
+    },
+    (err, user, info) => {
+      if (err) {
+        if (isOAuthProtocolFailure(err, info)) {
+          logOpenIDCallbackFailure(req, err, info);
+          return redirectToAuthFailure(res);
+        }
+
+        logOpenIDCallbackFailure(req, err, info, 'error');
+        return next(err);
+      }
+
+      if (!user) {
+        logOpenIDCallbackFailure(req, err, info);
+        return redirectToAuthFailure(res);
+      }
+
+      if (typeof req.logIn !== 'function') {
+        req.user = user;
+        return next();
+      }
+
+      return req.logIn(user, { session: false }, (loginErr) => {
+        if (loginErr) {
+          logOpenIDCallbackFailure(req, loginErr, info, 'error');
+          return next(loginErr);
+        }
+        return next();
+      });
+    },
+  )(req, res, next);
+}
+
 router.get('/error', (req, res) => {
   /** A single error message is pushed by passport when authentication fails. */
-  const errorMessage = req.session?.messages?.pop() || 'Unknown OAuth error';
-  logger.error('Error in OAuth authentication:', {
-    message: errorMessage,
-  });
+  const errorMessage = getOAuthFailureMessage(req);
+  logger.warn(
+    '[OAuth] Authentication failed',
+    buildOAuthFailureLog({
+      provider: 'unknown',
+      req,
+      info: { message: errorMessage },
+      defaultMessage: errorMessage,
+    }),
+  );
 
-  res.redirect(`${domains.client}/login?redirect=false&error=${ErrorTypes.AUTH_FAILED}`);
+  redirectToAuthFailure(res);
 });
 
 /**
@@ -100,11 +169,7 @@ router.get('/openid', (req, res, next) => {
 
 router.get(
   '/openid/callback',
-  passport.authenticate('openid', {
-    failureRedirect: `${domains.client}/oauth/error`,
-    failureMessage: true,
-    session: false,
-  }),
+  authenticateOpenIDCallback,
   setBalanceConfig,
   checkDomainAllowed,
   oauthHandler,
