@@ -181,6 +181,7 @@ function createDeps(
       const status: ISkillSyncStatus = {
         provider: input.provider,
         sourceId: input.sourceId,
+        tenantId: input.tenantId,
         status: input.status,
         credentialKey: input.credentialKey,
         owner: input.owner,
@@ -506,6 +507,69 @@ describe('createGitHubSkillSyncRunner', () => {
     });
     expect(deps.createSkill).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'research', tenantId: 'tenant-a' }),
+    );
+    expect(deps.upsertStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceId: 'librechat-skills', tenantId: 'tenant-a' }),
+    );
+    expect(deps.tryAcquireLock).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'tenant-a' }),
+    );
+  });
+
+  it('matches stored source status by tenant and source id', async () => {
+    const deps = createDeps({
+      listStatuses: jest.fn(async () => [
+        {
+          provider: 'github',
+          sourceId: 'librechat-skills',
+          tenantId: 'tenant-a',
+          status: 'succeeded',
+          syncedSkillCount: 1,
+          syncedFileCount: 2,
+          deletedSkillCount: 0,
+          deletedFileCount: 0,
+        } as ISkillSyncStatus,
+        {
+          provider: 'github',
+          sourceId: 'librechat-skills',
+          tenantId: 'tenant-b',
+          status: 'failed',
+          errorCode: 'OTHER_TENANT',
+          syncedSkillCount: 0,
+          syncedFileCount: 0,
+          deletedSkillCount: 0,
+          deletedFileCount: 0,
+        } as ISkillSyncStatus,
+      ]),
+      getConfig: () => ({
+        github: {
+          enabled: true,
+          intervalMinutes: 60,
+          runOnStartup: false,
+          sources: [
+            {
+              id: 'librechat-skills',
+              owner: 'LibreChat',
+              repo: 'skills',
+              ref: 'main',
+              paths: ['skills'],
+              credentialKey: 'github-skills-prod',
+              tenantId: 'tenant-b',
+            },
+          ],
+        },
+      }),
+    });
+
+    const status = await createGitHubSkillSyncRunner(deps).getStatus();
+
+    expect(status.sources[0]).toEqual(
+      expect.objectContaining({
+        sourceId: 'librechat-skills',
+        tenantId: 'tenant-b',
+        status: 'failed',
+        errorCode: 'OTHER_TENANT',
+      }),
     );
   });
 
