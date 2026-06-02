@@ -148,6 +148,51 @@ describe('MCPServerInspector', () => {
       expect(result.toolFunctions).toBeUndefined();
     });
 
+    it('should skip capabilities fetch when obo is configured', async () => {
+      // OBO servers mint per-user delegated tokens at tool-call time; an
+      // unauthenticated probe at inspection has no valid bearer to attach,
+      // so the upstream rejects the MCP `initialize` handshake and the
+      // create/update fails with MCP_INSPECTION_FAILED. Treat `obo` as
+      // user-scoped auth alongside requiresOAuth and customUserVars.
+      mockDetectOAuthRequirement.mockResolvedValue({
+        requiresOAuth: false,
+        method: 'no-metadata-found',
+      });
+
+      const rawConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://mcp-server.example.com/mcp',
+        obo: { scopes: 'api://mcp-server-id/Mcp.Tools.ReadWrite' },
+      };
+
+      const result = await MCPServerInspector.inspect('test_server', rawConfig, mockConnection);
+
+      expect(result.obo).toEqual({ scopes: 'api://mcp-server-id/Mcp.Tools.ReadWrite' });
+      expect(result.requiresOAuth).toBe(false);
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+      expect(mockConnection.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('should NOT create a temp connection when obo is configured and no connection is provided', async () => {
+      mockDetectOAuthRequirement.mockResolvedValue({
+        requiresOAuth: false,
+        method: 'no-metadata-found',
+      });
+
+      const rawConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://mcp-server.example.com/mcp',
+        obo: { scopes: 'api://mcp-server-id/Mcp.Tools.ReadWrite' },
+      };
+
+      const result = await MCPServerInspector.inspect('test_server', rawConfig);
+
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+      expect(result.requiresOAuth).toBe(false);
+      expect(result.capabilities).toBeUndefined();
+      expect(result.toolFunctions).toBeUndefined();
+    });
+
     it('should keep custom serverInstructions string and not fetch from server', async () => {
       const rawConfig: t.MCPOptions = {
         type: 'stdio',

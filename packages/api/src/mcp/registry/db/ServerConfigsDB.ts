@@ -455,11 +455,16 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
   private async mapDBServerToParsedConfig(
     serverDBDoc: MCPServerDocument,
   ): Promise<ParsedServerConfig> {
+    const authorId =
+      serverDBDoc.author != null
+        ? (serverDBDoc.author as unknown as Types.ObjectId | string).toString()
+        : undefined;
     const config: ParsedServerConfig = {
       ...serverDBDoc.config,
       dbId: (serverDBDoc._id as Types.ObjectId).toString(),
       source: 'user',
       updatedAt: serverDBDoc.updatedAt?.getTime(),
+      ...(authorId ? { author: authorId } : {}),
     };
     return sanitizeUserManagedOAuthConfig(await this.decryptConfig(config));
   }
