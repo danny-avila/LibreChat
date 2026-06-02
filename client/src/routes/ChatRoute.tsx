@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useRecoilCallback, useRecoilValue } from 'recoil';
+import { useQueryClient } from '@tanstack/react-query';
 import { Spinner, useToastContext } from '@librechat/client';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
@@ -13,6 +14,7 @@ import {
   isNotFoundError,
   isTemporaryConversation,
   logger,
+  clearMessagesCache,
 } from '~/utils';
 import {
   useAssistantListMap,
@@ -40,6 +42,7 @@ const isValidChatProjectId = (projectId: string | null): projectId is string =>
 export default function ChatRoute() {
   const { data: startupConfig } = useGetStartupConfig();
   const { isAuthenticated, user, roles } = useAuthRedirect();
+  const queryClient = useQueryClient();
 
   const defaultTemporaryChat = useRecoilValue(temporaryStore.defaultTemporaryChat);
   const setIsTemporary = useRecoilCallback(
@@ -68,6 +71,10 @@ export default function ChatRoute() {
     cacheTime: 300000,
   });
   const verifiedChatProjectId = projectQuery.data?._id === chatProjectId ? chatProjectId : null;
+  const projectTemplate = useMemo(
+    () => (verifiedChatProjectId ? { chatProjectId: verifiedChatProjectId } : {}),
+    [verifiedChatProjectId],
+  );
 
   const modelsQuery = useGetModelsQuery({
     enabled: isAuthenticated,
@@ -143,12 +150,10 @@ export default function ChatRoute() {
       const preset = getNewConvoPreset();
 
       logger.log('conversation', 'ChatRoute, new convo effect', conversation);
+      clearMessagesCache(queryClient, conversation?.conversationId);
       newConversation({
         modelsData: modelsQuery.data,
-        template: {
-          ...(conversation ?? {}),
-          ...(verifiedChatProjectId ? { chatProjectId: verifiedChatProjectId } : {}),
-        },
+        template: projectTemplate,
         ...(preset ? { preset } : {}),
       });
 
@@ -193,12 +198,10 @@ export default function ChatRoute() {
       const preset = getNewConvoPreset();
 
       logger.log('conversation', 'ChatRoute new convo, assistants effect', conversation);
+      clearMessagesCache(queryClient, conversation?.conversationId);
       newConversation({
         modelsData: modelsQuery.data,
-        template: {
-          ...(conversation ?? {}),
-          ...(verifiedChatProjectId ? { chatProjectId: verifiedChatProjectId } : {}),
-        },
+        template: projectTemplate,
         ...(preset ? { preset } : {}),
       });
       hasSetConversation.current = true;
@@ -227,6 +230,8 @@ export default function ChatRoute() {
     chatProjectId,
     projectQuery.data?._id,
     projectQuery.isLoading,
+    projectTemplate,
+    queryClient,
     conversation?.chatProjectId,
     conversation?.conversationId,
   ]);

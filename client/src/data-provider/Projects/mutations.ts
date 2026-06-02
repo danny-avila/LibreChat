@@ -1,14 +1,17 @@
+import { useRecoilCallback } from 'recoil';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataService, QueryKeys } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type {
   TChatProject,
+  TConversation,
   TCreateChatProjectRequest,
   TDeleteChatProjectResponse,
   TUpdateChatProjectRequest,
   TAssignConversationToProjectRequest,
   TAssignConversationToProjectResponse,
 } from 'librechat-data-provider';
+import store from '~/store';
 
 export const useCreateProjectMutation = (): UseMutationResult<
   TChatProject,
@@ -62,11 +65,26 @@ export const useAssignConversationToProjectMutation = (): UseMutationResult<
   unknown
 > => {
   const queryClient = useQueryClient();
+  const updateActiveConversation = useRecoilCallback(
+    ({ set }) =>
+      (conversation: TConversation) => {
+        if (!conversation.conversationId) {
+          return;
+        }
+        set(store.updateConversationSelector(conversation.conversationId), {
+          ...conversation,
+          chatProjectId: conversation.chatProjectId ?? null,
+        });
+      },
+    [],
+  );
+
   return useMutation(
     (payload: TAssignConversationToProjectRequest) =>
       dataService.assignConversationToProject(payload),
     {
       onSuccess: (result) => {
+        updateActiveConversation(result.conversation);
         queryClient.setQueryData(
           [QueryKeys.conversation, result.conversation.conversationId],
           result.conversation,

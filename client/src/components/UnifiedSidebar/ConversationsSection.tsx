@@ -1,16 +1,14 @@
 import { useCallback, useEffect, useState, useMemo, memo, lazy, Suspense, useRef } from 'react';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
 import { useNavigate } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
 import { useMediaQuery } from '@librechat/client';
-import { QueryKeys, PermissionTypes, Permissions } from 'librechat-data-provider';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import type { List } from 'react-virtualized';
 import type { SidebarChatSort, SidebarOrganizationMode } from '~/components/Conversations/types';
 import {
   useLocalize,
-  useNewConvo,
   useHasAccess,
   useAuthContext,
   useLocalStorage,
@@ -21,7 +19,6 @@ import type { ChatsHeaderControls } from '~/components/Conversations/Header';
 import { Conversations } from '~/components/Conversations';
 import SearchBar from '~/components/Nav/SearchBar';
 import ProjectConversations from '~/components/Conversations/ProjectConversations';
-import { clearMessagesCache } from '~/utils';
 import store from '~/store';
 
 const BookmarkNav = lazy(() => import('~/components/Nav/Bookmarks/BookmarkNav'));
@@ -29,11 +26,9 @@ const BookmarkNav = lazy(() => import('~/components/Nav/Bookmarks/BookmarkNav'))
 const ConversationsSection = memo(() => {
   const localize = useLocalize();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const setSidebarExpanded = useSetRecoilState(store.sidebarExpanded);
   const { isAuthenticated } = useAuthContext();
-  const { newConversation } = useNewConvo();
   useTitleGeneration(isAuthenticated);
 
   const [isChatsExpanded, setIsChatsExpanded] = useLocalStorage('chatsExpanded', true);
@@ -54,7 +49,6 @@ const ConversationsSection = memo(() => {
   });
 
   const search = useRecoilValue(store.search);
-  const conversation = useRecoilValue(store.conversationByIndex(0));
 
   const { data, fetchNextPage, isFetchingNextPage, isLoading, isFetching } =
     useConversationsInfiniteQuery(
@@ -123,13 +117,6 @@ const ConversationsSection = memo(() => {
     toggleNav();
   }, [navigate, toggleNav]);
 
-  const handleNewChat = useCallback(() => {
-    clearMessagesCache(queryClient, conversation?.conversationId);
-    queryClient.invalidateQueries([QueryKeys.messages]);
-    newConversation();
-    toggleNav();
-  }, [conversation?.conversationId, newConversation, queryClient, toggleNav]);
-
   const chatsHeaderControls = useMemo<ChatsHeaderControls>(
     () => ({
       organizationMode,
@@ -137,7 +124,6 @@ const ConversationsSection = memo(() => {
       onOrganizationModeChange: handleOrganizationModeChange,
       onChatSortByChange: handleChatSortByChange,
       onNewProject: handleNewProject,
-      onNewChat: handleNewChat,
     }),
     [
       organizationMode,
@@ -145,7 +131,6 @@ const ConversationsSection = memo(() => {
       handleOrganizationModeChange,
       handleChatSortByChange,
       handleNewProject,
-      handleNewChat,
     ],
   );
 

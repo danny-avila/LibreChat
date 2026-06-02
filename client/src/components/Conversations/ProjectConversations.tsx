@@ -13,12 +13,13 @@ import type {
 import type { MeasuredCellParent } from './Conversations';
 import type { ChatsHeaderControls } from './Header';
 import type { SidebarChatSort, SidebarProjectMode } from './types';
+import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
 import {
   useActiveJobs,
   useConversationsInfiniteQuery,
   useProjectsInfiniteQuery,
 } from '~/data-provider';
-import { useLocalize } from '~/hooks';
+import { useFavorites, useLocalize, useShowMarketplace } from '~/hooks';
 import { groupConversationsByDate, cn } from '~/utils';
 import { DateLabel } from './Conversations';
 import ChatsHeader from './Header';
@@ -33,6 +34,7 @@ type Section = {
 };
 
 type FlattenedItem =
+  | { type: 'favorites' }
   | { type: 'chats-header' }
   | { type: 'section'; section: Section; isExpanded: boolean }
   | { type: 'date'; groupName: string }
@@ -150,8 +152,15 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
   const localize = useLocalize();
   const search = useRecoilValue(store.search);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  const { favorites, isLoading: isFavoritesLoading } = useFavorites();
+  const showAgentMarketplace = useShowMarketplace();
+  const favoritesContentKeyRef = useRef('');
   const [expandedSectionId, setExpandedSectionId] = useState<string | null>(null);
   const isSearching = Boolean(search.debouncedQuery);
+  const shouldShowFavorites =
+    !search.query && (isFavoritesLoading || favorites.length > 0 || showAgentMarketplace);
+
+  favoritesContentKeyRef.current = `${favorites.length}-${showAgentMarketplace ? 1 : 0}-${isFavoritesLoading ? 1 : 0}`;
 
   const projectSortBy = mode === 'recentProjects' ? 'lastConversationAt' : 'name';
   const projectSortDirection = mode === 'recentProjects' ? 'desc' : 'asc';
@@ -188,6 +197,7 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
     },
     {
       enabled: isAuthenticated && isChatsExpanded && (isSearching || expandedSectionId != null),
+      keepPreviousData: false,
       staleTime: 30000,
       cacheTime: 300000,
     },
@@ -231,7 +241,13 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
   );
 
   const flattenedItems = useMemo(() => {
-    const items: FlattenedItem[] = [{ type: 'chats-header' }];
+    const items: FlattenedItem[] = [];
+
+    if (shouldShowFavorites) {
+      items.push({ type: 'favorites' });
+    }
+
+    items.push({ type: 'chats-header' });
 
     if (!isChatsExpanded) {
       return items;
@@ -311,6 +327,7 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
     isProjectsLoading,
     isFetchingNextProjectPage,
     localize,
+    shouldShowFavorites,
   ]);
 
   const flattenedItemsRef = useRef(flattenedItems);
@@ -329,6 +346,9 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
           }
           if (item.type === 'section') {
             return `project-section-${item.section.id}-${item.isExpanded ? 'open' : 'closed'}`;
+          }
+          if (item.type === 'favorites') {
+            return `project-favorites-${favoritesContentKeyRef.current}`;
           }
           if (item.type === 'chats-header') {
             return 'project-chats-header';
@@ -364,6 +384,9 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
     mode,
     search.query,
     tags,
+    favorites.length,
+    isFavoritesLoading,
+    showAgentMarketplace,
     containerRef,
   ]);
 
@@ -447,6 +470,14 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
         );
       }
 
+      if (item.type === 'favorites') {
+        return (
+          <MeasuredRow key={key} {...rowProps}>
+            <FavoritesList isSmallScreen={isSmallScreen} toggleNav={toggleNav} />
+          </MeasuredRow>
+        );
+      }
+
       if (item.type === 'section') {
         return (
           <MeasuredRow key={key} {...rowProps}>
@@ -498,6 +529,7 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
       toggleNav,
       toggleSection,
       isChatsExpanded,
+      isSmallScreen,
       setIsChatsExpanded,
       chatsHeaderControls,
     ],

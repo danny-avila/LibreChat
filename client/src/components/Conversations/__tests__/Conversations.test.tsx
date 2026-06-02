@@ -139,7 +139,6 @@ describe('Conversations – favorites CellMeasurerCache key invalidation', () =>
           onOrganizationModeChange: jest.fn(),
           onChatSortByChange: jest.fn(),
           onNewProject: jest.fn(),
-          onNewChat: jest.fn(),
         }}
       />
     </RecoilRoot>

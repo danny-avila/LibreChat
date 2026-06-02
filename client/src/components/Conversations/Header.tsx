@@ -13,7 +13,6 @@ export interface ChatsHeaderControls {
   onOrganizationModeChange: (mode: SidebarOrganizationMode) => void;
   onChatSortByChange: (sortBy: SidebarChatSort) => void;
   onNewProject: () => void;
-  onNewChat: () => void;
 }
 
 interface ChatsHeaderProps extends ChatsHeaderControls {
@@ -79,7 +78,6 @@ const ChatsHeader: FC<ChatsHeaderProps> = ({
   onOrganizationModeChange,
   onChatSortByChange,
   onNewProject,
-  onNewChat,
 }) => {
   const localize = useLocalize();
   const menuId = useId();
@@ -88,58 +86,60 @@ const ChatsHeader: FC<ChatsHeaderProps> = ({
   const dropdownItems = useMemo<MenuItemProps[]>(
     () => [
       {
-        id: 'organize-sidebar',
-        label: localize('com_ui_sidebar_organization_label'),
-        icon: <Folder className={menuIconClassName} aria-hidden="true" />,
-        subItems: [
-          createSelectedMenuItem<SidebarOrganizationMode>({
-            id: 'organize-by-project',
-            value: 'byProject',
-            label: localize('com_ui_sidebar_mode_by_project'),
-            icon: <Folder className={menuIconClassName} aria-hidden="true" />,
-            selectedValue: organizationMode,
-            onSelect: onOrganizationModeChange,
-          }),
-          createSelectedMenuItem<SidebarOrganizationMode>({
-            id: 'organize-recent-projects',
-            value: 'recentProjects',
-            label: localize('com_ui_sidebar_mode_recent_projects'),
-            icon: <Folder className={menuIconClassName} aria-hidden="true" />,
-            selectedValue: organizationMode,
-            onSelect: onOrganizationModeChange,
-          }),
-          createSelectedMenuItem<SidebarOrganizationMode>({
-            id: 'organize-chronological',
-            value: 'chronological',
-            label: localize('com_ui_sidebar_mode_chronological_list'),
-            icon: <Clock3 className={menuIconClassName} aria-hidden="true" />,
-            selectedValue: organizationMode,
-            onSelect: onOrganizationModeChange,
-          }),
-        ],
+        id: 'organize-by-project',
+        ...createSelectedMenuItem<SidebarOrganizationMode>({
+          id: 'organize-by-project',
+          value: 'byProject',
+          label: localize('com_ui_sidebar_mode_by_project'),
+          icon: <Folder className={menuIconClassName} aria-hidden="true" />,
+          selectedValue: organizationMode,
+          onSelect: onOrganizationModeChange,
+        }),
       },
       {
-        id: 'sort-chats',
-        label: localize('com_ui_sort_by'),
-        icon: <Clock3 className={menuIconClassName} aria-hidden="true" />,
-        subItems: [
-          createSelectedMenuItem<SidebarChatSort>({
-            id: 'sort-created',
-            value: 'createdAt',
-            label: localize('com_ui_sort_created'),
-            icon: <Clock3 className={menuIconClassName} aria-hidden="true" />,
-            selectedValue: chatSortBy,
-            onSelect: onChatSortByChange,
-          }),
-          createSelectedMenuItem<SidebarChatSort>({
-            id: 'sort-updated',
-            value: 'updatedAt',
-            label: localize('com_ui_sort_updated'),
-            icon: <SquarePen className={menuIconClassName} aria-hidden="true" />,
-            selectedValue: chatSortBy,
-            onSelect: onChatSortByChange,
-          }),
-        ],
+        id: 'organize-recent-projects',
+        ...createSelectedMenuItem<SidebarOrganizationMode>({
+          id: 'organize-recent-projects',
+          value: 'recentProjects',
+          label: localize('com_ui_sidebar_mode_recent_projects'),
+          icon: <Folder className={menuIconClassName} aria-hidden="true" />,
+          selectedValue: organizationMode,
+          onSelect: onOrganizationModeChange,
+        }),
+      },
+      {
+        id: 'organize-chronological',
+        ...createSelectedMenuItem<SidebarOrganizationMode>({
+          id: 'organize-chronological',
+          value: 'chronological',
+          label: localize('com_ui_sidebar_mode_chronological_list'),
+          icon: <Clock3 className={menuIconClassName} aria-hidden="true" />,
+          selectedValue: organizationMode,
+          onSelect: onOrganizationModeChange,
+        }),
+      },
+      { separate: true },
+      {
+        id: 'sort-created',
+        ...createSelectedMenuItem<SidebarChatSort>({
+          id: 'sort-created',
+          value: 'createdAt',
+          label: localize('com_ui_sort_created'),
+          icon: <Clock3 className={menuIconClassName} aria-hidden="true" />,
+          selectedValue: chatSortBy,
+          onSelect: onChatSortByChange,
+        }),
+      },
+      {
+        id: 'sort-updated',
+        ...createSelectedMenuItem<SidebarChatSort>({
+          id: 'sort-updated',
+          value: 'updatedAt',
+          label: localize('com_ui_sort_updated'),
+          icon: <SquarePen className={menuIconClassName} aria-hidden="true" />,
+          selectedValue: chatSortBy,
+          onSelect: onChatSortByChange,
+        }),
       },
     ],
     [chatSortBy, localize, onChatSortByChange, onOrganizationModeChange, organizationMode],
@@ -170,6 +170,7 @@ const ChatsHeader: FC<ChatsHeaderProps> = ({
         menuId={menuId}
         isOpen={isMenuOpen}
         setIsOpen={setIsMenuOpen}
+        modal={true}
         className="z-[125] min-w-56"
         iconClassName="mr-0 text-text-secondary"
         trigger={
@@ -202,19 +203,6 @@ const ChatsHeader: FC<ChatsHeaderProps> = ({
             onClick={onNewProject}
           >
             <FolderPlus className="h-4 w-4" aria-hidden="true" />
-          </button>
-        }
-      />
-      <TooltipAnchor
-        description={localize('com_ui_new_chat')}
-        render={
-          <button
-            type="button"
-            aria-label={localize('com_ui_new_chat')}
-            className={headerIconButtonClassName}
-            onClick={onNewChat}
-          >
-            <SquarePen className="h-4 w-4" aria-hidden="true" />
           </button>
         }
       />
