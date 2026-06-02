@@ -1,4 +1,4 @@
-import { getConfigDefaults } from 'librechat-data-provider';
+import { getConfigDefaults, RetentionMode } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
 import { loadDefaultInterface } from './interface';
 
@@ -64,5 +64,22 @@ describe('loadDefaultInterface', () => {
     });
 
     expect(interfaceConfig).not.toHaveProperty('temporaryChatRetention');
+  });
+
+  it('preserves the configured agent file retention exemption', async () => {
+    const config: Partial<TCustomConfig> = {
+      interface: {
+        retentionMode: RetentionMode.ALL,
+        retainAgentFiles: true,
+      },
+    };
+
+    const interfaceConfig = await loadDefaultInterface({
+      config,
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.retentionMode).toBe(RetentionMode.ALL);
+    expect(interfaceConfig?.retainAgentFiles).toBe(true);
   });
 });
