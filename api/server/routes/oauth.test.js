@@ -63,6 +63,7 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('librechat-data-provider', () => ({
+  ...jest.requireActual('librechat-data-provider'),
   ErrorTypes: {
     AUTH_FAILED: 'auth_failed',
   },
