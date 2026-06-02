@@ -6,9 +6,10 @@ const { logger } = require('@librechat/data-schemas');
 const { ErrorTypes } = require('librechat-data-provider');
 const {
   buildOAuthFailureLog,
+  createOpenIDCallbackAuthenticator,
   createSetBalanceConfig,
   getOAuthFailureMessage,
-  isOAuthProtocolFailure,
+  redirectToAuthFailure,
 } = require('@librechat/api');
 const { checkDomainAllowed, loginLimiter, logHeaders } = require('~/server/middleware');
 const { createOAuthHandler } = require('~/server/controllers/auth/oauth');
@@ -28,68 +29,20 @@ const domains = {
   server: process.env.DOMAIN_SERVER,
 };
 
+const authFailureRedirectOptions = {
+  clientDomain: domains.client,
+  authFailedError: ErrorTypes.AUTH_FAILED,
+};
+
 router.use(logHeaders);
 router.use(loginLimiter);
 
 const oauthHandler = createOAuthHandler();
-
-function redirectToAuthFailure(res) {
-  return res.redirect(`${domains.client}/login?redirect=false&error=${ErrorTypes.AUTH_FAILED}`);
-}
-
-function logOpenIDCallbackFailure(req, err, info, level = 'warn') {
-  logger[level](
-    level === 'error'
-      ? '[OpenID OAuth] Callback authentication error'
-      : '[OpenID OAuth] Callback authentication failed',
-    buildOAuthFailureLog({
-      provider: 'openid',
-      req,
-      err,
-      info,
-      defaultMessage: 'OpenID authentication failed',
-    }),
-  );
-}
-
-function authenticateOpenIDCallback(req, res, next) {
-  return passport.authenticate(
-    'openid',
-    {
-      failureMessage: true,
-      session: false,
-    },
-    (err, user, info) => {
-      if (err) {
-        if (isOAuthProtocolFailure(err, info)) {
-          logOpenIDCallbackFailure(req, err, info);
-          return redirectToAuthFailure(res);
-        }
-
-        logOpenIDCallbackFailure(req, err, info, 'error');
-        return next(err);
-      }
-
-      if (!user) {
-        logOpenIDCallbackFailure(req, err, info);
-        return redirectToAuthFailure(res);
-      }
-
-      if (typeof req.logIn !== 'function') {
-        req.user = user;
-        return next();
-      }
-
-      return req.logIn(user, { session: false }, (loginErr) => {
-        if (loginErr) {
-          logOpenIDCallbackFailure(req, loginErr, info, 'error');
-          return next(loginErr);
-        }
-        return next();
-      });
-    },
-  )(req, res, next);
-}
+const authenticateOpenIDCallback = createOpenIDCallbackAuthenticator({
+  passport,
+  logger,
+  ...authFailureRedirectOptions,
+});
 
 router.get('/error', (req, res) => {
   /** A single error message is pushed by passport when authentication fails. */
@@ -104,7 +57,7 @@ router.get('/error', (req, res) => {
     }),
   );
 
-  redirectToAuthFailure(res);
+  redirectToAuthFailure(res, authFailureRedirectOptions);
 });
 
 /**

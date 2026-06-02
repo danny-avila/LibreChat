@@ -12,6 +12,12 @@ const mockLogger = {
 };
 
 const mockOAuthHandler = jest.fn((_req, res) => res.status(204).end());
+const mockOpenIDCallbackMiddleware = jest.fn((_req, _res, next) => next());
+let mockOpenIDCallbackAuthenticatorOptions;
+const mockCreateOpenIDCallbackAuthenticator = jest.fn((options) => {
+  mockOpenIDCallbackAuthenticatorOptions = options;
+  return mockOpenIDCallbackMiddleware;
+});
 const mockBuildOAuthFailureLog = jest.fn(({ provider, req, err, info, defaultMessage }) => ({
   provider,
   code: err?.code ?? info?.code ?? info?.error ?? req.query?.error,
@@ -39,7 +45,9 @@ const mockGetOAuthFailureMessage = jest.fn(
     req.query?.error ??
     'OAuth authentication failed',
 );
-const mockIsOAuthProtocolFailure = jest.fn((err) => err?.code?.startsWith('OAUTH_') === true);
+const mockRedirectToAuthFailure = jest.fn((res, { clientDomain, authFailedError }) =>
+  res.redirect(`${clientDomain}/login?redirect=false&error=${authFailedError}`),
+);
 const mockPassportAuthenticate = jest.fn(() => (_req, _res, next) => next());
 
 jest.mock('passport', () => ({
@@ -64,9 +72,10 @@ jest.mock(
   '@librechat/api',
   () => ({
     buildOAuthFailureLog: (...args) => mockBuildOAuthFailureLog(...args),
+    createOpenIDCallbackAuthenticator: (...args) => mockCreateOpenIDCallbackAuthenticator(...args),
     createSetBalanceConfig: jest.fn(() => (_req, _res, next) => next()),
     getOAuthFailureMessage: (...args) => mockGetOAuthFailureMessage(...args),
-    isOAuthProtocolFailure: (...args) => mockIsOAuthProtocolFailure(...args),
+    redirectToAuthFailure: (...args) => mockRedirectToAuthFailure(...args),
   }),
   { virtual: true },
 );
@@ -117,41 +126,39 @@ function createApp(sessionMessages) {
 
 describe('OAuth route failure logging', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    mockLogger.warn.mockClear();
+    mockLogger.error.mockClear();
+    mockLogger.info.mockClear();
+    mockLogger.debug.mockClear();
+    mockOAuthHandler.mockClear();
+    mockOpenIDCallbackMiddleware.mockClear();
+    mockBuildOAuthFailureLog.mockClear();
+    mockGetOAuthFailureMessage.mockClear();
+    mockRedirectToAuthFailure.mockClear();
+    mockPassportAuthenticate.mockClear();
     mockPassportAuthenticate.mockImplementation(() => (_req, _res, next) => next());
+    mockOpenIDCallbackMiddleware.mockImplementation((_req, _res, next) => next());
   });
 
-  it('continues the successful OpenID callback path after logging in without a session', async () => {
+  it('wires the package OpenID callback middleware into the route', async () => {
     const app = createApp();
-    const user = {
-      id: 'user-1',
-      provider: 'openid',
-    };
-    let logIn;
-
-    mockPassportAuthenticate.mockImplementation((_provider, _options, callback) => {
-      return (req, _res, _next) => {
-        logIn = jest.fn((loginUser, options, done) => {
-          req.user = loginUser;
-          done();
-        });
-        req.logIn = logIn;
-        callback(null, user, { message: 'ok' });
-      };
-    });
 
     await request(app)
       .get('/oauth/openid/callback?code=secret-code&state=secret-state')
       .expect(204);
 
-    expect(logIn).toHaveBeenCalledWith(user, { session: false }, expect.any(Function));
-    expect(mockOAuthHandler).toHaveBeenCalledWith(
-      expect.objectContaining({ user }),
+    expect(mockOpenIDCallbackAuthenticatorOptions).toEqual({
+      passport: expect.objectContaining({ authenticate: expect.any(Function) }),
+      logger: mockLogger,
+      clientDomain: 'http://client.test',
+      authFailedError: 'auth_failed',
+    });
+    expect(mockOpenIDCallbackMiddleware).toHaveBeenCalledWith(
+      expect.any(Object),
       expect.any(Object),
       expect.any(Function),
     );
-    expect(mockLogger.warn).not.toHaveBeenCalled();
-    expect(mockLogger.error).not.toHaveBeenCalled();
+    expect(mockOAuthHandler).toHaveBeenCalled();
   });
 
   it('logs structured fallback errors without using Unknown OAuth error', async () => {
@@ -179,130 +186,5 @@ describe('OAuth route failure logging', () => {
       }),
     );
     expect(JSON.stringify(mockLogger.warn.mock.calls[0])).not.toContain('Unknown OAuth error');
-  });
-
-  it('logs OpenID protocol failures with cause metadata and redirects to login', async () => {
-    const app = createApp();
-    const error = Object.assign(new Error('invalid response encountered'), {
-      code: 'OAUTH_INVALID_RESPONSE',
-      name: 'ClientError',
-      cause: {
-        code: 'OAUTH_INVALID_RESPONSE',
-        name: 'OperationProcessingError',
-        message: 'invalid response encountered',
-      },
-    });
-
-    mockPassportAuthenticate.mockImplementation((_provider, _options, callback) => {
-      return (_req, _res, _next) => callback(error, false);
-    });
-
-    const response = await request(app)
-      .get('/oauth/openid/callback?code=secret-code&state=secret-state')
-      .set('user-agent', 'test-agent')
-      .expect(302);
-
-    expect(response.headers.location).toBe(
-      'http://client.test/login?redirect=false&error=auth_failed',
-    );
-    expect(mockLogger.warn).toHaveBeenCalledWith(
-      '[OpenID OAuth] Callback authentication failed',
-      expect.objectContaining({
-        provider: 'openid',
-        code: 'OAUTH_INVALID_RESPONSE',
-        name: 'ClientError',
-        message: 'invalid response encountered',
-        cause_code: 'OAUTH_INVALID_RESPONSE',
-        cause_name: 'OperationProcessingError',
-        has_code: true,
-        has_state: true,
-        path: '/openid/callback',
-        user_agent: 'test-agent',
-      }),
-    );
-    expect(mockLogger.error).not.toHaveBeenCalled();
-
-    const loggedPayload = JSON.stringify(mockLogger.warn.mock.calls[0][1]);
-    expect(loggedPayload).not.toContain('secret-code');
-    expect(loggedPayload).not.toContain('secret-state');
-  });
-
-  it('logs Passport info failures and redirects without escalating to the error controller', async () => {
-    const app = createApp();
-
-    mockPassportAuthenticate.mockImplementation((_provider, _options, callback) => {
-      return (_req, _res, _next) =>
-        callback(null, false, {
-          code: 'DOMAIN_DENIED',
-          message: 'Email domain not allowed',
-        });
-    });
-
-    await request(app).get('/oauth/openid/callback').expect(302);
-
-    expect(mockLogger.warn).toHaveBeenCalledWith(
-      '[OpenID OAuth] Callback authentication failed',
-      expect.objectContaining({
-        provider: 'openid',
-        code: 'DOMAIN_DENIED',
-        message: 'Email domain not allowed',
-      }),
-    );
-    expect(mockLogger.error).not.toHaveBeenCalled();
-  });
-
-  it('logs provider response error fields when Passport reports an auth failure', async () => {
-    const app = createApp();
-
-    mockPassportAuthenticate.mockImplementation((_provider, _options, callback) => {
-      return (_req, _res, _next) =>
-        callback(null, false, {
-          error: 'access_denied',
-          error_description: 'User denied consent',
-        });
-    });
-
-    await request(app).get('/oauth/openid/callback').expect(302);
-
-    expect(mockLogger.warn).toHaveBeenCalledWith(
-      '[OpenID OAuth] Callback authentication failed',
-      expect.objectContaining({
-        provider: 'openid',
-        code: 'access_denied',
-        message: 'User denied consent',
-      }),
-    );
-    expect(mockLogger.error).not.toHaveBeenCalled();
-  });
-
-  it('logs unexpected OpenID errors with OAuth context before escalating', async () => {
-    const app = createApp();
-    const error = Object.assign(new Error('database exploded'), {
-      name: 'DatabaseError',
-    });
-
-    mockPassportAuthenticate.mockImplementation((_provider, _options, callback) => {
-      return (_req, _res, _next) => callback(error, false);
-    });
-
-    const response = await request(app)
-      .get('/oauth/openid/callback?code=secret-code&state=secret-state')
-      .expect(500);
-
-    expect(response.body).toEqual({ message: 'database exploded' });
-    expect(mockLogger.error).toHaveBeenCalledWith(
-      '[OpenID OAuth] Callback authentication error',
-      expect.objectContaining({
-        provider: 'openid',
-        name: 'DatabaseError',
-        message: 'database exploded',
-        has_code: true,
-        has_state: true,
-      }),
-    );
-
-    const loggedPayload = JSON.stringify(mockLogger.error.mock.calls[0][1]);
-    expect(loggedPayload).not.toContain('secret-code');
-    expect(loggedPayload).not.toContain('secret-state');
   });
 });
