@@ -55,6 +55,40 @@ export function buExpression(emailPath: string, tenantIdPath: string): AggExpr {
   };
 }
 
+/** BU filter values, matching the client-side BUFilter ('all' = no filtering). */
+export type BuFilter = 'all' | 'POP' | 'BETC' | 'Other';
+
+/** Optional window + BU filter for the admin usage aggregations. */
+export interface UsageQueryParams {
+  /** Inclusive lower bound on createdAt (UTC). Defaults to the current month start. */
+  start?: Date;
+  /** Exclusive upper bound on createdAt (UTC). Defaults to now. */
+  end?: Date;
+  /** Restrict to a business unit. Omitted or 'all' = no BU filter. */
+  bu?: BuFilter;
+}
+
+/** One month with recorded activity, for the period selector. `label` is ISO "YYYY-MM". */
+export interface AvailablePeriod {
+  year: number;
+  month: number;
+  label: string;
+}
+
+/**
+ * Resolves a BU filter to the value produced by buExpression:
+ * 'POP'/'BETC' match directly, 'Other' maps to null, and 'all'/undefined means no filter.
+ */
+function buFilterValue(bu?: BuFilter): string | null | undefined {
+  if (!bu || bu === 'all') {
+    return undefined;
+  }
+  if (bu === 'Other') {
+    return null;
+  }
+  return bu;
+}
+
 type MultiplierParams = {
   model?: string;
   valueKey?: string;
@@ -483,19 +517,21 @@ export function createTransactionMethods(
   }
 
   /**
-   * Aggregates current-month token consumption per user.
-   * Sums absolute `tokenValue` over prompt + completion transactions of the current
-   * calendar month (UTC), joined with users to expose name/email/tenantId.
-   * Sorted by descending total. Used by GET /api/admin/usage.
+   * Aggregates token consumption per user over an optional window (defaults to the current
+   * UTC month) and optional BU filter. Sums absolute `tokenValue` over prompt + completion
+   * transactions, joined with users to expose name/email/tenantId. Sorted by descending total.
+   * Used by GET /api/admin/usage.
    */
-  async function aggregateMonthlyUsage(): Promise<MonthlyUsageRow[]> {
+  async function aggregateMonthlyUsage(params: UsageQueryParams = {}): Promise<MonthlyUsageRow[]> {
     const Transaction = mongoose.models.Transaction;
-    const startOfMonth = currentMonthStartUTC();
+    const start = params.start ?? currentMonthStartUTC();
+    const end = params.end ?? new Date();
+    const buValue = buFilterValue(params.bu);
 
     return Transaction.aggregate<MonthlyUsageRow>([
       {
         $match: {
-          createdAt: { $gte: startOfMonth },
+          createdAt: { $gte: start, $lt: end },
           tokenType: { $in: ['prompt', 'completion'] },
         },
       },
@@ -536,6 +572,7 @@ export function createTransactionMethods(
           },
         },
       },
+      ...(buValue !== undefined ? [{ $match: { bu: buValue } }] : []),
       { $sort: { totalCredits: -1 } },
     ]);
   }
@@ -549,23 +586,45 @@ export function createTransactionMethods(
   }
 
   /**
-   * Aggregates current-month token consumption per model (global, all users).
-   * Sums absolute `tokenValue` over prompt + completion transactions of the current
-   * calendar month (UTC); messageCount counts DISTINCT messageIds (a message spans a
-   * prompt + a completion transaction). Sorted by descending total, then model ascending.
+   * Aggregates token consumption per model over an optional window (defaults to the current
+   * UTC month) and optional BU filter. When a BU is requested, transactions are joined with
+   * users before grouping so the BU can be derived from the author's email/tenantId.
+   * messageCount counts DISTINCT messageIds. Sorted by descending total, then model ascending.
    * Used by GET /api/admin/usage/models.
    */
-  async function aggregateUsageByModel(): Promise<ModelUsageRow[]> {
+  async function aggregateUsageByModel(params: UsageQueryParams = {}): Promise<ModelUsageRow[]> {
     const Transaction = mongoose.models.Transaction;
-    const startOfMonth = currentMonthStartUTC();
+    const start = params.start ?? currentMonthStartUTC();
+    const end = params.end ?? new Date();
+    const buValue = buFilterValue(params.bu);
 
     return Transaction.aggregate<ModelUsageRow>([
       {
         $match: {
-          createdAt: { $gte: startOfMonth },
+          createdAt: { $gte: start, $lt: end },
           tokenType: { $in: ['prompt', 'completion'] },
         },
       },
+      ...(buValue !== undefined
+        ? [
+            {
+              $lookup: {
+                from: 'users',
+                localField: 'user',
+                foreignField: '_id',
+                as: 'userDoc',
+              },
+            },
+            { $unwind: { path: '$userDoc', preserveNullAndEmptyArrays: true } },
+            {
+              $match: {
+                $expr: {
+                  $eq: [buExpression('$userDoc.email', '$userDoc.tenantId'), buValue],
+                },
+              },
+            },
+          ]
+        : []),
       {
         $group: {
           _id: '$model',
@@ -604,6 +663,35 @@ export function createTransactionMethods(
     ]);
   }
 
+  /**
+   * Lists the distinct UTC months that have prompt/completion activity (ignores credit/adjustment
+   * transactions, so no "phantom" months appear). Sorted most-recent first; label is ISO "YYYY-MM".
+   * Used by GET /api/admin/usage/periods to populate the period selector.
+   */
+  async function listAvailablePeriods(): Promise<AvailablePeriod[]> {
+    const Transaction = mongoose.models.Transaction;
+
+    const rows = await Transaction.aggregate<{ year: number; month: number }>([
+      { $match: { tokenType: { $in: ['prompt', 'completion'] } } },
+      {
+        $group: {
+          _id: {
+            year: { $year: { date: '$createdAt', timezone: 'UTC' } },
+            month: { $month: { date: '$createdAt', timezone: 'UTC' } },
+          },
+        },
+      },
+      { $project: { _id: 0, year: '$_id.year', month: '$_id.month' } },
+      { $sort: { year: -1, month: -1 } },
+    ]);
+
+    return rows.map((row) => ({
+      year: row.year,
+      month: row.month,
+      label: `${row.year}-${String(row.month).padStart(2, '0')}`,
+    }));
+  }
+
   return {
     updateBalance,
     bulkInsertTransactions,
@@ -617,6 +705,7 @@ export function createTransactionMethods(
     createStructuredTransaction,
     aggregateMonthlyUsage,
     aggregateUsageByModel,
+    listAvailablePeriods,
   };
 }
 
