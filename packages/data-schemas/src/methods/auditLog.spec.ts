@@ -69,6 +69,18 @@ describe('auditLog methods', () => {
       const raw = await AuditLog.collection.findOne({});
       expect(raw && Object.prototype.hasOwnProperty.call(raw, 'tenantId')).toBe(false);
     });
+
+    it('treats blank and whitespace-only tenantId as platform-level (no silent drop)', async () => {
+      const blank = await methods.recordAuditEntry(baseInput({ tenantId: '' }));
+      const whitespace = await methods.recordAuditEntry(baseInput({ tenantId: '   ' }));
+      expect(blank).not.toBeNull();
+      expect(whitespace).not.toBeNull();
+      const rows = await AuditLog.collection.find({}).toArray();
+      expect(rows).toHaveLength(2);
+      for (const row of rows) {
+        expect(Object.prototype.hasOwnProperty.call(row, 'tenantId')).toBe(false);
+      }
+    });
   });
 
   describe('listAuditLogPage', () => {

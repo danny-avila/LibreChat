@@ -120,6 +120,16 @@ function clampLimit(limit?: number): number {
 export function createAuditLogMethods(mongoose: typeof import('mongoose')): AuditLogMethods {
   async function recordAuditEntry(input: RecordAuditEntryInput): Promise<IAuditLog | null> {
     const AuditLog = mongoose.models.AuditLog as Model<IAuditLog>;
+    /**
+     * Match the read-side `tenantFilter` convention: blank or whitespace-only
+     * tenant IDs are platform-level scope and the field must be omitted
+     * entirely (so the row matches `{ tenantId: { $exists: false } }` queries
+     * and satisfies the non-empty-string validator on the schema).
+     */
+    const normalizedTenantId =
+      typeof input.tenantId === 'string' && input.tenantId.trim().length > 0
+        ? input.tenantId
+        : undefined;
     try {
       const doc = await AuditLog.create({
         action: input.action,
@@ -129,7 +139,7 @@ export function createAuditLogMethods(mongoose: typeof import('mongoose')): Audi
         targetPrincipalId: input.targetPrincipalId,
         targetName: input.targetName,
         capability: input.capability,
-        ...(input.tenantId != null && { tenantId: input.tenantId }),
+        ...(normalizedTenantId !== undefined && { tenantId: normalizedTenantId }),
       });
       return doc;
     } catch (err) {
