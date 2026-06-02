@@ -3,7 +3,9 @@ import throttle from 'lodash/throttle';
 import { ChevronDown, Folder, FolderOpen } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { Spinner, useMediaQuery } from '@librechat/client';
+import { useQueries } from '@tanstack/react-query';
 import { AutoSizer, CellMeasurer, CellMeasurerCache, List } from 'react-virtualized';
+import { dataService, QueryKeys } from 'librechat-data-provider';
 import type {
   TChatProject,
   TConversation,
@@ -37,10 +39,25 @@ type FlattenedItem =
   | { type: 'favorites' }
   | { type: 'chats-header' }
   | { type: 'section'; section: Section; isExpanded: boolean }
-  | { type: 'date'; groupName: string }
-  | { type: 'convo'; convo: TConversation }
-  | { type: 'empty'; title: string }
-  | { type: 'loading'; key: string };
+  | { type: 'date'; sectionId?: string; groupName: string }
+  | { type: 'convo'; sectionId?: string; convo: TConversation }
+  | { type: 'empty'; sectionId?: string; title: string }
+  | { type: 'loading'; sectionId?: string; key: string };
+
+type SectionPageRequest = {
+  sectionId: string;
+  cursor?: string;
+};
+
+type SectionConversationState = {
+  pages: ConversationListResponse[];
+  conversations: TConversation[];
+  groupedConversations: ReturnType<typeof groupConversationsByDate>;
+  isLoading: boolean;
+  isFetchingNextPage: boolean;
+  hasNextPage: boolean;
+  nextCursor: string | null;
+};
 
 interface ProjectConversationsProps {
   mode: SidebarProjectMode;
@@ -113,9 +130,20 @@ const SectionHeader = memo(
         type="button"
         aria-expanded={isExpanded}
         onClick={onToggle}
-        className="group flex h-9 w-full items-center gap-2 rounded-lg px-1 text-left text-sm text-text-primary outline-none transition-colors hover:bg-surface-active-alt focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
+        className={cn(
+          'group flex h-8 w-full items-center gap-2 rounded-lg px-1 text-left text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white',
+          isExpanded
+            ? 'text-text-primary hover:bg-surface-hover'
+            : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
+        )}
       >
-        <Icon className="h-4 w-4 shrink-0 text-text-secondary" aria-hidden="true" />
+        <Icon
+          className={cn(
+            'h-4 w-4 shrink-0',
+            isExpanded ? 'text-text-primary' : 'text-text-secondary',
+          )}
+          aria-hidden="true"
+        />
         <span className="min-w-0 flex-1 truncate">{section.title}</span>
         {countLabel && <span className="shrink-0 text-xs text-text-tertiary">{countLabel}</span>}
         <ChevronDown
@@ -155,10 +183,15 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
   const { favorites, isLoading: isFavoritesLoading } = useFavorites();
   const showAgentMarketplace = useShowMarketplace();
   const favoritesContentKeyRef = useRef('');
-  const [expandedSectionId, setExpandedSectionId] = useState<string | null>(null);
+  const [expandedSectionIds, setExpandedSectionIds] = useState<Set<string>>(() => new Set());
+  const [sectionCursors, setSectionCursors] = useState<Record<string, Array<string | undefined>>>(
+    {},
+  );
   const isSearching = Boolean(search.debouncedQuery);
   const shouldShowFavorites =
     !search.query && (isFavoritesLoading || favorites.length > 0 || showAgentMarketplace);
+  const tagsKey = useMemo(() => tags.join('\u0000'), [tags]);
+  const sectionParamsKey = `${chatSortBy}|${tagsKey}`;
 
   favoritesContentKeyRef.current = `${favorites.length}-${showAgentMarketplace ? 1 : 0}-${isFavoritesLoading ? 1 : 0}`;
 
@@ -183,20 +216,19 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
   );
 
   const {
-    data: conversationsData,
-    fetchNextPage: fetchNextConversationPage,
-    isFetchingNextPage: isFetchingNextConversationPage,
-    isLoading: isConversationsLoading,
+    data: searchConversationsData,
+    fetchNextPage: fetchNextSearchConversationPage,
+    isFetchingNextPage: isFetchingNextSearchConversationPage,
+    isLoading: isSearchConversationsLoading,
   } = useConversationsInfiniteQuery(
     {
-      projectId: isSearching ? undefined : (expandedSectionId ?? undefined),
       tags: tags.length === 0 ? undefined : tags,
       sortBy: chatSortBy,
       sortDirection: 'desc',
       search: search.debouncedQuery || undefined,
     },
     {
-      enabled: isAuthenticated && isChatsExpanded && (isSearching || expandedSectionId != null),
+      enabled: isAuthenticated && isChatsExpanded && isSearching,
       keepPreviousData: false,
       staleTime: 30000,
       cacheTime: 300000,
@@ -214,9 +246,9 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
     [projectsData?.pages],
   );
 
-  const conversations = useMemo(
-    () => conversationsData?.pages.flatMap((page) => page.conversations) ?? [],
-    [conversationsData?.pages],
+  const searchConversations = useMemo(
+    () => searchConversationsData?.pages.flatMap((page) => page.conversations) ?? [],
+    [searchConversationsData?.pages],
   );
 
   const sections = useMemo<Section[]>(() => {
@@ -235,13 +267,116 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
     ];
   }, [localize, projects]);
 
-  const groupedConversations = useMemo(
-    () => groupConversationsByDate(conversations, chatSortBy),
-    [chatSortBy, conversations],
+  const expandedSectionIdsList = useMemo(
+    () =>
+      sections.filter((section) => expandedSectionIds.has(section.id)).map((section) => section.id),
+    [expandedSectionIds, sections],
   );
 
-  const flattenedItems = useMemo(() => {
+  const expandedSectionIdsKey = useMemo(
+    () => expandedSectionIdsList.join('\u0000'),
+    [expandedSectionIdsList],
+  );
+
+  useEffect(() => {
+    setSectionCursors({});
+  }, [sectionParamsKey]);
+
+  useEffect(() => {
+    setExpandedSectionIds((current) => {
+      const validSectionIds = new Set(sections.map((section) => section.id));
+      const next = new Set([...current].filter((sectionId) => validSectionIds.has(sectionId)));
+      const changed =
+        next.size !== current.size || [...next].some((sectionId) => !current.has(sectionId));
+      return changed ? next : current;
+    });
+  }, [sections]);
+
+  const sectionQuerySpecs = useMemo<SectionPageRequest[]>(() => {
+    if (isSearching || !isChatsExpanded) {
+      return [];
+    }
+    return expandedSectionIdsList.flatMap((sectionId) => {
+      const cursors = sectionCursors[sectionId] ?? [undefined];
+      return cursors.map((cursor) => ({ sectionId, cursor }));
+    });
+  }, [expandedSectionIdsList, isChatsExpanded, isSearching, sectionCursors]);
+
+  const sectionQueryResults = useQueries({
+    queries: sectionQuerySpecs.map(({ sectionId, cursor }) => ({
+      queryKey: [
+        QueryKeys.projectConversations,
+        {
+          projectId: sectionId,
+          tags: tags.length === 0 ? undefined : tags,
+          sortBy: chatSortBy,
+          sortDirection: 'desc',
+          cursor,
+        },
+      ],
+      queryFn: () =>
+        dataService.listConversations({
+          projectId: sectionId,
+          tags: tags.length === 0 ? undefined : tags,
+          sortBy: chatSortBy,
+          sortDirection: 'desc',
+          cursor,
+        }),
+      enabled: isAuthenticated && isChatsExpanded && !isSearching,
+      staleTime: 30000,
+      cacheTime: 300000,
+    })),
+  });
+
+  const sectionConversationsById = useMemo<Record<string, SectionConversationState>>(() => {
+    const states: Record<string, SectionConversationState> = {};
+
+    expandedSectionIdsList.forEach((sectionId) => {
+      states[sectionId] = {
+        pages: [],
+        conversations: [],
+        groupedConversations: [],
+        isLoading: true,
+        isFetchingNextPage: false,
+        hasNextPage: false,
+        nextCursor: null,
+      };
+    });
+
+    sectionQuerySpecs.forEach((spec, index) => {
+      const result = sectionQueryResults[index];
+      const state = states[spec.sectionId];
+      if (!state) {
+        return;
+      }
+
+      if (result?.data) {
+        state.pages.push(result.data as ConversationListResponse);
+      }
+    });
+
+    Object.entries(states).forEach(([sectionId, state]) => {
+      state.conversations = state.pages.flatMap((page) => page.conversations) as TConversation[];
+      state.groupedConversations = groupConversationsByDate(state.conversations, chatSortBy);
+      const expectedPageCount = sectionCursors[sectionId]?.length ?? 1;
+      const lastPage = state.pages[state.pages.length - 1];
+      state.isLoading = state.pages.length === 0;
+      state.isFetchingNextPage = state.pages.length > 0 && state.pages.length < expectedPageCount;
+      state.nextCursor = lastPage?.nextCursor ?? null;
+      state.hasNextPage = state.nextCursor != null;
+    });
+
+    return states;
+  }, [chatSortBy, expandedSectionIdsList, sectionCursors, sectionQueryResults, sectionQuerySpecs]);
+
+  const groupedSearchConversations = useMemo(
+    () => groupConversationsByDate(searchConversations, chatSortBy),
+    [chatSortBy, searchConversations],
+  );
+
+  const { flattenedItems, sectionEndIndexes } = useMemo(() => {
     const items: FlattenedItem[] = [];
+    const endIndexes: Record<string, number> = {};
 
     if (shouldShowFavorites) {
       items.push({ type: 'favorites' });
@@ -254,80 +389,93 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
     }
 
     if (isSearching) {
-      if (isConversationsLoading) {
+      if (isSearchConversationsLoading) {
         items.push({ type: 'loading', key: 'loading-search-conversations' });
-        return items;
+        return { flattenedItems: items, sectionEndIndexes: endIndexes };
       }
 
-      if (conversations.length === 0) {
+      if (searchConversations.length === 0) {
         items.push({ type: 'empty', title: localize('com_ui_no_results_found') });
-        return items;
+        return { flattenedItems: items, sectionEndIndexes: endIndexes };
       }
 
-      groupedConversations.forEach(([groupName, convos]) => {
+      groupedSearchConversations.forEach(([groupName, convos]) => {
         items.push({ type: 'date', groupName });
         convos.forEach((convo) => items.push({ type: 'convo', convo }));
       });
 
-      if (isFetchingNextConversationPage) {
+      if (isFetchingNextSearchConversationPage) {
         items.push({ type: 'loading', key: 'loading-more-search-conversations' });
       }
 
-      return items;
+      return { flattenedItems: items, sectionEndIndexes: endIndexes };
     }
 
     sections.forEach((section) => {
-      const isExpanded = expandedSectionId === section.id;
+      const isExpanded = expandedSectionIds.has(section.id);
       items.push({ type: 'section', section, isExpanded });
 
       if (!isExpanded) {
+        endIndexes[section.id] = items.length - 1;
         return;
       }
 
-      if (isConversationsLoading) {
-        items.push({ type: 'loading', key: `loading-${section.id}` });
+      const sectionState = sectionConversationsById[section.id];
+
+      if (!sectionState || sectionState.isLoading) {
+        items.push({ type: 'loading', sectionId: section.id, key: `loading-${section.id}` });
+        endIndexes[section.id] = items.length - 1;
         return;
       }
 
-      if (conversations.length === 0) {
+      if (sectionState.conversations.length === 0) {
         items.push({
           type: 'empty',
+          sectionId: section.id,
           title:
             section.id === UNASSIGNED_SECTION_ID
               ? localize('com_ui_no_unassigned_chats')
               : localize('com_ui_no_project_chats'),
         });
+        endIndexes[section.id] = items.length - 1;
         return;
       }
 
-      groupedConversations.forEach(([groupName, convos]) => {
-        items.push({ type: 'date', groupName });
-        convos.forEach((convo) => items.push({ type: 'convo', convo }));
+      sectionState.groupedConversations.forEach(([groupName, convos]) => {
+        items.push({ type: 'date', sectionId: section.id, groupName });
+        convos.forEach((convo) => items.push({ type: 'convo', sectionId: section.id, convo }));
       });
 
-      if (isFetchingNextConversationPage) {
-        items.push({ type: 'loading', key: `loading-more-${section.id}` });
+      if (sectionState.isFetchingNextPage && sectionState.hasNextPage) {
+        items.push({
+          type: 'loading',
+          sectionId: section.id,
+          key: `loading-more-${section.id}`,
+        });
       }
+
+      endIndexes[section.id] = items.length - 1;
     });
 
     if (isProjectsLoading || isFetchingNextProjectPage) {
       items.push({ type: 'loading', key: 'loading-projects' });
     }
 
-    return items;
+    return { flattenedItems: items, sectionEndIndexes: endIndexes };
   }, [
     sections,
     isChatsExpanded,
     isSearching,
-    expandedSectionId,
-    isConversationsLoading,
-    conversations.length,
-    groupedConversations,
-    isFetchingNextConversationPage,
+    expandedSectionIds,
+    isSearchConversationsLoading,
+    searchConversations.length,
+    groupedSearchConversations,
+    isFetchingNextSearchConversationPage,
     isProjectsLoading,
     isFetchingNextProjectPage,
     localize,
     shouldShowFavorites,
+    sectionConversationsById,
   ]);
 
   const flattenedItemsRef = useRef(flattenedItems);
@@ -354,18 +502,18 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
             return 'project-chats-header';
           }
           if (item.type === 'date') {
-            return `project-date-${isSearching ? 'search' : expandedSectionId}-${item.groupName}`;
+            return `project-date-${item.sectionId ?? 'search'}-${item.groupName}`;
           }
           if (item.type === 'convo') {
-            return `project-convo-${item.convo.conversationId}`;
+            return `project-convo-${item.sectionId ?? 'search'}-${item.convo.conversationId}`;
           }
           if (item.type === 'empty') {
-            return `project-empty-${isSearching ? 'search' : expandedSectionId}`;
+            return `project-empty-${item.sectionId ?? 'search'}`;
           }
           return item.key;
         },
       }),
-    [expandedSectionId, isSearching, rowHeight],
+    [rowHeight],
   );
 
   useEffect(() => {
@@ -379,7 +527,7 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
   }, [
     cache,
     chatSortBy,
-    expandedSectionId,
+    expandedSectionIdsKey,
     isChatsExpanded,
     mode,
     search.query,
@@ -395,7 +543,15 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
   }, [containerRef]);
 
   const toggleSection = useCallback((sectionId: string) => {
-    setExpandedSectionId((current) => (current === sectionId ? null : sectionId));
+    setExpandedSectionIds((current) => {
+      const next = new Set(current);
+      if (next.has(sectionId)) {
+        next.delete(sectionId);
+      } else {
+        next.add(sectionId);
+      }
+      return next;
+    });
   }, []);
 
   const projectHasNextPage = useMemo(() => {
@@ -408,40 +564,89 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
   }, [projectsData?.pages]);
 
   const conversationHasNextPage = useMemo(() => {
-    const pages = conversationsData?.pages;
+    const pages = searchConversationsData?.pages;
     if (!pages?.length) {
       return false;
     }
     const lastPage: ConversationListResponse = pages[pages.length - 1];
     return lastPage.nextCursor !== null;
-  }, [conversationsData?.pages]);
+  }, [searchConversationsData?.pages]);
 
-  const loadMoreRows = useCallback(() => {
-    if (!isChatsExpanded) {
-      return;
-    }
-    if (
-      (isSearching || expandedSectionId) &&
-      conversationHasNextPage &&
-      !isFetchingNextConversationPage
-    ) {
-      fetchNextConversationPage();
-      return;
-    }
-    if (projectHasNextPage && !isFetchingNextProjectPage) {
-      fetchNextProjectPage();
-    }
-  }, [
-    expandedSectionId,
-    isSearching,
-    conversationHasNextPage,
-    isFetchingNextConversationPage,
-    fetchNextConversationPage,
-    projectHasNextPage,
-    isFetchingNextProjectPage,
-    fetchNextProjectPage,
-    isChatsExpanded,
-  ]);
+  const fetchNextSectionPage = useCallback(
+    (sectionId: string) => {
+      const sectionState = sectionConversationsById[sectionId];
+      if (!sectionState?.hasNextPage || sectionState.isFetchingNextPage) {
+        return false;
+      }
+
+      const nextCursor = sectionState.nextCursor;
+      if (!nextCursor) {
+        return false;
+      }
+
+      setSectionCursors((current) => {
+        const cursors = current[sectionId] ?? [undefined];
+        if (cursors.includes(nextCursor)) {
+          return current;
+        }
+        return {
+          ...current,
+          [sectionId]: [...cursors, nextCursor],
+        };
+      });
+      return true;
+    },
+    [sectionConversationsById],
+  );
+
+  const loadMoreRows = useCallback(
+    (stopIndex: number) => {
+      if (!isChatsExpanded) {
+        return;
+      }
+      if (isSearching && conversationHasNextPage && !isFetchingNextSearchConversationPage) {
+        fetchNextSearchConversationPage();
+        return;
+      }
+
+      if (!isSearching) {
+        const sectionToLoad = Object.entries(sectionEndIndexes).find(([sectionId, endIndex]) => {
+          const sectionState = sectionConversationsById[sectionId];
+          return (
+            stopIndex >= endIndex - 8 &&
+            Boolean(sectionState?.hasNextPage) &&
+            !sectionState?.isFetchingNextPage
+          );
+        });
+
+        if (sectionToLoad && fetchNextSectionPage(sectionToLoad[0])) {
+          return;
+        }
+      }
+
+      if (
+        stopIndex >= flattenedItems.length - 8 &&
+        projectHasNextPage &&
+        !isFetchingNextProjectPage
+      ) {
+        fetchNextProjectPage();
+      }
+    },
+    [
+      isSearching,
+      conversationHasNextPage,
+      isFetchingNextSearchConversationPage,
+      fetchNextSearchConversationPage,
+      sectionEndIndexes,
+      sectionConversationsById,
+      fetchNextSectionPage,
+      flattenedItems.length,
+      projectHasNextPage,
+      isFetchingNextProjectPage,
+      fetchNextProjectPage,
+      isChatsExpanded,
+    ],
+  );
 
   const throttledLoadMore = useMemo(() => throttle(loadMoreRows, 300), [loadMoreRows]);
 
@@ -545,11 +750,9 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
       if (!isChatsExpanded) {
         return;
       }
-      if (stopIndex >= flattenedItems.length - 8) {
-        throttledLoadMore();
-      }
+      throttledLoadMore(stopIndex);
     },
-    [flattenedItems.length, isChatsExpanded, throttledLoadMore],
+    [isChatsExpanded, throttledLoadMore],
   );
 
   return (

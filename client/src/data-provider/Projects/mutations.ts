@@ -54,6 +54,7 @@ export const useDeleteProjectMutation = (): UseMutationResult<
       queryClient.removeQueries([QueryKeys.project, projectId]);
       queryClient.invalidateQueries([QueryKeys.projects]);
       queryClient.invalidateQueries([QueryKeys.allConversations]);
+      queryClient.invalidateQueries([QueryKeys.projectConversations]);
     },
   });
 };
@@ -96,6 +97,7 @@ export const useAssignConversationToProjectMutation = (): UseMutationResult<
         });
         queryClient.invalidateQueries([QueryKeys.projects]);
         queryClient.invalidateQueries([QueryKeys.allConversations]);
+        queryClient.invalidateQueries([QueryKeys.projectConversations]);
       },
     },
   );

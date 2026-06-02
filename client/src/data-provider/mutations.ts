@@ -35,6 +35,7 @@ export const useUpdateConversationMutation = (
         const targetId = payload.conversationId || id;
         queryClient.setQueryData([QueryKeys.conversation, targetId], updatedConvo);
         updateConvoInAllQueries(queryClient, targetId, () => updatedConvo);
+        queryClient.invalidateQueries([QueryKeys.projectConversations]);
       },
     },
   );
@@ -140,6 +141,7 @@ export const useArchiveConvoMutation = (
           queryKey: archivedConvoQueryKey,
           refetchPage: (_, index) => index === 0,
         });
+        queryClient.invalidateQueries([QueryKeys.projectConversations]);
         queryClient.invalidateQueries([QueryKeys.projects]);
       },
       ..._options,
@@ -544,6 +546,7 @@ export const useDeleteConversationMutation = (
           queryKey: [QueryKeys.archivedConversations],
           refetchPage: (_, index) => index === 0,
         });
+        queryClient.invalidateQueries([QueryKeys.projectConversations]);
         queryClient.invalidateQueries([QueryKeys.projects]);
         if (deletedProjectId) {
           queryClient.invalidateQueries([QueryKeys.project, deletedProjectId]);
@@ -579,6 +582,7 @@ export const useDuplicateConversationMutation = (
         queryKey: [QueryKeys.allConversations],
         refetchPage: (_, index) => index === 0,
       });
+      queryClient.invalidateQueries([QueryKeys.projectConversations]);
       queryClient.invalidateQueries([QueryKeys.projects]);
       if (duplicatedConversation.chatProjectId) {
         queryClient.invalidateQueries([QueryKeys.project, duplicatedConversation.chatProjectId]);
@@ -626,6 +630,7 @@ export const useForkConvoMutation = (
         queryKey: [QueryKeys.allConversations],
         refetchPage: (_, index) => index === 0,
       });
+      queryClient.invalidateQueries([QueryKeys.projectConversations]);
       queryClient.invalidateQueries([QueryKeys.projects]);
       if (forkedConversation.chatProjectId) {
         queryClient.invalidateQueries([QueryKeys.project, forkedConversation.chatProjectId]);
