@@ -4,6 +4,7 @@ import { SystemRoles, Permissions, roleDefaults, PermissionTypes } from 'librech
 import type { IRole, IUser, RolePermissions } from '..';
 import { createRoleMethods } from './role';
 import { createModels } from '../models';
+import { _resetStrictCache } from '../models/plugins/tenantIsolation';
 import { tenantStorage } from '~/config/tenantContext';
 
 jest.mock('~/config/winston', () => ({
@@ -139,6 +140,21 @@ describe('findRolesByNames', () => {
 
     expect(baseMatches).toEqual([expect.objectContaining({ name: 'SCOPED-ROLE' })]);
     expect(baseMatches).toHaveLength(1);
+  });
+
+  it('matches base roles without a tenant context even under strict isolation', async () => {
+    await Role.create({ name: 'STRICT-BASE-ROLE', permissions: {} });
+    process.env.TENANT_ISOLATION_STRICT = 'true';
+    _resetStrictCache();
+
+    try {
+      await expect(findRolesByNames(['STRICT-BASE-ROLE'], 'name')).resolves.toEqual([
+        expect.objectContaining({ name: 'STRICT-BASE-ROLE' }),
+      ]);
+    } finally {
+      delete process.env.TENANT_ISOLATION_STRICT;
+      _resetStrictCache();
+    }
   });
 });
 

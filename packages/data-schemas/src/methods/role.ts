@@ -7,7 +7,7 @@ import {
 } from 'librechat-data-provider';
 import type { Model } from 'mongoose';
 import type { IRole, IUser } from '~/types';
-import { scopedCacheKey, getTenantId, SYSTEM_TENANT_ID } from '~/config/tenantContext';
+import { scopedCacheKey, getTenantId, runAsSystem, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { escapeRegExp } from '~/utils/string';
 import logger from '~/config/winston';
 
@@ -130,8 +130,9 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
    *
    * When a non-system tenant context is active, the tenant-isolation plugin scopes the
    * query to that tenant. When no tenant context is active (base/global users), the lookup
-   * is constrained to base roles (`tenantId` unset) so a base user cannot match — and be
-   * assigned — a role that only exists within some tenant.
+   * runs under an explicit system context — so strict-mode isolation does not reject the
+   * context-less query — while an explicit base-role filter (`tenantId` unset) ensures a
+   * base user cannot match, and be assigned, a role that only exists within some tenant.
    */
   async function findRolesByNames(
     roleNames: string[],
@@ -146,21 +147,28 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
       }
 
       const Role = mongoose.models.Role;
-      const filter: Record<string, unknown> = {
+      const nameFilter = {
         $or: uniqueRoleNames.map((roleName) => ({
           name: new RegExp(`^${escapeRegExp(roleName)}$`, 'i'),
         })),
       };
+
+      const runQuery = (filter: Record<string, unknown>) => {
+        let query = Role.find(filter);
+        if (fieldsToSelect) {
+          query = query.select(fieldsToSelect);
+        }
+        return query.lean<IRole[]>().exec();
+      };
+
       const tenantId = getTenantId();
-      if (!tenantId || tenantId === SYSTEM_TENANT_ID) {
-        filter.tenantId = { $in: [null, undefined] };
-      }
-      let query = Role.find(filter);
-      if (fieldsToSelect) {
-        query = query.select(fieldsToSelect);
+      if (tenantId && tenantId !== SYSTEM_TENANT_ID) {
+        return await runQuery(nameFilter);
       }
 
-      return await query.lean<IRole[]>().exec();
+      return await runAsSystem(() =>
+        runQuery({ ...nameFilter, tenantId: { $in: [null, undefined] } }),
+      );
     } catch (error) {
       throw new Error(`Failed to retrieve roles: ${(error as Error).message}`);
     }
