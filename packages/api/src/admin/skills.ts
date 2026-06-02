@@ -19,6 +19,8 @@ type AdminSkillsRequest = Request & {
     _id?: Types.ObjectId;
     id?: string;
   };
+  skillSyncAllowServerCredentials?: boolean;
+  skillSyncCanReadCredentials?: boolean;
 };
 
 export type AdminSkillSyncDeps = {
@@ -52,14 +54,15 @@ function serializeCredential(
 
 function serializeSourceStatus(
   status: ISkillSyncStatus & { credentialPresent?: boolean },
+  { includeCredentialMetadata = true }: { includeCredentialMetadata?: boolean } = {},
 ): TGitHubSkillSyncSourceStatus {
   return {
     provider: status.provider,
     sourceId: status.sourceId,
     tenantId: status.tenantId,
     status: status.status,
-    credentialKey: status.credentialKey,
-    credentialPresent: status.credentialPresent ?? false,
+    credentialKey: includeCredentialMetadata ? status.credentialKey : undefined,
+    credentialPresent: includeCredentialMetadata ? (status.credentialPresent ?? false) : false,
     owner: status.owner,
     repo: status.repo,
     ref: status.ref,
@@ -96,25 +99,31 @@ export function createAdminSkillsSyncHandlers(deps: AdminSkillSyncDeps) {
     return runner;
   }
 
-  async function getSyncStatus(req: Request, res: Response) {
+  async function getSyncStatus(req: AdminSkillsRequest, res: Response) {
+    const includeCredentialMetadata = req.skillSyncCanReadCredentials !== false;
     const status = await getRunner(req).getStatus();
     const response: TGitHubSkillSyncStatusResponse = {
       enabled: status.enabled,
       intervalMinutes: status.intervalMinutes,
       runOnStartup: status.runOnStartup,
-      sources: status.sources.map(serializeSourceStatus),
-      credentials: status.credentials.map(serializeCredential),
+      sources: status.sources.map((source) =>
+        serializeSourceStatus(source, { includeCredentialMetadata }),
+      ),
+      credentials: includeCredentialMetadata ? status.credentials.map(serializeCredential) : [],
       fineGrainedTokenRecommendation: status.fineGrainedTokenRecommendation,
     };
     return res.status(200).json(response);
   }
 
-  async function runSync(req: Request, res: Response) {
+  async function runSync(req: AdminSkillsRequest, res: Response) {
+    const includeCredentialMetadata = req.skillSyncAllowServerCredentials === true;
     const result = await getRunner(req).runOnce();
     const response: TGitHubSkillSyncManualRunResponse = {
       status: result.status,
       message: result.message,
-      sources: result.sources.map(serializeSourceStatus),
+      sources: result.sources.map((source) =>
+        serializeSourceStatus(source, { includeCredentialMetadata }),
+      ),
     };
     return res.status(result.status === 'skipped' ? 202 : 200).json(response);
   }

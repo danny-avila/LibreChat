@@ -208,6 +208,7 @@ export type GitHubSkillSyncDeps = {
   }) => Promise<unknown>;
   fetchFn?: FetchFn;
   lockOwner?: string;
+  allowServerCredentials?: boolean;
 };
 
 export type GitHubSkillSyncRunResult = {
@@ -1178,6 +1179,9 @@ async function resolveGitHubToken(
   deps: GitHubSkillSyncDeps,
   source: SkillSyncGitHubSourceConfig,
 ): Promise<string | null> {
+  if (deps.allowServerCredentials === false) {
+    return null;
+  }
   const tokenEnvVar = getTokenEnvVarName(source.token);
   if (tokenEnvVar) {
     return process.env[tokenEnvVar]?.trim() || null;
@@ -1188,7 +1192,13 @@ async function resolveGitHubToken(
   return deps.getCredentialToken(PROVIDER, source.credentialKey);
 }
 
-function getMissingCredentialMessage(source: SkillSyncGitHubSourceConfig): string {
+function getMissingCredentialMessage(
+  source: SkillSyncGitHubSourceConfig,
+  allowServerCredentials: boolean,
+): string {
+  if (!allowServerCredentials) {
+    return 'Server GitHub credentials are not available for this skill sync config';
+  }
   const tokenEnvVar = getTokenEnvVarName(source.token);
   if (tokenEnvVar) {
     return `Missing GitHub token environment variable "${tokenEnvVar}"`;
@@ -1207,10 +1217,14 @@ async function syncSource(params: {
   await deps.upsertStatus(makeStatusInput({ source, status: 'running', startedAt }));
   try {
     assertNotCancelled();
+    const allowServerCredentials = deps.allowServerCredentials !== false;
     const token = await resolveGitHubToken(deps, source);
     assertNotCancelled();
     if (!token) {
-      throw new SkillSyncError('MISSING_CREDENTIAL', getMissingCredentialMessage(source));
+      throw new SkillSyncError(
+        'MISSING_CREDENTIAL',
+        getMissingCredentialMessage(source, allowServerCredentials),
+      );
     }
     const commit = await fetchCommit({ fetchFn, token, source });
     assertNotCancelled();
@@ -1466,9 +1480,10 @@ export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps) {
 
   async function getStatus() {
     const github = getGithubConfig(await deps.getConfig());
+    const allowServerCredentials = deps.allowServerCredentials !== false;
     const [storedStatuses, credentials] = await Promise.all([
       deps.listStatuses(PROVIDER),
-      deps.listCredentials(PROVIDER),
+      allowServerCredentials ? deps.listCredentials(PROVIDER) : Promise.resolve([]),
     ]);
     const statusBySourceId = new Map(
       storedStatuses.map((status) => [makeStatusKey(status.sourceId, status.tenantId), status]),
@@ -1478,9 +1493,13 @@ export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps) {
     );
     const sources = github.sources.map((source) => {
       const stored = statusBySourceId.get(makeStatusKey(source.id, source.tenantId));
-      const credential = source.credentialKey ? credentialByKey.get(source.credentialKey) : null;
+      const credential =
+        allowServerCredentials && source.credentialKey
+          ? credentialByKey.get(source.credentialKey)
+          : null;
       const tokenEnvVar = getTokenEnvVarName(source.token);
-      const envTokenPresent = tokenEnvVar ? Boolean(process.env[tokenEnvVar]?.trim()) : false;
+      const envTokenPresent =
+        allowServerCredentials && tokenEnvVar ? Boolean(process.env[tokenEnvVar]?.trim()) : false;
       return {
         provider: PROVIDER,
         sourceId: source.id,
