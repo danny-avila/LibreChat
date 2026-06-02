@@ -17,6 +17,7 @@ const mockLlmBaseURL = `http://127.0.0.1:${mockLlmPort}/v1`;
 
 const vanillaOverrides = {
   TENANT_ISOLATION_STRICT: 'false',
+  OPENAI_API_KEY: 'user_provided',
   OPENID_CLIENT_ID: '',
   OPENID_ISSUER: '',
   OPENID_AUTO_REDIRECT: 'false',
@@ -31,9 +32,13 @@ const baseEnv = {
   MOCK_LLM_PORT: mockLlmPort,
   ...vanillaOverrides,
 };
-Object.assign(process.env, baseEnv);
 
 const SECRET_KEY_PATTERN = /(API_KEY|SECRET|TOKEN|PASSWORD|CREDENTIALS|CLIENT_ID|_KEY)$/i;
+const preservedCredentialEnvKeys = new Set([
+  ...Object.keys(baseEnv),
+  'E2E_USER_PASSWORD',
+  'E2E_USER_B_PASSWORD',
+]);
 
 function getMockLlmPort() {
   const port = process.env.MOCK_LLM_PORT ?? '8889';
@@ -54,8 +59,16 @@ function writeRuntimeMockConfig() {
   fs.writeFileSync(configPath, template.replaceAll(defaultMockLlmBaseURL, mockLlmBaseURL));
 }
 
+function neutralizeCredentialEnv(env: NodeJS.ProcessEnv, keep: Set<string>) {
+  for (const key of Object.keys(env)) {
+    if (!keep.has(key) && SECRET_KEY_PATTERN.test(key)) {
+      env[key] = '';
+    }
+  }
+}
+
 /** Blank any credential-like vars from a local `.env` so they never reach the test server. */
-function neutralizeDotenvSecrets(envFile: string, keep: Record<string, string>) {
+function neutralizeDotenvSecrets(envFile: string, keep: Set<string>) {
   if (!fs.existsSync(envFile)) {
     return;
   }
@@ -76,7 +89,9 @@ function neutralizeDotenvSecrets(envFile: string, keep: Record<string, string>) 
 }
 
 writeRuntimeMockConfig();
-neutralizeDotenvSecrets(path.resolve(rootPath, '.env'), baseEnv);
+neutralizeCredentialEnv(process.env, preservedCredentialEnvKeys);
+Object.assign(process.env, baseEnv);
+neutralizeDotenvSecrets(path.resolve(rootPath, '.env'), preservedCredentialEnvKeys);
 
 export default defineConfig({
   globalSetup: require.resolve('./setup/global-setup'),

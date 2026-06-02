@@ -6,7 +6,11 @@ const { spawn } = require('child_process');
 const rootPath = path.resolve(__dirname, '../..');
 const baseURL = process.env.E2E_BASE_URL || 'http://localhost:3080';
 const storageStatePath = path.resolve(rootPath, 'e2e/storageState.json');
-const mockLlmPort = process.env.MOCK_LLM_PORT || '8889';
+const configTemplatePath = path.resolve(rootPath, 'e2e/config/librechat.e2e.yaml');
+const configPath = path.resolve(rootPath, 'e2e/.generated/librechat.e2e.yaml');
+const defaultMockLlmBaseURL = 'http://127.0.0.1:8889/v1';
+const mockLlmPort = getMockLlmPort();
+const mockLlmBaseURL = `http://127.0.0.1:${mockLlmPort}/v1`;
 const defaultUser = {
   email: 'testuser@example.com',
   name: 'Test User',
@@ -44,7 +48,7 @@ const rateLimitOverrides = {
 };
 
 const mockOverrides = {
-  CONFIG_PATH: path.resolve(rootPath, 'e2e/config/librechat.e2e.yaml'),
+  CONFIG_PATH: configPath,
   MOCK_LLM_PORT: mockLlmPort,
   OPENAI_API_KEY: 'user_provided',
   TENANT_ISOLATION_STRICT: 'false',
@@ -57,7 +61,27 @@ const mockOverrides = {
 };
 
 const secretKeyPattern = /(API_KEY|SECRET|TOKEN|PASSWORD|CREDENTIALS|CLIENT_ID|_KEY)$/i;
+const preservedCredentialEnvKeys = new Set([
+  ...Object.keys(rateLimitOverrides),
+  ...Object.keys(mockOverrides).filter((key) => key !== 'OPENAI_API_KEY'),
+  'CREDS_KEY',
+  'CREDS_IV',
+  'E2E_USER_PASSWORD',
+  'E2E_USER_B_PASSWORD',
+  'JWT_SECRET',
+  'JWT_REFRESH_SECRET',
+  'REFRESH_TOKEN_EXPIRY',
+  'SESSION_EXPIRY',
+]);
 const npxBin = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+
+function getMockLlmPort() {
+  const port = process.env.MOCK_LLM_PORT || '8889';
+  if (!/^\d+$/.test(port)) {
+    throw new Error('MOCK_LLM_PORT must be a numeric port');
+  }
+  return port;
+}
 
 function appURL(pathname = '') {
   const normalizedBaseURL = baseURL.endsWith('/') ? baseURL : `${baseURL}/`;
@@ -114,22 +138,25 @@ function getBaseEnv() {
 }
 
 function neutralizeCredentialEnv(env) {
-  const keep = new Set([
-    'PATH',
-    'HOME',
-    'USER',
-    'USERNAME',
-    'E2E_USER_PASSWORD',
-    'CREDS_KEY',
-    'CREDS_IV',
-    'JWT_SECRET',
-    'JWT_REFRESH_SECRET',
-    'CONFIG_PATH',
-    'MOCK_LLM_PORT',
-  ]);
-
   for (const key of Object.keys(env)) {
-    if (!keep.has(key) && secretKeyPattern.test(key)) {
+    if (!preservedCredentialEnvKeys.has(key) && secretKeyPattern.test(key)) {
+      env[key] = '';
+    }
+  }
+}
+
+function neutralizeDotenvSecrets(envFile, env) {
+  if (!fs.existsSync(envFile)) {
+    return;
+  }
+  const lines = fs.readFileSync(envFile, 'utf8').split('\n');
+  for (const line of lines) {
+    const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=/);
+    if (!match) {
+      continue;
+    }
+    const key = match[1];
+    if (!preservedCredentialEnvKeys.has(key) && secretKeyPattern.test(key)) {
       env[key] = '';
     }
   }
@@ -139,6 +166,7 @@ function getEnv(profile) {
   const env = getBaseEnv();
   if (profile === 'mock') {
     neutralizeCredentialEnv(env);
+    neutralizeDotenvSecrets(path.resolve(rootPath, '.env'), env);
     Object.assign(env, mockOverrides);
   }
   return env;
@@ -149,6 +177,17 @@ function formatDate(date) {
     .toISOString()
     .replace(/\.\d{3}Z$/, '')
     .replace(/[:T]/g, '-');
+}
+
+function writeRuntimeMockConfig() {
+  const template = fs.readFileSync(configTemplatePath, 'utf8');
+
+  if (!template.includes(defaultMockLlmBaseURL)) {
+    throw new Error(`Expected mock config template to include ${defaultMockLlmBaseURL}`);
+  }
+
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, template.replaceAll(defaultMockLlmBaseURL, mockLlmBaseURL));
 }
 
 function parseArgs(argv) {
@@ -366,6 +405,8 @@ async function main() {
 
   try {
     if (options.profile === 'mock') {
+      writeRuntimeMockConfig();
+
       const mockURL = `http://127.0.0.1:${mockLlmPort}/health`;
       if (!(await waitForURL(mockURL, 1000))) {
         children.push(
