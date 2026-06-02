@@ -327,6 +327,7 @@ const Conversations: FC<ConversationsProps> = ({
       isSmallScreen,
       isChatsExpanded,
       setIsChatsExpanded,
+      chatsHeaderControls,
       shouldShowFavorites,
       activeJobIds,
     ],

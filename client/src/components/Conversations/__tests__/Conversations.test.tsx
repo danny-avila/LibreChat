@@ -95,9 +95,12 @@ jest.mock('~/components/Nav/Favorites/FavoritesList', () => ({
 jest.mock('../Header', () => ({
   __esModule: true,
   default: ({ isExpanded, onToggle }: { isExpanded: boolean; onToggle: () => void }) => (
-    <button type="button" aria-expanded={isExpanded} onClick={onToggle}>
-      chats
-    </button>
+    <button
+      type="button"
+      aria-expanded={isExpanded}
+      onClick={onToggle}
+      data-testid="chats-header"
+    />
   ),
 }));
 

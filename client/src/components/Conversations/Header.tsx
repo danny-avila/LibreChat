@@ -1,13 +1,5 @@
 import { memo, type FC, type ReactNode } from 'react';
-import {
-  Check,
-  Clock3,
-  Ellipsis,
-  Folder,
-  FolderPlus,
-  SquarePen,
-  ChevronDown,
-} from 'lucide-react';
+import { Check, Clock3, Ellipsis, Folder, FolderPlus, SquarePen, ChevronDown } from 'lucide-react';
 import {
   TooltipAnchor,
   DropdownMenu,
