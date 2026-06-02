@@ -11,44 +11,48 @@ jest.mock('~/server/services/Config', () => ({
   getAppConfig: mockGetAppConfig,
 }));
 
-jest.mock('@librechat/api', () => ({
-  createGitHubSkillSyncRunner: jest.fn((deps) => {
-    mockRunnerDeps = deps;
-    const runner = {
-      getStatus: jest.fn(async () => {
-        if (mockRunnerStatus) {
-          return mockRunnerStatus;
-        }
-        const config = await deps.getConfig();
-        const github = config?.github ?? {};
-        return {
-          enabled: github.enabled ?? false,
-          intervalMinutes: github.intervalMinutes ?? 60,
-          runOnStartup: github.runOnStartup ?? false,
-          sources: (github.sources ?? []).map((source) => ({
-            provider: 'github',
-            sourceId: source.id,
-            status: 'idle',
-            owner: source.owner,
-            repo: source.repo,
-            ref: source.ref,
-            paths: source.paths,
-            syncedSkillCount: 0,
-            syncedFileCount: 0,
-            deletedSkillCount: 0,
-            deletedFileCount: 0,
-          })),
-          credentials: [],
-        };
-      }),
-      runOnce: jest.fn(async () => deps.getConfig()),
-    };
-    mockCreatedRunners.push({ deps, runner });
-    return runner;
-  }),
-  getStorageMetadata: jest.fn(() => ({})),
-  startGitHubSkillSyncScheduler: jest.fn(() => ({ stop: jest.fn() })),
-}));
+jest.mock('@librechat/api', () => {
+  const actualApi = jest.requireActual('@librechat/api');
+  return {
+    createSkillSyncTriggerOrchestrator: actualApi.createSkillSyncTriggerOrchestrator,
+    createGitHubSkillSyncRunner: jest.fn((deps) => {
+      mockRunnerDeps = deps;
+      const runner = {
+        getStatus: jest.fn(async () => {
+          if (mockRunnerStatus) {
+            return mockRunnerStatus;
+          }
+          const config = await deps.getConfig();
+          const github = config?.github ?? {};
+          return {
+            enabled: github.enabled ?? false,
+            intervalMinutes: github.intervalMinutes ?? 60,
+            runOnStartup: github.runOnStartup ?? false,
+            sources: (github.sources ?? []).map((source) => ({
+              provider: 'github',
+              sourceId: source.id,
+              status: 'idle',
+              owner: source.owner,
+              repo: source.repo,
+              ref: source.ref,
+              paths: source.paths,
+              syncedSkillCount: 0,
+              syncedFileCount: 0,
+              deletedSkillCount: 0,
+              deletedFileCount: 0,
+            })),
+            credentials: [],
+          };
+        }),
+        runOnce: jest.fn(async () => deps.getConfig()),
+      };
+      mockCreatedRunners.push({ deps, runner });
+      return runner;
+    }),
+    getStorageMetadata: jest.fn(() => ({})),
+    startGitHubSkillSyncScheduler: jest.fn(() => ({ stop: jest.fn() })),
+  };
+});
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
