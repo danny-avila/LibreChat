@@ -1,6 +1,7 @@
 import { buildOAuthFailureLog, getOAuthFailureMessage, isOAuthProtocolFailure } from './failure';
+import type { OAuthFailureRequest } from './failure';
 
-function createRequest(overrides = {}) {
+function createRequest(overrides: Partial<OAuthFailureRequest> = {}): OAuthFailureRequest {
   return {
     headers: {},
     method: 'GET',
@@ -20,7 +21,7 @@ describe('OAuth failure logging helpers', () => {
     });
 
     expect(getOAuthFailureMessage(req)).toBe('latest');
-    expect(req.session.messages).toEqual(['first']);
+    expect(req.session?.messages).toEqual(['first']);
   });
 
   it('falls back to provider query error details without returning Unknown OAuth error', () => {
