@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom';
 import { Constants } from 'librechat-data-provider';
 import { useToastContext, useMediaQuery } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
+import { Pin } from 'lucide-react';
 import { useNavigateToConvo, useLocalize, useShiftKey } from '~/hooks';
 import ConversationEndpointIcon from './ConversationEndpointIcon';
 import { useUpdateConversationMutation } from '~/data-provider';
@@ -272,6 +273,9 @@ function Conversation({
         >
           <ConversationEndpointIcon conversation={conversation} size={20} context="menu-item" />
         </ConvoLink>
+      )}
+      {conversation.pinned === true && (
+        <Pin className="icon-sm mr-1 shrink-0 text-text-primary" aria-hidden="true" />
       )}
       <div
         className={cn(
