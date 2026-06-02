@@ -1079,7 +1079,7 @@ export type TRumConfig = {
   enabled: boolean;
   url: string;
   serviceName: string;
-  authMode: 'publicToken';
+  authMode: 'publicToken' | 'proxy';
   publicToken?: string;
   tracePropagationTargets?: string[];
   consoleCapture?: boolean;
