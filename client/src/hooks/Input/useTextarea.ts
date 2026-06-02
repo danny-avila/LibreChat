@@ -28,11 +28,13 @@ export default function useTextarea({
   submitButtonRef,
   setIsScrollable,
   disabled = false,
+  placeholder,
 }: {
   textAreaRef: React.RefObject<HTMLTextAreaElement>;
   submitButtonRef: React.RefObject<HTMLButtonElement>;
   setIsScrollable: React.Dispatch<React.SetStateAction<boolean>>;
   disabled?: boolean;
+  placeholder?: string;
 }) {
   const localize = useLocalize();
   const getSender = useGetSender();
@@ -95,6 +97,10 @@ export default function useTextarea({
         return localize('com_endpoint_message_not_appendable');
       }
 
+      if (placeholder) {
+        return placeholder;
+      }
+
       const sender =
         isAssistant || isAgent
           ? getEntityName({ name: entityName, isAgent, localize })
@@ -137,6 +143,7 @@ export default function useTextarea({
     conversation,
     latestMessage,
     isNotAppendable,
+    placeholder,
   ]);
 
   const handleKeyDown = useCallback(

@@ -98,15 +98,24 @@ export default function ChatRoute() {
   useEffect(() => {
     // Wait for roles to load so hasAgentAccess has a definitive value in useNewConvo
     const rolesLoaded = roles?.USER != null;
+    const isNewConvo = conversationId === Constants.NEW_CONVO;
+    const newConvoNeedsInit =
+      isNewConvo &&
+      (conversation?.conversationId !== Constants.NEW_CONVO ||
+        (verifiedChatProjectId
+          ? conversation?.chatProjectId !== verifiedChatProjectId
+          : conversation?.chatProjectId != null));
     const shouldSetConvo =
-      (startupConfig && rolesLoaded && !hasSetConversation.current && !modelsQuery.data?.initial) ??
+      (startupConfig &&
+        rolesLoaded &&
+        (!hasSetConversation.current || newConvoNeedsInit) &&
+        !modelsQuery.data?.initial) ??
       false;
     /* Early exit if startupConfig is not loaded and conversation is already set and only initial models have loaded */
     if (!shouldSetConvo) {
       return;
     }
 
-    const isNewConvo = conversationId === Constants.NEW_CONVO;
     if (isNewConvo && chatProjectId && projectQuery.isLoading) {
       return;
     }
@@ -218,6 +227,8 @@ export default function ChatRoute() {
     chatProjectId,
     projectQuery.data?._id,
     projectQuery.isLoading,
+    conversation?.chatProjectId,
+    conversation?.conversationId,
   ]);
 
   if (endpointsQuery.isLoading || modelsQuery.isLoading) {
@@ -247,7 +258,7 @@ export default function ChatRoute() {
 
   return (
     <ToolCallsMapProvider conversationId={conversation.conversationId ?? ''}>
-      <ChatView index={index} />
+      <ChatView index={index} project={verifiedChatProjectId ? projectQuery.data : undefined} />
     </ToolCallsMapProvider>
   );
 }

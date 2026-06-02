@@ -1,23 +1,31 @@
-import { useDeferredValue, useMemo, useState, type FormEvent } from 'react';
+import { useDeferredValue, useId, useMemo, useState, type FormEvent } from 'react';
+import * as Ariakit from '@ariakit/react';
 import { ArrowUpDown, Check, Folder, Plus, Search } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import {
-  Input,
-  Button,
-  Spinner,
-  DropdownMenu,
-  DropdownMenuItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-  useToastContext,
-} from '@librechat/client';
 import type { TChatProject } from 'librechat-data-provider';
+import { Input, Button, Spinner, DropdownPopup, useToastContext } from '@librechat/client';
+import type { MenuItemProps, RenderProp } from '~/common';
 import { useCreateProjectMutation, useProjectsInfiniteQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import { NotificationSeverity } from '~/common';
 import { cn } from '~/utils';
 
 type ProjectSort = 'name' | 'createdAt' | 'lastConversationAt';
+
+function renderSortMenuItem(label: string, isSelected: boolean): RenderProp {
+  return function SortMenuItem({ className, ...props }) {
+    return (
+      <div {...props} className={cn(className, 'justify-between gap-5')}>
+        <span className="truncate">{label}</span>
+        {isSelected ? (
+          <Check className="h-4 w-4 shrink-0 text-text-primary" aria-hidden="true" />
+        ) : (
+          <span className="h-4 w-4 shrink-0" aria-hidden="true" />
+        )}
+      </div>
+    );
+  };
+}
 
 function formatActivity(project: TChatProject, fallback: string) {
   const value = project.lastConversationAt ?? project.updatedAt ?? project.createdAt;
@@ -31,6 +39,8 @@ export default function ProjectsView() {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<ProjectSort>('lastConversationAt');
   const [isCreating, setIsCreating] = useState(searchParams.get('new') === '1');
+  const sortMenuId = useId();
+  const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
   const [name, setName] = useState('');
   const deferredSearch = useDeferredValue(search);
   const createProject = useCreateProjectMutation();
@@ -55,6 +65,20 @@ export default function ProjectsView() {
   const selectedSortLabel =
     sortOptions.find((option) => option.value === sortBy)?.label ??
     localize('com_ui_latest_activity');
+  const sortMenuItems = useMemo<MenuItemProps[]>(
+    () =>
+      sortOptions.map((option) => {
+        const isSelected = sortBy === option.value;
+        return {
+          id: `project-sort-${option.value}`,
+          ariaLabel: option.label,
+          ariaChecked: isSelected,
+          onClick: () => setSortBy(option.value),
+          render: renderSortMenuItem(option.label, isSelected),
+        };
+      }),
+    [sortBy, sortOptions],
+  );
 
   const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -103,13 +127,21 @@ export default function ProjectsView() {
               className="border-border-medium bg-transparent pl-9 text-text-primary placeholder:text-text-secondary focus-visible:ring-2 focus-visible:ring-ring-primary"
             />
           </label>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                className="h-10 justify-between border-border-medium bg-transparent px-3 sm:w-56"
+          <DropdownPopup
+            portal={true}
+            focusLoop={true}
+            unmountOnHide={true}
+            menuId={sortMenuId}
+            isOpen={isSortMenuOpen}
+            setIsOpen={setIsSortMenuOpen}
+            className="z-[125] min-w-56"
+            trigger={
+              <Ariakit.MenuButton
                 aria-label={localize('com_ui_sort_projects_by')}
+                className={cn(
+                  'inline-flex h-10 items-center justify-between gap-2 whitespace-nowrap rounded-lg border border-border-medium bg-transparent px-3 text-sm font-medium text-text-primary ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 sm:w-56',
+                  isSortMenuOpen && 'bg-surface-hover text-text-primary',
+                )}
               >
                 <span className="flex min-w-0 items-center gap-2">
                   <ArrowUpDown
@@ -118,19 +150,10 @@ export default function ProjectsView() {
                   />
                   <span className="truncate">{selectedSortLabel}</span>
                 </span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              {sortOptions.map((option) => (
-                <DropdownMenuItem key={option.value} onSelect={() => setSortBy(option.value)}>
-                  <span>{option.label}</span>
-                  {sortBy === option.value && (
-                    <Check className="ml-auto h-4 w-4 text-text-primary" aria-hidden="true" />
-                  )}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+              </Ariakit.MenuButton>
+            }
+            items={sortMenuItems}
+          />
         </div>
 
         {isCreating && (

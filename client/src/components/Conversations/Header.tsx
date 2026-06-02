@@ -1,15 +1,8 @@
-import { memo, type FC, type ReactNode } from 'react';
+import { memo, useId, useMemo, useState, type FC, type ReactNode } from 'react';
+import * as Ariakit from '@ariakit/react';
 import { Check, Clock3, Ellipsis, Folder, FolderPlus, SquarePen, ChevronDown } from 'lucide-react';
-import {
-  TooltipAnchor,
-  DropdownMenu,
-  DropdownMenuItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-} from '@librechat/client';
+import { DropdownPopup, TooltipAnchor } from '@librechat/client';
+import type { MenuItemProps, RenderProp } from '~/common';
 import type { SidebarChatSort, SidebarOrganizationMode } from './types';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -33,14 +26,50 @@ const headerIconButtonClassName =
 
 const menuIconClassName = 'h-4 w-4 text-text-secondary';
 
-const SelectionMark = memo(({ isSelected }: { isSelected: boolean }) => {
-  if (!isSelected) {
-    return <span className="ml-auto h-4 w-4" aria-hidden="true" />;
-  }
-  return <Check className="ml-auto h-4 w-4 text-text-primary" aria-hidden="true" />;
-});
+function renderSelectedMenuItem(label: string, icon: ReactNode, isSelected: boolean): RenderProp {
+  return function SelectedMenuItem({ className, ...props }) {
+    return (
+      <div {...props} className={cn(className, 'justify-between gap-5')}>
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="mr-0 flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden>
+            {icon}
+          </span>
+          <span className="truncate">{label}</span>
+        </span>
+        {isSelected ? (
+          <Check className="h-4 w-4 shrink-0 text-text-primary" aria-hidden="true" />
+        ) : (
+          <span className="h-4 w-4 shrink-0" aria-hidden="true" />
+        )}
+      </div>
+    );
+  };
+}
 
-SelectionMark.displayName = 'ChatsHeaderSelectionMark';
+function createSelectedMenuItem<T extends string>({
+  id,
+  value,
+  label,
+  icon,
+  selectedValue,
+  onSelect,
+}: {
+  id: string;
+  value: T;
+  label: string;
+  icon: ReactNode;
+  selectedValue: T;
+  onSelect: (value: T) => void;
+}): MenuItemProps {
+  const isSelected = selectedValue === value;
+  return {
+    id,
+    ariaLabel: label,
+    ariaChecked: isSelected,
+    onClick: () => onSelect(value),
+    render: renderSelectedMenuItem(label, icon, isSelected),
+  };
+}
 
 const ChatsHeader: FC<ChatsHeaderProps> = ({
   isExpanded,
@@ -53,45 +82,68 @@ const ChatsHeader: FC<ChatsHeaderProps> = ({
   onNewChat,
 }) => {
   const localize = useLocalize();
+  const menuId = useId();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  const organizationItems: Array<{
-    value: SidebarOrganizationMode;
-    label: string;
-    icon: ReactNode;
-  }> = [
-    {
-      value: 'byProject',
-      label: localize('com_ui_sidebar_mode_by_project'),
-      icon: <Folder className={menuIconClassName} aria-hidden="true" />,
-    },
-    {
-      value: 'recentProjects',
-      label: localize('com_ui_sidebar_mode_recent_projects'),
-      icon: <Folder className={menuIconClassName} aria-hidden="true" />,
-    },
-    {
-      value: 'chronological',
-      label: localize('com_ui_sidebar_mode_chronological_list'),
-      icon: <Clock3 className={menuIconClassName} aria-hidden="true" />,
-    },
-  ];
-
-  const sortItems: Array<{
-    value: SidebarChatSort;
-    label: string;
-    icon: ReactNode;
-  }> = [
-    {
-      value: 'createdAt',
-      label: localize('com_ui_sort_created'),
-      icon: <Clock3 className={menuIconClassName} aria-hidden="true" />,
-    },
-    {
-      value: 'updatedAt',
-      label: localize('com_ui_sort_updated'),
-      icon: <SquarePen className={menuIconClassName} aria-hidden="true" />,
-    },
-  ];
+  const dropdownItems = useMemo<MenuItemProps[]>(
+    () => [
+      {
+        id: 'organize-sidebar',
+        label: localize('com_ui_sidebar_organization_label'),
+        icon: <Folder className={menuIconClassName} aria-hidden="true" />,
+        subItems: [
+          createSelectedMenuItem<SidebarOrganizationMode>({
+            id: 'organize-by-project',
+            value: 'byProject',
+            label: localize('com_ui_sidebar_mode_by_project'),
+            icon: <Folder className={menuIconClassName} aria-hidden="true" />,
+            selectedValue: organizationMode,
+            onSelect: onOrganizationModeChange,
+          }),
+          createSelectedMenuItem<SidebarOrganizationMode>({
+            id: 'organize-recent-projects',
+            value: 'recentProjects',
+            label: localize('com_ui_sidebar_mode_recent_projects'),
+            icon: <Folder className={menuIconClassName} aria-hidden="true" />,
+            selectedValue: organizationMode,
+            onSelect: onOrganizationModeChange,
+          }),
+          createSelectedMenuItem<SidebarOrganizationMode>({
+            id: 'organize-chronological',
+            value: 'chronological',
+            label: localize('com_ui_sidebar_mode_chronological_list'),
+            icon: <Clock3 className={menuIconClassName} aria-hidden="true" />,
+            selectedValue: organizationMode,
+            onSelect: onOrganizationModeChange,
+          }),
+        ],
+      },
+      {
+        id: 'sort-chats',
+        label: localize('com_ui_sort_by'),
+        icon: <Clock3 className={menuIconClassName} aria-hidden="true" />,
+        subItems: [
+          createSelectedMenuItem<SidebarChatSort>({
+            id: 'sort-created',
+            value: 'createdAt',
+            label: localize('com_ui_sort_created'),
+            icon: <Clock3 className={menuIconClassName} aria-hidden="true" />,
+            selectedValue: chatSortBy,
+            onSelect: onChatSortByChange,
+          }),
+          createSelectedMenuItem<SidebarChatSort>({
+            id: 'sort-updated',
+            value: 'updatedAt',
+            label: localize('com_ui_sort_updated'),
+            icon: <SquarePen className={menuIconClassName} aria-hidden="true" />,
+            selectedValue: chatSortBy,
+            onSelect: onChatSortByChange,
+          }),
+        ],
+      },
+    ],
+    [chatSortBy, localize, onChatSortByChange, onOrganizationModeChange, organizationMode],
+  );
 
   return (
     <div className="flex h-8 w-full items-center gap-0.5">
@@ -111,60 +163,34 @@ const ChatsHeader: FC<ChatsHeaderProps> = ({
         />
       </button>
 
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            aria-label={localize('com_nav_convo_menu_options')}
-            title={localize('com_nav_convo_menu_options')}
-            className={headerIconButtonClassName}
-          >
-            <Ellipsis className="h-4 w-4" aria-hidden="true" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-56">
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>
-              <Folder className={menuIconClassName} aria-hidden="true" />
-              <span>{localize('com_ui_sidebar_organization_label')}</span>
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="w-56">
-              {organizationItems.map((item) => (
-                <DropdownMenuItem
-                  key={item.value}
-                  role="menuitemradio"
-                  aria-checked={organizationMode === item.value}
-                  onSelect={() => onOrganizationModeChange(item.value)}
-                >
-                  {item.icon}
-                  <span>{item.label}</span>
-                  <SelectionMark isSelected={organizationMode === item.value} />
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>
-              <Clock3 className={menuIconClassName} aria-hidden="true" />
-              <span>{localize('com_ui_sort_by')}</span>
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="w-44">
-              {sortItems.map((item) => (
-                <DropdownMenuItem
-                  key={item.value}
-                  role="menuitemradio"
-                  aria-checked={chatSortBy === item.value}
-                  onSelect={() => onChatSortByChange(item.value)}
-                >
-                  {item.icon}
-                  <span>{item.label}</span>
-                  <SelectionMark isSelected={chatSortBy === item.value} />
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <DropdownPopup
+        portal={true}
+        focusLoop={true}
+        unmountOnHide={true}
+        menuId={menuId}
+        isOpen={isMenuOpen}
+        setIsOpen={setIsMenuOpen}
+        className="z-[125] min-w-56"
+        iconClassName="mr-0 text-text-secondary"
+        trigger={
+          <TooltipAnchor
+            description={localize('com_nav_convo_menu_options')}
+            render={
+              <Ariakit.MenuButton
+                id="chats-header-menu-button"
+                aria-label={localize('com_nav_convo_menu_options')}
+                className={cn(
+                  headerIconButtonClassName,
+                  isMenuOpen && 'bg-surface-hover text-text-primary',
+                )}
+              >
+                <Ellipsis className="h-4 w-4" aria-hidden="true" />
+              </Ariakit.MenuButton>
+            }
+          />
+        }
+        items={dropdownItems}
+      />
 
       <TooltipAnchor
         description={localize('com_ui_new_project')}

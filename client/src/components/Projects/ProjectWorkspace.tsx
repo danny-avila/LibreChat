@@ -1,27 +1,39 @@
-import { useCallback, useMemo, useState, type FormEvent } from 'react';
-import { ArrowLeft, ArrowUpDown, Check, Folder, Plus, Send } from 'lucide-react';
+import { useCallback, useId, useMemo, useState } from 'react';
+import * as Ariakit from '@ariakit/react';
+import { ArrowLeft, ArrowUpDown, Check, Folder, Plus } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
-import {
-  Button,
-  Spinner,
-  DropdownMenu,
-  DropdownMenuItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from '@librechat/client';
 import type { ConversationListResponse } from 'librechat-data-provider';
+import { Button, Spinner, DropdownPopup } from '@librechat/client';
+import type { MenuItemProps, RenderProp } from '~/common';
 import { useConversationsInfiniteQuery, useProjectQuery } from '~/data-provider';
-import { useLocalize, useNewConvo } from '~/hooks';
+import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 import ProjectChatList from './ProjectChatList';
 
 type ChatSortField = 'updatedAt' | 'createdAt';
+
+function renderSortMenuItem(label: string, isSelected: boolean): RenderProp {
+  return function SortMenuItem({ className, ...props }) {
+    return (
+      <div {...props} className={cn(className, 'justify-between gap-5')}>
+        <span className="truncate">{label}</span>
+        {isSelected ? (
+          <Check className="h-4 w-4 shrink-0 text-text-primary" aria-hidden="true" />
+        ) : (
+          <span className="h-4 w-4 shrink-0" aria-hidden="true" />
+        )}
+      </div>
+    );
+  };
+}
 
 export default function ProjectWorkspace() {
   const localize = useLocalize();
   const navigate = useNavigate();
   const { projectId = '' } = useParams();
-  const { newConversation } = useNewConvo();
   const [sortBy, setSortBy] = useState<ChatSortField>('updatedAt');
+  const sortMenuId = useId();
+  const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
   const { data: project, isLoading: isProjectLoading } = useProjectQuery(projectId);
   const activeProjectId = project?._id;
   const sortOptions = useMemo(
@@ -33,6 +45,20 @@ export default function ProjectWorkspace() {
   );
   const selectedSortLabel =
     sortOptions.find((option) => option.value === sortBy)?.label ?? localize('com_ui_sort_updated');
+  const sortMenuItems = useMemo<MenuItemProps[]>(
+    () =>
+      sortOptions.map((option) => {
+        const isSelected = sortBy === option.value;
+        return {
+          id: `project-chat-sort-${option.value}`,
+          ariaLabel: option.label,
+          ariaChecked: isSelected,
+          onClick: () => setSortBy(option.value),
+          render: renderSortMenuItem(option.label, isSelected),
+        };
+      }),
+    [sortBy, sortOptions],
+  );
 
   const {
     data,
@@ -66,19 +92,14 @@ export default function ProjectWorkspace() {
     return lastPage.nextCursor !== null;
   }, [data?.pages]);
 
-  const startProjectChat = useCallback(
-    (event?: FormEvent<HTMLFormElement>) => {
-      event?.preventDefault();
-      if (!activeProjectId) {
-        return;
-      }
-      newConversation({ template: { chatProjectId: activeProjectId } });
-      navigate(`/c/new?projectId=${encodeURIComponent(activeProjectId)}`, {
-        state: { focusChat: true },
-      });
-    },
-    [activeProjectId, navigate, newConversation],
-  );
+  const startProjectChat = useCallback(() => {
+    if (!activeProjectId) {
+      return;
+    }
+    navigate(`/c/new?projectId=${encodeURIComponent(activeProjectId)}`, {
+      state: { focusChat: true },
+    });
+  }, [activeProjectId, navigate]);
 
   if (isProjectLoading) {
     return (
@@ -126,30 +147,6 @@ export default function ProjectWorkspace() {
           </Button>
         </header>
 
-        <form
-          onSubmit={startProjectChat}
-          className="rounded-2xl border border-border-medium bg-surface-primary p-4 shadow-sm"
-        >
-          <div className="flex min-h-24 items-start gap-3">
-            <Plus className="mt-1 h-5 w-5 shrink-0 text-text-secondary" aria-hidden="true" />
-            <input
-              className="min-w-0 flex-1 bg-transparent text-lg outline-none placeholder:text-text-tertiary"
-              placeholder={localize('com_ui_new_chat_in_project', { name: project.name })}
-              readOnly
-              onFocus={() => startProjectChat()}
-            />
-            <Button
-              type="submit"
-              variant="submit"
-              size="icon"
-              className="h-9 w-9 shrink-0"
-              aria-label={localize('com_ui_new_chat')}
-            >
-              <Send className="h-4 w-4" aria-hidden="true" />
-            </Button>
-          </div>
-        </form>
-
         <section className="flex min-h-[360px] flex-1 flex-col gap-3">
           <div className="flex items-center justify-between gap-3">
             <div className="inline-flex rounded-lg border border-border-light p-1">
@@ -160,30 +157,28 @@ export default function ProjectWorkspace() {
                 {localize('com_ui_chats')}
               </button>
             </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="border-border-medium bg-transparent"
+            <DropdownPopup
+              portal={true}
+              focusLoop={true}
+              unmountOnHide={true}
+              menuId={sortMenuId}
+              isOpen={isSortMenuOpen}
+              setIsOpen={setIsSortMenuOpen}
+              className="z-[125] min-w-44"
+              trigger={
+                <Ariakit.MenuButton
                   aria-label={localize('com_ui_sort_chats_by')}
+                  className={cn(
+                    'inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-border-medium bg-transparent px-3 text-sm font-medium text-text-primary ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
+                    isSortMenuOpen && 'bg-surface-hover text-text-primary',
+                  )}
                 >
                   <ArrowUpDown className="h-4 w-4 text-text-secondary" aria-hidden="true" />
                   {selectedSortLabel}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-44">
-                {sortOptions.map((option) => (
-                  <DropdownMenuItem key={option.value} onSelect={() => setSortBy(option.value)}>
-                    <span>{option.label}</span>
-                    {sortBy === option.value && (
-                      <Check className="ml-auto h-4 w-4 text-text-primary" aria-hidden="true" />
-                    )}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                </Ariakit.MenuButton>
+              }
+              items={sortMenuItems}
+            />
           </div>
           <ProjectChatList
             conversations={conversations}

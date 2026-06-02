@@ -3,11 +3,18 @@ import { useRecoilValue } from 'recoil';
 import { useForm } from 'react-hook-form';
 import { Spinner } from '@librechat/client';
 import { useParams } from 'react-router-dom';
+import { Folder } from 'lucide-react';
 import { Constants, buildTree } from 'librechat-data-provider';
-import type { TMessage } from 'librechat-data-provider';
+import type { TChatProject, TMessage } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
 import { ChatContext, AddedChatContext, ChatFormProvider, useFileMapContext } from '~/Providers';
-import { useAddedResponse, useResumeOnLoad, useAdaptiveSSE, useChatHelpers } from '~/hooks';
+import {
+  useAddedResponse,
+  useResumeOnLoad,
+  useAdaptiveSSE,
+  useChatHelpers,
+  useLocalize,
+} from '~/hooks';
 import ConversationStarters from './Input/ConversationStarters';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import MessagesView from './Messages/MessagesView';
@@ -29,8 +36,27 @@ function LoadingSpinner() {
   );
 }
 
-function ChatView({ index = 0 }: { index?: number }) {
+function ProjectLanding({ project }: { project: TChatProject }) {
+  return (
+    <div className="flex h-full max-h-full transform-gpu flex-col items-center justify-center pb-16 transition-all duration-200 sm:max-h-0">
+      <div className="flex max-w-2xl flex-col items-center gap-3 px-4 text-center">
+        <div className="flex items-center gap-3">
+          <Folder className="h-9 w-9 shrink-0 text-text-secondary" aria-hidden="true" />
+          <h1 className="min-w-0 truncate text-2xl font-medium text-text-primary sm:text-4xl">
+            {project.name}
+          </h1>
+        </div>
+        {project.description && (
+          <p className="max-w-md text-sm text-text-secondary">{project.description}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ChatView({ index = 0, project }: { index?: number; project?: TChatProject }) {
   const { conversationId } = useParams();
+  const localize = useLocalize();
   const rootSubmission = useRecoilValue(store.submissionByIndex(index));
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
   const centerFormOnLanding = useRecoilValue(store.centerFormOnLanding);
@@ -70,6 +96,7 @@ function ChatView({ index = 0 }: { index?: number }) {
     (!messagesTree || messagesTree.length === 0) &&
     (conversationId === Constants.NEW_CONVO || !conversationId);
   const isNavigating = (!messagesTree || messagesTree.length === 0) && conversationId != null;
+  const isProjectLandingPage = isLandingPage && project != null;
 
   if (isLoading && conversationId !== Constants.NEW_CONVO) {
     content = <LoadingSpinner />;
@@ -77,9 +104,16 @@ function ChatView({ index = 0 }: { index?: number }) {
     content = <LoadingSpinner />;
   } else if (!isLandingPage) {
     content = <MessagesView messagesTree={messagesTree} />;
+  } else if (isProjectLandingPage && project) {
+    content = <ProjectLanding project={project} />;
   } else {
     content = <Landing centerFormOnLanding={centerFormOnLanding} />;
   }
+
+  const chatFormPlaceholder =
+    isProjectLandingPage && project
+      ? localize('com_ui_new_chat_in_project', { name: project.name })
+      : undefined;
 
   return (
     <ChatFormProvider {...methods}>
@@ -104,7 +138,7 @@ function ChatView({ index = 0 }: { index?: number }) {
                       isLandingPage && 'max-w-3xl transition-all duration-200 xl:max-w-4xl',
                     )}
                   >
-                    <ChatForm index={index} />
+                    <ChatForm index={index} placeholder={chatFormPlaceholder} />
                     {isLandingPage ? <ConversationStarters /> : <Footer />}
                   </div>
                 </div>
