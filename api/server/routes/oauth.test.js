@@ -132,7 +132,6 @@ describe('OAuth route failure logging', () => {
     mockGetOAuthFailureMessage.mockClear();
     mockRedirectToAuthFailure.mockClear();
     mockPassportAuthenticate.mockClear();
-    mockOpenIDCallbackAuthenticatorOptions = undefined;
     mockPassportAuthenticate.mockImplementation(() => (_req, _res, next) => next());
     mockOpenIDCallbackMiddleware.mockImplementation((_req, _res, next) => next());
   });
