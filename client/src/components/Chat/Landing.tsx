@@ -6,7 +6,7 @@ import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import ConvoIcon from '~/components/Endpoints/ConvoIcon';
 import { useLocalize, useAuthContext } from '~/hooks';
-import { getIconEndpoint, getEntity } from '~/utils';
+import { getIconEndpoint, getEntity, getDefaultModelSpec } from '~/utils';
 
 const containerClassName =
   'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white dark:bg-presentation dark:text-white text-black dark:after:shadow-none ';
@@ -62,7 +62,13 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
   });
 
   const name = entity?.name ?? '';
-  const description = (entity?.description || conversation?.greeting) ?? '';
+  const defaultSpecDescription = useMemo(() => {
+    const result = getDefaultModelSpec(startupConfig);
+    const spec = result?.default ?? result?.last;
+    return spec?.description ?? '';
+  }, [startupConfig]);
+  const description =
+    (entity?.description || conversation?.greeting || defaultSpecDescription) ?? '';
 
   const getGreeting = useCallback(() => {
     if (typeof startupConfig?.interface?.customWelcome === 'string') {
@@ -74,6 +80,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
       return customWelcome;
     }
 
+    const appTitle = startupConfig?.appTitle ?? 'AI Workforce Pro';
     const now = new Date();
     const hours = now.getHours();
 
@@ -89,17 +96,17 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
       if (isWeekend) {
         return localize('com_ui_weekend_morning');
       }
-      return localize('com_ui_good_morning');
+      return `${localize('com_ui_good_morning')} — ${appTitle}`;
     }
     // Afternoon (12 PM to 4:59 PM)
     else if (hours < 17) {
-      return localize('com_ui_good_afternoon');
+      return `${localize('com_ui_good_afternoon')} — ${appTitle}`;
     }
     // Evening (5 PM to 8:59 PM)
     else {
-      return localize('com_ui_good_evening');
+      return `${localize('com_ui_good_evening')} — ${appTitle}`;
     }
-  }, [localize, startupConfig?.interface?.customWelcome, user?.name]);
+  }, [localize, startupConfig?.interface?.customWelcome, startupConfig?.appTitle, user?.name]);
 
   const handleLineCountChange = useCallback((count: number) => {
     setTextHasMultipleLines(count > 1);

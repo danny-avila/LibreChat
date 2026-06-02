@@ -918,6 +918,7 @@ export const interfaceSchema = z
     bookmarks: z.boolean().optional(),
     memories: z.boolean().optional(),
     presets: z.boolean().optional(),
+    forking: z.boolean().optional(),
     prompts: z
       .union([
         z.boolean(),
@@ -985,6 +986,7 @@ export const interfaceSchema = z
     modelSelect: true,
     parameters: true,
     presets: true,
+    forking: true,
     multiConvo: true,
     bookmarks: true,
     memories: true,

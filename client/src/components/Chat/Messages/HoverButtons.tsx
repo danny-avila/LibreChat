@@ -3,6 +3,7 @@ import { useRecoilState } from 'recoil';
 import type { TConversation, TMessage, TFeedback } from 'librechat-data-provider';
 import { EditIcon, Clipboard, CheckMark, ContinueIcon, RegenerateIcon } from '@librechat/client';
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
+import { useGetStartupConfig } from '~/data-provider';
 import { Fork } from '~/components/Conversations';
 import MessageAudio from './MessageAudio';
 import Feedback from './Feedback';
@@ -124,6 +125,8 @@ const HoverButtons = ({
   handleFeedback,
 }: THoverButtons) => {
   const localize = useLocalize();
+  const { data: startupConfig } = useGetStartupConfig();
+  const forkingEnabled = startupConfig?.interface?.forking !== false;
   const [isCopied, setIsCopied] = useState(false);
   const [TextToSpeech] = useRecoilState<boolean>(store.textToSpeech);
 
@@ -144,6 +147,7 @@ const HoverButtons = ({
     finish_reason: message.finish_reason,
     isCreatedByUser: message.isCreatedByUser,
     latestMessageId: latestMessageId,
+    forkingEnabled,
   });
 
   const {

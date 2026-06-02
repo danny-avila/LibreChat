@@ -10,6 +10,7 @@ type TUseGenerations = {
   finish_reason?: string;
   latestMessageId?: string;
   isCreatedByUser?: boolean;
+  forkingEnabled?: boolean;
 };
 
 export default function useGenerationsByLatest({
@@ -22,6 +23,7 @@ export default function useGenerationsByLatest({
   finish_reason = '',
   latestMessageId,
   isCreatedByUser = false,
+  forkingEnabled = true,
 }: TUseGenerations) {
   const isEditableEndpoint = Boolean(
     [
@@ -65,7 +67,7 @@ export default function useGenerationsByLatest({
     !branchingSupported ||
     (!isEditableEndpoint && !isCreatedByUser);
 
-  const forkingSupported = !isAssistantsEndpoint(endpoint) && !searchResult;
+  const forkingSupported = forkingEnabled && !isAssistantsEndpoint(endpoint) && !searchResult;
 
   return {
     forkingSupported,

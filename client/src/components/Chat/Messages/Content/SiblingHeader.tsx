@@ -4,6 +4,7 @@ import { useToastContext } from '@librechat/client';
 import { EModelEndpoint, parseEphemeralAgentId, stripAgentIdSuffix } from 'librechat-data-provider';
 import type { TMessage, Agent } from 'librechat-data-provider';
 import { useBranchMessageMutation } from '~/data-provider/Messages';
+import { useGetStartupConfig } from '~/data-provider';
 import MessageIcon from '~/components/Share/MessageIcon';
 import { useAgentsMapContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
@@ -33,6 +34,8 @@ export default function SiblingHeader({
   const agentsMap = useAgentsMapContext();
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const { data: startupConfig } = useGetStartupConfig();
+  const forkingEnabled = startupConfig?.interface?.forking !== false;
 
   const branchMessage = useBranchMessageMutation(conversationId ?? null, {
     onSuccess: () => {
@@ -118,22 +121,24 @@ export default function SiblingHeader({
         </div>
         <span className="truncate text-sm font-medium text-text-primary">{displayName}</span>
       </div>
-      <button
-        type="button"
-        onClick={handleBranch}
-        disabled={!messageId || !agentId || isSubmitting || branchMessage.isLoading}
-        className={cn(
-          'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md',
-          'text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary',
-          'focus:outline-none focus:ring-2 focus:ring-border-medium focus:ring-offset-1',
-          'disabled:cursor-not-allowed disabled:opacity-50',
-          (!messageId || !agentId || isSubmitting) && 'invisible',
-        )}
-        aria-label={localize('com_ui_branch_message')}
-        title={localize('com_ui_branch_message')}
-      >
-        <GitBranchPlus className="h-4 w-4" aria-hidden="true" />
-      </button>
+      {forkingEnabled && (
+        <button
+          type="button"
+          onClick={handleBranch}
+          disabled={!messageId || !agentId || isSubmitting || branchMessage.isLoading}
+          className={cn(
+            'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md',
+            'text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary',
+            'focus:outline-none focus:ring-2 focus:ring-border-medium focus:ring-offset-1',
+            'disabled:cursor-not-allowed disabled:opacity-50',
+            (!messageId || !agentId || isSubmitting) && 'invisible',
+          )}
+          aria-label={localize('com_ui_branch_message')}
+          title={localize('com_ui_branch_message')}
+        >
+          <GitBranchPlus className="h-4 w-4" aria-hidden="true" />
+        </button>
+      )}
     </div>
   );
 }

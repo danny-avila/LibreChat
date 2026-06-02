@@ -1,11 +1,16 @@
 import { memo } from 'react';
+import { getConfigDefaults, PermissionTypes, Permissions } from 'librechat-data-provider';
 import { showThinkingAtom } from '~/store/showThinking';
 import AdvancedPrompts from './AdvancedPrompts';
 import FontSizeSelector from './FontSizeSelector';
 import { ForkSettings } from './ForkSettings';
 import ChatDirection from './ChatDirection';
 import ToggleSwitch from '../ToggleSwitch';
+import { useGetStartupConfig } from '~/data-provider';
+import { useHasAccess } from '~/hooks';
 import store from '~/store';
+
+const defaultInterface = getConfigDefaults().interface;
 
 const toggleSwitchConfigs = [
   {
@@ -102,6 +107,15 @@ const toggleSwitchConfigs = [
 ];
 
 function Chat() {
+  const { data: startupConfig } = useGetStartupConfig();
+  const interfaceConfig = startupConfig?.interface ?? defaultInterface;
+  const hasPromptCreateAccess = useHasAccess({
+    permissionType: PermissionTypes.PROMPTS,
+    permission: Permissions.CREATE,
+  });
+  const showAdvancedPrompts = interfaceConfig.parameters === true && hasPromptCreateAccess === true;
+  const showForkSettings = interfaceConfig.forking !== false;
+
   return (
     <div className="flex flex-col gap-3 p-1 text-sm text-text-primary">
       <div className="pb-3">
@@ -120,10 +134,12 @@ function Chat() {
           />
         </div>
       ))}
-      <div className="pb-3">
-        <AdvancedPrompts />
-      </div>
-      <ForkSettings />
+      {showAdvancedPrompts && (
+        <div className="pb-3">
+          <AdvancedPrompts />
+        </div>
+      )}
+      {showForkSettings && <ForkSettings />}
     </div>
   );
 }

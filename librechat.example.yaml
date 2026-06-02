@@ -119,18 +119,19 @@ interface:
       By using AI Workforce Pro, you acknowledge that you have read these Terms of Service and agree to be bound by them.
 
   modelSelect: false
-  parameters: true
-  presets: true
+  parameters: false
+  presets: false
+  forking: false
   prompts:
     use: true
-    create: true
+    create: false
     share: false
     public: false
   bookmarks: true
-  multiConvo: true
+  multiConvo: false
   agents:
-    use: true
-    create: true
+    use: false
+    create: false
     share: false
     public: false
   peoplePicker:
@@ -405,14 +406,16 @@ endpoints:
   #     trace: "enabled"
 
 modelSpecs:
+  prioritize: true
   list:
     - name: claude-sonnet-4-6
       label: AI Assistant
-      description: Default assistant for AI Workforce Pro
+      description: Your AI assistant from SMB Team — ask anything to get started.
       default: true
       preset:
         endpoint: anthropic
         model: claude-sonnet-4-6
+        greeting: How can I help you today?
 
 # Example modelSpecs configuration showing grouping options
 # The 'group' field organizes model specs in the UI selector:
