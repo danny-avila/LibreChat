@@ -11,7 +11,7 @@ import {
 import { NotificationSeverity } from '~/common';
 import EditBudgetModal from './EditBudgetModal';
 import { useLocalize } from '~/hooks';
-import { formatUSD, creditsToUsdInput } from './credits';
+import { formatUSD, creditsToUsdInput, budgetColor } from './credits';
 
 function formatTokens(value: number): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(value);
@@ -148,11 +148,11 @@ function KpiCard({
 function BudgetProgress({ spent, budget }: { spent: number; budget: number }) {
   const ratio = budget > 0 ? spent / budget : spent > 0 ? 1 : 0;
   const percent = Math.min(100, Math.round(ratio * 100));
-  const color = ratio > 0.8 ? 'bg-red-500' : ratio >= 0.6 ? 'bg-amber-500' : 'bg-green-500';
+  const { bar } = budgetColor(ratio);
   return (
     <div className="flex items-center gap-2">
       <div className="h-2 w-24 overflow-hidden rounded-full bg-surface-tertiary">
-        <div className={`h-full ${color}`} style={{ width: `${percent}%` }} />
+        <div className={`h-full ${bar}`} style={{ width: `${percent}%` }} />
       </div>
       <span className="w-10 text-right text-xs tabular-nums text-text-secondary">{percent}%</span>
     </div>

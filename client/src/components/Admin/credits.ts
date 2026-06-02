@@ -20,3 +20,17 @@ export function creditsToUsdInput(valueInCredits: number): string {
 export function usdToCredits(usd: number): number {
   return Math.round(usd * CREDITS_PER_USD);
 }
+
+/**
+ * Single source for the spend-vs-budget color rule: green <60%, amber 60–80%, red >80%.
+ * `bg`/`text` are the soft badge classes; `bar` is the solid fill for progress bars.
+ */
+export function budgetColor(ratio: number): { bg: string; text: string; bar: string } {
+  if (ratio > 0.8) {
+    return { bg: 'bg-red-500/15', text: 'text-red-300', bar: 'bg-red-500' };
+  }
+  if (ratio >= 0.6) {
+    return { bg: 'bg-amber-500/15', text: 'text-amber-300', bar: 'bg-amber-500' };
+  }
+  return { bg: 'bg-green-500/15', text: 'text-green-300', bar: 'bg-green-500' };
+}

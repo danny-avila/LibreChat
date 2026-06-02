@@ -226,6 +226,7 @@
   "com_auth_welcome_back": "Welcome back",
   "com_budget_action_edit": "Edit",
   "com_budget_alert_over_threshold": "{{count}} user(s) exceed 80% of their threshold",
+  "com_budget_badge_tooltip": "{{percent}}% of your monthly budget — {{spent}} of {{budget}} this month",
   "com_budget_col_action": "Action",
   "com_budget_col_progress": "Progress",
   "com_budget_col_spent": "Consumed",

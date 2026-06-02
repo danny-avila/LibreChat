@@ -686,6 +686,9 @@ export type TBalanceResponse = {
   refillIntervalUnit?: 'seconds' | 'minutes' | 'hours' | 'days' | 'weeks' | 'months';
   lastRefill?: Date;
   refillAmount?: number;
+  /** Monthly threshold + reference, in tokenCredits (Vermeer budget). Present when a Balance doc exists. */
+  monthlyBudget?: number;
+  monthlyBudgetBaseline?: number;
   /** Month-to-date spend in tokenCredits (Vermeer budget badge). Optional: absent until backend rebuilt. */
   currentMonthSpend?: number;
 };

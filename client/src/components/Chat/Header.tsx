@@ -5,6 +5,7 @@ import { useMediaQuery, TooltipAnchor } from '@librechat/client';
 import { getConfigDefaults, PermissionTypes, Permissions } from 'librechat-data-provider';
 import ModelSelector from './Menus/Endpoints/ModelSelector';
 import { useGetStartupConfig } from '~/data-provider';
+import BudgetBadge from './BudgetBadge';
 import ExportAndShareMenu from './ExportAndShareMenu';
 import { OpenSidebar, PresetsMenu } from './Menus';
 import BookmarkMenu from './Menus/BookmarkMenu';
@@ -100,6 +101,7 @@ function Header() {
               ) : (
                 <>
                   <ModelSelector startupConfig={startupConfig} />
+                  <BudgetBadge />
                   {SHOW_PRESETS_BUTTON && interfaceConfig.presets === true && interfaceConfig.modelSelect && (
                     <PresetsMenu />
                   )}
