@@ -4,12 +4,13 @@ const { SystemCapabilities } = require('@librechat/data-schemas');
 const { hasCapability, requireCapability } = require('~/server/middleware/roles/capabilities');
 const { requireJwtAuth } = require('~/server/middleware');
 const { upsertSkillSyncCredential, deleteSkillSyncCredential } = require('~/models');
-const { getGitHubSkillSyncRunner } = require('~/server/services/Skills/sync');
+const { getGitHubSkillSyncRunnerForRequest } = require('~/server/services/Skills/sync');
+const configMiddleware = require('~/server/middleware/config/app');
 
 const router = express.Router();
 const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
 
-function requirePlatformCapability(capability) {
+function requireSkillCapability(capability, { platformOnly = false } = {}) {
   return async (req, res, next) => {
     try {
       const id = req.user?.id ?? req.user?._id?.toString?.();
@@ -19,6 +20,7 @@ function requirePlatformCapability(capability) {
       const user = {
         id,
         role: req.user?.role ?? '',
+        ...(platformOnly ? {} : { tenantId: req.user?.tenantId }),
       };
       if (await hasCapability(user, capability)) {
         return next();
@@ -30,19 +32,22 @@ function requirePlatformCapability(capability) {
   };
 }
 
-const requirePlatformReadSkills = requirePlatformCapability(SystemCapabilities.READ_SKILLS);
-const requirePlatformManageSkills = requirePlatformCapability(SystemCapabilities.MANAGE_SKILLS);
+const requireReadSkills = requireSkillCapability(SystemCapabilities.READ_SKILLS);
+const requireManageSkills = requireSkillCapability(SystemCapabilities.MANAGE_SKILLS);
+const requirePlatformManageSkills = requireSkillCapability(SystemCapabilities.MANAGE_SKILLS, {
+  platformOnly: true,
+});
 
 const handlers = createAdminSkillsSyncHandlers({
-  runner: getGitHubSkillSyncRunner(),
+  getRunner: getGitHubSkillSyncRunnerForRequest,
   upsertCredential: upsertSkillSyncCredential,
   deleteCredential: deleteSkillSyncCredential,
 });
 
-router.use(requireJwtAuth, requireAdminAccess);
+router.use(requireJwtAuth, requireAdminAccess, configMiddleware);
 
-router.get('/sync/status', requirePlatformReadSkills, handlers.getSyncStatus);
-router.post('/sync/run', requirePlatformManageSkills, handlers.runSync);
+router.get('/sync/status', requireReadSkills, handlers.getSyncStatus);
+router.post('/sync/run', requireManageSkills, handlers.runSync);
 router.put('/sync/credentials/:credentialKey', requirePlatformManageSkills, handlers.setCredential);
 router.delete(
   '/sync/credentials/:credentialKey',

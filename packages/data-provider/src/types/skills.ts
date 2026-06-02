@@ -216,6 +216,7 @@ export type TGitHubSkillSyncCredentialSummary = {
 export type TGitHubSkillSyncSourceStatus = {
   provider: 'github';
   sourceId: string;
+  tenantId?: string;
   status: 'idle' | 'running' | 'succeeded' | 'failed' | 'skipped';
   credentialKey?: string;
   credentialPresent: boolean;
