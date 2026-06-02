@@ -5,6 +5,7 @@ import { buildRetentionVisibilityFilter, createFallbackRetentionDate } from '~/u
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '~/config/winston';
 import type { AppConfig, IConversation } from '~/types';
+import { refreshChatProjectStatsForUser } from './chatProject';
 import type { MessageMethods } from './message';
 import type { DeleteResult } from 'mongoose';
 
@@ -36,6 +37,7 @@ export interface ConversationMethods {
       search?: string;
       sortBy?: string;
       sortDirection?: string;
+      projectId?: string;
     },
   ): Promise<{ conversations: IConversation[]; nextCursor: string | null }>;
   getConvosQueried(
@@ -283,6 +285,10 @@ export function createConversationMethods(
         conversation.isTemporary = false;
       }
 
+      if (conversation.chatProjectId) {
+        await refreshChatProjectStatsForUser(mongoose, userId, conversation.chatProjectId);
+      }
+
       return conversation.toObject();
     } catch (error) {
       logger.error('[saveConvo] Error saving conversation', error);
@@ -332,6 +338,7 @@ export function createConversationMethods(
       search,
       sortBy = 'updatedAt',
       sortDirection = 'desc',
+      projectId,
     }: {
       cursor?: string | null;
       limit?: number;
@@ -340,6 +347,7 @@ export function createConversationMethods(
       search?: string;
       sortBy?: string;
       sortDirection?: string;
+      projectId?: string;
     } = {},
   ) {
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
@@ -354,6 +362,14 @@ export function createConversationMethods(
 
     if (Array.isArray(tags) && tags.length > 0) {
       filters.push({ tags: { $in: tags } } as FilterQuery<IConversation>);
+    }
+
+    if (projectId === 'unassigned') {
+      filters.push({
+        $or: [{ chatProjectId: null }, { chatProjectId: { $exists: false } }],
+      } as FilterQuery<IConversation>);
+    } else if (projectId) {
+      filters.push({ chatProjectId: projectId } as FilterQuery<IConversation>);
     }
 
     filters.push(getVisibleConversationRetentionFilter());
@@ -431,7 +447,7 @@ export function createConversationMethods(
 
       const convos = await Conversation.find(query)
         .select(
-          'conversationId endpoint title createdAt updatedAt user model agent_id assistant_id spec iconURL',
+          'conversationId endpoint title createdAt updatedAt user model agent_id assistant_id spec iconURL chatProjectId',
         )
         .sort(sortObj)
         .limit(limit + 1)
@@ -538,8 +554,15 @@ export function createConversationMethods(
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
       const { deleteMessages } = getMessageMethods();
       const userFilter = { ...filter, user };
-      const conversations = await Conversation.find(userFilter).select('conversationId');
+      const conversations = await Conversation.find(userFilter).select(
+        'conversationId chatProjectId',
+      );
       const conversationIds = conversations.map((c) => c.conversationId);
+      const projectIds = new Set(
+        conversations
+          .map((conversation) => conversation.chatProjectId)
+          .filter((projectId): projectId is string => Boolean(projectId)),
+      );
 
       if (!conversationIds.length) {
         throw new Error('Conversation not found or already deleted.');
@@ -551,6 +574,12 @@ export function createConversationMethods(
         conversationId: { $in: conversationIds },
         user,
       });
+
+      await Promise.all(
+        [...projectIds].map((projectId) =>
+          refreshChatProjectStatsForUser(mongoose, user, projectId),
+        ),
+      );
 
       return { ...deleteConvoResult, messages: deleteMessagesResult };
     } catch (error) {

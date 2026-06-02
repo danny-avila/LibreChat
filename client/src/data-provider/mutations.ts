@@ -136,6 +136,7 @@ export const useArchiveConvoMutation = (
           queryKey: archivedConvoQueryKey,
           refetchPage: (_, index) => index === 0,
         });
+        queryClient.invalidateQueries([QueryKeys.projects]);
       },
       ..._options,
     },
@@ -519,6 +520,7 @@ export const useDeleteConversationMutation = (
           queryKey: [QueryKeys.archivedConversations],
           refetchPage: (_, index) => index === 0,
         });
+        queryClient.invalidateQueries([QueryKeys.projects]);
 
         options?.onSuccess?.(data, vars, context);
       },
@@ -550,6 +552,7 @@ export const useDuplicateConversationMutation = (
         queryKey: [QueryKeys.allConversations],
         refetchPage: (_, index) => index === 0,
       });
+      queryClient.invalidateQueries([QueryKeys.projects]);
 
       if (duplicatedConversation.tags && duplicatedConversation.tags.length > 0) {
         queryClient.setQueryData<t.TConversationTag[]>([QueryKeys.conversationTags], (oldTags) => {
@@ -593,6 +596,7 @@ export const useForkConvoMutation = (
         queryKey: [QueryKeys.allConversations],
         refetchPage: (_, index) => index === 0,
       });
+      queryClient.invalidateQueries([QueryKeys.projects]);
 
       if (forkedConversation.tags && forkedConversation.tags.length > 0) {
         queryClient.setQueryData<t.TConversationTag[]>([QueryKeys.conversationTags], (oldTags) => {

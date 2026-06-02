@@ -31,6 +31,7 @@ interface ConversationsProps {
   isLoading: boolean;
   isSearchLoading: boolean;
   isChatsExpanded: boolean;
+  dateField?: 'updatedAt' | 'createdAt';
   setIsChatsExpanded: (expanded: boolean) => void;
 }
 
@@ -159,6 +160,7 @@ const Conversations: FC<ConversationsProps> = ({
   isLoading,
   isSearchLoading,
   isChatsExpanded,
+  dateField = 'updatedAt',
   setIsChatsExpanded,
 }) => {
   const localize = useLocalize();
@@ -189,8 +191,8 @@ const Conversations: FC<ConversationsProps> = ({
   );
 
   const groupedConversations = useMemo(
-    () => groupConversationsByDate(filteredConversations),
-    [filteredConversations],
+    () => groupConversationsByDate(filteredConversations, dateField),
+    [filteredConversations, dateField],
   );
 
   const flattenedItems = useMemo(() => {

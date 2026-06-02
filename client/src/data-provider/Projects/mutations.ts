@@ -1,0 +1,79 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { dataService, QueryKeys } from 'librechat-data-provider';
+import type { UseMutationResult } from '@tanstack/react-query';
+import type {
+  TChatProject,
+  TCreateChatProjectRequest,
+  TDeleteChatProjectResponse,
+  TUpdateChatProjectRequest,
+  TAssignConversationToProjectRequest,
+  TAssignConversationToProjectResponse,
+} from 'librechat-data-provider';
+
+export const useCreateProjectMutation = (): UseMutationResult<
+  TChatProject,
+  unknown,
+  TCreateChatProjectRequest,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation((payload: TCreateChatProjectRequest) => dataService.createProject(payload), {
+    onSuccess: () => {
+      queryClient.invalidateQueries([QueryKeys.projects]);
+    },
+  });
+};
+
+export const useUpdateProjectMutation = (): UseMutationResult<
+  TChatProject,
+  unknown,
+  TUpdateChatProjectRequest,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation((payload: TUpdateChatProjectRequest) => dataService.updateProject(payload), {
+    onSuccess: (project) => {
+      queryClient.setQueryData([QueryKeys.project, project._id], project);
+      queryClient.invalidateQueries([QueryKeys.projects]);
+    },
+  });
+};
+
+export const useDeleteProjectMutation = (): UseMutationResult<
+  TDeleteChatProjectResponse,
+  unknown,
+  string,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation((projectId: string) => dataService.deleteProject(projectId), {
+    onSuccess: (_result, projectId) => {
+      queryClient.removeQueries([QueryKeys.project, projectId]);
+      queryClient.invalidateQueries([QueryKeys.projects]);
+      queryClient.invalidateQueries([QueryKeys.allConversations]);
+    },
+  });
+};
+
+export const useAssignConversationToProjectMutation = (): UseMutationResult<
+  TAssignConversationToProjectResponse,
+  unknown,
+  TAssignConversationToProjectRequest,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    (payload: TAssignConversationToProjectRequest) =>
+      dataService.assignConversationToProject(payload),
+    {
+      onSuccess: (result) => {
+        queryClient.setQueryData(
+          [QueryKeys.conversation, result.conversation.conversationId],
+          result.conversation,
+        );
+        queryClient.invalidateQueries([QueryKeys.projects]);
+        queryClient.invalidateQueries([QueryKeys.allConversations]);
+      },
+    },
+  );
+};

@@ -46,6 +46,7 @@ export default function ChatRoute() {
   const index = 0;
   const [searchParams] = useSearchParams();
   const { conversationId = '' } = useParams();
+  const chatProjectId = searchParams.get('projectId');
   useIdChangeEffect(conversationId);
   const { hasSetConversation, conversation } = store.useCreateConversationAtom(index);
   const { newConversation } = useNewConvo();
@@ -98,7 +99,7 @@ export default function ChatRoute() {
 
       const queryParams: Record<string, string> = {};
       searchParams.forEach((value, key) => {
-        if (key !== 'prompt' && key !== 'q' && key !== 'submit') {
+        if (key !== 'prompt' && key !== 'q' && key !== 'submit' && key !== 'projectId') {
           queryParams[key] = value;
         }
       });
@@ -116,7 +117,10 @@ export default function ChatRoute() {
       logger.log('conversation', 'ChatRoute, new convo effect', conversation);
       newConversation({
         modelsData: modelsQuery.data,
-        template: conversation ? conversation : undefined,
+        template: {
+          ...(conversation ?? {}),
+          ...(chatProjectId ? { chatProjectId } : {}),
+        },
         ...(preset ? { preset } : {}),
       });
 
@@ -163,7 +167,10 @@ export default function ChatRoute() {
       logger.log('conversation', 'ChatRoute new convo, assistants effect', conversation);
       newConversation({
         modelsData: modelsQuery.data,
-        template: conversation ? conversation : undefined,
+        template: {
+          ...(conversation ?? {}),
+          ...(chatProjectId ? { chatProjectId } : {}),
+        },
         ...(preset ? { preset } : {}),
       });
       hasSetConversation.current = true;
