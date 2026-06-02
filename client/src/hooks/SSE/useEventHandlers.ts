@@ -661,9 +661,7 @@ export default function useEventHandlers({
         const titlePreservable = responseMessage?.unfinished !== true;
         const finalConversationId = conversation.conversationId;
         const shouldRollbackStreamedTitle =
-          !titlePreservable &&
-          finalConversationId &&
-          !hasRealTitle(serverConversation.title);
+          !titlePreservable && finalConversationId && !hasRealTitle(serverConversation.title);
 
         if (shouldRollbackStreamedTitle && finalConversationId) {
           updateConvoInAllQueries(queryClient, finalConversationId, (convo) => ({

@@ -84,9 +84,9 @@ export function resolveTitleTiming({
   );
 
   for (const endpointCandidate of endpointCandidates) {
-    const endpointConfig = endpoints?.[
-      endpointCandidate as keyof NonNullable<typeof endpoints>
-    ] as Partial<TEndpoint> | undefined;
+    const endpointConfig = endpoints?.[endpointCandidate as keyof NonNullable<typeof endpoints>] as
+      | Partial<TEndpoint>
+      | undefined;
     const endpointTiming = resolveConfiguredTiming(endpointConfig);
     if (endpointTiming) {
       return endpointTiming;
