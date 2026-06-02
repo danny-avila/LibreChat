@@ -433,6 +433,87 @@ describe('createGitHubSkillSyncRunner', () => {
     }
   });
 
+  it('does not list or resolve server credentials when server credentials are disabled', async () => {
+    const previousToken = process.env.GITHUB_SKILLS_TOKEN;
+    process.env.GITHUB_SKILLS_TOKEN = 'github_pat_from_env';
+    const getCredentialToken = jest.fn(async () => 'github_pat_from_db');
+    const listCredentials = jest.fn(async () => [
+      {
+        provider: 'github' as const,
+        credentialKey: 'github-skills-prod',
+        credentialPresent: true,
+        tokenFingerprint: 'abc123',
+      },
+    ]);
+    const deps = createDeps({
+      allowServerCredentials: false,
+      getCredentialToken,
+      listCredentials,
+      getConfig: () => ({
+        github: {
+          enabled: true,
+          intervalMinutes: 60,
+          runOnStartup: false,
+          sources: [
+            {
+              id: 'librechat-skills',
+              owner: 'LibreChat',
+              repo: 'skills',
+              ref: 'main',
+              paths: ['skills'],
+              token: '${GITHUB_SKILLS_TOKEN}',
+            },
+            {
+              id: 'stored-credential-skills',
+              owner: 'LibreChat',
+              repo: 'skills',
+              ref: 'main',
+              paths: ['skills'],
+              credentialKey: 'github-skills-prod',
+            },
+          ],
+        },
+      }),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+
+    try {
+      const status = await runner.getStatus();
+      const result = await runner.runOnce();
+
+      expect(status.credentials).toEqual([]);
+      expect(status.sources).toEqual([
+        expect.objectContaining({ sourceId: 'librechat-skills', credentialPresent: false }),
+        expect.objectContaining({
+          sourceId: 'stored-credential-skills',
+          credentialPresent: false,
+        }),
+      ]);
+      expect(result.status).toBe('failed');
+      expect(result.sources).toEqual([
+        expect.objectContaining({
+          sourceId: 'librechat-skills',
+          status: 'failed',
+          errorCode: 'MISSING_CREDENTIAL',
+        }),
+        expect.objectContaining({
+          sourceId: 'stored-credential-skills',
+          status: 'failed',
+          errorCode: 'MISSING_CREDENTIAL',
+        }),
+      ]);
+      expect(listCredentials).not.toHaveBeenCalled();
+      expect(getCredentialToken).not.toHaveBeenCalled();
+      expect(deps.fetchFn).not.toHaveBeenCalled();
+    } finally {
+      if (previousToken == null) {
+        delete process.env.GITHUB_SKILLS_TOKEN;
+      } else {
+        process.env.GITHUB_SKILLS_TOKEN = previousToken;
+      }
+    }
+  });
+
   it('preserves slash-delimited refs when fetching the GitHub commit', async () => {
     const baseFetch = githubFetch();
     const fetchFn = jest.fn(async (input: RequestInfo | URL) => {
