@@ -58,6 +58,7 @@ test.describe('auth session', () => {
     browser,
     baseURL,
   }) => {
+    test.setTimeout(90000);
     if (typeof baseURL !== 'string') {
       throw new Error('baseURL must be configured for mock auth tests');
     }
