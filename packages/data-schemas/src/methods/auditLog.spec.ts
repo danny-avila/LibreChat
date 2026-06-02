@@ -213,6 +213,22 @@ describe('auditLog methods', () => {
       await expect(AuditLog.deleteMany({})).rejects.toThrow(/append-only/);
     });
 
+    it('rejects Document.prototype.deleteOne() on a loaded audit entry', async () => {
+      const doc = await methods.recordAuditEntry(baseInput());
+      const persisted = (await AuditLog.findById(doc!._id))!;
+      await expect(persisted.deleteOne()).rejects.toThrow(/append-only/);
+      const stillThere = await AuditLog.findById(doc!._id);
+      expect(stillThere).not.toBeNull();
+    });
+
+    it('rejects Document.prototype.updateOne() on a loaded audit entry', async () => {
+      const doc = await methods.recordAuditEntry(baseInput());
+      const persisted = (await AuditLog.findById(doc!._id))!;
+      await expect(persisted.updateOne({ capability: 'tampered' })).rejects.toThrow(/append-only/);
+      const unchanged = await AuditLog.findById(doc!._id);
+      expect(unchanged?.capability).toBe('manage:users');
+    });
+
     it('rejects a second save() on an existing document', async () => {
       const doc = await methods.recordAuditEntry(baseInput());
       const persisted = (await AuditLog.findById(doc!._id))!;

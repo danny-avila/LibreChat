@@ -91,6 +91,21 @@ auditLogSchema.pre(['deleteOne', 'deleteMany', 'findOneAndDelete'], function (ne
 });
 
 /**
+ * Mongoose registers `deleteOne` / `updateOne` pre-hooks as query middleware
+ * by default, which leaves `Document.prototype.deleteOne()` and
+ * `Document.prototype.updateOne()` as escape hatches around the append-only
+ * contract: a caller that has already loaded a doc could invoke either method
+ * on the instance and bypass the query-level hooks above. The explicit
+ * `{ document: true, query: false }` registrations below close both holes.
+ */
+auditLogSchema.pre('deleteOne', { document: true, query: false }, function (next) {
+  next(new Error(APPEND_ONLY_MESSAGE));
+});
+auditLogSchema.pre('updateOne', { document: true, query: false }, function (next) {
+  next(new Error(APPEND_ONLY_MESSAGE));
+});
+
+/**
  * Document-level `save` is allowed for new docs only. A second save on an
  * existing document would mutate it, so reject that case explicitly.
  */
