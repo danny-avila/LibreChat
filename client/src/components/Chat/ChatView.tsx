@@ -11,6 +11,7 @@ import { useAddedResponse, useResumeOnLoad, useAdaptiveSSE, useChatHelpers } fro
 import ConversationStarters from './Input/ConversationStarters';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import SuggestionGrid from './Landing/SuggestionGrid';
+import BudgetCard from './BudgetCard';
 import MessagesView from './Messages/MessagesView';
 import Presentation from './Presentation';
 import ChatForm from './Input/ChatForm';
@@ -101,6 +102,7 @@ function ChatView({ index = 0 }: { index?: number }) {
                     )}
                   >
                     <ChatForm index={index} />
+                    <BudgetCard />
                     {isLandingPage && <SuggestionGrid index={index} />}
                     {isLandingPage ? <ConversationStarters /> : <Footer />}
                   </div>
