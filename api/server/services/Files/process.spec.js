@@ -34,12 +34,27 @@ jest.mock('librechat-data-provider', () => {
 });
 
 jest.mock('@librechat/api', () => {
+  const actualDataProvider = jest.requireActual('librechat-data-provider');
+  const RetentionMode = actualDataProvider.RetentionMode ?? { ALL: 'all', TEMPORARY: 'temporary' };
+  const getRetentionExpiry = jest.fn(() => ({}));
   return {
     sanitizeFilename: jest.fn((n) => n),
     parseText: jest.fn().mockResolvedValue({ text: '', bytes: 0 }),
     processAudioFile: jest.fn(),
     getStorageMetadata: jest.fn(() => ({})),
-    getRetentionExpiry: jest.fn(() => ({})),
+    getRetentionExpiry,
+    getAgentFileRetentionExpiry: jest.fn(({ req, messageAttachment, toolResource }) => {
+      const interfaceConfig = req?.config?.interfaceConfig;
+      if (
+        !messageAttachment &&
+        !!toolResource &&
+        (interfaceConfig?.retentionMode !== RetentionMode.ALL ||
+          interfaceConfig?.retainAgentFiles === true)
+      ) {
+        return {};
+      }
+      return getRetentionExpiry(req);
+    }),
     sweepExpiredFiles: jest.fn().mockResolvedValue({ scanned: 0, deleted: 0, failed: 0 }),
     startExpiredFileSweep: jest.fn().mockReturnValue('sweep-interval'),
   };
@@ -112,6 +127,7 @@ jest.mock('~/server/services/Files/Audio/STTService', () => ({
 
 const {
   getRetentionExpiry,
+  getAgentFileRetentionExpiry,
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
 } = require('@librechat/api');
@@ -425,6 +441,14 @@ describe('processAgentFileUpload', () => {
 
       await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
 
+      expect(getAgentFileRetentionExpiry).toHaveBeenCalledWith(
+        {
+          req,
+          messageAttachment: false,
+          toolResource: EToolResources.context,
+        },
+        expect.any(Object),
+      );
       expect(getRetentionExpiry).not.toHaveBeenCalled();
       expect(db.createFile).toHaveBeenCalledWith(expect.not.objectContaining({ expiredAt }), true);
       expect(db.addAgentResourceFile).toHaveBeenCalledWith(
@@ -493,6 +517,14 @@ describe('processAgentFileUpload', () => {
 
       await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
 
+      expect(getAgentFileRetentionExpiry).toHaveBeenCalledWith(
+        {
+          req,
+          messageAttachment: false,
+          toolResource: EToolResources.context,
+        },
+        expect.any(Object),
+      );
       expect(getRetentionExpiry).not.toHaveBeenCalled();
       expect(db.createFile).toHaveBeenCalledWith(
         expect.objectContaining({
