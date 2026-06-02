@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test';
 import type { Browser, Page } from '@playwright/test';
 import type { User } from '../../types';
-import { getSecondaryE2EUser } from '../../setup/users.mock';
 import { MOCK_ENDPOINTS, NEW_CHAT_PATH, selectMockEndpoint, sendMessage } from './helpers';
+import { getSecondaryE2EUser } from '../../setup/users.mock';
+import cleanupUser from '../../setup/cleanupUser';
 
 const A_PRIVATE_MARKER = 'A-private-conversation-marker';
 
@@ -15,21 +16,39 @@ async function register(page: Page, user: User) {
   await page.getByLabel('Submit registration').click();
 }
 
+async function registrationErrorIsVisible(page: Page) {
+  return page
+    .getByTestId('registration-error')
+    .isVisible({ timeout: 500 })
+    .catch(() => false);
+}
+
+async function registerSecondaryUser(page: Page, user: User) {
+  await page.goto('/', { timeout: 10000 });
+  await page.waitForURL(/\/login/, { timeout: 10000 });
+  await register(page, user);
+
+  try {
+    await page.waitForURL(/\/c\/new/, { timeout: 10000 });
+  } catch (error) {
+    if (!(await registrationErrorIsVisible(page))) {
+      throw error;
+    }
+
+    await cleanupUser(user);
+    await page.goto('/', { timeout: 10000 });
+    await page.waitForURL(/\/login/, { timeout: 10000 });
+    await register(page, user);
+    await page.waitForURL(/\/c\/new/, { timeout: 10000 });
+  }
+}
+
 /** Register the secondary user in a throwaway context, then log in within `page`. */
-async function ensureSecondaryUser(browser: Browser, page: Page, user: User) {
-  const setupContext = await browser.newContext({ storageState: undefined });
+async function ensureSecondaryUser(browser: Browser, page: Page, user: User, baseURL: string) {
+  const setupContext = await browser.newContext({ storageState: undefined, baseURL });
   const setupPage = await setupContext.newPage();
   try {
-    await setupPage.goto('/', { timeout: 10000 });
-    await setupPage.waitForURL(/\/login/, { timeout: 10000 });
-    await register(setupPage, user);
-    await Promise.race([
-      setupPage.waitForURL(/\/c\/new/, { timeout: 10000 }).catch(() => undefined),
-      setupPage
-        .getByTestId('registration-error')
-        .waitFor({ timeout: 10000 })
-        .catch(() => undefined),
-    ]);
+    await registerSecondaryUser(setupPage, user);
   } finally {
     await setupContext.close();
   }
@@ -42,8 +61,11 @@ async function ensureSecondaryUser(browser: Browser, page: Page, user: User) {
 }
 
 test.describe('user isolation', () => {
-  test('user B cannot see user A conversations', async ({ page, browser }) => {
+  test('user B cannot see user A conversations', async ({ page, browser, baseURL }) => {
     test.setTimeout(90000);
+    if (typeof baseURL !== 'string') {
+      throw new Error('baseURL must be configured for mock isolation tests');
+    }
 
     // User A (authenticated via storageState) creates a private conversation.
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
@@ -54,10 +76,10 @@ test.describe('user isolation', () => {
     const conversationAUrl = page.url();
 
     // User B in a fresh, unauthenticated context.
-    const contextB = await browser.newContext({ storageState: undefined });
+    const contextB = await browser.newContext({ storageState: undefined, baseURL });
     const pageB = await contextB.newPage();
     try {
-      await ensureSecondaryUser(browser, pageB, getSecondaryE2EUser());
+      await ensureSecondaryUser(browser, pageB, getSecondaryE2EUser(), baseURL);
 
       // (a) Sidebar list does not expose A's conversation.
       await pageB.goto(NEW_CHAT_PATH, { timeout: 10000 });
