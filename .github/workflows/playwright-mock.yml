@@ -1,0 +1,88 @@
+name: Playwright E2E (Mock LLM)
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual trigger'
+        required: false
+        default: 'Manual e2e run'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: playwright-mock-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_OPTIONS: '--max-old-space-size=${{ secrets.NODE_MAX_OLD_SPACE_SIZE || 6144 }}'
+
+jobs:
+  e2e:
+    name: Tier-1 smoke (headless Chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 20.19
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19'
+
+      - name: Restore node_modules cache
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            client/node_modules
+            packages/client/node_modules
+            packages/data-provider/node_modules
+            packages/data-schemas/node_modules
+            packages/api/node_modules
+            api/node_modules
+          key: node-modules-e2e-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Resolve Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: cache-playwright
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run mock-LLM Tier-1 e2e
+        run: npm run e2e:mock:ci
+        env:
+          CI: 'true'
+
+      - name: Upload Playwright HTML report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report/**
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload traces & screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: e2e/specs/.test-results/**
+          retention-days: 7
+          if-no-files-found: ignore

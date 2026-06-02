@@ -1,0 +1,26 @@
+# Credential-free e2e config: both custom endpoints target the local mock LLM
+# server. Selected via CONFIG_PATH by e2e/playwright.config.mock.ts.
+version: 1.3.11
+cache: true
+
+endpoints:
+  custom:
+    - name: 'Mock Provider A'
+      apiKey: 'e2e-mock-key-a'
+      baseURL: 'http://127.0.0.1:8889/v1'
+      models:
+        default:
+          - 'mock-model-a'
+        fetch: false
+      titleConvo: false
+      modelDisplayLabel: 'Mock Provider A'
+
+    - name: 'Mock Provider B'
+      apiKey: 'e2e-mock-key-b'
+      baseURL: 'http://127.0.0.1:8889/v1'
+      models:
+        default:
+          - 'mock-model-b'
+        fetch: false
+      titleConvo: false
+      modelDisplayLabel: 'Mock Provider B'

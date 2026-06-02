@@ -58,6 +58,8 @@
     "e2e:headed": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.local.ts --headed",
     "e2e:a11y": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.a11y.ts --headed",
     "e2e:ci": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.ts",
+    "e2e:mock": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.mock.ts",
+    "e2e:mock:ci": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.mock.ts",
     "e2e:debug": "npm run e2e:prepare && cross-env PWDEBUG=1 playwright test --config=e2e/playwright.config.local.ts",
     "e2e:codegen": "npx playwright codegen --load-storage=e2e/storageState.json http://localhost:3080/c/new",
     "e2e:login": "npx playwright codegen --save-storage=e2e/auth.json http://localhost:3080/login",
