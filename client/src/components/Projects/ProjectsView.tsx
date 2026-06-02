@@ -102,7 +102,6 @@ export default function ProjectsView() {
               onChange={(event) => setName(event.target.value)}
               placeholder={localize('com_ui_project_name')}
               className="h-10 min-w-0 flex-1 rounded-lg border border-border-light bg-surface-primary px-3 text-sm outline-none focus:ring-2 focus:ring-ring-primary"
-              autoFocus
             />
             <div className="flex gap-2">
               <button
@@ -155,7 +154,8 @@ export default function ProjectsView() {
                   </span>
                 )}
                 <span className="text-xs text-text-secondary">
-                  {localize('com_ui_latest_activity')}: {formatActivity(project, localize('com_ui_no_activity'))}
+                  {localize('com_ui_latest_activity')}:{' '}
+                  {formatActivity(project, localize('com_ui_no_activity'))}
                 </span>
               </button>
             ))}

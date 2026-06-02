@@ -5,11 +5,7 @@ import type {
   QueryObserverResult,
   UseQueryOptions,
 } from '@tanstack/react-query';
-import type {
-  ProjectListParams,
-  ProjectListResponse,
-  TChatProject,
-} from 'librechat-data-provider';
+import type { ProjectListParams, ProjectListResponse, TChatProject } from 'librechat-data-provider';
 
 export const useProjectsInfiniteQuery = (
   params: ProjectListParams = {},
@@ -51,4 +47,3 @@ export const useProjectQuery = (
     },
   );
 };
-

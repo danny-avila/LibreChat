@@ -40,7 +40,10 @@ export type AssignConversationToProjectResult = {
 export interface ChatProjectMethods {
   createChatProject(user: string, input: CreateChatProjectInput): Promise<IChatProject>;
   getChatProject(user: string, projectId: string): Promise<IChatProject | null>;
-  listChatProjects(user: string, options?: ListChatProjectsOptions): Promise<ListChatProjectsResult>;
+  listChatProjects(
+    user: string,
+    options?: ListChatProjectsOptions,
+  ): Promise<ListChatProjectsResult>;
   updateChatProject(
     user: string,
     projectId: string,
@@ -148,10 +151,7 @@ function createCursorFilter(
   const primary = cursorPrimaryValue(cursor.primary, sortBy);
 
   return {
-    $or: [
-      { [sortBy]: { [op]: primary } },
-      { [sortBy]: primary, _id: { [op]: id } },
-    ],
+    $or: [{ [sortBy]: { [op]: primary } }, { [sortBy]: primary, _id: { [op]: id } }],
   } as FilterQuery<IChatProjectDocument>;
 }
 
@@ -201,9 +201,7 @@ export async function refreshChatProjectStatsForUser(
   ).lean<IChatProject>();
 }
 
-export function createChatProjectMethods(
-  mongoose: typeof import('mongoose'),
-): ChatProjectMethods {
+export function createChatProjectMethods(mongoose: typeof import('mongoose')): ChatProjectMethods {
   async function createChatProject(
     user: string,
     input: CreateChatProjectInput,
@@ -262,9 +260,7 @@ export function createChatProjectMethods(
     }
 
     const query =
-      filters.length === 1
-        ? filters[0]
-        : ({ $and: filters } as FilterQuery<IChatProjectDocument>);
+      filters.length === 1 ? filters[0] : ({ $and: filters } as FilterQuery<IChatProjectDocument>);
     const projects = await ChatProject.find(query)
       .sort({ [sortBy]: sortOrder, _id: sortOrder })
       .limit(limit + 1)
@@ -328,7 +324,10 @@ export function createChatProjectMethods(
     }
 
     const [conversationResult, deleteResult] = await Promise.all([
-      Conversation.updateMany({ user, chatProjectId: projectId }, { $unset: { chatProjectId: '' } }),
+      Conversation.updateMany(
+        { user, chatProjectId: projectId },
+        { $unset: { chatProjectId: '' } },
+      ),
       ChatProject.deleteOne(projectFilter),
     ]);
 

@@ -14,4 +14,3 @@ export interface IChatProject {
 }
 
 export interface IChatProjectDocument extends Omit<IChatProject, '_id'>, Document {}
-

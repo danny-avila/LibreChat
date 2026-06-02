@@ -110,9 +110,10 @@ describe('ChatProject methods', () => {
     await methods.assignConversationToProject(user, 'convo-1', firstProject._id!.toString());
     await methods.assignConversationToProject(user, 'convo-1', secondProject._id!.toString());
 
-    const movedConversation = await Conversation.findOne({ user, conversationId: 'convo-1' }).lean<
-      IConversation
-    >();
+    const movedConversation = await Conversation.findOne({
+      user,
+      conversationId: 'convo-1',
+    }).lean<IConversation>();
     const refreshedFirst = await methods.getChatProject(user, firstProject._id!.toString());
     const refreshedSecond = await methods.getChatProject(user, secondProject._id!.toString());
 
@@ -127,9 +128,10 @@ describe('ChatProject methods', () => {
     await methods.assignConversationToProject(user, 'convo-1', project._id!.toString());
 
     const result = await methods.deleteChatProject(user, project._id!.toString());
-    const conversation = await Conversation.findOne({ user, conversationId: 'convo-1' }).lean<
-      IConversation
-    >();
+    const conversation = await Conversation.findOne({
+      user,
+      conversationId: 'convo-1',
+    }).lean<IConversation>();
 
     expect(result.deletedCount).toBe(1);
     expect(result.modifiedCount).toBe(1);
@@ -154,4 +156,3 @@ describe('ChatProject methods', () => {
     expect(deleteResult.deletedCount).toBe(0);
   });
 });
-

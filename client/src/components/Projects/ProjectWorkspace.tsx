@@ -3,10 +3,7 @@ import { ArrowLeft, Folder, Plus, Send } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Spinner } from '@librechat/client';
 import type { ConversationListResponse } from 'librechat-data-provider';
-import {
-  useConversationsInfiniteQuery,
-  useProjectQuery,
-} from '~/data-provider';
+import { useConversationsInfiniteQuery, useProjectQuery } from '~/data-provider';
 import { useLocalize, useNewConvo } from '~/hooks';
 import ProjectChatList from './ProjectChatList';
 

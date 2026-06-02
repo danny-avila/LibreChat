@@ -161,13 +161,7 @@ function ConvoOptions({
         },
       },
     );
-  }, [
-    assignConversationToProject,
-    conversationId,
-    localize,
-    setIsPopoverActive,
-    showToast,
-  ]);
+  }, [assignConversationToProject, conversationId, localize, setIsPopoverActive, showToast]);
 
   const handleInstantDelete = useCallback(
     (e: MouseEvent) => {

@@ -216,7 +216,9 @@ const ProjectChatList = ({
   );
 
   return (
-    <div className={cn('min-h-[280px] flex-1 overflow-hidden rounded-lg border border-border-light')}>
+    <div
+      className={cn('min-h-[280px] flex-1 overflow-hidden rounded-lg border border-border-light')}
+    >
       <AutoSizer>
         {({ width, height }) => (
           <List

@@ -800,9 +800,7 @@ export function listProjects(params?: q.ProjectListParams): Promise<q.ProjectLis
   return request.get(endpoints.projects(params ?? {}));
 }
 
-export function createProject(
-  payload: t.TCreateChatProjectRequest,
-): Promise<t.TChatProject> {
+export function createProject(payload: t.TCreateChatProjectRequest): Promise<t.TChatProject> {
   return request.post(endpoints.projects(), payload);
 }
 
@@ -810,9 +808,7 @@ export function getProjectById(projectId: string): Promise<t.TChatProject> {
   return request.get(endpoints.projectById(projectId));
 }
 
-export function updateProject(
-  payload: t.TUpdateChatProjectRequest,
-): Promise<t.TChatProject> {
+export function updateProject(payload: t.TUpdateChatProjectRequest): Promise<t.TChatProject> {
   const { projectId, ...data } = payload;
   return request.patch(endpoints.projectById(projectId), data);
 }

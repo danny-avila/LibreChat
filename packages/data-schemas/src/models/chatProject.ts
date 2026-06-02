@@ -9,4 +9,3 @@ export function createChatProjectModel(mongoose: typeof import('mongoose')) {
     mongoose.model<IChatProjectDocument>('ChatProject', chatProjectSchema, 'chatprojects')
   );
 }
-

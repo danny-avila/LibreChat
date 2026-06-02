@@ -48,4 +48,3 @@ chatProjectSchema.index({ user: 1, createdAt: -1, _id: -1 });
 chatProjectSchema.index({ user: 1, lastConversationAt: -1, _id: -1 });
 
 export default chatProjectSchema;
-
