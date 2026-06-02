@@ -34,7 +34,7 @@ function BudgetCard() {
   const budget = formatUSD(monthlyBudget);
 
   return (
-    <div className="mx-auto mt-2 flex w-full max-w-3xl px-4">
+    <div className="mx-auto mt-2 flex w-full md:max-w-3xl xl:max-w-4xl sm:px-2">
       <div
         title={localize('com_budget_badge_tooltip', { percent, spent, budget })}
         className="inline-flex items-center gap-2.5 rounded-md border border-border-light bg-surface-secondary px-2.5 py-1 text-xs text-text-primary"

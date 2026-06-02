@@ -47,7 +47,7 @@ function SuggestionGrid({ index }: SuggestionGridProps) {
   }
 
   return (
-    <div className="mx-auto mt-3 flex w-full max-w-3xl flex-col items-start gap-2 px-4">
+    <div className="mx-auto mt-3 flex w-full md:max-w-3xl xl:max-w-4xl flex-col items-start gap-2 sm:px-2">
       <p className="text-sm text-text-secondary">
         {localize('com_ui_landing_suggestions_intro')}
       </p>
