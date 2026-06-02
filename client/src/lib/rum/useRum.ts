@@ -5,6 +5,11 @@ import { useGetStartupConfig } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { normalizeRumPath } from './routes';
 
+const PROXY_API_KEY = 'librechat-rum-proxy';
+
+let rumProxyToken: string | undefined;
+let rumProxyFetchPatched = false;
+
 type HyperDXBrowser = {
   init: (config: {
     advancedNetworkCapture: boolean;
@@ -18,16 +23,68 @@ type HyperDXBrowser = {
   setGlobalAttributes: (attributes: Record<string, string>) => void;
 };
 
-function shouldInitializeRum(config: TRumConfig | undefined): boolean {
+function shouldInitializeRum(config: TRumConfig | undefined, token: string | undefined): boolean {
   if (!config?.enabled || config.provider !== 'hyperdx' || !config.url || !config.serviceName) {
     return false;
   }
 
-  return config.authMode === 'publicToken' && !!config.publicToken;
+  if (config.authMode === 'publicToken') {
+    return !!config.publicToken;
+  }
+
+  return config.authMode === 'proxy' && !!token && !config.publicToken;
 }
 
-function getApiKey(config: TRumConfig): string {
+function getApiKey(config: TRumConfig, token: string | undefined): string {
+  if (config.authMode === 'proxy') {
+    return token ? PROXY_API_KEY : '';
+  }
+
   return config.publicToken ?? '';
+}
+
+function isRumProxyRequest(input: RequestInfo | URL, proxyUrl: string): boolean {
+  const rawUrl =
+    typeof Request !== 'undefined' && input instanceof Request ? input.url : input.toString();
+  const url = new URL(rawUrl, window.location.origin);
+  const proxy = new URL(proxyUrl, window.location.origin);
+
+  return url.origin === window.location.origin && url.pathname.startsWith(`${proxy.pathname}/`);
+}
+
+function withAuthorization(
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  token: string,
+): [RequestInfo | URL, RequestInit | undefined] {
+  const headers = new Headers(
+    init?.headers ??
+      (typeof Request !== 'undefined' && input instanceof Request ? input.headers : undefined),
+  );
+  headers.set('authorization', `Bearer ${token}`);
+
+  if (typeof Request !== 'undefined' && input instanceof Request) {
+    return [new Request(input, { ...init, headers }), undefined];
+  }
+
+  return [input, { ...init, headers }];
+}
+
+function ensureRumProxyAuth(proxyUrl: string): void {
+  if (rumProxyFetchPatched || typeof window === 'undefined' || typeof window.fetch !== 'function') {
+    return;
+  }
+
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+    if (rumProxyToken && isRumProxyRequest(input, proxyUrl)) {
+      const [authorizedInput, authorizedInit] = withAuthorization(input, init, rumProxyToken);
+      return originalFetch(authorizedInput, authorizedInit);
+    }
+
+    return originalFetch(input, init);
+  };
+  rumProxyFetchPatched = true;
 }
 
 function buildGlobalAttributes(
@@ -56,7 +113,7 @@ async function loadHyperDX(): Promise<HyperDXBrowser> {
 
 export default function useRum(): void {
   const { data: startupConfig } = useGetStartupConfig();
-  const { user } = useAuthContext();
+  const { token, user } = useAuthContext();
   const location = useLocation();
   const initializedKeyRef = useRef<string | undefined>(undefined);
   const sampledInitKeyRef = useRef<string | undefined>(undefined);
@@ -75,13 +132,21 @@ export default function useRum(): void {
       return;
     }
 
-    if (!shouldInitializeRum(rumConfig)) {
+    if (!shouldInitializeRum(rumConfig, token)) {
+      if (rumConfig?.authMode === 'proxy') {
+        rumProxyToken = undefined;
+      }
       return;
     }
 
     const config = rumConfig;
+    const apiKey = getApiKey(config, token);
+    if (config.authMode === 'proxy') {
+      rumProxyToken = token;
+      ensureRumProxyAuth(config.url);
+    }
 
-    const initKey = [config.url, config.serviceName, config.authMode, config.publicToken].join(':');
+    const initKey = [config.url, config.serviceName, config.authMode, apiKey].join(':');
 
     if (initializedKeyRef.current === initKey) {
       return;
@@ -107,7 +172,7 @@ export default function useRum(): void {
 
         HyperDX.init({
           advancedNetworkCapture: config.advancedNetworkCapture ?? false,
-          apiKey: getApiKey(config),
+          apiKey,
           consoleCapture: config.consoleCapture ?? false,
           disableReplay: config.disableReplay ?? true,
           service: config.serviceName,
@@ -124,7 +189,7 @@ export default function useRum(): void {
     return () => {
       cancelled = true;
     };
-  }, [rumConfig, user]);
+  }, [rumConfig, token, user]);
 
   useEffect(() => {
     hyperDxRef.current?.setGlobalAttributes(
