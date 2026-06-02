@@ -115,6 +115,7 @@ export const genTitle = (conversationId: string) =>
 export const updateConversation = () => `${conversationsRoot}/update`;
 
 export const archiveConversation = () => `${conversationsRoot}/archive`;
+export const pinConversation = () => `${conversationsRoot}/pin`;
 
 export const deleteConversation = () => `${conversationsRoot}`;
 

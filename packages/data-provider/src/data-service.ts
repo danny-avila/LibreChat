@@ -834,6 +834,12 @@ export function assignConversationToProject(
   return request.put(endpoints.projectConversation(conversationId), { projectId });
 }
 
+export function pinConversation(
+  payload: t.TPinConversationRequest,
+): Promise<t.TPinConversationResponse> {
+  return request.post(endpoints.pinConversation(), { arg: payload });
+}
+
 export function genTitle(payload: m.TGenTitleRequest): Promise<m.TGenTitleResponse> {
   return request.get(endpoints.genTitle(payload.conversationId));
 }

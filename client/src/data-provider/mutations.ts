@@ -149,6 +149,26 @@ export const useArchiveConvoMutation = (
   );
 };
 
+export const usePinConversationMutation = (
+  options?: t.PinConversationOptions,
+): UseMutationResult<t.TPinConversationResponse, unknown, t.TPinConversationRequest, unknown> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, onError, ..._options } = options || {};
+
+  return useMutation(
+    [MutationKeys.convoPin],
+    (payload: t.TPinConversationRequest) => dataService.pinConversation(payload),
+    {
+      onSuccess: (data, vars, context) => {
+        updateConvoInAllQueries(queryClient, vars.conversationId, () => data);
+        onSuccess?.(data, vars, context);
+      },
+      onError,
+      ..._options,
+    },
+  );
+};
+
 export const useCreateSharedLinkMutation = (
   options?: t.MutationOptions<
     t.TCreateShareLinkRequest,
