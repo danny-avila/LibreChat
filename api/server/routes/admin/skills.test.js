@@ -8,11 +8,18 @@ const mockRequireJwtAuth = jest.fn((req, res, next) => {
 const mockCapabilityMiddleware = jest.fn((req, res, next) => next());
 const mockRequireCapability = jest.fn(() => mockCapabilityMiddleware);
 const mockHasCapability = jest.fn().mockResolvedValue(true);
+let mockResolvedConfig = { skillSync: { github: { enabled: false, sources: [] } } };
 const mockConfigMiddleware = jest.fn((req, res, next) => {
-  req.config = { skillSync: { github: { enabled: false, sources: [] } } };
+  req.config = mockResolvedConfig;
   next();
 });
 const mockGetGitHubSkillSyncRunnerForRequest = jest.fn();
+const mockHandlers = {
+  getSyncStatus: jest.fn((req, res) => res.status(200).json({ ok: true })),
+  runSync: jest.fn((req, res) => res.status(200).json({ ok: true })),
+  setCredential: jest.fn((req, res) => res.status(200).json({ ok: true })),
+  deleteCredential: jest.fn((req, res) => res.status(200).json({ ok: true })),
+};
 
 jest.mock('@librechat/data-schemas', () => ({
   SystemCapabilities: {
@@ -23,12 +30,7 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
-  createAdminSkillsSyncHandlers: jest.fn(() => ({
-    getSyncStatus: jest.fn((req, res) => res.status(200).json({ ok: true })),
-    runSync: jest.fn((req, res) => res.status(200).json({ ok: true })),
-    setCredential: jest.fn((req, res) => res.status(200).json({ ok: true })),
-    deleteCredential: jest.fn((req, res) => res.status(200).json({ ok: true })),
-  })),
+  createAdminSkillsSyncHandlers: jest.fn(() => mockHandlers),
 }));
 
 jest.mock('~/server/middleware/roles/capabilities', () => ({
@@ -52,11 +54,22 @@ jest.mock('~/server/services/Skills/sync', () => ({
 }));
 
 describe('admin skills sync routes', () => {
-  it('requires JWT auth and admin capabilities for sync endpoints', async () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockHasCapability.mockResolvedValue(true);
+    mockResolvedConfig = { skillSync: { github: { enabled: false, sources: [] } } };
+  });
+
+  function createApp() {
     const router = require('./skills');
     const app = express();
     app.use(express.json());
     app.use('/api/admin/skills', router);
+    return app;
+  }
+
+  it('requires JWT auth and admin capabilities for sync endpoints', async () => {
+    const app = createApp();
 
     await request(app).get('/api/admin/skills/sync/status').expect(200);
     await request(app).post('/api/admin/skills/sync/run').expect(200);
@@ -67,15 +80,12 @@ describe('admin skills sync routes', () => {
     expect(mockRequireJwtAuth).toHaveBeenCalled();
     expect(mockCapabilityMiddleware).toHaveBeenCalled();
     expect(mockConfigMiddleware).toHaveBeenCalled();
-    expect(mockHasCapability).toHaveBeenCalledTimes(4);
+    expect(mockHasCapability).toHaveBeenCalledTimes(5);
     expect(mockHasCapability).toHaveBeenCalledWith(
       { id: 'user-1', role: 'ADMIN', tenantId: 'tenant-a' },
       'read:skills',
     );
-    expect(mockHasCapability).toHaveBeenCalledWith(
-      { id: 'user-1', role: 'ADMIN', tenantId: 'tenant-a' },
-      'manage:skills',
-    );
+    expect(mockHasCapability).toHaveBeenCalledWith({ id: 'user-1', role: 'ADMIN' }, 'read:skills');
     expect(mockHasCapability).toHaveBeenCalledWith(
       { id: 'user-1', role: 'ADMIN' },
       'manage:skills',
@@ -84,5 +94,113 @@ describe('admin skills sync routes', () => {
     expect(createAdminSkillsSyncHandlers).toHaveBeenCalledWith(
       expect.objectContaining({ getRunner: mockGetGitHubSkillSyncRunnerForRequest }),
     );
+  });
+
+  it('marks credential metadata hidden for tenant-scoped status reads', async () => {
+    mockHasCapability.mockImplementation(async (user, capability) => {
+      if (capability === 'read:skills') {
+        return Boolean(user.tenantId);
+      }
+      return true;
+    });
+    const app = createApp();
+
+    await request(app).get('/api/admin/skills/sync/status').expect(200);
+
+    const req = mockHandlers.getSyncStatus.mock.calls[0][0];
+    expect(req.skillSyncCanReadCredentials).toBe(false);
+    expect(req.skillSyncAllowServerCredentials).toBe(false);
+  });
+
+  it('allows tenant admins to run resolved override sync without server credentials', async () => {
+    const skillSync = {
+      github: {
+        enabled: true,
+        intervalMinutes: 60,
+        runOnStartup: false,
+        sources: [
+          {
+            id: 'tenant-skills',
+            owner: 'LibreChat',
+            repo: 'skills',
+            ref: 'main',
+            paths: ['skills'],
+            token: '${GITHUB_SKILLS_TOKEN}',
+          },
+        ],
+      },
+    };
+    mockResolvedConfig = { skillSync, config: {} };
+    mockHasCapability.mockImplementation(async (user, capability) => {
+      if (capability === 'manage:skills') {
+        return Boolean(user.tenantId);
+      }
+      return true;
+    });
+    const app = createApp();
+
+    await request(app).post('/api/admin/skills/sync/run').expect(200);
+
+    const req = mockHandlers.runSync.mock.calls[0][0];
+    expect(req.skillSyncAllowServerCredentials).toBe(false);
+  });
+
+  it('prevents tenant admins from manually running base skill sync config', async () => {
+    const skillSync = {
+      github: {
+        enabled: true,
+        intervalMinutes: 60,
+        runOnStartup: false,
+        sources: [
+          {
+            id: 'base-skills',
+            owner: 'LibreChat',
+            repo: 'skills',
+            ref: 'main',
+            paths: ['skills'],
+            token: '${GITHUB_SKILLS_TOKEN}',
+          },
+        ],
+      },
+    };
+    mockResolvedConfig = { skillSync, config: { skillSync } };
+    mockHasCapability.mockImplementation(async (user, capability) => {
+      if (capability === 'manage:skills') {
+        return Boolean(user.tenantId);
+      }
+      return true;
+    });
+    const app = createApp();
+
+    await request(app).post('/api/admin/skills/sync/run').expect(403);
+
+    expect(mockHandlers.runSync).not.toHaveBeenCalled();
+  });
+
+  it('allows platform admins to manually run base skill sync config with server credentials', async () => {
+    const skillSync = {
+      github: {
+        enabled: true,
+        intervalMinutes: 60,
+        runOnStartup: false,
+        sources: [
+          {
+            id: 'base-skills',
+            owner: 'LibreChat',
+            repo: 'skills',
+            ref: 'main',
+            paths: ['skills'],
+            token: '${GITHUB_SKILLS_TOKEN}',
+          },
+        ],
+      },
+    };
+    mockResolvedConfig = { skillSync, config: { skillSync } };
+    const app = createApp();
+
+    await request(app).post('/api/admin/skills/sync/run').expect(200);
+
+    const req = mockHandlers.runSync.mock.calls[0][0];
+    expect(req.skillSyncAllowServerCredentials).toBe(true);
   });
 });
