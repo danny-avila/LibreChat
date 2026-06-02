@@ -401,7 +401,15 @@ describe('createToolExecuteHandler', () => {
           args: { custom: true },
           codeSessionContext: {
             session_id: 'ignored-session',
-            files: [{ id: 'ignored-file', name: 'ignored.txt', session_id: 'ignored-session' }],
+            files: [
+              {
+                id: 'ignored-file',
+                name: 'ignored.txt',
+                storage_session_id: 'ignored-session',
+                resource_id: 'user-1',
+                kind: 'user',
+              },
+            ],
           },
         },
       ]);
