@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { ChevronDown, Users } from 'lucide-react';
 import { Tools, Constants, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
@@ -9,7 +9,7 @@ import type {
   FunctionToolCall,
 } from 'librechat-data-provider';
 import type { PartWithIndex } from './ParallelContent';
-import { useLocalize, useExpandCollapse } from '~/hooks';
+import { useLocalize, useExpandCollapse, dispatchMessageContentLayoutChange } from '~/hooks';
 import { cn, getToolDisplayLabel } from '~/utils';
 import { StackedToolIcons } from './ToolOutput';
 import { useMCPIconMap } from '~/hooks/MCP';
@@ -75,7 +75,12 @@ interface ToolCallGroupProps {
   parts: PartWithIndex[];
   isSubmitting: boolean;
   isLast: boolean;
-  renderPart: (part: TMessageContentParts, idx: number, isLastPart: boolean) => React.ReactNode;
+  renderPart: (
+    part: TMessageContentParts,
+    idx: number,
+    isLastPart: boolean,
+    onToolExpand?: () => void,
+  ) => React.ReactNode;
   lastContentIdx: number;
   groupAttachments?: TAttachment[];
   initialExpansionState?: ToolCallGroupExpansionState;
@@ -99,6 +104,7 @@ export default function ToolCallGroup({
 }: ToolCallGroupProps) {
   const localize = useLocalize();
   const mcpIconMap = useMCPIconMap();
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const count = parts.length;
 
   const toolMetadata = useMemo(() => parts.map((p) => getToolMeta(p.part)), [parts]);
@@ -151,21 +157,43 @@ export default function ToolCallGroup({
   );
   const [userOverride, setUserOverride] = useState(initialState != null);
   const { style: expandStyle, ref: expandRef } = useExpandCollapse(isExpanded);
+  const notifyLayoutChange = useCallback(() => {
+    dispatchMessageContentLayoutChange(rootRef.current);
+  }, []);
 
   useEffect(() => {
     if (autoCollapse && !userOverride) {
       setIsExpanded(false);
+      notifyLayoutChange();
     }
-  }, [autoCollapse, userOverride]);
+  }, [autoCollapse, notifyLayoutChange, userOverride]);
 
   const handleToggle = useCallback(() => {
     setUserOverride(true);
     setIsExpanded((prev) => {
       const nextExpanded = !prev;
       onExpansionChange?.({ isExpanded: nextExpanded, userOverride: true });
+      notifyLayoutChange();
       return nextExpanded;
     });
-  }, [onExpansionChange]);
+  }, [notifyLayoutChange, onExpansionChange]);
+
+  const handleToolExpand = useCallback(() => {
+    setUserOverride(true);
+    setIsExpanded(true);
+    onExpansionChange?.({ isExpanded: true, userOverride: true });
+    notifyLayoutChange();
+  }, [notifyLayoutChange, onExpansionChange]);
+
+  const handleTransitionEnd = useCallback(
+    (event: React.TransitionEvent<HTMLDivElement>) => {
+      if (event.target !== event.currentTarget) {
+        return;
+      }
+      notifyLayoutChange();
+    },
+    [notifyLayoutChange],
+  );
 
   const getSubagentLabel = () =>
     subagentsDone
@@ -183,11 +211,12 @@ export default function ToolCallGroup({
   useEffect(() => {
     if (hasActiveToolCall && !userOverride) {
       setIsExpanded(true);
+      notifyLayoutChange();
     }
-  }, [hasActiveToolCall, userOverride]);
+  }, [hasActiveToolCall, notifyLayoutChange, userOverride]);
 
   return (
-    <div className="mb-2 mt-1">
+    <div className="mb-2 mt-1" ref={rootRef}>
       <button
         type="button"
         className="inline-flex w-full items-center gap-2 py-1 text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
@@ -232,10 +261,12 @@ export default function ToolCallGroup({
           aria-hidden="true"
         />
       </button>
-      <div style={expandStyle}>
+      <div style={expandStyle} onTransitionEnd={handleTransitionEnd}>
         <div className="overflow-hidden" ref={expandRef}>
           <div className="py-0.5 pl-4">
-            {parts.map(({ part, idx }) => renderPart(part, idx, isLast && idx === lastContentIdx))}
+            {parts.map(({ part, idx }) =>
+              renderPart(part, idx, isLast && idx === lastContentIdx, handleToolExpand),
+            )}
           </div>
         </div>
       </div>

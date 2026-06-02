@@ -45,6 +45,7 @@ type PartWithContextProps = {
   isLast: boolean;
   partAttachments: TAttachment[] | undefined;
   hideAttachments?: boolean;
+  onToolExpand?: () => void;
 };
 
 const PartWithContext = memo(function PartWithContext({
@@ -60,6 +61,7 @@ const PartWithContext = memo(function PartWithContext({
   isLast,
   partAttachments,
   hideAttachments,
+  onToolExpand,
 }: PartWithContextProps) {
   const contextValue = useMemo(
     () => ({
@@ -85,6 +87,7 @@ const PartWithContext = memo(function PartWithContext({
         isLast={isLastPart}
         showCursor={isLastPart && isLast}
         hideAttachments={hideAttachments}
+        onToolExpand={onToolExpand}
       />
     </MessageContext.Provider>
   );
@@ -253,7 +256,7 @@ const ContentParts = memo(function ContentParts({
   );
 
   const renderGroupedPart = useCallback(
-    (part: TMessageContentParts, idx: number, isLastPart: boolean) => {
+    (part: TMessageContentParts, idx: number, isLastPart: boolean, onToolExpand?: () => void) => {
       return (
         <PartWithContext
           key={`provider-${messageId}-${idx}`}
@@ -269,6 +272,7 @@ const ContentParts = memo(function ContentParts({
           isSubmitting={effectiveIsSubmitting}
           partAttachments={attachmentMap[getToolCallId(part)]}
           hideAttachments
+          onToolExpand={onToolExpand}
         />
       );
     },

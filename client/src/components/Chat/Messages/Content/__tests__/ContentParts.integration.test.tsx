@@ -17,6 +17,7 @@ jest.mock('~/hooks', () => ({
     ref: { current: null },
   }),
   useProgress: (initial: number) => (initial >= 1 ? 1 : initial),
+  dispatchMessageContentLayoutChange: jest.fn(),
 }));
 
 jest.mock('~/hooks/MCP', () => ({
@@ -255,6 +256,38 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     rerender(
       <RecoilRoot>
         <ContentParts {...baseProps} content={nextContent} />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Used 2 tools' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+  });
+
+  it('keeps a running tool group open when an individual tool is expanded before completion', () => {
+    const runningContent = [makeMcpToolCall('t1', false), makeMcpToolCall('t2', false)];
+    const completedContent = [makeMcpToolCall('t1'), makeMcpToolCall('t2')];
+
+    const { rerender } = render(
+      <RecoilRoot>
+        <ContentParts {...baseProps} isSubmitting isLatestMessage content={runningContent} />
+      </RecoilRoot>,
+    );
+
+    const toggle = screen.getByRole('button', { name: 'Used 2 tools' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.click(screen.getAllByTestId('progress-text')[0]);
+
+    rerender(
+      <RecoilRoot>
+        <ContentParts
+          {...baseProps}
+          isSubmitting={false}
+          isLatestMessage
+          content={completedContent}
+        />
       </RecoilRoot>,
     );
 

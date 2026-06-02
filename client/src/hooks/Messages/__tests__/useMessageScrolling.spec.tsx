@@ -26,6 +26,7 @@ jest.mock('~/hooks/useScrollToRef', () => ({
 }));
 
 import useMessageScrolling from '../useMessageScrolling';
+import { MESSAGE_CONTENT_LAYOUT_CHANGE_EVENT } from '../messageLayout';
 
 class MockResizeObserver {
   static instances: MockResizeObserver[] = [];
@@ -223,6 +224,23 @@ describe('useMessageScrolling resize reconciliation', () => {
     act(() => {
       MockResizeObserver.last()?.trigger();
     });
+
+    expect(scrollable.scrollTop).toBe(300);
+    expect(mockScrollToBottom).not.toHaveBeenCalled();
+  });
+
+  it('clamps explicit layout-change shrinks without following the bottom', () => {
+    renderScrolling();
+
+    const scrollable = screen.getByTestId('scrollable');
+    Object.defineProperty(scrollable, 'scrollHeight', { value: 500, configurable: true });
+    Object.defineProperty(scrollable, 'clientHeight', { value: 200, configurable: true });
+    scrollable.scrollTop = 450;
+
+    fireEvent(
+      screen.getByTestId('content'),
+      new CustomEvent(MESSAGE_CONTENT_LAYOUT_CHANGE_EVENT, { bubbles: true }),
+    );
 
     expect(scrollable.scrollTop).toBe(300);
     expect(mockScrollToBottom).not.toHaveBeenCalled();

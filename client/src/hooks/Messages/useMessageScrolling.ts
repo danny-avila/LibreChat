@@ -4,6 +4,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import type { TMessage } from 'librechat-data-provider';
 import { useMessagesConversation, useMessagesSubmission } from '~/Providers';
 import useScrollToRef from '~/hooks/useScrollToRef';
+import { MESSAGE_CONTENT_LAYOUT_CHANGE_EVENT } from './messageLayout';
 import store from '~/store';
 
 const threshold = 0.85;
@@ -90,29 +91,40 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
     },
   });
 
-  const reconcileContentResize = useCallback(() => {
+  const clampScrollToContent = useCallback(() => {
     const scrollEl = scrollableRef.current;
     if (!scrollEl) {
-      return;
+      return false;
     }
 
     const maxScrollTop = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
-    if (scrollEl.scrollTop > maxScrollTop) {
-      scrollEl.scrollTop = maxScrollTop;
-      isNearBottomRef.current = getIsNearBottom();
-      return;
+    if (scrollEl.scrollTop <= maxScrollTop) {
+      return false;
     }
 
-    if (suppressNextResizeFollowRef.current) {
-      suppressNextResizeFollowRef.current = false;
-      isNearBottomRef.current = getIsNearBottom();
-      return;
-    }
+    scrollEl.scrollTop = maxScrollTop;
+    isNearBottomRef.current = getIsNearBottom();
+    return true;
+  }, [getIsNearBottom]);
 
-    if (isSubmitting && abortScroll !== true && isNearBottomRef.current) {
-      scrollToBottom?.();
-    }
-  }, [abortScroll, getIsNearBottom, isSubmitting, scrollToBottom]);
+  const reconcileContentResize = useCallback(
+    (shouldFollowResize = true) => {
+      if (clampScrollToContent()) {
+        return;
+      }
+
+      if (suppressNextResizeFollowRef.current) {
+        suppressNextResizeFollowRef.current = false;
+        isNearBottomRef.current = getIsNearBottom();
+        return;
+      }
+
+      if (shouldFollowResize && isSubmitting && abortScroll !== true && isNearBottomRef.current) {
+        scrollToBottom?.();
+      }
+    },
+    [abortScroll, clampScrollToContent, getIsNearBottom, isSubmitting, scrollToBottom],
+  );
 
   useEffect(() => {
     const contentEl = contentRef.current;
@@ -120,9 +132,36 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
       return;
     }
 
-    const observer = new ResizeObserver(reconcileContentResize);
+    const observer = new ResizeObserver(() => reconcileContentResize());
     observer.observe(contentEl);
     return () => observer.disconnect();
+  }, [reconcileContentResize]);
+
+  useEffect(() => {
+    const contentEl = contentRef.current;
+    if (!contentEl) {
+      return;
+    }
+
+    let animationFrameId: number | undefined;
+    const reconcileWithoutFollowing = () => {
+      reconcileContentResize(false);
+      if (typeof window === 'undefined') {
+        return;
+      }
+      animationFrameId = window.requestAnimationFrame(() => {
+        reconcileContentResize(false);
+        animationFrameId = undefined;
+      });
+    };
+
+    contentEl.addEventListener(MESSAGE_CONTENT_LAYOUT_CHANGE_EVENT, reconcileWithoutFollowing);
+    return () => {
+      contentEl.removeEventListener(MESSAGE_CONTENT_LAYOUT_CHANGE_EVENT, reconcileWithoutFollowing);
+      if (animationFrameId !== undefined && typeof window !== 'undefined') {
+        window.cancelAnimationFrame(animationFrameId);
+      }
+    };
   }, [reconcileContentResize]);
 
   useEffect(() => {
