@@ -151,6 +151,7 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
   const search = useRecoilValue(store.search);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const [expandedSectionId, setExpandedSectionId] = useState<string | null>(null);
+  const isSearching = Boolean(search.debouncedQuery);
 
   const projectSortBy = mode === 'recentProjects' ? 'lastConversationAt' : 'name';
   const projectSortDirection = mode === 'recentProjects' ? 'desc' : 'asc';
@@ -179,14 +180,14 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
     isLoading: isConversationsLoading,
   } = useConversationsInfiniteQuery(
     {
-      projectId: expandedSectionId ?? undefined,
+      projectId: isSearching ? undefined : (expandedSectionId ?? undefined),
       tags: tags.length === 0 ? undefined : tags,
       sortBy: chatSortBy,
       sortDirection: 'desc',
       search: search.debouncedQuery || undefined,
     },
     {
-      enabled: isAuthenticated && isChatsExpanded && expandedSectionId != null,
+      enabled: isAuthenticated && isChatsExpanded && (isSearching || expandedSectionId != null),
       staleTime: 30000,
       cacheTime: 300000,
     },
@@ -236,6 +237,29 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
       return items;
     }
 
+    if (isSearching) {
+      if (isConversationsLoading) {
+        items.push({ type: 'loading', key: 'loading-search-conversations' });
+        return items;
+      }
+
+      if (conversations.length === 0) {
+        items.push({ type: 'empty', title: localize('com_ui_no_results_found') });
+        return items;
+      }
+
+      groupedConversations.forEach(([groupName, convos]) => {
+        items.push({ type: 'date', groupName });
+        convos.forEach((convo) => items.push({ type: 'convo', convo }));
+      });
+
+      if (isFetchingNextConversationPage) {
+        items.push({ type: 'loading', key: 'loading-more-search-conversations' });
+      }
+
+      return items;
+    }
+
     sections.forEach((section) => {
       const isExpanded = expandedSectionId === section.id;
       items.push({ type: 'section', section, isExpanded });
@@ -278,6 +302,7 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
   }, [
     sections,
     isChatsExpanded,
+    isSearching,
     expandedSectionId,
     isConversationsLoading,
     conversations.length,
@@ -309,18 +334,18 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
             return 'project-chats-header';
           }
           if (item.type === 'date') {
-            return `project-date-${expandedSectionId}-${item.groupName}`;
+            return `project-date-${isSearching ? 'search' : expandedSectionId}-${item.groupName}`;
           }
           if (item.type === 'convo') {
             return `project-convo-${item.convo.conversationId}`;
           }
           if (item.type === 'empty') {
-            return `project-empty-${expandedSectionId}`;
+            return `project-empty-${isSearching ? 'search' : expandedSectionId}`;
           }
           return item.key;
         },
       }),
-    [expandedSectionId, rowHeight],
+    [expandedSectionId, isSearching, rowHeight],
   );
 
   useEffect(() => {
@@ -372,7 +397,11 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
     if (!isChatsExpanded) {
       return;
     }
-    if (expandedSectionId && conversationHasNextPage && !isFetchingNextConversationPage) {
+    if (
+      (isSearching || expandedSectionId) &&
+      conversationHasNextPage &&
+      !isFetchingNextConversationPage
+    ) {
       fetchNextConversationPage();
       return;
     }
@@ -381,6 +410,7 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
     }
   }, [
     expandedSectionId,
+    isSearching,
     conversationHasNextPage,
     isFetchingNextConversationPage,
     fetchNextConversationPage,

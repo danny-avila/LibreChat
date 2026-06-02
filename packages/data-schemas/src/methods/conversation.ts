@@ -1,10 +1,11 @@
 import type { FilterQuery, Model, SortOrder } from 'mongoose';
 import { RetentionMode } from 'librechat-data-provider';
+import { isValidObjectIdString } from '~/utils/objectId';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { buildRetentionVisibilityFilter, createFallbackRetentionDate } from '~/utils/retention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '~/config/winston';
-import type { AppConfig, IConversation } from '~/types';
+import type { AppConfig, IChatProjectDocument, IConversation } from '~/types';
 import {
   refreshChatProjectStatsForUser,
   updateChatProjectLastConversationForUser,
@@ -213,6 +214,26 @@ export function createConversationMethods(
 
       const messages = await getMessages({ conversationId, user: userId }, '_id');
       const update: Record<string, unknown> = { ...convo, messages, user: userId };
+      const unsetFields: Record<string, number> = { ...(metadata?.unsetFields ?? {}) };
+
+      if (Object.prototype.hasOwnProperty.call(update, 'chatProjectId') && update.chatProjectId) {
+        const chatProjectId = typeof update.chatProjectId === 'string' ? update.chatProjectId : '';
+        let isValidChatProject = isValidObjectIdString(chatProjectId);
+
+        if (isValidChatProject) {
+          const ChatProject = mongoose.models.ChatProject as Model<IChatProjectDocument>;
+          const project = await ChatProject.exists({
+            _id: new mongoose.Types.ObjectId(chatProjectId),
+            user: userId,
+          });
+          isValidChatProject = project != null;
+        }
+
+        if (!isValidChatProject) {
+          delete update.chatProjectId;
+          unsetFields.chatProjectId = 1;
+        }
+      }
 
       if (newConversationId) {
         update.conversationId = newConversationId;
@@ -253,8 +274,8 @@ export function createConversationMethods(
       }
 
       const updateOperation: Record<string, unknown> = { $set: update };
-      if (metadata?.unsetFields && Object.keys(metadata.unsetFields).length > 0) {
-        updateOperation.$unset = metadata.unsetFields;
+      if (Object.keys(unsetFields).length > 0) {
+        updateOperation.$unset = unsetFields;
       }
       if (createdAtOnInsert) {
         updateOperation.$setOnInsert = { createdAt: createdAtOnInsert };
@@ -302,9 +323,15 @@ export function createConversationMethods(
       }
 
       if (conversation.chatProjectId) {
+        const isRetentionVisibilityUpdate =
+          typeof update.isTemporary === 'boolean' ||
+          Object.prototype.hasOwnProperty.call(convo, 'expiredAt') ||
+          Object.prototype.hasOwnProperty.call(unsetFields, 'isTemporary') ||
+          Object.prototype.hasOwnProperty.call(unsetFields, 'expiredAt');
         const shouldRefreshProjectStats =
           typeof update.isArchived === 'boolean' ||
-          Object.prototype.hasOwnProperty.call(metadata?.unsetFields ?? {}, 'isArchived');
+          Object.prototype.hasOwnProperty.call(unsetFields, 'isArchived') ||
+          isRetentionVisibilityUpdate;
 
         if (shouldRefreshProjectStats) {
           await refreshChatProjectStatsForUser(mongoose, userId, conversation.chatProjectId);
