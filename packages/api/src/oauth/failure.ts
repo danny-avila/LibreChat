@@ -1,12 +1,73 @@
+import type { Request } from 'express';
+
 const MAX_LOG_VALUE_LENGTH = 300;
 
-function normalizeLogValue(value) {
+type LogValue = string | boolean;
+
+type FailureLike = {
+  code?: unknown;
+  error?: unknown;
+  name?: unknown;
+  message?: unknown;
+  error_description?: unknown;
+  cause?: unknown;
+};
+
+export type OAuthFailureRequest = Pick<
+  Request,
+  'headers' | 'method' | 'path' | 'originalUrl' | 'query'
+> & {
+  id?: string;
+  requestId?: string;
+  session?: {
+    messages?: unknown[];
+  };
+};
+
+export type OAuthFailureLog = {
+  provider: string;
+  code?: string;
+  name?: string;
+  message?: string;
+  cause_code?: string;
+  cause_name?: string;
+  cause_message?: string;
+  has_code: boolean;
+  has_state: boolean;
+  query_error?: string;
+  query_error_description?: string;
+  method?: string;
+  path?: string;
+  request_id?: string;
+  host?: string;
+  forwarded_host?: string;
+  forwarded_proto?: string;
+  forwarded_for?: string;
+  real_ip?: string;
+  user_agent?: string;
+};
+
+export type BuildOAuthFailureLogParams = {
+  provider: string;
+  req: OAuthFailureRequest;
+  err?: unknown;
+  info?: unknown;
+  defaultMessage?: string;
+};
+
+function normalizeLogValue(value: unknown): string | undefined {
   if (value == null) {
     return undefined;
   }
 
   if (Array.isArray(value)) {
-    return normalizeLogValue(value.find((entry) => normalizeLogValue(entry)));
+    for (const entry of value) {
+      const normalized = normalizeLogValue(entry);
+      if (normalized) {
+        return normalized;
+      }
+    }
+    return undefined;
   }
 
   if (typeof value === 'string') {
@@ -27,16 +88,21 @@ function normalizeLogValue(value) {
   return undefined;
 }
 
-function compactLogObject(log) {
-  return Object.entries(log).reduce((acc, [key, value]) => {
+function compactLogObject(
+  log: Partial<OAuthFailureLog> & Pick<OAuthFailureLog, 'provider' | 'has_code' | 'has_state'>,
+): OAuthFailureLog {
+  const compacted: Partial<OAuthFailureLog> = {};
+  const keys = Object.keys(log) as Array<keyof OAuthFailureLog>;
+  for (const key of keys) {
+    const value = log[key];
     if (value !== undefined) {
-      acc[key] = value;
+      Object.assign(compacted, { [key]: value as LogValue });
     }
-    return acc;
-  }, {});
+  }
+  return compacted as OAuthFailureLog;
 }
 
-function getField(source, field) {
+function getField(source: unknown, field: keyof FailureLike): unknown {
   if (!source) {
     return undefined;
   }
@@ -44,12 +110,12 @@ function getField(source, field) {
     return field === 'message' ? source : undefined;
   }
   if (typeof source === 'object') {
-    return source[field];
+    return (source as FailureLike)[field];
   }
   return undefined;
 }
 
-function firstLogValue(...values) {
+function firstLogValue(...values: unknown[]): string | undefined {
   for (const value of values) {
     const normalized = normalizeLogValue(value);
     if (normalized) {
@@ -59,45 +125,56 @@ function firstLogValue(...values) {
   return undefined;
 }
 
-function getCause(source) {
+function getCause(source: unknown): unknown {
   const cause = getField(source, 'cause');
   return cause && typeof cause === 'object' ? cause : undefined;
 }
 
-function getHeader(req, headerName) {
-  return normalizeLogValue(req?.headers?.[headerName]);
+function getHeader(req: OAuthFailureRequest, headerName: string): string | undefined {
+  return normalizeLogValue(req.headers?.[headerName]);
 }
 
-function getQueryValue(req, queryName) {
-  return normalizeLogValue(req?.query?.[queryName]);
+function getQueryValue(req: OAuthFailureRequest, queryName: string): string | undefined {
+  return normalizeLogValue(req.query?.[queryName]);
 }
 
-function hasQueryValue(req, queryName) {
+function hasQueryValue(req: OAuthFailureRequest, queryName: string): boolean {
   return getQueryValue(req, queryName) !== undefined;
 }
 
-function getRequestPath(req) {
-  return firstLogValue(req?.path, req?.originalUrl?.split('?')[0]);
+function getRequestPath(req: OAuthFailureRequest): string | undefined {
+  return firstLogValue(req.path, req.originalUrl?.split('?')[0]);
 }
 
-function popSessionFailureMessage(req) {
-  const messages = req?.session?.messages;
+function popSessionFailureMessage(req: OAuthFailureRequest): unknown {
+  const messages = req.session?.messages;
   if (!Array.isArray(messages) || messages.length === 0) {
     return undefined;
   }
   return messages.pop();
 }
 
-function getOAuthFailureMessage(req, defaultMessage = 'OAuth authentication failed') {
-  return firstLogValue(
-    popSessionFailureMessage(req),
-    getQueryValue(req, 'error_description'),
-    getQueryValue(req, 'error'),
-    defaultMessage,
+export function getOAuthFailureMessage(
+  req: OAuthFailureRequest,
+  defaultMessage = 'OAuth authentication failed',
+): string {
+  return (
+    firstLogValue(
+      popSessionFailureMessage(req),
+      getQueryValue(req, 'error_description'),
+      getQueryValue(req, 'error'),
+      defaultMessage,
+    ) ?? defaultMessage
   );
 }
 
-function buildOAuthFailureLog({ provider, req, err, info, defaultMessage }) {
+export function buildOAuthFailureLog({
+  provider,
+  req,
+  err,
+  info,
+  defaultMessage,
+}: BuildOAuthFailureLogParams): OAuthFailureLog {
   const errCause = getCause(err);
   const infoCause = getCause(info);
   return compactLogObject({
@@ -130,9 +207,9 @@ function buildOAuthFailureLog({ provider, req, err, info, defaultMessage }) {
     has_state: hasQueryValue(req, 'state'),
     query_error: getQueryValue(req, 'error'),
     query_error_description: getQueryValue(req, 'error_description'),
-    method: normalizeLogValue(req?.method),
+    method: normalizeLogValue(req.method),
     path: getRequestPath(req),
-    request_id: firstLogValue(req?.requestId, req?.id, getHeader(req, 'x-request-id')),
+    request_id: firstLogValue(req.requestId, req.id, getHeader(req, 'x-request-id')),
     host: getHeader(req, 'host'),
     forwarded_host: getHeader(req, 'x-forwarded-host'),
     forwarded_proto: getHeader(req, 'x-forwarded-proto'),
@@ -142,7 +219,7 @@ function buildOAuthFailureLog({ provider, req, err, info, defaultMessage }) {
   });
 }
 
-function isOAuthProtocolFailure(err, info) {
+export function isOAuthProtocolFailure(err?: unknown, info?: unknown): boolean {
   const errCause = getCause(err);
   const infoCause = getCause(info);
   const code = firstLogValue(
@@ -179,9 +256,3 @@ function isOAuthProtocolFailure(err, info) {
 
   return name === 'OperationProcessingError' && /invalid response/i.test(message ?? '');
 }
-
-module.exports = {
-  buildOAuthFailureLog,
-  getOAuthFailureMessage,
-  isOAuthProtocolFailure,
-};

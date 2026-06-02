@@ -1,6 +1,7 @@
 const express = require('express');
 const request = require('supertest');
 
+const originalDomainClient = process.env.DOMAIN_CLIENT;
 process.env.DOMAIN_CLIENT = 'http://client.test';
 
 const mockLogger = {
@@ -11,6 +12,34 @@ const mockLogger = {
 };
 
 const mockOAuthHandler = jest.fn((_req, res) => res.status(204).end());
+const mockBuildOAuthFailureLog = jest.fn(({ provider, req, err, info, defaultMessage }) => ({
+  provider,
+  code: err?.code ?? info?.code ?? info?.error ?? req.query?.error,
+  name: err?.name ?? info?.name,
+  message:
+    err?.message ??
+    info?.message ??
+    info?.error_description ??
+    req.query?.error_description ??
+    defaultMessage,
+  cause_code: err?.cause?.code ?? info?.cause?.code,
+  cause_name: err?.cause?.name ?? info?.cause?.name,
+  has_code: req.query?.code != null,
+  has_state: req.query?.state != null,
+  query_error: req.query?.error,
+  query_error_description: req.query?.error_description,
+  path: req.path,
+  forwarded_for: req.headers?.['x-forwarded-for'],
+  user_agent: req.headers?.['user-agent'],
+}));
+const mockGetOAuthFailureMessage = jest.fn(
+  (req) =>
+    req.session?.messages?.pop() ??
+    req.query?.error_description ??
+    req.query?.error ??
+    'OAuth authentication failed',
+);
+const mockIsOAuthProtocolFailure = jest.fn((err) => err?.code?.startsWith('OAUTH_') === true);
 const mockPassportAuthenticate = jest.fn(() => (_req, _res, next) => next());
 
 jest.mock('passport', () => ({
@@ -31,9 +60,16 @@ jest.mock('librechat-data-provider', () => ({
   },
 }));
 
-jest.mock('@librechat/api', () => ({
-  createSetBalanceConfig: jest.fn(() => (_req, _res, next) => next()),
-}));
+jest.mock(
+  '@librechat/api',
+  () => ({
+    buildOAuthFailureLog: (...args) => mockBuildOAuthFailureLog(...args),
+    createSetBalanceConfig: jest.fn(() => (_req, _res, next) => next()),
+    getOAuthFailureMessage: (...args) => mockGetOAuthFailureMessage(...args),
+    isOAuthProtocolFailure: (...args) => mockIsOAuthProtocolFailure(...args),
+  }),
+  { virtual: true },
+);
 
 jest.mock('~/server/middleware', () => ({
   checkDomainAllowed: jest.fn((_req, _res, next) => next()),
@@ -55,6 +91,14 @@ jest.mock('~/server/services/Config', () => ({
 }));
 
 const oauthRouter = require('./oauth');
+
+afterAll(() => {
+  if (originalDomainClient === undefined) {
+    delete process.env.DOMAIN_CLIENT;
+    return;
+  }
+  process.env.DOMAIN_CLIENT = originalDomainClient;
+});
 
 function createApp(sessionMessages) {
   const app = express();

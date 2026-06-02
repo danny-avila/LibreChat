@@ -4,16 +4,16 @@ const passport = require('passport');
 const { randomState } = require('openid-client');
 const { logger } = require('@librechat/data-schemas');
 const { ErrorTypes } = require('librechat-data-provider');
-const { createSetBalanceConfig } = require('@librechat/api');
+const {
+  buildOAuthFailureLog,
+  createSetBalanceConfig,
+  getOAuthFailureMessage,
+  isOAuthProtocolFailure,
+} = require('@librechat/api');
 const { checkDomainAllowed, loginLimiter, logHeaders } = require('~/server/middleware');
 const { createOAuthHandler } = require('~/server/controllers/auth/oauth');
 const { findBalanceByUser, upsertBalanceFields } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
-const {
-  buildOAuthFailureLog,
-  getOAuthFailureMessage,
-  isOAuthProtocolFailure,
-} = require('./oauthFailure');
 
 const setBalanceConfig = createSetBalanceConfig({
   getAppConfig,
