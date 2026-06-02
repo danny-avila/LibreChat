@@ -1834,7 +1834,7 @@
   "com_usage_segment_power_range": ">100 messages",
   "com_usage_segment_regular": "Regular",
   "com_usage_segment_regular_range": "30-100 messages",
-  "com_usage_subtitle": "Top users by token credits consumed this month.",
+  "com_usage_subtitle": "Consumption by user, model, and BU this month.",
   "com_usage_tab_analytics": "Analytics",
   "com_usage_tab_thresholds": "Thresholds & management",
   "com_usage_thresholds_coming_soon": "Feature coming soon.",
