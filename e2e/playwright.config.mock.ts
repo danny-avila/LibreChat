@@ -6,10 +6,14 @@ import { getLocalE2EEnv, getE2EBaseURL } from './setup/env';
 const rootPath = path.resolve(__dirname, '..');
 const serverPath = path.resolve(rootPath, 'e2e/setup/start-server.js');
 const mockLlmPath = path.resolve(rootPath, 'e2e/setup/mock-llm-server.js');
-const configPath = path.resolve(rootPath, 'e2e/config/librechat.e2e.yaml');
+const configTemplatePath = path.resolve(rootPath, 'e2e/config/librechat.e2e.yaml');
+const configPath = path.resolve(rootPath, 'e2e/.generated/librechat.e2e.yaml');
+const reportPath = path.resolve(rootPath, 'e2e/playwright-report');
 
 const baseURL = getE2EBaseURL();
-const mockLlmPort = process.env.MOCK_LLM_PORT ?? '8889';
+const mockLlmPort = getMockLlmPort();
+const defaultMockLlmBaseURL = 'http://127.0.0.1:8889/v1';
+const mockLlmBaseURL = `http://127.0.0.1:${mockLlmPort}/v1`;
 
 const vanillaOverrides = {
   TENANT_ISOLATION_STRICT: 'false',
@@ -30,6 +34,25 @@ const baseEnv = {
 Object.assign(process.env, baseEnv);
 
 const SECRET_KEY_PATTERN = /(API_KEY|SECRET|TOKEN|PASSWORD|CREDENTIALS|CLIENT_ID|_KEY)$/i;
+
+function getMockLlmPort() {
+  const port = process.env.MOCK_LLM_PORT ?? '8889';
+  if (!/^\d+$/.test(port)) {
+    throw new Error('MOCK_LLM_PORT must be a numeric port');
+  }
+  return port;
+}
+
+function writeRuntimeMockConfig() {
+  const template = fs.readFileSync(configTemplatePath, 'utf8');
+
+  if (!template.includes(defaultMockLlmBaseURL)) {
+    throw new Error(`Expected mock config template to include ${defaultMockLlmBaseURL}`);
+  }
+
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, template.replaceAll(defaultMockLlmBaseURL, mockLlmBaseURL));
+}
 
 /** Blank any credential-like vars from a local `.env` so they never reach the test server. */
 function neutralizeDotenvSecrets(envFile: string, keep: Record<string, string>) {
@@ -52,6 +75,7 @@ function neutralizeDotenvSecrets(envFile: string, keep: Record<string, string>) 
   }
 }
 
+writeRuntimeMockConfig();
 neutralizeDotenvSecrets(path.resolve(rootPath, '.env'), baseEnv);
 
 export default defineConfig({
@@ -64,8 +88,8 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: 1,
   reporter: process.env.CI
-    ? [['html', { outputFolder: 'playwright-report', open: 'never' }], ['line']]
-    : [['html', { outputFolder: 'playwright-report' }], ['list']],
+    ? [['html', { outputFolder: reportPath, open: 'never' }], ['line']]
+    : [['html', { outputFolder: reportPath }], ['list']],
   use: {
     baseURL,
     video: 'on-first-retry',
@@ -91,7 +115,7 @@ export default defineConfig({
       url: `http://127.0.0.1:${mockLlmPort}/health`,
       stdout: 'pipe',
       timeout: 30_000,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
     },
     {
       command: `node ${serverPath}`,
@@ -100,7 +124,7 @@ export default defineConfig({
       stdout: 'pipe',
       ignoreHTTPSErrors: true,
       timeout: 120_000,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
     },
   ],
 });
