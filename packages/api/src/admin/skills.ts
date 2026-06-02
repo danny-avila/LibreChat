@@ -22,7 +22,8 @@ type AdminSkillsRequest = Request & {
 };
 
 export type AdminSkillSyncDeps = {
-  runner: GitHubSkillSyncRunner;
+  runner?: GitHubSkillSyncRunner;
+  getRunner?: (req: Request) => GitHubSkillSyncRunner;
   upsertCredential: (input: UpsertSkillSyncCredentialInput) => Promise<SkillSyncCredentialSummary>;
   deleteCredential: (
     provider: SkillSyncProvider,
@@ -55,6 +56,7 @@ function serializeSourceStatus(
   return {
     provider: status.provider,
     sourceId: status.sourceId,
+    tenantId: status.tenantId,
     status: status.status,
     credentialKey: status.credentialKey,
     credentialPresent: status.credentialPresent ?? false,
@@ -86,8 +88,16 @@ function getUserObjectId(req: AdminSkillsRequest): Types.ObjectId | undefined {
 }
 
 export function createAdminSkillsSyncHandlers(deps: AdminSkillSyncDeps) {
-  async function getSyncStatus(_req: Request, res: Response) {
-    const status = await deps.runner.getStatus();
+  function getRunner(req: Request): GitHubSkillSyncRunner {
+    const runner = deps.getRunner?.(req) ?? deps.runner;
+    if (!runner) {
+      throw new Error('GitHub skill sync runner is not configured');
+    }
+    return runner;
+  }
+
+  async function getSyncStatus(req: Request, res: Response) {
+    const status = await getRunner(req).getStatus();
     const response: TGitHubSkillSyncStatusResponse = {
       enabled: status.enabled,
       intervalMinutes: status.intervalMinutes,
@@ -99,8 +109,8 @@ export function createAdminSkillsSyncHandlers(deps: AdminSkillSyncDeps) {
     return res.status(200).json(response);
   }
 
-  async function runSync(_req: Request, res: Response) {
-    const result = await deps.runner.runOnce();
+  async function runSync(req: Request, res: Response) {
+    const result = await getRunner(req).runOnce();
     const response: TGitHubSkillSyncManualRunResponse = {
       status: result.status,
       message: result.message,

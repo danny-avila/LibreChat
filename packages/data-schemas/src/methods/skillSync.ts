@@ -31,6 +31,7 @@ export type UpsertSkillSyncCredentialInput = {
 export type SkillSyncStatusInput = {
   provider: SkillSyncProvider;
   sourceId: string;
+  tenantId?: string;
   status: SkillSyncRunStatus;
   credentialKey?: string;
   owner?: string;
@@ -49,6 +50,10 @@ export type SkillSyncStatusInput = {
 
 function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
+}
+
+function tenantStatusCondition(tenantId?: string) {
+  return tenantId ? { tenantId } : { tenantId: { $exists: false } };
 }
 
 function summarizeCredential(
@@ -155,9 +160,14 @@ export function createSkillSyncMethods(mongoose: typeof import('mongoose')) {
   async function getSkillSyncStatus(
     provider: SkillSyncProvider,
     sourceId: string,
+    tenantId?: string,
   ): Promise<ISkillSyncStatus | null> {
     const Status = mongoose.models.SkillSyncStatus as Model<ISkillSyncStatusDocument>;
-    const row = await Status.findOne({ provider, sourceId }).lean<ISkillSyncStatus | null>();
+    const row = await Status.findOne({
+      provider,
+      sourceId,
+      ...tenantStatusCondition(tenantId),
+    }).lean<ISkillSyncStatus | null>();
     return row ?? null;
   }
 
@@ -188,13 +198,18 @@ export function createSkillSyncMethods(mongoose: typeof import('mongoose')) {
     }
     const unsetPayload = failure ? {} : { errorCode: '', errorMessage: '' };
     const row = await Status.findOneAndUpdate(
-      { provider: input.provider, sourceId: input.sourceId },
+      {
+        provider: input.provider,
+        sourceId: input.sourceId,
+        ...tenantStatusCondition(input.tenantId),
+      },
       {
         $set: setPayload,
         ...(failure ? {} : { $unset: unsetPayload }),
         $setOnInsert: {
           provider: input.provider,
           sourceId: input.sourceId,
+          ...(input.tenantId ? { tenantId: input.tenantId } : {}),
         },
       },
       { upsert: true, new: true, setDefaultsOnInsert: true },
@@ -206,6 +221,7 @@ export function createSkillSyncMethods(mongoose: typeof import('mongoose')) {
     provider: SkillSyncProvider;
     lockOwner: string;
     leaseMs: number;
+    tenantId?: string;
   }): Promise<boolean> {
     const Status = mongoose.models.SkillSyncStatus as Model<ISkillSyncStatusDocument>;
     const now = new Date();
@@ -213,6 +229,7 @@ export function createSkillSyncMethods(mongoose: typeof import('mongoose')) {
     const existing = await Status.findOne({
       provider: params.provider,
       sourceId: LOCK_SOURCE_ID,
+      ...tenantStatusCondition(params.tenantId),
     }).lean<ISkillSyncStatus | null>();
     if (existing?.lockOwner && existing.lockExpiresAt && existing.lockExpiresAt > now) {
       return false;
@@ -222,6 +239,7 @@ export function createSkillSyncMethods(mongoose: typeof import('mongoose')) {
         await Status.create({
           provider: params.provider,
           sourceId: LOCK_SOURCE_ID,
+          ...(params.tenantId ? { tenantId: params.tenantId } : {}),
           status: 'running',
           lockOwner: params.lockOwner,
           lockExpiresAt,
@@ -240,6 +258,7 @@ export function createSkillSyncMethods(mongoose: typeof import('mongoose')) {
         {
           provider: params.provider,
           sourceId: LOCK_SOURCE_ID,
+          ...tenantStatusCondition(params.tenantId),
           $or: [{ lockExpiresAt: { $exists: false } }, { lockExpiresAt: { $lte: now } }],
         },
         {
@@ -252,6 +271,7 @@ export function createSkillSyncMethods(mongoose: typeof import('mongoose')) {
           $setOnInsert: {
             provider: params.provider,
             sourceId: LOCK_SOURCE_ID,
+            ...(params.tenantId ? { tenantId: params.tenantId } : {}),
           },
         },
         { upsert: true, new: true, setDefaultsOnInsert: true },
@@ -269,6 +289,7 @@ export function createSkillSyncMethods(mongoose: typeof import('mongoose')) {
     provider: SkillSyncProvider;
     lockOwner: string;
     leaseMs: number;
+    tenantId?: string;
   }): Promise<boolean> {
     const Status = mongoose.models.SkillSyncStatus as Model<ISkillSyncStatusDocument>;
     const now = new Date();
@@ -276,6 +297,7 @@ export function createSkillSyncMethods(mongoose: typeof import('mongoose')) {
       {
         provider: params.provider,
         sourceId: LOCK_SOURCE_ID,
+        ...tenantStatusCondition(params.tenantId),
         lockOwner: params.lockOwner,
         lockExpiresAt: { $gt: now },
       },
@@ -293,10 +315,16 @@ export function createSkillSyncMethods(mongoose: typeof import('mongoose')) {
   async function releaseSkillSyncLock(params: {
     provider: SkillSyncProvider;
     lockOwner: string;
+    tenantId?: string;
   }): Promise<void> {
     const Status = mongoose.models.SkillSyncStatus as Model<ISkillSyncStatusDocument>;
     await Status.updateOne(
-      { provider: params.provider, sourceId: LOCK_SOURCE_ID, lockOwner: params.lockOwner },
+      {
+        provider: params.provider,
+        sourceId: LOCK_SOURCE_ID,
+        ...tenantStatusCondition(params.tenantId),
+        lockOwner: params.lockOwner,
+      },
       {
         $set: {
           status: 'idle',
