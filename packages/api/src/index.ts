@@ -41,6 +41,8 @@ export * from './modelSpecs';
 export * from './agents';
 /* Prompts */
 export * from './prompts';
+/* Security */
+export * from './security';
 /* Skills */
 export * from './skills';
 /* Endpoints */

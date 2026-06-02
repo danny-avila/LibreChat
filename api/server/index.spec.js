@@ -4,6 +4,9 @@ const request = require('supertest');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
 
+const indexHtmlFixture =
+  '<!DOCTYPE html><html lang="en-US"><head><title>LibreChat</title><style>body{margin:0}</style><script defer src="/assets/app.js"></script></head><body><div id="root"></div></body></html>';
+
 jest.mock('~/server/services/Config', () => ({
   loadCustomConfig: jest.fn(() => Promise.resolve({})),
   getAppConfig: jest.fn().mockResolvedValue({
@@ -95,7 +98,7 @@ describe('Server Configuration', () => {
   beforeAll(() => {
     fs.readFileSync = function (filepath, options) {
       if (filepath.includes('index.html')) {
-        return '<!DOCTYPE html><html><head><title>LibreChat</title></head><body><div id="root"></div></body></html>';
+        return indexHtmlFixture;
       }
       return originalReadFileSync(filepath, options);
     };
@@ -118,10 +121,7 @@ describe('Server Configuration', () => {
       }
     });
 
-    fs.writeFileSync(
-      path.join('/tmp/dist', 'index.html'),
-      '<!DOCTYPE html><html><head><title>LibreChat</title></head><body><div id="root"></div></body></html>',
-    );
+    fs.writeFileSync(path.join('/tmp/dist', 'index.html'), indexHtmlFixture);
 
     mongoServer = await MongoMemoryServer.create();
     process.env.MONGO_URI = mongoServer.getUri();
@@ -137,6 +137,12 @@ describe('Server Configuration', () => {
     await mongoose.disconnect();
   });
 
+  afterEach(() => {
+    delete process.env.CSP_ENABLED;
+    delete process.env.CSP_REPORT_ONLY;
+    delete process.env.CSP_REPORT_URI;
+  });
+
   it('should return OK for /health', async () => {
     const response = await request(app).get('/health');
     expect(response.status).toBe(200);
@@ -149,6 +155,35 @@ describe('Server Configuration', () => {
     expect(response.headers['cache-control']).toBe('no-cache, no-store, must-revalidate');
     expect(response.headers['pragma']).toBe('no-cache');
     expect(response.headers['expires']).toBe('0');
+    expect(response.headers['content-security-policy']).toBeUndefined();
+    expect(response.headers['content-security-policy-report-only']).toBeUndefined();
+  });
+
+  it('should apply nonce CSP to index HTML when enabled', async () => {
+    process.env.CSP_ENABLED = 'true';
+    process.env.CSP_REPORT_URI = 'https://reports.example.com/csp';
+
+    const response = await request(app).get('/');
+    const csp = response.headers['content-security-policy-report-only'];
+    const nonce = csp?.match(/script-src 'nonce-([^']+)'/)?.[1];
+
+    expect(response.status).toBe(200);
+    expect(csp).toContain("'strict-dynamic'");
+    expect(csp).toContain('report-uri https://reports.example.com/csp');
+    expect(nonce).toBeTruthy();
+    expect(response.text).toContain(`<style nonce="${nonce}">`);
+    expect(response.text).toContain(`<script nonce="${nonce}" defer src="/assets/app.js">`);
+  });
+
+  it('should serve /index.html through the nonce-aware HTML handler', async () => {
+    process.env.CSP_ENABLED = 'true';
+    process.env.CSP_REPORT_ONLY = 'false';
+
+    const response = await request(app).get('/index.html');
+
+    expect(response.status).toBe(200);
+    expect(response.headers['content-security-policy']).toContain("script-src 'nonce-");
+    expect(response.headers['content-security-policy-report-only']).toBeUndefined();
   });
 
   it('should return 404 JSON for undefined API routes', async () => {
