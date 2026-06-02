@@ -24,13 +24,13 @@ function Footer({ className }: { className?: string }) {
     </a>
   );
 
+  const appTitle = config?.appTitle ?? 'AI Workforce Pro';
+  const appUrl = 'https://smbteam.com';
+
   const mainContentParts = (
     typeof config?.customFooter === 'string'
       ? config.customFooter
-      : '[LibreChat ' +
-        Constants.VERSION +
-        '](https://librechat.ai) - ' +
-        localize('com_ui_latest_footer')
+      : `[${appTitle} ${Constants.VERSION}](${appUrl}) - ${localize('com_ui_latest_footer')}`
   ).split('|');
 
   useEffect(() => {

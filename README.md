@@ -163,6 +163,7 @@ Open source, actively developed, and built for anyone who values control over th
 Run MongoDB and Meilisearch in Docker while developing the API and UI on the host with hot reload:
 
 - [Local Development Guide](docs/local-development.md) — uses `docker-compose.local.yml` with `npm run backend:dev` and `npm run frontend:dev`
+- [Database Migrations](docs/database-migrations.md) — one-time MongoDB scripts for production data migrations
 
 ---
 

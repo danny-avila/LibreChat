@@ -5,6 +5,7 @@ import type { SetterOrUpdater } from 'recoil';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { EndpointIcon } from '~/components/Endpoints';
 import { useAgentsMapContext } from '~/Providers';
+import { ASSISTANT_DISPLAY_NAME, getAssistantDisplayName } from '~/utils/branding';
 
 export default function AddedConvo({
   addedConvo,
@@ -24,11 +25,11 @@ export default function AddedConvo({
       }
     }
 
-    const endpointConfig = endpointsConfig?.[addedConvo?.endpoint ?? ''];
-    const displayLabel =
-      endpointConfig?.modelDisplayLabel || addedConvo?.modelLabel || addedConvo?.model || 'AI';
+    const displayLabel = getAssistantDisplayName(
+      addedConvo?.modelLabel ?? endpointsConfig?.[addedConvo?.endpoint ?? '']?.modelDisplayLabel,
+    );
 
-    return `+ ${displayLabel}`;
+    return `+ ${displayLabel || ASSISTANT_DISPLAY_NAME}`;
   }, [addedConvo, agentsMap, endpointsConfig]);
 
   if (!addedConvo) {

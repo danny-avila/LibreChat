@@ -60,10 +60,15 @@ function AuthLayout({
     <div className="relative flex min-h-screen flex-col bg-white dark:bg-gray-900">
       <Banner />
       <BlinkAnimation active={isFetching}>
-        <div className="mt-6 h-10 w-full bg-cover">
+        <div className="mt-6 h-10 w-full">
           <img
-            src="https://smbteam.com/wp-content/uploads/2026/03/header-logo.png"
-            className="h-full w-full object-contain"
+            src="/assets/smb-team-logo-light.png"
+            className="h-full w-full object-contain dark:hidden"
+            alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'SMB Team' })}
+          />
+          <img
+            src="/assets/smb-team-logo-dark.png"
+            className="hidden h-full w-full object-contain dark:block"
             alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'SMB Team' })}
           />
         </div>

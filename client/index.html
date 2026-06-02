@@ -7,11 +7,61 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="description" content="LibreChat - An open source chat application with support for multiple AI models" />
-    <title>LibreChat</title>
-    <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32x32.png" />
-    <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16x16.png" />
-    <link rel="apple-touch-icon" href="assets/apple-touch-icon-180x180.png" />
+    <meta name="description" content="AI Workforce Pro - AI workforce platform powered by SMB Team" />
+    <title>AI Workforce Pro</title>
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href="assets/favicon-32x32-dark.png"
+      media="(prefers-color-scheme: dark)"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="16x16"
+      href="assets/favicon-16x16-dark.png"
+      media="(prefers-color-scheme: dark)"
+    />
+    <link rel="icon" href="/favicon-dark.ico" sizes="any" media="(prefers-color-scheme: dark)" />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href="assets/favicon-32x32.png"
+      media="(prefers-color-scheme: light)"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="16x16"
+      href="assets/favicon-16x16.png"
+      media="(prefers-color-scheme: light)"
+    />
+    <link rel="icon" href="/favicon.ico" sizes="any" media="(prefers-color-scheme: light)" />
+    <link rel="apple-touch-icon" href="assets/apple-touch-icon-180x180-dark.png" media="(prefers-color-scheme: dark)" />
+    <link rel="apple-touch-icon" href="assets/apple-touch-icon-180x180.png" media="(prefers-color-scheme: light)" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <script>
+      (function () {
+        var cachedTitle = localStorage.getItem('appTitle');
+        if (cachedTitle) {
+          document.title = cachedTitle;
+        }
+
+        fetch('/api/config')
+          .then(function (response) {
+            return response.ok ? response.json() : null;
+          })
+          .then(function (config) {
+            if (config && config.appTitle) {
+              document.title = config.appTitle;
+              localStorage.setItem('appTitle', config.appTitle);
+            }
+          })
+          .catch(function () {});
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content" />
     <style>
       html,

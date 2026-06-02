@@ -4,7 +4,11 @@ import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import { useSearchParams, useParams, useNavigate } from 'react-router-dom';
 import type t from 'librechat-data-provider';
 import { useDocumentTitle, useHasAccess, useLocalize, TranslationKeys } from '~/hooks';
-import { useGetEndpointsQuery, useGetAgentCategoriesQuery } from '~/data-provider';
+import {
+  useGetEndpointsQuery,
+  useGetAgentCategoriesQuery,
+  useGetStartupConfig,
+} from '~/data-provider';
 import MarketplaceAdminSettings from './MarketplaceAdminSettings';
 import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
 import { SidePanelGroup } from '~/components/SidePanel';
@@ -46,8 +50,12 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
   // Ref for the scrollable container to enable infinite scroll
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
+  const { data: startupConfig } = useGetStartupConfig();
+
   // Set page title
-  useDocumentTitle(`${localize('com_agents_marketplace')} | LibreChat`);
+  useDocumentTitle(
+    `${localize('com_agents_marketplace')} | ${startupConfig?.appTitle ?? 'AI Workforce Pro'}`,
+  );
 
   // Ensure endpoints config is loaded first (required for agent queries)
   useGetEndpointsQuery();

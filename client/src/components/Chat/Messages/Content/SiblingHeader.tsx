@@ -7,7 +7,7 @@ import { useBranchMessageMutation } from '~/data-provider/Messages';
 import MessageIcon from '~/components/Share/MessageIcon';
 import { useAgentsMapContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
+import { cn, getAssistantDisplayName, getPublicModelName } from '~/utils';
 
 type SiblingHeaderProps = {
   /** The agentId from the content part (could be real agent ID or endpoint__model format) */
@@ -76,9 +76,9 @@ export default function SiblingHeader({
       const parsed = parseEphemeralAgentId(agentId);
       if (parsed) {
         return {
-          displayName: parsed.sender || parsed.model || 'AI',
+          displayName: getAssistantDisplayName(parsed.sender),
           displayEndpoint: parsed.endpoint,
-          displayModel: parsed.model,
+          displayModel: getPublicModelName(parsed.model),
           agent: undefined,
         };
       }

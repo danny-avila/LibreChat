@@ -1,7 +1,6 @@
 import { EarthIcon } from 'lucide-react';
 import {
   FileSources,
-  alternateName,
   EModelEndpoint,
   EToolResources,
   LocalStorageKeys,
@@ -9,6 +8,7 @@ import {
 } from 'librechat-data-provider';
 import type { Agent, TFile } from 'librechat-data-provider';
 import type { DropdownValueSetter, TAgentOption, ExtendedFile } from '~/common';
+import { getEndpointDisplayName } from '~/utils/branding';
 
 /**
  * Creates a Dropdown value setter that always passes a string value,
@@ -40,7 +40,7 @@ export const createDropdownSetter = (setValue: (value: string) => void): Dropdow
  * Creates an Option object for a provider dropdown.
  **/
 export const createProviderOption = (provider: string) => ({
-  label: (alternateName[provider] as string | undefined) ?? provider,
+  label: getEndpointDisplayName(provider),
   value: provider,
 });
 

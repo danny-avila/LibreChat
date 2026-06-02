@@ -6,6 +6,7 @@ import {
   appendAgentIdSuffix,
   encodeEphemeralAgentId,
 } from 'librechat-data-provider';
+import { ASSISTANT_DISPLAY_NAME } from '~/utils/branding';
 import type {
   TMessage,
   TConversation,
@@ -227,8 +228,8 @@ export const getHeaderPrefixForScreenReader = (
 export const createDualMessageContent = (
   primaryConvo: TConversation,
   addedConvo: TConversation,
-  endpointsConfig?: TEndpointsConfig,
-  modelSpecs?: { name: string; label?: string }[],
+  _endpointsConfig?: TEndpointsConfig,
+  _modelSpecs?: { name: string; label?: string }[],
 ): TMessageContentParts[] => {
   // For real agents (agent_id starts with "agent_"), use agent_id directly
   // Otherwise create ephemeral ID from endpoint/model
@@ -238,18 +239,7 @@ export const createDualMessageContent = (
   } else {
     const primaryEndpoint = primaryConvo.endpoint;
     const primaryModel = primaryConvo.model ?? '';
-    // Look up model spec for label fallback
-    const primarySpec =
-      primaryConvo.spec != null && primaryConvo.spec !== ''
-        ? modelSpecs?.find((s) => s.name === primaryConvo.spec)
-        : undefined;
-    // For ephemeral agents, use modelLabel if provided, then model spec's label,
-    // then modelDisplayLabel from endpoint config, otherwise empty string to show model name
-    const primarySender =
-      primaryConvo.modelLabel ??
-      primarySpec?.label ??
-      (primaryEndpoint ? endpointsConfig?.[primaryEndpoint]?.modelDisplayLabel : undefined) ??
-      '';
+    const primarySender = ASSISTANT_DISPLAY_NAME;
     primaryAgentId = encodeEphemeralAgentId({
       endpoint: primaryEndpoint ?? '',
       model: primaryModel,
@@ -278,18 +268,7 @@ export const createDualMessageContent = (
   } else {
     const addedEndpoint = addedConvo.endpoint;
     const addedModel = addedConvo.model ?? '';
-    // Look up model spec for label fallback
-    const addedSpec =
-      addedConvo.spec != null && addedConvo.spec !== ''
-        ? modelSpecs?.find((s) => s.name === addedConvo.spec)
-        : undefined;
-    // For ephemeral agents, use modelLabel if provided, then model spec's label,
-    // then modelDisplayLabel from endpoint config, otherwise empty string to show model name
-    const addedSender =
-      addedConvo.modelLabel ??
-      addedSpec?.label ??
-      (addedEndpoint ? endpointsConfig?.[addedEndpoint]?.modelDisplayLabel : undefined) ??
-      '';
+    const addedSender = ASSISTANT_DISPLAY_NAME;
     addedAgentId = encodeEphemeralAgentId({
       endpoint: addedEndpoint ?? '',
       model: addedModel,

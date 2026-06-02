@@ -11,6 +11,7 @@ import {
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { LocalizeFunction, IconsRecord } from '~/common';
+import { getAssistantDisplayName } from './branding';
 import { getTimestampedValue } from './timestamps';
 
 /**
@@ -308,6 +309,7 @@ export function getModelSpecPreset(modelSpec?: t.TModelSpec) {
     ...modelSpec.preset,
     spec: modelSpec.name,
     iconURL: getModelSpecIconURL(modelSpec),
+    modelLabel: getAssistantDisplayName(modelSpec.label),
   };
 }
 

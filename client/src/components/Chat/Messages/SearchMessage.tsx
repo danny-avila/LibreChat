@@ -9,7 +9,7 @@ import SearchContent from './Content/SearchContent';
 import { fontSizeAtom } from '~/store/fontSize';
 import SearchButtons from './SearchButtons';
 import SubRow from './SubRow';
-import { cn } from '~/utils';
+import { cn, getAssistantDisplayName } from '~/utils';
 import store from '~/store';
 
 const MessageAvatar = ({ iconData }: { iconData: TMessageIcon }) => (
@@ -57,7 +57,7 @@ export default function SearchMessage({ message }: Pick<TMessageProps, 'message'
         ? (user?.name ?? '') || (user?.username ?? '')
         : localize('com_user_message');
     }
-    return message?.sender ?? '';
+    return getAssistantDisplayName(message?.sender);
   }, [
     message?.isCreatedByUser,
     message?.sender,

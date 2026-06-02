@@ -1,64 +1,74 @@
 import { Feather } from 'lucide-react';
-import { EModelEndpoint, alternateName } from 'librechat-data-provider';
-import {
-  Sparkles,
-  BedrockIcon,
-  AnthropicIcon,
-  AzureMinimalIcon,
-  OpenAIMinimalIcon,
-  GoogleMinimalIcon,
-  CustomMinimalIcon,
-} from '@librechat/client';
+import { EModelEndpoint } from 'librechat-data-provider';
+import { Sparkles } from '@librechat/client';
 import UnknownIcon from '~/hooks/Endpoint/UnknownIcon';
+import {
+  ASSISTANT_DISPLAY_NAME,
+  NeutralAssistantIcon,
+  getAssistantDisplayName,
+  shouldWhiteLabelEndpoint,
+} from '~/utils/branding';
 import { IconProps } from '~/common';
 import { cn } from '~/utils';
 
 const MinimalIcon: React.FC<IconProps> = (props) => {
   const { size = 30, iconURL = '', iconClassName, error } = props;
 
-  let endpoint = 'default'; // Default value for endpoint
+  let endpoint = 'default';
 
   if (typeof props.endpoint === 'string') {
     endpoint = props.endpoint;
   }
 
+  const displayName = getAssistantDisplayName(props.modelLabel ?? props.chatGptLabel);
+
   const endpointIcons = {
     [EModelEndpoint.azureOpenAI]: {
-      icon: <AzureMinimalIcon className={iconClassName} />,
-      name: props.chatGptLabel ?? 'ChatGPT',
+      icon: <NeutralAssistantIcon className={iconClassName} size={size} />,
+      name: displayName,
     },
     [EModelEndpoint.openAI]: {
-      icon: <OpenAIMinimalIcon className={iconClassName} />,
-      name: props.chatGptLabel ?? 'ChatGPT',
+      icon: <NeutralAssistantIcon className={iconClassName} size={size} />,
+      name: displayName,
     },
-    [EModelEndpoint.google]: { icon: <GoogleMinimalIcon />, name: props.modelLabel ?? 'Google' },
+    [EModelEndpoint.google]: {
+      icon: <NeutralAssistantIcon className={iconClassName} size={size} />,
+      name: displayName,
+    },
     [EModelEndpoint.anthropic]: {
-      icon: <AnthropicIcon className="icon-md shrink-0 dark:text-white" />,
-      name: props.modelLabel ?? 'Claude',
+      icon: <NeutralAssistantIcon className={iconClassName} size={size} />,
+      name: displayName,
     },
     [EModelEndpoint.custom]: {
-      icon: <CustomMinimalIcon />,
-      name: 'Custom',
+      icon: <NeutralAssistantIcon className={iconClassName} size={size} />,
+      name: displayName,
     },
     [EModelEndpoint.assistants]: { icon: <Sparkles className="icon-sm" />, name: 'Assistant' },
     [EModelEndpoint.azureAssistants]: { icon: <Sparkles className="icon-sm" />, name: 'Assistant' },
     [EModelEndpoint.agents]: {
       icon: <Feather className="icon-sm" aria-hidden="true" />,
-      name: props.modelLabel ?? alternateName[EModelEndpoint.agents],
+      name: props.modelLabel?.trim() || ASSISTANT_DISPLAY_NAME,
     },
     [EModelEndpoint.bedrock]: {
-      icon: <BedrockIcon className="icon-xl text-text-primary" />,
-      name: props.modelLabel ?? alternateName[EModelEndpoint.bedrock],
+      icon: <NeutralAssistantIcon className={iconClassName} size={size} />,
+      name: displayName,
     },
     default: {
       icon: <UnknownIcon iconURL={iconURL} endpoint={endpoint} className="icon-sm" context="nav" />,
-      name: endpoint,
+      name: ASSISTANT_DISPLAY_NAME,
     },
   };
 
   let { icon, name } = endpointIcons[endpoint] ?? endpointIcons.default;
   if (iconURL && endpointIcons[iconURL] != null) {
     ({ icon, name } = endpointIcons[iconURL]);
+  }
+
+  if (shouldWhiteLabelEndpoint(endpoint)) {
+    ({ icon, name } = {
+      icon: <NeutralAssistantIcon className={iconClassName} size={size} />,
+      name: displayName,
+    });
   }
 
   return (

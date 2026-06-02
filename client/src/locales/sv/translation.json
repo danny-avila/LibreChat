@@ -66,7 +66,7 @@
   "com_agents_mcp_description_placeholder": "Förklara vad den gör med några få ord.",
   "com_agents_mcp_icon_size": "Minsta storlek är 128 x 128 px.",
   "com_agents_mcp_name_placeholder": "Anpassat verktyg",
-  "com_agents_mcp_trust_subtext": "Anpassade anslutningar verifieras inte av LibreChat.",
+  "com_agents_mcp_trust_subtext": "Anpassade anslutningar verifieras inte av AI Workforce Pro.",
   "com_agents_missing_name": "Skriv in ett namn innan du skapar en agent.",
   "com_agents_missing_provider_model": "Välj leverantör och modell innan du skapar en agent.",
   "com_agents_name_placeholder": "Valfritt: Namn på agenten",

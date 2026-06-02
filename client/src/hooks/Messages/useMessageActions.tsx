@@ -17,6 +17,7 @@ import useCopyToClipboard from './useCopyToClipboard';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useGetAddedConvo } from '~/hooks/Chat';
 import { useLocalize } from '~/hooks';
+import { getAssistantDisplayName } from '~/utils/branding';
 import store from '~/store';
 
 export type TMessageActions = Pick<
@@ -130,9 +131,8 @@ export default function useMessageActions(props: TMessageActions) {
       return agent.name ?? 'Assistant';
     } else if (assistant) {
       return assistant.name ?? 'Assistant';
-    } else {
-      return message?.sender;
     }
+    return getAssistantDisplayName(message?.sender);
   }, [message, agent, assistant, UsernameDisplay, user, localize]);
 
   const feedbackMutation = useUpdateFeedbackMutation(

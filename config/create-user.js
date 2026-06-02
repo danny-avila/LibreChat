@@ -14,17 +14,21 @@ const connect = require('./connect');
   console.purple('--------------------------');
 
   if (process.argv.length < 5) {
-    console.orange('Usage: npm run create-user -- <email> <name> <username> [--email-verified=false]');
+    console.orange(
+      'Usage: npm run create-user -- <email> <name> <username> [--email-verified=false] [--role=USER|ADMIN] [--tenant-id=<id>]',
+    );
     console.orange('Note: if you do not pass in the arguments, you will be prompted for them.');
     console.orange(
       'If you really need to pass in the password, you can do so as the 4th argument (not recommended for security).',
     );
     console.orange('Use --email-verified=false to set emailVerified to false. Default is true.');
+    console.orange('Use --role=ADMIN to assign the admin role. Default is USER.');
+    console.orange('Use --tenant-id=<id> to assign the user to a specific tenant.');
     console.purple('--------------------------');
   }
 
   // Parse command line arguments
-  let email, password, name, username, emailVerified, provider;
+  let email, password, name, username, emailVerified, provider, role, tenantId;
   for (let i = 2; i < process.argv.length; i++) {
     if (process.argv[i].startsWith('--email-verified=')) {
       emailVerified = process.argv[i].split('=')[1].toLowerCase() !== 'false';
@@ -33,6 +37,16 @@ const connect = require('./connect');
 
     if (process.argv[i].startsWith('--provider=')) {
       provider = process.argv[i].split('=')[1];
+      continue;
+    }
+
+    if (process.argv[i].startsWith('--role=')) {
+      role = process.argv[i].split('=')[1].toUpperCase();
+      continue;
+    }
+
+    if (process.argv[i].startsWith('--tenant-id=')) {
+      tenantId = process.argv[i].split('=')[1];
       continue;
     }
 
@@ -46,6 +60,11 @@ const connect = require('./connect');
       console.red('Warning: password passed in as argument, this is not secure!');
       password = process.argv[i];
     }
+  }
+
+  if (role !== undefined && role !== 'USER' && role !== 'ADMIN') {
+    console.red('Error: Invalid role. Must be USER or ADMIN.');
+    silentExit(1);
   }
 
   if (email === undefined) {
@@ -88,9 +107,9 @@ If \`n\`, and email service is configured, the user will be sent a verification 
 If \`n\`, and email service is not configured, you must have the \`ALLOW_UNVERIFIED_EMAIL_LOGIN\` .env variable set to true,
 or the user will need to attempt logging in to have a verification link sent to them.`);
 
-    const normalizedEmailVerifiedInput = emailVerifiedInput.trim().toLowerCase()
+    const normalizedEmailVerifiedInput = emailVerifiedInput.trim().toLowerCase();
 
-    emailVerified = true
+    emailVerified = true;
 
     if (normalizedEmailVerifiedInput === 'n') {
       emailVerified = false;
@@ -104,9 +123,16 @@ or the user will need to attempt logging in to have a verification link sent to 
   }
 
   const user = { email, password, name, username, confirm_password: password, provider };
+  const additionalData = { emailVerified };
+  if (role !== undefined) {
+    additionalData.role = role;
+  }
+  if (tenantId !== undefined) {
+    additionalData.tenantId = tenantId;
+  }
   let result;
   try {
-    result = await registerUser(user, { emailVerified });
+    result = await registerUser(user, additionalData);
   } catch (error) {
     console.red('Error: ' + error.message);
     silentExit(1);
@@ -121,6 +147,10 @@ or the user will need to attempt logging in to have a verification link sent to 
   if (userCreated) {
     console.green('User created successfully!');
     console.green(`Email verified: ${userCreated.emailVerified}`);
+    console.green(`Role: ${userCreated.role}`);
+    if (userCreated.tenantId) {
+      console.green(`Tenant ID: ${userCreated.tenantId}`);
+    }
     silentExit(0);
   }
 })();
