@@ -76,7 +76,6 @@ export default function AgentBuilderHeader({
             </div>
           </button>
 
-          {/* NJ: We moved duplicate / delete to the top of the agent builder */}
           {agent_id && (
             <ManageAgentDropdown
               agent={agentQuery.data}
