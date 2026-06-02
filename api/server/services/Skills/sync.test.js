@@ -220,6 +220,41 @@ describe('GitHub skill sync service', () => {
     expect(mockCreatedRunners).toHaveLength(0);
   });
 
+  it('creates an admin request runner from resolved skillSync config overrides', async () => {
+    const skillSync = {
+      github: {
+        enabled: true,
+        intervalMinutes: 60,
+        runOnStartup: true,
+        sources: [
+          {
+            id: 'tenant-skills',
+            owner: 'LibreChat',
+            repo: 'skills',
+            ref: 'main',
+            paths: ['skills'],
+            token: '${GITHUB_SKILLS_TOKEN}',
+            tenantId: 'other-tenant',
+          },
+        ],
+      },
+    };
+
+    const service = require('./sync');
+    const runner = service.getGitHubSkillSyncRunnerForRequest({
+      config: { skillSync, config: {} },
+      user: { id: 'user-1', tenantId: 'tenant-a' },
+    });
+    const config = await mockCreatedRunners[0].deps.getConfig();
+
+    expect(runner.runOnce).toBe(mockCreatedRunners[0].runner.runOnce);
+    expect(runner.getStatus).toBe(mockCreatedRunners[0].runner.getStatus);
+    expect(config.github.runOnStartup).toBe(true);
+    expect(config.github.sources[0]).toEqual(
+      expect.objectContaining({ id: 'tenant-skills', tenantId: 'tenant-a' }),
+    );
+  });
+
   it('does not start a request-scoped sync when the configured source is already running', async () => {
     const skillSync = {
       github: {
@@ -269,6 +304,57 @@ describe('GitHub skill sync service', () => {
 
     expect(started).toBe(false);
     expect(mockCreatedRunners[0].runner.runOnce).not.toHaveBeenCalled();
+  });
+
+  it('retries a request-scoped sync when a running source status is stale', async () => {
+    const skillSync = {
+      github: {
+        enabled: true,
+        intervalMinutes: 60,
+        runOnStartup: false,
+        sources: [
+          {
+            id: 'tenant-skills',
+            owner: 'LibreChat',
+            repo: 'skills',
+            ref: 'main',
+            paths: ['skills'],
+            token: '${GITHUB_SKILLS_TOKEN}',
+          },
+        ],
+      },
+    };
+    mockRunnerStatus = {
+      enabled: true,
+      intervalMinutes: 60,
+      runOnStartup: false,
+      sources: [
+        {
+          provider: 'github',
+          sourceId: 'tenant-skills',
+          status: 'running',
+          owner: 'LibreChat',
+          repo: 'skills',
+          ref: 'main',
+          paths: ['skills'],
+          startedAt: new Date(Date.now() - 40 * 60 * 1000),
+          syncedSkillCount: 0,
+          syncedFileCount: 0,
+          deletedSkillCount: 0,
+          deletedFileCount: 0,
+        },
+      ],
+      credentials: [],
+    };
+
+    const service = require('./sync');
+    const started = await service.maybeRunGitHubSkillSyncForRequest({
+      config: { skillSync, config: {} },
+      user: { id: 'user-1', tenantId: 'tenant-a' },
+    });
+
+    expect(started).toBe(true);
+    expect(mockCreatedRunners[0].runner.runOnce).toHaveBeenCalledTimes(1);
   });
 
   it('uses the file owner when deleting synced files from storage', async () => {

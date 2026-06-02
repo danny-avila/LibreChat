@@ -8,6 +8,11 @@ const mockRequireJwtAuth = jest.fn((req, res, next) => {
 const mockCapabilityMiddleware = jest.fn((req, res, next) => next());
 const mockRequireCapability = jest.fn(() => mockCapabilityMiddleware);
 const mockHasCapability = jest.fn().mockResolvedValue(true);
+const mockConfigMiddleware = jest.fn((req, res, next) => {
+  req.config = { skillSync: { github: { enabled: false, sources: [] } } };
+  next();
+});
+const mockGetGitHubSkillSyncRunnerForRequest = jest.fn();
 
 jest.mock('@librechat/data-schemas', () => ({
   SystemCapabilities: {
@@ -35,16 +40,15 @@ jest.mock('~/server/middleware', () => ({
   requireJwtAuth: mockRequireJwtAuth,
 }));
 
+jest.mock('~/server/middleware/config/app', () => mockConfigMiddleware);
+
 jest.mock('~/models', () => ({
   upsertSkillSyncCredential: jest.fn(),
   deleteSkillSyncCredential: jest.fn(),
 }));
 
 jest.mock('~/server/services/Skills/sync', () => ({
-  getGitHubSkillSyncRunner: jest.fn(() => ({
-    getStatus: jest.fn(),
-    runOnce: jest.fn(),
-  })),
+  getGitHubSkillSyncRunnerForRequest: mockGetGitHubSkillSyncRunnerForRequest,
 }));
 
 describe('admin skills sync routes', () => {
@@ -62,11 +66,23 @@ describe('admin skills sync routes', () => {
     expect(mockRequireCapability).toHaveBeenCalledWith('access:admin');
     expect(mockRequireJwtAuth).toHaveBeenCalled();
     expect(mockCapabilityMiddleware).toHaveBeenCalled();
+    expect(mockConfigMiddleware).toHaveBeenCalled();
     expect(mockHasCapability).toHaveBeenCalledTimes(4);
-    expect(mockHasCapability).toHaveBeenCalledWith({ id: 'user-1', role: 'ADMIN' }, 'read:skills');
+    expect(mockHasCapability).toHaveBeenCalledWith(
+      { id: 'user-1', role: 'ADMIN', tenantId: 'tenant-a' },
+      'read:skills',
+    );
+    expect(mockHasCapability).toHaveBeenCalledWith(
+      { id: 'user-1', role: 'ADMIN', tenantId: 'tenant-a' },
+      'manage:skills',
+    );
     expect(mockHasCapability).toHaveBeenCalledWith(
       { id: 'user-1', role: 'ADMIN' },
       'manage:skills',
+    );
+    const { createAdminSkillsSyncHandlers } = require('@librechat/api');
+    expect(createAdminSkillsSyncHandlers).toHaveBeenCalledWith(
+      expect.objectContaining({ getRunner: mockGetGitHubSkillSyncRunnerForRequest }),
     );
   });
 });
