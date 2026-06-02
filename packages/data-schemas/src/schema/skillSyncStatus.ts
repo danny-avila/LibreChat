@@ -15,6 +15,10 @@ const skillSyncStatusSchema: Schema<ISkillSyncStatusDocument> = new Schema(
       maxlength: 128,
       index: true,
     },
+    tenantId: {
+      type: String,
+      index: true,
+    },
     status: {
       type: String,
       enum: ['idle', 'running', 'succeeded', 'failed', 'skipped'],
@@ -88,6 +92,6 @@ const skillSyncStatusSchema: Schema<ISkillSyncStatusDocument> = new Schema(
   },
 );
 
-skillSyncStatusSchema.index({ provider: 1, sourceId: 1 }, { unique: true });
+skillSyncStatusSchema.index({ provider: 1, sourceId: 1, tenantId: 1 }, { unique: true });
 
 export default skillSyncStatusSchema;
