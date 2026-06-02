@@ -63,6 +63,7 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('librechat-data-provider', () => ({
+  ...jest.requireActual('librechat-data-provider'),
   ErrorTypes: {
     AUTH_FAILED: 'auth_failed',
   },
@@ -99,8 +100,6 @@ jest.mock('~/server/services/Config', () => ({
   getAppConfig: jest.fn(),
 }));
 
-const oauthRouter = require('./oauth');
-
 afterAll(() => {
   if (originalDomainClient === undefined) {
     delete process.env.DOMAIN_CLIENT;
@@ -108,6 +107,11 @@ afterAll(() => {
   }
   process.env.DOMAIN_CLIENT = originalDomainClient;
 });
+
+function getOAuthRouter() {
+  jest.resetModules();
+  return require('./oauth');
+}
 
 function createApp(sessionMessages) {
   const app = express();
@@ -117,7 +121,7 @@ function createApp(sessionMessages) {
     }
     next();
   });
-  app.use('/oauth', oauthRouter);
+  app.use('/oauth', getOAuthRouter());
   app.use((err, _req, res, _next) => {
     res.status(500).json({ message: err.message });
   });
@@ -136,6 +140,7 @@ describe('OAuth route failure logging', () => {
     mockGetOAuthFailureMessage.mockClear();
     mockRedirectToAuthFailure.mockClear();
     mockPassportAuthenticate.mockClear();
+    mockOpenIDCallbackAuthenticatorOptions = undefined;
     mockPassportAuthenticate.mockImplementation(() => (_req, _res, next) => next());
     mockOpenIDCallbackMiddleware.mockImplementation((_req, _res, next) => next());
   });
