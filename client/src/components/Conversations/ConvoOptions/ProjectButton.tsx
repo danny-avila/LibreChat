@@ -81,7 +81,11 @@ function ProjectConversationDialog({
   };
 
   return (
-    <OGDialogContent className="w-11/12 max-w-md" showCloseButton={false}>
+    <OGDialogContent
+      id="project-conversation-dialog"
+      className="w-11/12 max-w-md"
+      showCloseButton={false}
+    >
       <OGDialogHeader>
         <OGDialogTitle>{localize('com_ui_change_project')}</OGDialogTitle>
       </OGDialogHeader>

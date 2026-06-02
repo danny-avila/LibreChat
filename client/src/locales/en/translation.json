@@ -1341,6 +1341,7 @@
   "com_ui_prev": "Prev",
   "com_ui_prev_result": "Previous result",
   "com_ui_project_chat_count": "{{count}} chats",
+  "com_ui_project_create_error": "Failed to create project",
   "com_ui_project_name": "Project name",
   "com_ui_project_not_found": "Project not found",
   "com_ui_project_update_error": "Failed to update project assignment",

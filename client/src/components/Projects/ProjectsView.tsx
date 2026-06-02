@@ -1,10 +1,11 @@
 import { useDeferredValue, useMemo, useState, type FormEvent } from 'react';
 import { ArrowUpDown, Folder, Plus, Search } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Spinner } from '@librechat/client';
+import { Spinner, useToastContext } from '@librechat/client';
 import type { TChatProject } from 'librechat-data-provider';
 import { useCreateProjectMutation, useProjectsInfiniteQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';
+import { NotificationSeverity } from '~/common';
 
 type ProjectSort = 'name' | 'createdAt' | 'lastConversationAt';
 
@@ -23,6 +24,7 @@ export default function ProjectsView() {
   const [name, setName] = useState('');
   const deferredSearch = useDeferredValue(search);
   const createProject = useCreateProjectMutation();
+  const { showToast } = useToastContext();
 
   const { data, fetchNextPage, isFetchingNextPage, isLoading } = useProjectsInfiniteQuery({
     search: deferredSearch || undefined,
@@ -39,10 +41,18 @@ export default function ProjectsView() {
     if (!trimmedName) {
       return;
     }
-    const project = await createProject.mutateAsync({ name: trimmedName });
-    setName('');
-    setIsCreating(false);
-    navigate(`/projects/${project._id}`);
+    try {
+      const project = await createProject.mutateAsync({ name: trimmedName });
+      setName('');
+      setIsCreating(false);
+      navigate(`/projects/${project._id}`);
+    } catch {
+      showToast({
+        message: localize('com_ui_project_create_error'),
+        severity: NotificationSeverity.ERROR,
+        showIcon: true,
+      });
+    }
   };
 
   return (

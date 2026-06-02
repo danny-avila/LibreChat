@@ -83,6 +83,54 @@ describe('ChatProject methods', () => {
     expect(list.projects[0].name).toBe('Customer Alpha Updated');
   });
 
+  it('paginates projects deterministically when latest activity is null', async () => {
+    const staleProject = await methods.createChatProject(user, { name: 'Stale' });
+    await methods.createChatProject(user, { name: 'Quiet A' });
+    await methods.createChatProject(user, { name: 'Quiet B' });
+    const recentProject = await methods.createChatProject(user, { name: 'Recent' });
+
+    await ChatProject.updateOne(
+      { _id: staleProject._id },
+      { $set: { lastConversationAt: new Date('2026-01-01T00:00:00.000Z') } },
+    );
+    await ChatProject.updateOne(
+      { _id: recentProject._id },
+      { $set: { lastConversationAt: new Date('2026-02-01T00:00:00.000Z') } },
+    );
+
+    const firstPage = await methods.listChatProjects(user, {
+      sortBy: 'lastConversationAt',
+      sortDirection: 'desc',
+      limit: 3,
+    });
+    const secondPage = await methods.listChatProjects(user, {
+      sortBy: 'lastConversationAt',
+      sortDirection: 'desc',
+      limit: 3,
+      cursor: firstPage.nextCursor,
+    });
+    const names = [...firstPage.projects, ...secondPage.projects].map((project) => project.name);
+
+    expect(firstPage.projects[0].name).toBe('Recent');
+    expect(firstPage.projects[1].name).toBe('Stale');
+    expect(firstPage.nextCursor).toBeTruthy();
+    expect(secondPage.projects.every((project) => project.lastConversationAt == null)).toBe(true);
+    expect(names).toEqual(expect.arrayContaining(['Recent', 'Stale', 'Quiet A', 'Quiet B']));
+    expect(new Set(names).size).toBe(4);
+
+    const invalidCursor = Buffer.from(
+      JSON.stringify({ primary: 'not-a-date', id: recentProject._id!.toString() }),
+    ).toString('base64');
+    const invalidCursorPage = await methods.listChatProjects(user, {
+      sortBy: 'lastConversationAt',
+      sortDirection: 'desc',
+      limit: 1,
+      cursor: invalidCursor,
+    });
+
+    expect(invalidCursorPage.projects[0].name).toBe('Recent');
+  });
+
   it('assigns many conversations to one project and updates stats', async () => {
     const project = await methods.createChatProject(user, { name: 'Customer Alpha' });
     await createConversation(user, 'convo-1', 'First');

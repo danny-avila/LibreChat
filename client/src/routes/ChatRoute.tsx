@@ -29,6 +29,9 @@ import useAuthRedirect from './useAuthRedirect';
 import temporaryStore from '~/store/temporary';
 import store from '~/store';
 
+const isValidChatProjectId = (projectId: string | null): projectId is string =>
+  projectId != null && /^[a-f\d]{24}$/i.test(projectId);
+
 export default function ChatRoute() {
   const { data: startupConfig } = useGetStartupConfig();
   const { isAuthenticated, user, roles } = useAuthRedirect();
@@ -46,7 +49,8 @@ export default function ChatRoute() {
   const index = 0;
   const [searchParams] = useSearchParams();
   const { conversationId = '' } = useParams();
-  const chatProjectId = searchParams.get('projectId');
+  const projectIdParam = searchParams.get('projectId');
+  const chatProjectId = isValidChatProjectId(projectIdParam) ? projectIdParam : null;
   useIdChangeEffect(conversationId);
   const { hasSetConversation, conversation } = store.useCreateConversationAtom(index);
   const { newConversation } = useNewConvo();

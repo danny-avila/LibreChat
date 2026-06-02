@@ -5,7 +5,10 @@ import { buildRetentionVisibilityFilter, createFallbackRetentionDate } from '~/u
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '~/config/winston';
 import type { AppConfig, IConversation } from '~/types';
-import { refreshChatProjectStatsForUser } from './chatProject';
+import {
+  refreshChatProjectStatsForUser,
+  updateChatProjectLastConversationForUser,
+} from './chatProject';
 import type { MessageMethods } from './message';
 import type { DeleteResult } from 'mongoose';
 
@@ -257,15 +260,28 @@ export function createConversationMethods(
         updateOperation.$setOnInsert = { createdAt: createdAtOnInsert };
       }
 
-      const conversation = await Conversation.findOneAndUpdate(
+      const conversationResult = (await Conversation.findOneAndUpdate(
         { conversationId, user: userId },
         updateOperation,
         {
           new: true,
           upsert: metadata?.noUpsert !== true,
+          includeResultMetadata: true,
           ...(createdAtOnInsert ? { timestamps: false } : {}),
         },
-      );
+      )) as unknown as {
+        value:
+          | (IConversation & {
+              _id: unknown;
+              $isDefault: (path: string) => boolean;
+              toObject: () => IConversation;
+            })
+          | null;
+        lastErrorObject?: {
+          updatedExisting?: boolean;
+        };
+      };
+      const conversation = conversationResult.value;
 
       if (!conversation) {
         logger.debug('[saveConvo] Conversation not found, skipping update');
@@ -286,7 +302,13 @@ export function createConversationMethods(
       }
 
       if (conversation.chatProjectId) {
-        await refreshChatProjectStatsForUser(mongoose, userId, conversation.chatProjectId);
+        await updateChatProjectLastConversationForUser(
+          mongoose,
+          userId,
+          conversation.chatProjectId,
+          conversation,
+          conversationResult.lastErrorObject?.updatedExisting === false,
+        );
       }
 
       return conversation.toObject();

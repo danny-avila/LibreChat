@@ -1,6 +1,7 @@
 import type { FilterQuery, Model, SortOrder, Types } from 'mongoose';
 import logger from '~/config/winston';
 import { isValidObjectIdString } from '~/utils/objectId';
+import { escapeRegExp } from '~/utils/string';
 import type { IChatProject, IChatProjectDocument, IConversation } from '~/types';
 
 export type ChatProjectSortBy = 'name' | 'createdAt' | 'lastConversationAt';
@@ -67,10 +68,6 @@ type ProjectLean = IChatProject & { _id: Types.ObjectId };
 
 const VALID_SORT_FIELDS = new Set<ChatProjectSortBy>(['name', 'createdAt', 'lastConversationAt']);
 
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 function normalizeSortBy(sortBy?: string): ChatProjectSortBy {
   return VALID_SORT_FIELDS.has(sortBy as ChatProjectSortBy)
     ? (sortBy as ChatProjectSortBy)
@@ -129,11 +126,17 @@ function encodeCursor(project: ProjectLean, sortBy: ChatProjectSortBy): string {
 function cursorPrimaryValue(
   primary: string | null,
   sortBy: ChatProjectSortBy,
-): string | Date | null {
+): string | Date | null | undefined {
   if (primary == null) {
-    return null;
+    return sortBy === 'lastConversationAt' ? null : undefined;
   }
-  return sortBy === 'name' ? primary : new Date(primary);
+
+  if (sortBy === 'name') {
+    return primary;
+  }
+
+  const date = new Date(primary);
+  return Number.isNaN(date.getTime()) ? undefined : date;
 }
 
 function createCursorFilter(
@@ -149,6 +152,11 @@ function createCursorFilter(
   const op = sortDirection === 'asc' ? '$gt' : '$lt';
   const id = new mongoose.Types.ObjectId(cursor.id);
   const primary = cursorPrimaryValue(cursor.primary, sortBy);
+
+  if (primary === undefined) {
+    logger.warn('[listChatProjects] Invalid cursor primary value, starting from beginning');
+    return null;
+  }
 
   return {
     $or: [{ [sortBy]: { [op]: primary } }, { [sortBy]: primary, _id: { [op]: id } }],
@@ -201,6 +209,32 @@ export async function refreshChatProjectStatsForUser(
   ).lean<IChatProject>();
 }
 
+export async function updateChatProjectLastConversationForUser(
+  mongoose: typeof import('mongoose'),
+  user: string,
+  projectId: string,
+  conversation: Pick<IConversation, 'conversationId' | 'createdAt' | 'updatedAt'>,
+  incrementCount = false,
+): Promise<void> {
+  if (!isValidObjectIdString(projectId) || !conversation.conversationId) {
+    return;
+  }
+
+  const lastConversationAt = conversation.updatedAt ?? conversation.createdAt ?? new Date();
+  const update: Record<string, unknown> = {
+    $set: {
+      lastConversationAt,
+      lastConversationId: conversation.conversationId,
+    },
+  };
+  if (incrementCount) {
+    update.$inc = { conversationCount: 1 };
+  }
+
+  const ChatProject = mongoose.models.ChatProject as Model<IChatProjectDocument>;
+  await ChatProject.updateOne({ _id: new mongoose.Types.ObjectId(projectId), user }, update);
+}
+
 export function createChatProjectMethods(mongoose: typeof import('mongoose')): ChatProjectMethods {
   async function createChatProject(
     user: string,
@@ -246,7 +280,7 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
     const filters: FilterQuery<IChatProjectDocument>[] = [{ user }];
 
     if (options.search?.trim()) {
-      filters.push({ name: { $regex: escapeRegex(options.search.trim()), $options: 'i' } });
+      filters.push({ name: { $regex: escapeRegExp(options.search.trim()), $options: 'i' } });
     }
 
     const cursorFilter = createCursorFilter(
