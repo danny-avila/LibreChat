@@ -361,6 +361,7 @@ export type TOptions = {
   overrideManualSkills?: string[];
   /** Added conversation for multi-convo feature - sent to server as part of submission payload */
   addedConvo?: t.TConversation;
+  referencedText?: string | null;
 };
 
 export type TAskFunction = (props: TAskProps, options?: TOptions) => void;

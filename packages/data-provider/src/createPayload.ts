@@ -2,6 +2,15 @@ import type * as t from './types';
 import { EndpointURLs } from './config';
 import * as s from './schemas';
 
+const mergeReferencedText = (text: string, referencedText?: string | null) => {
+  const normalizedReference = referencedText?.trim();
+  if (!normalizedReference) {
+    return text;
+  }
+
+  return `<referenced_text>\n${normalizedReference}\n</referenced_text>\n\n${text}`;
+};
+
 export default function createPayload(submission: t.TSubmission) {
   const {
     isEdited,
@@ -15,6 +24,7 @@ export default function createPayload(submission: t.TSubmission) {
     ephemeralAgent,
     endpointOption,
     manualSkills,
+    referencedText,
   } = submission;
   const { conversationId } = s.tConvoUpdateSchema.parse(conversation);
   const { endpoint: _e, endpointType } = endpointOption as {
@@ -42,6 +52,7 @@ export default function createPayload(submission: t.TSubmission) {
     isContinued: !!(isEdited && isContinued),
     ephemeralAgent: s.isAssistantsEndpoint(endpoint) ? undefined : ephemeralAgent,
     manualSkills: s.isAssistantsEndpoint(endpoint) ? undefined : manualSkills,
+    text: mergeReferencedText(userMessage.text ?? '', referencedText),
   };
 
   return { server, payload };

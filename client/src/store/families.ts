@@ -21,6 +21,11 @@ import {
 } from '~/utils';
 import { useSetConvoContext } from '~/Providers/SetConvoContext';
 
+type TReferencedText = {
+  messageId: string;
+  text: string;
+};
+
 const submissionKeysAtom = atom<(string | number)[]>({
   key: 'submissionKeys',
   default: [],
@@ -249,6 +254,11 @@ const activePromptByIndex = atomFamily<string | undefined, string | number | nul
   default: undefined,
 });
 
+const referencedTextByIndex = atomFamily<TReferencedText | null, string | number>({
+  key: 'referencedTextByIndex',
+  default: null,
+});
+
 const showMentionPopoverFamily = atomFamily<boolean, string | number | null>({
   key: 'showMentionPopoverByIndex',
   default: false,
@@ -444,6 +454,7 @@ export default {
   globalAudioFetchingFamily,
   showPlusPopoverFamily,
   activePromptByIndex,
+  referencedTextByIndex,
   useClearSubmissionState,
   showPromptsPopoverFamily,
   showSkillsPopoverFamily,

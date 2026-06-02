@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import { replaceSpecialVars } from 'librechat-data-provider';
 import { useChatContext, useChatFormContext, useAddedChatContext } from '~/Providers';
 import { useAuthContext } from '~/hooks/AuthContext';
@@ -16,6 +16,7 @@ export default function useSubmitMessage() {
 
   const autoSendPrompts = useRecoilValue(store.autoSendPrompts);
   const setActivePrompt = useSetRecoilState(store.activePromptByIndex(index));
+  const [referencedText, setReferencedText] = useRecoilState(store.referencedTextByIndex(index));
 
   const submitMessage = useCallback(
     (data?: { text: string }) => {
@@ -36,11 +37,22 @@ export default function useSubmitMessage() {
         },
         {
           addedConvo: addedConvo ?? undefined,
+          referencedText: referencedText?.text,
         },
       );
       methods.reset();
+      setReferencedText(null);
     },
-    [ask, methods, addedConvo, setMessages, getMessages, latestMessage],
+    [
+      ask,
+      methods,
+      addedConvo,
+      setMessages,
+      getMessages,
+      latestMessage,
+      referencedText,
+      setReferencedText,
+    ],
   );
 
   const submitPrompt = useCallback(

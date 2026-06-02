@@ -116,6 +116,7 @@ export default function useChatFunctions({
       overrideFiles,
       overrideManualSkills,
       addedConvo,
+      referencedText = null,
     } = {},
   ) => {
     setShowStopButton(false);
@@ -389,6 +390,7 @@ export default function useChatFunctions({
       editedContent,
       addedConvo,
       manualSkills: manualSkills.length > 0 ? manualSkills : undefined,
+      referencedText: referencedText?.trim() ? referencedText.trim() : null,
     };
 
     if (isRegenerate) {

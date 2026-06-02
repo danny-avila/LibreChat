@@ -1,5 +1,6 @@
 import { memo, useRef, useMemo, useEffect, useState, useCallback } from 'react';
 import { useWatch } from 'react-hook-form';
+import { Quote, X } from 'lucide-react';
 import { TextareaAutosize } from '@librechat/client';
 import { useRecoilState, useRecoilValue } from 'recoil';
 import { Constants, isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
@@ -53,6 +54,57 @@ interface ChatFormProps {
   handleStopGenerating: (e: React.MouseEvent<HTMLButtonElement>) => void;
 }
 
+type TSelectionPrompt = {
+  left: number;
+  top: number;
+  text: string;
+  messageId: string;
+};
+
+const MESSAGE_RENDER_SELECTOR = '.message-render';
+const REFERENCE_MAX_LENGTH = 1500;
+const REFERENCE_PROMPT_OFFSET = 12;
+const REFERENCE_PROMPT_MARGIN = 92;
+
+const getSelectionElement = (node: Node | null) =>
+  node instanceof Element ? node : node?.parentElement ?? null;
+
+const getMessageElement = (node: Node | null) =>
+  getSelectionElement(node)?.closest(MESSAGE_RENDER_SELECTOR) as HTMLElement | null;
+
+const getSelectionPrompt = (): TSelectionPrompt | null => {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+    return null;
+  }
+
+  const anchorMessage = getMessageElement(selection.anchorNode);
+  const focusMessage = getMessageElement(selection.focusNode);
+  if (!anchorMessage || anchorMessage !== focusMessage) {
+    return null;
+  }
+
+  const text = selection.toString().replace(/\u00a0/g, ' ').trim();
+  if (text.length === 0) {
+    return null;
+  }
+
+  const rect = selection.getRangeAt(0).getBoundingClientRect();
+  if (rect.width === 0 && rect.height === 0) {
+    return null;
+  }
+
+  return {
+    left: Math.min(
+      Math.max(rect.left + rect.width / 2, REFERENCE_PROMPT_MARGIN),
+      window.innerWidth - REFERENCE_PROMPT_MARGIN,
+    ),
+    top: Math.max(rect.top - REFERENCE_PROMPT_OFFSET, REFERENCE_PROMPT_OFFSET),
+    text: text.slice(0, REFERENCE_MAX_LENGTH),
+    messageId: anchorMessage.id,
+  };
+};
+
 const ChatForm = memo(function ChatForm({
   index,
   files,
@@ -86,6 +138,8 @@ const ChatForm = memo(function ChatForm({
   const [badges, setBadges] = useRecoilState(store.chatBadges);
   const [isEditingBadges, setIsEditingBadges] = useRecoilState(store.isEditingBadges);
   const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
+  const [selectionPrompt, setSelectionPrompt] = useState<TSelectionPrompt | null>(null);
+  const [referencedText, setReferencedText] = useRecoilState(store.referencedTextByIndex(index));
   const plusPopoverAtom = useMemo(() => store.showPlusPopoverFamily(index), [index]);
   const mentionPopoverAtom = useMemo(() => store.showMentionPopoverFamily(index), [index]);
 
@@ -151,6 +205,49 @@ const ChatForm = memo(function ChatForm({
   const handleTextareaBlur = useCallback(() => {
     setIsTextAreaFocused(false);
   }, []);
+
+  const updateSelectionPrompt = useCallback(() => {
+    setSelectionPrompt(getSelectionPrompt());
+  }, []);
+
+  const handleAddReference = useCallback(() => {
+    if (!selectionPrompt) {
+      return;
+    }
+
+    setReferencedText({
+      text: selectionPrompt.text,
+      messageId: selectionPrompt.messageId,
+    });
+    setSelectionPrompt(null);
+    window.getSelection()?.removeAllRanges();
+    textAreaRef.current?.focus();
+  }, [selectionPrompt, setReferencedText]);
+
+  const handleClearReference = useCallback(() => {
+    setReferencedText(null);
+  }, [setReferencedText]);
+
+  useEffect(() => {
+    document.addEventListener('mouseup', updateSelectionPrompt);
+    document.addEventListener('keyup', updateSelectionPrompt);
+
+    const clearSelectionPrompt = () => setSelectionPrompt(null);
+    document.addEventListener('scroll', clearSelectionPrompt, true);
+    window.addEventListener('resize', clearSelectionPrompt);
+
+    return () => {
+      document.removeEventListener('mouseup', updateSelectionPrompt);
+      document.removeEventListener('keyup', updateSelectionPrompt);
+      document.removeEventListener('scroll', clearSelectionPrompt, true);
+      window.removeEventListener('resize', clearSelectionPrompt);
+    };
+  }, [updateSelectionPrompt]);
+
+  useEffect(() => {
+    setSelectionPrompt(null);
+    setReferencedText(null);
+  }, [conversationId, setReferencedText]);
 
   useAutoSave({
     files,
@@ -232,8 +329,9 @@ const ChatForm = memo(function ChatForm({
   );
 
   return (
-    <form
-      onSubmit={methods.handleSubmit(submitMessage)}
+    <>
+      <form
+        onSubmit={methods.handleSubmit(submitMessage)}
       className={cn(
         'mx-auto flex w-full flex-row gap-3 transition-[max-width] duration-300 sm:px-2',
         maximizeChatSpace ? 'max-w-full' : 'md:max-w-3xl xl:max-w-4xl',
@@ -281,6 +379,24 @@ const ChatForm = memo(function ChatForm({
           >
             <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
             <PendingManualSkillsChips conversationId={conversationId} />
+            {referencedText && (
+              <div className="px-2 pt-2">
+                <div className="inline-flex w-full items-center gap-1.5 rounded-2xl border border-border-light bg-surface-secondary px-2.5 py-1 text-text-secondary">
+                  <Quote className="h-3.5 w-3.5 text-text-primary" aria-hidden="true" />
+                  <span className="flex-1 truncate text-sm" title={referencedText.text}>
+                    {`“${referencedText.text}”`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleClearReference}
+                    aria-label={localize('com_ui_remove_reference')}
+                    className="rounded-full p-0.5 text-text-secondary hover:bg-surface-tertiary hover:text-text-primary"
+                  >
+                    <X className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                </div>
+              </div>
+            )}
             {/* WIP */}
             <EditBadges
               isEditingChatBadges={isEditingBadges}
@@ -400,10 +516,23 @@ const ChatForm = memo(function ChatForm({
               </div>
             </div>
             {TextToSpeech && automaticPlayback && <StreamAudio index={index} />}
+            </div>
           </div>
         </div>
-      </div>
-    </form>
+      </form>
+      {selectionPrompt && (
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={handleAddReference}
+          className="fixed z-50 inline-flex items-center gap-1 rounded-full border border-border-light bg-surface-secondary px-2.5 py-1 text-sm font-medium text-text-primary shadow-lg"
+          style={{ top: selectionPrompt.top, left: selectionPrompt.left, transform: 'translate(-50%, -100%)' }}
+        >
+          <Quote className="h-3.5 w-3.5" aria-hidden="true" />
+          {localize('com_ui_refer_to')}
+        </button>
+      )}
+    </>
   );
 });
 ChatForm.displayName = 'ChatForm';
