@@ -543,9 +543,7 @@ describe('createAdminAuditLogHandlers', () => {
       await handlers.exportAuditLogCsv(ctx.req, ctx.res);
 
       const optionsArg = (deps.streamAuditLogEntries as jest.Mock).mock.calls[0][3];
-      expect(optionsArg).toEqual(
-        expect.objectContaining({ maxRows: expect.any(Number) }),
-      );
+      expect(optionsArg).toEqual(expect.objectContaining({ maxRows: expect.any(Number) }));
       expect(optionsArg.maxRows).toBeGreaterThan(0);
     });
 
