@@ -2,7 +2,8 @@
 
 Mémoire institutionnelle du projet Vermeer Chat, à destination de tout nouveau lecteur (humain ou IA). Ce fichier est **stratégique** : contexte, stack, conventions, décisions, garde-fous, état d'avancement. Il ne contient pas l'historique détaillé des décisions et conversations — celui-ci est tracké sur Notion.
 
-Dernière mise à jour : 2026-05-29 — ajout de la section 12 (Déploiement et CI/CD).
+Dernière mise à jour : 2026-06-02
+Dernière passe : retrait Locize → i18n FR manuelle, helpers partagés Vermeer (currentMonthStartUTC, budgetColor, composer responsive, BU casing), watchlist code natif touché, §7 réaligné sur HEAD 4eef9d165 (credit management livré).
 
 La Partie 1 ci-dessous couvre le projet Vermeer. La [Partie 2](#partie-2--conventions-techniques-librechat) reprend les conventions techniques LibreChat (workspaces, code style, tests) — à lire après le contexte projet.
 
@@ -73,11 +74,24 @@ Les autres intervenants (UX, chefferie de projet, business, PMO BETC, documentat
 
 - **Branches** : aujourd'hui `main` uniquement côté `origin`. Mise en place d'environnements staging/prod en cours via Oussama. **À CONFIRMER** : état réel des branches staging/prod.
 - **Release / déploiement** : l'image Docker de prod se construit en poussant un **tag de version** (`v*`). Procédure complète en [section 12](#12-déploiement-et-cicd).
-- **Commits** : convention `type(scope): sujet` en français (ex. `feat(ux/agents): …`), corps détaillé en français expliquant le pivot et les hors-scope, signature `Co-Authored-By: Claude Opus 4.7`.
+- **Commits** : convention `type(scope): sujet` en français (ex. `feat(ux/agents): …`), corps détaillé en français expliquant le pivot et les hors-scope, signature `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`.
 - **Méthode de travail** : approche **Phase 1 (investigation) → Phase 2 (plan) → Phase 3 (exécution)** avec validation explicite entre chaque phase pour tout chantier conséquent (voir garde-fou dédié section 6).
 - **Design system Vermeer V1** : dark mode global par défaut (forcé via `FORCE_VERMEER_DARK=true`), accent rouge Vermeer `#E5384A` (hover `#C52838`), fond noir principal `#0A0A0B` (`--surface-primary`) avec surfaces anthracite `#141416` / `#1A1A1C`. Variables définies dans la section `.dark` de `client/src/style.css`. Valeurs V1 best-guess, à raffiner en atelier specs avec Antoine.
 - **Posture éditoriale** : premium, registre « atelier d'art ». Wordings francisés et orientés métier agence. L'IA parle à la première personne (« Comment veux-tu que je t'appelle ? »).
+- **i18n FR** : depuis le retrait de Locize, les traductions FR sont ajoutées manuellement par CC après validation terminologique par le PMO. Procédure complète : voir Partie 2 → Localization.
 - Les conventions de code détaillées (nommage, typage, imports, perf) sont en Partie 2 et s'appliquent intégralement.
+
+### Helpers & patterns partagés Vermeer
+
+Quatre conventions à respecter pour toute nouvelle feature touchant budgets / analytics / mise en page composer.
+
+1. **`currentMonthStartUTC()` — début du mois courant en UTC** (helper exporté de `packages/data-schemas/src/methods/transaction.ts`). Utilisé par 4 méthodes : `aggregateMonthlyUsage`, `aggregateUsageByModel`, `getUserBudget`, `getAllBudgets`. **Règle** : toute nouvelle méthode qui calcule le début du mois courant UTC DOIT importer et appeler ce helper. Ne JAMAIS reconstruire avec `new Date(Date.UTC(...))` à la main. Réf : commit `635651451`.
+
+2. **`budgetColor(ratio)` — couleurs cohérentes pour toute jauge budget** (helper exporté de `client/src/components/Admin/credits.ts`). Retourne `{bg, text, bar}` selon le ratio `consommé / budget`. **Règle** : toute jauge, barre de progression ou indicateur visuel de budget DOIT utiliser ce helper pour garder une cohérence de couleurs cross-features. Actuellement utilisé par : admin Seuils (table de progression), BudgetCard user-facing (barre sous le composer).
+
+3. **Pattern responsive du composer** — Le wrapper `ChatForm` utilise `md:max-w-3xl xl:max-w-4xl sm:px-2`. **Règle** : tout composant qui doit s'aligner visuellement avec le composer (BudgetCard sous la barre, SuggestionGrid au-dessus, etc.) DOIT répliquer exactement ces classes pour garder l'alignement bord-à-bord à toutes les tailles d'écran. Réfs : commits `e5959eac2`, `b8994e2e1`.
+
+4. **Convention BU casing — toujours en majuscules côté UI** — Côté UI et côté types frontend, les BU sont toujours en majuscules : `'POP'`, `'BETC'`, `'Other'`. **Jamais** en minuscules. `'Vermeer'` n'apparaît pas côté UI (le mapping backend dans `buExpression` peut produire `'Vermeer'` à partir de `tenantId`/email, mais ce n'est pas exposé). Le filtre admin Analytics a 4 valeurs : `'all'`, `'POP'`, `'BETC'`, `'Other'`. Cohérent avec les clés i18n `com_usage_filter_bu_pop/betc/other`.
 
 ## 5. Décisions architecturales clés
 
@@ -155,10 +169,23 @@ _Catégorie B — branding/cosmétique, sans équivalent natif → restent légi
 - `SHOW_AGENT_VARIABLES_BUTTON` (`SidePanel/Agents/Instructions.tsx`)
 - `SHOW_AGENT_ID` (`SidePanel/Agents/AgentConfig.tsx`)
 
+### V1.5 — Credit management & budgets (livré sur main depuis le 29 mai)
+
+HEAD actuel : 4eef9d165.
+
+Features livrées (commits clés) :
+- **Admin Seuils & gestion** (55dbf9028 → a8c814f5d → dabb03d73 → 21a26bda6) : nouveau schéma Balance avec monthlyBudget/monthlyBudgetBaseline, routes API admin/budgets, UI onglet Seuils & gestion, modale d'édition, tous users listés (même sans transactions).
+- **Analytics admin enrichi** (648f5721c → 72fa04597 → fb7e48421 → 4899e1d8a → 48e8af0bf → 2a5ffe966 → 644d9cd30 → 6df2e7268 → f69060100) : page Consommation MVP, scission Analytics/Seuils, 4 KPI cards, filtres BU, segmentation par intensité, agrégation Model Mix backend, UI Model Mix donut+tableau, User details collapsible + export CSV.
+- **Jauge BudgetCard user-facing** (7c5fd9bad → 276ba7a49 → 7772bf0f5 → 601b5f753 → 77208a80f → e5959eac2 → b8994e2e1) : enrichissement /api/balance avec currentMonthSpend, refetch SSE, BudgetCard sous le composer alignée + responsive, FR + EN.
+- **Dettes techniques résorbées** (635651451 → 7fd9af216 → 6068ec993 → 4eef9d165) : DRY currentMonthStartUTC dans getAllBudgets, i18n FR complète admin Seuils (27 clés) + Analytics (40 clés), accord pluriel USD consommés.
+
+État déploiement : main est à 4eef9d165 ; **preprod en attente de mise à jour côté Oussama** (image Docker / variables d'env à vérifier). Démo Jonathan/Yvan/Eugénie planifiée après validation preprod.
+
 ## 8. Roadmap V1 / V2 / V3
 
 - **V1 — mercredi 3 juin 2026** : premier déploiement en production + première version du credit management (acter l'activation de `balance`/`transactions` dans `librechat.yaml`).
 - **V2 — mi-juin 2026** : intégration des agents L2 via Codeur (environnement sandbox de Damien/Benoit), c'est-à-dire des agents qui agissent via des outils.
+- **V2 — BudgetCard auto-création Balance** : créer le doc Balance automatiquement à la première transaction OU au premier login user, pour que la BudgetCard soit visible sans intervention admin préalable (limitation V1 documentée en §9).
 - **V3 — à définir** : capacités agentiques étendues, refacturation interne entre BU.
 
 ## 9. Limitations connues et travaux en cours
@@ -170,6 +197,8 @@ _Catégorie B — branding/cosmétique, sans équivalent natif → restent légi
 - **RAG API non opérationnelle en V1** : `RAG_API_URL` est undefined dans le `.env`. File Search est exposée dans l'UI builder agent mais l'indexation échoue silencieusement (warning dans les logs backend). À activer en V1 : lancer le conteneur RAG API (port 8000 + PostgreSQL/PGVector), définir `RAG_API_URL`, vérifier les embeddings OpenAI déjà câblés (`RAG_OPENAI_API_KEY` présent). À coordonner avec Oussama (infra Docker / déploiement).
 - **Gap UX boutons d'upload** : LibreChat upstream propose 4 modes (Upload Images, Upload as Text/File Context, Upload for File Search/RAG, Upload for Code Interpreter). Vermeer V1 n'expose qu'un bouton « joindre un fichier » (= File Context) ; les 3 autres modes sont absents de l'UI. À enrichir en V1/V1.1 pour bénéficier du RAG et du Code Interpreter une fois activés.
 - **Builder agent — web search native non exposée** : l'accordéon « Recherche web » du builder pointe vers le pipeline tiers (trop technique pour les users). La native (param `web_search`, livrée V1 dans le panel Paramètres de la conversation) n'est pas exposable simplement dans le builder — upstream ne propose pas de capability « web search native » au niveau agent. Sujet V1.1+ : investiguer le stockage de `web_search` dans la config d'un agent + exposition builder (chantier custom potentiellement non trivial).
+
+- **BudgetCard user-facing — V1** : visible uniquement pour les users ayant un document Balance en base. Comme le bloc `balance` est commenté dans librechat.yaml, la Balance n'est PAS créée à la première transaction. Workaround V1 : un admin doit éditer un seuil pour le user (onglet Seuils & gestion), ce qui crée le doc Balance et débloque l'affichage. Comportement contre-intuitif, à mentionner lors des démos. Backlog V2 : voir §8.
 
 ## 10. Documentation et ressources externes
 
@@ -185,6 +214,11 @@ _Catégorie B — branding/cosmétique, sans équivalent natif → restent légi
 - **Pricing en dur dans `api/models/tx.js`** : les rates input/completion par modèle vivent dans ce fichier, pas dans le yaml. Avant d'activer la balance en V1, vérifier que les modèles utilisés (gpt-5.x, claude-opus-4-6, claude-sonnet-4-5, claude-haiku-4-5) ont un rate défini, sinon la consommation n'est pas trackée.
 - **Synchro balance au login** : le solde se réaligne sur la config globale (`startBalance`) à chaque connexion. Attention à la migration des users existants — un `startBalance` global mal réglé peut écraser les soldes attendus.
 - **`CREDS_KEY` / `CREDS_IV`** : présents dans le `.env`, à ne JAMAIS perdre ni régénérer lors d'une migration MongoDB. Ces clés chiffrent les credentials user en base ; sans elles, les données existantes deviennent illisibles.
+- **Code natif LibreChat modifié — watchlist merge upstream**. À chaque merge depuis upstream LibreChat, contrôler ces 4 fichiers en priorité, car nous y avons ajouté du code Vermeer susceptible de conflit :
+  - `api/server/controllers/Balance.js` (enrichi avec currentMonthSpend dans la réponse /api/balance)
+  - `client/src/hooks/SSE/useSSE.ts` (retrait du gate balance.enabled sur le refetch balanceQuery)
+  - `client/src/components/Chat/ChatView.tsx` (BudgetCard inséré dans le layout, gestion footer)
+  - `client/src/locales/en/translation.json` (clés com_budget_* + com_usage_* ajoutées + subtitle com_usage_subtitle modifié)
 
 ---
 
@@ -327,7 +361,13 @@ Multi-line imports count total character length across all lines. Consolidate va
 ### Localization
 
 - All user-facing text must use `useLocalize()`.
-- Only update English keys in `client/src/locales/en/translation.json` (other languages are automated externally).
+- **i18n EN + FR — procédure manuelle (Locize retiré, commit d58c249a2)** :
+  - Ajouter la clé EN dans `client/src/locales/en/translation.json`.
+  - Le PMO (Loïse) valide la terminologie EN AVANT que CC traduise.
+  - CC traduit en FR et insère dans `client/src/locales/fr/translation.json` en ordre alphabétique (cohérent avec l'ordre EN).
+  - Conventions strictes : interpolations `{{xxx}}` préservées à l'identique ; apostrophes ASCII (`'`), jamais typographiques ; sigles métier non traduits (POP, BETC, BU, USD, CSV) ; pas d'espaces insécables (le repo utilise les espaces normaux) ; références techniques (`librechat.yaml`, noms de fichiers) non traduites.
+  - Vérifs post-insertion : `JSON.parse` valide sur les deux fichiers ; diff des noms de clés EN vs FR → AUCUNE DIFFÉRENCE.
+  - Passes de référence : commits `7fd9af216` (27 clés com_budget_*) et `6068ec993` (40 clés com_usage_* + maj subtitle EN obsolète).
 - Semantic key prefixes: `com_ui_`, `com_assistants_`, etc.
 
 ### Components
