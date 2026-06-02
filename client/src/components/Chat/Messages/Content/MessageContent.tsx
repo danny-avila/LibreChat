@@ -26,6 +26,9 @@ const parseThinkingContent = (text: string) => {
   };
 };
 
+const stripReferencedText = (text: string) =>
+  text.replace(/^<referenced_text>[\s\S]*?<\/referenced_text>\s*/i, '');
+
 const LoadingFallback = () => (
   <div className="text-message mb-[0.625rem] flex min-h-[20px] flex-col items-start gap-3 overflow-visible">
     <div className="markdown prose dark:prose-invert light w-full break-words dark:text-gray-100">
@@ -95,6 +98,10 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
   const { isSubmitting = false, isLatestMessage = false } = useMessageContext();
   const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
 
+  const displayText = useMemo(
+    () => (isCreatedByUser ? stripReferencedText(text) : text),
+    [isCreatedByUser, text],
+  );
   const showCursorState = useMemo(
     () => showCursor === true && isSubmitting,
     [showCursor, isSubmitting],
@@ -102,13 +109,13 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
 
   const content = useMemo(() => {
     if (!isCreatedByUser) {
-      return <Markdown content={text} isLatestMessage={isLatestMessage} />;
+      return <Markdown content={displayText} isLatestMessage={isLatestMessage} />;
     }
     if (enableUserMsgMarkdown) {
-      return <MarkdownLite content={text} />;
+      return <MarkdownLite content={displayText} />;
     }
-    return <>{text}</>;
-  }, [isCreatedByUser, enableUserMsgMarkdown, text, isLatestMessage]);
+    return <>{displayText}</>;
+  }, [isCreatedByUser, enableUserMsgMarkdown, displayText, isLatestMessage]);
 
   return (
     <Container message={message}>
@@ -116,7 +123,7 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
         className={cn(
           'markdown prose message-content dark:prose-invert light w-full break-words',
           isSubmitting && 'submitting',
-          showCursorState && text.length > 0 && 'result-streaming',
+          showCursorState && displayText.length > 0 && 'result-streaming',
           isCreatedByUser && !enableUserMsgMarkdown && 'whitespace-pre-wrap',
           isCreatedByUser ? 'dark:text-gray-20' : 'dark:text-gray-100',
         )}

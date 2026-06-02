@@ -30,6 +30,30 @@ const { logViolation } = require('~/cache');
 const TextStream = require('./TextStream');
 const db = require('~/models');
 
+const REFERENCED_TEXT_MAX_LENGTH = 1500;
+
+const getReferencedText = (body) => {
+  const rawReferencedText = body?.referencedText;
+  if (typeof rawReferencedText !== 'string') {
+    return null;
+  }
+
+  const normalizedText = rawReferencedText.trim();
+  if (normalizedText.length === 0) {
+    return null;
+  }
+
+  return normalizedText.slice(0, REFERENCED_TEXT_MAX_LENGTH);
+};
+
+const mergeReferencedText = (text, referencedText) => {
+  if (!referencedText) {
+    return text;
+  }
+
+  return `<referenced_text>\n${referencedText}\n</referenced_text>\n\n${text}`;
+};
+
 class BaseClient {
   constructor(apiKey, options = {}) {
     this.apiKey = apiKey;
@@ -413,6 +437,10 @@ class BaseClient {
     const { user, head, isEdited, conversationId, responseMessageId, saveOptions, userMessage } =
       await this.handleStartMethods(message, opts);
 
+    const originalUserText = userMessage.text ?? '';
+    const referencedText = getReferencedText(this.options.req?.body);
+    userMessage.text = mergeReferencedText(originalUserText, referencedText);
+
     if (opts.progressCallback) {
       opts.onProgress = opts.progressCallback.call(null, {
         ...(opts.progressOptions ?? {}),
@@ -473,6 +501,8 @@ class BaseClient {
       this.getBuildMessagesOptions(opts),
       opts,
     );
+
+    userMessage.text = originalUserText;
 
     if (tokenCountMap && tokenCountMap[userMessage.messageId]) {
       userMessage.tokenCount = tokenCountMap[userMessage.messageId];

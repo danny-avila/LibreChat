@@ -126,6 +126,7 @@ export type TPayload = Partial<TMessage> &
      * before the LLM turn runs.
      */
     manualSkills?: string[];
+    referencedText?: string | null;
   };
 
 export type TEditedContent =
