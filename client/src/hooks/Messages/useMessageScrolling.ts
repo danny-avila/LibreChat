@@ -4,7 +4,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import type { TMessage } from 'librechat-data-provider';
 import { useMessagesConversation, useMessagesSubmission } from '~/Providers';
 import useScrollToRef from '~/hooks/useScrollToRef';
-import { getRenderedContentMaxScrollTop } from './messageLayout';
+import { reconcileMessageContentLayout } from './messageLayout';
 import store from '~/store';
 
 const threshold = 0.85;
@@ -78,6 +78,7 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
   }, [debouncedSetShowScrollButton, getIsNearBottom]);
 
   const scrollCallback = () => {
+    reconcileMessageContentLayout(scrollableRef.current);
     isNearBottomRef.current = true;
     debouncedSetShowScrollButton(false);
   };
@@ -97,7 +98,7 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
       return false;
     }
 
-    const maxScrollTop = getRenderedContentMaxScrollTop(scrollEl);
+    const maxScrollTop = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
     if (scrollEl.scrollTop <= maxScrollTop) {
       return false;
     }

@@ -16,16 +16,27 @@ const mockScrollToBottom = jest.fn() as MockScrollToBottom;
 mockScrollToBottom.cancel = jest.fn();
 mockScrollToBottom.flush = jest.fn();
 const mockHandleSmoothToRef = jest.fn();
+let mockScrollCallback: (() => void) | undefined;
 
 jest.mock('~/hooks/useScrollToRef', () => ({
   __esModule: true,
-  default: () => ({
-    scrollToRef: mockScrollToBottom,
-    handleSmoothToRef: mockHandleSmoothToRef,
-  }),
+  default: ({ callback }: { callback: () => void }) => {
+    mockScrollCallback = callback;
+    return {
+      scrollToRef: mockScrollToBottom,
+      handleSmoothToRef: mockHandleSmoothToRef,
+    };
+  },
+}));
+
+jest.mock('../messageLayout', () => ({
+  reconcileMessageContentLayout: jest.fn(),
 }));
 
 import useMessageScrolling from '../useMessageScrolling';
+import { reconcileMessageContentLayout } from '../messageLayout';
+
+const mockReconcileMessageContentLayout = reconcileMessageContentLayout as jest.Mock;
 
 class MockResizeObserver {
   static instances: MockResizeObserver[] = [];
@@ -162,6 +173,8 @@ describe('useMessageScrolling resize reconciliation', () => {
     mockScrollToBottom.cancel.mockClear();
     mockScrollToBottom.flush.mockClear();
     mockHandleSmoothToRef.mockClear();
+    mockReconcileMessageContentLayout.mockClear();
+    mockScrollCallback = undefined;
     (global as unknown as { ResizeObserver: typeof MockResizeObserver }).ResizeObserver =
       MockResizeObserver;
     (
@@ -188,6 +201,17 @@ describe('useMessageScrolling resize reconciliation', () => {
     });
 
     expect(mockScrollToBottom).toHaveBeenCalledTimes(1);
+  });
+
+  it('reconciles message layout after an explicit scroll to bottom', () => {
+    renderScrolling();
+
+    const scrollable = screen.getByTestId('scrollable');
+    act(() => {
+      mockScrollCallback?.();
+    });
+
+    expect(mockReconcileMessageContentLayout).toHaveBeenCalledWith(scrollable);
   });
 
   it('does not follow resizes after the user aborts streaming auto-scroll', () => {
@@ -245,7 +269,7 @@ describe('useMessageScrolling resize reconciliation', () => {
     expect(mockScrollToBottom).not.toHaveBeenCalled();
   });
 
-  it('clamps to the rendered content bottom when scrollHeight stays oversized', () => {
+  it('does not clamp to rendered content bottom during general resize reconciliation', () => {
     renderScrolling({ contextOverrides: { abortScroll: true } });
 
     const scrollable = screen.getByTestId('scrollable');
@@ -260,7 +284,7 @@ describe('useMessageScrolling resize reconciliation', () => {
       MockResizeObserver.last()?.trigger();
     });
 
-    expect(scrollable.scrollTop).toBe(300);
+    expect(scrollable.scrollTop).toBe(700);
     expect(mockScrollToBottom).not.toHaveBeenCalled();
   });
 });

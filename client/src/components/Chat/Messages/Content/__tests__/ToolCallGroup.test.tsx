@@ -2,8 +2,9 @@ import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { Tools, Constants, ContentTypes } from 'librechat-data-provider';
 import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ToolCallGroup from '../ToolCallGroup';
+import { scheduleMessageContentLayoutReconcile } from '~/hooks';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string, values?: Record<string | number, string>) => {
@@ -96,6 +97,9 @@ const renderGroup = (props: React.ComponentProps<typeof ToolCallGroup>) =>
     </RecoilRoot>,
   );
 
+const mockScheduleMessageContentLayoutReconcile =
+  scheduleMessageContentLayoutReconcile as jest.Mock;
+
 describe('ToolCallGroup image hoisting', () => {
   const parts = [
     { part: makePart('t1'), idx: 0 },
@@ -113,6 +117,10 @@ describe('ToolCallGroup image hoisting', () => {
       </div>
     ),
   } satisfies React.ComponentProps<typeof ToolCallGroup>;
+
+  beforeEach(() => {
+    mockScheduleMessageContentLayoutReconcile.mockClear();
+  });
 
   it('renders an AttachmentGroup outside the collapsible container with all attachments', () => {
     renderGroup({
@@ -139,6 +147,24 @@ describe('ToolCallGroup image hoisting', () => {
   it('does not render an AttachmentGroup when there are no group attachments', () => {
     renderGroup(baseProps);
     expect(screen.queryByTestId('attachment-group')).not.toBeInTheDocument();
+  });
+
+  it('does not reconcile layout for an initially collapsed completed group', () => {
+    renderGroup(baseProps);
+    expect(mockScheduleMessageContentLayoutReconcile).not.toHaveBeenCalled();
+  });
+
+  it('reconciles layout after the group collapses from an expanded state', async () => {
+    renderGroup(baseProps);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Used 2 tools' }));
+    expect(mockScheduleMessageContentLayoutReconcile).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Used 2 tools' }));
+
+    await waitFor(() => {
+      expect(mockScheduleMessageContentLayoutReconcile).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('renders the image AttachmentGroup as a sibling of the collapsible panel, not a child', () => {

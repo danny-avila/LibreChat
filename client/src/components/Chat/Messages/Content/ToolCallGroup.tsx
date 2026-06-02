@@ -157,6 +157,7 @@ export default function ToolCallGroup({
     initialState?.isExpanded ?? (autoExpand || !autoCollapse),
   );
   const [userOverride, setUserOverride] = useState(initialState != null);
+  const previousIsExpandedRef = useRef(isExpanded);
   const { style: expandStyle, ref: expandRef } = useExpandCollapse(isExpanded);
   const notifyLayoutChange = useCallback(() => {
     cancelLayoutReconcileRef.current?.();
@@ -171,37 +172,45 @@ export default function ToolCallGroup({
   );
 
   useEffect(() => {
-    if (autoCollapse && !userOverride) {
-      setIsExpanded(false);
+    const wasExpanded = previousIsExpandedRef.current;
+    previousIsExpandedRef.current = isExpanded;
+    if (wasExpanded && !isExpanded) {
       notifyLayoutChange();
     }
-  }, [autoCollapse, notifyLayoutChange, userOverride]);
+  }, [isExpanded, notifyLayoutChange]);
+
+  useEffect(() => {
+    if (autoCollapse && !userOverride) {
+      setIsExpanded(false);
+    }
+  }, [autoCollapse, userOverride]);
 
   const handleToggle = useCallback(() => {
     setUserOverride(true);
     setIsExpanded((prev) => {
       const nextExpanded = !prev;
       onExpansionChange?.({ isExpanded: nextExpanded, userOverride: true });
-      notifyLayoutChange();
       return nextExpanded;
     });
-  }, [notifyLayoutChange, onExpansionChange]);
+  }, [onExpansionChange]);
 
   const handleToolExpand = useCallback(() => {
     setUserOverride(true);
     setIsExpanded(true);
     onExpansionChange?.({ isExpanded: true, userOverride: true });
-    notifyLayoutChange();
-  }, [notifyLayoutChange, onExpansionChange]);
+  }, [onExpansionChange]);
 
   const handleTransitionEnd = useCallback(
     (event: React.TransitionEvent<HTMLDivElement>) => {
       if (event.target !== event.currentTarget) {
         return;
       }
+      if (isExpanded) {
+        return;
+      }
       notifyLayoutChange();
     },
-    [notifyLayoutChange],
+    [isExpanded, notifyLayoutChange],
   );
 
   const getSubagentLabel = () =>
@@ -220,9 +229,8 @@ export default function ToolCallGroup({
   useEffect(() => {
     if (hasActiveToolCall && !userOverride) {
       setIsExpanded(true);
-      notifyLayoutChange();
     }
-  }, [hasActiveToolCall, notifyLayoutChange, userOverride]);
+  }, [hasActiveToolCall, userOverride]);
 
   return (
     <div className="mb-2 mt-1" ref={rootRef}>
