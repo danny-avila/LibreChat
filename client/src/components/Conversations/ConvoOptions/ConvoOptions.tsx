@@ -1,8 +1,7 @@
 import { useState, useId, useRef, memo, useCallback, useMemo } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
+import { useParams, useNavigate } from 'react-router-dom';
 import { DropdownPopup, Spinner, useToastContext } from '@librechat/client';
 import {
   Ellipsis,
@@ -14,6 +13,7 @@ import {
   Pen,
   Trash,
 } from 'lucide-react';
+import { QueryKeys, PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { MouseEvent } from 'react';
 import type { TMessage } from 'librechat-data-provider';
 import {
@@ -23,7 +23,7 @@ import {
   useGetStartupConfig,
   useArchiveConvoMutation,
 } from '~/data-provider';
-import { useLocalize, useNavigateToConvo, useNewConvo } from '~/hooks';
+import { useHasAccess, useLocalize, useNavigateToConvo, useNewConvo } from '~/hooks';
 import { NotificationSeverity } from '~/common';
 import { useChatContext } from '~/Providers';
 import DeleteButton from './DeleteButton';
@@ -71,6 +71,11 @@ function ConvoOptions({
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showProjectDialog, setShowProjectDialog] = useState(false);
   const [announcement, setAnnouncement] = useState('');
+
+  const canCreateSharedLinks = useHasAccess({
+    permissionType: PermissionTypes.SHARED_LINKS,
+    permission: Permissions.CREATE,
+  });
 
   const archiveConvoMutation = useArchiveConvoMutation();
   const assignConversationToProject = useAssignConversationToProjectMutation();
@@ -236,7 +241,7 @@ function ConvoOptions({
         label: localize('com_ui_share'),
         onClick: shareHandler,
         icon: <Share2 className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
-        show: startupConfig && startupConfig.sharedLinksEnabled,
+        show: startupConfig && startupConfig.sharedLinksEnabled && canCreateSharedLinks,
         ariaHasPopup: 'dialog' as const,
         ariaControls: 'share-conversation-dialog',
         /** NOTE: THE FOLLOWING PROPS ARE REQUIRED FOR MENU ITEMS THAT OPEN DIALOGS */
@@ -311,6 +316,7 @@ function ConvoOptions({
       isArchiveLoading,
       isDuplicateLoading,
       handleArchiveClick,
+      canCreateSharedLinks,
       handleDuplicateClick,
       projectHandler,
       removeProjectHandler,

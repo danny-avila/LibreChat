@@ -18,12 +18,15 @@ concurrency:
 
 env:
   NODE_OPTIONS: '--max-old-space-size=${{ secrets.NODE_MAX_OLD_SPACE_SIZE || 6144 }}'
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
 
 jobs:
   e2e:
-    name: Tier-1 smoke (headless Chromium)
+    name: Tier-1 smoke (headless Chrome)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      E2E_CHROMIUM_CHANNEL: chrome
     steps:
       - uses: actions/checkout@v4
 
@@ -105,19 +108,11 @@ jobs:
         if: steps.cache-client-app.outputs.cache-hit != 'true'
         run: npm run build:client
 
-      - name: Resolve Playwright version
-        id: pw
-        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Playwright browsers
-        id: cache-playwright
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
-
-      - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
+      - name: Install Playwright runtime dependencies
+        timeout-minutes: 5
+        run: |
+          google-chrome --version
+          npx playwright install-deps chrome
 
       - name: Run mock-LLM Tier-1 e2e
         run: npx playwright test --config=e2e/playwright.config.mock.ts

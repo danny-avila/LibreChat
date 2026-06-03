@@ -358,7 +358,9 @@ export type TUpdateShareLinkRequest = Pick<TSharedLink, 'shareId' | 'targetMessa
 
 export type TSharedLinkResponse = Pick<TSharedLink, 'shareId'> &
   Pick<TSharedLink, 'targetMessageId'> &
-  Pick<TConversation, 'conversationId'>;
+  Pick<TConversation, 'conversationId'> & {
+    _id?: string;
+  };
 
 export type TSharedLinkGetResponse = Omit<TSharedLinkResponse, 'shareId'> & {
   shareId: string | null;
