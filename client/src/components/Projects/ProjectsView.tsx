@@ -202,7 +202,11 @@ export default function ProjectsView() {
                   ) : null}
                   <span className="mt-auto flex items-center justify-between gap-2 pt-4 text-xs text-text-secondary">
                     <span>
-                      {localize('com_ui_project_chat_count', { count: project.conversationCount })}
+                      {project.conversationCount === 1
+                        ? localize('com_ui_project_chat_count_single')
+                        : localize('com_ui_project_chat_count', {
+                            count: project.conversationCount,
+                          })}
                     </span>
                     {activity ? <span className="shrink-0 truncate">{activity}</span> : null}
                   </span>
