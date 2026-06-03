@@ -9,14 +9,15 @@ import {
   type ReactNode,
 } from 'react';
 import throttle from 'lodash/throttle';
-import { MessageSquare } from 'lucide-react';
 import { AutoSizer, CellMeasurer, CellMeasurerCache, List } from 'react-virtualized';
 import { Spinner } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
 import type { MeasuredCellParent } from '~/components/Conversations/Conversations';
+import { useGetEndpointsQuery } from '~/data-provider';
 import { useLocalize, useNavigateToConvo } from '~/hooks';
 import { groupConversationsByDate, cn } from '~/utils';
 import { DateLabel } from '~/components/Conversations/Conversations';
+import EndpointIcon from '~/components/Endpoints/EndpointIcon';
 
 type ChatSortField = 'updatedAt' | 'createdAt';
 
@@ -74,6 +75,7 @@ LoadingRow.displayName = 'ProjectWorkspaceLoadingRow';
 const ConversationRow = memo(({ conversation }: { conversation: TConversation }) => {
   const { navigateToConvo } = useNavigateToConvo();
   const localize = useLocalize();
+  const { data: endpointsConfig } = useGetEndpointsQuery();
   const title = conversation.title || localize('com_ui_untitled');
   const updatedAt = conversation.updatedAt || conversation.createdAt;
   const formattedDate = updatedAt ? new Date(updatedAt).toLocaleString() : '';
@@ -84,8 +86,13 @@ const ConversationRow = memo(({ conversation }: { conversation: TConversation })
       className="flex w-full items-center gap-3 border-b border-border-light py-3 text-left outline-none transition-colors hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring-primary"
       onClick={() => navigateToConvo(conversation)}
     >
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-surface-secondary text-text-secondary">
-        <MessageSquare className="h-4 w-4" aria-hidden="true" />
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center">
+        <EndpointIcon
+          conversation={conversation}
+          endpointsConfig={endpointsConfig ?? {}}
+          size={24}
+          context="menu-item"
+        />
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium text-text-primary">{title}</span>
