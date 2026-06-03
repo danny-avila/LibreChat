@@ -363,7 +363,7 @@ describe('syncUserEntraGroupMemberships', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('removes stale memberships when graph returns no groups', async () => {
+  it('does not remove stale memberships when graph returns no groups', async () => {
     const deps = methods();
     const result = await sync({
       graphConfig: { ...graphConfig, includeOwnersAsMembers: false },
@@ -376,16 +376,9 @@ describe('syncUserEntraGroupMemberships', () => {
     });
 
     expect(result).toMatchObject({ attempted: true, synced: true });
-    expect(deps.findGroupsByExternalIds).toHaveBeenCalledWith([], 'entra');
+    expect(deps.findGroupsByExternalIds).not.toHaveBeenCalled();
     expect(deps.upsertGroupByExternalId).not.toHaveBeenCalled();
-    expect(deps.bulkUpdateGroups).toHaveBeenCalledWith(
-      {
-        source: 'entra',
-        memberIds: 'oid-123',
-        idOnTheSource: { $nin: [] },
-      },
-      { $pullAll: { memberIds: ['oid-123'] } },
-    );
+    expect(deps.bulkUpdateGroups).not.toHaveBeenCalled();
   });
 
   it('rejects unsafe discovered token endpoints before OBO exchange', async () => {

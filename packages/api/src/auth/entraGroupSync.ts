@@ -377,16 +377,18 @@ async function syncMemberships({
   methods: EntraGroupSyncDbMethods;
   fetcher: GraphFetch;
 }): Promise<void> {
-  if (groupIds.length > 0) {
-    await methods.bulkUpdateGroups(
-      {
-        idOnTheSource: { $in: groupIds },
-        source: 'entra',
-        memberIds: { $ne: user.idOnTheSource },
-      },
-      { $addToSet: { memberIds: user.idOnTheSource } },
-    );
+  if (groupIds.length === 0) {
+    return;
   }
+
+  await methods.bulkUpdateGroups(
+    {
+      idOnTheSource: { $in: groupIds },
+      source: 'entra',
+      memberIds: { $ne: user.idOnTheSource },
+    },
+    { $addToSet: { memberIds: user.idOnTheSource } },
+  );
 
   const existingGroups = await methods.findGroupsByExternalIds(groupIds, 'entra');
   const existingGroupIds = new Set(existingGroups.map((group) => group.idOnTheSource));
