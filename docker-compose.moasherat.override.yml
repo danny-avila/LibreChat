@@ -1,0 +1,4 @@
+services:
+  mcp:
+    healthcheck:
+      disable: true

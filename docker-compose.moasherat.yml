@@ -1,0 +1,92 @@
+# Moasherat: LibreChat + analytics MCP (streamable-http).
+# Usage (sibling repos):
+#   parent/
+#     analytics_chatbot/   ← MCP .env + Dockerfile
+#     LibreChat/           ← this repo; run from here
+#   cd LibreChat
+#   cp librechat.moasherat.yaml librechat.yaml
+#   docker compose -f docker-compose.moasherat.yml -f docker-compose.moasherat.override.yml up -d --build
+
+services:
+  mcp:
+    container_name: analytics-mcp
+    build:
+      context: ../analytics_chatbot
+      dockerfile: Dockerfile
+    restart: always
+    env_file:
+      - ../analytics_chatbot/.env
+    ports:
+      - "3000:3000"
+
+  api:
+    container_name: LibreChat
+    ports:
+      - "${PORT:-3080}:${PORT:-3080}"
+    depends_on:
+      - mongodb
+      - rag_api
+      - mcp
+    image: registry.librechat.ai/danny-avila/librechat:latest
+    restart: always
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - .env
+    environment:
+      - HOST=0.0.0.0
+      - MONGO_URI=mongodb://mongodb:27017/LibreChat
+      - MEILI_HOST=http://meilisearch:7700
+      - RAG_PORT=${RAG_PORT:-8000}
+      - RAG_API_URL=http://rag_api:${RAG_PORT:-8000}
+      - CONFIG_BYPASS_VALIDATION=true
+    volumes:
+      - type: bind
+        source: ./librechat.yaml
+        target: /app/librechat.yaml
+      - ./images:/app/client/public/images
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs
+  mongodb:
+    container_name: chat-mongodb
+    image: mongo:8.0.20
+    restart: always
+    user: "${UID}:${GID}"
+    volumes:
+      - ./data-node:/data/db
+    command: mongod --noauth
+  meilisearch:
+    container_name: chat-meilisearch
+    image: getmeili/meilisearch:v1.35.1
+    restart: always
+    user: "${UID}:${GID}"
+    environment:
+      - MEILI_HOST=http://meilisearch:7700
+      - MEILI_NO_ANALYTICS=true
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
+    volumes:
+      - ./meili_data_v1.35.1:/meili_data
+  vectordb:
+    container_name: vectordb
+    image: pgvector/pgvector:0.8.0-pg15-trixie
+    environment:
+      POSTGRES_DB: mydatabase
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+    restart: always
+    volumes:
+      - pgdata2:/var/lib/postgresql/data
+  rag_api:
+    container_name: rag_api
+    image: registry.librechat.ai/danny-avila/librechat-rag-api-dev-lite:latest
+    environment:
+      - DB_HOST=vectordb
+      - RAG_PORT=${RAG_PORT:-8000}
+    restart: always
+    depends_on:
+      - vectordb
+    env_file:
+      - .env
+
+volumes:
+  pgdata2:
