@@ -48,11 +48,15 @@ jest.mock('react-virtualized', () => {
 });
 
 jest.mock('~/store', () => {
-  const { atom } = jest.requireActual('recoil');
+  const { atom, atomFamily } = jest.requireActual('recoil');
   return {
     __esModule: true,
     default: {
       search: atom({ key: 'test-conversations-search', default: { query: '' } }),
+      conversationByIndex: atomFamily({
+        key: 'test-conversations-convo-by-index',
+        default: null,
+      }),
     },
   };
 });
@@ -70,12 +74,19 @@ jest.mock('~/hooks', () => ({
   useFavorites: () => mockFavoritesState,
   useLocalize: () => (key: string) => key,
   useShowMarketplace: () => mockShowMarketplace,
+  useNewConvo: () => ({ newConversation: jest.fn() }),
   TranslationKeys: {},
+}));
+
+jest.mock('@tanstack/react-query', () => ({
+  useQueryClient: () => ({ invalidateQueries: jest.fn() }),
 }));
 
 jest.mock('@librechat/client', () => ({
   Spinner: () => <div data-testid="spinner" />,
   useMediaQuery: () => false,
+  TooltipAnchor: ({ render }: { render: React.ReactNode }) => render,
+  NewChatIcon: () => <svg data-testid="new-chat-icon" />,
 }));
 
 jest.mock('~/data-provider', () => ({
@@ -84,24 +95,13 @@ jest.mock('~/data-provider', () => ({
 
 jest.mock('~/utils', () => ({
   groupConversationsByDate: () => [],
+  clearMessagesCache: jest.fn(),
   cn: (...args: unknown[]) => args.filter(Boolean).join(' '),
 }));
 
 jest.mock('~/components/Nav/Favorites/FavoritesList', () => ({
   __esModule: true,
   default: () => <div data-testid="favorites-list" />,
-}));
-
-jest.mock('../Header', () => ({
-  __esModule: true,
-  default: ({ isExpanded, onToggle }: { isExpanded: boolean; onToggle: () => void }) => (
-    <button
-      type="button"
-      aria-expanded={isExpanded}
-      onClick={onToggle}
-      data-testid="chats-header"
-    />
-  ),
 }));
 
 jest.mock('../Convo', () => ({
@@ -133,13 +133,6 @@ describe('Conversations – favorites CellMeasurerCache key invalidation', () =>
         isSearchLoading={false}
         isChatsExpanded={true}
         setIsChatsExpanded={jest.fn()}
-        chatsHeaderControls={{
-          organizationMode: 'chronological',
-          chatSortBy: 'updatedAt',
-          onOrganizationModeChange: jest.fn(),
-          onChatSortByChange: jest.fn(),
-          onNewProject: jest.fn(),
-        }}
       />
     </RecoilRoot>
   );

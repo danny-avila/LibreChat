@@ -53,6 +53,7 @@ export default function ProjectLandingChip({ project }: { project: TChatProject 
   return (
     <div className="mb-2.5 flex items-center gap-1 px-1">
       <ControlCombobox
+        selectId="project-landing-select"
         selectedValue={project._id}
         displayValue={project.name}
         items={items}
