@@ -233,6 +233,78 @@ describe('Conversation Operations', () => {
       expect(refreshedProject?.conversationCount).toBe(1);
     });
 
+    it('refreshes both projects when a save moves a conversation between them', async () => {
+      const projectA = await ChatProject.create({
+        user: mockCtx.userId,
+        name: 'Project A',
+        conversationCount: 0,
+      });
+      const projectB = await ChatProject.create({
+        user: mockCtx.userId,
+        name: 'Project B',
+        conversationCount: 0,
+      });
+      const conversationId = uuidv4();
+      const projectAId = projectA._id!.toString();
+      const projectBId = projectB._id!.toString();
+
+      await saveConvo(mockCtx, {
+        conversationId,
+        title: 'Moving',
+        endpoint: EModelEndpoint.openAI,
+        chatProjectId: projectAId,
+      });
+      // A stale tab re-submits with the new project id, moving the chat A -> B.
+      await saveConvo(mockCtx, {
+        conversationId,
+        endpoint: EModelEndpoint.openAI,
+        chatProjectId: projectBId,
+      });
+
+      const refreshedA = await ChatProject.findById(projectA._id).lean<IChatProject>();
+      const refreshedB = await ChatProject.findById(projectB._id).lean<IChatProject>();
+      expect(refreshedA?.conversationCount).toBe(0);
+      expect(refreshedA?.lastConversationId == null).toBe(true);
+      expect(refreshedB?.conversationCount).toBe(1);
+      expect(refreshedB?.lastConversationId).toBe(conversationId);
+    });
+
+    it('bulkSaveConvos refreshes the project a conversation leaves', async () => {
+      const projectA = await ChatProject.create({
+        user: mockCtx.userId,
+        name: 'Bulk Project A',
+        conversationCount: 0,
+      });
+      const projectB = await ChatProject.create({
+        user: mockCtx.userId,
+        name: 'Bulk Project B',
+        conversationCount: 0,
+      });
+      const conversationId = uuidv4();
+      const projectAId = projectA._id!.toString();
+      const projectBId = projectB._id!.toString();
+
+      await saveConvo(mockCtx, {
+        conversationId,
+        title: 'Bulk Moving',
+        endpoint: EModelEndpoint.openAI,
+        chatProjectId: projectAId,
+      });
+      await methods.bulkSaveConvos([
+        {
+          conversationId,
+          user: mockCtx.userId,
+          endpoint: EModelEndpoint.openAI,
+          chatProjectId: projectBId,
+        },
+      ]);
+
+      const refreshedA = await ChatProject.findById(projectA._id).lean<IChatProject>();
+      const refreshedB = await ChatProject.findById(projectB._id).lean<IChatProject>();
+      expect(refreshedA?.conversationCount).toBe(0);
+      expect(refreshedB?.conversationCount).toBe(1);
+    });
+
     it('should not create a conversation when noUpsert is true and conversation does not exist', async () => {
       const nonExistentId = uuidv4();
       const result = await saveConvo(

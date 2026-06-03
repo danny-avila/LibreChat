@@ -235,6 +235,18 @@ export function createConversationMethods(
         }
       }
 
+      const mayChangeProjectMembership =
+        Object.prototype.hasOwnProperty.call(update, 'chatProjectId') ||
+        Object.prototype.hasOwnProperty.call(unsetFields, 'chatProjectId');
+      let previousChatProjectId: string | null = null;
+      if (mayChangeProjectMembership) {
+        const existing = await Conversation.findOne(
+          { conversationId, user: userId },
+          'chatProjectId',
+        ).lean<{ chatProjectId?: string | null } | null>();
+        previousChatProjectId = existing?.chatProjectId ?? null;
+      }
+
       if (newConversationId) {
         update.conversationId = newConversationId;
       }
@@ -322,6 +334,18 @@ export function createConversationMethods(
         conversation.isTemporary = false;
       }
 
+      const newChatProjectId = conversation.chatProjectId ?? null;
+      const projectMembershipChanged = previousChatProjectId !== newChatProjectId;
+
+      /**
+       * A chat that moved between projects (e.g. a stale tab re-submitting an
+       * older project id) must fully recompute the stats of the project it left;
+       * the incremental path only ever touches the project it now belongs to.
+       */
+      if (projectMembershipChanged && previousChatProjectId) {
+        await refreshChatProjectStatsForUser(mongoose, userId, previousChatProjectId);
+      }
+
       if (conversation.chatProjectId) {
         const isRetentionVisibilityUpdate =
           typeof update.isTemporary === 'boolean' ||
@@ -339,7 +363,13 @@ export function createConversationMethods(
           conversation.isTemporary === true ||
           (conversation.expiredAt != null &&
             new Date(conversation.expiredAt).getTime() <= Date.now());
+        /**
+         * A move into this project (projectMembershipChanged) also needs a full
+         * refresh: the incremental path only bumps the count for brand-new inserts,
+         * so a pre-existing chat joining the project would otherwise be uncounted.
+         */
         const shouldRefreshProjectStats =
+          projectMembershipChanged ||
           typeof update.isArchived === 'boolean' ||
           Object.prototype.hasOwnProperty.call(unsetFields, 'isArchived') ||
           isRetentionVisibilityUpdate ||
@@ -411,6 +441,31 @@ export function createConversationMethods(
         }
       }
 
+      /**
+       * Capture each conversation's existing project so a bulk move (import that
+       * overwrites an existing (user, conversationId), duplicate/fork) also refreshes
+       * the project it leaves, not just the one it joins. One batched read keeps this
+       * O(1) in round-trips regardless of batch size.
+       */
+      const previousProjectByConversation = new Map<string, string>();
+      const conversationPairs = conversations
+        .filter((c) => typeof c.user === 'string' && typeof c.conversationId === 'string')
+        .map((c) => ({ user: c.user as string, conversationId: c.conversationId as string }));
+      if (conversationPairs.length > 0) {
+        const existing = await Conversation.find(
+          { $or: conversationPairs },
+          'user conversationId chatProjectId',
+        ).lean<Array<{ user: string; conversationId: string; chatProjectId?: string | null }>>();
+        for (const doc of existing) {
+          if (doc.chatProjectId) {
+            previousProjectByConversation.set(
+              `${doc.user}:${doc.conversationId}`,
+              doc.chatProjectId,
+            );
+          }
+        }
+      }
+
       const affectedProjectStats = new Map<string, { user: string; projectId: string }>();
       const bulkOps = conversations.map((convo) => {
         const sanitized = { ...convo };
@@ -422,6 +477,19 @@ export function createConversationMethods(
             });
           } else {
             sanitized.chatProjectId = null;
+          }
+        }
+        if (typeof sanitized.user === 'string' && typeof sanitized.conversationId === 'string') {
+          const previousProjectId = previousProjectByConversation.get(
+            `${sanitized.user}:${sanitized.conversationId}`,
+          );
+          const newProjectId =
+            typeof sanitized.chatProjectId === 'string' ? sanitized.chatProjectId : null;
+          if (previousProjectId && previousProjectId !== newProjectId) {
+            affectedProjectStats.set(`${sanitized.user}:${previousProjectId}`, {
+              user: sanitized.user,
+              projectId: previousProjectId,
+            });
           }
         }
         return {
