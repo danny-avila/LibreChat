@@ -16,7 +16,7 @@ import {
   ReasoningParameterFormat,
   ReasoningResponseKey,
 } from '../src/schemas';
-import { specsConfigSchema } from '../src/models';
+import { specsConfigSchema, tModelSpecSchema } from '../src/models';
 import { FileSources } from '../src/types/files';
 
 describe('paramDefinitionSchema', () => {
@@ -837,6 +837,64 @@ describe('specsConfigSchema', () => {
 
   it('still rejects null list', () => {
     const result = specsConfigSchema.safeParse({ list: null });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('tModelSpecSchema — localized label and description', () => {
+  const baseSpec = {
+    name: 'my-spec',
+    preset: { endpoint: EModelEndpoint.openAI },
+  };
+
+  it('accepts a plain string label (backward compatible)', () => {
+    const result = tModelSpecSchema.safeParse({ ...baseSpec, label: 'My Model' });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.label).toBe('My Model');
+    }
+  });
+
+  it('accepts a language-keyed object label', () => {
+    const result = tModelSpecSchema.safeParse({
+      ...baseSpec,
+      label: { en: 'My Model', de: 'Mein Modell', fr: 'Mon modèle' },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.label).toEqual({ en: 'My Model', de: 'Mein Modell', fr: 'Mon modèle' });
+    }
+  });
+
+  it('accepts a plain string description (backward compatible)', () => {
+    const result = tModelSpecSchema.safeParse({
+      ...baseSpec,
+      label: 'My Model',
+      description: 'Best for complex tasks',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.description).toBe('Best for complex tasks');
+    }
+  });
+
+  it('accepts a language-keyed object description', () => {
+    const result = tModelSpecSchema.safeParse({
+      ...baseSpec,
+      label: 'My Model',
+      description: { en: 'Best for complex tasks', de: 'Ideal für komplexe Aufgaben' },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.description).toEqual({
+        en: 'Best for complex tasks',
+        de: 'Ideal für komplexe Aufgaben',
+      });
+    }
+  });
+
+  it('rejects a numeric label', () => {
+    const result = tModelSpecSchema.safeParse({ ...baseSpec, label: 42 });
     expect(result.success).toBe(false);
   });
 });
