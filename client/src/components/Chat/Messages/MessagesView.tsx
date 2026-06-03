@@ -94,7 +94,9 @@ function MessagesViewContent({
             <ScrollToBottom ref={scrollToBottomRef} scrollHandler={handleSmoothToRef} />
           </CSSTransition>
 
+          {/* NJ: We're hiding this until it's made more accessible
           <MessageNav scrollableRef={scrollableRef} />
+          */}
         </div>
       </div>
     </>
