@@ -398,11 +398,10 @@ async function syncMemberships({
     groupIds: missingGroupIds,
     fetcher,
   });
-  if (missingGroupDetails.length < missingGroupIds.length) {
-    throw new Error(
-      `Could not fetch details for ${missingGroupIds.length - missingGroupDetails.length} missing Entra groups`,
-    );
-  }
+  const resolvedGroupIds = unique([
+    ...existingGroups.map((group) => group.idOnTheSource),
+    ...missingGroupDetails.map((group) => group.id),
+  ]);
 
   await Promise.all(
     missingGroupDetails.map((group) =>
@@ -419,10 +418,10 @@ async function syncMemberships({
     ),
   );
 
-  if (missingGroupIds.length > 0) {
+  if (missingGroupDetails.length > 0) {
     await methods.bulkUpdateGroups(
       {
-        idOnTheSource: { $in: missingGroupIds },
+        idOnTheSource: { $in: missingGroupDetails.map((group) => group.id) },
         source: 'entra',
         memberIds: { $ne: user.idOnTheSource },
       },
@@ -430,11 +429,15 @@ async function syncMemberships({
     );
   }
 
+  if (resolvedGroupIds.length === 0) {
+    return;
+  }
+
   await methods.bulkUpdateGroups(
     {
       source: 'entra',
       memberIds: user.idOnTheSource,
-      idOnTheSource: { $nin: groupIds },
+      idOnTheSource: { $nin: resolvedGroupIds },
     },
     { $pullAll: { memberIds: [user.idOnTheSource] } },
   );

@@ -315,7 +315,7 @@ describe('syncUserEntraGroupMemberships', () => {
     );
   });
 
-  it('returns failed when missing group details remain unresolved after retries', async () => {
+  it('ignores unresolved missing group details after retries', async () => {
     jest.useFakeTimers();
     const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => logger);
     const deps = methods();
@@ -341,12 +341,58 @@ describe('syncUserEntraGroupMemberships', () => {
     const result = await syncPromise;
     jest.useRealTimers();
 
-    expect(result).toEqual({ attempted: true, synced: false, reason: 'failed' });
+    expect(result).toMatchObject({ attempted: true, synced: true });
     expect(deps.upsertGroupByExternalId).not.toHaveBeenCalled();
-    expect(errorSpy).toHaveBeenCalledWith(
-      '[entraGroupSync] Error syncing remote Entra groups:',
-      expect.objectContaining({ reason: 'failed' }),
-      expect.any(Error),
+    expect(deps.bulkUpdateGroups).toHaveBeenCalledTimes(1);
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('continues syncing valid groups when Graph membership includes directory role ids', async () => {
+    const existingGroup = { idOnTheSource: 'group-existing' } as IGroup;
+    const deps = methods({
+      findGroupsByExternalIds: mockMethod<UserGroupMethods['findGroupsByExternalIds']>(async () => [
+        existingGroup,
+      ]),
+    });
+
+    const result = await sync({
+      graphConfig: { ...graphConfig, includeOwnersAsMembers: false },
+      methods: deps,
+      fetcher: fetcher([
+        jsonResponse({ token_endpoint: 'https://issuer.example.com/token' }),
+        jsonResponse({ access_token: 'graph-token' }),
+        jsonResponse({ value: ['group-existing', 'group-new', 'directory-role'] }),
+        jsonResponse({
+          responses: [
+            {
+              id: 'group-new',
+              status: 200,
+              body: { id: 'group-new', displayName: 'New Group' },
+            },
+            {
+              id: 'directory-role',
+              status: 404,
+              body: {},
+            },
+          ],
+        }),
+      ]),
+    });
+
+    expect(result).toMatchObject({ attempted: true, synced: true });
+    expect(deps.upsertGroupByExternalId).toHaveBeenCalledWith(
+      'group-new',
+      'entra',
+      { name: 'New Group', email: undefined, description: undefined },
+      undefined,
+    );
+    expect(deps.bulkUpdateGroups).toHaveBeenLastCalledWith(
+      {
+        source: 'entra',
+        memberIds: 'oid-123',
+        idOnTheSource: { $nin: ['group-existing', 'group-new'] },
+      },
+      { $pullAll: { memberIds: ['oid-123'] } },
     );
   });
 
