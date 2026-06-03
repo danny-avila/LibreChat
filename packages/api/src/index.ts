@@ -41,6 +41,8 @@ export * from './modelSpecs';
 export * from './agents';
 /* Prompts */
 export * from './prompts';
+/* Projects */
+export * from './projects';
 /* Skills */
 export * from './skills';
 /* Endpoints */
@@ -55,6 +57,9 @@ export * from './tools';
 export * from './web';
 /* Cache */
 export * from './cache';
+/* Shared Links */
+export * from './shared-links/access';
+export * from './shared-links/service';
 /* Stream */
 export * from './stream';
 /* Diagnostics */

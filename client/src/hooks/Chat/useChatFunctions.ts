@@ -28,7 +28,7 @@ import type { SetterOrUpdater } from 'recoil';
 import type { TAskFunction, ExtendedFile } from '~/common';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
-import { logger, createDualMessageContent } from '~/utils';
+import { logger, createDualMessageContent, getRouteChatProjectId } from '~/utils';
 import store, { useGetEphemeralAgent } from '~/store';
 import { startupConfigKey } from '~/data-provider';
 import useUserKey from '~/hooks/Input/useUserKey';
@@ -174,6 +174,13 @@ export default function useChatFunctions({
       });
     }
 
+    const chatProjectId =
+      conversationId === Constants.NEW_CONVO
+        ? getRouteChatProjectId()
+        : (conversation?.chatProjectId ?? null);
+    const conversationForPayload =
+      chatProjectId != null ? { ...(conversation ?? {}), chatProjectId } : (conversation ?? {});
+
     // construct the query message
     // this is not a real messageId, it is used as placeholder before real messageId returned
     const intermediateId = overrideUserMessageId ?? v4();
@@ -193,7 +200,8 @@ export default function useChatFunctions({
       parentMessageId = Constants.NO_PARENT;
       currentMessages = [];
       conversationId = null;
-      navigate('/c/new', { state: { focusChat: true } });
+      const projectSearch = chatProjectId ? `?projectId=${encodeURIComponent(chatProjectId)}` : '';
+      navigate(`/c/new${projectSearch}`, { state: { focusChat: true } });
     }
 
     const targetParentMessageId = isRegenerate ? messageId : latestMessage?.parentMessageId;
@@ -221,7 +229,7 @@ export default function useChatFunctions({
     const convo = parseCompactConvo({
       endpoint: endpoint as EndpointSchemaKey,
       endpointType: endpointType as EndpointSchemaKey,
-      conversation: conversation ?? {},
+      conversation: conversationForPayload,
       defaultParamsEndpoint,
     });
 
@@ -234,6 +242,7 @@ export default function useChatFunctions({
         overrideUserMessageId,
       },
       convo,
+      chatProjectId ? { chatProjectId } : {},
     ) as TEndpointOption;
     if (endpoint !== EModelEndpoint.agents) {
       endpointOption.key = getExpiry();
@@ -371,6 +380,7 @@ export default function useChatFunctions({
     const submission: TSubmission = {
       conversation: {
         ...conversation,
+        ...(chatProjectId ? { chatProjectId } : {}),
         conversationId,
       },
       endpointOption,

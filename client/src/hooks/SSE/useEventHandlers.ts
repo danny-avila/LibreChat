@@ -373,6 +373,10 @@ export default function useEventHandlers({
         } else {
           updateConvoInAllQueries(queryClient, update.conversationId!, (_c) => update, true);
         }
+        if (update.chatProjectId) {
+          queryClient.invalidateQueries([QueryKeys.projects]);
+          queryClient.invalidateQueries([QueryKeys.project, update.chatProjectId]);
+        }
       } else if (setConversation) {
         setConversation((prevState) => {
           update = tConvoUpdateSchema.parse({
@@ -447,6 +451,10 @@ export default function useEventHandlers({
             upsertConvoInAllQueries(queryClient, update);
           } else {
             updateConvoInAllQueries(queryClient, update.conversationId!, (_c) => update, true);
+          }
+          if (update.chatProjectId) {
+            queryClient.invalidateQueries([QueryKeys.projects]);
+            queryClient.invalidateQueries([QueryKeys.project, update.chatProjectId]);
           }
         }
       } else if (setConversation) {
@@ -718,6 +726,11 @@ export default function useEventHandlers({
               specName: submission.conversation?.spec,
               startupConfig: queryClient.getQueryData<TStartupConfig>(startupConfigKey(true)),
             });
+          }
+
+          if (conversation.chatProjectId) {
+            queryClient.invalidateQueries([QueryKeys.projects]);
+            queryClient.invalidateQueries([QueryKeys.project, conversation.chatProjectId]);
           }
 
           if (location.pathname === `/c/${Constants.NEW_CONVO}`) {

@@ -38,7 +38,6 @@ const PAGE_SIZE = 25;
 
 const DEFAULT_PARAMS: SharedLinksListParams = {
   pageSize: PAGE_SIZE,
-  isPublic: true,
   sortBy: 'createdAt',
   sortDirection: 'desc',
   search: '',
