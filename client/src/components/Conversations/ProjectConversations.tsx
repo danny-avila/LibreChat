@@ -337,11 +337,18 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
       };
     });
 
+    const resultsBySectionId: Record<string, typeof sectionQueryResults> = {};
+
     sectionQuerySpecs.forEach((spec, index) => {
       const result = sectionQueryResults[index];
       const state = states[spec.sectionId];
       if (!state) {
         return;
+      }
+
+      resultsBySectionId[spec.sectionId] ??= [];
+      if (result) {
+        resultsBySectionId[spec.sectionId].push(result);
       }
 
       if (result?.data) {
@@ -350,12 +357,21 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
     });
 
     Object.entries(states).forEach(([sectionId, state]) => {
+      const sectionResults = resultsBySectionId[sectionId] ?? [];
       state.conversations = state.pages.flatMap((page) => page.conversations) as TConversation[];
       state.groupedConversations = groupConversationsByDate(state.conversations, chatSortBy);
       const expectedPageCount = sectionCursors[sectionId]?.length ?? 1;
       const lastPage = state.pages[state.pages.length - 1];
-      state.isLoading = state.pages.length === 0;
-      state.isFetchingNextPage = state.pages.length > 0 && state.pages.length < expectedPageCount;
+      const isInitialRequestPending =
+        state.pages.length === 0 &&
+        sectionResults.some((result) => result.isLoading || result.isFetching);
+      const isInitialRequestError =
+        state.pages.length === 0 && sectionResults.some((result) => result.isError);
+      state.isLoading = isInitialRequestPending && !isInitialRequestError;
+      state.isFetchingNextPage =
+        state.pages.length > 0 &&
+        (state.pages.length < expectedPageCount ||
+          sectionResults.some((result) => result.isFetching));
       state.nextCursor = lastPage?.nextCursor ?? null;
       state.hasNextPage = state.nextCursor != null;
     });
@@ -496,6 +512,30 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
 
   const flattenedItemsRef = useRef(flattenedItems);
   flattenedItemsRef.current = flattenedItems;
+  const flattenedLayoutKey = useMemo(
+    () =>
+      flattenedItems
+        .map((item) => {
+          if (item.type === 'section') {
+            return `s:${item.section.id}:${item.isExpanded ? '1' : '0'}`;
+          }
+          if (item.type === 'convo') {
+            return `c:${item.sectionId ?? 'search'}:${item.convo.conversationId}`;
+          }
+          if (item.type === 'date') {
+            return `d:${item.sectionId ?? 'search'}:${item.groupName}`;
+          }
+          if (item.type === 'empty') {
+            return `e:${item.sectionId ?? 'search'}:${item.title}`;
+          }
+          if (item.type === 'loading') {
+            return `l:${item.sectionId ?? 'root'}:${item.key}`;
+          }
+          return item.type;
+        })
+        .join('|'),
+    [flattenedItems],
+  );
 
   const rowHeight = isSmallScreen ? 44 : 36;
   const cache = useMemo(
@@ -539,6 +579,7 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
       cache.clearAll();
       if (containerRef.current && 'recomputeRowHeights' in containerRef.current) {
         containerRef.current.recomputeRowHeights(0);
+        containerRef.current.forceUpdateGrid?.();
       }
     });
     return () => cancelAnimationFrame(frameId);
@@ -552,6 +593,7 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
     favorites.length,
     isFavoritesLoading,
     showAgentMarketplace,
+    flattenedLayoutKey,
     containerRef,
   ]);
 

@@ -1,14 +1,14 @@
-import { useDeferredValue, useId, useMemo, useState, type FormEvent } from 'react';
+import { useDeferredValue, useEffect, useId, useMemo, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { ArrowUpDown, Check, Folder, Plus, Search } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { TChatProject } from 'librechat-data-provider';
-import { Input, Button, Spinner, DropdownPopup, useToastContext } from '@librechat/client';
+import { Input, Button, Spinner, DropdownPopup } from '@librechat/client';
 import type { MenuItemProps, RenderProp } from '~/common';
-import { useCreateProjectMutation, useProjectsInfiniteQuery } from '~/data-provider';
+import { useProjectsInfiniteQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';
-import { NotificationSeverity } from '~/common';
 import { cn } from '~/utils';
+import ProjectCreateDialog from './ProjectCreateDialog';
 
 type ProjectSort = 'name' | 'createdAt' | 'lastConversationAt';
 
@@ -35,16 +35,13 @@ function formatActivity(project: TChatProject, fallback: string) {
 export default function ProjectsView() {
   const localize = useLocalize();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<ProjectSort>('lastConversationAt');
   const [isCreating, setIsCreating] = useState(searchParams.get('new') === '1');
   const sortMenuId = useId();
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
-  const [name, setName] = useState('');
   const deferredSearch = useDeferredValue(search);
-  const createProject = useCreateProjectMutation();
-  const { showToast } = useToastContext();
 
   const { data, fetchNextPage, isFetchingNextPage, isLoading } = useProjectsInfiniteQuery({
     search: deferredSearch || undefined,
@@ -80,23 +77,18 @@ export default function ProjectsView() {
     [sortBy, sortOptions],
   );
 
-  const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const trimmedName = name.trim();
-    if (!trimmedName) {
-      return;
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      setIsCreating(true);
     }
-    try {
-      const project = await createProject.mutateAsync({ name: trimmedName });
-      setName('');
-      setIsCreating(false);
-      navigate(`/projects/${project._id}`);
-    } catch {
-      showToast({
-        message: localize('com_ui_project_create_error'),
-        severity: NotificationSeverity.ERROR,
-        showIcon: true,
-      });
+  }, [searchParams]);
+
+  const handleCreateDialogChange = (open: boolean) => {
+    setIsCreating(open);
+    if (!open && searchParams.get('new') === '1') {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete('new');
+      setSearchParams(nextParams, { replace: true });
     }
   };
 
@@ -156,27 +148,11 @@ export default function ProjectsView() {
           />
         </div>
 
-        {isCreating && (
-          <form
-            onSubmit={handleCreate}
-            className="flex flex-col gap-3 rounded-lg border border-border-light bg-transparent p-3 sm:flex-row"
-          >
-            <Input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder={localize('com_ui_project_name')}
-              className="min-w-0 flex-1 bg-transparent focus-visible:ring-2 focus-visible:ring-ring-primary"
-            />
-            <div className="flex gap-2">
-              <Button type="submit" variant="submit" disabled={createProject.isLoading}>
-                {createProject.isLoading ? localize('com_ui_loading') : localize('com_ui_create')}
-              </Button>
-              <Button type="button" variant="outline" onClick={() => setIsCreating(false)}>
-                {localize('com_ui_cancel')}
-              </Button>
-            </div>
-          </form>
-        )}
+        <ProjectCreateDialog
+          open={isCreating}
+          onOpenChange={handleCreateDialogChange}
+          onCreated={(project) => navigate(`/projects/${project._id}`)}
+        />
 
         {isLoading ? (
           <div className="flex flex-1 items-center justify-center">

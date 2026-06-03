@@ -19,6 +19,7 @@ import type { ChatsHeaderControls } from '~/components/Conversations/Header';
 import { Conversations } from '~/components/Conversations';
 import SearchBar from '~/components/Nav/SearchBar';
 import ProjectConversations from '~/components/Conversations/ProjectConversations';
+import ProjectCreateDialog from '~/components/Projects/ProjectCreateDialog';
 import store from '~/store';
 
 const BookmarkNav = lazy(() => import('~/components/Nav/Bookmarks/BookmarkNav'));
@@ -42,6 +43,7 @@ const ConversationsSection = memo(() => {
   );
   const [showLoading, setShowLoading] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
+  const [isProjectCreateOpen, setIsProjectCreateOpen] = useState(false);
 
   const hasAccessToBookmarks = useHasAccess({
     permissionType: PermissionTypes.BOOKMARKS,
@@ -113,9 +115,8 @@ const ConversationsSection = memo(() => {
   );
 
   const handleNewProject = useCallback(() => {
-    navigate('/projects?new=1');
-    toggleNav();
-  }, [navigate, toggleNav]);
+    setIsProjectCreateOpen(true);
+  }, []);
 
   const chatsHeaderControls = useMemo<ChatsHeaderControls>(
     () => ({
@@ -198,6 +199,14 @@ const ConversationsSection = memo(() => {
           />
         )}
       </div>
+      <ProjectCreateDialog
+        open={isProjectCreateOpen}
+        onOpenChange={setIsProjectCreateOpen}
+        onCreated={(project) => {
+          navigate(`/projects/${project._id}`);
+          toggleNav();
+        }}
+      />
     </div>
   );
 });
