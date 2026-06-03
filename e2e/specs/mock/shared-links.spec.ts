@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { MongoClient } from 'mongodb';
-import type { ObjectId } from 'mongodb';
+import type { Collection, ObjectId } from 'mongodb';
 import { applyRuntimeEnv } from '../../setup/runtimeEnv';
 import {
   MOCK_ENDPOINTS,
@@ -11,24 +11,21 @@ import {
   sendMessage,
 } from './helpers';
 
-type MessageDoc = {
-  _id: ObjectId;
-  conversationId: string;
-  text?: string;
-  user?: string;
-  createdAt?: Date;
-};
-
-type LegacySharedLinkDoc = {
+type SharedLinkDoc = {
   _id?: ObjectId;
   conversationId: string;
-  title: string;
+  title?: string;
   user?: string;
-  messages: ObjectId[];
+  messages?: ObjectId[];
   shareId: string;
   isPublic?: boolean;
   createdAt: Date;
   updatedAt: Date;
+};
+
+type StoredSharedLinkDoc = SharedLinkDoc & {
+  _id: ObjectId;
+  messages: ObjectId[];
 };
 
 type AclEntryDoc = {
@@ -51,39 +48,31 @@ async function connectToE2EDb() {
   return { client, db: client.db() };
 }
 
-async function waitForConversationMessages(
-  client: MongoClient,
-  conversationId: string,
-  userMessage: string,
-): Promise<MessageDoc[]> {
-  const db = client.db();
+async function waitForSharedLink(
+  sharedLinks: Collection<SharedLinkDoc>,
+  shareId: string,
+): Promise<StoredSharedLinkDoc> {
   const deadline = Date.now() + 15000;
 
   while (Date.now() < deadline) {
-    const messages = (await db
-      .collection<MessageDoc>('messages')
-      .find({ conversationId })
-      .sort({ createdAt: 1 })
-      .toArray()) as MessageDoc[];
-
-    const hasUserMessage = messages.some((message) => message.text?.includes(userMessage));
-    const hasMockReply = messages.some((message) => message.text?.includes(MOCK_REPLY_TEXT));
-    if (hasUserMessage && hasMockReply) {
-      return messages;
+    const share = await sharedLinks.findOne({ shareId });
+    if (share?._id && Array.isArray(share.messages) && share.messages.length > 0) {
+      return share as StoredSharedLinkDoc;
     }
 
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
 
-  throw new Error(`Timed out waiting for persisted messages for ${conversationId}`);
+  throw new Error(`Timed out waiting for persisted shared link ${shareId}`);
 }
 
 test.describe('shared links', () => {
+  test.setTimeout(120000);
+
   test('creates a shared link and preserves legacy public links through runtime migration', async ({
     page,
     baseURL,
   }) => {
-    test.setTimeout(120000);
     if (typeof baseURL !== 'string') {
       throw new Error('baseURL must be configured for shared-link mock e2e tests');
     }
@@ -121,6 +110,10 @@ test.describe('shared links', () => {
       page.getByRole('button', { name: 'Create link' }).click(),
     ]);
     expect(shareResponse.ok()).toBeTruthy();
+    const sharePayload = (await shareResponse.json()) as { shareId?: string };
+    if (!sharePayload.shareId) {
+      throw new Error('Expected create-share response to include a shareId');
+    }
 
     await expect(page.getByTestId('shared-link-url')).toContainText('/share/');
     await expect(page.getByRole('button', { name: 'Manage Access' })).toBeVisible();
@@ -136,19 +129,18 @@ test.describe('shared links', () => {
 
     const { client, db } = await connectToE2EDb();
     const aclEntries = db.collection<AclEntryDoc>('aclentries');
-    const sharedLinks = db.collection<LegacySharedLinkDoc>('sharedlinks');
+    const sharedLinks = db.collection<SharedLinkDoc>('sharedlinks');
     const legacyShareId = `legacy-${suffix}`;
     let legacyResourceId: ObjectId | undefined;
 
     try {
-      const messages = await waitForConversationMessages(client, conversationId, userMessage);
-      const ownerId = messages.find((message) => message.user)?.user;
+      const createdShare = await waitForSharedLink(sharedLinks, sharePayload.shareId);
       const legacyShare = {
         shareId: legacyShareId,
-        conversationId,
-        title: `Legacy shared link ${suffix}`,
-        ...(ownerId ? { user: ownerId } : {}),
-        messages: messages.map((message) => message._id),
+        conversationId: createdShare.conversationId,
+        title: createdShare.title ?? `Legacy shared link ${suffix}`,
+        ...(createdShare.user ? { user: createdShare.user } : {}),
+        messages: createdShare.messages,
         isPublic: true,
         createdAt: new Date(),
         updatedAt: new Date(),
