@@ -12,7 +12,7 @@ import {
   useProjectQuery,
 } from '~/data-provider';
 import { useAgentsMap, useLocalize } from '~/hooks';
-import { cn, getDefaultModelSpec, getModelSpec } from '~/utils';
+import { cn, getDefaultModelSpec, getLocalStorageItems, getModelSpec } from '~/utils';
 import ProjectChatList from './ProjectChatList';
 import store from '~/store';
 
@@ -58,8 +58,20 @@ export default function ProjectWorkspace() {
       return agentsMap?.[conversation.agent_id]?.name ?? conversation.agent_id;
     }
 
-    const endpoint = conversation?.endpointType ?? conversation?.endpoint;
-    const model = conversation?.modelLabel ?? conversation?.model ?? conversation?.chatGptLabel;
+    const { lastConversationSetup, lastSelectedModel } = getLocalStorageItems();
+    const endpoint =
+      conversation?.endpointType ??
+      conversation?.endpoint ??
+      lastConversationSetup?.endpointType ??
+      lastConversationSetup?.endpoint;
+    const model =
+      conversation?.modelLabel ??
+      conversation?.model ??
+      conversation?.chatGptLabel ??
+      lastConversationSetup?.modelLabel ??
+      lastConversationSetup?.model ??
+      lastConversationSetup?.chatGptLabel ??
+      (endpoint ? lastSelectedModel?.[endpoint] : undefined);
     return [endpoint, model].filter(Boolean).join(' · ') || localize('com_ui_model');
   }, [
     agentsMap,
