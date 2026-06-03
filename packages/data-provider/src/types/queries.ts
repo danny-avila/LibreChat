@@ -278,6 +278,18 @@ export interface ModelUsageResponse {
   rows: ModelUsageRow[];
 }
 
+/* Admin scalar KPIs over the selected window/BU (all amounts in tokenCredits). */
+export interface AdminKpisResponse {
+  period: AnalyticsPeriod;
+  stats: {
+    avgCostPerConversation: number;
+    totalConversations: number;
+    avgConversationsPerActiveUser: number;
+    activeUsers: number;
+    agentsCreated: number;
+  };
+}
+
 /* Admin Budgets (monthly spend thresholds per user — all amounts in tokenCredits, 1 USD = 1_000_000) */
 export interface AdminBudgetRow {
   user: string;

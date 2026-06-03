@@ -6,6 +6,7 @@ import type {
   AnalyticsQueryParams,
   AdminUsageResponse,
   ModelUsageResponse,
+  AdminKpisResponse,
   AdminBudgetsResponse,
   UpdateBudgetRequest,
   UpdateBudgetResponse,
@@ -32,6 +33,20 @@ export const useAdminModelUsageQuery = (
   return useQuery<ModelUsageResponse>(
     [QueryKeys.adminModelUsage, params.period.key, params.bu],
     () => dataService.getAdminModelUsage(params),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      retry: false,
+    },
+  );
+};
+
+export const useAdminKpisQuery = (
+  params: AnalyticsQueryParams,
+): QueryObserverResult<AdminKpisResponse> => {
+  return useQuery<AdminKpisResponse>(
+    [QueryKeys.adminKpis, params.period.key, params.bu],
+    () => dataService.getAdminKpis(params),
     {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,

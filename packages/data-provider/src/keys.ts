@@ -88,6 +88,8 @@ export enum QueryKeys {
   adminModelUsage = 'adminModelUsage',
   /* Admin available periods (months with activity, for the period selector) */
   adminPeriods = 'adminPeriods',
+  /* Admin scalar KPIs (avg cost/conv, conv/active user, agents created) */
+  adminKpis = 'adminKpis',
 }
 
 // Dynamic query keys that require parameters

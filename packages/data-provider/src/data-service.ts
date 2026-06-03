@@ -1310,6 +1310,11 @@ export const getAdminPeriods = (): Promise<{ periods: q.AnalyticsPeriod[] }> => 
   return request.get(endpoints.adminPeriods());
 };
 
+/* Admin scalar KPIs (avg cost/conv, conv/active user, agents created) */
+export const getAdminKpis = (params: q.AnalyticsQueryParams): Promise<q.AdminKpisResponse> => {
+  return request.get(endpoints.adminKpis() + buildAnalyticsQuery(params));
+};
+
 /* Admin Budgets (monthly spend thresholds per user) */
 export const getAdminBudgets = (): Promise<q.AdminBudgetsResponse> => {
   return request.get(endpoints.adminBudgets());

@@ -421,6 +421,9 @@ export const adminModelUsage = () => `${BASE_URL}/api/admin/usage/models`;
 /* Admin available periods (months with activity, for the period selector — ADMIN) */
 export const adminPeriods = () => `${BASE_URL}/api/admin/usage/periods`;
 
+/* Admin scalar KPIs (avg cost/conv, conv/active user, agents created — ADMIN) */
+export const adminKpis = () => `${BASE_URL}/api/admin/usage/kpis`;
+
 /* Admin Budgets (monthly spend thresholds per user — ADMIN) */
 export const adminBudgets = () => `${BASE_URL}/api/admin/usage/budgets`;
 export const adminBudgetByUser = (userId: string) =>

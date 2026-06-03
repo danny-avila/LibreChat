@@ -12,6 +12,7 @@ import {
   useAdminUsageQuery,
   useAdminBudgetsQuery,
   useAdminModelUsageQuery,
+  useAdminKpisQuery,
   useResetMonthBudgetsMutation,
 } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
@@ -353,6 +354,7 @@ function Usage() {
     period,
     bu: activeBU,
   });
+  const { data: kpisData } = useAdminKpisQuery({ period, bu: activeBU });
   const resetMonthMutation = useResetMonthBudgetsMutation();
   const [editingRow, setEditingRow] = useState<AdminBudgetRow | null>(null);
   const [isUserDetailsOpen, setIsUserDetailsOpen] = useState(false);
@@ -528,6 +530,23 @@ function Usage() {
             <KpiCard
               label={localize('com_usage_kpi_messages')}
               value={formatTokens(totals.messages)}
+              sublabel={periodSubLabel}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+            <KpiCard
+              label={localize('com_usage_kpi_avg_cost_per_conversation')}
+              value={kpisData ? formatUSD(kpisData.stats.avgCostPerConversation) : '—'}
+              sublabel={periodSubLabel}
+            />
+            <KpiCard
+              label={localize('com_usage_kpi_avg_conversations_per_user')}
+              value={kpisData ? kpisData.stats.avgConversationsPerActiveUser.toFixed(1) : '—'}
+              sublabel={periodSubLabel}
+            />
+            <KpiCard
+              label={localize('com_usage_kpi_agents_created')}
+              value={kpisData ? kpisData.stats.agentsCreated.toString() : '—'}
               sublabel={periodSubLabel}
             />
           </div>
