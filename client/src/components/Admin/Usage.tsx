@@ -17,6 +17,7 @@ import {
 } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
 import EditBudgetModal from './EditBudgetModal';
+import HeroCardUSD from './HeroCardUSD';
 import PeriodSelector from './PeriodSelector';
 import { useLocalize } from '~/hooks';
 import { formatUSD, creditsToUsdInput, budgetColor } from './credits';
@@ -511,6 +512,11 @@ function Usage() {
 
       {activeTab === 'analytics' && (
         <>
+          <HeroCardUSD
+            value={totals.credits}
+            sublabel={periodSubLabel}
+            label={localize('com_usage_kpi_credits')}
+          />
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <KpiCard
               label={localize('com_usage_kpi_users')}
