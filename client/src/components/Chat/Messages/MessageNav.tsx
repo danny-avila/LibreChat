@@ -822,7 +822,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
         onLostPointerCapture={handleLostPointerCapture}
-        className="flex min-h-0 cursor-ns-resize touch-none select-none flex-col items-center gap-1.5 overflow-y-auto [&::-webkit-scrollbar]:hidden"
+        className="flex min-h-0 cursor-grab touch-none select-none flex-col items-center gap-1.5 overflow-y-auto active:cursor-grabbing [&::-webkit-scrollbar]:hidden"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
         {entries.map((entry) => (
