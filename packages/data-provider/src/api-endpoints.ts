@@ -74,13 +74,12 @@ export const shareMessages = (shareId: string) => `${shareRoot}/${shareId}`;
 export const getSharedLink = (conversationId: string) => `${shareRoot}/link/${conversationId}`;
 export const getSharedLinks = (
   pageSize: number,
-  isPublic: boolean,
   sortBy: 'title' | 'createdAt',
   sortDirection: 'asc' | 'desc',
   search?: string,
   cursor?: string,
 ) =>
-  `${shareRoot}?pageSize=${pageSize}&isPublic=${isPublic}&sortBy=${sortBy}&sortDirection=${sortDirection}${
+  `${shareRoot}?pageSize=${pageSize}&sortBy=${sortBy}&sortDirection=${sortDirection}${
     search ? `&search=${search}` : ''
   }${cursor ? `&cursor=${cursor}` : ''}`;
 export const createSharedLink = (conversationId: string) => `${shareRoot}/${conversationId}`;

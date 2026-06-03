@@ -60,7 +60,6 @@ export type SharedMessagesResponse = Omit<s.TSharedLink, 'messages'> & {
 
 export interface SharedLinksListParams {
   pageSize: number;
-  isPublic: boolean;
   sortBy: 'title' | 'createdAt';
   sortDirection: 'asc' | 'desc';
   search?: string;
@@ -70,7 +69,6 @@ export interface SharedLinksListParams {
 export type SharedLinkItem = {
   shareId: string;
   title: string;
-  isPublic: boolean;
   createdAt: Date;
   conversationId: string;
 };

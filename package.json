@@ -71,6 +71,7 @@
     "test:packages:api": "cd packages/api && npm run test:ci",
     "test:packages:data-provider": "cd packages/data-provider && npm run test:ci",
     "test:packages:data-schemas": "cd packages/data-schemas && npm run test:ci",
+    "test:config": "jest --config config/jest.config.js",
     "test:all": "npm run test:client && npm run test:api && npm run test:packages:api && npm run test:packages:data-provider && npm run test:packages:data-schemas",
     "e2e:update": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.local.ts --update-snapshots",
     "e2e:report": "npx playwright show-report e2e/playwright-report",
@@ -99,6 +100,9 @@
     "migrate:prompt-permissions:dry-run": "node config/migrate-prompt-permissions.js --dry-run",
     "migrate:prompt-permissions": "node config/migrate-prompt-permissions.js",
     "migrate:prompt-permissions:batch": "node config/migrate-prompt-permissions.js --batch-size=50",
+    "migrate:shared-link-permissions:dry-run": "node config/migrate-shared-link-permissions.js --dry-run",
+    "migrate:shared-link-permissions": "node config/migrate-shared-link-permissions.js",
+    "migrate:shared-link-permissions:batch": "node config/migrate-shared-link-permissions.js --batch-size=50",
     "migrate:orphaned-agent-files:dry-run": "node config/migrate-orphaned-agent-files.js --dry-run",
     "migrate:orphaned-agent-files": "node config/migrate-orphaned-agent-files.js",
     "migrate:orphaned-agent-files:batch": "node config/migrate-orphaned-agent-files.js --batch-size=50"

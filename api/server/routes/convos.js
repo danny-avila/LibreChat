@@ -5,6 +5,8 @@ const {
   isEnabled,
   resolveImportMaxFileSize,
   restoreTenantContextFromReq,
+  deleteAllSharedLinksWithCleanup,
+  deleteConvoSharedLinksWithCleanup,
 } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
@@ -133,7 +135,7 @@ router.delete('/', async (req, res) => {
     const dbResponse = await db.deleteConvos(req.user.id, filter);
     if (filter.conversationId) {
       await db.deleteToolCalls(req.user.id, filter.conversationId);
-      await db.deleteConvoSharedLink(req.user.id, filter.conversationId);
+      await deleteConvoSharedLinksWithCleanup(req.user.id, filter.conversationId);
     }
     res.status(201).json(dbResponse);
   } catch (error) {
@@ -146,7 +148,7 @@ router.delete('/all', async (req, res) => {
   try {
     const dbResponse = await db.deleteConvos(req.user.id, {});
     await db.deleteToolCalls(req.user.id);
-    await db.deleteAllSharedLinks(req.user.id);
+    await deleteAllSharedLinksWithCleanup(req.user.id);
     res.status(201).json(dbResponse);
   } catch (error) {
     logger.error('Error clearing conversations', error);

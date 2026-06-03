@@ -74,6 +74,11 @@ const rolePermissionsSchema = new Schema(
       [Permissions.SHARE]: { type: Boolean },
       [Permissions.SHARE_PUBLIC]: { type: Boolean },
     },
+    [PermissionTypes.SHARED_LINKS]: {
+      [Permissions.CREATE]: { type: Boolean },
+      [Permissions.SHARE]: { type: Boolean },
+      [Permissions.SHARE_PUBLIC]: { type: Boolean },
+    },
   },
   { _id: false },
 );

@@ -264,9 +264,10 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
     resourceType: string,
     resourceId: string | Types.ObjectId,
     permBits: number,
-    grantedBy: string | Types.ObjectId,
+    grantedBy?: string | Types.ObjectId,
     session?: ClientSession,
     roleId?: string | Types.ObjectId,
+    expiredAt?: Date,
   ): Promise<IAclEntry | null> {
     const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
     const query: Record<string, unknown> = {
@@ -292,9 +293,10 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
     const update = {
       $set: {
         permBits,
-        grantedBy,
         grantedAt: new Date(),
+        ...(grantedBy && { grantedBy }),
         ...(roleId && { roleId }),
+        ...(expiredAt && { expiredAt }),
       },
     };
 
