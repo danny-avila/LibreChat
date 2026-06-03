@@ -11,7 +11,6 @@ import {
   FolderPlus,
   LayoutGrid,
   Pencil,
-  Plus,
   Trash2,
 } from 'lucide-react';
 import { QueryKeys } from 'librechat-data-provider';
@@ -27,6 +26,7 @@ import {
   OGDialogContent,
   TooltipAnchor,
   DropdownPopup,
+  NewChatIcon,
   useToastContext,
 } from '@librechat/client';
 import type { MenuItemProps } from '~/common';
@@ -308,7 +308,7 @@ function ProjectItem({
 
   return (
     <li className="list-none">
-      <div className="group/project-row relative flex items-center rounded-lg text-sm text-text-primary transition-colors hover:bg-surface-hover">
+      <div className="group/project-row relative flex h-9 items-center rounded-lg text-sm text-text-primary transition-colors hover:bg-surface-active-alt">
         <button
           type="button"
           onClick={() => setExpanded((prev) => !prev)}
@@ -326,7 +326,7 @@ function ProjectItem({
           <Folder className="h-4 w-4 shrink-0 text-text-secondary" aria-hidden="true" />
           <span className="truncate">{project.name}</span>
         </button>
-        <div className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-surface-hover opacity-0 transition-opacity group-focus-within/project-row:opacity-100 group-hover/project-row:opacity-100 has-[[data-state=open]]:opacity-100">
+        <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-surface-active-alt opacity-0 transition-opacity group-focus-within/project-row:opacity-100 group-hover/project-row:opacity-100 has-[[data-state=open]]:opacity-100">
           <TooltipAnchor
             description={localize('com_ui_new_chat_in_project', { name: project.name })}
             render={
@@ -336,7 +336,7 @@ function ProjectItem({
                 className={iconButtonClassName}
                 onClick={startChat}
               >
-                <Plus className="h-4 w-4" aria-hidden="true" />
+                <NewChatIcon className="h-4 w-4" />
               </button>
             }
           />
@@ -451,7 +451,7 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
   }
 
   return (
-    <div className="flex flex-col px-3">
+    <div className="flex flex-col px-3 text-sm">
       <div className="flex h-8 w-full items-center gap-0.5">
         <button
           onClick={() => setIsExpanded(!isExpanded)}

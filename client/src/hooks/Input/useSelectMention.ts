@@ -107,7 +107,10 @@ export default function useSelectMention({
 
       logger.info('conversation', 'Switching conversation to new spec', conversation);
       newConversation({
-        template: { ...(template as Partial<TConversation>) },
+        template: {
+          ...(template as Partial<TConversation>),
+          chatProjectId: conversation?.chatProjectId ?? null,
+        },
         preset,
         keepAddedConvos: isModular,
       });
@@ -201,7 +204,10 @@ export default function useSelectMention({
 
       logger.info('conversation', 'Switching conversation to new endpoint/model', template);
       newConversation({
-        template: { ...(template as Partial<TConversation>) },
+        template: {
+          ...(template as Partial<TConversation>),
+          chatProjectId: conversation?.chatProjectId ?? null,
+        },
         preset: { ...kwargs, spec: null, iconURL: null, modelLabel: null, endpoint: newEndpoint },
         keepAddedConvos: isNewModular,
       });
@@ -264,6 +270,7 @@ export default function useSelectMention({
 
       logger.info('conversation', 'Switching conversation to new preset', template);
       newConversation({
+        template: { chatProjectId: conversation?.chatProjectId ?? null },
         preset: newPreset,
         keepAddedConvos: isModular,
         disableParams,
