@@ -52,9 +52,13 @@ const monthKeyIfMonthWindow = (start, end) => {
   return `${start.getUTCFullYear()}-${String(start.getUTCMonth() + 1).padStart(2, '0')}`;
 };
 
-router.use(requireJwtAuth, requireAdminAccess);
-
-router.get('/', requireReadUsage, async (req, res) => {
+/**
+ * Parses the analytics query (?overall | ?start&end | default) + ?bu from a request.
+ * Returns { params, period, error } — params feed the aggregation, period is echoed in the
+ * response, error is a 400 message (params/period null) when a date is malformed.
+ * Shared by GET /api/admin/usage and GET /api/admin/usage/models so both honour the same contract.
+ */
+const parseUsageQuery = (req) => {
   const { start, end, bu, overall } = req.query;
   const params = {};
   let period;
@@ -67,14 +71,14 @@ router.get('/', requireReadUsage, async (req, res) => {
     if (start !== undefined) {
       const parsed = parseDateUTC(start);
       if (!parsed) {
-        return res.status(400).json({ message: 'Invalid start date (expected YYYY-MM-DD)' });
+        return { params: null, period: null, error: 'Invalid start date (expected YYYY-MM-DD)' };
       }
       params.start = parsed;
     }
     if (end !== undefined) {
       const parsed = parseDateUTC(end);
       if (!parsed) {
-        return res.status(400).json({ message: 'Invalid end date (expected YYYY-MM-DD)' });
+        return { params: null, period: null, error: 'Invalid end date (expected YYYY-MM-DD)' };
       }
       params.end = parsed;
     }
@@ -105,11 +109,21 @@ router.get('/', requireReadUsage, async (req, res) => {
     params.bu = bu;
   }
 
+  return { params, period, error: null };
+};
+
+router.use(requireJwtAuth, requireAdminAccess);
+
+router.get('/', requireReadUsage, async (req, res) => {
+  const { params, period, error } = parseUsageQuery(req);
+  if (error) {
+    return res.status(400).json({ message: error });
+  }
   try {
     const rows = await db.aggregateMonthlyUsage(params);
     res.json({ period, rows });
-  } catch (error) {
-    logger.error('[GET /api/admin/usage] aggregation failed:', error);
+  } catch (err) {
+    logger.error('[GET /api/admin/usage] aggregation failed:', err);
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
@@ -125,11 +139,15 @@ router.get('/periods', requireReadUsage, async (req, res) => {
 });
 
 router.get('/models', requireReadUsage, async (req, res) => {
+  const { params, period, error } = parseUsageQuery(req);
+  if (error) {
+    return res.status(400).json({ message: error });
+  }
   try {
-    const rows = await db.aggregateUsageByModel();
-    res.json({ period: currentMonthPeriod(), rows });
-  } catch (error) {
-    logger.error('[GET /api/admin/usage/models] aggregation failed:', error);
+    const rows = await db.aggregateUsageByModel(params);
+    res.json({ period, rows });
+  } catch (err) {
+    logger.error('[GET /api/admin/usage/models] aggregation failed:', err);
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
