@@ -10,12 +10,11 @@ import {
 } from 'react';
 import throttle from 'lodash/throttle';
 import { MessageSquare } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 import { AutoSizer, CellMeasurer, CellMeasurerCache, List } from 'react-virtualized';
 import { Spinner } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
 import type { MeasuredCellParent } from '~/components/Conversations/Conversations';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useNavigateToConvo } from '~/hooks';
 import { groupConversationsByDate, cn } from '~/utils';
 import { DateLabel } from '~/components/Conversations/Conversations';
 
@@ -73,7 +72,7 @@ const LoadingRow = memo(() => {
 LoadingRow.displayName = 'ProjectWorkspaceLoadingRow';
 
 const ConversationRow = memo(({ conversation }: { conversation: TConversation }) => {
-  const navigate = useNavigate();
+  const { navigateToConvo } = useNavigateToConvo();
   const localize = useLocalize();
   const title = conversation.title || localize('com_ui_untitled');
   const updatedAt = conversation.updatedAt || conversation.createdAt;
@@ -83,7 +82,7 @@ const ConversationRow = memo(({ conversation }: { conversation: TConversation })
     <button
       type="button"
       className="flex w-full items-center gap-3 border-b border-border-light py-3 text-left outline-none transition-colors hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring-primary"
-      onClick={() => navigate(`/c/${conversation.conversationId}`)}
+      onClick={() => navigateToConvo(conversation)}
     >
       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-surface-secondary text-text-secondary">
         <MessageSquare className="h-4 w-4" aria-hidden="true" />
