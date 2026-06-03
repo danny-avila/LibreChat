@@ -8,6 +8,7 @@ import {
   getEndpointField,
   SettingDefinition,
   tConvoUpdateSchema,
+  applyModelAwareDefaults,
 } from 'librechat-data-provider';
 import type { TPreset } from 'librechat-data-provider';
 import { SaveAsPresetDialog } from '~/components/Endpoints';
@@ -45,9 +46,14 @@ export default function Parameters() {
     const defaultParams = paramSettings[combinedKey] ?? paramSettings[overriddenEndpointKey] ?? [];
     const overriddenParams = endpointsConfig[provider]?.customParams?.paramDefinitions ?? [];
     const overriddenParamsMap = keyBy(overriddenParams, 'key');
-    return defaultParams
-      .filter((param) => param != null)
-      .map((param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param);
+    const modelAwareParams = applyModelAwareDefaults(
+      defaultParams.filter((param) => param != null),
+      overriddenEndpointKey,
+      model,
+    );
+    return modelAwareParams.map(
+      (param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param,
+    );
   }, [endpointType, endpointsConfig, model, provider]);
 
   useEffect(() => {

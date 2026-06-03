@@ -98,6 +98,8 @@ jest.mock('~/utils', () => ({
 }));
 
 const mockValidateFiles = jest.requireMock('~/utils').validateFiles;
+const mockProcessFileForUpload = jest.requireMock('~/utils/heicConverter')
+  .processFileForUpload as jest.Mock;
 
 describe('useFileHandling', () => {
   beforeEach(() => {
@@ -109,6 +111,20 @@ describe('useFileHandling', () => {
   const loadHook = async () => (await import('../useFileHandling')).default;
 
   describe('endpointOverride', () => {
+    it('checks possible image uploads for HEIC conversion without HEIC metadata', async () => {
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      const imageFile = new File(['maybe-heic'], 'photo.jpg', { type: 'image/jpeg' });
+
+      await act(async () => {
+        await result.current.handleFiles([imageFile]);
+      });
+
+      expect(mockProcessFileForUpload).toHaveBeenCalledTimes(1);
+      expect(mockProcessFileForUpload).toHaveBeenCalledWith(imageFile, 0.9, expect.any(Function));
+    });
+
     it('uses conversation endpoint when no override is provided', async () => {
       mockConversation = {
         conversationId: 'convo-1',

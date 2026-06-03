@@ -60,6 +60,7 @@ const rolePermissionsSchema = new Schema(
       [Permissions.CREATE]: { type: Boolean },
       [Permissions.SHARE]: { type: Boolean },
       [Permissions.SHARE_PUBLIC]: { type: Boolean },
+      [Permissions.CONFIGURE_OBO]: { type: Boolean },
     },
     [PermissionTypes.REMOTE_AGENTS]: {
       [Permissions.USE]: { type: Boolean },

@@ -223,6 +223,7 @@ const startServer = async () => {
 
   app.use('/api/tags', routes.tags);
   app.use('/api/mcp', routes.mcp);
+  app.use('/api/rum', routes.rum);
 
   app.use('/metrics', metricsRouter);
 
@@ -283,7 +284,10 @@ const startServer = async () => {
 
       // Configure stream services (auto-detects Redis from USE_REDIS env var)
       const streamServices = createStreamServices();
-      GenerationJobManager.configure(streamServices);
+      GenerationJobManager.configure({
+        ...streamServices,
+        cleanupOnComplete: !isEnabled(process.env.STREAM_KEEP_COMPLETED_JOBS),
+      });
       GenerationJobManager.initialize();
 
       njCronJobs();
