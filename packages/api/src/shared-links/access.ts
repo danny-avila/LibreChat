@@ -15,6 +15,7 @@ interface RawSharedLink {
   shareId?: string;
   tenantId?: string;
   isPublic?: boolean;
+  expiredAt?: Date;
 }
 
 export interface SharedLinkAccessDeps {

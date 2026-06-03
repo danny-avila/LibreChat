@@ -12,6 +12,7 @@ import {
   autoMigrateLegacyLink,
   grantCreationPermissions,
   ensureLinkPermissions,
+  updateSharedLinkPermissionsExpiration,
   deleteSharedLinkWithCleanup,
   deleteConvoSharedLinksWithCleanup,
   deleteAllSharedLinksWithCleanup,
@@ -209,6 +210,19 @@ describe('grantCreationPermissions', () => {
     expect(entries[0].principalType).toBe(PrincipalType.USER);
   });
 
+  test('propagates shared link expiration to created AclEntries', async () => {
+    const expiredAt = new Date(Date.now() + 60 * 60 * 1000);
+    const link = await createTestLink({ expiredAt });
+
+    await grantCreationPermissions(link._id, userId, true, expiredAt);
+
+    const entries = await AclEntry.find({ resourceId: link._id }).lean();
+    expect(entries).toHaveLength(2);
+    for (const entry of entries) {
+      expect(entry.expiredAt?.toISOString()).toBe(expiredAt.toISOString());
+    }
+  });
+
   test('deletes SharedLink when OWNER grant fails', async () => {
     const link = await createTestLink();
 
@@ -264,6 +278,29 @@ describe('ensureLinkPermissions', () => {
     } finally {
       const methods = createMethods(mongoose);
       await methods.seedDefaultRoles();
+    }
+  });
+});
+
+describe('updateSharedLinkPermissionsExpiration', () => {
+  test('sets and clears expiration on shared-link AclEntries', async () => {
+    const link = await createTestLink();
+    await grantCreationPermissions(link._id, userId, true);
+
+    const expiredAt = new Date(Date.now() + 60 * 60 * 1000);
+    await updateSharedLinkPermissionsExpiration(link._id, expiredAt);
+
+    const expiringEntries = await AclEntry.find({ resourceId: link._id }).lean();
+    expect(expiringEntries).toHaveLength(2);
+    for (const entry of expiringEntries) {
+      expect(entry.expiredAt?.toISOString()).toBe(expiredAt.toISOString());
+    }
+
+    await updateSharedLinkPermissionsExpiration(link._id, null);
+
+    const retainedEntries = await AclEntry.find({ resourceId: link._id }).lean();
+    for (const entry of retainedEntries) {
+      expect(entry).not.toHaveProperty('expiredAt');
     }
   });
 });

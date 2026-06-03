@@ -835,11 +835,14 @@ describe('AccessControlService', () => {
     });
 
     test('should return true for resource with PUBLIC AclEntry', async () => {
+      const findPublicResourceIdsSpy = jest.spyOn(service['_dbMethods'], 'findPublicResourceIds');
       const result = await service.hasPublicAccess({
         resourceType: ResourceType.AGENT,
         resourceId: publicResource,
       });
       expect(result).toBe(true);
+      expect(findPublicResourceIdsSpy).not.toHaveBeenCalled();
+      findPublicResourceIdsSpy.mockRestore();
     });
 
     test('should return false for resource with only user AclEntry', async () => {

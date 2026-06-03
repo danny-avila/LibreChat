@@ -6,7 +6,7 @@ import {
   AccessRoleIds,
   PermissionBits,
 } from 'librechat-data-provider';
-import type { Model, Types, DeleteResult } from 'mongoose';
+import type { Model, Types, DeleteResult, UpdateQuery } from 'mongoose';
 import type { IAclEntry, ISharedLink } from '@librechat/data-schemas';
 import { AccessControlService } from '~/acl/accessControlService';
 
@@ -26,6 +26,7 @@ interface RawSharedLink {
   shareId?: string;
   tenantId?: string;
   isPublic?: boolean;
+  expiredAt?: Date;
 }
 
 export async function autoMigrateLegacyLink(share: RawSharedLink): Promise<void> {
@@ -55,6 +56,7 @@ export async function autoMigrateLegacyLink(share: RawSharedLink): Promise<void>
           resourceId,
           accessRoleId: AccessRoleIds.SHARED_LINK_OWNER,
           grantedBy: share.user,
+          expiredAt: share.expiredAt,
         });
         existingOwner = true;
         ownerGranted = true;
@@ -82,6 +84,7 @@ export async function autoMigrateLegacyLink(share: RawSharedLink): Promise<void>
           resourceId,
           accessRoleId: AccessRoleIds.SHARED_LINK_VIEWER,
           grantedBy: share.user,
+          expiredAt: share.expiredAt,
         });
         publicGranted = true;
       } catch (err) {
@@ -123,6 +126,7 @@ export async function grantCreationPermissions(
   sharedLinkId: string | Types.ObjectId,
   userId: string,
   grantPublic: boolean = true,
+  expiredAt?: Date | null,
 ): Promise<void> {
   const resourceId = sharedLinkId.toString();
 
@@ -134,6 +138,7 @@ export async function grantCreationPermissions(
       resourceId,
       accessRoleId: AccessRoleIds.SHARED_LINK_OWNER,
       grantedBy: userId,
+      expiredAt: expiredAt ?? undefined,
     });
   } catch (err) {
     logger.error('[grantCreationPermissions] OWNER grant failed, deleting SharedLink', {
@@ -153,6 +158,7 @@ export async function grantCreationPermissions(
         resourceId,
         accessRoleId: AccessRoleIds.SHARED_LINK_VIEWER,
         grantedBy: userId,
+        expiredAt: expiredAt ?? undefined,
       });
     } catch (err) {
       logger.error('[grantCreationPermissions] PUBLIC VIEWER grant failed, cleaning up', {
@@ -191,6 +197,7 @@ export async function ensureLinkPermissions(
       resourceId: sharedLinkId.toString(),
       accessRoleId: AccessRoleIds.SHARED_LINK_OWNER,
       grantedBy: userId,
+      expiredAt: rawDoc.expiredAt,
     });
   } catch (err) {
     logger.error('[ensureLinkPermissions] Failed to ensure OWNER AclEntry', {
@@ -217,6 +224,23 @@ export async function cleanupBulkSharedLinkPermissions(
     resourceType: ResourceType.SHARED_LINK,
     resourceId: { $in: resourceIds },
   });
+}
+
+export async function updateSharedLinkPermissionsExpiration(
+  resourceId: string | Types.ObjectId,
+  expiredAt: Date | null,
+): Promise<void> {
+  const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
+  const update: UpdateQuery<IAclEntry> =
+    expiredAt instanceof Date ? { $set: { expiredAt } } : { $unset: { expiredAt: 1 } };
+
+  await AclEntry.updateMany(
+    {
+      resourceType: ResourceType.SHARED_LINK,
+      resourceId,
+    },
+    update,
+  );
 }
 
 export async function deleteSharedLinkWithCleanup(

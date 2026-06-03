@@ -6,6 +6,7 @@ const {
   grantCreationPermissions,
   ensureLinkPermissions,
   deleteSharedLinkWithCleanup,
+  updateSharedLinkPermissionsExpiration,
   isActiveExpirationDate,
   getSharedLinkExpiration,
 } = require('@librechat/api');
@@ -146,7 +147,7 @@ router.post('/:conversationId', requireJwtAuth, checkSharedLinksAccess, async (r
       expiredAt,
     );
     if (created) {
-      await grantCreationPermissions(created._id, req.user.id, grantPublic);
+      await grantCreationPermissions(created._id, req.user.id, grantPublic, expiredAt);
       res.status(200).json(created);
     } else {
       res.status(404).end();
@@ -184,6 +185,9 @@ router.patch('/:shareId', requireJwtAuth, async (req, res) => {
       expiredAt,
     );
     if (updatedShare) {
+      if (updatedShare._id && expiredAt !== undefined) {
+        await updateSharedLinkPermissionsExpiration(updatedShare._id, expiredAt);
+      }
       res.status(200).json(updatedShare);
     } else {
       res.status(404).end();

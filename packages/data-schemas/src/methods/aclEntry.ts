@@ -267,6 +267,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
     grantedBy?: string | Types.ObjectId,
     session?: ClientSession,
     roleId?: string | Types.ObjectId,
+    expiredAt?: Date,
   ): Promise<IAclEntry | null> {
     const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
     const query: Record<string, unknown> = {
@@ -295,6 +296,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
         grantedAt: new Date(),
         ...(grantedBy && { grantedBy }),
         ...(roleId && { roleId }),
+        ...(expiredAt && { expiredAt }),
       },
     };
 

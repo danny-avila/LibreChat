@@ -4,12 +4,15 @@ const mongoose = require('mongoose');
 
 const mockGetSharedLinkExpiration = jest.fn();
 const mockGrantCreationPermissions = jest.fn();
+const mockUpdateSharedLinkPermissionsExpiration = jest.fn();
 const mockSharedLinksAccess = jest.fn((_req, _res, next) => next());
 
 jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn(() => true),
   generateCheckAccess: jest.fn(() => mockSharedLinksAccess),
   grantCreationPermissions: (...args) => mockGrantCreationPermissions(...args),
+  updateSharedLinkPermissionsExpiration: (...args) =>
+    mockUpdateSharedLinkPermissionsExpiration(...args),
   ensureLinkPermissions: jest.fn(),
   deleteSharedLinkWithCleanup: jest.fn(),
   getSharedLinkExpiration: (...args) => mockGetSharedLinkExpiration(...args),
@@ -131,6 +134,12 @@ describe('share routes retention', () => {
       'msg-123',
       new Date('2030-01-01T00:00:00.000Z'),
     );
+    expect(mockGrantCreationPermissions).toHaveBeenCalledWith(
+      'link-123',
+      'user-123',
+      true,
+      new Date('2030-01-01T00:00:00.000Z'),
+    );
     expect(mockSharedLinksAccess).toHaveBeenCalled();
   });
 
@@ -161,7 +170,7 @@ describe('share routes retention', () => {
   it('expires updated shares for retained non-temporary conversations', async () => {
     mongoose.models.SharedLink.findOne.mockReturnValue(lean({ conversationId: 'convo-123' }));
     mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
-    updateSharedLink.mockResolvedValue({ shareId: 'share-456' });
+    updateSharedLink.mockResolvedValue({ _id: 'link-456', shareId: 'share-456' });
 
     const response = await request(buildApp()).patch('/api/share/share-123');
 
@@ -186,6 +195,10 @@ describe('share routes retention', () => {
       'user-123',
       'share-123',
       undefined,
+      new Date('2030-01-01T00:00:00.000Z'),
+    );
+    expect(mockUpdateSharedLinkPermissionsExpiration).toHaveBeenCalledWith(
+      'link-456',
       new Date('2030-01-01T00:00:00.000Z'),
     );
   });
@@ -221,12 +234,13 @@ describe('share routes retention', () => {
   it('clears updated share expiration when the conversation is no longer retained', async () => {
     mongoose.models.SharedLink.findOne.mockReturnValue(lean({ conversationId: 'convo-123' }));
     mockGetSharedLinkExpiration.mockResolvedValue(null);
-    updateSharedLink.mockResolvedValue({ shareId: 'share-456' });
+    updateSharedLink.mockResolvedValue({ _id: 'link-456', shareId: 'share-456' });
 
     const response = await request(buildApp()).patch('/api/share/share-123');
 
     expect(response.status).toBe(200);
     expect(updateSharedLink).toHaveBeenCalledWith('user-123', 'share-123', undefined, null);
+    expect(mockUpdateSharedLinkPermissionsExpiration).toHaveBeenCalledWith('link-456', null);
     expect(mockSharedLinksAccess).not.toHaveBeenCalled();
   });
 
@@ -239,6 +253,7 @@ describe('share routes retention', () => {
 
     expect(response.status).toBe(200);
     expect(updateSharedLink).toHaveBeenCalledWith('user-123', 'share-123', undefined, undefined);
+    expect(mockUpdateSharedLinkPermissionsExpiration).not.toHaveBeenCalled();
   });
 
   it('clears updated share expiration when creating a new expiration throws', async () => {
@@ -248,7 +263,7 @@ describe('share routes retention', () => {
       dependencies.logger.error('[getSharedLinkExpiration] Error creating expiration date:', error);
       return null;
     });
-    updateSharedLink.mockResolvedValue({ shareId: 'share-456' });
+    updateSharedLink.mockResolvedValue({ _id: 'link-456', shareId: 'share-456' });
 
     const response = await request(buildApp()).patch('/api/share/share-123');
 
@@ -258,6 +273,7 @@ describe('share routes retention', () => {
       error,
     );
     expect(updateSharedLink).toHaveBeenCalledWith('user-123', 'share-123', undefined, null);
+    expect(mockUpdateSharedLinkPermissionsExpiration).toHaveBeenCalledWith('link-456', null);
   });
 
   it('updates share target message while applying retention expiration', async () => {

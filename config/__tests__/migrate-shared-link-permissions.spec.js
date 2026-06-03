@@ -44,12 +44,13 @@ describe('migrate-shared-link-permissions', () => {
     jest.restoreAllMocks();
   });
 
-  async function createLegacyLink(isPublic = true, user = testUserId) {
+  async function createLegacyLink(isPublic = true, user = testUserId, overrides = {}) {
     const link = await SharedLink.create({
       shareId: `share-${Date.now()}-${Math.random()}`,
       conversationId: 'convo1',
       messages: [],
       ...(user != null ? { user } : {}),
+      ...overrides,
     });
     await mongoose.connection.db
       .collection('sharedlinks')
@@ -183,6 +184,19 @@ describe('migrate-shared-link-permissions', () => {
       principalType: 'user',
     }).lean();
     expect(ownerEntry).toBeNull();
+  });
+
+  test('copies shared link expiration to migrated ACL entries', async () => {
+    const expiredAt = new Date(Date.now() + 60 * 60 * 1000);
+    const link = await createLegacyLink(true, testUserId, { expiredAt });
+
+    await migrateSharedLinkPermissions({ dryRun: false });
+
+    const entries = await AclEntry.find({ resourceId: link._id }).lean();
+    expect(entries).toHaveLength(2);
+    for (const entry of entries) {
+      expect(entry.expiredAt?.toISOString()).toBe(expiredAt.toISOString());
+    }
   });
 
   test('runs the migration body inside a system tenant context', async () => {

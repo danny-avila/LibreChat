@@ -136,7 +136,10 @@ async function migrateSharedLinkPermissions({
       missingUserWarnings: 0,
     };
 
-    const cursor = SharedLink.find({}).select('_id user isPublic tenantId').lean().cursor();
+    const cursor = SharedLink.find({})
+      .select('_id user isPublic tenantId expiredAt')
+      .lean()
+      .cursor();
 
     let batch = [];
     let batchIndex = 0;
@@ -155,6 +158,7 @@ async function migrateSharedLinkPermissions({
         const linkId = link._id;
         const userId = link.user;
         const tenantId = link.tenantId;
+        const expiredAt = link.expiredAt;
         const now = new Date();
 
         if (userId) {
@@ -173,6 +177,7 @@ async function migrateSharedLinkPermissions({
                   roleId: ownerRole._id,
                   grantedBy: new mongoose.Types.ObjectId(userId),
                   grantedAt: now,
+                  ...(expiredAt && { expiredAt }),
                 },
                 $setOnInsert: {
                   principalModel: 'User',
@@ -197,6 +202,7 @@ async function migrateSharedLinkPermissions({
             permBits: viewerRole.permBits,
             roleId: viewerRole._id,
             grantedAt: now,
+            ...(expiredAt && { expiredAt }),
           };
           if (userId) {
             publicUpdateSet.grantedBy = new mongoose.Types.ObjectId(userId);

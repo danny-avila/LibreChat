@@ -28,6 +28,7 @@ export class AccessControlService {
    * @param {string} params.accessRoleId - The ID of the role (e.g., AccessRoleIds.AGENT_VIEWER, AccessRoleIds.AGENT_EDITOR)
    * @param {Types.ObjectId} params.grantedBy - User ID granting the permission
    * @param {ClientSession} [params.session] - Optional MongoDB session for transactions
+   * @param {Date} [params.expiredAt] - Optional expiration for resource-tied permissions
    * @returns {Promise<IAclEntry>} The created or updated ACL entry
    */
   public async grantPermission(args: {
@@ -40,6 +41,7 @@ export class AccessControlService {
     grantedBy?: string | Types.ObjectId;
     session?: ClientSession;
     roleId?: string | Types.ObjectId;
+    expiredAt?: Date;
   }): Promise<IAclEntry | null> {
     const {
       principalType,
@@ -49,6 +51,7 @@ export class AccessControlService {
       accessRoleId,
       grantedBy,
       session,
+      expiredAt,
     } = args;
     try {
       if (!Object.values(PrincipalType).includes(principalType)) {
@@ -101,6 +104,7 @@ export class AccessControlService {
         grantedBy,
         session,
         role._id,
+        expiredAt,
       );
     } catch (error) {
       logger.error(
@@ -393,12 +397,12 @@ export class AccessControlService {
   }): Promise<boolean> {
     try {
       this.validateResourceType(resourceType);
-      const publicIds: Types.ObjectId[] = await this._dbMethods.findPublicResourceIds(
+      return await this._dbMethods.hasPermission(
+        [{ principalType: PrincipalType.PUBLIC }],
         resourceType,
+        resourceId,
         PermissionBits.VIEW,
       );
-      const normalizedResourceId = resourceId.toString();
-      return publicIds.some((id) => id.toString() === normalizedResourceId);
     } catch (error) {
       if (error instanceof Error) {
         logger.error(`[PermissionService.hasPublicAccess] Error: ${error.message}`);
