@@ -23,6 +23,7 @@ export interface SharedLinkAccessDeps {
 }
 
 function isAutoMigrateEnabled(): boolean {
+  // Fallback for legacy rows missed by the explicit shared-link permissions migration.
   const val = process.env.SHARED_LINKS_AUTO_MIGRATE;
   return val === undefined || isEnabled(val);
 }
