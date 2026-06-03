@@ -52,6 +52,33 @@ function normalizeAuthLogValue(value: unknown): string | undefined {
   return undefined;
 }
 
+function normalizeAuthLogContextValue(value: unknown): AuthLogValue | undefined {
+  if (value == null) {
+    return undefined;
+  }
+
+  if (Array.isArray(value)) {
+    const values = value
+      .map((entry) => normalizeAuthLogValue(entry))
+      .filter((entry): entry is string => entry !== undefined);
+    return values.length > 0 ? values : undefined;
+  }
+
+  if (typeof value === 'string') {
+    return normalizeAuthLogValue(value);
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : undefined;
+  }
+
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  return undefined;
+}
+
 function getRequestId(req: AuthLogRequest): string | undefined {
   return (
     normalizeAuthLogValue(req.requestId) ??
@@ -74,9 +101,24 @@ function getAuthFailureField(source: unknown, field: keyof AuthFailureLike): unk
     return field === 'message' ? source : undefined;
   }
   if (typeof source === 'object') {
-    return (source as AuthFailureLike)[field];
+    try {
+      return (source as AuthFailureLike)[field];
+    } catch {
+      return undefined;
+    }
   }
   return undefined;
+}
+
+function compactAuthLogContext(log: Record<string, unknown>): AuthLogContext {
+  const compacted: Partial<AuthLogContext> = {};
+  for (const key of Object.keys(log)) {
+    const value = normalizeAuthLogContextValue(log[key]);
+    if (value !== undefined) {
+      Object.assign(compacted, { [key]: value });
+    }
+  }
+  return compacted as AuthLogContext;
 }
 
 export function getAuthFailureReason(
@@ -101,9 +143,10 @@ export function getAuthFailureErrorName(err: unknown, info: unknown): string | u
 export function buildSafeAuthLogContext(
   req: AuthLogRequest,
   authState: AuthLogState,
-  extra: Partial<AuthLogContext> = {},
+  extra: Record<string, unknown> = {},
 ): AuthLogContext {
-  const log: Partial<AuthLogContext> = {
+  return compactAuthLogContext({
+    ...extra,
     request_id: getRequestId(req),
     method: normalizeAuthLogValue(req.method),
     path: getRequestPath(req),
@@ -111,14 +154,5 @@ export function buildSafeAuthLogContext(
     openid_reuse_enabled: authState.openidReuseEnabled,
     openid_jwt_available: authState.openidJwtAvailable,
     has_openid_reuse_user_id: authState.hasOpenIdReuseUserId,
-    ...extra,
-  };
-  const compacted: Partial<AuthLogContext> = {};
-  for (const key of Object.keys(log)) {
-    const value = log[key];
-    if (value !== undefined) {
-      Object.assign(compacted, { [key]: value });
-    }
-  }
-  return compacted as AuthLogContext;
+  });
 }

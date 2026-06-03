@@ -76,6 +76,27 @@ jest.mock('@librechat/api', () => {
     }
     return undefined;
   };
+  const normalizeAuthLogContextValue = (value) => {
+    if (value == null) {
+      return undefined;
+    }
+    if (Array.isArray(value)) {
+      const values = value
+        .map((entry) => normalizeAuthLogValue(entry))
+        .filter((entry) => entry !== undefined);
+      return values.length > 0 ? values : undefined;
+    }
+    if (typeof value === 'string') {
+      return normalizeAuthLogValue(value);
+    }
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : undefined;
+    }
+    if (typeof value === 'boolean') {
+      return value;
+    }
+    return undefined;
+  };
   const getAuthFailureField = (source, field) => {
     if (!source) {
       return undefined;
@@ -84,7 +105,11 @@ jest.mock('@librechat/api', () => {
       return field === 'message' ? source : undefined;
     }
     if (typeof source === 'object') {
-      return source[field];
+      try {
+        return source[field];
+      } catch {
+        return undefined;
+      }
     }
     return undefined;
   };
@@ -95,23 +120,27 @@ jest.mock('@librechat/api', () => {
   const getAuthFailureErrorName = (err, info) =>
     normalizeAuthLogValue(getAuthFailureField(info, 'name')) ??
     normalizeAuthLogValue(getAuthFailureField(err, 'name'));
-  const buildSafeAuthLogContext = (req, authState, extra = {}) =>
+  const compactAuthLogContext = (log) =>
     Object.fromEntries(
-      Object.entries({
-        request_id:
-          normalizeAuthLogValue(req.requestId) ??
-          normalizeAuthLogValue(req.id) ??
-          normalizeAuthLogValue(req.headers?.['x-request-id']) ??
-          normalizeAuthLogValue(req.headers?.['x-correlation-id']),
-        method: normalizeAuthLogValue(req.method),
-        path: normalizeAuthLogValue(req.path ?? req.originalUrl ?? req.url)?.split('?')[0],
-        token_provider: normalizeAuthLogValue(authState.tokenProvider),
-        openid_reuse_enabled: authState.openidReuseEnabled,
-        openid_jwt_available: authState.openidJwtAvailable,
-        has_openid_reuse_user_id: authState.hasOpenIdReuseUserId,
-        ...extra,
-      }).filter(([, value]) => value !== undefined),
+      Object.entries(log)
+        .map(([key, value]) => [key, normalizeAuthLogContextValue(value)])
+        .filter(([, value]) => value !== undefined),
     );
+  const buildSafeAuthLogContext = (req, authState, extra = {}) =>
+    compactAuthLogContext({
+      ...extra,
+      request_id:
+        normalizeAuthLogValue(req.requestId) ??
+        normalizeAuthLogValue(req.id) ??
+        normalizeAuthLogValue(req.headers?.['x-request-id']) ??
+        normalizeAuthLogValue(req.headers?.['x-correlation-id']),
+      method: normalizeAuthLogValue(req.method),
+      path: normalizeAuthLogValue(req.path ?? req.originalUrl ?? req.url)?.split('?')[0],
+      token_provider: normalizeAuthLogValue(authState.tokenProvider),
+      openid_reuse_enabled: authState.openidReuseEnabled,
+      openid_jwt_available: authState.openidJwtAvailable,
+      has_openid_reuse_user_id: authState.hasOpenIdReuseUserId,
+    });
   const normalizeContextValue = (value) => {
     const trimmed = value?.trim?.();
     return trimmed || undefined;
@@ -332,6 +361,65 @@ describe('requireJwtAuth tenant context chaining', () => {
       }),
     );
     expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it('does not let malformed Passport info break JWT fallback logging', () => {
+    isEnabled.mockReturnValue(true);
+    mockRegisteredStrategies.add('openidJwt');
+    const info = {};
+    Object.defineProperties(info, {
+      message: {
+        get() {
+          throw new TypeError('message getter failed');
+        },
+      },
+      name: {
+        get() {
+          throw new TypeError('name getter failed');
+        },
+      },
+    });
+    const req = mockReq(undefined, {
+      requestId: 'req-malformed-info',
+      method: 'GET',
+      path: '/api/messages',
+      headers: {
+        cookie: `token_provider=openid; openid_user_id=${signedOpenIdUserCookie('user-jwt')}`,
+      },
+      _mockStrategies: {
+        openidJwt: {
+          user: false,
+          info,
+          status: 401,
+        },
+        jwt: { user: { id: 'user-jwt', tenantId: 'tenant-jwt', role: 'user' } },
+      },
+    });
+    const res = mockRes();
+    const next = jest.fn();
+
+    expect(() => requireJwtAuth(req, res, next)).not.toThrow();
+
+    expect(next).toHaveBeenCalled();
+    expect(req.authStrategy).toBe('jwt');
+    expect(res.status).not.toHaveBeenCalled();
+    expect(logger.debug).toHaveBeenCalledWith(
+      '[requireJwtAuth] OpenID JWT auth failed; trying fallback',
+      expect.objectContaining({
+        request_id: 'req-malformed-info',
+        fallback_attempted: true,
+        reason: 'Unauthorized',
+        status: 401,
+      }),
+    );
+    expect(logger.debug).toHaveBeenCalledWith(
+      '[requireJwtAuth] JWT fallback succeeded after OpenID JWT failure',
+      expect.objectContaining({
+        request_id: 'req-malformed-info',
+        fallback_succeeded: true,
+        primary_failure_reason: 'Unauthorized',
+      }),
+    );
   });
 
   it('logs OpenID JWT expiry when JWT fallback fails', () => {

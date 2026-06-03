@@ -83,6 +83,32 @@ describe('auth middleware logging helpers', () => {
     });
   });
 
+  it('drops unsupported extra values and keeps safe arrays primitive', () => {
+    const log = buildSafeAuthLogContext(createRequest({ id: 'request-id' }), createAuthState(), {
+      attempted_strategies: ['openidJwt', '', { strategy: 'jwt' }, 'jwt'],
+      fallback_attempted: true,
+      path: { unsafe: true },
+      request_id: { unsafe: true },
+      status: Number.NaN,
+      unsafe_object: { token: 'secret-token' },
+      reason: '  jwt expired  ',
+    });
+
+    expect(log).toEqual({
+      request_id: 'request-id',
+      method: 'GET',
+      path: '/api/messages',
+      token_provider: 'openid',
+      openid_reuse_enabled: true,
+      openid_jwt_available: true,
+      has_openid_reuse_user_id: true,
+      attempted_strategies: ['openidJwt', 'jwt'],
+      fallback_attempted: true,
+      reason: 'jwt expired',
+    });
+    expect(JSON.stringify(log)).not.toContain('secret-token');
+  });
+
   it('prefers Passport info fields for auth failure reason and error name', () => {
     const err = Object.assign(new Error('outer failure'), { name: 'OuterError' });
     const info = { message: 'jwt expired', name: 'TokenExpiredError' };
@@ -96,5 +122,25 @@ describe('auth middleware logging helpers', () => {
 
     expect(getAuthFailureReason(err, undefined)).toBe('invalid signature');
     expect(getAuthFailureErrorName(err, undefined)).toBe('JsonWebTokenError');
+  });
+
+  it('does not throw when Passport failure objects expose throwing getters', () => {
+    const err = Object.assign(new Error('invalid signature'), { name: 'JsonWebTokenError' });
+    const info = {};
+    Object.defineProperties(info, {
+      message: {
+        get() {
+          throw new TypeError('message getter failed');
+        },
+      },
+      name: {
+        get() {
+          throw new TypeError('name getter failed');
+        },
+      },
+    });
+
+    expect(getAuthFailureReason(err, info)).toBe('invalid signature');
+    expect(getAuthFailureErrorName(err, info)).toBe('JsonWebTokenError');
   });
 });
