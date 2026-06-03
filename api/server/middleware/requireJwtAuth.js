@@ -5,6 +5,9 @@ const { logger } = require('@librechat/data-schemas');
 const {
   isEnabled,
   tenantContextMiddleware,
+  getAuthFailureReason,
+  getAuthFailureErrorName,
+  buildSafeAuthLogContext,
   maybeRefreshCloudFrontAuthCookiesMiddleware,
 } = require('@librechat/api');
 
@@ -31,43 +34,6 @@ const getAuthenticatedUserId = (user) => user?.id?.toString?.() ?? user?._id?.to
 const refreshCloudFrontCookies =
   maybeRefreshCloudFrontAuthCookiesMiddleware ?? ((_req, _res, next) => next());
 
-const normalizeContextValue = (value) => {
-  const stringValue = Array.isArray(value) ? value[0] : value;
-  const trimmed = stringValue?.toString?.().trim();
-  return trimmed || undefined;
-};
-
-const getRequestId = (req) =>
-  normalizeContextValue(req.requestId) ??
-  normalizeContextValue(req.id) ??
-  normalizeContextValue(req.headers?.['x-request-id']) ??
-  normalizeContextValue(req.headers?.['x-correlation-id']);
-
-const getRequestPath = (req) => {
-  const path = normalizeContextValue(req.path) ?? normalizeContextValue(req.originalUrl ?? req.url);
-  return path?.split('?')[0];
-};
-
-const getAuthFailureReason = (err, info, fallback = 'Unauthorized') =>
-  normalizeContextValue(info?.message) ?? normalizeContextValue(err?.message) ?? fallback;
-
-const getAuthFailureErrorName = (err, info) =>
-  normalizeContextValue(info?.name) ?? normalizeContextValue(err?.name);
-
-const buildSafeAuthLogContext = (req, authState, extra = {}) =>
-  Object.fromEntries(
-    Object.entries({
-      request_id: getRequestId(req),
-      method: normalizeContextValue(req.method),
-      path: getRequestPath(req),
-      token_provider: normalizeContextValue(authState.tokenProvider),
-      openid_reuse_enabled: authState.openidReuseEnabled,
-      openid_jwt_available: authState.openidJwtAvailable,
-      has_openid_reuse_user_id: authState.openIdReuseUserId != null,
-      ...extra,
-    }).filter(([, value]) => value !== undefined),
-  );
-
 /**
  * Custom Middleware to handle JWT authentication, with support for OpenID token reuse.
  * Switches between JWT and OpenID authentication based on cookies and environment settings.
@@ -90,7 +56,7 @@ const requireJwtAuth = (req, res, next) => {
     tokenProvider,
     openidReuseEnabled,
     openidJwtAvailable,
-    openIdReuseUserId,
+    hasOpenIdReuseUserId: openIdReuseUserId != null,
   };
   let primaryFailureReason;
   let primaryFailureErrorName;

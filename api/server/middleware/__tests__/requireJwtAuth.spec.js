@@ -54,6 +54,64 @@ jest.mock('@librechat/data-schemas', () => {
 // primitives. The real implementation is covered by packages/api tenant.spec.ts.
 jest.mock('@librechat/api', () => {
   const { tenantStorage } = require('@librechat/data-schemas');
+  const normalizeAuthLogValue = (value) => {
+    if (value == null) {
+      return undefined;
+    }
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        const normalized = normalizeAuthLogValue(entry);
+        if (normalized) {
+          return normalized;
+        }
+      }
+      return undefined;
+    }
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      return trimmed || undefined;
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+    return undefined;
+  };
+  const getAuthFailureField = (source, field) => {
+    if (!source) {
+      return undefined;
+    }
+    if (typeof source === 'string') {
+      return field === 'message' ? source : undefined;
+    }
+    if (typeof source === 'object') {
+      return source[field];
+    }
+    return undefined;
+  };
+  const getAuthFailureReason = (err, info, fallback = 'Unauthorized') =>
+    normalizeAuthLogValue(getAuthFailureField(info, 'message')) ??
+    normalizeAuthLogValue(getAuthFailureField(err, 'message')) ??
+    fallback;
+  const getAuthFailureErrorName = (err, info) =>
+    normalizeAuthLogValue(getAuthFailureField(info, 'name')) ??
+    normalizeAuthLogValue(getAuthFailureField(err, 'name'));
+  const buildSafeAuthLogContext = (req, authState, extra = {}) =>
+    Object.fromEntries(
+      Object.entries({
+        request_id:
+          normalizeAuthLogValue(req.requestId) ??
+          normalizeAuthLogValue(req.id) ??
+          normalizeAuthLogValue(req.headers?.['x-request-id']) ??
+          normalizeAuthLogValue(req.headers?.['x-correlation-id']),
+        method: normalizeAuthLogValue(req.method),
+        path: normalizeAuthLogValue(req.path ?? req.originalUrl ?? req.url)?.split('?')[0],
+        token_provider: normalizeAuthLogValue(authState.tokenProvider),
+        openid_reuse_enabled: authState.openidReuseEnabled,
+        openid_jwt_available: authState.openidJwtAvailable,
+        has_openid_reuse_user_id: authState.hasOpenIdReuseUserId,
+        ...extra,
+      }).filter(([, value]) => value !== undefined),
+    );
   const normalizeContextValue = (value) => {
     const trimmed = value?.trim?.();
     return trimmed || undefined;
@@ -67,6 +125,9 @@ jest.mock('@librechat/api', () => {
     normalizeContextValue(req.headers?.['x-correlation-id']);
   return {
     isEnabled: jest.fn(() => false),
+    getAuthFailureReason,
+    getAuthFailureErrorName,
+    buildSafeAuthLogContext,
     maybeRefreshCloudFrontAuthCookiesMiddleware: jest.fn((req, res, next) => next()),
     tenantContextMiddleware: (req, res, next) => {
       const context = {
