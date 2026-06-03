@@ -106,7 +106,6 @@ jobs:
             --set librechat.configEnv.OPENID_SESSION_SECRET=${{ secrets.OPENID_SESSION_SECRET }} \
             --set librechat.configEnv.RAG_OPENAI_API_KEY=${{ secrets.RAG_OPENAI_API_KEY }} \
             --set librechat.configEnv.AZURE_OPENAI_API_KEY=${{ secrets.AZURE_OPENAI_API_KEY }} \
-            --set librechat.configEnv.OPSAAS_API_KEY=${{ secrets.OPSAAS_API_KEY }} \
             --set librechat-rag-api.rag.configEnv.AZURE_OPENAI_API_KEY=${{ secrets.RAG_OPENAI_API_KEY }} \
             --timeout 10m \
             --wait
