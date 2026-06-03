@@ -85,9 +85,7 @@ function resolveCompletionTokens(usage: UsageMetadata): number {
   // check only fires when output_tokens genuinely undercounts (Vertex case).
   // Subset providers fold cache into input_tokens, so their adjustment is 0.
   const cacheRead =
-    Number(usage.input_token_details?.cache_read) ||
-    Number(usage.cache_read_input_tokens) ||
-    0;
+    Number(usage.input_token_details?.cache_read) || Number(usage.cache_read_input_tokens) || 0;
   const cacheCreation =
     Number(usage.input_token_details?.cache_creation) ||
     Number(usage.cache_creation_input_tokens) ||
