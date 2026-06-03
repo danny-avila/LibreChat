@@ -12,7 +12,7 @@ jest.mock('~/cache/getLogStores', () => jest.fn());
 
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
-const { createMethods } = require('@librechat/data-schemas');
+const { createMethods, SYSTEM_TENANT_ID, tenantStorage } = require('@librechat/data-schemas');
 
 describe('migrate-shared-link-permissions', () => {
   let mongoServer;
@@ -44,12 +44,12 @@ describe('migrate-shared-link-permissions', () => {
     jest.restoreAllMocks();
   });
 
-  async function createLegacyLink(isPublic = true) {
+  async function createLegacyLink(isPublic = true, user = testUserId) {
     const link = await SharedLink.create({
       shareId: `share-${Date.now()}-${Math.random()}`,
       conversationId: 'convo1',
-      user: testUserId,
       messages: [],
+      ...(user !== undefined ? { user } : {}),
     });
     await mongoose.connection.db
       .collection('sharedlinks')
@@ -66,12 +66,8 @@ describe('migrate-shared-link-permissions', () => {
     expect(result.errors).toBe(0);
     expect(result.failedLinkCount).toBe(0);
 
-    const raw1 = await mongoose.connection.db
-      .collection('sharedlinks')
-      .findOne({ _id: link1._id });
-    const raw2 = await mongoose.connection.db
-      .collection('sharedlinks')
-      .findOne({ _id: link2._id });
+    const raw1 = await mongoose.connection.db.collection('sharedlinks').findOne({ _id: link1._id });
+    const raw2 = await mongoose.connection.db.collection('sharedlinks').findOne({ _id: link2._id });
     expect(raw1).not.toHaveProperty('isPublic');
     expect(raw2).not.toHaveProperty('isPublic');
   });
@@ -111,15 +107,9 @@ describe('migrate-shared-link-permissions', () => {
     expect(result.failedLinkCount).toBe(1);
     expect(result.errors).toBeGreaterThan(0);
 
-    const raw1 = await mongoose.connection.db
-      .collection('sharedlinks')
-      .findOne({ _id: link1._id });
-    const raw2 = await mongoose.connection.db
-      .collection('sharedlinks')
-      .findOne({ _id: link2._id });
-    const raw3 = await mongoose.connection.db
-      .collection('sharedlinks')
-      .findOne({ _id: link3._id });
+    const raw1 = await mongoose.connection.db.collection('sharedlinks').findOne({ _id: link1._id });
+    const raw2 = await mongoose.connection.db.collection('sharedlinks').findOne({ _id: link2._id });
+    const raw3 = await mongoose.connection.db.collection('sharedlinks').findOne({ _id: link3._id });
 
     expect(raw2).toHaveProperty('isPublic', true);
     expect(raw1).not.toHaveProperty('isPublic');
@@ -136,12 +126,8 @@ describe('migrate-shared-link-permissions', () => {
 
     expect(result.failedLinkCount).toBe(2);
 
-    const raw1 = await mongoose.connection.db
-      .collection('sharedlinks')
-      .findOne({ _id: link1._id });
-    const raw2 = await mongoose.connection.db
-      .collection('sharedlinks')
-      .findOne({ _id: link2._id });
+    const raw1 = await mongoose.connection.db.collection('sharedlinks').findOne({ _id: link1._id });
+    const raw2 = await mongoose.connection.db.collection('sharedlinks').findOne({ _id: link2._id });
 
     expect(raw1).toHaveProperty('isPublic', true);
     expect(raw2).toHaveProperty('isPublic', true);
@@ -166,5 +152,42 @@ describe('migrate-shared-link-permissions', () => {
       principalType: 'user',
     }).lean();
     expect(ownerEntry).toBeDefined();
+  });
+
+  test('grants PUBLIC VIEWER to ownerless public legacy links', async () => {
+    const link = await createLegacyLink(true, undefined);
+
+    const result = await migrateSharedLinkPermissions({ dryRun: false });
+
+    expect(result.missingUserWarnings).toBe(1);
+
+    const publicEntry = await AclEntry.findOne({
+      resourceId: link._id,
+      principalType: 'public',
+    }).lean();
+    expect(publicEntry).toBeDefined();
+
+    const ownerEntry = await AclEntry.findOne({
+      resourceId: link._id,
+      principalType: 'user',
+    }).lean();
+    expect(ownerEntry).toBeNull();
+  });
+
+  test('runs the migration body inside a system tenant context', async () => {
+    await createLegacyLink(true);
+    const contextsObserved = [];
+    const originalCountDocuments = SharedLink.countDocuments.bind(SharedLink);
+    SharedLink.countDocuments = jest.fn((...args) => {
+      contextsObserved.push(tenantStorage.getStore()?.tenantId);
+      return originalCountDocuments(...args);
+    });
+
+    try {
+      await migrateSharedLinkPermissions({ dryRun: true });
+      expect(contextsObserved).toContain(SYSTEM_TENANT_ID);
+    } finally {
+      SharedLink.countDocuments = originalCountDocuments;
+    }
   });
 });

@@ -1,4 +1,4 @@
-import { tenantStorage } from '@librechat/data-schemas';
+import { getTenantId, runAsSystem, tenantStorage } from '@librechat/data-schemas';
 import { ResourceType, PermissionBits } from 'librechat-data-provider';
 import type { Request, Response, NextFunction } from 'express';
 import type { Types, Model } from 'mongoose';
@@ -51,7 +51,9 @@ export function createSharedLinkAccessMiddleware(deps: SharedLinkAccessDeps) {
     }
 
     const SharedLink = mg.models.SharedLink as Model<RawSharedLink>;
-    const rawShare = (await SharedLink.findOne({ shareId }).lean()) as RawSharedLink | null;
+    const findShare = async () =>
+      (await SharedLink.findOne({ shareId }).lean()) as RawSharedLink | null;
+    const rawShare = getTenantId() ? await findShare() : await runAsSystem(findShare);
 
     if (!rawShare) {
       res.status(404).json({ message: 'Shared link not found' });
@@ -70,7 +72,7 @@ export function createSharedLinkAccessMiddleware(deps: SharedLinkAccessDeps) {
       if (rawShare.tenantId) {
         return tenantStorage.run({ tenantId: rawShare.tenantId }, fn);
       }
-      return fn();
+      return runAsSystem(fn);
     };
 
     await runWithTenant(async () => {

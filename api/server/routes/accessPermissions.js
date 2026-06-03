@@ -1,5 +1,11 @@
+const mongoose = require('mongoose');
 const express = require('express');
-const { ResourceType, PermissionBits } = require('librechat-data-provider');
+const {
+  AccessRoleIds,
+  PrincipalType,
+  ResourceType,
+  PermissionBits,
+} = require('librechat-data-provider');
 const {
   getUserEffectivePermissions,
   getAllEffectivePermissions,
@@ -99,6 +105,56 @@ const checkResourcePermissionAccess = (requiredPermission) => (req, res, next) =
   middleware(req, res, next);
 };
 
+const rejectSharedLinkOwnerPermissionChanges = async (req, res, next) => {
+  if (req.params.resourceType !== ResourceType.SHARED_LINK) {
+    return next();
+  }
+
+  const updated = Array.isArray(req.body?.updated) ? req.body.updated : [];
+  const removed = Array.isArray(req.body?.removed) ? req.body.removed : [];
+  const grantsOwner = updated.some(
+    (principal) => principal?.accessRoleId === AccessRoleIds.SHARED_LINK_OWNER,
+  );
+
+  if (grantsOwner) {
+    return res.status(400).json({
+      error: 'Bad Request',
+      message: 'Shared link owner permissions cannot be changed',
+    });
+  }
+
+  const userMutations = [...updated, ...removed].filter(
+    (principal) => principal?.type === PrincipalType.USER && principal?.id,
+  );
+
+  if (userMutations.length === 0) {
+    return next();
+  }
+
+  try {
+    const SharedLink = mongoose.models.SharedLink;
+    const link = await SharedLink.findById(req.params.resourceId, 'user').lean();
+    const ownerId = link?.user?.toString();
+    const touchesOwner = ownerId
+      ? userMutations.some((principal) => principal.id?.toString() === ownerId)
+      : false;
+
+    if (touchesOwner) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Shared link owner permissions cannot be changed',
+      });
+    }
+  } catch (error) {
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Failed to validate shared link owner permissions',
+    });
+  }
+
+  return next();
+};
+
 /**
  * GET /api/permissions/{resourceType}/{resourceId}
  * Get all permissions for a specific resource
@@ -121,6 +177,7 @@ router.put(
   checkResourcePermissionAccess(PermissionBits.SHARE),
   checkShareAccess,
   checkSharePublicAccess,
+  rejectSharedLinkOwnerPermissionChanges,
   updateResourcePermissions,
 );
 

@@ -111,7 +111,7 @@ router.get('/link/:conversationId', requireJwtAuth, async (req, res) => {
     const share = await getSharedLink(req.user.id, req.params.conversationId);
 
     if (share._id && share.success) {
-      ensureLinkPermissions(share._id, req.user.id).catch(() => {});
+      await ensureLinkPermissions(share._id, req.user.id);
     }
 
     return res.status(200).json({
@@ -157,7 +157,7 @@ router.post('/:conversationId', requireJwtAuth, checkSharedLinksAccess, async (r
   }
 });
 
-router.patch('/:shareId', requireJwtAuth, checkSharedLinksAccess, async (req, res) => {
+router.patch('/:shareId', requireJwtAuth, async (req, res) => {
   try {
     const { targetMessageId } = req.body ?? {};
     if (targetMessageId !== undefined && typeof targetMessageId !== 'string') {
@@ -194,7 +194,7 @@ router.patch('/:shareId', requireJwtAuth, checkSharedLinksAccess, async (req, re
   }
 });
 
-router.delete('/:shareId', requireJwtAuth, checkSharedLinksAccess, async (req, res) => {
+router.delete('/:shareId', requireJwtAuth, async (req, res) => {
   try {
     const result = await deleteSharedLinkWithCleanup(req.user.id, req.params.shareId);
 

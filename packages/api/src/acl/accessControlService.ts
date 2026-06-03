@@ -37,7 +37,7 @@ export class AccessControlService {
     resourceId: string | Types.ObjectId;
     accessRoleId: AccessRoleIds;
 
-    grantedBy: string | Types.ObjectId;
+    grantedBy?: string | Types.ObjectId;
     session?: ClientSession;
     roleId?: string | Types.ObjectId;
   }): Promise<IAclEntry | null> {

@@ -264,7 +264,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
     resourceType: string,
     resourceId: string | Types.ObjectId,
     permBits: number,
-    grantedBy: string | Types.ObjectId,
+    grantedBy?: string | Types.ObjectId,
     session?: ClientSession,
     roleId?: string | Types.ObjectId,
   ): Promise<IAclEntry | null> {

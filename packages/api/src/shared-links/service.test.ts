@@ -62,6 +62,18 @@ describe('autoMigrateLegacyLink', () => {
     return link;
   }
 
+  async function createOwnerlessLegacyLink(isPublic: boolean) {
+    const link = await SharedLink.create({
+      shareId: `share-${Date.now()}-${Math.random()}`,
+      conversationId: 'convo1',
+      messages: [],
+    });
+    await mongoose.connection
+      .db!.collection('sharedlinks')
+      .updateOne({ _id: link._id }, { $set: { isPublic } });
+    return link;
+  }
+
   test('grants OWNER and PUBLIC VIEWER for public legacy link', async () => {
     const link = await createLegacyLink(true);
     await autoMigrateLegacyLink({
@@ -94,6 +106,22 @@ describe('autoMigrateLegacyLink', () => {
     const hasPublic = entries.some((e) => e.principalType === PrincipalType.PUBLIC);
     expect(hasOwner).toBe(true);
     expect(hasPublic).toBe(false);
+  });
+
+  test('grants PUBLIC VIEWER for ownerless public legacy link', async () => {
+    const link = await createOwnerlessLegacyLink(true);
+    await autoMigrateLegacyLink({
+      _id: link._id,
+      conversationId: link.conversationId,
+      shareId: link.shareId,
+      isPublic: true,
+    });
+
+    const entries = await AclEntry.find({ resourceId: link._id }).lean();
+    const hasOwner = entries.some((e) => e.principalType === PrincipalType.USER);
+    const hasPublic = entries.some((e) => e.principalType === PrincipalType.PUBLIC);
+    expect(hasOwner).toBe(false);
+    expect(hasPublic).toBe(true);
   });
 
   test('removes isPublic field from document', async () => {

@@ -66,7 +66,7 @@ export async function autoMigrateLegacyLink(share: RawSharedLink): Promise<void>
       }
     }
   }
-  const needsPublicGrant = share.isPublic !== false && !!share.user;
+  const needsPublicGrant = share.isPublic !== false;
   if (needsPublicGrant) {
     const hasPublic = await getAclService().hasPublicAccess({
       resourceType: ResourceType.SHARED_LINK,
@@ -81,7 +81,7 @@ export async function autoMigrateLegacyLink(share: RawSharedLink): Promise<void>
           resourceType: ResourceType.SHARED_LINK,
           resourceId,
           accessRoleId: AccessRoleIds.SHARED_LINK_VIEWER,
-          grantedBy: share.user!,
+          grantedBy: share.user,
         });
         publicGranted = true;
       } catch (err) {

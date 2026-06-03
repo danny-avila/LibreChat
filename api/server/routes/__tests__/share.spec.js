@@ -4,10 +4,11 @@ const mongoose = require('mongoose');
 
 const mockGetSharedLinkExpiration = jest.fn();
 const mockGrantCreationPermissions = jest.fn();
+const mockSharedLinksAccess = jest.fn((_req, _res, next) => next());
 
 jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn(() => true),
-  generateCheckAccess: jest.fn(() => (_req, _res, next) => next()),
+  generateCheckAccess: jest.fn(() => mockSharedLinksAccess),
   grantCreationPermissions: (...args) => mockGrantCreationPermissions(...args),
   ensureLinkPermissions: jest.fn(),
   deleteSharedLinkWithCleanup: jest.fn(),
@@ -61,6 +62,7 @@ jest.mock('~/server/middleware/requireJwtAuth', () => (req, res, next) => next()
 
 const { RetentionMode } = require('librechat-data-provider');
 const { createTempChatExpirationDate, logger } = require('@librechat/data-schemas');
+const { deleteSharedLinkWithCleanup } = require('@librechat/api');
 const { createSharedLink, updateSharedLink, getRoleByName } = require('~/models');
 const shareRouter = require('../share');
 
@@ -129,6 +131,7 @@ describe('share routes retention', () => {
       'msg-123',
       new Date('2030-01-01T00:00:00.000Z'),
     );
+    expect(mockSharedLinksAccess).toHaveBeenCalled();
   });
 
   it('rejects new shares when the retained conversation expired', async () => {
@@ -224,6 +227,7 @@ describe('share routes retention', () => {
 
     expect(response.status).toBe(200);
     expect(updateSharedLink).toHaveBeenCalledWith('user-123', 'share-123', undefined, null);
+    expect(mockSharedLinksAccess).not.toHaveBeenCalled();
   });
 
   it('preserves updated share expiration when the conversation cannot be found', async () => {
@@ -281,5 +285,15 @@ describe('share routes retention', () => {
 
     expect(response.status).toBe(400);
     expect(updateSharedLink).not.toHaveBeenCalled();
+  });
+
+  it('allows deleting existing shares without CREATE permission gate', async () => {
+    deleteSharedLinkWithCleanup.mockResolvedValue({ shareId: 'share-123' });
+
+    const response = await request(buildApp()).delete('/api/share/share-123');
+
+    expect(response.status).toBe(200);
+    expect(mockSharedLinksAccess).not.toHaveBeenCalled();
+    expect(deleteSharedLinkWithCleanup).toHaveBeenCalledWith('user-123', 'share-123');
   });
 });
