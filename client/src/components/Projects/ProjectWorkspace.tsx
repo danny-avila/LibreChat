@@ -5,7 +5,12 @@ import { useNavigate, useParams } from 'react-router-dom';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import { Button, Spinner, DropdownPopup } from '@librechat/client';
 import type { MenuItemProps, RenderProp } from '~/common';
-import { useConversationsInfiniteQuery, useProjectQuery } from '~/data-provider';
+import {
+  useConversationsInfiniteQuery,
+  useGetStartupConfig,
+  useProjectQuery,
+} from '~/data-provider';
+import ModelSelector from '~/components/Chat/Menus/Endpoints/ModelSelector';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import ProjectChatList from './ProjectChatList';
@@ -34,6 +39,7 @@ export default function ProjectWorkspace() {
   const [sortBy, setSortBy] = useState<ChatSortField>('updatedAt');
   const sortMenuId = useId();
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
+  const { data: startupConfig } = useGetStartupConfig();
   const { data: project, isLoading: isProjectLoading } = useProjectQuery(projectId);
   const activeProjectId = project?._id;
   const sortOptions = useMemo(
@@ -119,7 +125,7 @@ export default function ProjectWorkspace() {
 
   return (
     <main className="flex h-full min-h-0 flex-col overflow-auto bg-presentation text-text-primary">
-      <div className="container mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-8 md:px-6">
+      <div className="container mx-auto flex w-full max-w-5xl flex-1 flex-col gap-7 px-4 py-8 md:px-6 lg:pt-12">
         <Button
           type="button"
           variant="ghost"
@@ -131,31 +137,48 @@ export default function ProjectWorkspace() {
           {localize('com_ui_all_projects')}
         </Button>
 
-        <header className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <Folder className="h-8 w-8 shrink-0 text-text-secondary" aria-hidden="true" />
-            <div className="min-w-0">
-              <h1 className="truncate text-3xl font-semibold tracking-normal">{project.name}</h1>
-              <p className="text-sm text-text-secondary">
-                {localize('com_ui_project_chat_count', { count: project.conversationCount })}
-              </p>
+        <header className="flex flex-col gap-5">
+          <div className="flex min-w-0 flex-col gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <Folder className="h-9 w-9 shrink-0 text-text-secondary" aria-hidden="true" />
+              <h1 className="min-w-0 truncate text-3xl font-semibold tracking-normal text-text-primary md:text-4xl">
+                {project.name}
+              </h1>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <ModelSelector startupConfig={startupConfig} />
             </div>
           </div>
-          <Button type="button" variant="submit" size="sm" onClick={() => startProjectChat()}>
-            <Plus className="h-4 w-4" aria-hidden="true" />
-            {localize('com_ui_new_chat')}
-          </Button>
+
+          <button
+            type="button"
+            className={cn(
+              'flex min-h-16 w-full items-center gap-4 rounded-2xl border border-border-light bg-surface-chat px-4 py-3 text-left shadow-sm transition-colors',
+              'hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
+            )}
+            onClick={startProjectChat}
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-text-primary">
+              <Plus className="h-5 w-5" aria-hidden="true" />
+            </span>
+            <span className="min-w-0 flex-1 truncate text-base text-text-secondary">
+              {localize('com_ui_new_chat_in_project', { name: project.name })}
+            </span>
+          </button>
         </header>
 
         <section className="flex min-h-[360px] flex-1 flex-col gap-3">
           <div className="flex items-center justify-between gap-3">
-            <div className="inline-flex rounded-lg border border-border-light p-1">
+            <div className="inline-flex items-center gap-2 rounded-lg border border-border-light p-1">
               <button
                 type="button"
                 className="rounded-md bg-surface-secondary px-3 py-1.5 text-sm font-medium text-text-primary"
               >
                 {localize('com_ui_chats')}
               </button>
+              <span className="pr-2 text-xs text-text-secondary">
+                {localize('com_ui_project_chat_count', { count: project.conversationCount })}
+              </span>
             </div>
             <DropdownPopup
               portal={true}
