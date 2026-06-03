@@ -40,8 +40,9 @@ describe('fetchRemoteAuth', () => {
     process.env.PROXY = 'http://proxy.local:8080';
     fetchMock.mockResolvedValueOnce(response as unknown as Awaited<ReturnType<typeof undiciFetch>>);
 
-    await expect(fetchRemoteAuth('https://issuer.example.com/.well-known/openid-configuration'))
-      .resolves.toBe(response);
+    await expect(
+      fetchRemoteAuth('https://issuer.example.com/.well-known/openid-configuration'),
+    ).resolves.toBe(response);
 
     expect(ProxyAgent).toHaveBeenCalledWith('http://proxy.local:8080');
     expect(fetchMock).toHaveBeenCalledWith(
@@ -64,10 +65,13 @@ describe('fetchRemoteAuth', () => {
     );
 
     const request = fetchRemoteAuth('https://issuer.example.com/userinfo');
-    const assertion = expect(request).rejects.toThrow('aborted');
+    const requestError = request.then(
+      () => undefined,
+      (error) => error as Error,
+    );
     await jest.advanceTimersByTimeAsync(25);
 
-    await assertion;
+    await expect(requestError).resolves.toEqual(expect.objectContaining({ message: 'aborted' }));
   });
 
   it('clears the timeout when fetch fails before headers arrive', async () => {
@@ -98,9 +102,15 @@ describe('fetchRemoteAuth', () => {
     fetchMock.mockResolvedValueOnce(response as unknown as Awaited<ReturnType<typeof undiciFetch>>);
 
     const fetched = await fetchRemoteAuth('https://issuer.example.com/userinfo');
-    const assertion = expect(fetched.json()).rejects.toThrow('aborted while reading body');
+    const body = fetched.json();
+    const bodyError = body.then(
+      () => undefined,
+      (error) => error as Error,
+    );
     await jest.advanceTimersByTimeAsync(25);
 
-    await assertion;
+    await expect(bodyError).resolves.toEqual(
+      expect.objectContaining({ message: 'aborted while reading body' }),
+    );
   });
 });

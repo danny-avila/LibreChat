@@ -2503,7 +2503,7 @@ describe('createRemoteAgentAuth', () => {
   });
 
   describe('OpenID role sync', () => {
-    function expectNoRoleUpdate(updateUser: jest.Mock) {
+    function expectNoRoleUpdate(updateUser: jest.MockedFunction<UserMethods['updateUser']>) {
       const hasRoleUpdate = updateUser.mock.calls.some(([_userId, update]) =>
         Object.prototype.hasOwnProperty.call(update, 'role'),
       );
