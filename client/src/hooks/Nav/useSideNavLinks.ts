@@ -16,6 +16,7 @@ import {
   isParamEndpoint,
   isAgentsEndpoint,
   isAssistantsEndpoint,
+  defaultAgentCapabilities,
 } from 'librechat-data-provider';
 import type { TInterfaceConfig, TEndpointsConfig } from 'librechat-data-provider';
 import type { NavLink } from '~/common';
@@ -91,7 +92,9 @@ export default function useSideNavLinks({
   const { availableMCPServers } = useMCPServerManager();
 
   const { agentsConfig } = useGetAgentsConfig({ endpointsConfig });
-  const { skillsEnabled } = useAgentCapabilities(agentsConfig?.capabilities);
+  const { skillsEnabled } = useAgentCapabilities(
+    agentsConfig?.capabilities ?? defaultAgentCapabilities,
+  );
 
   const Links = useMemo(() => {
     const links: NavLink[] = [];

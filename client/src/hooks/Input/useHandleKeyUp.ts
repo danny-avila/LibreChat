@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
-import { PermissionTypes, Permissions, isAssistantsEndpoint } from 'librechat-data-provider';
+import {
+  PermissionTypes,
+  Permissions,
+  isAssistantsEndpoint,
+  defaultAgentCapabilities,
+} from 'librechat-data-provider';
 import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
 import useGetAgentsConfig from '~/hooks/Agents/useGetAgentsConfig';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
@@ -68,7 +73,9 @@ const useHandleKeyUp = ({
     permission: Permissions.USE,
   });
   const { agentsConfig } = useGetAgentsConfig();
-  const { skillsEnabled } = useAgentCapabilities(agentsConfig?.capabilities);
+  const { skillsEnabled } = useAgentCapabilities(
+    agentsConfig?.capabilities ?? defaultAgentCapabilities,
+  );
   const latestMessage = useRecoilValue(store.latestMessageFamily(index));
   const endpoint = useRecoilValue(store.effectiveEndpointByIndex(index));
   const setShowMentionPopover = useSetRecoilState(store.showMentionPopoverFamily(index));

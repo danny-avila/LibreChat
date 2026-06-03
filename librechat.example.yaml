@@ -134,6 +134,11 @@ interface:
     create: false
     share: false
     public: false
+  skills:
+    use: true
+    create: true
+    share: false
+    public: false
   peoplePicker:
     users: true
     groups: true
