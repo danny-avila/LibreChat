@@ -121,6 +121,10 @@ librechat:
       atlassian:
         type: streamable-http
         url: https://mcp.atlassian.com/v1/mcp/authv2
+    fileConfig:
+      endpoints:
+        default:
+          fileLimit: 100
     endpoints:
       azureOpenAI:
         titleModel: "gpt-5-chat"
