@@ -2,9 +2,15 @@ import jwt from 'jsonwebtoken';
 import jwksRsa from 'jwks-rsa';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { getTenantId, logger, tenantStorage } from '@librechat/data-schemas';
-import { isRemoteOidcUrlAllowed } from 'librechat-data-provider';
+import { SystemRoles, isRemoteOidcUrlAllowed } from 'librechat-data-provider';
 import type { RequestHandler, Request, Response, NextFunction } from 'express';
-import type { AppConfig, IUser, UserGroupMethods, UserMethods } from '@librechat/data-schemas';
+import type {
+  AppConfig,
+  IUser,
+  RoleMethods,
+  UserGroupMethods,
+  UserMethods,
+} from '@librechat/data-schemas';
 import type { Algorithm, JwtPayload, VerifyOptions } from 'jsonwebtoken';
 import type { TAgentsEndpoint } from 'librechat-data-provider';
 import type { GetAppConfigOptions } from '../app/service';
@@ -31,12 +37,19 @@ import {
   type FederatedAuthCacheOptions,
 } from '../auth/federatedAuthCache';
 import { fetchRemoteAuth } from '../auth/fetch';
+import {
+  getLibreChatRolesForOpenIdSync,
+  getOpenIdRolesForOpenIdSync,
+  getOpenIdRoleSyncOptions,
+  selectOpenIdRole,
+} from '../auth/openidRoleSync';
 import { isEnabled, math } from '~/utils';
 
 export interface RemoteAgentAuthDeps {
   apiKeyMiddleware: RequestHandler;
   findUser: UserMethods['findUser'];
   createUser: UserMethods['createUser'];
+  getRolesByNames: RoleMethods['findRolesByNames'];
   updateUser: UserMethods['updateUser'];
   bulkUpdateGroups: UserGroupMethods['bulkUpdateGroups'];
   findGroupsByExternalIds: UserGroupMethods['findGroupsByExternalIds'];
@@ -783,6 +796,94 @@ async function writeFederatedAuthCache({
   }
 }
 
+async function selectOpenIdRoleForOpenIdSync(
+  payload: JwtPayload,
+  user: IUser,
+  getRolesByNames: RemoteAgentAuthDeps['getRolesByNames'],
+): Promise<string | undefined> {
+  const options = getOpenIdRoleSyncOptions();
+  if (!options.enabled || !options.apiEnabled) {
+    return;
+  }
+
+  if (user.role === SystemRoles.ADMIN) {
+    logger.info(
+      `[remoteAgentAuth] OpenID role sync skipped for ${user.id}; existing ADMIN role is not managed by generic role sync`,
+    );
+    return;
+  }
+
+  if (options.claimSource !== 'access') {
+    logger.warn(
+      `[remoteAgentAuth] OpenID role sync skipped; source '${options.claimSource}' is not available for API auth`,
+    );
+    return;
+  }
+
+  const openIdRoleValues = await getOpenIdRolesForOpenIdSync({
+    options,
+    accessClaims: payload,
+    decodeToken: () => payload,
+  });
+  if (openIdRoleValues === undefined) {
+    logger.warn(
+      `[remoteAgentAuth] OpenID role sync skipped; claim '${options.claim}' was not found or invalid`,
+    );
+    return;
+  }
+
+  const loadLibreChatRoles = async () =>
+    getLibreChatRolesForOpenIdSync({
+      getRolesByNames,
+      rolePriority: options.rolePriority,
+      fallbackRole: options.fallbackRole,
+      logPrefix: '[remoteAgentAuth]',
+    });
+  const { rolePriority, fallbackRole } =
+    user.tenantId && getTenantId() !== user.tenantId
+      ? await tenantStorage.run({ tenantId: user.tenantId }, loadLibreChatRoles)
+      : await loadLibreChatRoles();
+  const result = selectOpenIdRole({
+    currentRole: user.role,
+    openIdRoleValues,
+    rolePriority,
+    fallbackRole,
+  });
+
+  if (!result.selectedRole || result.selectedRole === user.role) {
+    return;
+  }
+
+  logger.info(
+    `[remoteAgentAuth] OpenID role sync selected role for ${user.id}: ${user.role || 'unset'} -> ${result.selectedRole}`,
+  );
+  return result.selectedRole;
+}
+
+async function updateRemoteUserRole(
+  user: IUser,
+  selectedRole: string | undefined,
+  updateUser: RemoteAgentAuthDeps['updateUser'],
+): Promise<void> {
+  if (!selectedRole) {
+    return;
+  }
+
+  const userId = getUserId(user);
+  if (!userId) {
+    return;
+  }
+
+  user.role = selectedRole;
+  const update = async () => updateUser(userId, { role: selectedRole });
+  if (user.tenantId && getTenantId() !== user.tenantId) {
+    await tenantStorage.run({ tenantId: user.tenantId }, update);
+    return;
+  }
+
+  await update();
+}
+
 /**
  * Factory for Remote Agent API auth middleware.
  *
@@ -808,6 +909,7 @@ export function createRemoteAgentAuth({
   apiKeyMiddleware,
   findUser,
   createUser,
+  getRolesByNames,
   updateUser,
   bulkUpdateGroups,
   findGroupsByExternalIds,
@@ -1094,6 +1196,27 @@ export function createRemoteAgentAuth({
 
       //attaching request-scoped token material.
       attachFederatedTokens(authContext.user, token, payload);
+
+      const selectedRole = await selectOpenIdRoleForOpenIdSync(
+        payload,
+        authContext.user,
+        getRolesByNames,
+      );
+      if (selectedRole) {
+        authContext.user.role = selectedRole;
+        const rolePolicy = await enforceOidcTenantPolicy(
+          token,
+          authContext.user,
+          initialConfigOptions,
+          getAppConfig,
+        );
+        if (!rolePolicy.ok) {
+          res.status(401).json({ error: 'Unauthorized' });
+          return;
+        }
+
+        await updateRemoteUserRole(authContext.user, selectedRole, updateUser);
+      }
 
       // Sync remote groups only for lifecycle phases enabled by policy.
       let shouldSyncGroups = authContext.policy.groupSyncOptions.syncGroupsForExisting;

@@ -1,8 +1,12 @@
-import DOMPurify from 'dompurify';
 import { XIcon } from 'lucide-react';
 import { useRecoilState } from 'recoil';
 import { Button, cn } from '@librechat/client';
 import { useEffect, useMemo, useRef } from 'react';
+import {
+  CONFIG_HTML_TEXT_TAGS,
+  CONFIG_HTML_CLASS_ATTR,
+  createConfigHtmlSanitizer,
+} from '~/utils/configHtml';
 import { useGetBannerQuery } from '~/data-provider';
 import store from '~/store';
 
@@ -10,25 +14,21 @@ export const Banner = ({ onHeightChange }: { onHeightChange?: (height: number) =
   const { data: banner } = useGetBannerQuery();
   const [hideBannerHint, setHideBannerHint] = useRecoilState<string[]>(store.hideBannerHint);
   const bannerRef = useRef<HTMLDivElement>(null);
+  const sanitize = useMemo(
+    () =>
+      createConfigHtmlSanitizer({
+        allowedTags: CONFIG_HTML_TEXT_TAGS,
+        allowedAttr: CONFIG_HTML_CLASS_ATTR,
+      }),
+    [],
+  );
 
   const sanitizedMessage = useMemo(() => {
     if (!banner?.message) {
       return '';
     }
-    const sanitizer = DOMPurify();
-    sanitizer.addHook('afterSanitizeAttributes', (node) => {
-      if (node.tagName === 'A') {
-        node.setAttribute('target', '_blank');
-        node.setAttribute('rel', 'noopener noreferrer');
-      }
-    });
-    return sanitizer.sanitize(banner.message, {
-      ALLOWED_TAGS: ['a', 'strong', 'b', 'em', 'i', 'br', 'code', 'span'],
-      ALLOWED_ATTR: ['href', 'class', 'target', 'rel'],
-      ALLOW_DATA_ATTR: false,
-      ALLOW_ARIA_ATTR: false,
-    });
-  }, [banner?.message]);
+    return sanitize(banner.message);
+  }, [banner?.message, sanitize]);
 
   useEffect(() => {
     if (onHeightChange && bannerRef.current) {

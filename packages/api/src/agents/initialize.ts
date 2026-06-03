@@ -15,6 +15,7 @@ import type {
   AgentToolResources,
   AgentToolOptions,
   TEndpointOption,
+  ReasoningResponseKey,
   TFile,
   Agent,
   TUser,
@@ -77,7 +78,22 @@ function hasToolDefinition(toolDefinitions: LCTool[] | undefined, name: string):
   return toolDefinitions?.some((toolDefinition) => toolDefinition.name === name) === true;
 }
 
-function resolveAnthropicToolConflicts({
+function hasGoogleSearchTool(tool: unknown): boolean {
+  if (tool == null || typeof tool !== 'object') {
+    return false;
+  }
+  return 'googleSearch' in tool || 'googleSearchRetrieval' in tool;
+}
+
+function supportsGoogleToolCombination(model: unknown): boolean {
+  if (typeof model !== 'string') {
+    return false;
+  }
+  const normalized = model.toLowerCase().split('/').pop() ?? model.toLowerCase();
+  return normalized.startsWith('gemini-3');
+}
+
+function resolveProviderToolConflicts({
   provider,
   tools,
   toolDefinitions,
@@ -86,7 +102,7 @@ function resolveAnthropicToolConflicts({
   tools?: unknown[];
   toolDefinitions?: LCTool[];
 }): unknown[] | undefined {
-  if (provider !== Providers.ANTHROPIC || !tools?.length) {
+  if (!tools?.length) {
     return tools;
   }
 
@@ -94,9 +110,19 @@ function resolveAnthropicToolConflicts({
     return tools;
   }
 
+  const shouldRemoveTool = (tool: unknown): boolean => {
+    if (provider === Providers.ANTHROPIC) {
+      return getToolName(tool) === Tools.web_search;
+    }
+    if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
+      return hasGoogleSearchTool(tool);
+    }
+    return false;
+  };
+
   let removed = 0;
   const resolvedTools = tools.filter((tool) => {
-    const shouldRemove = getToolName(tool) === Tools.web_search;
+    const shouldRemove = shouldRemoveTool(tool);
     if (shouldRemove) {
       removed += 1;
     }
@@ -105,7 +131,7 @@ function resolveAnthropicToolConflicts({
 
   if (removed > 0) {
     logger.debug(
-      `[initializeAgent] Removed ${removed} Anthropic native web_search tool(s); LibreChat web_search is enabled.`,
+      `[initializeAgent] Removed ${removed} ${provider} native web search tool(s); LibreChat web_search is enabled.`,
     );
   }
 
@@ -144,6 +170,8 @@ export type InitializedAgent = Agent & {
   actionsEnabled?: boolean;
   /** Maximum characters allowed in a single tool result before truncation. */
   maxToolResultChars?: number;
+  /** Response field to read model reasoning from for custom OpenAI-compatible endpoints. */
+  reasoningKey?: ReasoningResponseKey;
   /**
    * Whether the code-execution environment is available *for this agent*.
    * Narrower than the incoming `params.codeEnvAvailable` admin flag — this
@@ -847,9 +875,9 @@ export async function initializeAgent(
    * never accidentally registers `bash_tool` or primes sandbox files
    * just because the admin globally enabled code execution.
    *
-   * Done BEFORE the `hasAgentTools` / GOOGLE_TOOL_CONFLICT gate so
-   * execute-code-only agents on Google/Vertex still trip the conflict
-   * guard when provider-specific tools are also configured. Also before
+   * Done before provider-tool merging so execute-code-only agents on
+   * Google/Vertex still surface as external function definitions when
+   * provider-specific tools are also configured. Also before
    * `injectSkillCatalog` so the skill path's own
    * `registerCodeExecutionTools` call upgrades `read_file` from the
    * code-only description to the skill-aware description without adding a
@@ -882,7 +910,7 @@ export async function initializeAgent(
 
   /** Check for tool presence from either full instances or definitions (event-driven mode) */
   const hasAgentTools = (structuredTools?.length ?? 0) > 0 || (toolDefinitions?.length ?? 0) > 0;
-  const providerTools = resolveAnthropicToolConflicts({
+  const providerTools = resolveProviderToolConflicts({
     provider: agent.provider,
     tools: options.tools,
     toolDefinitions,
@@ -898,7 +926,12 @@ export async function initializeAgent(
     hasProviderTools &&
     hasAgentTools
   ) {
-    throw new Error(`{ "type": "${ErrorTypes.GOOGLE_TOOL_CONFLICT}"}`);
+    if (!supportsGoogleToolCombination(llmConfig.model)) {
+      throw new Error(`{ "type": "${ErrorTypes.GOOGLE_TOOL_CONFLICT}"}`);
+    }
+    if (structuredTools?.length) {
+      tools = structuredTools.concat(providerTools as GenericTool[]);
+    }
   } else if (
     (agent.provider === Providers.OPENAI ||
       agent.provider === Providers.AZURE ||
@@ -1005,6 +1038,7 @@ export async function initializeAgent(
     actionsEnabled,
     baseContextTokens,
     codeEnvAvailable: effectiveCodeEnvAvailable,
+    reasoningKey: customEndpointConfig?.customParams?.reasoningKey,
     skillCount,
     accessibleSkillIds: executableSkillIds,
     activeSkillNames,

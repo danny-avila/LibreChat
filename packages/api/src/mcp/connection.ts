@@ -1,4 +1,3 @@
-import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import { EventEmitter } from 'events';
 import { logger } from '@librechat/data-schemas';
@@ -855,27 +854,14 @@ function createMCPDispatcher(options: {
   });
 }
 
-async function assertProxiedRequestTargetResolvable(hostname: string): Promise<void> {
-  if (parseIPLiteral(hostname)) {
-    return;
-  }
-
-  try {
-    await lookup(hostname, { all: true });
-  } catch {
-    throw new Error(
-      `SSRF protection: proxied MCP request target "${hostname}" could not be resolved before proxying`,
-    );
-  }
-}
-
 async function assertProxiedRequestTargetAllowed(
   urlString: string,
   proxyConfig: MCPProxyConfig | undefined,
   useSSRFProtection: boolean,
   allowedAddresses?: string[] | null,
 ): Promise<void> {
-  if (!proxyConfig || !useSSRFProtection) {
+  const proxyUrl = getProxyUrlForRequest(proxyConfig, urlString);
+  if (!proxyUrl || !useSSRFProtection) {
     return;
   }
 
@@ -884,13 +870,17 @@ async function assertProxiedRequestTargetAllowed(
   if (isAddressAllowed(targetUrl.hostname, allowedAddresses, port)) {
     return;
   }
+  if (!parseIPLiteral(targetUrl.hostname)) {
+    throw new Error(
+      `SSRF protection: proxied MCP request target "${targetUrl.hostname}" must be an IP literal or an explicitly allowed host`,
+    );
+  }
 
   const isBlockedTarget =
     isSSRFTarget(targetUrl.hostname, allowedAddresses, port) ||
     (await resolveHostnameSSRF(targetUrl.hostname, allowedAddresses, port));
 
   if (!isBlockedTarget) {
-    await assertProxiedRequestTargetResolvable(targetUrl.hostname);
     return;
   }
 
@@ -2324,6 +2314,10 @@ export class MCPConnection extends EventEmitter {
       }
       // Check for authentication required
       if (message.includes('authentication required') || message.includes('unauthorized')) {
+        return true;
+      }
+      // Check for missing authorization values (e.g., Amazon Ads MCP returns HTTP 400 with this)
+      if (message.includes('no authorization')) {
         return true;
       }
     }

@@ -38,7 +38,7 @@ const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 const { checkCapability } = require('~/server/services/Config');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
-const { getRetentionExpiry } = require('./retention');
+const { getRetentionExpiry, getAgentFileRetentionExpiry } = require('./retention');
 const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
 const { STTService } = require('./Audio/STTService');
@@ -66,6 +66,8 @@ const createSanitizedUploadWrapper = (uploadFunction) => {
     return uploadFunction({ req, file: sanitizedFile, file_id, ...restParams });
   };
 };
+
+const hasCodeEnvRef = (file) => file?.metadata?.codeEnvRef != null;
 
 const isMissingStorageError = (err) => {
   const code = err?.code ?? err?.status ?? err?.statusCode ?? err?.response?.status;
@@ -143,6 +145,49 @@ function enqueueDeleteOperation({
     );
   }
 }
+
+const getDeleteMethod = ({ source, deletionMethods }) => {
+  if (deletionMethods[source]) {
+    return deletionMethods[source];
+  }
+
+  const { deleteFile } = getStrategyFunctions(source);
+  if (!deleteFile) {
+    throw new Error(`Delete function not implemented for ${source}`);
+  }
+
+  deletionMethods[source] = deleteFile;
+  return deleteFile;
+};
+
+const createDeleteFileWithSecondaryStorage = ({ source, deleteFile, deletionMethods }) => {
+  return async (req, file, openai) => {
+    const secondaryDeleteMethods = [];
+    if (file.embedded === true && source !== FileSources.vectordb) {
+      secondaryDeleteMethods.push(
+        getDeleteMethod({ source: FileSources.vectordb, deletionMethods }),
+      );
+    }
+    if (hasCodeEnvRef(file) && source !== FileSources.execute_code) {
+      secondaryDeleteMethods.push(
+        getDeleteMethod({ source: FileSources.execute_code, deletionMethods }),
+      );
+    }
+
+    try {
+      await deleteFile(req, file, openai);
+    } catch (err) {
+      if (!isMissingStorageError(err)) {
+        throw err;
+      }
+      logger.warn('Primary file storage was already missing during delete', err);
+    }
+
+    await Promise.all(
+      secondaryDeleteMethods.map((secondaryDeleteFile) => secondaryDeleteFile(req, file)),
+    );
+  };
+};
 
 // TODO: refactor as currently only image files can be deleted this way
 // as other filetypes will not reside in public path
@@ -229,29 +274,11 @@ const processDeleteRequest = async ({ req, files }) => {
       promises.push(openai.beta.assistants.files.del(req.body.assistant_id, file.file_id));
     }
 
-    if (deletionMethods[source]) {
-      enqueueDeleteOperation({
-        req,
-        file,
-        deleteFile: deletionMethods[source],
-        promises,
-        resolvedFileIds,
-        failedFileIds,
-        openai,
-      });
-      continue;
-    }
-
-    const { deleteFile } = getStrategyFunctions(source);
-    if (!deleteFile) {
-      throw new Error(`Delete function not implemented for ${source}`);
-    }
-
-    deletionMethods[source] = deleteFile;
+    const deleteFile = getDeleteMethod({ source, deletionMethods });
     enqueueDeleteOperation({
       req,
       file,
-      deleteFile,
+      deleteFile: createDeleteFileWithSecondaryStorage({ source, deleteFile, deletionMethods }),
       promises,
       resolvedFileIds,
       failedFileIds,
@@ -727,7 +754,11 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
           `Extracted text from "${file.originalname}" exceeds the 15MB storage limit (${Math.round(textBytes / megabyte)}MB). Try a shorter document.`,
         );
       }
-      const retentionExpiry = await getRetentionExpiry(req);
+      const retentionExpiry = await getAgentFileRetentionExpiry({
+        req,
+        messageAttachment,
+        tool_resource,
+      });
       const fileInfo = {
         ...removeNullishValues({
           text,
@@ -925,7 +956,11 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     });
   }
 
-  const retentionExpiry = await getRetentionExpiry(req);
+  const retentionExpiry = await getAgentFileRetentionExpiry({
+    req,
+    messageAttachment,
+    tool_resource,
+  });
   const fileInfo = {
     ...removeNullishValues({
       user: req.user.id,

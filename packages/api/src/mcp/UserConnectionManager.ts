@@ -4,7 +4,7 @@ import type * as t from './types';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
-import { isUserSourced } from './utils';
+import { isUserSourced, requiresOAuthMachinery } from './utils';
 import { MCPConnection } from './connection';
 import { mcpConfig } from './mcpConfig';
 
@@ -35,14 +35,7 @@ export abstract class UserConnectionManager {
   }
 
   /** Gets or creates a connection for a specific user, coalescing concurrent attempts */
-  public async getUserConnection(
-    opts: {
-      serverName: string;
-      forceNew?: boolean;
-      /** Pre-resolved config for config-source servers not in YAML/DB */
-      serverConfig?: t.ParsedServerConfig;
-    } & Omit<t.OAuthConnectionOptions, 'useOAuth'>,
-  ): Promise<MCPConnection> {
+  public async getUserConnection(opts: t.UserMCPConnectionOptions): Promise<MCPConnection> {
     const { serverName, forceNew, user } = opts;
     const userId = user?.id;
     if (!userId) {
@@ -85,15 +78,13 @@ export abstract class UserConnectionManager {
       tokenMethods,
       oauthStart,
       oauthEnd,
+      oboTokenResolver,
+      oboTrustChecker,
       signal,
       returnOnOAuth = false,
       connectionTimeout,
       serverConfig: providedConfig,
-    }: {
-      serverName: string;
-      forceNew?: boolean;
-      serverConfig?: t.ParsedServerConfig;
-    } & Omit<t.OAuthConnectionOptions, 'useOAuth'>,
+    }: t.UserMCPConnectionOptions,
     userId: string,
   ): Promise<MCPConnection> {
     if (await this.appConnections!.has(serverName)) {
@@ -161,16 +152,26 @@ export abstract class UserConnectionManager {
 
     try {
       const registry = MCPServersRegistry.getInstance();
-      connection = await MCPConnectionFactory.create(
-        {
-          serverConfig: config,
-          serverName: serverName,
-          dbSourced: isUserSourced(config),
-          useSSRFProtection: registry.shouldEnableSSRFProtection(),
-          allowedDomains: registry.getAllowedDomains(),
-          allowedAddresses: registry.getAllowedAddresses(),
-        },
-        {
+      const basic: t.BasicConnectionOptions = {
+        serverConfig: config,
+        serverName: serverName,
+        dbSourced: isUserSourced(config),
+        useSSRFProtection: registry.shouldEnableSSRFProtection(),
+        allowedDomains: registry.getAllowedDomains(),
+        allowedAddresses: registry.getAllowedAddresses(),
+      };
+
+      const useOAuth = requiresOAuthMachinery(config);
+      let connectionOptions: t.OAuthConnectionOptions | t.UserConnectionContext;
+      if (useOAuth) {
+        if (!flowManager) {
+          throw new McpError(
+            ErrorCode.InvalidRequest,
+            `[MCP][User: ${userId}] OAuth server "${serverName}" requires a flowManager`,
+          );
+        }
+
+        connectionOptions = {
           useOAuth: true,
           user: user,
           customUserVars: customUserVars,
@@ -179,11 +180,22 @@ export abstract class UserConnectionManager {
           signal: signal,
           oauthStart: oauthStart,
           oauthEnd: oauthEnd,
+          oboTokenResolver: oboTokenResolver,
+          oboTrustChecker: oboTrustChecker,
           returnOnOAuth: returnOnOAuth,
           requestBody: requestBody,
           connectionTimeout: connectionTimeout,
-        },
-      );
+        };
+      } else {
+        connectionOptions = {
+          user,
+          customUserVars,
+          requestBody,
+          connectionTimeout,
+        };
+      }
+
+      connection = await MCPConnectionFactory.create(basic, connectionOptions);
 
       if (!(await connection?.isConnected())) {
         throw new Error('Failed to establish connection after initialization attempt.');

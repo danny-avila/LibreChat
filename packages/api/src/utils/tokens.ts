@@ -95,10 +95,19 @@ const cohereModels = {
 
 const googleModels = {
   /* Max I/O is combined so we subtract the amount from max response tokens for actual total */
-  gemma: 8196,
+  gemma: 32768,
   'gemma-2': 32768,
   'gemma-3': 32768,
   'gemma-3-27b': 131072,
+  'gemma4:31b': 256000,
+  'gemma4-31b': 256000,
+  'gemma-4-31b': 256000,
+  'gemma4:26b': 256000,
+  'gemma4-26b': 256000,
+  'gemma-4-26b-a4b': 256000,
+  'gemma-4-26b': 256000,
+  gemma4: 128000,
+  'gemma-4': 128000,
   gemini: 30720, // -2048 from max
   'gemini-pro-vision': 12288,
   'gemini-1.5': 1000000,
@@ -146,6 +155,7 @@ const anthropicModels = {
   'claude-sonnet-4-6': 1000000,
   'claude-opus-4-6': 1000000,
   'claude-opus-4-7': 1000000,
+  'claude-opus-4-8': 1000000,
 };
 
 const deepseekModels = {
@@ -394,6 +404,7 @@ const anthropicMaxOutputs = {
   'claude-opus-4-5': 64000,
   'claude-opus-4-6': 128000,
   'claude-opus-4-7': 128000,
+  'claude-opus-4-8': 128000,
   'claude-3.5-sonnet': 8192,
   'claude-3-5-sonnet': 8192,
   'claude-3.7-sonnet': 128000,

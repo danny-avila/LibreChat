@@ -73,14 +73,16 @@ function collectRecords(value: unknown, predicate: (record: Record<string, unkno
 }
 
 function hasIndexedIdPlan(explain: unknown): boolean {
-  return collectRecords(explain, (record) => {
-    const stage = record.stage;
-    if (stage === 'IDHACK' || stage === 'EXPRESS_IXSCAN') return true;
-    if (stage !== 'IXSCAN') return false;
+  return (
+    collectRecords(explain, (record) => {
+      const stage = record.stage;
+      if (stage === 'IDHACK' || stage === 'EXPRESS_IXSCAN') return true;
+      if (stage !== 'IXSCAN') return false;
 
-    const keyPattern = record.keyPattern;
-    return isRecord(keyPattern) && keyPattern._id === 1;
-  }).length > 0;
+      const keyPattern = record.keyPattern;
+      return isRecord(keyPattern) && keyPattern._id === 1;
+    }).length > 0
+  );
 }
 
 beforeAll(async () => {

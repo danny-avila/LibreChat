@@ -1,4 +1,10 @@
-import type { AppConfig, IUser, UserGroupMethods, UserMethods } from '@librechat/data-schemas';
+import type {
+  AppConfig,
+  IUser,
+  RoleMethods,
+  UserGroupMethods,
+  UserMethods,
+} from '@librechat/data-schemas';
 import type { TAgentsEndpoint } from 'librechat-data-provider';
 import type { JwtPayload, VerifyOptions } from 'jsonwebtoken';
 import type { Request, Response } from 'express';
@@ -77,6 +83,7 @@ jest.mock('../auth/federatedAuthCache', () => {
 
 import jwt from 'jsonwebtoken';
 import jwksRsa from 'jwks-rsa';
+import { SystemRoles } from 'librechat-data-provider';
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
 import { getTenantId, logger, tenantStorage } from '@librechat/data-schemas';
 import { clearRemoteAgentAuthCache, createRemoteAgentAuth } from './remoteAgentAuth';
@@ -84,11 +91,12 @@ import { findOpenIDUser, getOpenIdEmail } from '../auth/openid';
 import { syncUserEntraGroupMemberships } from '../auth/entraGroupSync';
 import { enrichOpenIdProfile } from '../auth/openidUserInfo';
 import { readFederatedAuthCache, writeFederatedAuthCache } from '../auth/federatedAuthCache';
-import { math } from '~/utils';
+import { isEnabled, math } from '~/utils';
 
 const mockFetch = undiciFetch as jest.Mock;
 const mockProxyAgent = ProxyAgent as unknown as jest.Mock;
 const mockMath = math as jest.Mock;
+const mockIsEnabled = isEnabled as jest.Mock;
 const realFindOpenIDUser =
   jest.requireActual<typeof import('../auth/openid')>('../auth/openid').findOpenIDUser;
 const mockFindOpenIDUser = findOpenIDUser as jest.MockedFunction<typeof findOpenIDUser>;
@@ -122,6 +130,12 @@ const ENV_KEYS = [
   'OPENID_ISSUER',
   'OPENID_CLIENT_ID',
   'OPENID_CLIENT_SECRET',
+  'OPENID_ROLE_SYNC_ENABLED',
+  'OPENID_ROLE_SYNC_API_ENABLED',
+  'OPENID_ROLE_SYNC_SOURCE',
+  'OPENID_ROLE_SYNC_CLAIM',
+  'OPENID_ROLE_SYNC_ROLE_PRIORITY',
+  'OPENID_ROLE_SYNC_FALLBACK_ROLE',
   'PROXY',
   'TENANT_ISOLATION_STRICT',
 ] as const;
@@ -184,6 +198,12 @@ const originalEnv = ENV_KEYS.reduce<Record<(typeof ENV_KEYS)[number], string | u
     OPENID_ISSUER: undefined,
     OPENID_CLIENT_ID: undefined,
     OPENID_CLIENT_SECRET: undefined,
+    OPENID_ROLE_SYNC_ENABLED: undefined,
+    OPENID_ROLE_SYNC_API_ENABLED: undefined,
+    OPENID_ROLE_SYNC_SOURCE: undefined,
+    OPENID_ROLE_SYNC_CLAIM: undefined,
+    OPENID_ROLE_SYNC_ROLE_PRIORITY: undefined,
+    OPENID_ROLE_SYNC_FALLBACK_ROLE: undefined,
     PROXY: undefined,
     TENANT_ISOLATION_STRICT: undefined,
   },
@@ -335,6 +355,9 @@ function makeDeps(appConfig: AppConfig = makeConfig()) {
     updateUser: mockMethod<UserMethods['updateUser']>(async (_userId, update) =>
       makeUser(update as Partial<IUser>),
     ),
+    getRolesByNames: mockMethod<RoleMethods['findRolesByNames']>(async (roleNames) =>
+      roleNames.map((roleName) => ({ name: roleName })),
+    ),
     bulkUpdateGroups: mockMethod<UserGroupMethods['bulkUpdateGroups']>(async () => updateResult),
     findGroupsByExternalIds: mockMethod<UserGroupMethods['findGroupsByExternalIds']>(
       async () => [],
@@ -373,6 +396,7 @@ describe('createRemoteAgentAuth', () => {
     clearRemoteAgentAuthCache();
     mockFetch.mockReset();
     mockMath.mockReturnValue(60000);
+    mockIsEnabled.mockImplementation((value?: string) => value === 'true');
     mockFindOpenIDUser.mockImplementation(realFindOpenIDUser);
     mockSyncUserEntraGroupMemberships.mockResolvedValue({ attempted: false, synced: false });
     mockEnrichOpenIdProfile.mockImplementation(async ({ claims }) => ({
@@ -2475,6 +2499,197 @@ describe('createRemoteAgentAuth', () => {
       );
       const updatePayload = mockUpdateUser.mock.calls[0]![1] as Record<string, unknown>;
       expectNoPersistedTokenFields(updatePayload);
+    });
+  });
+
+  describe('OpenID role sync', () => {
+    function expectNoRoleUpdate(updateUser: jest.Mock) {
+      const hasRoleUpdate = updateUser.mock.calls.some(([_userId, update]) =>
+        Object.prototype.hasOwnProperty.call(update, 'role'),
+      );
+      expect(hasRoleUpdate).toBe(false);
+    }
+
+    function enableApiRoleSync(overrides: Record<string, string> = {}) {
+      process.env.OPENID_ROLE_SYNC_ENABLED = 'true';
+      process.env.OPENID_ROLE_SYNC_API_ENABLED = 'true';
+      process.env.OPENID_ROLE_SYNC_SOURCE = 'access';
+      process.env.OPENID_ROLE_SYNC_CLAIM = 'roles';
+      process.env.OPENID_ROLE_SYNC_ROLE_PRIORITY = 'STANDARD-USER,BASIC-USER';
+      process.env.OPENID_ROLE_SYNC_FALLBACK_ROLE = 'USER';
+
+      for (const [key, value] of Object.entries(overrides)) {
+        process.env[key] = value;
+      }
+    }
+
+    it('does not run unless API role sync is explicitly enabled', async () => {
+      process.env.OPENID_ROLE_SYNC_ENABLED = 'true';
+      process.env.OPENID_ROLE_SYNC_SOURCE = 'access';
+      process.env.OPENID_ROLE_SYNC_CLAIM = 'roles';
+      process.env.OPENID_ROLE_SYNC_ROLE_PRIORITY = 'STANDARD-USER';
+      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com', roles: ['STANDARD-USER'] });
+
+      const deps = makeDeps();
+      await createRemoteAgentAuth(deps)(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        makeRes().res,
+        mockNext,
+      );
+
+      expect(deps.getRolesByNames).not.toHaveBeenCalled();
+      expectNoRoleUpdate(deps.updateUser);
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    it('selects the highest configured matching role from the verified bearer payload', async () => {
+      enableApiRoleSync();
+      setupOidcMocks({
+        sub: 'sub123',
+        email: 'agent@test.com',
+        roles: ['BASIC-USER', 'STANDARD-USER'],
+      });
+
+      const deps = makeDeps();
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+      await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
+
+      expect(deps.updateUser).toHaveBeenCalledWith('uid123', { role: 'STANDARD-USER' });
+      expect(req.user).toMatchObject({ role: 'STANDARD-USER' });
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    it('applies fallback when the verified payload has no configured role match', async () => {
+      enableApiRoleSync();
+      setupOidcMocks({
+        sub: 'sub123',
+        email: 'agent@test.com',
+        roles: ['external-role'],
+      });
+
+      const deps = makeDeps();
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+      await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
+
+      expect(deps.updateUser).toHaveBeenCalledWith('uid123', { role: 'USER' });
+      expect(req.user).toMatchObject({ role: 'USER' });
+    });
+
+    it('applies fallback when the role claim is present but empty', async () => {
+      enableApiRoleSync();
+      setupOidcMocks({
+        sub: 'sub123',
+        email: 'agent@test.com',
+        roles: '',
+      });
+
+      const deps = makeDeps();
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+      await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
+
+      expect(deps.updateUser).toHaveBeenCalledWith('uid123', { role: 'USER' });
+      expect(req.user).toMatchObject({ role: 'USER' });
+    });
+
+    it('preserves an existing ADMIN role because generic role sync cannot manage admin', async () => {
+      enableApiRoleSync();
+      setupOidcMocks({
+        sub: 'sub123',
+        email: 'agent@test.com',
+        roles: ['STANDARD-USER'],
+      });
+
+      const deps = makeDeps();
+      const adminUser = makeUser({ role: SystemRoles.ADMIN });
+      deps.findUser = makeFindUser(adminUser);
+      deps.updateUser.mockImplementation(async (_userId, update) =>
+        makeUser({ ...adminUser, ...(update as Partial<IUser>) }),
+      );
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+      await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
+
+      expect(deps.getRolesByNames).not.toHaveBeenCalled();
+      expectNoRoleUpdate(deps.updateUser);
+      expect(req.user).toMatchObject({ role: SystemRoles.ADMIN });
+    });
+
+    it('leaves the role unchanged when the configured source is unavailable to API auth', async () => {
+      enableApiRoleSync({ OPENID_ROLE_SYNC_SOURCE: 'id' });
+      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com', roles: ['STANDARD-USER'] });
+
+      const deps = makeDeps();
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+      await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
+
+      expect(deps.getRolesByNames).not.toHaveBeenCalled();
+      expectNoRoleUpdate(deps.updateUser);
+      expect(req.user).toMatchObject({ role: 'user' });
+    });
+
+    it('does not apply fallback when API group overage is unresolved', async () => {
+      enableApiRoleSync({ OPENID_ROLE_SYNC_CLAIM: 'groups' });
+      setupOidcMocks({
+        sub: 'sub123',
+        email: 'agent@test.com',
+        hasgroups: true,
+      });
+
+      const deps = makeDeps();
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+      await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
+
+      expectNoRoleUpdate(deps.updateUser);
+      expect(req.user).toMatchObject({ role: 'user' });
+    });
+
+    it('runs role lookup and persistence in the resolved user tenant context', async () => {
+      enableApiRoleSync();
+      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com', roles: ['BASIC-USER'] });
+
+      const deps = makeDeps();
+      deps.findUser = makeFindUser(makeUser({ tenantId: 'tenant-role-sync' }));
+      deps.getAppConfig.mockImplementation(async (options) =>
+        options?.tenantId === 'tenant-role-sync'
+          ? makeConfig({ scope: undefined }, { enabled: false })
+          : makeConfig({ scope: undefined }, { enabled: true }),
+      );
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+
+      await createRemoteAgentAuth(deps)(req as Request, makeRes().res, mockNext);
+
+      expect(deps.getRolesByNames).toHaveBeenCalledWith(
+        ['STANDARD-USER', 'BASIC-USER', 'USER'],
+        'name',
+      );
+      expect(deps.updateUser).toHaveBeenCalledWith('uid123', { role: 'BASIC-USER' });
+      expect(req.user).toMatchObject({ tenantId: 'tenant-role-sync', role: 'BASIC-USER' });
+    });
+
+    it('re-checks resolved user policy after role sync changes the role', async () => {
+      enableApiRoleSync();
+      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com', roles: ['STANDARD-USER'] });
+
+      const deps = makeDeps();
+      deps.findUser = makeFindUser(makeUser({ tenantId: 'tenant-role-sync', role: 'BASIC-USER' }));
+      deps.getAppConfig.mockImplementation(async (options) => {
+        if (options?.tenantId !== 'tenant-role-sync') {
+          return makeConfig({ scope: undefined }, { enabled: true });
+        }
+
+        return options.role === 'STANDARD-USER'
+          ? makeConfig({ enabled: false }, { enabled: false })
+          : makeConfig({ scope: undefined }, { enabled: false });
+      });
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+      const { res, status, json } = makeRes();
+
+      await createRemoteAgentAuth(deps)(req as Request, res, mockNext);
+
+      expect(status).toHaveBeenCalledWith(401);
+      expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
+      expectNoRoleUpdate(deps.updateUser);
+      expect(req.user).toBeUndefined();
+      expect(mockNext).not.toHaveBeenCalled();
     });
   });
 

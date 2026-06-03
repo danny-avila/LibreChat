@@ -5,6 +5,7 @@ import logger from './logger';
 
 export * from './map';
 export * from './json';
+export * from './icons';
 export * from './email';
 export * from './share';
 export * from './files';
@@ -25,6 +26,7 @@ export * from './languages';
 export * from './conversation';
 export * from './endpoints';
 export * from './resources';
+export * from './configHtml';
 export * from './downloadFile';
 export * from './scaleImage';
 export * from './timestamps';
