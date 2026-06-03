@@ -359,6 +359,19 @@ describe('requireJwtAuth tenant context chaining', () => {
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(401);
     expect(getTenantId()).toBeUndefined();
+    expect(logger.debug).toHaveBeenCalledWith(
+      expect.stringContaining('[requireJwtAuth] Authentication failed after all strategies'),
+      expect.objectContaining({
+        primary_strategy: 'jwt',
+        fallback_attempted: false,
+        fallback_succeeded: false,
+        attempted_strategies: ['jwt'],
+        final_strategy: 'jwt',
+        reason: 'Unauthorized',
+        status: 401,
+      }),
+    );
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 
   it('logs OpenID JWT expiry when JWT fallback succeeds', () => {

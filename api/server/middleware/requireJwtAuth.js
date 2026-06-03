@@ -92,7 +92,8 @@ const requireJwtAuth = (req, res, next) => {
       error_name: getAuthFailureErrorName(err, info),
       status: status || 401,
     });
-    logger.warn(formatAuthLogMessage(message, context), context);
+    const log = fallbackAttempted ? logger.warn : logger.debug;
+    log.call(logger, formatAuthLogMessage(message, context), context);
   };
 
   const logFallbackSuccess = (strategy) => {
