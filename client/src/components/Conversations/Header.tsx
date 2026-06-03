@@ -13,6 +13,7 @@ export interface ChatsHeaderControls {
   onOrganizationModeChange: (mode: SidebarOrganizationMode) => void;
   onChatSortByChange: (sortBy: SidebarChatSort) => void;
   onNewProject: () => void;
+  onOpenProjects: () => void;
 }
 
 interface ChatsHeaderProps extends ChatsHeaderControls {
@@ -78,6 +79,7 @@ const ChatsHeader: FC<ChatsHeaderProps> = ({
   onOrganizationModeChange,
   onChatSortByChange,
   onNewProject,
+  onOpenProjects,
 }) => {
   const localize = useLocalize();
   const menuId = useId();
@@ -144,6 +146,10 @@ const ChatsHeader: FC<ChatsHeaderProps> = ({
     ],
     [chatSortBy, localize, onChatSortByChange, onOrganizationModeChange, organizationMode],
   );
+  const headerLabel =
+    organizationMode === 'chronological'
+      ? localize('com_ui_all_chats')
+      : localize('com_ui_projects');
 
   return (
     <div className="flex h-8 w-full items-center gap-0.5">
@@ -153,7 +159,7 @@ const ChatsHeader: FC<ChatsHeaderProps> = ({
         type="button"
         aria-expanded={isExpanded}
       >
-        <span className="select-none truncate">{localize('com_ui_all_chats')}</span>
+        <span className="select-none truncate">{headerLabel}</span>
         <ChevronDown
           className={cn(
             'h-3 w-3 shrink-0 transition-transform duration-200',
@@ -191,6 +197,20 @@ const ChatsHeader: FC<ChatsHeaderProps> = ({
           />
         }
         items={dropdownItems}
+      />
+
+      <TooltipAnchor
+        description={localize('com_ui_all_projects')}
+        render={
+          <button
+            type="button"
+            aria-label={localize('com_ui_all_projects')}
+            className={headerIconButtonClassName}
+            onClick={onOpenProjects}
+          >
+            <Folder className="h-4 w-4" aria-hidden="true" />
+          </button>
+        }
       />
 
       <TooltipAnchor

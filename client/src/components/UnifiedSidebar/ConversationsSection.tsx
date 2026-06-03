@@ -118,6 +118,11 @@ const ConversationsSection = memo(() => {
     setIsProjectCreateOpen(true);
   }, []);
 
+  const handleOpenProjects = useCallback(() => {
+    navigate('/projects');
+    toggleNav();
+  }, [navigate, toggleNav]);
+
   const chatsHeaderControls = useMemo<ChatsHeaderControls>(
     () => ({
       organizationMode,
@@ -125,6 +130,7 @@ const ConversationsSection = memo(() => {
       onOrganizationModeChange: handleOrganizationModeChange,
       onChatSortByChange: handleChatSortByChange,
       onNewProject: handleNewProject,
+      onOpenProjects: handleOpenProjects,
     }),
     [
       organizationMode,
@@ -132,6 +138,7 @@ const ConversationsSection = memo(() => {
       handleOrganizationModeChange,
       handleChatSortByChange,
       handleNewProject,
+      handleOpenProjects,
     ],
   );
 

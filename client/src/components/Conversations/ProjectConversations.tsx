@@ -1,9 +1,9 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type FC } from 'react';
 import throttle from 'lodash/throttle';
-import { ChevronDown, Folder, FolderOpen } from 'lucide-react';
+import { ChevronDown, Folder, FolderOpen, SquarePen } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { Spinner, useMediaQuery } from '@librechat/client';
-import { useQueries } from '@tanstack/react-query';
+import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { AutoSizer, CellMeasurer, CellMeasurerCache, List } from 'react-virtualized';
 import { dataService, QueryKeys } from 'librechat-data-provider';
 import type {
@@ -21,8 +21,8 @@ import {
   useConversationsInfiniteQuery,
   useProjectsInfiniteQuery,
 } from '~/data-provider';
-import { useFavorites, useLocalize, useShowMarketplace } from '~/hooks';
-import { groupConversationsByDate, cn } from '~/utils';
+import { useFavorites, useLocalize, useNewConvo, useShowMarketplace } from '~/hooks';
+import { clearMessagesCache, groupConversationsByDate, cn } from '~/utils';
 import { DateLabel } from './Conversations';
 import ChatsHeader from './Header';
 import Convo from './Convo';
@@ -38,6 +38,7 @@ type Section = {
 type FlattenedItem =
   | { type: 'favorites' }
   | { type: 'chats-header' }
+  | { type: 'projects-overview' }
   | { type: 'section'; section: Section; isExpanded: boolean }
   | { type: 'date'; sectionId?: string; groupName: string; isFirst?: boolean }
   | { type: 'convo'; sectionId?: string; convo: TConversation }
@@ -113,10 +114,12 @@ const SectionHeader = memo(
     section,
     isExpanded,
     onToggle,
+    onStartProjectChat,
   }: {
     section: Section;
     isExpanded: boolean;
     onToggle: () => void;
+    onStartProjectChat: (project: TChatProject, event: React.MouseEvent<HTMLButtonElement>) => void;
   }) => {
     const localize = useLocalize();
     const Icon = isExpanded ? FolderOpen : Folder;
@@ -126,33 +129,55 @@ const SectionHeader = memo(
         : undefined;
 
     return (
-      <button
-        type="button"
-        aria-expanded={isExpanded}
-        onClick={onToggle}
+      <div
         className={cn(
-          'group flex h-8 w-full items-center gap-2 rounded-lg px-1 text-left text-sm outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white',
+          'group/project-row flex h-8 w-full items-center rounded-lg text-sm outline-none transition-colors duration-150',
           isExpanded ? 'text-text-primary' : 'text-text-secondary',
           'hover:bg-surface-active-alt hover:text-text-primary',
         )}
       >
-        <Icon
-          className={cn(
-            'h-4 w-4 shrink-0 transition-colors duration-150',
-            isExpanded ? 'text-text-primary' : 'text-text-secondary group-hover:text-text-primary',
-          )}
-          aria-hidden="true"
-        />
-        <span className="min-w-0 flex-1 truncate">{section.title}</span>
-        {countLabel && <span className="shrink-0 text-xs text-text-tertiary">{countLabel}</span>}
-        <ChevronDown
-          className={cn(
-            'h-3 w-3 shrink-0 text-text-tertiary transition-transform duration-200',
-            isExpanded ? 'rotate-180' : '',
-          )}
-          aria-hidden="true"
-        />
-      </button>
+        <button
+          type="button"
+          aria-expanded={isExpanded}
+          onClick={onToggle}
+          className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-lg px-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
+        >
+          <Icon
+            className={cn(
+              'h-4 w-4 shrink-0 transition-colors duration-150',
+              isExpanded
+                ? 'text-text-primary'
+                : 'text-text-secondary group-hover/project-row:text-text-primary',
+            )}
+            aria-hidden="true"
+          />
+          <span className="min-w-0 flex-1 truncate">{section.title}</span>
+          {countLabel && <span className="shrink-0 text-xs text-text-tertiary">{countLabel}</span>}
+          <ChevronDown
+            className={cn(
+              'h-3 w-3 shrink-0 text-text-tertiary transition-transform duration-200',
+              isExpanded ? 'rotate-180' : '',
+            )}
+            aria-hidden="true"
+          />
+        </button>
+        {section.project && (
+          <button
+            type="button"
+            aria-label={localize('com_ui_new_chat_in_project', { name: section.project.name })}
+            title={localize('com_ui_new_chat_in_project', { name: section.project.name })}
+            className={cn(
+              'mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-text-secondary outline-none transition-all duration-150 hover:bg-surface-hover hover:text-text-primary focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white',
+              isExpanded
+                ? 'opacity-100'
+                : 'opacity-0 group-focus-within/project-row:opacity-100 group-hover/project-row:opacity-100',
+            )}
+            onClick={(event) => onStartProjectChat(section.project as TChatProject, event)}
+          >
+            <SquarePen className="h-4 w-4" aria-hidden="true" />
+          </button>
+        )}
+      </div>
     );
   },
 );
@@ -164,6 +189,22 @@ const EmptyRow = memo(({ title }: { title: string }) => {
 });
 
 EmptyRow.displayName = 'ProjectEmptyRow';
+
+const ProjectsOverviewRow = memo(({ onOpenProjects }: { onOpenProjects: () => void }) => {
+  const localize = useLocalize();
+  return (
+    <button
+      type="button"
+      className="group flex h-8 w-full items-center gap-2 rounded-lg px-1 text-left text-sm text-text-secondary outline-none transition-colors duration-150 hover:bg-surface-active-alt hover:text-text-primary focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
+      onClick={onOpenProjects}
+    >
+      <Folder className="h-4 w-4 shrink-0 text-text-secondary group-hover:text-text-primary" />
+      <span className="min-w-0 flex-1 truncate">{localize('com_ui_all_projects')}</span>
+    </button>
+  );
+});
+
+ProjectsOverviewRow.displayName = 'ProjectsOverviewRow';
 
 const ProjectConversations: FC<ProjectConversationsProps> = ({
   mode,
@@ -177,8 +218,11 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
   chatsHeaderControls,
 }) => {
   const localize = useLocalize();
+  const queryClient = useQueryClient();
   const search = useRecoilValue(store.search);
+  const conversation = useRecoilValue(store.conversationByIndex(0));
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  const { newConversation } = useNewConvo();
   const { favorites, isLoading: isFavoritesLoading } = useFavorites();
   const showAgentMarketplace = useShowMarketplace();
   const favoritesContentKeyRef = useRef('');
@@ -403,6 +447,10 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
       };
     }
 
+    if (!isSearching) {
+      items.push({ type: 'projects-overview' });
+    }
+
     if (isSearching) {
       if (isSearchConversationsLoading) {
         items.push({ type: 'loading', key: 'loading-search-conversations' });
@@ -557,6 +605,9 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
           if (item.type === 'chats-header') {
             return 'project-chats-header';
           }
+          if (item.type === 'projects-overview') {
+            return 'project-overview';
+          }
           if (item.type === 'date') {
             return `project-date-${item.sectionId ?? 'search'}-${item.groupName}-${
               item.isFirst ? 'first' : 'next'
@@ -600,6 +651,22 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
   const retainView = useCallback(() => {
     containerRef.current?.scrollToPosition(0);
   }, [containerRef]);
+
+  const startProjectChat = useCallback(
+    (project: TChatProject, event: React.MouseEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      const path = `/c/new?projectId=${encodeURIComponent(project._id)}`;
+      if (event.ctrlKey || event.metaKey) {
+        window.open(path, '_blank');
+        return;
+      }
+      clearMessagesCache(queryClient, conversation?.conversationId);
+      queryClient.invalidateQueries([QueryKeys.messages]);
+      newConversation({ template: { chatProjectId: project._id } });
+      toggleNav();
+    },
+    [conversation?.conversationId, newConversation, queryClient, toggleNav],
+  );
 
   const toggleSection = useCallback((sectionId: string) => {
     setExpandedSectionIds((current) => {
@@ -746,6 +813,14 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
         );
       }
 
+      if (item.type === 'projects-overview') {
+        return (
+          <MeasuredRow key={key} {...rowProps}>
+            <ProjectsOverviewRow onOpenProjects={chatsHeaderControls.onOpenProjects} />
+          </MeasuredRow>
+        );
+      }
+
       if (item.type === 'section') {
         return (
           <MeasuredRow key={key} {...rowProps}>
@@ -753,6 +828,7 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
               section={item.section}
               isExpanded={item.isExpanded}
               onToggle={() => toggleSection(item.section.id)}
+              onStartProjectChat={startProjectChat}
             />
           </MeasuredRow>
         );
@@ -800,6 +876,7 @@ const ProjectConversations: FC<ProjectConversationsProps> = ({
       isSmallScreen,
       setIsChatsExpanded,
       chatsHeaderControls,
+      startProjectChat,
     ],
   );
 

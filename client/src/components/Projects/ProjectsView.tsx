@@ -94,18 +94,50 @@ export default function ProjectsView() {
 
   return (
     <main className="flex h-full min-h-0 flex-col overflow-auto bg-presentation text-text-primary">
-      <div className="container mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-8 md:px-6">
+      <div className="container mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-8 md:px-6 lg:pt-12">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-2xl font-bold tracking-tight text-text-primary md:text-3xl">
             {localize('com_ui_projects')}
           </h1>
-          <Button type="button" variant="submit" size="sm" onClick={() => setIsCreating(true)}>
-            <Plus className="h-4 w-4" aria-hidden="true" />
-            {localize('com_ui_new_project')}
-          </Button>
+          <div className="flex items-center gap-2">
+            <span className="hidden text-sm text-text-secondary sm:inline">
+              {localize('com_ui_sort_by')}
+            </span>
+            <DropdownPopup
+              portal={true}
+              focusLoop={true}
+              unmountOnHide={true}
+              menuId={sortMenuId}
+              isOpen={isSortMenuOpen}
+              setIsOpen={setIsSortMenuOpen}
+              className="z-[125] min-w-56"
+              trigger={
+                <Ariakit.MenuButton
+                  aria-label={localize('com_ui_sort_projects_by')}
+                  className={cn(
+                    'inline-flex h-10 items-center justify-between gap-2 whitespace-nowrap rounded-lg border border-border-medium bg-surface-primary px-3 text-sm font-medium text-text-primary transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary disabled:pointer-events-none disabled:opacity-50 sm:w-44',
+                    isSortMenuOpen && 'bg-surface-hover text-text-primary',
+                  )}
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <ArrowUpDown
+                      className="h-4 w-4 shrink-0 text-text-secondary"
+                      aria-hidden="true"
+                    />
+                    <span className="truncate">{selectedSortLabel}</span>
+                  </span>
+                </Ariakit.MenuButton>
+              }
+              items={sortMenuItems}
+            />
+            <Button type="button" variant="submit" size="sm" onClick={() => setIsCreating(true)}>
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              {localize('com_ui_new_project')}
+            </Button>
+          </div>
         </div>
 
-        <div className="flex flex-col gap-3 sm:flex-row">
+        <div className="flex flex-col gap-5">
           <label className="relative min-w-0 flex-1">
             <span className="sr-only">{localize('com_ui_search_projects')}</span>
             <Search
@@ -116,36 +148,14 @@ export default function ProjectsView() {
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder={localize('com_ui_search_projects')}
-              className="border-border-medium bg-transparent pl-9 text-text-primary placeholder:text-text-secondary focus-visible:ring-2 focus-visible:ring-ring-primary"
+              className="border-border-medium bg-surface-primary pl-9 text-text-primary placeholder:text-text-secondary focus-visible:ring-2 focus-visible:ring-ring-primary"
             />
           </label>
-          <DropdownPopup
-            portal={true}
-            focusLoop={true}
-            unmountOnHide={true}
-            menuId={sortMenuId}
-            isOpen={isSortMenuOpen}
-            setIsOpen={setIsSortMenuOpen}
-            className="z-[125] min-w-56"
-            trigger={
-              <Ariakit.MenuButton
-                aria-label={localize('com_ui_sort_projects_by')}
-                className={cn(
-                  'inline-flex h-10 items-center justify-between gap-2 whitespace-nowrap rounded-lg border border-border-medium bg-transparent px-3 text-sm font-medium text-text-primary ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 sm:w-56',
-                  isSortMenuOpen && 'bg-surface-hover text-text-primary',
-                )}
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  <ArrowUpDown
-                    className="h-4 w-4 shrink-0 text-text-secondary"
-                    aria-hidden="true"
-                  />
-                  <span className="truncate">{selectedSortLabel}</span>
-                </span>
-              </Ariakit.MenuButton>
-            }
-            items={sortMenuItems}
-          />
+          <div className="flex items-center">
+            <span className="rounded-full bg-surface-active-alt px-4 py-2 text-sm font-medium text-text-primary">
+              {localize('com_ui_your_projects')}
+            </span>
+          </div>
         </div>
 
         <ProjectCreateDialog
@@ -159,14 +169,14 @@ export default function ProjectsView() {
             <Spinner className="text-text-primary" />
           </div>
         ) : (
-          <div className="grid gap-2 md:grid-cols-2">
+          <div className="grid gap-3 md:grid-cols-2">
             {projects.map((project) => (
               <button
                 key={project._id}
                 type="button"
                 className={cn(
-                  'group/project min-h-32 rounded-xl border border-border-light bg-transparent p-4 text-left transition-colors',
-                  'hover:bg-surface-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
+                  'group/project min-h-32 rounded-lg border border-border-light bg-transparent p-4 text-left transition-colors',
+                  'hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
                 )}
                 onClick={() => navigate(`/projects/${project._id}`)}
               >

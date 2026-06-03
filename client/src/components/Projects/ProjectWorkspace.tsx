@@ -1,8 +1,10 @@
 import { useCallback, useId, useMemo, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { useRecoilValue } from 'recoil';
+import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, ArrowUpDown, Check, Folder, Plus, SlidersHorizontal } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { QueryKeys } from 'librechat-data-provider';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import { Button, Spinner, DropdownPopup } from '@librechat/client';
 import type { MenuItemProps, RenderProp } from '~/common';
@@ -11,8 +13,14 @@ import {
   useGetStartupConfig,
   useProjectQuery,
 } from '~/data-provider';
-import { useAgentsMap, useLocalize } from '~/hooks';
-import { cn, getDefaultModelSpec, getLocalStorageItems, getModelSpec } from '~/utils';
+import { useAgentsMap, useLocalize, useNewConvo } from '~/hooks';
+import {
+  cn,
+  clearMessagesCache,
+  getDefaultModelSpec,
+  getLocalStorageItems,
+  getModelSpec,
+} from '~/utils';
 import ProjectChatList from './ProjectChatList';
 import store from '~/store';
 
@@ -36,6 +44,7 @@ function renderSortMenuItem(label: string, isSelected: boolean): RenderProp {
 export default function ProjectWorkspace() {
   const localize = useLocalize();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { projectId = '' } = useParams();
   const [sortBy, setSortBy] = useState<ChatSortField>('updatedAt');
   const sortMenuId = useId();
@@ -43,6 +52,7 @@ export default function ProjectWorkspace() {
   const { data: startupConfig } = useGetStartupConfig();
   const { data: project, isLoading: isProjectLoading } = useProjectQuery(projectId);
   const conversation = useRecoilValue(store.conversationByIndex(0));
+  const { newConversation } = useNewConvo();
   const agentsMap = useAgentsMap({ isAuthenticated: true });
   const activeProjectId = project?._id;
   const activeSettingsLabel = useMemo(() => {
@@ -145,10 +155,10 @@ export default function ProjectWorkspace() {
     if (!activeProjectId) {
       return;
     }
-    navigate(`/c/new?projectId=${encodeURIComponent(activeProjectId)}`, {
-      state: { focusChat: true },
-    });
-  }, [activeProjectId, navigate]);
+    clearMessagesCache(queryClient, conversation?.conversationId);
+    queryClient.invalidateQueries([QueryKeys.messages]);
+    newConversation({ template: { chatProjectId: activeProjectId } });
+  }, [activeProjectId, conversation?.conversationId, newConversation, queryClient]);
 
   if (isProjectLoading) {
     return (
