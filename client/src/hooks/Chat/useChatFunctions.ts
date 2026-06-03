@@ -28,7 +28,7 @@ import type { SetterOrUpdater } from 'recoil';
 import type { TAskFunction, ExtendedFile } from '~/common';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
-import { logger, createDualMessageContent } from '~/utils';
+import { logger, createDualMessageContent, getRouteChatProjectId } from '~/utils';
 import store, { useGetEphemeralAgent } from '~/store';
 import { startupConfigKey } from '~/data-provider';
 import useUserKey from '~/hooks/Input/useUserKey';
@@ -38,15 +38,6 @@ const logChatRequest = (request: Record<string, unknown>) => {
   logger.log('=====================================\nAsk function called with:');
   logger.dir(request);
   logger.log('=====================================');
-};
-
-const getRouteChatProjectId = () => {
-  if (typeof window === 'undefined') {
-    return null;
-  }
-
-  const projectId = new URLSearchParams(window.location.search).get('projectId');
-  return projectId != null && /^[a-f\d]{24}$/i.test(projectId) ? projectId : null;
 };
 
 export default function useChatFunctions({

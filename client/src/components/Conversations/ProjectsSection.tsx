@@ -452,7 +452,7 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
 
   return (
     <div className="flex flex-col px-3 text-sm">
-      <div className="flex h-8 w-full items-center gap-0.5">
+      <div className="flex h-8 w-full items-center gap-0.5 pr-2">
         <button
           onClick={() => setIsExpanded(!isExpanded)}
           className="group flex min-w-0 flex-1 items-center gap-1 rounded-lg px-1 py-2 text-xs font-bold text-text-secondary outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"

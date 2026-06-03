@@ -167,6 +167,18 @@ function conversationMatchesProjectQuery(
   return conversation.chatProjectId === projectId;
 }
 
+/**
+ * Reads the project id from the current URL's `?projectId` param — the source of
+ * truth for a new chat's project scope (the conversation atom can lag behind it).
+ */
+export function getRouteChatProjectId(): string | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  const projectId = new URLSearchParams(window.location.search).get('projectId');
+  return projectId != null && /^[a-f\d]{24}$/i.test(projectId) ? projectId : null;
+}
+
 // === InfiniteData helpers for cursor-based convo queries ===
 
 export function findConversationInInfinite(

@@ -102,7 +102,7 @@ const ChatsHeader: FC<ChatsHeaderProps> = memo(({ isExpanded, onToggle }) => {
   }, [conversation?.conversationId, newConversation, queryClient]);
 
   return (
-    <div className="flex h-8 w-full items-center gap-0.5">
+    <div className="flex h-8 w-full items-center gap-0.5 pr-2">
       <button
         onClick={onToggle}
         className="group flex min-w-0 flex-1 items-center gap-1 rounded-lg px-1 py-2 text-xs font-bold text-text-secondary outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
@@ -156,7 +156,6 @@ DateLabel.displayName = 'DateLabel';
 
 type FlattenedItem =
   | { type: 'favorites' }
-  | { type: 'chats-header' }
   | { type: 'header'; groupName: string }
   | { type: 'convo'; convo: TConversation }
   | { type: 'loading' };
@@ -244,7 +243,6 @@ const Conversations: FC<ConversationsProps> = ({
     if (shouldShowFavorites) {
       items.push({ type: 'favorites' });
     }
-    items.push({ type: 'chats-header' });
 
     if (isChatsExpanded) {
       groupedConversations.forEach(([groupName, convos]) => {
@@ -276,9 +274,6 @@ const Conversations: FC<ConversationsProps> = ({
           }
           if (item.type === 'favorites') {
             return `favorites-${favoritesContentKeyRef.current}`;
-          }
-          if (item.type === 'chats-header') {
-            return 'chats-header';
           }
           if (item.type === 'header') {
             return `header-${item.groupName}`;
@@ -342,22 +337,9 @@ const Conversations: FC<ConversationsProps> = ({
         );
       }
 
-      if (item.type === 'chats-header') {
-        return (
-          <MeasuredRow key={key} {...rowProps}>
-            <ChatsHeader
-              isExpanded={isChatsExpanded}
-              onToggle={() => setIsChatsExpanded(!isChatsExpanded)}
-            />
-          </MeasuredRow>
-        );
-      }
-
       if (item.type === 'header') {
-        // First date header index depends on whether favorites row is included
-        // With favorites: [favorites, chats-header, first-header] → index 2
-        // Without favorites: [chats-header, first-header] → index 1
-        const firstHeaderIndex = shouldShowFavorites ? 2 : 1;
+        // First date header index depends on whether the favorites row is included
+        const firstHeaderIndex = shouldShowFavorites ? 1 : 0;
         return (
           <MeasuredRow key={key} {...rowProps}>
             <DateLabel groupName={item.groupName} isFirst={index === firstHeaderIndex} />
@@ -381,17 +363,7 @@ const Conversations: FC<ConversationsProps> = ({
 
       return null;
     },
-    [
-      cache,
-      flattenedItems,
-      moveToTop,
-      toggleNav,
-      isSmallScreen,
-      isChatsExpanded,
-      setIsChatsExpanded,
-      shouldShowFavorites,
-      activeJobIds,
-    ],
+    [cache, flattenedItems, moveToTop, toggleNav, isSmallScreen, shouldShowFavorites, activeJobIds],
   );
 
   const getRowHeight = useCallback(
@@ -415,6 +387,12 @@ const Conversations: FC<ConversationsProps> = ({
 
   return (
     <div className="relative flex h-full min-h-0 flex-col pb-2 text-sm text-text-primary">
+      <div className="px-3">
+        <ChatsHeader
+          isExpanded={isChatsExpanded}
+          onToggle={() => setIsChatsExpanded(!isChatsExpanded)}
+        />
+      </div>
       {isSearchLoading ? (
         <div className="flex flex-1 items-center justify-center">
           <Spinner className="text-text-primary" />
