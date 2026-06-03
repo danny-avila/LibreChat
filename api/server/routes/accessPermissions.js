@@ -115,8 +115,9 @@ const rejectSharedLinkOwnerPermissionChanges = async (req, res, next) => {
   const grantsOwner = updated.some(
     (principal) => principal?.accessRoleId === AccessRoleIds.SHARED_LINK_OWNER,
   );
+  const grantsPublicOwner = req.body?.publicAccessRoleId === AccessRoleIds.SHARED_LINK_OWNER;
 
-  if (grantsOwner) {
+  if (grantsOwner || grantsPublicOwner) {
     return res.status(400).json({
       error: 'Bad Request',
       message: 'Shared link owner permissions cannot be changed',

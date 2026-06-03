@@ -55,7 +55,7 @@ async function migrateSharedLinkPermissions({
     // migration, so Mongoose queries like { isPublic: false } become {} (match all).
     const rawCollection = mongoose.connection.db.collection('sharedlinks');
     const isPublicFalseCount = await rawCollection.countDocuments({ isPublic: false });
-    if (isPublicFalseCount > 0 && !force) {
+    if (!dryRun && isPublicFalseCount > 0 && !force) {
       const sample = await rawCollection
         .find({ isPublic: false })
         .project({ _id: 1, shareId: 1, user: 1 })
@@ -193,6 +193,15 @@ async function migrateSharedLinkPermissions({
         if (hasIsPublic && link.isPublic === false) {
           results.publicViewerSkipped++;
         } else if (hasIsPublic) {
+          const publicUpdateSet = {
+            permBits: viewerRole.permBits,
+            roleId: viewerRole._id,
+            grantedAt: now,
+          };
+          if (userId) {
+            publicUpdateSet.grantedBy = new mongoose.Types.ObjectId(userId);
+          }
+
           opIndexToLinkId.push(linkId);
           bulkOps.push({
             updateOne: {
@@ -202,12 +211,7 @@ async function migrateSharedLinkPermissions({
                 principalType: PRINCIPAL_PUBLIC,
               },
               update: {
-                $set: {
-                  permBits: viewerRole.permBits,
-                  roleId: viewerRole._id,
-                  grantedBy: userId ? new mongoose.Types.ObjectId(userId) : undefined,
-                  grantedAt: now,
-                },
+                $set: publicUpdateSet,
                 $setOnInsert: {
                   ...(tenantId && { tenantId }),
                 },

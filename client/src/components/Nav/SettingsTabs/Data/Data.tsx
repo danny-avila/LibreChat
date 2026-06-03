@@ -17,21 +17,15 @@ function Data() {
     permissionType: PermissionTypes.REMOTE_AGENTS,
     permission: Permissions.USE,
   });
-  const canCreateSharedLinks = useHasAccess({
-    permissionType: PermissionTypes.SHARED_LINKS,
-    permission: Permissions.CREATE,
-  });
 
   return (
     <div className="flex flex-col gap-3 p-1 text-sm text-text-primary">
       <div className="pb-3">
         <ImportConversations />
       </div>
-      {canCreateSharedLinks && (
-        <div className="pb-3">
-          <SharedLinks />
-        </div>
-      )}
+      <div className="pb-3">
+        <SharedLinks />
+      </div>
       {hasAccessToApiKeys && (
         <div className="pb-3">
           <AgentApiKeys />

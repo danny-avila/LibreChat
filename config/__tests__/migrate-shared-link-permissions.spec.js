@@ -154,6 +154,16 @@ describe('migrate-shared-link-permissions', () => {
     expect(ownerEntry).toBeDefined();
   });
 
+  test('reports private legacy links during dry run without aborting', async () => {
+    await createLegacyLink(false);
+
+    const result = await migrateSharedLinkPermissions({ dryRun: true });
+
+    expect(result.aborted).toBeUndefined();
+    expect(result.dryRun).toBe(true);
+    expect(result.summary.withIsPublicFalse).toBe(1);
+  });
+
   test('grants PUBLIC VIEWER to ownerless public legacy links', async () => {
     const link = await createLegacyLink(true, null);
 
@@ -166,6 +176,7 @@ describe('migrate-shared-link-permissions', () => {
       principalType: 'public',
     }).lean();
     expect(publicEntry).toBeDefined();
+    expect(publicEntry).not.toHaveProperty('grantedBy');
 
     const ownerEntry = await AclEntry.findOne({
       resourceId: link._id,

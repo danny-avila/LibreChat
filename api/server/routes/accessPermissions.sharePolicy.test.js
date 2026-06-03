@@ -264,6 +264,22 @@ describe('Access permissions share policy', () => {
     expect(updateResourcePermissions).not.toHaveBeenCalled();
   });
 
+  it('blocks granting shared-link owner to the public principal', async () => {
+    allowSharedLinkSharing();
+
+    const response = await request(app)
+      .put(`/api/permissions/${ResourceType.SHARED_LINK}/${resourceId}`)
+      .send({
+        public: true,
+        publicAccessRoleId: AccessRoleIds.SHARED_LINK_OWNER,
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toBe('Shared link owner permissions cannot be changed');
+    expect(updateResourcePermissions).not.toHaveBeenCalled();
+    expect(mockSharedLinkFindById).not.toHaveBeenCalled();
+  });
+
   it('blocks removing the canonical shared-link owner', async () => {
     allowSharedLinkSharing();
     mockSharedLinkOwner('owner-user');
