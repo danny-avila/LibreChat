@@ -211,6 +211,7 @@ export default function useResumableSSE(
     messageHandler,
     contentHandler,
     createdHandler,
+    titleHandler,
     syncStepMessage,
     attachmentHandler,
     resetContentHandler,
@@ -317,6 +318,11 @@ export default function useResumableSSE(
             return;
           }
 
+          if (data.event === 'title') {
+            titleHandler(data);
+            return;
+          }
+
           if (data.event != null) {
             stepHandler(data, { ...currentSubmission, userMessage } as EventSubmission);
             return;
@@ -398,11 +404,17 @@ export default function useResumableSSE(
               }
             }
 
+            if (data.resumeState?.titleEvent) {
+              titleHandler(data.resumeState.titleEvent);
+            }
+
             if (data.pendingEvents?.length > 0) {
               console.log(`[ResumableSSE] Replaying ${data.pendingEvents.length} pending events`);
               const submission = { ...currentSubmission, userMessage } as EventSubmission;
               for (const pendingEvent of data.pendingEvents) {
-                if (pendingEvent.event != null) {
+                if (pendingEvent.event === 'title') {
+                  titleHandler(pendingEvent);
+                } else if (pendingEvent.event != null) {
                   stepHandler(pendingEvent, submission);
                 } else if (pendingEvent.type != null) {
                   contentHandler({ data: pendingEvent, submission });
@@ -670,6 +682,7 @@ export default function useResumableSSE(
       finalHandler,
       createdHandler,
       attachmentHandler,
+      titleHandler,
       stepHandler,
       contentHandler,
       resetContentHandler,
@@ -801,9 +814,11 @@ export default function useResumableSSE(
           setStreamId(newStreamId);
           // Optimistically add to active jobs
           addActiveJob(newStreamId);
-          // Queue title generation if this is a new conversation (first message)
+          // Queue title generation if this is a new conversation (first message).
+          // Skip temporary conversations — the server never generates titles for
+          // them, so polling would 404 indefinitely.
           const isNewConvo = submission.userMessage?.parentMessageId === Constants.NO_PARENT;
-          if (isNewConvo) {
+          if (isNewConvo && !submission.isTemporary) {
             queueTitleGeneration(newStreamId);
           }
           if (isInitialNewConversation(submission)) {

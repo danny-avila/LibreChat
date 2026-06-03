@@ -6,6 +6,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const timeout = Number(process.env.E2E_AUTH_TIMEOUT ?? 15000);
+const chromiumChannel = process.env.E2E_CHROMIUM_CHANNEL || undefined;
 
 async function register(page: Page, user: User) {
   await page.getByRole('link', { name: 'Sign up' }).click();
@@ -50,6 +51,7 @@ async function authenticate(config: FullConfig, user: User) {
 
   const browser = await chromium.launch({
     headless: config.projects[0].use.headless ?? true,
+    ...(chromiumChannel ? { channel: chromiumChannel } : {}),
   });
   try {
     const page = await browser.newPage();

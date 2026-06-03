@@ -176,6 +176,9 @@ interface:
   # such as "_meiliIndex_1_expiredAt_1" can be dropped from conversations/messages once the new
   # "_meiliIndex_1_isTemporary_1_expiredAt_1" indexes exist.
   # retentionMode: "temporary"
+  # Set retainAgentFiles to true to keep persistent agent resource files from expiring under
+  # retentionMode: "all"; non-agent files still expire.
+  # retainAgentFiles: false
 
 # Example Cloudflare turnstile (optional)
 #turnstile:
@@ -359,6 +362,12 @@ endpoints:
   #   maxRecursionLimit: 100
   #   # (optional) Disable the builder interface for agents
   #   disableBuilder: false
+  #   # (optional) When conversation titles are generated:
+  #   #   immediate (default): generate as soon as the request is made, in parallel
+  #   #     with the response, from the user's first message (title appears within ~1-2s).
+  #   #   final: defer generation until the full response completes (legacy behavior).
+  #   # Set under `endpoints.all` instead to apply as the global default for all endpoints.
+  #   titleTiming: immediate
   #   # (optional) Maximum total citations to include in agent responses, defaults to 30
   #   maxCitations: 30
   #   # (optional) Maximum citations per file to include in agent responses, defaults to 7

@@ -4,6 +4,8 @@ import { SystemRoles, Permissions, roleDefaults, PermissionTypes } from 'librech
 import type { IRole, IUser, RolePermissions } from '..';
 import { createRoleMethods } from './role';
 import { createModels } from '../models';
+import { _resetStrictCache } from '../models/plugins/tenantIsolation';
+import { tenantStorage } from '~/config/tenantContext';
 
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),
@@ -23,6 +25,7 @@ const mockGetCache = jest.fn().mockReturnValue(mockCache);
 let Role: mongoose.Model<IRole>;
 let User: mongoose.Model<IUser>;
 let getRoleByName: ReturnType<typeof createRoleMethods>['getRoleByName'];
+let findRolesByNames: ReturnType<typeof createRoleMethods>['findRolesByNames'];
 let updateAccessPermissions: ReturnType<typeof createRoleMethods>['updateAccessPermissions'];
 let initializeRoles: ReturnType<typeof createRoleMethods>['initializeRoles'];
 let createRoleByName: ReturnType<typeof createRoleMethods>['createRoleByName'];
@@ -44,6 +47,7 @@ beforeAll(async () => {
   User = mongoose.models.User as mongoose.Model<IUser>;
   const methods = createRoleMethods(mongoose, { getCache: mockGetCache });
   getRoleByName = methods.getRoleByName;
+  findRolesByNames = methods.findRolesByNames;
   updateAccessPermissions = methods.updateAccessPermissions;
   initializeRoles = methods.initializeRoles;
   createRoleByName = methods.createRoleByName;
@@ -68,6 +72,90 @@ beforeEach(async () => {
   mockCache.get.mockClear();
   mockCache.set.mockClear();
   mockCache.del.mockClear();
+});
+
+describe('findRolesByNames', () => {
+  it('queries storage without reading or writing the role cache', async () => {
+    await Role.create([
+      { name: 'STANDARD-USER', permissions: {} },
+      { name: 'BASIC-USER', permissions: {} },
+    ]);
+
+    await expect(findRolesByNames(['STANDARD-USER', 'BASIC-USER'], 'name')).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'STANDARD-USER' }),
+        expect.objectContaining({ name: 'BASIC-USER' }),
+      ]),
+    );
+    expect(mockGetCache).not.toHaveBeenCalled();
+    expect(mockCache.get).not.toHaveBeenCalled();
+    expect(mockCache.set).not.toHaveBeenCalled();
+  });
+
+  it('matches role names case-insensitively without using pagination', async () => {
+    const roles = Array.from({ length: 75 }, (_value, index) => ({
+      name: `ROLE-${index}`,
+      permissions: {},
+    }));
+    await Role.create([...roles, { name: 'STANDARD-USER', permissions: {} }]);
+
+    await expect(findRolesByNames(['standard-user'], 'name')).resolves.toEqual([
+      expect.objectContaining({ name: 'STANDARD-USER' }),
+    ]);
+  });
+
+  it('uses the active tenant context for matching role names', async () => {
+    await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+      await Role.create({ name: 'TENANT-ROLE', permissions: {} });
+    });
+    await tenantStorage.run({ tenantId: 'tenant-b' }, async () => {
+      await Role.create({ name: 'TENANT-ROLE', permissions: {} });
+    });
+
+    const tenantARoles = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+      findRolesByNames(['TENANT-ROLE'], 'name tenantId'),
+    );
+    const tenantBRoles = await tenantStorage.run({ tenantId: 'tenant-b' }, async () =>
+      findRolesByNames(['TENANT-ROLE'], 'name tenantId'),
+    );
+
+    expect(tenantARoles).toEqual([
+      expect.objectContaining({ name: 'TENANT-ROLE', tenantId: 'tenant-a' }),
+    ]);
+    expect(tenantBRoles).toEqual([
+      expect.objectContaining({ name: 'TENANT-ROLE', tenantId: 'tenant-b' }),
+    ]);
+  });
+
+  it('matches only base roles when no tenant context is active', async () => {
+    await Role.create({ name: 'SCOPED-ROLE', permissions: {} });
+    await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
+      await Role.create({ name: 'TENANT-ONLY-ROLE', permissions: {} });
+    });
+
+    const baseMatches = await findRolesByNames(
+      ['SCOPED-ROLE', 'TENANT-ONLY-ROLE'],
+      'name tenantId',
+    );
+
+    expect(baseMatches).toEqual([expect.objectContaining({ name: 'SCOPED-ROLE' })]);
+    expect(baseMatches).toHaveLength(1);
+  });
+
+  it('matches base roles without a tenant context even under strict isolation', async () => {
+    await Role.create({ name: 'STRICT-BASE-ROLE', permissions: {} });
+    process.env.TENANT_ISOLATION_STRICT = 'true';
+    _resetStrictCache();
+
+    try {
+      await expect(findRolesByNames(['STRICT-BASE-ROLE'], 'name')).resolves.toEqual([
+        expect.objectContaining({ name: 'STRICT-BASE-ROLE' }),
+      ]);
+    } finally {
+      delete process.env.TENANT_ISOLATION_STRICT;
+      _resetStrictCache();
+    }
+  });
 });
 
 describe('updateAccessPermissions', () => {
