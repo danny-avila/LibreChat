@@ -126,7 +126,7 @@ export default function ProjectWorkspace() {
   }
 
   return (
-    <main className="flex h-full min-h-0 flex-col overflow-y-auto bg-presentation text-text-primary">
+    <main className="flex h-full min-h-0 flex-col overflow-y-auto bg-surface-primary text-text-primary">
       <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 pb-10 pt-4 md:px-6 lg:pt-8">
         <button
           type="button"
@@ -157,12 +157,12 @@ export default function ProjectWorkspace() {
           type="button"
           onClick={startProjectChat}
           className={cn(
-            'mt-6 flex w-full items-center gap-3 rounded-[26px] border border-border-medium bg-surface-primary px-3.5 py-3 text-left shadow-sm transition-colors',
-            'hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
+            'mt-6 flex w-full items-center gap-3 rounded-[26px] border border-border-medium bg-surface-secondary px-3.5 py-3 text-left shadow-sm transition-colors',
+            'hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
           )}
           aria-label={localize('com_ui_new_chat_in_project', { name: project.name })}
         >
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-secondary text-text-primary">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-tertiary text-text-primary">
             <Plus className="h-4 w-4" aria-hidden="true" />
           </span>
           <span className="min-w-0 flex-1 truncate text-text-secondary">
