@@ -43,6 +43,7 @@ jest.mock('@librechat/data-schemas', () => {
     getTenantId: () => tenantStorage.getStore()?.tenantId,
     getUserId: () => tenantStorage.getStore()?.userId,
     getRequestId: () => tenantStorage.getStore()?.requestId,
+    logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
     tenantStorage,
   };
 });
@@ -84,7 +85,7 @@ jest.mock('@librechat/api', () => {
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 const requireJwtAuth = require('../requireJwtAuth');
-const { getTenantId, getUserId } = require('@librechat/data-schemas');
+const { getTenantId, getUserId, logger } = require('@librechat/data-schemas');
 const { isEnabled, maybeRefreshCloudFrontAuthCookiesMiddleware } = require('@librechat/api');
 const passport = require('passport');
 
@@ -127,6 +128,10 @@ describe('requireJwtAuth tenant context chaining', () => {
     mockRegisteredStrategies = new Set(['jwt']);
     isEnabled.mockReturnValue(false);
     maybeRefreshCloudFrontAuthCookiesMiddleware.mockClear();
+    logger.debug.mockClear();
+    logger.info.mockClear();
+    logger.warn.mockClear();
+    logger.error.mockClear();
     passport.authenticate.mockClear();
     passport._strategy.mockClear();
     if (originalJwtSecret === undefined) {
@@ -206,6 +211,130 @@ describe('requireJwtAuth tenant context chaining', () => {
     expect(getTenantId()).toBeUndefined();
   });
 
+  it('logs OpenID JWT expiry when JWT fallback succeeds', () => {
+    isEnabled.mockReturnValue(true);
+    mockRegisteredStrategies.add('openidJwt');
+    const req = mockReq(undefined, {
+      requestId: 'req-expired-success',
+      method: 'GET',
+      path: '/api/messages',
+      headers: {
+        cookie: `token_provider=openid; openid_user_id=${signedOpenIdUserCookie('user-jwt')}`,
+      },
+      _mockStrategies: {
+        openidJwt: {
+          user: false,
+          info: { message: 'jwt expired', name: 'TokenExpiredError' },
+          status: 401,
+        },
+        jwt: { user: { id: 'user-jwt', tenantId: 'tenant-jwt', role: 'user' } },
+      },
+    });
+    const res = mockRes();
+    const next = jest.fn();
+
+    requireJwtAuth(req, res, next);
+
+    expect(next).toHaveBeenCalled();
+    expect(req.authStrategy).toBe('jwt');
+    expect(res.status).not.toHaveBeenCalled();
+    expect(logger.debug).toHaveBeenCalledWith(
+      '[requireJwtAuth] OpenID JWT auth failed; trying fallback',
+      expect.objectContaining({
+        request_id: 'req-expired-success',
+        method: 'GET',
+        path: '/api/messages',
+        token_provider: 'openid',
+        openid_reuse_enabled: true,
+        openid_jwt_available: true,
+        has_openid_reuse_user_id: true,
+        primary_strategy: 'openidJwt',
+        fallback_strategy: 'jwt',
+        fallback_attempted: true,
+        reason: 'jwt expired',
+        error_name: 'TokenExpiredError',
+        status: 401,
+      }),
+    );
+    expect(logger.debug).toHaveBeenCalledWith(
+      '[requireJwtAuth] JWT fallback succeeded after OpenID JWT failure',
+      expect.objectContaining({
+        request_id: 'req-expired-success',
+        auth_strategy: 'jwt',
+        primary_strategy: 'openidJwt',
+        fallback_strategy: 'jwt',
+        fallback_attempted: true,
+        fallback_succeeded: true,
+        primary_failure_reason: 'jwt expired',
+        reason: 'jwt expired',
+        error_name: 'TokenExpiredError',
+      }),
+    );
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it('logs OpenID JWT expiry when JWT fallback fails', () => {
+    isEnabled.mockReturnValue(true);
+    mockRegisteredStrategies.add('openidJwt');
+    const req = mockReq(undefined, {
+      id: 'req-expired-fail',
+      method: 'POST',
+      originalUrl: '/api/ask?access_token=hidden',
+      headers: {
+        cookie: `token_provider=openid; openid_user_id=${signedOpenIdUserCookie('user-jwt')}`,
+      },
+      _mockStrategies: {
+        openidJwt: {
+          user: false,
+          info: { message: 'jwt expired', name: 'TokenExpiredError' },
+          status: 401,
+        },
+        jwt: {
+          user: false,
+          info: { message: 'invalid signature', name: 'JsonWebTokenError' },
+          status: 401,
+        },
+      },
+    });
+    const res = mockRes();
+    const next = jest.fn();
+
+    requireJwtAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(logger.debug).toHaveBeenCalledWith(
+      '[requireJwtAuth] OpenID JWT auth failed; trying fallback',
+      expect.objectContaining({
+        request_id: 'req-expired-fail',
+        method: 'POST',
+        path: '/api/ask',
+        fallback_attempted: true,
+        reason: 'jwt expired',
+        error_name: 'TokenExpiredError',
+        status: 401,
+      }),
+    );
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[requireJwtAuth] Authentication failed after all strategies',
+      expect.objectContaining({
+        request_id: 'req-expired-fail',
+        method: 'POST',
+        path: '/api/ask',
+        token_provider: 'openid',
+        attempted_strategies: ['openidJwt', 'jwt'],
+        final_strategy: 'jwt',
+        primary_strategy: 'openidJwt',
+        fallback_strategy: 'jwt',
+        fallback_attempted: true,
+        fallback_succeeded: false,
+        reason: 'invalid signature',
+        error_name: 'JsonWebTokenError',
+        status: 401,
+      }),
+    );
+  });
+
   it('does not fall back to OpenID JWT for bearer-only reuse requests', () => {
     isEnabled.mockReturnValue(true);
     mockRegisteredStrategies.add('openidJwt');
@@ -260,6 +389,98 @@ describe('requireJwtAuth tenant context chaining', () => {
       req,
       res,
       expect.any(Function),
+    );
+  });
+
+  it('logs OpenID user-id mismatch when JWT fallback succeeds', () => {
+    isEnabled.mockReturnValue(true);
+    mockRegisteredStrategies.add('openidJwt');
+    const req = mockReq(undefined, {
+      requestId: 'req-mismatch-success',
+      method: 'GET',
+      path: '/api/auth/me',
+      headers: {
+        cookie: `token_provider=openid; openid_user_id=${signedOpenIdUserCookie('user-a')}`,
+      },
+      _mockStrategies: {
+        openidJwt: { user: { id: 'user-b', tenantId: 'tenant-openid', role: 'user' } },
+        jwt: { user: { id: 'user-a', tenantId: 'tenant-jwt', role: 'user' } },
+      },
+    });
+    const res = mockRes();
+    const next = jest.fn();
+
+    requireJwtAuth(req, res, next);
+
+    expect(next).toHaveBeenCalled();
+    expect(req.authStrategy).toBe('jwt');
+    expect(logger.debug).toHaveBeenCalledWith(
+      '[requireJwtAuth] OpenID JWT auth failed; trying fallback',
+      expect.objectContaining({
+        request_id: 'req-mismatch-success',
+        primary_strategy: 'openidJwt',
+        fallback_strategy: 'jwt',
+        fallback_attempted: true,
+        reason: 'openid user-id mismatch',
+        status: 401,
+      }),
+    );
+    expect(logger.debug).toHaveBeenCalledWith(
+      '[requireJwtAuth] JWT fallback succeeded after OpenID JWT failure',
+      expect.objectContaining({
+        request_id: 'req-mismatch-success',
+        auth_strategy: 'jwt',
+        fallback_attempted: true,
+        fallback_succeeded: true,
+        primary_failure_reason: 'openid user-id mismatch',
+        reason: 'openid user-id mismatch',
+      }),
+    );
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it('logs OpenID user-id mismatch when JWT fallback fails', () => {
+    isEnabled.mockReturnValue(true);
+    mockRegisteredStrategies.add('openidJwt');
+    const req = mockReq(undefined, {
+      requestId: 'req-mismatch-fail',
+      method: 'GET',
+      path: '/api/auth/me',
+      headers: {
+        cookie: `token_provider=openid; openid_user_id=${signedOpenIdUserCookie('user-a')}`,
+      },
+      _mockStrategies: {
+        openidJwt: { user: { id: 'user-b', tenantId: 'tenant-openid', role: 'user' } },
+        jwt: { user: false, info: { message: 'Unauthorized' }, status: 401 },
+      },
+    });
+    const res = mockRes();
+    const next = jest.fn();
+
+    requireJwtAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(logger.debug).toHaveBeenCalledWith(
+      '[requireJwtAuth] OpenID JWT auth failed; trying fallback',
+      expect.objectContaining({
+        request_id: 'req-mismatch-fail',
+        fallback_attempted: true,
+        reason: 'openid user-id mismatch',
+        status: 401,
+      }),
+    );
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[requireJwtAuth] Authentication failed after all strategies',
+      expect.objectContaining({
+        request_id: 'req-mismatch-fail',
+        attempted_strategies: ['openidJwt', 'jwt'],
+        final_strategy: 'jwt',
+        fallback_attempted: true,
+        fallback_succeeded: false,
+        reason: 'Unauthorized',
+        status: 401,
+      }),
     );
   });
 
