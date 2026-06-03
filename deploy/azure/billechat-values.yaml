@@ -93,11 +93,6 @@ librechat:
     LIMIT_CONCURRENT_MESSAGES: "true"
     CONCURRENT_MESSAGE_MAX: "2"
 
-    # OpSaaS telemetry (API key overridden via pipeline)
-    OPSAAS_INGEST_URL: "https://api.20.123.2.194.nip.io"
-    OPSAAS_API_KEY: "override-via-pipeline"
-    OPSAAS_SERVICE_NAME: "billechat-api"
-
   existingSecretName: ""
 
   configYamlContent: |
