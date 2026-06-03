@@ -195,9 +195,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
   const scrollMarginRef = useRef(0);
   const navRef = useRef<HTMLElement>(null);
   const draggingRef = useRef(false);
-  const dragStateRef = useRef<{ pointerId: number; startY: number; dragging: boolean } | null>(
-    null,
-  );
+  const dragCleanupRef = useRef<(() => void) | null>(null);
   const suppressClickRef = useRef(false);
 
   const getCurrentVisibleId = useCallback((): string | null => {
@@ -349,68 +347,64 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     [scrollToImmediate],
   );
 
-  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) {
-      return;
-    }
-    suppressClickRef.current = false;
-    dragStateRef.current = { pointerId: e.pointerId, startY: e.clientY, dragging: false };
-  }, []);
-
-  const handlePointerMove = useCallback(
+  const handlePointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
-      const state = dragStateRef.current;
-      if (!state || state.pointerId !== e.pointerId) {
+      if (e.button !== 0) {
         return;
       }
-      if (!state.dragging) {
-        if ((e.buttons & 1) === 0) {
-          dragStateRef.current = null;
+      dragCleanupRef.current?.();
+      suppressClickRef.current = false;
+      const state = { pointerId: e.pointerId, startY: e.clientY, dragging: false };
+
+      const finish = (wasDragging: boolean) => {
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onUp);
+        document.removeEventListener('pointercancel', onUp);
+        dragCleanupRef.current = null;
+        if (wasDragging) {
+          draggingRef.current = false;
+          suppressClickRef.current = true;
+          window.setTimeout(() => {
+            suppressClickRef.current = false;
+          }, 0);
+          scrollableRef.current?.dispatchEvent(new Event('scroll'));
+        }
+      };
+
+      function onMove(ev: PointerEvent) {
+        if (ev.pointerId !== state.pointerId) {
           return;
         }
-        if (Math.abs(e.clientY - state.startY) < DRAG_THRESHOLD) {
+        if (!state.dragging) {
+          if ((ev.buttons & 1) === 0) {
+            finish(false);
+            return;
+          }
+          if (Math.abs(ev.clientY - state.startY) < DRAG_THRESHOLD) {
+            return;
+          }
+          state.dragging = true;
+          draggingRef.current = true;
+        }
+        scrubTo(ev.clientY);
+      }
+
+      function onUp(ev: PointerEvent) {
+        if (ev.pointerId !== state.pointerId) {
           return;
         }
-        state.dragging = true;
-        draggingRef.current = true;
-        columnRef.current?.setPointerCapture?.(e.pointerId);
+        finish(state.dragging);
       }
-      scrubTo(e.clientY);
+
+      dragCleanupRef.current = () => finish(false);
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', onUp);
+      document.addEventListener('pointercancel', onUp);
     },
-    [scrubTo],
+    [scrubTo, scrollableRef],
   );
 
-  const endDrag = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      const state = dragStateRef.current;
-      if (!state || state.pointerId !== e.pointerId) {
-        return;
-      }
-      dragStateRef.current = null;
-      if (!state.dragging) {
-        return;
-      }
-      draggingRef.current = false;
-      suppressClickRef.current = true;
-      window.setTimeout(() => {
-        suppressClickRef.current = false;
-      }, 0);
-      const col = columnRef.current;
-      if (col?.hasPointerCapture?.(e.pointerId)) {
-        col.releasePointerCapture(e.pointerId);
-      }
-      scrollableRef.current?.dispatchEvent(new Event('scroll'));
-    },
-    [scrollableRef],
-  );
-
-  const handleLostPointerCapture = useCallback(() => {
-    if (!dragStateRef.current) {
-      return;
-    }
-    dragStateRef.current = null;
-    draggingRef.current = false;
-  }, []);
+  useEffect(() => () => dragCleanupRef.current?.(), []);
 
   useEffect(() => {
     refreshEntries();
@@ -825,10 +819,6 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       <div
         ref={columnRef}
         onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
-        onLostPointerCapture={handleLostPointerCapture}
         className="flex min-h-0 cursor-grab touch-none select-none flex-col items-center gap-1.5 overflow-y-auto active:cursor-grabbing [&::-webkit-scrollbar]:hidden"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >

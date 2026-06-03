@@ -712,23 +712,15 @@ describe('MessageNav', () => {
       );
       const result = renderNav(messages);
       const column = result.container.querySelector('nav > div') as HTMLDivElement;
-      column.setPointerCapture = jest.fn();
-      column.hasPointerCapture = jest.fn(() => true);
-      column.releasePointerCapture = jest.fn();
 
       const ribs = Array.from(column.querySelectorAll('[data-msg-id]')) as HTMLElement[];
       ribs.forEach((rib, i) => {
         rib.getBoundingClientRect = () =>
           ({ top: i * 10, bottom: (i + 1) * 10, height: 10 }) as DOMRect;
       });
-      return { ...result, column, ribs };
-    }
-
-    it('scrubs the conversation while dragging past the threshold', () => {
-      const { column, scrollable } = setupDraggableNav();
 
       let wrote = -1;
-      Object.defineProperty(scrollable, 'scrollTop', {
+      Object.defineProperty(result.scrollable, 'scrollTop', {
         get: () => 0,
         set: (v: number) => {
           wrote = v;
@@ -736,39 +728,69 @@ describe('MessageNav', () => {
         configurable: true,
       });
 
+      return { ...result, column, ribs, wrote: () => wrote };
+    }
+
+    it('scrubs the conversation while dragging past the threshold', () => {
+      const { column, wrote } = setupDraggableNav();
+
       act(() => {
         fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
-        fireEvent.pointerMove(column, { pointerId: 1, buttons: 1, clientY: 25 });
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 25 });
       });
 
-      expect(column.setPointerCapture).toHaveBeenCalledWith(1);
-      expect(wrote).toBeGreaterThanOrEqual(0);
+      expect(wrote()).toBeGreaterThanOrEqual(0);
     });
 
-    it('does not start a drag for movement under the threshold', () => {
-      const { column } = setupDraggableNav();
+    it('keeps tracking the drag after the pointer leaves the narrow column', () => {
+      const { column, wrote } = setupDraggableNav();
 
       act(() => {
         fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
-        fireEvent.pointerMove(column, { pointerId: 1, buttons: 1, clientY: 2 });
+        // pointer has moved off the column; the move bubbles to the document listener
+        fireEvent.pointerMove(document.body, { pointerId: 1, buttons: 1, clientY: 25 });
       });
 
-      expect(column.setPointerCapture).not.toHaveBeenCalled();
+      expect(wrote()).toBeGreaterThanOrEqual(0);
     });
 
-    it('does not start a drag from a later hover move when the button was released outside', () => {
-      const { column } = setupDraggableNav();
+    it('does not scrub for movement under the threshold', () => {
+      const { column, wrote } = setupDraggableNav();
 
       act(() => {
         fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
-        fireEvent.pointerMove(column, { pointerId: 1, buttons: 1, clientY: 2 });
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 2 });
       });
+
+      expect(wrote()).toBe(-1);
+    });
+
+    it('ignores pointer moves after the interaction ends', () => {
+      const { column, wrote } = setupDraggableNav();
 
       act(() => {
-        fireEvent.pointerMove(column, { pointerId: 1, buttons: 0, clientY: 40 });
+        fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
+        fireEvent.pointerUp(document, { pointerId: 1, clientY: 0 });
+      });
+      act(() => {
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 40 });
       });
 
-      expect(column.setPointerCapture).not.toHaveBeenCalled();
+      expect(wrote()).toBe(-1);
+    });
+
+    it('selects via the native click when a press does not become a drag', () => {
+      const { column, ribs } = setupDraggableNav();
+
+      act(() => {
+        fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
+        fireEvent.pointerUp(document, { pointerId: 1, clientY: 0 });
+      });
+      act(() => {
+        fireEvent.click(ribs[0]);
+      });
+
+      expect(document.activeElement).toBe(document.getElementById('m-0'));
     });
 
     it('suppresses the click that immediately follows a drag', () => {
@@ -776,8 +798,8 @@ describe('MessageNav', () => {
 
       act(() => {
         fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
-        fireEvent.pointerMove(column, { pointerId: 1, buttons: 1, clientY: 25 });
-        fireEvent.pointerUp(column, { pointerId: 1, clientY: 25 });
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 25 });
+        fireEvent.pointerUp(document, { pointerId: 1, clientY: 25 });
       });
 
       act(() => {
@@ -792,8 +814,8 @@ describe('MessageNav', () => {
 
       act(() => {
         fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
-        fireEvent.pointerMove(column, { pointerId: 1, buttons: 1, clientY: 25 });
-        fireEvent.pointerUp(column, { pointerId: 1, clientY: 25 });
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 25 });
+        fireEvent.pointerUp(document, { pointerId: 1, clientY: 25 });
         jest.advanceTimersByTime(1);
       });
 
