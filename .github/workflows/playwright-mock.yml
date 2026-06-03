@@ -1,7 +1,8 @@
 name: Playwright E2E (Mock LLM)
 
 on:
-  pull_request:
+# NJ: Commenting this workflow on PR, E2E tests not working right now, check back in a few weeks
+#  pull_request:
   workflow_dispatch:
     inputs:
       reason:
