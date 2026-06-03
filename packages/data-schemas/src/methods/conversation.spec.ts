@@ -191,6 +191,48 @@ describe('Conversation Operations', () => {
       expect(refreshedProject?.lastConversationId).toBe(firstConversationId);
     });
 
+    it('bulkSaveConvos keeps owned project ids and strips orphan ones', async () => {
+      const project = await ChatProject.create({
+        user: mockCtx.userId,
+        name: 'Bulk Project',
+        conversationCount: 0,
+        lastConversationAt: null,
+        lastConversationId: null,
+      });
+      const ownedId = project._id!.toString();
+      const orphanId = new mongoose.Types.ObjectId().toString();
+      const ownedConvoId = uuidv4();
+      const orphanConvoId = uuidv4();
+
+      await methods.bulkSaveConvos([
+        {
+          conversationId: ownedConvoId,
+          user: mockCtx.userId,
+          endpoint: EModelEndpoint.openAI,
+          chatProjectId: ownedId,
+        },
+        {
+          conversationId: orphanConvoId,
+          user: mockCtx.userId,
+          endpoint: EModelEndpoint.openAI,
+          chatProjectId: orphanId,
+        },
+      ]);
+
+      const ownedConvo = await Conversation.findOne({
+        conversationId: ownedConvoId,
+      }).lean<IConversation>();
+      const orphanConvo = await Conversation.findOne({
+        conversationId: orphanConvoId,
+      }).lean<IConversation>();
+
+      expect(ownedConvo?.chatProjectId).toBe(ownedId);
+      expect(orphanConvo?.chatProjectId == null).toBe(true);
+
+      const refreshedProject = await ChatProject.findById(project._id).lean<IChatProject>();
+      expect(refreshedProject?.conversationCount).toBe(1);
+    });
+
     it('should not create a conversation when noUpsert is true and conversation does not exist', async () => {
       const nonExistentId = uuidv4();
       const result = await saveConvo(

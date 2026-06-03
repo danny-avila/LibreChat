@@ -374,28 +374,68 @@ export function createConversationMethods(
   async function bulkSaveConvos(conversations: Array<Record<string, unknown>>) {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
-      const affectedProjectStats = new Map<string, { user: string; projectId: string }>();
-      const bulkOps = conversations.map((convo) => ({
-        updateOne: {
-          filter: {
-            conversationId: convo.conversationId,
-            user: convo.user,
-          },
-          update: convo,
-          upsert: true,
-          timestamps: false,
-        },
-      }));
+      const ChatProject = mongoose.models.ChatProject as Model<IChatProjectDocument>;
 
+      /**
+       * Validate project ownership before persisting (mirrors saveConvo). Bulk
+       * paths like import/duplicate/fork can carry a chatProjectId that does not
+       * belong to the user; persisting it would create an orphan assignment that
+       * is hidden from both the project and the unassigned filter.
+       */
+      const candidatePairs = new Map<string, { user: string; projectId: string }>();
       for (const convo of conversations) {
-        if (typeof convo.user !== 'string' || typeof convo.chatProjectId !== 'string') {
-          continue;
+        if (
+          typeof convo.user === 'string' &&
+          typeof convo.chatProjectId === 'string' &&
+          isValidObjectIdString(convo.chatProjectId)
+        ) {
+          candidatePairs.set(`${convo.user}:${convo.chatProjectId}`, {
+            user: convo.user,
+            projectId: convo.chatProjectId,
+          });
         }
-        affectedProjectStats.set(`${convo.user}:${convo.chatProjectId}`, {
-          user: convo.user,
-          projectId: convo.chatProjectId,
-        });
       }
+
+      const ownedProjects = new Set<string>();
+      if (candidatePairs.size > 0) {
+        const owned = await ChatProject.find({
+          $or: [...candidatePairs.values()].map(({ user, projectId }) => ({
+            _id: new mongoose.Types.ObjectId(projectId),
+            user,
+          })),
+        })
+          .select('_id user')
+          .lean<Array<{ _id: { toString: () => string }; user: string }>>();
+        for (const project of owned) {
+          ownedProjects.add(`${project.user}:${project._id.toString()}`);
+        }
+      }
+
+      const affectedProjectStats = new Map<string, { user: string; projectId: string }>();
+      const bulkOps = conversations.map((convo) => {
+        const sanitized = { ...convo };
+        if (typeof sanitized.user === 'string' && typeof sanitized.chatProjectId === 'string') {
+          if (ownedProjects.has(`${sanitized.user}:${sanitized.chatProjectId}`)) {
+            affectedProjectStats.set(`${sanitized.user}:${sanitized.chatProjectId}`, {
+              user: sanitized.user,
+              projectId: sanitized.chatProjectId,
+            });
+          } else {
+            sanitized.chatProjectId = null;
+          }
+        }
+        return {
+          updateOne: {
+            filter: {
+              conversationId: sanitized.conversationId,
+              user: sanitized.user,
+            },
+            update: sanitized,
+            upsert: true,
+            timestamps: false,
+          },
+        };
+      });
 
       const result = await tenantSafeBulkWrite(Conversation, bulkOps);
       await Promise.all(
