@@ -186,6 +186,7 @@ const MemoizedConvo = memo(
       prevProps.conversation.conversationId === nextProps.conversation.conversationId &&
       prevProps.conversation.title === nextProps.conversation.title &&
       prevProps.conversation.endpoint === nextProps.conversation.endpoint &&
+      prevProps.conversation.chatProjectId === nextProps.conversation.chatProjectId &&
       prevProps.isGenerating === nextProps.isGenerating
     );
   },

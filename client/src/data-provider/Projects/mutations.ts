@@ -49,12 +49,25 @@ export const useDeleteProjectMutation = (): UseMutationResult<
   unknown
 > => {
   const queryClient = useQueryClient();
+  const clearActiveConversationProject = useRecoilCallback(
+    ({ snapshot, set }) =>
+      async (projectId: string) => {
+        const conversation = await snapshot.getPromise(store.conversationByIndex(0));
+        if (conversation?.conversationId && conversation.chatProjectId === projectId) {
+          set(store.updateConversationSelector(conversation.conversationId), {
+            ...conversation,
+            chatProjectId: null,
+          });
+        }
+      },
+    [],
+  );
   return useMutation((projectId: string) => dataService.deleteProject(projectId), {
     onSuccess: (_result, projectId) => {
+      clearActiveConversationProject(projectId);
       queryClient.removeQueries([QueryKeys.project, projectId]);
       queryClient.invalidateQueries([QueryKeys.projects]);
       queryClient.invalidateQueries([QueryKeys.allConversations]);
-      queryClient.invalidateQueries([QueryKeys.projectConversations]);
     },
   });
 };
