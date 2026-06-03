@@ -159,9 +159,22 @@ function createCursorFilter(
     return null;
   }
 
-  return {
-    $or: [{ [sortBy]: { [op]: primary } }, { [sortBy]: primary, _id: { [op]: id } }],
-  } as FilterQuery<IChatProjectDocument>;
+  const branches: FilterQuery<IChatProjectDocument>[] = [
+    { [sortBy]: { [op]: primary } },
+    { [sortBy]: primary, _id: { [op]: id } },
+  ];
+
+  /**
+   * Projects with no conversations have `lastConversationAt: null`, which sorts
+   * after all dated projects in descending order. A `$lt: <date>` predicate does
+   * not match null, so once the cursor moves past the dated projects we must
+   * include the null bucket explicitly, otherwise empty projects never paginate.
+   */
+  if (sortBy === 'lastConversationAt' && sortDirection === 'desc' && primary instanceof Date) {
+    branches.push({ lastConversationAt: null } as FilterQuery<IChatProjectDocument>);
+  }
+
+  return { $or: branches } as FilterQuery<IChatProjectDocument>;
 }
 
 function visibleProjectConversationFilter(

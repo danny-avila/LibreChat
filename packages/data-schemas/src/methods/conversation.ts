@@ -328,10 +328,22 @@ export function createConversationMethods(
           Object.prototype.hasOwnProperty.call(convo, 'expiredAt') ||
           Object.prototype.hasOwnProperty.call(unsetFields, 'isTemporary') ||
           Object.prototype.hasOwnProperty.call(unsetFields, 'expiredAt');
+        /**
+         * Saving a conversation that is itself archived or retention-hidden (e.g.
+         * renaming or title generation on an archived project chat) must recompute
+         * stats rather than take the incremental fast path, otherwise the project's
+         * lastConversationAt/Id would point at a chat the project workspace hides.
+         */
+        const isConversationHidden =
+          conversation.isArchived === true ||
+          conversation.isTemporary === true ||
+          (conversation.expiredAt != null &&
+            new Date(conversation.expiredAt).getTime() <= Date.now());
         const shouldRefreshProjectStats =
           typeof update.isArchived === 'boolean' ||
           Object.prototype.hasOwnProperty.call(unsetFields, 'isArchived') ||
-          isRetentionVisibilityUpdate;
+          isRetentionVisibilityUpdate ||
+          isConversationHidden;
 
         if (shouldRefreshProjectStats) {
           await refreshChatProjectStatsForUser(mongoose, userId, conversation.chatProjectId);
