@@ -1,6 +1,7 @@
 import { useCallback, useId, useMemo, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { ArrowLeft, ArrowUpDown, Check, Folder, Plus } from 'lucide-react';
+import { useRecoilValue } from 'recoil';
+import { ArrowLeft, ArrowUpDown, Check, Folder, Plus, SlidersHorizontal } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import { Button, Spinner, DropdownPopup } from '@librechat/client';
@@ -10,10 +11,10 @@ import {
   useGetStartupConfig,
   useProjectQuery,
 } from '~/data-provider';
-import ModelSelector from '~/components/Chat/Menus/Endpoints/ModelSelector';
-import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
+import { useAgentsMap, useLocalize } from '~/hooks';
+import { cn, getModelSpec } from '~/utils';
 import ProjectChatList from './ProjectChatList';
+import store from '~/store';
 
 type ChatSortField = 'updatedAt' | 'createdAt';
 
@@ -41,7 +42,34 @@ export default function ProjectWorkspace() {
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
   const { data: startupConfig } = useGetStartupConfig();
   const { data: project, isLoading: isProjectLoading } = useProjectQuery(projectId);
+  const conversation = useRecoilValue(store.conversationByIndex(0));
+  const agentsMap = useAgentsMap({ isAuthenticated: true });
   const activeProjectId = project?._id;
+  const activeSettingsLabel = useMemo(() => {
+    const modelSpec = getModelSpec({ specName: conversation?.spec, startupConfig });
+    if (modelSpec?.label) {
+      return modelSpec.label;
+    }
+
+    if (conversation?.agent_id) {
+      return agentsMap?.[conversation.agent_id]?.name ?? conversation.agent_id;
+    }
+
+    const endpoint = conversation?.endpointType ?? conversation?.endpoint;
+    const model = conversation?.modelLabel ?? conversation?.model ?? conversation?.chatGptLabel;
+    return [endpoint, model].filter(Boolean).join(' · ') || localize('com_ui_model');
+  }, [
+    agentsMap,
+    conversation?.agent_id,
+    conversation?.chatGptLabel,
+    conversation?.endpoint,
+    conversation?.endpointType,
+    conversation?.model,
+    conversation?.modelLabel,
+    conversation?.spec,
+    localize,
+    startupConfig,
+  ]);
   const sortOptions = useMemo(
     () => [
       { value: 'updatedAt' as const, label: localize('com_ui_sort_updated') },
@@ -146,7 +174,13 @@ export default function ProjectWorkspace() {
               </h1>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <ModelSelector startupConfig={startupConfig} />
+              <div className="inline-flex max-w-full items-center gap-2 rounded-xl border border-border-light bg-presentation px-3 py-2 text-sm text-text-primary">
+                <SlidersHorizontal
+                  className="h-4 w-4 shrink-0 text-text-secondary"
+                  aria-hidden="true"
+                />
+                <span className="truncate">{activeSettingsLabel}</span>
+              </div>
             </div>
           </div>
 
