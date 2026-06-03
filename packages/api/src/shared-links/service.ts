@@ -184,7 +184,11 @@ export async function ensureLinkPermissions(
   const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
   const rawDoc = await SharedLink.findById(sharedLinkId).lean();
 
-  if (rawDoc && 'isPublic' in rawDoc) {
+  if (!rawDoc) {
+    return;
+  }
+
+  if ('isPublic' in rawDoc) {
     await autoMigrateLegacyLink(rawDoc as Parameters<typeof autoMigrateLegacyLink>[0]);
     return;
   }
