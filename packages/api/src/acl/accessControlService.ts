@@ -1,6 +1,6 @@
 import { Types } from 'mongoose';
 import { createMethods, logger } from '@librechat/data-schemas';
-import { AccessRoleIds, PrincipalType, ResourceType } from 'librechat-data-provider';
+import { AccessRoleIds, PermissionBits, PrincipalType, ResourceType } from 'librechat-data-provider';
 import type { AllMethods, IAclEntry } from '@librechat/data-schemas';
 import type { ClientSession, DeleteResult } from 'mongoose';
 
@@ -388,14 +388,12 @@ export class AccessControlService {
   }): Promise<boolean> {
     try {
       this.validateResourceType(resourceType);
-      const entry = await this._aclModel
-        .findOne({
-          principalType: PrincipalType.PUBLIC,
-          resourceType,
-          resourceId,
-        })
-        .lean();
-      return entry != null;
+      const publicIds = await this._dbMethods.findPublicResourceIds(
+        resourceType,
+        PermissionBits.VIEW,
+      );
+      const normalizedResourceId = resourceId.toString();
+      return publicIds.some((id) => id.toString() === normalizedResourceId);
     } catch (error) {
       if (error instanceof Error) {
         logger.error(`[PermissionService.hasPublicAccess] Error: ${error.message}`);
