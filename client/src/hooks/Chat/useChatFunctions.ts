@@ -40,6 +40,15 @@ const logChatRequest = (request: Record<string, unknown>) => {
   logger.log('=====================================');
 };
 
+const getRouteChatProjectId = () => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const projectId = new URLSearchParams(window.location.search).get('projectId');
+  return projectId != null && /^[a-f\d]{24}$/i.test(projectId) ? projectId : null;
+};
+
 export default function useChatFunctions({
   index = 0,
   files,
@@ -174,6 +183,12 @@ export default function useChatFunctions({
       });
     }
 
+    const routeChatProjectId =
+      conversationId === Constants.NEW_CONVO ? getRouteChatProjectId() : null;
+    const chatProjectId = conversation?.chatProjectId || routeChatProjectId || null;
+    const conversationForPayload =
+      chatProjectId != null ? { ...(conversation ?? {}), chatProjectId } : (conversation ?? {});
+
     // construct the query message
     // this is not a real messageId, it is used as placeholder before real messageId returned
     const intermediateId = overrideUserMessageId ?? v4();
@@ -193,9 +208,7 @@ export default function useChatFunctions({
       parentMessageId = Constants.NO_PARENT;
       currentMessages = [];
       conversationId = null;
-      const projectSearch = conversation?.chatProjectId
-        ? `?projectId=${encodeURIComponent(conversation.chatProjectId)}`
-        : '';
+      const projectSearch = chatProjectId ? `?projectId=${encodeURIComponent(chatProjectId)}` : '';
       navigate(`/c/new${projectSearch}`, { state: { focusChat: true } });
     }
 
@@ -224,7 +237,7 @@ export default function useChatFunctions({
     const convo = parseCompactConvo({
       endpoint: endpoint as EndpointSchemaKey,
       endpointType: endpointType as EndpointSchemaKey,
-      conversation: conversation ?? {},
+      conversation: conversationForPayload,
       defaultParamsEndpoint,
     });
 
@@ -237,6 +250,7 @@ export default function useChatFunctions({
         overrideUserMessageId,
       },
       convo,
+      chatProjectId ? { chatProjectId } : {},
     ) as TEndpointOption;
     if (endpoint !== EModelEndpoint.agents) {
       endpointOption.key = getExpiry();
@@ -374,6 +388,7 @@ export default function useChatFunctions({
     const submission: TSubmission = {
       conversation: {
         ...conversation,
+        ...(chatProjectId ? { chatProjectId } : {}),
         conversationId,
       },
       endpointOption,
