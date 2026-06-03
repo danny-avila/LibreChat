@@ -1,5 +1,11 @@
 import crypto from 'node:crypto';
-import { Constants, EToolResources, ResourceType, actionDelimiter } from 'librechat-data-provider';
+import {
+  Constants,
+  EToolResources,
+  ResourceType,
+  actionDelimiter,
+  isActionTool,
+} from 'librechat-data-provider';
 import type { AgentToolResources } from 'librechat-data-provider';
 import type { FilterQuery, Model, Types } from 'mongoose';
 import type { IAgent, IAclEntry } from '~/types';
@@ -46,7 +52,7 @@ function extractMCPServerNames(tools: string[] | undefined | null): string[] {
   }
   const serverNames = new Set<string>();
   for (const tool of tools) {
-    if (!tool || !tool.includes(mcp_delimiter)) {
+    if (!tool || !tool.includes(mcp_delimiter) || isActionTool(tool)) {
       continue;
     }
     const parts = tool.split(mcp_delimiter);
@@ -280,6 +286,50 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
   async function getAgents(searchParameter: FilterQuery<IAgent>): Promise<IAgent[]> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
     return await Agent.find(searchParameter).lean<IAgent[]>();
+  }
+
+  async function hasAgentWithMCPServerName({
+    agentIds,
+    serverName,
+  }: {
+    agentIds: Types.ObjectId[];
+    serverName: string;
+  }): Promise<boolean> {
+    if (agentIds.length === 0) {
+      return false;
+    }
+
+    const Agent = mongoose.models.Agent as Model<IAgent>;
+    const agent = await Agent.exists({
+      _id: { $in: agentIds },
+      mcpServerNames: serverName,
+    });
+
+    return agent !== null;
+  }
+
+  async function getMCPServerNamesByAgentIds(agentIds: Types.ObjectId[]): Promise<string[]> {
+    if (agentIds.length === 0) {
+      return [];
+    }
+
+    const Agent = mongoose.models.Agent as Model<IAgent>;
+    const agents = await Agent.find(
+      {
+        _id: { $in: agentIds },
+        mcpServerNames: { $exists: true, $not: { $size: 0 } },
+      },
+      { mcpServerNames: 1 },
+    ).lean<Array<Pick<IAgent, 'mcpServerNames'>>>();
+
+    const serverNames = new Set<string>();
+    for (const agent of agents) {
+      for (const serverName of agent.mcpServerNames ?? []) {
+        serverNames.add(serverName);
+      }
+    }
+
+    return Array.from(serverNames);
   }
 
   /**
@@ -641,12 +691,13 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
   }
 
   /**
-   * Get agents by accessible IDs with optional cursor-based pagination.
+   * Get agents by accessible IDs with cursor pagination. Defaults to a 100-page
+   * limit (max 1000); pass `limit: null` to opt out entirely.
    */
   async function getListAgentsByAccess({
     accessibleIds = [],
     otherParams = {},
-    limit = null,
+    limit = 100,
     after = null,
     includeSkillConfig = false,
   }: {
@@ -666,7 +717,7 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
     const Agent = mongoose.models.Agent as Model<IAgent>;
     const isPaginated = limit !== null && limit !== undefined;
     const normalizedLimit = isPaginated
-      ? Math.min(Math.max(1, parseInt(String(limit)) || 20), 100)
+      ? Math.min(Math.max(1, parseInt(String(limit)) || 20), 1000)
       : null;
 
     const baseQuery: Record<string, unknown> = {
@@ -823,6 +874,8 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
     getAgent,
     getAgents,
     createAgent,
+    hasAgentWithMCPServerName,
+    getMCPServerNamesByAgentIds,
     updateAgent,
     deleteAgent,
     deleteUserAgents,

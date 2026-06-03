@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const express = require('express');
 const {
   isEnabled,
@@ -5,8 +6,10 @@ const {
   grantCreationPermissions,
   ensureLinkPermissions,
   deleteSharedLinkWithCleanup,
+  isActiveExpirationDate,
+  getSharedLinkExpiration,
 } = require('@librechat/api');
-const { logger } = require('@librechat/data-schemas');
+const { logger, createTempChatExpirationDate } = require('@librechat/data-schemas');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
   getSharedMessages,
@@ -26,6 +29,22 @@ const checkSharedLinksAccess = generateCheckAccess({
   permissions: [Permissions.CREATE],
   getRoleByName,
 });
+
+const resolveSharedLinkExpiration = (req, conversationId) =>
+  getSharedLinkExpiration(
+    { req, conversationId },
+    {
+      getConvo: async (userId, sourceConversationId) => {
+        const Conversation = mongoose.models.Conversation;
+        return Conversation.findOne(
+          { conversationId: sourceConversationId, user: userId },
+          'isTemporary expiredAt',
+        ).lean();
+      },
+      createExpirationDate: createTempChatExpirationDate,
+      logger,
+    },
+  );
 
 /**
  * Shared messages
@@ -111,10 +130,21 @@ router.get('/link/:conversationId', requireJwtAuth, async (req, res) => {
 router.post('/:conversationId', requireJwtAuth, checkSharedLinksAccess, async (req, res) => {
   try {
     const { targetMessageId } = req.body;
+    const expiredAt = await resolveSharedLinkExpiration(req, req.params.conversationId);
+    if (expiredAt != null && !isActiveExpirationDate(expiredAt)) {
+      return res.status(404).end();
+    }
+
     const role = await getRoleByName(req.user.role);
     const sharedLinksPerms = role?.permissions?.[PermissionTypes.SHARED_LINKS] || {};
     const grantPublic = sharedLinksPerms[Permissions.SHARE_PUBLIC] === true;
-    const created = await createSharedLink(req.user.id, req.params.conversationId, targetMessageId);
+
+    const created = await createSharedLink(
+      req.user.id,
+      req.params.conversationId,
+      targetMessageId,
+      expiredAt,
+    );
     if (created) {
       await grantCreationPermissions(created._id, req.user.id, grantPublic);
       res.status(200).json(created);
@@ -134,7 +164,25 @@ router.patch('/:shareId', requireJwtAuth, checkSharedLinksAccess, async (req, re
       return res.status(400).json({ message: 'targetMessageId must be a string' });
     }
 
-    const updatedShare = await updateSharedLink(req.user.id, req.params.shareId, targetMessageId);
+    let expiredAt;
+    const SharedLink = mongoose.models.SharedLink;
+    const existing = await SharedLink.findOne(
+      { shareId: req.params.shareId, user: req.user.id },
+      'conversationId',
+    ).lean();
+    if (existing?.conversationId) {
+      expiredAt = await resolveSharedLinkExpiration(req, existing.conversationId);
+    }
+    if (expiredAt != null && !isActiveExpirationDate(expiredAt)) {
+      return res.status(404).end();
+    }
+
+    const updatedShare = await updateSharedLink(
+      req.user.id,
+      req.params.shareId,
+      targetMessageId,
+      expiredAt,
+    );
     if (updatedShare) {
       res.status(200).json(updatedShare);
     } else {

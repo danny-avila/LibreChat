@@ -21,19 +21,23 @@ import type {
 } from 'librechat-data-provider';
 import type { TResData, TFinalResData, ConvoGenerator } from '~/common';
 import type { InfiniteData } from '@tanstack/react-query';
-import type { SetterOrUpdater, Resetter } from 'recoil';
+import type { SetterOrUpdater } from 'recoil';
 import type { ConversationCursorData } from '~/utils';
 import {
   logger,
   setDraft,
   scrollToEnd,
   getAllContentText,
-  addConvoToAllQueries,
+  upsertConvoInAllQueries,
   updateConvoInAllQueries,
   removeConvoFromAllQueries,
   findConversationInInfinite,
 } from '~/utils';
-import { startupConfigKey, queueTitleGeneration } from '~/data-provider';
+import {
+  startupConfigKey,
+  queueTitleGeneration,
+  markTitleGenerationProcessed,
+} from '~/data-provider';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
@@ -53,6 +57,17 @@ type TSyncData = {
   conversationId: string;
 };
 
+type TTitleEvent = {
+  event: 'title';
+  data?: {
+    conversationId?: string;
+    title?: string;
+  };
+};
+
+const hasRealTitle = (title?: string | null): title is string =>
+  title != null && title !== '' && title !== 'New Chat';
+
 export type EventHandlerParams = {
   isAddedRequest?: boolean;
   setCompleted: React.Dispatch<React.SetStateAction<Set<unknown>>>;
@@ -62,7 +77,6 @@ export type EventHandlerParams = {
   setConversation?: SetterOrUpdater<TConversation | null>;
   newConversation?: ConvoGenerator;
   setShowStopButton: SetterOrUpdater<boolean>;
-  resetLatestMessage?: Resetter;
 };
 
 const createErrorMessage = ({
@@ -175,7 +189,6 @@ export default function useEventHandlers({
   setIsSubmitting,
   newConversation,
   setShowStopButton,
-  resetLatestMessage,
 }: EventHandlerParams) {
   const queryClient = useQueryClient();
   const { announcePolite } = useLiveAnnouncer();
@@ -323,14 +336,12 @@ export default function useEventHandlers({
       const { initialResponse, messages: _messages, userMessage } = submission;
       const messages = _messages.filter((msg) => msg.messageId !== userMessage.messageId);
 
-      setMessages([
-        ...messages,
-        requestMessage,
-        {
-          ...initialResponse,
-          ...responseMessage,
-        },
-      ]);
+      const nextResponseMessage = {
+        ...initialResponse,
+        ...responseMessage,
+      };
+
+      setMessages([...messages, requestMessage, nextResponseMessage]);
 
       announcePolite({
         message: 'start',
@@ -358,7 +369,7 @@ export default function useEventHandlers({
         });
 
         if (requestMessage.parentMessageId === Constants.NO_PARENT) {
-          addConvoToAllQueries(queryClient, update);
+          upsertConvoInAllQueries(queryClient, update);
         } else {
           updateConvoInAllQueries(queryClient, update.conversationId!, (_c) => update, true);
         }
@@ -375,20 +386,8 @@ export default function useEventHandlers({
       }
 
       setShowStopButton(true);
-      if (resetLatestMessage) {
-        logger.log('latest_message', 'syncHandler: resetting latest message');
-        resetLatestMessage();
-      }
     },
-    [
-      queryClient,
-      setMessages,
-      isAddedRequest,
-      announcePolite,
-      setConversation,
-      setShowStopButton,
-      resetLatestMessage,
-    ],
+    [queryClient, setMessages, isAddedRequest, announcePolite, setConversation, setShowStopButton],
   );
 
   const createdHandler = useCallback(
@@ -410,6 +409,7 @@ export default function useEventHandlers({
         ...submission.initialResponse,
         parentMessageId: userMessage.messageId,
         messageId: userMessage.messageId + '_',
+        conversationId: userMessage.conversationId ?? submission.initialResponse.conversationId,
       };
       if (isRegenerate) {
         setMessages([...messages, initialResponse]);
@@ -444,7 +444,7 @@ export default function useEventHandlers({
 
         if (!isTemporary) {
           if (parentMessageId === Constants.NO_PARENT) {
-            addConvoToAllQueries(queryClient, update);
+            upsertConvoInAllQueries(queryClient, update);
           } else {
             updateConvoInAllQueries(queryClient, update.conversationId!, (_c) => update, true);
           }
@@ -469,10 +469,6 @@ export default function useEventHandlers({
         });
       }
 
-      if (resetLatestMessage) {
-        logger.log('latest_message', 'createdHandler: resetting latest message');
-        resetLatestMessage();
-      }
       scrollToEnd(() => setAbortScroll(false));
     },
     [
@@ -482,9 +478,44 @@ export default function useEventHandlers({
       isAddedRequest,
       announcePolite,
       setConversation,
-      resetLatestMessage,
       applyAgentTemplate,
     ],
+  );
+
+  const titleHandler = useCallback(
+    (event: TTitleEvent) => {
+      const { conversationId, title } = event.data ?? {};
+      if (!conversationId || !hasRealTitle(title)) {
+        return;
+      }
+
+      queryClient.setQueryData<TConversation>([QueryKeys.conversation, conversationId], (convo) =>
+        convo ? { ...convo, title } : convo,
+      );
+      updateConvoInAllQueries(queryClient, conversationId, (convo) => ({ ...convo, title }));
+      markTitleGenerationProcessed(conversationId);
+
+      if (location.pathname.includes(conversationId)) {
+        document.title = title;
+      }
+
+      if (setConversation && !isAddedRequest) {
+        setConversation((prevState) => {
+          if (!prevState) {
+            return prevState;
+          }
+          if (prevState.conversationId && prevState.conversationId !== conversationId) {
+            return prevState;
+          }
+          return {
+            ...prevState,
+            conversationId,
+            title,
+          };
+        });
+      }
+    },
+    [queryClient, location.pathname, setConversation, isAddedRequest],
   );
 
   const finalHandler = useCallback(
@@ -496,6 +527,7 @@ export default function useEventHandlers({
         isRegenerate = false,
         isTemporary: _isTemporary = false,
       } = submission;
+      const serverConversation = conversation as TConversation;
 
       try {
         // Handle early abort - aborted during tool loading before any messages saved
@@ -542,7 +574,8 @@ export default function useEventHandlers({
 
         const isNewConvo = conversation.conversationId !== submissionConvo.conversationId;
 
-        if (isNewConvo && conversation.conversationId) {
+        // Skip temporary conversations — the server never generates titles for them.
+        if (isNewConvo && conversation.conversationId && !_isTemporary) {
           queueTitleGeneration(conversation.conversationId);
         }
 
@@ -619,6 +652,28 @@ export default function useEventHandlers({
           removeConvoFromAllQueries(queryClient, submissionConvo.conversationId);
         }
 
+        /** A title applied locally (e.g. an immediate-mode title fetched while the
+         *  response was still streaming) must survive the final event, whose
+         *  `conversation` was built before the title was saved and so carries no
+         *  title yet — otherwise the chat reverts to "New Chat" until reload.
+         *  Skip preservation for a stopped (unfinished) turn: the server cancels
+         *  and discards that title, so the local one would diverge from server state. */
+        const titlePreservable = responseMessage?.unfinished !== true;
+        const finalConversationId = conversation.conversationId;
+        const shouldRollbackStreamedTitle =
+          !titlePreservable && finalConversationId && !hasRealTitle(serverConversation.title);
+
+        if (shouldRollbackStreamedTitle && finalConversationId) {
+          updateConvoInAllQueries(queryClient, finalConversationId, (convo) => ({
+            ...convo,
+            title: null,
+          }));
+          if (location.pathname.includes(finalConversationId)) {
+            const startupConfig = queryClient.getQueryData<TStartupConfig>(startupConfigKey(true));
+            document.title = startupConfig?.appTitle ?? 'LibreChat';
+          }
+        }
+
         if (setConversation && isAddedRequest !== true) {
           setConversation((prevState) => {
             const update = {
@@ -628,14 +683,28 @@ export default function useEventHandlers({
             if (prevState?.model != null && prevState.model !== submissionConvo.model) {
               update.model = prevState.model;
             }
-            const cachedConvo = queryClient.getQueryData<TConversation>([
-              QueryKeys.conversation,
-              conversation.conversationId,
-            ]);
-            if (!cachedConvo) {
-              queryClient.setQueryData(
+            const prevTitle = prevState?.title;
+            if (titlePreservable && !hasRealTitle(conversation.title) && hasRealTitle(prevTitle)) {
+              update.title = prevTitle;
+            }
+            if (conversation.conversationId) {
+              queryClient.setQueryData<TConversation>(
                 [QueryKeys.conversation, conversation.conversationId],
-                update,
+                (cachedConvo) => {
+                  const merged = {
+                    ...cachedConvo,
+                    ...serverConversation,
+                  } as TConversation;
+                  const cachedTitle = cachedConvo?.title;
+                  if (
+                    titlePreservable &&
+                    !hasRealTitle(serverConversation.title) &&
+                    hasRealTitle(cachedTitle)
+                  ) {
+                    merged.title = cachedTitle;
+                  }
+                  return merged;
+                },
               );
             }
             return update;
@@ -909,6 +978,7 @@ export default function useEventHandlers({
     messageHandler,
     contentHandler,
     createdHandler,
+    titleHandler,
     syncStepMessage,
     attachmentHandler,
     abortConversation,

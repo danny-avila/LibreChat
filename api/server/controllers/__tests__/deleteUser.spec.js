@@ -130,7 +130,7 @@ function stubDeletionMocks() {
   mockDeleteAllSharedLinks.mockResolvedValue();
   mockDeleteAllSharedLinksWithCleanup.mockResolvedValue({ deletedCount: 0 });
   mockGetFiles.mockResolvedValue([]);
-  mockProcessDeleteRequest.mockResolvedValue();
+  mockProcessDeleteRequest.mockResolvedValue({ deletedFileIds: [], failedFileIds: [] });
   mockDeleteFiles.mockResolvedValue();
   mockDeleteToolCalls.mockResolvedValue();
   mockDeleteUserAgents.mockResolvedValue();

@@ -20,6 +20,7 @@ const {
   buildImageToolContext,
   buildOAuthToolCallName,
   buildToolClassification,
+  getMissingCustomUserVars,
   buildWebSearchDynamicContext,
   getCodeApiAuthHeaders,
 } = require('@librechat/api');
@@ -62,12 +63,12 @@ const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/pro
 const { manifestToolMap, toolkits } = require('~/app/clients/tools/manifest');
 const { createOnSearchResults } = require('~/server/services/Tools/search');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
-const { resolveConfigServers } = require('~/server/services/MCP');
+const { createMCPPermissionContext, resolveConfigServers } = require('~/server/services/MCP');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
 const { redactMessage } = require('~/config/parsers');
 const { findPluginAuthsByKeys } = require('~/models');
-const { getFlowStateManager } = require('~/config');
+const { getFlowStateManager, getMCPServersRegistry } = require('~/config');
 const { getLogStores } = require('~/cache');
 
 const domainSeparatorRegex = new RegExp(actionDomainSeparator, 'g');
@@ -550,6 +551,9 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
   const codeExecutionEnabled =
     agent.tools?.includes(Tools.execute_code) === true &&
     enabledCapabilities.has(AgentCapabilities.execute_code);
+  const hasMCPTools = agent.tools?.some((tool) => tool?.includes(Constants.mcp_delimiter));
+  const mcpPermissionContext = createMCPPermissionContext(req);
+  const canUseMCP = hasMCPTools ? await mcpPermissionContext.canUseServers(req.user) : true;
 
   const filteredTools = agent.tools?.filter((tool) => {
     if (tool === Tools.file_search) {
@@ -564,6 +568,9 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     if (isActionTool(tool)) {
       return actionsEnabled;
     }
+    if (tool?.includes(Constants.mcp_delimiter)) {
+      return areToolsEnabled && canUseMCP;
+    }
     if (!areToolsEnabled) {
       return false;
     }
@@ -576,9 +583,9 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
   /** @type {Record<string, Record<string, string>>} */
   let userMCPAuthMap;
-  if (agent.tools?.some((t) => t.includes(Constants.mcp_delimiter))) {
+  if (filteredTools?.some((t) => t.includes(Constants.mcp_delimiter))) {
     userMCPAuthMap = await getUserMCPAuthMap({
-      tools: agent.tools,
+      tools: filteredTools,
       userId: req.user.id,
       findPluginAuthsByKeys,
     });
@@ -638,6 +645,38 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
   };
 
   const getOrFetchMCPServerTools = async (userId, serverName) => {
+    let serverConfig;
+    try {
+      serverConfig =
+        configServers?.[serverName] ??
+        (await getMCPServersRegistry().getServerConfig(serverName, userId, configServers));
+    } catch (err) {
+      logger.warn(
+        `[Tool Definitions] MCP registry unavailable while resolving '${serverName}': ${
+          err?.message ?? err
+        }. Skipping MCP tool exposure for this lookup.`,
+      );
+      return null;
+    }
+
+    if (!serverConfig) {
+      logger.warn(
+        `[Tool Definitions] Skipping MCP server '${serverName}': no server config found (server may have been removed).`,
+      );
+      return null;
+    }
+
+    const customUserVars = userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
+    const missingUserVars = getMissingCustomUserVars(serverConfig, customUserVars);
+    if (missingUserVars.length > 0) {
+      logger.warn(
+        `[Tool Definitions] Skipping MCP server '${serverName}': required user-provided variable(s) not set: ${missingUserVars.join(
+          ', ',
+        )}. Tools will not be exposed until the user configures them.`,
+      );
+      return null;
+    }
+
     const cached = await getMCPServerTools(userId, serverName);
     if (cached) {
       return cached;
@@ -950,6 +989,9 @@ async function loadAgentTools({
   };
   const areToolsEnabled = checkCapability(AgentCapabilities.tools);
   const actionsEnabled = checkCapability(AgentCapabilities.actions);
+  const hasMCPTools = agent.tools?.some((tool) => tool?.includes(Constants.mcp_delimiter));
+  const mcpPermissionContext = createMCPPermissionContext(req);
+  const canUseMCP = hasMCPTools ? await mcpPermissionContext.canUseServers(req.user) : true;
 
   let includesWebSearch = false;
   const _agentTools = agent.tools?.filter((tool) => {
@@ -962,6 +1004,8 @@ async function loadAgentTools({
       return includesWebSearch;
     } else if (isActionTool(tool)) {
       return actionsEnabled;
+    } else if (tool?.includes(Constants.mcp_delimiter)) {
+      return areToolsEnabled && canUseMCP;
     } else if (!areToolsEnabled) {
       return false;
     }
@@ -979,9 +1023,9 @@ async function loadAgentTools({
 
   /** @type {Record<string, Record<string, string>>} */
   let userMCPAuthMap;
-  if (agent.tools?.some((t) => t.includes(Constants.mcp_delimiter))) {
+  if (_agentTools?.some((t) => t.includes(Constants.mcp_delimiter))) {
     userMCPAuthMap = await getUserMCPAuthMap({
-      tools: agent.tools,
+      tools: _agentTools,
       userId: req.user.id,
       findPluginAuthsByKeys,
     });
@@ -1002,6 +1046,7 @@ async function loadAgentTools({
       processFileURL,
       uploadImageBuffer,
       returnMetadata: true,
+      mcpPermissionContext,
       [Tools.web_search]: webSearchCallbacks,
     },
     webSearch: appConfig.webSearch,

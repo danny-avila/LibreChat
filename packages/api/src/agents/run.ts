@@ -26,6 +26,7 @@ import type {
   Agent,
   AgentModelParameters,
   AgentSubagentsConfig,
+  ReasoningResponseKey,
   SummarizationConfig,
 } from 'librechat-data-provider';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
@@ -212,6 +213,8 @@ const customProviders = new Set([
   KnownEndpoints.ollama,
 ]);
 
+type AgentReasoningKey = 'reasoning_content' | 'reasoning';
+
 function includesOpenRouter(value?: string | null): boolean {
   return typeof value === 'string' && value.toLowerCase().includes(KnownEndpoints.openrouter);
 }
@@ -220,8 +223,13 @@ export function getReasoningKey(
   provider: Providers,
   llmConfig: t.RunLLMConfig,
   agentEndpoint?: string | null,
-): 'reasoning_content' | 'reasoning' {
-  let reasoningKey: 'reasoning_content' | 'reasoning' = 'reasoning_content';
+  customReasoningKey?: ReasoningResponseKey,
+): AgentReasoningKey {
+  if (customReasoningKey) {
+    return customReasoningKey as AgentReasoningKey;
+  }
+
+  let reasoningKey: AgentReasoningKey = 'reasoning_content';
   if (provider === Providers.GOOGLE) {
     reasoningKey = 'reasoning';
   } else if (
@@ -236,6 +244,38 @@ export function getReasoningKey(
     reasoningKey = 'reasoning';
   }
   return reasoningKey;
+}
+
+const DEEPSEEK_MODEL_PATTERN = /^deepseek(?:[-/]|$)/i;
+const OPENROUTER_LATEST_ROUTING_PREFIX = /^~/;
+
+function matchesDeepSeekModel(model?: string | null): boolean {
+  if (typeof model !== 'string' || model.length === 0) {
+    return false;
+  }
+  return DEEPSEEK_MODEL_PATTERN.test(model.replace(OPENROUTER_LATEST_ROUTING_PREFIX, ''));
+}
+
+/**
+ * Whether the (provider, model) pair targets DeepSeek's thinking-mode
+ * tool-calling contract, which requires `reasoning_content` to be replayed
+ * on every prior assistant message that emitted `tool_calls`.
+ * @see https://api-docs.deepseek.com/guides/thinking_mode#tool-calls
+ */
+export function isDeepSeekReasoningProvider(
+  provider: string | Providers | undefined | null,
+  model?: string | null,
+): boolean {
+  if (typeof provider === 'string' && provider.length > 0) {
+    const normalized = provider.toLowerCase();
+    if (normalized === Providers.DEEPSEEK) {
+      return true;
+    }
+    if (normalized === Providers.OPENROUTER) {
+      return matchesDeepSeekModel(model);
+    }
+  }
+  return matchesDeepSeekModel(model);
 }
 
 type RunAgent = Omit<Agent, 'tools'> & {
@@ -261,6 +301,8 @@ type RunAgent = Omit<Agent, 'tools'> & {
   codeEnvAvailable?: boolean;
   /** Optional per-agent summarization overrides */
   summarization?: SummarizationConfig;
+  /** Response field to read model reasoning from for custom OpenAI-compatible endpoints. */
+  reasoningKey?: ReasoningResponseKey;
   /**
    * Maximum characters allowed in a single tool result before truncation.
    * Overrides the default computed from maxContextTokens.
@@ -804,6 +846,10 @@ export async function createRun({
     );
 
     const modelParameters = normalizeAgentModelParameters(agent.model_parameters);
+    const hasExplicitStreamUsage = Object.prototype.hasOwnProperty.call(
+      modelParameters ?? {},
+      'streamUsage',
+    );
     const llmConfig = Object.assign(
       {
         provider,
@@ -847,7 +893,9 @@ export async function createRun({
       customProviders.has(agent.provider) ||
       (agent.provider === Providers.OPENAI && agent.endpoint !== agent.provider)
     ) {
-      llmConfig.streamUsage = false;
+      if (!hasExplicitStreamUsage) {
+        llmConfig.streamUsage = false;
+      }
       llmConfig.usage = true;
     }
 
@@ -908,7 +956,7 @@ export async function createRun({
       agent.maxContextTokens,
     );
 
-    const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint);
+    const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint, agent.reasoningKey);
     return {
       provider,
       reasoningKey,
@@ -987,9 +1035,10 @@ export async function createRun({
     graphConfig,
     tokenCounter,
     customHandlers,
-    indexTokenCountMap,
     initialSessions,
     calibrationRatio,
+    indexTokenCountMap,
+    eagerEventToolExecution: { enabled: true },
     ...(enableToolOutputReferences && {
       toolOutputReferences: { enabled: true },
     }),

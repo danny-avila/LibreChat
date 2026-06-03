@@ -9,6 +9,7 @@ export interface ISharedLink {
   messages?: Types.ObjectId[];
   shareId?: string;
   targetMessageId?: string;
+  expiredAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
 }

@@ -98,6 +98,7 @@ const defaultRolesSchema = z.object({
         [Permissions.CREATE]: z.boolean().default(true),
         [Permissions.SHARE]: z.boolean().default(true),
         [Permissions.SHARE_PUBLIC]: z.boolean().default(true),
+        [Permissions.CONFIGURE_OBO]: z.boolean().default(true),
       }),
       [PermissionTypes.REMOTE_AGENTS]: remoteAgentsPermissionsSchema.extend({
         [Permissions.USE]: z.boolean().default(true),
@@ -191,6 +192,7 @@ export const roleDefaults = defaultRolesSchema.parse({
         [Permissions.CREATE]: true,
         [Permissions.SHARE]: true,
         [Permissions.SHARE_PUBLIC]: true,
+        [Permissions.CONFIGURE_OBO]: true,
       },
       [PermissionTypes.REMOTE_AGENTS]: {
         [Permissions.USE]: true,
@@ -247,6 +249,7 @@ export const roleDefaults = defaultRolesSchema.parse({
         [Permissions.CREATE]: false,
         [Permissions.SHARE]: false,
         [Permissions.SHARE_PUBLIC]: false,
+        [Permissions.CONFIGURE_OBO]: false,
       },
       [PermissionTypes.REMOTE_AGENTS]: {
         [Permissions.USE]: false,

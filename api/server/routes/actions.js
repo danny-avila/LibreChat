@@ -107,6 +107,7 @@ router.get('/:action_id/oauth/callback', async (req, res) => {
         client_url: flowState.metadata.client_url,
         redirect_uri: flowState.metadata.redirect_uri,
         token_exchange_method: flowState.metadata.token_exchange_method,
+        allowedAddresses: flowState.metadata.allowedAddresses,
         /** Encrypted values */
         encrypted_oauth_client_id: flowState.metadata.encrypted_oauth_client_id,
         encrypted_oauth_client_secret: flowState.metadata.encrypted_oauth_client_secret,

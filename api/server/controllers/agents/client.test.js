@@ -13,6 +13,8 @@ jest.mock('@librechat/agents', () => ({
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   checkAccess: jest.fn(),
+  countFormattedMessageTokens: jest.fn(() => 42),
+  countTokens: jest.fn((text) => Math.ceil(String(text ?? '').length / 4)),
   initializeAgent: jest.fn(),
   createMemoryProcessor: jest.fn(),
   isMemoryAgentEnabled: jest.fn((config) => {
@@ -124,6 +126,52 @@ describe('AgentClient - titleConvo', () => {
       await expect(
         client.titleConvo({ text: 'Test', abortController: new AbortController() }),
       ).rejects.toThrow('Run not initialized');
+    });
+
+    it('waits for the run in immediate mode instead of throwing', async () => {
+      client.run = null;
+      const abortController = new AbortController();
+
+      const titlePromise = client.titleConvo({ text: 'Test', abortController, immediate: true });
+
+      // Simulate `chatCompletion` assigning the run (client.js: `this.run = run`).
+      client.run = mockRun;
+      client._resolveRun(mockRun);
+
+      await titlePromise;
+      expect(mockRun.generateTitle).toHaveBeenCalled();
+    });
+
+    it('passes empty contentParts in immediate mode (title from the user input only)', async () => {
+      client.contentParts = [{ type: 'text', text: 'Streaming response so far' }];
+      const abortController = new AbortController();
+
+      await client.titleConvo({ text: 'Hello there', abortController, immediate: true });
+
+      const call = mockRun.generateTitle.mock.calls[0][0];
+      expect(call.contentParts).toEqual([]);
+      expect(call.inputText).toBe('Hello there');
+    });
+
+    it('uses live contentParts in non-immediate (final) mode', async () => {
+      client.contentParts = [{ type: 'text', text: 'Full response' }];
+      const abortController = new AbortController();
+
+      await client.titleConvo({ text: 'Hello there', abortController });
+
+      const call = mockRun.generateTitle.mock.calls[0][0];
+      expect(call.contentParts).toEqual([{ type: 'text', text: 'Full response' }]);
+    });
+
+    it('rejects promptly when aborted before the run initializes in immediate mode', async () => {
+      client.run = null;
+      const abortController = new AbortController();
+      abortController.abort();
+
+      await expect(
+        client.titleConvo({ text: 'Test', abortController, immediate: true }),
+      ).rejects.toThrow('Aborted before run initialization');
+      expect(mockRun.generateTitle).not.toHaveBeenCalled();
     });
 
     it('should use titlePrompt from endpoint config', async () => {
@@ -1426,6 +1474,183 @@ describe('AgentClient - titleConvo', () => {
       // Should still have base instructions without MCP content (from agent config, not buildOptions)
       expect(client.options.agent.instructions).toContain('Base agent instructions');
       expect(client.options.agent.instructions).not.toContain('[object Promise]');
+    });
+  });
+
+  describe('buildMessages with request and agent-scoped context attachments', () => {
+    let client;
+    let mockReq;
+    let mockRes;
+    let mockAgent;
+
+    const makeTextFile = (file_id, filename, text) => ({
+      user: 'user-123',
+      file_id,
+      filename,
+      filepath: `/uploads/${filename}`,
+      object: 'file',
+      type: 'text/plain',
+      bytes: text.length,
+      embedded: false,
+      usage: 0,
+      source: 'text',
+      text,
+    });
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockFormatInstructions.mockResolvedValue('');
+
+      mockAgent = {
+        id: 'primary-agent',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        instructions: 'Primary instructions',
+        model_parameters: {
+          model: 'gpt-4',
+        },
+        tools: [],
+      };
+
+      mockReq = {
+        user: {
+          id: 'user-123',
+          personalization: {
+            memories: true,
+          },
+        },
+        body: {
+          endpoint: EModelEndpoint.openAI,
+          fileTokenLimit: 1000,
+        },
+        config: {
+          memory: {
+            disabled: true,
+          },
+        },
+      };
+      mockRes = {};
+
+      client = new AgentClient({
+        req: mockReq,
+        res: mockRes,
+        agent: mockAgent,
+        endpoint: EModelEndpoint.agents,
+      });
+      client.conversationId = 'convo-123';
+      client.responseMessageId = 'response-123';
+      client.shouldSummarize = false;
+      client.maxContextTokens = 4096;
+      client.useMemory = jest.fn().mockResolvedValue(undefined);
+    });
+
+    it("applies shared request context plus each agent's own context docs only", async () => {
+      const requestFile = makeTextFile('request-file', 'request.txt', 'Shared request context');
+      const primaryContext = makeTextFile(
+        'primary-context',
+        'primary.txt',
+        'Primary private context',
+      );
+      const handoffContext = makeTextFile(
+        'handoff-context',
+        'handoff.txt',
+        'Handoff private context',
+      );
+      const handoffAgent = {
+        id: 'handoff-agent',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        instructions: 'Handoff instructions',
+        model_parameters: {
+          model: 'gpt-4',
+        },
+        tools: [],
+      };
+
+      client.options.attachments = [requestFile];
+      client.options.agentContextAttachmentsByAgentId = new Map([
+        ['primary-agent', [primaryContext]],
+        ['handoff-agent', [handoffContext]],
+      ]);
+      client.agentConfigs = new Map([['handoff-agent', handoffAgent]]);
+
+      await client.buildMessages(
+        [
+          {
+            messageId: 'msg-1',
+            parentMessageId: null,
+            sender: 'User',
+            text: 'Use the available context.',
+            isCreatedByUser: true,
+          },
+        ],
+        'msg-1',
+        {},
+      );
+
+      expect(mockAgent.additional_instructions).toContain('Shared request context');
+      expect(mockAgent.additional_instructions).toContain('Primary private context');
+      expect(mockAgent.additional_instructions).not.toContain('Handoff private context');
+
+      expect(handoffAgent.additional_instructions).toContain('Shared request context');
+      expect(handoffAgent.additional_instructions).toContain('Handoff private context');
+      expect(handoffAgent.additional_instructions).not.toContain('Primary private context');
+    });
+
+    it('does not duplicate a file that is both request context and scoped context', async () => {
+      const sharedFile = makeTextFile('shared-file', 'shared.txt', 'Shared duplicate context');
+
+      client.options.attachments = [sharedFile];
+      client.options.agentContextAttachmentsByAgentId = new Map([['primary-agent', [sharedFile]]]);
+      client.agentConfigs = new Map();
+
+      await client.buildMessages(
+        [
+          {
+            messageId: 'msg-1',
+            parentMessageId: null,
+            sender: 'User',
+            text: 'Use the available context.',
+            isCreatedByUser: true,
+          },
+        ],
+        'msg-1',
+        {},
+      );
+
+      const occurrences = (
+        mockAgent.additional_instructions.match(/Shared duplicate context/g) ?? []
+      ).length;
+      expect(occurrences).toBe(1);
+    });
+
+    it('keeps direct chats with context-doc agents working without request attachments', async () => {
+      const primaryContext = makeTextFile(
+        'primary-context',
+        'primary.txt',
+        'Direct primary context',
+      );
+
+      client.options.agentContextAttachmentsByAgentId = new Map([
+        ['primary-agent', [primaryContext]],
+      ]);
+      client.agentConfigs = new Map();
+
+      await client.buildMessages(
+        [
+          {
+            messageId: 'msg-1',
+            parentMessageId: null,
+            sender: 'User',
+            text: 'Answer from your context.',
+            isCreatedByUser: true,
+          },
+        ],
+        'msg-1',
+        {},
+      );
+
+      expect(mockAgent.additional_instructions).toContain('Direct primary context');
     });
   });
 

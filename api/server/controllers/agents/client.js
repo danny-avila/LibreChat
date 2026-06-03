@@ -12,6 +12,7 @@ const {
   resolveHeaders,
   createSafeUser,
   initializeAgent,
+  countTokens,
   getBalanceConfig,
   omitTitleOptions,
   getProviderConfig,
@@ -20,6 +21,7 @@ const {
   applyContextToAgent,
   isMemoryAgentEnabled,
   recordCollectedUsage,
+  isDeepSeekReasoningProvider,
   GenerationJobManager,
   getTransactionsConfig,
   resolveRecursionLimit,
@@ -31,6 +33,8 @@ const {
   hydrateMissingIndexTokenCounts,
   injectSkillPrimes,
   isSkillPrimeMessage,
+  collectFileIds,
+  buildAgentScopedContext,
   buildSkillPrimeContentParts,
   buildInitialToolSessions,
 } = require('@librechat/api');
@@ -77,6 +81,14 @@ class AgentClient extends BaseClient {
 
     /** @type {AgentRun} */
     this.run;
+
+    /** Resolves with the agent run once `chatCompletion` initializes it (or
+     *  `null` if initialization fails), letting immediate-mode title generation
+     *  await the run instead of throwing when fired before the run exists.
+     *  @type {Promise<AgentRun | null> | null} */
+    this._runReady = null;
+    /** @type {((run: AgentRun | null) => void) | null} */
+    this._resolveRun = null;
 
     const {
       agentConfigs,
@@ -270,9 +282,14 @@ class AgentClient extends BaseClient {
           }))
         : []),
     ];
+    const sharedRunAttachmentIds = new Set();
     if (this.options.attachments) {
       const attachments = await this.options.attachments;
       const latestMessage = orderedMessages[orderedMessages.length - 1];
+
+      for (const fileId of collectFileIds(attachments)) {
+        sharedRunAttachmentIds.add(fileId);
+      }
 
       if (this.message_file_map) {
         this.message_file_map[latestMessage.messageId] = attachments;
@@ -402,6 +419,14 @@ class AgentClient extends BaseClient {
     const sharedRunContext = sharedRunContextParts.join('\n\n');
     const memoryAgentEnabled = isMemoryAgentEnabled(this.options.req.config?.memory);
 
+    const agentScopedContext = await buildAgentScopedContext({
+      agentIds: allAgents.map(({ agentId }) => agentId),
+      attachmentsByAgentId: this.options.agentContextAttachmentsByAgentId,
+      sharedRunAttachmentIds,
+      req: this.options.req,
+      tokenCountFn: (text) => countTokens(text),
+    });
+
     /** Preserve canonical pre-format token counts for all history entering graph formatting */
     this.indexTokenCountMap = canonicalTokenCountMap;
 
@@ -439,10 +464,14 @@ class AgentClient extends BaseClient {
 
     await Promise.all(
       allAgents.map(({ agent, agentId }) => {
-        const agentRunContext =
-          memoryContext && (agentId === this.options.agent.id || memoryAgentEnabled)
-            ? [sharedRunContext, memoryContext].filter(Boolean).join('\n\n')
-            : sharedRunContext;
+        const agentRunContextParts = [sharedRunContext];
+        if (memoryContext && (agentId === this.options.agent.id || memoryAgentEnabled)) {
+          agentRunContextParts.push(memoryContext);
+        }
+        const scopedContext = agentScopedContext.get(agentId);
+        if (scopedContext) {
+          agentRunContextParts.push(scopedContext);
+        }
 
         return applyContextToAgent({
           agent,
@@ -450,7 +479,7 @@ class AgentClient extends BaseClient {
           logger,
           mcpManager,
           configServers,
-          sharedRunContext: agentRunContext,
+          sharedRunContext: agentRunContextParts.filter(Boolean).join('\n\n'),
           ephemeralAgent: agentId === this.options.agent.id ? ephemeralAgent : undefined,
         });
       }),
@@ -856,12 +885,27 @@ class AgentClient extends BaseClient {
         agents: [this.options.agent, ...(this.agentConfigs ? this.agentConfigs.values() : [])],
       });
 
+      /** Spoof `Providers.DEEPSEEK` so the SDK preserves `reasoning_content` on tool turns (#13366). */
+      const hasDeepSeekAgent = (agent) =>
+        agent != null &&
+        isDeepSeekReasoningProvider(agent.provider, agent.model_parameters?.model ?? agent.model);
+      const needsDeepSeekFormat =
+        hasDeepSeekAgent(this.options.agent) ||
+        (this.agentConfigs != null &&
+          Array.from(this.agentConfigs.values()).some(hasDeepSeekAgent));
+      const formatOptions = needsDeepSeekFormat ? { provider: Providers.DEEPSEEK } : undefined;
       let {
         messages: initialMessages,
         indexTokenCountMap,
         summary: initialSummary,
         boundaryTokenAdjustment,
-      } = formatAgentMessages(payload, this.indexTokenCountMap, toolSet, skillPrimeResult?.skills);
+      } = formatAgentMessages(
+        payload,
+        this.indexTokenCountMap,
+        toolSet,
+        skillPrimeResult?.skills,
+        formatOptions,
+      );
       if (boundaryTokenAdjustment) {
         logger.debug(
           `[AgentClient] Boundary token adjustment: ${boundaryTokenAdjustment.original} → ${boundaryTokenAdjustment.adjusted} (${boundaryTokenAdjustment.remainingChars}/${boundaryTokenAdjustment.totalChars} chars)`,
@@ -1003,6 +1047,10 @@ class AgentClient extends BaseClient {
         }
 
         this.run = run;
+        if (this._resolveRun) {
+          this._resolveRun(run);
+          this._resolveRun = null;
+        }
 
         const streamId = this.options.req?._resumableStreamId;
         if (streamId && run.Graph) {
@@ -1134,6 +1182,10 @@ class AgentClient extends BaseClient {
           err,
         );
       }
+      if (this._resolveRun) {
+        this._resolveRun(this.run ?? null);
+        this._resolveRun = null;
+      }
       run = null;
       config = null;
       memoryPromise = null;
@@ -1141,14 +1193,58 @@ class AgentClient extends BaseClient {
   }
 
   /**
-   *
+   * Resolves with the agent run once it is initialized, or `null` if
+   * initialization fails. Lets immediate-mode title generation await the run
+   * instead of throwing when fired before `chatCompletion` assigns `this.run`.
+   * Rejects promptly if the provided signal aborts before the run is ready.
+   * @param {AbortSignal} [signal]
+   * @returns {Promise<AgentRun | null>}
+   */
+  _waitForRun(signal) {
+    if (this.run) {
+      return Promise.resolve(this.run);
+    }
+    if (!this._runReady) {
+      this._runReady = new Promise((resolve) => {
+        this._resolveRun = resolve;
+      });
+    }
+    if (!signal) {
+      return this._runReady;
+    }
+    if (signal.aborted) {
+      return Promise.reject(new Error('Aborted before run initialization'));
+    }
+    return new Promise((resolve, reject) => {
+      const onAbort = () => reject(new Error('Aborted before run initialization'));
+      signal.addEventListener('abort', onAbort, { once: true });
+      this._runReady.then((run) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(run);
+      });
+    });
+  }
+
+  /**
    * @param {Object} params
    * @param {string} params.text
-   * @param {string} params.conversationId
+   * @param {AbortController} params.abortController
+   * @param {boolean} [params.immediate] When true, the title is generated as soon
+   *   as the request is made — the run is awaited (instead of throwing) and the
+   *   title derives from the user's input only (`contentParts` is empty).
    */
-  async titleConvo({ text, abortController }) {
+  async titleConvo({ text, abortController, immediate = false }) {
     if (!this.run) {
-      throw new Error('Run not initialized');
+      if (!immediate) {
+        throw new Error('Run not initialized');
+      }
+      await this._waitForRun(abortController?.signal);
+      if (!this.run) {
+        logger.debug(
+          '[api/server/controllers/agents/client.js #titleConvo] Run unavailable for immediate title generation',
+        );
+        return;
+      }
     }
     const { handleLLMEnd, collected: collectedMetadata } = createMetadataAggregator();
     const { req, agent } = this.options;
@@ -1288,7 +1384,7 @@ class AgentClient extends BaseClient {
         provider,
         clientOptions,
         inputText: text,
-        contentParts: this.contentParts,
+        contentParts: immediate ? [] : this.contentParts,
         titleMethod: endpointConfig?.titleMethod,
         titlePrompt: endpointConfig?.titlePrompt,
         titlePromptTemplate: endpointConfig?.titlePromptTemplate,

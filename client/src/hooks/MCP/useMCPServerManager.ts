@@ -562,6 +562,7 @@ export function useMCPServerManager({
                   authField: key,
                   label: config.title,
                   description: config.description,
+                  sensitive: config.sensitive,
                 }))
               : []),
           authenticated: serverData?.authenticated ?? false,
@@ -609,6 +610,7 @@ export function useMCPServerManager({
         fieldsSchema[field.authField] = {
           title: field.label || field.authField,
           description: field.description,
+          sensitive: field.sensitive,
         };
       });
     }

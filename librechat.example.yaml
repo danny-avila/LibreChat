@@ -2,7 +2,7 @@
 # https://www.librechat.ai/docs/configuration/librechat_yaml
 
 # Configuration version (required)
-version: 1.3.11
+version: 1.3.12
 
 # Cache settings: Set to true to enable caching
 cache: true
@@ -173,6 +173,18 @@ interface:
 
   # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
   # temporaryChatRetention: 1
+  # Retention mode: "all" applies expiry to all data types, "temporary" (default) only to temporary chats
+  # Before switching from "all" back to "temporary", remove retention deadlines from non-temporary data
+  # that should stop expiring:
+  # db.conversations.updateMany({ isTemporary: false, expiredAt: { $ne: null } }, { $unset: { expiredAt: 1 } })
+  # db.messages.updateMany({ isTemporary: false, expiredAt: { $ne: null } }, { $unset: { expiredAt: 1 } })
+  # MongoDB does not drop superseded indexes automatically. After upgrading, old Meili indexes
+  # such as "_meiliIndex_1_expiredAt_1" can be dropped from conversations/messages once the new
+  # "_meiliIndex_1_isTemporary_1_expiredAt_1" indexes exist.
+  # retentionMode: "temporary"
+  # Set retainAgentFiles to true to keep persistent agent resource files from expiring under
+  # retentionMode: "all"; non-agent files still expire.
+  # retainAgentFiles: false
 
 # Example Cloudflare turnstile (optional)
 #turnstile:
@@ -310,6 +322,7 @@ actions:
 #   everything:
 #     # type: sse # type can optionally be omitted
 #     url: http://localhost:3001/sse
+#     # proxy: "${MCP_PROXY_URL}"  # optional outbound proxy (http/https/socks/socks5)
 #     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
 #   puppeteer:
 #     type: stdio
@@ -355,6 +368,12 @@ endpoints:
   #   maxRecursionLimit: 100
   #   # (optional) Disable the builder interface for agents
   #   disableBuilder: false
+  #   # (optional) When conversation titles are generated:
+  #   #   immediate (default): generate as soon as the request is made, in parallel
+  #   #     with the response, from the user's first message (title appears within ~1-2s).
+  #   #   final: defer generation until the full response completes (legacy behavior).
+  #   # Set under `endpoints.all` instead to apply as the global default for all endpoints.
+  #   titleTiming: immediate
   #   # (optional) Maximum total citations to include in agent responses, defaults to 30
   #   maxCitations: 30
   #   # (optional) Maximum citations per file to include in agent responses, defaults to 7
@@ -397,6 +416,7 @@ endpoints:
   #     # Option 1: Simple array (legacy format - model name = deployment name)
   #     # Use this if you want the technical model IDs to show in the UI
   #     # models:
+  #     #   - "claude-opus-4-8"
   #     #   - "claude-sonnet-4-6"
   #     #   - "claude-3-7-sonnet-20250219"
   #     #   - "claude-3-5-sonnet-v2@20241022"
@@ -407,6 +427,8 @@ endpoints:
   #     # The deploymentName is the actual Vertex AI model ID used for API calls
   #     # You can use friendly names (avoid spaces for cleaner YAML) or technical IDs as keys
   #     models:
+  #       claude-opus-4.8:
+  #         deploymentName: claude-opus-4-8
   #       claude-opus-4.5:
   #         deploymentName: claude-opus-4-5@20251101
   #       claude-sonnet-4:

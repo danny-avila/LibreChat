@@ -63,6 +63,10 @@ const messageSchema: Schema<IMessage> = new Schema(
       required: true,
       default: false,
     },
+    isTemporary: {
+      type: Boolean,
+      default: false,
+    },
     unfinished: {
       type: Boolean,
       default: false,
@@ -180,6 +184,6 @@ messageSchema.index({ createdAt: 1 });
 messageSchema.index({ messageId: 1, user: 1, tenantId: 1 }, { unique: true });
 
 // index for MeiliSearch sync operations
-messageSchema.index({ _meiliIndex: 1, expiredAt: 1 });
+messageSchema.index({ _meiliIndex: 1, isTemporary: 1, expiredAt: 1 });
 
 export default messageSchema;

@@ -174,8 +174,12 @@ export const primeResources = async ({
   agentId?: string;
 }): Promise<{
   attachments: Array<TFile | undefined> | undefined;
+  requestAttachments: Array<TFile | undefined> | undefined;
+  agentContextAttachments: Array<TFile | undefined> | undefined;
   tool_resources: AgentToolResources | undefined;
 }> => {
+  const requestAttachments: Array<TFile> = [];
+  const agentContextAttachments: Array<TFile> = [];
   try {
     /**
      * Array to collect all unique files that will be returned as attachments
@@ -269,6 +273,7 @@ export const primeResources = async ({
 
         // Add to attachments
         attachments.push(file);
+        agentContextAttachments.push(file);
         attachmentFileIds.add(file.file_id);
 
         // Categorize for tool resources
@@ -282,10 +287,17 @@ export const primeResources = async ({
     }
 
     if (!_attachments) {
-      return { attachments: attachments.length > 0 ? attachments : undefined, tool_resources };
+      return {
+        attachments: attachments.length > 0 ? attachments : undefined,
+        requestAttachments: undefined,
+        agentContextAttachments:
+          agentContextAttachments.length > 0 ? agentContextAttachments : undefined,
+        tool_resources,
+      };
     }
 
     const files = await _attachments;
+    const requestAttachmentFileIds = new Set<string>();
 
     for (const file of files) {
       if (!file) {
@@ -300,16 +312,30 @@ export const primeResources = async ({
       });
 
       if (file.file_id && attachmentFileIds.has(file.file_id)) {
+        if (!requestAttachmentFileIds.has(file.file_id)) {
+          requestAttachments.push(file);
+          requestAttachmentFileIds.add(file.file_id);
+        }
         continue;
       }
 
       attachments.push(file);
+      if (!file.file_id || !requestAttachmentFileIds.has(file.file_id)) {
+        requestAttachments.push(file);
+      }
       if (file.file_id) {
         attachmentFileIds.add(file.file_id);
+        requestAttachmentFileIds.add(file.file_id);
       }
     }
 
-    return { attachments: attachments.length > 0 ? attachments : [], tool_resources };
+    return {
+      attachments: attachments.length > 0 ? attachments : [],
+      requestAttachments,
+      agentContextAttachments:
+        agentContextAttachments.length > 0 ? agentContextAttachments : undefined,
+      tool_resources,
+    };
   } catch (error) {
     logger.error('Error priming resources', error);
 
@@ -328,6 +354,9 @@ export const primeResources = async ({
 
     return {
       attachments: safeAttachments,
+      requestAttachments: safeAttachments,
+      agentContextAttachments:
+        agentContextAttachments.length > 0 ? agentContextAttachments : undefined,
       tool_resources: _tool_resources,
     };
   }

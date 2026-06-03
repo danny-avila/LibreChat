@@ -177,7 +177,8 @@ https://www.librechat.ai/docs/configuration/stt_tts`);
 
 // Validate and fill out missing values for custom parameters
 function parseCustomParams(endpointName, customParams) {
-  const paramEndpoint = customParams.defaultParamsEndpoint;
+  const paramEndpoint = customParams.defaultParamsEndpoint ?? 'custom';
+  customParams.defaultParamsEndpoint = paramEndpoint;
   customParams.paramDefinitions = customParams.paramDefinitions || [];
 
   // Checks if `defaultParamsEndpoint` is a key in `paramSettings`.

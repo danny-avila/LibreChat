@@ -327,6 +327,51 @@ describe('createAppConfigService', () => {
 
         expect(deps.getApplicableConfigs).toHaveBeenCalledWith([]);
       });
+
+      it('scopes the override cache key to the ALS tenant when no tenantId param is given', async () => {
+        const { tenantStorage } = jest.requireActual('@librechat/data-schemas');
+        const deps = createDeps({
+          getApplicableConfigs: jest
+            .fn()
+            .mockResolvedValue([{ priority: 10, overrides: { x: 1 }, isActive: true }]),
+        });
+        const { getAppConfig } = createAppConfigService(deps);
+
+        await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+          getAppConfig({ role: 'USER' }),
+        );
+
+        const overrideKey = [...deps._cache._store.keys()].find((k: string) =>
+          k.includes('_OVERRIDE_:'),
+        );
+        expect(overrideKey).toBe('app_config:_OVERRIDE_:tenant-a:USER');
+        expect(overrideKey).not.toContain('__default__');
+      });
+
+      it('does not serve one tenant a cached config built for another tenant', async () => {
+        const { tenantStorage, getTenantId } = jest.requireActual('@librechat/data-schemas');
+        // Each tenant's DB overrides carry a marker derived from the active ALS tenant.
+        const deps = createDeps({
+          getApplicableConfigs: jest
+            .fn()
+            .mockImplementation(async () => [
+              { priority: 10, overrides: { whoami: getTenantId() }, isActive: true },
+            ]),
+        });
+        const { getAppConfig } = createAppConfigService(deps);
+
+        const configA = (await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+          getAppConfig({ role: 'USER' }),
+        )) as TestConfig & { whoami?: string };
+        const configB = (await tenantStorage.run({ tenantId: 'tenant-b' }, async () =>
+          getAppConfig({ role: 'USER' }),
+        )) as TestConfig & { whoami?: string };
+
+        expect(configA.whoami).toBe('tenant-a');
+        expect(configB.whoami).toBe('tenant-b');
+        // A cache collision would short-circuit the second tenant's DB read.
+        expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(2);
+      });
     });
 
     it('does not cache on buildPrincipals error — retries on next request', async () => {

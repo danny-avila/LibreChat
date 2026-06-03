@@ -10,8 +10,10 @@ import { MongooseInstrumentation } from '@opentelemetry/instrumentation-mongoose
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
 import type { NodeSDKConfiguration } from '@opentelemetry/sdk-node';
 import type { Span, Attributes } from '@opentelemetry/api';
+import type { RequestOptions } from 'node:http';
 import type { TelemetryConfig, TelemetryStatus } from './config';
 import { getTelemetryConfig } from './config';
+import { registerShutdownTask } from '../app/shutdown';
 
 export interface TelemetryController {
   readonly enabled: boolean;
@@ -23,9 +25,19 @@ const WARNING_CODE = 'LIBRECHAT_OTEL';
 const REDACTED_QUERY_VALUE = '[REDACTED]';
 const SIGNAL_SHUTDOWN_TIMEOUT_MS = 5_000;
 
-interface RegisteredSignal {
-  signal: NodeJS.Signals;
-  listener: NodeJS.SignalsListener;
+interface RequestUrlParts {
+  href?: string;
+  search?: string;
+  pathname?: string;
+}
+
+interface AgentProtocol {
+  protocol?: string;
+}
+
+interface UndiciRequestInfo {
+  path?: string;
+  origin?: string;
 }
 
 let activeSdk: NodeSDK | undefined;
@@ -33,7 +45,7 @@ let pendingSdk: NodeSDK | undefined;
 let startPromise: Promise<void> | undefined;
 let shutdownPromise: Promise<void> | undefined;
 let status: TelemetryStatus = 'stopped';
-let registeredSignals: RegisteredSignal[] = [];
+let shutdownTaskRegistered = false;
 let requestSpans = new WeakMap<IncomingMessage, Span>();
 
 function isBunRuntime(): boolean {
@@ -95,6 +107,183 @@ function getSanitizedIncomingUrlAttributes(
   return attributes;
 }
 
+function getStringValue(value: string | number | null | undefined): string | undefined {
+  if (value == null) {
+    return undefined;
+  }
+
+  const stringValue = String(value).trim();
+  return stringValue || undefined;
+}
+
+function getRedactedQuery(search: string): string | undefined {
+  const query = search.startsWith('?') ? search.slice(1) : search;
+  if (!query) {
+    return undefined;
+  }
+
+  return query
+    .split('&')
+    .map((part) => {
+      const separatorIndex = part.indexOf('=');
+      if (separatorIndex < 0) {
+        return REDACTED_QUERY_VALUE;
+      }
+
+      const key = part.slice(0, separatorIndex);
+      if (!key) {
+        return REDACTED_QUERY_VALUE;
+      }
+
+      return `${key}=${REDACTED_QUERY_VALUE}`;
+    })
+    .join('&');
+}
+
+function getSanitizedUrlAttributesFromParts(
+  origin: string | undefined,
+  pathname: string,
+  search: string,
+): Attributes {
+  const path = pathname || '/';
+  const redactedQuery = getRedactedQuery(search);
+  const target = redactedQuery ? `${path}?${redactedQuery}` : path;
+  const fullUrl = origin ? `${origin}${target}` : target;
+  const attributes: Attributes = {
+    'http.target': target,
+    'http.url': fullUrl,
+    'url.full': fullUrl,
+    'url.path': path,
+  };
+
+  if (redactedQuery) {
+    attributes['url.query'] = redactedQuery;
+  }
+
+  return attributes;
+}
+
+function getFallbackUrlParts(rawUrl: string): { pathname: string; search: string } {
+  const queryIndex = rawUrl.indexOf('?');
+  if (queryIndex < 0) {
+    return { pathname: rawUrl || '/', search: '' };
+  }
+
+  return {
+    pathname: rawUrl.slice(0, queryIndex) || '/',
+    search: rawUrl.slice(queryIndex),
+  };
+}
+
+function getSanitizedOutgoingUrlAttributes(rawUrl: string, origin?: string): Attributes {
+  const hasOrigin = /^[a-z][a-z\d+\-.]*:\/\//i.test(rawUrl);
+
+  try {
+    const parsedUrl = new URL(rawUrl, origin ?? 'http://localhost');
+    const safeOrigin = hasOrigin || origin ? parsedUrl.origin : undefined;
+    return getSanitizedUrlAttributesFromParts(safeOrigin, parsedUrl.pathname, parsedUrl.search);
+  } catch {
+    const { pathname, search } = getFallbackUrlParts(rawUrl);
+    return getSanitizedUrlAttributesFromParts(origin, pathname, search);
+  }
+}
+
+function normalizeProtocol(protocol: string): string {
+  return protocol.endsWith(':') ? protocol : `${protocol}:`;
+}
+
+function getRequestAgentProtocol(request: RequestOptions): string | undefined {
+  const { agent } = request;
+  if (!agent || typeof agent === 'boolean') {
+    return undefined;
+  }
+
+  return getStringValue((agent as AgentProtocol).protocol);
+}
+
+function getOutgoingHttpProtocol(request: RequestOptions): string {
+  const protocol = getStringValue(request.protocol) ?? getRequestAgentProtocol(request);
+  if (!protocol) {
+    return 'http:';
+  }
+
+  return normalizeProtocol(protocol);
+}
+
+function getUrlAuthorityHost(host: string): string {
+  try {
+    const parsedHost = new URL(`http://${host}`);
+    return parsedHost.host;
+  } catch {
+    if (host.includes(':') && !host.startsWith('[')) {
+      return `[${host}]`;
+    }
+  }
+
+  return host;
+}
+
+function getHostWithPort(host: string, port: string | undefined): string {
+  const authorityHost = getUrlAuthorityHost(host);
+  if (!port) {
+    return authorityHost;
+  }
+
+  try {
+    const parsedHost = new URL(`http://${authorityHost}`);
+    if (parsedHost.port) {
+      return authorityHost;
+    }
+  } catch {
+    return authorityHost;
+  }
+
+  return `${authorityHost}:${port}`;
+}
+
+function getOutgoingHttpOrigin(request: RequestOptions): string | undefined {
+  const protocol = getOutgoingHttpProtocol(request);
+  const host = getStringValue(request.host);
+  const port = getStringValue(request.port);
+  if (host) {
+    return `${protocol}//${getHostWithPort(host, port)}`;
+  }
+
+  const hostname = getStringValue(request.hostname);
+  const resolvedHostname = hostname ?? 'localhost';
+  return `${protocol}//${getHostWithPort(resolvedHostname, port)}`;
+}
+
+function getOutgoingHttpUrl(request: RequestOptions & RequestUrlParts): string {
+  if (request.path) {
+    return request.path;
+  }
+
+  if (request.href) {
+    return request.href;
+  }
+
+  const pathname = request.pathname || '/';
+  if (!request.search) {
+    return pathname;
+  }
+
+  const search = request.search.startsWith('?') ? request.search : `?${request.search}`;
+  return `${pathname}${search}`;
+}
+
+function getSanitizedOutgoingHttpUrlAttributes(request: RequestOptions): Attributes {
+  const requestWithUrlParts = request as RequestOptions & RequestUrlParts;
+  return getSanitizedOutgoingUrlAttributes(
+    getOutgoingHttpUrl(requestWithUrlParts),
+    getOutgoingHttpOrigin(request),
+  );
+}
+
+function getSanitizedUndiciUrlAttributes(request: UndiciRequestInfo): Attributes {
+  return getSanitizedOutgoingUrlAttributes(request.path ?? '/', request.origin);
+}
+
 function getResourceAttributes(config: TelemetryConfig): Attributes {
   const attributes: Attributes = {
     [ATTR_SERVICE_NAME]: config.serviceName,
@@ -123,6 +312,8 @@ function createSdk(config: TelemetryConfig): NodeSDK {
         },
         startIncomingSpanHook: (request: IncomingMessage) =>
           getSanitizedIncomingUrlAttributes(request, config.healthPath),
+        startOutgoingSpanHook: (request: RequestOptions) =>
+          getSanitizedOutgoingHttpUrlAttributes(request),
         ignoreIncomingRequestHook: (request: IncomingMessage) =>
           shouldIgnoreIncomingRequest(request, config.healthPath),
       }),
@@ -130,7 +321,9 @@ function createSdk(config: TelemetryConfig): NodeSDK {
       new MongoDBInstrumentation(),
       new MongooseInstrumentation(),
       new IORedisInstrumentation(),
-      new UndiciInstrumentation(),
+      new UndiciInstrumentation({
+        startSpanHook: (request: UndiciRequestInfo) => getSanitizedUndiciUrlAttributes(request),
+      }),
     ],
   };
 
@@ -173,35 +366,22 @@ function makeController(): TelemetryController {
   };
 }
 
-function unregisterShutdownHandlers(): void {
-  for (const { signal, listener } of registeredSignals) {
-    process.removeListener(signal, listener);
-  }
-  registeredSignals = [];
-}
-
-function registerShutdownHandlers(): void {
-  if (registeredSignals.length > 0) {
+function ensureShutdownTaskRegistered(): void {
+  if (shutdownTaskRegistered) {
     return;
   }
-
-  const signals: NodeJS.Signals[] = ['SIGTERM', 'SIGINT'];
-  registeredSignals = signals.map((signal) => {
-    const listener: NodeJS.SignalsListener = () => {
-      const shouldReraiseSignal = process.listenerCount(signal) === 0;
-      withTimeout(shutdownTelemetry(), SIGNAL_SHUTDOWN_TIMEOUT_MS)
-        .catch((error) => {
-          emitWarning(`OpenTelemetry shutdown failed: ${getErrorMessage(error)}`);
-        })
-        .finally(() => {
-          if (shouldReraiseSignal) {
-            process.kill(process.pid, signal);
-          }
-        });
-    };
-    process.once(signal, listener);
-    return { signal, listener };
-  });
+  shutdownTaskRegistered = true;
+  // Register with the centralized graceful-shutdown coordinator
+  // (see ../app/shutdown.ts) rather than attaching SIGTERM/SIGINT
+  // listeners directly — signal listener return values are ignored
+  // by Node, so a separate signal handler can let the coordinator
+  // exit before the async OpenTelemetry flush completes, dropping
+  // final spans during pod shutdowns.
+  registerShutdownTask('telemetry', () =>
+    withTimeout(shutdownTelemetry(), SIGNAL_SHUTDOWN_TIMEOUT_MS).catch((error) => {
+      emitWarning(`OpenTelemetry shutdown failed: ${getErrorMessage(error)}`);
+    }),
+  );
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -243,7 +423,7 @@ export function initializeTelemetry(env: NodeJS.ProcessEnv = process.env): Telem
             pendingSdk = undefined;
             activeSdk = sdk;
             status = 'started';
-            registerShutdownHandlers();
+            ensureShutdownTaskRegistered();
           }
         })
         .catch((error) => {
@@ -264,7 +444,7 @@ export function initializeTelemetry(env: NodeJS.ProcessEnv = process.env): Telem
 
     activeSdk = sdk;
     status = 'started';
-    registerShutdownHandlers();
+    ensureShutdownTaskRegistered();
     return makeController();
   } catch (error) {
     status = 'failed';
@@ -288,7 +468,6 @@ async function performShutdownTelemetry(): Promise<void> {
     await sdk.shutdown();
     activeSdk = undefined;
     status = 'stopped';
-    unregisterShutdownHandlers();
   } catch (error) {
     status = 'started';
     throw error;
@@ -323,6 +502,6 @@ export async function resetTelemetryForTests(): Promise<void> {
     shutdownPromise = undefined;
     status = 'stopped';
     requestSpans = new WeakMap<IncomingMessage, Span>();
-    unregisterShutdownHandlers();
+    shutdownTaskRegistered = false;
   }
 }

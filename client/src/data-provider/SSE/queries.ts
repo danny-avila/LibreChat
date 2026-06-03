@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { apiBaseUrl, QueryKeys, request, dataService } from 'librechat-data-provider';
 import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query';
 import type { Agents, TConversation } from 'librechat-data-provider';
-import { updateConvoInAllQueries } from '~/utils';
+import { isNotFoundError, updateConvoInAllQueries } from '~/utils';
+import { useGetStartupConfig } from '../Endpoints';
 
 export interface StreamStatusResponse {
   active: boolean;
@@ -45,6 +46,12 @@ export interface ActiveJobsResponse {
 const titleQueue = new Set<string>();
 const processedTitles = new Set<string>();
 
+/** Conversations whose eager (immediate-mode) title fetch 404'd while the stream
+ * was still active. They wait for stream completion before fetching again instead
+ * of busy-looping — covers a per-endpoint `final` override under a global
+ * `immediate` default. */
+const deferredTitles = new Set<string>();
+
 /** Listeners to notify when queue changes (for non-resumable streams like assistants) */
 const queueListeners = new Set<() => void>();
 
@@ -56,13 +63,31 @@ export function queueTitleGeneration(conversationId: string) {
   }
 }
 
+export function markTitleGenerationProcessed(conversationId: string) {
+  processedTitles.add(conversationId);
+  titleQueue.delete(conversationId);
+  deferredTitles.delete(conversationId);
+  queueListeners.forEach((listener) => listener());
+}
+
 /**
  * Hook to process the title generation queue.
- * Only fetches titles AFTER the job completes (not in activeJobIds).
+ *
+ * Timing is driven by the server's effective default (`titleGenerationTiming`):
+ * - `immediate` (default): fetch the title in parallel with the active stream so
+ *   it appears while the response is still streaming.
+ * - `final` (legacy): fetch only after the stream completes.
+ *
+ * The title query retries on 404 (server still generating) so a transient
+ * not-ready response is never treated as final (#13318).
  * Place this high in the component tree (e.g., Nav.tsx).
  */
 export function useTitleGeneration(enabled = true) {
   const queryClient = useQueryClient();
+  const { data: startupConfig } = useGetStartupConfig();
+  /** Defaults to immediate until startup config loads. */
+  const timing = startupConfig?.titleGenerationTiming ?? 'immediate';
+
   const [queueVersion, setQueueVersion] = useState(0);
   const [readyToFetch, setReadyToFetch] = useState<string[]>([]);
 
@@ -82,33 +107,54 @@ export function useTitleGeneration(enabled = true) {
 
   useEffect(() => {
     const activeSet = new Set(activeJobIds);
-    const completedJobs: string[] = [];
+    const eligible: string[] = [];
 
     for (const conversationId of titleQueue) {
-      if (!activeSet.has(conversationId) && !processedTitles.has(conversationId)) {
-        completedJobs.push(conversationId);
+      if (processedTitles.has(conversationId)) {
+        continue;
+      }
+      const eager = timing === 'immediate' && !deferredTitles.has(conversationId);
+      if (eager || !activeSet.has(conversationId)) {
+        eligible.push(conversationId);
       }
     }
 
-    if (completedJobs.length > 0) {
-      setReadyToFetch((prev) => [...new Set([...prev, ...completedJobs])]);
+    if (eligible.length > 0) {
+      setReadyToFetch((prev) => [...new Set([...prev, ...eligible])]);
     }
-  }, [activeJobIds, queueVersion]);
+  }, [activeJobIds, queueVersion, timing]);
 
-  // Fetch titles for ready conversations
+  useEffect(() => {
+    setReadyToFetch((prev) => {
+      const next = prev.filter((id) => !processedTitles.has(id));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [queueVersion]);
+
+  // Fetch titles for ready conversations.
   const titleQueries = useQueries({
     queries: readyToFetch.map((conversationId) => ({
       queryKey: genTitleQueryKey(conversationId),
       queryFn: () => dataService.genTitle({ conversationId }),
+      // Gate on `enabled` so no /gen_title request fires while unauthenticated
+      // (e.g. after logout) even if the module-level queue still holds IDs.
+      enabled,
       staleTime: Infinity,
-      retry: false,
+      /** Retry only on 404 (title still generating server-side) so a transient
+       * not-ready response is never treated as final. All other errors are
+       * terminal. Bounded retry adapted from PR #13329. */
+      retry: (failureCount: number, error: unknown) => isNotFoundError(error) && failureCount < 3,
+      retryDelay: () => 5_000,
     })),
   });
 
   useEffect(() => {
+    const activeSet = new Set(activeJobIds);
     titleQueries.forEach((titleQuery, index) => {
       const conversationId = readyToFetch[index];
-      if (!conversationId || processedTitles.has(conversationId)) return;
+      if (!conversationId || processedTitles.has(conversationId)) {
+        return;
+      }
 
       if (titleQuery.isSuccess && titleQuery.data) {
         const { title } = titleQuery.data;
@@ -121,17 +167,34 @@ export function useTitleGeneration(enabled = true) {
         if (window.location.pathname.includes(conversationId)) {
           document.title = title;
         }
-        processedTitles.add(conversationId);
-        titleQueue.delete(conversationId);
+        markTitleGenerationProcessed(conversationId);
         setReadyToFetch((prev) => prev.filter((id) => id !== conversationId));
       } else if (titleQuery.isError) {
-        // Mark as processed even on error to avoid infinite retries
-        processedTitles.add(conversationId);
-        titleQueue.delete(conversationId);
-        setReadyToFetch((prev) => prev.filter((id) => id !== conversationId));
+        // Retries are exhausted here (the query only retries on 404). A title may
+        // still be generated *after* the stream completes (final mode generates
+        // only once the response ends), so don't treat the first 404 as final —
+        // guarantee one fresh, full-budget fetch cycle that runs post-completion.
+        if (activeSet.has(conversationId)) {
+          // Failed while still streaming: drop and clear so the completion
+          // transition re-promotes a fresh fetch (instead of busy-looping).
+          deferredTitles.add(conversationId);
+          queryClient.removeQueries(genTitleQueryKey(conversationId));
+          setReadyToFetch((prev) => prev.filter((id) => id !== conversationId));
+        } else if (!deferredTitles.has(conversationId)) {
+          // First failure at/after completion without a prior deferral: grant one
+          // fresh cycle. Polling has stopped (no re-promotion), so reset the query
+          // in place — `resetQueries` refetches active observers with a fresh retry
+          // budget, unlike `removeQueries`, which leaves the observer in error state.
+          deferredTitles.add(conversationId);
+          queryClient.resetQueries(genTitleQueryKey(conversationId));
+        } else {
+          // The post-completion fetch also failed — the title is genuinely absent.
+          markTitleGenerationProcessed(conversationId);
+          setReadyToFetch((prev) => prev.filter((id) => id !== conversationId));
+        }
       }
     });
-  }, [titleQueries, readyToFetch, queryClient]);
+  }, [titleQueries, readyToFetch, queryClient, activeJobIds]);
 }
 
 /**

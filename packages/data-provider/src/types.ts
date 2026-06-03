@@ -7,6 +7,8 @@ import type {
   TAttachment,
   TMessage,
   TBanner,
+  ReasoningResponseKey,
+  ReasoningParameterFormat,
 } from './schemas';
 import type { RefillIntervalUnit } from './balance';
 import type { SettingDefinition } from './generate';
@@ -213,6 +215,7 @@ export type TUser = {
   avatar: string;
   role: string;
   provider: string;
+  tenantId?: string;
   plugins?: string[];
   twoFactorEnabled?: boolean;
   backupCodes?: TBackupCode[];
@@ -390,11 +393,17 @@ export type TConfig = {
   modelDisplayLabel?: string;
   userProvide?: boolean | null;
   userProvideURL?: boolean | null;
+  userProvideAccessKeyId?: boolean;
+  userProvideSecretAccessKey?: boolean;
+  userProvideSessionToken?: boolean;
+  userProvideBearerToken?: boolean;
   disableBuilder?: boolean;
   retrievalModels?: string[];
   capabilities?: string[];
   customParams?: {
     defaultParamsEndpoint?: string;
+    reasoningFormat?: ReasoningParameterFormat;
+    reasoningKey?: ReasoningResponseKey;
     paramDefinitions?: Partial<SettingDefinition>[];
   };
 };
