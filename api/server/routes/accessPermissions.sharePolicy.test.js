@@ -28,14 +28,6 @@ jest.mock('~/server/controllers/PermissionsController', () => ({
   searchPrincipals: jest.fn((_req, res) => res.json({ principals: [] })),
 }));
 
-jest.mock('mongoose', () => ({
-  models: {
-    SharedLink: {
-      findById: jest.fn(),
-    },
-  },
-}));
-
 const express = require('express');
 const request = require('supertest');
 const mongoose = require('mongoose');
@@ -57,6 +49,8 @@ const { getRoleByName } = require('~/models');
 
 describe('Access permissions share policy', () => {
   let app;
+  const mockSharedLinkFindById = jest.fn();
+  const originalSharedLinkModel = mongoose.models.SharedLink;
 
   const resourceId = '507f1f77bcf86cd799439011';
   const sharePolicyCases = [
@@ -137,13 +131,18 @@ describe('Access permissions share policy', () => {
   };
 
   const mockSharedLinkOwner = (ownerId = 'owner-user') => {
-    mongoose.models.SharedLink.findById.mockReturnValue({
+    mockSharedLinkFindById.mockReturnValue({
       lean: jest.fn().mockResolvedValue({ user: ownerId }),
     });
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
+    if (mongoose.models.SharedLink) {
+      mongoose.models.SharedLink.findById = mockSharedLinkFindById;
+    } else {
+      mongoose.models.SharedLink = { findById: mockSharedLinkFindById };
+    }
     hasCapability.mockResolvedValue(false);
 
     app = express();
@@ -153,6 +152,14 @@ describe('Access permissions share policy', () => {
       next();
     });
     app.use('/api/permissions', accessPermissionsRouter);
+  });
+
+  afterAll(() => {
+    if (originalSharedLinkModel) {
+      mongoose.models.SharedLink = originalSharedLinkModel;
+    } else {
+      delete mongoose.models.SharedLink;
+    }
   });
 
   it.each(sharePolicyCases)(
