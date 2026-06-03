@@ -42,6 +42,7 @@ export default function useSSE(
     messageHandler,
     contentHandler,
     createdHandler,
+    titleHandler,
     attachmentHandler,
     abortConversation,
   } = useEventHandlers({
@@ -113,6 +114,8 @@ export default function useSSE(
         };
 
         createdHandler(data, { ...submission, userMessage } as EventSubmission);
+      } else if (data.event === 'title') {
+        titleHandler(data);
       } else if (data.event != null) {
         stepHandler(data, { ...submission, userMessage } as EventSubmission);
       } else if (data.sync != null) {

@@ -4,9 +4,10 @@ const {
   getBalanceConfig,
   getCloudFrontConfig,
   resolveBuildInfo,
+  resolveTitleTiming,
   sanitizeModelSpecs,
 } = require('@librechat/api');
-const { defaultSocialLogins } = require('librechat-data-provider');
+const { EModelEndpoint, defaultSocialLogins } = require('librechat-data-provider');
 const { logger, getTenantId, SystemCapabilities } = require('@librechat/data-schemas');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { getLdapConfig } = require('~/server/services/Config/ldap');
@@ -258,6 +259,10 @@ router.get('/', async function (req, res) {
       ...buildPostLoginPayload(),
       socialLogins: appConfig?.registration?.socialLogins ?? defaultSocialLogins,
       interface: appConfig?.interfaceConfig,
+      titleGenerationTiming: resolveTitleTiming({
+        appConfig,
+        endpoint: EModelEndpoint.agents,
+      }),
       turnstile: appConfig?.turnstileConfig,
       modelSpecs: sanitizeModelSpecs(appConfig?.modelSpecs),
       balance: balanceConfig,

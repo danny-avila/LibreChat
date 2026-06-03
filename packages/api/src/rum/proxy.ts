@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import { logger } from '@librechat/data-schemas';
+import { isEnabled } from '~/utils';
 
 const DEFAULT_PROXY_PATH = '/api/rum';
 const DEFAULT_BODY_LIMIT = '3mb';
@@ -52,7 +53,11 @@ export function getRumProxyTargetBaseUrl(): URL | undefined {
 }
 
 export function isRumProxyEnabled(): boolean {
-  return process.env.RUM_AUTH_MODE === 'proxy' && getRumProxyTargetBaseUrl() != null;
+  return (
+    isEnabled(process.env.RUM_ENABLED) &&
+    process.env.RUM_AUTH_MODE === 'proxy' &&
+    getRumProxyTargetBaseUrl() != null
+  );
 }
 
 export function resolveRumProxyTarget(path: string): string | undefined {

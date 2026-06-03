@@ -10,7 +10,6 @@ const {
   imageExtRegex,
   EModelEndpoint,
   EToolResources,
-  RetentionMode,
   mergeFileConfig,
   AgentCapabilities,
   checkOpenAIStorage,
@@ -39,7 +38,7 @@ const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 const { checkCapability } = require('~/server/services/Config');
 const { LB_QueueAsyncCall } = require('~/server/utils/queue');
-const { getRetentionExpiry } = require('./retention');
+const { getRetentionExpiry, getAgentFileRetentionExpiry } = require('./retention');
 const { getStrategyFunctions } = require('./strategies');
 const { determineFileType } = require('~/server/utils');
 const { STTService } = require('./Audio/STTService');
@@ -66,20 +65,6 @@ const createSanitizedUploadWrapper = (uploadFunction) => {
 
     return uploadFunction({ req, file: sanitizedFile, file_id, ...restParams });
   };
-};
-
-const isPersistentAgentResourceUpload = ({ messageAttachment, tool_resource }) =>
-  !messageAttachment && !!tool_resource;
-
-const getAgentFileRetentionExpiry = async ({ req, messageAttachment, tool_resource }) => {
-  if (
-    isPersistentAgentResourceUpload({ messageAttachment, tool_resource }) &&
-    req?.config?.interfaceConfig?.retentionMode !== RetentionMode.ALL
-  ) {
-    return {};
-  }
-
-  return await getRetentionExpiry(req);
 };
 
 const hasCodeEnvRef = (file) => file?.metadata?.codeEnvRef != null;

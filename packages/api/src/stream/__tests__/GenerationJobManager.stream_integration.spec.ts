@@ -1356,6 +1356,28 @@ describe('GenerationJobManager Integration Tests', () => {
       await manager.destroy();
     });
 
+    test('should include emitted title event in resume state', async () => {
+      const manager = createInMemoryManager();
+      const streamId = `title-resume-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1', streamId);
+
+      const titleEvent = {
+        event: 'title',
+        data: {
+          conversationId: streamId,
+          title: 'Resumed Title',
+        },
+      } satisfies ServerSentEvent;
+
+      await manager.emitChunk(streamId, titleEvent);
+
+      const resumeState = await manager.getResumeState(streamId);
+
+      expect(resumeState?.titleEvent).toEqual(titleEvent);
+
+      await manager.destroy();
+    });
+
     test('should replay buffer by default when no options are passed', async () => {
       const manager = createInMemoryManager();
       const streamId = `replay-buf-${Date.now()}`;

@@ -48,6 +48,7 @@ describe('RUM proxy configuration', () => {
   });
 
   it('resolves OTLP paths against the configured collector base URL', () => {
+    process.env.RUM_ENABLED = 'true';
     process.env.RUM_AUTH_MODE = 'proxy';
     process.env.RUM_PROXY_TARGET_URL = 'http://otel-collector:4318';
 
@@ -55,6 +56,17 @@ describe('RUM proxy configuration', () => {
     expect(resolveRumProxyTarget('/v1/traces')).toBe('http://otel-collector:4318/v1/traces');
     expect(resolveRumProxyTarget('/v1/logs')).toBe('http://otel-collector:4318/v1/logs');
     expect(resolveRumProxyTarget('/v1/metrics')).toBeUndefined();
+  });
+
+  it('does not enable proxy mode when RUM is disabled', () => {
+    process.env.RUM_ENABLED = 'false';
+    process.env.RUM_AUTH_MODE = 'proxy';
+    process.env.RUM_PROXY_TARGET_URL = 'http://otel-collector:4318';
+
+    expect(isRumProxyEnabled()).toBe(false);
+
+    delete process.env.RUM_ENABLED;
+    expect(isRumProxyEnabled()).toBe(false);
   });
 
   it('rejects unsafe collector target URLs', () => {
@@ -66,6 +78,7 @@ describe('RUM proxy configuration', () => {
   });
 
   it('forwards OTLP requests without forwarding app authorization', async () => {
+    process.env.RUM_ENABLED = 'true';
     process.env.RUM_AUTH_MODE = 'proxy';
     process.env.RUM_PROXY_TARGET_URL = 'http://otel-collector:4318';
     const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue(
@@ -106,6 +119,7 @@ describe('RUM proxy configuration', () => {
   });
 
   it('returns 400 for missing payloads and 404 for unsupported OTLP paths', async () => {
+    process.env.RUM_ENABLED = 'true';
     process.env.RUM_AUTH_MODE = 'proxy';
     process.env.RUM_PROXY_TARGET_URL = 'http://otel-collector:4318';
     const missingBodyRes = makeResponse();
@@ -122,6 +136,7 @@ describe('RUM proxy configuration', () => {
   });
 
   it('returns 502 when the collector request fails', async () => {
+    process.env.RUM_ENABLED = 'true';
     process.env.RUM_AUTH_MODE = 'proxy';
     process.env.RUM_PROXY_TARGET_URL = 'http://otel-collector:4318';
     const fetchMock = jest.spyOn(global, 'fetch').mockRejectedValue(new Error('collector down'));

@@ -961,6 +961,7 @@ class GenerationJobManagerClass {
     this.jobStore.recordActivity?.(streamId);
 
     await this.trackUserMessage(streamId, event);
+    await this.trackTitleEvent(streamId, event);
 
     // For Redis mode, persist chunk for later reconstruction (fire-and-forget for resumability)
     if (this._isRedis) {
@@ -1041,6 +1042,21 @@ class GenerationJobManagerClass {
         logger.error(`[GenerationJobManager] Failed to save run steps:`, err);
       });
     }
+  }
+
+  /**
+   * Persist the last title event so resume sync can replay it. Content
+   * aggregation only reconstructs message parts, so UI-only events need their
+   * own metadata slot.
+   */
+  private async trackTitleEvent(streamId: string, event: t.ServerSentEvent): Promise<void> {
+    if (!('event' in event) || event.event !== 'title') {
+      return;
+    }
+
+    await this.jobStore.updateJob(streamId, {
+      titleEvent: JSON.stringify(event),
+    });
   }
 
   /**
@@ -1152,6 +1168,14 @@ class GenerationJobManagerClass {
     const result = await this.jobStore.getContentParts(streamId);
     const aggregatedContent = result?.content ?? [];
     const runSteps = await this.jobStore.getRunSteps(streamId);
+    let titleEvent: t.ResumeState['titleEvent'];
+    if (jobData.titleEvent) {
+      try {
+        titleEvent = JSON.parse(jobData.titleEvent) as t.ResumeState['titleEvent'];
+      } catch {
+        // Ignore malformed persisted title events.
+      }
+    }
 
     logger.debug(`[GenerationJobManager] getResumeState:`, {
       streamId,
@@ -1166,6 +1190,7 @@ class GenerationJobManagerClass {
       responseMessageId: jobData.responseMessageId,
       conversationId: jobData.conversationId,
       sender: jobData.sender,
+      titleEvent,
     };
   }
 

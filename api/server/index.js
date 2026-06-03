@@ -282,7 +282,10 @@ const startServer = async () => {
 
       // Configure stream services (auto-detects Redis from USE_REDIS env var)
       const streamServices = createStreamServices();
-      GenerationJobManager.configure(streamServices);
+      GenerationJobManager.configure({
+        ...streamServices,
+        cleanupOnComplete: !isEnabled(process.env.STREAM_KEEP_COMPLETED_JOBS),
+      });
       GenerationJobManager.initialize();
 
       const inspectFlags = process.execArgv.some((arg) => arg.startsWith('--inspect'));
