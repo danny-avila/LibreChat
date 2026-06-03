@@ -749,6 +749,38 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
         file_data: `data:application/pdf;base64,${mockContent}`,
       });
     });
+
+    it.each([Providers.GOOGLE, Providers.VERTEXAI] as const)(
+      'should format %s PDF as media block when responses API is enabled',
+      async (provider) => {
+        const req = createMockRequest(15, provider) as ServerRequest;
+        const file = createMockFile(10);
+
+        const mockContent = Buffer.from('test-pdf-content').toString('base64');
+        mockedGetFileStream.mockResolvedValue({
+          file,
+          content: mockContent,
+          metadata: file,
+        });
+
+        mockedValidatePdf.mockResolvedValue({ isValid: true });
+
+        const result = await encodeAndFormatDocuments(
+          req,
+          [file],
+          { provider, useResponsesApi: true },
+          mockStrategyFunctions,
+        );
+
+        expect(result.documents).toHaveLength(1);
+        expect(result.documents[0]).toMatchObject({
+          type: 'media',
+          mimeType: 'application/pdf',
+          data: mockContent,
+        });
+        expect(result.documents[0]).not.toHaveProperty('type', 'input_file');
+      },
+    );
   });
 
   describe('Generic document encoding path', () => {

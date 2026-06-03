@@ -1,5 +1,5 @@
 import React from 'react';
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { Agent } from 'librechat-data-provider';
 import type { TMessageIcon } from '~/common';
@@ -60,6 +60,22 @@ describe('MessageIcon render cycles', () => {
   it('renders once on initial mount', () => {
     render(<MessageIcon iconData={baseIconData} agent={makeAgent()} />);
     expect(iconRenderCount.current).toBe(1);
+  });
+
+  it('renders same-origin absolute model spec icon URLs directly', () => {
+    render(
+      <MessageIcon
+        iconData={{
+          ...baseIconData,
+          iconURL: '/assets/clickhouse-logo.svg',
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId('convo-icon-url')).toHaveAttribute(
+      'data-icon-url',
+      '/assets/clickhouse-logo.svg',
+    );
   });
 
   it('does not re-render when parent re-renders with same field values but new object references', () => {

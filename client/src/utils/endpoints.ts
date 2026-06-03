@@ -335,12 +335,9 @@ export function mergeQuerySettingsWithSpec(
   };
 }
 
-/** Gets the default spec iconURL by order or definition.
- *
- * First, the admin defined default, then last selected spec, followed by first spec
- */
+/** Gets the model spec iconURL by explicit icon, preset icon, then preset endpoint. */
 export function getModelSpecIconURL(modelSpec: t.TModelSpec) {
-  return modelSpec.iconURL ?? modelSpec.preset.iconURL ?? modelSpec.preset.endpoint ?? '';
+  return modelSpec.iconURL ?? modelSpec.preset?.iconURL ?? modelSpec.preset?.endpoint ?? '';
 }
 
 /** Gets the default frontend-facing endpoint, dependent on iconURL definition.

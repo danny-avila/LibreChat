@@ -156,4 +156,20 @@ describe('roleDefaults', () => {
       });
     });
   });
+
+  describe('MCP_SERVERS.CONFIGURE_OBO defaults', () => {
+    it('grants ADMIN CONFIGURE_OBO by default', () => {
+      const adminMcp = roleDefaults[SystemRoles.ADMIN].permissions[
+        PermissionTypes.MCP_SERVERS
+      ] as Record<string, boolean>;
+      expect(adminMcp[Permissions.CONFIGURE_OBO]).toBe(true);
+    });
+
+    it('does not grant CONFIGURE_OBO to USER by default — gates the OBO config layer', () => {
+      const userMcp = roleDefaults[SystemRoles.USER].permissions[
+        PermissionTypes.MCP_SERVERS
+      ] as Record<string, boolean>;
+      expect(userMcp[Permissions.CONFIGURE_OBO]).toBe(false);
+    });
+  });
 });

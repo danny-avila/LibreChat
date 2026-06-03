@@ -68,7 +68,8 @@ export class MCPServerInspector {
     if (
       this.config.startup !== false &&
       !this.config.requiresOAuth &&
-      !hasCustomUserVars(this.config)
+      !hasCustomUserVars(this.config) &&
+      !this.config.obo
     ) {
       let tempConnection = false;
       if (!this.connection) {

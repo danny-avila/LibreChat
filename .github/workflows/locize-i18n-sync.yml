@@ -22,10 +22,10 @@ jobs:
       - name: Set Up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '24.16.0'
 
       - name: Install locize CLI
-        run: npm install -g locize-cli
+        run: npm install -g locize-cli@12.2.0 --ignore-scripts --no-audit --no-fund
 
       # Sync translations (Push missing keys & remove deleted ones)
       - name: Sync Locize with Repository
@@ -35,7 +35,7 @@ jobs:
           LOCIZE_PROJECT_ID: ${{ secrets.LOCIZE_PROJECT_ID }}
         run: |
           cd client/src/locales
-          locize sync --api-key "$LOCIZE_API_KEY" --project-id "$LOCIZE_PROJECT_ID" --language en
+          locize sync --cdn-type pro --api-key "$LOCIZE_API_KEY" --project-id "$LOCIZE_PROJECT_ID" --language en
 
       # When triggered by repository_dispatch, skip sync step.
       - name: Skip sync step on non-push events

@@ -80,6 +80,8 @@ jest.mock('~/data-provider', () => ({
 
 const mockErrorHandler = jest.fn();
 const mockCreatedHandler = jest.fn();
+const mockStepHandler = jest.fn();
+const mockTitleHandler = jest.fn();
 const mockSetIsSubmitting = jest.fn();
 const mockClearStepMaps = jest.fn();
 
@@ -89,7 +91,8 @@ jest.mock('~/hooks/SSE/useEventHandlers', () =>
     finalHandler: jest.fn(),
     createdHandler: mockCreatedHandler,
     attachmentHandler: jest.fn(),
-    stepHandler: jest.fn(),
+    stepHandler: mockStepHandler,
+    titleHandler: mockTitleHandler,
     contentHandler: jest.fn(),
     resetContentHandler: jest.fn(),
     syncStepMessage: jest.fn(),
@@ -177,6 +180,8 @@ describe('useResumableSSE - 404 error path', () => {
     localStorage.clear();
     mockErrorHandler.mockClear();
     mockCreatedHandler.mockClear();
+    mockStepHandler.mockClear();
+    mockTitleHandler.mockClear();
     mockClearStepMaps.mockClear();
     mockSetIsSubmitting.mockClear();
     mockSetQueryData.mockClear();
@@ -427,6 +432,67 @@ describe('useResumableSSE - 404 error path', () => {
         userMessage: expect.objectContaining({ conversationId: 'stream-123' }),
       }),
     );
+    unmount();
+  });
+
+  it('routes title stream events to the title handler', async () => {
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const titleEvent = {
+      event: 'title',
+      data: {
+        conversationId: CONV_ID,
+        title: 'Streamed Title',
+      },
+    };
+    const sse = getLastSSE();
+    await act(async () => {
+      sse._emit('message', { data: JSON.stringify(titleEvent) });
+    });
+
+    expect(mockTitleHandler).toHaveBeenCalledWith(titleEvent);
+    expect(mockStepHandler).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('replays title events from resume state sync', async () => {
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const titleEvent = {
+      event: 'title',
+      data: {
+        conversationId: CONV_ID,
+        title: 'Resumed Title',
+      },
+    };
+    const sse = getLastSSE();
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          sync: true,
+          resumeState: {
+            runSteps: [],
+            titleEvent,
+          },
+        }),
+      });
+    });
+
+    expect(mockTitleHandler).toHaveBeenCalledWith(titleEvent);
     unmount();
   });
 

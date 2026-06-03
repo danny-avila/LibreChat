@@ -5,7 +5,7 @@
 # startup. A fresh index only requires rsync + container restart — no
 # image rebuild on every push.
 
-FROM node:24-slim
+FROM node:24.16.0-slim
 
 ARG GITNEXUS_VERSION=1.5.3
 

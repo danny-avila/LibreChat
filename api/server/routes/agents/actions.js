@@ -51,6 +51,7 @@ router.get('/', async (req, res) => {
 
     const agentsResponse = await db.getListAgentsByAccess({
       accessibleIds: editableAgentObjectIds,
+      limit: null,
     });
 
     const editableAgentIds = agentsResponse.data.map((agent) => agent.id);

@@ -8,6 +8,8 @@ import {
   PrincipalModel,
   PermissionBits,
   EToolResources,
+  Constants,
+  actionDelimiter,
 } from 'librechat-data-provider';
 import type {
   UpdateWithAggregationPipeline,
@@ -518,6 +520,42 @@ describe('Agent Methods', () => {
       expect(retrievedAgent!.id).toBe(agentId);
       expect(retrievedAgent!.name).toBe('Test Agent');
       expect(retrievedAgent!.description).toBe('Test description');
+    });
+
+    test('should derive mcpServerNames only from MCP tools on create', async () => {
+      const { agentId, authorId } = createTestIds();
+      const actionTool = `sync${Constants.mcp_delimiter}state${actionDelimiter}api---example---com`;
+      const mcpTool = `search${Constants.mcp_delimiter}authorizedServer`;
+
+      const newAgent = await createAgent({
+        id: agentId,
+        name: 'MCP Names Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        tools: [actionTool, mcpTool],
+      });
+
+      expect(newAgent.mcpServerNames).toEqual(['authorizedServer']);
+    });
+
+    test('should derive mcpServerNames only from MCP tools on update', async () => {
+      const { agentId, authorId } = createTestIds();
+      const actionTool = `sync${Constants.mcp_delimiter}state${actionDelimiter}api---example---com`;
+      const mcpTool = `search${Constants.mcp_delimiter}authorizedServer`;
+
+      await createAgent({
+        id: agentId,
+        name: 'MCP Names Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        tools: [],
+      });
+
+      const updatedAgent = await updateAgent({ id: agentId }, { tools: [actionTool, mcpTool] });
+
+      expect(updatedAgent!.mcpServerNames).toEqual(['authorizedServer']);
     });
 
     test('should delete an agent', async () => {
@@ -3512,6 +3550,85 @@ describe('Support Contact Field', () => {
       expect(result.data).toHaveLength(1);
       expect(result.data[0].id).toBe(agentB1.id);
       expect(result.data[0].author).toBe(userB.toString());
+    });
+
+    test('should cap results at the default page size when limit is omitted', async () => {
+      const extraAgents = [];
+      for (let i = 0; i < 102; i++) {
+        const agent = await createAgent({
+          id: `agent_${uuidv4().slice(0, 12)}`,
+          name: `Bulk Agent ${i}`,
+          description: `Bulk agent ${i}`,
+          provider: 'openai',
+          model: 'gpt-4',
+          author: userA,
+        });
+        extraAgents.push(agent);
+      }
+
+      const accessibleIds = extraAgents.map((a) => a._id) as mongoose.Types.ObjectId[];
+
+      const result = await getListAgentsByAccess({
+        accessibleIds,
+        otherParams: {},
+      });
+
+      expect(result.data).toHaveLength(100);
+      expect(result.has_more).toBe(true);
+      expect(result.after).toBeTruthy();
+    });
+
+    test('should return all agents when limit is explicitly null', async () => {
+      const extraAgents = [];
+      for (let i = 0; i < 102; i++) {
+        const agent = await createAgent({
+          id: `agent_${uuidv4().slice(0, 12)}`,
+          name: `Bulk Agent ${i}`,
+          description: `Bulk agent ${i}`,
+          provider: 'openai',
+          model: 'gpt-4',
+          author: userA,
+        });
+        extraAgents.push(agent);
+      }
+
+      const accessibleIds = extraAgents.map((a) => a._id) as mongoose.Types.ObjectId[];
+
+      const result = await getListAgentsByAccess({
+        accessibleIds,
+        otherParams: {},
+        limit: null,
+      });
+
+      expect(result.data).toHaveLength(102);
+      expect(result.has_more).toBe(false);
+      expect(result.after).toBeNull();
+    });
+
+    test('should honor explicit limits above the legacy 100 cap', async () => {
+      const extraAgents = [];
+      for (let i = 0; i < 105; i++) {
+        const agent = await createAgent({
+          id: `agent_${uuidv4().slice(0, 12)}`,
+          name: `Bulk Agent ${i}`,
+          description: `Bulk agent ${i}`,
+          provider: 'openai',
+          model: 'gpt-4',
+          author: userA,
+        });
+        extraAgents.push(agent);
+      }
+
+      const accessibleIds = extraAgents.map((a) => a._id) as mongoose.Types.ObjectId[];
+
+      const result = await getListAgentsByAccess({
+        accessibleIds,
+        otherParams: {},
+        limit: 500,
+      });
+
+      expect(result.data).toHaveLength(105);
+      expect(result.has_more).toBe(false);
     });
   });
 });

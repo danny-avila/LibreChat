@@ -398,18 +398,18 @@ export function getGoogleConfig(
   const modelName = (modelOptions?.model ?? '') as string;
 
   /**
-   * Gemini 3+ uses a qualitative `thinkingLevel` ('minimal'|'low'|'medium'|'high')
-   * instead of the numeric `thinkingBudget` used by Gemini 2.5 and earlier.
+   * Gemini 3+ and Gemma 4+ use a qualitative `thinkingLevel` ('minimal'|'low'|'medium'|'high')
+   * instead of the numeric `thinkingBudget` used by earlier models.
    * When `thinking` is enabled (default: true), we always send `thinkingConfig`
-   * with `includeThoughts: true`. The `thinkingBudget` param is ignored for Gemini 3+.
+   * with `includeThoughts: true`. The `thinkingBudget` param is ignored for these models.
    *
    * For Vertex AI, top-level `includeThoughts` is still required because
    * `@librechat/agents/langchain/google-common`'s `formatGenerationConfig` reads it separately
    * from `thinkingConfig` — they serve different purposes in the request pipeline.
    */
-  const isGemini3Plus = /gemini-([3-9]|\d{2,})/i.test(modelName);
+  const supportsThinkingLevel = /gemini-([3-9]|\d{2,})|gemma-([4-9]|\d{2,})/i.test(modelName);
 
-  if (isGemini3Plus && thinking) {
+  if (supportsThinkingLevel && thinking) {
     const thinkingConfig: GoogleThinkingConfig = {
       includeThoughts: true,
     };
@@ -423,7 +423,7 @@ export function getGoogleConfig(
       (llmConfig as { thinkingConfig?: GoogleThinkingConfig }).thinkingConfig = thinkingConfig;
       (llmConfig as VertexAIClientOptions).includeThoughts = true;
     }
-  } else if (!isGemini3Plus) {
+  } else if (!supportsThinkingLevel) {
     const shouldEnableThinking =
       thinking && thinkingBudget != null && (thinkingBudget > 0 || thinkingBudget === -1);
 
@@ -531,6 +531,26 @@ export function getGoogleConfig(
         delete (llmConfig as Record<string, unknown>)[param];
       }
     });
+  }
+
+  /**
+   * Apply the model-aware `maxOutputTokens` default last, so an explicit value,
+   * `defaultParams`, and `addParams` all take precedence and a `dropParams` entry
+   * is respected. Only fill in when the field is genuinely unset (`undefined`/`null`);
+   * an empty-string value stays stripped per Gemini empty-payload handling. Without
+   * this, current Gemini models would inherit the legacy 8K default instead of their
+   * documented limit.
+   */
+  const maxOutputDropped =
+    Array.isArray(options.dropParams) && options.dropParams.includes('maxOutputTokens');
+  if (
+    !maxOutputDropped &&
+    modelOptions?.maxOutputTokens == null &&
+    (llmConfig as Record<string, unknown>).maxOutputTokens == null
+  ) {
+    const resolvedModel = (llmConfig as { model?: string }).model || modelName;
+    (llmConfig as GoogleClientOptions).maxOutputTokens =
+      googleSettings.maxOutputTokens.reset(resolvedModel);
   }
 
   applyGemini35FlashOverrides({

@@ -356,6 +356,37 @@ describe('getModelMaxTokens', () => {
     );
   });
 
+  test('should return correct context tokens for Gemma models', () => {
+    expect(maxTokensMap[EModelEndpoint.google].gemma).toBe(32768);
+    expect(getModelMaxTokens('gemma', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google].gemma,
+    );
+    expect(getModelMaxTokens('gemma-2-9b-it', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['gemma-2'],
+    );
+    expect(getModelMaxTokens('gemma-3-27b-it', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['gemma-3-27b'],
+    );
+    expect(getModelMaxTokens('gemma4:latest', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google].gemma4,
+    );
+    expect(getModelMaxTokens('gemma4:e4b', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google].gemma4,
+    );
+    expect(getModelMaxTokens('Gemma4:31B', EModelEndpoint.custom)).toBe(
+      maxTokensMap[EModelEndpoint.custom]['gemma4:31b'],
+    );
+    expect(getModelMaxTokens('ollama/gemma4:31b', EModelEndpoint.custom)).toBe(
+      maxTokensMap[EModelEndpoint.custom]['gemma4:31b'],
+    );
+    expect(getModelMaxTokens('google/gemma-4-31B-it', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['gemma-4-31b'],
+    );
+    expect(getModelMaxTokens('google/gemma-4-26B-A4B-it', EModelEndpoint.google)).toBe(
+      maxTokensMap[EModelEndpoint.google]['gemma-4-26b-a4b'],
+    );
+  });
+
   test('should return correct tokens for partial match - Cohere models', () => {
     expect(getModelMaxTokens('command', EModelEndpoint.custom)).toBe(
       maxTokensMap[EModelEndpoint.custom]['command'],
@@ -1456,6 +1487,37 @@ describe('Claude Model Tests', () => {
 
     modelVariations.forEach((model) => {
       expect(matchModelName(model, EModelEndpoint.anthropic)).toBe('claude-opus-4-7');
+    });
+  });
+
+  it('should return correct context length for Claude Opus 4.8 (1M)', () => {
+    expect(getModelMaxTokens('claude-opus-4-8', EModelEndpoint.anthropic)).toBe(
+      maxTokensMap[EModelEndpoint.anthropic]['claude-opus-4-8'],
+    );
+    expect(getModelMaxTokens('claude-opus-4-8')).toBe(
+      maxTokensMap[EModelEndpoint.anthropic]['claude-opus-4-8'],
+    );
+  });
+
+  it('should return correct max output tokens for Claude Opus 4.8 (128K)', () => {
+    const { getModelMaxOutputTokens } = require('@librechat/api');
+    expect(getModelMaxOutputTokens('claude-opus-4-8', EModelEndpoint.anthropic)).toBe(
+      maxOutputTokensMap[EModelEndpoint.anthropic]['claude-opus-4-8'],
+    );
+  });
+
+  it('should match model names correctly for Claude Opus 4.8', () => {
+    const modelVariations = [
+      'claude-opus-4-8',
+      'claude-opus-4-8-20260528',
+      'claude-opus-4-8-latest',
+      'anthropic/claude-opus-4-8',
+      'claude-opus-4-8/anthropic',
+      'claude-opus-4-8-preview',
+    ];
+
+    modelVariations.forEach((model) => {
+      expect(matchModelName(model, EModelEndpoint.anthropic)).toBe('claude-opus-4-8');
     });
   });
 

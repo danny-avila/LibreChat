@@ -20,7 +20,6 @@ import { logger, validateFiles, cachePreview, getCachedPreview, removePreviewEnt
 import { useGetFileConfig, useUploadFileMutation } from '~/data-provider';
 import useLocalize, { TranslationKeys } from '~/hooks/useLocalize';
 import { useDelayedUploadToast } from './useDelayedUploadToast';
-import { processFileForUpload } from '~/utils/heicConverter';
 import { useChatContext } from '~/Providers/ChatContext';
 import store, { ephemeralAgentByConvoId } from '~/store';
 import useClientResize from './useClientResize';
@@ -339,11 +338,16 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
         // Add file immediately to show in UI
         addFile(initialExtendedFile);
 
+        const originalFileName = originalFile.name.toLowerCase();
+
         // Check if HEIC conversion is needed and show toast
         const isHEIC =
           originalFile.type === 'image/heic' ||
           originalFile.type === 'image/heif' ||
-          originalFile.name.toLowerCase().match(/\.(heic|heif)$/);
+          /\.(heic|heif)$/.test(originalFileName);
+        const isPossibleImage =
+          originalFile.type.startsWith('image/') ||
+          /\.(avif|bmp|gif|heic|heif|jpe?g|png|svg|tiff?|webp)$/.test(originalFileName);
 
         if (isHEIC) {
           showToast({
@@ -353,19 +357,17 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
           });
         }
 
-        // Process file for HEIC conversion if needed
-        const heicProcessedFile = await processFileForUpload(
-          originalFile,
-          0.9,
-          (conversionProgress) => {
-            // Update progress during HEIC conversion (0.1 to 0.5 range for conversion)
-            const adjustedProgress = 0.1 + conversionProgress * 0.4;
-            replaceFile({
-              ...initialExtendedFile,
-              progress: adjustedProgress,
-            });
-          },
-        );
+        const heicProcessedFile = isPossibleImage
+          ? await import('~/utils/heicConverter').then(({ processFileForUpload }) =>
+              processFileForUpload(originalFile, 0.9, (conversionProgress) => {
+                const adjustedProgress = 0.1 + conversionProgress * 0.4;
+                replaceFile({
+                  ...initialExtendedFile,
+                  progress: adjustedProgress,
+                });
+              }),
+            )
+          : originalFile;
 
         let finalProcessedFile = heicProcessedFile;
 

@@ -55,6 +55,14 @@ function formatDocumentBlock(
     return document;
   }
 
+  if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
+    return {
+      type: 'media',
+      mimeType,
+      data: content,
+    };
+  }
+
   const resolvedFilename = filename ?? 'document';
 
   if (useResponsesApi) {
@@ -62,14 +70,6 @@ function formatDocumentBlock(
       type: 'input_file',
       filename: resolvedFilename,
       file_data: `data:${mimeType};base64,${content}`,
-    };
-  }
-
-  if (provider === Providers.GOOGLE || provider === Providers.VERTEXAI) {
-    return {
-      type: 'media',
-      mimeType,
-      data: content,
     };
   }
 
@@ -84,6 +84,18 @@ function formatDocumentBlock(
   }
 
   return null;
+}
+
+function getBase64DecodedByteCount(content: string): number {
+  let paddingChars = 0;
+
+  if (content.endsWith('==')) {
+    paddingChars = 2;
+  } else if (content.endsWith('=')) {
+    paddingChars = 1;
+  }
+
+  return Math.floor((content.length * 3) / 4) - paddingChars;
 }
 
 /**
@@ -208,8 +220,7 @@ export async function encodeAndFormatDocuments(
         result.files.push(metadata);
       }
     } else if (isDocSupported && !isBedrock) {
-      const paddingChars = content.endsWith('==') ? 2 : content.endsWith('=') ? 1 : 0;
-      const decodedByteCount = Math.floor((content.length * 3) / 4) - paddingChars;
+      const decodedByteCount = getBase64DecodedByteCount(content);
       if (configuredFileSizeLimit && decodedByteCount > configuredFileSizeLimit) {
         throw new Error(
           `File size (~${(decodedByteCount / 1024 / 1024).toFixed(1)}MB) exceeds the configured limit for ${provider}`,

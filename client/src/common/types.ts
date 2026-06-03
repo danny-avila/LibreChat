@@ -16,6 +16,8 @@ export function isEphemeralAgent(agentId: string | null | undefined): boolean {
 export interface ConfigFieldDetail {
   title: string;
   description: string;
+  /** Whether the field holds a secret and should be masked (defaults to masked when omitted). */
+  sensitive?: boolean;
 }
 
 export type CodeBarProps = {

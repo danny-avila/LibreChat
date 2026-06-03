@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { ChevronDown, Users } from 'lucide-react';
 import { Tools, Constants, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
@@ -9,7 +9,7 @@ import type {
   FunctionToolCall,
 } from 'librechat-data-provider';
 import type { PartWithIndex } from './ParallelContent';
-import { useLocalize, useExpandCollapse } from '~/hooks';
+import { useLocalize, useExpandCollapse, scheduleMessageContentLayoutReconcile } from '~/hooks';
 import { cn, getToolDisplayLabel } from '~/utils';
 import { StackedToolIcons } from './ToolOutput';
 import { useMCPIconMap } from '~/hooks/MCP';
@@ -75,10 +75,22 @@ interface ToolCallGroupProps {
   parts: PartWithIndex[];
   isSubmitting: boolean;
   isLast: boolean;
-  renderPart: (part: TMessageContentParts, idx: number, isLastPart: boolean) => React.ReactNode;
+  renderPart: (
+    part: TMessageContentParts,
+    idx: number,
+    isLastPart: boolean,
+    onToolExpand?: () => void,
+  ) => React.ReactNode;
   lastContentIdx: number;
   groupAttachments?: TAttachment[];
+  initialExpansionState?: ToolCallGroupExpansionState;
+  onExpansionChange?: (state: ToolCallGroupExpansionState) => void;
 }
+
+export type ToolCallGroupExpansionState = {
+  isExpanded: boolean;
+  userOverride: boolean;
+};
 
 export default function ToolCallGroup({
   parts,
@@ -87,9 +99,13 @@ export default function ToolCallGroup({
   renderPart,
   lastContentIdx,
   groupAttachments,
+  initialExpansionState,
+  onExpansionChange,
 }: ToolCallGroupProps) {
   const localize = useLocalize();
   const mcpIconMap = useMCPIconMap();
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const cancelLayoutReconcileRef = useRef<(() => void) | null>(null);
   const count = parts.length;
 
   const toolMetadata = useMemo(() => parts.map((p) => getToolMeta(p.part)), [parts]);
@@ -136,9 +152,33 @@ export default function ToolCallGroup({
 
   const autoExpand = useRecoilValue(store.autoExpandTools);
   const autoCollapse = !autoExpand && count >= 2 && allCompleted;
-  const [isExpanded, setIsExpanded] = useState(autoExpand || !autoCollapse);
-  const [userOverride, setUserOverride] = useState(false);
+  const initialState = initialExpansionState?.userOverride === true ? initialExpansionState : null;
+  const [isExpanded, setIsExpanded] = useState(
+    initialState?.isExpanded ?? (autoExpand || !autoCollapse),
+  );
+  const [userOverride, setUserOverride] = useState(initialState != null);
+  const [shouldRenderBody, setShouldRenderBody] = useState(isExpanded);
+  const previousIsExpandedRef = useRef(isExpanded);
   const { style: expandStyle, ref: expandRef } = useExpandCollapse(isExpanded);
+  const notifyLayoutChange = useCallback(() => {
+    cancelLayoutReconcileRef.current?.();
+    cancelLayoutReconcileRef.current = scheduleMessageContentLayoutReconcile(rootRef.current);
+  }, []);
+
+  useEffect(
+    () => () => {
+      cancelLayoutReconcileRef.current?.();
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const wasExpanded = previousIsExpandedRef.current;
+    previousIsExpandedRef.current = isExpanded;
+    if (wasExpanded && !isExpanded) {
+      notifyLayoutChange();
+    }
+  }, [isExpanded, notifyLayoutChange]);
 
   useEffect(() => {
     if (autoCollapse && !userOverride) {
@@ -147,9 +187,35 @@ export default function ToolCallGroup({
   }, [autoCollapse, userOverride]);
 
   const handleToggle = useCallback(() => {
+    const nextExpanded = !isExpanded;
     setUserOverride(true);
-    setIsExpanded((prev) => !prev);
-  }, []);
+    if (nextExpanded) {
+      setShouldRenderBody(true);
+    }
+    setIsExpanded(nextExpanded);
+    onExpansionChange?.({ isExpanded: nextExpanded, userOverride: true });
+  }, [isExpanded, onExpansionChange]);
+
+  const handleToolExpand = useCallback(() => {
+    setUserOverride(true);
+    setShouldRenderBody(true);
+    setIsExpanded(true);
+    onExpansionChange?.({ isExpanded: true, userOverride: true });
+  }, [onExpansionChange]);
+
+  const handleTransitionEnd = useCallback(
+    (event: React.TransitionEvent<HTMLDivElement>) => {
+      if (event.target !== event.currentTarget) {
+        return;
+      }
+      if (isExpanded) {
+        return;
+      }
+      setShouldRenderBody(false);
+      notifyLayoutChange();
+    },
+    [isExpanded, notifyLayoutChange],
+  );
 
   const getSubagentLabel = () =>
     subagentsDone
@@ -165,13 +231,14 @@ export default function ToolCallGroup({
   );
 
   useEffect(() => {
-    if (hasActiveToolCall) {
+    if (hasActiveToolCall && !userOverride) {
+      setShouldRenderBody(true);
       setIsExpanded(true);
     }
-  }, [hasActiveToolCall]);
+  }, [hasActiveToolCall, userOverride]);
 
   return (
-    <div className="mb-2 mt-1">
+    <div className="mb-2 mt-1" ref={rootRef}>
       <button
         type="button"
         className="inline-flex w-full items-center gap-2 py-1 text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
@@ -216,12 +283,16 @@ export default function ToolCallGroup({
           aria-hidden="true"
         />
       </button>
-      <div style={expandStyle}>
-        <div className="overflow-hidden" ref={expandRef}>
-          <div className="py-0.5 pl-4">
-            {parts.map(({ part, idx }) => renderPart(part, idx, isLast && idx === lastContentIdx))}
+      <div style={expandStyle} onTransitionEnd={handleTransitionEnd} aria-hidden={!isExpanded}>
+        {shouldRenderBody && (
+          <div className="overflow-hidden" ref={expandRef}>
+            <div className="py-0.5 pl-4">
+              {parts.map(({ part, idx }) =>
+                renderPart(part, idx, isLast && idx === lastContentIdx, handleToolExpand),
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
       {groupAttachments && groupAttachments.length > 0 && (
         <AttachmentGroup attachments={groupAttachments} />

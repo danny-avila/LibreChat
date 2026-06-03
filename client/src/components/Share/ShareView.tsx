@@ -29,7 +29,7 @@ import store from '~/store';
 
 function SharedView() {
   const localize = useLocalize();
-  const { data: config } = useGetStartupConfig();
+  const { data: config } = useGetStartupConfig(undefined, { context: 'share' });
   const { theme, setTheme } = useContext(ThemeContext);
   const { shareId } = useParams();
   const { data, isLoading } = useGetSharedMessages(shareId ?? '');
@@ -124,7 +124,10 @@ function SharedView() {
 
   const footer = (
     <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-surface-secondary from-40% to-transparent">
-      <Footer className="pointer-events-auto relative mx-auto flex max-w-[55rem] flex-wrap items-center justify-center gap-2 px-3 pb-4 pt-6 text-center text-xs text-text-secondary" />
+      <Footer
+        startupConfig={config ?? null}
+        className="pointer-events-auto relative mx-auto flex max-w-[55rem] flex-wrap items-center justify-center gap-2 px-3 pb-4 pt-6 text-center text-xs text-text-secondary"
+      />
     </div>
   );
 

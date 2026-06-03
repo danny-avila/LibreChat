@@ -3,6 +3,7 @@ import {
   agentsEndpointSchema,
   azureEndpointSchema,
   endpointSchema,
+  RetentionMode,
   configSchema,
   interfaceSchema,
   fileStorageSchema,
@@ -10,7 +11,12 @@ import {
   summarizationTriggerSchema,
   summarizationConfigSchema,
 } from '../src/config';
-import { tModelSpecPresetSchema, EModelEndpoint } from '../src/schemas';
+import {
+  tModelSpecPresetSchema,
+  EModelEndpoint,
+  ReasoningParameterFormat,
+  ReasoningResponseKey,
+} from '../src/schemas';
 import { specsConfigSchema } from '../src/models';
 import { FileSources } from '../src/types/files';
 
@@ -303,6 +309,58 @@ describe('endpointSchema addParams validation', () => {
       },
     });
     expect(result.success).toBe(true);
+  });
+
+  it('accepts custom reasoning format config', () => {
+    const result = endpointSchema.safeParse({
+      ...validEndpoint,
+      customParams: {
+        reasoningFormat: ReasoningParameterFormat.reasoningObject,
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.customParams?.reasoningFormat).toBe(
+        ReasoningParameterFormat.reasoningObject,
+      );
+    }
+  });
+
+  it('rejects invalid custom reasoning format config', () => {
+    const result = endpointSchema.safeParse({
+      ...validEndpoint,
+      customParams: {
+        reasoningFormat: 'provider_magic',
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts custom reasoning response key config', () => {
+    const result = endpointSchema.safeParse({
+      ...validEndpoint,
+      customParams: {
+        reasoningKey: ReasoningResponseKey.reasoning,
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.customParams?.reasoningKey).toBe(ReasoningResponseKey.reasoning);
+    }
+  });
+
+  it('rejects invalid custom reasoning response key config', () => {
+    const result = endpointSchema.safeParse({
+      ...validEndpoint,
+      customParams: {
+        reasoningKey: 'reasoning_text',
+      },
+    });
+
+    expect(result.success).toBe(false);
   });
 
   it('rejects non-boolean web_search objects in addParams', () => {
@@ -632,6 +690,16 @@ describe('interfaceSchema', () => {
     expect(result).not.toHaveProperty('endpointsMenu');
     expect(result).not.toHaveProperty('sidePanel');
     expect(result.modelSelect).toBe(false);
+  });
+
+  it('accepts retainAgentFiles with all-data retention', () => {
+    const result = interfaceSchema.parse({
+      retentionMode: RetentionMode.ALL,
+      retainAgentFiles: true,
+    });
+
+    expect(result.retentionMode).toBe(RetentionMode.ALL);
+    expect(result.retainAgentFiles).toBe(true);
   });
 });
 

@@ -20,6 +20,9 @@ import type { GenerationJobStore } from '~/app/metrics';
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
 
+/** Error surfaced to any client still attached when a stale/hung job is reaped. */
+const REAPED_JOB_ERROR = 'Generation timed out';
+
 /**
  * Configuration options for GenerationJobManager
  */
@@ -952,7 +955,13 @@ class GenerationJobManagerClass {
       return;
     }
 
+    // Refresh job activity so the store's stale-job failsafe reaps on inactivity
+    // (a hung generation), not on age (a long but live stream). Parity with
+    // RedisJobStore refreshing the running TTL on each appendChunk.
+    this.jobStore.recordActivity?.(streamId);
+
     await this.trackUserMessage(streamId, event);
+    await this.trackTitleEvent(streamId, event);
 
     // For Redis mode, persist chunk for later reconstruction (fire-and-forget for resumability)
     if (this._isRedis) {
@@ -1033,6 +1042,21 @@ class GenerationJobManagerClass {
         logger.error(`[GenerationJobManager] Failed to save run steps:`, err);
       });
     }
+  }
+
+  /**
+   * Persist the last title event so resume sync can replay it. Content
+   * aggregation only reconstructs message parts, so UI-only events need their
+   * own metadata slot.
+   */
+  private async trackTitleEvent(streamId: string, event: t.ServerSentEvent): Promise<void> {
+    if (!('event' in event) || event.event !== 'title') {
+      return;
+    }
+
+    await this.jobStore.updateJob(streamId, {
+      titleEvent: JSON.stringify(event),
+    });
   }
 
   /**
@@ -1144,6 +1168,14 @@ class GenerationJobManagerClass {
     const result = await this.jobStore.getContentParts(streamId);
     const aggregatedContent = result?.content ?? [];
     const runSteps = await this.jobStore.getRunSteps(streamId);
+    let titleEvent: t.ResumeState['titleEvent'];
+    if (jobData.titleEvent) {
+      try {
+        titleEvent = JSON.parse(jobData.titleEvent) as t.ResumeState['titleEvent'];
+      } catch {
+        // Ignore malformed persisted title events.
+      }
+    }
 
     logger.debug(`[GenerationJobManager] getResumeState:`, {
       streamId,
@@ -1158,6 +1190,7 @@ class GenerationJobManagerClass {
       responseMessageId: jobData.responseMessageId,
       conversationId: jobData.conversationId,
       sender: jobData.sender,
+      titleEvent,
     };
   }
 
@@ -1234,6 +1267,26 @@ class GenerationJobManagerClass {
     // Cleanup runtime state for deleted jobs
     for (const streamId of this.runtimeState.keys()) {
       if (!(await this.jobStore.hasJob(streamId))) {
+        /**
+         * Abort any still-pending generation whose job has been reaped (e.g. a
+         * stale "running" job removed by the store's failsafe timeout). This
+         * unwinds the hung in-flight work so its client/graph references can be
+         * garbage collected, rather than leaking via the pending promise.
+         */
+        const runtime = this.runtimeState.get(streamId);
+        if (runtime && !runtime.abortController.signal.aborted) {
+          runtime.abortController.abort();
+        }
+        // If a client is still attached when the job is reaped, send a terminal
+        // error first so the SSE connection closes instead of hanging open with no
+        // final/done event (the route only ends the response from onDone/onError).
+        if (this.eventTransport.getSubscriberCount(streamId) > 0) {
+          try {
+            await this.eventTransport.emitError(streamId, REAPED_JOB_ERROR);
+          } catch (err) {
+            logger.error(`[GenerationJobManager] Failed to notify reaped stream ${streamId}:`, err);
+          }
+        }
         this.runtimeState.delete(streamId);
         runningJobsChanged = this.runningJobs.delete(streamId) || runningJobsChanged;
         this.runStepBuffers?.delete(streamId);

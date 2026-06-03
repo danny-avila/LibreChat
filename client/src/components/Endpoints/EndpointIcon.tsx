@@ -8,6 +8,7 @@ import type {
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import MinimalIcon from '~/components/Endpoints/MinimalIcon';
 import { getIconEndpoint } from '~/utils';
+import { isImageURL } from '~/utils/icons';
 
 export default function EndpointIcon({
   conversation,
@@ -39,7 +40,7 @@ export default function EndpointIcon({
 
   const iconURL = assistantAvatar || convoIconURL;
 
-  if (iconURL && (iconURL.includes('http') || iconURL.startsWith('/images/'))) {
+  if (isImageURL(iconURL)) {
     return (
       <ConvoIconURL
         iconURL={iconURL}

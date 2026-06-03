@@ -2,20 +2,27 @@ import jwt from 'jsonwebtoken';
 import jwksRsa from 'jwks-rsa';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
-import { getTenantId, logger } from '@librechat/data-schemas';
+import { getTenantId, logger, tenantStorage } from '@librechat/data-schemas';
 import { SystemRoles, isRemoteOidcUrlAllowed } from 'librechat-data-provider';
 import type { RequestHandler, Request, Response, NextFunction } from 'express';
-import type { AppConfig, IUser, UserMethods } from '@librechat/data-schemas';
+import type { AppConfig, IUser, RoleMethods, UserMethods } from '@librechat/data-schemas';
 import type { Algorithm, JwtPayload, VerifyOptions } from 'jsonwebtoken';
 import type { TAgentsEndpoint } from 'librechat-data-provider';
 import type { RequestInit } from 'undici';
 import type { GetAppConfigOptions } from '../app/service';
 import { findOpenIDUser, getOpenIdEmail, normalizeOpenIdIssuer } from '../auth/openid';
+import {
+  getLibreChatRolesForOpenIdSync,
+  getOpenIdRolesForOpenIdSync,
+  getOpenIdRoleSyncOptions,
+  selectOpenIdRole,
+} from '../auth/openidRoleSync';
 import { isEnabled, math } from '~/utils';
 
 export interface RemoteAgentAuthDeps {
   apiKeyMiddleware: RequestHandler;
   findUser: UserMethods['findUser'];
+  getRolesByNames: RoleMethods['findRolesByNames'];
   updateUser: UserMethods['updateUser'];
   getAppConfig: (options?: GetAppConfigOptions) => Promise<AppConfig>;
 }
@@ -444,6 +451,87 @@ async function resolveUser(
   return { status: 'resolved', user, updateData };
 }
 
+async function selectOpenIdRoleForOpenIdSync(
+  payload: JwtPayload,
+  user: IUser,
+  getRolesByNames: RemoteAgentAuthDeps['getRolesByNames'],
+): Promise<string | undefined> {
+  const options = getOpenIdRoleSyncOptions();
+  if (!options.enabled || !options.apiEnabled) {
+    return;
+  }
+
+  if (user.role === SystemRoles.ADMIN) {
+    logger.info(
+      `[remoteAgentAuth] OpenID role sync skipped for ${user.id}; existing ADMIN role is not managed by generic role sync`,
+    );
+    return;
+  }
+
+  if (options.claimSource !== 'access') {
+    logger.warn(
+      `[remoteAgentAuth] OpenID role sync skipped; source '${options.claimSource}' is not available for API auth`,
+    );
+    return;
+  }
+
+  const openIdRoleValues = await getOpenIdRolesForOpenIdSync({
+    options,
+    accessClaims: payload,
+    decodeToken: () => payload,
+  });
+  if (openIdRoleValues === undefined) {
+    logger.warn(
+      `[remoteAgentAuth] OpenID role sync skipped; claim '${options.claim}' was not found or invalid`,
+    );
+    return;
+  }
+
+  const loadLibreChatRoles = async () =>
+    getLibreChatRolesForOpenIdSync({
+      getRolesByNames,
+      rolePriority: options.rolePriority,
+      fallbackRole: options.fallbackRole,
+      logPrefix: '[remoteAgentAuth]',
+    });
+  const { rolePriority, fallbackRole } =
+    user.tenantId && getTenantId() !== user.tenantId
+      ? await tenantStorage.run({ tenantId: user.tenantId }, loadLibreChatRoles)
+      : await loadLibreChatRoles();
+  const result = selectOpenIdRole({
+    currentRole: user.role,
+    openIdRoleValues,
+    rolePriority,
+    fallbackRole,
+  });
+
+  if (!result.selectedRole || result.selectedRole === user.role) {
+    return;
+  }
+
+  logger.info(
+    `[remoteAgentAuth] OpenID role sync selected role for ${user.id}: ${user.role || 'unset'} -> ${result.selectedRole}`,
+  );
+  return result.selectedRole;
+}
+
+async function updateResolvedUser(
+  userResolution: Extract<UserResolution, { status: 'resolved' }>,
+  updateUser: RemoteAgentAuthDeps['updateUser'],
+): Promise<void> {
+  if (Object.keys(userResolution.updateData).length === 0) {
+    return;
+  }
+
+  const update = async () => updateUser(userResolution.user.id, userResolution.updateData);
+  if (userResolution.user.tenantId && getTenantId() !== userResolution.user.tenantId) {
+    await tenantStorage.run({ tenantId: userResolution.user.tenantId }, update);
+    return;
+  }
+
+  await update();
+}
+
 /**
  * Factory for Remote Agent API auth middleware.
  *
@@ -468,6 +556,7 @@ async function resolveUser(
 export function createRemoteAgentAuth({
   apiKeyMiddleware,
   findUser,
+  getRolesByNames,
   updateUser,
   getAppConfig,
 }: RemoteAgentAuthDeps): RequestHandler {
@@ -569,9 +658,31 @@ export function createRemoteAgentAuth({
         return;
       }
 
-      if (Object.keys(userResolution.updateData).length > 0) {
-        await updateUser(userResolution.user.id, userResolution.updateData);
+      const selectedRole = await selectOpenIdRoleForOpenIdSync(
+        payload,
+        userResolution.user,
+        getRolesByNames,
+      );
+      const roleChanged = Boolean(selectedRole);
+      if (selectedRole) {
+        userResolution.user.role = selectedRole;
+        userResolution.updateData.role = selectedRole;
       }
+
+      if (
+        roleChanged &&
+        !(await enforceOidcTenantPolicy(
+          token,
+          userResolution.user,
+          initialConfigOptions,
+          getAppConfig,
+        ))
+      ) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      await updateResolvedUser(userResolution, updateUser);
 
       req.user = userResolution.user;
       return next();

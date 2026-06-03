@@ -1,4 +1,11 @@
 export { default as useProgress } from './useProgress';
+export {
+  MESSAGE_CONTENT_LAYOUT_CHANGE_EVENT,
+  dispatchMessageContentLayoutChange,
+  getRenderedContentMaxScrollTop,
+  reconcileMessageContentLayout,
+  scheduleMessageContentLayoutReconcile,
+} from './messageLayout';
 export { EXPAND_TRANSITION } from './useExpandCollapse';
 export { default as useAttachments } from './useAttachments';
 export { default as useSubmitMessage } from './useSubmitMessage';

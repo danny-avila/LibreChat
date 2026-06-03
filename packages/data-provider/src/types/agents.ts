@@ -217,6 +217,13 @@ export namespace Agents {
     responseMessageId?: string;
     conversationId?: string;
     sender?: string;
+    titleEvent?: {
+      event: 'title';
+      data?: {
+        conversationId?: string;
+        title?: string;
+      };
+    };
   }
   /**
    * Represents a run step delta i.e. any changed fields on a run step during

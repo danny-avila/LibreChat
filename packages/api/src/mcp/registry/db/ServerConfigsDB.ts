@@ -27,6 +27,8 @@ const DANGEROUS_CREDENTIAL_PATTERNS = [
   /\{\{LIBRECHAT_BODY_[^}]+\}\}/g,
 ];
 
+const BLOCKED_USER_OAUTH_ENDPOINT_PARAMS = ['audience', 'resource'] as const;
+
 /**
  * Sanitizes headers by removing dangerous credential placeholders.
  * This prevents credential exfiltration when MCP servers are shared between users.
@@ -50,6 +52,44 @@ function sanitizeCredentialPlaceholders(
     sanitized[key] = sanitizedValue;
   }
   return sanitized;
+}
+
+function stripBlockedOAuthEndpointParams(url?: string): string | undefined {
+  if (!url) {
+    return url;
+  }
+
+  try {
+    const parsed = new URL(url);
+    BLOCKED_USER_OAUTH_ENDPOINT_PARAMS.forEach((param) => parsed.searchParams.delete(param));
+    return parsed.href;
+  } catch {
+    return url;
+  }
+}
+
+function sanitizeUserManagedOAuthConfig(config: ParsedServerConfig): ParsedServerConfig {
+  if (!config.oauth) {
+    return config;
+  }
+
+  const {
+    audience: _audience,
+    forward_audience_on_refresh: _forwardAudienceOnRefresh,
+    ...oauth
+  } = config.oauth;
+  return {
+    ...config,
+    oauth: {
+      ...oauth,
+      ...(config.oauth.authorization_url && {
+        authorization_url: stripBlockedOAuthEndpointParams(config.oauth.authorization_url),
+      }),
+      ...(config.oauth.token_url && {
+        token_url: stripBlockedOAuthEndpointParams(config.oauth.token_url),
+      }),
+    },
+  };
 }
 
 /**
@@ -126,12 +166,12 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
       );
     }
 
-    const sanitizedConfig = {
+    const sanitizedConfig = sanitizeUserManagedOAuthConfig({
       ...config,
       headers: sanitizeCredentialPlaceholders(
         (config as ParsedServerConfig & { headers?: Record<string, string> }).headers,
       ),
-    } as ParsedServerConfig;
+    } as ParsedServerConfig);
 
     /** Transformed user-provided API key config (adds customUserVars and headers) */
     const transformedConfig = this.transformUserApiKeyConfig(sanitizedConfig);
@@ -175,12 +215,12 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
 
     const existingServer = await this._dbMethods.findMCPServerByServerName(serverName);
 
-    let configToSave: ParsedServerConfig = {
+    let configToSave: ParsedServerConfig = sanitizeUserManagedOAuthConfig({
       ...config,
       headers: sanitizeCredentialPlaceholders(
         (config as ParsedServerConfig & { headers?: Record<string, string> }).headers,
       ),
-    } as ParsedServerConfig;
+    } as ParsedServerConfig);
 
     /** Transformed user-provided API key config (adds customUserVars and headers) */
     configToSave = this.transformUserApiKeyConfig(configToSave);
@@ -415,13 +455,18 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
   private async mapDBServerToParsedConfig(
     serverDBDoc: MCPServerDocument,
   ): Promise<ParsedServerConfig> {
+    const authorId =
+      serverDBDoc.author != null
+        ? (serverDBDoc.author as unknown as Types.ObjectId | string).toString()
+        : undefined;
     const config: ParsedServerConfig = {
       ...serverDBDoc.config,
       dbId: (serverDBDoc._id as Types.ObjectId).toString(),
       source: 'user',
       updatedAt: serverDBDoc.updatedAt?.getTime(),
+      ...(authorId ? { author: authorId } : {}),
     };
-    return await this.decryptConfig(config);
+    return sanitizeUserManagedOAuthConfig(await this.decryptConfig(config));
   }
 
   /**

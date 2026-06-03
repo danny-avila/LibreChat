@@ -29,6 +29,18 @@ describe('formatToolContent', () => {
       expect(content).toBe('(No response)');
       expect(artifacts).toBeUndefined();
     });
+
+    it('should preserve the image payload in the string for unrecognized providers', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'image', data: 'iVBORw0KGgoAAAA...', mimeType: 'image/png' }],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'unknown' as t.Provider);
+
+      expect(artifacts).toBeUndefined();
+      expect(content).toContain('iVBORw0KGgoAAAA...');
+      expect(content).toContain('image/png');
+    });
   });
 
   describe('recognized providers', () => {
@@ -91,6 +103,16 @@ describe('formatToolContent', () => {
   });
 
   describe('image handling', () => {
+    const originalMaxImageBytes = process.env.MCP_IMAGE_DATA_MAX_BYTES;
+
+    afterEach(() => {
+      if (originalMaxImageBytes === undefined) {
+        delete process.env.MCP_IMAGE_DATA_MAX_BYTES;
+        return;
+      }
+      process.env.MCP_IMAGE_DATA_MAX_BYTES = originalMaxImageBytes;
+    });
+
     it('should handle images with http URLs', () => {
       const result: t.MCPToolCallResponse = {
         content: [{ type: 'image', data: 'https://example.com/image.png', mimeType: 'image/png' }],
@@ -146,6 +168,83 @@ describe('formatToolContent', () => {
       expect(content).toBe('');
       expect(artifacts).toBeDefined();
       expect(artifacts?.content).toHaveLength(2);
+    });
+
+    it('should reject oversized base64 image data before creating artifacts', () => {
+      process.env.MCP_IMAGE_DATA_MAX_BYTES = '3';
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'image', data: 'QUJDRA==', mimeType: 'image/png' }],
+      };
+
+      expect(() => formatToolContent(result, 'openai')).toThrow(
+        'MCP image result exceeds maximum size of 3 bytes',
+      );
+    });
+
+    it('should allow base64 image data when decoded size is within the cap', () => {
+      process.env.MCP_IMAGE_DATA_MAX_BYTES = '4';
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'image', data: 'QUJDRA==', mimeType: 'image/png' }],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai');
+
+      expect(content).toBe('');
+      expect(artifacts?.content?.[0]).toEqual({
+        type: 'image_url',
+        image_url: { url: 'data:image/png;base64,QUJDRA==' },
+      });
+    });
+
+    it('should reject oversized image data for unrecognized providers before stringifying', () => {
+      process.env.MCP_IMAGE_DATA_MAX_BYTES = '3';
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'image', data: 'QUJDRA==', mimeType: 'image/png' }],
+      };
+
+      expect(() => formatToolContent(result, 'unknown' as t.Provider)).toThrow(
+        'MCP image result exceeds maximum size of 3 bytes',
+      );
+    });
+
+    it('should not apply the image data cap to remote image URLs', () => {
+      process.env.MCP_IMAGE_DATA_MAX_BYTES = '3';
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'image', data: 'https://example.com/large.png', mimeType: 'image/png' }],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai');
+
+      expect(content).toBe('');
+      expect(artifacts?.content?.[0]).toEqual({
+        type: 'image_url',
+        image_url: { url: 'https://example.com/large.png' },
+      });
+    });
+
+    it('should enforce the image cap on base64 data that merely starts with "http"', () => {
+      process.env.MCP_IMAGE_DATA_MAX_BYTES = '3';
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'image', data: 'httpAAAAAAAA', mimeType: 'image/png' }],
+      };
+
+      expect(() => formatToolContent(result, 'openai')).toThrow(
+        'MCP image result exceeds maximum size of 3 bytes',
+      );
+    });
+
+    it('should treat base64 starting with "http" as inline data, not a remote URL', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [{ type: 'image', data: 'httpAAAA', mimeType: 'image/png' }],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'openai');
+
+      expect(content).toBe('');
+      expect(artifacts?.content?.[0]).toEqual({
+        type: 'image_url',
+        image_url: { url: 'data:image/png;base64,httpAAAA' },
+      });
     });
   });
 

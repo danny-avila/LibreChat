@@ -1,10 +1,8 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { motion } from 'framer-motion';
 import { QRCodeSVG } from 'qrcode.react';
-import { Copy, Check } from 'lucide-react';
-import { Input, Button, Label } from '@librechat/client';
+import { Button, Label, SecretInput } from '@librechat/client';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
 
 const fadeAnimation = {
   initial: { opacity: 0, y: 20 },
@@ -23,13 +21,6 @@ interface QRPhaseProps {
 
 export const QRPhase: React.FC<QRPhaseProps> = ({ secret, otpauthUrl, onNext }) => {
   const localize = useLocalize();
-  const [isCopying, setIsCopying] = useState(false);
-
-  const handleCopy = async () => {
-    await navigator.clipboard.writeText(secret);
-    setIsCopying(true);
-    setTimeout(() => setIsCopying(false), 2000);
-  };
 
   return (
     <motion.div {...fadeAnimation} className="space-y-6">
@@ -45,21 +36,14 @@ export const QRPhase: React.FC<QRPhaseProps> = ({ secret, otpauthUrl, onNext }) 
           <Label className="text-sm font-medium text-text-secondary">
             {localize('com_ui_secret_key')}
           </Label>
-          <div className="flex gap-2">
-            <Input value={secret} readOnly className="font-mono text-lg tracking-wider" />
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleCopy}
-              className={cn('h-auto shrink-0', isCopying ? 'cursor-default' : '')}
-            >
-              {isCopying ? (
-                <Check className="size-4" aria-hidden="true" />
-              ) : (
-                <Copy className="size-4" aria-hidden="true" />
-              )}
-            </Button>
-          </div>
+          <SecretInput
+            value={secret}
+            readOnly
+            showCopy
+            controlsOnHover
+            aria-label={localize('com_ui_secret_key')}
+            className="font-mono text-lg tracking-wider"
+          />
         </div>
       </div>
       <Button onClick={onNext} className="w-full">

@@ -5,18 +5,54 @@ on:
   push:
     tags:
       - "chart-*"
+  workflow_dispatch:
+    inputs:
+      chart_tag:
+        description: "Existing chart tag to release, for example chart-2.0.5"
+        required: true
+        type: string
 
 jobs:
   release:
     permissions:
-      contents: write
+      contents: read
       packages: write
     runs-on: ubuntu-latest
+    env:
+      CHART_REPOSITORY: ${{ github.repository_owner }}/librechat-chart
     steps:
+      - name: Resolve chart tag
+        id: chart-version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_CHART_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.chart_tag || '' }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          CHART_TAG="$REF_NAME"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            CHART_TAG="$INPUT_CHART_TAG"
+          fi
+
+          CHART_VERSION="${CHART_TAG#chart-}"
+          SEMVER_REGEX='^[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z.-]+)?([+][0-9A-Za-z.-]+)?$'
+          if [[ "$CHART_TAG" != chart-* || ! "$CHART_VERSION" =~ $SEMVER_REGEX ]]; then
+            echo "::error::Chart tags must use the form chart-<semver>, for example chart-2.0.3"
+            exit 1
+          fi
+
+          {
+            printf 'CHART_REF=refs/tags/%s\n' "$CHART_TAG"
+            printf 'CHART_TAG=%s\n' "$CHART_TAG"
+            printf 'CHART_VERSION=%s\n' "$CHART_VERSION"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ steps.chart-version.outputs.CHART_REF }}
 
       - name: Configure Git
         run: |
@@ -35,20 +71,6 @@ jobs:
           cd ../librechat-rag-api
           helm dependency build      
 
-      - name: Get Chart Version
-        id: chart-version
-        env:
-          REF_NAME: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          CHART_VERSION="${REF_NAME#chart-}"
-          SEMVER_REGEX='^[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z.-]+)?([+][0-9A-Za-z.-]+)?$'
-          if [[ "$REF_NAME" != chart-* || ! "$CHART_VERSION" =~ $SEMVER_REGEX ]]; then
-            echo "::error::Chart tags must use the form chart-<semver>, for example chart-2.0.3"
-            exit 1
-          fi
-          printf 'CHART_VERSION=%s\n' "$CHART_VERSION" >> "$GITHUB_OUTPUT"
-
       # Log in to GitHub Container Registry
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -63,7 +85,7 @@ jobs:
         uses: appany/helm-oci-chart-releaser@v0.4.2
         with:
           name: librechat
-          repository: ${{ github.actor }}/librechat-chart
+          repository: ${{ env.CHART_REPOSITORY }}
           tag: ${{ steps.chart-version.outputs.CHART_VERSION }}
           path: helm/librechat
           registry: ghcr.io
@@ -75,7 +97,7 @@ jobs:
         uses: appany/helm-oci-chart-releaser@v0.4.2
         with:
           name: librechat-rag-api
-          repository: ${{ github.actor }}/librechat-chart
+          repository: ${{ env.CHART_REPOSITORY }}
           tag: ${{ steps.chart-version.outputs.CHART_VERSION }}
           path: helm/librechat-rag-api
           registry: ghcr.io

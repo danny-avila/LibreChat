@@ -5,9 +5,40 @@ const getLogStores = require('~/cache/getLogStores');
 const { saveConvo } = require('~/models');
 
 /**
- * Add title to conversation in a way that avoids memory retention
+ * Add title to conversation in a way that avoids memory retention.
+ *
+ * @param {ServerRequest} req
+ * @param {Object} params
+ * @param {string} params.text - The user's first message.
+ * @param {TMessage} [params.response] - The assistant response (legacy/`final` timing only).
+ * @param {AgentClient} params.client
+ * @param {string} [params.conversationId] - Required for `immediate` timing, where
+ *   `response` is not yet available; falls back to `response.conversationId`.
+ * @param {boolean} [params.immediate] - When true, the title is generated in parallel
+ *   with the response (from the user's first message) and persisted to the conversation
+ *   only after `convoReady` resolves (the conversation row must exist for `noUpsert`).
+ * @param {Promise<void>} [params.convoReady] - Resolves once the conversation has been
+ *   persisted; awaited before saving the title in `immediate` mode.
+ * @param {AbortSignal} [params.signal] - When aborted (e.g. the user stops an
+ *   immediate-mode generation), cancels the in-flight title model call so a
+ *   cancelled turn neither consumes the title model nor surfaces a title.
+ * @param {(params: { conversationId: string, title: string }) => Promise<void>|void} [params.onTitleGenerated]
+ *   Called after the title is cached and before persistence waits for the
+ *   conversation row. Used by live streams to push the title immediately.
  */
-const addTitle = async (req, { text, response, client }) => {
+const addTitle = async (
+  req,
+  {
+    text,
+    response,
+    client,
+    conversationId,
+    immediate = false,
+    convoReady,
+    signal,
+    onTitleGenerated,
+  },
+) => {
   const { TITLE_CONVO = true } = process.env ?? {};
   if (!isEnabled(TITLE_CONVO)) {
     return;
@@ -22,8 +53,14 @@ const addTitle = async (req, { text, response, client }) => {
     return;
   }
 
+  const convoId = conversationId ?? response?.conversationId;
+  if (!convoId) {
+    logger.warn('[addTitle] Missing conversationId; skipping title generation');
+    return;
+  }
+
   const titleCache = getLogStores(CacheKeys.GEN_TITLE);
-  const key = `${req.user.id}-${response.conversationId}`;
+  const key = `${req.user.id}-${convoId}`;
   /** @type {NodeJS.Timeout} */
   let timeoutId;
   try {
@@ -35,12 +72,22 @@ const addTitle = async (req, { text, response, client }) => {
 
     let titlePromise;
     let abortController = new AbortController();
+    /** Propagate a request abort (Stop) to the title generation so a cancelled
+     *  turn does not consume the title model or surface a title. */
+    if (signal) {
+      if (signal.aborted) {
+        abortController.abort();
+      } else {
+        signal.addEventListener('abort', () => abortController.abort(), { once: true });
+      }
+    }
     if (client && typeof client.titleConvo === 'function') {
       titlePromise = Promise.race([
         client
           .titleConvo({
             text,
             abortController,
+            immediate,
           })
           .catch((error) => {
             logger.error('Client title error:', error);
@@ -65,6 +112,37 @@ const addTitle = async (req, { text, response, client }) => {
     }
 
     await titleCache.set(key, title, 120000);
+
+    if (!signal?.aborted && typeof onTitleGenerated === 'function') {
+      try {
+        await onTitleGenerated({ conversationId: convoId, title });
+      } catch (error) {
+        logger.error('Error emitting generated title:', error);
+      }
+    }
+
+    /** In immediate mode the title is generated in parallel with the response,
+     *  so the conversation row may not exist yet. `saveConvo` with `noUpsert`
+     *  is a silent no-op when the row is missing, which would drop the title
+     *  from the database (the cache above still serves the live UI). Wait for
+     *  the controller to signal the conversation has been persisted. */
+    if (convoReady) {
+      await convoReady;
+    }
+
+    if (signal?.aborted) {
+      // The turn was stopped, or this stream was replaced, after the title had
+      // already been generated — discard it instead of persisting a title for a
+      // cancelled/discarded response. Only clear the cache if it still holds THIS
+      // task's title: a replacement stream shares the `userId-conversationId` key
+      // and may have already cached its own (valid) title that we must not remove.
+      const cached = await titleCache.get(key);
+      if (cached === title) {
+        await titleCache.delete(key);
+      }
+      return;
+    }
+
     await saveConvo(
       {
         userId: req?.user?.id,
@@ -72,7 +150,7 @@ const addTitle = async (req, { text, response, client }) => {
         interfaceConfig: req?.config?.interfaceConfig,
       },
       {
-        conversationId: response.conversationId,
+        conversationId: convoId,
         title,
       },
       { context: 'api/server/services/Endpoints/agents/title.js', noUpsert: true },

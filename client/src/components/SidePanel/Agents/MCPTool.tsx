@@ -102,7 +102,7 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
       <Accordion type="single" value={accordionValue} onValueChange={setAccordionValue} collapsible>
         <AccordionItem value={currentServerName} className="group relative w-full border-none">
           <div
-            className="relative flex w-full items-center gap-1 rounded-lg p-1 text-sm hover:bg-surface-primary-alt"
+            className="relative flex w-full items-center gap-1 rounded-lg p-1 text-sm focus-within:bg-surface-primary-alt hover:bg-surface-primary-alt"
             onMouseEnter={() => setIsHovering(true)}
             onMouseLeave={() => setIsHovering(false)}
             onFocus={() => setIsFocused(true)}
@@ -140,7 +140,7 @@ export default function MCPTool({ serverInfo }: { serverInfo?: MCPServerInfo }) 
                   <div className="relative flex items-center">
                     <div
                       className={cn(
-                        'absolute right-0 transition-all duration-300',
+                        'absolute right-0 rounded-md bg-surface-primary-alt py-0.5 pl-1 transition-all duration-300',
                         isHovering || isFocused
                           ? 'translate-x-0 opacity-100'
                           : 'translate-x-8 opacity-0',

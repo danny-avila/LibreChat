@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import { Copy, CopyCheck } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
+import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import { Label, Input, Checkbox, SecretInput, Radio, useToastContext } from '@librechat/client';
 import { AuthTypeEnum, AuthorizationTypeEnum } from '../hooks/useMCPServerForm';
 import type { MCPServerFormData } from '../hooks/useMCPServerForm';
-import { useLocalize, useCopyToClipboard } from '~/hooks';
+import { useLocalize, useCopyToClipboard, useHasAccess } from '~/hooks';
 import { cn } from '~/utils';
 
 interface AuthSectionProps {
@@ -22,6 +23,11 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
   } = useFormContext<MCPServerFormData>();
 
   const [isCopying, setIsCopying] = useState(false);
+
+  const canConfigureObo = useHasAccess({
+    permissionType: PermissionTypes.MCP_SERVERS,
+    permission: Permissions.CONFIGURE_OBO,
+  });
 
   const authType = useWatch<MCPServerFormData, 'auth.auth_type'>({
     name: 'auth.auth_type',
@@ -41,14 +47,31 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
 
   const copyLink = useCopyToClipboard({ text: redirectUri });
 
-  const authTypeOptions = useMemo(
-    () => [
+  /**
+   * Show OBO as a selectable auth option only when the caller has the permission.
+   * Edit-mode carve-out: if the form was loaded for a server that already uses OBO
+   * and the caller has since lost the permission, surface OBO in the radio so the
+   * current auth state is visible — but mark every OBO control disabled (and
+   * disable the radio itself, so the user can't switch away) since the backend
+   * also rejects modifying OBO without the permission.
+   */
+  const showOboOption = canConfigureObo || authType === AuthTypeEnum.OBO;
+  const isOboLockedReadOnly = !canConfigureObo && authType === AuthTypeEnum.OBO;
+
+  const authTypeOptions = useMemo(() => {
+    const options = [
       { value: AuthTypeEnum.None, label: localize('com_ui_no_auth') },
       { value: AuthTypeEnum.ServiceHttp, label: localize('com_ui_api_key') },
       { value: AuthTypeEnum.OAuth, label: 'OAuth' },
-    ],
-    [localize],
-  );
+    ];
+    if (showOboOption) {
+      options.push({
+        value: AuthTypeEnum.OBO,
+        label: localize('com_ui_obo'),
+      });
+    }
+    return options;
+  }, [localize, showOboOption]);
 
   const headerFormatOptions = useMemo(
     () => [
@@ -73,6 +96,7 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
           value={authType || AuthTypeEnum.None}
           onChange={(val) => setValue('auth.auth_type', val as AuthTypeEnum)}
           fullWidth
+          disabled={isOboLockedReadOnly}
           aria-labelledby="auth-type-label"
         />
       </fieldset>
@@ -105,7 +129,12 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
               <Label htmlFor="api_key" className="text-sm font-medium">
                 {localize('com_ui_api_key')}
               </Label>
-              <SecretInput id="api_key" placeholder="sk-..." {...register('auth.api_key')} />
+              <SecretInput
+                id="api_key"
+                placeholder="sk-..."
+                controlsOnHover
+                {...register('auth.api_key')}
+              />
             </div>
           )}
 
@@ -160,9 +189,12 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
                   </>
                 )}
               </Label>
-              <Input
+              <SecretInput
                 id="oauth_client_id"
-                autoComplete="off"
+                autoComplete="new-password"
+                data-lpignore="true"
+                data-1p-ignore="true"
+                controlsOnHover
                 placeholder={isEditMode ? localize('com_ui_leave_blank_to_keep') : ''}
                 aria-invalid={errors.auth?.oauth_client_id ? 'true' : 'false'}
                 aria-describedby={
@@ -188,6 +220,7 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
               <SecretInput
                 id="oauth_client_secret"
                 placeholder={isEditMode ? localize('com_ui_leave_blank_to_keep') : ''}
+                controlsOnHover
                 {...register('auth.oauth_client_secret')}
               />
             </div>
@@ -254,6 +287,48 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* OBO Fields */}
+      {authType === AuthTypeEnum.OBO && (
+        <div className="space-y-3 rounded-lg border border-border-light p-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="obo_scopes" className="text-sm font-medium">
+              {localize('com_ui_obo_scopes')}{' '}
+              <span aria-hidden="true" className="text-text-secondary">
+                *
+              </span>
+              <span className="sr-only">{localize('com_ui_field_required')}</span>
+            </Label>
+            <Input
+              id="obo_scopes"
+              placeholder="api://<client-id>/Mcp.Tools.ReadWrite"
+              disabled={!canConfigureObo}
+              aria-invalid={errors.auth?.obo_scopes ? 'true' : 'false'}
+              aria-describedby={
+                canConfigureObo ? 'obo-scopes-description' : 'obo-scopes-readonly-description'
+              }
+              {...register('auth.obo_scopes', {
+                required: canConfigureObo && authType === AuthTypeEnum.OBO,
+              })}
+              className={cn(errors.auth?.obo_scopes && 'border-border-destructive')}
+            />
+            {errors.auth?.obo_scopes && (
+              <p role="alert" className="text-xs text-text-destructive">
+                {localize('com_ui_field_required')}
+              </p>
+            )}
+            {canConfigureObo ? (
+              <p id="obo-scopes-description" className="text-xs text-text-secondary">
+                {localize('com_ui_obo_scopes_description')}
+              </p>
+            ) : (
+              <p id="obo-scopes-readonly-description" className="text-xs text-text-secondary">
+                {localize('com_ui_obo_readonly_no_permission')}
+              </p>
+            )}
+          </div>
         </div>
       )}
     </div>

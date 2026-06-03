@@ -68,7 +68,7 @@ const checkMCPCreate = generateCheckAccess({
  * Get all MCP tools available to the user
  * Returns only MCP tools, completely decoupled from regular LibreChat tools
  */
-router.get('/tools', requireJwtAuth, async (req, res) => {
+router.get('/tools', requireJwtAuth, checkMCPUsePermissions, async (req, res) => {
   return getMCPTools(req, res);
 });
 

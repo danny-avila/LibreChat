@@ -402,6 +402,17 @@ export async function updateInterfacePermissions({
               ),
             }
           : {}),
+        ...((typeof interfaceConfig?.mcpServers === 'object' &&
+          'configureObo' in interfaceConfig.mcpServers) ||
+        !existingPermissions?.[PermissionTypes.MCP_SERVERS]
+          ? {
+              [Permissions.CONFIGURE_OBO]: getPermissionValue(
+                loadedInterface.mcpServers?.configureObo,
+                defaultPerms[PermissionTypes.MCP_SERVERS]?.[Permissions.CONFIGURE_OBO],
+                undefined,
+              ),
+            }
+          : {}),
       },
       [PermissionTypes.REMOTE_AGENTS]: {
         [Permissions.USE]: getPermissionValue(
@@ -618,6 +629,39 @@ export async function updateInterfacePermissions({
           ...permissionsToUpdate[PermissionTypes.MCP_SERVERS],
           [Permissions.CREATE]: false,
         };
+      }
+    }
+
+    /**
+     * Backfill MCP_SERVERS.CONFIGURE_OBO for existing roles that pre-date the permission.
+     * The MCP_SERVERS permission type already exists on these role docs, so the
+     * `addPermissionIfNeeded` block above does not re-seed it. Only fill in the field
+     * when it is literally absent — never overwrite an admin-set value.
+     */
+    {
+      const existingMcpPerms = existingPermissions?.[PermissionTypes.MCP_SERVERS];
+      const oboExplicit =
+        typeof interfaceConfig?.mcpServers === 'object' &&
+        'configureObo' in interfaceConfig.mcpServers;
+      const alreadyQueued =
+        permissionsToUpdate[PermissionTypes.MCP_SERVERS]?.[Permissions.CONFIGURE_OBO] !== undefined;
+      if (
+        existingMcpPerms &&
+        existingMcpPerms[Permissions.CONFIGURE_OBO] === undefined &&
+        !oboExplicit &&
+        !alreadyQueued
+      ) {
+        const backfillValue =
+          defaultPerms[PermissionTypes.MCP_SERVERS]?.[Permissions.CONFIGURE_OBO];
+        if (backfillValue !== undefined) {
+          logger.debug(
+            `Role '${roleName}': Backfilling MCP_SERVERS.CONFIGURE_OBO=${backfillValue}`,
+          );
+          permissionsToUpdate[PermissionTypes.MCP_SERVERS] = {
+            ...permissionsToUpdate[PermissionTypes.MCP_SERVERS],
+            [Permissions.CONFIGURE_OBO]: backfillValue,
+          };
+        }
       }
     }
 

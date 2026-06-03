@@ -128,6 +128,52 @@ describe('AgentClient - titleConvo', () => {
       ).rejects.toThrow('Run not initialized');
     });
 
+    it('waits for the run in immediate mode instead of throwing', async () => {
+      client.run = null;
+      const abortController = new AbortController();
+
+      const titlePromise = client.titleConvo({ text: 'Test', abortController, immediate: true });
+
+      // Simulate `chatCompletion` assigning the run (client.js: `this.run = run`).
+      client.run = mockRun;
+      client._resolveRun(mockRun);
+
+      await titlePromise;
+      expect(mockRun.generateTitle).toHaveBeenCalled();
+    });
+
+    it('passes empty contentParts in immediate mode (title from the user input only)', async () => {
+      client.contentParts = [{ type: 'text', text: 'Streaming response so far' }];
+      const abortController = new AbortController();
+
+      await client.titleConvo({ text: 'Hello there', abortController, immediate: true });
+
+      const call = mockRun.generateTitle.mock.calls[0][0];
+      expect(call.contentParts).toEqual([]);
+      expect(call.inputText).toBe('Hello there');
+    });
+
+    it('uses live contentParts in non-immediate (final) mode', async () => {
+      client.contentParts = [{ type: 'text', text: 'Full response' }];
+      const abortController = new AbortController();
+
+      await client.titleConvo({ text: 'Hello there', abortController });
+
+      const call = mockRun.generateTitle.mock.calls[0][0];
+      expect(call.contentParts).toEqual([{ type: 'text', text: 'Full response' }]);
+    });
+
+    it('rejects promptly when aborted before the run initializes in immediate mode', async () => {
+      client.run = null;
+      const abortController = new AbortController();
+      abortController.abort();
+
+      await expect(
+        client.titleConvo({ text: 'Test', abortController, immediate: true }),
+      ).rejects.toThrow('Aborted before run initialization');
+      expect(mockRun.generateTitle).not.toHaveBeenCalled();
+    });
+
     it('should use titlePrompt from endpoint config', async () => {
       const text = 'Test conversation text';
       const abortController = new AbortController();

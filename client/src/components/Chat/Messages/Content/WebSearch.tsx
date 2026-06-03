@@ -82,12 +82,14 @@ export default function WebSearch({
   isLast,
   output,
   attachments,
+  onExpand,
 }: {
   isLast?: boolean;
   isSubmitting: boolean;
   output?: string | null;
   initialProgress: number;
   attachments?: TAttachment[];
+  onExpand?: () => void;
 }) {
   const localize = useLocalize();
   const { searchResults } = useSearchContext();
@@ -182,6 +184,16 @@ export default function WebSearch({
     }
   }, [autoExpand, sourceCount]);
 
+  const handleToggleSources = () => {
+    setShowSourceList((prev) => {
+      const next = !prev;
+      if (next) {
+        onExpand?.();
+      }
+      return next;
+    });
+  };
+
   if (cancelled) {
     return null;
   }
@@ -204,7 +216,7 @@ export default function WebSearch({
               : 'pointer-events-none text-text-secondary',
           )}
           disabled={!hasSourceData}
-          onClick={hasSourceData ? () => setShowSourceList((prev) => !prev) : undefined}
+          onClick={hasSourceData ? handleToggleSources : undefined}
           aria-expanded={hasSourceData ? showSourceList : undefined}
           aria-label={
             hasSourceData

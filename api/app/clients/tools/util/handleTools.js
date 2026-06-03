@@ -35,7 +35,12 @@ const {
   createGeminiImageTool,
   createOpenAIImageTools,
 } = require('../');
-const { createMCPTool, createMCPTools, resolveConfigServers } = require('~/server/services/MCP');
+const {
+  createMCPTool,
+  createMCPTools,
+  createMCPPermissionContext,
+  resolveConfigServers,
+} = require('~/server/services/MCP');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
@@ -227,6 +232,13 @@ const loadTools = async ({
   };
 
   const requestedTools = {};
+  const hasMCPTools = tools.some((toolName) => toolName && mcpToolPattern.test(toolName));
+  const mcpPermissionContext =
+    options.mcpPermissionContext ?? createMCPPermissionContext(options.req);
+  const canUseMCP = hasMCPTools
+    ? await mcpPermissionContext.canUseServers(options.req?.user)
+    : true;
+  let loggedMCPDenied = false;
 
   if (functions === true) {
     toolConstructors.dalle = DALLE3;
@@ -266,7 +278,7 @@ const loadTools = async ({
 
   /** Resolve config-source servers for the current user/tenant context */
   let configServers;
-  if (tools.some((tool) => tool && mcpToolPattern.test(tool))) {
+  if (hasMCPTools && canUseMCP) {
     configServers = await resolveConfigServers(options.req);
   }
 
@@ -345,6 +357,16 @@ const loadTools = async ({
       };
       continue;
     } else if (tool && mcpToolPattern.test(tool)) {
+      if (!canUseMCP) {
+        if (!loggedMCPDenied) {
+          logger.warn(
+            `[handleTools] User ${options.req?.user?.id} lacks MCP server use permission`,
+          );
+          loggedMCPDenied = true;
+        }
+        continue;
+      }
+
       const [toolName, serverName] = tool.split(Constants.mcp_delimiter);
       if (toolName === Constants.mcp_server) {
         /** Placeholder used for UI purposes */
@@ -440,6 +462,7 @@ const loadTools = async ({
           continue;
         }
         const mcpParams = {
+          mcpPermissionContext,
           index,
           signal,
           user: safeUser,

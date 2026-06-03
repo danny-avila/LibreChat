@@ -49,6 +49,69 @@ export const providerConfigMap: Record<string, InitializeFn> = {
   [EModelEndpoint.anthropic]: initializeAnthropic,
 };
 
+export type TitleTiming = 'immediate' | 'final';
+
+/**
+ * Resolves when conversation titles are generated for a given endpoint.
+ *
+ * `endpoints.all.titleTiming`, when present, is the global override. Otherwise,
+ * endpoint candidates are checked in order so the public endpoint (for example
+ * `agents`) can override the backing provider, with provider/custom config used
+ * as a fallback. Resolving custom providers via `getProviderConfig` picks up its
+ * case-insensitive fallback for normalized provider names (e.g. `openrouter` →
+ * `OpenRouter`). Defaults to `immediate`.
+ */
+export function resolveTitleTiming({
+  appConfig,
+  endpoint,
+}: {
+  appConfig?: AppConfig;
+  endpoint?: string | Array<string | undefined>;
+}): TitleTiming {
+  const endpoints = appConfig?.endpoints;
+  const resolveConfiguredTiming = (config?: Partial<TEndpoint>): TitleTiming | undefined =>
+    config?.titleTiming === 'final' || config?.titleTiming === 'immediate'
+      ? config.titleTiming
+      : undefined;
+
+  const globalTiming = resolveConfiguredTiming(endpoints?.all);
+  if (globalTiming) {
+    return globalTiming;
+  }
+
+  const endpointCandidates = (Array.isArray(endpoint) ? endpoint : [endpoint]).filter(
+    (value): value is string => !!value,
+  );
+
+  for (const endpointCandidate of endpointCandidates) {
+    const endpointConfig = endpoints?.[endpointCandidate as keyof NonNullable<typeof endpoints>] as
+      | Partial<TEndpoint>
+      | undefined;
+    const endpointTiming = resolveConfiguredTiming(endpointConfig);
+    if (endpointTiming) {
+      return endpointTiming;
+    }
+  }
+
+  for (const endpointCandidate of endpointCandidates) {
+    if (!appConfig) {
+      continue;
+    }
+    try {
+      const providerTiming = resolveConfiguredTiming(
+        getProviderConfig({ provider: endpointCandidate, appConfig }).customEndpointConfig,
+      );
+      if (providerTiming) {
+        return providerTiming;
+      }
+    } catch {
+      // Unsupported providers fall back to the default timing.
+    }
+  }
+
+  return 'immediate';
+}
+
 /**
  * Result from getProviderConfig
  */

@@ -28,17 +28,18 @@ export const useGetEndpointsQuery = <TData = t.TEndpointsConfig>(
  * (chat page) configs are cached independently, preventing stale
  * unauthenticated config from persisting after login.
  */
-export const startupConfigKey = (isAuthenticated: boolean) =>
-  [QueryKeys.startupConfig, isAuthenticated] as const;
+export const startupConfigKey = (isAuthenticated: boolean, context?: t.StartupConfigContext) =>
+  [QueryKeys.startupConfig, isAuthenticated, context ?? 'default'] as const;
 
 export const useGetStartupConfig = (
   config?: UseQueryOptions<t.TStartupConfig>,
+  options?: { context?: t.StartupConfigContext },
 ): QueryObserverResult<t.TStartupConfig> => {
   const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
   const user = useRecoilValue<t.TUser | undefined>(store.user);
   return useQuery<t.TStartupConfig>(
-    startupConfigKey(!!user),
-    () => dataService.getStartupConfig(),
+    startupConfigKey(!!user, options?.context),
+    () => dataService.getStartupConfig({ context: options?.context }),
     {
       staleTime: Infinity,
       refetchOnWindowFocus: false,

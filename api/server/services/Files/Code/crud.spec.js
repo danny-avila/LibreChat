@@ -61,7 +61,7 @@ const {
   codeServerHttpsAgent,
   getCodeApiAuthHeaders,
 } = require('@librechat/api');
-const { getCodeOutputDownloadStream, uploadCodeEnvFile } = require('./crud');
+const { deleteCodeEnvFile, getCodeOutputDownloadStream, uploadCodeEnvFile } = require('./crud');
 
 describe('Code CRUD', () => {
   beforeEach(() => {
@@ -152,6 +152,94 @@ describe('Code CRUD', () => {
       mockAxios.mockRejectedValue(new Error('ECONNREFUSED'));
 
       await expect(getCodeOutputDownloadStream('s/f', userIdentity)).rejects.toThrow();
+    });
+  });
+
+  describe('deleteCodeEnvFile', () => {
+    const req = { user: { id: 'user-123' } };
+    const file = {
+      metadata: {
+        codeEnvRef: {
+          kind: 'agent',
+          id: 'agent-abc',
+          storage_session_id: 'session-1',
+          file_id: 'file-1',
+        },
+      },
+    };
+
+    it('deletes the code environment object with resource identity and auth headers', async () => {
+      getCodeApiAuthHeaders.mockResolvedValue({ Authorization: 'Bearer codeapi-token' });
+      mockAxios.mockResolvedValue({ status: 204 });
+
+      await deleteCodeEnvFile(req, file);
+
+      expect(getCodeApiAuthHeaders).toHaveBeenCalledWith(req);
+      expect(mockAxios).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: 'delete',
+          url: 'https://code-api.example.com/sessions/session-1/objects/file-1?kind=agent&id=agent-abc',
+          headers: expect.objectContaining({
+            Authorization: 'Bearer codeapi-token',
+            'User-Agent': 'LibreChat/1.0',
+          }),
+          httpAgent: codeServerHttpAgent,
+          httpsAgent: codeServerHttpsAgent,
+          timeout: 15000,
+        }),
+      );
+    });
+
+    it.each([404, 405])(
+      'falls back to the legacy code environment delete route after a %s',
+      async (status) => {
+        mockAxios
+          .mockRejectedValueOnce(
+            Object.assign(new Error('missing route'), { response: { status } }),
+          )
+          .mockResolvedValueOnce({ status: 204 });
+
+        await deleteCodeEnvFile(req, file);
+
+        expect(mockAxios).toHaveBeenNthCalledWith(
+          1,
+          expect.objectContaining({
+            method: 'delete',
+            url: 'https://code-api.example.com/sessions/session-1/objects/file-1?kind=agent&id=agent-abc',
+          }),
+        );
+        expect(mockAxios).toHaveBeenNthCalledWith(
+          2,
+          expect.objectContaining({
+            method: 'delete',
+            url: 'https://code-api.example.com/files/session-1/file-1?kind=agent&id=agent-abc',
+          }),
+        );
+      },
+    );
+
+    it('skips files without a code environment ref', async () => {
+      await deleteCodeEnvFile(req, {});
+
+      expect(mockAxios).not.toHaveBeenCalled();
+      expect(getCodeApiAuthHeaders).not.toHaveBeenCalled();
+    });
+
+    it('treats missing code environment objects as already deleted', async () => {
+      mockAxios
+        .mockRejectedValueOnce(Object.assign(new Error('missing'), { response: { status: 404 } }))
+        .mockRejectedValueOnce(Object.assign(new Error('missing'), { response: { status: 404 } }));
+
+      await expect(deleteCodeEnvFile(req, file)).resolves.toBeUndefined();
+      expect(mockAxios).toHaveBeenCalledTimes(2);
+    });
+
+    it('throws when code environment deletion fails', async () => {
+      mockAxios.mockRejectedValue(
+        Object.assign(new Error('unavailable'), { response: { status: 500 } }),
+      );
+
+      await expect(deleteCodeEnvFile(req, file)).rejects.toThrow('unavailable');
     });
   });
 

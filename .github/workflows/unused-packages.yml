@@ -20,10 +20,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js 20.x
+      - name: Use Node.js 24.16.0
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '24.16.0'
           cache: 'npm'
 
       - name: Install depcheck

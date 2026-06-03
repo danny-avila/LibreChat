@@ -23,8 +23,29 @@ describe('PluginAuthForm', () => {
     //@ts-ignore - dont need all props of plugin
     render(<PluginAuthForm plugin={plugin} onSubmit={onSubmit} />);
 
-    expect(screen.getByLabelText('Key')).toBeInTheDocument();
-    expect(screen.getByLabelText('Secret')).toBeInTheDocument();
+    expect(screen.getByLabelText('Key')).toHaveAttribute('type', 'password');
+    expect(screen.getByLabelText('Secret')).toHaveAttribute('type', 'password');
+  });
+
+  it('masks fields by default and renders non-sensitive fields as plain text', () => {
+    const mixedPlugin = {
+      pluginKey: 'mixed-plugin',
+      authConfig: [
+        { authField: 'token', label: 'Token' },
+        { authField: 'secret', label: 'Secret', sensitive: true },
+        { authField: 'url', label: 'URL', sensitive: false },
+      ],
+    };
+
+    //@ts-ignore - dont need all props of plugin
+    render(<PluginAuthForm plugin={mixedPlugin} onSubmit={onSubmit} />);
+
+    expect(screen.getByLabelText('Token')).toHaveAttribute('type', 'password');
+    expect(screen.getByLabelText('Secret')).toHaveAttribute('type', 'password');
+
+    const urlField = screen.getByLabelText('URL');
+    expect(urlField).toHaveAttribute('type', 'text');
+    expect(urlField.parentElement?.querySelector('button')).toBeNull();
   });
 
   it('calls the onSubmit function with the form data when submitted', async () => {
