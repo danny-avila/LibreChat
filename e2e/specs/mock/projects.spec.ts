@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { sendMessage } from './helpers';
+import { MOCK_ENDPOINTS, mockReply, selectMockEndpoint, sendMessage } from './helpers';
 
 /**
  * Creates a project from the all-projects page and returns its id.
@@ -33,7 +33,7 @@ test.describe('chat projects', () => {
     await expect(page.getByRole('button', { name }).first()).toBeVisible();
   });
 
-  test('starts a project-scoped chat and shows the project chip', async ({ page }) => {
+  test('starts a project-scoped chat and files it under the project', async ({ page }) => {
     test.setTimeout(120000);
     const name = uniqueName('E2E Project');
     const projectId = await createProject(page, name);
@@ -47,12 +47,27 @@ test.describe('chat projects', () => {
     // The interactive project chip is present, and the composer is scoped.
     await expect(page.getByRole('button', { name: 'Remove from project' })).toBeVisible();
     const input = page.getByRole('textbox', { name: 'Message input' });
-    await expect(input).toBeEditable();
     await expect(input).toHaveAttribute('placeholder', new RegExp(name));
 
-    // Sending a message from the project landing is accepted by the backend.
+    // Switch to a mock endpoint so the message streams without a real API key;
+    // the project scope must be retained across the model switch.
+    await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+    await expect(page.getByRole('button', { name: 'Remove from project' })).toBeVisible();
+
+    // Send the message; it streams a reply and the new chat opens at /c/:id.
     const response = await sendMessage(page, 'hello from a project');
     expect(response.ok()).toBeTruthy();
+    await expect(mockReply(page)).toBeVisible({ timeout: 20000 });
+    await expect(page).toHaveURL(/\/c\/(?!new)/, { timeout: 15000 });
+
+    // Expand the project in the sidebar and confirm the chat is filed under it.
+    const projectRow = page.getByRole('button', { name }).first();
+    if ((await projectRow.getAttribute('aria-expanded')) !== 'true') {
+      await projectRow.click();
+    }
+    await expect(
+      page.getByTestId(`project-chats-${projectId}`).getByTestId('convo-item').first(),
+    ).toBeVisible();
   });
 
   test('removes the project scope via the chip ×', async ({ page }) => {

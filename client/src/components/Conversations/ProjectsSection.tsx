@@ -227,7 +227,7 @@ function ProjectChatsInline({
   }
 
   return (
-    <div>
+    <div data-testid={`project-chats-${projectId}`}>
       {visible.map((convo) => (
         <Convo
           key={convo.conversationId}
