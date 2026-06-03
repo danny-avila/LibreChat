@@ -12,7 +12,7 @@ import {
   useProjectQuery,
 } from '~/data-provider';
 import { useAgentsMap, useLocalize } from '~/hooks';
-import { cn, getModelSpec } from '~/utils';
+import { cn, getDefaultModelSpec, getModelSpec } from '~/utils';
 import ProjectChatList from './ProjectChatList';
 import store from '~/store';
 
@@ -46,7 +46,10 @@ export default function ProjectWorkspace() {
   const agentsMap = useAgentsMap({ isAuthenticated: true });
   const activeProjectId = project?._id;
   const activeSettingsLabel = useMemo(() => {
-    const modelSpec = getModelSpec({ specName: conversation?.spec, startupConfig });
+    const defaultModelSpec = getDefaultModelSpec(startupConfig);
+    const fallbackModelSpec = defaultModelSpec?.default ?? defaultModelSpec?.last;
+    const modelSpec =
+      getModelSpec({ specName: conversation?.spec, startupConfig }) ?? fallbackModelSpec;
     if (modelSpec?.label) {
       return modelSpec.label;
     }
