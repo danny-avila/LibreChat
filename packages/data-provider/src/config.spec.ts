@@ -29,6 +29,34 @@ describe('excludedKeys', () => {
   });
 });
 
+describe('bedrockEndpointSchema', () => {
+  it('preserves guardrailConfig from configSchema parsing', () => {
+    const guardrailConfig = {
+      guardrailIdentifier: '${BEDROCK_GUARDRAIL_ID}',
+      guardrailVersion: '${BEDROCK_GUARDRAIL_VERSION}',
+      trace: 'enabled_full',
+      streamProcessingMode: 'sync',
+    };
+
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        bedrock: {
+          streamRate: 25,
+          availableRegions: ['us-west-2'],
+          guardrailConfig,
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
+    }
+    expect(result.data.endpoints?.bedrock?.guardrailConfig).toEqual(guardrailConfig);
+  });
+});
+
 describe('resolveEndpointType', () => {
   describe('non-agents endpoints', () => {
     it('returns the config type for a custom endpoint', () => {

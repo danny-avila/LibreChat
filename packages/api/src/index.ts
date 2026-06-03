@@ -1,4 +1,6 @@
 export * from './app';
+/* Artifacts */
+export * from './artifacts';
 /* Admin */
 export * from './admin';
 export * from './cdn';
@@ -57,6 +59,8 @@ export * from './cache';
 export * from './stream';
 /* Diagnostics */
 export { memoryDiagnostics } from './utils/memory';
+/* RUM */
+export * from './rum/proxy';
 /* types */
 export type * from './mcp/types';
 export type * from './flow/types';

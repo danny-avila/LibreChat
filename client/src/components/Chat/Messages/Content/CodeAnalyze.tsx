@@ -11,10 +11,12 @@ export default function CodeAnalyze({
   initialProgress = 0.1,
   code,
   outputs = [],
+  onExpand,
 }: {
   initialProgress: number;
   code: string;
   outputs: Record<string, unknown>[];
+  onExpand?: () => void;
 }) {
   const localize = useLocalize();
   const progress = useProgress(initialProgress);
@@ -26,6 +28,16 @@ export default function CodeAnalyze({
       setShowCode(true);
     }
   }, [autoExpand]);
+
+  const handleToggleCode = () => {
+    setShowCode((prev) => {
+      const next = !prev;
+      if (next) {
+        onExpand?.();
+      }
+      return next;
+    });
+  };
 
   const logs = outputs.reduce((acc, output) => {
     if (output['logs']) {
@@ -42,7 +54,7 @@ export default function CodeAnalyze({
       <div className="my-1 flex items-center gap-2.5">
         <ProgressText
           progress={progress}
-          onClick={() => setShowCode((prev) => !prev)}
+          onClick={handleToggleCode}
           inProgressText={localize('com_ui_analyzing')}
           finishedText={localize('com_ui_analyzing_finished')}
           hasInput={!!code.length}
