@@ -2,8 +2,7 @@ import { memo, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useForm } from 'react-hook-form';
 import { Spinner } from '@librechat/client';
-import { useNavigate, useParams } from 'react-router-dom';
-import { Folder } from 'lucide-react';
+import { useParams } from 'react-router-dom';
 import { Constants, buildTree } from 'librechat-data-provider';
 import type { TChatProject, TMessage } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
@@ -19,6 +18,7 @@ import ConversationStarters from './Input/ConversationStarters';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import MessagesView from './Messages/MessagesView';
 import Presentation from './Presentation';
+import ProjectLandingChip from './ProjectLandingChip';
 import ChatForm from './Input/ChatForm';
 import Landing from './Landing';
 import Header from './Header';
@@ -32,24 +32,6 @@ function LoadingSpinner() {
       <div className="relative flex h-full items-center justify-center">
         <Spinner className="text-text-primary" />
       </div>
-    </div>
-  );
-}
-
-function ProjectLandingChip({ project }: { project: TChatProject }) {
-  const localize = useLocalize();
-  const navigate = useNavigate();
-  return (
-    <div className="mb-2.5 flex px-1">
-      <button
-        type="button"
-        onClick={() => navigate(`/projects/${project._id}`)}
-        aria-label={localize('com_ui_go_to_project', { name: project.name })}
-        className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-surface-secondary px-3 py-1 text-sm text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
-      >
-        <Folder className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-        <span className="truncate font-medium">{project.name}</span>
-      </button>
     </div>
   );
 }

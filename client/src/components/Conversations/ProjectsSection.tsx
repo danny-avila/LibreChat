@@ -9,7 +9,7 @@ import {
   Ellipsis,
   Folder,
   FolderPlus,
-  LayoutGrid,
+  GalleryVerticalEnd,
   Pencil,
   Trash2,
 } from 'lucide-react';
@@ -477,7 +477,7 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
               className={iconButtonClassName}
               onClick={openProjects}
             >
-              <LayoutGrid className="h-4 w-4" aria-hidden="true" />
+              <GalleryVerticalEnd className="h-4 w-4" aria-hidden="true" />
             </button>
           }
         />
