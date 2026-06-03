@@ -145,7 +145,7 @@ const rejectSharedLinkOwnerPermissionChanges = async (req, res, next) => {
         message: 'Shared link owner permissions cannot be changed',
       });
     }
-  } catch (error) {
+  } catch (_error) {
     return res.status(500).json({
       error: 'Internal Server Error',
       message: 'Failed to validate shared link owner permissions',

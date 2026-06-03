@@ -49,7 +49,7 @@ describe('migrate-shared-link-permissions', () => {
       shareId: `share-${Date.now()}-${Math.random()}`,
       conversationId: 'convo1',
       messages: [],
-      ...(user !== undefined ? { user } : {}),
+      ...(user != null ? { user } : {}),
     });
     await mongoose.connection.db
       .collection('sharedlinks')
@@ -155,7 +155,7 @@ describe('migrate-shared-link-permissions', () => {
   });
 
   test('grants PUBLIC VIEWER to ownerless public legacy links', async () => {
-    const link = await createLegacyLink(true, undefined);
+    const link = await createLegacyLink(true, null);
 
     const result = await migrateSharedLinkPermissions({ dryRun: false });
 
