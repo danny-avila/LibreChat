@@ -199,6 +199,7 @@ jest.mock('@librechat/api', () => {
       openid_jwt_available: authState.openidJwtAvailable,
       has_openid_reuse_user_id: authState.hasOpenIdReuseUserId,
     });
+  const formatAuthLogMessage = (message, context) => `${message} ${JSON.stringify(context)}`;
   const normalizeContextValue = (value) => {
     const trimmed = value?.trim?.();
     return trimmed || undefined;
@@ -215,6 +216,7 @@ jest.mock('@librechat/api', () => {
     getAuthFailureReason,
     getAuthFailureErrorName,
     buildSafeAuthLogContext,
+    formatAuthLogMessage,
     maybeRefreshCloudFrontAuthCookiesMiddleware: jest.fn((req, res, next) => next()),
     tenantContextMiddleware: (req, res, next) => {
       const context = {
@@ -387,7 +389,7 @@ describe('requireJwtAuth tenant context chaining', () => {
     expect(req.authStrategy).toBe('jwt');
     expect(res.status).not.toHaveBeenCalled();
     expect(logger.debug).toHaveBeenCalledWith(
-      '[requireJwtAuth] OpenID JWT auth failed; trying fallback',
+      expect.stringContaining('[requireJwtAuth] OpenID JWT auth failed; trying fallback'),
       expect.objectContaining({
         request_id: 'req-expired-success',
         method: 'GET',
@@ -405,7 +407,7 @@ describe('requireJwtAuth tenant context chaining', () => {
       }),
     );
     expect(logger.debug).toHaveBeenCalledWith(
-      '[requireJwtAuth] JWT fallback succeeded after OpenID JWT failure',
+      expect.stringContaining('[requireJwtAuth] JWT fallback succeeded after OpenID JWT failure'),
       expect.objectContaining({
         request_id: 'req-expired-success',
         auth_strategy: 'jwt',
@@ -418,6 +420,9 @@ describe('requireJwtAuth tenant context chaining', () => {
         error_name: 'TokenExpiredError',
       }),
     );
+    expect(logger.debug.mock.calls[0][0]).toContain('"reason":"jwt expired"');
+    expect(logger.debug.mock.calls[0][0]).toContain('"fallback_attempted":true');
+    expect(logger.debug.mock.calls[1][0]).toContain('"fallback_succeeded":true');
     expect(logger.warn).not.toHaveBeenCalled();
   });
 
@@ -462,7 +467,7 @@ describe('requireJwtAuth tenant context chaining', () => {
     expect(req.authStrategy).toBe('jwt');
     expect(res.status).not.toHaveBeenCalled();
     expect(logger.debug).toHaveBeenCalledWith(
-      '[requireJwtAuth] OpenID JWT auth failed; trying fallback',
+      expect.stringContaining('[requireJwtAuth] OpenID JWT auth failed; trying fallback'),
       expect.objectContaining({
         request_id: 'req-malformed-info',
         fallback_attempted: true,
@@ -471,7 +476,7 @@ describe('requireJwtAuth tenant context chaining', () => {
       }),
     );
     expect(logger.debug).toHaveBeenCalledWith(
-      '[requireJwtAuth] JWT fallback succeeded after OpenID JWT failure',
+      expect.stringContaining('[requireJwtAuth] JWT fallback succeeded after OpenID JWT failure'),
       expect.objectContaining({
         request_id: 'req-malformed-info',
         fallback_succeeded: true,
@@ -511,7 +516,7 @@ describe('requireJwtAuth tenant context chaining', () => {
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(401);
     expect(logger.debug).toHaveBeenCalledWith(
-      '[requireJwtAuth] OpenID JWT auth failed; trying fallback',
+      expect.stringContaining('[requireJwtAuth] OpenID JWT auth failed; trying fallback'),
       expect.objectContaining({
         request_id: 'req-expired-fail',
         method: 'POST',
@@ -624,7 +629,7 @@ describe('requireJwtAuth tenant context chaining', () => {
     expect(next).toHaveBeenCalled();
     expect(req.authStrategy).toBe('jwt');
     expect(logger.debug).toHaveBeenCalledWith(
-      '[requireJwtAuth] OpenID JWT auth failed; trying fallback',
+      expect.stringContaining('[requireJwtAuth] OpenID JWT auth failed; trying fallback'),
       expect.objectContaining({
         request_id: 'req-mismatch-success',
         primary_strategy: 'openidJwt',
@@ -635,7 +640,7 @@ describe('requireJwtAuth tenant context chaining', () => {
       }),
     );
     expect(logger.debug).toHaveBeenCalledWith(
-      '[requireJwtAuth] JWT fallback succeeded after OpenID JWT failure',
+      expect.stringContaining('[requireJwtAuth] JWT fallback succeeded after OpenID JWT failure'),
       expect.objectContaining({
         request_id: 'req-mismatch-success',
         auth_strategy: 'jwt',
@@ -671,7 +676,7 @@ describe('requireJwtAuth tenant context chaining', () => {
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(401);
     expect(logger.debug).toHaveBeenCalledWith(
-      '[requireJwtAuth] OpenID JWT auth failed; trying fallback',
+      expect.stringContaining('[requireJwtAuth] OpenID JWT auth failed; trying fallback'),
       expect.objectContaining({
         request_id: 'req-mismatch-fail',
         fallback_attempted: true,

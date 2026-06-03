@@ -1,4 +1,9 @@
-import { buildSafeAuthLogContext, getAuthFailureErrorName, getAuthFailureReason } from './auth';
+import {
+  buildSafeAuthLogContext,
+  formatAuthLogMessage,
+  getAuthFailureErrorName,
+  getAuthFailureReason,
+} from './auth';
 import type { AuthLogRequest, AuthLogState } from './auth';
 
 function createRequest(overrides: Partial<AuthLogRequest> = {}): AuthLogRequest {
@@ -147,6 +152,21 @@ describe('auth middleware logging helpers', () => {
       reason: 'jwt expired',
     });
     expect(JSON.stringify(log)).not.toContain('secret-token');
+  });
+
+  it('formats auth log messages with serialized safe context for stdout collectors', () => {
+    const log = buildSafeAuthLogContext(createRequest({ id: 'request-id' }), createAuthState(), {
+      fallback_attempted: true,
+      reason: 'jwt expired',
+      error_name: 'TokenExpiredError',
+      status: 401,
+    });
+
+    expect(
+      formatAuthLogMessage('[requireJwtAuth] OpenID JWT auth failed; trying fallback', log),
+    ).toBe(
+      '[requireJwtAuth] OpenID JWT auth failed; trying fallback {"fallback_attempted":true,"reason":"jwt expired","error_name":"TokenExpiredError","status":401,"request_id":"request-id","method":"GET","path":"/api/messages","token_provider":"openid","openid_reuse_enabled":true,"openid_jwt_available":true,"has_openid_reuse_user_id":true}',
+    );
   });
 
   it('prefers Passport info fields for auth failure reason and error name', () => {

@@ -8,6 +8,7 @@ const {
   getAuthFailureReason,
   getAuthFailureErrorName,
   buildSafeAuthLogContext,
+  formatAuthLogMessage,
   maybeRefreshCloudFrontAuthCookiesMiddleware,
 } = require('@librechat/api');
 
@@ -66,20 +67,20 @@ const requireJwtAuth = (req, res, next) => {
     primaryFailureReason = reason;
     primaryFailureErrorName = errorName;
     fallbackAttempted = true;
-    logger.debug(
-      '[requireJwtAuth] OpenID JWT auth failed; trying fallback',
-      buildSafeAuthLogContext(req, authLogState, {
-        primary_strategy: 'openidJwt',
-        fallback_strategy: fallbackStrategy,
-        fallback_attempted: true,
-        reason,
-        error_name: errorName,
-        status,
-      }),
-    );
+    const message = '[requireJwtAuth] OpenID JWT auth failed; trying fallback';
+    const context = buildSafeAuthLogContext(req, authLogState, {
+      primary_strategy: 'openidJwt',
+      fallback_strategy: fallbackStrategy,
+      fallback_attempted: true,
+      reason,
+      error_name: errorName,
+      status,
+    });
+    logger.debug(formatAuthLogMessage(message, context), context);
   };
 
   const logAuthenticationFailure = ({ strategy, info, status, err }) => {
+    const message = '[requireJwtAuth] Authentication failed after all strategies';
     const context = buildSafeAuthLogContext(req, authLogState, {
       primary_strategy: strategies[0],
       fallback_strategy: strategies[1],
@@ -91,29 +92,25 @@ const requireJwtAuth = (req, res, next) => {
       error_name: getAuthFailureErrorName(err, info),
       status: status || 401,
     });
-    logger.warn(
-      `[requireJwtAuth] Authentication failed after all strategies ${JSON.stringify(context)}`,
-      context,
-    );
+    logger.warn(formatAuthLogMessage(message, context), context);
   };
 
   const logFallbackSuccess = (strategy) => {
     if (!fallbackAttempted || strategy !== 'jwt') {
       return;
     }
-    logger.debug(
-      '[requireJwtAuth] JWT fallback succeeded after OpenID JWT failure',
-      buildSafeAuthLogContext(req, authLogState, {
-        auth_strategy: 'jwt',
-        primary_strategy: 'openidJwt',
-        fallback_strategy: 'jwt',
-        fallback_attempted: true,
-        fallback_succeeded: true,
-        primary_failure_reason: primaryFailureReason,
-        reason: primaryFailureReason,
-        error_name: primaryFailureErrorName,
-      }),
-    );
+    const message = '[requireJwtAuth] JWT fallback succeeded after OpenID JWT failure';
+    const context = buildSafeAuthLogContext(req, authLogState, {
+      auth_strategy: 'jwt',
+      primary_strategy: 'openidJwt',
+      fallback_strategy: 'jwt',
+      fallback_attempted: true,
+      fallback_succeeded: true,
+      primary_failure_reason: primaryFailureReason,
+      reason: primaryFailureReason,
+      error_name: primaryFailureErrorName,
+    });
+    logger.debug(formatAuthLogMessage(message, context), context);
   };
 
   const authenticateWithStrategy = (index) => {

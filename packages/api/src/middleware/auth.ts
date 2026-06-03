@@ -222,3 +222,7 @@ export function buildSafeAuthLogContext(
     has_openid_reuse_user_id: authState.hasOpenIdReuseUserId,
   });
 }
+
+export function formatAuthLogMessage(message: string, context: AuthLogContext): string {
+  return `${message} ${JSON.stringify(context)}`;
+}
