@@ -146,4 +146,25 @@ describe('migrate-shared-link-permissions', () => {
     expect(raw1).toHaveProperty('isPublic', true);
     expect(raw2).toHaveProperty('isPublic', true);
   });
+
+  test('does not grant PUBLIC VIEWER to isPublic false links when forced', async () => {
+    const link = await createLegacyLink(false);
+
+    const result = await migrateSharedLinkPermissions({ dryRun: false, force: true });
+
+    expect(result.aborted).toBeUndefined();
+    expect(result.publicViewerSkipped).toBe(1);
+
+    const publicEntry = await AclEntry.findOne({
+      resourceId: link._id,
+      principalType: 'public',
+    }).lean();
+    expect(publicEntry).toBeNull();
+
+    const ownerEntry = await AclEntry.findOne({
+      resourceId: link._id,
+      principalType: 'user',
+    }).lean();
+    expect(ownerEntry).toBeDefined();
+  });
 });

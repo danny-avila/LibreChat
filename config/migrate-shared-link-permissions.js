@@ -189,33 +189,31 @@ async function migrateSharedLinkPermissions({
       }
 
       const hasIsPublic = link.isPublic !== undefined;
-      if (hasIsPublic) {
-        if (link.isPublic === false && !force) {
-          results.publicViewerSkipped++;
-        } else {
-          opIndexToLinkId.push(linkId);
-          bulkOps.push({
-            updateOne: {
-              filter: {
-                resourceType: RESOURCE_TYPE_SHARED_LINK,
-                resourceId: linkId,
-                principalType: PRINCIPAL_PUBLIC,
-              },
-              update: {
-                $set: {
-                  permBits: viewerRole.permBits,
-                  roleId: viewerRole._id,
-                  grantedBy: userId ? new mongoose.Types.ObjectId(userId) : undefined,
-                  grantedAt: now,
-                },
-                $setOnInsert: {
-                  ...(tenantId && { tenantId }),
-                },
-              },
-              upsert: true,
+      if (hasIsPublic && link.isPublic === false) {
+        results.publicViewerSkipped++;
+      } else if (hasIsPublic) {
+        opIndexToLinkId.push(linkId);
+        bulkOps.push({
+          updateOne: {
+            filter: {
+              resourceType: RESOURCE_TYPE_SHARED_LINK,
+              resourceId: linkId,
+              principalType: PRINCIPAL_PUBLIC,
             },
-          });
-        }
+            update: {
+              $set: {
+                permBits: viewerRole.permBits,
+                roleId: viewerRole._id,
+                grantedBy: userId ? new mongoose.Types.ObjectId(userId) : undefined,
+                grantedAt: now,
+              },
+              $setOnInsert: {
+                ...(tenantId && { tenantId }),
+              },
+            },
+            upsert: true,
+          },
+        });
       }
 
       results.migrated++;
