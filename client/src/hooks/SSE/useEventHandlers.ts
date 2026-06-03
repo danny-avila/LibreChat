@@ -375,6 +375,7 @@ export default function useEventHandlers({
         }
         if (update.chatProjectId) {
           queryClient.invalidateQueries([QueryKeys.projects]);
+          queryClient.invalidateQueries([QueryKeys.project, update.chatProjectId]);
         }
       } else if (setConversation) {
         setConversation((prevState) => {
@@ -453,6 +454,7 @@ export default function useEventHandlers({
           }
           if (update.chatProjectId) {
             queryClient.invalidateQueries([QueryKeys.projects]);
+            queryClient.invalidateQueries([QueryKeys.project, update.chatProjectId]);
           }
         }
       } else if (setConversation) {
@@ -728,6 +730,7 @@ export default function useEventHandlers({
 
           if (conversation.chatProjectId) {
             queryClient.invalidateQueries([QueryKeys.projects]);
+            queryClient.invalidateQueries([QueryKeys.project, conversation.chatProjectId]);
           }
 
           if (location.pathname === `/c/${Constants.NEW_CONVO}`) {

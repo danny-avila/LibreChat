@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { useRecoilValue } from 'recoil';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   ChevronDown,
@@ -139,6 +139,7 @@ function ProjectDeleteDialog({
 }) {
   const localize = useLocalize();
   const navigate = useNavigate();
+  const location = useLocation();
   const deleteProject = useDeleteProjectMutation();
   const { showToast } = useToastContext();
 
@@ -146,7 +147,7 @@ function ProjectDeleteDialog({
     deleteProject.mutate(project._id, {
       onSuccess: () => {
         onOpenChange(false);
-        if (window.location.pathname === `/projects/${project._id}`) {
+        if (location.pathname === `/projects/${project._id}`) {
           navigate('/projects');
         }
       },
