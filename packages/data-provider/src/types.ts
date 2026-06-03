@@ -71,6 +71,7 @@ export type TEndpointOption = Pick<
   | 'file_ids'
   // System field
   | 'system'
+  | 'chatProjectId'
   // Google examples
   | 'examples'
   // Context
@@ -286,6 +287,43 @@ export type TUpdateConversationRequest = {
 };
 
 export type TUpdateConversationResponse = TConversation;
+
+export type TChatProject = {
+  _id: string;
+  name: string;
+  description?: string;
+  user?: string;
+  conversationCount: number;
+  lastConversationAt?: string | null;
+  lastConversationId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TCreateChatProjectRequest = {
+  name: string;
+  description?: string;
+};
+
+export type TUpdateChatProjectRequest = Partial<TCreateChatProjectRequest> & {
+  projectId: string;
+};
+
+export type TDeleteChatProjectResponse = {
+  deletedCount: number;
+  modifiedCount: number;
+};
+
+export type TAssignConversationToProjectRequest = {
+  conversationId: string;
+  projectId: string | null;
+};
+
+export type TAssignConversationToProjectResponse = {
+  conversation: TConversation;
+  previousProjectId: string | null;
+  projectId: string | null;
+};
 
 export type TDeleteConversationRequest = {
   conversationId?: string;
