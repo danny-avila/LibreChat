@@ -1,6 +1,11 @@
 import { Types } from 'mongoose';
 import { createMethods, logger } from '@librechat/data-schemas';
-import { AccessRoleIds, PermissionBits, PrincipalType, ResourceType } from 'librechat-data-provider';
+import {
+  AccessRoleIds,
+  PermissionBits,
+  PrincipalType,
+  ResourceType,
+} from 'librechat-data-provider';
 import type { AllMethods, IAclEntry } from '@librechat/data-schemas';
 import type { ClientSession, DeleteResult } from 'mongoose';
 
@@ -388,7 +393,7 @@ export class AccessControlService {
   }): Promise<boolean> {
     try {
       this.validateResourceType(resourceType);
-      const publicIds = await this._dbMethods.findPublicResourceIds(
+      const publicIds: Types.ObjectId[] = await this._dbMethods.findPublicResourceIds(
         resourceType,
         PermissionBits.VIEW,
       );
