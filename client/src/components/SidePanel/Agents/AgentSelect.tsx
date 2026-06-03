@@ -44,7 +44,7 @@ function AgentSelect({
   );
 
   const resetAgentForm = useCallback(
-    (fullAgent: Agent) => {
+    (fullAgent: Agent, options?: Record<string, boolean>) => {
       const isGlobal = fullAgent.isPublic ?? false;
       const update = {
         ...fullAgent,
@@ -150,7 +150,7 @@ function AgentSelect({
         }
       });
 
-      reset(formValues);
+      reset(formValues, options);
     },
     [reset],
   );
@@ -181,7 +181,7 @@ function AgentSelect({
 
   useEffect(() => {
     if (agentQuery.data && agentQuery.isSuccess) {
-      resetAgentForm(agentQuery.data);
+      resetAgentForm(agentQuery.data, { keepDirtyValues: true });
     }
   }, [agentQuery.data, agentQuery.isSuccess, resetAgentForm]);
 
