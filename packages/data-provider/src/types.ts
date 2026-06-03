@@ -221,6 +221,7 @@ export type TUser = {
   backupCodes?: TBackupCode[];
   personalization?: {
     memories?: boolean;
+    displayName?: string;
   };
   createdAt: string;
   updatedAt: string;

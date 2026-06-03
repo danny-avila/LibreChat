@@ -240,6 +240,31 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     }).lean<IUser>();
   }
 
+  async function updateUserDisplayName(
+    userId: string,
+    displayName: string | null,
+  ): Promise<IUser | null> {
+    const User = mongoose.models.User;
+    const value = displayName?.trim() ?? '';
+    const updateOperation =
+      value.length > 0
+        ? {
+            $set: {
+              'personalization.displayName': value,
+            },
+          }
+        : {
+            $unset: {
+              'personalization.displayName': '',
+            },
+          };
+
+    return await User.findByIdAndUpdate(userId, updateOperation, {
+      new: true,
+      runValidators: true,
+    }).lean<IUser>();
+  }
+
   /**
    * Search for users by pattern matching on name, email, or username (case-insensitive)
    * @param searchPattern - The pattern to search for
@@ -358,6 +383,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     deleteUserById,
     updateUserPlugins,
     toggleUserMemories,
+    updateUserDisplayName,
   };
 }
 

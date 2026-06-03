@@ -7,10 +7,12 @@ export default function usePersonalizationAccess() {
     permission: Permissions.OPT_OUT,
   });
 
-  const hasAnyPersonalizationFeature = hasMemoryOptOut;
+  const hasDisplayNameOverride = true;
+  const hasAnyPersonalizationFeature = hasMemoryOptOut || hasDisplayNameOverride;
 
   return {
     hasMemoryOptOut,
+    hasDisplayNameOverride,
     hasAnyPersonalizationFeature,
   };
 }

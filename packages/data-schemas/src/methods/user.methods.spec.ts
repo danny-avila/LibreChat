@@ -592,6 +592,69 @@ describe('User Methods - Database Tests', () => {
     });
   });
 
+  describe('updateUserDisplayName', () => {
+    test('should set display name for user', async () => {
+      const user = await User.create({
+        name: 'Test User',
+        email: 'test@example.com',
+        provider: 'local',
+      });
+
+      const updated = await methods.updateUserDisplayName(user._id?.toString() || '', 'Ben');
+
+      expect(updated).toBeDefined();
+      expect(updated?.personalization?.displayName).toBe('Ben');
+    });
+
+    test('should trim and set display name for user', async () => {
+      const user = await User.create({
+        name: 'Test User',
+        email: 'test@example.com',
+        provider: 'local',
+      });
+
+      const updated = await methods.updateUserDisplayName(user._id?.toString() || '', '  Ben  ');
+
+      expect(updated).toBeDefined();
+      expect(updated?.personalization?.displayName).toBe('Ben');
+    });
+
+    test('should clear display name when empty string is provided', async () => {
+      const user = await User.create({
+        name: 'Test User',
+        email: 'test@example.com',
+        provider: 'local',
+        personalization: { displayName: 'Ben' },
+      });
+
+      const updated = await methods.updateUserDisplayName(user._id?.toString() || '', '');
+
+      expect(updated).toBeDefined();
+      expect(updated?.personalization?.displayName).toBeUndefined();
+    });
+
+    test('should clear display name when null is provided', async () => {
+      const user = await User.create({
+        name: 'Test User',
+        email: 'test@example.com',
+        provider: 'local',
+        personalization: { displayName: 'Ben' },
+      });
+
+      const updated = await methods.updateUserDisplayName(user._id?.toString() || '', null);
+
+      expect(updated).toBeDefined();
+      expect(updated?.personalization?.displayName).toBeUndefined();
+    });
+
+    test('should return null for non-existent user', async () => {
+      const fakeId = new mongoose.Types.ObjectId();
+      const updated = await methods.updateUserDisplayName(fakeId.toString(), 'Ben');
+
+      expect(updated).toBeNull();
+    });
+  });
+
   describe('Email Normalization Edge Cases', () => {
     test('should handle email with multiple spaces', async () => {
       await User.create({

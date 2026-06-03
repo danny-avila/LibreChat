@@ -35,6 +35,8 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const { user } = useAuthContext();
   const localize = useLocalize();
+  const preferredDisplayName = user?.personalization?.displayName;
+  const userDisplayName = preferredDisplayName || user?.name;
 
   const [textHasMultipleLines, setTextHasMultipleLines] = useState(false);
   const [lineCount, setLineCount] = useState(1);
@@ -68,8 +70,8 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
     if (typeof startupConfig?.interface?.customWelcome === 'string') {
       const customWelcome = startupConfig.interface.customWelcome;
       // Replace {{user.name}} with actual user name if available
-      if (user?.name && customWelcome.includes('{{user.name}}')) {
-        return customWelcome.replace(/{{user.name}}/g, user.name);
+      if (userDisplayName && customWelcome.includes('{{user.name}}')) {
+        return customWelcome.replace(/{{user.name}}/g, () => userDisplayName);
       }
       return customWelcome;
     }
@@ -99,7 +101,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
     else {
       return localize('com_ui_good_evening');
     }
-  }, [localize, startupConfig?.interface?.customWelcome, user?.name]);
+  }, [localize, startupConfig?.interface?.customWelcome, userDisplayName]);
 
   const handleLineCountChange = useCallback((count: number) => {
     setTextHasMultipleLines(count > 1);
@@ -135,7 +137,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
   const greetingText =
     typeof startupConfig?.interface?.customWelcome === 'string'
       ? getGreeting()
-      : getGreeting() + (user?.name ? ', ' + user.name : '');
+      : getGreeting() + (userDisplayName ? ', ' + userDisplayName : '');
 
   return (
     <div
@@ -184,7 +186,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
             </div>
           ) : (
             <SplitText
-              key={`split-text-${greetingText}${user?.name ? '-user' : ''}`}
+              key={`split-text-${greetingText}${userDisplayName ? '-user' : ''}`}
               text={greetingText}
               className={`${getTextSizeClass(greetingText)} font-medium text-text-primary`}
               delay={50}

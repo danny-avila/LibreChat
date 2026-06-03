@@ -5,6 +5,7 @@ export * from './Skills';
 export * from './Files';
 /* Memories */
 export * from './Memories';
+export * from './Personalization';
 export * from './Messages';
 export * from './Misc';
 export * from './Tools';

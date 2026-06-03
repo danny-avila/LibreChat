@@ -1223,6 +1223,15 @@ export const updateMemoryPreferences = (preferences: {
   return request.patch(endpoints.memoryPreferences(), preferences);
 };
 
+export const updatePersonalization = (personalization: {
+  displayName: string | null;
+}): Promise<{
+  updated: boolean;
+  personalization: { memories?: boolean; displayName?: string };
+}> => {
+  return request.patch(endpoints.personalization(), personalization);
+};
+
 export const createMemory = (data: {
   key: string;
   value: string;

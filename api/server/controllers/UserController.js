@@ -24,6 +24,7 @@ const { processDeleteRequest } = require('~/server/services/Files/process');
 const { getAppConfig } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
+const MAX_DISPLAY_NAME_LENGTH = 100;
 
 const PUBLIC_USER_RESPONSE_FIELDS = [
   '_id',
@@ -106,6 +107,36 @@ const acceptTermsController = async (req, res) => {
   } catch (error) {
     logger.error('Error accepting terms:', error);
     res.status(500).json({ message: 'Error accepting terms' });
+  }
+};
+
+const updatePersonalizationController = async (req, res) => {
+  try {
+    const { displayName } = req.body ?? {};
+    if (typeof displayName !== 'string' && displayName !== null) {
+      return res.status(400).json({ message: 'displayName must be a string or null' });
+    }
+
+    const normalizedDisplayName = typeof displayName === 'string' ? displayName.trim() : null;
+    const value = normalizedDisplayName ?? '';
+    if (value.length > MAX_DISPLAY_NAME_LENGTH) {
+      return res.status(400).json({
+        message: `displayName exceeds maximum length of ${MAX_DISPLAY_NAME_LENGTH}`,
+      });
+    }
+
+    const user = await db.updateUserDisplayName(req.user.id, normalizedDisplayName);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    return res.status(200).json({
+      updated: true,
+      personalization: user.personalization ?? {},
+    });
+  } catch (error) {
+    logger.error('[updatePersonalizationController] Error updating personalization:', error);
+    return res.status(500).json({ message: 'Internal server error' });
   }
 };
 
@@ -578,6 +609,7 @@ module.exports = {
   getUserController,
   getTermsStatusController,
   acceptTermsController,
+  updatePersonalizationController,
   deleteUserController,
   verifyEmailController,
   updateUserPluginsController,
