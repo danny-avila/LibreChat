@@ -92,6 +92,15 @@ module.exports = {
           900: '#6A1319',
         },
         'brand-purple': 'var(--brand-purple)',
+        // Accent rouge Vermeer exposé en namespace propre (alias des HEX
+        // conventionnés dans style.css:128 / CLAUDE.md §4). HEX en dur (et non
+        // var(--brand-purple)) pour que Tailwind génère les modificateurs
+        // d'opacité bg-vermeer/10, bg-vermeer/15, etc. Source de vérité de la
+        // palette : style.css ; ce cluster n'est qu'un alias utilitaire.
+        vermeer: {
+          DEFAULT: '#E5384A',
+          hover: '#C52838',
+        },
         presentation: 'var(--presentation)',
         'text-primary': 'var(--text-primary)',
         'text-secondary': 'var(--text-secondary)',
