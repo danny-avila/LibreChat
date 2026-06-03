@@ -487,16 +487,20 @@ export const useDeleteConversationMutation = (
           : undefined;
         let deletedProjectId = deletedConversation?.chatProjectId;
         if (!deletedProjectId && vars.conversationId) {
-          const queries = queryClient
-            .getQueryCache()
-            .findAll([QueryKeys.allConversations], { exact: false });
-          for (const query of queries) {
-            const found = findConversationInInfinite(
-              queryClient.getQueryData<InfiniteData<ConversationListResponse>>(query.queryKey),
-              vars.conversationId,
-            );
-            if (found?.chatProjectId) {
-              deletedProjectId = found.chatProjectId;
+          const cacheKeys = [QueryKeys.allConversations, QueryKeys.projectConversations];
+          for (const cacheKey of cacheKeys) {
+            const queries = queryClient.getQueryCache().findAll([cacheKey], { exact: false });
+            for (const query of queries) {
+              const found = findConversationInInfinite(
+                queryClient.getQueryData<InfiniteData<ConversationListResponse>>(query.queryKey),
+                vars.conversationId,
+              );
+              if (found?.chatProjectId) {
+                deletedProjectId = found.chatProjectId;
+                break;
+              }
+            }
+            if (deletedProjectId) {
               break;
             }
           }
