@@ -194,7 +194,6 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
   const scrollTokenRef = useRef(0);
   const scrollMarginRef = useRef(0);
   const navRef = useRef<HTMLElement>(null);
-  const draggingRef = useRef(false);
   const dragCleanupRef = useRef<(() => void) | null>(null);
   const suppressClickRef = useRef(false);
 
@@ -322,7 +321,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       return false;
     }
     target.focus();
-    return true;
+    return document.activeElement === target;
   }, []);
 
   const scrubTo = useCallback(
@@ -336,14 +335,10 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       if (count === 0) {
         return;
       }
-      let target = ribs[count - 1];
-      for (let i = 0; i < count; i++) {
-        if (clientY < ribs[i].getBoundingClientRect().bottom) {
-          target = ribs[i];
-          break;
-        }
-      }
-      const id = target.getAttribute('data-msg-id');
+      const rect = col.getBoundingClientRect();
+      const fraction = rect.height > 0 ? (clientY - rect.top) / rect.height : 0;
+      const index = Math.max(0, Math.min(count - 1, Math.round(fraction * (count - 1))));
+      const id = ribs[index].getAttribute('data-msg-id');
       if (id) {
         scrollToImmediate(id);
       }
@@ -364,14 +359,13 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         document.removeEventListener('pointermove', onMove);
         document.removeEventListener('pointerup', onUp);
         document.removeEventListener('pointercancel', onUp);
+        window.removeEventListener('blur', onBlur);
         dragCleanupRef.current = null;
         if (wasDragging) {
-          draggingRef.current = false;
           suppressClickRef.current = true;
           window.setTimeout(() => {
             suppressClickRef.current = false;
           }, 0);
-          scrollableRef.current?.dispatchEvent(new Event('scroll'));
         }
       };
 
@@ -379,16 +373,15 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         if (ev.pointerId !== state.pointerId) {
           return;
         }
+        if ((ev.buttons & 1) === 0) {
+          finish(state.dragging);
+          return;
+        }
         if (!state.dragging) {
-          if ((ev.buttons & 1) === 0) {
-            finish(false);
-            return;
-          }
           if (Math.abs(ev.clientY - state.startY) < DRAG_THRESHOLD) {
             return;
           }
           state.dragging = true;
-          draggingRef.current = true;
         }
         scrubTo(ev.clientY);
       }
@@ -400,12 +393,17 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         finish(state.dragging);
       }
 
+      function onBlur() {
+        finish(state.dragging);
+      }
+
       dragCleanupRef.current = () => finish(state.dragging);
       document.addEventListener('pointermove', onMove);
       document.addEventListener('pointerup', onUp);
       document.addEventListener('pointercancel', onUp);
+      window.addEventListener('blur', onBlur);
     },
-    [scrubTo, scrollableRef],
+    [scrubTo],
   );
 
   useEffect(() => () => dragCleanupRef.current?.(), []);
@@ -550,10 +548,6 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       }
       setCanGoUp((prev) => (prev === nextCanUp ? prev : nextCanUp));
       setCanGoDown((prev) => (prev === nextCanDown ? prev : nextCanDown));
-
-      if (draggingRef.current) {
-        return;
-      }
 
       const col = columnRef.current;
       if (!col) {

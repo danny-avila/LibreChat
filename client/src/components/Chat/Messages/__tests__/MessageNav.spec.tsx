@@ -747,38 +747,35 @@ describe('MessageNav', () => {
       );
       const result = renderNav(messages);
       const column = result.container.querySelector('nav > div') as HTMLDivElement;
+      column.getBoundingClientRect = () => ({ top: 0, bottom: 50, height: 50 }) as DOMRect;
 
       const ribs = Array.from(column.querySelectorAll('[data-msg-id]')) as HTMLElement[];
-      ribs.forEach((rib, i) => {
-        rib.getBoundingClientRect = () =>
-          ({ top: i * 10, bottom: (i + 1) * 10, height: 10 }) as DOMRect;
-      });
 
-      let wrote = -1;
+      const writes: number[] = [];
       Object.defineProperty(result.scrollable, 'scrollTop', {
         get: () => 0,
         set: (v: number) => {
-          wrote = v;
+          writes.push(v);
         },
         configurable: true,
       });
 
-      return { ...result, column, ribs, wrote: () => wrote };
+      return { ...result, column, ribs, writes };
     }
 
     it('scrubs the conversation while dragging past the threshold', () => {
-      const { column, wrote } = setupDraggableNav();
+      const { column, writes } = setupDraggableNav();
 
       act(() => {
         fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
         fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 25 });
       });
 
-      expect(wrote()).toBeGreaterThanOrEqual(0);
+      expect(writes.length).toBeGreaterThan(0);
     });
 
     it('keeps tracking the drag after the pointer leaves the narrow column', () => {
-      const { column, wrote } = setupDraggableNav();
+      const { column, writes } = setupDraggableNav();
 
       act(() => {
         fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
@@ -786,22 +783,41 @@ describe('MessageNav', () => {
         fireEvent.pointerMove(document.body, { pointerId: 1, buttons: 1, clientY: 25 });
       });
 
-      expect(wrote()).toBeGreaterThanOrEqual(0);
+      expect(writes.length).toBeGreaterThan(0);
+    });
+
+    it('maps the pointer proportionally across the full set of messages', () => {
+      const { column } = setupDraggableNav();
+      const getById = jest.spyOn(document, 'getElementById');
+
+      act(() => {
+        fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 25 });
+      });
+      expect(getById.mock.calls.map((c) => c[0])).toContain('m-2');
+
+      getById.mockClear();
+      act(() => {
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 50 });
+      });
+      expect(getById.mock.calls.map((c) => c[0])).toContain('m-4');
+
+      getById.mockRestore();
     });
 
     it('does not scrub for movement under the threshold', () => {
-      const { column, wrote } = setupDraggableNav();
+      const { column, writes } = setupDraggableNav();
 
       act(() => {
         fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
         fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 2 });
       });
 
-      expect(wrote()).toBe(-1);
+      expect(writes.length).toBe(0);
     });
 
     it('ignores pointer moves after the interaction ends', () => {
-      const { column, wrote } = setupDraggableNav();
+      const { column, writes } = setupDraggableNav();
 
       act(() => {
         fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
@@ -811,7 +827,57 @@ describe('MessageNav', () => {
         fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 40 });
       });
 
-      expect(wrote()).toBe(-1);
+      expect(writes.length).toBe(0);
+    });
+
+    it('ends the drag when the primary button is released during a move', () => {
+      const { column, writes } = setupDraggableNav();
+
+      act(() => {
+        fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 25 });
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 0, clientY: 30 });
+      });
+      const before = writes.length;
+      act(() => {
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 45 });
+      });
+
+      expect(writes.length).toBe(before);
+    });
+
+    it('ends the drag when the window loses focus', () => {
+      const { column, writes } = setupDraggableNav();
+
+      act(() => {
+        fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 25 });
+        window.dispatchEvent(new Event('blur'));
+      });
+      const before = writes.length;
+      act(() => {
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 45 });
+      });
+
+      expect(writes.length).toBe(before);
+    });
+
+    it('tears down a previous drag when a new pointer starts', () => {
+      const { column, writes } = setupDraggableNav();
+
+      act(() => {
+        fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 25 });
+      });
+      act(() => {
+        fireEvent.pointerDown(column, { pointerId: 2, button: 0, buttons: 1, clientY: 0 });
+      });
+      const before = writes.length;
+      act(() => {
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 45 });
+      });
+
+      expect(writes.length).toBe(before);
     });
 
     it('selects via the native click when a press does not become a drag', () => {
@@ -859,26 +925,6 @@ describe('MessageNav', () => {
       });
 
       expect(document.activeElement).toBe(document.getElementById('m-0'));
-    });
-
-    it('ends the active drag when a second pointer replaces it', () => {
-      const { column, scrollable } = setupDraggableNav();
-      const dispatchSpy = jest.spyOn(scrollable, 'dispatchEvent');
-
-      act(() => {
-        fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
-        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 25 });
-      });
-
-      dispatchSpy.mockClear();
-      act(() => {
-        fireEvent.pointerDown(column, { pointerId: 2, button: 0, buttons: 1, clientY: 0 });
-      });
-
-      const finishedActiveDrag = dispatchSpy.mock.calls.some(
-        ([ev]) => (ev as Event).type === 'scroll',
-      );
-      expect(finishedActiveDrag).toBe(true);
     });
   });
 
