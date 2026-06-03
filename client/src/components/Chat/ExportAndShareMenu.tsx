@@ -57,7 +57,7 @@ export default function ExportAndShareMenu({
       /** NOTE: THE FOLLOWING PROPS ARE REQUIRED FOR MENU ITEMS THAT OPEN DIALOGS */
       hideOnClick: false,
       ref: shareButtonRef,
-      render: (props) => <button {...props} />,
+      render: (props) => <button {...props} data-testid="share-conversation-menu-item" />,
     },
     {
       label: localize('com_endpoint_export'),
