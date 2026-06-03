@@ -684,6 +684,41 @@ describe('MessageNav', () => {
       expect(document.activeElement).toBe(container.querySelector('[data-msg-id="b"]'));
     });
 
+    it('consumes Shift+Alt+M only when the nav is rendered', () => {
+      const messages = [
+        buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
+        buildMessage({ messageId: 'b', text: 'bravo' }),
+        buildMessage({ messageId: 'c', text: 'charlie', isCreatedByUser: true }),
+      ];
+      renderNav(messages);
+
+      let notPrevented = true;
+      act(() => {
+        notPrevented = fireEvent.keyDown(document, {
+          code: 'KeyM',
+          altKey: true,
+          shiftKey: true,
+        });
+      });
+
+      expect(notPrevented).toBe(false);
+    });
+
+    it('does not consume Shift+Alt+M when the nav is not rendered', () => {
+      renderNav([buildMessage({ messageId: 'solo', text: 'only one', isCreatedByUser: true })]);
+
+      let notPrevented = true;
+      act(() => {
+        notPrevented = fireEvent.keyDown(document, {
+          code: 'KeyM',
+          altKey: true,
+          shiftKey: true,
+        });
+      });
+
+      expect(notPrevented).toBe(true);
+    });
+
     it('ignores the keyboard shortcut without the alt and shift modifiers', () => {
       const messages = [
         buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
@@ -824,6 +859,26 @@ describe('MessageNav', () => {
       });
 
       expect(document.activeElement).toBe(document.getElementById('m-0'));
+    });
+
+    it('ends the active drag when a second pointer replaces it', () => {
+      const { column, scrollable } = setupDraggableNav();
+      const dispatchSpy = jest.spyOn(scrollable, 'dispatchEvent');
+
+      act(() => {
+        fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 25 });
+      });
+
+      dispatchSpy.mockClear();
+      act(() => {
+        fireEvent.pointerDown(column, { pointerId: 2, button: 0, buttons: 1, clientY: 0 });
+      });
+
+      const finishedActiveDrag = dispatchSpy.mock.calls.some(
+        ([ev]) => (ev as Event).type === 'scroll',
+      );
+      expect(finishedActiveDrag).toBe(true);
     });
   });
 

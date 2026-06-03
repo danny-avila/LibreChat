@@ -310,15 +310,19 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     [scrollToStart, focusMessage],
   );
 
-  const focusNav = useCallback(() => {
+  const focusNav = useCallback((): boolean => {
     const nav = navRef.current;
     if (!nav) {
-      return;
+      return false;
     }
     const target =
       nav.querySelector<HTMLElement>('[aria-current="true"]') ??
       nav.querySelector<HTMLElement>('[data-msg-id]');
-    target?.focus();
+    if (!target) {
+      return false;
+    }
+    target.focus();
+    return true;
   }, []);
 
   const scrubTo = useCallback(
@@ -396,7 +400,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         finish(state.dragging);
       }
 
-      dragCleanupRef.current = () => finish(false);
+      dragCleanupRef.current = () => finish(state.dragging);
       document.addEventListener('pointermove', onMove);
       document.addEventListener('pointerup', onUp);
       document.addEventListener('pointercancel', onUp);
@@ -781,8 +785,9 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.altKey && e.shiftKey && (e.code === 'KeyM' || e.key.toLowerCase() === 'm')) {
-        e.preventDefault();
-        focusNav();
+        if (focusNav()) {
+          e.preventDefault();
+        }
       }
     };
     document.addEventListener('keydown', onKeyDown);
