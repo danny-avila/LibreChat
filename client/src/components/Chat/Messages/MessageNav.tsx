@@ -73,6 +73,7 @@ function getMessageEntries(root: ParentNode, messagesById: Map<string, TMessage>
 const JUMP_EPS = 4;
 const SCROLL_DURATION = 400;
 const BOTTOM_SNAP_RETRIES = 2;
+const DRAG_THRESHOLD = 4;
 
 function easeOutCubic(t: number): number {
   return 1 - Math.pow(1 - t, 3);
@@ -84,6 +85,18 @@ function readScrollMargin(el: HTMLElement | null): number {
   }
   const value = parseFloat(getComputedStyle(el).scrollMarginTop);
   return Number.isFinite(value) ? value : 0;
+}
+
+function computeTargetScroll(
+  container: HTMLElement,
+  el: HTMLElement,
+  scrollMargin: number,
+): number {
+  const cRect = container.getBoundingClientRect();
+  const elRect = el.getBoundingClientRect();
+  const target = container.scrollTop + (elRect.top - cRect.top) - scrollMargin;
+  const max = container.scrollHeight - container.clientHeight;
+  return Math.max(0, Math.min(target, max));
 }
 
 const indicatorButtonClasses = cn(
@@ -180,6 +193,12 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
   const messagesByIdRef = useRef(messagesById);
   const scrollTokenRef = useRef(0);
   const scrollMarginRef = useRef(0);
+  const navRef = useRef<HTMLElement>(null);
+  const draggingRef = useRef(false);
+  const dragStateRef = useRef<{ pointerId: number; startY: number; dragging: boolean } | null>(
+    null,
+  );
+  const suppressClickRef = useRef(false);
 
   const getCurrentVisibleId = useCallback((): string | null => {
     let nextId: string | null = null;
@@ -246,11 +265,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       if (!current) {
         return;
       }
-      const cRect = container.getBoundingClientRect();
-      const elRect = current.getBoundingClientRect();
-      const targetScroll = container.scrollTop + (elRect.top - cRect.top) - scrollMargin;
-      const max = container.scrollHeight - container.clientHeight;
-      const clamped = Math.max(0, Math.min(targetScroll, max));
+      const clamped = computeTargetScroll(container, current, scrollMargin);
       container.scrollTop = startScroll + (clamped - startScroll) * easeOutCubic(progress);
       if (progress < 1) {
         requestAnimationFrame(step);
@@ -258,6 +273,136 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     };
 
     requestAnimationFrame(step);
+  }, []);
+
+  const scrollToImmediate = useCallback((id: string) => {
+    const el = document.getElementById(id);
+    if (!el) {
+      return;
+    }
+    const container = el.closest<HTMLElement>('.scrollbar-gutter-stable');
+    if (!container) {
+      return;
+    }
+    scrollTokenRef.current++;
+    const scrollMargin = scrollMarginRef.current || readScrollMargin(el);
+    container.scrollTop = computeTargetScroll(container, el, scrollMargin);
+  }, []);
+
+  const focusMessage = useCallback((id: string) => {
+    const el = document.getElementById(id);
+    if (!el) {
+      return;
+    }
+    if (!el.hasAttribute('tabindex')) {
+      el.setAttribute('tabindex', '-1');
+    }
+    el.focus({ preventScroll: true });
+  }, []);
+
+  const handleSelect = useCallback(
+    (id: string) => {
+      if (suppressClickRef.current) {
+        suppressClickRef.current = false;
+        return;
+      }
+      scrollToStart(id);
+      focusMessage(id);
+    },
+    [scrollToStart, focusMessage],
+  );
+
+  const focusNav = useCallback(() => {
+    const nav = navRef.current;
+    if (!nav) {
+      return;
+    }
+    const target =
+      nav.querySelector<HTMLElement>('[aria-current="true"]') ??
+      nav.querySelector<HTMLElement>('[data-msg-id]');
+    target?.focus();
+  }, []);
+
+  const scrubTo = useCallback(
+    (clientY: number) => {
+      const col = columnRef.current;
+      if (!col) {
+        return;
+      }
+      const ribs = col.querySelectorAll<HTMLElement>('[data-msg-id]');
+      const count = ribs.length;
+      if (count === 0) {
+        return;
+      }
+      let target = ribs[count - 1];
+      for (let i = 0; i < count; i++) {
+        if (clientY < ribs[i].getBoundingClientRect().bottom) {
+          target = ribs[i];
+          break;
+        }
+      }
+      const id = target.getAttribute('data-msg-id');
+      if (id) {
+        scrollToImmediate(id);
+      }
+    },
+    [scrollToImmediate],
+  );
+
+  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) {
+      return;
+    }
+    suppressClickRef.current = false;
+    dragStateRef.current = { pointerId: e.pointerId, startY: e.clientY, dragging: false };
+  }, []);
+
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      const state = dragStateRef.current;
+      if (!state || state.pointerId !== e.pointerId) {
+        return;
+      }
+      if (!state.dragging) {
+        if (Math.abs(e.clientY - state.startY) < DRAG_THRESHOLD) {
+          return;
+        }
+        state.dragging = true;
+        draggingRef.current = true;
+        columnRef.current?.setPointerCapture?.(e.pointerId);
+      }
+      scrubTo(e.clientY);
+    },
+    [scrubTo],
+  );
+
+  const endDrag = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      const state = dragStateRef.current;
+      if (!state || state.pointerId !== e.pointerId) {
+        return;
+      }
+      dragStateRef.current = null;
+      if (!state.dragging) {
+        return;
+      }
+      draggingRef.current = false;
+      suppressClickRef.current = true;
+      const col = columnRef.current;
+      if (col?.hasPointerCapture?.(e.pointerId)) {
+        col.releasePointerCapture(e.pointerId);
+      }
+      scrollableRef.current?.dispatchEvent(new Event('scroll'));
+    },
+    [scrollableRef],
+  );
+
+  const handleLostPointerCapture = useCallback(() => {
+    if (!dragStateRef.current) {
+      return;
+    }
+    dragStateRef.current = null;
+    draggingRef.current = false;
   }, []);
 
   useEffect(() => {
@@ -400,6 +545,10 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       }
       setCanGoUp((prev) => (prev === nextCanUp ? prev : nextCanUp));
       setCanGoDown((prev) => (prev === nextCanDown ? prev : nextCanDown));
+
+      if (draggingRef.current) {
+        return;
+      }
 
       const col = columnRef.current;
       if (!col) {
@@ -628,13 +777,26 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     }
   }, [entries, scrollableRef, scrollToStart]);
 
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && e.shiftKey && e.code === 'KeyM') {
+        e.preventDefault();
+        focusNav();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [focusNav]);
+
   if (entries.length < 3) {
     return null;
   }
 
   return (
     <nav
+      ref={navRef}
       aria-label={localize('com_ui_message_nav')}
+      aria-keyshortcuts="Shift+Alt+M"
       className={cn(
         'group/nav absolute right-2 top-1/2 z-40 hidden max-h-[min(24rem,calc(100%-2rem))]',
         '-translate-y-1/2 flex-col items-center gap-1.5 rounded-full px-1 py-2 md:flex',
@@ -655,7 +817,12 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
 
       <div
         ref={columnRef}
-        className="flex min-h-0 flex-col items-center gap-1.5 overflow-y-auto [&::-webkit-scrollbar]:hidden"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        onLostPointerCapture={handleLostPointerCapture}
+        className="flex min-h-0 cursor-ns-resize touch-none select-none flex-col items-center gap-1.5 overflow-y-auto [&::-webkit-scrollbar]:hidden"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
         {entries.map((entry) => (
@@ -664,7 +831,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
             entry={entry}
             isActive={visibleIds.has(entry.id)}
             isCurrent={currentId === entry.id}
-            onSelect={scrollToStart}
+            onSelect={handleSelect}
             label={localize(
               entry.isUser ? 'com_ui_message_nav_go_to_user' : 'com_ui_message_nav_go_to_assistant',
               { 0: entry.preview.slice(0, 30) },

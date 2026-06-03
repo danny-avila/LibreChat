@@ -88,6 +88,21 @@ class MockIntersectionObserver {
 
 const originalIO = global.IntersectionObserver;
 
+class PointerEventPolyfill extends MouseEvent {
+  pointerId: number;
+  constructor(type: string, params: MouseEventInit & { pointerId?: number } = {}) {
+    super(type, params);
+    this.pointerId = params.pointerId ?? 0;
+  }
+}
+
+if (typeof (global as { PointerEvent?: unknown }).PointerEvent === 'undefined') {
+  (global as unknown as { PointerEvent: typeof PointerEventPolyfill }).PointerEvent =
+    PointerEventPolyfill;
+  (window as unknown as { PointerEvent: typeof PointerEventPolyfill }).PointerEvent =
+    PointerEventPolyfill;
+}
+
 import MessageNav from '../MessageNav';
 
 function buildMessage(overrides: Partial<TestMessage> = {}): TestMessage {
@@ -605,6 +620,135 @@ describe('MessageNav', () => {
       expect(aScrollTouched).toBe(true);
 
       rafSpy.mockRestore();
+    });
+  });
+
+  describe('focus management', () => {
+    it('moves focus to the target message when an indicator is clicked', () => {
+      const messages = [
+        buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
+        buildMessage({ messageId: 'b', text: 'bravo' }),
+        buildMessage({ messageId: 'c', text: 'charlie', isCreatedByUser: true }),
+      ];
+      const { container } = renderNav(messages);
+
+      const indicator = container.querySelectorAll('[data-msg-id]')[1] as HTMLButtonElement;
+      act(() => {
+        fireEvent.click(indicator);
+      });
+
+      const message = document.getElementById('b');
+      expect(message).toHaveAttribute('tabindex', '-1');
+      expect(document.activeElement).toBe(message);
+    });
+
+    it('focuses the current indicator when Shift+Alt+M is pressed', () => {
+      const messages = [
+        buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
+        buildMessage({ messageId: 'b', text: 'bravo' }),
+        buildMessage({ messageId: 'c', text: 'charlie', isCreatedByUser: true }),
+      ];
+      const { container } = renderNav(messages);
+
+      const io = MockIntersectionObserver.last();
+      act(() => {
+        io!.trigger([{ target: document.getElementById('b')!, isIntersecting: true }]);
+        jest.advanceTimersByTime(32);
+      });
+
+      act(() => {
+        fireEvent.keyDown(document, { code: 'KeyM', altKey: true, shiftKey: true });
+      });
+
+      expect(document.activeElement).toBe(container.querySelector('[data-msg-id="b"]'));
+    });
+
+    it('ignores the keyboard shortcut without the alt and shift modifiers', () => {
+      const messages = [
+        buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
+        buildMessage({ messageId: 'b', text: 'bravo' }),
+        buildMessage({ messageId: 'c', text: 'charlie', isCreatedByUser: true }),
+      ];
+      const { container } = renderNav(messages);
+
+      act(() => {
+        fireEvent.keyDown(document, { code: 'KeyM' });
+      });
+
+      const navButtons = container.querySelectorAll('[data-msg-id]');
+      expect(Array.from(navButtons)).not.toContain(document.activeElement);
+    });
+  });
+
+  describe('drag to scroll', () => {
+    function setupDraggableNav() {
+      const messages = Array.from({ length: 5 }, (_, i) =>
+        buildMessage({
+          messageId: `m-${i}`,
+          text: `message ${i}`,
+          isCreatedByUser: i % 2 === 0,
+        }),
+      );
+      const result = renderNav(messages);
+      const column = result.container.querySelector('nav > div') as HTMLDivElement;
+      column.setPointerCapture = jest.fn();
+      column.hasPointerCapture = jest.fn(() => true);
+      column.releasePointerCapture = jest.fn();
+
+      const ribs = Array.from(column.querySelectorAll('[data-msg-id]')) as HTMLElement[];
+      ribs.forEach((rib, i) => {
+        rib.getBoundingClientRect = () =>
+          ({ top: i * 10, bottom: (i + 1) * 10, height: 10 }) as DOMRect;
+      });
+      return { ...result, column, ribs };
+    }
+
+    it('scrubs the conversation while dragging past the threshold', () => {
+      const { column, scrollable } = setupDraggableNav();
+
+      let wrote = -1;
+      Object.defineProperty(scrollable, 'scrollTop', {
+        get: () => 0,
+        set: (v: number) => {
+          wrote = v;
+        },
+        configurable: true,
+      });
+
+      act(() => {
+        fireEvent.pointerDown(column, { pointerId: 1, button: 0, clientY: 0 });
+        fireEvent.pointerMove(column, { pointerId: 1, clientY: 25 });
+      });
+
+      expect(column.setPointerCapture).toHaveBeenCalledWith(1);
+      expect(wrote).toBeGreaterThanOrEqual(0);
+    });
+
+    it('does not start a drag for movement under the threshold', () => {
+      const { column } = setupDraggableNav();
+
+      act(() => {
+        fireEvent.pointerDown(column, { pointerId: 1, button: 0, clientY: 0 });
+        fireEvent.pointerMove(column, { pointerId: 1, clientY: 2 });
+      });
+
+      expect(column.setPointerCapture).not.toHaveBeenCalled();
+    });
+
+    it('suppresses the click that immediately follows a drag', () => {
+      const { column, ribs } = setupDraggableNav();
+
+      act(() => {
+        fireEvent.pointerDown(column, { pointerId: 1, button: 0, clientY: 0 });
+        fireEvent.pointerMove(column, { pointerId: 1, clientY: 25 });
+        fireEvent.pointerUp(column, { pointerId: 1, clientY: 25 });
+      });
+
+      act(() => {
+        fireEvent.click(ribs[0]);
+      });
+
+      expect(document.activeElement).not.toBe(document.getElementById('m-0'));
     });
   });
 
