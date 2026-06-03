@@ -35,7 +35,6 @@ import { createConversationMethods, type ConversationMethods } from './conversat
 import { createChatProjectMethods, type ChatProjectMethods } from './chatProject';
 export type {
   AssignConversationToProjectResult,
-  ChatProjectMethods,
   ChatProjectSortBy,
   ChatProjectSortDirection,
   CreateChatProjectInput,

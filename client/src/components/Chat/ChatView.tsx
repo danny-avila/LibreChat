@@ -38,16 +38,16 @@ function LoadingSpinner() {
 
 function ProjectLanding({ project }: { project: TChatProject }) {
   return (
-    <div className="flex h-full max-h-full transform-gpu flex-col items-center justify-center pb-16 transition-all duration-200 sm:max-h-0">
-      <div className="flex max-w-2xl flex-col items-center gap-3 px-4 text-center">
-        <div className="flex items-center gap-3">
-          <Folder className="h-9 w-9 shrink-0 text-text-secondary" aria-hidden="true" />
-          <h1 className="min-w-0 truncate text-2xl font-medium text-text-primary sm:text-4xl">
-            {project.name}
-          </h1>
+    <div className="pointer-events-none absolute left-1/2 top-6 z-10 w-full max-w-3xl -translate-x-1/2 px-4 transition-all duration-200 xl:max-w-4xl">
+      <div className="max-w-full text-left">
+        <div className="inline-flex max-w-full items-center gap-2 px-1 py-1 text-text-primary">
+          <Folder className="h-5 w-5 shrink-0 text-text-secondary" aria-hidden="true" />
+          <span className="min-w-0 truncate text-base font-medium sm:text-lg">{project.name}</span>
         </div>
         {project.description && (
-          <p className="max-w-md text-sm text-text-secondary">{project.description}</p>
+          <p className="ml-8 mt-1 max-w-lg truncate text-xs text-text-secondary sm:text-sm">
+            {project.description}
+          </p>
         )}
       </div>
     </div>
@@ -125,7 +125,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
               <>
                 <div
                   className={cn(
-                    'flex flex-col',
+                    'relative flex flex-col',
                     isLandingPage
                       ? 'flex-1 items-center justify-end sm:justify-center'
                       : 'h-full overflow-y-auto',
