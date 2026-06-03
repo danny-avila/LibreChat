@@ -134,8 +134,8 @@ const updateResourcePermissions = async (req, res) => {
       revokedPrincipals.push(...removed);
     }
 
-    // If public is disabled, add public to revoked list
-    if (!isPublic) {
+    // If public is explicitly disabled, add public to revoked list
+    if (isPublic === false) {
       revokedPrincipals.push({
         type: PrincipalType.PUBLIC,
         id: null,
@@ -167,7 +167,7 @@ const updateResourcePermissions = async (req, res) => {
       message: 'Permissions updated successfully',
       results: {
         principals: results.granted,
-        public: isPublic || false,
+        ...(isPublic !== undefined ? { public: isPublic } : {}),
         publicAccessRoleId: isPublic ? publicAccessRoleId : undefined,
       },
     };

@@ -5,6 +5,7 @@ import { ResourceType } from 'librechat-data-provider';
 import type { TPrincipal, AccessRoleIds } from 'librechat-data-provider';
 import AccessRolesPicker from '~/components/Sharing/AccessRolesPicker';
 import PrincipalAvatar from '~/components/Sharing/PrincipalAvatar';
+import { RESOURCE_CONFIGS } from '~/utils/resources';
 import { useLocalize } from '~/hooks';
 
 interface SelectedPrincipalsListProps {
@@ -50,6 +51,10 @@ export default function SelectedPrincipalsList({
       <div className="space-y-2">
         {principles.map((share) => {
           const { displayName, subtitle } = getPrincipalDisplayInfo(share);
+          const ownerRoleId = RESOURCE_CONFIGS[resourceType]?.defaultOwnerRoleId;
+          const isOwner = share.accessRoleId === ownerRoleId;
+          const isSharedLink = resourceType === ResourceType.SHARED_LINK;
+          const lockOwner = isSharedLink && isOwner;
           return (
             <div
               key={share.idOnTheSource + '-principalList'}
@@ -73,24 +78,33 @@ export default function SelectedPrincipalsList({
               </div>
 
               <div className="flex flex-shrink-0 items-center gap-2">
-                {!!share.accessRoleId && !!onRoleChange && (
-                  <AccessRolesPicker
-                    resourceType={resourceType}
-                    selectedRoleId={share.accessRoleId}
-                    onRoleChange={(newRole) => {
-                      onRoleChange?.(share.idOnTheSource!, newRole);
-                    }}
-                    className="min-w-0"
-                  />
+                {lockOwner ? (
+                  <span className="px-3 py-2 text-sm font-medium text-text-secondary">
+                    {localize('com_ui_role_owner')}
+                  </span>
+                ) : (
+                  !!share.accessRoleId &&
+                  !!onRoleChange && (
+                    <AccessRolesPicker
+                      resourceType={resourceType}
+                      selectedRoleId={share.accessRoleId}
+                      onRoleChange={(newRole) => {
+                        onRoleChange?.(share.idOnTheSource!, newRole);
+                      }}
+                      className="min-w-0"
+                    />
+                  )
                 )}
-                <Button
-                  variant="outline"
-                  onClick={() => onRemoveHandler(share.idOnTheSource!)}
-                  className="h-9 w-9 p-0 hover:border-destructive/10 hover:bg-destructive/10 hover:text-destructive"
-                  aria-label={localize('com_ui_remove_user', { 0: displayName })}
-                >
-                  <X className="h-4 w-4" aria-hidden="true" />
-                </Button>
+                {!lockOwner && (
+                  <Button
+                    variant="outline"
+                    onClick={() => onRemoveHandler(share.idOnTheSource!)}
+                    className="h-9 w-9 p-0 hover:border-destructive/10 hover:bg-destructive/10 hover:text-destructive"
+                    aria-label={localize('com_ui_remove_user', { 0: displayName })}
+                  >
+                    <X className="h-4 w-4" aria-hidden="true" />
+                  </Button>
+                )}
               </div>
             </div>
           );

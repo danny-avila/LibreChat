@@ -15,6 +15,7 @@ import type {
   AgentToolResources,
   AgentToolOptions,
   TEndpointOption,
+  ReasoningResponseKey,
   TFile,
   Agent,
   TUser,
@@ -169,6 +170,8 @@ export type InitializedAgent = Agent & {
   actionsEnabled?: boolean;
   /** Maximum characters allowed in a single tool result before truncation. */
   maxToolResultChars?: number;
+  /** Response field to read model reasoning from for custom OpenAI-compatible endpoints. */
+  reasoningKey?: ReasoningResponseKey;
   /**
    * Whether the code-execution environment is available *for this agent*.
    * Narrower than the incoming `params.codeEnvAvailable` admin flag — this
@@ -1035,6 +1038,7 @@ export async function initializeAgent(
     actionsEnabled,
     baseContextTokens,
     codeEnvAvailable: effectiveCodeEnvAvailable,
+    reasoningKey: customEndpointConfig?.customParams?.reasoningKey,
     skillCount,
     accessibleSkillIds: executableSkillIds,
     activeSkillNames,

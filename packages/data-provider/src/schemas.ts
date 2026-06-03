@@ -177,6 +177,17 @@ export enum ReasoningEffort {
   xhigh = 'xhigh',
 }
 
+export enum ReasoningParameterFormat {
+  disabled = 'disabled',
+  reasoningEffort = 'reasoning_effort',
+  reasoningObject = 'reasoning_object',
+}
+
+export enum ReasoningResponseKey {
+  reasoning = 'reasoning',
+  reasoningContent = 'reasoning_content',
+}
+
 export enum AnthropicEffort {
   unset = '',
   low = 'low',
@@ -250,6 +261,8 @@ export const imageDetailValue = {
 
 export const eImageDetailSchema = z.nativeEnum(ImageDetail);
 export const eReasoningEffortSchema = z.nativeEnum(ReasoningEffort);
+export const eReasoningParameterFormatSchema = z.nativeEnum(ReasoningParameterFormat);
+export const eReasoningResponseKeySchema = z.nativeEnum(ReasoningResponseKey);
 export const eAnthropicEffortSchema = z.nativeEnum(AnthropicEffort);
 export const eThinkingDisplaySchema = z.nativeEnum(ThinkingDisplay);
 export const eReasoningSummarySchema = z.nativeEnum(ReasoningSummary);
@@ -629,6 +642,8 @@ export const tPluginAuthConfigSchema = z.object({
   label: z.string(),
   description: z.string(),
   optional: z.boolean().optional(),
+  /** Whether the field holds a secret and should be masked in the UI (defaults to masked when omitted). */
+  sensitive: z.boolean().optional(),
 });
 
 export type TPluginAuthConfig = z.infer<typeof tPluginAuthConfigSchema>;
@@ -844,6 +859,7 @@ export const tConversationSchema = z.object({
   examples: z.array(tExampleSchema).optional(),
   /* DB */
   tags: z.array(z.string()).optional(),
+  chatProjectId: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   /* Files */
@@ -899,6 +915,7 @@ export const tConversationSchema = z.object({
 export const tPresetSchema = tConversationSchema
   .omit({
     conversationId: true,
+    chatProjectId: true,
     createdAt: true,
     updatedAt: true,
     title: true,
@@ -1059,7 +1076,6 @@ export const tSharedLinkSchema = z.object({
   shareId: z.string(),
   targetMessageId: z.string().optional(),
   messages: z.array(z.string()),
-  isPublic: z.boolean(),
   title: z.string(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -1080,6 +1096,7 @@ export const tConversationTagSchema = z.object({
 export type TConversationTag = z.infer<typeof tConversationTagSchema>;
 
 export const googleBaseSchema = tConversationSchema.pick({
+  chatProjectId: true,
   model: true,
   modelLabel: true,
   promptPrefix: true,
@@ -1151,6 +1168,7 @@ export function removeNullishValues<T extends Record<string, unknown>>(
 }
 
 const assistantBaseSchema = tConversationSchema.pick({
+  chatProjectId: true,
   model: true,
   assistant_id: true,
   instructions: true,
@@ -1186,6 +1204,7 @@ export const assistantSchema = assistantBaseSchema
   }));
 
 const compactAssistantBaseSchema = tConversationSchema.pick({
+  chatProjectId: true,
   model: true,
   assistant_id: true,
   instructions: true,
@@ -1201,6 +1220,7 @@ export const compactAssistantSchema = compactAssistantBaseSchema
   .catch(() => ({}));
 
 export const agentsBaseSchema = tConversationSchema.pick({
+  chatProjectId: true,
   model: true,
   modelLabel: true,
   temperature: true,
@@ -1254,6 +1274,7 @@ export const agentsSchema = agentsBaseSchema
   }));
 
 export const openAIBaseSchema = tConversationSchema.pick({
+  chatProjectId: true,
   model: true,
   modelLabel: true,
   chatGptLabel: true,
@@ -1310,6 +1331,7 @@ export const compactGoogleSchema = googleBaseSchema
   .catch(() => ({}));
 
 export const anthropicBaseSchema = tConversationSchema.pick({
+  chatProjectId: true,
   model: true,
   modelLabel: true,
   promptPrefix: true,
@@ -1351,6 +1373,7 @@ export const tBannerSchema = z.object({
 export type TBanner = z.infer<typeof tBannerSchema>;
 
 export const compactAgentsBaseSchema = tConversationSchema.pick({
+  chatProjectId: true,
   spec: true,
   // model: true,
   iconURL: true,

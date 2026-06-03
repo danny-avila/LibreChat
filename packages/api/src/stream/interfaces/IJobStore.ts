@@ -39,6 +39,9 @@ export interface SerializableJobData {
   /** Serialized final event for replay */
   finalEvent?: string;
 
+  /** Serialized title event for replay during active-stream resume */
+  titleEvent?: string;
+
   /** Endpoint metadata for abort handling - avoids storing functions */
   endpoint?: string;
   iconURL?: string;
@@ -139,6 +142,13 @@ export interface ResumeState {
   responseMessageId?: string;
   conversationId?: string;
   sender?: string;
+  titleEvent?: {
+    event: 'title';
+    data?: {
+      conversationId?: string;
+      title?: string;
+    };
+  };
 }
 
 /**

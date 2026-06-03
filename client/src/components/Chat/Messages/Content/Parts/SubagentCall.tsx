@@ -293,7 +293,12 @@ export default function SubagentCall({
    * from routing through `Parts/index`.
    */
   const renderDialogPart = useCallback(
-    (part: TMessageContentParts, idx: number, isLastPart: boolean): JSX.Element | null => {
+    (
+      part: TMessageContentParts,
+      idx: number,
+      isLastPart: boolean,
+      onToolExpand?: () => void,
+    ): JSX.Element | null => {
       return (
         <SubagentDialogPart
           key={`${toolCallId}-part-${idx}`}
@@ -301,6 +306,7 @@ export default function SubagentCall({
           isSubmitting={running}
           showCursor={running && isLastPart}
           isLast={isLastPart}
+          onToolExpand={onToolExpand}
         />
       );
     },
@@ -811,11 +817,13 @@ function SubagentDialogPart({
   isSubmitting,
   showCursor,
   isLast,
+  onToolExpand,
 }: {
   part: TMessageContentParts;
   isSubmitting: boolean;
   showCursor: boolean;
   isLast: boolean;
+  onToolExpand?: () => void;
 }): JSX.Element | null {
   if (part.type === ContentTypes.TEXT) {
     const text = (part as { text: string }).text;
@@ -849,6 +857,7 @@ function SubagentDialogPart({
         isSubmitting={isSubmitting}
         isLast={isLast}
         name={tc.name ?? ''}
+        onExpand={onToolExpand}
       />
     );
   }

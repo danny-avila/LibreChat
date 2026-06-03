@@ -1,6 +1,7 @@
 import { RetentionMode } from 'librechat-data-provider';
 import {
   createMinimalRetentionRequest,
+  getAgentFileRetentionExpiry,
   getConversationExpirationDate,
   getRetentionExpiry,
   getSharedLinkExpiration,
@@ -189,6 +190,129 @@ describe('retention helpers', () => {
   it('returns no retention fields when req is null or undefined', async () => {
     await expect(getRetentionExpiry(null, dependencies)).resolves.toEqual({});
     await expect(getRetentionExpiry(undefined, dependencies)).resolves.toEqual({});
+  });
+
+  it('skips persistent agent files in temporary retention mode when retainAgentFiles is disabled', async () => {
+    const result = await getAgentFileRetentionExpiry(
+      {
+        req: request({
+          config: {
+            interfaceConfig: {
+              retentionMode: RetentionMode.TEMPORARY,
+              retainAgentFiles: false,
+            },
+          },
+        }),
+        messageAttachment: false,
+        toolResource: 'context',
+      },
+      dependencies,
+    );
+
+    expect(result).toEqual({});
+    expect(dependencies.getConvo).not.toHaveBeenCalled();
+    expect(dependencies.createExpirationDate).not.toHaveBeenCalled();
+  });
+
+  it('skips persistent agent files in temporary retention mode when retainAgentFiles is enabled', async () => {
+    const result = await getAgentFileRetentionExpiry(
+      {
+        req: request({
+          config: {
+            interfaceConfig: {
+              retentionMode: RetentionMode.TEMPORARY,
+              retainAgentFiles: true,
+            },
+          },
+        }),
+        messageAttachment: false,
+        toolResource: 'context',
+      },
+      dependencies,
+    );
+
+    expect(result).toEqual({});
+    expect(dependencies.getConvo).not.toHaveBeenCalled();
+    expect(dependencies.createExpirationDate).not.toHaveBeenCalled();
+  });
+
+  it('applies all-data retention to persistent agent files when retainAgentFiles is disabled', async () => {
+    const result = await getAgentFileRetentionExpiry(
+      {
+        req: request({
+          config: {
+            interfaceConfig: {
+              retentionMode: RetentionMode.ALL,
+              retainAgentFiles: false,
+            },
+          },
+        }),
+        messageAttachment: false,
+        toolResource: 'context',
+      },
+      dependencies,
+    );
+
+    expect(result).toEqual({ expiredAt: expirationDate });
+    expect(dependencies.getConvo).not.toHaveBeenCalled();
+    expect(dependencies.createExpirationDate).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps current all-data retention behavior when retainAgentFiles is unset', async () => {
+    const result = await getAgentFileRetentionExpiry(
+      {
+        req: request({ config: { interfaceConfig: { retentionMode: RetentionMode.ALL } } }),
+        messageAttachment: false,
+        toolResource: 'context',
+      },
+      dependencies,
+    );
+
+    expect(result).toEqual({ expiredAt: expirationDate });
+    expect(dependencies.createExpirationDate).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips all-data retention for persistent agent files when retainAgentFiles is enabled', async () => {
+    const result = await getAgentFileRetentionExpiry(
+      {
+        req: request({
+          config: {
+            interfaceConfig: {
+              retentionMode: RetentionMode.ALL,
+              retainAgentFiles: true,
+            },
+          },
+        }),
+        messageAttachment: false,
+        toolResource: 'context',
+      },
+      dependencies,
+    );
+
+    expect(result).toEqual({});
+    expect(dependencies.getConvo).not.toHaveBeenCalled();
+    expect(dependencies.createExpirationDate).not.toHaveBeenCalled();
+  });
+
+  it('still applies all-data retention to agent message attachments when retainAgentFiles is enabled', async () => {
+    const result = await getAgentFileRetentionExpiry(
+      {
+        req: request({
+          config: {
+            interfaceConfig: {
+              retentionMode: RetentionMode.ALL,
+              retainAgentFiles: true,
+            },
+          },
+        }),
+        messageAttachment: true,
+        toolResource: 'context',
+      },
+      dependencies,
+    );
+
+    expect(result).toEqual({ expiredAt: expirationDate });
+    expect(dependencies.createExpirationDate).toHaveBeenCalledTimes(1);
   });
 
   it('parses valid conversation expiration dates and ignores invalid ones', () => {

@@ -49,6 +49,7 @@ export async function loadDefaultInterface({
     temporaryChat: interfaceConfig?.temporaryChat,
     temporaryChatRetention: interfaceConfig?.temporaryChatRetention,
     retentionMode: interfaceConfig?.retentionMode,
+    retainAgentFiles: interfaceConfig?.retainAgentFiles,
     runCode: interfaceConfig?.runCode,
     webSearch: interfaceConfig?.webSearch,
     fileSearch: interfaceConfig?.fileSearch,
@@ -57,6 +58,7 @@ export async function loadDefaultInterface({
     marketplace: interfaceConfig?.marketplace,
     remoteAgents: interfaceConfig?.remoteAgents,
     skills: interfaceConfig?.skills,
+    sharedLinks: interfaceConfig?.sharedLinks,
   });
 
   return loadedInterface;
