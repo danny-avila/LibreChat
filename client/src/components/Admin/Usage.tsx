@@ -456,7 +456,7 @@ function Usage() {
   }
 
   return (
-    <div className="flex h-full w-full flex-col gap-4 overflow-y-auto bg-surface-primary px-8 py-6 min-h-0">
+    <div className="flex h-full w-full flex-col gap-4 overflow-y-auto bg-surface-primary px-8 py-6 min-h-0 [&>*]:shrink-0">
       <header>
         <h1 className="text-2xl font-semibold text-text-primary">
           {localize('com_usage_title')}
