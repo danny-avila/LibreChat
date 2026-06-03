@@ -183,9 +183,10 @@ export default function useChatFunctions({
       });
     }
 
-    const routeChatProjectId =
-      conversationId === Constants.NEW_CONVO ? getRouteChatProjectId() : null;
-    const chatProjectId = conversation?.chatProjectId || routeChatProjectId || null;
+    const chatProjectId =
+      conversationId === Constants.NEW_CONVO
+        ? getRouteChatProjectId()
+        : (conversation?.chatProjectId ?? null);
     const conversationForPayload =
       chatProjectId != null ? { ...(conversation ?? {}), chatProjectId } : (conversation ?? {});
 

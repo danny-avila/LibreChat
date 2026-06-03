@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useState, useMemo, memo, lazy, Suspense, useRef } from 'react';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
-import { useNavigate } from 'react-router-dom';
 import { useMediaQuery } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import type { List } from 'react-virtualized';
-import type { SidebarChatSort, SidebarOrganizationMode } from '~/components/Conversations/types';
 import {
   useLocalize,
   useHasAccess,
@@ -15,35 +13,24 @@ import {
   useNavScrolling,
 } from '~/hooks';
 import { useConversationsInfiniteQuery, useTitleGeneration } from '~/data-provider';
-import type { ChatsHeaderControls } from '~/components/Conversations/Header';
 import { Conversations } from '~/components/Conversations';
+import ProjectsSection from '~/components/Conversations/ProjectsSection';
+import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
 import SearchBar from '~/components/Nav/SearchBar';
-import ProjectConversations from '~/components/Conversations/ProjectConversations';
-import ProjectCreateDialog from '~/components/Projects/ProjectCreateDialog';
 import store from '~/store';
 
 const BookmarkNav = lazy(() => import('~/components/Nav/Bookmarks/BookmarkNav'));
 
 const ConversationsSection = memo(() => {
   const localize = useLocalize();
-  const navigate = useNavigate();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const setSidebarExpanded = useSetRecoilState(store.sidebarExpanded);
   const { isAuthenticated } = useAuthContext();
   useTitleGeneration(isAuthenticated);
 
   const [isChatsExpanded, setIsChatsExpanded] = useLocalStorage('chatsExpanded', true);
-  const [organizationMode, setOrganizationMode] = useLocalStorage<SidebarOrganizationMode>(
-    'sidebarOrganizationMode',
-    'chronological',
-  );
-  const [chatSortBy, setChatSortBy] = useLocalStorage<SidebarChatSort>(
-    'sidebarChatSortBy',
-    'updatedAt',
-  );
   const [showLoading, setShowLoading] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
-  const [isProjectCreateOpen, setIsProjectCreateOpen] = useState(false);
 
   const hasAccessToBookmarks = useHasAccess({
     permissionType: PermissionTypes.BOOKMARKS,
@@ -57,11 +44,9 @@ const ConversationsSection = memo(() => {
       {
         tags: tags.length === 0 ? undefined : tags,
         search: search.debouncedQuery || undefined,
-        sortBy: chatSortBy,
-        sortDirection: 'desc',
       },
       {
-        enabled: isAuthenticated && organizationMode === 'chronological',
+        enabled: isAuthenticated,
         staleTime: 30000,
         cacheTime: 300000,
       },
@@ -98,50 +83,6 @@ const ConversationsSection = memo(() => {
     }
   }, [isSmallScreen, setSidebarExpanded]);
 
-  const handleOrganizationModeChange = useCallback(
-    (mode: SidebarOrganizationMode) => {
-      setOrganizationMode(mode);
-      conversationsRef.current?.scrollToPosition(0);
-    },
-    [setOrganizationMode],
-  );
-
-  const handleChatSortByChange = useCallback(
-    (sortBy: SidebarChatSort) => {
-      setChatSortBy(sortBy);
-      conversationsRef.current?.scrollToPosition(0);
-    },
-    [setChatSortBy],
-  );
-
-  const handleNewProject = useCallback(() => {
-    setIsProjectCreateOpen(true);
-  }, []);
-
-  const handleOpenProjects = useCallback(() => {
-    navigate('/projects');
-    toggleNav();
-  }, [navigate, toggleNav]);
-
-  const chatsHeaderControls = useMemo<ChatsHeaderControls>(
-    () => ({
-      organizationMode,
-      chatSortBy,
-      onOrganizationModeChange: handleOrganizationModeChange,
-      onChatSortByChange: handleChatSortByChange,
-      onNewProject: handleNewProject,
-      onOpenProjects: handleOpenProjects,
-    }),
-    [
-      organizationMode,
-      chatSortBy,
-      handleOrganizationModeChange,
-      handleChatSortByChange,
-      handleNewProject,
-      handleOpenProjects,
-    ],
-  );
-
   const loadMoreConversations = useCallback(() => {
     if (isFetchingNextPage || !computedHasNextPage) {
       return;
@@ -177,43 +118,26 @@ const ConversationsSection = memo(() => {
         )}
         {search.enabled && <SearchBar isSmallScreen={isSmallScreen} />}
       </div>
+      {!search.query && (
+        <div className="px-3">
+          <FavoritesList isSmallScreen={isSmallScreen} toggleNav={toggleNav} />
+        </div>
+      )}
+      {!search.query && <ProjectsSection toggleNav={toggleNav} isAuthenticated={isAuthenticated} />}
       <div className="flex min-h-0 flex-grow flex-col overflow-hidden">
-        {organizationMode === 'chronological' ? (
-          <Conversations
-            conversations={conversations}
-            moveToTop={moveToTop}
-            toggleNav={toggleNav}
-            containerRef={conversationsRef}
-            loadMoreConversations={loadMoreConversations}
-            isLoading={isFetchingNextPage || showLoading || isLoading}
-            isSearchLoading={isSearchLoading}
-            isChatsExpanded={isChatsExpanded}
-            dateField={chatSortBy}
-            setIsChatsExpanded={setIsChatsExpanded}
-            chatsHeaderControls={chatsHeaderControls}
-          />
-        ) : (
-          <ProjectConversations
-            mode={organizationMode}
-            chatSortBy={chatSortBy}
-            tags={tags}
-            toggleNav={toggleNav}
-            isAuthenticated={isAuthenticated}
-            containerRef={conversationsRef}
-            isChatsExpanded={isChatsExpanded}
-            setIsChatsExpanded={setIsChatsExpanded}
-            chatsHeaderControls={chatsHeaderControls}
-          />
-        )}
+        <Conversations
+          conversations={conversations}
+          moveToTop={moveToTop}
+          toggleNav={toggleNav}
+          containerRef={conversationsRef}
+          loadMoreConversations={loadMoreConversations}
+          isLoading={isFetchingNextPage || showLoading || isLoading}
+          isSearchLoading={isSearchLoading}
+          isChatsExpanded={isChatsExpanded}
+          setIsChatsExpanded={setIsChatsExpanded}
+          showFavorites={false}
+        />
       </div>
-      <ProjectCreateDialog
-        open={isProjectCreateOpen}
-        onOpenChange={setIsProjectCreateOpen}
-        onCreated={(project) => {
-          navigate(`/projects/${project._id}`);
-          toggleNav();
-        }}
-      />
     </div>
   );
 });

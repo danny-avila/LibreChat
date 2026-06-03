@@ -2,7 +2,7 @@ import { memo, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useForm } from 'react-hook-form';
 import { Spinner } from '@librechat/client';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Folder } from 'lucide-react';
 import { Constants, buildTree } from 'librechat-data-provider';
 import type { TChatProject, TMessage } from 'librechat-data-provider';
@@ -36,20 +36,20 @@ function LoadingSpinner() {
   );
 }
 
-function ProjectLanding({ project }: { project: TChatProject }) {
+function ProjectLandingChip({ project }: { project: TChatProject }) {
+  const localize = useLocalize();
+  const navigate = useNavigate();
   return (
-    <div className="pointer-events-none absolute left-1/2 top-6 z-10 w-full max-w-3xl -translate-x-1/2 px-4 transition-all duration-200 xl:max-w-4xl">
-      <div className="max-w-full text-left">
-        <div className="inline-flex max-w-full items-center gap-2 px-1 py-1 text-text-primary">
-          <Folder className="h-5 w-5 shrink-0 text-text-secondary" aria-hidden="true" />
-          <span className="min-w-0 truncate text-base font-medium sm:text-lg">{project.name}</span>
-        </div>
-        {project.description && (
-          <p className="ml-8 mt-1 max-w-lg truncate text-xs text-text-secondary sm:text-sm">
-            {project.description}
-          </p>
-        )}
-      </div>
+    <div className="mb-2.5 flex px-1">
+      <button
+        type="button"
+        onClick={() => navigate(`/projects/${project._id}`)}
+        aria-label={localize('com_ui_go_to_project', { name: project.name })}
+        className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-surface-secondary px-3 py-1 text-sm text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+      >
+        <Folder className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        <span className="truncate font-medium">{project.name}</span>
+      </button>
     </div>
   );
 }
@@ -104,8 +104,6 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
     content = <LoadingSpinner />;
   } else if (!isLandingPage) {
     content = <MessagesView messagesTree={messagesTree} />;
-  } else if (isProjectLandingPage && project) {
-    content = <ProjectLanding project={project} />;
   } else {
     content = <Landing centerFormOnLanding={centerFormOnLanding} />;
   }
@@ -125,7 +123,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
               <>
                 <div
                   className={cn(
-                    'relative flex flex-col',
+                    'flex flex-col',
                     isLandingPage
                       ? 'flex-1 items-center justify-end sm:justify-center'
                       : 'h-full overflow-y-auto',
@@ -138,6 +136,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
                       isLandingPage && 'max-w-3xl transition-all duration-200 xl:max-w-4xl',
                     )}
                   >
+                    {isProjectLandingPage && project && <ProjectLandingChip project={project} />}
                     <ChatForm index={index} placeholder={chatFormPlaceholder} />
                     {isLandingPage ? <ConversationStarters /> : <Footer />}
                   </div>

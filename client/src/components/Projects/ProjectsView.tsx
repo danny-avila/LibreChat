@@ -27,9 +27,16 @@ function renderSortMenuItem(label: string, isSelected: boolean): RenderProp {
   };
 }
 
-function formatActivity(project: TChatProject, fallback: string) {
+function formatActivity(project: TChatProject) {
   const value = project.lastConversationAt ?? project.updatedAt ?? project.createdAt;
-  return value ? new Date(value).toLocaleString() : fallback;
+  if (!value) {
+    return null;
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 export default function ProjectsView() {
@@ -169,41 +176,39 @@ export default function ProjectsView() {
             <Spinner className="text-text-primary" />
           </div>
         ) : (
-          <div className="grid gap-3 md:grid-cols-2">
-            {projects.map((project) => (
-              <button
-                key={project._id}
-                type="button"
-                className={cn(
-                  'group/project min-h-32 rounded-lg border border-border-light bg-transparent p-4 text-left transition-colors',
-                  'hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
-                )}
-                onClick={() => navigate(`/projects/${project._id}`)}
-              >
-                <span className="mb-3 flex items-center gap-3">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-tertiary transition-colors group-hover/project:bg-surface-hover">
-                    <Folder className="h-5 w-5 text-text-secondary" aria-hidden="true" />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block truncate text-base font-semibold">{project.name}</span>
-                    <span className="block text-xs text-text-secondary">
-                      {localize('com_ui_project_chat_count', {
-                        count: project.conversationCount,
-                      })}
+          <div className="grid gap-3 md:grid-cols-2 md:gap-4">
+            {projects.map((project) => {
+              const activity = formatActivity(project);
+              return (
+                <button
+                  key={project._id}
+                  type="button"
+                  className={cn(
+                    'group/project flex min-h-[8.5rem] flex-col rounded-xl border border-border-light bg-surface-primary p-4 text-left transition-colors',
+                    'hover:border-border-medium hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
+                  )}
+                  onClick={() => navigate(`/projects/${project._id}`)}
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <Folder className="h-4 w-4 shrink-0 text-text-secondary" aria-hidden="true" />
+                    <span className="truncate text-base font-semibold text-text-primary">
+                      {project.name}
                     </span>
                   </span>
-                </span>
-                {project.description && (
-                  <span className="mb-3 line-clamp-2 block text-sm leading-relaxed text-text-secondary">
-                    {project.description}
+                  {project.description ? (
+                    <span className="mt-2 line-clamp-2 text-sm leading-relaxed text-text-secondary">
+                      {project.description}
+                    </span>
+                  ) : null}
+                  <span className="mt-auto flex items-center justify-between gap-2 pt-4 text-xs text-text-secondary">
+                    <span>
+                      {localize('com_ui_project_chat_count', { count: project.conversationCount })}
+                    </span>
+                    {activity ? <span className="shrink-0 truncate">{activity}</span> : null}
                   </span>
-                )}
-                <span className="block truncate text-xs text-text-secondary">
-                  {localize('com_ui_latest_activity')}:{' '}
-                  {formatActivity(project, localize('com_ui_no_activity'))}
-                </span>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
         )}
 

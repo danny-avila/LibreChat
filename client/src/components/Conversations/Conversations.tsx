@@ -1,16 +1,14 @@
 import { useMemo, memo, type FC, useCallback, useEffect, useRef } from 'react';
 import throttle from 'lodash/throttle';
+import { ChevronDown } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { Spinner, useMediaQuery } from '@librechat/client';
 import { List, AutoSizer, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
 import type { TConversation } from 'librechat-data-provider';
-import type { ChatsHeaderControls } from './Header';
-import type { SidebarChatSort } from './types';
 import { useLocalize, TranslationKeys, useFavorites, useShowMarketplace } from '~/hooks';
 import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
 import { useActiveJobs } from '~/data-provider';
 import { groupConversationsByDate, cn } from '~/utils';
-import ChatsHeader from './Header';
 import Convo from './Convo';
 import store from '~/store';
 
@@ -33,9 +31,8 @@ interface ConversationsProps {
   isLoading: boolean;
   isSearchLoading: boolean;
   isChatsExpanded: boolean;
-  dateField?: SidebarChatSort;
   setIsChatsExpanded: (expanded: boolean) => void;
-  chatsHeaderControls: ChatsHeaderControls;
+  showFavorites?: boolean;
 }
 
 interface MeasuredRowProps {
@@ -74,6 +71,30 @@ const LoadingSpinner = memo(() => {
 });
 
 LoadingSpinner.displayName = 'LoadingSpinner';
+
+interface ChatsHeaderProps {
+  isExpanded: boolean;
+  onToggle: () => void;
+}
+
+/** Collapsible header for the Chats section */
+const ChatsHeader: FC<ChatsHeaderProps> = memo(({ isExpanded, onToggle }) => {
+  const localize = useLocalize();
+  return (
+    <button
+      onClick={onToggle}
+      className="group flex w-full items-center justify-between rounded-lg px-1 py-2 text-xs font-bold text-text-secondary outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
+      type="button"
+    >
+      <span className="select-none">{localize('com_ui_chats')}</span>
+      <ChevronDown
+        className={cn('h-3 w-3 transition-transform duration-200', isExpanded ? 'rotate-180' : '')}
+      />
+    </button>
+  );
+});
+
+ChatsHeader.displayName = 'ChatsHeader';
 
 const DateLabel: FC<{ groupName: string; isFirst?: boolean }> = memo(({ groupName, isFirst }) => {
   const localize = useLocalize();
@@ -125,7 +146,6 @@ const MemoizedConvo = memo(
       prevProps.conversation.conversationId === nextProps.conversation.conversationId &&
       prevProps.conversation.title === nextProps.conversation.title &&
       prevProps.conversation.endpoint === nextProps.conversation.endpoint &&
-      prevProps.conversation.chatProjectId === nextProps.conversation.chatProjectId &&
       prevProps.isGenerating === nextProps.isGenerating
     );
   },
@@ -140,9 +160,8 @@ const Conversations: FC<ConversationsProps> = ({
   isLoading,
   isSearchLoading,
   isChatsExpanded,
-  dateField = 'updatedAt',
   setIsChatsExpanded,
-  chatsHeaderControls,
+  showFavorites = true,
 }) => {
   const localize = useLocalize();
   const search = useRecoilValue(store.search);
@@ -162,7 +181,9 @@ const Conversations: FC<ConversationsProps> = ({
 
   // Determine if FavoritesList will render content
   const shouldShowFavorites =
-    !search.query && (isFavoritesLoading || favorites.length > 0 || showAgentMarketplace);
+    showFavorites &&
+    !search.query &&
+    (isFavoritesLoading || favorites.length > 0 || showAgentMarketplace);
 
   favoritesContentKeyRef.current = `${favorites.length}-${showAgentMarketplace ? 1 : 0}-${isFavoritesLoading ? 1 : 0}`;
 
@@ -172,8 +193,8 @@ const Conversations: FC<ConversationsProps> = ({
   );
 
   const groupedConversations = useMemo(
-    () => groupConversationsByDate(filteredConversations, dateField),
-    [filteredConversations, dateField],
+    () => groupConversationsByDate(filteredConversations),
+    [filteredConversations],
   );
 
   const flattenedItems = useMemo(() => {
@@ -257,7 +278,7 @@ const Conversations: FC<ConversationsProps> = ({
       }
     });
     return () => cancelAnimationFrame(frameId);
-  }, [search.query, dateField, cache, containerRef]);
+  }, [search.query, cache, containerRef]);
 
   const rowRenderer = useCallback(
     ({ index, key, parent, style }) => {
@@ -286,7 +307,6 @@ const Conversations: FC<ConversationsProps> = ({
             <ChatsHeader
               isExpanded={isChatsExpanded}
               onToggle={() => setIsChatsExpanded(!isChatsExpanded)}
-              {...chatsHeaderControls}
             />
           </MeasuredRow>
         );
@@ -328,7 +348,6 @@ const Conversations: FC<ConversationsProps> = ({
       isSmallScreen,
       isChatsExpanded,
       setIsChatsExpanded,
-      chatsHeaderControls,
       shouldShowFavorites,
       activeJobIds,
     ],
