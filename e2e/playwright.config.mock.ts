@@ -14,6 +14,7 @@ const baseURL = getE2EBaseURL();
 const mockLlmPort = getMockLlmPort();
 const defaultMockLlmBaseURL = 'http://127.0.0.1:8889/v1';
 const mockLlmBaseURL = `http://127.0.0.1:${mockLlmPort}/v1`;
+const chromiumChannel = process.env.E2E_CHROMIUM_CHANNEL || undefined;
 
 const vanillaOverrides = {
   TENANT_ISOLATION_STRICT: 'false',
@@ -119,8 +120,11 @@ export default defineConfig({
   },
   projects: [
     {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      name: chromiumChannel ?? 'chromium',
+      use: {
+        ...devices['Desktop Chrome'],
+        ...(chromiumChannel ? { channel: chromiumChannel } : {}),
+      },
     },
   ],
   webServer: [
