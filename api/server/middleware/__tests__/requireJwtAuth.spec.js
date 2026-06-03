@@ -120,6 +120,64 @@ jest.mock('@librechat/api', () => {
   const getAuthFailureErrorName = (err, info) =>
     normalizeAuthLogValue(getAuthFailureField(info, 'name')) ??
     normalizeAuthLogValue(getAuthFailureField(err, 'name'));
+  const getSafeTokenProvider = (tokenProvider) => {
+    const normalized = normalizeAuthLogValue(tokenProvider);
+    if (!normalized) {
+      return undefined;
+    }
+    return normalized === 'openid' || normalized === 'librechat' ? normalized : 'other';
+  };
+  const normalizeRoutePath = (path) => {
+    if (typeof path === 'string') {
+      return normalizeAuthLogValue(path);
+    }
+    if (Array.isArray(path)) {
+      for (const entry of path) {
+        const normalized = normalizeRoutePath(entry);
+        if (normalized) {
+          return normalized;
+        }
+      }
+    }
+    return undefined;
+  };
+  const joinRoutePath = (baseUrl, routePath) => {
+    const normalizedRoute = routePath === '/' ? '' : routePath;
+    if (!baseUrl) {
+      return normalizedRoute || '/';
+    }
+    if (!normalizedRoute) {
+      return baseUrl;
+    }
+    return `${baseUrl.replace(/\/$/, '')}/${normalizedRoute.replace(/^\//, '')}`;
+  };
+  const bucketConcretePath = (path) => {
+    const queryless = path?.split('?')[0];
+    if (!queryless) {
+      return undefined;
+    }
+    const segments = queryless.split('/').filter(Boolean);
+    if (segments.length === 0) {
+      return '/';
+    }
+    if (segments[0] === 'api' && segments[1]) {
+      return `/${segments.slice(0, 2).join('/')}`;
+    }
+    return `/${segments[0]}`;
+  };
+  const getRequestPath = (req) => {
+    const baseUrl = normalizeAuthLogValue(req.baseUrl);
+    const routePath = normalizeRoutePath(req.route?.path);
+    if (routePath) {
+      return joinRoutePath(baseUrl, routePath);
+    }
+    if (baseUrl) {
+      return baseUrl;
+    }
+    const path =
+      normalizeAuthLogValue(req.path) ?? normalizeAuthLogValue(req.originalUrl ?? req.url);
+    return bucketConcretePath(path);
+  };
   const compactAuthLogContext = (log) =>
     Object.fromEntries(
       Object.entries(log)
@@ -135,8 +193,8 @@ jest.mock('@librechat/api', () => {
         normalizeAuthLogValue(req.headers?.['x-request-id']) ??
         normalizeAuthLogValue(req.headers?.['x-correlation-id']),
       method: normalizeAuthLogValue(req.method),
-      path: normalizeAuthLogValue(req.path ?? req.originalUrl ?? req.url)?.split('?')[0],
-      token_provider: normalizeAuthLogValue(authState.tokenProvider),
+      path: getRequestPath(req),
+      token_provider: getSafeTokenProvider(authState.tokenProvider),
       openid_reuse_enabled: authState.openidReuseEnabled,
       openid_jwt_available: authState.openidJwtAvailable,
       has_openid_reuse_user_id: authState.hasOpenIdReuseUserId,
@@ -465,7 +523,7 @@ describe('requireJwtAuth tenant context chaining', () => {
       }),
     );
     expect(logger.warn).toHaveBeenCalledWith(
-      '[requireJwtAuth] Authentication failed after all strategies',
+      expect.stringContaining('[requireJwtAuth] Authentication failed after all strategies'),
       expect.objectContaining({
         request_id: 'req-expired-fail',
         method: 'POST',
@@ -482,6 +540,8 @@ describe('requireJwtAuth tenant context chaining', () => {
         status: 401,
       }),
     );
+    expect(logger.warn.mock.calls[0][0]).toContain('"reason":"invalid signature"');
+    expect(logger.warn.mock.calls[0][0]).toContain('"path":"/api/ask"');
   });
 
   it('does not fall back to OpenID JWT for bearer-only reuse requests', () => {
@@ -620,7 +680,7 @@ describe('requireJwtAuth tenant context chaining', () => {
       }),
     );
     expect(logger.warn).toHaveBeenCalledWith(
-      '[requireJwtAuth] Authentication failed after all strategies',
+      expect.stringContaining('[requireJwtAuth] Authentication failed after all strategies'),
       expect.objectContaining({
         request_id: 'req-mismatch-fail',
         attempted_strategies: ['openidJwt', 'jwt'],

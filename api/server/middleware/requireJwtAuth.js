@@ -80,19 +80,20 @@ const requireJwtAuth = (req, res, next) => {
   };
 
   const logAuthenticationFailure = ({ strategy, info, status, err }) => {
+    const context = buildSafeAuthLogContext(req, authLogState, {
+      primary_strategy: strategies[0],
+      fallback_strategy: strategies[1],
+      fallback_attempted: fallbackAttempted,
+      fallback_succeeded: false,
+      attempted_strategies: strategies,
+      final_strategy: strategy,
+      reason: getAuthFailureReason(err, info),
+      error_name: getAuthFailureErrorName(err, info),
+      status: status || 401,
+    });
     logger.warn(
-      '[requireJwtAuth] Authentication failed after all strategies',
-      buildSafeAuthLogContext(req, authLogState, {
-        primary_strategy: strategies[0],
-        fallback_strategy: strategies[1],
-        fallback_attempted: fallbackAttempted,
-        fallback_succeeded: false,
-        attempted_strategies: strategies,
-        final_strategy: strategy,
-        reason: getAuthFailureReason(err, info),
-        error_name: getAuthFailureErrorName(err, info),
-        status: status || 401,
-      }),
+      `[requireJwtAuth] Authentication failed after all strategies ${JSON.stringify(context)}`,
+      context,
     );
   };
 

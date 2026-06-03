@@ -83,6 +83,46 @@ describe('auth middleware logging helpers', () => {
     });
   });
 
+  it('buckets unknown token providers to keep auth logs low-cardinality', () => {
+    const log = buildSafeAuthLogContext(
+      createRequest(),
+      createAuthState({
+        tokenProvider: 'attacker-controlled-provider',
+      }),
+    );
+
+    expect(log.token_provider).toBe('other');
+  });
+
+  it('prefers route buckets over concrete dynamic request paths', () => {
+    const log = buildSafeAuthLogContext(
+      createRequest({
+        baseUrl: '/api/messages',
+        path: '/conversation-123/message-456',
+        originalUrl: '/api/messages/conversation-123/message-456?access_token=secret-token',
+      }),
+      createAuthState(),
+    );
+
+    expect(log.path).toBe('/api/messages');
+    expect(JSON.stringify(log)).not.toContain('conversation-123');
+    expect(JSON.stringify(log)).not.toContain('message-456');
+    expect(JSON.stringify(log)).not.toContain('secret-token');
+  });
+
+  it('logs route templates when Express exposes them', () => {
+    const log = buildSafeAuthLogContext(
+      createRequest({
+        baseUrl: '/api/share',
+        path: '/link/conversation-123',
+        route: { path: '/link/:conversationId' },
+      }),
+      createAuthState(),
+    );
+
+    expect(log.path).toBe('/api/share/link/:conversationId');
+  });
+
   it('drops unsupported extra values and keeps safe arrays primitive', () => {
     const log = buildSafeAuthLogContext(createRequest({ id: 'request-id' }), createAuthState(), {
       attempted_strategies: ['openidJwt', '', { strategy: 'jwt' }, 'jwt'],

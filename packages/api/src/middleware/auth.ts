@@ -5,6 +5,7 @@ type AuthFailureLike = {
 
 type AuthLogValue = string | number | boolean | readonly string[];
 type AuthLogHeaderValue = string | string[] | undefined;
+type AuthRoutePath = string | RegExp | readonly (string | RegExp)[];
 
 export type AuthLogRequest = {
   headers?: Record<string, AuthLogHeaderValue>;
@@ -12,6 +13,10 @@ export type AuthLogRequest = {
   path?: string;
   originalUrl?: string;
   url?: string;
+  baseUrl?: string;
+  route?: {
+    path?: AuthRoutePath;
+  };
   id?: string;
   requestId?: string;
 };
@@ -88,9 +93,62 @@ function getRequestId(req: AuthLogRequest): string | undefined {
   );
 }
 
+function normalizeRoutePath(path: AuthRoutePath | undefined): string | undefined {
+  if (typeof path === 'string') {
+    return normalizeAuthLogValue(path);
+  }
+
+  if (Array.isArray(path)) {
+    for (const entry of path) {
+      const normalized = normalizeRoutePath(entry);
+      if (normalized) {
+        return normalized;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function joinRoutePath(baseUrl: string | undefined, routePath: string): string {
+  const normalizedRoute = routePath === '/' ? '' : routePath;
+  if (!baseUrl) {
+    return normalizedRoute || '/';
+  }
+  if (!normalizedRoute) {
+    return baseUrl;
+  }
+  return `${baseUrl.replace(/\/$/, '')}/${normalizedRoute.replace(/^\//, '')}`;
+}
+
+function bucketConcretePath(path: string | undefined): string | undefined {
+  const queryless = path?.split('?')[0];
+  if (!queryless) {
+    return undefined;
+  }
+
+  const segments = queryless.split('/').filter(Boolean);
+  if (segments.length === 0) {
+    return '/';
+  }
+  if (segments[0] === 'api' && segments[1]) {
+    return `/${segments.slice(0, 2).join('/')}`;
+  }
+  return `/${segments[0]}`;
+}
+
 function getRequestPath(req: AuthLogRequest): string | undefined {
+  const baseUrl = normalizeAuthLogValue(req.baseUrl);
+  const routePath = normalizeRoutePath(req.route?.path);
+  if (routePath) {
+    return joinRoutePath(baseUrl, routePath);
+  }
+  if (baseUrl) {
+    return baseUrl;
+  }
+
   const path = normalizeAuthLogValue(req.path) ?? normalizeAuthLogValue(req.originalUrl ?? req.url);
-  return path?.split('?')[0];
+  return bucketConcretePath(path);
 }
 
 function getAuthFailureField(source: unknown, field: keyof AuthFailureLike): unknown {
@@ -140,6 +198,14 @@ export function getAuthFailureErrorName(err: unknown, info: unknown): string | u
   );
 }
 
+function getSafeTokenProvider(tokenProvider: unknown): string | undefined {
+  const normalized = normalizeAuthLogValue(tokenProvider);
+  if (!normalized) {
+    return undefined;
+  }
+  return normalized === 'openid' || normalized === 'librechat' ? normalized : 'other';
+}
+
 export function buildSafeAuthLogContext(
   req: AuthLogRequest,
   authState: AuthLogState,
@@ -150,7 +216,7 @@ export function buildSafeAuthLogContext(
     request_id: getRequestId(req),
     method: normalizeAuthLogValue(req.method),
     path: getRequestPath(req),
-    token_provider: normalizeAuthLogValue(authState.tokenProvider),
+    token_provider: getSafeTokenProvider(authState.tokenProvider),
     openid_reuse_enabled: authState.openidReuseEnabled,
     openid_jwt_available: authState.openidJwtAvailable,
     has_openid_reuse_user_id: authState.hasOpenIdReuseUserId,
