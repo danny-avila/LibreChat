@@ -663,6 +663,27 @@ describe('MessageNav', () => {
       expect(document.activeElement).toBe(container.querySelector('[data-msg-id="b"]'));
     });
 
+    it('focuses the current indicator via the produced key on non-QWERTY layouts', () => {
+      const messages = [
+        buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
+        buildMessage({ messageId: 'b', text: 'bravo' }),
+        buildMessage({ messageId: 'c', text: 'charlie', isCreatedByUser: true }),
+      ];
+      const { container } = renderNav(messages);
+
+      const io = MockIntersectionObserver.last();
+      act(() => {
+        io!.trigger([{ target: document.getElementById('b')!, isIntersecting: true }]);
+        jest.advanceTimersByTime(32);
+      });
+
+      act(() => {
+        fireEvent.keyDown(document, { key: 'm', code: 'Semicolon', altKey: true, shiftKey: true });
+      });
+
+      expect(document.activeElement).toBe(container.querySelector('[data-msg-id="b"]'));
+    });
+
     it('ignores the keyboard shortcut without the alt and shift modifiers', () => {
       const messages = [
         buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
@@ -716,8 +737,8 @@ describe('MessageNav', () => {
       });
 
       act(() => {
-        fireEvent.pointerDown(column, { pointerId: 1, button: 0, clientY: 0 });
-        fireEvent.pointerMove(column, { pointerId: 1, clientY: 25 });
+        fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
+        fireEvent.pointerMove(column, { pointerId: 1, buttons: 1, clientY: 25 });
       });
 
       expect(column.setPointerCapture).toHaveBeenCalledWith(1);
@@ -728,8 +749,23 @@ describe('MessageNav', () => {
       const { column } = setupDraggableNav();
 
       act(() => {
-        fireEvent.pointerDown(column, { pointerId: 1, button: 0, clientY: 0 });
-        fireEvent.pointerMove(column, { pointerId: 1, clientY: 2 });
+        fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
+        fireEvent.pointerMove(column, { pointerId: 1, buttons: 1, clientY: 2 });
+      });
+
+      expect(column.setPointerCapture).not.toHaveBeenCalled();
+    });
+
+    it('does not start a drag from a later hover move when the button was released outside', () => {
+      const { column } = setupDraggableNav();
+
+      act(() => {
+        fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
+        fireEvent.pointerMove(column, { pointerId: 1, buttons: 1, clientY: 2 });
+      });
+
+      act(() => {
+        fireEvent.pointerMove(column, { pointerId: 1, buttons: 0, clientY: 40 });
       });
 
       expect(column.setPointerCapture).not.toHaveBeenCalled();
@@ -739,8 +775,8 @@ describe('MessageNav', () => {
       const { column, ribs } = setupDraggableNav();
 
       act(() => {
-        fireEvent.pointerDown(column, { pointerId: 1, button: 0, clientY: 0 });
-        fireEvent.pointerMove(column, { pointerId: 1, clientY: 25 });
+        fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
+        fireEvent.pointerMove(column, { pointerId: 1, buttons: 1, clientY: 25 });
         fireEvent.pointerUp(column, { pointerId: 1, clientY: 25 });
       });
 
@@ -749,6 +785,23 @@ describe('MessageNav', () => {
       });
 
       expect(document.activeElement).not.toBe(document.getElementById('m-0'));
+    });
+
+    it('clears click suppression after the drag so a later activation is honored', () => {
+      const { column, ribs } = setupDraggableNav();
+
+      act(() => {
+        fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
+        fireEvent.pointerMove(column, { pointerId: 1, buttons: 1, clientY: 25 });
+        fireEvent.pointerUp(column, { pointerId: 1, clientY: 25 });
+        jest.advanceTimersByTime(1);
+      });
+
+      act(() => {
+        fireEvent.click(ribs[0]);
+      });
+
+      expect(document.activeElement).toBe(document.getElementById('m-0'));
     });
   });
 

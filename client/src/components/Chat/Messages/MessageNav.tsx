@@ -364,6 +364,10 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         return;
       }
       if (!state.dragging) {
+        if ((e.buttons & 1) === 0) {
+          dragStateRef.current = null;
+          return;
+        }
         if (Math.abs(e.clientY - state.startY) < DRAG_THRESHOLD) {
           return;
         }
@@ -388,6 +392,9 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       }
       draggingRef.current = false;
       suppressClickRef.current = true;
+      window.setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 0);
       const col = columnRef.current;
       if (col?.hasPointerCapture?.(e.pointerId)) {
         col.releasePointerCapture(e.pointerId);
@@ -779,7 +786,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.altKey && e.shiftKey && e.code === 'KeyM') {
+      if (e.altKey && e.shiftKey && (e.code === 'KeyM' || e.key.toLowerCase() === 'm')) {
         e.preventDefault();
         focusNav();
       }
