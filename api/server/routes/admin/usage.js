@@ -152,4 +152,31 @@ router.get('/models', requireReadUsage, async (req, res) => {
   }
 });
 
+router.get('/kpis', requireReadUsage, async (req, res) => {
+  const { params, period, error } = parseUsageQuery(req);
+  if (error) {
+    return res.status(400).json({ message: error });
+  }
+  try {
+    const [convStats, perUser, agents] = await Promise.all([
+      db.aggregateConversationStats(params),
+      db.aggregateConversationsPerUser(params),
+      db.countAgentsCreated(params),
+    ]);
+    res.json({
+      period,
+      stats: {
+        avgCostPerConversation: convStats.avgCostPerConversation,
+        totalConversations: convStats.totalConversations,
+        avgConversationsPerActiveUser: perUser.avgConversationsPerActiveUser,
+        activeUsers: perUser.activeUsers,
+        agentsCreated: agents.count,
+      },
+    });
+  } catch (err) {
+    logger.error('[GET /api/admin/usage/kpis] aggregation failed:', err);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+});
+
 module.exports = router;

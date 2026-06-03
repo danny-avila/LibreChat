@@ -692,6 +692,150 @@ export function createTransactionMethods(
     }));
   }
 
+  /** Aggregation stages applying a BU filter via a users $lookup; empty when no BU filter. */
+  function buLookupStages(buValue: string | null | undefined, userIdField: string) {
+    if (buValue === undefined) {
+      return [];
+    }
+    return [
+      { $lookup: { from: 'users', localField: userIdField, foreignField: '_id', as: 'userDoc' } },
+      { $unwind: { path: '$userDoc', preserveNullAndEmptyArrays: true } },
+      {
+        $match: {
+          $expr: { $eq: [buExpression('$userDoc.email', '$userDoc.tenantId'), buValue] },
+        },
+      },
+    ];
+  }
+
+  interface ConversationStats {
+    totalConversations: number;
+    totalSpend: number;
+    avgCostPerConversation: number;
+  }
+
+  /**
+   * Average spend per conversation over the window/BU: total prompt+completion spend divided by
+   * the number of distinct conversationIds (nulls excluded). Returns zeros when there is no activity.
+   */
+  async function aggregateConversationStats(
+    params: UsageQueryParams = {},
+  ): Promise<ConversationStats> {
+    const Transaction = mongoose.models.Transaction;
+    const start = params.start ?? currentMonthStartUTC();
+    const end = params.end ?? new Date();
+    const buValue = buFilterValue(params.bu);
+
+    const result = await Transaction.aggregate<ConversationStats>([
+      {
+        $match: {
+          createdAt: { $gte: start, $lt: end },
+          tokenType: { $in: ['prompt', 'completion'] },
+          conversationId: { $ne: null, $exists: true },
+        },
+      },
+      ...buLookupStages(buValue, 'user'),
+      {
+        $group: {
+          _id: null,
+          totalSpend: { $sum: { $abs: { $ifNull: ['$tokenValue', 0] } } },
+          conversations: { $addToSet: '$conversationId' },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          totalSpend: 1,
+          totalConversations: { $size: '$conversations' },
+          avgCostPerConversation: {
+            $cond: [
+              { $gt: [{ $size: '$conversations' }, 0] },
+              { $divide: ['$totalSpend', { $size: '$conversations' }] },
+              0,
+            ],
+          },
+        },
+      },
+    ]);
+
+    return result[0] ?? { totalConversations: 0, totalSpend: 0, avgCostPerConversation: 0 };
+  }
+
+  interface ConversationsPerUser {
+    activeUsers: number;
+    totalConversations: number;
+    avgConversationsPerActiveUser: number;
+  }
+
+  /**
+   * Average conversations per active user over the window/BU. Active user = a user with
+   * prompt/completion transactions in the window (consistent with the "Active users" KPI).
+   * Conversations = distinct conversationIds (nulls excluded). Returns zeros when no activity.
+   */
+  async function aggregateConversationsPerUser(
+    params: UsageQueryParams = {},
+  ): Promise<ConversationsPerUser> {
+    const Transaction = mongoose.models.Transaction;
+    const start = params.start ?? currentMonthStartUTC();
+    const end = params.end ?? new Date();
+    const buValue = buFilterValue(params.bu);
+
+    const result = await Transaction.aggregate<ConversationsPerUser>([
+      {
+        $match: {
+          createdAt: { $gte: start, $lt: end },
+          tokenType: { $in: ['prompt', 'completion'] },
+          conversationId: { $ne: null, $exists: true },
+        },
+      },
+      ...buLookupStages(buValue, 'user'),
+      {
+        $group: {
+          _id: null,
+          users: { $addToSet: '$user' },
+          conversations: { $addToSet: '$conversationId' },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          activeUsers: { $size: '$users' },
+          totalConversations: { $size: '$conversations' },
+          avgConversationsPerActiveUser: {
+            $cond: [
+              { $gt: [{ $size: '$users' }, 0] },
+              { $divide: [{ $size: '$conversations' }, { $size: '$users' }] },
+              0,
+            ],
+          },
+        },
+      },
+    ]);
+
+    return (
+      result[0] ?? { activeUsers: 0, totalConversations: 0, avgConversationsPerActiveUser: 0 }
+    );
+  }
+
+  /**
+   * Counts agents created in the window, filtered by the BU of their author (via users $lookup).
+   * Queries the Agent collection. Returns { count: 0 } when none.
+   */
+  async function countAgentsCreated(params: UsageQueryParams = {}): Promise<{ count: number }> {
+    const Agent = mongoose.models.Agent;
+    const start = params.start ?? currentMonthStartUTC();
+    const end = params.end ?? new Date();
+    const buValue = buFilterValue(params.bu);
+
+    const result = await Agent.aggregate<{ count: number }>([
+      { $match: { createdAt: { $gte: start, $lt: end } } },
+      ...buLookupStages(buValue, 'author'),
+      { $count: 'count' },
+    ]);
+
+    return { count: result[0]?.count ?? 0 };
+  }
+
   return {
     updateBalance,
     bulkInsertTransactions,
@@ -706,6 +850,9 @@ export function createTransactionMethods(
     aggregateMonthlyUsage,
     aggregateUsageByModel,
     listAvailablePeriods,
+    aggregateConversationStats,
+    aggregateConversationsPerUser,
+    countAgentsCreated,
   };
 }
 
