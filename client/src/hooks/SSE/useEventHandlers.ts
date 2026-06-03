@@ -373,7 +373,9 @@ export default function useEventHandlers({
         } else {
           updateConvoInAllQueries(queryClient, update.conversationId!, (_c) => update, true);
         }
-        queryClient.invalidateQueries([QueryKeys.projectConversations]);
+        if (update.chatProjectId) {
+          queryClient.invalidateQueries([QueryKeys.projects]);
+        }
       } else if (setConversation) {
         setConversation((prevState) => {
           update = tConvoUpdateSchema.parse({
@@ -449,7 +451,9 @@ export default function useEventHandlers({
           } else {
             updateConvoInAllQueries(queryClient, update.conversationId!, (_c) => update, true);
           }
-          queryClient.invalidateQueries([QueryKeys.projectConversations]);
+          if (update.chatProjectId) {
+            queryClient.invalidateQueries([QueryKeys.projects]);
+          }
         }
       } else if (setConversation) {
         setConversation((prevState) => {
@@ -495,7 +499,6 @@ export default function useEventHandlers({
         convo ? { ...convo, title } : convo,
       );
       updateConvoInAllQueries(queryClient, conversationId, (convo) => ({ ...convo, title }));
-      queryClient.invalidateQueries([QueryKeys.projectConversations]);
       markTitleGenerationProcessed(conversationId);
 
       if (location.pathname.includes(conversationId)) {
@@ -723,7 +726,9 @@ export default function useEventHandlers({
             });
           }
 
-          queryClient.invalidateQueries([QueryKeys.projectConversations]);
+          if (conversation.chatProjectId) {
+            queryClient.invalidateQueries([QueryKeys.projects]);
+          }
 
           if (location.pathname === `/c/${Constants.NEW_CONVO}`) {
             preserveSubagentAtomsForNewConvoIdRef.current = conversation.conversationId;

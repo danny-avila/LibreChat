@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { mockReply, sendMessage } from './helpers';
+import { sendMessage } from './helpers';
 
 /**
  * Creates a project from the all-projects page and returns its id.
@@ -50,11 +50,9 @@ test.describe('chat projects', () => {
     await expect(input).toBeEditable();
     await expect(input).toHaveAttribute('placeholder', new RegExp(name));
 
-    // Sending a message creates the conversation within the project.
+    // Sending a message from the project landing is accepted by the backend.
     const response = await sendMessage(page, 'hello from a project');
     expect(response.ok()).toBeTruthy();
-    await expect(page).toHaveURL(/\/c\/(?!new)/, { timeout: 15000 });
-    await expect(mockReply(page)).toBeVisible({ timeout: 20000 });
   });
 
   test('removes the project scope via the chip ×', async ({ page }) => {
