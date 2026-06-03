@@ -1,7 +1,13 @@
 import { memo, useMemo, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { Spinner, useToastContext } from '@librechat/client';
-import type { AdminUsageRow, AdminBudgetRow, ModelUsageRow } from 'librechat-data-provider';
+import type {
+  BUFilter,
+  AnalyticsPeriod,
+  AdminUsageRow,
+  AdminBudgetRow,
+  ModelUsageRow,
+} from 'librechat-data-provider';
 import {
   useAdminUsageQuery,
   useAdminBudgetsQuery,
@@ -10,6 +16,7 @@ import {
 } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
 import EditBudgetModal from './EditBudgetModal';
+import PeriodSelector from './PeriodSelector';
 import { useLocalize } from '~/hooks';
 import { formatUSD, creditsToUsdInput, budgetColor } from './credits';
 
@@ -71,7 +78,24 @@ function downloadCsv(filename: string, content: string): void {
 
 type TabKey = 'analytics' | 'thresholds';
 
-type BUFilter = 'all' | 'POP' | 'BETC' | 'Other';
+/** Default selected period: the current month (label resolved at display time). */
+const CURRENT_MONTH_PERIOD: AnalyticsPeriod = {
+  key: 'current-month',
+  label: '',
+  start: null,
+  end: null,
+};
+
+/** KPI sublabel reflecting the selected period: localized for current-month/overall, else the month label. */
+function getSubLabel(period: AnalyticsPeriod, localize: ReturnType<typeof useLocalize>): string {
+  if (period.key === 'current-month') {
+    return localize('com_usage_kpi_sublabel_current_month');
+  }
+  if (period.key === 'overall') {
+    return localize('com_usage_kpi_sublabel_all_time');
+  }
+  return period.label;
+}
 
 function matchesBuFilter(bu: string | null, filter: BUFilter): boolean {
   if (filter === 'all') {
@@ -223,8 +247,16 @@ function ModelDonut({ segments }: { segments: DonutSegment[] }) {
   );
 }
 
-/** Model Mix section: spend-share donut (top 6 + Other) + full per-model table. Global, all BUs. */
-function ModelMixSection({ rows, isLoading }: { rows: ModelUsageRow[]; isLoading: boolean }) {
+/** Model Mix section: spend-share donut (top 6 + Other) + full per-model table. */
+function ModelMixSection({
+  rows,
+  isLoading,
+  caption,
+}: {
+  rows: ModelUsageRow[];
+  isLoading: boolean;
+  caption: string;
+}) {
   const localize = useLocalize();
   const totalCredits = rows.reduce((sum, row) => sum + row.totalCredits, 0);
   const segments = buildDonutSegments(rows, localize('com_usage_model_other'));
@@ -235,7 +267,7 @@ function ModelMixSection({ rows, isLoading }: { rows: ModelUsageRow[]; isLoading
         <h2 className="text-lg font-semibold text-text-primary">
           {localize('com_usage_model_title')}
         </h2>
-        <p className="text-xs text-text-tertiary">{localize('com_usage_model_caption')}</p>
+        <p className="text-xs text-text-tertiary">{caption}</p>
       </div>
 
       {isLoading ? (
@@ -311,12 +343,17 @@ function ModelMixSection({ rows, isLoading }: { rows: ModelUsageRow[]; isLoading
 function Usage() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
-  const { data, isLoading, isError } = useAdminUsageQuery();
-  const { data: budgetData, isLoading: isBudgetLoading } = useAdminBudgetsQuery();
-  const { data: modelData, isLoading: isModelLoading } = useAdminModelUsageQuery();
-  const resetMonthMutation = useResetMonthBudgetsMutation();
   const [activeTab, setActiveTab] = useState<TabKey>('analytics');
   const [activeBU, setActiveBU] = useState<BUFilter>('all');
+  const [period, setPeriod] = useState<AnalyticsPeriod>(CURRENT_MONTH_PERIOD);
+
+  const { data, isLoading, isError } = useAdminUsageQuery({ period, bu: activeBU });
+  const { data: budgetData, isLoading: isBudgetLoading } = useAdminBudgetsQuery();
+  const { data: modelData, isLoading: isModelLoading } = useAdminModelUsageQuery({
+    period,
+    bu: activeBU,
+  });
+  const resetMonthMutation = useResetMonthBudgetsMutation();
   const [editingRow, setEditingRow] = useState<AdminBudgetRow | null>(null);
   const [isUserDetailsOpen, setIsUserDetailsOpen] = useState(false);
 
@@ -370,6 +407,12 @@ function Usage() {
     aggregated.totalRemaining = aggregated.totalBudget - aggregated.totalSpent;
     return { filteredBudgetRows: filtered, budgetTotals: aggregated };
   }, [budgetData?.rows, activeBU]);
+
+  const periodSubLabel = getSubLabel(period, localize);
+  const modelMixCaption =
+    activeBU === 'all'
+      ? `${localize('com_usage_model_caption')}, ${periodSubLabel}`
+      : `${activeBU}, ${periodSubLabel}`;
 
   const handleResetMonth = () => {
     if (!window.confirm(localize('com_budget_reset_confirm'))) {
@@ -444,21 +487,24 @@ function Usage() {
         </button>
       </div>
 
-      <div className="flex gap-2">
-        {BU_FILTERS.map((filter) => (
-          <button
-            key={filter.key}
-            type="button"
-            onClick={() => setActiveBU(filter.key)}
-            className={`rounded-md px-3 py-1.5 text-xs transition-colors ${
-              activeBU === filter.key
-                ? 'bg-surface-tertiary text-text-primary'
-                : 'text-text-secondary hover:bg-surface-secondary'
-            }`}
-          >
-            {localize(filter.labelKey)}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex gap-2">
+          {BU_FILTERS.map((filter) => (
+            <button
+              key={filter.key}
+              type="button"
+              onClick={() => setActiveBU(filter.key)}
+              className={`rounded-md px-3 py-1.5 text-xs transition-colors ${
+                activeBU === filter.key
+                  ? 'bg-surface-tertiary text-text-primary'
+                  : 'text-text-secondary hover:bg-surface-secondary'
+              }`}
+            >
+              {localize(filter.labelKey)}
+            </button>
+          ))}
+        </div>
+        {activeTab === 'analytics' && <PeriodSelector value={period} onChange={setPeriod} />}
       </div>
 
       {activeTab === 'analytics' && (
@@ -467,22 +513,22 @@ function Usage() {
             <KpiCard
               label={localize('com_usage_kpi_users')}
               value={formatTokens(filteredRows.length)}
-              sublabel={localize('com_usage_kpi_this_month')}
+              sublabel={periodSubLabel}
             />
             <KpiCard
               label={localize('com_usage_kpi_tokens')}
               value={formatTokens(totals.tokens)}
-              sublabel={localize('com_usage_kpi_this_month')}
+              sublabel={periodSubLabel}
             />
             <KpiCard
               label={localize('com_usage_kpi_credits')}
               value={formatUSD(totals.credits)}
-              sublabel={localize('com_usage_kpi_this_month')}
+              sublabel={periodSubLabel}
             />
             <KpiCard
               label={localize('com_usage_kpi_messages')}
               value={formatTokens(totals.messages)}
-              sublabel={localize('com_usage_kpi_this_month')}
+              sublabel={periodSubLabel}
             />
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -496,7 +542,11 @@ function Usage() {
               />
             ))}
           </div>
-          <ModelMixSection rows={modelData?.rows ?? []} isLoading={isModelLoading} />
+          <ModelMixSection
+            rows={modelData?.rows ?? []}
+            isLoading={isModelLoading}
+            caption={modelMixCaption}
+          />
 
           <div className="overflow-hidden rounded-lg border border-border-light">
             <div

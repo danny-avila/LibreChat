@@ -1272,14 +1272,37 @@ export const getActiveJobs = (): Promise<ActiveJobsResponse> => {
   return request.get(endpoints.activeJobs());
 };
 
+/**
+ * Builds the analytics query string from the selected period + BU.
+ * Empty (rétrocompatible) for current-month + all; '?overall=true' for Overall;
+ * '?start=YYYY-MM-01&end=YYYY-(MM+1)-01' for a month; '&bu=' appended when a BU is set.
+ */
+const buildAnalyticsQuery = ({ period, bu }: q.AnalyticsQueryParams): string => {
+  const parts: string[] = [];
+  if (period.key === 'overall') {
+    parts.push('overall=true');
+  } else if (/^\d{4}-\d{2}$/.test(period.key)) {
+    const [year, month] = period.key.split('-').map(Number);
+    const nextMonth = new Date(Date.UTC(year, month, 1));
+    const end = `${nextMonth.getUTCFullYear()}-${String(nextMonth.getUTCMonth() + 1).padStart(2, '0')}-01`;
+    parts.push(`start=${period.key}-01`, `end=${end}`);
+  }
+  if (bu !== 'all') {
+    parts.push(`bu=${bu}`);
+  }
+  return parts.length ? `?${parts.join('&')}` : '';
+};
+
 /* Admin Usage (V1 MVP) */
-export const getAdminUsage = (): Promise<q.AdminUsageResponse> => {
-  return request.get(endpoints.adminUsage());
+export const getAdminUsage = (params: q.AnalyticsQueryParams): Promise<q.AdminUsageResponse> => {
+  return request.get(endpoints.adminUsage() + buildAnalyticsQuery(params));
 };
 
 /* Admin Model Mix (current-month consumption per model) */
-export const getAdminModelUsage = (): Promise<q.ModelUsageResponse> => {
-  return request.get(endpoints.adminModelUsage());
+export const getAdminModelUsage = (
+  params: q.AnalyticsQueryParams,
+): Promise<q.ModelUsageResponse> => {
+  return request.get(endpoints.adminModelUsage() + buildAnalyticsQuery(params));
 };
 
 /* Admin available periods (months with activity, for the period selector) */

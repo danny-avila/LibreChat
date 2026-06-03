@@ -228,6 +228,9 @@ export type GraphTokenResponse = {
   scope: string;
 };
 
+/* Business-unit filter shared by the admin analytics views ('all' = no filter). */
+export type BUFilter = 'all' | 'POP' | 'BETC' | 'Other';
+
 /* Selected analytics window: 'overall', 'current-month', a 'YYYY-MM' month, or a custom range. */
 export interface AnalyticsPeriod {
   /** 'overall' | 'current-month' | 'YYYY-MM' | 'custom'. */
@@ -249,6 +252,12 @@ export interface AdminUsageRow {
   totalCredits: number;
   totalTokens: number;
   messageCount: number;
+}
+
+/* Args for the period/BU-aware admin analytics queries. */
+export interface AnalyticsQueryParams {
+  period: AnalyticsPeriod;
+  bu: BUFilter;
 }
 
 export interface AdminUsageResponse {
