@@ -22,6 +22,7 @@ import useAssistantListMap from '~/hooks/Assistants/useAssistantListMap';
 import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
 import { mapEndpoints, getPresetTitle } from '~/utils';
 import { EndpointIcon } from '~/components/Endpoints';
+import { useLocalizedConfig } from '~/hooks';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
 import { filterMentionEndpoints } from './mentions';
 
@@ -59,6 +60,7 @@ export default function useMentions({
   assistantMap: TAssistantsMap;
   includeAssistants: boolean;
 }) {
+  const getLocalizedValue = useLocalizedConfig();
   const hasAgentAccess = useHasAccess({
     permissionType: PermissionTypes.AGENTS,
     permission: Permissions.USE,
@@ -197,8 +199,10 @@ export default function useMentions({
     const mentions = [
       ...(modelSpecs.length > 0 ? modelSpecs : []).map((modelSpec) => ({
         value: modelSpec.name,
-        label: modelSpec.label,
-        description: modelSpec.description,
+        label: getLocalizedValue(modelSpec.label, modelSpec.name),
+        description: modelSpec.description != null
+          ? getLocalizedValue(modelSpec.description, '')
+          : undefined,
         icon: EndpointIcon({
           conversation: {
             ...modelSpec.preset,

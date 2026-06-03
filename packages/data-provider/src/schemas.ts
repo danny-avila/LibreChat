@@ -7,6 +7,9 @@ import type { TFile } from './types/files';
 
 export const isUUID = z.string().uuid();
 
+export const localizedStringSchema = z.union([z.string(), z.record(z.string())]);
+export type LocalizedString = z.infer<typeof localizedStringSchema>;
+
 export enum AuthType {
   OVERRIDE_AUTH = 'override_auth',
   USER_PROVIDED = 'user_provided',
