@@ -479,6 +479,35 @@ describe('resolveOpenIdAccount', () => {
     expect(deps.updateUser).not.toHaveBeenCalled();
   });
 
+  it('scopes OpenID and email lookups to the request tenant', async () => {
+    const tenantUser = user({ tenantId: 'tenant-a' });
+    const otherTenantUser = user({ tenantId: 'tenant-b' });
+    const deps = methods({
+      findUser: mockFindUser(async (query) => {
+        if (query.tenantId === 'tenant-a') {
+          return tenantUser;
+        }
+
+        return otherTenantUser;
+      }),
+      updateUser: mockUpdateUser(async (_userId, update) =>
+        user({ ...tenantUser, ...(update as Partial<IUser>) }),
+      ),
+    });
+
+    const result = await resolveOpenIdAccount(input({ tenantId: 'tenant-a', methods: deps }));
+
+    expect(result).toMatchObject({
+      status: 'resolved',
+      user: expect.objectContaining({ tenantId: 'tenant-a' }),
+      created: false,
+    });
+    expect(deps.findUser).toHaveBeenCalledWith(
+      expect.objectContaining({ openidId: 'sub-123', tenantId: 'tenant-a' }),
+    );
+    expect(deps.updateUser).toHaveBeenCalledWith(tenantUser._id.toString(), expect.any(Object));
+  });
+
   it('accepts a duplicate create race only when retry lookup resolves a safe same-scope user', async () => {
     const existing = user();
     const deps = methods({
@@ -535,9 +564,11 @@ describe('resolveOpenIdAccount', () => {
 
   it('rereads created users under the explicit tenant scope when create returns a partial user', async () => {
     const created = user({ tenantId: 'tenant-a' });
+    let createAttempted = false;
     const deps = methods({
       findUser: mockFindUser(async (query) => {
         if (
+          createAttempted &&
           query.openidId === 'sub-123' &&
           query.openidIssuer === 'https://issuer.example.com' &&
           query.tenantId === 'tenant-a'
@@ -547,7 +578,10 @@ describe('resolveOpenIdAccount', () => {
 
         return null;
       }),
-      createUser: mockCreateUser(async () => ({ email: 'user@example.com' })),
+      createUser: mockCreateUser(async () => {
+        createAttempted = true;
+        return { email: 'user@example.com' };
+      }),
     });
 
     const result = await resolveOpenIdAccount(input({ tenantId: 'tenant-a', methods: deps }));

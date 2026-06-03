@@ -225,6 +225,18 @@ function shouldDeferExistingTenantUserMutation(input: OpenIdAccountInput, user: 
   return !input.tenantId && Boolean(user.tenantId);
 }
 
+function getScopedFindUser(input: OpenIdAccountInput): UserMethods['findUser'] {
+  if (!input.tenantId) {
+    return input.methods.findUser;
+  }
+
+  return ((query: Parameters<UserMethods['findUser']>[0]) =>
+    input.methods.findUser({
+      ...query,
+      tenantId: input.tenantId,
+    })) as UserMethods['findUser'];
+}
+
 async function persistExistingUser(
   user: IUser,
   profile: NormalizedOpenIdProfile,
@@ -251,7 +263,7 @@ async function resolveDuplicateUser(
 ): Promise<OpenIdAccountResult> {
   const { methods } = input;
   const result = await findOpenIDUser({
-    findUser: methods.findUser,
+    findUser: getScopedFindUser(input),
     email: profile.email,
     openidId: profile.subject,
     openidIssuer: profile.issuer,
@@ -339,9 +351,10 @@ export async function resolveOpenIdAccount(
   try {
     const profile = normalizeOpenIdProfile(input);
     if (!profile.subject) return { status: 'unauthorized', reason: 'missing_sub' };
+    const findUser = getScopedFindUser(input);
 
     const result = await findOpenIDUser({
-      findUser: input.methods.findUser,
+      findUser,
       email: undefined,
       openidId: profile.subject,
       openidIssuer: profile.issuer,
@@ -366,7 +379,7 @@ export async function resolveOpenIdAccount(
       }
 
       const emailResult = await findOpenIDUser({
-        findUser: input.methods.findUser,
+        findUser,
         email: profile.email,
         openidId: profile.subject,
         openidIssuer: profile.issuer,
