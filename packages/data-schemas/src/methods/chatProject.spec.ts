@@ -131,6 +131,44 @@ describe('ChatProject methods', () => {
     expect(invalidCursorPage.projects[0].name).toBe('Recent');
   });
 
+  it('paginates chat-less projects when a page ends on the last dated project', async () => {
+    const staleProject = await methods.createChatProject(user, { name: 'Stale' });
+    await methods.createChatProject(user, { name: 'Quiet A' });
+    await methods.createChatProject(user, { name: 'Quiet B' });
+    const recentProject = await methods.createChatProject(user, { name: 'Recent' });
+
+    await ChatProject.updateOne(
+      { _id: staleProject._id },
+      { $set: { lastConversationAt: new Date('2026-01-01T00:00:00.000Z') } },
+    );
+    await ChatProject.updateOne(
+      { _id: recentProject._id },
+      { $set: { lastConversationAt: new Date('2026-02-01T00:00:00.000Z') } },
+    );
+
+    // limit equals the number of dated projects, so the cursor lands on a dated
+    // project; the null (chat-less) projects must still appear on the next page.
+    const firstPage = await methods.listChatProjects(user, {
+      sortBy: 'lastConversationAt',
+      sortDirection: 'desc',
+      limit: 2,
+    });
+    const secondPage = await methods.listChatProjects(user, {
+      sortBy: 'lastConversationAt',
+      sortDirection: 'desc',
+      limit: 2,
+      cursor: firstPage.nextCursor,
+    });
+
+    expect(firstPage.projects.map((project) => project.name)).toEqual(['Recent', 'Stale']);
+    expect(firstPage.nextCursor).toBeTruthy();
+    expect(secondPage.projects.map((project) => project.name).sort()).toEqual([
+      'Quiet A',
+      'Quiet B',
+    ]);
+    expect(secondPage.projects.every((project) => project.lastConversationAt == null)).toBe(true);
+  });
+
   it('assigns many conversations to one project and updates stats', async () => {
     const project = await methods.createChatProject(user, { name: 'Customer Alpha' });
     await createConversation(user, 'convo-1', 'First');
