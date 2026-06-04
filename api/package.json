@@ -131,6 +131,7 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@babel/preset-env": "^7.29.5",
     "@types/sanitize-html": "^2.13.0",
     "jest": "^30.2.0",
     "mongodb-memory-server": "^11.0.1",

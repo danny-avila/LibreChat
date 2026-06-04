@@ -5,7 +5,6 @@
  * Mirrors the same pattern used in `__tests__/skills.test.ts`.
  */
 jest.mock('@librechat/agents', () => ({
-  ...jest.requireActual('@librechat/agents'),
   CODE_EXECUTION_TOOLS: new Set(['execute_code', 'bash_tool']),
   ReadFileToolDefinition: {
     name: 'read_file',
