@@ -40,6 +40,7 @@ describe('Share Methods', () => {
         text: String,
         isCreatedByUser: Boolean,
         model: String,
+        iconURL: String,
         endpoint: String,
         conversationSignature: String,
         clientId: String,
@@ -422,6 +423,7 @@ describe('Share Methods', () => {
         text: 'safe text',
         isCreatedByUser: false,
         model: 'gpt-4',
+        iconURL: 'https://cdn.example.com/icon.png',
         endpoint: 'openAI',
         conversationSignature: 'signature',
         clientId: 'client-id',
@@ -438,6 +440,7 @@ describe('Share Methods', () => {
             width: 100,
             height: 100,
             filepath: '/images/upload.png',
+            conversationId,
             user: userId,
             tenantId: 'tenant-a',
             storageKey: 'private/upload.png',
@@ -468,6 +471,8 @@ describe('Share Methods', () => {
       const shared = result?.messages[0];
 
       expect(shared?.text).toBe('safe text');
+      // Custom message icon is render metadata and should be preserved.
+      expect(shared?.iconURL).toBe('https://cdn.example.com/icon.png');
       // Non-assistant model and internal message fields must not be disclosed.
       expect(shared?.model).toBeUndefined();
       expect(shared).not.toHaveProperty('endpoint');
@@ -489,6 +494,9 @@ describe('Share Methods', () => {
       expect(file).not.toHaveProperty('user');
       expect(file).not.toHaveProperty('tenantId');
       expect(file).not.toHaveProperty('source');
+      // The file's conversation id is rewritten to the anonymized id, not the original.
+      expect(file?.conversationId).toBe(shared?.conversationId);
+      expect(file?.conversationId).not.toBe(conversationId);
 
       // Tool-call attachments keep their correlation id, payload, and render URL so
       // citations still render, while storage-only fields are removed.

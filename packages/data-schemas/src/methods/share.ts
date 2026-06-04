@@ -132,7 +132,13 @@ function anonymizeMessages(messages: t.IMessage[], newConvoId: string): t.Shared
       messageId: newMessageId,
       conversationId: newConvoId,
     }));
-    const files = sanitizeSharedFiles(message.files);
+    // Persisted file records can carry the original conversation/message ids;
+    // rewrite them to the anonymized ids so shared files don't expose them.
+    const files = sanitizeSharedFiles(message.files)?.map((file) => ({
+      ...file,
+      ...(file.conversationId !== undefined && { conversationId: newConvoId }),
+      ...(file.messageId !== undefined && { messageId: newMessageId }),
+    }));
     const model = anonymizeSharedModel(message.model);
 
     return {
@@ -144,6 +150,7 @@ function anonymizeMessages(messages: t.IMessage[], newConvoId: string): t.Shared
       sender: message.sender,
       text: message.text,
       content: message.content,
+      ...(message.iconURL && { iconURL: message.iconURL }),
       ...(model && { model }),
       isCreatedByUser: message.isCreatedByUser,
       createdAt: message.createdAt,

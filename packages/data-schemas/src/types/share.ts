@@ -40,6 +40,7 @@ export type SharedMessage = Pick<
   | 'sender'
   | 'text'
   | 'content'
+  | 'iconURL'
   | 'isCreatedByUser'
   | 'createdAt'
   | 'updatedAt'
