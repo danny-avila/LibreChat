@@ -251,6 +251,7 @@ const ALLOWED_FRONTMATTER_KEYS = new Set<string>([
   'shell',
   'hooks',
   'version',
+  'license',
   'metadata',
 ]);
 
@@ -277,6 +278,7 @@ const FRONTMATTER_KIND: Record<string, FrontmatterKind | FrontmatterKind[]> = {
   paths: ['string', 'stringArray'],
   shell: 'string',
   version: 'string',
+  license: 'string',
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

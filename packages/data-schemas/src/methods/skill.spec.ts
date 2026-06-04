@@ -253,7 +253,9 @@ describe('skill validation helpers', () => {
           'user-invocable': true,
           effort: 5,
           version: '1.0.0',
+          license: 'MIT',
           hooks: { 'pre-run': 'echo hi' },
+          metadata: { owner: 'data-team' },
         }),
       ).toEqual([]);
     });
