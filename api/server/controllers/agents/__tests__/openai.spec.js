@@ -50,6 +50,10 @@ const mockEnrichLoadedToolsWithAgentContext = jest.fn(({ result, req, ctx }) =>
     },
   }),
 );
+const mockCanAuthorSkillFiles = jest.fn(
+  ({ scopedEditableSkillIds = [], skillCreateAllowed }) =>
+    scopedEditableSkillIds.length > 0 || skillCreateAllowed === true,
+);
 const mockGetSkillToolDeps = jest.fn(() => ({}));
 
 jest.mock('nanoid', () => ({
@@ -146,6 +150,7 @@ jest.mock('~/server/services/Files/permissions', () => ({
 
 jest.mock('~/server/services/Endpoints/agents/skillDeps', () => ({
   getSkillToolDeps: mockGetSkillToolDeps,
+  canAuthorSkillFiles: mockCanAuthorSkillFiles,
   enrichWithSkillConfigurable: mockEnrichWithSkillConfigurable,
   buildSkillPrimedIdsByName: mockBuildSkillPrimedIdsByName,
   buildAgentToolContext: mockBuildAgentToolContext,

@@ -618,7 +618,7 @@ export async function initializeAgent(
    * contribute before the same name gets deduped on a later prime).
    */
   const hasSkillAccess = (params.accessibleSkillIds?.length ?? 0) > 0;
-  const skillAuthoringAvailable = hasSkillAccess || params.skillAuthoringAvailable === true;
+  const skillAuthoringAvailable = params.skillAuthoringAvailable === true;
   let manualSkillPrimes: ResolvedManualSkill[] | undefined;
   let alwaysApplySkillPrimes: ResolvedAlwaysApplySkill[] | undefined;
   let extraAllowedToolNames: string[] = [];

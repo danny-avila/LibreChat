@@ -21,6 +21,7 @@ const {
   AccessRoleIds,
   PrincipalType,
   PermissionTypes,
+  isEphemeralAgentId,
 } = require('librechat-data-provider');
 const { checkPermission, grantPermission } = require('~/server/services/PermissionService');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
@@ -115,6 +116,29 @@ function canEditSkill({ req, skillId }) {
     resourceId: skillId,
     requiredPermission: PermissionBits.EDIT,
   });
+}
+
+function isAgentSkillsEnabledForRun({ agent, skillsCapabilityEnabled, ephemeralSkillsToggle }) {
+  if (!skillsCapabilityEnabled) {
+    return false;
+  }
+  if (isEphemeralAgentId(agent.id)) {
+    return ephemeralSkillsToggle === true;
+  }
+  return agent.skills_enabled === true;
+}
+
+function canAuthorSkillFiles({
+  agent,
+  scopedEditableSkillIds = [],
+  skillCreateAllowed,
+  skillsCapabilityEnabled,
+  ephemeralSkillsToggle,
+}) {
+  return (
+    isAgentSkillsEnabledForRun({ agent, skillsCapabilityEnabled, ephemeralSkillsToggle }) &&
+    (scopedEditableSkillIds.length > 0 || skillCreateAllowed === true)
+  );
 }
 
 function grantSkillOwner({ req, skillId }) {
@@ -290,6 +314,8 @@ function getSkillToolDeps() {
 
 module.exports = {
   getSkillToolDeps,
+  canAuthorSkillFiles,
+  isAgentSkillsEnabledForRun,
   enrichWithSkillConfigurable,
   buildSkillPrimedIdsByName,
   buildAgentToolContext,

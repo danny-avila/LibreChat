@@ -7,7 +7,6 @@ const {
   PermissionBits,
   hasPermissions,
   AgentCapabilities,
-  isEphemeralAgentId,
 } = require('librechat-data-provider');
 const {
   writeSSE,
@@ -48,6 +47,7 @@ const {
 } = require('~/server/services/PermissionService');
 const {
   getSkillToolDeps,
+  canAuthorSkillFiles,
   buildAgentToolContext,
   enrichLoadedToolsWithAgentContext,
 } = require('~/server/services/Endpoints/agents/skillDeps');
@@ -87,30 +87,6 @@ function createToolLoader(signal, definitionsOnly = true) {
       logger.error('Error loading tools for agent ' + agentId, error);
     }
   };
-}
-
-function isAgentSkillsEnabledForRun({ agent, skillsCapabilityEnabled, ephemeralSkillsToggle }) {
-  if (!skillsCapabilityEnabled) {
-    return false;
-  }
-  if (isEphemeralAgentId(agent.id)) {
-    return ephemeralSkillsToggle === true;
-  }
-  return agent.skills_enabled === true;
-}
-
-function canAuthorSkillFiles({
-  agent,
-  scopedSkillIds,
-  skillCreateAllowed,
-  skillsCapabilityEnabled,
-  ephemeralSkillsToggle,
-}) {
-  return (
-    scopedSkillIds.length > 0 ||
-    (skillCreateAllowed === true &&
-      isAgentSkillsEnabledForRun({ agent, skillsCapabilityEnabled, ephemeralSkillsToggle }))
-  );
 }
 
 /**
@@ -286,6 +262,14 @@ const OpenAIChatCompletionController = async (req, res) => {
           requiredPermissions: PermissionBits.VIEW,
         })
       : [];
+    const editableSkillIds = skillsCapabilityEnabled
+      ? await findAccessibleResources({
+          userId: req.user.id,
+          role: req.user.role,
+          resourceType: ResourceType.SKILL,
+          requiredPermissions: PermissionBits.EDIT,
+        })
+      : [];
     const skillCreateAllowed = skillsCapabilityEnabled
       ? await getSkillToolDeps().canCreateSkill({ req })
       : false;
@@ -305,6 +289,12 @@ const OpenAIChatCompletionController = async (req, res) => {
       skillsCapabilityEnabled,
       ephemeralSkillsToggle,
     });
+    const primaryScopedEditableSkillIds = resolveAgentScopedSkillIds({
+      agent,
+      accessibleSkillIds: editableSkillIds,
+      skillsCapabilityEnabled,
+      ephemeralSkillsToggle,
+    });
 
     const primaryConfig = await initializeAgent(
       {
@@ -321,7 +311,7 @@ const OpenAIChatCompletionController = async (req, res) => {
         accessibleSkillIds: primaryScopedSkillIds,
         skillAuthoringAvailable: canAuthorSkillFiles({
           agent,
-          scopedSkillIds: primaryScopedSkillIds,
+          scopedEditableSkillIds: primaryScopedEditableSkillIds,
           skillCreateAllowed,
           skillsCapabilityEnabled,
           ephemeralSkillsToggle,
@@ -386,10 +376,15 @@ const OpenAIChatCompletionController = async (req, res) => {
               skillsCapabilityEnabled,
               ephemeralSkillsToggle,
             }),
-          computeSkillAuthoringAvailable: (handoffAgent, scopedSkillIds = []) =>
+          computeSkillAuthoringAvailable: (handoffAgent) =>
             canAuthorSkillFiles({
               agent: handoffAgent,
-              scopedSkillIds,
+              scopedEditableSkillIds: resolveAgentScopedSkillIds({
+                agent: handoffAgent,
+                accessibleSkillIds: editableSkillIds,
+                skillsCapabilityEnabled,
+                ephemeralSkillsToggle,
+              }),
               skillCreateAllowed,
               skillsCapabilityEnabled,
               ephemeralSkillsToggle,

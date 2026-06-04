@@ -1281,6 +1281,7 @@ describe('initializeAgent — skill `allowed-tools` union (Phase 6)', () => {
         allowedProviders: new Set([Providers.OPENAI]),
         isInitialAgent: true,
         accessibleSkillIds: [skillId],
+        skillAuthoringAvailable: true,
         manualSkills: ['broken-skill'],
       },
       { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
@@ -1435,6 +1436,52 @@ describe('initializeAgent — execute_code capability expansion', () => {
     expect(names).toContain('skill');
     expect(names).toContain('create_file');
     expect(names).toContain('edit_file');
+  });
+
+  it('keeps skill authoring tools hidden for read-only skill access', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = [];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const author = { toString: () => req.user?.id } as unknown as import('mongoose').Types.ObjectId;
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: false,
+        accessibleSkillIds: [skillId],
+        skillAuthoringAvailable: false,
+      },
+      {
+        ...db,
+        listSkillsByAccess: jest.fn().mockResolvedValue({
+          skills: [
+            {
+              _id: skillId,
+              name: 'read-only-skill',
+              description: 'Read-only skill.',
+              author,
+            },
+          ],
+          has_more: false,
+          after: null,
+        }),
+      },
+    );
+
+    const names = result.toolDefinitions?.map((d) => d.name) ?? [];
+    expect(names).toContain('skill');
+    expect(names).toContain('read_file');
+    expect(names).not.toContain('create_file');
+    expect(names).not.toContain('edit_file');
+    expect(names).not.toContain('bash_tool');
+    expect(result.skillAuthoringAvailable).toBe(false);
   });
 
   it('registers skill authoring tools for first-time skill creators', async () => {

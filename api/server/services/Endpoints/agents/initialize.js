@@ -31,6 +31,7 @@ const { loadAgentTools, loadToolsForExecution } = require('~/server/services/Too
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const {
   getSkillToolDeps,
+  canAuthorSkillFiles,
   buildAgentToolContext,
   enrichLoadedToolsWithAgentContext,
 } = require('./skillDeps');
@@ -93,30 +94,6 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false) {
   };
 }
 
-function isAgentSkillsEnabledForRun({ agent, skillsCapabilityEnabled, ephemeralSkillsToggle }) {
-  if (!skillsCapabilityEnabled) {
-    return false;
-  }
-  if (isEphemeralAgentId(agent.id)) {
-    return ephemeralSkillsToggle === true;
-  }
-  return agent.skills_enabled === true;
-}
-
-function canAuthorSkillFiles({
-  agent,
-  scopedSkillIds,
-  skillCreateAllowed,
-  skillsCapabilityEnabled,
-  ephemeralSkillsToggle,
-}) {
-  return (
-    scopedSkillIds.length > 0 ||
-    (skillCreateAllowed === true &&
-      isAgentSkillsEnabledForRun({ agent, skillsCapabilityEnabled, ephemeralSkillsToggle }))
-  );
-}
-
 /**
  * Initializes the AgentClient for a given request/response cycle.
  * @param {Object} params
@@ -171,6 +148,14 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         role: req.user.role,
         resourceType: ResourceType.SKILL,
         requiredPermissions: PermissionBits.VIEW,
+      })
+    : [];
+  const editableSkillIds = skillsCapabilityEnabled
+    ? await findAccessibleResources({
+        userId: req.user.id,
+        role: req.user.role,
+        resourceType: ResourceType.SKILL,
+        requiredPermissions: PermissionBits.EDIT,
       })
     : [];
   const skillCreateAllowed = skillsCapabilityEnabled
@@ -309,9 +294,15 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     skillsCapabilityEnabled,
     ephemeralSkillsToggle,
   });
+  const primaryScopedEditableSkillIds = resolveAgentScopedSkillIds({
+    agent: primaryAgent,
+    accessibleSkillIds: editableSkillIds,
+    skillsCapabilityEnabled,
+    ephemeralSkillsToggle,
+  });
   const primarySkillAuthoringAvailable = canAuthorSkillFiles({
     agent: primaryAgent,
-    scopedSkillIds: primaryScopedSkillIds,
+    scopedEditableSkillIds: primaryScopedEditableSkillIds,
     skillCreateAllowed,
     skillsCapabilityEnabled,
     ephemeralSkillsToggle,
@@ -386,10 +377,15 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
           skillsCapabilityEnabled,
           ephemeralSkillsToggle,
         }),
-      computeSkillAuthoringAvailable: (agent, scopedSkillIds = []) =>
+      computeSkillAuthoringAvailable: (agent) =>
         canAuthorSkillFiles({
           agent,
-          scopedSkillIds,
+          scopedEditableSkillIds: resolveAgentScopedSkillIds({
+            agent,
+            accessibleSkillIds: editableSkillIds,
+            skillsCapabilityEnabled,
+            ephemeralSkillsToggle,
+          }),
           skillCreateAllowed,
           skillsCapabilityEnabled,
           ephemeralSkillsToggle,
@@ -565,6 +561,12 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         skillsCapabilityEnabled,
         ephemeralSkillsToggle,
       });
+      const scopedEditableSkillIds = resolveAgentScopedSkillIds({
+        agent,
+        accessibleSkillIds: editableSkillIds,
+        skillsCapabilityEnabled,
+        ephemeralSkillsToggle,
+      });
       const config = await initializeAgent(
         {
           req,
@@ -579,7 +581,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
           accessibleSkillIds: scopedSkillIds,
           skillAuthoringAvailable: canAuthorSkillFiles({
             agent,
-            scopedSkillIds,
+            scopedEditableSkillIds,
             skillCreateAllowed,
             skillsCapabilityEnabled,
             ephemeralSkillsToggle,
