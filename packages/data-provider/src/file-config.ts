@@ -400,7 +400,7 @@ const defaultSizeLimit = mbToBytes(512);
 const defaultSkillImportSizeLimit = mbToBytes(50);
 const defaultTokenLimit = 100000;
 const assistantsFileConfig = {
-  fileLimit: 10,
+  fileLimit: 50,
   fileSizeLimit: defaultSizeLimit,
   totalSizeLimit: defaultSizeLimit,
   supportedMimeTypes,
@@ -413,14 +413,14 @@ export const fileConfig = {
     [EModelEndpoint.azureAssistants]: assistantsFileConfig,
     [EModelEndpoint.agents]: assistantsFileConfig,
     [EModelEndpoint.anthropic]: {
-      fileLimit: 10,
+      fileLimit: 50,
       fileSizeLimit: defaultSizeLimit,
       totalSizeLimit: defaultSizeLimit,
       supportedMimeTypes,
       disabled: false,
     },
     default: {
-      fileLimit: 10,
+      fileLimit: 50,
       fileSizeLimit: defaultSizeLimit,
       totalSizeLimit: defaultSizeLimit,
       supportedMimeTypes,
