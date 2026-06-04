@@ -757,8 +757,12 @@ function parseSkillMdUpdate(content: string): {
 } {
   const parsed = parseFrontmatter(content);
   const structured = parseStructuredSkillFrontmatter(content);
+  const structuredDescription =
+    typeof structured.frontmatter?.description === 'string'
+      ? structured.frontmatter.description
+      : undefined;
   return {
-    description: parsed.description,
+    description: structuredDescription ?? parsed.description,
     ...(structured.frontmatter !== undefined ? { frontmatter: structured.frontmatter } : {}),
     ...(parsed.alwaysApply !== undefined ? { alwaysApply: parsed.alwaysApply } : {}),
   };
@@ -1553,6 +1557,9 @@ async function resolveAuthorSkillForCurrentUser({
   if (!req || !options.getAuthorSkillByName) {
     return null;
   }
+  if (!isSkillKnownToCurrentRun(skillName, mergedConfigurable)) {
+    return null;
+  }
   const skill = await options.getAuthorSkillByName({ req, name: skillName });
   if (!skill) {
     return null;
@@ -1601,6 +1608,17 @@ function isSkillPrimedForAuthoring(
   const skillPrimedIdsByName =
     (mergedConfigurable.skillPrimedIdsByName as Record<string, string> | undefined) ?? {};
   return typeof skillPrimedIdsByName[skillName] === 'string';
+}
+
+function isSkillKnownToCurrentRun(
+  skillName: string,
+  mergedConfigurable: Record<string, unknown>,
+): boolean {
+  if (isSkillPrimedForAuthoring(skillName, mergedConfigurable)) {
+    return true;
+  }
+  const activeSkillNames = mergedConfigurable.activeSkillNames;
+  return activeSkillNames instanceof Set && activeSkillNames.has(skillName);
 }
 
 function hiddenSkillAuthoringDenied(
@@ -1984,14 +2002,14 @@ async function writeSkillMd({
     if (!author) {
       return errorResult(tc, 'Authentication required to create a skill.');
     }
-    const parsed = parseFrontmatter(content);
+    const parsed = parseSkillMdUpdate(content);
     let result: Awaited<ReturnType<NonNullable<ToolExecuteOptions['createSkill']>>>;
     try {
       result = await options.createSkill({
-        name: parsed.name,
+        name: skillName,
         description: parsed.description,
         body: content,
-        ...(structured.frontmatter !== undefined ? { frontmatter: structured.frontmatter } : {}),
+        ...(parsed.frontmatter !== undefined ? { frontmatter: parsed.frontmatter } : {}),
         author: author.author,
         authorName: author.authorName,
         ...(parsed.alwaysApply !== undefined ? { alwaysApply: parsed.alwaysApply } : {}),
@@ -2694,14 +2712,17 @@ async function handleReadFileCall(
   const lookupAccessibleIds = primedIdString ? [new Types.ObjectId(primedIdString)] : accessibleIds;
   const lookupOptions: { preferUserInvocable?: boolean; preferModelInvocable?: boolean } =
     primedIdString ? {} : { preferModelInvocable: true };
-  const skill = await getSkillByName(skillName, lookupAccessibleIds, lookupOptions);
+  let skill = await getSkillByName(skillName, lookupAccessibleIds, lookupOptions);
   if (!skill) {
-    return {
-      toolCallId: tc.id,
-      status: 'error',
-      content: '',
-      errorMessage: `Skill "${skillName}" not found or not accessible`,
-    };
+    skill = await recoverAuthorSkill();
+    if (!skill) {
+      return {
+        toolCallId: tc.id,
+        status: 'error',
+        content: '',
+        errorMessage: `Skill "${skillName}" not found or not accessible`,
+      };
+    }
   }
 
   /**

@@ -1287,11 +1287,11 @@ describe('initializeAgent — skill `allowed-tools` union (Phase 6)', () => {
     );
 
     /* Two attempts (initial + retry), both undefined. Registry-backed tools
-       fall away, but create/edit_file are registered by the initializer so
-       skill authoring still works. */
+       fall away, but read/create/edit_file are registered by the initializer
+       so skill authoring still works. */
     expect(loadTools).toHaveBeenCalledTimes(2);
     const definedNames = result.toolDefinitions?.map((d) => d.name) ?? [];
-    expect(definedNames).toEqual(['create_file', 'edit_file']);
+    expect(definedNames).toEqual(['read_file', 'create_file', 'edit_file']);
   });
 
   it('propagates the error when loadTools fails AND there are no skill-added extras to drop', async () => {
@@ -1460,8 +1460,11 @@ describe('initializeAgent — execute_code capability expansion', () => {
     const names = (result.toolDefinitions ?? []).map((d) => d.name);
     expect(names).toContain('create_file');
     expect(names).toContain('edit_file');
+    expect(names).toContain('read_file');
     expect(names).not.toContain('bash_tool');
-    expect(names).not.toContain('read_file');
+    const readFile = result.toolDefinitions?.find((d) => d.name === 'read_file');
+    expect(readFile?.description).toContain('skills/{skillName}/');
+    expect(readFile?.description).toContain('SKILL.md');
     const createFile = result.toolDefinitions?.find((d) => d.name === 'create_file');
     expect(createFile?.description).toContain('skills/');
     expect(result.skillAuthoringAvailable).toBe(true);

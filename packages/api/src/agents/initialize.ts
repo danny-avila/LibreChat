@@ -919,6 +919,17 @@ export async function initializeAgent(
     );
   }
 
+  if (skillAuthoringAvailable) {
+    const skillReadResult = registerCodeExecutionTools({
+      toolRegistry,
+      toolDefinitions,
+      includeBash: false,
+      includeSkillFileInstructions: true,
+      enableToolOutputReferences: effectiveCodeEnvAvailable,
+    });
+    toolDefinitions = skillReadResult.toolDefinitions;
+  }
+
   if (effectiveCodeEnvAvailable || skillAuthoringAvailable) {
     const fileAuthoringResult = registerFileAuthoringTools({
       toolRegistry,

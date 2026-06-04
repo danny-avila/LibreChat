@@ -120,12 +120,12 @@ export default function FileAuthoringCall({
   const fileName = filePath.split('/').pop() || filePath;
   const fileLang = useMemo(() => langFromPath(filePath), [filePath]);
   const outputIsDiff = hasDiff(output);
-  const preview = isCreate ? authoredContent || output : output || editArgsPreview;
+  const preview = isCreate ? output || authoredContent : output || editArgsPreview;
   const previewIsDiff = outputIsDiff || (!isCreate && !!editArgsPreview && !output);
   let previewLang = 'plaintext';
   if (previewIsDiff) {
     previewLang = 'diff';
-  } else if (isCreate && authoredContent) {
+  } else if (isCreate && authoredContent && !output) {
     previewLang = fileLang;
   }
 

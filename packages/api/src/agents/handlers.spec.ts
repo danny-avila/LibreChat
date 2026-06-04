@@ -1160,6 +1160,44 @@ describe('createToolExecuteHandler', () => {
       );
     });
 
+    it('preserves block-scalar SKILL.md descriptions when creating skills', async () => {
+      const createSkill = jest.fn(async () => ({
+        skill: {
+          _id: SKILL_ID,
+          name: 'block-description-skill',
+          body: '# Block description skill',
+          version: 1,
+        },
+      }));
+      const handler = makeAuthoringHandler({
+        getSkillByName: jest.fn(async () => null),
+        createSkill: createSkill as unknown as ToolExecuteOptions['createSkill'],
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_create_block_description',
+          name: 'create_file',
+          args: {
+            file_path: 'skills/block-description-skill/SKILL.md',
+            content:
+              '---\nname: block-description-skill\ndescription: |-\n  Use this skill for long descriptions.\n  Keep both lines searchable.\n---\n# Block description skill\n',
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(createSkill).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'block-description-skill',
+          description: 'Use this skill for long descriptions.\nKeep both lines searchable.',
+          frontmatter: expect.objectContaining({
+            description: 'Use this skill for long descriptions.\nKeep both lines searchable.',
+          }),
+        }),
+      );
+    });
+
     it('can add bundled files to a newly created skill in the same tool batch', async () => {
       const createdSkill = {
         _id: SKILL_ID,
@@ -1186,7 +1224,7 @@ describe('createToolExecuteHandler', () => {
         {
           accessibleSkillIds: [],
           skillPrimedIdsByName: {},
-          activeSkillNames: new Set<string>(),
+          activeSkillNames: new Set(['stale-skill']),
         },
       );
 
@@ -1349,7 +1387,7 @@ describe('createToolExecuteHandler', () => {
         {
           accessibleSkillIds: [],
           skillPrimedIdsByName: {},
-          activeSkillNames: new Set<string>(),
+          activeSkillNames: new Set(['stale-skill']),
         },
       );
 
@@ -1372,6 +1410,46 @@ describe('createToolExecuteHandler', () => {
       expect(updateSkill).not.toHaveBeenCalled();
     });
 
+    it('does not rehydrate same-author skills outside the current agent scope', async () => {
+      const updateSkill = jest.fn();
+      const getAuthorSkillByName = jest.fn(async () => ({
+        _id: SKILL_ID,
+        name: 'excluded-skill',
+        body: '---\nname: excluded-skill\ndescription: Excluded\n---\n# Excluded\n',
+        fileCount: 0,
+        version: 1,
+      }));
+      const handler = makeAuthoringHandler(
+        {
+          getSkillByName: jest.fn(async () => null),
+          getAuthorSkillByName,
+          updateSkill,
+        },
+        {
+          accessibleSkillIds: [],
+          skillPrimedIdsByName: {},
+          activeSkillNames: new Set(['hidden-recovered-skill']),
+        },
+      );
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_edit_excluded_skill',
+          name: 'edit_file',
+          args: {
+            file_path: 'skills/excluded-skill/SKILL.md',
+            old_text: '# Excluded',
+            new_text: '# Changed',
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('not found or not accessible');
+      expect(getAuthorSkillByName).not.toHaveBeenCalled();
+      expect(updateSkill).not.toHaveBeenCalled();
+    });
+
     it('does not treat stale same-author recovery as a hidden-skill prime', async () => {
       const updateSkill = jest.fn();
       const handler = makeAuthoringHandler(
@@ -1390,7 +1468,7 @@ describe('createToolExecuteHandler', () => {
         {
           accessibleSkillIds: [],
           skillPrimedIdsByName: {},
-          activeSkillNames: new Set<string>(),
+          activeSkillNames: new Set(['hidden-recovered-skill']),
         },
       );
 
@@ -1566,6 +1644,54 @@ describe('createToolExecuteHandler', () => {
               'disable-model-invocation': true,
               'allowed-tools': ['execute_code'],
               'always-apply': true,
+            }),
+          }),
+        }),
+      );
+    });
+
+    it('preserves block-scalar SKILL.md descriptions when editing skills', async () => {
+      const oldBody = '---\nname: runtime-skill\ndescription: Use before\n---\n# Runtime skill\n';
+      const updateSkill = jest.fn(async () => ({
+        status: 'updated',
+        skill: {
+          _id: SKILL_ID,
+          name: 'runtime-skill',
+          body: oldBody,
+          version: 2,
+        },
+      }));
+      const handler = makeAuthoringHandler({
+        getSkillByName: jest.fn(async () => ({
+          _id: SKILL_ID,
+          name: 'runtime-skill',
+          body: oldBody,
+          fileCount: 0,
+          version: 1,
+        })),
+        updateSkill: updateSkill as unknown as ToolExecuteOptions['updateSkill'],
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_edit_skill_md_block_description',
+          name: 'edit_file',
+          args: {
+            file_path: 'skills/runtime-skill/SKILL.md',
+            old_text: 'description: Use before',
+            new_text:
+              'description: |-\n  Use this skill for long descriptions.\n  Keep both lines searchable.',
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(updateSkill).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({
+            description: 'Use this skill for long descriptions.\nKeep both lines searchable.',
+            frontmatter: expect.objectContaining({
+              description: 'Use this skill for long descriptions.\nKeep both lines searchable.',
             }),
           }),
         }),
@@ -2295,14 +2421,16 @@ describe('createToolExecuteHandler', () => {
         version: 4,
       };
       const getAuthorSkillByName = jest.fn(async () => recoveredSkill);
-      const getSkillByName = jest.fn(async () => recoveredSkill);
+      const getSkillByName = jest.fn(async (_name: string, ids: unknown[]) =>
+        ids.some((id) => id?.toString() === skillId.toString()) ? recoveredSkill : null,
+      );
       const readSandboxFile = jest.fn();
       const handler = makeReadFileHandler({
         req,
         codeEnvAvailable: true,
         skillAuthoringAvailable: true,
         accessibleSkillIds: skillsInScope(),
-        activeSkillNames: new Set(['other-skill']),
+        activeSkillNames: new Set(['stale-catalog-skill']),
         readSandboxFile,
         getAuthorSkillByName,
         getSkillByName,

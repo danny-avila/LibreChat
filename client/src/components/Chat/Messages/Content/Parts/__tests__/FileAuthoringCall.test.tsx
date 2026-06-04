@@ -84,6 +84,25 @@ describe('FileAuthoringCall', () => {
     expect(screen.getByText(/Use this skill for testing/)).toBeInTheDocument();
   });
 
+  it('shows completed create_file output instead of full content args', () => {
+    render(
+      <FileAuthoringCall
+        toolName="create_file"
+        initialProgress={1}
+        isSubmitting={false}
+        args={{
+          file_path: 'skills/demo/SKILL.md',
+          content: '# Demo\n\nLarge generated body should not stay mounted after completion.',
+        }}
+        output="Created skills/demo/SKILL.md (4096 chars)."
+      />,
+    );
+
+    expect(screen.getByTestId('progress-text')).toHaveTextContent('Created SKILL.md');
+    expect(screen.getByText('Created skills/demo/SKILL.md (4096 chars).')).toBeInTheDocument();
+    expect(screen.queryByText(/Large generated body/)).not.toBeInTheDocument();
+  });
+
   it('shows edit_file replacement args while the call is in progress', () => {
     render(
       <FileAuthoringCall
