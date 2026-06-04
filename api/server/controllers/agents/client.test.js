@@ -1597,6 +1597,51 @@ describe('AgentClient - titleConvo', () => {
       expect(handoffAgent.additional_instructions).not.toContain('Primary private context');
     });
 
+    it('places current request file context on the latest user message', async () => {
+      const currentFile = makeTextFile('current-file', 'current.txt', 'Current turn file body');
+      const previousFileContext =
+        'Attached document(s):\n```md\n# "previous.txt"\nPrevious turn file body\n```';
+
+      client.options.attachments = [currentFile];
+
+      const result = await client.buildMessages(
+        [
+          {
+            messageId: 'msg-1',
+            parentMessageId: null,
+            sender: 'User',
+            text: 'What is written here?',
+            isCreatedByUser: true,
+            fileContext: previousFileContext,
+          },
+          {
+            messageId: 'msg-2',
+            parentMessageId: 'msg-1',
+            sender: 'Assistant',
+            text: 'It describes the previous file.',
+            isCreatedByUser: false,
+          },
+          {
+            messageId: 'msg-3',
+            parentMessageId: 'msg-2',
+            sender: 'User',
+            text: 'What is written here?',
+            isCreatedByUser: true,
+          },
+        ],
+        'msg-3',
+        {},
+      );
+
+      expect(result.prompt[0].content).toContain('Previous turn file body');
+      expect(result.prompt[2].content).toContain('Current turn file body');
+      expect(result.prompt[2].content).toContain('What is written here?');
+      expect(result.prompt[2].content).not.toContain('Previous turn file body');
+      expect(result.prompt[2].content.indexOf('Current turn file body')).toBeLessThan(
+        result.prompt[2].content.indexOf('What is written here?'),
+      );
+    });
+
     it('does not duplicate a file that is both request context and scoped context', async () => {
       const sharedFile = makeTextFile('shared-file', 'shared.txt', 'Shared duplicate context');
 

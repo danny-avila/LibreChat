@@ -69,6 +69,26 @@ const db = require('~/models');
 
 const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
 
+const prependFileContext = (formattedMessage, fileContext) => {
+  if (!fileContext) {
+    return;
+  }
+
+  if (typeof formattedMessage.content === 'string') {
+    formattedMessage.content = `${fileContext}\n${formattedMessage.content}`;
+    return;
+  }
+
+  if (Array.isArray(formattedMessage.content)) {
+    const textPart = formattedMessage.content.find((part) => part.type === 'text');
+    if (textPart) {
+      textPart.text = `${fileContext}\n${textPart.text}`;
+    } else {
+      formattedMessage.content.unshift({ type: 'text', text: fileContext });
+    }
+  }
+};
+
 class AgentClient extends BaseClient {
   constructor(options = {}) {
     super(null, options);
@@ -326,16 +346,13 @@ class AgentClient extends BaseClient {
         assistantName: this.options?.modelLabel,
       });
 
-      /** For non-latest messages, prepend file context directly to message content */
-      if (message.fileContext && i !== orderedMessages.length - 1) {
-        if (typeof formattedMessage.content === 'string') {
-          formattedMessage.content = message.fileContext + '\n' + formattedMessage.content;
-        } else {
-          const textPart = formattedMessage.content.find((part) => part.type === 'text');
-          textPart
-            ? (textPart.text = message.fileContext + '\n' + textPart.text)
-            : formattedMessage.content.unshift({ type: 'text', text: message.fileContext });
-        }
+      /**
+       * Bind file context to the message it belongs to. Historical attachments
+       * are resent inline, so the current turn's text attachment must be inline
+       * too instead of living only in the dynamic system tail.
+       */
+      if (message.fileContext) {
+        prependFileContext(formattedMessage, message.fileContext);
       }
 
       const dbTokenCount = orderedMessages[i].tokenCount;
