@@ -2,8 +2,8 @@
 
 Mémoire institutionnelle du projet Vermeer Chat, à destination de tout nouveau lecteur (humain ou IA). Ce fichier est **stratégique** : contexte, stack, conventions, décisions, garde-fous, état d'avancement. Il ne contient pas l'historique détaillé des décisions et conversations — celui-ci est tracké sur Notion.
 
-Dernière mise à jour : 2026-06-02
-Dernière passe : retrait Locize → i18n FR manuelle, helpers partagés Vermeer (currentMonthStartUTC, budgetColor, composer responsive, BU casing), watchlist code natif touché, §7 réaligné sur HEAD 4eef9d165 (credit management livré).
+Dernière mise à jour : 2026-06-04
+Dernière passe : réécriture procédure de release (ECR + OIDC, fin du flux GHCR/tag-only), 4 environnements avec auth distincte (alpha/dev/staging/prod), POC code interpreter / agents L2 prouvé en local, précision couverture i18n FR (~76 %).
 
 La Partie 1 ci-dessous couvre le projet Vermeer. La [Partie 2](#partie-2--conventions-techniques-librechat) reprend les conventions techniques LibreChat (workspaces, code style, tests) — à lire après le contexte projet.
 
@@ -72,8 +72,13 @@ Les autres intervenants (UX, chefferie de projet, business, PMO BETC, documentat
 
 ## 4. Conventions de code et de workflow
 
-- **Branches** : aujourd'hui `main` uniquement côté `origin`. Mise en place d'environnements staging/prod en cours via Oussama. **À CONFIRMER** : état réel des branches staging/prod.
-- **Release / déploiement** : l'image Docker de prod se construit en poussant un **tag de version** (`v*`). Procédure complète en [section 12](#12-déploiement-et-cicd).
+- **Branches** : `main` côté `origin`. Le build d'image se déclenche sur push de n'importe quelle branche (tag d'image dérivé du nom de branche, cf. §12).
+- **Environnements** : **4 environnements** avec auth distincte, chacun avec son dossier dans le gitops (`alpha/llm/`, `staging/llm/`, etc.).
+  - **alpha** : grosses features / intégrations en cours, auth **Keycloak interne** (LibreChat y tourne actuellement) ; le gitops alpha pull l'image `feat-build`.
+  - **dev** : développement.
+  - **staging** : test / QA, auth **SSO Havas + BETC** ; cible du beta-test des key users BETC.
+  - **prod** : production.
+- **Release / déploiement** : l'image Docker est buildée/poussée sur **ECR** via OIDC. Procédure complète en [section 12](#12-déploiement-et-cicd).
 - **Commits** : convention `type(scope): sujet` en français (ex. `feat(ux/agents): …`), corps détaillé en français expliquant le pivot et les hors-scope, signature `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`.
 - **Méthode de travail** : approche **Phase 1 (investigation) → Phase 2 (plan) → Phase 3 (exécution)** avec validation explicite entre chaque phase pour tout chantier conséquent (voir garde-fou dédié section 6).
 - **Design system Vermeer V1** : dark mode global par défaut (forcé via `FORCE_VERMEER_DARK=true`), accent rouge Vermeer `#E5384A` (hover `#C52838`), fond noir principal `#0A0A0B` (`--surface-primary`) avec surfaces anthracite `#141416` / `#1A1A1C`. Variables définies dans la section `.dark` de `client/src/style.css`. Valeurs V1 best-guess, à raffiner en atelier specs avec Antoine.
@@ -184,7 +189,7 @@ Features livrées (commits clés) :
 ## 8. Roadmap V1 / V2 / V3
 
 - **V1 — mercredi 3 juin 2026** : premier déploiement en production + première version du credit management (acter l'activation de `balance`/`transactions` dans `librechat.yaml`).
-- **V2 — mi-juin 2026** : intégration des agents L2 via Codeur (environnement sandbox de Damien/Benoit), c'est-à-dire des agents qui agissent via des outils.
+- **V2 — mi-juin 2026** : intégration des agents L2 via Codeur (environnement sandbox de Damien/Benoit), c'est-à-dire des agents qui agissent via des outils. **Faisabilité prouvée en local (POC).** Auth code interpreter : ce build ne lit **pas** le header `LIBRECHAT_CODE_API_KEY` ; la clé est embarquée dans `LIBRECHAT_CODE_BASEURL` (userinfo de l'URL → Basic auth). Le `BASEURL` contient donc un secret → à injecter via **ExternalSecret**, jamais en clair. ⚠️ Le service hébergé Code Interpreter de LibreChat est en **fin de vie** (rachat ClickHouse) ; prévoir un backend self-hosted. Renvois : doc Notion L2 + package de déploiement K8s dans `~/vermeer-l2-deploy/k8s/`.
 - **V2 — BudgetCard auto-création Balance** : créer le doc Balance automatiquement à la première transaction OU au premier login user, pour que la BudgetCard soit visible sans intervention admin préalable (limitation V1 documentée en §9).
 - **V3 — à définir** : capacités agentiques étendues, refacturation interne entre BU.
 
@@ -224,37 +229,46 @@ Features livrées (commits clés) :
 
 ## 12. Déploiement et CI/CD
 
-La construction de l'image Docker de prod est automatisée par GitHub Actions, workflow [`vermeer-prod-image.yml`](.github/workflows/vermeer-prod-image.yml).
+La construction de l'image Docker est automatisée par GitHub Actions, workflow [`vermeer-prod-image.yml`](.github/workflows/vermeer-prod-image.yml).
 
-**Principe** : l'image n'est construite **que lorsqu'on pousse un tag de version** (`v*`, ex. `v0.8.5`). Un simple push sur `main` ne déclenche **aucun** build — le build complet (`npm ci` + build frontend) est long et coûteux, on ne le lance donc que pour une vraie release. Un déclenchement manuel reste possible depuis l'onglet **Actions → Build & Push Vermeer Prod Image → Run workflow**.
+> **⚠️ Procédure réécrite (PR #1).** L'ancien flux « push d'un tag `v*` → image GHCR `ghcr.io/popaistudio/vermeer-text` » est **OBSOLÈTE**. Le workflow build et pousse désormais sur **ECR**, avec authentification **OIDC** (pas de secret long terme à gérer).
 
-**Image produite** (registre GitHub Container Registry, pas de secret à gérer, auth via le `GITHUB_TOKEN` natif) :
+**Registre cible (ECR)** :
 
 ```
-ghcr.io/popaistudio/vermeer-text:v0.8.5     # le tag de version
-ghcr.io/popaistudio/vermeer-text:<short-sha> # le commit exact, pour rollback
-ghcr.io/popaistudio/vermeer-text:latest      # toujours la dernière release
+897388551593.dkr.ecr.eu-west-1.amazonaws.com/vermeer-text
 ```
+
+**Logique de tag d'image** (dérivée de la ref Git poussée) :
+
+| Push Git | Tag d'image produit |
+|---|---|
+| `main` | `latest` |
+| autre branche (ex. `feat/build`) | nom de branche assaini (`feat-build`) |
+| tag Git (ex. `v0.9.0`) | nom du tag (`v0.9.0`) |
+
+Le gitops **alpha** pull l'image `feat-build`.
 
 ### Publier une release de prod (procédure)
+
+⚠️ **Pour une release prod, utiliser un tag de version immuable `v*`** — jamais un tag mutable (`feat-build`, `latest`), pour la traçabilité et le rollback.
 
 ```bash
 # 1. Être sur main à jour, code mergé et relu
 git checkout main && git pull origin main
 
-# 2. Créer le tag de version (préfixe v obligatoire pour matcher v*)
-git tag v0.8.5
+# 2. Créer le tag de version (préfixe v obligatoire)
+git tag v0.9.0
 
-# 3. Pousser le tag — c'est CE push qui lance le build de l'image
-git push origin v0.8.5
+# 3. Pousser le tag — c'est CE push qui produit l'image ECR taguée v0.9.0
+git push origin v0.9.0
 ```
 
-Suivre le build dans l'onglet **Actions** du repo. Une fois vert, l'image `ghcr.io/popaistudio/vermeer-text:v0.8.5` (+ `latest`) est disponible et le serveur de prod peut la `docker pull`.
+Suivre le build dans l'onglet **Actions** du repo. Une fois vert, l'image `…/vermeer-text:v0.9.0` est disponible sur ECR et l'environnement cible peut la pull.
 
 **Notes pratiques** :
-- Le numéro de version du tag doit rester cohérent avec le champ `version` de `package.json` (actuellement `v0.8.5`).
-- Le déploiement sur le serveur de prod (pull de l'image + redémarrage) n'est **pas encore automatisé** — étape à câbler avec Oussama (cf. §3). Pour l'instant, après un build vert, le pull/restart est manuel côté serveur.
-- En cas de souci au build : vérifier dans **Settings → Actions → General → Workflow permissions** que « Read and write permissions » est activé (nécessaire pour pousser sur GHCR).
+- Le numéro de version du tag doit rester cohérent avec le champ `version` de `package.json`.
+- Le déploiement sur les serveurs (pull de l'image + redémarrage) n'est **pas encore entièrement automatisé** côté prod — étape à câbler avec Oussama (cf. §3). Le gitops alpha consomme `feat-build`.
 - Rappel garde-fou §6 : ne pas pousser sur `main` sans review. Le tag se pose sur un commit de `main` déjà relu et mergé.
 
 ---
@@ -368,6 +382,7 @@ Multi-line imports count total character length across all lines. Consolidate va
   - Conventions strictes : interpolations `{{xxx}}` préservées à l'identique ; apostrophes ASCII (`'`), jamais typographiques ; sigles métier non traduits (POP, BETC, BU, USD, CSV) ; pas d'espaces insécables (le repo utilise les espaces normaux) ; références techniques (`librechat.yaml`, noms de fichiers) non traduites.
   - Vérifs post-insertion : `JSON.parse` valide sur les deux fichiers ; diff des noms de clés EN vs FR → AUCUNE DIFFÉRENCE.
   - Passes de référence : commits `7fd9af216` (27 clés com_budget_*) et `6068ec993` (40 clés com_usage_* + maj subtitle EN obsolète).
+  - **Couverture FR ~76 %** : ~443 clés EN restent sans traduction FR. Les clés EN font foi (source) ; les FR sont ajoutées manuellement dans `fr/translation.json` (workflow Locize abandonné).
 - Semantic key prefixes: `com_ui_`, `com_assistants_`, etc.
 
 ### Components
