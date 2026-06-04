@@ -51,11 +51,22 @@ import {
   isCodeSessionToolName,
 } from './tools';
 
+/** Portable ceiling for OpenAI-compatible tool description validators. */
+const TOOL_DESCRIPTION_ADVISORY_MAX_LENGTH = 1024;
+
 function filePathDescription(tool?: LCTool): string {
   const parameters = tool?.parameters as
     | { properties?: { file_path?: { description?: string } } }
     | undefined;
   return parameters?.properties?.file_path?.description ?? '';
+}
+
+function expectToolDescriptionsWithinAdvisoryLimit(definitions: LCTool[]): void {
+  for (const definition of definitions) {
+    expect(definition.description).toBeDefined();
+    const description = definition.description ?? '';
+    expect(description.length).toBeLessThanOrEqual(TOOL_DESCRIPTION_ADVISORY_MAX_LENGTH);
+  }
 }
 
 describe('buildToolSet', () => {
@@ -273,6 +284,26 @@ describe('registerCodeExecutionTools', () => {
 
       const names = result.toolDefinitions.map((d) => d.name);
       expect(names).toEqual(['calculator', 'read_file', 'bash_tool']);
+    });
+
+    it('keeps code-execution tool descriptions within provider advisory limits', () => {
+      const skillAwareWithRefs = registerCodeExecutionTools({
+        toolRegistry: makeRegistry(),
+        toolDefinitions: [],
+        includeBash: true,
+        includeSkillFileInstructions: true,
+        enableToolOutputReferences: true,
+      });
+      const codeOnlyWithoutRefs = registerCodeExecutionTools({
+        toolRegistry: makeRegistry(),
+        toolDefinitions: [],
+        includeBash: true,
+        includeSkillFileInstructions: false,
+        enableToolOutputReferences: false,
+      });
+
+      expectToolDescriptionsWithinAdvisoryLimit(skillAwareWithRefs.toolDefinitions);
+      expectToolDescriptionsWithinAdvisoryLimit(codeOnlyWithoutRefs.toolDefinitions);
     });
   });
 
@@ -538,6 +569,29 @@ describe('registerFileAuthoringTools', () => {
       'skills/',
     );
     expect(toolRegistry.get('edit_file')?.description).toContain('skills/');
+  });
+
+  it('keeps file-authoring tool descriptions within provider advisory limits', () => {
+    const skillAware = registerFileAuthoringTools({
+      toolRegistry: makeRegistry(),
+      toolDefinitions: [],
+      includeSkillFileInstructions: true,
+    });
+    const codeOnlyRegistry = makeRegistry();
+    const codeOnly = registerFileAuthoringTools({
+      toolRegistry: codeOnlyRegistry,
+      toolDefinitions: [],
+      includeSkillFileInstructions: false,
+    });
+    const upgraded = registerFileAuthoringTools({
+      toolRegistry: codeOnlyRegistry,
+      toolDefinitions: codeOnly.toolDefinitions,
+      includeSkillFileInstructions: true,
+    });
+
+    expectToolDescriptionsWithinAdvisoryLimit(skillAware.toolDefinitions);
+    expectToolDescriptionsWithinAdvisoryLimit(codeOnly.toolDefinitions);
+    expectToolDescriptionsWithinAdvisoryLimit(upgraded.toolDefinitions);
   });
 
   it('distinguishes host file authoring definitions from user tools with matching names', () => {
