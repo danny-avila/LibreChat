@@ -409,16 +409,11 @@ class AgentClient extends BaseClient {
 
     /**
      * Build shared run context - applies to ALL agents in the run.
-     * This includes file context from the latest message and augmented prompt (RAG).
+     * Request attachment file context is already bound inline to the latest
+     * user message above; only side-channel context belongs here.
      * Memory context is handled separately and applied per-agent based on config.
      */
     const sharedRunContextParts = [];
-
-    /** File context from the latest message (attachments) */
-    const latestMessage = orderedMessages[orderedMessages.length - 1];
-    if (latestMessage?.fileContext) {
-      sharedRunContextParts.push(latestMessage.fileContext);
-    }
 
     /** Augmented prompt from RAG/context handlers */
     if (this.contextHandlers) {

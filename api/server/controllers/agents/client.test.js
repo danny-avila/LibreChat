@@ -1544,7 +1544,7 @@ describe('AgentClient - titleConvo', () => {
       client.useMemory = jest.fn().mockResolvedValue(undefined);
     });
 
-    it("applies shared request context plus each agent's own context docs only", async () => {
+    it('places request context inline and applies each agent context doc only once', async () => {
       const requestFile = makeTextFile('request-file', 'request.txt', 'Shared request context');
       const primaryContext = makeTextFile(
         'primary-context',
@@ -1574,7 +1574,7 @@ describe('AgentClient - titleConvo', () => {
       ]);
       client.agentConfigs = new Map([['handoff-agent', handoffAgent]]);
 
-      await client.buildMessages(
+      const result = await client.buildMessages(
         [
           {
             messageId: 'msg-1',
@@ -1588,12 +1588,14 @@ describe('AgentClient - titleConvo', () => {
         {},
       );
 
-      expect(mockAgent.additional_instructions).toContain('Shared request context');
+      expect(result.prompt[0].content).toContain('Shared request context');
+
       expect(mockAgent.additional_instructions).toContain('Primary private context');
+      expect(mockAgent.additional_instructions).not.toContain('Shared request context');
       expect(mockAgent.additional_instructions).not.toContain('Handoff private context');
 
-      expect(handoffAgent.additional_instructions).toContain('Shared request context');
       expect(handoffAgent.additional_instructions).toContain('Handoff private context');
+      expect(handoffAgent.additional_instructions).not.toContain('Shared request context');
       expect(handoffAgent.additional_instructions).not.toContain('Primary private context');
     });
 
@@ -1637,6 +1639,7 @@ describe('AgentClient - titleConvo', () => {
       expect(result.prompt[2].content).toContain('Current turn file body');
       expect(result.prompt[2].content).toContain('What is written here?');
       expect(result.prompt[2].content).not.toContain('Previous turn file body');
+      expect(mockAgent.additional_instructions ?? '').not.toContain('Current turn file body');
       expect(result.prompt[2].content.indexOf('Current turn file body')).toBeLessThan(
         result.prompt[2].content.indexOf('What is written here?'),
       );
@@ -1649,7 +1652,7 @@ describe('AgentClient - titleConvo', () => {
       client.options.agentContextAttachmentsByAgentId = new Map([['primary-agent', [sharedFile]]]);
       client.agentConfigs = new Map();
 
-      await client.buildMessages(
+      const result = await client.buildMessages(
         [
           {
             messageId: 'msg-1',
@@ -1663,10 +1666,10 @@ describe('AgentClient - titleConvo', () => {
         {},
       );
 
-      const occurrences = (
-        mockAgent.additional_instructions.match(/Shared duplicate context/g) ?? []
-      ).length;
-      expect(occurrences).toBe(1);
+      const inlineOccurrences = (result.prompt[0].content.match(/Shared duplicate context/g) ?? [])
+        .length;
+      expect(inlineOccurrences).toBe(1);
+      expect(mockAgent.additional_instructions ?? '').not.toContain('Shared duplicate context');
     });
 
     it('keeps direct chats with context-doc agents working without request attachments', async () => {
