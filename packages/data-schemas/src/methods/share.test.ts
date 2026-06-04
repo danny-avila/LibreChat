@@ -40,8 +40,18 @@ describe('Share Methods', () => {
         text: String,
         isCreatedByUser: Boolean,
         model: String,
+        iconURL: String,
+        endpoint: String,
+        conversationSignature: String,
+        clientId: String,
+        plugin: mongoose.Schema.Types.Mixed,
+        metadata: mongoose.Schema.Types.Mixed,
+        feedback: mongoose.Schema.Types.Mixed,
+        manualSkills: [String],
+        alwaysAppliedSkills: [String],
         parentMessageId: String,
         attachments: [mongoose.Schema.Types.Mixed],
+        files: [mongoose.Schema.Types.Mixed],
         content: [mongoose.Schema.Types.Mixed],
       },
       { timestamps: true },
@@ -340,7 +350,7 @@ describe('Share Methods', () => {
         expect(msg.messageId).toMatch(/^msg_/); // Should be anonymized with msg_ prefix
         expect(msg.messageId).not.toBe(messages[0].messageId); // Should be different from original
         expect(msg.conversationId).toBe(result.conversationId);
-        expect(msg.user).toBeUndefined(); // User should be removed
+        expect((msg as Record<string, unknown>).user).toBeUndefined(); // User should be removed
       });
     });
 
@@ -399,6 +409,106 @@ describe('Share Methods', () => {
       expect(
         (result?.messages[0].attachments?.[0] as unknown as t.IMessage | undefined)?.conversationId,
       ).toBe(result?.conversationId);
+    });
+
+    test('strips storage-internal fields while preserving shared render data', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+
+      const message = await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'safe text',
+        isCreatedByUser: false,
+        model: 'gpt-4',
+        iconURL: 'https://cdn.example.com/icon.png',
+        endpoint: 'openAI',
+        conversationSignature: 'signature',
+        clientId: 'client-id',
+        plugin: { latest: 'internal' },
+        metadata: { codeEnvRef: 'internal-ref' },
+        feedback: { rating: 'thumbsDown', tag: { key: 'inaccurate' }, text: 'private note' },
+        manualSkills: ['research'],
+        alwaysAppliedSkills: ['brand-voice'],
+        files: [
+          {
+            file_id: 'file123',
+            filename: 'upload.png',
+            type: 'image/png',
+            width: 100,
+            height: 100,
+            filepath: '/images/upload.png',
+            conversationId,
+            user: userId,
+            tenantId: 'tenant-a',
+            storageKey: 'private/upload.png',
+            source: 's3',
+          },
+        ],
+        attachments: [
+          {
+            toolCallId: 'call_abc',
+            type: 'web_search',
+            web_search: { results: [{ title: 'Cited source', link: 'https://example.com' }] },
+            filename: 'result.json',
+            filepath: '/images/result.json',
+            storageKey: 'private/result.json',
+            metadata: { codeEnvRef: 'internal-ref' },
+          },
+        ],
+      });
+
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: [message._id],
+      });
+
+      const result = await shareMethods.getSharedMessages(shareId);
+      const shared = result?.messages[0];
+
+      expect(shared?.text).toBe('safe text');
+      // Custom message icon is render metadata and should be preserved.
+      expect(shared?.iconURL).toBe('https://cdn.example.com/icon.png');
+      // Non-assistant model and internal message fields must not be disclosed.
+      expect(shared?.model).toBeUndefined();
+      expect(shared).not.toHaveProperty('endpoint');
+      expect(shared).not.toHaveProperty('conversationSignature');
+      expect(shared).not.toHaveProperty('clientId');
+      expect(shared).not.toHaveProperty('plugin');
+      expect(shared).not.toHaveProperty('metadata');
+      // Private owner feedback is not render data and must not leak publicly.
+      expect(shared).not.toHaveProperty('feedback');
+      // Skill badges are non-sensitive UI metadata and should still render.
+      expect(shared?.manualSkills).toEqual(['research']);
+      expect(shared?.alwaysAppliedSkills).toEqual(['brand-voice']);
+
+      // User-uploaded files keep their render URL (filepath/preview) but drop storage internals.
+      const file = shared?.files?.[0];
+      expect(file).toMatchObject({ filename: 'upload.png', type: 'image/png' });
+      expect(file?.filepath).toBe('/images/upload.png');
+      expect(file).not.toHaveProperty('storageKey');
+      expect(file).not.toHaveProperty('user');
+      expect(file).not.toHaveProperty('tenantId');
+      expect(file).not.toHaveProperty('source');
+      // The file's conversation id is rewritten to the anonymized id, not the original.
+      expect(file?.conversationId).toBe(shared?.conversationId);
+      expect(file?.conversationId).not.toBe(conversationId);
+
+      // Tool-call attachments keep their correlation id, payload, and render URL so
+      // citations still render, while storage-only fields are removed.
+      const attachment = shared?.attachments?.[0];
+      expect(attachment).toMatchObject({
+        toolCallId: 'call_abc',
+        type: 'web_search',
+        web_search: { results: [{ title: 'Cited source', link: 'https://example.com' }] },
+        filepath: '/images/result.json',
+      });
+      expect(attachment).not.toHaveProperty('storageKey');
+      expect(attachment).not.toHaveProperty('metadata');
     });
   });
 
