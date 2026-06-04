@@ -1,5 +1,5 @@
 const { Providers } = require('@librechat/agents');
-const { Constants, EModelEndpoint } = require('librechat-data-provider');
+const { Constants, ContentTypes, EModelEndpoint } = require('librechat-data-provider');
 const AgentClient = require('./client');
 
 jest.mock('@librechat/agents', () => ({
@@ -1500,6 +1500,7 @@ describe('AgentClient - titleConvo', () => {
     beforeEach(() => {
       jest.clearAllMocks();
       mockFormatInstructions.mockResolvedValue('');
+      require('@librechat/api').countFormattedMessageTokens.mockImplementation(() => 42);
 
       mockAgent = {
         id: 'primary-agent',
@@ -1639,10 +1640,46 @@ describe('AgentClient - titleConvo', () => {
       expect(result.prompt[2].content).toContain('Current turn file body');
       expect(result.prompt[2].content).toContain('What is written here?');
       expect(result.prompt[2].content).not.toContain('Previous turn file body');
+      expect(client.memoryPayload[2].content).toContain('What is written here?');
+      expect(client.memoryPayload[2].content).not.toContain('Current turn file body');
       expect(mockAgent.additional_instructions ?? '').not.toContain('Current turn file body');
       expect(result.prompt[2].content.indexOf('Current turn file body')).toBeLessThan(
         result.prompt[2].content.indexOf('What is written here?'),
       );
+    });
+
+    it('persists canonical token counts while counting request file context for the prompt', async () => {
+      const { countFormattedMessageTokens } = require('@librechat/api');
+      const currentFile = makeTextFile('current-file', 'current.txt', 'Current turn file body');
+
+      countFormattedMessageTokens.mockImplementation(({ content }) => {
+        const text = Array.isArray(content)
+          ? content.map((part) => part.text ?? part[ContentTypes.TEXT] ?? '').join('\n')
+          : String(content ?? '');
+        return text.includes('Current turn file body') ? 200 : 20;
+      });
+
+      client.options.attachments = [currentFile];
+
+      const result = await client.buildMessages(
+        [
+          {
+            messageId: 'msg-1',
+            parentMessageId: null,
+            sender: 'User',
+            text: 'What is written here?',
+            isCreatedByUser: true,
+          },
+        ],
+        'msg-1',
+        {},
+      );
+
+      expect(result.prompt[0].content).toContain('Current turn file body');
+      expect(result.tokenCountMap['msg-1']).toBe(20);
+      expect(result.promptTokens).toBe(200);
+      expect(client.indexTokenCountMap[0]).toBe(200);
+      expect(client.memoryPayload[0].content).toBe('What is written here?');
     });
 
     it('does not duplicate a file that is both request context and scoped context', async () => {

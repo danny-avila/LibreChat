@@ -136,6 +136,8 @@ class AgentClient extends BaseClient {
     this.usage;
     /** @type {Record<string, number>} */
     this.indexTokenCountMap = {};
+    /** @type {Array<Record<string, unknown>> | null} */
+    this.memoryPayload = null;
     /** @type {(messages: BaseMessage[]) => Promise<void>} */
     this.processMemory;
   }
@@ -316,12 +318,20 @@ class AgentClient extends BaseClient {
     }
 
     /** @type {Record<number, number>} */
-    const canonicalTokenCountMap = {};
+    const indexTokenCountMap = {};
     /** @type {Record<string, number>} */
     const tokenCountMap = {};
+    const memoryPayload = [];
+    let hasFileContext = false;
     let promptTokenTotal = 0;
+    const encoding = this.getEncoding();
     const formattedMessages = orderedMessages.map((message, i) => {
       const formattedMessage = formatMessage({
+        message,
+        userName: this.options?.name,
+        assistantName: this.options?.modelLabel,
+      });
+      const memoryFormattedMessage = formatMessage({
         message,
         userName: this.options?.name,
         assistantName: this.options?.modelLabel,
@@ -333,18 +343,25 @@ class AgentClient extends BaseClient {
        * too instead of living only in the dynamic system tail.
        */
       if (message.fileContext) {
+        hasFileContext = true;
         prependFileContext(formattedMessage, message.fileContext);
       }
 
-      const dbTokenCount = orderedMessages[i].tokenCount;
-      const needsTokenCount = !dbTokenCount || message.fileContext;
+      memoryPayload.push(memoryFormattedMessage);
 
-      if (needsTokenCount || (this.isVisionModel && (message.image_urls || message.files))) {
-        orderedMessages[i].tokenCount = countFormattedMessageTokens(
-          formattedMessage,
-          this.getEncoding(),
-        );
+      const dbTokenCount = Number(orderedMessages[i].tokenCount);
+      const hasDbTokenCount = Number.isFinite(dbTokenCount) && dbTokenCount > 0;
+      const needsCanonicalTokenCount =
+        !hasDbTokenCount || (this.isVisionModel && (message.image_urls || message.files));
+
+      let canonicalTokenCount = hasDbTokenCount ? dbTokenCount : 0;
+      if (needsCanonicalTokenCount) {
+        canonicalTokenCount = countFormattedMessageTokens(memoryFormattedMessage, encoding);
       }
+
+      const promptMessageTokenCount = message.fileContext
+        ? countFormattedMessageTokens(formattedMessage, encoding)
+        : canonicalTokenCount;
 
       /* If message has files, calculate image token cost */
       if (this.message_file_map && this.message_file_map[message.messageId]) {
@@ -360,13 +377,19 @@ class AgentClient extends BaseClient {
         }
       }
 
-      const tokenCount = Number(orderedMessages[i].tokenCount);
-      const normalizedTokenCount = Number.isFinite(tokenCount) && tokenCount > 0 ? tokenCount : 0;
-      canonicalTokenCountMap[i] = normalizedTokenCount;
-      promptTokenTotal += normalizedTokenCount;
+      const normalizedCanonicalTokenCount =
+        Number.isFinite(canonicalTokenCount) && canonicalTokenCount > 0 ? canonicalTokenCount : 0;
+      const normalizedPromptTokenCount =
+        Number.isFinite(promptMessageTokenCount) && promptMessageTokenCount > 0
+          ? promptMessageTokenCount
+          : 0;
+
+      orderedMessages[i].tokenCount = normalizedCanonicalTokenCount;
+      indexTokenCountMap[i] = normalizedPromptTokenCount;
+      promptTokenTotal += normalizedPromptTokenCount;
 
       if (message.messageId) {
-        tokenCountMap[message.messageId] = normalizedTokenCount;
+        tokenCountMap[message.messageId] = normalizedCanonicalTokenCount;
       }
 
       if (isEnabled(process.env.AGENT_DEBUG_LOGGING)) {
@@ -375,9 +398,10 @@ class AgentClient extends BaseClient {
           Array.isArray(message.content) && message.content.some((p) => p && p.type === 'summary');
         const suffix = hasSummary ? '[S]' : '';
         const id = (message.messageId ?? message.id ?? '').slice(-8);
-        const recalced = needsTokenCount ? orderedMessages[i].tokenCount : null;
+        const recalced = needsCanonicalTokenCount ? normalizedCanonicalTokenCount : null;
+        const promptRecalced = message.fileContext ? normalizedPromptTokenCount : null;
         logger.debug(
-          `[AgentClient] msg[${i}] ${role}${suffix} id=…${id} db=${dbTokenCount} needsRecount=${needsTokenCount} recalced=${recalced} tokens=${normalizedTokenCount}`,
+          `[AgentClient] msg[${i}] ${role}${suffix} id=…${id} db=${dbTokenCount} needsRecount=${needsCanonicalTokenCount} recalced=${recalced} promptRecalced=${promptRecalced} tokens=${normalizedPromptTokenCount}`,
         );
       }
 
@@ -385,6 +409,7 @@ class AgentClient extends BaseClient {
     });
 
     payload = formattedMessages;
+    this.memoryPayload = hasFileContext ? memoryPayload : null;
     messages = orderedMessages;
     promptTokens = promptTokenTotal;
 
@@ -421,8 +446,8 @@ class AgentClient extends BaseClient {
       tokenCountFn: (text) => countTokens(text),
     });
 
-    /** Preserve canonical pre-format token counts for all history entering graph formatting */
-    this.indexTokenCountMap = canonicalTokenCountMap;
+    /** Preserve prompt token counts for graph formatting and pruning. */
+    this.indexTokenCountMap = indexTokenCountMap;
 
     /** Extract contextMeta from the parent response (second-to-last in ordered chain;
      *  last is the current user message). Seeds the pruner's calibration EMA for this run. */
@@ -963,6 +988,17 @@ class AgentClient extends BaseClient {
         tokenCounter,
       });
 
+      const memoryMessages =
+        this.processMemory && this.memoryPayload
+          ? formatAgentMessages(
+              this.memoryPayload,
+              undefined,
+              toolSet,
+              skillPrimeResult?.skills,
+              formatOptions,
+            ).messages
+          : initialMessages;
+
       /**
        * @param {BaseMessage[]} messages
        */
@@ -1003,7 +1039,7 @@ class AgentClient extends BaseClient {
         // }
 
         if (this.processMemory) {
-          memoryPromise = this.runMemory(messages);
+          memoryPromise = this.runMemory(memoryMessages);
         }
 
         /** Seed calibration state from previous run if encoding matches */
