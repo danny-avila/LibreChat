@@ -171,7 +171,7 @@ class ChunkedToolArgsFakeModel extends FakeListChatModel {
   }
 
   splitText(text) {
-    return text.split(/(?<=\s+)|(?=\s+)/);
+    return text.split(/(\s+)/).filter(Boolean);
   }
 
   createResponseChunk(text, toolCallChunks, responseMetadata) {
