@@ -68,14 +68,14 @@ type AnthropicInput = BedrockConverseInput & {
 
 /** Extracts opus major/minor version from both naming formats */
 function parseOpusVersion(model: string): { major: number; minor: number } | null {
-  const nameFirst = model.match(/claude-opus[-.]?(\d+)(?:[-.](\d+))?/);
+  const nameFirst = model.match(/claude-opus[-.]?(\d+)(?:[-.](\d{1,2})(?!\d))?/);
   if (nameFirst) {
     return {
       major: parseInt(nameFirst[1], 10),
       minor: nameFirst[2] != null ? parseInt(nameFirst[2], 10) : 0,
     };
   }
-  const numFirst = model.match(/claude-(\d+)(?:[-.](\d+))?-opus/);
+  const numFirst = model.match(/claude-(\d+)(?:[-.](\d{1,2})(?!\d))?-opus/);
   if (numFirst) {
     return {
       major: parseInt(numFirst[1], 10),
@@ -136,6 +136,14 @@ export function omitsThinkingByDefault(model: string): boolean {
   return false;
 }
 
+export function omitsSamplingParameters(model: string): boolean {
+  const opus = parseOpusVersion(model);
+  if (opus && (opus.major > 4 || (opus.major === 4 && opus.minor >= 7))) {
+    return true;
+  }
+  return false;
+}
+
 /** Checks if a model has a 1M context window (Sonnet 4.6+, Opus 4.6+, Opus 5+) */
 export function supportsContext1m(model: string): boolean {
   const sonnet = parseSonnetVersion(model);
@@ -177,11 +185,12 @@ function getBedrockAnthropicBetaHeaders(model: string): string[] {
 }
 
 function mergeBedrockAnthropicBetaHeaders(existing: unknown, generated: string[]): string[] {
-  const existingValues: unknown[] = Array.isArray(existing)
-    ? existing
-    : typeof existing === 'string'
-      ? [existing]
-      : [];
+  let existingValues: unknown[] = [];
+  if (Array.isArray(existing)) {
+    existingValues = existing;
+  } else if (typeof existing === 'string') {
+    existingValues = [existing];
+  }
 
   const betaHeaders = new Set<string>();
 
@@ -203,6 +212,7 @@ function mergeBedrockAnthropicBetaHeaders(existing: unknown, generated: string[]
 export const bedrockInputSchema = s.tConversationSchema
   .pick({
     /* LibreChat params; optionType: 'conversation' */
+    chatProjectId: true,
     modelLabel: true,
     promptPrefix: true,
     resendFiles: true,
@@ -259,6 +269,7 @@ export type BedrockConverseInput = z.infer<typeof bedrockInputSchema>;
 export const bedrockInputParser = s.tConversationSchema
   .pick({
     /* LibreChat params; optionType: 'conversation' */
+    chatProjectId: true,
     modelLabel: true,
     promptPrefix: true,
     resendFiles: true,
@@ -288,6 +299,7 @@ export const bedrockInputParser = s.tConversationSchema
   .catchall(z.any())
   .transform((data) => {
     const knownKeys = [
+      'chatProjectId',
       'modelLabel',
       'promptPrefix',
       'resendFiles',
@@ -308,6 +320,8 @@ export const bedrockInputParser = s.tConversationSchema
 
     const additionalFields: Record<string, unknown> = {};
     const typedData = data as Record<string, unknown>;
+    const shouldOmitSamplingParameters =
+      typeof typedData.model === 'string' && omitsSamplingParameters(typedData.model);
 
     Object.entries(typedData).forEach(([key, value]) => {
       if (!knownKeys.includes(key)) {
@@ -436,6 +450,24 @@ export const bedrockInputParser = s.tConversationSchema
         delete amrf.reasoning_config;
         delete amrf.reasoning_effort;
       }
+
+      if (shouldOmitSamplingParameters) {
+        delete amrf.temperature;
+        delete amrf.topP;
+        delete amrf.top_p;
+        delete amrf.topK;
+        delete amrf.top_k;
+      }
+    }
+
+    if (shouldOmitSamplingParameters) {
+      delete typedData.temperature;
+      delete typedData.topP;
+      delete additionalFields.temperature;
+      delete additionalFields.topP;
+      delete additionalFields.top_p;
+      delete additionalFields.topK;
+      delete additionalFields.top_k;
     }
 
     /** Default promptCache for claude and nova models, if not defined */

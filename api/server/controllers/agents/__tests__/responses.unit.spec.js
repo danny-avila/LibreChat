@@ -10,6 +10,50 @@ const mockRecordCollectedUsage = jest
   .mockResolvedValue({ input_tokens: 100, output_tokens: 50 });
 const mockGetBalanceConfig = jest.fn().mockReturnValue({ enabled: true });
 const mockGetTransactionsConfig = jest.fn().mockReturnValue({ enabled: true });
+const mockBuildSkillPrimedIdsByName = jest.fn((manualSkillPrimes, alwaysApplySkillPrimes) => {
+  const primed = {};
+  for (const skill of alwaysApplySkillPrimes ?? []) {
+    primed[skill.name] = skill._id.toString();
+  }
+  for (const skill of manualSkillPrimes ?? []) {
+    primed[skill.name] = skill._id.toString();
+  }
+  return Object.keys(primed).length > 0 ? primed : undefined;
+});
+const mockEnrichWithSkillConfigurable = jest.fn((result) => result);
+const mockBuildAgentToolContext = jest.fn(({ agent, config }) => ({
+  agent,
+  toolRegistry: config.toolRegistry,
+  userMCPAuthMap: config.userMCPAuthMap,
+  tool_resources: config.tool_resources,
+  actionsEnabled: config.actionsEnabled,
+  accessibleSkillIds: config.accessibleSkillIds,
+  activeSkillNames: config.activeSkillNames,
+  codeEnvAvailable: config.codeEnvAvailable,
+  skillAuthoringAvailable: config.skillAuthoringAvailable,
+  fileAuthoringToolNames: config.fileAuthoringToolNames,
+  skillPrimedIdsByName:
+    mockBuildSkillPrimedIdsByName(config.manualSkillPrimes, config.alwaysApplySkillPrimes) ?? {},
+}));
+const mockEnrichLoadedToolsWithAgentContext = jest.fn(({ result, req, ctx }) =>
+  mockEnrichWithSkillConfigurable({
+    result,
+    context: {
+      req,
+      accessibleSkillIds: ctx.accessibleSkillIds,
+      codeEnvAvailable: ctx.codeEnvAvailable === true,
+      skillPrimedIdsByName: ctx.skillPrimedIdsByName,
+      activeSkillNames: ctx.activeSkillNames,
+      skillAuthoringAvailable: ctx.skillAuthoringAvailable === true,
+      fileAuthoringToolNames: ctx.fileAuthoringToolNames,
+    },
+  }),
+);
+const mockCanAuthorSkillFiles = jest.fn(
+  ({ scopedEditableSkillIds = [], skillCreateAllowed }) =>
+    scopedEditableSkillIds.length > 0 || skillCreateAllowed === true,
+);
+const mockGetSkillToolDeps = jest.fn(() => ({}));
 
 jest.mock('nanoid', () => ({
   nanoid: jest.fn(() => 'mock-nanoid-123'),
@@ -152,6 +196,15 @@ jest.mock('~/server/controllers/ModelController', () => ({
 
 jest.mock('~/server/services/Files/permissions', () => ({
   filterFilesByAgentAccess: jest.fn(),
+}));
+
+jest.mock('~/server/services/Endpoints/agents/skillDeps', () => ({
+  getSkillToolDeps: mockGetSkillToolDeps,
+  canAuthorSkillFiles: mockCanAuthorSkillFiles,
+  enrichWithSkillConfigurable: mockEnrichWithSkillConfigurable,
+  buildSkillPrimedIdsByName: mockBuildSkillPrimedIdsByName,
+  buildAgentToolContext: mockBuildAgentToolContext,
+  enrichLoadedToolsWithAgentContext: mockEnrichLoadedToolsWithAgentContext,
 }));
 
 jest.mock('~/cache', () => ({
@@ -456,6 +509,89 @@ describe('createResponse controller', () => {
           ]),
         }),
       );
+    });
+  });
+
+  describe('sub-agent skill priming', () => {
+    it('passes the sub-agent primed skill IDs into non-streaming tool execution', async () => {
+      const {
+        initializeAgent,
+        discoverConnectedAgents,
+        createToolExecuteHandler,
+      } = require('@librechat/api');
+      const { loadToolsForExecution } = require('~/server/services/ToolService');
+      const subAgent = { id: 'agent-sub', name: 'Sub Agent' };
+      const subConfig = {
+        id: 'agent-sub',
+        model: 'claude-3',
+        model_parameters: {},
+        toolRegistry: new Map(),
+        userMCPAuthMap: { sub: { token: 'sub-token' } },
+        tool_resources: { code_interpreter: { file_ids: ['sub-file'] } },
+        actionsEnabled: true,
+        accessibleSkillIds: ['sub-skill-id'],
+        activeSkillNames: ['sub-hidden-skill'],
+        codeEnvAvailable: true,
+        skillAuthoringAvailable: true,
+        fileAuthoringToolNames: ['create_file', 'edit_file'],
+        manualSkillPrimes: [{ name: 'sub-hidden-skill', _id: { toString: () => 'sub-manual-id' } }],
+        alwaysApplySkillPrimes: [
+          { name: 'sub-always-skill', _id: { toString: () => 'sub-always-id' } },
+        ],
+      };
+
+      initializeAgent.mockResolvedValueOnce({
+        id: 'agent-123',
+        model: 'claude-3',
+        model_parameters: {},
+        toolRegistry: new Map(),
+        edges: [{ source: 'agent-123', target: 'agent-sub' }],
+        accessibleSkillIds: ['primary-skill-id'],
+        activeSkillNames: ['primary-skill'],
+        codeEnvAvailable: false,
+        skillAuthoringAvailable: false,
+        fileAuthoringToolNames: [],
+        manualSkillPrimes: [{ name: 'primary-skill', _id: { toString: () => 'primary-skill-id' } }],
+      });
+      discoverConnectedAgents.mockImplementationOnce(async (_params, deps) => {
+        deps.onAgentInitialized('agent-sub', subAgent, subConfig);
+        return {
+          agentConfigs: new Map([['agent-sub', subConfig]]),
+          edges: [],
+          skippedAgentIds: new Set(),
+          userMCPAuthMap: undefined,
+        };
+      });
+
+      await createResponse(req, res);
+
+      const toolExecuteOptions = createToolExecuteHandler.mock.calls.at(-1)[0];
+      await toolExecuteOptions.loadTools(['read_file'], 'agent-sub');
+
+      expect(loadToolsForExecution).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          agent: subAgent,
+          toolRegistry: subConfig.toolRegistry,
+          userMCPAuthMap: subConfig.userMCPAuthMap,
+          tool_resources: subConfig.tool_resources,
+          actionsEnabled: true,
+        }),
+      );
+      expect(mockEnrichWithSkillConfigurable).toHaveBeenLastCalledWith({
+        result: expect.anything(),
+        context: {
+          req,
+          accessibleSkillIds: ['sub-skill-id'],
+          codeEnvAvailable: true,
+          skillPrimedIdsByName: {
+            'sub-always-skill': 'sub-always-id',
+            'sub-hidden-skill': 'sub-manual-id',
+          },
+          activeSkillNames: ['sub-hidden-skill'],
+          skillAuthoringAvailable: true,
+          fileAuthoringToolNames: ['create_file', 'edit_file'],
+        },
+      });
     });
   });
 });

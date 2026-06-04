@@ -5,12 +5,13 @@ import {
   useDeleteAgentApiKeyMutation,
 } from 'librechat-data-provider/react-query';
 import { Permissions, PermissionTypes } from 'librechat-data-provider';
-import { Plus, Trash2, Copy, CopyCheck, Key, Eye, EyeOff, ShieldEllipsis } from 'lucide-react';
+import { Plus, Trash2, Key, ShieldEllipsis } from 'lucide-react';
 import {
   Button,
   Input,
   Label,
   Spinner,
+  SecretInput,
   OGDialog,
   OGDialogClose,
   OGDialogTitle,
@@ -21,7 +22,7 @@ import {
 } from '@librechat/client';
 import type { PermissionConfig } from '~/components/ui';
 import { useUpdateRemoteAgentsPermissionsMutation } from '~/data-provider';
-import { useLocalize, useCopyToClipboard } from '~/hooks';
+import { useLocalize } from '~/hooks';
 import { AdminSettingsDialog } from '~/components/ui';
 
 function CreateKeyDialog({ onKeyCreated }: { onKeyCreated?: () => void }) {
@@ -30,10 +31,7 @@ function CreateKeyDialog({ onKeyCreated }: { onKeyCreated?: () => void }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [newKey, setNewKey] = useState<string | null>(null);
-  const [showKey, setShowKey] = useState(false);
-  const [isCopying, setIsCopying] = useState(false);
   const createMutation = useCreateAgentApiKeyMutation();
-  const copyKey = useCopyToClipboard({ text: newKey || '' });
 
   const handleCreate = async () => {
     if (!name.trim()) {
@@ -54,15 +52,10 @@ function CreateKeyDialog({ onKeyCreated }: { onKeyCreated?: () => void }) {
   const handleClose = () => {
     setName('');
     setNewKey(null);
-    setShowKey(false);
     setOpen(false);
   };
 
   const handleCopy = () => {
-    if (isCopying) {
-      return;
-    }
-    copyKey(setIsCopying);
     showToast({ message: localize('com_ui_api_key_copied'), status: 'success' });
   };
 
@@ -112,30 +105,15 @@ function CreateKeyDialog({ onKeyCreated }: { onKeyCreated?: () => void }) {
               </div>
               <div className="space-y-2">
                 <Label>{localize('com_ui_your_api_key')}</Label>
-                <div className="flex gap-2">
-                  <Input
-                    value={showKey ? newKey : '•'.repeat(newKey.length)}
-                    readOnly
-                    className="font-mono text-sm"
-                  />
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => setShowKey(!showKey)}
-                    title={showKey ? localize('com_ui_hide') : localize('com_ui_show')}
-                  >
-                    {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={handleCopy}
-                    disabled={isCopying}
-                    title={localize('com_ui_copy')}
-                  >
-                    {isCopying ? <CopyCheck className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                  </Button>
-                </div>
+                <SecretInput
+                  value={newKey}
+                  readOnly
+                  showCopy
+                  controlsOnHover
+                  onCopy={handleCopy}
+                  aria-label={localize('com_ui_your_api_key')}
+                  className="font-mono text-sm"
+                />
               </div>
               <div className="flex justify-end">
                 <Button onClick={handleClose}>{localize('com_ui_done')}</Button>

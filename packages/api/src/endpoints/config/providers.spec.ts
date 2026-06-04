@@ -1,7 +1,7 @@
 import { Providers } from '@librechat/agents';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
-import { getProviderConfig, providerConfigMap } from './providers';
+import { getProviderConfig, providerConfigMap, resolveTitleTiming } from './providers';
 
 const buildAppConfig = (
   customEndpoints: Array<{ name: string; baseURL?: string; apiKey?: string }>,
@@ -95,5 +95,96 @@ describe('getProviderConfig', () => {
     expect(() =>
       getProviderConfig({ provider: 'openrouter', appConfig: buildAppConfig([]) }),
     ).toThrow('Provider openrouter not supported');
+  });
+});
+
+describe('resolveTitleTiming', () => {
+  const withEndpoints = (endpoints: Record<string, unknown>): AppConfig =>
+    ({ endpoints }) as unknown as AppConfig;
+
+  it("defaults to 'immediate' when no config is provided", () => {
+    expect(resolveTitleTiming({})).toBe('immediate');
+  });
+
+  it("defaults to 'immediate' when endpoints is missing", () => {
+    expect(resolveTitleTiming({ appConfig: {} as AppConfig })).toBe('immediate');
+  });
+
+  it("defaults to 'immediate' when no titleTiming is set", () => {
+    const appConfig = withEndpoints({ [EModelEndpoint.agents]: { titleConvo: true } });
+    expect(resolveTitleTiming({ appConfig, endpoint: EModelEndpoint.agents })).toBe('immediate');
+  });
+
+  it("returns 'final' from the global `all` config", () => {
+    const appConfig = withEndpoints({ all: { titleTiming: 'final' } });
+    expect(resolveTitleTiming({ appConfig, endpoint: EModelEndpoint.agents })).toBe('final');
+  });
+
+  it("returns 'final' from the per-endpoint config when `all` is unset", () => {
+    const appConfig = withEndpoints({ [EModelEndpoint.agents]: { titleTiming: 'final' } });
+    expect(resolveTitleTiming({ appConfig, endpoint: EModelEndpoint.agents })).toBe('final');
+  });
+
+  it('lets `all` take precedence over the per-endpoint value', () => {
+    const appConfig = withEndpoints({
+      all: { titleTiming: 'immediate' },
+      [EModelEndpoint.agents]: { titleTiming: 'final' },
+    });
+    expect(resolveTitleTiming({ appConfig, endpoint: EModelEndpoint.agents })).toBe('immediate');
+  });
+
+  it('does not let unrelated `all` config block a per-endpoint value', () => {
+    const appConfig = withEndpoints({
+      all: { titleConvo: true },
+      [EModelEndpoint.agents]: { titleTiming: 'final' },
+    });
+    expect(resolveTitleTiming({ appConfig, endpoint: EModelEndpoint.agents })).toBe('final');
+  });
+
+  it('checks endpoint candidates in order before provider fallback', () => {
+    const appConfig = withEndpoints({
+      [EModelEndpoint.agents]: { titleTiming: 'final' },
+      [EModelEndpoint.openAI]: { titleTiming: 'immediate' },
+    });
+    expect(
+      resolveTitleTiming({
+        appConfig,
+        endpoint: [EModelEndpoint.agents, EModelEndpoint.openAI],
+      }),
+    ).toBe('final');
+  });
+
+  it('falls back to backing provider timing when agents has no titleTiming', () => {
+    const appConfig = withEndpoints({
+      [EModelEndpoint.agents]: { titleConvo: true },
+      [EModelEndpoint.openAI]: { titleTiming: 'final' },
+    });
+    expect(
+      resolveTitleTiming({
+        appConfig,
+        endpoint: [EModelEndpoint.agents, EModelEndpoint.openAI],
+      }),
+    ).toBe('final');
+  });
+
+  it("returns 'immediate' for an endpoint with no override and no `all`", () => {
+    const appConfig = withEndpoints({ [EModelEndpoint.openAI]: { titleTiming: 'final' } });
+    expect(resolveTitleTiming({ appConfig, endpoint: EModelEndpoint.agents })).toBe('immediate');
+  });
+
+  it("resolves 'final' from a custom endpoint config (endpoints.custom[])", () => {
+    const appConfig = withEndpoints({
+      [EModelEndpoint.custom]: [{ name: 'MyProvider', titleTiming: 'final' }],
+    });
+    expect(resolveTitleTiming({ appConfig, endpoint: 'MyProvider' })).toBe('final');
+  });
+
+  it('resolves a normalized custom provider name (openrouter -> OpenRouter)', () => {
+    const appConfig = withEndpoints({
+      [EModelEndpoint.custom]: [
+        { name: 'OpenRouter', baseURL: 'https://openrouter.ai/api/v1', titleTiming: 'final' },
+      ],
+    });
+    expect(resolveTitleTiming({ appConfig, endpoint: 'openrouter' })).toBe('final');
   });
 });

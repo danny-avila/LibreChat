@@ -47,8 +47,9 @@ const {
 } = require('~/server/services/PermissionService');
 const {
   getSkillToolDeps,
-  enrichWithSkillConfigurable,
-  buildSkillPrimedIdsByName,
+  canAuthorSkillFiles,
+  buildAgentToolContext,
+  enrichLoadedToolsWithAgentContext,
 } = require('~/server/services/Endpoints/agents/skillDeps');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { logViolation } = require('~/cache');
@@ -261,6 +262,17 @@ const OpenAIChatCompletionController = async (req, res) => {
           requiredPermissions: PermissionBits.VIEW,
         })
       : [];
+    const editableSkillIds = skillsCapabilityEnabled
+      ? await findAccessibleResources({
+          userId: req.user.id,
+          role: req.user.role,
+          resourceType: ResourceType.SKILL,
+          requiredPermissions: PermissionBits.EDIT,
+        })
+      : [];
+    const skillCreateAllowed = skillsCapabilityEnabled
+      ? await getSkillToolDeps().canCreateSkill({ req })
+      : false;
 
     const { skillStates, defaultActiveOnShare } = await loadSkillStates({
       userId: req.user.id,
@@ -270,6 +282,19 @@ const OpenAIChatCompletionController = async (req, res) => {
     });
 
     const manualSkills = extractManualSkills(req.body);
+
+    const primaryScopedSkillIds = resolveAgentScopedSkillIds({
+      agent,
+      accessibleSkillIds,
+      skillsCapabilityEnabled,
+      ephemeralSkillsToggle,
+    });
+    const primaryScopedEditableSkillIds = resolveAgentScopedSkillIds({
+      agent,
+      accessibleSkillIds: editableSkillIds,
+      skillsCapabilityEnabled,
+      ephemeralSkillsToggle,
+    });
 
     const primaryConfig = await initializeAgent(
       {
@@ -283,9 +308,11 @@ const OpenAIChatCompletionController = async (req, res) => {
         endpointOption,
         allowedProviders,
         isInitialAgent: true,
-        accessibleSkillIds: resolveAgentScopedSkillIds({
+        accessibleSkillIds: primaryScopedSkillIds,
+        skillAuthoringAvailable: canAuthorSkillFiles({
           agent,
-          accessibleSkillIds,
+          scopedEditableSkillIds: primaryScopedEditableSkillIds,
+          skillCreateAllowed,
           skillsCapabilityEnabled,
           ephemeralSkillsToggle,
         }),
@@ -310,14 +337,10 @@ const OpenAIChatCompletionController = async (req, res) => {
      * }>}
      */
     const agentToolContexts = new Map();
-    agentToolContexts.set(primaryConfig.id, {
-      agent,
-      toolRegistry: primaryConfig.toolRegistry,
-      userMCPAuthMap: primaryConfig.userMCPAuthMap,
-      tool_resources: primaryConfig.tool_resources,
-      actionsEnabled: primaryConfig.actionsEnabled,
-      codeEnvAvailable: primaryConfig.codeEnvAvailable,
-    });
+    agentToolContexts.set(
+      primaryConfig.id,
+      buildAgentToolContext({ agent, config: primaryConfig }),
+    );
 
     // Only run BFS discovery (and pay `getModelsConfig` upfront) when the
     // primary has edges to follow — the common API case is single-agent.
@@ -346,6 +369,28 @@ const OpenAIChatCompletionController = async (req, res) => {
           // sub-agent must clear the same sharing boundary, not the looser
           // in-app AGENT one.
           resourceType: ResourceType.REMOTE_AGENT,
+          computeAccessibleSkillIds: (handoffAgent) =>
+            resolveAgentScopedSkillIds({
+              agent: handoffAgent,
+              accessibleSkillIds,
+              skillsCapabilityEnabled,
+              ephemeralSkillsToggle,
+            }),
+          computeSkillAuthoringAvailable: (handoffAgent) =>
+            canAuthorSkillFiles({
+              agent: handoffAgent,
+              scopedEditableSkillIds: resolveAgentScopedSkillIds({
+                agent: handoffAgent,
+                accessibleSkillIds: editableSkillIds,
+                skillsCapabilityEnabled,
+                ephemeralSkillsToggle,
+              }),
+              skillCreateAllowed,
+              skillsCapabilityEnabled,
+              ephemeralSkillsToggle,
+            }),
+          skillStates,
+          defaultActiveOnShare,
           /** @see DiscoverConnectedAgentsParams.codeEnvAvailable */
           codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
         },
@@ -368,14 +413,7 @@ const OpenAIChatCompletionController = async (req, res) => {
           logViolation,
           db: dbMethods,
           onAgentInitialized: (agentId, handoffAgent, config) => {
-            agentToolContexts.set(agentId, {
-              agent: handoffAgent,
-              toolRegistry: config.toolRegistry,
-              userMCPAuthMap: config.userMCPAuthMap,
-              tool_resources: config.tool_resources,
-              actionsEnabled: config.actionsEnabled,
-              codeEnvAvailable: config.codeEnvAvailable,
-            });
+            agentToolContexts.set(agentId, buildAgentToolContext({ agent: handoffAgent, config }));
           },
           initializeAgent,
         },
@@ -420,18 +458,13 @@ const OpenAIChatCompletionController = async (req, res) => {
 
     const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId: null });
 
-    /* Stable for the turn: the prime lists are fixed once
-       `initializeAgent` resolves. Hoisted out of `loadTools` so tool
-       execution doesn't recompute them. `codeEnvAvailable` is read
+    /* Stable for the turn: the primary prime list is fixed once
+       `initializeAgent` resolves and is used as the fallback when a
+       specific agent context is unavailable. `codeEnvAvailable` is read
        per-agent from the stored tool context (admin cap AND that
        agent's `tools` list includes `execute_code`) — a skills-only
        agent never gains sandbox access even if the admin enabled the
        capability globally. */
-    const skillPrimedIdsByName = buildSkillPrimedIdsByName(
-      primaryConfig.manualSkillPrimes,
-      primaryConfig.alwaysApplySkillPrimes,
-    );
-
     const toolExecuteOptions = {
       loadTools: async (toolNames, agentId) => {
         const ctx = agentToolContexts.get(agentId) ?? agentToolContexts.get(primaryConfig.id) ?? {};
@@ -446,13 +479,11 @@ const OpenAIChatCompletionController = async (req, res) => {
           tool_resources: ctx.tool_resources,
           actionsEnabled: ctx.actionsEnabled,
         });
-        return enrichWithSkillConfigurable(
+        return enrichLoadedToolsWithAgentContext({
           result,
           req,
-          primaryConfig.accessibleSkillIds,
-          ctx.codeEnvAvailable === true,
-          skillPrimedIdsByName,
-        );
+          ctx,
+        });
       },
       toolEndCallback,
       ...getSkillToolDeps(),

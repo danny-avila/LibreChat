@@ -1,5 +1,6 @@
 import {
   EModelEndpoint,
+  ReasoningParameterFormat,
   removeNullishValues,
   supportsAdaptiveThinking,
 } from 'librechat-data-provider';
@@ -84,6 +85,78 @@ function hasReasoningParams({
     (reasoning_effort != null && reasoning_effort !== '') ||
     (reasoning_summary != null && reasoning_summary !== '')
   );
+}
+
+function getReasoningObject({
+  reasoningEffort,
+  reasoningSummary,
+}: {
+  reasoningEffort?: OpenAILLMConfig['reasoning_effort'];
+  reasoningSummary?: OpenAILLMConfig['reasoning_summary'];
+}): OpenAI.Reasoning {
+  return removeNullishValues(
+    {
+      effort: reasoningEffort,
+      summary: reasoningSummary,
+    },
+    true,
+  ) as OpenAI.Reasoning;
+}
+
+function isOpenAIEndpoint(endpoint?: EModelEndpoint | string | null): boolean {
+  return endpoint === EModelEndpoint.openAI || endpoint === EModelEndpoint.azureOpenAI;
+}
+
+function removeReasoningSummary(target: Record<string, unknown>) {
+  const { reasoning } = target;
+  if (reasoning == null || typeof reasoning !== 'object' || Array.isArray(reasoning)) {
+    return;
+  }
+
+  const rest = { ...(reasoning as Record<string, unknown>) };
+  delete rest.summary;
+  if (Object.keys(rest).length === 0) {
+    delete target.reasoning;
+    return;
+  }
+
+  target.reasoning = rest;
+}
+
+function removeReasoningPayload(target: Record<string, unknown>) {
+  delete target.reasoning;
+  delete target.reasoning_effort;
+}
+
+function deleteConfigParam({
+  param,
+  llmConfig,
+  modelKwargs,
+}: {
+  param: string;
+  llmConfig: OpenAILLMConfig;
+  modelKwargs: Record<string, unknown>;
+}) {
+  if (param === 'reasoning_effort') {
+    removeReasoningPayload(llmConfig as Record<string, unknown>);
+    removeReasoningPayload(modelKwargs);
+    return;
+  }
+
+  if (param === 'reasoning_summary') {
+    delete (llmConfig as Record<string, unknown>).reasoning_summary;
+    delete modelKwargs.reasoning_summary;
+    removeReasoningSummary(llmConfig as Record<string, unknown>);
+    removeReasoningSummary(modelKwargs);
+    return;
+  }
+
+  if (param in llmConfig) {
+    delete llmConfig[param as keyof t.OAIClientOptions];
+  }
+  if (param in modelKwargs) {
+    delete modelKwargs[param];
+  }
 }
 
 const openRouterAnthropicVerbosityByEffort: Record<
@@ -204,6 +277,64 @@ function applyOpenRouterReasoningConfig({
   return true;
 }
 
+function applyReasoningConfig({
+  endpoint,
+  llmConfig,
+  modelKwargs,
+  reasoningEffort,
+  reasoningFormat,
+  reasoningSummary,
+}: {
+  endpoint?: EModelEndpoint | string | null;
+  llmConfig: OpenAILLMConfig;
+  modelKwargs: Record<string, unknown>;
+  reasoningEffort?: OpenAILLMConfig['reasoning_effort'];
+  reasoningFormat?: ReasoningParameterFormat;
+  reasoningSummary?: OpenAILLMConfig['reasoning_summary'];
+}): boolean {
+  if (
+    !hasReasoningParams({
+      reasoning_effort: reasoningEffort,
+      reasoning_summary: reasoningSummary,
+    })
+  ) {
+    return false;
+  }
+
+  const reasoning = getReasoningObject({ reasoningEffort, reasoningSummary });
+  if (reasoningFormat === ReasoningParameterFormat.disabled) {
+    return false;
+  }
+
+  if (isOpenAIEndpoint(endpoint)) {
+    if (llmConfig.useResponsesApi === true) {
+      llmConfig.reasoning = reasoning;
+      return false;
+    }
+    if (reasoningEffort) {
+      llmConfig.reasoning_effort = reasoningEffort;
+    }
+    return false;
+  }
+
+  if (llmConfig.useResponsesApi === true) {
+    modelKwargs.reasoning = reasoning;
+    return true;
+  }
+
+  if (reasoningFormat === ReasoningParameterFormat.reasoningObject) {
+    modelKwargs.reasoning = reasoning;
+    return true;
+  }
+
+  if (reasoningEffort) {
+    modelKwargs.reasoning_effort = reasoningEffort;
+    return true;
+  }
+
+  return false;
+}
+
 function getModelKwargsText(modelKwargs: Record<string, unknown>): Record<string, unknown> {
   const { text } = modelKwargs;
   if (text == null || typeof text !== 'object' || Array.isArray(text)) {
@@ -294,6 +425,7 @@ export function getOpenAILLMConfig({
   dropParams,
   defaultParams,
   useOpenRouter,
+  reasoningFormat = ReasoningParameterFormat.reasoningEffort,
   modelOptions: _modelOptions,
 }: {
   apiKey: string;
@@ -305,6 +437,7 @@ export function getOpenAILLMConfig({
   dropParams?: string[];
   defaultParams?: Record<string, unknown>;
   useOpenRouter?: boolean;
+  reasoningFormat?: ReasoningParameterFormat;
   azure?: false | t.AzureOptions;
 }): Pick<t.LLMConfigResult, 'llmConfig' | 'tools'> & {
   azure?: t.AzureOptions;
@@ -343,6 +476,8 @@ export function getOpenAILLMConfig({
 
   const modelKwargs: Record<string, unknown> = {};
   let hasModelKwargs = false;
+  let reasoningEffort = reasoning_effort;
+  let reasoningSummary = reasoning_summary;
 
   if (verbosity != null && verbosity !== '' && useOpenRouter) {
     llmConfig.verbosity = verbosity;
@@ -366,6 +501,18 @@ export function getOpenAILLMConfig({
       if (key === 'promptCache') {
         if (enablePromptCache === undefined && typeof value === 'boolean') {
           enablePromptCache = value;
+        }
+        continue;
+      }
+      if (key === 'reasoning_effort') {
+        if (!reasoningEffort && typeof value === 'string') {
+          reasoningEffort = value as OpenAILLMConfig['reasoning_effort'];
+        }
+        continue;
+      }
+      if (key === 'reasoning_summary') {
+        if (!reasoningSummary && typeof value === 'string') {
+          reasoningSummary = value as OpenAILLMConfig['reasoning_summary'];
         }
         continue;
       }
@@ -408,6 +555,18 @@ export function getOpenAILLMConfig({
         }
         continue;
       }
+      if (key === 'reasoning_effort') {
+        if (typeof value === 'string' || value == null) {
+          reasoningEffort = value as OpenAILLMConfig['reasoning_effort'];
+        }
+        continue;
+      }
+      if (key === 'reasoning_summary') {
+        if (typeof value === 'string' || value == null) {
+          reasoningSummary = value as OpenAILLMConfig['reasoning_summary'];
+        }
+        continue;
+      }
       if (key === 'verbosity') {
         hasModelKwargs =
           applyVerbosityParam({
@@ -437,25 +596,11 @@ export function getOpenAILLMConfig({
      */
     hasModelKwargs =
       applyOpenRouterReasoningConfig({
-        reasoningEffort: reasoning_effort,
+        reasoningEffort,
         model: modelOptions.model,
         modelKwargs,
         llmConfig,
       }) || hasModelKwargs;
-  } else if (
-    hasReasoningParams({ reasoning_effort, reasoning_summary }) &&
-    (llmConfig.useResponsesApi === true ||
-      (endpoint !== EModelEndpoint.openAI && endpoint !== EModelEndpoint.azureOpenAI))
-  ) {
-    llmConfig.reasoning = removeNullishValues(
-      {
-        effort: reasoning_effort,
-        summary: reasoning_summary,
-      },
-      true,
-    ) as OpenAI.Reasoning;
-  } else if (hasReasoningParams({ reasoning_effort })) {
-    llmConfig.reasoning_effort = reasoning_effort;
   }
 
   if (llmConfig.max_tokens != null) {
@@ -486,6 +631,26 @@ export function getOpenAILLMConfig({
     llmConfig.promptCache = true;
   }
 
+  if (!useOpenRouter) {
+    hasModelKwargs =
+      applyReasoningConfig({
+        endpoint,
+        llmConfig,
+        modelKwargs,
+        reasoningFormat,
+        reasoningEffort,
+        reasoningSummary,
+      }) || hasModelKwargs;
+  }
+
+  /** DeepSeek thinking-mode requires `reasoning_content` replay on tool turns (#13366). */
+  if (
+    typeof modelOptions.model === 'string' &&
+    /^deepseek(?:[-/]|$)/i.test(modelOptions.model.replace(/^~/, ''))
+  ) {
+    llmConfig.includeReasoningContent = true;
+  }
+
   /**
    * Note: OpenAI reasoning models (o1/o3/gpt-5) do not support temperature and other sampling parameters
    * Exception: gpt-5-chat and versioned models like gpt-5.1 DO support these parameters
@@ -507,11 +672,7 @@ export function getOpenAILLMConfig({
     const updatedDropParams = dropParams || [];
     const combinedDropParams = [...new Set([...updatedDropParams, ...reasoningExcludeParams])];
 
-    combinedDropParams.forEach((param) => {
-      if (param in llmConfig) {
-        delete llmConfig[param as keyof t.OAIClientOptions];
-      }
-    });
+    combinedDropParams.forEach((param) => deleteConfigParam({ param, llmConfig, modelKwargs }));
   } else if (modelOptions.model && /gpt-4o.*search/.test(modelOptions.model as string)) {
     /**
      * Note: OpenAI Web Search models do not support any known parameters besides `max_tokens`
@@ -536,17 +697,9 @@ export function getOpenAILLMConfig({
     const updatedDropParams = dropParams || [];
     const combinedDropParams = [...new Set([...updatedDropParams, ...searchExcludeParams])];
 
-    combinedDropParams.forEach((param) => {
-      if (param in llmConfig) {
-        delete llmConfig[param as keyof t.OAIClientOptions];
-      }
-    });
+    combinedDropParams.forEach((param) => deleteConfigParam({ param, llmConfig, modelKwargs }));
   } else if (dropParams && Array.isArray(dropParams)) {
-    dropParams.forEach((param) => {
-      if (param in llmConfig) {
-        delete llmConfig[param as keyof t.OAIClientOptions];
-      }
-    });
+    dropParams.forEach((param) => deleteConfigParam({ param, llmConfig, modelKwargs }));
   }
 
   hasModelKwargs =
@@ -568,7 +721,7 @@ export function getOpenAILLMConfig({
     hasModelKwargs = true;
   }
 
-  if (hasModelKwargs) {
+  if (hasModelKwargs && Object.keys(modelKwargs).length > 0) {
     llmConfig.modelKwargs = modelKwargs;
   }
 

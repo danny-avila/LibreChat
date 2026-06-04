@@ -27,7 +27,12 @@ import { MCPConnection } from '~/mcp/connection';
 import { createSSRFSafeUndiciConnect, resolveHostnameSSRF } from '~/auth';
 
 type CustomFetch = (input: UndiciRequestInfo, init?: UndiciRequestInit) => Promise<UndiciResponse>;
-type LookupCallback = (err: NodeJS.ErrnoException | null, address: string, family: number) => void;
+type LookupAddress = string | Array<{ address: string; family: number }>;
+type LookupCallback = (
+  err: NodeJS.ErrnoException | null,
+  address: LookupAddress,
+  family?: number,
+) => void;
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -48,9 +53,20 @@ jest.mock('~/auth', () => ({
       if (!callback) {
         throw new Error('lookup callback missing');
       }
+      if (
+        typeof optionsOrCallback === 'object' &&
+        optionsOrCallback != null &&
+        'all' in optionsOrCallback &&
+        optionsOrCallback.all === true
+      ) {
+        callback(null, [{ address: '127.0.0.1', family: 4 }]);
+        return;
+      }
       callback(null, '127.0.0.1', 4);
     },
   })),
+  isOAuthUrlAllowed: jest.fn(() => false),
+  isSSRFTarget: jest.fn(() => false),
   resolveHostnameSSRF: jest.fn(async () => false),
 }));
 
@@ -534,6 +550,60 @@ async function createHeaderCaptureServer(): Promise<HeaderCaptureServer> {
   };
 }
 
+async function createTunnelProxyCaptureServer(): Promise<HeaderCaptureServer> {
+  const headers: http.IncomingHttpHeaders[] = [];
+  const requests: CapturedRequest[] = [];
+  const server = http.createServer((_req, res) => {
+    res.writeHead(502);
+    res.end();
+  });
+  server.on('connect', (req, clientSocket, head) => {
+    headers.push({ ...req.headers });
+    requests.push({
+      method: 'CONNECT',
+      headers: { ...req.headers },
+      body: req.url ?? '',
+    });
+
+    let buffer = Buffer.from(head);
+    let responded = false;
+    const respondIfRequestComplete = () => {
+      if (responded || !buffer.includes('\r\n\r\n')) {
+        return;
+      }
+      responded = true;
+      const requestLine = buffer.toString('utf8').split('\r\n')[0] ?? '';
+      requests.push({
+        method: requestLine.split(' ')[0] ?? '',
+        headers: {},
+        body: requestLine,
+      });
+      clientSocket.write(
+        'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}',
+      );
+      clientSocket.end();
+    };
+
+    clientSocket.on('error', () => undefined);
+    clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+    clientSocket.on('data', (chunk: Buffer) => {
+      buffer = Buffer.concat([buffer, chunk]);
+      respondIfRequestComplete();
+    });
+    respondIfRequestComplete();
+  });
+
+  const destroySockets = trackSockets(server);
+  const port = await getFreePort();
+  await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
+  return {
+    url: `http://127.0.0.1:${port}/`,
+    receivedHeaders: headers,
+    receivedRequests: requests,
+    close: destroySockets,
+  };
+}
+
 async function createRawResponseServer(handler: http.RequestListener): Promise<RawResponseServer> {
   const server = http.createServer(handler);
   const destroySockets = trackSockets(server);
@@ -939,6 +1009,823 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
     ).createFetchFunction;
     return factory.call(connection, () => null, undefined, undefined, undefined, undefined, true);
   }
+
+  function createBaseUrlFetch(connection: MCPConnection, baseUrl: string): CustomFetch {
+    const factory = (
+      connection as unknown as {
+        createFetchFunction: (
+          getHeaders: () => Record<string, string> | null | undefined,
+          timeout?: number,
+          sseBodyTimeout?: number,
+          configuredSecretHeaderKeys?: ReadonlySet<string>,
+          baseUrl?: string,
+        ) => CustomFetch;
+      }
+    ).createFetchFunction;
+    return factory.call(connection, () => null, undefined, 300000, undefined, baseUrl);
+  }
+
+  function createBaseUrlDispatchers(connection: MCPConnection, baseUrl: string): string[] {
+    const privateSelf = connection as unknown as {
+      agents: Array<{ constructor: { name: string } }>;
+    };
+    createBaseUrlFetch(connection, baseUrl);
+    return privateSelf.agents.map((agent) => agent.constructor.name);
+  }
+
+  const proxyEnvKeys = [
+    'PROXY',
+    'HTTP_PROXY',
+    'HTTPS_PROXY',
+    'NO_PROXY',
+    'http_proxy',
+    'https_proxy',
+    'no_proxy',
+  ] as const;
+  type ProxyEnvKey = (typeof proxyEnvKeys)[number];
+
+  function snapshotProxyEnv(): Partial<Record<ProxyEnvKey, string>> {
+    const snapshot: Partial<Record<ProxyEnvKey, string>> = {};
+    for (const key of proxyEnvKeys) {
+      if (process.env[key] != null) {
+        snapshot[key] = process.env[key];
+      }
+    }
+    return snapshot;
+  }
+
+  function restoreProxyEnv(snapshot: Partial<Record<ProxyEnvKey, string>>): void {
+    for (const key of proxyEnvKeys) {
+      if (snapshot[key] == null) {
+        delete process.env[key];
+      } else {
+        process.env[key] = snapshot[key];
+      }
+    }
+  }
+
+  function clearProxyEnv(): void {
+    for (const key of proxyEnvKeys) {
+      delete process.env[key];
+    }
+  }
+
+  it('should allocate proxy dispatchers for streamable-http when proxy is configured', () => {
+    conn = new MCPConnection({
+      serverName: 'customfetch-proxy-dispatchers',
+      serverConfig: {
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp',
+        proxy: 'http://proxy.example.com:8080',
+      },
+      useSSRFProtection: false,
+    });
+
+    const privateSelf = conn as unknown as {
+      agents: Array<{ constructor: { name: string } }>;
+      createFetchFunction: (
+        getHeaders: () => Record<string, string> | null | undefined,
+        timeout?: number,
+        sseBodyTimeout?: number,
+        configuredSecretHeaderKeys?: ReadonlySet<string>,
+        baseUrl?: string,
+      ) => CustomFetch;
+    };
+    privateSelf.createFetchFunction.call(
+      conn,
+      () => null,
+      undefined,
+      300000,
+      undefined,
+      'https://mcp.example.com/mcp',
+    );
+
+    expect(privateSelf.agents.map((agent) => agent.constructor.name)).toEqual([
+      'ProxyAgent',
+      'ProxyAgent',
+    ]);
+  });
+
+  it('should use the PROXY env var for streamable-http when server proxy is not configured', () => {
+    const originalProxy = process.env.PROXY;
+    process.env.PROXY = 'http://env-proxy.example.com:8080';
+    try {
+      conn = new MCPConnection({
+        serverName: 'customfetch-env-proxy-dispatchers',
+        serverConfig: {
+          type: 'streamable-http',
+          url: 'https://mcp.example.com/mcp',
+        },
+        useSSRFProtection: false,
+      });
+
+      const privateSelf = conn as unknown as {
+        agents: Array<{ constructor: { name: string } }>;
+        createFetchFunction: (
+          getHeaders: () => Record<string, string> | null | undefined,
+          timeout?: number,
+          sseBodyTimeout?: number,
+          configuredSecretHeaderKeys?: ReadonlySet<string>,
+          baseUrl?: string,
+        ) => CustomFetch;
+      };
+      privateSelf.createFetchFunction.call(
+        conn,
+        () => null,
+        undefined,
+        300000,
+        undefined,
+        'https://mcp.example.com/mcp',
+      );
+
+      expect(privateSelf.agents.map((agent) => agent.constructor.name)).toEqual([
+        'ProxyAgent',
+        'ProxyAgent',
+      ]);
+    } finally {
+      if (originalProxy == null) {
+        delete process.env.PROXY;
+      } else {
+        process.env.PROXY = originalProxy;
+      }
+    }
+  });
+
+  it('should use standard HTTP proxy env vars for streamable-http when PROXY is absent', () => {
+    const originalProxy = process.env.PROXY;
+    const originalHttpProxy = process.env.HTTP_PROXY;
+    const originalHttpsProxy = process.env.HTTPS_PROXY;
+    const originalNoProxy = process.env.NO_PROXY;
+    const originalLowerHttpProxy = process.env.http_proxy;
+    const originalLowerHttpsProxy = process.env.https_proxy;
+    const originalLowerNoProxy = process.env.no_proxy;
+
+    delete process.env.PROXY;
+    delete process.env.http_proxy;
+    delete process.env.https_proxy;
+    delete process.env.no_proxy;
+    process.env.HTTP_PROXY = 'http://http-proxy.example.com:8080';
+    process.env.HTTPS_PROXY = 'http://https-proxy.example.com:8080';
+    process.env.NO_PROXY = 'localhost,127.0.0.1';
+
+    try {
+      conn = new MCPConnection({
+        serverName: 'customfetch-standard-env-proxy-dispatchers',
+        serverConfig: {
+          type: 'streamable-http',
+          url: 'https://mcp.example.com/mcp',
+        },
+        useSSRFProtection: false,
+      });
+
+      const privateSelf = conn as unknown as {
+        agents: Array<{ constructor: { name: string } }>;
+        createFetchFunction: (
+          getHeaders: () => Record<string, string> | null | undefined,
+          timeout?: number,
+          sseBodyTimeout?: number,
+          configuredSecretHeaderKeys?: ReadonlySet<string>,
+          baseUrl?: string,
+        ) => CustomFetch;
+      };
+      privateSelf.createFetchFunction.call(
+        conn,
+        () => null,
+        undefined,
+        300000,
+        undefined,
+        'https://mcp.example.com/mcp',
+      );
+
+      expect(privateSelf.agents.map((agent) => agent.constructor.name)).toEqual([
+        'ProxyAgent',
+        'ProxyAgent',
+      ]);
+    } finally {
+      if (originalProxy == null) {
+        delete process.env.PROXY;
+      } else {
+        process.env.PROXY = originalProxy;
+      }
+      if (originalHttpProxy == null) {
+        delete process.env.HTTP_PROXY;
+      } else {
+        process.env.HTTP_PROXY = originalHttpProxy;
+      }
+      if (originalHttpsProxy == null) {
+        delete process.env.HTTPS_PROXY;
+      } else {
+        process.env.HTTPS_PROXY = originalHttpsProxy;
+      }
+      if (originalNoProxy == null) {
+        delete process.env.NO_PROXY;
+      } else {
+        process.env.NO_PROXY = originalNoProxy;
+      }
+      if (originalLowerHttpProxy == null) {
+        delete process.env.http_proxy;
+      } else {
+        process.env.http_proxy = originalLowerHttpProxy;
+      }
+      if (originalLowerHttpsProxy == null) {
+        delete process.env.https_proxy;
+      } else {
+        process.env.https_proxy = originalLowerHttpsProxy;
+      }
+      if (originalLowerNoProxy == null) {
+        delete process.env.no_proxy;
+      } else {
+        process.env.no_proxy = originalLowerNoProxy;
+      }
+    }
+  });
+
+  it('should honor NO_PROXY when standard HTTP proxy env vars are configured', () => {
+    const originalProxy = process.env.PROXY;
+    const originalHttpsProxy = process.env.HTTPS_PROXY;
+    const originalNoProxy = process.env.NO_PROXY;
+    const originalLowerHttpsProxy = process.env.https_proxy;
+    const originalLowerNoProxy = process.env.no_proxy;
+
+    delete process.env.PROXY;
+    delete process.env.https_proxy;
+    delete process.env.no_proxy;
+    process.env.HTTPS_PROXY = 'http://https-proxy.example.com:8080';
+    process.env.NO_PROXY = 'mcp.example.com';
+
+    try {
+      conn = new MCPConnection({
+        serverName: 'customfetch-standard-env-no-proxy',
+        serverConfig: {
+          type: 'streamable-http',
+          url: 'https://mcp.example.com/mcp',
+        },
+        useSSRFProtection: false,
+      });
+
+      const privateSelf = conn as unknown as {
+        agents: Array<{ constructor: { name: string } }>;
+        createFetchFunction: (
+          getHeaders: () => Record<string, string> | null | undefined,
+          timeout?: number,
+          sseBodyTimeout?: number,
+          configuredSecretHeaderKeys?: ReadonlySet<string>,
+          baseUrl?: string,
+        ) => CustomFetch;
+      };
+      privateSelf.createFetchFunction.call(
+        conn,
+        () => null,
+        undefined,
+        300000,
+        undefined,
+        'https://mcp.example.com/mcp',
+      );
+
+      expect(privateSelf.agents.map((agent) => agent.constructor.name)).toEqual(['Agent', 'Agent']);
+    } finally {
+      if (originalProxy == null) {
+        delete process.env.PROXY;
+      } else {
+        process.env.PROXY = originalProxy;
+      }
+      if (originalHttpsProxy == null) {
+        delete process.env.HTTPS_PROXY;
+      } else {
+        process.env.HTTPS_PROXY = originalHttpsProxy;
+      }
+      if (originalNoProxy == null) {
+        delete process.env.NO_PROXY;
+      } else {
+        process.env.NO_PROXY = originalNoProxy;
+      }
+      if (originalLowerHttpsProxy == null) {
+        delete process.env.https_proxy;
+      } else {
+        process.env.https_proxy = originalLowerHttpsProxy;
+      }
+      if (originalLowerNoProxy == null) {
+        delete process.env.no_proxy;
+      } else {
+        process.env.no_proxy = originalLowerNoProxy;
+      }
+    }
+  });
+
+  it('should honor bare IPv6 NO_PROXY entries without parsing a port suffix', () => {
+    const originalProxy = process.env.PROXY;
+    const originalHttpProxy = process.env.HTTP_PROXY;
+    const originalNoProxy = process.env.NO_PROXY;
+    const originalLowerHttpProxy = process.env.http_proxy;
+    const originalLowerNoProxy = process.env.no_proxy;
+
+    delete process.env.PROXY;
+    delete process.env.http_proxy;
+    delete process.env.no_proxy;
+    process.env.HTTP_PROXY = 'http://http-proxy.example.com:8080';
+    process.env.NO_PROXY = '::1';
+
+    try {
+      conn = new MCPConnection({
+        serverName: 'customfetch-standard-env-no-proxy-ipv6',
+        serverConfig: {
+          type: 'streamable-http',
+          url: 'http://[::1]:3000/mcp',
+        },
+        useSSRFProtection: false,
+      });
+
+      const privateSelf = conn as unknown as {
+        agents: Array<{ constructor: { name: string } }>;
+        createFetchFunction: (
+          getHeaders: () => Record<string, string> | null | undefined,
+          timeout?: number,
+          sseBodyTimeout?: number,
+          configuredSecretHeaderKeys?: ReadonlySet<string>,
+          baseUrl?: string,
+        ) => CustomFetch;
+      };
+      privateSelf.createFetchFunction.call(
+        conn,
+        () => null,
+        undefined,
+        300000,
+        undefined,
+        'http://[::1]:3000/mcp',
+      );
+
+      expect(privateSelf.agents.map((agent) => agent.constructor.name)).toEqual(['Agent', 'Agent']);
+    } finally {
+      if (originalProxy == null) {
+        delete process.env.PROXY;
+      } else {
+        process.env.PROXY = originalProxy;
+      }
+      if (originalHttpProxy == null) {
+        delete process.env.HTTP_PROXY;
+      } else {
+        process.env.HTTP_PROXY = originalHttpProxy;
+      }
+      if (originalNoProxy == null) {
+        delete process.env.NO_PROXY;
+      } else {
+        process.env.NO_PROXY = originalNoProxy;
+      }
+      if (originalLowerHttpProxy == null) {
+        delete process.env.http_proxy;
+      } else {
+        process.env.http_proxy = originalLowerHttpProxy;
+      }
+      if (originalLowerNoProxy == null) {
+        delete process.env.no_proxy;
+      } else {
+        process.env.no_proxy = originalLowerNoProxy;
+      }
+    }
+  });
+
+  it('should honor wildcard tokens in NO_PROXY lists', () => {
+    const originalProxy = process.env.PROXY;
+    const originalHttpProxy = process.env.HTTP_PROXY;
+    const originalNoProxy = process.env.NO_PROXY;
+    const originalLowerHttpProxy = process.env.http_proxy;
+    const originalLowerNoProxy = process.env.no_proxy;
+
+    delete process.env.PROXY;
+    delete process.env.http_proxy;
+    delete process.env.no_proxy;
+    process.env.HTTP_PROXY = 'http://http-proxy.example.com:8080';
+    process.env.NO_PROXY = 'localhost,*';
+
+    try {
+      conn = new MCPConnection({
+        serverName: 'customfetch-standard-env-no-proxy-wildcard-list',
+        serverConfig: {
+          type: 'streamable-http',
+          url: 'http://mcp.example.com/mcp',
+        },
+        useSSRFProtection: false,
+      });
+
+      const privateSelf = conn as unknown as {
+        agents: Array<{ constructor: { name: string } }>;
+        createFetchFunction: (
+          getHeaders: () => Record<string, string> | null | undefined,
+          timeout?: number,
+          sseBodyTimeout?: number,
+          configuredSecretHeaderKeys?: ReadonlySet<string>,
+          baseUrl?: string,
+        ) => CustomFetch;
+      };
+      privateSelf.createFetchFunction.call(
+        conn,
+        () => null,
+        undefined,
+        300000,
+        undefined,
+        'http://mcp.example.com/mcp',
+      );
+
+      expect(privateSelf.agents.map((agent) => agent.constructor.name)).toEqual(['Agent', 'Agent']);
+    } finally {
+      if (originalProxy == null) {
+        delete process.env.PROXY;
+      } else {
+        process.env.PROXY = originalProxy;
+      }
+      if (originalHttpProxy == null) {
+        delete process.env.HTTP_PROXY;
+      } else {
+        process.env.HTTP_PROXY = originalHttpProxy;
+      }
+      if (originalNoProxy == null) {
+        delete process.env.NO_PROXY;
+      } else {
+        process.env.NO_PROXY = originalNoProxy;
+      }
+      if (originalLowerHttpProxy == null) {
+        delete process.env.http_proxy;
+      } else {
+        process.env.http_proxy = originalLowerHttpProxy;
+      }
+      if (originalLowerNoProxy == null) {
+        delete process.env.no_proxy;
+      } else {
+        process.env.no_proxy = originalLowerNoProxy;
+      }
+    }
+  });
+
+  it('should honor CIDR and IP range patterns in NO_PROXY lists', async () => {
+    const originalEnv = snapshotProxyEnv();
+    clearProxyEnv();
+    process.env.HTTP_PROXY = 'http://http-proxy.example.com:8080';
+    process.env.NO_PROXY = '10.0.0.0/8,192.168.1.10-192.168.1.20';
+
+    const expectDispatcherNamesForUrl = async (
+      url: string,
+      expectedNames: string[],
+    ): Promise<void> => {
+      await safeDisconnect(conn);
+      conn = new MCPConnection({
+        serverName: `customfetch-no-proxy-${url}`,
+        serverConfig: {
+          type: 'streamable-http',
+          url,
+        },
+        useSSRFProtection: false,
+      });
+      expect(createBaseUrlDispatchers(conn, url)).toEqual(expectedNames);
+    };
+
+    try {
+      await expectDispatcherNamesForUrl('http://10.2.3.4/mcp', ['Agent', 'Agent']);
+      await expectDispatcherNamesForUrl('http://192.168.1.15/mcp', ['Agent', 'Agent']);
+      await expectDispatcherNamesForUrl('http://192.168.1.25/mcp', ['ProxyAgent', 'ProxyAgent']);
+    } finally {
+      restoreProxyEnv(originalEnv);
+    }
+  });
+
+  it('should match NO_PROXY host entries like undici env proxy agents', async () => {
+    const originalEnv = snapshotProxyEnv();
+    clearProxyEnv();
+    process.env.HTTPS_PROXY = 'http://https-proxy.example.com:8080';
+
+    const expectDispatcherNamesForUrl = async (
+      noProxy: string,
+      url: string,
+      expectedNames: string[],
+    ): Promise<void> => {
+      await safeDisconnect(conn);
+      process.env.NO_PROXY = noProxy;
+      conn = new MCPConnection({
+        serverName: `customfetch-no-proxy-host-${noProxy}-${url}`,
+        serverConfig: {
+          type: 'streamable-http',
+          url,
+        },
+        useSSRFProtection: false,
+      });
+      expect(createBaseUrlDispatchers(conn, url)).toEqual(expectedNames);
+    };
+
+    try {
+      await expectDispatcherNamesForUrl('example.com', 'https://example.com/mcp', [
+        'Agent',
+        'Agent',
+      ]);
+      await expectDispatcherNamesForUrl('example.com', 'https://api.example.com/mcp', [
+        'Agent',
+        'Agent',
+      ]);
+      await expectDispatcherNamesForUrl('*.example.com', 'https://api.example.com/mcp', [
+        'Agent',
+        'Agent',
+      ]);
+      await expectDispatcherNamesForUrl('*.example.com', 'https://example.com/mcp', [
+        'Agent',
+        'Agent',
+      ]);
+      await expectDispatcherNamesForUrl('.example.com', 'https://example.com/mcp', [
+        'Agent',
+        'Agent',
+      ]);
+      await expectDispatcherNamesForUrl('.example.com', 'https://api.example.com/mcp', [
+        'Agent',
+        'Agent',
+      ]);
+      await expectDispatcherNamesForUrl('example.com', 'https://badexample.com/mcp', [
+        'ProxyAgent',
+        'ProxyAgent',
+      ]);
+    } finally {
+      restoreProxyEnv(originalEnv);
+    }
+  });
+
+  it('should let empty lowercase proxy env vars disable uppercase fallbacks', () => {
+    const originalProxy = process.env.PROXY;
+    const originalHttpProxy = process.env.HTTP_PROXY;
+    const originalNoProxy = process.env.NO_PROXY;
+    const originalLowerHttpProxy = process.env.http_proxy;
+    const originalLowerNoProxy = process.env.no_proxy;
+
+    delete process.env.PROXY;
+    delete process.env.NO_PROXY;
+    delete process.env.no_proxy;
+    process.env.HTTP_PROXY = 'http://http-proxy.example.com:8080';
+    process.env.http_proxy = '';
+
+    try {
+      conn = new MCPConnection({
+        serverName: 'customfetch-standard-empty-lowercase-proxy',
+        serverConfig: {
+          type: 'streamable-http',
+          url: 'http://mcp.example.com/mcp',
+        },
+        useSSRFProtection: false,
+      });
+
+      const privateSelf = conn as unknown as {
+        agents: Array<{ constructor: { name: string } }>;
+        createFetchFunction: (
+          getHeaders: () => Record<string, string> | null | undefined,
+          timeout?: number,
+          sseBodyTimeout?: number,
+          configuredSecretHeaderKeys?: ReadonlySet<string>,
+          baseUrl?: string,
+        ) => CustomFetch;
+      };
+      privateSelf.createFetchFunction.call(
+        conn,
+        () => null,
+        undefined,
+        300000,
+        undefined,
+        'http://mcp.example.com/mcp',
+      );
+
+      expect(privateSelf.agents.map((agent) => agent.constructor.name)).toEqual(['Agent', 'Agent']);
+    } finally {
+      if (originalProxy == null) {
+        delete process.env.PROXY;
+      } else {
+        process.env.PROXY = originalProxy;
+      }
+      if (originalHttpProxy == null) {
+        delete process.env.HTTP_PROXY;
+      } else {
+        process.env.HTTP_PROXY = originalHttpProxy;
+      }
+      if (originalNoProxy == null) {
+        delete process.env.NO_PROXY;
+      } else {
+        process.env.NO_PROXY = originalNoProxy;
+      }
+      if (originalLowerHttpProxy == null) {
+        delete process.env.http_proxy;
+      } else {
+        process.env.http_proxy = originalLowerHttpProxy;
+      }
+      if (originalLowerNoProxy == null) {
+        delete process.env.no_proxy;
+      } else {
+        process.env.no_proxy = originalLowerNoProxy;
+      }
+    }
+  });
+
+  it('should let empty lowercase no_proxy disable uppercase fallbacks', () => {
+    const originalProxy = process.env.PROXY;
+    const originalHttpProxy = process.env.HTTP_PROXY;
+    const originalNoProxy = process.env.NO_PROXY;
+    const originalLowerHttpProxy = process.env.http_proxy;
+    const originalLowerNoProxy = process.env.no_proxy;
+
+    delete process.env.PROXY;
+    delete process.env.http_proxy;
+    process.env.HTTP_PROXY = 'http://http-proxy.example.com:8080';
+    process.env.NO_PROXY = 'mcp.example.com';
+    process.env.no_proxy = '';
+
+    try {
+      conn = new MCPConnection({
+        serverName: 'customfetch-standard-empty-lowercase-no-proxy',
+        serverConfig: {
+          type: 'streamable-http',
+          url: 'http://mcp.example.com/mcp',
+        },
+        useSSRFProtection: false,
+      });
+
+      const privateSelf = conn as unknown as {
+        agents: Array<{ constructor: { name: string } }>;
+        createFetchFunction: (
+          getHeaders: () => Record<string, string> | null | undefined,
+          timeout?: number,
+          sseBodyTimeout?: number,
+          configuredSecretHeaderKeys?: ReadonlySet<string>,
+          baseUrl?: string,
+        ) => CustomFetch;
+      };
+      privateSelf.createFetchFunction.call(
+        conn,
+        () => null,
+        undefined,
+        300000,
+        undefined,
+        'http://mcp.example.com/mcp',
+      );
+
+      expect(privateSelf.agents.map((agent) => agent.constructor.name)).toEqual([
+        'ProxyAgent',
+        'ProxyAgent',
+      ]);
+    } finally {
+      if (originalProxy == null) {
+        delete process.env.PROXY;
+      } else {
+        process.env.PROXY = originalProxy;
+      }
+      if (originalHttpProxy == null) {
+        delete process.env.HTTP_PROXY;
+      } else {
+        process.env.HTTP_PROXY = originalHttpProxy;
+      }
+      if (originalNoProxy == null) {
+        delete process.env.NO_PROXY;
+      } else {
+        process.env.NO_PROXY = originalNoProxy;
+      }
+      if (originalLowerHttpProxy == null) {
+        delete process.env.http_proxy;
+      } else {
+        process.env.http_proxy = originalLowerHttpProxy;
+      }
+      if (originalLowerNoProxy == null) {
+        delete process.env.no_proxy;
+      } else {
+        process.env.no_proxy = originalLowerNoProxy;
+      }
+    }
+  });
+
+  it('should recompute proxy dispatchers from the resolved request URL', async () => {
+    const originalEnv = snapshotProxyEnv();
+    const capture = await createHeaderCaptureServer();
+    clearProxyEnv();
+    process.env.HTTP_PROXY = 'http://http-proxy.example.com:8080';
+    process.env.NO_PROXY = '127.0.0.1';
+
+    try {
+      conn = new MCPConnection({
+        serverName: 'customfetch-recompute-proxy-dispatcher',
+        serverConfig: {
+          type: 'streamable-http',
+          url: 'http://mcp.example.com/mcp',
+        },
+        useSSRFProtection: false,
+      });
+
+      const customFetch = createBaseUrlFetch(conn, 'http://mcp.example.com/mcp');
+      const response = await customFetch(capture.url);
+
+      expect(response.status).toBe(200);
+      await response.body?.cancel();
+      expect(capture.receivedRequests).toHaveLength(1);
+      expect(
+        (conn as unknown as { agents: Array<{ constructor: { name: string } }> }).agents.map(
+          (agent) => agent.constructor.name,
+        ),
+      ).toEqual(['ProxyAgent', 'ProxyAgent', 'Agent']);
+    } finally {
+      restoreProxyEnv(originalEnv);
+      await capture.close();
+    }
+  });
+
+  it('should preflight proxied IP literal targets before dispatching network requests', async () => {
+    mockedResolveHostnameSSRF.mockResolvedValueOnce(true);
+
+    conn = new MCPConnection({
+      serverName: 'customfetch-proxy-ssrf',
+      serverConfig: {
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp',
+        proxy: 'http://proxy.example.com:8080',
+      },
+      useSSRFProtection: true,
+    });
+
+    const customFetch = getCustomFetch(conn);
+
+    await expect(customFetch('http://203.0.113.10/mcp')).rejects.toThrow(
+      /proxied MCP request target/,
+    );
+    expect(mockedResolveHostnameSSRF).toHaveBeenCalledWith('203.0.113.10', null, '80');
+  });
+
+  it('should reject proxied hostname targets unless explicitly allowed when SSRF protection is enabled', async () => {
+    mockedResolveHostnameSSRF.mockClear();
+
+    conn = new MCPConnection({
+      serverName: 'customfetch-proxy-ssrf-hostname-denied',
+      serverConfig: {
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp',
+        proxy: 'http://proxy.example.com:8080',
+      },
+      useSSRFProtection: true,
+    });
+
+    const customFetch = getCustomFetch(conn);
+
+    await expect(customFetch('http://hostname-only.example/mcp')).rejects.toThrow(
+      /must be an IP literal or an explicitly allowed host/,
+    );
+    expect(mockedResolveHostnameSSRF).not.toHaveBeenCalled();
+  });
+
+  it('should skip proxied SSRF checks for explicitly allowed target hosts', async () => {
+    const proxy = await createTunnelProxyCaptureServer();
+    mockedResolveHostnameSSRF.mockClear();
+
+    try {
+      conn = new MCPConnection({
+        serverName: 'customfetch-proxy-ssrf-allowed-dns',
+        serverConfig: {
+          type: 'streamable-http',
+          url: 'https://mcp.example.com/mcp',
+          proxy: proxy.url,
+        },
+        useSSRFProtection: true,
+        allowedAddresses: ['proxy-only.internal:80'],
+      });
+
+      const customFetch = getCustomFetch(conn);
+      const response = await customFetch('http://proxy-only.internal/mcp');
+
+      expect(response.status).toBe(200);
+      await response.body?.cancel().catch(() => undefined);
+      expect(proxy.receivedRequests[0]?.method).toBe('CONNECT');
+      expect(mockedResolveHostnameSSRF).not.toHaveBeenCalled();
+    } finally {
+      await proxy.close();
+    }
+  });
+
+  it('should allow NO_PROXY hostname targets to use direct SSRF-safe dispatchers', async () => {
+    const originalEnv = snapshotProxyEnv();
+    const capture = await createHeaderCaptureServer();
+    clearProxyEnv();
+    process.env.HTTP_PROXY = 'http://http-proxy.example.com:8080';
+    process.env.NO_PROXY = 'direct.example.com';
+    mockedResolveHostnameSSRF.mockClear();
+
+    try {
+      conn = new MCPConnection({
+        serverName: 'customfetch-no-proxy-hostname-direct',
+        serverConfig: {
+          type: 'streamable-http',
+          url: 'http://mcp.example.com/mcp',
+        },
+        useSSRFProtection: true,
+      });
+
+      const customFetch = createBaseUrlFetch(conn, 'http://mcp.example.com/mcp');
+      const directUrl = capture.url.replace('127.0.0.1', 'direct.example.com');
+      const response = await customFetch(directUrl);
+
+      expect(response.status).toBe(200);
+      await response.body?.cancel().catch(() => undefined);
+      expect(capture.receivedRequests).toHaveLength(1);
+      expect(mockedResolveHostnameSSRF).not.toHaveBeenCalled();
+    } finally {
+      restoreProxyEnv(originalEnv);
+      await capture.close();
+    }
+  });
 
   it.each<['string' | 'URL' | 'Request']>([['string'], ['URL'], ['Request']])(
     'should accept a %s input without throwing on URL derivation',

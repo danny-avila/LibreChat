@@ -506,15 +506,15 @@ describe('telemetry SDK lifecycle', () => {
     mockShutdown.mockRejectedValueOnce(new Error('flush failed'));
     initializeTelemetry({ OTEL_TRACING_ENABLED: 'true' });
 
-    const taskFn = (registerShutdownTask as jest.Mock).mock.calls.at(-1)?.[1] as
+    const shutdownTaskCalls = (registerShutdownTask as jest.Mock).mock.calls;
+    const taskFn = shutdownTaskCalls[shutdownTaskCalls.length - 1]?.[1] as
       | (() => Promise<void>)
       | undefined;
     expect(taskFn).toBeDefined();
     await taskFn?.();
 
-    expect(emitWarningSpy).toHaveBeenCalledWith(
-      'OpenTelemetry shutdown failed: flush failed',
-      { code: 'LIBRECHAT_OTEL' },
-    );
+    expect(emitWarningSpy).toHaveBeenCalledWith('OpenTelemetry shutdown failed: flush failed', {
+      code: 'LIBRECHAT_OTEL',
+    });
   });
 });

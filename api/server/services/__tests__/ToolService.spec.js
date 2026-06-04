@@ -35,6 +35,9 @@ const mockDomainParser = jest.fn();
 const mockLegacyDomainEncode = jest.fn();
 const mockDecryptMetadata = jest.fn();
 const mockCreateActionTool = jest.fn();
+const mockGetServerConfig = jest.fn();
+const mockResolveConfigServers = jest.fn();
+const mockUserCanUseMCPServers = jest.fn().mockResolvedValue(true);
 jest.mock('~/server/services/Tools/credentials', () => ({
   loadAuthValues: jest.fn().mockResolvedValue({}),
 }));
@@ -69,9 +72,16 @@ jest.mock('~/models', () => ({
 }));
 jest.mock('~/config', () => ({
   getFlowStateManager: jest.fn(() => ({})),
+  getMCPServersRegistry: jest.fn(() => ({
+    getServerConfig: (...args) => mockGetServerConfig(...args),
+  })),
 }));
 jest.mock('~/server/services/MCP', () => ({
-  resolveConfigServers: jest.fn().mockResolvedValue({}),
+  resolveConfigServers: (...args) => mockResolveConfigServers(...args),
+  createMCPPermissionContext: jest.fn((req) => ({
+    canUseServers: (user) => mockUserCanUseMCPServers(user, req),
+  })),
+  userCanUseMCPServers: mockUserCanUseMCPServers,
 }));
 jest.mock('~/cache', () => ({
   getLogStores: jest.fn(() => ({})),
@@ -113,6 +123,11 @@ describe('ToolService - Action Capability Gating', () => {
     });
     mockLoadToolsUtil.mockResolvedValue({ loadedTools: [], toolContextMap: {} });
     mockLoadActionSets.mockResolvedValue([]);
+    mockGetMCPServerTools.mockResolvedValue(null);
+    mockGetCachedTools.mockResolvedValue(null);
+    mockGetUserMCPAuthMap.mockResolvedValue({});
+    mockGetServerConfig.mockResolvedValue(undefined);
+    mockResolveConfigServers.mockResolvedValue({});
   });
 
   describe('resolveAgentCapabilities', () => {
@@ -245,6 +260,28 @@ describe('ToolService - Action Capability Gating', () => {
       expect(callArgs.tools).toContain(regularTool);
     });
 
+    it('should filter MCP tool definitions when user lacks MCP server use permission', async () => {
+      const { userCanUseMCPServers } = require('~/server/services/MCP');
+      userCanUseMCPServers.mockResolvedValueOnce(false);
+
+      const mcpTool = `search${Constants.mcp_delimiter}myserver`;
+      const capabilities = [AgentCapabilities.tools];
+      const req = createMockReq(capabilities);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+
+      await loadAgentTools({
+        req,
+        res: {},
+        agent: { id: 'agent_123', tools: [regularTool, mcpTool] },
+        definitionsOnly: true,
+      });
+
+      expect(mockLoadToolDefinitions).toHaveBeenCalledTimes(1);
+      const [callArgs] = mockLoadToolDefinitions.mock.calls[0];
+      expect(callArgs.tools).toContain(regularTool);
+      expect(callArgs.tools).not.toContain(mcpTool);
+    });
+
     it('should return actionsEnabled in the result', async () => {
       const capabilities = [AgentCapabilities.tools];
       const req = createMockReq(capabilities);
@@ -258,6 +295,92 @@ describe('ToolService - Action Capability Gating', () => {
       });
 
       expect(result.actionsEnabled).toBe(false);
+    });
+
+    it('should not expose cached MCP tool definitions when the registry lookup fails', async () => {
+      const serverName = 'private-server';
+      const mcpTool = `search${Constants.mcp_delimiter}${serverName}`;
+      const capabilities = [AgentCapabilities.tools];
+      const req = createMockReq(capabilities);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockGetServerConfig.mockImplementation(() => {
+        throw new Error('MCPServersRegistry has not been initialized.');
+      });
+      mockGetMCPServerTools.mockResolvedValue({
+        [mcpTool]: {
+          function: {
+            name: mcpTool,
+            description: 'Cached private search',
+            parameters: {},
+          },
+        },
+      });
+      mockLoadToolDefinitions.mockImplementation(async (params, deps) => {
+        const serverTools = await deps.getOrFetchMCPServerTools(params.userId, serverName);
+        return {
+          toolDefinitions: serverTools ? Object.keys(serverTools) : [],
+          toolRegistry: new Map(),
+          hasDeferredTools: false,
+        };
+      });
+
+      const result = await loadAgentTools({
+        req,
+        res: {},
+        agent: { id: 'agent_123', tools: [mcpTool] },
+        definitionsOnly: true,
+      });
+
+      expect(result.toolDefinitions).toEqual([]);
+      expect(mockGetMCPServerTools).not.toHaveBeenCalled();
+    });
+
+    it('should use request-scoped MCP config before falling back to the registry', async () => {
+      const serverName = 'config-server';
+      const mcpTool = `search${Constants.mcp_delimiter}${serverName}`;
+      const capabilities = [AgentCapabilities.tools];
+      const req = createMockReq(capabilities);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockResolveConfigServers.mockResolvedValue({
+        [serverName]: {
+          type: 'streamable-http',
+          url: 'https://config.example.com/mcp',
+          customUserVars: {
+            TOKEN: { title: 'Token', description: 'Token' },
+          },
+        },
+      });
+      mockGetUserMCPAuthMap.mockResolvedValue({
+        [`${Constants.mcp_prefix}${serverName}`]: { TOKEN: 'secret' },
+      });
+      mockGetMCPServerTools.mockResolvedValue({
+        [mcpTool]: {
+          function: {
+            name: mcpTool,
+            description: 'Config search',
+            parameters: {},
+          },
+        },
+      });
+      mockLoadToolDefinitions.mockImplementation(async (params, deps) => {
+        const serverTools = await deps.getOrFetchMCPServerTools(params.userId, serverName);
+        return {
+          toolDefinitions: serverTools ? Object.keys(serverTools) : [],
+          toolRegistry: new Map(),
+          hasDeferredTools: false,
+        };
+      });
+
+      const result = await loadAgentTools({
+        req,
+        res: {},
+        agent: { id: 'agent_123', tools: [mcpTool] },
+        definitionsOnly: true,
+      });
+
+      expect(result.toolDefinitions).toEqual([mcpTool]);
+      expect(mockGetServerConfig).not.toHaveBeenCalled();
+      expect(mockGetMCPServerTools).toHaveBeenCalledWith(req.user.id, serverName);
     });
   });
 

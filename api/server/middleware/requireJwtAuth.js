@@ -1,9 +1,14 @@
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
 const passport = require('passport');
+const { logger } = require('@librechat/data-schemas');
 const {
   isEnabled,
   tenantContextMiddleware,
+  getAuthFailureReason,
+  getAuthFailureErrorName,
+  buildSafeAuthLogContext,
+  formatAuthLogMessage,
   maybeRefreshCloudFrontAuthCookiesMiddleware,
 } = require('@librechat/api');
 
@@ -48,6 +53,66 @@ const requireJwtAuth = (req, res, next) => {
   const useOpenIdJwt =
     tokenProvider === 'openid' && openidJwtAvailable && openIdReuseUserId != null;
   const strategies = useOpenIdJwt ? ['openidJwt', 'jwt'] : ['jwt'];
+  const authLogState = {
+    tokenProvider,
+    openidReuseEnabled,
+    openidJwtAvailable,
+    hasOpenIdReuseUserId: openIdReuseUserId != null,
+  };
+  let primaryFailureReason;
+  let primaryFailureErrorName;
+  let fallbackAttempted = false;
+
+  const logOpenIdFallbackAttempt = ({ fallbackStrategy, reason, errorName, status }) => {
+    primaryFailureReason = reason;
+    primaryFailureErrorName = errorName;
+    fallbackAttempted = true;
+    const message = '[requireJwtAuth] OpenID JWT auth failed; trying fallback';
+    const context = buildSafeAuthLogContext(req, authLogState, {
+      primary_strategy: 'openidJwt',
+      fallback_strategy: fallbackStrategy,
+      fallback_attempted: true,
+      reason,
+      error_name: errorName,
+      status,
+    });
+    logger.debug(formatAuthLogMessage(message, context), context);
+  };
+
+  const logAuthenticationFailure = ({ strategy, info, status, err }) => {
+    const message = '[requireJwtAuth] Authentication failed after all strategies';
+    const context = buildSafeAuthLogContext(req, authLogState, {
+      primary_strategy: strategies[0],
+      fallback_strategy: strategies[1],
+      fallback_attempted: fallbackAttempted,
+      fallback_succeeded: false,
+      attempted_strategies: strategies,
+      final_strategy: strategy,
+      reason: getAuthFailureReason(err, info),
+      error_name: getAuthFailureErrorName(err, info),
+      status: status || 401,
+    });
+    const log = fallbackAttempted ? logger.warn : logger.debug;
+    log.call(logger, formatAuthLogMessage(message, context), context);
+  };
+
+  const logFallbackSuccess = (strategy) => {
+    if (!fallbackAttempted || strategy !== 'jwt') {
+      return;
+    }
+    const message = '[requireJwtAuth] JWT fallback succeeded after OpenID JWT failure';
+    const context = buildSafeAuthLogContext(req, authLogState, {
+      auth_strategy: 'jwt',
+      primary_strategy: 'openidJwt',
+      fallback_strategy: 'jwt',
+      fallback_attempted: true,
+      fallback_succeeded: true,
+      primary_failure_reason: primaryFailureReason,
+      reason: primaryFailureReason,
+      error_name: primaryFailureErrorName,
+    });
+    logger.debug(formatAuthLogMessage(message, context), context);
+  };
 
   const authenticateWithStrategy = (index) => {
     const strategy = strategies[index];
@@ -57,20 +122,34 @@ const requireJwtAuth = (req, res, next) => {
       }
       if (!user) {
         if (index + 1 < strategies.length) {
+          logOpenIdFallbackAttempt({
+            fallbackStrategy: strategies[index + 1],
+            reason: getAuthFailureReason(err, info),
+            errorName: getAuthFailureErrorName(err, info),
+            status: status || 401,
+          });
           return authenticateWithStrategy(index + 1);
         }
+        logAuthenticationFailure({ strategy, info, status, err });
         return res.status(status || 401).json({
           message: info?.message || 'Unauthorized',
         });
       }
       if (strategy === 'openidJwt' && getAuthenticatedUserId(user) !== openIdReuseUserId) {
         if (index + 1 < strategies.length) {
+          logOpenIdFallbackAttempt({
+            fallbackStrategy: strategies[index + 1],
+            reason: 'openid user-id mismatch',
+            status: 401,
+          });
           return authenticateWithStrategy(index + 1);
         }
+        logAuthenticationFailure({ strategy, info, status: 401, err });
         return res.status(401).json({ message: 'Unauthorized' });
       }
       req.user = user;
       req.authStrategy = strategy;
+      logFallbackSuccess(strategy);
       tenantContextMiddleware(req, res, (tenantErr) => {
         if (tenantErr) {
           return next(tenantErr);
