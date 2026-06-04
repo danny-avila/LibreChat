@@ -8,9 +8,7 @@ const baseURL = process.env.E2E_BASE_URL || 'http://localhost:3080';
 const storageStatePath = path.resolve(rootPath, 'e2e/storageState.json');
 const configTemplatePath = path.resolve(rootPath, 'e2e/config/librechat.e2e.yaml');
 const configPath = path.resolve(rootPath, 'e2e/.generated/librechat.e2e.yaml');
-const defaultMockLlmBaseURL = 'http://127.0.0.1:8889/v1';
-const mockLlmPort = getMockLlmPort();
-const mockLlmBaseURL = `http://127.0.0.1:${mockLlmPort}/v1`;
+const fakeModelHookPath = path.resolve(rootPath, 'e2e/setup/fake-model.js');
 const defaultUser = {
   email: 'testuser@example.com',
   name: 'Test User',
@@ -49,7 +47,8 @@ const rateLimitOverrides = {
 
 const mockOverrides = {
   CONFIG_PATH: configPath,
-  MOCK_LLM_PORT: mockLlmPort,
+  /** Loaded in-process by `@librechat/api`'s `createRun` to swap in a fake model. */
+  LIBRECHAT_TEST_RUN_HOOK: fakeModelHookPath,
   OPENAI_API_KEY: 'user_provided',
   TENANT_ISOLATION_STRICT: 'false',
   OPENID_CLIENT_ID: '',
@@ -74,14 +73,6 @@ const preservedCredentialEnvKeys = new Set([
   'SESSION_EXPIRY',
 ]);
 const npxBin = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-
-function getMockLlmPort() {
-  const port = process.env.MOCK_LLM_PORT || '8889';
-  if (!/^\d+$/.test(port)) {
-    throw new Error('MOCK_LLM_PORT must be a numeric port');
-  }
-  return port;
-}
 
 function appURL(pathname = '') {
   const normalizedBaseURL = baseURL.endsWith('/') ? baseURL : `${baseURL}/`;
@@ -181,13 +172,8 @@ function formatDate(date) {
 
 function writeRuntimeMockConfig() {
   const template = fs.readFileSync(configTemplatePath, 'utf8');
-
-  if (!template.includes(defaultMockLlmBaseURL)) {
-    throw new Error(`Expected mock config template to include ${defaultMockLlmBaseURL}`);
-  }
-
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, template.replaceAll(defaultMockLlmBaseURL, mockLlmBaseURL));
+  fs.writeFileSync(configPath, template);
 }
 
 function parseArgs(argv) {
@@ -406,21 +392,6 @@ async function main() {
   try {
     if (options.profile === 'mock') {
       writeRuntimeMockConfig();
-
-      const mockURL = `http://127.0.0.1:${mockLlmPort}/health`;
-      if (!(await waitForURL(mockURL, 1000))) {
-        children.push(
-          spawnProcess(
-            'mock-llm',
-            'node',
-            [path.resolve(rootPath, 'e2e/setup/mock-llm-server.js')],
-            env,
-          ),
-        );
-        if (!(await waitForURL(mockURL, 30000))) {
-          throw new Error(`Mock LLM server did not become ready at ${mockURL}`);
-        }
-      }
     }
 
     if (await waitForURL(baseURL, 1000)) {
