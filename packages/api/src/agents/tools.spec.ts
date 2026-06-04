@@ -61,12 +61,11 @@ function filePathDescription(tool?: LCTool): string {
   return parameters?.properties?.file_path?.description ?? '';
 }
 
-function expectToolDescriptionsWithinAdvisoryLimit(definitions: LCTool[]): void {
-  for (const definition of definitions) {
-    expect(definition.description).toBeDefined();
-    const description = definition.description ?? '';
-    expect(description.length).toBeLessThanOrEqual(TOOL_DESCRIPTION_ADVISORY_MAX_LENGTH);
-  }
+function maxToolDescriptionLength(definitions: LCTool[]): number {
+  return definitions.reduce((max, definition) => {
+    const length = definition.description?.length ?? Number.POSITIVE_INFINITY;
+    return Math.max(max, length);
+  }, 0);
 }
 
 describe('buildToolSet', () => {
@@ -302,8 +301,12 @@ describe('registerCodeExecutionTools', () => {
         enableToolOutputReferences: false,
       });
 
-      expectToolDescriptionsWithinAdvisoryLimit(skillAwareWithRefs.toolDefinitions);
-      expectToolDescriptionsWithinAdvisoryLimit(codeOnlyWithoutRefs.toolDefinitions);
+      expect(
+        maxToolDescriptionLength([
+          ...skillAwareWithRefs.toolDefinitions,
+          ...codeOnlyWithoutRefs.toolDefinitions,
+        ]),
+      ).toBeLessThanOrEqual(TOOL_DESCRIPTION_ADVISORY_MAX_LENGTH);
     });
   });
 
@@ -591,9 +594,13 @@ describe('registerFileAuthoringTools', () => {
       includeSkillFileInstructions: true,
     });
 
-    expectToolDescriptionsWithinAdvisoryLimit(skillAware.toolDefinitions);
-    expectToolDescriptionsWithinAdvisoryLimit(codeOnly.toolDefinitions);
-    expectToolDescriptionsWithinAdvisoryLimit(upgraded.toolDefinitions);
+    expect(
+      maxToolDescriptionLength([
+        ...skillAware.toolDefinitions,
+        ...codeOnly.toolDefinitions,
+        ...upgraded.toolDefinitions,
+      ]),
+    ).toBeLessThanOrEqual(TOOL_DESCRIPTION_ADVISORY_MAX_LENGTH);
   });
 
   it('distinguishes host file authoring definitions from user tools with matching names', () => {
