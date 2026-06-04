@@ -1359,7 +1359,7 @@
   "com_ui_project_create_error": "Failed to create project",
   "com_ui_project_delete_error": "Failed to delete project",
   "com_ui_project_name": "Project name",
-  "com_ui_project_name_placeholder": "Copenhagen Trip",
+  "com_ui_project_name_placeholder": "New project",
   "com_ui_project_not_found": "Project not found",
   "com_ui_project_rename_error": "Failed to rename project",
   "com_ui_project_update_error": "Failed to update project assignment",
