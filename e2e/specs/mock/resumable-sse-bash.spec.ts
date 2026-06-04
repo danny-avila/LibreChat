@@ -131,6 +131,7 @@ async function installStreamProbe(page: Page, faultMode: FaultMode) {
             reproWindow.__libreChatSseReproFaultHadArgs = this.responseText.includes('bash_tool');
             reproWindow.__libreChatSseReproFaultInjected = true;
             this.dispatchEvent(new Event('error'));
+            this.abort();
           };
           const armIdleTimer = () => {
             if (reproWindow.__libreChatSseReproFaulted || this.responseText.includes('bash_tool')) {
@@ -170,6 +171,7 @@ async function installStreamProbe(page: Page, faultMode: FaultMode) {
             window.setTimeout(() => {
               reproWindow.__libreChatSseReproFaultInjected = true;
               this.dispatchEvent(new Event('error'));
+              this.abort();
             }, 400);
           });
         }

@@ -15,7 +15,7 @@ const { FakeListChatModel } = require('@langchain/core/utils/testing');
  */
 const MOCK_REPLY = process.env.MOCK_LLM_REPLY || 'E2E mock reply: pong';
 const CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_CHUNK_DELAY_MS) || 10;
-const TOOL_ARGS_DELAY_MS = Number(process.env.MOCK_LLM_TOOL_ARGS_DELAY_MS) || CHUNK_DELAY_MS;
+const TOOL_ARGS_DELAY_MS = Number(process.env.MOCK_LLM_TOOL_ARGS_DELAY_MS) || 3000;
 
 const CREATE_SKILL_MARKER = 'E2E_CREATE_SKILL:';
 const EDIT_SKILL_MARKER = 'E2E_EDIT_SKILL:';
