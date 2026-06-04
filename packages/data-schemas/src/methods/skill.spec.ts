@@ -645,6 +645,55 @@ describe('Skill CRUD methods', () => {
     expect(fetched?.allowedTools).toEqual(['execute_code']);
   });
 
+  it('getAuthorSkillByName resolves only the matching author and tenant', async () => {
+    const sharedName = 'author-owned-lookup';
+    const ownerSkill = await Skill.create({
+      name: sharedName,
+      description: 'Owner tenant skill.',
+      body: 'owner body',
+      frontmatter: {},
+      author: owner._id,
+      authorName: owner.name ?? 'Skill Owner',
+      tenantId: 'tenant-a',
+      version: 1,
+      source: 'inline',
+      fileCount: 0,
+    });
+    await Skill.create({
+      name: sharedName,
+      description: 'Other author skill.',
+      body: 'other body',
+      frontmatter: {},
+      author: other._id,
+      authorName: other.name ?? 'Other',
+      tenantId: 'tenant-a',
+      version: 1,
+      source: 'inline',
+      fileCount: 0,
+    });
+    await Skill.create({
+      name: sharedName,
+      description: 'Owner different tenant skill.',
+      body: 'tenant b body',
+      frontmatter: {},
+      author: owner._id,
+      authorName: owner.name ?? 'Skill Owner',
+      tenantId: 'tenant-b',
+      version: 1,
+      source: 'inline',
+      fileCount: 0,
+    });
+
+    const fetched = await methods.getAuthorSkillByName({
+      name: sharedName,
+      author: owner._id,
+      tenantId: 'tenant-a',
+    });
+
+    expect(fetched?._id.toString()).toBe(ownerSkill._id.toString());
+    expect(fetched?.body).toBe('owner body');
+  });
+
   it('preferModelInvocable picks the model-invocable doc on same-name collision (does NOT filter on userInvocable)', async () => {
     /* Same-name collision scenario the model paths must handle: an older
        user-invocable variant and a newer model-only variant

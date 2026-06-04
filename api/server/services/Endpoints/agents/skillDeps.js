@@ -128,6 +128,18 @@ function grantSkillOwner({ req, skillId }) {
   });
 }
 
+function getAuthorSkillByName({ req, name }) {
+  const author = req.user?._id ?? req.user?.id;
+  if (!author) {
+    return null;
+  }
+  return db.getAuthorSkillByName({
+    name,
+    author,
+    tenantId: resolveRequestTenantId(req),
+  });
+}
+
 /**
  * Builds the `skillPrimedIdsByName` map threaded through
  * `buildAgentToolContext`. Centralized here so every runtime route shares
@@ -244,6 +256,7 @@ function enrichLoadedToolsWithAgentContext({ result, req, ctx = {}, fallback = {
 /** Skill-related properties for ToolExecuteOptions (stable references, allocated once). */
 const skillToolDeps = {
   getSkillByName: db.getSkillByName,
+  getAuthorSkillByName,
   createSkill: db.createSkill,
   updateSkill: db.updateSkill,
   deleteSkill: db.deleteSkill,

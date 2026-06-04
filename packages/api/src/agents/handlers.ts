@@ -90,6 +90,20 @@ export interface ToolExecuteOptions {
      */
     disableModelInvocation?: boolean;
   } | null>;
+  /**
+   * Loads a skill by name when the current user is the author. This is a
+   * narrow recovery path for freshly-authored skills whose runtime catalog
+   * snapshot has not caught up yet; normal skill resolution still goes
+   * through `accessibleSkillIds`.
+   */
+  getAuthorSkillByName?: (params: { req: ServerRequest; name: string }) => Promise<{
+    body: string;
+    name: string;
+    _id: Types.ObjectId;
+    version: number;
+    fileCount: number;
+    disableModelInvocation?: boolean;
+  } | null>;
   /** Creates a skill from a tool-authored SKILL.md body. */
   createSkill?: (data: {
     name: string;
@@ -579,23 +593,38 @@ function parseSkillAuthoringPath(filePath: string): ParsedSkillAuthoringPath | s
   };
 }
 
-function validateSkillMdContent(content: string, skillName: string): string | null {
-  const parsed = parseFrontmatter(content);
-  if (!parsed.name || !parsed.description) {
-    return `${SKILL_MD} must include YAML frontmatter with "name" and "description".`;
+function deriveSkillDescription(body: string, skillName: string): string {
+  const fallback = `Use this skill for ${skillName.replace(/-/g, ' ')}.`;
+  const headingCandidates: string[] = [];
+  for (const line of body.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const withoutMarkdown = trimmed
+      .replace(/^#{1,6}\s+/, '')
+      .replace(/^[*>-]\s+/, '')
+      .trim();
+    if (!withoutMarkdown) {
+      continue;
+    }
+    if (/^#{1,6}\s+/.test(trimmed)) {
+      headingCandidates.push(withoutMarkdown);
+      continue;
+    }
+    return truncateMiddle(withoutMarkdown.replace(/\s+/g, ' '), 180);
   }
-  if (parsed.name !== skillName) {
-    return `${SKILL_MD} frontmatter name "${parsed.name}" must match path skill name "${skillName}".`;
-  }
-  if (parsed.invalidBooleans.length > 0) {
-    return parsed.invalidBooleans
-      .map((key) => `"${key}" in ${SKILL_MD} frontmatter must be a boolean`)
-      .join('; ');
-  }
-  return null;
+  const heading = headingCandidates[0];
+  return heading ? truncateMiddle(heading.replace(/\s+/g, ' '), 180) : fallback;
 }
 
-function extractSkillFrontmatterBlock(content: string): string | null {
+function splitSkillFrontmatter(content: string):
+  | {
+      block: string;
+      body: string;
+    }
+  | { error: string }
+  | null {
   const trimmed = content.trim();
   if (!trimmed.startsWith('---')) {
     return null;
@@ -603,9 +632,94 @@ function extractSkillFrontmatterBlock(content: string): string | null {
   const afterOpening = trimmed.slice(3);
   const closingIdx = afterOpening.indexOf('\n---');
   if (closingIdx === -1) {
+    return { error: `Invalid ${SKILL_MD} frontmatter: missing closing "---".` };
+  }
+  const afterClosing = afterOpening.slice(closingIdx + '\n---'.length);
+  return {
+    block: afterOpening.slice(0, closingIdx),
+    body: afterClosing.startsWith('\n') ? afterClosing.slice(1) : afterClosing,
+  };
+}
+
+function buildSkillMdContent(frontmatter: Record<string, unknown>, body: string): string {
+  const dumped = yaml.dump(frontmatter, { lineWidth: -1 }).trimEnd();
+  const normalizedBody = body.trimStart();
+  return `---\n${dumped}\n---\n${normalizedBody}`;
+}
+
+function normalizeSkillMdContent(
+  content: string,
+  skillName: string,
+): { status: 'success'; content: string } | { status: 'error'; error: string } {
+  const split = splitSkillFrontmatter(content);
+  if (split && 'error' in split) {
+    return { status: 'error', error: split.error };
+  }
+
+  let normalizedContent = content;
+  if (!split) {
+    normalizedContent = buildSkillMdContent(
+      {
+        name: skillName,
+        description: deriveSkillDescription(content, skillName),
+      },
+      content,
+    );
+  } else {
+    const structured = parseStructuredSkillFrontmatter(content);
+    if (structured.error) {
+      return { status: 'error', error: structured.error };
+    }
+    const frontmatter = { ...(structured.frontmatter ?? {}) };
+    const parsed = parseFrontmatter(content);
+    const frontmatterName =
+      typeof frontmatter.name === 'string' ? frontmatter.name : parsed.name || undefined;
+    if (frontmatterName && frontmatterName !== skillName) {
+      return {
+        status: 'error',
+        error: `${SKILL_MD} frontmatter name "${frontmatterName}" must match path skill name "${skillName}".`,
+      };
+    }
+    frontmatter.name = skillName;
+    const frontmatterDescription =
+      typeof frontmatter.description === 'string'
+        ? frontmatter.description
+        : parsed.description || undefined;
+    frontmatter.description =
+      frontmatterDescription || deriveSkillDescription(split.body, skillName);
+    normalizedContent = buildSkillMdContent(frontmatter, split.body);
+  }
+
+  const parsed = parseFrontmatter(normalizedContent);
+  if (!parsed.name || !parsed.description) {
+    return {
+      status: 'error',
+      error: `${SKILL_MD} must include YAML frontmatter with "name" and "description".`,
+    };
+  }
+  if (parsed.name !== skillName) {
+    return {
+      status: 'error',
+      error: `${SKILL_MD} frontmatter name "${parsed.name}" must match path skill name "${skillName}".`,
+    };
+  }
+  if (parsed.invalidBooleans.length > 0) {
+    return {
+      status: 'error',
+      error: parsed.invalidBooleans
+        .map((key) => `"${key}" in ${SKILL_MD} frontmatter must be a boolean`)
+        .join('; '),
+    };
+  }
+  return { status: 'success', content: normalizedContent };
+}
+
+function extractSkillFrontmatterBlock(content: string): string | null {
+  const split = splitSkillFrontmatter(content);
+  if (!split || 'error' in split) {
     return null;
   }
-  return afterOpening.slice(0, closingIdx);
+  return split.block;
 }
 
 function parseStructuredSkillFrontmatter(
@@ -1419,6 +1533,38 @@ async function resolveSkillForAuthoring(
   return await getSkillByName(skillName, accessibleIds, { preferModelInvocable: true });
 }
 
+async function resolveAuthorSkillForCurrentUser({
+  skillName,
+  mergedConfigurable,
+  sourceConfigurable,
+  options,
+  req,
+}: {
+  skillName: string;
+  mergedConfigurable: Record<string, unknown>;
+  sourceConfigurable?: Record<string, unknown>;
+  options: ToolExecuteOptions;
+  req?: ServerRequest;
+}): Promise<AuthoringSkill | null> {
+  if (!req || !options.getAuthorSkillByName) {
+    return null;
+  }
+  const skill = await options.getAuthorSkillByName({ req, name: skillName });
+  if (!skill) {
+    return null;
+  }
+  rememberAuthoredSkill([mergedConfigurable, sourceConfigurable], skill, { prime: false });
+  return skill;
+}
+
+function isDuplicateSkillNameError(error: unknown): boolean {
+  const maybeError = error as { code?: string | number; message?: string } | undefined;
+  return (
+    maybeError?.code === 11000 ||
+    /skill with name .* already exists/i.test(maybeError?.message ?? '')
+  );
+}
+
 function isSkillAuthoringAvailable(mergedConfigurable: Record<string, unknown>): boolean {
   return mergedConfigurable.skillAuthoringAvailable === true;
 }
@@ -1549,7 +1695,9 @@ function mergeToolConfigurables(
 function rememberAuthoredSkill(
   configurables: Array<Record<string, unknown> | undefined>,
   skill: { _id: Types.ObjectId; name: string },
+  options: { prime?: boolean } = {},
 ): void {
+  const prime = options.prime !== false;
   const idString = skill._id.toString();
   for (const configurable of configurables) {
     if (!configurable) {
@@ -1566,10 +1714,12 @@ function rememberAuthoredSkill(
       accessibleIds.push(skill._id);
     }
 
-    const primedIds =
-      (configurable.skillPrimedIdsByName as Record<string, string> | undefined) ?? {};
-    primedIds[skill.name] = idString;
-    configurable.skillPrimedIdsByName = primedIds;
+    if (prime) {
+      const primedIds =
+        (configurable.skillPrimedIdsByName as Record<string, string> | undefined) ?? {};
+      primedIds[skill.name] = idString;
+      configurable.skillPrimedIdsByName = primedIds;
+    }
 
     const activeSkillNames = configurable.activeSkillNames as Set<string> | undefined;
     if (activeSkillNames) {
@@ -1808,10 +1958,11 @@ async function writeSkillMd({
   skillName: string;
   content: string;
 }): AuthoringResult {
-  const validationError = validateSkillMdContent(content, skillName);
-  if (validationError) {
-    return errorResult(tc, validationError);
+  const normalized = normalizeSkillMdContent(content, skillName);
+  if (normalized.status === 'error') {
+    return errorResult(tc, normalized.error);
   }
+  content = normalized.content;
   const structured = parseStructuredSkillFrontmatter(content);
   if (structured.error) {
     return errorResult(tc, structured.error);
@@ -1830,16 +1981,27 @@ async function writeSkillMd({
       return errorResult(tc, 'Authentication required to create a skill.');
     }
     const parsed = parseFrontmatter(content);
-    const result = await options.createSkill({
-      name: parsed.name,
-      description: parsed.description,
-      body: content,
-      ...(structured.frontmatter !== undefined ? { frontmatter: structured.frontmatter } : {}),
-      author: author.author,
-      authorName: author.authorName,
-      ...(parsed.alwaysApply !== undefined ? { alwaysApply: parsed.alwaysApply } : {}),
-      ...(author.tenantId ? { tenantId: author.tenantId } : {}),
-    });
+    let result: Awaited<ReturnType<NonNullable<ToolExecuteOptions['createSkill']>>>;
+    try {
+      result = await options.createSkill({
+        name: parsed.name,
+        description: parsed.description,
+        body: content,
+        ...(structured.frontmatter !== undefined ? { frontmatter: structured.frontmatter } : {}),
+        author: author.author,
+        authorName: author.authorName,
+        ...(parsed.alwaysApply !== undefined ? { alwaysApply: parsed.alwaysApply } : {}),
+        ...(author.tenantId ? { tenantId: author.tenantId } : {}),
+      });
+    } catch (error) {
+      if (isDuplicateSkillNameError(error)) {
+        return errorResult(
+          tc,
+          `Skill "${skillName}" already exists for this author. It cannot be created again or overwritten blindly. Read or enable the existing skill, then use edit_file for targeted changes, or choose a new skill name.`,
+        );
+      }
+      throw error;
+    }
     try {
       await options.grantSkillOwner({ req, skillId: result.skill._id });
     } catch (error) {
@@ -2122,14 +2284,26 @@ async function handleCreateFileCall(
     return errorResult(tc, 'Skill file authoring is not available for this agent.');
   }
 
-  const skill = await resolveSkillForAuthoring(parsed.skillName, mergedConfigurable, options);
+  let skill = await resolveSkillForAuthoring(parsed.skillName, mergedConfigurable, options);
+  if (!skill) {
+    skill = await resolveAuthorSkillForCurrentUser({
+      skillName: parsed.skillName,
+      mergedConfigurable,
+      sourceConfigurable,
+      options,
+      req,
+    });
+  }
   const hiddenDenied = hiddenSkillAuthoringDenied(tc, skill, parsed.skillName, mergedConfigurable);
   if (hiddenDenied) {
     return hiddenDenied;
   }
   if (parsed.relativePath === SKILL_MD) {
     if (skill && !overwrite) {
-      return errorResult(tc, 'File already exists. Pass overwrite: true to replace.');
+      return errorResult(
+        tc,
+        `Skill "${parsed.skillName}" already exists. Use edit_file for targeted changes, or pass overwrite: true only if replacing the entire ${parsed.displayPath} is intended.`,
+      );
     }
     return await writeSkillMd({
       tc,
@@ -2219,7 +2393,15 @@ async function handleEditFileCall(
     return errorResult(tc, 'Skill file authoring is not available for this agent.');
   }
 
-  const skill = await resolveSkillForAuthoring(parsed.skillName, mergedConfigurable, options);
+  let skill = await resolveSkillForAuthoring(parsed.skillName, mergedConfigurable, options);
+  if (!skill) {
+    skill = await resolveAuthorSkillForCurrentUser({
+      skillName: parsed.skillName,
+      mergedConfigurable,
+      options,
+      req,
+    });
+  }
   if (!skill) {
     return errorResult(tc, `Skill "${parsed.skillName}" not found or not accessible.`);
   }
@@ -2316,7 +2498,7 @@ async function handleReadFileCall(
   }
 
   const codeEnvAvailable = mergedConfigurable?.codeEnvAvailable === true;
-  const accessibleIds = (mergedConfigurable?.accessibleSkillIds as Types.ObjectId[]) ?? [];
+  let accessibleIds = (mergedConfigurable?.accessibleSkillIds as Types.ObjectId[]) ?? [];
 
   /**
    * Short-circuit absolute code-env paths: the path can never be a skill
@@ -2385,10 +2567,31 @@ async function handleReadFileCall(
     }
   }
 
-  const skillPrimedIdsByName =
+  let skillPrimedIdsByName =
     (mergedConfigurable?.skillPrimedIdsByName as Record<string, string> | undefined) ?? {};
-  const primedIdString = skillPrimedIdsByName[skillName];
-  const isPrimedThisTurn = primedIdString != null;
+  let primedIdString = skillPrimedIdsByName[skillName];
+  let isPrimedThisTurn = primedIdString != null;
+  const refreshSkillReadScope = () => {
+    accessibleIds = (mergedConfigurable?.accessibleSkillIds as Types.ObjectId[]) ?? [];
+    skillPrimedIdsByName =
+      (mergedConfigurable?.skillPrimedIdsByName as Record<string, string> | undefined) ?? {};
+    primedIdString = skillPrimedIdsByName[skillName];
+    isPrimedThisTurn = primedIdString != null;
+  };
+  let recoveredAuthorSkill: AuthoringSkill | null | undefined;
+  const recoverAuthorSkill = async () => {
+    if (recoveredAuthorSkill !== undefined) {
+      return recoveredAuthorSkill;
+    }
+    recoveredAuthorSkill = await resolveAuthorSkillForCurrentUser({
+      skillName,
+      mergedConfigurable,
+      options,
+      req,
+    });
+    refreshSkillReadScope();
+    return recoveredAuthorSkill;
+  };
   /**
    * `accessibleSkillIds` is the resolver's normal output (admin
    * capability AND ACL access AND ephemeral badge / persisted
@@ -2396,7 +2599,15 @@ async function handleReadFileCall(
    * resolvable through `skillPrimedIdsByName`, even when the run started
    * with an empty accessible set for a first-time creator.
    */
-  const skillsEffectivelyEnabled = accessibleIds.length > 0 || isPrimedThisTurn;
+  let skillsEffectivelyEnabled = accessibleIds.length > 0 || isPrimedThisTurn;
+  if (
+    !skillsEffectivelyEnabled &&
+    explicitSkillNamespace &&
+    isSkillAuthoringAvailable(mergedConfigurable)
+  ) {
+    await recoverAuthorSkill();
+    skillsEffectivelyEnabled = accessibleIds.length > 0 || isPrimedThisTurn;
+  }
 
   /**
    * Skills not in scope (admin capability off, ephemeral badge off, or
@@ -2443,15 +2654,18 @@ async function handleReadFileCall(
    */
   const activeSkillNames = mergedConfigurable?.activeSkillNames as Set<string> | undefined;
   if (activeSkillNames && !activeSkillNames.has(skillName) && !isPrimedThisTurn) {
-    if (codeEnvAvailable && !explicitSkillNamespace) {
-      return handleSandboxFileFallback(tc, args.file_path, options, req);
+    const recovered = await recoverAuthorSkill();
+    if (!recovered) {
+      if (codeEnvAvailable && !explicitSkillNamespace) {
+        return handleSandboxFileFallback(tc, args.file_path, options, req);
+      }
+      return {
+        toolCallId: tc.id,
+        status: 'error',
+        content: '',
+        errorMessage: `Skill "${skillName}" not found or not accessible`,
+      };
     }
-    return {
-      toolCallId: tc.id,
-      status: 'error',
-      content: '',
-      errorMessage: `Skill "${skillName}" not found or not accessible`,
-    };
   }
 
   if (!getSkillByName) {
@@ -2473,11 +2687,9 @@ async function handleReadFileCall(
      (rather than relying on mongoose's string auto-cast in `$in` queries)
      keeps the value correct for any future consumer that compares with
      `.equals()` or `===`. */
-  const lookupAccessibleIds = isPrimedThisTurn
-    ? [new Types.ObjectId(primedIdString)]
-    : accessibleIds;
+  const lookupAccessibleIds = primedIdString ? [new Types.ObjectId(primedIdString)] : accessibleIds;
   const lookupOptions: { preferUserInvocable?: boolean; preferModelInvocable?: boolean } =
-    isPrimedThisTurn ? {} : { preferModelInvocable: true };
+    primedIdString ? {} : { preferModelInvocable: true };
   const skill = await getSkillByName(skillName, lookupAccessibleIds, lookupOptions);
   if (!skill) {
     return {
