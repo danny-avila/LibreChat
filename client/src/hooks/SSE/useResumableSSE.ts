@@ -749,7 +749,8 @@ export default function useResumableSSE(
   /**
    * Start generation (POST request that returns streamId)
    * Uses request.post which has axios interceptors for automatic token refresh.
-   * Retries up to 3 times on network errors with exponential backoff.
+   * Retries transient network failures and startup readiness responses.
+   * Readiness retries honor Retry-After when the server provides it.
    */
   const startGeneration = useCallback(
     async (currentSubmission: TSubmission): Promise<string | null> => {
@@ -783,8 +784,11 @@ export default function useResumableSSE(
               ? getRetryAfterDelay(error, fallbackDelay)
               : fallbackDelay;
             const reason = isServerNotReady ? 'Server not ready' : 'Network error';
+            const maxAttempts = isServerNotReady
+              ? START_GENERATION_MAX_RETRIES
+              : START_GENERATION_NETWORK_RETRIES;
             console.log(
-              `[ResumableSSE] ${reason} starting generation, retrying in ${delay}ms (attempt ${attempt}/${START_GENERATION_MAX_RETRIES})`,
+              `[ResumableSSE] ${reason} starting generation, retrying in ${delay}ms (attempt ${attempt}/${maxAttempts})`,
             );
             await new Promise((resolve) => setTimeout(resolve, delay));
             continue;
