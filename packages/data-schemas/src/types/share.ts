@@ -47,7 +47,8 @@ export type SharedMessage = Pick<
   | 'unfinished'
   | 'error'
   | 'finish_reason'
-  | 'feedback'
+  | 'manualSkills'
+  | 'alwaysAppliedSkills'
 > & {
   model?: string;
   files?: SharedFile[];

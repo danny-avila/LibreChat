@@ -45,6 +45,9 @@ describe('Share Methods', () => {
         clientId: String,
         plugin: mongoose.Schema.Types.Mixed,
         metadata: mongoose.Schema.Types.Mixed,
+        feedback: mongoose.Schema.Types.Mixed,
+        manualSkills: [String],
+        alwaysAppliedSkills: [String],
         parentMessageId: String,
         attachments: [mongoose.Schema.Types.Mixed],
         files: [mongoose.Schema.Types.Mixed],
@@ -424,6 +427,9 @@ describe('Share Methods', () => {
         clientId: 'client-id',
         plugin: { latest: 'internal' },
         metadata: { codeEnvRef: 'internal-ref' },
+        feedback: { rating: 'thumbsDown', tag: { key: 'inaccurate' }, text: 'private note' },
+        manualSkills: ['research'],
+        alwaysAppliedSkills: ['brand-voice'],
         files: [
           {
             file_id: 'file123',
@@ -431,9 +437,9 @@ describe('Share Methods', () => {
             type: 'image/png',
             width: 100,
             height: 100,
+            filepath: '/images/upload.png',
             user: userId,
             tenantId: 'tenant-a',
-            filepath: '/private/upload.png',
             storageKey: 'private/upload.png',
             source: 's3',
           },
@@ -444,7 +450,7 @@ describe('Share Methods', () => {
             type: 'web_search',
             web_search: { results: [{ title: 'Cited source', link: 'https://example.com' }] },
             filename: 'result.json',
-            filepath: '/private/result.json',
+            filepath: '/images/result.json',
             storageKey: 'private/result.json',
             metadata: { codeEnvRef: 'internal-ref' },
           },
@@ -469,25 +475,30 @@ describe('Share Methods', () => {
       expect(shared).not.toHaveProperty('clientId');
       expect(shared).not.toHaveProperty('plugin');
       expect(shared).not.toHaveProperty('metadata');
+      // Private owner feedback is not render data and must not leak publicly.
+      expect(shared).not.toHaveProperty('feedback');
+      // Skill badges are non-sensitive UI metadata and should still render.
+      expect(shared?.manualSkills).toEqual(['research']);
+      expect(shared?.alwaysAppliedSkills).toEqual(['brand-voice']);
 
-      // User-uploaded files are preserved (render data) but storage internals are stripped.
+      // User-uploaded files keep their render URL (filepath/preview) but drop storage internals.
       const file = shared?.files?.[0];
       expect(file).toMatchObject({ filename: 'upload.png', type: 'image/png' });
-      expect(file).not.toHaveProperty('filepath');
+      expect(file?.filepath).toBe('/images/upload.png');
       expect(file).not.toHaveProperty('storageKey');
       expect(file).not.toHaveProperty('user');
       expect(file).not.toHaveProperty('tenantId');
       expect(file).not.toHaveProperty('source');
 
-      // Tool-call attachments keep their correlation id and payload so citations
-      // still render, while storage-only fields are removed.
+      // Tool-call attachments keep their correlation id, payload, and render URL so
+      // citations still render, while storage-only fields are removed.
       const attachment = shared?.attachments?.[0];
       expect(attachment).toMatchObject({
         toolCallId: 'call_abc',
         type: 'web_search',
         web_search: { results: [{ title: 'Cited source', link: 'https://example.com' }] },
+        filepath: '/images/result.json',
       });
-      expect(attachment).not.toHaveProperty('filepath');
       expect(attachment).not.toHaveProperty('storageKey');
       expect(attachment).not.toHaveProperty('metadata');
     });

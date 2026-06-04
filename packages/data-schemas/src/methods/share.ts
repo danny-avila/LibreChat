@@ -44,9 +44,11 @@ function anonymizeConvo(conversation: Partial<t.IConversation> & Partial<t.IShar
 
 /**
  * Storage- and identity-internal fields that must never be exposed through a
- * public shared link. Everything else on a file/attachment (filename, type,
- * dimensions, previews, and tool-call payloads such as `toolCallId` and search
- * results) is render data the shared view needs, so it is preserved.
+ * public shared link. Everything else on a file/attachment — including the
+ * `filepath`/`preview` render URLs, dimensions, and tool-call payloads such as
+ * `toolCallId` and search results — is render data the shared view needs, so it
+ * is preserved. (`storageKey` is the raw object key and is dropped; `filepath`
+ * is the URL the share renderer actually loads, so it is kept.)
  */
 const SENSITIVE_SHARED_FILE_FIELDS = new Set([
   '_id',
@@ -55,7 +57,6 @@ const SENSITIVE_SHARED_FILE_FIELDS = new Set([
   'tenantId',
   'storageRegion',
   'storageKey',
-  'filepath',
   'temp_file_id',
   'message',
   'source',
@@ -151,7 +152,8 @@ function anonymizeMessages(messages: t.IMessage[], newConvoId: string): t.Shared
       unfinished: message.unfinished,
       error: message.error,
       finish_reason: message.finish_reason,
-      feedback: message.feedback,
+      ...(message.manualSkills && { manualSkills: message.manualSkills }),
+      ...(message.alwaysAppliedSkills && { alwaysAppliedSkills: message.alwaysAppliedSkills }),
       ...(files && { files }),
       ...(attachments && { attachments }),
     };
