@@ -1,7 +1,7 @@
 import * as cdk from 'aws-cdk-lib';
 import { Duration } from 'aws-cdk-lib';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
-import * as cw_actions from 'aws-cdk-lib/aws-cloudwatch-actions';
+import * as cwActions from 'aws-cdk-lib/aws-cloudwatch-actions';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as ecsPatterns from 'aws-cdk-lib/aws-ecs-patterns';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
@@ -29,10 +29,9 @@ export class MonitoringStack extends cdk.Stack {
   }
 
   private createSNSTopic() {
-    const topic = new sns.Topic(this, 'AlarmTopic', {
+    return new sns.Topic(this, 'AlarmTopic', {
       topicName: `${cdk.Stack.of(this).stackName}-alarms`,
     });
-    return topic;
   }
 
   private createAlarms(
@@ -53,7 +52,7 @@ export class MonitoringStack extends cdk.Stack {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
     });
-    unhealthyHostsAlarm.addAlarmAction(new cw_actions.SnsAction(topic));
+    unhealthyHostsAlarm.addAlarmAction(new cwActions.SnsAction(topic));
 
     const elb4xxAlarm = new cloudwatch.Alarm(this, 'AlbElb4xx', {
       alarmName: `ai-assistant-alb-elb-4xx`,
@@ -72,7 +71,7 @@ export class MonitoringStack extends cdk.Stack {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
     });
-    elb4xxAlarm.addAlarmAction(new cw_actions.SnsAction(topic));
+    elb4xxAlarm.addAlarmAction(new cwActions.SnsAction(topic));
 
     const elb5xxAlarm = new cloudwatch.Alarm(this, 'AlbElb5xx', {
       alarmName: `ai-assistant-alb-elb-5xx`,
@@ -91,7 +90,7 @@ export class MonitoringStack extends cdk.Stack {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
     });
-    elb5xxAlarm.addAlarmAction(new cw_actions.SnsAction(topic));
+    elb5xxAlarm.addAlarmAction(new cwActions.SnsAction(topic));
 
     const target5xxAlarm = new cloudwatch.Alarm(this, 'AlbTarget5xx', {
       alarmName: `ai-assistant-alb-target-5xx`,
@@ -111,7 +110,7 @@ export class MonitoringStack extends cdk.Stack {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
     });
-    target5xxAlarm.addAlarmAction(new cw_actions.SnsAction(topic));
+    target5xxAlarm.addAlarmAction(new cwActions.SnsAction(topic));
 
     if (props.rdsInstanceIdentifier) {
       this.createRdsAlarms(topic, props.rdsInstanceIdentifier);
@@ -144,7 +143,7 @@ export class MonitoringStack extends cdk.Stack {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_OR_EQUAL_TO_THRESHOLD,
     });
-    rdsFreeStorageAlarm.addAlarmAction(new cw_actions.SnsAction(topic));
+    rdsFreeStorageAlarm.addAlarmAction(new cwActions.SnsAction(topic));
 
     const rdsCpuAlarm = new cloudwatch.Alarm(this, 'RdsCpu', {
       alarmName: 'ai-assistant-rds-cpu',
@@ -161,7 +160,7 @@ export class MonitoringStack extends cdk.Stack {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
     });
-    rdsCpuAlarm.addAlarmAction(new cw_actions.SnsAction(topic));
+    rdsCpuAlarm.addAlarmAction(new cwActions.SnsAction(topic));
   }
 
   private createBedrockAlarms(topic: sns.Topic) {
@@ -179,7 +178,7 @@ export class MonitoringStack extends cdk.Stack {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
     });
-    bedrockThrottlesAlarm.addAlarmAction(new cw_actions.SnsAction(topic));
+    bedrockThrottlesAlarm.addAlarmAction(new cwActions.SnsAction(topic));
 
     const bedrockServerErrorsAlarm = new cloudwatch.Alarm(this, 'BedrockServerErrors', {
       alarmName: 'ai-assistant-bedrock-server-errors',
@@ -195,38 +194,27 @@ export class MonitoringStack extends cdk.Stack {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
     });
-    bedrockServerErrorsAlarm.addAlarmAction(new cw_actions.SnsAction(topic));
+    bedrockServerErrorsAlarm.addAlarmAction(new cwActions.SnsAction(topic));
 
     for (const [id, metricName, stat, alarmName] of [
       ['BedrockInvocationLatency', 'InvocationLatency', 'p50', 'ai-assistant-bedrock-invocation-latency-p50'],
       ['BedrockModelInvocations', 'ModelInvocations', 'Sum', 'ai-assistant-bedrock-model-invocations'],
     ] as const) {
-      new cloudwatch.CfnAlarm(this, id, {
+      const alarm = new cloudwatch.AnomalyDetectionAlarm(this, id, {
         alarmName,
-        comparisonOperator: 'GreaterThanUpperThreshold',
+        metric: new cloudwatch.Metric({
+          namespace: 'AWS/Bedrock',
+          metricName,
+          period: Duration.minutes(1),
+          statistic: stat,
+        }),
+        stdDevs: 2,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_UPPER_THRESHOLD,
         evaluationPeriods: 5,
         datapointsToAlarm: 3,
-        treatMissingData: 'notBreaching',
-        metrics: [
-          {
-            id: 'm1',
-            metricStat: {
-              metric: {
-                namespace: 'AWS/Bedrock',
-                metricName,
-              },
-              period: 60,
-              stat,
-            },
-          },
-          {
-            id: 'ad1',
-            expression: 'ANOMALY_DETECTION_BAND(m1, 2)',
-          },
-        ],
-        thresholdMetricId: 'ad1',
-        alarmActions: [topic.topicArn],
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       });
+      alarm.addAlarmAction(new cwActions.SnsAction(topic));
     }
   }
 
@@ -235,33 +223,22 @@ export class MonitoringStack extends cdk.Stack {
       ['AlbLatencyP95', 'p95', 'ai-assistant-alb-latency-p95'],
       ['AlbLatencyP50', 'p50', 'ai-assistant-alb-latency-p50'],
     ] as const) {
-      new cloudwatch.CfnAlarm(this, id, {
+      const alarm = new cloudwatch.AnomalyDetectionAlarm(this, id, {
         alarmName,
-        comparisonOperator: 'GreaterThanUpperThreshold',
+        metric: new cloudwatch.Metric({
+          namespace: 'AWS/ApplicationELB',
+          metricName: 'TargetResponseTime',
+          period: Duration.minutes(1),
+          statistic: stat,
+          dimensionsMap: { LoadBalancer: loadBalancer.loadBalancerArn },
+        }),
+        stdDevs: 2,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_UPPER_THRESHOLD,
         evaluationPeriods: 5,
         datapointsToAlarm: 3,
-        treatMissingData: 'notBreaching',
-        metrics: [
-          {
-            id: 'm1',
-            metricStat: {
-              metric: {
-                namespace: 'AWS/ApplicationELB',
-                metricName: 'TargetResponseTime',
-                dimensions: [{ name: 'LoadBalancer', value: loadBalancer.loadBalancerArn }],
-              },
-              period: 60,
-              stat,
-            },
-          },
-          {
-            id: 'ad1',
-            expression: 'ANOMALY_DETECTION_BAND(m1, 2)',
-          },
-        ],
-        thresholdMetricId: 'ad1',
-        alarmActions: [topic.topicArn],
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       });
+      alarm.addAlarmAction(new cwActions.SnsAction(topic));
     }
   }
 
@@ -281,7 +258,7 @@ export class MonitoringStack extends cdk.Stack {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
     });
-    currConnectionsAlarm.addAlarmAction(new cw_actions.SnsAction(topic));
+    currConnectionsAlarm.addAlarmAction(new cwActions.SnsAction(topic));
   }
 
   private createDocDbAlarms(topic: sns.Topic, clusterIdentifier: string) {
@@ -302,39 +279,28 @@ export class MonitoringStack extends cdk.Stack {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
     });
-    docDbCpuAlarm.addAlarmAction(new cw_actions.SnsAction(topic));
+    docDbCpuAlarm.addAlarmAction(new cwActions.SnsAction(topic));
 
     for (const [id, metricName] of [
       ['DocDbReadLatency', 'ReadLatency'],
       ['DocDbWriteLatency', 'WriteLatency'],
     ] as const) {
-      new cloudwatch.CfnAlarm(this, id, {
+      const alarm = new cloudwatch.AnomalyDetectionAlarm(this, id, {
         alarmName: `ai-assistant-docdb-${metricName.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase()}`,
-        comparisonOperator: 'GreaterThanUpperThreshold',
+        metric: new cloudwatch.Metric({
+          namespace: 'AWS/DocDB',
+          metricName,
+          period: Duration.minutes(5),
+          statistic: 'Average',
+          dimensionsMap: docDbDimensions,
+        }),
+        stdDevs: 2,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_UPPER_THRESHOLD,
         evaluationPeriods: 5,
         datapointsToAlarm: 4,
-        treatMissingData: 'notBreaching',
-        metrics: [
-          {
-            id: 'm1',
-            metricStat: {
-              metric: {
-                namespace: 'AWS/DocDB',
-                metricName,
-                dimensions: [{ name: 'DBClusterIdentifier', value: clusterIdentifier }],
-              },
-              period: 300,
-              stat: 'Average',
-            },
-          },
-          {
-            id: 'ad1',
-            expression: 'ANOMALY_DETECTION_BAND(m1, 2)',
-          },
-        ],
-        thresholdMetricId: 'ad1',
-        alarmActions: [topic.topicArn],
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       });
+      alarm.addAlarmAction(new cwActions.SnsAction(topic));
     }
   }
 }
