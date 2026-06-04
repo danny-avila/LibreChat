@@ -47,6 +47,7 @@ describe('Share Methods', () => {
         metadata: mongoose.Schema.Types.Mixed,
         parentMessageId: String,
         attachments: [mongoose.Schema.Types.Mixed],
+        files: [mongoose.Schema.Types.Mixed],
         content: [mongoose.Schema.Types.Mixed],
       },
       { timestamps: true },
@@ -345,7 +346,7 @@ describe('Share Methods', () => {
         expect(msg.messageId).toMatch(/^msg_/); // Should be anonymized with msg_ prefix
         expect(msg.messageId).not.toBe(messages[0].messageId); // Should be different from original
         expect(msg.conversationId).toBe(result.conversationId);
-        expect(msg.user).toBeUndefined(); // User should be removed
+        expect((msg as Record<string, unknown>).user).toBeUndefined(); // User should be removed
       });
     });
 
@@ -406,7 +407,7 @@ describe('Share Methods', () => {
       ).toBe(result?.conversationId);
     });
 
-    test('should strip internal message and attachment fields from shared output', async () => {
+    test('strips storage-internal fields while preserving shared render data', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
       const conversationId = `conv_${nanoid()}`;
       const shareId = `share_${nanoid()}`;
@@ -423,15 +424,28 @@ describe('Share Methods', () => {
         clientId: 'client-id',
         plugin: { latest: 'internal' },
         metadata: { codeEnvRef: 'internal-ref' },
-        attachments: [
+        files: [
           {
             file_id: 'file123',
-            filename: 'safe.pdf',
-            type: 'application/pdf',
-            width: 640,
-            height: 480,
-            filepath: '/private/safe.pdf',
-            storageKey: 'private/safe.pdf',
+            filename: 'upload.png',
+            type: 'image/png',
+            width: 100,
+            height: 100,
+            user: userId,
+            tenantId: 'tenant-a',
+            filepath: '/private/upload.png',
+            storageKey: 'private/upload.png',
+            source: 's3',
+          },
+        ],
+        attachments: [
+          {
+            toolCallId: 'call_abc',
+            type: 'web_search',
+            web_search: { results: [{ title: 'Cited source', link: 'https://example.com' }] },
+            filename: 'result.json',
+            filepath: '/private/result.json',
+            storageKey: 'private/result.json',
             metadata: { codeEnvRef: 'internal-ref' },
           },
         ],
@@ -445,7 +459,7 @@ describe('Share Methods', () => {
       });
 
       const result = await shareMethods.getSharedMessages(shareId);
-      const shared = result?.messages[0] as (t.IMessage & Record<string, unknown>) | undefined;
+      const shared = result?.messages[0];
 
       expect(shared?.text).toBe('safe text');
       // Non-assistant model and internal message fields must not be disclosed.
@@ -456,15 +470,23 @@ describe('Share Methods', () => {
       expect(shared).not.toHaveProperty('plugin');
       expect(shared).not.toHaveProperty('metadata');
 
-      // Attachments keep render-relevant fields but drop internal storage fields.
-      const attachment = shared?.attachments?.[0] as Record<string, unknown> | undefined;
+      // User-uploaded files are preserved (render data) but storage internals are stripped.
+      const file = shared?.files?.[0];
+      expect(file).toMatchObject({ filename: 'upload.png', type: 'image/png' });
+      expect(file).not.toHaveProperty('filepath');
+      expect(file).not.toHaveProperty('storageKey');
+      expect(file).not.toHaveProperty('user');
+      expect(file).not.toHaveProperty('tenantId');
+      expect(file).not.toHaveProperty('source');
+
+      // Tool-call attachments keep their correlation id and payload so citations
+      // still render, while storage-only fields are removed.
+      const attachment = shared?.attachments?.[0];
       expect(attachment).toMatchObject({
-        filename: 'safe.pdf',
-        type: 'application/pdf',
-        width: 640,
-        height: 480,
+        toolCallId: 'call_abc',
+        type: 'web_search',
+        web_search: { results: [{ title: 'Cited source', link: 'https://example.com' }] },
       });
-      expect(attachment).not.toHaveProperty('file_id');
       expect(attachment).not.toHaveProperty('filepath');
       expect(attachment).not.toHaveProperty('storageKey');
       expect(attachment).not.toHaveProperty('metadata');

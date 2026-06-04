@@ -20,6 +20,40 @@ export interface ShareServiceError extends Error {
   code: string;
 }
 
+/**
+ * A file or attachment as exposed through a public shared link: storage- and
+ * identity-internal fields are stripped, but render-relevant data (including
+ * dynamic tool-call payloads keyed by tool name) is preserved.
+ */
+export type SharedFile = Record<string, unknown>;
+
+/**
+ * Public, anonymized projection of a message returned by a shared link. Only
+ * render-relevant fields are surfaced; internal fields (user, endpoint,
+ * conversationSignature, clientId, plugin(s), metadata, etc.) are omitted.
+ */
+export type SharedMessage = Pick<
+  IMessage,
+  | 'messageId'
+  | 'parentMessageId'
+  | 'conversationId'
+  | 'sender'
+  | 'text'
+  | 'content'
+  | 'isCreatedByUser'
+  | 'createdAt'
+  | 'updatedAt'
+  | 'tokenCount'
+  | 'unfinished'
+  | 'error'
+  | 'finish_reason'
+  | 'feedback'
+> & {
+  model?: string;
+  files?: SharedFile[];
+  attachments?: SharedFile[];
+};
+
 export interface SharedLinksResult {
   links: Array<{
     shareId: string;
@@ -33,7 +67,7 @@ export interface SharedLinksResult {
 
 export interface SharedMessagesResult {
   conversationId: string;
-  messages: Array<IMessage>;
+  messages: Array<SharedMessage>;
   shareId: string;
   title?: string;
   createdAt?: Date;

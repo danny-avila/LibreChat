@@ -42,61 +42,57 @@ function anonymizeConvo(conversation: Partial<t.IConversation> & Partial<t.IShar
   return newConvo;
 }
 
-type SharedAttachment = {
-  filename?: string;
-  type?: string;
-  width?: number;
-  height?: number;
-};
-
-type MessageAttachment = SharedAttachment & {
-  messageId?: string;
-  conversationId?: string;
-};
-
-function getString(value: unknown): string | undefined {
-  return typeof value === 'string' ? value : undefined;
-}
-
-function getNumber(value: unknown): number | undefined {
-  return typeof value === 'number' ? value : undefined;
-}
+/**
+ * Storage- and identity-internal fields that must never be exposed through a
+ * public shared link. Everything else on a file/attachment (filename, type,
+ * dimensions, previews, and tool-call payloads such as `toolCallId` and search
+ * results) is render data the shared view needs, so it is preserved.
+ */
+const SENSITIVE_SHARED_FILE_FIELDS = new Set([
+  '_id',
+  '__v',
+  'user',
+  'tenantId',
+  'storageRegion',
+  'storageKey',
+  'filepath',
+  'temp_file_id',
+  'message',
+  'source',
+  'filterSource',
+  'context',
+  'embedded',
+  'usage',
+  'metadata',
+]);
 
 /**
- * Allowlist the safe, render-relevant fields of an attachment, dropping internal
- * fields (e.g. `filepath`, `storageKey`, `metadata`) that must not be exposed
- * through a public shared link.
+ * Strip storage/identity-internal fields from a file or attachment while keeping
+ * render-relevant data (including tool-call payloads keyed by tool name).
  */
-function sanitizeAttachment(value: unknown): SharedAttachment | null {
+function sanitizeSharedFile(value: unknown): t.SharedFile | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return null;
   }
 
-  const source = value as Record<string, unknown>;
-  const filename = getString(source.filename);
-  const type = getString(source.type);
-  const width = getNumber(source.width);
-  const height = getNumber(source.height);
-  const attachment: SharedAttachment = {
-    ...(filename && { filename }),
-    ...(type && { type }),
-    ...(width !== undefined && { width }),
-    ...(height !== undefined && { height }),
-  };
+  const result: t.SharedFile = {};
+  for (const [key, fieldValue] of Object.entries(value as Record<string, unknown>)) {
+    if (!SENSITIVE_SHARED_FILE_FIELDS.has(key)) {
+      result[key] = fieldValue;
+    }
+  }
 
-  return Object.keys(attachment).length > 0 ? attachment : null;
+  return Object.keys(result).length > 0 ? result : null;
 }
 
-function sanitizeAttachments(
-  attachments: t.IMessage['attachments'],
-): SharedAttachment[] | undefined {
-  if (!Array.isArray(attachments)) {
+function sanitizeSharedFiles(files: unknown): t.SharedFile[] | undefined {
+  if (!Array.isArray(files)) {
     return undefined;
   }
 
-  const sanitized = attachments
-    .map(sanitizeAttachment)
-    .filter((attachment): attachment is SharedAttachment => attachment != null);
+  const sanitized = files
+    .map(sanitizeSharedFile)
+    .filter((file): file is t.SharedFile => file != null);
 
   return sanitized.length > 0 ? sanitized : undefined;
 }
@@ -113,11 +109,14 @@ function anonymizeSharedModel(model?: string): string | undefined {
 }
 
 /**
- * Build the public, anonymized view of shared messages. Uses an allowlist so that
- * internal message fields (endpoint, conversationSignature, clientId, plugin(s),
- * metadata, etc.) and internal attachment fields are never exposed in a shared link.
+ * Build the public, anonymized view of shared messages. An allowlist of
+ * render-relevant fields keeps internal message fields (endpoint,
+ * conversationSignature, clientId, plugin(s), metadata, etc.) out of the
+ * payload, while user files and tool-call attachments are sanitized field by
+ * field so render data (uploaded files, `toolCallId`, search results, generated
+ * outputs) is preserved without leaking storage internals.
  */
-function anonymizeMessages(messages: t.IMessage[], newConvoId: string): t.IMessage[] {
+function anonymizeMessages(messages: t.IMessage[], newConvoId: string): t.SharedMessage[] {
   if (!Array.isArray(messages)) {
     return [];
   }
@@ -127,13 +126,12 @@ function anonymizeMessages(messages: t.IMessage[], newConvoId: string): t.IMessa
     const newMessageId = anonymizeMessageId(message.messageId);
     idMap.set(message.messageId, newMessageId);
 
-    const anonymizedAttachments = sanitizeAttachments(message.attachments)?.map(
-      (attachment): MessageAttachment => ({
-        ...attachment,
-        messageId: newMessageId,
-        conversationId: newConvoId,
-      }),
-    );
+    const attachments = sanitizeSharedFiles(message.attachments)?.map((attachment) => ({
+      ...attachment,
+      messageId: newMessageId,
+      conversationId: newConvoId,
+    }));
+    const files = sanitizeSharedFiles(message.files);
     const model = anonymizeSharedModel(message.model);
 
     return {
@@ -154,8 +152,9 @@ function anonymizeMessages(messages: t.IMessage[], newConvoId: string): t.IMessa
       error: message.error,
       finish_reason: message.finish_reason,
       feedback: message.feedback,
-      ...(anonymizedAttachments && { attachments: anonymizedAttachments }),
-    } as t.IMessage;
+      ...(files && { files }),
+      ...(attachments && { attachments }),
+    };
   });
 }
 
