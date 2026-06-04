@@ -1,5 +1,5 @@
 import { renderHook, act } from '@testing-library/react';
-import { Constants, LocalStorageKeys, QueryKeys } from 'librechat-data-provider';
+import { Constants, LocalStorageKeys, QueryKeys, request } from 'librechat-data-provider';
 import type { TSubmission } from 'librechat-data-provider';
 
 type SSEEventListener = (e: Partial<MessageEvent> & { responseCode?: number }) => void;
@@ -189,6 +189,8 @@ describe('useResumableSSE - 404 error path', () => {
     mockInvalidateQueries.mockClear();
     mockRemoveQueries.mockClear();
     mockFindAll.mockClear();
+    (request.post as jest.Mock).mockReset();
+    (request.post as jest.Mock).mockResolvedValue({ streamId: 'stream-123' });
   });
 
   const seedDraft = (conversationId: string) => {
@@ -459,6 +461,41 @@ describe('useResumableSSE - 404 error path', () => {
 
     expect(mockTitleHandler).toHaveBeenCalledWith(titleEvent);
     expect(mockStepHandler).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('retries chat start while the server reports startup readiness pending', async () => {
+    (request.post as jest.Mock)
+      .mockRejectedValueOnce({
+        response: {
+          status: 503,
+          data: { code: 'SERVER_NOT_READY' },
+          headers: { 'retry-after': '0' },
+        },
+      })
+      .mockResolvedValueOnce({ streamId: 'stream-ready' });
+
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(request.post).toHaveBeenCalledTimes(2);
+    expect(mockSSEInstances).toHaveLength(1);
+    expect(mockSSEInstances[0].stream).toHaveBeenCalledTimes(1);
+    expect(mockErrorHandler).not.toHaveBeenCalled();
     unmount();
   });
 

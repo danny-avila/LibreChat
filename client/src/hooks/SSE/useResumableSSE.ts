@@ -40,6 +40,52 @@ type ChatHelpers = Pick<
 >;
 
 const MAX_RETRIES = 5;
+const START_GENERATION_MAX_RETRIES = 8;
+const START_GENERATION_NETWORK_RETRIES = 3;
+const SERVER_NOT_READY_CODE = 'SERVER_NOT_READY';
+
+type StartGenerationError = {
+  code?: string;
+  response?: {
+    status?: number;
+    data?: {
+      code?: string;
+    };
+    headers?: Record<string, string | number | string[] | undefined>;
+  };
+};
+
+const toStartGenerationError = (error: unknown): StartGenerationError | undefined =>
+  error != null && typeof error === 'object' ? (error as StartGenerationError) : undefined;
+
+const isRetryableNetworkError = (error: unknown) => {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const { code } = toStartGenerationError(error) ?? {};
+  return code === 'ERR_NETWORK' || code === 'ERR_INTERNET_DISCONNECTED';
+};
+
+const isServerNotReadyError = (error: unknown) => {
+  const candidate = toStartGenerationError(error);
+  return (
+    candidate?.response?.status === 503 && candidate.response?.data?.code === SERVER_NOT_READY_CODE
+  );
+};
+
+const getRetryAfterDelay = (error: unknown, fallbackDelay: number) => {
+  const headers = toStartGenerationError(error)?.response?.headers;
+  const rawValue = headers?.['retry-after'] ?? headers?.['Retry-After'];
+  const retryAfter = Array.isArray(rawValue) ? rawValue[0] : rawValue;
+  const seconds = typeof retryAfter === 'number' ? retryAfter : Number(retryAfter);
+
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return fallbackDelay;
+  }
+
+  return Math.min(seconds * 1000, 30000);
+};
 
 const hasConcreteConversationId = (conversationId?: string | null) =>
   !!conversationId &&
@@ -715,10 +761,9 @@ export default function useResumableSSE(
 
       const url = payloadData.server;
 
-      const maxRetries = 3;
       let lastError: unknown = null;
 
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      for (let attempt = 1; attempt <= START_GENERATION_MAX_RETRIES; attempt++) {
         try {
           // Use request.post which handles auth token refresh via axios interceptors
           const data = (await request.post(url, payload)) as { streamId: string };
@@ -726,16 +771,21 @@ export default function useResumableSSE(
           return data.streamId;
         } catch (error) {
           lastError = error;
-          // Check if it's a network error (retry) vs server error (don't retry)
-          const isNetworkError =
-            error instanceof Error &&
-            'code' in error &&
-            (error.code === 'ERR_NETWORK' || error.code === 'ERR_INTERNET_DISCONNECTED');
+          const isNetworkError = isRetryableNetworkError(error);
+          const isServerNotReady = isServerNotReadyError(error);
+          const shouldRetryNetwork =
+            isNetworkError && attempt < START_GENERATION_NETWORK_RETRIES;
+          const shouldRetryServerNotReady =
+            isServerNotReady && attempt < START_GENERATION_MAX_RETRIES;
 
-          if (isNetworkError && attempt < maxRetries) {
-            const delay = Math.min(1000 * Math.pow(2, attempt - 1), 8000);
+          if (shouldRetryNetwork || shouldRetryServerNotReady) {
+            const fallbackDelay = Math.min(1000 * Math.pow(2, attempt - 1), 8000);
+            const delay = isServerNotReady
+              ? getRetryAfterDelay(error, fallbackDelay)
+              : fallbackDelay;
+            const reason = isServerNotReady ? 'Server not ready' : 'Network error';
             console.log(
-              `[ResumableSSE] Network error starting generation, retrying in ${delay}ms (attempt ${attempt}/${maxRetries})`,
+              `[ResumableSSE] ${reason} starting generation, retrying in ${delay}ms (attempt ${attempt}/${START_GENERATION_MAX_RETRIES})`,
             );
             await new Promise((resolve) => setTimeout(resolve, delay));
             continue;

@@ -56,6 +56,30 @@ const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default 
 const app = express();
 let serverReady = false;
 
+const SERVER_NOT_READY_CODE = 'SERVER_NOT_READY';
+const CHAT_START_RETRY_AFTER_SECONDS = '1';
+
+const rejectChatStartsUntilReady = (req, res, next) => {
+  if (serverReady || req.method !== 'POST' || req.path === '/abort') {
+    return next();
+  }
+
+  res.set('Retry-After', CHAT_START_RETRY_AFTER_SECONDS);
+  return res.status(503).json({
+    code: SERVER_NOT_READY_CODE,
+    error: 'Server is still starting. Please retry shortly.',
+  });
+};
+
+const configureGenerationStreams = () => {
+  const streamServices = createStreamServices();
+  GenerationJobManager.configure({
+    ...streamServices,
+    cleanupOnComplete: !isEnabled(process.env.STREAM_KEEP_COMPLETED_JOBS),
+  });
+  GenerationJobManager.initialize();
+};
+
 const startServer = async () => {
   const { metricsMiddleware, metricsRouter } = createMetrics();
   if (!process.env.METRICS_SECRET) {
@@ -214,6 +238,7 @@ const startServer = async () => {
   app.use('/images/', createValidateImageRequest(appConfig.secureImageLinks), routes.staticRoute);
   app.use('/api/share', preAuthTenantMiddleware, routes.share);
   app.use('/api/roles', routes.roles);
+  app.use('/api/agents/chat', rejectChatStartsUntilReady);
   app.use('/api/agents', routes.agents);
   app.use('/api/banner', routes.banner);
   app.use('/api/memories', routes.memories);
@@ -251,6 +276,8 @@ const startServer = async () => {
   /** Error handler (must be last - Express identifies error middleware by its 4-arg signature) */
   app.use(ErrorController);
 
+  configureGenerationStreams();
+
   const server = app.listen(port, host, async (err) => {
     if (err) {
       logger.error('Failed to start server:', err);
@@ -279,14 +306,6 @@ const startServer = async () => {
         await initializeOAuthReconnectManager();
       });
       await checkMigrations();
-
-      // Configure stream services (auto-detects Redis from USE_REDIS env var)
-      const streamServices = createStreamServices();
-      GenerationJobManager.configure({
-        ...streamServices,
-        cleanupOnComplete: !isEnabled(process.env.STREAM_KEEP_COMPLETED_JOBS),
-      });
-      GenerationJobManager.initialize();
 
       const inspectFlags = process.execArgv.some((arg) => arg.startsWith('--inspect'));
       if (inspectFlags || isEnabled(process.env.MEM_DIAG)) {
