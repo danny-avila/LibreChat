@@ -15,24 +15,6 @@ jest.mock('@librechat/api', () => ({
   checkAccess: jest.fn(),
   countFormattedMessageTokens: jest.fn(() => 42),
   countTokens: jest.fn((text) => Math.ceil(String(text ?? '').length / 4)),
-  prependFileContext: (formattedMessage, fileContext) => {
-    if (!fileContext) {
-      return;
-    }
-    if (typeof formattedMessage.content === 'string') {
-      formattedMessage.content = `${fileContext}\n${formattedMessage.content}`;
-      return;
-    }
-    if (!Array.isArray(formattedMessage.content)) {
-      return;
-    }
-    const textPart = formattedMessage.content.find((part) => part.type === 'text');
-    if (textPart) {
-      textPart.text = `${fileContext}\n${textPart.text}`;
-      return;
-    }
-    formattedMessage.content.unshift({ type: 'text', text: fileContext });
-  },
   initializeAgent: jest.fn(),
   createMemoryProcessor: jest.fn(),
   isMemoryAgentEnabled: jest.fn((config) => {
