@@ -13,8 +13,84 @@ import { cn } from '~/utils';
 
 type FileAuthoringToolName = 'create_file' | 'edit_file';
 
+type ToolCallArgs = string | Record<string, unknown> | undefined;
+
+interface TextEditPreview {
+  oldText: string;
+  newText: string;
+}
+
 function hasDiff(output: string): boolean {
   return /\n@@\s/.test(output) || output.includes('\n--- ') || output.includes('\n+++ ');
+}
+
+function parseArgsObject(args: ToolCallArgs): Record<string, unknown> | undefined {
+  if (typeof args === 'object' && args !== null) {
+    return args;
+  }
+  if (typeof args !== 'string') {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(args);
+    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+function textValue(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function editPreviewLines(prefix: '-' | '+', text: string): string {
+  return text
+    .split('\n')
+    .map((line) => `${prefix}${line}`)
+    .join('\n');
+}
+
+function formatEditPreview(edits: TextEditPreview[]): string {
+  return edits
+    .map((edit, index) => {
+      const suffix = edits.length > 1 ? ` ${index + 1}` : '';
+      return [
+        `--- old_text${suffix}`,
+        `+++ new_text${suffix}`,
+        '@@',
+        editPreviewLines('-', edit.oldText),
+        editPreviewLines('+', edit.newText),
+      ].join('\n');
+    })
+    .join('\n\n');
+}
+
+function buildEditArgsPreview(args: ToolCallArgs): string {
+  const parsed = parseArgsObject(args);
+  if (Array.isArray(parsed?.edits) && parsed.edits.length > 0) {
+    const edits = parsed.edits
+      .map((edit): TextEditPreview | undefined => {
+        if (typeof edit !== 'object' || edit === null || Array.isArray(edit)) {
+          return undefined;
+        }
+        const entry = edit as Record<string, unknown>;
+        const oldText = textValue(entry.old_text);
+        const newText = textValue(entry.new_text);
+        return oldText || newText ? { oldText, newText } : undefined;
+      })
+      .filter((edit): edit is TextEditPreview => !!edit);
+    return formatEditPreview(edits);
+  }
+
+  const oldText = parsed ? textValue(parsed.old_text) : parseJsonField(args, 'old_text');
+  const newText = parsed ? textValue(parsed.new_text) : parseJsonField(args, 'new_text');
+  if (!oldText && !newText) {
+    return '';
+  }
+  return formatEditPreview([{ oldText, newText }]);
 }
 
 export default function FileAuthoringCall({
@@ -40,12 +116,14 @@ export default function FileAuthoringCall({
   const isCreate = toolName === 'create_file';
   const filePath = useMemo(() => parseJsonField(args, 'file_path'), [args]);
   const authoredContent = useMemo(() => parseJsonField(args, 'content'), [args]);
+  const editArgsPreview = useMemo(() => buildEditArgsPreview(args), [args]);
   const fileName = filePath.split('/').pop() || filePath;
   const fileLang = useMemo(() => langFromPath(filePath), [filePath]);
   const outputIsDiff = hasDiff(output);
-  const preview = outputIsDiff || !isCreate ? output : authoredContent || output;
+  const preview = isCreate ? authoredContent || output : output || editArgsPreview;
+  const previewIsDiff = outputIsDiff || (!isCreate && !!editArgsPreview && !output);
   let previewLang = 'plaintext';
-  if (outputIsDiff) {
+  if (previewIsDiff) {
     previewLang = 'diff';
   } else if (isCreate && authoredContent) {
     previewLang = fileLang;
@@ -90,7 +168,7 @@ export default function FileAuthoringCall({
         <div className="overflow-hidden" ref={expandRef}>
           {!!preview && (
             <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
-              <CodeWindowHeader language={outputIsDiff ? 'diff' : fileName} code={preview} />
+              <CodeWindowHeader language={previewIsDiff ? 'diff' : fileName} code={preview} />
               <pre className="max-h-[300px] overflow-auto bg-surface-chat p-4 font-mono text-xs dark:bg-surface-primary-alt">
                 <code className={`hljs language-${previewLang} !whitespace-pre`}>
                   {highlighted ?? preview}
