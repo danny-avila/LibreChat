@@ -773,8 +773,7 @@ export default function useResumableSSE(
           lastError = error;
           const isNetworkError = isRetryableNetworkError(error);
           const isServerNotReady = isServerNotReadyError(error);
-          const shouldRetryNetwork =
-            isNetworkError && attempt < START_GENERATION_NETWORK_RETRIES;
+          const shouldRetryNetwork = isNetworkError && attempt < START_GENERATION_NETWORK_RETRIES;
           const shouldRetryServerNotReady =
             isServerNotReady && attempt < START_GENERATION_MAX_RETRIES;
 
