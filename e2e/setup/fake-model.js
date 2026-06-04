@@ -1,3 +1,7 @@
+const { AIMessageChunk } = require('@langchain/core/messages');
+const { ChatGenerationChunk } = require('@langchain/core/outputs');
+const { FakeListChatModel } = require('@langchain/core/utils/testing');
+
 /**
  * In-process fake LLM for credential-free e2e tests. Loaded by `@librechat/api`'s
  * `createRun` via the `LIBRECHAT_TEST_RUN_HOOK` env var (set by the mock
@@ -11,16 +15,21 @@
  */
 const MOCK_REPLY = process.env.MOCK_LLM_REPLY || 'E2E mock reply: pong';
 const CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_CHUNK_DELAY_MS) || 10;
+const TOOL_ARGS_DELAY_MS = Number(process.env.MOCK_LLM_TOOL_ARGS_DELAY_MS) || CHUNK_DELAY_MS;
 
 const CREATE_SKILL_MARKER = 'E2E_CREATE_SKILL:';
 const EDIT_SKILL_MARKER = 'E2E_EDIT_SKILL:';
+const BASH_TOOL_MARKER = 'E2E_BASH_TOOL:';
+const BASH_TOOL_STREAM_MARKER = 'E2E_BASH_TOOL_STREAM:';
 const CREATE_FILE_AUTHORING_FINAL_TEXT = 'E2E file authoring complete';
 const EDIT_FILE_AUTHORING_FINAL_TEXT = 'E2E file edit complete';
+const BASH_TOOL_FINAL_TEXT = 'E2E bash tool complete';
 const CREATE_FILE_TOOL_NAME = 'create_file';
 const EDIT_FILE_TOOL_NAME = 'edit_file';
 const BASH_TOOL_NAME = 'bash_tool';
 const CREATE_SKILL_TOOL_CALL_ID = 'call_e2e_create_skill';
 const EDIT_SKILL_TOOL_CALL_ID = 'call_e2e_edit_skill';
+const BASH_TOOL_CALL_ID = 'call_e2e_bash_tool';
 const SKILL_DESCRIPTION =
   'Use this skill to verify LibreChat skill file authoring in mock end-to-end tests.';
 const EDITED_SKILL_DESCRIPTION =
@@ -135,6 +144,123 @@ function buildEditSkillArgs(skillName) {
   };
 }
 
+function getRequestedCommand(text) {
+  const markerIndex = text.indexOf(BASH_TOOL_MARKER);
+  if (markerIndex === -1) {
+    return '';
+  }
+  const afterMarker = text.slice(markerIndex + BASH_TOOL_MARKER.length);
+  return afterMarker.split('\n')[0]?.trim() ?? '';
+}
+
+function getRequestedStreamedCommand(text) {
+  const markerIndex = text.indexOf(BASH_TOOL_STREAM_MARKER);
+  if (markerIndex === -1) {
+    return '';
+  }
+  const afterMarker = text.slice(markerIndex + BASH_TOOL_STREAM_MARKER.length);
+  return afterMarker.split('\n')[0]?.trim() ?? '';
+}
+
+class ChunkedToolArgsFakeModel extends FakeListChatModel {
+  constructor({ responses, sleep, toolDelay, toolCall }) {
+    super({ responses, sleep, emitCustomEvent: true });
+    this.toolDelay = toolDelay;
+    this.toolCall = toolCall;
+    this.addedToolCall = false;
+  }
+
+  splitText(text) {
+    return text.split(/(?<=\s+)|(?=\s+)/);
+  }
+
+  createResponseChunk(text, toolCallChunks, responseMetadata) {
+    return new ChatGenerationChunk({
+      text,
+      generationInfo: {},
+      message: new AIMessageChunk({
+        content: text,
+        tool_call_chunks: toolCallChunks,
+        response_metadata: responseMetadata,
+        additional_kwargs: toolCallChunks
+          ? {
+              tool_calls: toolCallChunks.map((toolCall) => ({
+                index: toolCall.index ?? 0,
+                id: toolCall.id ?? '',
+                type: 'function',
+                function: {
+                  name: toolCall.name ?? '',
+                  arguments: toolCall.args ?? '',
+                },
+              })),
+            }
+          : undefined,
+      }),
+    });
+  }
+
+  sleepForToolInput() {
+    if (!this.toolDelay) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => setTimeout(resolve, this.toolDelay));
+  }
+
+  async *_streamResponseChunks(_messages, options, runManager) {
+    const response = this._currentResponse();
+    this._incrementResponse();
+
+    if (this.emitCustomEvent) {
+      await runManager?.handleCustomEvent('some_test_event', {
+        someval: true,
+      });
+    }
+
+    for await (const chunk of this.splitText(response)) {
+      await this._sleepIfRequested();
+      if (options.thrownErrorString != null && options.thrownErrorString) {
+        throw new Error(options.thrownErrorString);
+      }
+      const responseChunk = super._createResponseChunk(chunk);
+      yield responseChunk;
+      void runManager?.handleLLMNewToken(chunk);
+    }
+
+    if (!this.toolCall || this.addedToolCall) {
+      return;
+    }
+
+    this.addedToolCall = true;
+    const args = JSON.stringify(this.toolCall.args);
+    const firstBreak = Math.max(1, Math.floor(args.length / 3));
+    const secondBreak = Math.max(firstBreak + 1, Math.floor((args.length * 2) / 3));
+    const pieces = [
+      args.slice(0, firstBreak),
+      args.slice(firstBreak, secondBreak),
+      args.slice(secondBreak),
+    ];
+    for (let index = 0; index < pieces.length; index++) {
+      await this.sleepForToolInput();
+      const isFinal = index === pieces.length - 1;
+      const responseChunk = this.createResponseChunk(
+        '',
+        [
+          {
+            name: this.toolCall.name,
+            args: pieces[index],
+            id: this.toolCall.id,
+            index: 0,
+            type: 'tool_call_chunk',
+          },
+        ],
+        isFinal ? { finish_reason: 'tool_calls' } : undefined,
+      );
+      yield responseChunk;
+      void runManager?.handleLLMNewToken('');
+    }
+  }
+}
+
 /**
  * Pick the fake-model script for a skill file-authoring turn. The graph runs two
  * model turns: turn 1 streams the (empty) preamble and emits the tool call, the
@@ -166,7 +292,47 @@ function fileAuthoringResponses(operation, toolNames) {
   };
 }
 
+function bashToolResponse(command, toolNames) {
+  if (!toolNames.has(BASH_TOOL_NAME)) {
+    return {
+      responses: [`E2E bash tool unavailable: ${BASH_TOOL_NAME} was not advertised.`],
+    };
+  }
+  return {
+    responses: ['', `${BASH_TOOL_FINAL_TEXT}: ${command}`],
+    toolCalls: [
+      {
+        id: BASH_TOOL_CALL_ID,
+        name: BASH_TOOL_NAME,
+        args: { command },
+        type: 'tool_call',
+      },
+    ],
+  };
+}
+
+function streamedBashToolResponse(command, toolNames) {
+  const response = bashToolResponse(command, toolNames);
+  if (!response.toolCalls?.[0]) {
+    return response;
+  }
+  return {
+    responses: ['E2E preparing bash input', response.responses[1]],
+    streamedToolCall: response.toolCalls[0],
+  };
+}
+
 function resolveResponses(text, toolNames) {
+  const streamedBashCommand = getRequestedStreamedCommand(text);
+  if (streamedBashCommand) {
+    return streamedBashToolResponse(streamedBashCommand, toolNames);
+  }
+
+  const bashCommand = getRequestedCommand(text);
+  if (bashCommand) {
+    return bashToolResponse(bashCommand, toolNames);
+  }
+
   const createSkillName = getRequestedSkillName(text, CREATE_SKILL_MARKER);
   if (createSkillName) {
     return fileAuthoringResponses(
@@ -208,6 +374,15 @@ module.exports = function fakeModelHook(run, context) {
 
   const text = getLatestUserText(context?.messages);
   const toolNames = collectToolNames(context?.agents);
-  const { responses, toolCalls } = resolveResponses(text, toolNames);
+  const { responses, toolCalls, streamedToolCall } = resolveResponses(text, toolNames);
+  if (streamedToolCall) {
+    graph.overrideModel = new ChunkedToolArgsFakeModel({
+      responses,
+      sleep: CHUNK_DELAY_MS,
+      toolDelay: TOOL_ARGS_DELAY_MS,
+      toolCall: streamedToolCall,
+    });
+    return;
+  }
   graph.overrideTestModel(responses, CHUNK_DELAY_MS, toolCalls);
 };

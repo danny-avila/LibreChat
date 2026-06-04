@@ -15,6 +15,7 @@ const responses = require('./responses');
 const openai = require('./openai');
 const { v1 } = require('./v1');
 const chat = require('./chat');
+const { startSseHeartbeat } = require('./sseHeartbeat');
 
 const { LIMIT_MESSAGE_IP, LIMIT_MESSAGE_USER } = process.env ?? {};
 
@@ -86,6 +87,7 @@ router.get('/chat/stream/:streamId', async (req, res) => {
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
   streamTelemetry.recordHeadersFlushed();
+  const stopHeartbeat = startSseHeartbeat(res);
 
   logger.debug(`[AgentStream] Client subscribed to ${streamId}, resume: ${isResume}`);
 
@@ -106,6 +108,7 @@ router.get('/chat/stream/:streamId', async (req, res) => {
 
   const onDone = (event) => {
     streamTelemetry.recordFinalEventEmitted();
+    stopHeartbeat();
     writeEvent(event, { final: true });
     res.end();
   };
@@ -113,6 +116,7 @@ router.get('/chat/stream/:streamId', async (req, res) => {
   const onError = (error) => {
     if (!res.writableEnded) {
       streamTelemetry.recordErrorEventEmitted();
+      stopHeartbeat();
       writeEvent({ error }, { eventName: 'error' });
       res.end();
     }
@@ -153,6 +157,7 @@ router.get('/chat/stream/:streamId', async (req, res) => {
   }
 
   req.on('close', () => {
+    stopHeartbeat();
     logger.debug(`[AgentStream] Client disconnected from ${streamId}`);
     result.unsubscribe();
   });
