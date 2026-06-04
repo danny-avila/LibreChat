@@ -1572,6 +1572,40 @@ describe('createToolExecuteHandler', () => {
       );
     });
 
+    it('rejects edit_file attempts to rename a skill through SKILL.md frontmatter', async () => {
+      const oldBody = '---\nname: runtime-skill\ndescription: Use before\n---\n# Runtime skill\n';
+      const updateSkill = jest.fn();
+      const handler = makeAuthoringHandler({
+        getSkillByName: jest.fn(async () => ({
+          _id: SKILL_ID,
+          name: 'runtime-skill',
+          body: oldBody,
+          fileCount: 0,
+          version: 1,
+        })),
+        updateSkill: updateSkill as unknown as ToolExecuteOptions['updateSkill'],
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_edit_skill_md_name',
+          name: 'edit_file',
+          args: {
+            file_path: 'skills/runtime-skill/SKILL.md',
+            old_text: 'name: runtime-skill',
+            new_text: 'name: dev-toolkit',
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain(
+        'frontmatter name "dev-toolkit" must match path skill name "runtime-skill"',
+      );
+      expect(result.errorMessage).toContain('edit_file cannot rename skills');
+      expect(updateSkill).not.toHaveBeenCalled();
+    });
+
     it('fails loudly when edit_file old_text is ambiguous', async () => {
       const saveSkillFileContent = jest.fn();
       const handler = makeAuthoringHandler({

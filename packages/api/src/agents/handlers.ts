@@ -647,6 +647,10 @@ function buildSkillMdContent(frontmatter: Record<string, unknown>, body: string)
   return `---\n${dumped}\n---\n${normalizedBody}`;
 }
 
+function skillNameMismatchError(frontmatterName: string, skillName: string): string {
+  return `${SKILL_MD} frontmatter name "${frontmatterName}" must match path skill name "${skillName}". edit_file cannot rename skills; keep the name unchanged or create a new skills/{newName}/SKILL.md.`;
+}
+
 function normalizeSkillMdContent(
   content: string,
   skillName: string,
@@ -677,7 +681,7 @@ function normalizeSkillMdContent(
     if (frontmatterName && frontmatterName !== skillName) {
       return {
         status: 'error',
-        error: `${SKILL_MD} frontmatter name "${frontmatterName}" must match path skill name "${skillName}".`,
+        error: skillNameMismatchError(frontmatterName, skillName),
       };
     }
     frontmatter.name = skillName;
@@ -700,7 +704,7 @@ function normalizeSkillMdContent(
   if (parsed.name !== skillName) {
     return {
       status: 'error',
-      error: `${SKILL_MD} frontmatter name "${parsed.name}" must match path skill name "${skillName}".`,
+      error: skillNameMismatchError(parsed.name, skillName),
     };
   }
   if (parsed.invalidBooleans.length > 0) {

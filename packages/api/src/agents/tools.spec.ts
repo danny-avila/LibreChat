@@ -461,6 +461,8 @@ describe('registerFileAuthoringTools', () => {
     expect(toolRegistry.has('edit_file')).toBe(true);
     expect(result.toolDefinitions[0].responseFormat).toBe('content_and_artifact');
     expect(result.toolDefinitions.map((d) => d.description).join('\n')).toContain('skills/');
+    expect(toolRegistry.get('create_file')?.description).toContain('frontmatter name must match');
+    expect(toolRegistry.get('edit_file')?.description).toContain('edit_file cannot rename skills');
   });
 
   it('registers code-only descriptions for code-exec-only agents', () => {

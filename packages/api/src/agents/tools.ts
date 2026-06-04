@@ -162,7 +162,7 @@ const CREATE_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
     file_path: {
       type: 'string',
       description:
-        'Path to write. Use "skills/{skillName}/..." for skill files when available, or a code-execution sandbox path such as "/mnt/data/result.txt" when code execution is enabled.',
+        'Path to write. Use "skills/{skillName}/..." for skill files when available, or a code-execution sandbox path such as "/mnt/data/result.txt" when code execution is enabled. For SKILL.md, the YAML frontmatter name must match {skillName}.',
     },
     content: {
       type: 'string',
@@ -183,7 +183,7 @@ const EDIT_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
     file_path: {
       type: 'string',
       description:
-        'Path to edit. Use "skills/{skillName}/..." for skill files when available, or a code-execution sandbox path such as "/mnt/data/result.txt" when code execution is enabled.',
+        'Path to edit. Use "skills/{skillName}/..." for skill files when available, or a code-execution sandbox path such as "/mnt/data/result.txt" when code execution is enabled. edit_file cannot rename skills; keep SKILL.md frontmatter name equal to {skillName}.',
     },
     old_text: {
       type: 'string',
@@ -219,6 +219,8 @@ Paths starting with "skills/" target the skill file system:
 - skills/{skillName}/scripts/{file} - helper scripts
 - skills/{skillName}/templates/{file} - output templates
 
+For skills/{skillName}/SKILL.md, YAML frontmatter name must match {skillName}. To use a different skill name, create a new skills/{newName}/SKILL.md instead.
+
 When code execution is enabled, non-skills paths target the code-execution sandbox. Prefer /mnt/data/{file} for files that should remain available to later sandbox calls.`;
 
 const CODE_CREATE_FILE_DESCRIPTION = `Create a new file, or overwrite an existing file with explicit intent.
@@ -230,6 +232,8 @@ Targets code-execution sandbox paths. Prefer /mnt/data/{file} for files that sho
 const SKILL_EDIT_FILE_DESCRIPTION = `Apply targeted text replacements to an existing file.
 
 Use for small, precise changes. Each old_text must match exactly one location. Tries exact match first; falls back to whitespace-tolerant matching if needed. Reports which matching strategy was used. Returns a unified diff.
+
+For skills/{skillName}/SKILL.md, edit description, title, or body content, but keep YAML frontmatter name equal to {skillName}. edit_file cannot rename skills; create a new skills/{newName}/SKILL.md for a different skill name.
 
 Paths starting with "skills/" target the skill file system. When code execution is enabled, non-skills paths target the code-execution sandbox.`;
 
