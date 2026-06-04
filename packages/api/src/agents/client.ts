@@ -56,6 +56,42 @@ type ContentBlock = {
   tool_call?: { name?: string; args?: string; output?: string };
 };
 
+export type FormattedMessageContentPart = {
+  type?: string;
+  text?: string;
+  [key: string]: unknown;
+};
+
+export type FormattedMessageWithContent = {
+  content?: string | FormattedMessageContentPart[];
+};
+
+export function prependFileContext(
+  formattedMessage: FormattedMessageWithContent,
+  fileContext?: string | null,
+): void {
+  if (!fileContext) {
+    return;
+  }
+
+  if (typeof formattedMessage.content === 'string') {
+    formattedMessage.content = `${fileContext}\n${formattedMessage.content}`;
+    return;
+  }
+
+  if (!Array.isArray(formattedMessage.content)) {
+    return;
+  }
+
+  const textPart = formattedMessage.content.find((part) => part.type === ContentTypes.TEXT);
+  if (textPart != null && typeof textPart.text === 'string') {
+    textPart.text = `${fileContext}\n${textPart.text}`;
+    return;
+  }
+
+  formattedMessage.content.unshift({ type: ContentTypes.TEXT, text: fileContext });
+}
+
 function estimateImageDataTokens(data: string, isClaude: boolean): number {
   const dims = extractImageDimensions(data);
   if (dims == null) {

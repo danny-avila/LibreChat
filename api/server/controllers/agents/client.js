@@ -30,6 +30,7 @@ const {
   createMultiAgentMapper,
   filterMalformedContentParts,
   countFormattedMessageTokens,
+  prependFileContext,
   hydrateMissingIndexTokenCounts,
   injectSkillPrimes,
   isSkillPrimeMessage,
@@ -68,26 +69,6 @@ const { getMCPManager } = require('~/config');
 const db = require('~/models');
 
 const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
-
-const prependFileContext = (formattedMessage, fileContext) => {
-  if (!fileContext) {
-    return;
-  }
-
-  if (typeof formattedMessage.content === 'string') {
-    formattedMessage.content = `${fileContext}\n${formattedMessage.content}`;
-    return;
-  }
-
-  if (Array.isArray(formattedMessage.content)) {
-    const textPart = formattedMessage.content.find((part) => part.type === 'text');
-    if (textPart) {
-      textPart.text = `${fileContext}\n${textPart.text}`;
-    } else {
-      formattedMessage.content.unshift({ type: 'text', text: fileContext });
-    }
-  }
-};
 
 class AgentClient extends BaseClient {
   constructor(options = {}) {
