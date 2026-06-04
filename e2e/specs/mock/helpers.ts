@@ -37,6 +37,14 @@ export async function enableSkills(page: Page) {
   await expect(page.getByRole('button', { name: 'Skills' })).toBeVisible();
 }
 
+/** Enable the ephemeral Run Code capability from the composer tool menu. */
+export async function enableRunCode(page: Page) {
+  await page.getByRole('button', { name: 'Tools Options' }).click();
+  await page.getByText('Run Code').click();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('checkbox', { name: 'Run Code' })).toBeChecked();
+}
+
 /** The mock reply as rendered in the conversation, scoped to the messages view. */
 export function mockReply(page: Page) {
   return page.getByTestId('messages-view').getByText(new RegExp(MOCK_REPLY_TEXT, 'i'));

@@ -122,6 +122,22 @@ describe('SSE stream tenant isolation', () => {
       expect(mockGenerationJobManager.subscribe).toHaveBeenCalledTimes(1);
     });
 
+    it('ends the SSE stream when subscription setup throws after headers are sent', async () => {
+      mockUserId = 'user-123';
+      mockTenantId = 'tenant-a';
+
+      mockGenerationJobManager.getJob.mockResolvedValue({
+        metadata: { userId: 'user-123', tenantId: 'tenant-a' },
+        status: 'running',
+      });
+      mockGenerationJobManager.subscribe.mockRejectedValue(new Error('subscribe failed'));
+
+      const res = await request(app).get('/agents/chat/stream/stream-123');
+      expect(res.status).toBe(200);
+      expect(res.text).toContain('event: error');
+      expect(res.text).toContain('Failed to subscribe to stream');
+    });
+
     it('returns 403 when job has tenantId but user has no tenantId', async () => {
       mockUserId = 'user-123';
       mockTenantId = undefined;

@@ -15,6 +15,7 @@ const responses = require('./responses');
 const openai = require('./openai');
 const { v1 } = require('./v1');
 const chat = require('./chat');
+const { startSseHeartbeat } = require('./sseHeartbeat');
 
 const { LIMIT_MESSAGE_IP, LIMIT_MESSAGE_USER } = process.env ?? {};
 
@@ -89,6 +90,9 @@ router.get('/chat/stream/:streamId', async (req, res) => {
 
   logger.debug(`[AgentStream] Client subscribed to ${streamId}, resume: ${isResume}`);
 
+  let result;
+  let stopHeartbeat = () => {};
+
   const writeEvent = (event, options = {}) => {
     if (!res.writableEnded) {
       const eventName = options.eventName ?? 'message';
@@ -106,6 +110,7 @@ router.get('/chat/stream/:streamId', async (req, res) => {
 
   const onDone = (event) => {
     streamTelemetry.recordFinalEventEmitted();
+    stopHeartbeat();
     writeEvent(event, { final: true });
     res.end();
   };
@@ -113,37 +118,49 @@ router.get('/chat/stream/:streamId', async (req, res) => {
   const onError = (error) => {
     if (!res.writableEnded) {
       streamTelemetry.recordErrorEventEmitted();
+      stopHeartbeat();
       writeEvent({ error }, { eventName: 'error' });
       res.end();
     }
   };
 
-  let result;
+  req.on('close', () => {
+    stopHeartbeat();
+    logger.debug(`[AgentStream] Client disconnected from ${streamId}`);
+    result?.unsubscribe();
+  });
 
-  if (isResume) {
-    const { subscription, resumeState, pendingEvents } =
-      await GenerationJobManager.subscribeWithResume(streamId, writeEvent, onDone, onError);
+  try {
+    if (isResume) {
+      const { subscription, resumeState, pendingEvents } =
+        await GenerationJobManager.subscribeWithResume(streamId, writeEvent, onDone, onError);
 
-    if (!res.writableEnded) {
-      if (resumeState) {
-        writeEvent({ sync: true, resumeState, pendingEvents });
-        GenerationJobManager.markSyncSent(streamId);
-        logger.debug(
-          `[AgentStream] Sent sync event for ${streamId} with ${resumeState.runSteps.length} run steps, ${pendingEvents.length} pending events`,
-        );
-      } else if (pendingEvents.length > 0) {
-        for (const event of pendingEvents) {
-          writeEvent(event);
+      if (!res.writableEnded) {
+        if (resumeState) {
+          writeEvent({ sync: true, resumeState, pendingEvents });
+          GenerationJobManager.markSyncSent(streamId);
+          logger.debug(
+            `[AgentStream] Sent sync event for ${streamId} with ${resumeState.runSteps.length} run steps, ${pendingEvents.length} pending events`,
+          );
+        } else if (pendingEvents.length > 0) {
+          for (const event of pendingEvents) {
+            writeEvent(event);
+          }
+          logger.warn(
+            `[AgentStream] Resume state null for ${streamId}, replayed ${pendingEvents.length} gap events directly`,
+          );
         }
-        logger.warn(
-          `[AgentStream] Resume state null for ${streamId}, replayed ${pendingEvents.length} gap events directly`,
-        );
       }
-    }
 
-    result = subscription;
-  } else {
-    result = await GenerationJobManager.subscribe(streamId, writeEvent, onDone, onError);
+      result = subscription;
+    } else {
+      result = await GenerationJobManager.subscribe(streamId, writeEvent, onDone, onError);
+    }
+  } catch (error) {
+    logger.error(`[AgentStream] Failed to subscribe to ${streamId}:`, error);
+    streamTelemetry.recordSubscribeFailed();
+    onError('Failed to subscribe to stream');
+    return;
   }
 
   if (!result) {
@@ -152,10 +169,9 @@ router.get('/chat/stream/:streamId', async (req, res) => {
     return;
   }
 
-  req.on('close', () => {
-    logger.debug(`[AgentStream] Client disconnected from ${streamId}`);
-    result.unsubscribe();
-  });
+  if (!res.writableEnded && !res.destroyed) {
+    stopHeartbeat = startSseHeartbeat(res);
+  }
 });
 
 /**
