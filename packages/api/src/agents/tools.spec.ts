@@ -51,6 +51,13 @@ import {
   isCodeSessionToolName,
 } from './tools';
 
+function filePathDescription(tool?: LCTool): string {
+  const parameters = tool?.parameters as
+    | { properties?: { file_path?: { description?: string } } }
+    | undefined;
+  return parameters?.properties?.file_path?.description ?? '';
+}
+
 describe('buildToolSet', () => {
   describe('event-driven mode (toolDefinitions)', () => {
     it('builds toolSet from toolDefinitions when available', () => {
@@ -463,6 +470,12 @@ describe('registerFileAuthoringTools', () => {
     expect(result.toolDefinitions.map((d) => d.description).join('\n')).toContain('skills/');
     expect(toolRegistry.get('create_file')?.description).toContain('frontmatter name must match');
     expect(toolRegistry.get('edit_file')?.description).toContain('edit_file cannot rename skills');
+    expect(filePathDescription(toolRegistry.get('create_file'))).toContain(
+      'frontmatter name must match',
+    );
+    expect(filePathDescription(toolRegistry.get('edit_file'))).toContain(
+      'edit_file cannot rename skills',
+    );
   });
 
   it('registers code-only descriptions for code-exec-only agents', () => {
@@ -481,6 +494,12 @@ describe('registerFileAuthoringTools', () => {
     expect(editFile?.description).toContain('code-execution sandbox');
     expect(editFile?.description).toContain('/mnt/data/');
     expect(editFile?.description).not.toContain('skills/');
+    expect(filePathDescription(createFile)).toContain('code-execution sandbox');
+    expect(filePathDescription(createFile)).not.toContain('skills/');
+    expect(filePathDescription(createFile)).not.toContain('SKILL.md');
+    expect(filePathDescription(editFile)).toContain('code-execution sandbox');
+    expect(filePathDescription(editFile)).not.toContain('skills/');
+    expect(filePathDescription(editFile)).not.toContain('rename skills');
   });
 
   it('is idempotent across repeated registration calls', () => {

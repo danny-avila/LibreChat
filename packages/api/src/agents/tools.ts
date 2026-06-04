@@ -156,7 +156,7 @@ const CODE_READ_FILE_DEF: LCTool = Object.freeze({
   responseFormat: ReadFileToolDefinition.responseFormat,
 }) as LCTool;
 
-const CREATE_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
+const SKILL_CREATE_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
   type: 'object',
   properties: {
     file_path: {
@@ -177,13 +177,65 @@ const CREATE_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
   required: ['file_path', 'content'],
 }) as LCTool['parameters'];
 
-const EDIT_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
+const CODE_CREATE_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
+  type: 'object',
+  properties: {
+    file_path: {
+      type: 'string',
+      description:
+        'Path to write in the code-execution sandbox, such as "/mnt/data/result.txt". Prefer /mnt/data/{file} for files that should remain available to later sandbox calls.',
+    },
+    content: {
+      type: 'string',
+      description: 'Complete file contents.',
+    },
+    overwrite: {
+      type: 'boolean',
+      description: 'Must be true to replace an existing file. Refuses otherwise.',
+      default: false,
+    },
+  },
+  required: ['file_path', 'content'],
+}) as LCTool['parameters'];
+
+const SKILL_EDIT_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
   type: 'object',
   properties: {
     file_path: {
       type: 'string',
       description:
         'Path to edit. Use "skills/{skillName}/..." for skill files when available, or a code-execution sandbox path such as "/mnt/data/result.txt" when code execution is enabled. edit_file cannot rename skills; keep SKILL.md frontmatter name equal to {skillName}.',
+    },
+    old_text: {
+      type: 'string',
+      description: 'Exact text to find. Must match exactly one location in the file.',
+    },
+    new_text: {
+      type: 'string',
+      description: 'Replacement text.',
+    },
+    edits: {
+      type: 'array',
+      description: 'Optional batch of replacements. Each old_text must match exactly once.',
+      items: {
+        type: 'object',
+        properties: {
+          old_text: { type: 'string' },
+          new_text: { type: 'string' },
+        },
+        required: ['old_text', 'new_text'],
+      },
+    },
+  },
+  required: ['file_path'],
+}) as LCTool['parameters'];
+
+const CODE_EDIT_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
+  type: 'object',
+  properties: {
+    file_path: {
+      type: 'string',
+      description: 'Path to edit in the code-execution sandbox, such as "/mnt/data/result.txt".',
     },
     old_text: {
       type: 'string',
@@ -246,28 +298,28 @@ Targets code-execution sandbox paths, such as /mnt/data/result.txt.`;
 const SKILL_CREATE_FILE_DEF: LCTool = Object.freeze({
   name: CREATE_FILE_TOOL_NAME,
   description: SKILL_CREATE_FILE_DESCRIPTION,
-  parameters: CREATE_FILE_PARAMETERS,
+  parameters: SKILL_CREATE_FILE_PARAMETERS,
   responseFormat: 'content_and_artifact' as LCTool['responseFormat'],
 }) as LCTool;
 
 const CODE_CREATE_FILE_DEF: LCTool = Object.freeze({
   name: CREATE_FILE_TOOL_NAME,
   description: CODE_CREATE_FILE_DESCRIPTION,
-  parameters: CREATE_FILE_PARAMETERS,
+  parameters: CODE_CREATE_FILE_PARAMETERS,
   responseFormat: 'content_and_artifact' as LCTool['responseFormat'],
 }) as LCTool;
 
 const SKILL_EDIT_FILE_DEF: LCTool = Object.freeze({
   name: EDIT_FILE_TOOL_NAME,
   description: SKILL_EDIT_FILE_DESCRIPTION,
-  parameters: EDIT_FILE_PARAMETERS,
+  parameters: SKILL_EDIT_FILE_PARAMETERS,
   responseFormat: 'content_and_artifact' as LCTool['responseFormat'],
 }) as LCTool;
 
 const CODE_EDIT_FILE_DEF: LCTool = Object.freeze({
   name: EDIT_FILE_TOOL_NAME,
   description: CODE_EDIT_FILE_DESCRIPTION,
-  parameters: EDIT_FILE_PARAMETERS,
+  parameters: CODE_EDIT_FILE_PARAMETERS,
   responseFormat: 'content_and_artifact' as LCTool['responseFormat'],
 }) as LCTool;
 
