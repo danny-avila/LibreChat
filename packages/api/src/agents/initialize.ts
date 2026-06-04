@@ -40,7 +40,11 @@ import {
   unionPrimeAllowedTools,
   MAX_PRIMED_SKILLS_PER_TURN,
 } from './skills';
-import { registerCodeExecutionTools } from './tools';
+import {
+  registerCodeExecutionTools,
+  registerFileAuthoringTools,
+  isFileAuthoringToolDefinition,
+} from './tools';
 import { primeResources } from './resources';
 import type { ResolvedManualSkill, ResolvedAlwaysApplySkill } from './skills';
 import type { TFilterFilesByAgentAccess } from './resources';
@@ -184,6 +188,10 @@ export type InitializedAgent = Agent & {
    * (`packages/api/src/agents/added.ts`), so the check is uniform.
    */
   codeEnvAvailable: boolean;
+  /** Whether host-side skill file authoring is available for this agent/run. */
+  skillAuthoringAvailable: boolean;
+  /** Host-side file authoring tool names registered for this run. */
+  fileAuthoringToolNames?: Set<string>;
   /** Accessible skill IDs for ACL checking at execute time */
   accessibleSkillIds?: import('mongoose').Types.ObjectId[];
   /**
@@ -282,6 +290,8 @@ export interface InitializeAgentParams {
   isInitialAgent?: boolean;
   /** Accessible skill IDs for this user (pre-computed by the caller via ACL query) */
   accessibleSkillIds?: import('mongoose').Types.ObjectId[];
+  /** Whether skill file authoring should be exposed even before a user has viewable skills. */
+  skillAuthoringAvailable?: boolean;
   /** Whether the code execution environment is available (execute_code capability enabled) */
   codeEnvAvailable?: boolean;
   /** Per-user skill active/inactive overrides for filtering the skill catalog. */
@@ -607,7 +617,8 @@ export async function initializeAgent(
    * go first so their names win on dedup (primes earlier in the list
    * contribute before the same name gets deduped on a later prime).
    */
-  const hasSkillAccess = params.accessibleSkillIds && params.accessibleSkillIds.length > 0;
+  const hasSkillAccess = (params.accessibleSkillIds?.length ?? 0) > 0;
+  const skillAuthoringAvailable = params.skillAuthoringAvailable === true;
   let manualSkillPrimes: ResolvedManualSkill[] | undefined;
   let alwaysApplySkillPrimes: ResolvedAlwaysApplySkill[] | undefined;
   let extraAllowedToolNames: string[] = [];
@@ -908,6 +919,26 @@ export async function initializeAgent(
     );
   }
 
+  if (skillAuthoringAvailable) {
+    const skillReadResult = registerCodeExecutionTools({
+      toolRegistry,
+      toolDefinitions,
+      includeBash: false,
+      includeSkillFileInstructions: true,
+      enableToolOutputReferences: effectiveCodeEnvAvailable,
+    });
+    toolDefinitions = skillReadResult.toolDefinitions;
+  }
+
+  if (effectiveCodeEnvAvailable || skillAuthoringAvailable) {
+    const fileAuthoringResult = registerFileAuthoringTools({
+      toolRegistry,
+      toolDefinitions,
+      includeSkillFileInstructions: skillAuthoringAvailable,
+    });
+    toolDefinitions = fileAuthoringResult.toolDefinitions;
+  }
+
   /** Check for tool presence from either full instances or definitions (event-driven mode) */
   const hasAgentTools = (structuredTools?.length ?? 0) > 0 || (toolDefinitions?.length ?? 0) > 0;
   const providerTools = resolveProviderToolConflicts({
@@ -1026,6 +1057,11 @@ export async function initializeAgent(
       : undefined;
   const maxToolResultCharsResolved =
     providerMaxToolResultChars ?? endpointConfigs?.all?.maxToolResultChars;
+  const fileAuthoringToolNames = new Set(
+    (toolDefinitions ?? [])
+      .filter((toolDefinition) => isFileAuthoringToolDefinition(toolDefinition))
+      .map((toolDefinition) => toolDefinition.name),
+  );
 
   const initializedAgent: InitializedAgent = {
     ...agent,
@@ -1039,6 +1075,8 @@ export async function initializeAgent(
     baseContextTokens,
     codeEnvAvailable: effectiveCodeEnvAvailable,
     reasoningKey: customEndpointConfig?.customParams?.reasoningKey,
+    skillAuthoringAvailable,
+    fileAuthoringToolNames: fileAuthoringToolNames.size > 0 ? fileAuthoringToolNames : undefined,
     skillCount,
     accessibleSkillIds: executableSkillIds,
     activeSkillNames,

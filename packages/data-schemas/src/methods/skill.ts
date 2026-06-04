@@ -489,6 +489,12 @@ export type UpdateSkillInput = {
   alwaysApply?: boolean;
 };
 
+export type GetAuthorSkillByNameParams = {
+  name: string;
+  author: Types.ObjectId | string;
+  tenantId?: string | null;
+};
+
 /**
  * Maps the runtime-enforced frontmatter fields onto their first-class
  * column equivalents. Returns only the keys that were explicitly set on the
@@ -1017,6 +1023,22 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     return preferred ?? docs[0];
   }
 
+  async function getAuthorSkillByName(
+    params: GetAuthorSkillByNameParams,
+  ): Promise<(ISkill & { _id: Types.ObjectId }) | null> {
+    const Skill = mongoose.models.Skill as Model<ISkillDocument>;
+    const doc = await Skill.findOne({
+      name: params.name,
+      author: params.author,
+      tenantId: params.tenantId ?? null,
+    })
+      .sort({ updatedAt: -1 })
+      .lean();
+    return backfillDerivedFromFrontmatter(
+      (doc as unknown as (ISkill & { _id: Types.ObjectId }) | null) ?? null,
+    );
+  }
+
   async function listSkillsByAccess(
     params: ListSkillsByAccessParams,
   ): Promise<ListSkillsByAccessResult> {
@@ -1526,6 +1548,7 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     createSkill,
     getSkillById,
     getSkillByName,
+    getAuthorSkillByName,
     listSkillsByAccess,
     listAlwaysApplySkills,
     updateSkill,

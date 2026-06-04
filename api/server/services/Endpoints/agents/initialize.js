@@ -31,8 +31,9 @@ const { loadAgentTools, loadToolsForExecution } = require('~/server/services/Too
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const {
   getSkillToolDeps,
-  enrichWithSkillConfigurable,
-  buildSkillPrimedIdsByName,
+  canAuthorSkillFiles,
+  buildAgentToolContext,
+  enrichLoadedToolsWithAgentContext,
 } = require('./skillDeps');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { checkPermission, findAccessibleResources } = require('~/server/services/PermissionService');
@@ -149,6 +150,17 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         requiredPermissions: PermissionBits.VIEW,
       })
     : [];
+  const editableSkillIds = skillsCapabilityEnabled
+    ? await findAccessibleResources({
+        userId: req.user.id,
+        role: req.user.role,
+        resourceType: ResourceType.SKILL,
+        requiredPermissions: PermissionBits.EDIT,
+      })
+    : [];
+  const skillCreateAllowed = skillsCapabilityEnabled
+    ? await getSkillToolDeps().canCreateSkill({ req })
+    : false;
 
   const { skillStates, defaultActiveOnShare } = await loadSkillStates({
     userId: req.user.id,
@@ -195,14 +207,11 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
        *  the agent initialized. Falls back to `false` on any stray
        *  ctx miss so a skills-only agent never gains sandbox access
        *  even if capability lookup somehow skips. */
-      return enrichWithSkillConfigurable(
+      return enrichLoadedToolsWithAgentContext({
         result,
         req,
-        ctx.accessibleSkillIds,
-        ctx.codeEnvAvailable === true,
-        ctx.skillPrimedIdsByName,
-        ctx.activeSkillNames,
-      );
+        ctx,
+      });
     },
     toolEndCallback,
     ...getSkillToolDeps(),
@@ -285,6 +294,19 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     skillsCapabilityEnabled,
     ephemeralSkillsToggle,
   });
+  const primaryScopedEditableSkillIds = resolveAgentScopedSkillIds({
+    agent: primaryAgent,
+    accessibleSkillIds: editableSkillIds,
+    skillsCapabilityEnabled,
+    ephemeralSkillsToggle,
+  });
+  const primarySkillAuthoringAvailable = canAuthorSkillFiles({
+    agent: primaryAgent,
+    scopedEditableSkillIds: primaryScopedEditableSkillIds,
+    skillCreateAllowed,
+    skillsCapabilityEnabled,
+    ephemeralSkillsToggle,
+  });
 
   const primaryConfig = await initializeAgent(
     {
@@ -299,6 +321,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       allowedProviders,
       isInitialAgent: true,
       accessibleSkillIds: primaryScopedSkillIds,
+      skillAuthoringAvailable: primarySkillAuthoringAvailable,
       codeEnvAvailable,
       skillStates,
       defaultActiveOnShare,
@@ -324,27 +347,10 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   logger.debug(
     `[initializeClient] Storing tool context for ${primaryConfig.id}: ${primaryConfig.toolDefinitions?.length ?? 0} tools, registry size: ${primaryConfig.toolRegistry?.size ?? '0'}`,
   );
-  /** Maps each primed skill name (manual `$` or always-apply) to the
-   *  `_id` of the exact doc that was primed. Plumbed to
-   *  `enrichWithSkillConfigurable` so the read_file handler can pin
-   *  same-name collision lookups to the resolver's chosen doc AND relax
-   *  the disable-model-invocation gate for skills whose body is already
-   *  in this turn's context. */
-  const skillPrimedIdsByName = buildSkillPrimedIdsByName(
-    primaryConfig.manualSkillPrimes,
-    primaryConfig.alwaysApplySkillPrimes,
+  agentToolContexts.set(
+    primaryConfig.id,
+    buildAgentToolContext({ agent: primaryAgent, config: primaryConfig }),
   );
-  agentToolContexts.set(primaryConfig.id, {
-    agent: primaryAgent,
-    toolRegistry: primaryConfig.toolRegistry,
-    userMCPAuthMap: primaryConfig.userMCPAuthMap,
-    tool_resources: primaryConfig.tool_resources,
-    actionsEnabled: primaryConfig.actionsEnabled,
-    accessibleSkillIds: primaryConfig.accessibleSkillIds,
-    activeSkillNames: primaryConfig.activeSkillNames,
-    codeEnvAvailable: primaryConfig.codeEnvAvailable,
-    skillPrimedIdsByName,
-  });
 
   const {
     agentConfigs: discoveredConfigs,
@@ -368,6 +374,19 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         resolveAgentScopedSkillIds({
           agent,
           accessibleSkillIds,
+          skillsCapabilityEnabled,
+          ephemeralSkillsToggle,
+        }),
+      computeSkillAuthoringAvailable: (agent) =>
+        canAuthorSkillFiles({
+          agent,
+          scopedEditableSkillIds: resolveAgentScopedSkillIds({
+            agent,
+            accessibleSkillIds: editableSkillIds,
+            skillsCapabilityEnabled,
+            ephemeralSkillsToggle,
+          }),
+          skillCreateAllowed,
           skillsCapabilityEnabled,
           ephemeralSkillsToggle,
         }),
@@ -400,28 +419,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       // set. The per-agent tool context map is OK to keep populated even
       // for pruned ids: it's only read by closure in ON_TOOL_EXECUTE,
       // stale entries are unreachable at runtime.
-      //
-      // Handoff agents get the same `skillPrimedIdsByName` plumbing as the
-      // primary so `read_file` can pin same-name collisions to the exact
-      // primed doc AND relax the `disable-model-invocation: true` gate for
-      // skills whose body is already in this turn's context — matters for
-      // handoff agents that have their own always-apply skills bound or
-      // that the user `$`-invokes within the handoff flow.
       onAgentInitialized: (agentId, agent, config) => {
-        agentToolContexts.set(agentId, {
-          agent,
-          toolRegistry: config.toolRegistry,
-          userMCPAuthMap: config.userMCPAuthMap,
-          tool_resources: config.tool_resources,
-          actionsEnabled: config.actionsEnabled,
-          accessibleSkillIds: config.accessibleSkillIds,
-          activeSkillNames: config.activeSkillNames,
-          codeEnvAvailable: config.codeEnvAvailable,
-          skillPrimedIdsByName: buildSkillPrimedIdsByName(
-            config.manualSkillPrimes,
-            config.alwaysApplySkillPrimes,
-          ),
-        });
+        agentToolContexts.set(agentId, buildAgentToolContext({ agent, config }));
       },
       // Pass through the `@librechat/api` exports so that tests which
       // `jest.mock('@librechat/api')` can override the initializer/validator.
@@ -468,16 +467,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     if (agentToolContexts.has(agentId)) {
       continue;
     }
-    agentToolContexts.set(agentId, {
-      agent: config,
-      toolRegistry: config.toolRegistry,
-      userMCPAuthMap: config.userMCPAuthMap,
-      tool_resources: config.tool_resources,
-      actionsEnabled: config.actionsEnabled,
-      accessibleSkillIds: config.accessibleSkillIds,
-      activeSkillNames: config.activeSkillNames,
-      codeEnvAvailable: config.codeEnvAvailable,
-    });
+    agentToolContexts.set(agentId, buildAgentToolContext({ agent: config, config }));
   }
 
   // `discoverConnectedAgents` always returns a concrete array, so no
@@ -565,6 +555,18 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         skippedAgentIds.add(agentId);
         return null;
       }
+      const scopedSkillIds = resolveAgentScopedSkillIds({
+        agent,
+        accessibleSkillIds,
+        skillsCapabilityEnabled,
+        ephemeralSkillsToggle,
+      });
+      const scopedEditableSkillIds = resolveAgentScopedSkillIds({
+        agent,
+        accessibleSkillIds: editableSkillIds,
+        skillsCapabilityEnabled,
+        ephemeralSkillsToggle,
+      });
       const config = await initializeAgent(
         {
           req,
@@ -576,9 +578,11 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
           parentMessageId,
           endpointOption: { ...endpointOption, endpoint: EModelEndpoint.agents },
           allowedProviders,
-          accessibleSkillIds: resolveAgentScopedSkillIds({
+          accessibleSkillIds: scopedSkillIds,
+          skillAuthoringAvailable: canAuthorSkillFiles({
             agent,
-            accessibleSkillIds,
+            scopedEditableSkillIds,
+            skillCreateAllowed,
             skillsCapabilityEnabled,
             ephemeralSkillsToggle,
           }),
@@ -611,20 +615,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         },
       );
       agentConfigs.set(agentId, config);
-      agentToolContexts.set(agentId, {
-        agent,
-        toolRegistry: config.toolRegistry,
-        userMCPAuthMap: config.userMCPAuthMap,
-        tool_resources: config.tool_resources,
-        actionsEnabled: config.actionsEnabled,
-        accessibleSkillIds: config.accessibleSkillIds,
-        activeSkillNames: config.activeSkillNames,
-        codeEnvAvailable: config.codeEnvAvailable,
-        skillPrimedIdsByName: buildSkillPrimedIdsByName(
-          config.manualSkillPrimes,
-          config.alwaysApplySkillPrimes,
-        ),
-      });
+      agentToolContexts.set(agentId, buildAgentToolContext({ agent, config }));
       return config;
     } catch (err) {
       logger.error(`[processAgent] Error processing subagent ${agentId}:`, err);

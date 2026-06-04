@@ -6,6 +6,7 @@
  */
 jest.mock('@librechat/agents', () => ({
   ...jest.requireActual('@librechat/agents'),
+  CODE_EXECUTION_TOOLS: new Set(['execute_code', 'bash_tool']),
   ReadFileToolDefinition: {
     name: 'read_file',
     description: 'read skill files using {skillName}/{filePath} and SKILL.md',
@@ -38,8 +39,24 @@ jest.mock('@librechat/agents', () => ({
     enableToolOutputReferences === true ? 'bash {{tool<idx>turn<turn>}}' : 'bash',
 }));
 
+import { CODE_EXECUTION_TOOLS } from '@librechat/agents';
 import type { LCTool, LCToolRegistry } from '@librechat/agents';
-import { buildToolSet, BuildToolSetConfig, registerCodeExecutionTools } from './tools';
+import {
+  buildToolSet,
+  BuildToolSetConfig,
+  registerCodeExecutionTools,
+  registerFileAuthoringTools,
+  FILE_AUTHORING_TOOL_NAMES,
+  isFileAuthoringToolDefinition,
+  isCodeSessionToolName,
+} from './tools';
+
+function filePathDescription(tool?: LCTool): string {
+  const parameters = tool?.parameters as
+    | { properties?: { file_path?: { description?: string } } }
+    | undefined;
+  return parameters?.properties?.file_path?.description ?? '';
+}
 
 describe('buildToolSet', () => {
   describe('event-driven mode (toolDefinitions)', () => {
@@ -238,6 +255,7 @@ describe('registerCodeExecutionTools', () => {
       const readFile = upgraded.toolDefinitions.find((d) => d.name === 'read_file');
       expect(upgraded.registered).toEqual([]);
       expect(readFile?.description).toContain('{skillName}/{filePath}');
+      expect(readFile?.description).toContain('skills/{skillName}/');
       expect(readFile?.description).toContain('SKILL.md');
       expect(toolRegistry.get('read_file')?.description).toBe(readFile?.description);
     });
@@ -419,5 +437,121 @@ describe('registerCodeExecutionTools', () => {
       expect(a?.description).toContain('{{tool<idx>turn<turn>}}');
       expect(b?.description).not.toContain('{{tool<idx>turn<turn>}}');
     });
+  });
+});
+
+describe('registerFileAuthoringTools', () => {
+  const makeRegistry = (): LCToolRegistry => new Map() as unknown as LCToolRegistry;
+
+  it('recognizes host-side file authoring tools as code-session-aware without mutating the shared set', () => {
+    expect(isCodeSessionToolName('bash_tool')).toBe(true);
+    expect(isCodeSessionToolName('create_file')).toBe(false);
+    expect(isCodeSessionToolName('edit_file')).toBe(false);
+    expect(isCodeSessionToolName('create_file', FILE_AUTHORING_TOOL_NAMES)).toBe(true);
+    expect(isCodeSessionToolName('edit_file', FILE_AUTHORING_TOOL_NAMES)).toBe(true);
+    expect(CODE_EXECUTION_TOOLS.has('create_file')).toBe(false);
+    expect(CODE_EXECUTION_TOOLS.has('edit_file')).toBe(false);
+  });
+
+  it('registers create_file and edit_file with skill-aware descriptions', () => {
+    const toolRegistry = makeRegistry();
+    const result = registerFileAuthoringTools({
+      toolRegistry,
+      toolDefinitions: [],
+      includeSkillFileInstructions: true,
+    });
+
+    const names = result.toolDefinitions.map((d) => d.name).sort();
+    expect(names).toEqual(['create_file', 'edit_file']);
+    expect(result.registered.sort()).toEqual(['create_file', 'edit_file']);
+    expect(toolRegistry.has('create_file')).toBe(true);
+    expect(toolRegistry.has('edit_file')).toBe(true);
+    expect(result.toolDefinitions[0].responseFormat).toBe('content_and_artifact');
+    expect(result.toolDefinitions.map((d) => d.description).join('\n')).toContain('skills/');
+    expect(toolRegistry.get('create_file')?.description).toContain('frontmatter name must match');
+    expect(toolRegistry.get('edit_file')?.description).toContain('edit_file cannot rename skills');
+    expect(filePathDescription(toolRegistry.get('create_file'))).toContain(
+      'frontmatter name must match',
+    );
+    expect(filePathDescription(toolRegistry.get('edit_file'))).toContain(
+      'edit_file cannot rename skills',
+    );
+  });
+
+  it('registers code-only descriptions for code-exec-only agents', () => {
+    const toolRegistry = makeRegistry();
+    const result = registerFileAuthoringTools({
+      toolRegistry,
+      toolDefinitions: [],
+      includeSkillFileInstructions: false,
+    });
+
+    const createFile = result.toolDefinitions.find((d) => d.name === 'create_file');
+    const editFile = result.toolDefinitions.find((d) => d.name === 'edit_file');
+    expect(createFile?.description).toContain('code-execution sandbox');
+    expect(createFile?.description).toContain('/mnt/data/');
+    expect(createFile?.description).not.toContain('skills/');
+    expect(editFile?.description).toContain('code-execution sandbox');
+    expect(editFile?.description).toContain('/mnt/data/');
+    expect(editFile?.description).not.toContain('skills/');
+    expect(filePathDescription(createFile)).toContain('code-execution sandbox');
+    expect(filePathDescription(createFile)).not.toContain('skills/');
+    expect(filePathDescription(createFile)).not.toContain('SKILL.md');
+    expect(filePathDescription(editFile)).toContain('code-execution sandbox');
+    expect(filePathDescription(editFile)).not.toContain('skills/');
+    expect(filePathDescription(editFile)).not.toContain('rename skills');
+  });
+
+  it('is idempotent across repeated registration calls', () => {
+    const toolRegistry = makeRegistry();
+    const first = registerFileAuthoringTools({
+      toolRegistry,
+      toolDefinitions: [],
+    });
+    const second = registerFileAuthoringTools({
+      toolRegistry,
+      toolDefinitions: first.toolDefinitions,
+    });
+
+    expect(second.registered).toEqual([]);
+    expect(second.toolDefinitions).toHaveLength(2);
+  });
+
+  it('upgrades code-only definitions to skill-aware definitions', () => {
+    const toolRegistry = makeRegistry();
+    const codeOnly = registerFileAuthoringTools({
+      toolRegistry,
+      toolDefinitions: [],
+      includeSkillFileInstructions: false,
+    });
+    const upgraded = registerFileAuthoringTools({
+      toolRegistry,
+      toolDefinitions: codeOnly.toolDefinitions,
+      includeSkillFileInstructions: true,
+    });
+
+    expect(upgraded.registered).toEqual([]);
+    expect(upgraded.toolDefinitions.find((d) => d.name === 'create_file')?.description).toContain(
+      'skills/',
+    );
+    expect(toolRegistry.get('edit_file')?.description).toContain('skills/');
+  });
+
+  it('distinguishes host file authoring definitions from user tools with matching names', () => {
+    const result = registerFileAuthoringTools({
+      toolRegistry: makeRegistry(),
+      toolDefinitions: [],
+      includeSkillFileInstructions: true,
+    });
+    const createFile = result.toolDefinitions.find((d) => d.name === 'create_file');
+
+    expect(isFileAuthoringToolDefinition(createFile)).toBe(true);
+    expect(
+      isFileAuthoringToolDefinition({
+        name: 'create_file',
+        description: 'A user-defined create_file action',
+        parameters: { type: 'object', properties: {} } as LCTool['parameters'],
+      }),
+    ).toBe(false);
   });
 });

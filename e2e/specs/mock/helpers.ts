@@ -29,6 +29,14 @@ export async function selectMockEndpoint(page: Page, endpoint: MockEndpoint) {
   await expect(modelSelectorTrigger(page)).not.toHaveText('Select a model');
 }
 
+/** Enable the ephemeral Skills capability from the composer tool menu. */
+export async function enableSkills(page: Page) {
+  await page.getByRole('button', { name: 'Tools Options' }).click();
+  await page.getByTestId('tools-menu-skills').click();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: 'Skills' })).toBeVisible();
+}
+
 /** The mock reply as rendered in the conversation, scoped to the messages view. */
 export function mockReply(page: Page) {
   return page.getByTestId('messages-view').getByText(new RegExp(MOCK_REPLY_TEXT, 'i'));
