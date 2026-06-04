@@ -40,6 +40,11 @@ describe('Share Methods', () => {
         text: String,
         isCreatedByUser: Boolean,
         model: String,
+        endpoint: String,
+        conversationSignature: String,
+        clientId: String,
+        plugin: mongoose.Schema.Types.Mixed,
+        metadata: mongoose.Schema.Types.Mixed,
         parentMessageId: String,
         attachments: [mongoose.Schema.Types.Mixed],
         content: [mongoose.Schema.Types.Mixed],
@@ -399,6 +404,70 @@ describe('Share Methods', () => {
       expect(
         (result?.messages[0].attachments?.[0] as unknown as t.IMessage | undefined)?.conversationId,
       ).toBe(result?.conversationId);
+    });
+
+    test('should strip internal message and attachment fields from shared output', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+
+      const message = await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'safe text',
+        isCreatedByUser: false,
+        model: 'gpt-4',
+        endpoint: 'openAI',
+        conversationSignature: 'signature',
+        clientId: 'client-id',
+        plugin: { latest: 'internal' },
+        metadata: { codeEnvRef: 'internal-ref' },
+        attachments: [
+          {
+            file_id: 'file123',
+            filename: 'safe.pdf',
+            type: 'application/pdf',
+            width: 640,
+            height: 480,
+            filepath: '/private/safe.pdf',
+            storageKey: 'private/safe.pdf',
+            metadata: { codeEnvRef: 'internal-ref' },
+          },
+        ],
+      });
+
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: [message._id],
+      });
+
+      const result = await shareMethods.getSharedMessages(shareId);
+      const shared = result?.messages[0] as (t.IMessage & Record<string, unknown>) | undefined;
+
+      expect(shared?.text).toBe('safe text');
+      // Non-assistant model and internal message fields must not be disclosed.
+      expect(shared?.model).toBeUndefined();
+      expect(shared).not.toHaveProperty('endpoint');
+      expect(shared).not.toHaveProperty('conversationSignature');
+      expect(shared).not.toHaveProperty('clientId');
+      expect(shared).not.toHaveProperty('plugin');
+      expect(shared).not.toHaveProperty('metadata');
+
+      // Attachments keep render-relevant fields but drop internal storage fields.
+      const attachment = shared?.attachments?.[0] as Record<string, unknown> | undefined;
+      expect(attachment).toMatchObject({
+        filename: 'safe.pdf',
+        type: 'application/pdf',
+        width: 640,
+        height: 480,
+      });
+      expect(attachment).not.toHaveProperty('file_id');
+      expect(attachment).not.toHaveProperty('filepath');
+      expect(attachment).not.toHaveProperty('storageKey');
+      expect(attachment).not.toHaveProperty('metadata');
     });
   });
 

@@ -12,6 +12,8 @@ export interface ISharedLink {
   expiredAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
+  /** Owning tenant for multi-tenant deployments (read by the shared-link access middleware). */
+  tenantId?: string;
 }
 
 export interface ShareServiceError extends Error {

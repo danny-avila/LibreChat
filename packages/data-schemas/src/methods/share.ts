@@ -42,6 +42,81 @@ function anonymizeConvo(conversation: Partial<t.IConversation> & Partial<t.IShar
   return newConvo;
 }
 
+type SharedAttachment = {
+  filename?: string;
+  type?: string;
+  width?: number;
+  height?: number;
+};
+
+type MessageAttachment = SharedAttachment & {
+  messageId?: string;
+  conversationId?: string;
+};
+
+function getString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function getNumber(value: unknown): number | undefined {
+  return typeof value === 'number' ? value : undefined;
+}
+
+/**
+ * Allowlist the safe, render-relevant fields of an attachment, dropping internal
+ * fields (e.g. `filepath`, `storageKey`, `metadata`) that must not be exposed
+ * through a public shared link.
+ */
+function sanitizeAttachment(value: unknown): SharedAttachment | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const source = value as Record<string, unknown>;
+  const filename = getString(source.filename);
+  const type = getString(source.type);
+  const width = getNumber(source.width);
+  const height = getNumber(source.height);
+  const attachment: SharedAttachment = {
+    ...(filename && { filename }),
+    ...(type && { type }),
+    ...(width !== undefined && { width }),
+    ...(height !== undefined && { height }),
+  };
+
+  return Object.keys(attachment).length > 0 ? attachment : null;
+}
+
+function sanitizeAttachments(
+  attachments: t.IMessage['attachments'],
+): SharedAttachment[] | undefined {
+  if (!Array.isArray(attachments)) {
+    return undefined;
+  }
+
+  const sanitized = attachments
+    .map(sanitizeAttachment)
+    .filter((attachment): attachment is SharedAttachment => attachment != null);
+
+  return sanitized.length > 0 ? sanitized : undefined;
+}
+
+/**
+ * Only surface a model name when it is an (already-anonymized) assistant id;
+ * otherwise omit it so the underlying provider/model is not disclosed.
+ */
+function anonymizeSharedModel(model?: string): string | undefined {
+  if (!model?.startsWith('asst_')) {
+    return undefined;
+  }
+  return anonymizeAssistantId(model);
+}
+
+/**
+ * Build the public, anonymized view of shared messages. Uses an allowlist so that
+ * internal message fields (endpoint, conversationSignature, clientId, plugin(s),
+ * metadata, etc.) and internal attachment fields are never exposed in a shared link.
+ */
 function anonymizeMessages(messages: t.IMessage[], newConvoId: string): t.IMessage[] {
   if (!Array.isArray(messages)) {
     return [];
@@ -52,33 +127,34 @@ function anonymizeMessages(messages: t.IMessage[], newConvoId: string): t.IMessa
     const newMessageId = anonymizeMessageId(message.messageId);
     idMap.set(message.messageId, newMessageId);
 
-    type MessageAttachment = {
-      messageId?: string;
-      conversationId?: string;
-      [key: string]: unknown;
-    };
-
-    const anonymizedAttachments = (message.attachments as MessageAttachment[])?.map(
-      (attachment) => {
-        return {
-          ...attachment,
-          messageId: newMessageId,
-          conversationId: newConvoId,
-        };
-      },
+    const anonymizedAttachments = sanitizeAttachments(message.attachments)?.map(
+      (attachment): MessageAttachment => ({
+        ...attachment,
+        messageId: newMessageId,
+        conversationId: newConvoId,
+      }),
     );
+    const model = anonymizeSharedModel(message.model);
 
     return {
-      ...message,
       messageId: newMessageId,
       parentMessageId:
         idMap.get(message.parentMessageId || '') ||
         anonymizeMessageId(message.parentMessageId || ''),
       conversationId: newConvoId,
-      model: message.model?.startsWith('asst_')
-        ? anonymizeAssistantId(message.model)
-        : message.model,
-      attachments: anonymizedAttachments,
+      sender: message.sender,
+      text: message.text,
+      content: message.content,
+      ...(model && { model }),
+      isCreatedByUser: message.isCreatedByUser,
+      createdAt: message.createdAt,
+      updatedAt: message.updatedAt,
+      tokenCount: message.tokenCount,
+      unfinished: message.unfinished,
+      error: message.error,
+      finish_reason: message.finish_reason,
+      feedback: message.feedback,
+      ...(anonymizedAttachments && { attachments: anonymizedAttachments }),
     } as t.IMessage;
   });
 }
