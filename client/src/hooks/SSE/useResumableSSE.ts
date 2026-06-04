@@ -94,7 +94,6 @@ const waitForRetryDelay = (delay: number, signal?: AbortSignal): Promise<boolean
       return;
     }
 
-    let timeout: ReturnType<typeof setTimeout>;
     function cleanup() {
       signal?.removeEventListener('abort', onAbort);
     }
@@ -103,7 +102,7 @@ const waitForRetryDelay = (delay: number, signal?: AbortSignal): Promise<boolean
       cleanup();
       resolve(false);
     }
-    timeout = setTimeout(() => {
+    const timeout = setTimeout(() => {
       cleanup();
       resolve(true);
     }, delay);
