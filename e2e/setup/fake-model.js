@@ -1,13 +1,13 @@
 /**
  * In-process fake LLM for credential-free e2e tests. Loaded by `@librechat/api`'s
- * `createRun` via the `LIBRECHAT_TEST_RUN_HOOK` env var (set in
- * `playwright.config.mock.ts`), it swaps the run's model for the agents
- * package's own `FakeChatModel` through `run.Graph.overrideTestModel(...)`.
+ * `createRun` via the `LIBRECHAT_TEST_RUN_HOOK` env var (set by the mock
+ * Playwright config and the `--profile=mock` recorder), it swaps the run's model
+ * for the agents package's own `FakeChatModel` through
+ * `run.Graph.overrideTestModel(...)`.
  *
  * This exercises the real `Run.create` -> graph -> tool-node pipeline end to end
- * without a live provider or a standalone HTTP mock server. The behavior mirrors
- * the previous `mock-llm-server.js`, but decides responses from the conversation
- * and the agents' advertised tools instead of an OpenAI-style request body.
+ * without a live provider or a standalone HTTP mock server: responses are decided
+ * from the conversation and the agents' advertised tools.
  */
 const MOCK_REPLY = process.env.MOCK_LLM_REPLY || 'E2E mock reply: pong';
 const CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_CHUNK_DELAY_MS) || 10;
