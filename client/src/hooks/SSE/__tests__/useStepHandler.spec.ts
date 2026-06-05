@@ -234,6 +234,182 @@ describe('useStepHandler', () => {
       );
     });
 
+    it('should preserve multiple tool call steps for the same preliminary response', () => {
+      const responseMessage = createResponseMessage();
+      let currentMessages = [responseMessage];
+      mockGetMessages.mockImplementation(() => currentMessages);
+      mockSetMessages.mockImplementation((messages) => {
+        currentMessages = messages;
+      });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const submission = createSubmission({ initialResponse: responseMessage });
+
+      const firstRunStep = createToolCallRunStep({
+        id: 'step-oauth-eli',
+        runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
+        index: 0,
+        stepDetails: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [
+            {
+              id: 'tool-call-eli',
+              name: `oauth${Constants.mcp_delimiter}ELI`,
+              args: '',
+              type: ToolCallTypes.TOOL_CALL,
+            },
+          ],
+        },
+      });
+      const secondRunStep = createToolCallRunStep({
+        id: 'step-oauth-vespa',
+        runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
+        index: 1,
+        stepDetails: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [
+            {
+              id: 'tool-call-vespa',
+              name: `oauth${Constants.mcp_delimiter}Vespa`,
+              args: '',
+              type: ToolCallTypes.TOOL_CALL,
+            },
+          ],
+        },
+      });
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_RUN_STEP, data: firstRunStep },
+          submission,
+        );
+        result.current.stepHandler(
+          { event: StepEvents.ON_RUN_STEP, data: secondRunStep },
+          submission,
+        );
+      });
+
+      const responseMsg = currentMessages.find((m) => !m.isCreatedByUser);
+      expect(responseMsg?.content).toHaveLength(2);
+      expect(responseMsg?.content?.[0]?.tool_call?.name).toBe(`oauth${Constants.mcp_delimiter}ELI`);
+      expect(responseMsg?.content?.[1]?.tool_call?.name).toBe(
+        `oauth${Constants.mcp_delimiter}Vespa`,
+      );
+    });
+
+    it('should clear OAuth prompt slots when one occupies the real response slot', () => {
+      const responseMessage = createResponseMessage();
+      let currentMessages = [responseMessage];
+      mockGetMessages.mockImplementation(() => currentMessages);
+      mockSetMessages.mockImplementation((messages) => {
+        currentMessages = messages;
+      });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const submission = createSubmission({ initialResponse: responseMessage });
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP,
+            data: createToolCallRunStep({
+              id: 'step-oauth-eli',
+              runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
+              index: 0,
+              stepDetails: {
+                type: StepTypes.TOOL_CALLS,
+                tool_calls: [
+                  {
+                    id: 'tool-call-eli',
+                    name: `oauth${Constants.mcp_delimiter}ELI`,
+                    args: '',
+                    type: ToolCallTypes.TOOL_CALL,
+                  },
+                ],
+              },
+            }),
+          },
+          submission,
+        );
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP,
+            data: createToolCallRunStep({
+              id: 'step-oauth-vespa',
+              runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
+              index: 1,
+              stepDetails: {
+                type: StepTypes.TOOL_CALLS,
+                tool_calls: [
+                  {
+                    id: 'tool-call-vespa',
+                    name: `oauth${Constants.mcp_delimiter}Vespa`,
+                    args: '',
+                    type: ToolCallTypes.TOOL_CALL,
+                  },
+                ],
+              },
+            }),
+          },
+          submission,
+        );
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP,
+            data: createRunStep({
+              id: 'step-message',
+              runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
+              index: 0,
+            }),
+          },
+          submission,
+        );
+        result.current.stepHandler(
+          { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta('step-message', 'Ready') },
+          submission,
+        );
+      });
+
+      const responseMsg = currentMessages.find((m) => !m.isCreatedByUser);
+      expect(responseMsg?.content).toEqual([{ type: ContentTypes.TEXT, text: 'Ready' }]);
+    });
+
+    it('should not replace the message list from a shorter refresh during tool call steps', () => {
+      const userMessage = createUserMessage();
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValueOnce([userMessage, responseMessage]).mockReturnValueOnce([]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createToolCallRunStep({
+        runId: responseMessage.messageId,
+        stepDetails: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [
+            {
+              id: 'tool-call-eli',
+              name: `oauth${Constants.mcp_delimiter}ELI`,
+              args: '',
+              type: ToolCallTypes.TOOL_CALL,
+            },
+          ],
+        },
+      });
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_RUN_STEP, data: runStep },
+          createSubmission({ userMessage, initialResponse: responseMessage }),
+        );
+      });
+
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1][0];
+      expect(lastCall.map((message: TMessage) => message.messageId)).toEqual([
+        userMessage.messageId,
+        responseMessage.messageId,
+      ]);
+    });
+
     it('should replay buffered deltas after registering step', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
@@ -755,6 +931,59 @@ describe('useStepHandler', () => {
         'No run step or runId found for completed tool call event',
       );
       consoleSpy.mockRestore();
+    });
+
+    it('should mark completed OAuth prompts as finished', () => {
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createToolCallRunStep({
+        id: 'step-oauth-eli',
+        stepDetails: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [
+            {
+              id: 'tool-call-eli',
+              name: `oauth${Constants.mcp_delimiter}ELI`,
+              args: '',
+              type: ToolCallTypes.TOOL_CALL,
+            },
+          ],
+        },
+      });
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP_COMPLETED,
+            data: {
+              result: {
+                id: 'step-oauth-eli',
+                index: 0,
+                tool_call: {
+                  id: 'tool-call-eli',
+                  name: `oauth${Constants.mcp_delimiter}ELI`,
+                  args: '',
+                  output: 'OAuth authentication completed',
+                  type: ToolCallTypes.TOOL_CALL,
+                },
+              },
+            },
+          },
+          submission,
+        );
+      });
+
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1][0];
+      const responseMsg = lastCall.find((m: TMessage) => !m.isCreatedByUser);
+      expect(responseMsg?.content?.[0]?.tool_call?.progress).toBe(1);
     });
   });
 
