@@ -381,6 +381,10 @@ endpoints:
   #   # (optional) Minimum relevance score for sources to be included in responses, defaults to 0.45 (45% relevance threshold)
   #   # Set to 0.0 to show all sources (no filtering), or higher like 0.7 for stricter filtering
   #   minRelevanceScore: 0.45
+  #   # (optional) Cap the number of active accessible skills shown in the model-visible catalog.
+  #   # Useful for large organizations where many department-specific skills may be available.
+  #   skills:
+  #     maxCatalogSkills: 20
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["deferred_tools", "execute_code", "file_search", "actions", "tools"]
 
@@ -606,6 +610,10 @@ endpoints:
 #       preset:
 #         endpoint: "openAI"
 #         model: "gpt-4o"
+#       # Skills can be enabled per model spec. Use true for the user's active
+#       # accessible skill catalog, false to force skills off, or a name list as
+#       # a strict allowlist for catalog, manual, and always-apply resolution.
+#       # skills: ["brand-guidelines", "code-review"]
 #
 #     # Example 2: Nested under a custom endpoint (grouped with groq endpoint)
 #     - name: "llama3-70b-8192"

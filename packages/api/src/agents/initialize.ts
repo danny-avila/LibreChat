@@ -70,6 +70,13 @@ function appendAdditionalInstructions(agent: Agent, text?: string | null): void 
     .join('\n\n');
 }
 
+function getMaxCatalogSkills(req: ServerRequest): number | undefined {
+  const endpoints = req.config?.endpoints as
+    | Record<string, { skills?: { maxCatalogSkills?: number } } | undefined>
+    | undefined;
+  return endpoints?.[EModelEndpoint.agents]?.skills?.maxCatalogSkills;
+}
+
 function getToolName(tool: unknown): string | undefined {
   if (tool == null || typeof tool !== 'object') {
     return undefined;
@@ -1022,6 +1029,7 @@ export async function initializeAgent(
       userId: req.user?.id,
       skillStates: params.skillStates,
       defaultActiveOnShare: params.defaultActiveOnShare,
+      maxCatalogSkills: getMaxCatalogSkills(req),
     });
     toolDefinitions = skillResult.toolDefinitions;
     skillCount = skillResult.skillCount;

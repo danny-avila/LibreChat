@@ -197,7 +197,7 @@ export type TCreateSkill = {
   body: string;
   frontmatter?: Partial<SkillFrontmatter>;
   category?: string;
-  /** When `true`, the skill auto-primes into every turn (mirrors `always-apply` frontmatter). */
+  /** When `true`, the skill auto-primes into every turn (mirrors always-apply frontmatter). */
   alwaysApply?: boolean;
 };
 

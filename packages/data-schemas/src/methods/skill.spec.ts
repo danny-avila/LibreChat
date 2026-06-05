@@ -283,6 +283,8 @@ describe('skill validation helpers', () => {
     it('accepts always-apply as a boolean', () => {
       expect(validateSkillFrontmatter({ 'always-apply': true })).toEqual([]);
       expect(validateSkillFrontmatter({ 'always-apply': false })).toEqual([]);
+      expect(validateSkillFrontmatter({ alwaysApply: true })).toEqual([]);
+      expect(validateSkillFrontmatter({ alwaysApply: false })).toEqual([]);
     });
 
     it('rejects always-apply with non-boolean values', () => {
@@ -293,6 +295,11 @@ describe('skill validation helpers', () => {
       ).toBe(true);
       expect(
         validateSkillFrontmatter({ 'always-apply': 1 }).some((i) => i.code === 'INVALID_TYPE'),
+      ).toBe(true);
+      expect(
+        validateSkillFrontmatter({ alwaysApply: 'yes' }).some(
+          (i) => i.code === 'INVALID_TYPE' && i.field === 'frontmatter.alwaysApply',
+        ),
       ).toBe(true);
     });
   });
@@ -1076,6 +1083,35 @@ describe('Skill CRUD methods', () => {
     expect(skill.alwaysApply).toBe(true);
   });
 
+  it('createSkill derives alwaysApply from the camel-case frontmatter alias', async () => {
+    const { skill } = await methods.createSkill(
+      makeSkillInput({
+        name: 'frontmatter-alias-on',
+        frontmatter: {
+          name: 'frontmatter-alias-on',
+          description: 'A small demo skill used in tests.',
+          alwaysApply: true,
+        },
+      }),
+    );
+    expect(skill.alwaysApply).toBe(true);
+  });
+
+  it('createSkill lets always-apply win when both frontmatter spellings are present', async () => {
+    const { skill } = await methods.createSkill(
+      makeSkillInput({
+        name: 'frontmatter-canonical-wins',
+        frontmatter: {
+          name: 'frontmatter-canonical-wins',
+          description: 'A small demo skill used in tests.',
+          'always-apply': false,
+          alwaysApply: true,
+        },
+      }),
+    );
+    expect(skill.alwaysApply).toBe(false);
+  });
+
   it('createSkill prefers explicit top-level alwaysApply over frontmatter', async () => {
     const { skill } = await methods.createSkill(
       makeSkillInput({
@@ -1102,6 +1138,26 @@ describe('Skill CRUD methods', () => {
           name: 'sync-test',
           description: 'A small demo skill used in tests.',
           'always-apply': true,
+        },
+      },
+    });
+    expect(result.status).toBe('updated');
+    if (result.status === 'updated') {
+      expect(result.skill.alwaysApply).toBe(true);
+    }
+  });
+
+  it('updateSkill syncs alwaysApply column from the camel-case frontmatter alias', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'sync-alias-test' }));
+    expect(skill.alwaysApply).toBe(false);
+    const result = await methods.updateSkill({
+      id: skill._id.toString(),
+      expectedVersion: skill.version,
+      update: {
+        frontmatter: {
+          name: 'sync-alias-test',
+          description: 'A small demo skill used in tests.',
+          alwaysApply: true,
         },
       },
     });
@@ -1169,6 +1225,21 @@ describe('Skill CRUD methods', () => {
     const { skill } = await methods.createSkill(makeSkillInput({ name: 'body-enable' }));
     expect(skill.alwaysApply).toBe(false);
     const newBody = `---\nname: body-enable\ndescription: now opting in.\nalways-apply: true\n---\n\n# Body`;
+    const result = await methods.updateSkill({
+      id: skill._id.toString(),
+      expectedVersion: skill.version,
+      update: { body: newBody },
+    });
+    expect(result.status).toBe('updated');
+    if (result.status === 'updated') {
+      expect(result.skill.alwaysApply).toBe(true);
+    }
+  });
+
+  it('updateSkill derives alwaysApply=true from a body edit that adds `alwaysApply: true` inline', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'body-enable-alias' }));
+    expect(skill.alwaysApply).toBe(false);
+    const newBody = `---\nname: body-enable-alias\ndescription: now opting in.\nalwaysApply: true\n---\n\n# Body`;
     const result = await methods.updateSkill({
       id: skill._id.toString(),
       expectedVersion: skill.version,

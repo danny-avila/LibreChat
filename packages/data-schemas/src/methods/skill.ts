@@ -250,6 +250,7 @@ const ALLOWED_FRONTMATTER_KEYS = new Set<string>([
   'user-invocable',
   'disable-model-invocation',
   'always-apply',
+  'alwaysApply',
   'model',
   'effort',
   'context',
@@ -278,6 +279,7 @@ const FRONTMATTER_KIND: Record<string, FrontmatterKind | FrontmatterKind[]> = {
   'user-invocable': 'boolean',
   'disable-model-invocation': 'boolean',
   'always-apply': 'boolean',
+  alwaysApply: 'boolean',
   model: 'string',
   effort: ['string', 'number'],
   context: 'string',
@@ -597,6 +599,20 @@ export function backfillDerivedFromFrontmatter<
   return skill;
 }
 
+function getAlwaysApplyFrontmatterValue(
+  frontmatter: Record<string, unknown> | undefined,
+): boolean | undefined {
+  const canonical = frontmatter?.['always-apply'];
+  if (typeof canonical === 'boolean') {
+    return canonical;
+  }
+  const camelAlias = frontmatter?.alwaysApply;
+  if (typeof camelAlias === 'boolean') {
+    return camelAlias;
+  }
+  return undefined;
+}
+
 export type UpsertSkillFileInput = {
   skillId: Types.ObjectId | string;
   relativePath: string;
@@ -679,14 +695,14 @@ type BodyAlwaysApplyResult =
   | { status: 'invalid' };
 
 /**
- * Extractor for the `always-apply` flag sitting inside a SKILL.md body's
+ * Extractor for the `always-apply` / `alwaysApply` flag sitting inside a SKILL.md body's
  * YAML frontmatter block. The REST edit flow lets users rewrite the full
  * SKILL.md text via `update.body` without a structured `frontmatter`
  * object, so this is the only signal we have for "user flipped
- * `always-apply:` inline in their editor".
+ * `always-apply:` or `alwaysApply:` inline in their editor".
  *
  * Returns a discriminated union so callers can tell:
- *  - `absent` — no `always-apply:` key (leave column alone; could be
+ *  - `absent` — no always-apply key (leave column alone; could be
  *    "user removed the flag" or "user hasn't written it yet" — both
  *    resolve to no-op). An empty value (`always-apply:` with nothing
  *    after the colon) is also treated as absent to allow mid-edit
@@ -697,7 +713,8 @@ type BodyAlwaysApplyResult =
  *    recognizable boolean (e.g. `tru`, `yes`, `1`). Validation rejects
  *    this rather than silently ignoring so `always-apply: tru` typos
  *    surface as 400s instead of drifting the column from what the
- *    saved SKILL.md text says.
+ *    saved SKILL.md text says. When both forms are present, the canonical
+ *    `always-apply` form wins because existing files may already rely on it.
  */
 function extractAlwaysApplyFromBody(body: string | undefined): BodyAlwaysApplyResult {
   if (typeof body !== 'string' || body.length === 0) {
@@ -713,13 +730,15 @@ function extractAlwaysApplyFromBody(body: string | undefined): BodyAlwaysApplyRe
     return { status: 'absent' };
   }
   const block = after.slice(0, closingIdx);
+  let aliasResult: BodyAlwaysApplyResult | undefined;
   for (const line of block.split('\n')) {
     const colon = line.indexOf(':');
     if (colon === -1) {
       continue;
     }
-    const key = line.slice(0, colon).trim().toLowerCase();
-    if (key !== 'always-apply') {
+    const key = line.slice(0, colon).trim();
+    const normalizedKey = key.toLowerCase();
+    if (normalizedKey !== 'always-apply' && normalizedKey !== 'alwaysapply') {
       continue;
     }
     // Strip the YAML inline comment BEFORE unquoting — a line like
@@ -728,7 +747,12 @@ function extractAlwaysApplyFromBody(body: string | undefined): BodyAlwaysApplyRe
     // the comment-strip would leave `"true"` which parses as invalid.
     let value = stripYamlTrailingComment(line.slice(colon + 1).trim()).trim();
     if (value === '') {
-      return { status: 'absent' };
+      const result: BodyAlwaysApplyResult = { status: 'absent' };
+      if (normalizedKey === 'always-apply') {
+        return result;
+      }
+      aliasResult = result;
+      continue;
     }
     if (
       value.length >= 2 &&
@@ -739,14 +763,28 @@ function extractAlwaysApplyFromBody(body: string | undefined): BodyAlwaysApplyRe
     }
     value = value.trim();
     if (value === '') {
-      return { status: 'absent' };
+      const result: BodyAlwaysApplyResult = { status: 'absent' };
+      if (normalizedKey === 'always-apply') {
+        return result;
+      }
+      aliasResult = result;
+      continue;
     }
     const lowered = value.toLowerCase();
-    if (lowered === 'true') return { status: 'valid', value: true };
-    if (lowered === 'false') return { status: 'valid', value: false };
-    return { status: 'invalid' };
+    let result: BodyAlwaysApplyResult;
+    if (lowered === 'true') {
+      result = { status: 'valid', value: true };
+    } else if (lowered === 'false') {
+      result = { status: 'valid', value: false };
+    } else {
+      result = { status: 'invalid' };
+    }
+    if (normalizedKey === 'always-apply') {
+      return result;
+    }
+    aliasResult = result;
   }
-  return { status: 'absent' };
+  return aliasResult ?? { status: 'absent' };
 }
 
 /**
@@ -760,9 +798,9 @@ function extractAlwaysApplyFromBody(body: string | undefined): BodyAlwaysApplyRe
  *
  * Precedence:
  *  1. An explicit top-level `alwaysApply` wins (caller overrides).
- *  2. Otherwise, derive from `frontmatter['always-apply']` when it is
- *     a strict boolean.
- *  3. Otherwise, parse `always-apply:` out of the SKILL.md body
+ *  2. Otherwise, derive from `frontmatter['always-apply']` or the accepted
+ *     alias `frontmatter.alwaysApply` when either is a strict boolean.
+ *  3. Otherwise, parse `always-apply:` / `alwaysApply:` out of the SKILL.md body
  *     frontmatter block (covers the UI edit flow that sends only
  *     `body` without a structured `frontmatter` object).
  *  4. Otherwise, return `fallback` (typically `false` on create, or the
@@ -782,7 +820,7 @@ function resolveAlwaysApplyFromInput(
   if (typeof explicit === 'boolean') {
     return explicit;
   }
-  const fromFrontmatter = frontmatter?.['always-apply'];
+  const fromFrontmatter = getAlwaysApplyFrontmatterValue(frontmatter);
   if (typeof fromFrontmatter === 'boolean') {
     return fromFrontmatter;
   }
@@ -807,9 +845,10 @@ export function validateAlwaysApplyInBody(body: string | undefined): ValidationI
   if (result.status === 'invalid') {
     return [
       {
-        field: 'body.frontmatter.always-apply',
+        field: 'body.frontmatter.alwaysApply',
         code: 'INVALID_TYPE',
-        message: '"always-apply" in SKILL.md frontmatter must be a boolean (true or false)',
+        message:
+          '"always-apply" or "alwaysApply" in SKILL.md frontmatter must be a boolean (true or false)',
       },
     ];
   }
@@ -885,18 +924,19 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
        higher-precedence source won't override it (see
        `resolveAlwaysApplyFromInput` for the cascade). A caller sending
        an explicit top-level `alwaysApply` or a structured
-       `frontmatter['always-apply']` has the body value overridden at
+       an always-apply value in structured `frontmatter` has the body value overridden at
        derivation time, so rejecting them for a typo they aren't relying
        on would be user-hostile. */
     if (
       bodyAlwaysApply?.status === 'invalid' &&
       typeof data.alwaysApply !== 'boolean' &&
-      typeof data.frontmatter?.['always-apply'] !== 'boolean'
+      getAlwaysApplyFrontmatterValue(data.frontmatter) === undefined
     ) {
       issues.push({
-        field: 'body.frontmatter.always-apply',
+        field: 'body.frontmatter.alwaysApply',
         code: 'INVALID_TYPE',
-        message: '"always-apply" in SKILL.md frontmatter must be a boolean (true or false)',
+        message:
+          '"always-apply" or "alwaysApply" in SKILL.md frontmatter must be a boolean (true or false)',
       });
     }
     const { errors, warnings } = partitionIssues(issues);
@@ -1214,12 +1254,13 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     if (
       bodyAlwaysApply?.status === 'invalid' &&
       update.alwaysApply === undefined &&
-      typeof update.frontmatter?.['always-apply'] !== 'boolean'
+      getAlwaysApplyFrontmatterValue(update.frontmatter) === undefined
     ) {
       issues.push({
-        field: 'body.frontmatter.always-apply',
+        field: 'body.frontmatter.alwaysApply',
         code: 'INVALID_TYPE',
-        message: '"always-apply" in SKILL.md frontmatter must be a boolean (true or false)',
+        message:
+          '"always-apply" or "alwaysApply" in SKILL.md frontmatter must be a boolean (true or false)',
       });
     }
     const { errors, warnings } = partitionIssues(issues);
@@ -1258,11 +1299,11 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     /**
      * Keep the indexed `alwaysApply` column in sync with whatever the update
      * is carrying: an explicit top-level `alwaysApply` always wins; a
-     * structured `frontmatter` with `always-apply: true/false` is next; and
-     * a `body` update is scanned last for an inline `always-apply:` line
+     * structured `frontmatter` with `always-apply: true/false` or the
+     * accepted `alwaysApply` alias is next; and a `body` update is scanned last for an inline `always-apply:` line
      * inside the SKILL.md frontmatter block. The body path is load-bearing
      * for the REST edit flow — the current UI sends `body` without a
-     * parallel `frontmatter` object, so inline edits to `always-apply:`
+     * parallel `frontmatter` object, so inline edits to `always-apply:` / `alwaysApply:`
      * would otherwise leave the column stale and auto-priming / pin
      * badges would keep using the old value.
      *
@@ -1277,7 +1318,7 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
      * at each level, not the presence of the parent field. An API caller
      * that sends both `body` and an unrelated `frontmatter` bag (e.g.
      * editing category + rewriting SKILL.md in one PATCH) still gets the
-     * body-inline flag respected because `frontmatter['always-apply']`
+     * body-inline flag respected because no structured always-apply key
      * is absent in that payload.
      */
     let derivedAlwaysApply: boolean | undefined;
@@ -1285,7 +1326,7 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
       derivedAlwaysApply = update.alwaysApply;
     }
     if (derivedAlwaysApply === undefined && update.frontmatter !== undefined) {
-      const fromFrontmatter = update.frontmatter['always-apply'];
+      const fromFrontmatter = getAlwaysApplyFrontmatterValue(update.frontmatter);
       if (typeof fromFrontmatter === 'boolean') {
         derivedAlwaysApply = fromFrontmatter;
       }

@@ -135,6 +135,17 @@ export async function loadEphemeralAgent(
   if (ephemeralAgent?.artifacts) {
     result.artifacts = ephemeralAgent.artifacts;
   }
+  if (modelSpec && Object.prototype.hasOwnProperty.call(modelSpec, 'skills')) {
+    if (modelSpec.skills === true) {
+      result.skills_enabled = true;
+    } else if (modelSpec.skills === false) {
+      result.skills_enabled = false;
+      result.skills = [];
+    } else if (Array.isArray(modelSpec.skills)) {
+      result.skills_enabled = true;
+      result.skills = [];
+    }
+  }
   return result as Agent;
 }
 

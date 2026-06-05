@@ -17,6 +17,7 @@ describe('modelSpecs helpers', () => {
         {
           name: 'guarded-spec',
           label: 'Guarded Spec',
+          skills: ['private-skill'],
           preset: {
             endpoint: EModelEndpoint.openAI,
             model: 'gpt-4o',
@@ -32,11 +33,13 @@ describe('modelSpecs helpers', () => {
       ],
     };
 
-    expect(sanitizeModelSpecs(modelSpecs).list[0].preset).toEqual({
+    const sanitizedModelSpecs = sanitizeModelSpecs(modelSpecs);
+    expect(sanitizedModelSpecs.list[0].preset).toEqual({
       endpoint: EModelEndpoint.openAI,
       model: 'gpt-4o',
       greeting: 'Hello',
     });
+    expect(sanitizedModelSpecs.list[0]).not.toHaveProperty('skills');
   });
 
   it('should restore only private fields for non-enforced model specs', () => {

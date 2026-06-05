@@ -14,13 +14,20 @@ const CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_CHUNK_DELAY_MS) || 10;
 
 const CREATE_SKILL_MARKER = 'E2E_CREATE_SKILL:';
 const EDIT_SKILL_MARKER = 'E2E_EDIT_SKILL:';
+const ASSERT_MODEL_SPEC_SKILLS_MARKER = 'E2E_ASSERT_MODEL_SPEC_SKILLS';
 const CREATE_FILE_AUTHORING_FINAL_TEXT = 'E2E file authoring complete';
 const EDIT_FILE_AUTHORING_FINAL_TEXT = 'E2E file edit complete';
+const MODEL_SPEC_SKILL_ASSERTION_FINAL_TEXT = 'E2E model spec skill assertion passed';
 const CREATE_FILE_TOOL_NAME = 'create_file';
 const EDIT_FILE_TOOL_NAME = 'edit_file';
 const BASH_TOOL_NAME = 'bash_tool';
+const SKILL_TOOL_NAME = 'skill';
 const CREATE_SKILL_TOOL_CALL_ID = 'call_e2e_create_skill';
 const EDIT_SKILL_TOOL_CALL_ID = 'call_e2e_edit_skill';
+const MODEL_SPEC_ACCESSIBLE_SKILL = 'e2e-model-spec-allowed';
+const MODEL_SPEC_MISSING_SKILL = 'e2e-model-spec-missing';
+const MODEL_SPEC_INACCESSIBLE_SKILL = 'e2e-model-spec-inaccessible';
+const ALWAYS_APPLY_BODY_MARKER = 'E2E_ALWAYS_APPLY_BODY_MARKER';
 const SKILL_DESCRIPTION =
   'Use this skill to verify LibreChat skill file authoring in mock end-to-end tests.';
 const EDITED_SKILL_DESCRIPTION =
@@ -108,6 +115,67 @@ function collectToolNames(agents) {
   return names;
 }
 
+function collectAdditionalInstructions(agents) {
+  return (agents ?? [])
+    .map((agent) =>
+      typeof agent?.additional_instructions === 'string' ? agent.additional_instructions : '',
+    )
+    .filter(Boolean)
+    .join('\n');
+}
+
+function collectSkillPrimeMessages(messages) {
+  return (messages ?? [])
+    .filter((message) => message?.additional_kwargs?.source === 'skill')
+    .map((message) => ({
+      name: message.additional_kwargs.skillName,
+      trigger: message.additional_kwargs.trigger,
+      content: getContentText(message.content),
+    }));
+}
+
+function modelSpecSkillAssertionResponses({ agents, messages, toolNames }) {
+  const failures = [];
+  const additionalInstructions = collectAdditionalInstructions(agents);
+  const skillPrimeMessages = collectSkillPrimeMessages(messages);
+  const alwaysApplyPrime = skillPrimeMessages.find(
+    (message) => message.name === MODEL_SPEC_ACCESSIBLE_SKILL && message.trigger === 'always-apply',
+  );
+
+  if (!toolNames.has(SKILL_TOOL_NAME)) {
+    failures.push(`${SKILL_TOOL_NAME} tool was not advertised`);
+  }
+  if (!additionalInstructions.includes(MODEL_SPEC_ACCESSIBLE_SKILL)) {
+    failures.push(`${MODEL_SPEC_ACCESSIBLE_SKILL} was not present in the model-visible catalog`);
+  }
+  if (additionalInstructions.includes(MODEL_SPEC_MISSING_SKILL)) {
+    failures.push(`${MODEL_SPEC_MISSING_SKILL} leaked into the model-visible catalog`);
+  }
+  if (additionalInstructions.includes(MODEL_SPEC_INACCESSIBLE_SKILL)) {
+    failures.push(`${MODEL_SPEC_INACCESSIBLE_SKILL} leaked into the model-visible catalog`);
+  }
+  if (!alwaysApplyPrime) {
+    failures.push(`${MODEL_SPEC_ACCESSIBLE_SKILL} was not always-apply primed`);
+  } else if (!alwaysApplyPrime.content.includes(ALWAYS_APPLY_BODY_MARKER)) {
+    failures.push(`${MODEL_SPEC_ACCESSIBLE_SKILL} always-apply body was missing its marker`);
+  }
+  if (skillPrimeMessages.some((message) => message.name === MODEL_SPEC_MISSING_SKILL)) {
+    failures.push(`${MODEL_SPEC_MISSING_SKILL} was unexpectedly primed`);
+  }
+  if (skillPrimeMessages.some((message) => message.name === MODEL_SPEC_INACCESSIBLE_SKILL)) {
+    failures.push(`${MODEL_SPEC_INACCESSIBLE_SKILL} was unexpectedly primed`);
+  }
+
+  if (failures.length > 0) {
+    return {
+      responses: [`E2E model spec skill assertion failed: ${failures.join('; ')}`],
+    };
+  }
+  return {
+    responses: [`${MODEL_SPEC_SKILL_ASSERTION_FINAL_TEXT}: ${MODEL_SPEC_ACCESSIBLE_SKILL}`],
+  };
+}
+
 function buildSkillBody(skillName) {
   return `---
 name: ${skillName}
@@ -166,7 +234,11 @@ function fileAuthoringResponses(operation, toolNames) {
   };
 }
 
-function resolveResponses(text, toolNames) {
+function resolveResponses({ agents, messages, text, toolNames }) {
+  if (text.includes(ASSERT_MODEL_SPEC_SKILLS_MARKER)) {
+    return modelSpecSkillAssertionResponses({ agents, messages, toolNames });
+  }
+
   const createSkillName = getRequestedSkillName(text, CREATE_SKILL_MARKER);
   if (createSkillName) {
     return fileAuthoringResponses(
@@ -208,6 +280,11 @@ module.exports = function fakeModelHook(run, context) {
 
   const text = getLatestUserText(context?.messages);
   const toolNames = collectToolNames(context?.agents);
-  const { responses, toolCalls } = resolveResponses(text, toolNames);
+  const { responses, toolCalls } = resolveResponses({
+    agents: context?.agents,
+    messages: context?.messages,
+    text,
+    toolNames,
+  });
   graph.overrideTestModel(responses, CHUNK_DELAY_MS, toolCalls);
 };
