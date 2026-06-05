@@ -26,7 +26,7 @@ beforeEach(async () => {
   await mongoose.models.Config.deleteMany({});
 });
 
-describe('upsertConfig', () => {
+describe('upsertConfig tombstone preservation', () => {
   it('creates a new config document', async () => {
     const result = await methods.upsertConfig(
       PrincipalType.ROLE,

@@ -152,9 +152,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
       setPayload[`overrides.${path}`] = value;
     }
 
-    const tombstonesToClear = [
-      ...new Set(Object.keys(fields).flatMap(getTombstonePathsToClear)),
-    ];
+    const tombstonesToClear = [...new Set(Object.keys(fields).flatMap(getTombstonePathsToClear))];
 
     const options = {
       upsert: true,
