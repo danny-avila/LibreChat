@@ -173,6 +173,9 @@ function shouldRunRequestSync(
   const intervalMs = Math.max(minIntervalMs, (status.intervalMinutes ?? 60) * 60 * 1000);
   const now = Date.now();
   return status.sources.some((source) => {
+    if (!source.credentialPresent) {
+      return false;
+    }
     if (source.status === 'running') {
       const startedAt = toTimestamp(source.startedAt);
       return Boolean(startedAt && now - startedAt >= staleRunningMs);

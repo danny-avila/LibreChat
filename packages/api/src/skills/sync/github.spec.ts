@@ -433,7 +433,7 @@ describe('createGitHubSkillSyncRunner', () => {
     }
   });
 
-  it('does not list or resolve server credentials when server credentials are disabled', async () => {
+  it('does not list or resolve server credentials and skips runs when they are disabled', async () => {
     const previousToken = process.env.GITHUB_SKILLS_TOKEN;
     process.env.GITHUB_SKILLS_TOKEN = 'github_pat_from_env';
     const getCredentialToken = jest.fn(async () => 'github_pat_from_db');
@@ -489,22 +489,22 @@ describe('createGitHubSkillSyncRunner', () => {
           credentialPresent: false,
         }),
       ]);
-      expect(result.status).toBe('failed');
+      expect(result.status).toBe('skipped');
+      expect(result.message).toBe(
+        'GitHub skill sync credentials are not available for this runner',
+      );
       expect(result.sources).toEqual([
-        expect.objectContaining({
-          sourceId: 'librechat-skills',
-          status: 'failed',
-          errorCode: 'MISSING_CREDENTIAL',
-        }),
+        expect.objectContaining({ sourceId: 'librechat-skills', credentialPresent: false }),
         expect.objectContaining({
           sourceId: 'stored-credential-skills',
-          status: 'failed',
-          errorCode: 'MISSING_CREDENTIAL',
+          credentialPresent: false,
         }),
       ]);
       expect(listCredentials).not.toHaveBeenCalled();
       expect(getCredentialToken).not.toHaveBeenCalled();
       expect(deps.fetchFn).not.toHaveBeenCalled();
+      expect(deps.tryAcquireLock).not.toHaveBeenCalled();
+      expect(deps.upsertStatus).not.toHaveBeenCalled();
     } finally {
       if (previousToken == null) {
         delete process.env.GITHUB_SKILLS_TOKEN;
@@ -592,9 +592,8 @@ describe('createGitHubSkillSyncRunner', () => {
     expect(deps.upsertStatus).toHaveBeenCalledWith(
       expect.objectContaining({ sourceId: 'librechat-skills', tenantId: 'tenant-a' }),
     );
-    expect(deps.tryAcquireLock).toHaveBeenCalledWith(
-      expect.objectContaining({ tenantId: 'tenant-a' }),
-    );
+    const [lockParams] = (deps.tryAcquireLock as jest.Mock).mock.calls[0];
+    expect(lockParams).not.toHaveProperty('tenantId');
   });
 
   it('matches stored source status by tenant and source id', async () => {
