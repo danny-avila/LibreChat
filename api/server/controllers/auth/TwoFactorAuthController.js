@@ -5,7 +5,11 @@ const {
   getTOTPSecret,
   verifyBackupCode,
 } = require('~/server/services/twoFactorService');
-const { setAuthTokens } = require('~/server/services/AuthService');
+const {
+  setAuthTokens,
+  activeSessionMessage,
+  ACTIVE_SESSION_EXISTS_CODE,
+} = require('~/server/services/AuthService');
 const { getUserById } = require('~/models');
 
 /**
@@ -53,6 +57,9 @@ const verify2FAWithTempToken = async (req, res) => {
     const authToken = await setAuthTokens(user._id, res);
     return res.status(200).json({ token: authToken, user: userData });
   } catch (err) {
+    if (err?.code === ACTIVE_SESSION_EXISTS_CODE) {
+      return res.status(409).json({ message: activeSessionMessage });
+    }
     logger.error('[verify2FAWithTempToken]', err);
     return res.status(500).json({ message: 'Something went wrong' });
   }

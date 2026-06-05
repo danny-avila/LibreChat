@@ -82,6 +82,8 @@ export interface IUser extends Document {
       auth: string;
     };
   }>;
+  activeSessionId?: Types.ObjectId | string | null;
+  activeSessionExpiresAt?: Date | null;
   lastActiveAt: Date
 }
 

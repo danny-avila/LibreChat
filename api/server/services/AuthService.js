@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const { webcrypto } = require('node:crypto');
 const {
   logger,
+  ACTIVE_SESSION_EXISTS_CODE,
   DEFAULT_SESSION_EXPIRY,
   DEFAULT_REFRESH_TOKEN_EXPIRY,
 } = require('@librechat/data-schemas');
@@ -35,6 +36,8 @@ const domains = {
 
 const isProduction = process.env.NODE_ENV === 'production';
 const genericVerificationMessage = 'Please check your email to verify your email address.';
+const activeSessionMessage =
+  'You are already logged in on one device. Logout to access in this device.';
 
 /**
  * Logout user
@@ -551,4 +554,6 @@ module.exports = {
   setOpenIDAuthTokens,
   requestPasswordReset,
   resendVerificationEmail,
+  activeSessionMessage,
+  ACTIVE_SESSION_EXISTS_CODE,
 };
