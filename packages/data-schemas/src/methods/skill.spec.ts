@@ -139,6 +139,23 @@ function makeSkillInput(overrides: Record<string, unknown> = {}) {
   };
 }
 
+describe('Skill schema indexes', () => {
+  it('supports GitHub sync source metadata lookups', () => {
+    const indexSpecs = Skill.schema.indexes().map(([fields]) => fields);
+
+    expect(indexSpecs).toContainEqual({
+      source: 1,
+      'sourceMetadata.upstreamId': 1,
+      tenantId: 1,
+    });
+    expect(indexSpecs).toContainEqual({
+      source: 1,
+      'sourceMetadata.sourceId': 1,
+      tenantId: 1,
+    });
+  });
+});
+
 describe('skill validation helpers', () => {
   it('rejects names starting with reserved brand prefixes', () => {
     expect(validateSkillName('anthropic-helper').some((i) => i.code === 'RESERVED_PREFIX')).toBe(

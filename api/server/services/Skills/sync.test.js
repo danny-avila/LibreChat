@@ -32,6 +32,9 @@ jest.mock('@librechat/api', () => {
               provider: 'github',
               sourceId: source.id,
               status: 'idle',
+              credentialPresent:
+                deps.allowServerCredentials !== false &&
+                Boolean(source.credentialKey || source.token),
               owner: source.owner,
               repo: source.repo,
               ref: source.ref,
@@ -175,6 +178,28 @@ describe('GitHub skill sync service', () => {
         ],
       },
     };
+    mockRunnerStatus = {
+      enabled: true,
+      intervalMinutes: 60,
+      runOnStartup: false,
+      sources: [
+        {
+          provider: 'github',
+          sourceId: 'tenant-skills',
+          status: 'idle',
+          credentialPresent: true,
+          owner: 'LibreChat',
+          repo: 'skills',
+          ref: 'main',
+          paths: ['skills'],
+          syncedSkillCount: 0,
+          syncedFileCount: 0,
+          deletedSkillCount: 0,
+          deletedFileCount: 0,
+        },
+      ],
+      credentials: [],
+    };
 
     const service = require('./sync');
     const started = await service.maybeRunGitHubSkillSyncForRequest({
@@ -194,6 +219,36 @@ describe('GitHub skill sync service', () => {
         tenantId: 'tenant-a',
       }),
     );
+  });
+
+  it('does not auto-start request-scoped sync when server credentials are unavailable', async () => {
+    const skillSync = {
+      github: {
+        enabled: true,
+        intervalMinutes: 60,
+        runOnStartup: true,
+        sources: [
+          {
+            id: 'tenant-skills',
+            owner: 'LibreChat',
+            repo: 'skills',
+            ref: 'main',
+            paths: ['skills'],
+            token: '${GITHUB_SKILLS_TOKEN}',
+          },
+        ],
+      },
+    };
+
+    const service = require('./sync');
+    const started = await service.maybeRunGitHubSkillSyncForRequest({
+      config: { skillSync, config: {} },
+      user: { id: 'user-1', tenantId: 'tenant-a' },
+    });
+
+    expect(started).toBe(false);
+    expect(mockCreatedRunners[0].deps.allowServerCredentials).toBe(false);
+    expect(mockCreatedRunners[0].runner.runOnce).not.toHaveBeenCalled();
   });
 
   it('does not start a request-scoped sync for base YAML skillSync config', async () => {
@@ -317,6 +372,7 @@ describe('GitHub skill sync service', () => {
           provider: 'github',
           sourceId: 'tenant-skills',
           status: 'running',
+          credentialPresent: true,
           owner: 'LibreChat',
           repo: 'skills',
           ref: 'main',
@@ -368,6 +424,7 @@ describe('GitHub skill sync service', () => {
           provider: 'github',
           sourceId: 'tenant-skills',
           status: 'running',
+          credentialPresent: true,
           owner: 'LibreChat',
           repo: 'skills',
           ref: 'main',
