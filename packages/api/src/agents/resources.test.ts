@@ -115,7 +115,7 @@ describe('primeResources', () => {
       });
 
       expect(mockGetFiles).not.toHaveBeenCalled();
-      expect(result.attachments).toEqual([]);
+      expect(result.attachments).toBeUndefined();
       expect(result.tool_resources).toEqual(tool_resources);
     });
   });
@@ -1472,7 +1472,7 @@ describe('primeResources', () => {
         role: 'USER',
         agentId: 'agent_shared',
       });
-      expect(result.attachments).toEqual([]);
+      expect(result.attachments).toBeUndefined();
     });
 
     it('should skip filtering when filterFiles is not provided', async () => {
@@ -1640,8 +1640,8 @@ describe('primeResources', () => {
 
       expect(mockGetFiles).not.toHaveBeenCalled();
       // When appConfig agents endpoint is missing, context is disabled
-      // and no attachments are provided, the function returns an empty array
-      expect(result.attachments).toEqual([]);
+      // and no attachments are provided, the function returns undefined
+      expect(result.attachments).toBeUndefined();
     });
 
     it('should handle undefined tool_resources', async () => {
@@ -1655,7 +1655,7 @@ describe('primeResources', () => {
       });
 
       expect(result.tool_resources).toEqual({});
-      expect(result.attachments).toEqual([]);
+      expect(result.attachments).toBeUndefined();
     });
 
     it('should handle empty requestFileSet', async () => {
@@ -1734,7 +1734,7 @@ describe('primeResources', () => {
         agentId: 'agent1',
       });
 
-      const attachmentIds = result.attachments.map((f) => f?.file_id);
+      const attachmentIds = result.attachments?.map((f) => f?.file_id);
       expect(attachmentIds).toContain('provider-file');
       expect(attachmentIds).toContain('none-file');
     });
@@ -1767,7 +1767,7 @@ describe('primeResources', () => {
         loadCodeApiKey: jest.fn().mockResolvedValue('code-key'),
       });
 
-      expect(result.attachments.map((f) => f?.file_id)).toContain('none-file');
+      expect(result.attachments?.map((f) => f?.file_id)).toContain('none-file');
       expect(result.provisionState?.codeEnvFiles.map((f) => f.file_id)).toContain('none-file');
       expect(result.provisionState?.vectorDBFiles.map((f) => f.file_id)).toContain('none-file');
     });
@@ -1797,7 +1797,7 @@ describe('primeResources', () => {
         agentId: 'agent1',
       });
 
-      const attachmentIds = result.attachments.map((f) => f?.file_id);
+      const attachmentIds = result.attachments?.map((f) => f?.file_id);
       expect(attachmentIds).toContain('legacy-file');
     });
   });
