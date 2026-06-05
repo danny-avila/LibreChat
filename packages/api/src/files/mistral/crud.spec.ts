@@ -549,6 +549,8 @@ describe('MistralOCR Service', () => {
         filepath: 'mistral_ocr',
         text: expect.stringContaining('# PAGE 1'),
         images: ['base64image1', 'base64image2'],
+        pages_processed: expect.any(Number),
+        model: expect.anything(),
       });
     });
 
@@ -659,6 +661,8 @@ describe('MistralOCR Service', () => {
         filepath: 'mistral_ocr',
         text: expect.stringContaining('Image OCR result'),
         images: ['imgbase64'],
+        pages_processed: expect.any(Number),
+        model: expect.anything(),
       });
     });
 
@@ -1660,6 +1664,8 @@ describe('MistralOCR Service', () => {
           filepath: 'mistral_ocr',
           text: 'OCR content\n\n',
           images: [],
+          pages_processed: expect.any(Number),
+          model: expect.anything(),
         });
 
         // Verify delete was attempted
@@ -2203,6 +2209,8 @@ describe('MistralOCR Service', () => {
         filepath: 'azure_mistral_ocr',
         text: 'Azure OCR content\n\n',
         images: ['azure-base64'],
+        pages_processed: expect.any(Number),
+        model: expect.anything(),
       });
     });
 

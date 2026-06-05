@@ -4,8 +4,21 @@ const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { Tool } = require('@librechat/agents/langchain/tools');
-const { createMinimalRetentionRequest } = require('@librechat/api');
+const { createMinimalRetentionRequest, recordUsage } = require('@librechat/api');
 const { FileContext, ContentTypes } = require('librechat-data-provider');
+
+/**
+ * Maps a Flux endpoint path to the model key used for billing pricing in
+ * `mediaTokenValues`. Falls back to 'flux-pro' for unrecognised paths.
+ */
+function resolveFluxModel(endpoint) {
+  if (endpoint.includes('flux-pro-1.1-ultra-finetuned')) return 'flux-pro-1.1-ultra-finetuned';
+  if (endpoint.includes('flux-pro-1.1-ultra')) return 'flux-pro-1.1-ultra';
+  if (endpoint.includes('flux-pro-finetuned')) return 'flux-pro-finetuned';
+  if (endpoint.includes('flux-pro-1.1')) return 'flux-pro-1.1';
+  if (endpoint.includes('flux-dev')) return 'flux-dev';
+  return 'flux-pro';
+}
 
 const fluxApiJsonSchema = {
   type: 'object',
@@ -111,6 +124,10 @@ class FluxAPI extends Tool {
 
     this.userId = fields.userId;
     this.tenantId = fields.req?.user?.tenantId;
+    // Capture just the billing config slices — never retain the full req object
+    // (would hold cookies/body/uploads across the task lifecycle).
+    this.balanceConfig = fields.req?.config?.balance;
+    this.transactionsConfig = fields.req?.config?.transactions;
     this.retentionRequest = createMinimalRetentionRequest(fields.req);
     this.fileStrategy = fields.fileStrategy;
 
@@ -297,6 +314,20 @@ class FluxAPI extends Tool {
     if (!resultData || !resultData.sample) {
       logger.error('[FluxAPI] No image data received from API. Response:', resultData);
       return this.returnValue('No image data received from Flux API.');
+    }
+
+    if (this.userId) {
+      const db = require('~/models');
+      const endpoint = imageData.endpoint || '/v1/flux-pro';
+      const model = resolveFluxModel(endpoint);
+      await recordUsage(db, {
+        user: this.userId,
+        model,
+        context: 'image_gen',
+        balance: this.balanceConfig,
+        transactions: this.transactionsConfig,
+        media: { type: 'image_count', amount: 1 },
+      });
     }
 
     // Try saving the image locally
@@ -531,6 +562,22 @@ class FluxAPI extends Tool {
     if (!resultData || !resultData.sample) {
       logger.error('[FluxAPI] No image data received from API. Response:', resultData);
       return this.returnValue('No image data received from Flux API.');
+    }
+
+    if (this.userId) {
+      const db = require('~/models');
+      // imageData.endpoint here is a finetuned endpoint; default to the
+      // /v1/flux-pro-finetuned tier if unset.
+      const endpoint = imageData.endpoint || '/v1/flux-pro-finetuned';
+      const model = resolveFluxModel(endpoint);
+      await recordUsage(db, {
+        user: this.userId,
+        model,
+        context: 'image_gen',
+        balance: this.balanceConfig,
+        transactions: this.transactionsConfig,
+        media: { type: 'image_count', amount: 1 },
+      });
     }
 
     const imageUrl = resultData.sample;

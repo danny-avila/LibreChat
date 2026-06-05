@@ -1,10 +1,24 @@
 import mongoose, { Schema, Document, Types } from 'mongoose';
 
+/**
+ * Token types accepted by the Transaction model. Media types
+ * (audio_input, audio_output, ocr_pages, image_count) cover non-text
+ * usage from STT, TTS, OCR, and image-generation endpoints.
+ */
+export type TokenType =
+  | 'prompt'
+  | 'completion'
+  | 'credits'
+  | 'audio_input'
+  | 'audio_output'
+  | 'ocr_pages'
+  | 'image_count';
+
 // @ts-ignore
 export interface ITransaction extends Document {
   user: Types.ObjectId;
   conversationId?: string;
-  tokenType: 'prompt' | 'completion' | 'credits';
+  tokenType: TokenType;
   model?: string;
   context?: string;
   valueKey?: string;
@@ -35,7 +49,15 @@ const transactionSchema: Schema<ITransaction> = new Schema(
     },
     tokenType: {
       type: String,
-      enum: ['prompt', 'completion', 'credits'],
+      enum: [
+        'prompt',
+        'completion',
+        'credits',
+        'audio_input',
+        'audio_output',
+        'ocr_pages',
+        'image_count',
+      ],
       required: true,
     },
     model: {

@@ -79,4 +79,8 @@ export interface MistralOCRUploadResult {
   filepath: string;
   text: string;
   images: string[];
+  /** Pages processed by the OCR provider; consumed by billing (ocr_pages). */
+  pages_processed?: number;
+  /** Model name returned by the provider (e.g. 'mistral-ocr-2505'). */
+  model?: string;
 }

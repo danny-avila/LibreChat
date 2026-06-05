@@ -438,6 +438,8 @@ export const uploadMistralOCR = async (context: OCRContext): Promise<MistralOCRU
       filepath: FileSources.mistral_ocr,
       text,
       images,
+      pages_processed: ocrResult.usage_info?.pages_processed ?? ocrResult.pages.length,
+      model: ocrResult.model,
     };
   } catch (error) {
     if (mistralFileId && apiKey && baseURL) {
@@ -497,6 +499,8 @@ export const uploadAzureMistralOCR = async (
       filepath: FileSources.azure_mistral_ocr,
       text,
       images,
+      pages_processed: ocrResult.usage_info?.pages_processed ?? ocrResult.pages.length,
+      model: ocrResult.model,
     };
   } catch (error) {
     throw createOCRError(error, 'Error uploading document to Azure Mistral OCR API:');
@@ -725,6 +729,8 @@ export const uploadGoogleVertexMistralOCR = async (
       filepath: FileSources.vertexai_mistral_ocr as string,
       text,
       images,
+      pages_processed: ocrResult.usage_info?.pages_processed ?? ocrResult.pages.length,
+      model: ocrResult.model,
     };
   } catch (error) {
     throw createOCRError(error, 'Error uploading document to Google Vertex AI Mistral OCR:');

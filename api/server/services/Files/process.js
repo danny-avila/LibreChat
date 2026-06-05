@@ -26,6 +26,7 @@ const {
   getStorageMetadata,
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
+  recordUsage,
 } = require('@librechat/api');
 const {
   convertImage,
@@ -834,6 +835,18 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
       const ocrResult = await resolveDocumentText();
       if (ocrResult) {
         const { text, bytes, filepath: ocrFileURL } = ocrResult;
+        // Record ocr_pages usage when the strategy populated pages_processed.
+        // Only Mistral OCR variants do; document_parser returns no page count.
+        if (req?.user?.id && ocrResult.pages_processed && ocrResult.pages_processed > 0) {
+          await recordUsage(db, {
+            user: req.user.id,
+            model: ocrResult.model || 'mistral-ocr-2505',
+            context: 'ocr',
+            balance: req?.config?.balance,
+            transactions: req?.config?.transactions,
+            media: { type: 'ocr_pages', amount: ocrResult.pages_processed },
+          });
+        }
         return await createTextFile({ text, bytes, filepath: ocrFileURL });
       }
       throw new Error(

@@ -8,6 +8,7 @@ const {
   getImageBasename,
   extractBaseURL,
   createMinimalRetentionRequest,
+  recordUsage,
 } = require('@librechat/api');
 const { FileContext, ContentTypes } = require('librechat-data-provider');
 
@@ -53,6 +54,10 @@ class DALLE3 extends Tool {
 
     this.userId = fields.userId;
     this.tenantId = fields.req?.user?.tenantId;
+    // Capture just the billing config slices — never retain the full req object
+    // (would hold cookies/body/uploads across the task lifecycle).
+    this.balanceConfig = fields.req?.config?.balance;
+    this.transactionsConfig = fields.req?.config?.transactions;
     this.retentionRequest = createMinimalRetentionRequest(fields.req);
     this.fileStrategy = fields.fileStrategy;
     /** @type {boolean} */
@@ -174,6 +179,21 @@ Error Message: ${error.message}`);
       return this.returnValue(
         'Something went wrong when trying to generate the image. The DALL-E API may be unavailable',
       );
+    }
+
+    if (this.userId) {
+      const db = require('~/models');
+      const imageCount = Array.isArray(resp?.data) ? resp.data.length : 1;
+      if (imageCount > 0) {
+        await recordUsage(db, {
+          user: this.userId,
+          model: quality === 'hd' ? 'dall-e-3-hd' : 'dall-e-3',
+          context: 'image_gen',
+          balance: this.balanceConfig,
+          transactions: this.transactionsConfig,
+          media: { type: 'image_count', amount: imageCount },
+        });
+      }
     }
 
     const theImageUrl = resp.data[0].url;

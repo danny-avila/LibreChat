@@ -62,6 +62,8 @@ export * from './shared-links/access';
 export * from './shared-links/service';
 /* Stream */
 export * from './stream';
+/* Billing */
+export * from './billing';
 /* Diagnostics */
 export { memoryDiagnostics } from './utils/memory';
 /* RUM */

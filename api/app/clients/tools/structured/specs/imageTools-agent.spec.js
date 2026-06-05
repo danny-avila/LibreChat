@@ -28,6 +28,12 @@ jest.mock('undici', () => ({
 jest.mock('@librechat/data-schemas', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() },
 }));
+// Stub ~/models so the billing recordUsage call inside DALLE3/Flux does not
+// trigger the full mongoose model factory (createMethods is mocked away above).
+jest.mock('~/models', () => ({
+  spendTokens: jest.fn().mockResolvedValue(undefined),
+  spendMediaTokens: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock('path', () => ({
   resolve: jest.fn(),
   join: jest.fn().mockReturnValue('/mock/path'),
