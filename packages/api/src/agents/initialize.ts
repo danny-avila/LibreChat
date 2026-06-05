@@ -104,6 +104,18 @@ function supportsGoogleToolCombination(model: unknown): boolean {
   return normalized.startsWith('gemini-3');
 }
 
+function shouldIncludeGoogleServerSideToolInvocations({
+  provider,
+  hasProviderTools,
+  hasAgentTools,
+}: {
+  provider?: string;
+  hasProviderTools: boolean;
+  hasAgentTools: boolean;
+}): boolean {
+  return provider === Providers.GOOGLE && hasProviderTools && hasAgentTools;
+}
+
 function resolveProviderToolConflicts({
   provider,
   tools,
@@ -972,6 +984,15 @@ export async function initializeAgent(
   ) {
     if (!supportsGoogleToolCombination(llmConfig.model)) {
       throw new Error(`{ "type": "${ErrorTypes.GOOGLE_TOOL_CONFLICT}"}`);
+    }
+    if (
+      shouldIncludeGoogleServerSideToolInvocations({
+        provider: agent.provider,
+        hasProviderTools,
+        hasAgentTools,
+      })
+    ) {
+      llmConfig.includeServerSideToolInvocations = true;
     }
     if (structuredTools?.length) {
       tools = structuredTools.concat(providerTools as GenericTool[]);

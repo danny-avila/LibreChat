@@ -438,6 +438,11 @@ describe('initializeAgent — provider web_search precedence', () => {
     expect(result.tools).toEqual([nativeGoogleSearchTool]);
     expect(countGoogleSearchTools(result.tools)).toBe(1);
     expect(result.toolDefinitions).toContain(mcpToolDefinition);
+    expect(result.model_parameters).toEqual(
+      expect.objectContaining({
+        includeServerSideToolInvocations: true,
+      }),
+    );
   });
 
   it('rejects Google native search with external tools for unsupported Gemini models', async () => {
@@ -1681,6 +1686,9 @@ describe('initializeAgent — execute_code capability expansion', () => {
     ).resolves.toEqual(
       expect.objectContaining({
         tools: [{ googleSearch: {} }],
+        model_parameters: expect.objectContaining({
+          includeServerSideToolInvocations: true,
+        }),
         toolDefinitions: expect.arrayContaining([
           expect.objectContaining({ name: 'bash_tool' }),
           expect.objectContaining({ name: 'read_file' }),
@@ -1722,6 +1730,9 @@ describe('initializeAgent — execute_code capability expansion', () => {
     ).resolves.toEqual(
       expect.objectContaining({
         tools: [structuredTool, providerTool],
+        model_parameters: expect.objectContaining({
+          includeServerSideToolInvocations: true,
+        }),
       }),
     );
   });
