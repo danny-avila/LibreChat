@@ -1,4 +1,7 @@
-import { resolveDefaultLLMDeliveryPath, SYSTEM_LLM_DELIVERY_DEFAULTS } from './resolve-llm-delivery-path';
+import {
+  resolveDefaultLLMDeliveryPath,
+  SYSTEM_LLM_DELIVERY_DEFAULTS,
+} from './resolve-llm-delivery-path';
 import type { TDefaultLLMDeliveryPathConfig } from './file-config';
 
 describe('resolveDefaultLLMDeliveryPath', () => {
@@ -69,8 +72,12 @@ describe('resolveDefaultLLMDeliveryPath', () => {
   it('should fall through entire chain to system defaults', () => {
     const endpointConfig: TDefaultLLMDeliveryPathConfig = {};
     const globalConfig: TDefaultLLMDeliveryPathConfig = {};
-    expect(resolveDefaultLLMDeliveryPath('image/png', endpointConfig, globalConfig)).toBe('provider');
-    expect(resolveDefaultLLMDeliveryPath('application/pdf', endpointConfig, globalConfig)).toBe('provider');
+    expect(resolveDefaultLLMDeliveryPath('image/png', endpointConfig, globalConfig)).toBe(
+      'provider',
+    );
+    expect(resolveDefaultLLMDeliveryPath('application/pdf', endpointConfig, globalConfig)).toBe(
+      'provider',
+    );
     expect(resolveDefaultLLMDeliveryPath('text/csv', endpointConfig, globalConfig)).toBe('text');
   });
 
