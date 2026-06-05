@@ -290,6 +290,26 @@ describe('patchConfigFields', () => {
 
     expect(result!.tombstones).not.toContain('mcpServers.github');
   });
+
+  it('does not clear a whole-section tombstone when patching a nested path', async () => {
+    await methods.tombstoneConfigField(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      'mcpServers',
+      10,
+    );
+
+    const result = await methods.patchConfigFields(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      { 'mcpServers.github.url': 'https://scoped.example.com' },
+      10,
+    );
+
+    expect(result!.tombstones).toContain('mcpServers');
+  });
 });
 
 describe('tombstoneConfigField', () => {
@@ -341,6 +361,28 @@ describe('tombstoneConfigField', () => {
     );
 
     expect(result).toBeTruthy();
+    expect(result!.tombstones).toContain('mcpServers.github');
+  });
+});
+
+describe('upsertConfig', () => {
+  it('preserves tombstones when replacing overrides', async () => {
+    await methods.tombstoneConfigField(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      'mcpServers.github',
+      10,
+    );
+
+    const result = await methods.upsertConfig(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      { interface: { modelSelect: false } },
+      10,
+    );
+
     expect(result!.tombstones).toContain('mcpServers.github');
   });
 });

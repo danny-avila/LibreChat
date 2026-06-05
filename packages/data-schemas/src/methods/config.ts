@@ -1,17 +1,17 @@
 import { Types } from 'mongoose';
 import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
+import { escapeRegExp } from '~/utils/string';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { Model, ClientSession } from 'mongoose';
 import type { IConfig } from '~/types';
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function getAncestorPaths(fieldPath: string): string[] {
+function getTombstonePathsToClear(fieldPath: string): string[] {
   const parts = fieldPath.split('.');
-  return parts.map((_, index) => parts.slice(0, index + 1).join('.'));
+  if (parts.length <= 1) {
+    return [fieldPath];
+  }
+  return parts.slice(1).map((_, index) => parts.slice(0, index + 2).join('.'));
 }
 
 function getPathAndDescendantsRegex(fieldPath: string): RegExp {
@@ -105,7 +105,6 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
       $set: {
         principalModel,
         overrides,
-        tombstones: [],
         priority,
         isActive: true,
       },
@@ -153,7 +152,9 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
       setPayload[`overrides.${path}`] = value;
     }
 
-    const tombstonesToClear = [...new Set(Object.keys(fields).flatMap(getAncestorPaths))];
+    const tombstonesToClear = [
+      ...new Set(Object.keys(fields).flatMap(getTombstonePathsToClear)),
+    ];
 
     const options = {
       upsert: true,
