@@ -112,7 +112,6 @@ const BU_FILTERS = [
   { key: 'all', labelKey: 'com_usage_filter_all' },
   { key: 'POP', labelKey: 'com_usage_filter_bu_pop' },
   { key: 'BETC', labelKey: 'com_usage_filter_bu_betc' },
-  { key: 'Other', labelKey: 'com_usage_filter_bu_other' },
 ] as const;
 
 const USER_SEGMENTS = [
