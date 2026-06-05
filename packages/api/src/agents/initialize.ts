@@ -367,6 +367,8 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
        * by the manual-invocation resolver. Defaults to `true`.
        */
       userInvocable?: boolean;
+      /** True for deployment-directory skills that are loaded in memory. */
+      deployment?: boolean;
     }>;
     has_more?: boolean;
     after?: string | null;
@@ -412,6 +414,8 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
      * caller can't bypass the popover-side filter.
      */
     userInvocable?: boolean;
+    /** True for deployment-directory skills that are loaded in memory. */
+    deployment?: boolean;
   } | null>;
   /**
    * Load accessible skills with `alwaysApply: true`, eagerly including
@@ -431,6 +435,8 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
       body: string;
       author: import('mongoose').Types.ObjectId;
       allowedTools?: string[];
+      /** True for deployment-directory skills that are loaded in memory. */
+      deployment?: boolean;
     }>;
     has_more?: boolean;
     after?: string | null;

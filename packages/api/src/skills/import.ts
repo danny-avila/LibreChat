@@ -679,6 +679,6 @@ const MIME_MAP: Record<string, string> = {
   '.pdf': 'application/pdf',
 };
 
-function guessMimeType(filename: string): string {
+export function guessMimeType(filename: string): string {
   return MIME_MAP[path.extname(filename).toLowerCase()] || 'application/octet-stream';
 }
