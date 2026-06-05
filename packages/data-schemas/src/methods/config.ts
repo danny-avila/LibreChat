@@ -199,7 +199,6 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
         $set: {
           principalModel,
           priority,
-          isActive: true,
         },
         $unset: { [`overrides.${fieldPath}`]: '' },
         $addToSet: { tombstones: fieldPath },

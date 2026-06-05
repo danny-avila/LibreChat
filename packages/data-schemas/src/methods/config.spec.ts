@@ -363,6 +363,22 @@ describe('tombstoneConfigField', () => {
     expect(result).toBeTruthy();
     expect(result!.tombstones).toContain('mcpServers.github');
   });
+
+  it('preserves inactive configs when adding a tombstone', async () => {
+    await methods.upsertConfig(PrincipalType.ROLE, 'admin', PrincipalModel.ROLE, {}, 10);
+    await methods.toggleConfigActive(PrincipalType.ROLE, 'admin', false);
+
+    const result = await methods.tombstoneConfigField(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      'mcpServers.github',
+      10,
+    );
+
+    expect(result!.isActive).toBe(false);
+    expect(result!.tombstones).toContain('mcpServers.github');
+  });
 });
 
 describe('upsertConfig', () => {
