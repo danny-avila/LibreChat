@@ -278,6 +278,22 @@ describe('createDeploymentSkillMethods', () => {
       'assets/pixel.bin',
       'references/guide.txt',
     ]);
+    const guideFile = files?.find((file) => file.relativePath === 'references/guide.txt');
+    expect(guideFile?._id).toBeInstanceOf(Types.ObjectId);
+    expect(guideFile?.skillId.toString()).toBe(deploymentId.toString());
+    expect(guideFile).toMatchObject({
+      file_id: expect.any(String),
+      filename: 'guide.txt',
+      source: 'deployment',
+      mimeType: 'text/plain',
+      bytes: 'reference notes'.length,
+      category: 'reference',
+      isExecutable: false,
+      author: expect.any(Types.ObjectId),
+    });
+    expect(guideFile?.createdAt.getTime()).toEqual(expect.any(Number));
+    expect(guideFile?.updatedAt.getTime()).toEqual(expect.any(Number));
+    expect(guideFile).not.toHaveProperty('content');
     expect(base.listSkillFiles).not.toHaveBeenCalled();
 
     await methods.updateSkillFileContent?.(deploymentId, 'references/guide.txt', {

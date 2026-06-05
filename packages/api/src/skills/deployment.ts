@@ -145,20 +145,16 @@ type ListAlwaysApplyResult = {
   after?: string | null;
 };
 
-type SkillFileRow = {
-  relativePath: string;
-  filename: string;
-  filepath: string;
-  source: string;
-  mimeType?: string;
-  bytes: number;
-  codeEnvRef?: CodeEnvRef;
-  content?: string;
-  isBinary?: boolean;
+type SkillFileRow = Omit<DeploymentSkillFile, 'codeEnvRef' | 'content' | 'isBinary'> & {
+  storageKey?: string;
+  storageRegion?: string;
+  tenantId?: string;
 };
 
 type SkillFileContentRow = SkillFileRow & {
-  mimeType: string;
+  codeEnvRef?: CodeEnvRef;
+  content?: string;
+  isBinary?: boolean;
 };
 
 export type DeploymentSkillBaseMethods = {
@@ -884,23 +880,16 @@ function toAlwaysApplyRow(skill: DeploymentSkill): AlwaysApplySkillRow {
 }
 
 function toSkillFileRow(file: DeploymentSkillFile): SkillFileRow {
-  return {
-    relativePath: file.relativePath,
-    filename: file.filename,
-    filepath: file.filepath,
-    source: file.source,
-    mimeType: file.mimeType,
-    bytes: file.bytes,
-    codeEnvRef: file.codeEnvRef,
-    content: file.content,
-    isBinary: file.isBinary,
-  };
+  const { codeEnvRef: _codeEnvRef, content: _content, isBinary: _isBinary, ...row } = file;
+  return row;
 }
 
 function toSkillFileContentRow(file: DeploymentSkillFile): SkillFileContentRow {
   return {
     ...toSkillFileRow(file),
-    mimeType: file.mimeType,
+    codeEnvRef: file.codeEnvRef,
+    content: file.content,
+    isBinary: file.isBinary,
   };
 }
 
