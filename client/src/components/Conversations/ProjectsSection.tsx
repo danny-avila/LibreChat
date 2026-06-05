@@ -382,7 +382,11 @@ interface ProjectsSectionProps {
 const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) => {
   const localize = useLocalize();
   const navigate = useNavigate();
-  const [isExpanded, setIsExpanded] = useLocalStorage('projectsSectionExpanded', true);
+  const [storedExpanded, setStoredExpanded] = useLocalStorage('projectsSectionExpanded', true);
+  const [hasToggledSection, setHasToggledSection] = useLocalStorage(
+    'projectsSectionToggled',
+    false,
+  );
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const conversation = useRecoilValue(store.conversationByIndex(0));
   const activeProjectId = conversation?.chatProjectId ?? null;
@@ -394,6 +398,14 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
 
   const projects = useMemo(() => data?.pages.flatMap((page) => page.projects) ?? [], [data?.pages]);
   const hasMore = (data?.pages[data.pages.length - 1]?.nextCursor ?? null) != null;
+
+  /**
+   * Collapse the section by default for users with no projects who have never
+   * toggled it, to keep the sidebar compact. An explicit toggle — or a collapse
+   * set before this default existed (stored === false) — is always respected.
+   */
+  const respectStoredExpanded = hasToggledSection || storedExpanded === false;
+  const isExpanded = respectStoredExpanded ? storedExpanded : isLoading || projects.length > 0;
 
   const openProjects = useCallback(() => {
     navigate('/projects');
@@ -455,7 +467,10 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
     <div className="flex flex-col px-3 text-sm">
       <div className="flex h-8 w-full items-center gap-0.5 pr-2">
         <button
-          onClick={() => setIsExpanded(!isExpanded)}
+          onClick={() => {
+            setStoredExpanded(!isExpanded);
+            setHasToggledSection(true);
+          }}
           className="group flex min-w-0 flex-1 items-center gap-1 rounded-lg px-1 py-2 text-xs font-bold text-text-secondary outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
           type="button"
           aria-expanded={isExpanded}
