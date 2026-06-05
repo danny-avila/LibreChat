@@ -2,6 +2,8 @@ import * as cdk from 'aws-cdk-lib';
 import { Duration } from 'aws-cdk-lib';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as cwActions from 'aws-cdk-lib/aws-cloudwatch-actions';
+import * as events from 'aws-cdk-lib/aws-events';
+import * as eventTargets from 'aws-cdk-lib/aws-events-targets';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as ecsPatterns from 'aws-cdk-lib/aws-ecs-patterns';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
@@ -29,6 +31,18 @@ export class MonitoringStack extends cdk.Stack {
 
     const topic = this.createSNSTopic();
     this.createAlarms(topic, loadBalancer, targetGroup, props);
+    this.createBedrockHealthEventRule(topic);
+  }
+
+  private createBedrockHealthEventRule(topic: sns.Topic) {
+    new events.Rule(this, 'BedrockHealthEvents', {
+      eventPattern: {
+        source: ['aws.health'],
+        detailType: ['AWS Health Event'],
+        detail: { service: ['BEDROCK'] },
+      },
+      targets: [new eventTargets.SnsTopic(topic)],
+    });
   }
 
   private createSNSTopic() {
@@ -193,42 +207,47 @@ export class MonitoringStack extends cdk.Stack {
       }),
       threshold: 1,
       evaluationPeriods: 5,
-      datapointsToAlarm: 3,
+      datapointsToAlarm: 5,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
     });
     bedrockServerErrorsAlarm.addAlarmAction(new cwActions.SnsAction(topic));
 
-    for (const [id, metricName, stat, alarmName] of [
-      [
-        'BedrockInvocationLatency',
-        'InvocationLatency',
-        'p50',
-        'ai-assistant-bedrock-invocation-latency-p50',
-      ],
-      [
-        'BedrockModelInvocations',
-        'ModelInvocations',
-        'Sum',
-        'ai-assistant-bedrock-model-invocations',
-      ],
-    ] as const) {
-      const alarm = new cloudwatch.AnomalyDetectionAlarm(this, id, {
-        alarmName: this.makeAlarmName(alarmName),
+    const modelInvocationsAlarm = new cloudwatch.AnomalyDetectionAlarm(
+      this,
+      'BedrockModelInvocations',
+      {
+        alarmName: this.makeAlarmName('ai-assistant-bedrock-model-invocations'),
         metric: new cloudwatch.Metric({
           namespace: 'AWS/Bedrock',
-          metricName,
+          metricName: 'ModelInvocations',
           period: Duration.minutes(1),
-          statistic: stat,
+          statistic: 'Sum',
         }),
         stdDevs: 2,
         comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_UPPER_THRESHOLD,
         evaluationPeriods: 5,
         datapointsToAlarm: 3,
         treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
-      });
-      alarm.addAlarmAction(new cwActions.SnsAction(topic));
-    }
+      },
+    );
+    modelInvocationsAlarm.addAlarmAction(new cwActions.SnsAction(topic));
+
+    const ttftAlarm = new cloudwatch.Alarm(this, 'BedrockTimeToFirstToken', {
+      alarmName: this.makeAlarmName('ai-assistant-bedrock-time-to-first-token'),
+      metric: new cloudwatch.Metric({
+        namespace: 'AWS/Bedrock',
+        metricName: 'TimeToFirstToken',
+        period: Duration.minutes(3),
+        statistic: 'Average',
+      }),
+      threshold: 15_000,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      treatMissingData: cloudwatch.TreatMissingData.IGNORE,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+    });
+    ttftAlarm.addAlarmAction(new cwActions.SnsAction(topic));
   }
 
   private createAlbLatencyAlarms(topic: sns.Topic, loadBalancer: elbv2.IApplicationLoadBalancer) {
