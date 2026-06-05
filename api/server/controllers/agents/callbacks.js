@@ -640,6 +640,16 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
       return;
     }
 
+    /* Live-artifact allowlist: a create_file authoring call may declare
+     * `mcp_tools` for an HTML file. Persist it onto that file's record
+     * (`metadata.mcpTools`) so the live-artifact bridge can authorize tool
+     * calls. Scope to the authored HTML file only — never other outputs. */
+    const authoredMcpTools = Array.isArray(output.artifact.mcp_tools)
+      ? output.artifact.mcp_tools
+      : null;
+    const authoredPath = typeof output.artifact.path === 'string' ? output.artifact.path : null;
+    const authoredBase = authoredPath ? authoredPath.split('/').pop() : null;
+
     for (const file of output.artifact.files) {
       /* `inherited` files are unchanged passthroughs of inputs the caller
        * already owns (skill files, prior session inputs, inherited
@@ -652,6 +662,12 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
       }
       const { id, name } = file;
       const toolCallId = output.tool_call_id;
+      const mcpTools =
+        authoredMcpTools &&
+        /\.html?$/i.test(name) &&
+        (name === authoredBase || name === authoredPath)
+          ? authoredMcpTools
+          : undefined;
       artifactPromises.push(
         (async () => {
           const result = await processCodeOutput({
@@ -679,6 +695,7 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
              * ids.
              */
             session_id: file.storage_session_id ?? output.artifact.session_id,
+            mcpTools,
           });
           const fileMetadata = result?.file ?? null;
           const finalize = result?.finalize;
@@ -907,6 +924,16 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
       return;
     }
 
+    /* Live-artifact allowlist: a create_file authoring call may declare
+     * `mcp_tools` for an HTML file. Persist it onto that file's record
+     * (`metadata.mcpTools`) so the live-artifact bridge can authorize tool
+     * calls. Scope to the authored HTML file only — never other outputs. */
+    const authoredMcpTools = Array.isArray(output.artifact.mcp_tools)
+      ? output.artifact.mcp_tools
+      : null;
+    const authoredPath = typeof output.artifact.path === 'string' ? output.artifact.path : null;
+    const authoredBase = authoredPath ? authoredPath.split('/').pop() : null;
+
     for (const file of output.artifact.files) {
       /* `inherited` files are unchanged passthroughs of inputs the caller
        * already owns (skill files, prior session inputs, inherited
@@ -919,6 +946,12 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
       }
       const { id, name } = file;
       const toolCallId = output.tool_call_id;
+      const mcpTools =
+        authoredMcpTools &&
+        /\.html?$/i.test(name) &&
+        (name === authoredBase || name === authoredPath)
+          ? authoredMcpTools
+          : undefined;
       artifactPromises.push(
         (async () => {
           const result = await processCodeOutput({
@@ -946,6 +979,7 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
              * ids.
              */
             session_id: file.storage_session_id ?? output.artifact.session_id,
+            mcpTools,
           });
           const fileMetadata = result?.file ?? null;
           const finalize = result?.finalize;

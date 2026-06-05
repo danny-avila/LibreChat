@@ -26,6 +26,7 @@ import {
   isCodeSessionToolName,
 } from './tools';
 import { parseFrontmatter } from '../skills/import';
+import { sanitizeMcpToolList } from '../artifacts/tools';
 
 export interface ToolEndCallbackData {
   output: {
@@ -1456,6 +1457,11 @@ async function loadSandboxTextForAuthoring({
   }
 }
 
+/** True for paths the live-artifact renderer treats as HTML. */
+function isHtmlAuthoringPath(filePath: string): boolean {
+  return /\.html?$/i.test(filePath);
+}
+
 async function writeSandboxTextForAuthoring({
   tc,
   options,
@@ -1464,6 +1470,7 @@ async function writeSandboxTextForAuthoring({
   content,
   oldContent,
   created,
+  mcpTools,
   sandboxContext,
 }: {
   tc: ToolCallRequest;
@@ -1473,6 +1480,7 @@ async function writeSandboxTextForAuthoring({
   content: string;
   oldContent?: string;
   created: boolean;
+  mcpTools?: string[];
   sandboxContext?: SandboxSessionContext;
 }): AuthoringResult {
   if (!options.writeSandboxFile) {
@@ -1513,6 +1521,7 @@ async function writeSandboxTextForAuthoring({
     bytes_written: Buffer.byteLength(content, 'utf8'),
     created,
     ...(diff ? { diff } : {}),
+    ...(mcpTools && mcpTools.length > 0 ? { mcp_tools: mcpTools } : {}),
     ...(writeResult.session_id ? { session_id: writeResult.session_id } : {}),
     ...(writeResult.files ? { files: writeResult.files } : {}),
   });
@@ -2156,6 +2165,7 @@ async function handleSandboxCreateFileCall({
   filePath,
   content,
   overwrite,
+  mcpTools,
   sandboxContext,
 }: {
   tc: ToolCallRequest;
@@ -2164,6 +2174,7 @@ async function handleSandboxCreateFileCall({
   filePath: string;
   content: string;
   overwrite: boolean;
+  mcpTools?: string[];
   sandboxContext?: SandboxSessionContext;
 }): AuthoringResult {
   const pathError = invalidSandboxAuthoringPath(filePath);
@@ -2193,6 +2204,7 @@ async function handleSandboxCreateFileCall({
     content,
     oldContent: current.status === 'loaded' ? current.content : undefined,
     created: current.status === 'missing',
+    mcpTools,
     sandboxContext,
   });
 }
@@ -2270,7 +2282,12 @@ async function handleCreateFileCall(
   sourceConfigurable?: Record<string, unknown>,
   sandboxContext?: SandboxSessionContext,
 ): AuthoringResult {
-  const args = tc.args as { file_path?: unknown; content?: unknown; overwrite?: unknown };
+  const args = tc.args as {
+    file_path?: unknown;
+    content?: unknown;
+    overwrite?: unknown;
+    mcp_tools?: unknown;
+  };
   if (typeof args.file_path !== 'string' || args.file_path.length === 0) {
     return errorResult(tc, 'file_path is required');
   }
@@ -2282,6 +2299,8 @@ async function handleCreateFileCall(
   }
 
   const overwrite = args.overwrite === true;
+  /** Live-artifact allowlist: HTML files only; well-formed MCP keys only. */
+  const mcpTools = isHtmlAuthoringPath(args.file_path) ? sanitizeMcpToolList(args.mcp_tools) : [];
   if (!args.file_path.startsWith(SKILL_FILE_PREFIX)) {
     if (mergedConfigurable?.codeEnvAvailable !== true) {
       return errorResult(
@@ -2296,6 +2315,7 @@ async function handleCreateFileCall(
       filePath: args.file_path,
       content: args.content,
       overwrite,
+      mcpTools,
       sandboxContext,
     });
   }

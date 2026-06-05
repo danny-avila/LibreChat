@@ -1,4 +1,10 @@
-import { isToolAllowed, isMcpToolKey, parseMcpToolKey, authorizeArtifactToolCall } from './tools';
+import {
+  isToolAllowed,
+  isMcpToolKey,
+  parseMcpToolKey,
+  sanitizeMcpToolList,
+  authorizeArtifactToolCall,
+} from './tools';
 
 describe('isToolAllowed', () => {
   it('matches exact tool keys only', () => {
@@ -25,6 +31,25 @@ describe('parseMcpToolKey', () => {
     expect(parseMcpToolKey('execute_code')).toBeNull();
     expect(isMcpToolKey('execute_code')).toBe(false);
     expect(isMcpToolKey('list_prs_mcp_github')).toBe(true);
+  });
+});
+
+describe('sanitizeMcpToolList', () => {
+  it('keeps only well-formed MCP keys, deduped, in order', () => {
+    expect(
+      sanitizeMcpToolList([
+        'list_prs_mcp_github',
+        'list_prs_mcp_github',
+        'execute_code',
+        42,
+        'send_msg_mcp_slack',
+      ]),
+    ).toEqual(['list_prs_mcp_github', 'send_msg_mcp_slack']);
+  });
+
+  it('returns [] for non-arrays', () => {
+    expect(sanitizeMcpToolList(undefined)).toEqual([]);
+    expect(sanitizeMcpToolList('list_prs_mcp_github')).toEqual([]);
   });
 });
 

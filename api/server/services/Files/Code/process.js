@@ -321,6 +321,7 @@ const processCodeOutput = async ({
   conversationId,
   messageId,
   session_id,
+  mcpTools,
 }) => {
   const appConfig = req.config;
   const currentDate = new Date();
@@ -385,6 +386,19 @@ const processCodeOutput = async ({
       id: req.user.id,
       storage_session_id: session_id,
       file_id: id,
+    };
+
+    /* Live-artifact allowlist for HTML authored via `create_file`. Prefer the
+     * freshly-declared list; otherwise preserve any list already on the record
+     * so a later content edit (edit_file / bash overwrite) doesn't silently
+     * strip an artifact's permissions. */
+    const resolvedMcpTools =
+      Array.isArray(mcpTools) && mcpTools.length > 0 ? mcpTools : claimed?.metadata?.mcpTools;
+    const fileMetadata = {
+      codeEnvRef,
+      ...(Array.isArray(resolvedMcpTools) && resolvedMcpTools.length > 0
+        ? { mcpTools: resolvedMcpTools }
+        : {}),
     };
 
     /* `safeName` keeps the directory structure (`a/b/file.txt` -> `a/b/file.txt`)
@@ -463,7 +477,7 @@ const processCodeOutput = async ({
         updatedAt: formattedDate,
         source: appConfig.fileStrategy,
         context: FileContext.execute_code,
-        metadata: { codeEnvRef },
+        metadata: fileMetadata,
         ...(await getRetentionExpiry(req)),
       };
       await createFile(file, true);
@@ -562,7 +576,7 @@ const processCodeOutput = async ({
       tenantId: req.user.tenantId,
       bytes: buffer.length,
       updatedAt: formattedDate,
-      metadata: { codeEnvRef },
+      metadata: fileMetadata,
       source: appConfig.fileStrategy,
       context: FileContext.execute_code,
       usage: isUpdate ? (claimed.usage ?? 0) + 1 : 1,

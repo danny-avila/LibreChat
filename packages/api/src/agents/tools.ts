@@ -194,6 +194,12 @@ const CODE_CREATE_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
       description: 'Must be true to replace an existing file. Refuses otherwise.',
       default: false,
     },
+    mcp_tools: {
+      type: 'array',
+      items: { type: 'string' },
+      description:
+        'For an HTML file only: MCP tool keys (format "<tool>_mcp_<server>") this page may call live via window.librechat.callMcpTool(name, args). Declaring tools turns the file into a live artifact that fetches fresh data on open. Omit for static files.',
+    },
   },
   required: ['file_path', 'content'],
 }) as LCTool['parameters'];
@@ -280,7 +286,9 @@ const CODE_CREATE_FILE_DESCRIPTION = `Create a new file, or overwrite an existin
 
 Use for new files and full rewrites where the change is larger than half the file. Requires overwrite: true to replace existing files. Refuses otherwise.
 
-Targets code-execution sandbox paths. Prefer /mnt/data/{file} for files that should remain available to later sandbox calls.`;
+Targets code-execution sandbox paths. Prefer /mnt/data/{file} for files that should remain available to later sandbox calls.
+
+For an HTML file, pass mcp_tools to make it a live artifact: the rendered page may call those MCP tools via window.librechat.callMcpTool(name, args) to fetch fresh data on open.`;
 
 const SKILL_EDIT_FILE_DESCRIPTION = `Apply targeted text replacements to an existing file.
 
