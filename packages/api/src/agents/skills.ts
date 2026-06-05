@@ -130,10 +130,7 @@ function normalizeSkillCatalogLimit(limit: number | undefined): number {
   if (typeof limit !== 'number' || !Number.isFinite(limit)) {
     return SKILL_CATALOG_LIMIT;
   }
-  return Math.min(
-    SKILL_CATALOG_LIMIT,
-    Math.max(MIN_SKILL_CATALOG_LIMIT, Math.floor(limit)),
-  );
+  return Math.min(SKILL_CATALOG_LIMIT, Math.max(MIN_SKILL_CATALOG_LIMIT, Math.floor(limit)));
 }
 
 export interface ResolveModelSpecSkillIdsParams {
