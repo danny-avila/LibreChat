@@ -203,11 +203,70 @@ describe('MCP Routes', () => {
     const { MCPOAuthHandler } = require('@librechat/api');
     const { getLogStores } = require('~/cache');
 
-    it('should initiate OAuth flow successfully', async () => {
+    it('should reuse stored authorization URL without starting a new OAuth flow', async () => {
       const mockFlowManager = {
         getFlowState: jest.fn().mockResolvedValue({
+          status: 'PENDING',
+          createdAt: Date.now(),
+          metadata: {
+            serverName: 'test-server',
+            userId: 'test-user-id',
+            authorizationUrl: 'https://oauth.example.com/auth?state=stored-state',
+          },
+        }),
+      };
+
+      getLogStores.mockReturnValue({});
+      require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+
+      const response = await request(app).get('/api/mcp/test-server/oauth/initiate').query({
+        userId: 'test-user-id',
+        flowId: 'test-user-id:test-server',
+      });
+
+      expect(response.status).toBe(302);
+      expect(response.headers.location).toBe('https://oauth.example.com/auth?state=stored-state');
+      expect(response.headers['set-cookie']?.join('')).toContain('oauth_csrf=');
+      expect(MCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
+      expect(MCPOAuthHandler.storeStateMapping).not.toHaveBeenCalled();
+      expect(mockRegistryInstance.getServerConfig).not.toHaveBeenCalled();
+    });
+
+    it('should reject stored authorization URL when flow is no longer pending', async () => {
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({
+          status: 'COMPLETED',
+          createdAt: Date.now(),
+          metadata: {
+            serverName: 'test-server',
+            userId: 'test-user-id',
+            authorizationUrl: 'https://oauth.example.com/auth?state=stored-state',
+          },
+        }),
+      };
+
+      getLogStores.mockReturnValue({});
+      require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+
+      const response = await request(app).get('/api/mcp/test-server/oauth/initiate').query({
+        userId: 'test-user-id',
+        flowId: 'test-user-id:test-server',
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'Invalid flow state' });
+      expect(MCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
+      expect(MCPOAuthHandler.storeStateMapping).not.toHaveBeenCalled();
+    });
+
+    it('should initiate OAuth flow when stored authorization URL is missing', async () => {
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({
+          status: 'PENDING',
+          createdAt: Date.now(),
           metadata: {
             serverUrl: 'https://test-server.com',
+            state: 'old-state-value',
             oauth: { clientId: 'test-client-id' },
           },
         }),
@@ -241,6 +300,23 @@ describe('MCP Routes', () => {
         null,
         undefined,
         null,
+      );
+      expect(MCPOAuthHandler.deleteStateMapping).toHaveBeenCalledWith(
+        'old-state-value',
+        mockFlowManager,
+      );
+      expect(mockFlowManager.initFlow).toHaveBeenCalledWith(
+        'test-user-id:test-server',
+        'mcp_oauth',
+        expect.objectContaining({
+          state: 'random-state-value',
+          authorizationUrl: 'https://oauth.example.com/auth',
+        }),
+      );
+      expect(MCPOAuthHandler.storeStateMapping).toHaveBeenCalledWith(
+        'random-state-value',
+        'test-user-id:test-server',
+        mockFlowManager,
       );
     });
 
