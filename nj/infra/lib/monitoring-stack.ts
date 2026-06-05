@@ -16,8 +16,11 @@ export interface MonitoringStackProps extends cdk.StackProps {
 }
 
 export class MonitoringStack extends cdk.Stack {
+  readonly #isProd: boolean;
+
   constructor(scope: Construct, id: string, props: MonitoringStackProps) {
     super(scope, id, props);
+    this.#isProd = props.isProd;
 
     const service = props.service;
 
@@ -41,7 +44,7 @@ export class MonitoringStack extends cdk.Stack {
     props: MonitoringStackProps,
   ) {
     const unhealthyHostsAlarm = new cloudwatch.Alarm(this, 'TgUnhealthyHosts', {
-      alarmName: `ai-assistant-tg-unhealthy-hosts`,
+      alarmName: this.makeAlarmName('ai-assistant-tg-unhealthy-hosts'),
       metric: targetGroup.metrics.unhealthyHostCount({
         period: Duration.minutes(1),
         statistic: 'Sum',
@@ -55,7 +58,7 @@ export class MonitoringStack extends cdk.Stack {
     unhealthyHostsAlarm.addAlarmAction(new cwActions.SnsAction(topic));
 
     const elb4xxAlarm = new cloudwatch.Alarm(this, 'AlbElb4xx', {
-      alarmName: `ai-assistant-alb-elb-4xx`,
+      alarmName: this.makeAlarmName('ai-assistant-alb-elb-4xx'),
       metric: new cloudwatch.Metric({
         namespace: 'AWS/ApplicationELB',
         metricName: 'HTTPCode_ELB_4XX_Count',
@@ -74,7 +77,7 @@ export class MonitoringStack extends cdk.Stack {
     elb4xxAlarm.addAlarmAction(new cwActions.SnsAction(topic));
 
     const elb5xxAlarm = new cloudwatch.Alarm(this, 'AlbElb5xx', {
-      alarmName: `ai-assistant-alb-elb-5xx`,
+      alarmName: this.makeAlarmName('ai-assistant-alb-elb-5xx'),
       metric: new cloudwatch.Metric({
         namespace: 'AWS/ApplicationELB',
         metricName: 'HTTPCode_ELB_5XX_Count',
@@ -93,7 +96,7 @@ export class MonitoringStack extends cdk.Stack {
     elb5xxAlarm.addAlarmAction(new cwActions.SnsAction(topic));
 
     const target5xxAlarm = new cloudwatch.Alarm(this, 'AlbTarget5xx', {
-      alarmName: `ai-assistant-alb-target-5xx`,
+      alarmName: this.makeAlarmName('ai-assistant-alb-target-5xx'),
       metric: new cloudwatch.Metric({
         namespace: 'AWS/ApplicationELB',
         metricName: 'HTTPCode_Target_5XX_Count',
@@ -116,7 +119,7 @@ export class MonitoringStack extends cdk.Stack {
       this.createRdsAlarms(topic, props.rdsInstanceIdentifier);
     }
 
-    if (props.isProd && props.docDbClusterIdentifier) {
+    if (this.#isProd && props.docDbClusterIdentifier) {
       this.createDocDbAlarms(topic, props.docDbClusterIdentifier);
     }
 
@@ -129,7 +132,7 @@ export class MonitoringStack extends cdk.Stack {
     const rdsDimensions = { DBInstanceIdentifier: instanceIdentifier };
 
     const rdsFreeStorageAlarm = new cloudwatch.Alarm(this, 'RdsFreeStorage', {
-      alarmName: 'ai-assistant-rds-free-storage',
+      alarmName: this.makeAlarmName('ai-assistant-rds-free-storage'),
       metric: new cloudwatch.Metric({
         namespace: 'AWS/RDS',
         metricName: 'FreeStorageSpace',
@@ -146,7 +149,7 @@ export class MonitoringStack extends cdk.Stack {
     rdsFreeStorageAlarm.addAlarmAction(new cwActions.SnsAction(topic));
 
     const rdsCpuAlarm = new cloudwatch.Alarm(this, 'RdsCpu', {
-      alarmName: 'ai-assistant-rds-cpu',
+      alarmName: this.makeAlarmName('ai-assistant-rds-cpu'),
       metric: new cloudwatch.Metric({
         namespace: 'AWS/RDS',
         metricName: 'CPUUtilization',
@@ -165,7 +168,7 @@ export class MonitoringStack extends cdk.Stack {
 
   private createBedrockAlarms(topic: sns.Topic) {
     const bedrockThrottlesAlarm = new cloudwatch.Alarm(this, 'BedrockThrottles', {
-      alarmName: 'ai-assistant-bedrock-throttles',
+      alarmName: this.makeAlarmName('ai-assistant-bedrock-throttles'),
       metric: new cloudwatch.Metric({
         namespace: 'AWS/Bedrock',
         metricName: 'InvocationThrottles',
@@ -181,7 +184,7 @@ export class MonitoringStack extends cdk.Stack {
     bedrockThrottlesAlarm.addAlarmAction(new cwActions.SnsAction(topic));
 
     const bedrockServerErrorsAlarm = new cloudwatch.Alarm(this, 'BedrockServerErrors', {
-      alarmName: 'ai-assistant-bedrock-server-errors',
+      alarmName: this.makeAlarmName('ai-assistant-bedrock-server-errors'),
       metric: new cloudwatch.Metric({
         namespace: 'AWS/Bedrock',
         metricName: 'InvocationServerErrors',
@@ -197,11 +200,21 @@ export class MonitoringStack extends cdk.Stack {
     bedrockServerErrorsAlarm.addAlarmAction(new cwActions.SnsAction(topic));
 
     for (const [id, metricName, stat, alarmName] of [
-      ['BedrockInvocationLatency', 'InvocationLatency', 'p50', 'ai-assistant-bedrock-invocation-latency-p50'],
-      ['BedrockModelInvocations', 'ModelInvocations', 'Sum', 'ai-assistant-bedrock-model-invocations'],
+      [
+        'BedrockInvocationLatency',
+        'InvocationLatency',
+        'p50',
+        'ai-assistant-bedrock-invocation-latency-p50',
+      ],
+      [
+        'BedrockModelInvocations',
+        'ModelInvocations',
+        'Sum',
+        'ai-assistant-bedrock-model-invocations',
+      ],
     ] as const) {
       const alarm = new cloudwatch.AnomalyDetectionAlarm(this, id, {
-        alarmName,
+        alarmName: this.makeAlarmName(alarmName),
         metric: new cloudwatch.Metric({
           namespace: 'AWS/Bedrock',
           metricName,
@@ -224,7 +237,7 @@ export class MonitoringStack extends cdk.Stack {
       ['AlbLatencyP50', 'p50', 'ai-assistant-alb-latency-p50'],
     ] as const) {
       const alarm = new cloudwatch.AnomalyDetectionAlarm(this, id, {
-        alarmName,
+        alarmName: this.makeAlarmName(alarmName),
         metric: new cloudwatch.Metric({
           namespace: 'AWS/ApplicationELB',
           metricName: 'TargetResponseTime',
@@ -244,7 +257,7 @@ export class MonitoringStack extends cdk.Stack {
 
   private createElastiCacheAlarms(topic: sns.Topic, cacheName: string) {
     const currConnectionsAlarm = new cloudwatch.Alarm(this, 'ElastiCacheCurrConnections', {
-      alarmName: 'ai-assistant-elasticache-curr-connections',
+      alarmName: this.makeAlarmName('ai-assistant-elasticache-curr-connections'),
       metric: new cloudwatch.Metric({
         namespace: 'AWS/ElastiCache',
         metricName: 'CurrConnections',
@@ -265,7 +278,7 @@ export class MonitoringStack extends cdk.Stack {
     const docDbDimensions = { DBClusterIdentifier: clusterIdentifier };
 
     const docDbCpuAlarm = new cloudwatch.Alarm(this, 'DocDbCpu', {
-      alarmName: 'ai-assistant-docdb-cpu',
+      alarmName: this.makeAlarmName('ai-assistant-docdb-cpu'),
       metric: new cloudwatch.Metric({
         namespace: 'AWS/DocDB',
         metricName: 'CPUUtilization',
@@ -285,8 +298,9 @@ export class MonitoringStack extends cdk.Stack {
       ['DocDbReadLatency', 'ReadLatency'],
       ['DocDbWriteLatency', 'WriteLatency'],
     ] as const) {
+      const metricNameSuffix = metricName.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
       const alarm = new cloudwatch.AnomalyDetectionAlarm(this, id, {
-        alarmName: `ai-assistant-docdb-${metricName.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase()}`,
+        alarmName: this.makeAlarmName(`ai-assistant-docdb-${metricNameSuffix}`),
         metric: new cloudwatch.Metric({
           namespace: 'AWS/DocDB',
           metricName,
@@ -302,5 +316,9 @@ export class MonitoringStack extends cdk.Stack {
       });
       alarm.addAlarmAction(new cwActions.SnsAction(topic));
     }
+  }
+
+  private makeAlarmName(base: string): string {
+    return `${base}--${this.#isProd ? 'PROD' : 'DEV'}`;
   }
 }
