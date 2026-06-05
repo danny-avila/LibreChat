@@ -542,6 +542,51 @@ describe('resolveModelSpecSkillIds', () => {
     });
   });
 
+  it('resolves configured names sequentially to avoid query bursts', async () => {
+    const firstId = new Types.ObjectId();
+    const secondId = new Types.ObjectId();
+    const order: string[] = [];
+    let releaseFirst!: () => void;
+    const firstLookup = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const getSkillByName = jest.fn(async (name: string) => {
+      order.push(`start:${name}`);
+      if (name === 'first') {
+        await firstLookup;
+        order.push(`end:${name}`);
+        return {
+          _id: firstId,
+          name,
+          body: 'body',
+          author: userObjectId,
+        };
+      }
+      order.push(`end:${name}`);
+      return {
+        _id: secondId,
+        name,
+        body: 'body',
+        author: userObjectId,
+      };
+    });
+
+    const promise = resolveModelSpecSkillIds({
+      names: ['first', 'second'],
+      accessibleSkillIds: [firstId, secondId],
+      getSkillByName,
+    });
+
+    await Promise.resolve();
+    expect(order).toEqual(['start:first']);
+
+    releaseFirst();
+    const result = await promise;
+
+    expect(result.map((id) => id.toString())).toEqual([firstId.toString(), secondId.toString()]);
+    expect(order).toEqual(['start:first', 'end:first', 'start:second', 'end:second']);
+  });
+
   it('returns [] when no skill lookup is available', async () => {
     const result = await resolveModelSpecSkillIds({
       names: ['known-skill'],

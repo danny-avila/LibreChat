@@ -179,28 +179,28 @@ export async function resolveModelSpecSkillIds({
     boundedNames = uniqueNames.slice(0, MAX_MODEL_SPEC_SKILLS);
   }
 
-  const resolved = await Promise.all(
-    boundedNames.map(async (name) => {
-      try {
-        const skill = await getSkillByName(name, accessibleSkillIds, {
-          preferModelInvocable: true,
-        });
-        if (!skill) {
-          logger.warn(
-            `[resolveModelSpecSkillIds] Skill "${name}" not found or not accessible for this user`,
-          );
-          return null;
-        }
-        return skill._id;
-      } catch (err) {
+  const resolved: Array<Types.ObjectId | null> = [];
+  for (const name of boundedNames) {
+    try {
+      const skill = await getSkillByName(name, accessibleSkillIds, {
+        preferModelInvocable: true,
+      });
+      if (!skill) {
         logger.warn(
-          `[resolveModelSpecSkillIds] Failed to resolve skill "${name}":`,
-          err instanceof Error ? err.message : err,
+          `[resolveModelSpecSkillIds] Skill "${name}" not found or not accessible for this user`,
         );
-        return null;
+        resolved.push(null);
+        continue;
       }
-    }),
-  );
+      resolved.push(skill._id);
+    } catch (err) {
+      logger.warn(
+        `[resolveModelSpecSkillIds] Failed to resolve skill "${name}":`,
+        err instanceof Error ? err.message : err,
+      );
+      resolved.push(null);
+    }
+  }
 
   const seenIds = new Set<string>();
   return resolved.filter((id): id is Types.ObjectId => {
