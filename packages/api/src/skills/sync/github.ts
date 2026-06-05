@@ -760,11 +760,6 @@ function makeStatusKey(sourceId: string, tenantId?: string): string {
   return `${tenantId ?? ''}:${sourceId}`;
 }
 
-function getLockTenantId(sources: SkillSyncGitHubSourceConfig[]): string | undefined {
-  const tenantIds = new Set(sources.map((source) => source.tenantId).filter(Boolean));
-  return tenantIds.size === 1 ? [...tenantIds][0] : undefined;
-}
-
 async function ensurePublicViewer(
   deps: GitHubSkillSyncDeps,
   skillId: Types.ObjectId,
@@ -1540,13 +1535,22 @@ export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps) {
     if (!github.enabled || github.sources.length === 0) {
       return { status: 'skipped', message: 'GitHub skill sync is disabled', sources: [] };
     }
+    const allowServerCredentials = deps.allowServerCredentials !== false;
+    if (!allowServerCredentials) {
+      const status = await getStatus();
+      if (!status.sources.some((source) => source.credentialPresent)) {
+        return {
+          status: 'skipped',
+          message: 'GitHub skill sync credentials are not available for this runner',
+          sources: status.sources,
+        };
+      }
+    }
     const lockOwner = `${lockOwnerPrefix}:${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
-    const lockTenantId = getLockTenantId(github.sources);
     const acquired = await deps.tryAcquireLock({
       provider: PROVIDER,
       lockOwner,
       leaseMs: LOCK_LEASE_MS,
-      tenantId: lockTenantId,
     });
     if (!acquired) {
       const status = await getStatus();
@@ -1569,7 +1573,6 @@ export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps) {
             provider: PROVIDER,
             lockOwner,
             leaseMs: LOCK_LEASE_MS,
-            tenantId: lockTenantId,
           })
           .then((refreshed) => {
             if (!refreshed) {
@@ -1603,7 +1606,7 @@ export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps) {
       };
     } finally {
       clearInterval(refreshTimer);
-      await deps.releaseLock({ provider: PROVIDER, lockOwner, tenantId: lockTenantId });
+      await deps.releaseLock({ provider: PROVIDER, lockOwner });
     }
   }
 

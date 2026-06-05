@@ -30,7 +30,10 @@ function skillSync(
   };
 }
 
-function statusFromConfig(config: SkillSyncConfig | undefined): RunnerStatus {
+function statusFromConfig(
+  config: SkillSyncConfig | undefined,
+  { allowServerCredentials = true }: { allowServerCredentials?: boolean } = {},
+): RunnerStatus {
   const github = config?.github;
   return {
     enabled: github?.enabled ?? false,
@@ -43,7 +46,9 @@ function statusFromConfig(config: SkillSyncConfig | undefined): RunnerStatus {
         tenantId: configuredSource.tenantId,
         status: 'idle',
         credentialKey: configuredSource.credentialKey,
-        credentialPresent: Boolean(configuredSource.credentialKey || configuredSource.token),
+        credentialPresent:
+          allowServerCredentials &&
+          Boolean(configuredSource.credentialKey || configuredSource.token),
         owner: configuredSource.owner,
         repo: configuredSource.repo,
         ref: configuredSource.ref,
@@ -63,6 +68,16 @@ function statusFromConfig(config: SkillSyncConfig | undefined): RunnerStatus {
       })) ?? [],
     credentials: [],
     fineGrainedTokenRecommendation: 'Use a GitHub fine-grained personal access token.',
+  };
+}
+
+function withRunnableCredentials(status: RunnerStatus): RunnerStatus {
+  return {
+    ...status,
+    sources: status.sources.map((configuredSource) => ({
+      ...configuredSource,
+      credentialPresent: true,
+    })),
   };
 }
 
@@ -99,7 +114,13 @@ function createHarness(
   };
   const createRunner = jest.fn((input: SkillSyncTriggerRunnerFactoryInput) => {
     const runner: GitHubSkillSyncRunner = {
-      getStatus: jest.fn(async () => options.status ?? statusFromConfig(await input.getConfig())),
+      getStatus: jest.fn(
+        async () =>
+          options.status ??
+          statusFromConfig(await input.getConfig(), {
+            allowServerCredentials: input.allowServerCredentials !== false,
+          }),
+      ),
       runOnce: jest.fn(options.runOnce ?? (async () => completedRun())),
     };
     runners.push({ input, runner });
@@ -115,7 +136,9 @@ function createHarness(
 describe('createSkillSyncTriggerOrchestrator', () => {
   it('starts request sync from resolved admin skillSync config and derives tenant from the request', async () => {
     const config = skillSync();
-    const { orchestrator, runners } = createHarness();
+    const { orchestrator, runners } = createHarness({
+      status: withRunnableCredentials(statusFromConfig(config)),
+    });
 
     const started = await orchestrator.maybeRunForRequest({
       config: { skillSync: config, config: {} },
@@ -130,6 +153,20 @@ describe('createSkillSyncTriggerOrchestrator', () => {
     expect(requestConfig?.github?.sources[0]).toEqual(
       expect.objectContaining({ id: 'tenant-skills', tenantId: 'tenant-a' }),
     );
+  });
+
+  it('does not auto-start request sync when only server credentials are configured', async () => {
+    const config = skillSync();
+    const { orchestrator, runners } = createHarness();
+
+    const started = await orchestrator.maybeRunForRequest({
+      config: { skillSync: config, config: {} },
+      user: { tenantId: 'tenant-a' },
+    });
+
+    expect(started).toBe(false);
+    expect(runners[0].input.allowServerCredentials).toBe(false);
+    expect(runners[0].runner.runOnce).not.toHaveBeenCalled();
   });
 
   it('does not start request sync for base YAML skillSync config', async () => {
@@ -209,6 +246,7 @@ describe('createSkillSyncTriggerOrchestrator', () => {
           {
             ...statusFromConfig(config).sources[0],
             status: 'running',
+            credentialPresent: true,
             startedAt: new Date(Date.now() - 40 * 60 * 1000),
           },
         ],
@@ -228,6 +266,7 @@ describe('createSkillSyncTriggerOrchestrator', () => {
     const pendingRun = deferred<RunnerRunResult>();
     const config = skillSync({ runOnStartup: false });
     const { orchestrator, runners } = createHarness({
+      status: withRunnableCredentials(statusFromConfig(config)),
       runOnce: () => pendingRun.promise,
     });
 
