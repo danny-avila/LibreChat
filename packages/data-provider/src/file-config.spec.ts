@@ -1,4 +1,3 @@
-import type { TDefaultLLMDeliveryPathConfig } from './file-config';
 import type { FileConfig } from './types/files';
 import {
   fileConfig as baseFileConfig,
