@@ -388,19 +388,6 @@ const processCodeOutput = async ({
       file_id: id,
     };
 
-    /* Live-artifact allowlist for HTML authored via `create_file`. Prefer the
-     * freshly-declared list; otherwise preserve any list already on the record
-     * so a later content edit (edit_file / bash overwrite) doesn't silently
-     * strip an artifact's permissions. */
-    const resolvedMcpTools =
-      Array.isArray(mcpTools) && mcpTools.length > 0 ? mcpTools : claimed?.metadata?.mcpTools;
-    const fileMetadata = {
-      codeEnvRef,
-      ...(Array.isArray(resolvedMcpTools) && resolvedMcpTools.length > 0
-        ? { mcpTools: resolvedMcpTools }
-        : {}),
-    };
-
     /* `safeName` keeps the directory structure (`a/b/file.txt` -> `a/b/file.txt`)
      * so the next prime() can place the file at the same nested path in the
      * sandbox; flattening would re-create the bug where every nested artifact
@@ -434,6 +421,19 @@ const processCodeOutput = async ({
     });
     const file_id = claimed.file_id;
     const isUpdate = file_id !== newFileId;
+
+    /* Live-artifact allowlist for HTML authored via `create_file`. Prefer the
+     * freshly-declared list; otherwise preserve any list already on the record
+     * so a later content edit (edit_file / bash overwrite) doesn't silently
+     * strip an artifact's permissions. */
+    const resolvedMcpTools =
+      Array.isArray(mcpTools) && mcpTools.length > 0 ? mcpTools : claimed?.metadata?.mcpTools;
+    const fileMetadata = {
+      codeEnvRef,
+      ...(Array.isArray(resolvedMcpTools) && resolvedMcpTools.length > 0
+        ? { mcpTools: resolvedMcpTools }
+        : {}),
+    };
 
     if (isUpdate) {
       logger.debug(

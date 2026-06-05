@@ -18,13 +18,6 @@ const {
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
 const { getRetentionExpiry } = require('~/server/services/Files/retention');
 const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
-const {
-  createMCPTool,
-  getMCPSetupData,
-  userCanUseMCPServers,
-  getServerConnectionStatus,
-  createMCPPermissionContext,
-} = require('~/server/services/MCP');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { loadTools } = require('~/app/clients/tools/util');
 
@@ -283,6 +276,17 @@ const createNoopEventSink = () => ({
  */
 const callArtifactTool = async (req, res) => {
   try {
+    /* Lazy-require: `~/server/services/MCP` pulls a heavy auth chain
+     * (Graph/OBO/openid) at load time. Requiring it here keeps the rest of
+     * this controller (and its tests) loadable without that chain. */
+    const {
+      createMCPTool,
+      getMCPSetupData,
+      userCanUseMCPServers,
+      getServerConnectionStatus,
+      createMCPPermissionContext,
+    } = require('~/server/services/MCP');
+
     const { tool, file_id: fileId, messageId, conversationId, partIndex, blockIndex } = req.body;
     const args = req.body.args ?? {};
 
