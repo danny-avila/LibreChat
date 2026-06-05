@@ -14,6 +14,16 @@ mcpServers:
     description: Local MCP fixture used by mock end-to-end tests.
     timeout: 30000
 
+# Unified file upload routing. Spreadsheet/csv files resolve to llmDeliveryPath
+# 'none' (kept out of LLM context + provider delivery; reachable only via tools
+# like code interpreter). Exercised by e2e/specs/mock/unified-upload.spec.ts.
+fileConfig:
+  defaultLLMDeliveryPath:
+    overrides:
+      'text/csv': 'none'
+      'text/plain': 'none'
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'none'
+
 endpoints:
   custom:
     - name: 'Mock Provider A'
