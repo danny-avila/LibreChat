@@ -5,11 +5,10 @@ import { LinkIcon, GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/cl
 import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
-import { useHasAccess, useLocalize } from '~/hooks';
+import { useLocalize } from '~/hooks';
 import Settings from './Settings';
 import { NewJerseySelectItems } from '~/nj/components/NewJerseySelectItems';
 import icons from '@uswds/uswds/img/sprite.svg';
-import { Permissions, PermissionTypes } from 'librechat-data-provider';
 
 function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
   const localize = useLocalize();
@@ -21,10 +20,6 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
   const [showSettings, setShowSettings] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
   const accountSettingsButtonRef = useRef<HTMLButtonElement>(null);
-  const hasAccessToFileSearch = useHasAccess({
-    permissionType: PermissionTypes.FILE_SEARCH,
-    permission: Permissions.USE,
-  });
 
   return (
     <Menu.MenuProvider>
@@ -76,15 +71,10 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
             <DropdownMenuSeparator />
           </>
         )}
-        */}
-        {/* NJ (Temp feature flag): Conditionally show file attachment until RAG fully enabled */}
-        {hasAccessToFileSearch && (
-          <Menu.MenuItem onClick={() => setShowFiles(true)} className="select-item text-sm">
-            <FileText className="icon-md" aria-hidden="true" />
-            {localize('com_nav_my_files')}
-          </Menu.MenuItem>
-        )}
-        {/*
+        <Menu.MenuItem onClick={() => setShowFiles(true)} className="select-item text-sm">
+          <FileText className="icon-md" aria-hidden="true" />
+          {localize('com_nav_my_files')}
+        </Menu.MenuItem>
         {startupConfig?.helpAndFaqURL !== '/' && (
           <Menu.MenuItem
             onClick={() => window.open(startupConfig?.helpAndFaqURL, '_blank')}

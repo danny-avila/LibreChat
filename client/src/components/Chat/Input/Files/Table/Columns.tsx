@@ -32,7 +32,6 @@ export const columns: ColumnDef<TFile>[] = [
     size: 40,
     header: ({ table }) => {
       const localize = useLocalize();
-      return <></>; // NJ: We don't allow file deletion, and thus selecting files means nothing
       return (
         <TooltipAnchor
           description={localize('com_ui_select_all')}
@@ -54,7 +53,6 @@ export const columns: ColumnDef<TFile>[] = [
     },
     cell: ({ row }) => {
       const localize = useLocalize();
-      return <></>; // NJ: We don't allow file deletion, and thus selecting files means nothing
       return (
         <Checkbox
           checked={row.getIsSelected()}
