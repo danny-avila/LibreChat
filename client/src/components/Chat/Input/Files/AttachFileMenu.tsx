@@ -172,7 +172,7 @@ const AttachFileMenu = ({
 
   /** Unified mode: single click triggers file upload with no tool_resource */
   const handleUnifiedUpload = () => {
-    setToolResource(undefined);
+    toolResourceRef.current = undefined;
     handleUploadClick();
   };
 
@@ -343,7 +343,7 @@ const AttachFileMenu = ({
         <FileUpload
           ref={inputRef}
           handleFileChange={(e) => {
-            handleFileChange(e, toolResource);
+            handleFileChange(e, toolResourceRef.current);
           }}
         >
           <TooltipAnchor
