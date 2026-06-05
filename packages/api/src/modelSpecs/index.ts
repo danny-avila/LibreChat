@@ -170,9 +170,15 @@ export function sanitizeModelSpecs<T extends Partial<TSpecsConfig> | null | unde
   return {
     ...modelSpecs,
     list: modelSpecs.list.map((modelSpec) => {
-      const preset = modelSpec?.preset;
-      if (!preset || typeof preset !== 'object') {
+      if (!modelSpec || typeof modelSpec !== 'object') {
         return modelSpec;
+      }
+
+      const preset = modelSpec?.preset;
+      const sanitizedModelSpec = { ...modelSpec };
+      delete (sanitizedModelSpec as { skills?: unknown }).skills;
+      if (!preset || typeof preset !== 'object') {
+        return sanitizedModelSpec;
       }
 
       const sanitizedPreset = { ...preset };
@@ -181,7 +187,7 @@ export function sanitizeModelSpecs<T extends Partial<TSpecsConfig> | null | unde
       }
 
       return {
-        ...modelSpec,
+        ...sanitizedModelSpec,
         preset: sanitizedPreset,
       };
     }),

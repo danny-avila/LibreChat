@@ -136,6 +136,22 @@ describe('parseFrontmatter', () => {
     expect(parseFrontmatter(raw).alwaysApply).toBe(false);
   });
 
+  it('ignores invalid alwaysApply alias when canonical always-apply is valid', () => {
+    const raw = `---\nname: legal\ndescription: Legal rules.\nalways-apply: true\nalwaysApply: yes\n---\n\n# Legal body`;
+    const result = parseFrontmatter(raw);
+
+    expect(result.alwaysApply).toBe(true);
+    expect(result.invalidBooleans).toEqual([]);
+  });
+
+  it('ignores invalid alwaysApply alias before a valid canonical always-apply', () => {
+    const raw = `---\nname: legal\ndescription: Legal rules.\nalwaysApply: yes\nalways-apply: false\n---\n\n# Legal body`;
+    const result = parseFrontmatter(raw);
+
+    expect(result.alwaysApply).toBe(false);
+    expect(result.invalidBooleans).toEqual([]);
+  });
+
   it('flags non-boolean always-apply values as invalid (no silent drop)', () => {
     const raw = `---\nname: n\ndescription: d\nalways-apply: yes\n---\n\nbody`;
     const result = parseFrontmatter(raw);

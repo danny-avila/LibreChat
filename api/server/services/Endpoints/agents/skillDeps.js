@@ -128,6 +128,12 @@ function isAgentSkillsEnabledForRun({ agent, skillsCapabilityEnabled, ephemeralS
     return false;
   }
   if (isEphemeralAgentId(agent.id)) {
+    if (agent.skills_enabled === false) {
+      return false;
+    }
+    if (agent.skills_enabled === true) {
+      return true;
+    }
     return ephemeralSkillsToggle === true;
   }
   return agent.skills_enabled === true;

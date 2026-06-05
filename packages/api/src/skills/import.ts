@@ -95,8 +95,9 @@ export function parseFrontmatter(raw: string): {
   let name = '';
   let description = '';
   let alwaysApply: boolean | undefined;
-  let hasCanonicalAlwaysApply = false;
-  const invalidBooleans: string[] = [];
+  let hasValidCanonicalAlwaysApply = false;
+  const invalidCanonicalAlwaysApply: string[] = [];
+  const invalidAliasAlwaysApply: string[] = [];
   for (const line of block.split('\n')) {
     const colon = line.indexOf(':');
     if (colon === -1) {
@@ -111,7 +112,6 @@ export function parseFrontmatter(raw: string): {
       description = unquoteYaml(rawValue);
     } else if (key === 'always-apply' || key === 'alwaysapply') {
       const isCanonical = key === 'always-apply';
-      hasCanonicalAlwaysApply ||= isCanonical;
       // Operate on the raw post-colon text (no outer `unquoteYaml`): a
       // line like `always-apply: "true" # note` must have its comment
       // stripped BEFORE unquoting. Running `unquoteYaml` on the whole
@@ -127,14 +127,24 @@ export function parseFrontmatter(raw: string): {
       }
       const parsed = parseBooleanScalar(unquoteYaml(stripped));
       if (parsed === undefined) {
-        invalidBooleans.push(rawKey);
+        if (isCanonical) {
+          invalidCanonicalAlwaysApply.push(rawKey);
+        } else {
+          invalidAliasAlwaysApply.push(rawKey);
+        }
       } else {
-        if (isCanonical || !hasCanonicalAlwaysApply) {
+        if (isCanonical) {
+          hasValidCanonicalAlwaysApply = true;
+          alwaysApply = parsed;
+        } else if (!hasValidCanonicalAlwaysApply && invalidCanonicalAlwaysApply.length === 0) {
           alwaysApply = parsed;
         }
       }
     }
   }
+  const invalidBooleans = hasValidCanonicalAlwaysApply
+    ? invalidCanonicalAlwaysApply
+    : [...invalidCanonicalAlwaysApply, ...invalidAliasAlwaysApply];
   return { name, description, alwaysApply, invalidBooleans };
 }
 
