@@ -517,9 +517,7 @@ describe('initializeAgent — provider web_search precedence', () => {
     );
 
     expect(result.tools).toEqual([nativeGoogleSearchTool]);
-    expect(result.toolDefinitions?.map((toolDefinition) => toolDefinition.name)).toContain(
-      'skill',
-    );
+    expect(result.toolDefinitions?.map((toolDefinition) => toolDefinition.name)).toContain('skill');
     expect(result.model_parameters).toEqual(
       expect.objectContaining({
         includeServerSideToolInvocations: true,

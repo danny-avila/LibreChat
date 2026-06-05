@@ -117,11 +117,7 @@ function shouldIncludeGoogleServerSideToolInvocations({
   hasProviderTools: boolean;
   hasAgentTools: boolean;
 }): boolean {
-  return (
-    isGoogleToolCombinationProvider(provider) &&
-    hasProviderTools &&
-    hasAgentTools
-  );
+  return isGoogleToolCombinationProvider(provider) && hasProviderTools && hasAgentTools;
 }
 
 function assertGoogleToolCombinationSupport(model: unknown): void {
@@ -139,9 +135,7 @@ function enableGoogleServerSideToolInvocations({
 }): void {
   llmConfig.includeServerSideToolInvocations = true;
   if (agent.model_parameters) {
-    (
-      agent.model_parameters as Record<string, unknown>
-    ).includeServerSideToolInvocations = true;
+    (agent.model_parameters as Record<string, unknown>).includeServerSideToolInvocations = true;
   }
 }
 
@@ -1087,9 +1081,7 @@ export async function initializeAgent(
     activeSkillNames = skillResult.activeSkillNames;
   }
 
-  const hasFinalAgentTools =
-    (structuredTools?.length ?? 0) > 0 ||
-    (toolDefinitions?.length ?? 0) > 0;
+  const hasFinalAgentTools = (structuredTools?.length ?? 0) > 0 || (toolDefinitions?.length ?? 0) > 0;
   if (isGoogleToolCombinationProvider(agent.provider) && hasProviderTools && hasFinalAgentTools) {
     assertGoogleToolCombinationSupport(llmConfig.model);
     if (
