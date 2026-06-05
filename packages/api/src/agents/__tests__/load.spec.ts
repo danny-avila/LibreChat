@@ -253,6 +253,72 @@ describe('loadAgent', () => {
     expect(result?.model_parameters).not.toHaveProperty('promptPrefix');
   });
 
+  test('should enable full skill scope for ephemeral model spec with skills true', async () => {
+    const { EPHEMERAL_AGENT_ID } = Constants;
+
+    const result = await loadAgent(
+      {
+        req: {
+          user: { id: 'user123' },
+          body: {},
+          config: {
+            modelSpecs: {
+              list: [
+                {
+                  name: 'skills-on',
+                  label: 'Skills On',
+                  preset: { endpoint: 'openai', model: 'gpt-4' },
+                  skills: true,
+                },
+              ],
+            },
+          },
+        },
+        spec: 'skills-on',
+        agent_id: EPHEMERAL_AGENT_ID as string,
+        endpoint: 'openai',
+        model_parameters: { model: 'gpt-4' } as unknown as AgentModelParameters,
+      },
+      deps,
+    );
+
+    expect(result?.skills_enabled).toBe(true);
+    expect(result?.skills).toBeUndefined();
+  });
+
+  test('should initialize an empty allowlist for ephemeral model spec skill names', async () => {
+    const { EPHEMERAL_AGENT_ID } = Constants;
+
+    const result = await loadAgent(
+      {
+        req: {
+          user: { id: 'user123' },
+          body: {},
+          config: {
+            modelSpecs: {
+              list: [
+                {
+                  name: 'scoped-skills',
+                  label: 'Scoped Skills',
+                  preset: { endpoint: 'openai', model: 'gpt-4' },
+                  skills: ['finance-analyst', 'brand-writer'],
+                },
+              ],
+            },
+          },
+        },
+        spec: 'scoped-skills',
+        agent_id: EPHEMERAL_AGENT_ID as string,
+        endpoint: 'openai',
+        model_parameters: { model: 'gpt-4' } as unknown as AgentModelParameters,
+      },
+      deps,
+    );
+
+    expect(result?.skills_enabled).toBe(true);
+    expect(result?.skills).toEqual([]);
+  });
+
   test('should handle ephemeral agent with undefined ephemeralAgent in body', async () => {
     const { EPHEMERAL_AGENT_ID } = Constants;
 

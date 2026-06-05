@@ -38,6 +38,7 @@ import {
   scopeSkillIds,
   resolveSkillActive,
   resolveAgentScopedSkillIds,
+  resolveModelSpecSkillIds,
   injectSkillCatalog,
   buildSkillPrimeMessage,
   resolveManualSkills,
@@ -312,9 +313,11 @@ describe('resolveAgentScopedSkillIds', () => {
   });
   const ephemeralAgent = (
     skills?: string[],
+    skills_enabled?: boolean,
   ): { id: string; skills?: string[]; skills_enabled?: boolean } => ({
     id: 'ephemeral_convo_xyz',
     skills,
+    skills_enabled,
   });
 
   it('returns [] when the skills capability is disabled, even with every other signal on', () => {
@@ -366,14 +369,50 @@ describe('resolveAgentScopedSkillIds', () => {
       expect(scoped.map((o) => o.toString()).sort()).toEqual([a.toString(), b.toString()].sort());
     });
 
-    it('ignores any `skills` field on an ephemeral agent (toggle is the only signal)', () => {
+    it('returns the full accessible catalog when a model spec enables skills', () => {
+      const a = makeId();
+      const b = makeId();
+      const scoped = resolveAgentScopedSkillIds({
+        agent: ephemeralAgent(undefined, true),
+        accessibleSkillIds: [a, b],
+        skillsCapabilityEnabled: true,
+        ephemeralSkillsToggle: false,
+      });
+      expect(scoped.map((o) => o.toString()).sort()).toEqual([a.toString(), b.toString()].sort());
+    });
+
+    it('returns the model-spec allowlist intersection when configured', () => {
+      const a = makeId();
+      const b = makeId();
+      const scoped = resolveAgentScopedSkillIds({
+        agent: ephemeralAgent([a.toString()], true),
+        accessibleSkillIds: [a, b],
+        skillsCapabilityEnabled: true,
+        ephemeralSkillsToggle: false,
+      });
+      expect(scoped.map((o) => o.toString())).toEqual([a.toString()]);
+    });
+
+    it('treats an empty model-spec allowlist as explicit none', () => {
       const a = makeId();
       expect(
         resolveAgentScopedSkillIds({
-          agent: ephemeralAgent([a.toString()]),
+          agent: ephemeralAgent([], true),
           accessibleSkillIds: [a],
           skillsCapabilityEnabled: true,
-          ephemeralSkillsToggle: false,
+          ephemeralSkillsToggle: true,
+        }),
+      ).toEqual([]);
+    });
+
+    it('lets an explicit model-spec skills=false override the badge toggle', () => {
+      const a = makeId();
+      expect(
+        resolveAgentScopedSkillIds({
+          agent: ephemeralAgent(undefined, false),
+          accessibleSkillIds: [a],
+          skillsCapabilityEnabled: true,
+          ephemeralSkillsToggle: true,
         }),
       ).toEqual([]);
     });
@@ -467,6 +506,50 @@ describe('resolveAgentScopedSkillIds', () => {
         }),
       ).toEqual([]);
     });
+  });
+});
+
+describe('resolveModelSpecSkillIds', () => {
+  const userObjectId = new Types.ObjectId();
+
+  it('resolves configured names against accessible skills and skips misses without failing', async () => {
+    const knownId = new Types.ObjectId();
+    const getSkillByName = jest.fn(async (name: string) => {
+      if (name === 'known-skill') {
+        return {
+          _id: knownId,
+          name,
+          body: 'body',
+          author: userObjectId,
+        };
+      }
+      if (name === 'throws') {
+        throw new Error('lookup failed');
+      }
+      return null;
+    });
+
+    const result = await resolveModelSpecSkillIds({
+      names: [' known-skill ', 'missing-skill', 'throws', 'known-skill'],
+      accessibleSkillIds: [knownId],
+      getSkillByName,
+    });
+
+    expect(result.map((id) => id.toString())).toEqual([knownId.toString()]);
+    expect(getSkillByName).toHaveBeenCalledTimes(3);
+    expect(getSkillByName).toHaveBeenCalledWith('known-skill', [knownId], {
+      preferModelInvocable: true,
+    });
+  });
+
+  it('returns [] when no skill lookup is available', async () => {
+    const result = await resolveModelSpecSkillIds({
+      names: ['known-skill'],
+      accessibleSkillIds: [new Types.ObjectId()],
+      getSkillByName: undefined,
+    });
+
+    expect(result).toEqual([]);
   });
 });
 
@@ -742,6 +825,26 @@ describe('injectSkillCatalog', () => {
     await injectSkillCatalog(baseParams({ listSkillsByAccess, agent }));
     expect(agent.additional_instructions).toContain('my-skill');
     expect(agent.additional_instructions).toContain('desc-my-skill');
+  });
+
+  it('honors a configured maxCatalogSkills below the default hard limit', async () => {
+    const first = makeSkill('first-skill', userObjectId);
+    const second = makeSkill('second-skill', userObjectId);
+    const third = makeSkill('third-skill', userObjectId);
+    const listSkillsByAccess = buildPager([[first, second, third]]);
+    const agent = makeAgent();
+    const result = await injectSkillCatalog(
+      baseParams({ listSkillsByAccess, agent, maxCatalogSkills: 2 }),
+    );
+
+    expect(result.skillCount).toBe(2);
+    expect(result.activeSkillIds.map((id) => id.toString())).toEqual([
+      first._id.toString(),
+      second._id.toString(),
+    ]);
+    expect(agent.additional_instructions).toContain('first-skill');
+    expect(agent.additional_instructions).toContain('second-skill');
+    expect(agent.additional_instructions).not.toContain('third-skill');
   });
 
   it('fails closed when userId is absent (shared skills drop, owned would need override)', async () => {

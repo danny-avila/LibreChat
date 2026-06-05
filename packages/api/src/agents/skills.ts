@@ -11,10 +11,13 @@ import { registerCodeExecutionTools } from './tools';
 import { logAxiosError } from '~/utils';
 
 const SKILL_CATALOG_LIMIT = 100;
+const MIN_SKILL_CATALOG_LIMIT = 1;
 /** Max pages scanned per run when filtering out inactive skills. */
 const MAX_CATALOG_PAGES = 10;
 /** Page size used when paginating to fill the active-skill quota. */
 const CATALOG_PAGE_SIZE = 100;
+/** Hard ceiling on skill names a model spec can request by config. */
+const MAX_MODEL_SPEC_SKILLS = SKILL_CATALOG_LIMIT;
 /**
  * Hard ceiling on skill names resolved per request via `$` popover or
  * `always-apply`. The popover realistically surfaces only a few per turn;
@@ -123,6 +126,99 @@ export function scopeSkillIds(
   return accessibleSkillIds.filter((oid) => agentSet.has(oid.toString()));
 }
 
+function normalizeSkillCatalogLimit(limit: number | undefined): number {
+  if (typeof limit !== 'number' || !Number.isFinite(limit)) {
+    return SKILL_CATALOG_LIMIT;
+  }
+  return Math.min(
+    SKILL_CATALOG_LIMIT,
+    Math.max(MIN_SKILL_CATALOG_LIMIT, Math.floor(limit)),
+  );
+}
+
+export interface ResolveModelSpecSkillIdsParams {
+  /** Skill names configured on a model spec. */
+  names: string[];
+  /** Full VIEW-accessible skill IDs for this user before model-spec scoping. */
+  accessibleSkillIds: Types.ObjectId[];
+  /** DB lookup: name → skill doc constrained to the user's accessible IDs. */
+  getSkillByName?: InitializeAgentDbMethods['getSkillByName'];
+}
+
+/**
+ * Resolves model-spec skill names against the current user's accessible skill
+ * set. Config is advisory: unrecognized, inaccessible, malformed, or errored
+ * names are skipped with a warning so a stale model-spec entry never blocks
+ * the actual chat request.
+ */
+export async function resolveModelSpecSkillIds({
+  names,
+  accessibleSkillIds,
+  getSkillByName,
+}: ResolveModelSpecSkillIdsParams): Promise<Types.ObjectId[]> {
+  if (!names.length || accessibleSkillIds.length === 0 || !getSkillByName) {
+    return [];
+  }
+
+  const seenNames = new Set<string>();
+  const uniqueNames: string[] = [];
+  for (const name of names) {
+    if (typeof name !== 'string') {
+      continue;
+    }
+    const trimmed = name.trim();
+    if (!trimmed || trimmed.length > MAX_SKILL_NAME_LENGTH || seenNames.has(trimmed)) {
+      continue;
+    }
+    seenNames.add(trimmed);
+    uniqueNames.push(trimmed);
+  }
+
+  let boundedNames = uniqueNames;
+  if (uniqueNames.length > MAX_MODEL_SPEC_SKILLS) {
+    logger.warn(
+      `[resolveModelSpecSkillIds] Truncating model spec skill list from ${uniqueNames.length} to ${MAX_MODEL_SPEC_SKILLS}.`,
+    );
+    boundedNames = uniqueNames.slice(0, MAX_MODEL_SPEC_SKILLS);
+  }
+
+  const resolved = await Promise.all(
+    boundedNames.map(async (name) => {
+      try {
+        const skill = await getSkillByName(name, accessibleSkillIds, {
+          preferModelInvocable: true,
+        });
+        if (!skill) {
+          logger.warn(
+            `[resolveModelSpecSkillIds] Skill "${name}" not found or not accessible for this user`,
+          );
+          return null;
+        }
+        return skill._id;
+      } catch (err) {
+        logger.warn(
+          `[resolveModelSpecSkillIds] Failed to resolve skill "${name}":`,
+          err instanceof Error ? err.message : err,
+        );
+        return null;
+      }
+    }),
+  );
+
+  const seenIds = new Set<string>();
+  return resolved.filter((id): id is Types.ObjectId => {
+    if (!id) {
+      return false;
+    }
+    const key = id.toString();
+    if (seenIds.has(key)) {
+      return false;
+    }
+    seenIds.add(key);
+    return true;
+  });
+}
+
 export interface ResolveAgentScopedSkillIdsParams {
   /** Agent being initialized. Reads `id`, `skills`, and `skills_enabled`. */
   agent: Pick<Agent, 'id' | 'skills' | 'skills_enabled'>;
@@ -137,8 +233,10 @@ export interface ResolveAgentScopedSkillIdsParams {
 /**
  * Strict opt-in resolver for per-agent skill scope. Activation requires an
  * explicit signal from the user or the agent author:
- *  - Ephemeral agent  → the skills badge toggle for this conversation.
- *    Toggle ON = full accessible catalog; OFF = no skills.
+ *  - Ephemeral agent  → model-spec `skills` wins when configured:
+ *    `true` = full accessible catalog, string list = scoped allowlist,
+ *    `false` = no skills. Otherwise the skills badge toggle controls
+ *    the full accessible catalog.
  *  - Persisted agent  → the builder's `skills_enabled` master switch.
  *    Enabled + empty allowlist = full catalog; enabled + non-empty
  *    allowlist = narrow to those ids; disabled (or undefined) = no skills.
@@ -158,6 +256,14 @@ export function resolveAgentScopedSkillIds(
     return [];
   }
   if (isEphemeralAgentId(agent.id)) {
+    if (agent.skills_enabled === false) {
+      return [];
+    }
+    if (agent.skills_enabled === true) {
+      return Array.isArray(agent.skills)
+        ? scopeSkillIds(accessibleSkillIds, agent.skills)
+        : scopeSkillIds(accessibleSkillIds, undefined);
+    }
     return ephemeralSkillsToggle ? scopeSkillIds(accessibleSkillIds, undefined) : [];
   }
   if (agent.skills_enabled !== true) {
@@ -217,6 +323,8 @@ export interface InjectSkillCatalogParams {
   skillStates?: Record<string, boolean>;
   /** Admin-configured default for shared skills. `true` = shared skills auto-activate. */
   defaultActiveOnShare?: boolean;
+  /** Admin-configured cap on the model-visible catalog. Defaults to 100. */
+  maxCatalogSkills?: number;
 }
 
 export interface InjectSkillCatalogResult {
@@ -268,7 +376,9 @@ export async function injectSkillCatalog(
     userId,
     skillStates,
     defaultActiveOnShare = false,
+    maxCatalogSkills,
   } = params;
+  const catalogLimit = normalizeSkillCatalogLimit(maxCatalogSkills);
 
   if (!listSkillsByAccess || accessibleSkillIds.length === 0) {
     return {
@@ -299,7 +409,7 @@ export async function injectSkillCatalog(
   let pages = 0;
   let reachedEnd = false;
 
-  while (visibleCount < SKILL_CATALOG_LIMIT && pages < MAX_CATALOG_PAGES) {
+  while (visibleCount < catalogLimit && pages < MAX_CATALOG_PAGES) {
     const page = await listSkillsByAccess({
       accessibleIds: accessibleSkillIds,
       limit: CATALOG_PAGE_SIZE,
@@ -307,7 +417,7 @@ export async function injectSkillCatalog(
     });
 
     for (const skill of page.skills) {
-      if (visibleCount >= SKILL_CATALOG_LIMIT) {
+      if (visibleCount >= catalogLimit) {
         break;
       }
       /**
@@ -344,9 +454,9 @@ export async function injectSkillCatalog(
     };
   }
 
-  if (!reachedEnd && visibleCount < SKILL_CATALOG_LIMIT) {
+  if (!reachedEnd && visibleCount < catalogLimit) {
     logger.warn(
-      `[injectSkillCatalog] Scanned ${MAX_CATALOG_PAGES} pages without filling the ${SKILL_CATALOG_LIMIT}-skill catalog. Some active skills may be excluded.`,
+      `[injectSkillCatalog] Scanned ${MAX_CATALOG_PAGES} pages without filling the ${catalogLimit}-skill catalog. Some active skills may be excluded.`,
     );
   }
 

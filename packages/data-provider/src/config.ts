@@ -572,6 +572,11 @@ export const agentsEndpointSchema = baseEndpointSchema
         .array(z.nativeEnum(AgentCapabilities))
         .optional()
         .default(defaultAgentCapabilities),
+      skills: z
+        .object({
+          maxCatalogSkills: z.number().int().min(1).max(100).optional(),
+        })
+        .optional(),
       remoteApi: remoteApiSchema.optional(),
     }),
   )

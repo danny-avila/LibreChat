@@ -10,6 +10,7 @@ const {
   getCustomEndpointConfig,
   discoverConnectedAgents,
   resolveAgentScopedSkillIds,
+  resolveModelSpecSkillIds,
   buildAgentContextAttachmentsByAgentId,
 } = require('@librechat/api');
 const {
@@ -133,7 +134,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   /** Query accessible skill IDs once per run (shared across all agents).
    *  Skills activate under strict opt-in semantics — see
    *  `resolveAgentScopedSkillIds` for the per-agent activation predicate:
-   *    - Ephemeral agent → per-conversation skills badge toggle (full catalog).
+   *    - Ephemeral agent → model-spec `skills` config first, otherwise the
+   *      per-conversation skills badge toggle (full catalog).
    *    - Persisted agent → `agent.skills_enabled === true`. Optional
    *      `agent.skills` allowlist narrows the catalog; empty/undefined
    *      allowlist with the toggle on = full accessible catalog. */
@@ -287,6 +289,34 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
    * @type {string[] | undefined}
    */
   const manualSkills = extractManualSkills(req.body);
+
+  const selectedModelSpec =
+    endpointOption.spec && Array.isArray(appConfig?.modelSpecs?.list)
+      ? appConfig.modelSpecs.list.find((modelSpec) => modelSpec.name === endpointOption.spec)
+      : null;
+
+  if (
+    primaryAgent &&
+    isEphemeralAgentId(primaryAgent.id) &&
+    selectedModelSpec &&
+    Object.hasOwn(selectedModelSpec, 'skills')
+  ) {
+    if (selectedModelSpec.skills === true) {
+      primaryAgent.skills_enabled = true;
+      delete primaryAgent.skills;
+    } else if (selectedModelSpec.skills === false) {
+      primaryAgent.skills_enabled = false;
+      primaryAgent.skills = [];
+    } else if (Array.isArray(selectedModelSpec.skills)) {
+      const resolvedSkillIds = await resolveModelSpecSkillIds({
+        names: selectedModelSpec.skills,
+        accessibleSkillIds,
+        getSkillByName: db.getSkillByName,
+      });
+      primaryAgent.skills_enabled = true;
+      primaryAgent.skills = resolvedSkillIds.map((id) => id.toString());
+    }
+  }
 
   const primaryScopedSkillIds = resolveAgentScopedSkillIds({
     agent: primaryAgent,
