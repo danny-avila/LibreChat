@@ -1,4 +1,4 @@
-name: Playwright E2E (Mock LLM)
+name: Playwright E2E Tests
 
 on:
   pull_request:
@@ -22,7 +22,6 @@ env:
 
 jobs:
   e2e:
-    name: Tier-1 smoke (headless Chrome)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:

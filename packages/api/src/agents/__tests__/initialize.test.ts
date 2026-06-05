@@ -1251,13 +1251,11 @@ describe('initializeAgent — skill `allowed-tools` union (Phase 6)', () => {
     expect(definedNames).not.toContain('mcp__broken__tool');
   });
 
-  it('falls through to empty toolDefinitions when BOTH the union and base-only loadTools calls return undefined', async () => {
+  it('falls back to host-provided skill authoring tools when BOTH loadTools calls return undefined', async () => {
     /* Worst-case silent-failure path: production loaders catch errors
        and return undefined. If the agent's own tools fail to load AND
-       the retry without extras also fails, we have nothing to give the
-       LLM. The current behavior is to fall through to the `?? {}`
-       fallback rather than throw — pinning that contract here so the
-       turn doesn't crash hard but the agent simply has no tools. */
+       the retry without extras also fails, loaded registry tools drop out,
+       but host-provided file authoring remains available for skill access. */
     const { agent, req, res, loadTools, db } = createMocks();
     agent.tools = ['web_search'];
     const { Types } = await import('mongoose');
@@ -1283,16 +1281,18 @@ describe('initializeAgent — skill `allowed-tools` union (Phase 6)', () => {
         allowedProviders: new Set([Providers.OPENAI]),
         isInitialAgent: true,
         accessibleSkillIds: [skillId],
+        skillAuthoringAvailable: true,
         manualSkills: ['broken-skill'],
       },
       { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
     );
 
-    /* Two attempts (initial + retry), both undefined → empty fallback.
-       The agent gets no tool definitions for the turn but does NOT
-       crash; downstream code handles the empty case. */
+    /* Two attempts (initial + retry), both undefined. Registry-backed tools
+       fall away, but read/create/edit_file are registered by the initializer
+       so skill authoring still works. */
     expect(loadTools).toHaveBeenCalledTimes(2);
-    expect(result.toolDefinitions).toEqual([]);
+    const definedNames = result.toolDefinitions?.map((d) => d.name) ?? [];
+    expect(definedNames).toEqual(['read_file', 'create_file', 'edit_file']);
   });
 
   it('propagates the error when loadTools fails AND there are no skill-added extras to drop', async () => {
@@ -1374,6 +1374,8 @@ describe('initializeAgent — execute_code capability expansion', () => {
     const names = (result.toolDefinitions ?? []).map((d) => d.name);
     expect(names).toContain('bash_tool');
     expect(names).toContain('read_file');
+    expect(names).toContain('create_file');
+    expect(names).toContain('edit_file');
     /* The legacy `execute_code` tool def is no longer registered by this
        path — the string stays in `agent.tools` as the capability trigger
        but never appears in the tool definitions the LLM sees. */
@@ -1382,6 +1384,12 @@ describe('initializeAgent — execute_code capability expansion', () => {
     expect(readFile?.description).toContain('code-execution sandbox');
     expect(readFile?.description).not.toContain('{skillName}');
     expect(readFile?.description).not.toContain('SKILL.md');
+    const createFile = result.toolDefinitions?.find((d) => d.name === 'create_file');
+    expect(createFile?.description).toContain('code-execution sandbox');
+    expect(createFile?.description).toContain('/mnt/data/');
+    expect(createFile?.description).not.toContain('skills/');
+    expect(result.skillAuthoringAvailable).toBe(false);
+    expect(result.fileAuthoringToolNames).toEqual(new Set(['create_file', 'edit_file']));
   });
 
   it('upgrades read_file to the skill-aware description when active skills are in scope', async () => {
@@ -1422,8 +1430,92 @@ describe('initializeAgent — execute_code capability expansion', () => {
 
     const readFile = result.toolDefinitions?.find((d) => d.name === 'read_file');
     expect(readFile?.description).toContain('{skillName}/{filePath}');
+    expect(readFile?.description).toContain('skills/{skillName}/');
     expect(readFile?.description).toContain('SKILL.md');
-    expect(result.toolDefinitions?.map((d) => d.name)).toContain('skill');
+    const names = result.toolDefinitions?.map((d) => d.name) ?? [];
+    expect(names).toContain('skill');
+    expect(names).toContain('create_file');
+    expect(names).toContain('edit_file');
+  });
+
+  it('keeps skill authoring tools hidden for read-only skill access', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = [];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const author = { toString: () => req.user?.id } as unknown as import('mongoose').Types.ObjectId;
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: false,
+        accessibleSkillIds: [skillId],
+        skillAuthoringAvailable: false,
+      },
+      {
+        ...db,
+        listSkillsByAccess: jest.fn().mockResolvedValue({
+          skills: [
+            {
+              _id: skillId,
+              name: 'read-only-skill',
+              description: 'Read-only skill.',
+              author,
+            },
+          ],
+          has_more: false,
+          after: null,
+        }),
+      },
+    );
+
+    const names = result.toolDefinitions?.map((d) => d.name) ?? [];
+    expect(names).toContain('skill');
+    expect(names).toContain('read_file');
+    expect(names).not.toContain('create_file');
+    expect(names).not.toContain('edit_file');
+    expect(names).not.toContain('bash_tool');
+    expect(result.skillAuthoringAvailable).toBe(false);
+  });
+
+  it('registers skill authoring tools for first-time skill creators', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = [];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [],
+        skillAuthoringAvailable: true,
+        codeEnvAvailable: false,
+      },
+      db,
+    );
+
+    const names = (result.toolDefinitions ?? []).map((d) => d.name);
+    expect(names).toContain('create_file');
+    expect(names).toContain('edit_file');
+    expect(names).toContain('read_file');
+    expect(names).not.toContain('bash_tool');
+    const readFile = result.toolDefinitions?.find((d) => d.name === 'read_file');
+    expect(readFile?.description).toContain('skills/{skillName}/');
+    expect(readFile?.description).toContain('SKILL.md');
+    const createFile = result.toolDefinitions?.find((d) => d.name === 'create_file');
+    expect(createFile?.description).toContain('skills/');
+    expect(result.skillAuthoringAvailable).toBe(true);
+    expect(result.fileAuthoringToolNames).toEqual(new Set(['create_file', 'edit_file']));
   });
 
   it('does not register bash_tool + read_file when codeEnvAvailable=false', async () => {
@@ -1447,6 +1539,8 @@ describe('initializeAgent — execute_code capability expansion', () => {
     const names = (result.toolDefinitions ?? []).map((d) => d.name);
     expect(names).not.toContain('bash_tool');
     expect(names).not.toContain('read_file');
+    expect(names).not.toContain('create_file');
+    expect(names).not.toContain('edit_file');
   });
 
   it('does not register bash_tool + read_file when agent does not request execute_code', async () => {
@@ -1470,6 +1564,8 @@ describe('initializeAgent — execute_code capability expansion', () => {
     const names = (result.toolDefinitions ?? []).map((d) => d.name);
     expect(names).not.toContain('bash_tool');
     expect(names).not.toContain('read_file');
+    expect(names).not.toContain('create_file');
+    expect(names).not.toContain('edit_file');
   });
 
   it('narrows codeEnvAvailable on InitializedAgent to the per-agent effective value', async () => {

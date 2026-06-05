@@ -42,7 +42,82 @@ function anonymizeConvo(conversation: Partial<t.IConversation> & Partial<t.IShar
   return newConvo;
 }
 
-function anonymizeMessages(messages: t.IMessage[], newConvoId: string): t.IMessage[] {
+/**
+ * Storage- and identity-internal fields that must never be exposed through a
+ * public shared link. Everything else on a file/attachment — including the
+ * `filepath`/`preview` render URLs, dimensions, and tool-call payloads such as
+ * `toolCallId` and search results — is render data the shared view needs, so it
+ * is preserved. (`storageKey` is the raw object key and is dropped; `filepath`
+ * is the URL the share renderer actually loads, so it is kept.)
+ */
+const SENSITIVE_SHARED_FILE_FIELDS = new Set([
+  '_id',
+  '__v',
+  'user',
+  'tenantId',
+  'storageRegion',
+  'storageKey',
+  'temp_file_id',
+  'message',
+  'source',
+  'filterSource',
+  'context',
+  'embedded',
+  'usage',
+  'metadata',
+]);
+
+/**
+ * Strip storage/identity-internal fields from a file or attachment while keeping
+ * render-relevant data (including tool-call payloads keyed by tool name).
+ */
+function sanitizeSharedFile(value: unknown): t.SharedFile | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const result: t.SharedFile = {};
+  for (const [key, fieldValue] of Object.entries(value as Record<string, unknown>)) {
+    if (!SENSITIVE_SHARED_FILE_FIELDS.has(key)) {
+      result[key] = fieldValue;
+    }
+  }
+
+  return Object.keys(result).length > 0 ? result : null;
+}
+
+function sanitizeSharedFiles(files: unknown): t.SharedFile[] | undefined {
+  if (!Array.isArray(files)) {
+    return undefined;
+  }
+
+  const sanitized = files
+    .map(sanitizeSharedFile)
+    .filter((file): file is t.SharedFile => file != null);
+
+  return sanitized.length > 0 ? sanitized : undefined;
+}
+
+/**
+ * Only surface a model name when it is an (already-anonymized) assistant id;
+ * otherwise omit it so the underlying provider/model is not disclosed.
+ */
+function anonymizeSharedModel(model?: string): string | undefined {
+  if (!model?.startsWith('asst_')) {
+    return undefined;
+  }
+  return anonymizeAssistantId(model);
+}
+
+/**
+ * Build the public, anonymized view of shared messages. An allowlist of
+ * render-relevant fields keeps internal message fields (endpoint,
+ * conversationSignature, clientId, plugin(s), metadata, etc.) out of the
+ * payload, while user files and tool-call attachments are sanitized field by
+ * field so render data (uploaded files, `toolCallId`, search results, generated
+ * outputs) is preserved without leaking storage internals.
+ */
+function anonymizeMessages(messages: t.IMessage[], newConvoId: string): t.SharedMessage[] {
   if (!Array.isArray(messages)) {
     return [];
   }
@@ -52,34 +127,43 @@ function anonymizeMessages(messages: t.IMessage[], newConvoId: string): t.IMessa
     const newMessageId = anonymizeMessageId(message.messageId);
     idMap.set(message.messageId, newMessageId);
 
-    type MessageAttachment = {
-      messageId?: string;
-      conversationId?: string;
-      [key: string]: unknown;
-    };
-
-    const anonymizedAttachments = (message.attachments as MessageAttachment[])?.map(
-      (attachment) => {
-        return {
-          ...attachment,
-          messageId: newMessageId,
-          conversationId: newConvoId,
-        };
-      },
-    );
+    const attachments = sanitizeSharedFiles(message.attachments)?.map((attachment) => ({
+      ...attachment,
+      messageId: newMessageId,
+      conversationId: newConvoId,
+    }));
+    // Persisted file records can carry the original conversation/message ids;
+    // rewrite them to the anonymized ids so shared files don't expose them.
+    const files = sanitizeSharedFiles(message.files)?.map((file) => ({
+      ...file,
+      ...(file.conversationId !== undefined && { conversationId: newConvoId }),
+      ...(file.messageId !== undefined && { messageId: newMessageId }),
+    }));
+    const model = anonymizeSharedModel(message.model);
 
     return {
-      ...message,
       messageId: newMessageId,
       parentMessageId:
         idMap.get(message.parentMessageId || '') ||
         anonymizeMessageId(message.parentMessageId || ''),
       conversationId: newConvoId,
-      model: message.model?.startsWith('asst_')
-        ? anonymizeAssistantId(message.model)
-        : message.model,
-      attachments: anonymizedAttachments,
-    } as t.IMessage;
+      sender: message.sender,
+      text: message.text,
+      content: message.content,
+      ...(message.iconURL && { iconURL: message.iconURL }),
+      ...(model && { model }),
+      isCreatedByUser: message.isCreatedByUser,
+      createdAt: message.createdAt,
+      updatedAt: message.updatedAt,
+      tokenCount: message.tokenCount,
+      unfinished: message.unfinished,
+      error: message.error,
+      finish_reason: message.finish_reason,
+      ...(message.manualSkills && { manualSkills: message.manualSkills }),
+      ...(message.alwaysAppliedSkills && { alwaysAppliedSkills: message.alwaysAppliedSkills }),
+      ...(files && { files }),
+      ...(attachments && { attachments }),
+    };
   });
 }
 

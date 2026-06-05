@@ -253,7 +253,9 @@ describe('skill validation helpers', () => {
           'user-invocable': true,
           effort: 5,
           version: '1.0.0',
+          license: 'MIT',
           hooks: { 'pre-run': 'echo hi' },
+          metadata: { owner: 'data-team' },
         }),
       ).toEqual([]);
     });
@@ -643,6 +645,55 @@ describe('Skill CRUD methods', () => {
     expect(fetched?.disableModelInvocation).toBe(true);
     expect(fetched?.userInvocable).toBe(false);
     expect(fetched?.allowedTools).toEqual(['execute_code']);
+  });
+
+  it('getAuthorSkillByName resolves only the matching author and tenant', async () => {
+    const sharedName = 'author-owned-lookup';
+    const ownerSkill = await Skill.create({
+      name: sharedName,
+      description: 'Owner tenant skill.',
+      body: 'owner body',
+      frontmatter: {},
+      author: owner._id,
+      authorName: owner.name ?? 'Skill Owner',
+      tenantId: 'tenant-a',
+      version: 1,
+      source: 'inline',
+      fileCount: 0,
+    });
+    await Skill.create({
+      name: sharedName,
+      description: 'Other author skill.',
+      body: 'other body',
+      frontmatter: {},
+      author: other._id,
+      authorName: other.name ?? 'Other',
+      tenantId: 'tenant-a',
+      version: 1,
+      source: 'inline',
+      fileCount: 0,
+    });
+    await Skill.create({
+      name: sharedName,
+      description: 'Owner different tenant skill.',
+      body: 'tenant b body',
+      frontmatter: {},
+      author: owner._id,
+      authorName: owner.name ?? 'Skill Owner',
+      tenantId: 'tenant-b',
+      version: 1,
+      source: 'inline',
+      fileCount: 0,
+    });
+
+    const fetched = await methods.getAuthorSkillByName({
+      name: sharedName,
+      author: owner._id,
+      tenantId: 'tenant-a',
+    });
+
+    expect(fetched?._id.toString()).toBe(ownerSkill._id.toString());
+    expect(fetched?.body).toBe('owner body');
   });
 
   it('preferModelInvocable picks the model-invocable doc on same-name collision (does NOT filter on userInvocable)', async () => {
@@ -1337,6 +1388,40 @@ describe('SkillFile methods', () => {
     const files = await methods.listSkillFiles(skill._id);
     expect(files[0].storageKey).toBe('r/us-east-2/uploads/user123/parse.sh');
     expect(files[0].storageRegion).toBe('us-east-2');
+  });
+
+  it('throws an explicit error when the upsert returns no saved file row', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput());
+    const missingUpsert = {
+      lean: jest.fn().mockResolvedValue({
+        value: null,
+        lastErrorObject: { updatedExisting: false },
+      }),
+    } as unknown as ReturnType<typeof SkillFile.findOneAndUpdate>;
+    const findOneAndUpdateSpy = jest
+      .spyOn(SkillFile, 'findOneAndUpdate')
+      .mockReturnValueOnce(missingUpsert);
+    const bumpSpy = jest.spyOn(Skill, 'findByIdAndUpdate');
+
+    try {
+      await expect(
+        methods.upsertSkillFile({
+          skillId: skill._id,
+          relativePath: 'scripts/parse.sh',
+          file_id: 'file-1',
+          filename: 'parse.sh',
+          filepath: '/tmp/v1',
+          source: 'local',
+          mimeType: 'text/plain',
+          bytes: 10,
+          author: owner._id,
+        }),
+      ).rejects.toMatchObject({ code: 'SKILL_FILE_UPSERT_NOT_FOUND' });
+      expect(bumpSpy).not.toHaveBeenCalled();
+    } finally {
+      findOneAndUpdateSpy.mockRestore();
+      bumpSpy.mockRestore();
+    }
   });
 
   it('clears codeEnvRef when a skill file is upserted (replacement)', async () => {

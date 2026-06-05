@@ -23,6 +23,7 @@ const {
   getMissingCustomUserVars,
   buildWebSearchDynamicContext,
   getCodeApiAuthHeaders,
+  isFileAuthoringToolDefinition,
 } = require('@librechat/api');
 const {
   Time,
@@ -1380,6 +1381,13 @@ async function loadToolsForExecution({
     }
   }
 
+  const fileAuthoringToolNames = new Set(
+    toolRegistry
+      ? Array.from(toolRegistry.values())
+          .filter((definition) => isFileAuthoringToolDefinition(definition))
+          .map((definition) => definition.name)
+      : [],
+  );
   const specialToolNames = new Set([
     AgentConstants.TOOL_SEARCH,
     AgentConstants.PROGRAMMATIC_TOOL_CALLING,
@@ -1387,6 +1395,7 @@ async function loadToolsForExecution({
     AgentConstants.BASH_TOOL,
     AgentConstants.SKILL_TOOL,
     AgentConstants.READ_FILE,
+    ...fileAuthoringToolNames,
   ]);
 
   let ptcOrchestratedToolNames = [];

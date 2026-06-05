@@ -1,5 +1,6 @@
-# Credential-free e2e config template. e2e/playwright.config.mock.ts writes
-# an ignored runtime copy and rewrites the mock LLM port from MOCK_LLM_PORT.
+# Credential-free e2e config template. e2e/playwright.config.mock.ts copies this
+# to an ignored runtime path; the in-process fake model (e2e/setup/fake-model.js)
+# overrides each run, so the placeholder baseURL below is never contacted.
 version: 1.3.11
 cache: true
 

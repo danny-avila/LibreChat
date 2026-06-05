@@ -42,6 +42,13 @@ export type ValidationIssue = {
   severity?: 'error' | 'warning';
 };
 
+type SkillFileUpsertResult = {
+  value: (ISkillFile & { _id: Types.ObjectId }) | null;
+  lastErrorObject?: {
+    updatedExisting?: boolean;
+  };
+};
+
 /** Partition an issue list into blocking errors and non-blocking warnings. */
 export function partitionIssues(issues: ValidationIssue[]): {
   errors: ValidationIssue[];
@@ -251,6 +258,7 @@ const ALLOWED_FRONTMATTER_KEYS = new Set<string>([
   'shell',
   'hooks',
   'version',
+  'license',
   'metadata',
 ]);
 
@@ -277,6 +285,7 @@ const FRONTMATTER_KIND: Record<string, FrontmatterKind | FrontmatterKind[]> = {
   paths: ['string', 'stringArray'],
   shell: 'string',
   version: 'string',
+  license: 'string',
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -487,6 +496,12 @@ export type UpdateSkillInput = {
   frontmatter?: Record<string, unknown>;
   category?: string;
   alwaysApply?: boolean;
+};
+
+export type GetAuthorSkillByNameParams = {
+  name: string;
+  author: Types.ObjectId | string;
+  tenantId?: string | null;
 };
 
 /**
@@ -1017,6 +1032,22 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     return preferred ?? docs[0];
   }
 
+  async function getAuthorSkillByName(
+    params: GetAuthorSkillByNameParams,
+  ): Promise<(ISkill & { _id: Types.ObjectId }) | null> {
+    const Skill = mongoose.models.Skill as Model<ISkillDocument>;
+    const doc = await Skill.findOne({
+      name: params.name,
+      author: params.author,
+      tenantId: params.tenantId ?? null,
+    })
+      .sort({ updatedAt: -1 })
+      .lean();
+    return backfillDerivedFromFrontmatter(
+      (doc as unknown as (ISkill & { _id: Types.ObjectId }) | null) ?? null,
+    );
+  }
+
   async function listSkillsByAccess(
     params: ListSkillsByAccessParams,
   ): Promise<ListSkillsByAccessResult> {
@@ -1413,12 +1444,7 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     }
     const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
     const category = inferSkillFileCategory(row.relativePath);
-    // Atomic new-vs-replace detection: with `new: false, upsert: true`,
-    // `findOneAndUpdate` returns the pre-update document (or null if the doc
-    // did not exist and was just inserted). Checking the return value replaces
-    // a non-atomic `findOne` + `upsert` pair that could double-count on
-    // concurrent uploads of the same (skillId, relativePath).
-    const previous = await SkillFile.findOneAndUpdate(
+    const result = (await SkillFile.findOneAndUpdate(
       { skillId: row.skillId, relativePath: row.relativePath },
       {
         $set: {
@@ -1439,23 +1465,17 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
         },
         $unset: { content: '', isBinary: '', codeEnvRef: '' },
       },
-      { new: false, upsert: true },
-    ).lean();
-    const delta = previous ? 0 : 1;
+      { new: true, upsert: true, includeResultMetadata: true },
+    ).lean()) as unknown as SkillFileUpsertResult;
+    const current = result.value;
+    if (!current) {
+      const error = new Error('Skill file upsert failed to read the saved file row');
+      (error as Error & { code?: string }).code = 'SKILL_FILE_UPSERT_NOT_FOUND';
+      throw error;
+    }
+    const delta = result.lastErrorObject?.updatedExisting === false ? 1 : 0;
     await bumpSkillVersionAndAdjustFileCount(row.skillId, delta);
-
-    // Fetch the current (post-upsert) document for the caller. This second
-    // round-trip is an intentional tradeoff for the TOCTOU-safe detection
-    // above: `new: false` is required to distinguish insert from replace
-    // atomically, which means `findOneAndUpdate` returns the pre-update
-    // document (null on insert). A separate `findOne` is the simplest way
-    // to return the authoritative post-upsert state. Performance impact is
-    // negligible compared to the file upload I/O this sits behind.
-    const current = await SkillFile.findOne({
-      skillId: row.skillId,
-      relativePath: row.relativePath,
-    }).lean();
-    return current as unknown as ISkillFile & { _id: Types.ObjectId };
+    return current;
   }
 
   async function deleteSkillFile(
@@ -1526,6 +1546,7 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     createSkill,
     getSkillById,
     getSkillByName,
+    getAuthorSkillByName,
     listSkillsByAccess,
     listAlwaysApplySkills,
     updateSkill,

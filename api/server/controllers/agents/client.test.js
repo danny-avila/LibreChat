@@ -1,5 +1,5 @@
 const { Providers } = require('@librechat/agents');
-const { Constants, EModelEndpoint } = require('librechat-data-provider');
+const { Constants, ContentTypes, EModelEndpoint } = require('librechat-data-provider');
 const AgentClient = require('./client');
 
 jest.mock('@librechat/agents', () => ({
@@ -1500,6 +1500,7 @@ describe('AgentClient - titleConvo', () => {
     beforeEach(() => {
       jest.clearAllMocks();
       mockFormatInstructions.mockResolvedValue('');
+      require('@librechat/api').countFormattedMessageTokens.mockImplementation(() => 42);
 
       mockAgent = {
         id: 'primary-agent',
@@ -1544,7 +1545,7 @@ describe('AgentClient - titleConvo', () => {
       client.useMemory = jest.fn().mockResolvedValue(undefined);
     });
 
-    it("applies shared request context plus each agent's own context docs only", async () => {
+    it('places request context inline and applies each agent context doc only once', async () => {
       const requestFile = makeTextFile('request-file', 'request.txt', 'Shared request context');
       const primaryContext = makeTextFile(
         'primary-context',
@@ -1574,7 +1575,7 @@ describe('AgentClient - titleConvo', () => {
       ]);
       client.agentConfigs = new Map([['handoff-agent', handoffAgent]]);
 
-      await client.buildMessages(
+      const result = await client.buildMessages(
         [
           {
             messageId: 'msg-1',
@@ -1588,13 +1589,97 @@ describe('AgentClient - titleConvo', () => {
         {},
       );
 
-      expect(mockAgent.additional_instructions).toContain('Shared request context');
+      expect(result.prompt[0].content).toContain('Shared request context');
+
       expect(mockAgent.additional_instructions).toContain('Primary private context');
+      expect(mockAgent.additional_instructions).not.toContain('Shared request context');
       expect(mockAgent.additional_instructions).not.toContain('Handoff private context');
 
-      expect(handoffAgent.additional_instructions).toContain('Shared request context');
       expect(handoffAgent.additional_instructions).toContain('Handoff private context');
+      expect(handoffAgent.additional_instructions).not.toContain('Shared request context');
       expect(handoffAgent.additional_instructions).not.toContain('Primary private context');
+    });
+
+    it('places current request file context on the latest user message', async () => {
+      const currentFile = makeTextFile('current-file', 'current.txt', 'Current turn file body');
+      const previousFileContext =
+        'Attached document(s):\n```md\n# "previous.txt"\nPrevious turn file body\n```';
+
+      client.options.attachments = [currentFile];
+
+      const result = await client.buildMessages(
+        [
+          {
+            messageId: 'msg-1',
+            parentMessageId: null,
+            sender: 'User',
+            text: 'What is written here?',
+            isCreatedByUser: true,
+            fileContext: previousFileContext,
+          },
+          {
+            messageId: 'msg-2',
+            parentMessageId: 'msg-1',
+            sender: 'Assistant',
+            text: 'It describes the previous file.',
+            isCreatedByUser: false,
+          },
+          {
+            messageId: 'msg-3',
+            parentMessageId: 'msg-2',
+            sender: 'User',
+            text: 'What is written here?',
+            isCreatedByUser: true,
+          },
+        ],
+        'msg-3',
+        {},
+      );
+
+      expect(result.prompt[0].content).toContain('Previous turn file body');
+      expect(result.prompt[2].content).toContain('Current turn file body');
+      expect(result.prompt[2].content).toContain('What is written here?');
+      expect(result.prompt[2].content).not.toContain('Previous turn file body');
+      expect(client.memoryPayload[2].content).toContain('What is written here?');
+      expect(client.memoryPayload[2].content).not.toContain('Current turn file body');
+      expect(mockAgent.additional_instructions ?? '').not.toContain('Current turn file body');
+      expect(result.prompt[2].content.indexOf('Current turn file body')).toBeLessThan(
+        result.prompt[2].content.indexOf('What is written here?'),
+      );
+    });
+
+    it('persists canonical token counts while counting request file context for the prompt', async () => {
+      const { countFormattedMessageTokens } = require('@librechat/api');
+      const currentFile = makeTextFile('current-file', 'current.txt', 'Current turn file body');
+
+      countFormattedMessageTokens.mockImplementation(({ content }) => {
+        const text = Array.isArray(content)
+          ? content.map((part) => part.text ?? part[ContentTypes.TEXT] ?? '').join('\n')
+          : String(content ?? '');
+        return text.includes('Current turn file body') ? 200 : 20;
+      });
+
+      client.options.attachments = [currentFile];
+
+      const result = await client.buildMessages(
+        [
+          {
+            messageId: 'msg-1',
+            parentMessageId: null,
+            sender: 'User',
+            text: 'What is written here?',
+            isCreatedByUser: true,
+          },
+        ],
+        'msg-1',
+        {},
+      );
+
+      expect(result.prompt[0].content).toContain('Current turn file body');
+      expect(result.tokenCountMap['msg-1']).toBe(20);
+      expect(result.promptTokens).toBe(200);
+      expect(client.indexTokenCountMap[0]).toBe(200);
+      expect(client.memoryPayload[0].content).toBe('What is written here?');
     });
 
     it('does not duplicate a file that is both request context and scoped context', async () => {
@@ -1604,7 +1689,7 @@ describe('AgentClient - titleConvo', () => {
       client.options.agentContextAttachmentsByAgentId = new Map([['primary-agent', [sharedFile]]]);
       client.agentConfigs = new Map();
 
-      await client.buildMessages(
+      const result = await client.buildMessages(
         [
           {
             messageId: 'msg-1',
@@ -1618,10 +1703,10 @@ describe('AgentClient - titleConvo', () => {
         {},
       );
 
-      const occurrences = (
-        mockAgent.additional_instructions.match(/Shared duplicate context/g) ?? []
-      ).length;
-      expect(occurrences).toBe(1);
+      const inlineOccurrences = (result.prompt[0].content.match(/Shared duplicate context/g) ?? [])
+        .length;
+      expect(inlineOccurrences).toBe(1);
+      expect(mockAgent.additional_instructions ?? '').not.toContain('Shared duplicate context');
     });
 
     it('keeps direct chats with context-doc agents working without request attachments', async () => {

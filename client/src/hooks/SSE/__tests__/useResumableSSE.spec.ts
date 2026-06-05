@@ -1,5 +1,5 @@
 import { renderHook, act } from '@testing-library/react';
-import { Constants, LocalStorageKeys, QueryKeys } from 'librechat-data-provider';
+import { Constants, LocalStorageKeys, QueryKeys, request } from 'librechat-data-provider';
 import type { TSubmission } from 'librechat-data-provider';
 
 type SSEEventListener = (e: Partial<MessageEvent> & { responseCode?: number }) => void;
@@ -174,6 +174,28 @@ const getLastSSE = (): MockSSEInstance => {
   return sse;
 };
 
+const serverNotReadyError = (retryAfter = '0') => ({
+  response: {
+    status: 503,
+    data: { code: 'SERVER_NOT_READY' },
+    headers: { 'retry-after': retryAfter },
+  },
+});
+
+const flushMicrotasks = async () => {
+  await act(async () => {
+    await Promise.resolve();
+  });
+};
+
+const advanceRetryTimer = async (ms: number) => {
+  await act(async () => {
+    jest.advanceTimersByTime(ms);
+    await Promise.resolve();
+  });
+  await flushMicrotasks();
+};
+
 describe('useResumableSSE - 404 error path', () => {
   beforeEach(() => {
     mockSSEInstances.length = 0;
@@ -189,6 +211,12 @@ describe('useResumableSSE - 404 error path', () => {
     mockInvalidateQueries.mockClear();
     mockRemoveQueries.mockClear();
     mockFindAll.mockClear();
+    (request.post as jest.Mock).mockReset();
+    (request.post as jest.Mock).mockResolvedValue({ streamId: 'stream-123' });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   const seedDraft = (conversationId: string) => {
@@ -460,6 +488,53 @@ describe('useResumableSSE - 404 error path', () => {
     expect(mockTitleHandler).toHaveBeenCalledWith(titleEvent);
     expect(mockStepHandler).not.toHaveBeenCalled();
     unmount();
+  });
+
+  it('continues retrying chat start while the server reports startup readiness pending', async () => {
+    jest.useFakeTimers();
+    for (let i = 0; i < 9; i++) {
+      (request.post as jest.Mock).mockRejectedValueOnce(serverNotReadyError('1'));
+    }
+    (request.post as jest.Mock).mockResolvedValueOnce({ streamId: 'stream-ready' });
+
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await flushMicrotasks();
+
+    for (let i = 0; i < 9; i++) {
+      await advanceRetryTimer(1000);
+    }
+
+    expect(request.post).toHaveBeenCalledTimes(10);
+    expect(mockSSEInstances).toHaveLength(1);
+    expect(mockSSEInstances[0].stream).toHaveBeenCalledTimes(1);
+    expect(mockErrorHandler).not.toHaveBeenCalled();
+    unmount();
+    jest.useRealTimers();
+  });
+
+  it('cancels startup readiness retries on cleanup before opening a stream', async () => {
+    jest.useFakeTimers();
+    (request.post as jest.Mock)
+      .mockRejectedValueOnce(serverNotReadyError('1'))
+      .mockResolvedValueOnce({ streamId: 'stale-stream' });
+
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await flushMicrotasks();
+    unmount();
+    await advanceRetryTimer(1000);
+
+    expect(request.post).toHaveBeenCalledTimes(1);
+    expect(mockSSEInstances).toHaveLength(0);
+    expect(mockErrorHandler).not.toHaveBeenCalled();
+    jest.useRealTimers();
   });
 
   it('replays title events from resume state sync', async () => {
