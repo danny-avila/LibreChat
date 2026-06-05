@@ -4,6 +4,7 @@ const { checkAccess, loadWebSearchAuth, authorizeArtifactToolCall } = require('@
 const {
   Tools,
   AuthType,
+  Constants,
   Permissions,
   ToolCallTypes,
   PermissionTypes,
@@ -286,6 +287,7 @@ const callArtifactTool = async (req, res) => {
       getServerConnectionStatus,
       createMCPPermissionContext,
     } = require('~/server/services/MCP');
+    const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 
     const { tool, file_id: fileId, messageId, conversationId, partIndex, blockIndex } = req.body;
     const rawArgs = req.body.args;
@@ -351,6 +353,24 @@ const callArtifactTool = async (req, res) => {
       return;
     }
 
+    /* Resolve the user's per-server custom variables (API keys, etc.) the same
+     * way the normal agent path does, so servers that template `{{USER_VAR}}`
+     * aren't invoked without the user's configured values. */
+    const pluginKey = `${Constants.mcp_prefix}${serverName}`;
+    const customUserVars = {};
+    if (serverConfig.customUserVars && typeof serverConfig.customUserVars === 'object') {
+      for (const varName of Object.keys(serverConfig.customUserVars)) {
+        const value = await getUserPluginAuthValue(req.user.id, varName, false, pluginKey).catch(
+          () => null,
+        );
+        if (value) {
+          customUserVars[varName] = value;
+        }
+      }
+    }
+    const userMCPAuthMap =
+      Object.keys(customUserVars).length > 0 ? { [pluginKey]: customUserVars } : undefined;
+
     const toolInstance = await createMCPTool({
       res: createNoopEventSink(),
       user: req.user,
@@ -371,7 +391,11 @@ const callArtifactTool = async (req, res) => {
         /* Stable flow identifiers so any OAuth path derives a unique flowId
          * instead of `${serverName}:oauth_login:undefined:undefined`. */
         metadata: { thread_id: conversationId ?? `artifact:${fileId}`, run_id: toolCallId },
-        configurable: { user: req.user, requestBody: { conversationId, messageId } },
+        configurable: {
+          user: req.user,
+          requestBody: { conversationId, messageId },
+          userMCPAuthMap,
+        },
       },
     );
 

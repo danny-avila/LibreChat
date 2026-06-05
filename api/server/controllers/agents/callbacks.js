@@ -648,7 +648,11 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
       ? output.artifact.mcp_tools
       : null;
     const authoredPath = typeof output.artifact.path === 'string' ? output.artifact.path : null;
-    const authoredBase = authoredPath ? authoredPath.split('/').pop() : null;
+    /* Normalize sandbox paths so a nested authored file (e.g.
+     * `/mnt/data/reports/dash.html` vs a reported `reports/dash.html`) still
+     * matches and keeps its allowlist. */
+    const stripSandboxRoot = (p) => (p || '').replace(/^\/?mnt\/data\//, '').replace(/^\.?\//, '');
+    const authoredNorm = authoredPath ? stripSandboxRoot(authoredPath) : null;
 
     for (const file of output.artifact.files) {
       /* `inherited` files are unchanged passthroughs of inputs the caller
@@ -664,8 +668,9 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
       const toolCallId = output.tool_call_id;
       const mcpTools =
         authoredMcpTools &&
+        authoredNorm &&
         /\.html?$/i.test(name) &&
-        (name === authoredBase || name === authoredPath)
+        stripSandboxRoot(name) === authoredNorm
           ? authoredMcpTools
           : undefined;
       artifactPromises.push(
@@ -932,7 +937,11 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
       ? output.artifact.mcp_tools
       : null;
     const authoredPath = typeof output.artifact.path === 'string' ? output.artifact.path : null;
-    const authoredBase = authoredPath ? authoredPath.split('/').pop() : null;
+    /* Normalize sandbox paths so a nested authored file (e.g.
+     * `/mnt/data/reports/dash.html` vs a reported `reports/dash.html`) still
+     * matches and keeps its allowlist. */
+    const stripSandboxRoot = (p) => (p || '').replace(/^\/?mnt\/data\//, '').replace(/^\.?\//, '');
+    const authoredNorm = authoredPath ? stripSandboxRoot(authoredPath) : null;
 
     for (const file of output.artifact.files) {
       /* `inherited` files are unchanged passthroughs of inputs the caller
@@ -948,8 +957,9 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
       const toolCallId = output.tool_call_id;
       const mcpTools =
         authoredMcpTools &&
+        authoredNorm &&
         /\.html?$/i.test(name) &&
-        (name === authoredBase || name === authoredPath)
+        stripSandboxRoot(name) === authoredNorm
           ? authoredMcpTools
           : undefined;
       artifactPromises.push(

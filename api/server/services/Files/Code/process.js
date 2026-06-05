@@ -422,12 +422,11 @@ const processCodeOutput = async ({
     const file_id = claimed.file_id;
     const isUpdate = file_id !== newFileId;
 
-    /* Live-artifact allowlist for HTML authored via `create_file`. Prefer the
-     * freshly-declared list; otherwise preserve any list already on the record
-     * so a later content edit (edit_file / bash overwrite) doesn't silently
-     * strip an artifact's permissions. */
-    const resolvedMcpTools =
-      Array.isArray(mcpTools) && mcpTools.length > 0 ? mcpTools : claimed?.metadata?.mcpTools;
+    /* Live-artifact allowlist for HTML authored via `create_file`. An array
+     * (incl. empty) is authoritative — a create_file overwrite with an empty
+     * or omitted list revokes prior permissions. `undefined` (edit_file / bash
+     * content update) preserves the existing list so an edit doesn't strip it. */
+    const resolvedMcpTools = Array.isArray(mcpTools) ? mcpTools : claimed?.metadata?.mcpTools;
     const fileMetadata = {
       codeEnvRef,
       ...(Array.isArray(resolvedMcpTools) && resolvedMcpTools.length > 0

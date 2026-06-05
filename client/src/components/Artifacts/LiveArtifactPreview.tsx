@@ -5,7 +5,13 @@ import { useLocalize } from '~/hooks';
 import { useArtifactToolCallMutation } from '~/data-provider';
 import { buildLiveArtifactDocument, splitMcpToolKey } from '~/utils/liveArtifact';
 
-type ToolRequest = { id: string; name: string; args: Record<string, unknown> };
+type ToolRequest = {
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
+  /** The port that issued this request; results go back only here. */
+  port: MessagePort;
+};
 
 /**
  * Renders a live HTML artifact in an opaque-origin sandboxed iframe and bridges
@@ -57,10 +63,10 @@ export default function LiveArtifactPreview({
           tool: request.name,
           args: request.args,
         });
-        portRef.current?.postMessage({ type: 'tool-result', id: request.id, result });
+        request.port.postMessage({ type: 'tool-result', id: request.id, result });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Tool call failed';
-        portRef.current?.postMessage({ type: 'tool-result', id: request.id, error: message });
+        request.port.postMessage({ type: 'tool-result', id: request.id, error: message });
       }
     },
     [callArtifactTool, conversationId, fileId, messageId],
@@ -95,11 +101,7 @@ export default function LiveArtifactPreview({
     if (!pending) {
       return;
     }
-    portRef.current?.postMessage({
-      type: 'tool-result',
-      id: pending.id,
-      error: 'Permission denied',
-    });
+    pending.port.postMessage({ type: 'tool-result', id: pending.id, error: 'Permission denied' });
     showNextConsent();
   }, [pending, showNextConsent]);
 
@@ -120,7 +122,7 @@ export default function LiveArtifactPreview({
         typeof data.id === 'string' &&
         typeof data.name === 'string'
       ) {
-        requestTool({ id: data.id, name: data.name, args: data.args ?? {} });
+        requestTool({ id: data.id, name: data.name, args: data.args ?? {}, port: channel.port1 });
       }
     };
     frame.contentWindow.postMessage({ type: 'librechat:init' }, '*', [channel.port2]);

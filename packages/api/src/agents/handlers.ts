@@ -1547,7 +1547,7 @@ async function writeSandboxTextForAuthoring({
     bytes_written: Buffer.byteLength(content, 'utf8'),
     created,
     ...(diff ? { diff } : {}),
-    ...(mcpTools && mcpTools.length > 0 ? { mcp_tools: mcpTools } : {}),
+    ...(Array.isArray(mcpTools) ? { mcp_tools: mcpTools } : {}),
     ...(writeResult.session_id ? { session_id: writeResult.session_id } : {}),
     ...(writeResult.files ? { files: writeResult.files } : {}),
   });
@@ -2326,10 +2326,12 @@ async function handleCreateFileCall(
 
   const overwrite = args.overwrite === true;
   /** Live-artifact allowlist: HTML files only; well-formed keys the agent
-   * actually exposes (so a page can't self-allow a tool outside its subset). */
+   * actually exposes (so a page can't self-allow a tool outside its subset).
+   * An array (incl. empty) is authoritative for HTML create_file — empty
+   * revokes; `undefined` (non-HTML / edit_file) means "preserve existing". */
   const mcpTools = isHtmlAuthoringPath(args.file_path)
     ? filterToAgentMcpTools(sanitizeMcpToolList(args.mcp_tools), mergedConfigurable)
-    : [];
+    : undefined;
   if (!args.file_path.startsWith(SKILL_FILE_PREFIX)) {
     if (mergedConfigurable?.codeEnvAvailable !== true) {
       return errorResult(
