@@ -44,7 +44,7 @@ export default function FilesSection({
         <h2 id={headingId}>
           {title} <span className="sr-only">files</span>
         </h2>
-        {shown > 0 && <div className="text-text-secondary">{showingText}</div>}
+        {shown > 0 && canCollapse && <div className="text-text-secondary">{showingText}</div>}
       </div>
 
       {/* Files (or empty text if none) */}
@@ -60,23 +60,23 @@ export default function FilesSection({
         <div className="pl-2 text-sm">{emptyText}</div>
       )}
 
+      {/* End of files indicator */}
+      {isLastVisibleSection && showingAll && (
+        <div className="mt-3 w-full text-center text-sm text-text-secondary">
+          You&#39;ve reached the end
+        </div>
+      )}
+
       {/* Show more / show less toggle */}
       {canCollapse && (
         <button
-          className="mt-3 font-bold text-jersey-blue underline hover:decoration-2"
+          className="mb-2 mt-3 font-bold text-jersey-blue underline hover:decoration-2"
           aria-expanded={showAll}
           aria-controls={listId}
           onClick={() => setShowAll(!showAll)}
         >
           {!showingAll ? showMoreText : 'Show less'}
         </button>
-      )}
-
-      {/* End of files indicator */}
-      {isLastVisibleSection && showingAll && (
-        <div className="mb-3 mt-3 w-full text-center text-sm text-text-secondary">
-          You&#39;ve reached the end
-        </div>
       )}
     </section>
   );
