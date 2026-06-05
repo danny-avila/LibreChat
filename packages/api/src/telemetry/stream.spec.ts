@@ -107,6 +107,26 @@ describe('createSseStreamTelemetry', () => {
     expect(span.end).toHaveBeenCalledTimes(1);
   });
 
+  it('runs callbacks through the stream context', () => {
+    const span = createSpan();
+    mockTracer(span);
+    const contextWith = jest
+      .spyOn(context, 'with')
+      .mockImplementation((_telemetryContext, fn) => fn());
+    const res = createResponse();
+    const telemetry = createSseStreamTelemetry({
+      isResume: false,
+      req: createRequest(),
+      res: res as Response,
+      streamId: 'stream-context',
+    });
+
+    const result = telemetry.runWithContext(() => 'ok');
+
+    expect(result).toBe('ok');
+    expect(contextWith).toHaveBeenCalledWith(expect.any(Object), expect.any(Function));
+  });
+
   it('records client aborts on close before writableEnded', () => {
     const span = createSpan();
     mockTracer(span);

@@ -90,18 +90,20 @@ router.get('/chat/stream/:streamId', async (req, res) => {
   logger.debug(`[AgentStream] Client subscribed to ${streamId}, resume: ${isResume}`);
 
   const writeEvent = (event, options = {}) => {
-    if (!res.writableEnded) {
-      const eventName = options.eventName ?? 'message';
-      const payload = `event: ${eventName}\ndata: ${JSON.stringify(event)}\n\n`;
-      res.write(payload);
-      streamTelemetry.recordWrite(payload, { final: options.final });
-      if (typeof res.flush === 'function') {
-        res.flush();
+    return streamTelemetry.runWithContext(() => {
+      if (!res.writableEnded) {
+        const eventName = options.eventName ?? 'message';
+        const payload = `event: ${eventName}\ndata: ${JSON.stringify(event)}\n\n`;
+        res.write(payload);
+        streamTelemetry.recordWrite(payload, { final: options.final });
+        if (typeof res.flush === 'function') {
+          res.flush();
+        }
+        return true;
       }
-      return true;
-    }
 
-    return false;
+      return false;
+    });
   };
 
   const onDone = (event) => {
@@ -121,8 +123,9 @@ router.get('/chat/stream/:streamId', async (req, res) => {
   let result;
 
   if (isResume) {
-    const { subscription, resumeState, pendingEvents } =
-      await GenerationJobManager.subscribeWithResume(streamId, writeEvent, onDone, onError);
+    const { subscription, resumeState, pendingEvents } = await streamTelemetry.runWithContext(() =>
+      GenerationJobManager.subscribeWithResume(streamId, writeEvent, onDone, onError),
+    );
 
     if (!res.writableEnded) {
       if (resumeState) {
@@ -143,7 +146,9 @@ router.get('/chat/stream/:streamId', async (req, res) => {
 
     result = subscription;
   } else {
-    result = await GenerationJobManager.subscribe(streamId, writeEvent, onDone, onError);
+    result = await streamTelemetry.runWithContext(() =>
+      GenerationJobManager.subscribe(streamId, writeEvent, onDone, onError),
+    );
   }
 
   if (!result) {
