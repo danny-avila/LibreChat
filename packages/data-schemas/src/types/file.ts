@@ -70,6 +70,12 @@ export interface IMongoFile extends Omit<Document, 'model'> {
      * derive the sessionKey explicitly.
      */
     codeEnvRef?: CodeEnvRef;
+    /**
+     * MCP tool keys (`<tool>_mcp_<server>`) a live HTML artifact may
+     * call from its sandboxed iframe. Server-stored allowlist for the
+     * live-artifact bridge.
+     */
+    mcpTools?: string[];
   };
   expiresAt?: Date;
   expiredAt?: Date | null;

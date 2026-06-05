@@ -159,6 +159,12 @@ export type TFile = {
      * resolve via `resolveCodeEnvRef`.
      */
     codeEnvRef?: CodeEnvRef;
+    /**
+     * MCP tool keys (`<tool>_mcp_<server>`) a live HTML artifact may
+     * call from its sandboxed iframe. Server-stored allowlist that the
+     * live-artifact bridge re-validates against on every call.
+     */
+    mcpTools?: string[];
   };
   createdAt?: string | Date;
   updatedAt?: string | Date;

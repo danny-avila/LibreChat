@@ -1,6 +1,6 @@
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
-const { checkAccess, loadWebSearchAuth } = require('@librechat/api');
+const { checkAccess, loadWebSearchAuth, authorizeArtifactToolCall } = require('@librechat/api');
 const {
   Tools,
   AuthType,
@@ -8,10 +8,23 @@ const {
   ToolCallTypes,
   PermissionTypes,
 } = require('librechat-data-provider');
-const { getRoleByName, createToolCall, getToolCallsByConvo, getMessage } = require('~/models');
+const {
+  getFiles,
+  getMessage,
+  getRoleByName,
+  createToolCall,
+  getToolCallsByConvo,
+} = require('~/models');
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
 const { getRetentionExpiry } = require('~/server/services/Files/retention');
 const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
+const {
+  createMCPTool,
+  getMCPSetupData,
+  userCanUseMCPServers,
+  getServerConnectionStatus,
+  createMCPPermissionContext,
+} = require('~/server/services/MCP');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { loadTools } = require('~/app/clients/tools/util');
 
@@ -241,6 +254,143 @@ const callTool = async (req, res) => {
   }
 };
 
+/**
+ * No-op response used as the captured `res` for live-artifact MCP tool
+ * instances. The bridge is a non-streaming JSON endpoint, so the OAuth/SSE
+ * emitters inside the tool must never write to the real response. We pre-check
+ * the connection and reject when a server isn't connected, so this stub is only
+ * a defense-in-depth guard against the interactive OAuth path.
+ */
+const createNoopEventSink = () => ({
+  headersSent: true,
+  write: () => true,
+  end: () => {},
+  flush: () => {},
+  on: () => {},
+});
+
+/**
+ * Dispatch a single MCP tool call originating from a live artifact's bridge.
+ *
+ * The artifact's permitted tools are stored on its file record at authoring time
+ * (`file.metadata.mcpTools`). That server-stored allowlist is re-validated here,
+ * so a tampered client cannot call tools the artifact never declared. Tools run
+ * with the user's live MCP credentials.
+ *
+ * @param {ServerRequest} req
+ * @param {ServerResponse} res
+ * @returns {Promise<void>}
+ */
+const callArtifactTool = async (req, res) => {
+  try {
+    const { tool, file_id: fileId, messageId, conversationId, partIndex, blockIndex } = req.body;
+    const args = req.body.args ?? {};
+
+    if (!tool || !fileId) {
+      res.status(400).json({ message: 'tool and file_id are required' });
+      return;
+    }
+
+    const [file] = await getFiles({ file_id: fileId, user: req.user.id });
+    if (!file) {
+      res.status(404).json({ message: 'Artifact file not found' });
+      return;
+    }
+
+    const authorization = authorizeArtifactToolCall(file.metadata?.mcpTools, tool);
+    if (!authorization.allowed) {
+      if (authorization.reason === 'not_mcp') {
+        res.status(400).json({ message: 'Only MCP tools are callable from artifacts' });
+        return;
+      }
+      logger.warn(
+        `[artifact/tool] User ${req.user.id} attempted tool "${tool}" not in file "${fileId}" allowlist`,
+      );
+      res.status(403).json({ message: 'Tool not permitted for this artifact' });
+      return;
+    }
+    const { serverName } = authorization;
+
+    const hasAccess = await userCanUseMCPServers(req.user, req);
+    if (!hasAccess) {
+      logger.warn(`[artifact/tool] Forbidden: User ${req.user.id} lacks MCP server permissions`);
+      res.status(403).json({ message: 'Forbidden: Insufficient MCP server permissions' });
+      return;
+    }
+
+    const { mcpConfig, appConnections, userConnections, oauthServers } = await getMCPSetupData(
+      req.user.id,
+      { role: req.user.role, tenantId: req.user.tenantId },
+    );
+    const serverConfig = mcpConfig[serverName];
+    if (!serverConfig) {
+      res.status(404).json({ message: `MCP server "${serverName}" not found` });
+      return;
+    }
+
+    const { connectionState, requiresOAuth } = await getServerConnectionStatus(
+      req.user.id,
+      serverName,
+      serverConfig,
+      appConnections,
+      userConnections,
+      oauthServers,
+    );
+    if (connectionState !== 'connected') {
+      res.status(409).json({
+        message: `MCP server "${serverName}" is not connected`,
+        serverName,
+        connectionState,
+        requiresOAuth,
+      });
+      return;
+    }
+
+    const toolInstance = await createMCPTool({
+      res: createNoopEventSink(),
+      user: req.user,
+      toolKey: tool,
+      config: serverConfig,
+      mcpPermissionContext: createMCPPermissionContext(req),
+    });
+    if (!toolInstance) {
+      res.status(404).json({ message: 'Tool unavailable' });
+      return;
+    }
+
+    const toolCallId = `${req.user.id}_${nanoid()}`;
+    const result = await toolInstance.invoke(
+      { name: tool, args, id: toolCallId, type: ToolCallTypes.TOOL_CALL },
+      {
+        signal: req.abortController?.signal,
+        metadata: {},
+        configurable: { user: req.user, requestBody: { conversationId, messageId } },
+      },
+    );
+
+    const { content, artifact } = result ?? {};
+    if (messageId) {
+      createToolCall({
+        toolId: tool,
+        messageId,
+        partIndex,
+        blockIndex,
+        conversationId,
+        result: content,
+        user: req.user.id,
+        ...(await getRetentionExpiry(req)),
+      }).catch((error) => {
+        logger.error(`[artifact/tool] Error recording tool call: ${error.message}`);
+      });
+    }
+
+    res.status(200).json({ result: content, artifact });
+  } catch (error) {
+    logger.error('[artifact/tool] Error calling artifact tool', error);
+    res.status(500).json({ message: 'Error calling tool' });
+  }
+};
+
 const getToolCalls = async (req, res) => {
   try {
     const { conversationId } = req.query;
@@ -256,4 +406,5 @@ module.exports = {
   callTool,
   getToolCalls,
   verifyToolAuth,
+  callArtifactTool,
 };

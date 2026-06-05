@@ -1,5 +1,10 @@
 const express = require('express');
-const { callTool, verifyToolAuth, getToolCalls } = require('~/server/controllers/tools');
+const {
+  callTool,
+  getToolCalls,
+  verifyToolAuth,
+  callArtifactTool,
+} = require('~/server/controllers/tools');
 const { getAvailableTools } = require('~/server/controllers/PluginController');
 const { toolCallLimiter } = require('~/server/middleware');
 
@@ -26,6 +31,15 @@ router.get('/calls', getToolCalls);
  * @returns {{ authenticated?: boolean; message?: string }}
  */
 router.get('/:toolId/auth', verifyToolAuth);
+
+/**
+ * Dispatch an MCP tool call from a live artifact's bridge.
+ * Registered before `/:toolId/call` so the literal path wins over the param.
+ * @route POST /agents/tools/mcp/call
+ * @param {object} req.body - { tool, identifier, messageId, conversationId, args }
+ * @returns {object} { result, artifact }
+ */
+router.post('/mcp/call', toolCallLimiter, callArtifactTool);
 
 /**
  * Execute code for a specific tool

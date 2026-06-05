@@ -3,6 +3,16 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 
+export const useArtifactToolCallMutation = (
+  options?: t.ArtifactToolCallMutationOptions,
+): UseMutationResult<t.ArtifactToolCallResponse, Error, t.ArtifactToolCallParams> => {
+  return useMutation((params: t.ArtifactToolCallParams) => dataService.callArtifactTool(params), {
+    onMutate: (variables) => options?.onMutate?.(variables),
+    onError: (error, variables, context) => options?.onError?.(error, variables, context),
+    onSuccess: (response, variables, context) => options?.onSuccess?.(response, variables, context),
+  });
+};
+
 export const useToolCallMutation = <T extends t.ToolId>(
   toolId: T,
   options?: t.ToolCallMutationOptions<T>,
