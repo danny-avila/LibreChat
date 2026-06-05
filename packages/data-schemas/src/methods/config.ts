@@ -5,6 +5,19 @@ import type { TCustomConfig } from 'librechat-data-provider';
 import type { Model, ClientSession } from 'mongoose';
 import type { IConfig } from '~/types';
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function getAncestorPaths(fieldPath: string): string[] {
+  const parts = fieldPath.split('.');
+  return parts.map((_, index) => parts.slice(0, index + 1).join('.'));
+}
+
+function getPathAndDescendantsRegex(fieldPath: string): RegExp {
+  return new RegExp(`^${escapeRegExp(fieldPath)}(?:\\.|$)`);
+}
+
 export function createConfigMethods(mongoose: typeof import('mongoose')) {
   async function findConfigByPrincipal(
     principalType: PrincipalType,
@@ -92,6 +105,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
       $set: {
         principalModel,
         overrides,
+        tombstones: [],
         priority,
         isActive: true,
       },
@@ -139,6 +153,40 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
       setPayload[`overrides.${path}`] = value;
     }
 
+    const tombstonesToClear = [...new Set(Object.keys(fields).flatMap(getAncestorPaths))];
+
+    const options = {
+      upsert: true,
+      new: true,
+      setDefaultsOnInsert: true,
+      ...(session ? { session } : {}),
+    };
+
+    const update: Record<string, unknown> = {
+      $set: setPayload,
+      $inc: { configVersion: 1 },
+    };
+    if (tombstonesToClear.length > 0) {
+      update.$pull = { tombstones: { $in: tombstonesToClear } };
+    }
+
+    return await Config.findOneAndUpdate(
+      { principalType, principalId: principalId.toString() },
+      update,
+      options,
+    );
+  }
+
+  async function tombstoneConfigField(
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+    principalModel: PrincipalModel,
+    fieldPath: string,
+    priority: number,
+    session?: ClientSession,
+  ): Promise<IConfig | null> {
+    const Config = mongoose.models.Config as Model<IConfig>;
+
     const options = {
       upsert: true,
       new: true,
@@ -148,7 +196,16 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
 
     return await Config.findOneAndUpdate(
       { principalType, principalId: principalId.toString() },
-      { $set: setPayload, $inc: { configVersion: 1 } },
+      {
+        $set: {
+          principalModel,
+          priority,
+          isActive: true,
+        },
+        $unset: { [`overrides.${fieldPath}`]: '' },
+        $addToSet: { tombstones: fieldPath },
+        $inc: { configVersion: 1 },
+      },
       options,
     );
   }
@@ -168,7 +225,11 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
 
     return await Config.findOneAndUpdate(
       { principalType, principalId: principalId.toString() },
-      { $unset: { [`overrides.${fieldPath}`]: '' }, $inc: { configVersion: 1 } },
+      {
+        $unset: { [`overrides.${fieldPath}`]: '' },
+        $pull: { tombstones: { $regex: getPathAndDescendantsRegex(fieldPath) } },
+        $inc: { configVersion: 1 },
+      },
       options,
     );
   }
@@ -206,6 +267,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
     getApplicableConfigs,
     upsertConfig,
     patchConfigFields,
+    tombstoneConfigField,
     unsetConfigField,
     deleteConfig,
     toggleConfigActive,
