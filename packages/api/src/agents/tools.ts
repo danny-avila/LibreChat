@@ -198,7 +198,7 @@ const CODE_CREATE_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
       type: 'array',
       items: { type: 'string' },
       description:
-        'For an HTML file only: MCP tool keys (format "<tool>_mcp_<server>") this page may call live via window.librechat.callMcpTool(name, args). Declaring tools turns the file into a live artifact that fetches fresh data on open. Omit for static files.',
+        'For an HTML file only: MCP tool keys (format "<tool>_mcp_<server>") this page may call live via window.librechat.callMcpTool(name, args), which returns a Promise of the tool result. Declaring tools turns the file into a live artifact that fetches fresh data on open. The page is sandboxed with a strict CSP: inline ALL CSS/JS (no external <script src>/<link>/CDN), images must be data: URIs, and the only network access is window.librechat.callMcpTool. Omit for static files.',
     },
   },
   required: ['file_path', 'content'],

@@ -33,26 +33,33 @@ describe('buildLiveArtifactDocument', () => {
     expect(doc.indexOf('window.librechat')).toBeLessThan(doc.indexOf('<h1>hi</h1>'));
   });
 
-  it('injects CSP/shim as the first head children of a full document', () => {
-    const html = '<!doctype html><html><head><title>x</title></head><body><p>y</p></body></html>';
+  it('puts CSP + shim before authored markup even when content has a pre-<head> prefix', () => {
+    // A model prefix before <head> must NOT execute before the policy.
+    const html =
+      '<script>steal()</script><html><head><title>x</title></head><body><p>y</p></body></html>';
     const doc = buildLiveArtifactDocument(html);
     expect(doc).toContain('<title>x</title>');
     expect(doc).toContain('<p>y</p>');
-    // CSP appears after <head> but before the page's own <title>
-    expect(doc.indexOf('Content-Security-Policy')).toBeLessThan(doc.indexOf('<title>x</title>'));
+    expect(doc.indexOf('Content-Security-Policy')).toBeLessThan(doc.indexOf('<script>steal()'));
+    expect(doc.indexOf('window.librechat')).toBeLessThan(doc.indexOf('<script>steal()'));
   });
 
-  it('adds a head when the document has <html> but no <head>', () => {
+  it('nests an <html>-without-<head> document under the policy', () => {
     const doc = buildLiveArtifactDocument('<html><body><p>z</p></body></html>');
     expect(doc).toContain('Content-Security-Policy');
     expect(doc).toContain('window.librechat');
     expect(doc.indexOf('window.librechat')).toBeLessThan(doc.indexOf('<p>z</p>'));
   });
 
-  it('blocks network egress and forbids form/base by policy', () => {
+  it('blocks all network egress: no remote script/style, no img/font hosts', () => {
     const doc = buildLiveArtifactDocument('<div></div>');
     expect(doc).toContain("default-src 'none'");
+    expect(doc).toContain("script-src 'unsafe-inline'");
+    expect(doc).toContain("connect-src 'none'");
     expect(doc).toContain("form-action 'none'");
     expect(doc).toContain("base-uri 'none'");
+    // No remote origins anywhere in the CSP (bridge-only egress).
+    const csp = doc.slice(doc.indexOf('Content-Security-Policy'), doc.indexOf('">'));
+    expect(csp).not.toMatch(/https?:\/\//);
   });
 });

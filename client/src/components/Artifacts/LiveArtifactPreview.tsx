@@ -37,6 +37,7 @@ export default function LiveArtifactPreview({
 
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const portRef = useRef<MessagePort | null>(null);
+  const transferredSigRef = useRef<string | null>(null);
   const grantsRef = useRef<Set<string>>(new Set());
   const queueRef = useRef<ToolRequest[]>([]);
   const [pending, setPending] = useState<ToolRequest | null>(null);
@@ -44,14 +45,15 @@ export default function LiveArtifactPreview({
 
   const srcDocument = useMemo(() => buildLiveArtifactDocument(content), [content]);
 
-  // React reuses this instance when switching between live artifacts. Reset
-  // consent + pending state when the source file changes so a grant approved
-  // for one artifact never carries over to another.
+  // React reuses this instance when switching between live artifacts, and the
+  // same fileId can be reused across turns with new content. Reset consent +
+  // pending state on fileId OR content change so a grant approved for one
+  // version never carries over to a different one.
   useEffect(() => {
     grantsRef.current.clear();
     queueRef.current = [];
     setPending(null);
-  }, [fileId]);
+  }, [fileId, content]);
 
   const dispatch = useCallback(
     async (request: ToolRequest) => {
@@ -110,8 +112,16 @@ export default function LiveArtifactPreview({
     if (!frame?.contentWindow) {
       return;
     }
-    // Close any prior port (e.g. an iframe self-reload fired `load` again) so
-    // stale handlers and queued messages from the old document are dropped.
+    // Only hand the bridge to a document WE loaded. A self-navigation fires
+    // `load` again with the same intended signature; skipping it means a
+    // navigated page (no longer under our injected CSP) can never receive the
+    // port. A real (re)load — new content/file or the reload button — changes
+    // the signature and gets a fresh port.
+    const sig = `${fileId}::${reloadNonce}::${content}`;
+    if (transferredSigRef.current === sig) {
+      return;
+    }
+    transferredSigRef.current = sig;
     portRef.current?.close();
     const channel = new MessageChannel();
     portRef.current = channel.port1;
@@ -126,7 +136,7 @@ export default function LiveArtifactPreview({
       }
     };
     frame.contentWindow.postMessage({ type: 'librechat:init' }, '*', [channel.port2]);
-  }, [requestTool]);
+  }, [requestTool, fileId, reloadNonce, content]);
 
   const handleReload = useCallback(() => {
     portRef.current?.close();

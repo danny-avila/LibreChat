@@ -15,27 +15,28 @@ export const splitMcpToolKey = (tool: string): { toolName: string; serverName: s
 };
 
 /**
- * Strict CSP injected into every live artifact. `connect-src 'none'` is the
- * load-bearing line: the artifact cannot make its own network calls, so the
- * the consented, allowlisted bridge is the only intended egress.
+ * Strict CSP injected into every live artifact. Live artifacts receive private
+ * MCP tool results, so the contract is hard: the consented bridge is the ONLY
+ * egress. No directive may permit an outbound request to any host.
  *
- * Egress is locked down across directives, not just `connect-src`:
+ * - `default-src 'none'` denies everything not explicitly allowed.
+ * - `script-src 'unsafe-inline'` / `style-src 'unsafe-inline'` allow only
+ *   *inline* code — NO remote origins (a `<script src=cdn/…data>` is an egress
+ *   channel even to an allowlisted host, so all JS/CSS must be inlined).
+ * - `img-src data:` / `font-src data:` block pixel/`@font-face` URL exfil.
  * - `connect-src 'none'` blocks fetch/XHR/WebSocket/EventSource/sendBeacon.
- * - `img-src data:` / `font-src data:` block the pixel/`@font-face` URL
- *   exfiltration channels (no remote hosts — inline data URIs only).
- * - `script-src`/`style-src` allow only two fixed, attacker-uncontrolled CDNs.
- * - `form-action 'none'` blocks form-POST exfiltration; `navigate-to 'none'`
- *   blocks self-navigation exfiltration where the engine supports it.
+ * - `form-action 'none'` blocks form-POST exfil; `navigate-to 'none'` blocks
+ *   self-navigation exfil where the engine supports it.
  *
  * Note: a `<meta>` CSP cannot carry `frame-ancestors`/`sandbox`/`report-uri`
- * (enforced by the iframe element's attributes instead), and `navigate-to` has
- * partial engine support — so self-navigation is best-effort, which is why the
- * tool allowlist + consent gate remain the primary controls.
+ * (enforced by the iframe element's attributes), and `navigate-to` has partial
+ * engine support — so self-navigation is also defended in the host by refusing
+ * to hand the bridge port to a navigated document.
  */
 const CONTENT_SECURITY_POLICY = [
   "default-src 'none'",
-  "script-src 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com",
-  "style-src 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com",
+  "script-src 'unsafe-inline'",
+  "style-src 'unsafe-inline'",
   'img-src data:',
   'font-src data:',
   "connect-src 'none'",
@@ -89,7 +90,6 @@ const BRIDGE_SHIM = `
 
   window.librechat = {
     callMcpTool: callMcpTool,
-    reload: function () { window.location.reload(); },
   };
 })();
 `;
@@ -101,17 +101,14 @@ const buildHead = (): string =>
   `<script>${BRIDGE_SHIM}</script>`;
 
 /**
- * Wrap model-authored HTML into a document whose first head children are the
- * CSP and bridge shim, so both apply before any artifact code runs. Handles a
- * full document, an `<html>` without `<head>`, or a bare fragment.
+ * Wrap model-authored HTML so the CSP + bridge shim are the very first things
+ * the parser sees. We ALWAYS nest the authored markup inside our own
+ * `<body>` rather than injecting into the model's `<head>` — injecting after an
+ * existing `<head>` would let any markup the model placed *before* that tag
+ * (e.g. `<script>…</script><html><head>`) execute before the policy is active.
+ * Nesting a full document inside the body is tolerated by parsers (the inner
+ * doctype/html/head tags are ignored; scripts/styles still run) and guarantees
+ * the CSP governs everything.
  */
-export const buildLiveArtifactDocument = (html: string): string => {
-  const head = buildHead();
-  if (/<head[^>]*>/i.test(html)) {
-    return html.replace(/<head[^>]*>/i, (match) => match + head);
-  }
-  if (/<html[^>]*>/i.test(html)) {
-    return html.replace(/<html[^>]*>/i, (match) => `${match}<head>${head}</head>`);
-  }
-  return `<!doctype html><html><head>${head}</head><body>${html}</body></html>`;
-};
+export const buildLiveArtifactDocument = (html: string): string =>
+  `<!doctype html><html><head>${buildHead()}</head><body>${html}</body></html>`;

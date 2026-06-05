@@ -376,6 +376,7 @@ const callArtifactTool = async (req, res) => {
       user: req.user,
       toolKey: tool,
       config: serverConfig,
+      userMCPAuthMap,
       mcpPermissionContext: createMCPPermissionContext(req),
     });
     if (!toolInstance) {
