@@ -1081,7 +1081,8 @@ export async function initializeAgent(
     activeSkillNames = skillResult.activeSkillNames;
   }
 
-  const hasFinalAgentTools = (structuredTools?.length ?? 0) > 0 || (toolDefinitions?.length ?? 0) > 0;
+  const hasFinalAgentTools =
+    (structuredTools?.length ?? 0) > 0 || (toolDefinitions?.length ?? 0) > 0;
   if (isGoogleToolCombinationProvider(agent.provider) && hasProviderTools && hasFinalAgentTools) {
     assertGoogleToolCombinationSupport(llmConfig.model);
     if (
