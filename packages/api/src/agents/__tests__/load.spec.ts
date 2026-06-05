@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
-import { Constants } from 'librechat-data-provider';
+import { Constants, FileSources } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { agentSchema, createMethods } from '@librechat/data-schemas';
 import type { AgentModelParameters } from 'librechat-data-provider';
@@ -262,6 +262,9 @@ describe('loadAgent', () => {
           user: { id: 'user123' },
           body: {},
           config: {
+            config: {},
+            fileStrategy: FileSources.local,
+            imageOutputType: 'png',
             modelSpecs: {
               list: [
                 {
@@ -295,6 +298,9 @@ describe('loadAgent', () => {
           user: { id: 'user123' },
           body: {},
           config: {
+            config: {},
+            fileStrategy: FileSources.local,
+            imageOutputType: 'png',
             modelSpecs: {
               list: [
                 {
