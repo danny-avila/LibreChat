@@ -74,6 +74,11 @@ async function saveSkillFileContent({ req, skillId, relativePath, content, mimeT
       author: req.user._id ?? req.user.id,
       tenantId,
     });
+    if (!result) {
+      const error = new Error('Skill file save failed to persist metadata');
+      error.code = 'SKILL_FILE_UPSERT_NOT_FOUND';
+      throw error;
+    }
   } catch (error) {
     const { deleteFile } = getStrategyFunctions(storage.source);
     if (deleteFile) {
