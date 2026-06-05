@@ -229,5 +229,7 @@ skillSchema.index({ author: 1, tenantId: 1 });
 skillSchema.index({ category: 1, updatedAt: -1 });
 skillSchema.index({ updatedAt: -1, _id: 1 });
 skillSchema.index({ name: 1, author: 1, tenantId: 1 }, { unique: true });
+skillSchema.index({ source: 1, 'sourceMetadata.upstreamId': 1, tenantId: 1 });
+skillSchema.index({ source: 1, 'sourceMetadata.sourceId': 1, tenantId: 1 });
 
 export default skillSchema;
