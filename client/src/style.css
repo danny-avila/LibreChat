@@ -3118,35 +3118,9 @@ body {
   font-weight: normal;
 }
 
-/* File icon styles */
-.file-icon-default {
-  color: #782312;
-  background-color: #FFF3EA;
-}
-
-.file-icon-audio {
-  color: #45472F;
-  background-color: #F1F4D7;
-}
-
-.file-icon-application {
-  color: #2F4668;
-  background-color: #ECF1F7;
-}
-
-.file-icon-image {
-  color: #453C7B;
-  background-color: #F1EFF7;
-}
-
-.file-icon-text {
-  color: #4D4438;
+.file-icon {
+  color: #454540;
   background-color: #F5F0E6;
-}
-
-.file-icon-video {
-  color: #45472F;
-  background-color: #F1F4D7;
 }
 
 .tip-component-icon {
