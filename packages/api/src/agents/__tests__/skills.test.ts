@@ -523,6 +523,30 @@ describe('resolveSkillActive', () => {
     ).toBe(false);
   });
 
+  it('respects explicit override = false even for deployment skills', () => {
+    const deploymentSkill = { ...makeSkill(new Types.ObjectId()), deployment: true };
+    expect(
+      resolveSkillActive({
+        skill: deploymentSkill,
+        skillStates: { [deploymentSkill._id.toString()]: false },
+        userId: undefined,
+        defaultActiveOnShare: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('defaults deployment skills to active without ownership or shared defaults', () => {
+    const deploymentSkill = { ...makeSkill(new Types.ObjectId()), deployment: true };
+    expect(
+      resolveSkillActive({
+        skill: deploymentSkill,
+        skillStates: {},
+        userId: undefined,
+        defaultActiveOnShare: false,
+      }),
+    ).toBe(true);
+  });
+
   it('owned skills default to active when no override is present', () => {
     const userObjectId = new Types.ObjectId();
     const userId = userObjectId.toString();
@@ -990,6 +1014,7 @@ describe('resolveManualSkills', () => {
     author: Types.ObjectId;
     allowedTools?: string[];
     userInvocable?: boolean;
+    deployment?: boolean;
   };
 
   const buildGetSkillByName =
@@ -1197,6 +1222,23 @@ describe('resolveManualSkills', () => {
       defaultActiveOnShare: true,
     });
     expect(result).toEqual([{ _id: shared._id, name: 'shared', body: 'shared-body' }]);
+  });
+
+  it('allows deployment skills even when shared skills default inactive', async () => {
+    const deployment = {
+      ...mkSkill('deployment', otherAuthor, 'deployment-body'),
+      deployment: true,
+    };
+    const result = await resolveManualSkills({
+      names: ['deployment'],
+      getSkillByName: buildGetSkillByName({ deployment }),
+      accessibleSkillIds: [deployment._id],
+      userId,
+      defaultActiveOnShare: false,
+    });
+    expect(result).toEqual([
+      { _id: deployment._id, name: 'deployment', body: 'deployment-body' },
+    ]);
   });
 
   it('drops explicitly-deactivated skills (skillStates override wins over ownership default)', async () => {
@@ -1633,6 +1675,7 @@ describe('resolveAlwaysApplySkills', () => {
     body: string;
     author: Types.ObjectId | string;
     allowedTools?: string[];
+    deployment?: boolean;
   };
 
   const mkRow = (
@@ -1718,6 +1761,22 @@ describe('resolveAlwaysApplySkills', () => {
       defaultActiveOnShare: true,
     });
     expect(result).toEqual([{ _id: shared._id, name: 'shared-on', body: 'shared-body' }]);
+  });
+
+  it('allows deployment always-apply skills even when shared skills default inactive', async () => {
+    const deployment: AlwaysApplyRow = {
+      ...mkRow('deployment-always', otherAuthor, 'deployment body'),
+      deployment: true,
+    };
+    const result = await resolveAlwaysApplySkills({
+      listAlwaysApplySkills: buildLister([deployment]),
+      accessibleSkillIds: [deployment._id],
+      userId,
+      defaultActiveOnShare: false,
+    });
+    expect(result).toEqual([
+      { _id: deployment._id, name: 'deployment-always', body: 'deployment body' },
+    ]);
   });
 
   it('honors explicit deactivation override even for owned skills', async () => {

@@ -58,6 +58,14 @@ import { createSpendTokensMethods, type SpendTokensMethods } from './spendTokens
 import { createPromptMethods, type PromptMethods, type PromptDeps } from './prompt';
 import {
   createSkillMethods,
+  partitionIssues,
+  validateSkillName,
+  validateSkillBody,
+  validateRelativePath,
+  validateSkillFrontmatter,
+  validateSkillDescription,
+  deriveStructuredFrontmatterFields,
+  inferSkillFileCategory,
   type SkillMethods,
   type SkillDeps,
   type CreateSkillInput,
@@ -77,6 +85,16 @@ import { createConfigMethods, type ConfigMethods } from './config';
 export { RoleConflictError, DEFAULT_REFRESH_TOKEN_EXPIRY, DEFAULT_SESSION_EXPIRY };
 export { tokenValues, cacheTokenValues, premiumTokenValues, defaultRate };
 export { permissionBitSupersets };
+export {
+  partitionIssues,
+  validateSkillName,
+  validateSkillBody,
+  validateRelativePath,
+  validateSkillFrontmatter,
+  validateSkillDescription,
+  deriveStructuredFrontmatterFields,
+  inferSkillFileCategory,
+};
 
 export type AllMethods = UserMethods &
   SessionMethods &

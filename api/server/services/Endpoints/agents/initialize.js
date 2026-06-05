@@ -31,7 +31,9 @@ const { loadAgentTools, loadToolsForExecution } = require('~/server/services/Too
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const {
   getSkillToolDeps,
+  getSkillDbMethods,
   canAuthorSkillFiles,
+  withDeploymentSkillIds,
   buildAgentToolContext,
   enrichLoadedToolsWithAgentContext,
 } = require('./skillDeps');
@@ -141,14 +143,17 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
   const codeEnvAvailable = enabledCapabilities.has(AgentCapabilities.execute_code);
   const ephemeralSkillsToggle = req.body?.ephemeralAgent?.skills === true;
+  const skillDbMethods = getSkillDbMethods();
 
   const accessibleSkillIds = skillsCapabilityEnabled
-    ? await findAccessibleResources({
-        userId: req.user.id,
-        role: req.user.role,
-        resourceType: ResourceType.SKILL,
-        requiredPermissions: PermissionBits.VIEW,
-      })
+    ? withDeploymentSkillIds(
+        await findAccessibleResources({
+          userId: req.user.id,
+          role: req.user.role,
+          resourceType: ResourceType.SKILL,
+          requiredPermissions: PermissionBits.VIEW,
+        }),
+      )
     : [];
   const editableSkillIds = skillsCapabilityEnabled
     ? await findAccessibleResources({
@@ -338,9 +343,9 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       getToolFilesByIds: db.getToolFilesByIds,
       getCodeGeneratedFiles: db.getCodeGeneratedFiles,
       filterFilesByAgentAccess,
-      listSkillsByAccess: db.listSkillsByAccess,
-      listAlwaysApplySkills: db.listAlwaysApplySkills,
-      getSkillByName: db.getSkillByName,
+      listSkillsByAccess: skillDbMethods.listSkillsByAccess,
+      listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
+      getSkillByName: skillDbMethods.getSkillByName,
     },
   );
 
@@ -409,9 +414,9 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         getToolFilesByIds: db.getToolFilesByIds,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
         filterFilesByAgentAccess,
-        listSkillsByAccess: db.listSkillsByAccess,
-        listAlwaysApplySkills: db.listAlwaysApplySkills,
-        getSkillByName: db.getSkillByName,
+        listSkillsByAccess: skillDbMethods.listSkillsByAccess,
+        listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
+        getSkillByName: skillDbMethods.getSkillByName,
       },
       // The callback fires during BFS, before the helper prunes agents
       // whose edges end up filtered. Don't populate `agentConfigs` here —
@@ -609,9 +614,9 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
           getToolFilesByIds: db.getToolFilesByIds,
           getCodeGeneratedFiles: db.getCodeGeneratedFiles,
           filterFilesByAgentAccess,
-          listSkillsByAccess: db.listSkillsByAccess,
-          listAlwaysApplySkills: db.listAlwaysApplySkills,
-          getSkillByName: db.getSkillByName,
+          listSkillsByAccess: skillDbMethods.listSkillsByAccess,
+          listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
+          getSkillByName: skillDbMethods.getSkillByName,
         },
       );
       agentConfigs.set(agentId, config);

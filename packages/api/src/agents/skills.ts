@@ -171,7 +171,7 @@ export function resolveAgentScopedSkillIds(
 
 export interface ResolveSkillActiveParams {
   /** Skill being evaluated. Only `_id` and `author` matter for resolution. */
-  skill: { _id: Types.ObjectId | string; author: Types.ObjectId | string };
+  skill: { _id: Types.ObjectId | string; author: Types.ObjectId | string; deployment?: boolean };
   /** Per-user overrides: `{ [skillId]: boolean }`. Missing entries use the default. */
   skillStates?: Record<string, boolean>;
   /** Current user ID. When absent, the function fails closed for all non-overridden skills. */
@@ -195,6 +195,9 @@ export function resolveSkillActive(params: ResolveSkillActiveParams): boolean {
   const override = skillStates?.[skill._id.toString()];
   if (override !== undefined) {
     return override;
+  }
+  if (skill.deployment === true) {
+    return true;
   }
   if (!userId) {
     return false;
@@ -508,6 +511,7 @@ export interface ResolveManualSkillsParams {
     name: string;
     body: string;
     author: Types.ObjectId | string;
+    deployment?: boolean;
     /**
      * Skill-declared tool allowlist, forwarded verbatim from the skill doc.
      * Surfaced on `ResolvedManualSkill` so future runtime enforcement can
@@ -678,7 +682,7 @@ export async function resolveManualSkills(
           return null;
         }
         const active = resolveSkillActive({
-          skill: { _id: skill._id, author: skill.author },
+          skill: { _id: skill._id, author: skill.author, deployment: skill.deployment },
           skillStates,
           userId,
           defaultActiveOnShare,
@@ -728,6 +732,7 @@ export interface ResolveAlwaysApplySkillsParams {
       body: string;
       author: Types.ObjectId | string;
       allowedTools?: string[];
+      deployment?: boolean;
     }>;
     has_more?: boolean;
     after?: string | null;
@@ -826,7 +831,7 @@ export async function resolveAlwaysApplySkills(
         continue;
       }
       const active = resolveSkillActive({
-        skill: { _id: skill._id, author: skill.author },
+        skill: { _id: skill._id, author: skill.author, deployment: skill.deployment },
         skillStates,
         userId,
         defaultActiveOnShare,
