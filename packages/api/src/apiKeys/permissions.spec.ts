@@ -57,8 +57,8 @@ describe('enrichRemoteAgentPrincipals', () => {
 
       await enrichRemoteAgentPrincipals(deps, resourceId, []);
 
-      const pipeline = aggregateAclEntries.mock.calls[0][0];
-      const matchStage = pipeline[0].$match;
+      const pipeline = aggregateAclEntries.mock.calls[0][0] as Record<string, unknown>[];
+      const matchStage = pipeline[0].$match as Record<string, unknown>;
       expect(matchStage.resourceType).toBe(ResourceType.AGENT);
       expect(matchStage.principalType).toBe(PrincipalType.USER);
       expect(matchStage.resourceId).toBeInstanceOf(Types.ObjectId);
@@ -112,7 +112,7 @@ describe('enrichRemoteAgentPrincipals', () => {
 
       await enrichRemoteAgentPrincipals(deps, resourceId, []);
 
-      const pipeline = aggregateAclEntries.mock.calls[0][0];
+      const pipeline = aggregateAclEntries.mock.calls[0][0] as Record<string, unknown>[];
       const lookupStage = pipeline.find((stage) => '$lookup' in stage) as
         | { $lookup: Record<string, unknown> }
         | undefined;
