@@ -219,11 +219,14 @@ Features livrées (commits clés) :
 - **Pricing en dur dans `api/models/tx.js`** : les rates input/completion par modèle vivent dans ce fichier, pas dans le yaml. Avant d'activer la balance en V1, vérifier que les modèles utilisés (gpt-5.x, claude-opus-4-6, claude-sonnet-4-5, claude-haiku-4-5) ont un rate défini, sinon la consommation n'est pas trackée.
 - **Synchro balance au login** : le solde se réaligne sur la config globale (`startBalance`) à chaque connexion. Attention à la migration des users existants — un `startBalance` global mal réglé peut écraser les soldes attendus.
 - **`CREDS_KEY` / `CREDS_IV`** : présents dans le `.env`, à ne JAMAIS perdre ni régénérer lors d'une migration MongoDB. Ces clés chiffrent les credentials user en base ; sans elles, les données existantes deviennent illisibles.
-- **Code natif LibreChat modifié — watchlist merge upstream**. À chaque merge depuis upstream LibreChat, contrôler ces 4 fichiers en priorité, car nous y avons ajouté du code Vermeer susceptible de conflit :
+- **Code natif LibreChat modifié — watchlist merge upstream**. À chaque merge depuis upstream LibreChat, contrôler ces 7 fichiers en priorité, car nous y avons ajouté du code Vermeer susceptible de conflit :
   - `api/server/controllers/Balance.js` (enrichi avec currentMonthSpend dans la réponse /api/balance)
   - `client/src/hooks/SSE/useSSE.ts` (retrait du gate balance.enabled sur le refetch balanceQuery)
   - `client/src/components/Chat/ChatView.tsx` (BudgetCard inséré dans le layout, gestion footer)
   - `client/src/locales/en/translation.json` (clés com_budget_* + com_usage_* ajoutées + subtitle com_usage_subtitle modifié)
+  - `packages/data-provider/src/parsers.ts` (helper `applyWebSearchDefault` : web_search ON par défaut sur endpoints natifs + strip pour custom, appliqué dans `parseConvo`/`parseCompactConvo`)
+  - `packages/data-provider/src/schemas.ts` (`anthropicSettings.web_search.default = true` ; le champ `web_search` reste `.optional()` volontairement, le défaut est appliqué au runtime côté parsers)
+  - `packages/data-provider/src/parameterSettings.ts` (`openai`/`google` `web_search.default = true`)
 
 ---
 
