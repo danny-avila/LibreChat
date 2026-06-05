@@ -288,9 +288,10 @@ const callArtifactTool = async (req, res) => {
     } = require('~/server/services/MCP');
 
     const { tool, file_id: fileId, messageId, conversationId, partIndex, blockIndex } = req.body;
-    const args = req.body.args ?? {};
+    const rawArgs = req.body.args;
+    const args = rawArgs && typeof rawArgs === 'object' && !Array.isArray(rawArgs) ? rawArgs : {};
 
-    if (!tool || !fileId) {
+    if (typeof tool !== 'string' || !tool || typeof fileId !== 'string' || !fileId) {
       res.status(400).json({ message: 'tool and file_id are required' });
       return;
     }
@@ -367,7 +368,9 @@ const callArtifactTool = async (req, res) => {
       { name: tool, args, id: toolCallId, type: ToolCallTypes.TOOL_CALL },
       {
         signal: req.abortController?.signal,
-        metadata: {},
+        /* Stable flow identifiers so any OAuth path derives a unique flowId
+         * instead of `${serverName}:oauth_login:undefined:undefined`. */
+        metadata: { thread_id: conversationId ?? `artifact:${fileId}`, run_id: toolCallId },
         configurable: { user: req.user, requestBody: { conversationId, messageId } },
       },
     );

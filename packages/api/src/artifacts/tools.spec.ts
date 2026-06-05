@@ -47,6 +47,12 @@ describe('sanitizeMcpToolList', () => {
     ).toEqual(['list_prs_mcp_github', 'send_msg_mcp_slack']);
   });
 
+  it('drops malformed MCP keys with an empty tool or server segment', () => {
+    expect(sanitizeMcpToolList(['_mcp_github', 'tool_mcp_', 'list_prs_mcp_github'])).toEqual([
+      'list_prs_mcp_github',
+    ]);
+  });
+
   it('returns [] for non-arrays', () => {
     expect(sanitizeMcpToolList(undefined)).toEqual([]);
     expect(sanitizeMcpToolList('list_prs_mcp_github')).toEqual([]);

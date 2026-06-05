@@ -33,7 +33,9 @@ export default function ArtifactTabs({
   }, [setCurrentCode, artifact.id]);
 
   const { files, fileKey, template, sharedProps } = useArtifactProps({ artifact });
-  const live = isLiveArtifact(artifact.type, artifact.tools);
+  // Require a real fileId: the bridge keys off it, so a live render without one
+  // would 400 every tool call. Fall back to the static Sandpack preview instead.
+  const live = isLiveArtifact(artifact.type, artifact.tools) && Boolean(artifact.fileId);
 
   return (
     <div className="flex h-full w-full flex-col">

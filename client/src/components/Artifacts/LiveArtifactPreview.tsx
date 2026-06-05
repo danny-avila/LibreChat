@@ -10,8 +10,10 @@ type ToolRequest = { id: string; name: string; args: Record<string, unknown> };
 /**
  * Renders a live HTML artifact in an opaque-origin sandboxed iframe and bridges
  * its `window.librechat.callMcpTool` calls to the server, gated by
- * consent-on-first-call. The iframe cannot reach the network itself (CSP
- * `connect-src 'none'`), so every tool call flows through this relay.
+ * consent-on-first-call. The injected CSP blocks scriptable network egress
+ * (`connect-src 'none'`) and the pixel/font/form/navigation exfil channels, so
+ * the bridge is the only intended way data leaves the iframe; every tool call
+ * flows through this relay.
  */
 export default function LiveArtifactPreview({
   content,
@@ -97,6 +99,9 @@ export default function LiveArtifactPreview({
     if (!frame?.contentWindow) {
       return;
     }
+    // Close any prior port (e.g. an iframe self-reload fired `load` again) so
+    // stale handlers and queued messages from the old document are dropped.
+    portRef.current?.close();
     const channel = new MessageChannel();
     portRef.current = channel.port1;
     channel.port1.onmessage = (event: MessageEvent) => {
@@ -113,6 +118,7 @@ export default function LiveArtifactPreview({
   }, [requestTool]);
 
   const handleReload = useCallback(() => {
+    portRef.current?.close();
     portRef.current = null;
     setReloadNonce((nonce) => nonce + 1);
   }, []);

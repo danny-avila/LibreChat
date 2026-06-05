@@ -40,7 +40,10 @@ export const sanitizeMcpToolList = (value: unknown): string[] => {
   const seen = new Set<string>();
   const tools: string[] = [];
   for (const entry of value) {
-    if (typeof entry === 'string' && isMcpToolKey(entry) && !seen.has(entry)) {
+    // `parseMcpToolKey` (not `isMcpToolKey`) so malformed keys like
+    // `_mcp_github` or `tool_mcp_` — which would always fail authorization —
+    // never reach `file.metadata.mcpTools`.
+    if (typeof entry === 'string' && parseMcpToolKey(entry) !== null && !seen.has(entry)) {
       seen.add(entry);
       tools.push(entry);
     }

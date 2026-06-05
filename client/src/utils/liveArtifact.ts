@@ -17,20 +17,30 @@ export const splitMcpToolKey = (tool: string): { toolName: string; serverName: s
 /**
  * Strict CSP injected into every live artifact. `connect-src 'none'` is the
  * load-bearing line: the artifact cannot make its own network calls, so the
- * only data egress is the consented, allowlisted bridge. `script-src` permits
- * inline scripts (artifacts are inline) plus the two CDNs the prompt allows.
+ * the consented, allowlisted bridge is the only intended egress.
  *
- * Note: a `<meta>` CSP cannot carry `frame-ancestors`/`sandbox`/`report-uri` —
- * those are enforced by the iframe element's own attributes instead.
+ * Egress is locked down across directives, not just `connect-src`:
+ * - `connect-src 'none'` blocks fetch/XHR/WebSocket/EventSource/sendBeacon.
+ * - `img-src data:` / `font-src data:` block the pixel/`@font-face` URL
+ *   exfiltration channels (no remote hosts — inline data URIs only).
+ * - `script-src`/`style-src` allow only two fixed, attacker-uncontrolled CDNs.
+ * - `form-action 'none'` blocks form-POST exfiltration; `navigate-to 'none'`
+ *   blocks self-navigation exfiltration where the engine supports it.
+ *
+ * Note: a `<meta>` CSP cannot carry `frame-ancestors`/`sandbox`/`report-uri`
+ * (enforced by the iframe element's attributes instead), and `navigate-to` has
+ * partial engine support — so self-navigation is best-effort, which is why the
+ * tool allowlist + consent gate remain the primary controls.
  */
 const CONTENT_SECURITY_POLICY = [
   "default-src 'none'",
   "script-src 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com",
   "style-src 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com",
-  'img-src data: https:',
-  'font-src data: https:',
+  'img-src data:',
+  'font-src data:',
   "connect-src 'none'",
   "form-action 'none'",
+  "navigate-to 'none'",
   "base-uri 'none'",
 ].join('; ');
 
