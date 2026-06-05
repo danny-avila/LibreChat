@@ -288,6 +288,7 @@ const callArtifactTool = async (req, res) => {
       createMCPPermissionContext,
     } = require('~/server/services/MCP');
     const { getUserPluginAuthValue } = require('~/server/services/PluginService');
+    const { getMCPManager } = require('~/config');
 
     const { tool, file_id: fileId, messageId, conversationId, partIndex, blockIndex } = req.body;
     const rawArgs = req.body.args;
@@ -371,12 +372,21 @@ const callArtifactTool = async (req, res) => {
     const userMCPAuthMap =
       Object.keys(customUserVars).length > 0 ? { [pluginKey]: customUserVars } : undefined;
 
+    /* Reuse the connected server's cached tool definitions so createMCPTool
+     * doesn't reconnect on every bridge call (the reconnect path is throttled
+     * per user/server and would otherwise return an unavailable stub). */
+    const availableTools = await getMCPManager(req.user.id).getServerToolFunctions(
+      req.user.id,
+      serverName,
+    );
+
     const toolInstance = await createMCPTool({
       res: createNoopEventSink(),
       user: req.user,
       toolKey: tool,
       config: serverConfig,
       userMCPAuthMap,
+      availableTools,
       mcpPermissionContext: createMCPPermissionContext(req),
     });
     if (!toolInstance) {

@@ -46,13 +46,17 @@ const CONTENT_SECURITY_POLICY = [
 ].join('; ');
 
 /**
- * Bridge shim, injected as the first script in the document. It waits for the
- * host to transfer a private `MessagePort`, then exposes
- * `window.librechat.callMcpTool(name, args)` which round-trips a request over
- * that port and resolves with the tool result. This is the only channel out.
+ * Bridge shim, injected as the first script in the document. A per-render
+ * `token` (a secret kept inside this IIFE — page scripts can't read it) gates a
+ * handshake: the shim announces readiness with the token, the host transfers a
+ * private `MessagePort` only in response, and the shim `ack`s with the token
+ * over the port to prove THIS document (not a navigated/attacker page that
+ * lacks the token) holds it. Then `window.librechat.callMcpTool(name, args)`
+ * round-trips over the port and resolves with the tool result — the only egress.
  */
-const BRIDGE_SHIM = `
+const buildBridgeShim = (token: string): string => `
 (function () {
+  var TOKEN = ${JSON.stringify(token)};
   var pending = {};
   var seq = 0;
   var resolvePort;
@@ -67,11 +71,14 @@ const BRIDGE_SHIM = `
   }
 
   window.addEventListener('message', function (event) {
-    if (!event.data || event.data.type !== 'librechat:init' || !event.ports[0]) return;
+    if (!event.data || event.data.type !== 'librechat:init') return;
+    if (event.data.token !== TOKEN || !event.ports[0]) return;
     var port = event.ports[0];
     port.onmessage = function (e) {
       if (e.data && e.data.type === 'tool-result') settle(e.data);
     };
+    // Prove to the host that the original (token-bearing) document holds the port.
+    port.postMessage({ type: 'librechat:ack', token: TOKEN });
     resolvePort(port);
   });
 
@@ -88,17 +95,20 @@ const BRIDGE_SHIM = `
     });
   }
 
-  window.librechat = {
-    callMcpTool: callMcpTool,
-  };
+  window.librechat = { callMcpTool: callMcpTool };
+
+  // Announce readiness so the host hands the bridge port to THIS document.
+  if (window.parent !== window) {
+    window.parent.postMessage({ type: 'librechat:ready', token: TOKEN }, '*');
+  }
 })();
 `;
 
-const buildHead = (): string =>
+const buildHead = (token: string): string =>
   `<meta http-equiv="Content-Security-Policy" content="${CONTENT_SECURITY_POLICY}">` +
   `<meta charset="utf-8">` +
   `<meta name="viewport" content="width=device-width, initial-scale=1">` +
-  `<script>${BRIDGE_SHIM}</script>`;
+  `<script>${buildBridgeShim(token)}</script>`;
 
 /**
  * Wrap model-authored HTML so the CSP + bridge shim are the very first things
@@ -109,6 +119,9 @@ const buildHead = (): string =>
  * Nesting a full document inside the body is tolerated by parsers (the inner
  * doctype/html/head tags are ignored; scripts/styles still run) and guarantees
  * the CSP governs everything.
+ *
+ * `token` is a per-render secret embedded in the shim; the host transfers the
+ * bridge port only to a document that proves it knows this token.
  */
-export const buildLiveArtifactDocument = (html: string): string =>
-  `<!doctype html><html><head>${buildHead()}</head><body>${html}</body></html>`;
+export const buildLiveArtifactDocument = (html: string, token: string): string =>
+  `<!doctype html><html><head>${buildHead(token)}</head><body>${html}</body></html>`;

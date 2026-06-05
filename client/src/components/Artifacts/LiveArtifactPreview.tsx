@@ -13,6 +13,17 @@ type ToolRequest = {
   port: MessagePort;
 };
 
+/** Per-render secret embedded in the shim; gates the bridge-port handshake. */
+const makeHandshakeToken = (): string => {
+  const c = globalThis.crypto;
+  if (c?.randomUUID) {
+    return c.randomUUID();
+  }
+  const bytes = new Uint8Array(16);
+  c?.getRandomValues?.(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+};
+
 /**
  * Renders a live HTML artifact in an opaque-origin sandboxed iframe and bridges
  * its `window.librechat.callMcpTool` calls to the server, gated by
@@ -37,13 +48,21 @@ export default function LiveArtifactPreview({
 
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const portRef = useRef<MessagePort | null>(null);
-  const transferredSigRef = useRef<string | null>(null);
   const grantsRef = useRef<Set<string>>(new Set());
   const queueRef = useRef<ToolRequest[]>([]);
   const [pending, setPending] = useState<ToolRequest | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
 
-  const srcDocument = useMemo(() => buildLiveArtifactDocument(content), [content]);
+  // Fresh token + document per content render — only the shim we injected knows
+  // the token, so a navigated/attacker doc can't claim the bridge. (A reload
+  // remounts the iframe and re-handshakes with the same token, which is fine.)
+  const { token, srcDocument } = useMemo(() => {
+    const handshakeToken = makeHandshakeToken();
+    return {
+      token: handshakeToken,
+      srcDocument: buildLiveArtifactDocument(content, handshakeToken),
+    };
+  }, [content]);
 
   // React reuses this instance when switching between live artifacts, and the
   // same fileId can be reused across turns with new content. Reset consent +
@@ -107,36 +126,49 @@ export default function LiveArtifactPreview({
     showNextConsent();
   }, [pending, showNextConsent]);
 
-  const handleLoad = useCallback(() => {
-    const frame = iframeRef.current;
-    if (!frame?.contentWindow) {
-      return;
-    }
-    // Only hand the bridge to a document WE loaded. A self-navigation fires
-    // `load` again with the same intended signature; skipping it means a
-    // navigated page (no longer under our injected CSP) can never receive the
-    // port. A real (re)load — new content/file or the reload button — changes
-    // the signature and gets a fresh port.
-    const sig = `${fileId}::${reloadNonce}::${content}`;
-    if (transferredSigRef.current === sig) {
-      return;
-    }
-    transferredSigRef.current = sig;
-    portRef.current?.close();
-    const channel = new MessageChannel();
-    portRef.current = channel.port1;
-    channel.port1.onmessage = (event: MessageEvent) => {
-      const data = event.data;
-      if (
-        data?.type === 'tool-call' &&
-        typeof data.id === 'string' &&
-        typeof data.name === 'string'
-      ) {
-        requestTool({ id: data.id, name: data.name, args: data.args ?? {}, port: channel.port1 });
+  // Token handshake: only transfer the bridge port to the iframe document that
+  // proves it knows our per-render token (i.e. ran our injected shim), and only
+  // honor tool calls once that document acks over the port. A self-navigated
+  // page can't produce the token, so it can never drive the bridge.
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      const frame = iframeRef.current;
+      if (!frame || event.source !== frame.contentWindow) {
+        return;
       }
+      if (event.data?.type !== 'librechat:ready' || event.data.token !== token) {
+        return;
+      }
+      portRef.current?.close();
+      const channel = new MessageChannel();
+      portRef.current = channel.port1;
+      let verified = false;
+      channel.port1.onmessage = (e: MessageEvent) => {
+        const data = e.data;
+        if (data?.type === 'librechat:ack' && data.token === token) {
+          verified = true;
+          return;
+        }
+        if (!verified) {
+          return;
+        }
+        if (
+          data?.type === 'tool-call' &&
+          typeof data.id === 'string' &&
+          typeof data.name === 'string'
+        ) {
+          requestTool({ id: data.id, name: data.name, args: data.args ?? {}, port: channel.port1 });
+        }
+      };
+      frame.contentWindow.postMessage({ type: 'librechat:init', token }, '*', [channel.port2]);
     };
-    frame.contentWindow.postMessage({ type: 'librechat:init' }, '*', [channel.port2]);
-  }, [requestTool, fileId, reloadNonce, content]);
+    window.addEventListener('message', onMessage);
+    return () => {
+      window.removeEventListener('message', onMessage);
+      portRef.current?.close();
+      portRef.current = null;
+    };
+  }, [token, requestTool]);
 
   const handleReload = useCallback(() => {
     portRef.current?.close();
@@ -163,7 +195,6 @@ export default function LiveArtifactPreview({
       <iframe
         key={reloadNonce}
         ref={iframeRef}
-        onLoad={handleLoad}
         srcDoc={srcDocument}
         sandbox="allow-scripts"
         referrerPolicy="no-referrer"

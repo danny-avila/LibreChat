@@ -24,7 +24,7 @@ describe('splitMcpToolKey', () => {
 
 describe('buildLiveArtifactDocument', () => {
   it('wraps a bare fragment in a full document with CSP and the bridge first', () => {
-    const doc = buildLiveArtifactDocument('<h1>hi</h1>');
+    const doc = buildLiveArtifactDocument('<h1>hi</h1>', 'tok-1');
     expect(doc.startsWith('<!doctype html>')).toBe(true);
     expect(doc).toContain("connect-src 'none'");
     expect(doc).toContain('window.librechat');
@@ -33,11 +33,18 @@ describe('buildLiveArtifactDocument', () => {
     expect(doc.indexOf('window.librechat')).toBeLessThan(doc.indexOf('<h1>hi</h1>'));
   });
 
+  it('embeds the handshake token in the shim', () => {
+    const doc = buildLiveArtifactDocument('<h1>hi</h1>', 'secret-tok');
+    expect(doc).toContain('secret-tok');
+    expect(doc).toContain('librechat:ready');
+    expect(doc).toContain('librechat:ack');
+  });
+
   it('puts CSP + shim before authored markup even when content has a pre-<head> prefix', () => {
     // A model prefix before <head> must NOT execute before the policy.
     const html =
       '<script>steal()</script><html><head><title>x</title></head><body><p>y</p></body></html>';
-    const doc = buildLiveArtifactDocument(html);
+    const doc = buildLiveArtifactDocument(html, 'tok-2');
     expect(doc).toContain('<title>x</title>');
     expect(doc).toContain('<p>y</p>');
     expect(doc.indexOf('Content-Security-Policy')).toBeLessThan(doc.indexOf('<script>steal()'));
@@ -45,14 +52,14 @@ describe('buildLiveArtifactDocument', () => {
   });
 
   it('nests an <html>-without-<head> document under the policy', () => {
-    const doc = buildLiveArtifactDocument('<html><body><p>z</p></body></html>');
+    const doc = buildLiveArtifactDocument('<html><body><p>z</p></body></html>', 'tok-3');
     expect(doc).toContain('Content-Security-Policy');
     expect(doc).toContain('window.librechat');
     expect(doc.indexOf('window.librechat')).toBeLessThan(doc.indexOf('<p>z</p>'));
   });
 
   it('blocks all network egress: no remote script/style, no img/font hosts', () => {
-    const doc = buildLiveArtifactDocument('<div></div>');
+    const doc = buildLiveArtifactDocument('<div></div>', 'tok-4');
     expect(doc).toContain("default-src 'none'");
     expect(doc).toContain("script-src 'unsafe-inline'");
     expect(doc).toContain("connect-src 'none'");
