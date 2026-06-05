@@ -33,11 +33,14 @@ describe('buildLiveArtifactDocument', () => {
     expect(doc.indexOf('window.librechat')).toBeLessThan(doc.indexOf('<h1>hi</h1>'));
   });
 
-  it('embeds the handshake token in the shim', () => {
+  it('embeds the handshake token in a self-removing shim', () => {
     const doc = buildLiveArtifactDocument('<h1>hi</h1>', 'secret-tok');
     expect(doc).toContain('secret-tok');
     expect(doc).toContain('librechat:ready');
     expect(doc).toContain('librechat:ack');
+    // The shim removes its own element so the token can't be read from the DOM.
+    expect(doc).toContain('document.currentScript');
+    expect(doc).toMatch(/removeChild\(self\)/);
   });
 
   it('puts CSP + shim before authored markup even when content has a pre-<head> prefix', () => {

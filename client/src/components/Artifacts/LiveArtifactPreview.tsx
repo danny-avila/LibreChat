@@ -193,7 +193,7 @@ export default function LiveArtifactPreview({
       </div>
 
       <iframe
-        key={reloadNonce}
+        key={`${fileId}:${reloadNonce}`}
         ref={iframeRef}
         srcDoc={srcDocument}
         sandbox="allow-scripts"

@@ -56,6 +56,11 @@ const CONTENT_SECURITY_POLICY = [
  */
 const buildBridgeShim = (token: string): string => `
 (function () {
+  // Remove this script element before any model-authored script can run, so the
+  // token literal in its source can't be read out of the DOM (e.g. via
+  // document.scripts[...].textContent) and replayed after a self-navigation.
+  var self = document.currentScript;
+  if (self && self.parentNode) self.parentNode.removeChild(self);
   var TOKEN = ${JSON.stringify(token)};
   var pending = {};
   var seq = 0;

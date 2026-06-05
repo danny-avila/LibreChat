@@ -1,6 +1,11 @@
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
-const { checkAccess, loadWebSearchAuth, authorizeArtifactToolCall } = require('@librechat/api');
+const {
+  checkAccess,
+  loadWebSearchAuth,
+  normalizeServerName,
+  authorizeArtifactToolCall,
+} = require('@librechat/api');
 const {
   Tools,
   AuthType,
@@ -317,7 +322,7 @@ const callArtifactTool = async (req, res) => {
       res.status(403).json({ message: 'Tool not permitted for this artifact' });
       return;
     }
-    const { serverName } = authorization;
+    const { serverName: normalizedServerName, toolName } = authorization;
 
     const hasAccess = await userCanUseMCPServers(req.user, req);
     if (!hasAccess) {
@@ -330,15 +335,21 @@ const callArtifactTool = async (req, res) => {
       req.user.id,
       { role: req.user.role, tenantId: req.user.tenantId },
     );
-    const serverConfig = mcpConfig[serverName];
+    /* Tool keys expose a NORMALIZED server name; `mcpConfig` is keyed by the raw
+     * configured name. Resolve back to the raw name so lookup/connection/tool
+     * resolution all use the same key the normal agent path uses. */
+    const rawServerName = mcpConfig[normalizedServerName]
+      ? normalizedServerName
+      : Object.keys(mcpConfig).find((name) => normalizeServerName(name) === normalizedServerName);
+    const serverConfig = rawServerName ? mcpConfig[rawServerName] : undefined;
     if (!serverConfig) {
-      res.status(404).json({ message: `MCP server "${serverName}" not found` });
+      res.status(404).json({ message: `MCP server "${normalizedServerName}" not found` });
       return;
     }
 
     const { connectionState, requiresOAuth } = await getServerConnectionStatus(
       req.user.id,
-      serverName,
+      rawServerName,
       serverConfig,
       appConnections,
       userConnections,
@@ -346,8 +357,8 @@ const callArtifactTool = async (req, res) => {
     );
     if (connectionState !== 'connected') {
       res.status(409).json({
-        message: `MCP server "${serverName}" is not connected`,
-        serverName,
+        message: `MCP server "${rawServerName}" is not connected`,
+        serverName: rawServerName,
         connectionState,
         requiresOAuth,
       });
@@ -357,7 +368,7 @@ const callArtifactTool = async (req, res) => {
     /* Resolve the user's per-server custom variables (API keys, etc.) the same
      * way the normal agent path does, so servers that template `{{USER_VAR}}`
      * aren't invoked without the user's configured values. */
-    const pluginKey = `${Constants.mcp_prefix}${serverName}`;
+    const pluginKey = `${Constants.mcp_prefix}${rawServerName}`;
     const customUserVars = {};
     if (serverConfig.customUserVars && typeof serverConfig.customUserVars === 'object') {
       for (const varName of Object.keys(serverConfig.customUserVars)) {
@@ -377,13 +388,15 @@ const callArtifactTool = async (req, res) => {
      * per user/server and would otherwise return an unavailable stub). */
     const availableTools = await getMCPManager(req.user.id).getServerToolFunctions(
       req.user.id,
-      serverName,
+      rawServerName,
     );
 
     const toolInstance = await createMCPTool({
       res: createNoopEventSink(),
       user: req.user,
-      toolKey: tool,
+      // Rebuild the tool key with the RAW server name so createMCPTool resolves
+      // the connection/definition the same way the agent path does.
+      toolKey: `${toolName}${Constants.mcp_delimiter}${rawServerName}`,
       config: serverConfig,
       userMCPAuthMap,
       availableTools,
