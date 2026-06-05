@@ -10,6 +10,7 @@ const {
   getCustomEndpointConfig,
   discoverConnectedAgents,
   resolveAgentScopedSkillIds,
+  resolveModelSpecSkillIds,
   buildAgentContextAttachmentsByAgentId,
 } = require('@librechat/api');
 const {
@@ -31,7 +32,9 @@ const { loadAgentTools, loadToolsForExecution } = require('~/server/services/Too
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const {
   getSkillToolDeps,
+  getSkillDbMethods,
   canAuthorSkillFiles,
+  withDeploymentSkillIds,
   buildAgentToolContext,
   enrichLoadedToolsWithAgentContext,
 } = require('./skillDeps');
@@ -133,7 +136,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   /** Query accessible skill IDs once per run (shared across all agents).
    *  Skills activate under strict opt-in semantics — see
    *  `resolveAgentScopedSkillIds` for the per-agent activation predicate:
-   *    - Ephemeral agent → per-conversation skills badge toggle (full catalog).
+   *    - Ephemeral agent → model-spec `skills` config first, otherwise the
+   *      per-conversation skills badge toggle (full catalog).
    *    - Persisted agent → `agent.skills_enabled === true`. Optional
    *      `agent.skills` allowlist narrows the catalog; empty/undefined
    *      allowlist with the toggle on = full accessible catalog. */
@@ -141,14 +145,17 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
   const codeEnvAvailable = enabledCapabilities.has(AgentCapabilities.execute_code);
   const ephemeralSkillsToggle = req.body?.ephemeralAgent?.skills === true;
+  const skillDbMethods = getSkillDbMethods();
 
   const accessibleSkillIds = skillsCapabilityEnabled
-    ? await findAccessibleResources({
-        userId: req.user.id,
-        role: req.user.role,
-        resourceType: ResourceType.SKILL,
-        requiredPermissions: PermissionBits.VIEW,
-      })
+    ? withDeploymentSkillIds(
+        await findAccessibleResources({
+          userId: req.user.id,
+          role: req.user.role,
+          resourceType: ResourceType.SKILL,
+          requiredPermissions: PermissionBits.VIEW,
+        }),
+      )
     : [];
   const editableSkillIds = skillsCapabilityEnabled
     ? await findAccessibleResources({
@@ -288,6 +295,34 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
    */
   const manualSkills = extractManualSkills(req.body);
 
+  const selectedModelSpec =
+    endpointOption.spec && Array.isArray(appConfig?.modelSpecs?.list)
+      ? appConfig.modelSpecs.list.find((modelSpec) => modelSpec.name === endpointOption.spec)
+      : null;
+
+  if (
+    primaryAgent &&
+    isEphemeralAgentId(primaryAgent.id) &&
+    selectedModelSpec &&
+    Object.hasOwn(selectedModelSpec, 'skills')
+  ) {
+    if (selectedModelSpec.skills === true) {
+      primaryAgent.skills_enabled = true;
+      delete primaryAgent.skills;
+    } else if (selectedModelSpec.skills === false) {
+      primaryAgent.skills_enabled = false;
+      primaryAgent.skills = [];
+    } else if (Array.isArray(selectedModelSpec.skills)) {
+      const resolvedSkillIds = await resolveModelSpecSkillIds({
+        names: selectedModelSpec.skills,
+        accessibleSkillIds,
+        getSkillByName: db.getSkillByName,
+      });
+      primaryAgent.skills_enabled = true;
+      primaryAgent.skills = resolvedSkillIds.map((id) => id.toString());
+    }
+  }
+
   const primaryScopedSkillIds = resolveAgentScopedSkillIds({
     agent: primaryAgent,
     accessibleSkillIds,
@@ -338,9 +373,9 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       getToolFilesByIds: db.getToolFilesByIds,
       getCodeGeneratedFiles: db.getCodeGeneratedFiles,
       filterFilesByAgentAccess,
-      listSkillsByAccess: db.listSkillsByAccess,
-      listAlwaysApplySkills: db.listAlwaysApplySkills,
-      getSkillByName: db.getSkillByName,
+      listSkillsByAccess: skillDbMethods.listSkillsByAccess,
+      listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
+      getSkillByName: skillDbMethods.getSkillByName,
     },
   );
 
@@ -409,9 +444,9 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         getToolFilesByIds: db.getToolFilesByIds,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
         filterFilesByAgentAccess,
-        listSkillsByAccess: db.listSkillsByAccess,
-        listAlwaysApplySkills: db.listAlwaysApplySkills,
-        getSkillByName: db.getSkillByName,
+        listSkillsByAccess: skillDbMethods.listSkillsByAccess,
+        listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
+        getSkillByName: skillDbMethods.getSkillByName,
       },
       // The callback fires during BFS, before the helper prunes agents
       // whose edges end up filtered. Don't populate `agentConfigs` here —
@@ -456,6 +491,13 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     parentMessageId,
     allowedProviders,
     primaryAgentId: primaryConfig.id,
+    accessibleSkillIds,
+    editableSkillIds,
+    skillsCapabilityEnabled,
+    ephemeralSkillsToggle,
+    skillCreateAllowed,
+    skillStates,
+    defaultActiveOnShare,
     codeEnvAvailable,
   });
 
@@ -609,9 +651,9 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
           getToolFilesByIds: db.getToolFilesByIds,
           getCodeGeneratedFiles: db.getCodeGeneratedFiles,
           filterFilesByAgentAccess,
-          listSkillsByAccess: db.listSkillsByAccess,
-          listAlwaysApplySkills: db.listAlwaysApplySkills,
-          getSkillByName: db.getSkillByName,
+          listSkillsByAccess: skillDbMethods.listSkillsByAccess,
+          listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
+          getSkillByName: skillDbMethods.getSkillByName,
         },
       );
       agentConfigs.set(agentId, config);

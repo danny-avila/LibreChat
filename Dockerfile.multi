@@ -109,6 +109,7 @@ RUN attempt=1; \
     done
 COPY api ./api
 COPY config ./config
+COPY skill ./skill
 COPY --from=data-provider-build /app/packages/data-provider/dist ./packages/data-provider/dist
 COPY --from=data-schemas-build /app/packages/data-schemas/dist ./packages/data-schemas/dist
 COPY --from=api-package-build /app/packages/api/dist ./packages/api/dist

@@ -70,6 +70,13 @@ function appendAdditionalInstructions(agent: Agent, text?: string | null): void 
     .join('\n\n');
 }
 
+function getMaxCatalogSkills(req: ServerRequest): number | undefined {
+  const endpoints = req.config?.endpoints as
+    | Record<string, { skills?: { maxCatalogSkills?: number } } | undefined>
+    | undefined;
+  return endpoints?.[EModelEndpoint.agents]?.skills?.maxCatalogSkills;
+}
+
 function getToolName(tool: unknown): string | undefined {
   if (tool == null || typeof tool !== 'object') {
     return undefined;
@@ -360,6 +367,8 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
        * by the manual-invocation resolver. Defaults to `true`.
        */
       userInvocable?: boolean;
+      /** True for deployment-directory skills that are loaded in memory. */
+      deployment?: boolean;
     }>;
     has_more?: boolean;
     after?: string | null;
@@ -405,6 +414,8 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
      * caller can't bypass the popover-side filter.
      */
     userInvocable?: boolean;
+    /** True for deployment-directory skills that are loaded in memory. */
+    deployment?: boolean;
   } | null>;
   /**
    * Load accessible skills with `alwaysApply: true`, eagerly including
@@ -424,6 +435,8 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
       body: string;
       author: import('mongoose').Types.ObjectId;
       allowedTools?: string[];
+      /** True for deployment-directory skills that are loaded in memory. */
+      deployment?: boolean;
     }>;
     has_more?: boolean;
     after?: string | null;
@@ -1022,6 +1035,7 @@ export async function initializeAgent(
       userId: req.user?.id,
       skillStates: params.skillStates,
       defaultActiveOnShare: params.defaultActiveOnShare,
+      maxCatalogSkills: getMaxCatalogSkills(req),
     });
     toolDefinitions = skillResult.toolDefinitions;
     skillCount = skillResult.skillCount;

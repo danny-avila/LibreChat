@@ -25,3 +25,27 @@ endpoints:
         fetch: false
       titleConvo: false
       modelDisplayLabel: 'Mock Provider B'
+
+modelSpecs:
+  list:
+    - name: 'e2e-mock-provider-a'
+      label: 'Mock Provider A'
+      preset:
+        endpoint: 'Mock Provider A'
+        model: 'mock-model-a'
+
+    - name: 'e2e-mock-provider-b'
+      label: 'Mock Provider B'
+      preset:
+        endpoint: 'Mock Provider B'
+        model: 'mock-model-b'
+
+    - name: 'e2e-skill-scope'
+      label: 'E2E Skill Scope'
+      preset:
+        endpoint: 'Mock Provider A'
+        model: 'mock-model-a'
+      skills:
+        - 'e2e-model-spec-allowed'
+        - 'e2e-model-spec-missing'
+        - 'e2e-model-spec-inaccessible'

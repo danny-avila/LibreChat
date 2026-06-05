@@ -8,12 +8,31 @@ import {
   appendAgentIdSuffix,
   encodeEphemeralAgentId,
 } from 'librechat-data-provider';
-import type { Agent, TConversation } from 'librechat-data-provider';
+import type { Agent, TConversation, TModelSpec } from 'librechat-data-provider';
 import { getCustomEndpointConfig } from '~/app/config';
 
 const { mcp_all, mcp_delimiter } = Constants;
 
 export const ADDED_AGENT_ID = 'added_agent';
+
+function applyModelSpecSkills(
+  result: Record<string, unknown>,
+  modelSpec: Pick<TModelSpec, 'skills'> | null | undefined,
+): void {
+  if (!modelSpec || !Object.prototype.hasOwnProperty.call(modelSpec, 'skills')) {
+    return;
+  }
+  if (modelSpec.skills === true) {
+    result.skills_enabled = true;
+    delete result.skills;
+  } else if (modelSpec.skills === false) {
+    result.skills_enabled = false;
+    result.skills = [];
+  } else if (Array.isArray(modelSpec.skills)) {
+    result.skills_enabled = true;
+    result.skills = [];
+  }
+}
 
 export interface LoadAddedAgentDeps {
   getAgent: (searchParameter: { id: string }) => Promise<Agent | null>;
@@ -95,8 +114,7 @@ export async function loadAddedAgent(
       }
     }
 
-    const modelSpecs = (appConfig?.modelSpecs as { list?: Array<{ name: string; label?: string }> })
-      ?.list;
+    const modelSpecs = (appConfig?.modelSpecs as { list?: TModelSpec[] })?.list;
     const modelSpec = spec != null && spec !== '' ? modelSpecs?.find((s) => s.name === spec) : null;
     const sender =
       rest.modelLabel ??
@@ -105,14 +123,16 @@ export async function loadAddedAgent(
       '';
     const ephemeralId = encodeEphemeralAgentId({ endpoint, model, sender, index: 1 });
 
-    return {
+    const result: Record<string, unknown> = {
       id: ephemeralId,
       instructions: promptPrefix || '',
       provider: endpoint,
       model_parameters: {},
       model,
       tools: [...primaryAgent.tools],
-    } as unknown as Agent;
+    };
+    applyModelSpecSkills(result, modelSpec);
+    return result as unknown as Agent;
   }
 
   const ephemeralAgent = rest.ephemeralAgent as
@@ -127,18 +147,7 @@ export async function loadAddedAgent(
   const mcpServers = new Set<string>(ephemeralAgent?.mcp);
   const userId = req.user?.id ?? '';
 
-  const modelSpecs = (
-    appConfig?.modelSpecs as {
-      list?: Array<{
-        name: string;
-        label?: string;
-        mcpServers?: string[];
-        executeCode?: boolean;
-        fileSearch?: boolean;
-        webSearch?: boolean;
-      }>;
-    }
-  )?.list;
+  const modelSpecs = (appConfig?.modelSpecs as { list?: TModelSpec[] })?.list;
   let modelSpec: (typeof modelSpecs extends Array<infer T> | undefined ? T : never) | null = null;
   if (spec != null && spec !== '') {
     modelSpec = modelSpecs?.find((s) => s.name === spec) ?? null;
@@ -225,6 +234,7 @@ export async function loadAddedAgent(
   if (ephemeralAgent?.artifacts != null && ephemeralAgent.artifacts) {
     result.artifacts = ephemeralAgent.artifacts;
   }
+  applyModelSpecSkills(result, modelSpec);
 
   return result as unknown as Agent;
 }

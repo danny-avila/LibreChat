@@ -211,7 +211,7 @@ const skillSchema: Schema<ISkillDocument> = new Schema(
     /**
      * When `true`, the skill's SKILL.md body is auto-primed into every turn
      * without user `$` invocation or model discretion. Mirrors the
-     * `always-apply` YAML frontmatter field and is kept as a first-class
+     * always-apply YAML frontmatter field and is kept as a first-class
      * column so the `listAlwaysApplySkills` query at the top of every
      * request is an indexed lookup, not a frontmatter scan.
      */

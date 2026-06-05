@@ -9,6 +9,7 @@ const fakeModelHookPath = path.resolve(rootPath, 'e2e/setup/fake-model.js');
 const configTemplatePath = path.resolve(rootPath, 'e2e/config/librechat.e2e.yaml');
 const configPath = path.resolve(rootPath, 'e2e/.generated/librechat.e2e.yaml');
 const reportPath = path.resolve(rootPath, 'e2e/playwright-report');
+const deploymentSkillsPath = path.resolve(rootPath, 'e2e/fixtures/deployment-skills');
 
 const baseURL = getE2EBaseURL();
 const chromiumChannel = process.env.E2E_CHROMIUM_CHANNEL || undefined;
@@ -27,6 +28,7 @@ const vanillaOverrides = {
 const baseEnv = {
   ...getLocalE2EEnv(),
   CONFIG_PATH: configPath,
+  DEPLOYMENT_SKILLS_DIR: deploymentSkillsPath,
   /** Loaded in-process by `@librechat/api`'s `createRun` to swap in a fake model. */
   LIBRECHAT_TEST_RUN_HOOK: fakeModelHookPath,
   ...vanillaOverrides,
