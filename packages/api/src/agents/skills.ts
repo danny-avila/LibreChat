@@ -232,8 +232,8 @@ export interface ResolveAgentScopedSkillIdsParams {
  * explicit signal from the user or the agent author:
  *  - Ephemeral agent  → model-spec `skills` wins when configured:
  *    `true` = full accessible catalog, string list = scoped allowlist,
- *    `false` = no skills. Otherwise the skills badge toggle controls
- *    the full accessible catalog.
+ *    empty list / `false` = no skills. Otherwise the skills badge toggle
+ *    controls the full accessible catalog.
  *  - Persisted agent  → the builder's `skills_enabled` master switch.
  *    Enabled + empty allowlist = full catalog; enabled + non-empty
  *    allowlist = narrow to those ids; disabled (or undefined) = no skills.
@@ -257,6 +257,9 @@ export function resolveAgentScopedSkillIds(
       return [];
     }
     if (agent.skills_enabled === true) {
+      if (Array.isArray(agent.skills) && agent.skills.length === 0) {
+        return [];
+      }
       return Array.isArray(agent.skills)
         ? scopeSkillIds(accessibleSkillIds, agent.skills)
         : scopeSkillIds(accessibleSkillIds, undefined);

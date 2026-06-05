@@ -30,6 +30,10 @@ const configSchema = new Schema<IConfig>(
       type: Schema.Types.Mixed,
       default: {},
     },
+    tombstones: {
+      type: [String],
+      default: [],
+    },
     isActive: {
       type: Boolean,
       default: true,
