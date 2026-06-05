@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RotateCw } from 'lucide-react';
 import { Button } from '@librechat/client';
 import { useLocalize } from '~/hooks';
@@ -37,6 +37,15 @@ export default function LiveArtifactPreview({
   const [reloadNonce, setReloadNonce] = useState(0);
 
   const srcDocument = useMemo(() => buildLiveArtifactDocument(content), [content]);
+
+  // React reuses this instance when switching between live artifacts. Reset
+  // consent + pending state when the source file changes so a grant approved
+  // for one artifact never carries over to another.
+  useEffect(() => {
+    grantsRef.current.clear();
+    queueRef.current = [];
+    setPending(null);
+  }, [fileId]);
 
   const dispatch = useCallback(
     async (request: ToolRequest) => {

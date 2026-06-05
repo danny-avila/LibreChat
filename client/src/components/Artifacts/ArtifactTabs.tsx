@@ -58,6 +58,7 @@ export default function ArtifactTabs({
             content={currentCode ?? artifact.content ?? ''}
             fileId={artifact.fileId ?? ''}
             messageId={artifact.messageId}
+            conversationId={artifact.conversationId}
           />
         ) : (
           <ArtifactPreview

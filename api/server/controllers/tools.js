@@ -376,7 +376,9 @@ const callArtifactTool = async (req, res) => {
     );
 
     const { content, artifact } = result ?? {};
-    if (messageId) {
+    /* Record only with both ids — the ToolCall schema requires conversationId,
+     * so persisting with messageId alone would hit the validation error path. */
+    if (messageId && conversationId) {
       createToolCall({
         toolId: tool,
         messageId,

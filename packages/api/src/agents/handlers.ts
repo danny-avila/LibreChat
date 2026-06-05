@@ -1462,6 +1462,32 @@ function isHtmlAuthoringPath(filePath: string): boolean {
   return /\.html?$/i.test(filePath);
 }
 
+/**
+ * Keep only the tools the agent's own resolved registry exposes, so a
+ * model-authored page can't self-allow a tool outside the agent's configured
+ * subset. Fail closed: no registry → no allowlist (the agent has no MCP tools
+ * to grant in the first place).
+ */
+function filterToAgentMcpTools(
+  tools: string[],
+  mergedConfigurable: Record<string, unknown>,
+): string[] {
+  if (tools.length === 0) {
+    return tools;
+  }
+  const registry = mergedConfigurable?.toolRegistry as LCToolRegistry | undefined;
+  if (!registry || typeof registry.values !== 'function') {
+    return [];
+  }
+  const available = new Set<string>();
+  for (const tool of registry.values()) {
+    if (tool?.name) {
+      available.add(tool.name);
+    }
+  }
+  return tools.filter((tool) => available.has(tool));
+}
+
 async function writeSandboxTextForAuthoring({
   tc,
   options,
@@ -2299,8 +2325,11 @@ async function handleCreateFileCall(
   }
 
   const overwrite = args.overwrite === true;
-  /** Live-artifact allowlist: HTML files only; well-formed MCP keys only. */
-  const mcpTools = isHtmlAuthoringPath(args.file_path) ? sanitizeMcpToolList(args.mcp_tools) : [];
+  /** Live-artifact allowlist: HTML files only; well-formed keys the agent
+   * actually exposes (so a page can't self-allow a tool outside its subset). */
+  const mcpTools = isHtmlAuthoringPath(args.file_path)
+    ? filterToAgentMcpTools(sanitizeMcpToolList(args.mcp_tools), mergedConfigurable)
+    : [];
   if (!args.file_path.startsWith(SKILL_FILE_PREFIX)) {
     if (mergedConfigurable?.codeEnvAvailable !== true) {
       return errorResult(
