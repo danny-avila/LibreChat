@@ -98,9 +98,9 @@ export function isSkillPrimeMessage(msg: unknown): boolean {
  *
  * Semantics (pinned by unit tests):
  * - `undefined` / `null` → not configured, returns the full accessible catalog.
- * - `[]` (empty array) → explicitly none, returns `[]`. A user who narrows their
- *   agent to a subset and then removes all entries is explicitly opting out of
- *   the full catalog fallback.
+ * - `[]` (empty array) → no allowlist, returns the full accessible catalog.
+ *   Removing all selected skills in the builder restores the default full-catalog
+ *   behavior while `skills_enabled` remains true.
  * - non-empty array of skill `_id` hex strings → intersection of accessible IDs
  *   and agent-configured IDs.
  *
@@ -117,7 +117,7 @@ export function scopeSkillIds(
     return accessibleSkillIds;
   }
   if (agentSkills.length === 0) {
-    return [];
+    return accessibleSkillIds;
   }
   const agentSet = new Set(agentSkills);
   return accessibleSkillIds.filter((oid) => agentSet.has(oid.toString()));

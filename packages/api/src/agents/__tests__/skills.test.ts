@@ -252,9 +252,9 @@ describe('scopeSkillIds', () => {
     expect(scopeSkillIds(accessible, null)).toBe(accessible);
   });
 
-  it('returns [] when agentSkills is an empty array (explicit none)', () => {
+  it('returns the full set when agentSkills is an empty array (no allowlist)', () => {
     const accessible = [makeId(), makeId()];
-    expect(scopeSkillIds(accessible, [])).toEqual([]);
+    expect(scopeSkillIds(accessible, [])).toBe(accessible);
   });
 
   it('returns intersection when agentSkills overlaps accessibleSkillIds', () => {
