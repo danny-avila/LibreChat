@@ -1,8 +1,14 @@
 import { EModelEndpoint, getEndpointField } from 'librechat-data-provider';
 import type { TEndpointsConfig, TConfig } from 'librechat-data-provider';
-import { getAvailableEndpoints, getEndpointsFilter, mapEndpoints } from './endpoints';
+import {
+  getAvailableEndpoints,
+  getEndpointsFilter,
+  mapEndpoints,
+  applyEndpointRecency,
+} from './endpoints';
 
 const mockEndpointsConfig: TEndpointsConfig = {
+  [EModelEndpoint.anthropic]: { type: undefined, iconURL: 'anthropic.png', order: 99 },
   [EModelEndpoint.openAI]: { type: undefined, iconURL: 'openAI_icon.png', order: 0 },
   [EModelEndpoint.google]: { type: undefined, iconURL: 'google_icon.png', order: 1 },
   Mistral: { type: EModelEndpoint.custom, iconURL: 'custom_icon.png', order: 2 },
@@ -57,6 +63,7 @@ describe('getEndpointsFilter', () => {
 
   it('returns a filter object based on endpointsConfig', () => {
     const expectedFilter = {
+      [EModelEndpoint.anthropic]: true,
       [EModelEndpoint.openAI]: true,
       [EModelEndpoint.google]: true,
       Mistral: true,
@@ -78,8 +85,45 @@ describe('getAvailableEndpoints', () => {
 });
 
 describe('mapEndpoints', () => {
-  it('returns sorted available endpoints', () => {
-    const expectedOrder = [EModelEndpoint.openAI, EModelEndpoint.google, 'Mistral'];
+  it('returns sorted available endpoints using config order', () => {
+    const expectedOrder = [
+      EModelEndpoint.openAI,
+      EModelEndpoint.google,
+      'Mistral',
+      EModelEndpoint.anthropic,
+    ];
     expect(mapEndpoints(mockEndpointsConfig)).toEqual(expectedOrder);
+  });
+});
+
+describe('applyEndpointRecency', () => {
+  const list = [EModelEndpoint.openAI, EModelEndpoint.google, 'Mistral'] as const;
+
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('returns the same list when lastConversationSetup is missing', () => {
+    expect(applyEndpointRecency([...list])).toEqual([...list]);
+  });
+
+  it('moves the recent endpoint to the front when present', () => {
+    localStorage.setItem(
+      'lastConversationSetup_0',
+      JSON.stringify({ endpoint: EModelEndpoint.google }),
+    );
+    expect(applyEndpointRecency([...list])).toEqual([
+      EModelEndpoint.google,
+      EModelEndpoint.openAI,
+      'Mistral',
+    ]);
+  });
+
+  it('returns the same list when recent endpoint is not in the list', () => {
+    localStorage.setItem(
+      'lastConversationSetup_0',
+      JSON.stringify({ endpoint: EModelEndpoint.anthropic }),
+    );
+    expect(applyEndpointRecency([...list])).toEqual([...list]);
   });
 });

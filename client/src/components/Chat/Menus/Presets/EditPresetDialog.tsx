@@ -16,6 +16,7 @@ import {
   defaultTextProps,
   removeFocusOutlines,
   mapEndpoints,
+  applyEndpointRecency,
   getConvoSwitchLogic,
 } from '~/utils';
 import { useSetIndexOptions, useLocalize, useDebouncedInput } from '~/hooks';
@@ -50,7 +51,7 @@ const EditPresetDialog = ({
   });
 
   const availableEndpoints = useMemo(() => {
-    return _endpoints.filter((endpoint) => !isAgentsEndpoint(endpoint));
+    return applyEndpointRecency(_endpoints).filter((endpoint) => !isAgentsEndpoint(endpoint));
   }, [_endpoints]);
 
   useEffect(() => {
