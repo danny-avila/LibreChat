@@ -4,6 +4,8 @@ import {
   MOCK_ENDPOINTS,
   NEW_CHAT_PATH,
   enableSkills,
+  fetchJson,
+  getAccessToken,
   selectMockEndpoint,
   sendMessage,
 } from './helpers';
@@ -25,68 +27,7 @@ type SkillDetail = SkillSummary & {
   body: string;
 };
 
-type RefreshTokenBody = {
-  token?: string;
-};
-
 const uniqueSkillName = () => `e2e-file-authoring-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
-
-async function getAccessToken(page: Page): Promise<string> {
-  const result = await page.evaluate(async () => {
-    const response = await fetch('/api/auth/refresh', {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-    const text = await response.text();
-    let json: unknown = null;
-    try {
-      json = text ? JSON.parse(text) : null;
-    } catch {
-      json = null;
-    }
-    return { ok: response.ok, status: response.status, text, json };
-  });
-
-  if (!result.ok) {
-    throw new Error(
-      `Expected /api/auth/refresh to return 2xx, got ${result.status}: ${result.text}`,
-    );
-  }
-
-  const body = result.json as RefreshTokenBody | null;
-  if (!body?.token) {
-    throw new Error(`Expected /api/auth/refresh to return a token, got: ${result.text}`);
-  }
-
-  return body.token;
-}
-
-async function fetchJson<T>(page: Page, path: string, token: string): Promise<T> {
-  const result = await page.evaluate(
-    async ({ accessToken, urlPath }) => {
-      const response = await fetch(urlPath, {
-        credentials: 'include',
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      const text = await response.text();
-      let json: unknown = null;
-      try {
-        json = text ? JSON.parse(text) : null;
-      } catch {
-        json = null;
-      }
-      return { ok: response.ok, status: response.status, text, json };
-    },
-    { accessToken: token, urlPath: path },
-  );
-
-  if (!result.ok) {
-    throw new Error(`Expected ${path} to return 2xx, got ${result.status}: ${result.text}`);
-  }
-  return result.json as T;
-}
 
 async function findSkill(
   page: Page,
