@@ -139,6 +139,47 @@ export type TPossibleValues = {
   models: string[];
 };
 
+/**
+ * Endpoints whose providers support the native `web_search` param (OpenAI
+ * Responses API / Anthropic API / Google grounding). Custom endpoints are
+ * intentionally excluded: they share the OpenAI schema but do NOT support the
+ * native web_search tool — sending it returns a 400 (ex. French Models).
+ */
+const nativeWebSearchEndpoints = new Set<EndpointSchemaKey>([
+  EModelEndpoint.openAI,
+  EModelEndpoint.azureOpenAI,
+  EModelEndpoint.anthropic,
+  EModelEndpoint.google,
+]);
+
+/**
+ * Vermeer: web search native is ON by default. The schema keeps `web_search`
+ * optional (so the field stays optional on TConversation/TPreset), and the
+ * default is applied here at parse time:
+ *  - native endpoints: default to `true` when the user hasn't set a value;
+ *  - custom endpoints: strip the field entirely so it's never sent (400 guard).
+ * An explicit user choice (true/false) is always preserved for native endpoints.
+ */
+const applyWebSearchDefault = (
+  convo: Partial<s.TConversation> | null | undefined,
+  endpoint?: EndpointSchemaKey,
+  endpointType?: EndpointSchemaKey | null,
+): void => {
+  if (!convo) {
+    return;
+  }
+  if (endpoint === EModelEndpoint.custom || endpointType === EModelEndpoint.custom) {
+    delete convo.web_search;
+    return;
+  }
+  const isNative =
+    nativeWebSearchEndpoints.has(endpoint as EndpointSchemaKey) ||
+    nativeWebSearchEndpoints.has(endpointType as EndpointSchemaKey);
+  if (isNative && convo.web_search === undefined) {
+    convo.web_search = true;
+  }
+};
+
 export const parseConvo = ({
   endpoint,
   endpointType,
@@ -169,6 +210,8 @@ export const parseConvo = ({
   if (models && convo) {
     convo.model = getFirstDefinedValue(models) ?? convo.model;
   }
+
+  applyWebSearchDefault(convo, endpoint, endpointType);
 
   return convo;
 };
@@ -346,6 +389,8 @@ export const parseCompactConvo = ({
   if (models && convo) {
     convo.model = getFirstDefinedValue(models) ?? convo.model;
   }
+
+  applyWebSearchDefault(convo, endpoint, endpointType);
 
   return convo;
 };

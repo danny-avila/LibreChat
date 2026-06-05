@@ -534,7 +534,7 @@ export const anthropicSettings = {
     options: [ThinkingDisplay.auto, ThinkingDisplay.summarized, ThinkingDisplay.omitted],
   },
   web_search: {
-    default: false as const,
+    default: true as const,
   },
 };
 
@@ -831,6 +831,11 @@ export const tConversationSchema = z.object({
   /* Anthropic: Thinking visibility (Opus 4.7+ opt-in) */
   thinkingDisplay: eThinkingDisplaySchema.optional().nullable(),
   /* OpenAI Responses API / Anthropic API / Google API */
+  /* Vermeer: reste `.optional()` pour ne pas rendre le champ requis sur
+     TConversation/TPreset/TModelSpec (régression de type). Le défaut ON est
+     appliqué au runtime dans parsers.ts (applyWebSearchDefault) pour les seuls
+     endpoints natifs (OpenAI/Anthropic/Google) ; les endpoints custom ne
+     supportent pas le tool web_search natif (400) et ne le reçoivent jamais. */
   web_search: z.boolean().optional(),
   /* disable streaming */
   disableStreaming: z.boolean().optional(),
