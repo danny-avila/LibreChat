@@ -55,7 +55,7 @@ export default function ChatRoute() {
   useAppStartup({ startupConfig, user });
 
   const index = 0;
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { conversationId = '' } = useParams();
   const projectIdParam = searchParams.get('projectId');
   const chatProjectId = isValidChatProjectId(projectIdParam) ? projectIdParam : null;
@@ -70,11 +70,45 @@ export default function ChatRoute() {
     staleTime: 30000,
     cacheTime: 300000,
   });
-  const verifiedChatProjectId = projectQuery.data?._id === chatProjectId ? chatProjectId : null;
+  /**
+   * Only trust the project scope when the query actually succeeded. If the scoped
+   * project was deleted (or isn't owned), the query errors — and React Query may
+   * retain the last successful data — so a plain `data?._id` check would keep the
+   * landing chip alive for a project that no longer exists.
+   */
+  const verifiedChatProjectId =
+    projectQuery.isSuccess && projectQuery.data?._id === chatProjectId ? chatProjectId : null;
   const projectTemplate = useMemo(
     () => (verifiedChatProjectId ? { chatProjectId: verifiedChatProjectId } : {}),
     [verifiedChatProjectId],
   );
+
+  /**
+   * The scoped project no longer resolves (deleted, or not owned) even though the
+   * URL still carries `?projectId`. Drop the param so the new-chat landing reverts
+   * to an unscoped chat — otherwise the stale chip lingers and sends target a dead
+   * project. Wait for the query to settle so we don't strip a still-loading scope.
+   */
+  const projectScopeMissing =
+    Boolean(chatProjectId) &&
+    conversationId === Constants.NEW_CONVO &&
+    !projectQuery.isLoading &&
+    !projectQuery.isFetching &&
+    verifiedChatProjectId == null;
+
+  useEffect(() => {
+    if (!projectScopeMissing) {
+      return;
+    }
+    setSearchParams(
+      (params) => {
+        const next = new URLSearchParams(params);
+        next.delete('projectId');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [projectScopeMissing, setSearchParams]);
 
   const modelsQuery = useGetModelsQuery({
     enabled: isAuthenticated,

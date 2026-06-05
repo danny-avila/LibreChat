@@ -85,6 +85,33 @@ test.describe('chat projects', () => {
     await expect(page).toHaveURL((url) => !url.searchParams.has('projectId'));
   });
 
+  test('drops the project scope when the scoped project is deleted', async ({ page }) => {
+    test.setTimeout(90000);
+    const name = uniqueName('E2E Project');
+    const projectId = await createProject(page, name);
+
+    await page.goto(`/c/new?projectId=${projectId}`, { timeout: 10000 });
+    await expect(page.getByRole('button', { name: 'Remove from project' })).toBeVisible();
+
+    // Delete the scoped project from the sidebar while it is selected on the landing.
+    const row = page.getByRole('button', { name, exact: true }).first();
+    await expect(row).toBeVisible();
+    const item = row.locator('..');
+    await item.hover();
+    await item.getByRole('button', { name: 'More options' }).click();
+    await page.getByRole('menuitem', { name: 'Delete' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
+
+    // The stale chip is gone, the URL drops the now-dead project scope, and the
+    // composer reverts to an unscoped chat (placeholder no longer names the project).
+    await expect(page.getByRole('button', { name: 'Remove from project' })).toBeHidden();
+    await expect(page).toHaveURL((url) => !url.searchParams.has('projectId'));
+    await expect(page.getByRole('textbox', { name: 'Message input' })).not.toHaveAttribute(
+      'placeholder',
+      new RegExp(name),
+    );
+  });
+
   test('switches the project via the chip combobox', async ({ page }) => {
     test.setTimeout(90000);
     const nameA = uniqueName('E2E Project A');
