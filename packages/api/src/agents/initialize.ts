@@ -104,6 +104,10 @@ function supportsGoogleToolCombination(model: unknown): boolean {
   return normalized.startsWith('gemini-3');
 }
 
+function isGoogleToolCombinationProvider(provider?: string): boolean {
+  return provider === Providers.GOOGLE || provider === Providers.VERTEXAI;
+}
+
 function shouldIncludeGoogleServerSideToolInvocations({
   provider,
   hasProviderTools,
@@ -113,7 +117,32 @@ function shouldIncludeGoogleServerSideToolInvocations({
   hasProviderTools: boolean;
   hasAgentTools: boolean;
 }): boolean {
-  return provider === Providers.GOOGLE && hasProviderTools && hasAgentTools;
+  return (
+    isGoogleToolCombinationProvider(provider) &&
+    hasProviderTools &&
+    hasAgentTools
+  );
+}
+
+function assertGoogleToolCombinationSupport(model: unknown): void {
+  if (!supportsGoogleToolCombination(model)) {
+    throw new Error(`{ "type": "${ErrorTypes.GOOGLE_TOOL_CONFLICT}"}`);
+  }
+}
+
+function enableGoogleServerSideToolInvocations({
+  agent,
+  llmConfig,
+}: {
+  agent: Agent;
+  llmConfig: Record<string, unknown>;
+}): void {
+  llmConfig.includeServerSideToolInvocations = true;
+  if (agent.model_parameters) {
+    (
+      agent.model_parameters as Record<string, unknown>
+    ).includeServerSideToolInvocations = true;
+  }
 }
 
 function resolveProviderToolConflicts({
@@ -977,14 +1006,8 @@ export async function initializeAgent(
     ? (providerTools as GenericTool[])
     : (structuredTools ?? []);
 
-  if (
-    (agent.provider === Providers.GOOGLE || agent.provider === Providers.VERTEXAI) &&
-    hasProviderTools &&
-    hasAgentTools
-  ) {
-    if (!supportsGoogleToolCombination(llmConfig.model)) {
-      throw new Error(`{ "type": "${ErrorTypes.GOOGLE_TOOL_CONFLICT}"}`);
-    }
+  if (isGoogleToolCombinationProvider(agent.provider) && hasProviderTools && hasAgentTools) {
+    assertGoogleToolCombinationSupport(llmConfig.model);
     if (
       shouldIncludeGoogleServerSideToolInvocations({
         provider: agent.provider,
@@ -992,7 +1015,7 @@ export async function initializeAgent(
         hasAgentTools,
       })
     ) {
-      llmConfig.includeServerSideToolInvocations = true;
+      enableGoogleServerSideToolInvocations({ agent, llmConfig });
     }
     if (structuredTools?.length) {
       tools = structuredTools.concat(providerTools as GenericTool[]);
@@ -1062,6 +1085,22 @@ export async function initializeAgent(
     skillCount = skillResult.skillCount;
     executableSkillIds = skillResult.activeSkillIds;
     activeSkillNames = skillResult.activeSkillNames;
+  }
+
+  const hasFinalAgentTools =
+    (structuredTools?.length ?? 0) > 0 ||
+    (toolDefinitions?.length ?? 0) > 0;
+  if (isGoogleToolCombinationProvider(agent.provider) && hasProviderTools && hasFinalAgentTools) {
+    assertGoogleToolCombinationSupport(llmConfig.model);
+    if (
+      shouldIncludeGoogleServerSideToolInvocations({
+        provider: agent.provider,
+        hasProviderTools,
+        hasAgentTools: hasFinalAgentTools,
+      })
+    ) {
+      enableGoogleServerSideToolInvocations({ agent, llmConfig });
+    }
   }
 
   const agentMaxContextNum = Number(agentMaxContextTokens) || DEFAULT_MAX_CONTEXT_TOKENS;

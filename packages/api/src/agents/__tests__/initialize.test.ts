@@ -445,6 +445,88 @@ describe('initializeAgent — provider web_search precedence', () => {
     );
   });
 
+  it('includes the mixed-tool flag for Vertex AI native search with external tools', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.VERTEXAI,
+      model: 'gemini-3.5-flash',
+      providerTools: [nativeGoogleSearchTool],
+      loadedToolDefinitions: [mcpToolDefinition],
+    });
+    agent.tools = ['mcp_lookup'];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.VERTEXAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([nativeGoogleSearchTool]);
+    expect(result.toolDefinitions).toContain(mcpToolDefinition);
+    expect(result.model_parameters).toEqual(
+      expect.objectContaining({
+        includeServerSideToolInvocations: true,
+      }),
+    );
+  });
+
+  it('sets the mixed-tool flag when the skill catalog adds the external tool', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.GOOGLE,
+      model: 'gemini-3.5-flash',
+      providerTools: [nativeGoogleSearchTool],
+    });
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const author = {
+      toString: () => req.user?.id,
+    } as unknown as import('mongoose').Types.ObjectId;
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.GOOGLE]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+      },
+      {
+        ...db,
+        listSkillsByAccess: jest.fn().mockResolvedValue({
+          skills: [
+            {
+              _id: skillId,
+              name: 'research-helper',
+              description: 'Research current information.',
+              author,
+            },
+          ],
+          has_more: false,
+          after: null,
+        }),
+      },
+    );
+
+    expect(result.tools).toEqual([nativeGoogleSearchTool]);
+    expect(result.toolDefinitions?.map((toolDefinition) => toolDefinition.name)).toContain(
+      'skill',
+    );
+    expect(result.model_parameters).toEqual(
+      expect.objectContaining({
+        includeServerSideToolInvocations: true,
+      }),
+    );
+  });
+
   it('rejects Google native search with external tools for unsupported Gemini models', async () => {
     const { agent, req, res, loadTools, db } = createMocks({
       provider: Providers.GOOGLE,
