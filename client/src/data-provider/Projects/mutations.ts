@@ -65,11 +65,13 @@ export const useDeleteProjectMutation = (): UseMutationResult<
   return useMutation((projectId: string) => dataService.deleteProject(projectId), {
     onSuccess: (_result, projectId) => {
       clearActiveConversationProject(projectId);
-      // Invalidate (not remove) so an active project-detail observer refetches and
-      // settles into an error/not-found state. Removing the query leaves observers
-      // with `refetchOnMount: false` stuck in a perpetual loading state, which would
-      // prevent consumers (e.g. ChatRoute) from reacting to the deletion.
+      // Invalidate so an *active* project-detail observer refetches and settles into a
+      // not-found state — consumers (e.g. ChatRoute) can then react to the deletion.
+      // (Removing it instead leaves observers stuck loading under `refetchOnMount: false`.)
       queryClient.invalidateQueries([QueryKeys.project, projectId]);
+      // Drop any *inactive* cached detail so a later visit to the deleted project
+      // refetches (→ not-found) rather than rendering stale cache within `cacheTime`.
+      queryClient.removeQueries([QueryKeys.project, projectId], { type: 'inactive' });
       queryClient.invalidateQueries([QueryKeys.projects]);
       queryClient.invalidateQueries([QueryKeys.allConversations]);
     },

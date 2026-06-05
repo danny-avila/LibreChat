@@ -71,30 +71,34 @@ export default function ChatRoute() {
     cacheTime: 300000,
   });
   /**
-   * Only trust the project scope when the query actually succeeded. If the scoped
-   * project was deleted (or isn't owned), the query errors — and React Query may
-   * retain the last successful data — so a plain `data?._id` check would keep the
-   * landing chip alive for a project that no longer exists.
+   * The scoped project is *confirmed gone* — a not-found/not-owned (404) response,
+   * or a success that resolved to a different/empty project. Transient failures
+   * (500, network, auth refresh race) are deliberately excluded: this query runs with
+   * `retry: false`, so treating any error as "gone" would unscope a valid project on
+   * a single blip.
+   */
+  const projectNotFound = projectQuery.isError && isNotFoundError(projectQuery.error);
+  /**
+   * Trust the scope when the project resolves to itself, and keep showing it through
+   * transient errors via React Query's retained data — but never for a project that
+   * is confirmed gone (otherwise the deleted project's chip lingers).
    */
   const verifiedChatProjectId =
-    projectQuery.isSuccess && projectQuery.data?._id === chatProjectId ? chatProjectId : null;
+    !projectNotFound && projectQuery.data?._id === chatProjectId ? chatProjectId : null;
   const projectTemplate = useMemo(
     () => (verifiedChatProjectId ? { chatProjectId: verifiedChatProjectId } : {}),
     [verifiedChatProjectId],
   );
 
   /**
-   * The scoped project no longer resolves (deleted, or not owned) even though the
-   * URL still carries `?projectId`. Drop the param so the new-chat landing reverts
-   * to an unscoped chat — otherwise the stale chip lingers and sends target a dead
-   * project. Wait for the query to settle so we don't strip a still-loading scope.
+   * The scoped project is gone even though the URL still carries `?projectId`. Drop
+   * the param so the new-chat landing reverts to an unscoped chat — otherwise the
+   * stale chip lingers and sends target a dead project.
    */
   const projectScopeMissing =
     Boolean(chatProjectId) &&
     conversationId === Constants.NEW_CONVO &&
-    !projectQuery.isLoading &&
-    !projectQuery.isFetching &&
-    verifiedChatProjectId == null;
+    (projectNotFound || (projectQuery.isSuccess && projectQuery.data?._id !== chatProjectId));
 
   useEffect(() => {
     if (!projectScopeMissing) {
