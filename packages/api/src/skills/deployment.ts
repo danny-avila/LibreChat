@@ -243,7 +243,7 @@ export class DeploymentSkillRegistry {
   getByName(
     name: string,
     accessibleIds: Types.ObjectId[],
-    options?: SkillLookupOptions,
+    _options?: SkillLookupOptions,
   ): DeploymentSkill | null {
     const skill = this.skillsByName.get(name);
     if (!skill) {
@@ -251,9 +251,6 @@ export class DeploymentSkillRegistry {
     }
     if (!hasAccessibleId(accessibleIds, skill._id)) {
       return null;
-    }
-    if (matchesLookupPreference(skill, options)) {
-      return skill;
     }
     return skill;
   }
@@ -421,7 +418,10 @@ export async function loadDeploymentSkillsFromDirectory(
   try {
     rootStat = await fs.promises.stat(directory);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT' && options.explicitlyConfigured !== true) {
+    if (
+      (error as NodeJS.ErrnoException).code === 'ENOENT' &&
+      options.explicitlyConfigured !== true
+    ) {
       return new DeploymentSkillRegistry(directory, []);
     }
     throw new Error(`Deployment skills directory not found: ${directory}`);
@@ -455,10 +455,9 @@ export function createDeploymentSkillMethods<T extends DeploymentSkillBaseMethod
       accessibleIds: Types.ObjectId[],
       options?: SkillLookupOptions,
     ): Promise<SkillDetailRow | null> => {
-      const dbLookup = base.getSkillByName
-        ? base.getSkillByName(name, stripDeploymentIds(accessibleIds), options)
-        : Promise.resolve(null);
-      const [dbSkill] = await Promise.all([dbLookup]);
+      const dbSkill = base.getSkillByName
+        ? await base.getSkillByName(name, stripDeploymentIds(accessibleIds), options)
+        : null;
       const deployment = registry.getByName(name, accessibleIds, options);
       return pickPreferredSkill(
         [dbSkill, deployment ? toSkillDetailRow(deployment) : null],

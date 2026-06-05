@@ -1236,9 +1236,7 @@ describe('resolveManualSkills', () => {
       userId,
       defaultActiveOnShare: false,
     });
-    expect(result).toEqual([
-      { _id: deployment._id, name: 'deployment', body: 'deployment-body' },
-    ]);
+    expect(result).toEqual([{ _id: deployment._id, name: 'deployment', body: 'deployment-body' }]);
   });
 
   it('drops explicitly-deactivated skills (skillStates override wins over ownership default)', async () => {

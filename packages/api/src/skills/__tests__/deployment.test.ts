@@ -67,7 +67,9 @@ async function writeDeploymentSkill(
 afterEach(async () => {
   const emptyRoot = await makeTempRoot();
   await initializeDeploymentSkills({ projectRoot: emptyRoot, env: {} });
-  await Promise.all(tempRoots.map((root) => fs.promises.rm(root, { recursive: true, force: true })));
+  await Promise.all(
+    tempRoots.map((root) => fs.promises.rm(root, { recursive: true, force: true })),
+  );
   tempRoots = [];
 });
 
@@ -252,10 +254,7 @@ describe('createDeploymentSkillMethods', () => {
       accessibleIds: mergedIds,
       limit: 10,
     });
-    expect(listed?.skills.map((skill) => skill.name).sort()).toEqual([
-      'analysis-kit',
-      'db-skill',
-    ]);
+    expect(listed?.skills.map((skill) => skill.name).sort()).toEqual(['analysis-kit', 'db-skill']);
     expect(base.listSkillsByAccess).toHaveBeenCalledWith({
       accessibleIds: [dbId],
       limit: 10,

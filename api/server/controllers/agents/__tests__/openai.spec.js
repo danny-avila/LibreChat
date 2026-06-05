@@ -150,7 +150,9 @@ jest.mock('~/server/services/Files/permissions', () => ({
 
 jest.mock('~/server/services/Endpoints/agents/skillDeps', () => ({
   getSkillToolDeps: mockGetSkillToolDeps,
+  getSkillDbMethods: jest.fn(() => ({})),
   canAuthorSkillFiles: mockCanAuthorSkillFiles,
+  withDeploymentSkillIds: jest.fn((ids = []) => ids),
   enrichWithSkillConfigurable: mockEnrichWithSkillConfigurable,
   buildSkillPrimedIdsByName: mockBuildSkillPrimedIdsByName,
   buildAgentToolContext: mockBuildAgentToolContext,
