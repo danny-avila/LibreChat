@@ -184,6 +184,9 @@ describe('MCP Routes', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     currentUser = undefined;
+    require('@librechat/api').MCPOAuthHandler.generateFlowId.mockImplementation(
+      (userId, serverName) => `${userId}:${serverName}`,
+    );
     mockResolveAllMcpConfigs.mockResolvedValue({});
     mockResolveMcpConfigNames.mockResolvedValue([]);
     mockMCPUseAllowed = true;
@@ -330,6 +333,27 @@ describe('MCP Routes', () => {
       expect(response.body).toEqual({ error: 'User mismatch' });
     });
 
+    it('should return 403 when flowId does not match authenticated user and server', async () => {
+      const response = await request(app).get('/api/mcp/test-server/oauth/initiate').query({
+        userId: 'test-user-id',
+        flowId: 'other-user-id:test-server',
+      });
+
+      expect(response.status).toBe(403);
+      expect(response.body).toEqual({ error: 'Flow mismatch' });
+      expect(getLogStores).not.toHaveBeenCalled();
+    });
+
+    it('should return 403 when flowId query value is not a string', async () => {
+      const response = await request(app)
+        .get('/api/mcp/test-server/oauth/initiate')
+        .query('userId=test-user-id&flowId=test-user-id:test-server&flowId=other-flow');
+
+      expect(response.status).toBe(403);
+      expect(response.body).toEqual({ error: 'Flow mismatch' });
+      expect(getLogStores).not.toHaveBeenCalled();
+    });
+
     it('should return 404 when flow state is not found', async () => {
       const mockFlowManager = {
         getFlowState: jest.fn().mockResolvedValue(null),
@@ -340,7 +364,7 @@ describe('MCP Routes', () => {
 
       const response = await request(app).get('/api/mcp/test-server/oauth/initiate').query({
         userId: 'test-user-id',
-        flowId: 'non-existent-flow-id',
+        flowId: 'test-user-id:test-server',
       });
 
       expect(response.status).toBe(404);
