@@ -468,7 +468,6 @@ describe('ToolService - Action Capability Gating', () => {
       expect(mockGetServerConfig).not.toHaveBeenCalled();
       expect(mockGetMCPServerTools).toHaveBeenCalledWith(req.user.id, serverName);
     });
-
   });
 
   describe('loadAgentTools (definitionsOnly=false) — action tool filtering', () => {
