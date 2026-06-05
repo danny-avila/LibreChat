@@ -37,9 +37,7 @@ describe('useCopyToClipboard', () => {
         result.current(mockSetIsCopied);
       });
 
-      expect(mockCopy).toHaveBeenCalledWith('Simple text without citations', {
-        format: 'text/plain',
-      });
+      expect(mockCopy).toHaveBeenCalledWith('Simple text without citations', expect.objectContaining({ format: 'text/plain' }));
       expect(mockSetIsCopied).toHaveBeenCalledWith(true);
     });
 
@@ -59,9 +57,7 @@ describe('useCopyToClipboard', () => {
         result.current(mockSetIsCopied);
       });
 
-      expect(mockCopy).toHaveBeenCalledWith('First line\nSecond line', {
-        format: 'text/plain',
-      });
+      expect(mockCopy).toHaveBeenCalledWith('First line\nSecond line', expect.objectContaining({ format: 'text/plain' }));
     });
 
     it('should reset isCopied after timeout', () => {
@@ -82,6 +78,31 @@ describe('useCopyToClipboard', () => {
       });
 
       expect(mockSetIsCopied).toHaveBeenCalledWith(false);
+    });
+
+    it('should convert markdown tables to tab-separated text for spreadsheet paste', () => {
+      const text = `| Name    | Age | Occupation |
+| ------- | --- | ---------- |
+| Michael | 35  | Engineer   |
+| Sarah   | 28  | Doctor     |
+| Tracy   | 45  | Teacher    |`;
+
+      const { result } = renderHook(() =>
+        useCopyToClipboard({
+          text,
+        }),
+      );
+
+      act(() => {
+        result.current(mockSetIsCopied);
+      });
+
+      const expectedText = `Name\tAge\tOccupation
+Michael\t35\tEngineer
+Sarah\t28\tDoctor
+Tracy\t45\tTeacher`;
+
+      expect(mockCopy).toHaveBeenCalledWith(expectedText, expect.objectContaining({ format: 'text/plain' }));
     });
   });
 
@@ -140,7 +161,7 @@ Citations:
 [1] https://example.com/search1
 `;
 
-      expect(mockCopy).toHaveBeenCalledWith(expectedText, { format: 'text/plain' });
+      expect(mockCopy).toHaveBeenCalledWith(expectedText, expect.objectContaining({ format: 'text/plain' }));
     });
 
     it('should format news citations with correct mapping', () => {
@@ -164,7 +185,7 @@ Citations:
 [2] https://example.com/news2
 `;
 
-      expect(mockCopy).toHaveBeenCalledWith(expectedText, { format: 'text/plain' });
+      expect(mockCopy).toHaveBeenCalledWith(expectedText, expect.objectContaining({ format: 'text/plain' }));
     });
 
     it('should handle highlighted text with citations', () => {
@@ -181,13 +202,43 @@ Citations:
         result.current(mockSetIsCopied);
       });
 
-      const expectedText = `**This is highlighted text** [1] with citation.
+      const expectedText = `This is highlighted text [1] with citation.
 
 Citations:
 [1] https://example.com/search1
 `;
 
-      expect(mockCopy).toHaveBeenCalledWith(expectedText, { format: 'text/plain' });
+      expect(mockCopy).toHaveBeenCalledWith(expectedText, expect.objectContaining({ format: 'text/plain' }));
+    });
+
+    it('should preserve citation output while converting markdown tables', () => {
+      const text = `| Name | Score |
+| --- | --- |
+| John | 91 |
+
+Source \\ue202turn0search0`;
+
+      const { result } = renderHook(() =>
+        useCopyToClipboard({
+          text,
+          searchResults: mockSearchResults,
+        }),
+      );
+
+      act(() => {
+        result.current(mockSetIsCopied);
+      });
+
+      const expectedText = `Name\tScore
+John\t91
+
+Source [1]
+
+Citations:
+[1] https://example.com/search1
+`;
+
+      expect(mockCopy).toHaveBeenCalledWith(expectedText, expect.objectContaining({ format: 'text/plain' }));
     });
 
     it('should handle composite citations', () => {
@@ -213,7 +264,7 @@ Citations:
 [3] https://example.com/news2
 `;
 
-      expect(mockCopy).toHaveBeenCalledWith(expectedText, { format: 'text/plain' });
+      expect(mockCopy).toHaveBeenCalledWith(expectedText, expect.objectContaining({ format: 'text/plain' }));
     });
   });
 
@@ -255,7 +306,7 @@ Citations:
 [1] https://example.com/article
 `;
 
-      expect(mockCopy).toHaveBeenCalledWith(expectedText, { format: 'text/plain' });
+      expect(mockCopy).toHaveBeenCalledWith(expectedText, expect.objectContaining({ format: 'text/plain' }));
     });
 
     it('should handle multiple citations of the same source', () => {
@@ -290,7 +341,7 @@ Citations:
 [1] https://example.com/source1
 `;
 
-      expect(mockCopy).toHaveBeenCalledWith(expectedText, { format: 'text/plain' });
+      expect(mockCopy).toHaveBeenCalledWith(expectedText, expect.objectContaining({ format: 'text/plain' }));
     });
   });
 
@@ -310,9 +361,7 @@ Citations:
       });
 
       // Updated expectation: Citation marker should be removed
-      expect(mockCopy).toHaveBeenCalledWith('Text with citation but no data.', {
-        format: 'text/plain',
-      });
+      expect(mockCopy).toHaveBeenCalledWith('Text with citation but no data.', expect.objectContaining({ format: 'text/plain' }));
     });
 
     it('should handle invalid citation indices', () => {
@@ -347,7 +396,7 @@ Citations:
 [1] https://example.com/search1
 `;
 
-      expect(mockCopy).toHaveBeenCalledWith(expectedText, { format: 'text/plain' });
+      expect(mockCopy).toHaveBeenCalledWith(expectedText, expect.objectContaining({ format: 'text/plain' }));
     });
 
     it('should handle citations without links', () => {
@@ -376,9 +425,7 @@ Citations:
       });
 
       // Updated expectation: Citation marker without link should be removed
-      expect(mockCopy).toHaveBeenCalledWith('Citation without link.', {
-        format: 'text/plain',
-      });
+      expect(mockCopy).toHaveBeenCalledWith('Citation without link.', expect.objectContaining({ format: 'text/plain' }));
     });
 
     it('should clean up orphaned citation lists at the end', () => {
@@ -410,7 +457,7 @@ Citations:
 [1] https://example.com/1
 `;
 
-      expect(mockCopy).toHaveBeenCalledWith(expectedText, { format: 'text/plain' });
+      expect(mockCopy).toHaveBeenCalledWith(expectedText, expect.objectContaining({ format: 'text/plain' }));
     });
   });
 
@@ -450,7 +497,7 @@ Citations:
 [5] https://example.com/ref
 `;
 
-      expect(mockCopy).toHaveBeenCalledWith(expectedText, { format: 'text/plain' });
+      expect(mockCopy).toHaveBeenCalledWith(expectedText, expect.objectContaining({ format: 'text/plain' }));
     });
   });
 
@@ -480,7 +527,7 @@ Citations:
         result.current(mockSetIsCopied);
       });
 
-      const expectedText = `**Highlighted text with citation** [1] and composite [2][3].
+      const expectedText = `Highlighted text with citation [1] and composite [2][3].
 
 Citations:
 [1] https://example.com/1
@@ -488,7 +535,7 @@ Citations:
 [3] https://example.com/3
 `;
 
-      expect(mockCopy).toHaveBeenCalledWith(expectedText, { format: 'text/plain' });
+      expect(mockCopy).toHaveBeenCalledWith(expectedText, expect.objectContaining({ format: 'text/plain' }));
     });
   });
 });
