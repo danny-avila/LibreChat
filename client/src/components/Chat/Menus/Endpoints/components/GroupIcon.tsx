@@ -1,6 +1,7 @@
 import React, { memo, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import type { IconMapProps } from '~/common';
+import { getKnownEndpointAsset } from '~/hooks/Endpoint/UnknownIcon';
 import { icons } from '~/hooks/Endpoint/Icons';
 
 interface GroupIconProps {
@@ -42,13 +43,15 @@ const GroupIcon: React.FC<GroupIconProps> = ({ iconURL, groupName }) => {
     );
   }
 
+  const resolvedIconURL = getKnownEndpointAsset(iconURL) || iconURL;
+
   return (
     <div
       className="icon-md shrink-0 overflow-hidden rounded-full"
       style={{ width: 20, height: 20 }}
     >
       <img
-        src={iconURL}
+        src={resolvedIconURL}
         alt={groupName}
         className="h-full w-full object-cover"
         onError={handleImageError}

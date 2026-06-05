@@ -4,27 +4,35 @@ import { CustomMinimalIcon, XAIcon, MoonshotIcon } from '@librechat/client';
 import { IconContext } from '~/common';
 import { cn } from '~/utils';
 
-const knownEndpointAssets = {
+const knownEndpointAssets: Record<string, string> = {
   [KnownEndpoints.anyscale]: 'assets/anyscale.png',
   [KnownEndpoints.apipie]: 'assets/apipie.png',
   [KnownEndpoints.cohere]: 'assets/cohere.png',
   [KnownEndpoints.deepseek]: 'assets/deepseek.svg',
   [KnownEndpoints.fireworks]: 'assets/fireworks.png',
-  [KnownEndpoints.google]: 'assets/google.svg',
+  google: 'assets/google.svg',
   [KnownEndpoints.groq]: 'assets/groq.png',
   [KnownEndpoints.helicone]: 'assets/helicone.png',
   [KnownEndpoints.huggingface]: 'assets/huggingface.svg',
   [KnownEndpoints.mistral]: 'assets/mistral.png',
   [KnownEndpoints.mlx]: 'assets/mlx.png',
   [KnownEndpoints.ollama]: 'assets/ollama.png',
-  [KnownEndpoints.openai]: 'assets/openai.svg',
+  openai: 'assets/openai.svg',
   [KnownEndpoints.openrouter]: 'assets/openrouter.png',
   [KnownEndpoints.perplexity]: 'assets/perplexity.png',
-  [KnownEndpoints.qwen]: 'assets/qwen.svg',
+  qwen: 'assets/qwen.svg',
   [KnownEndpoints.shuttleai]: 'assets/shuttleai.png',
   [KnownEndpoints['together.ai']]: 'assets/together.png',
   [KnownEndpoints.unify]: 'assets/unify.webp',
 };
+
+export function getKnownEndpointAsset(endpoint?: string | null): string {
+  if (!endpoint) {
+    return '';
+  }
+
+  return knownEndpointAssets[endpoint.toLowerCase()] ?? '';
+}
 
 const knownEndpointClasses = {
   [KnownEndpoints.cohere]: {
@@ -81,7 +89,7 @@ function UnknownIcon({
     return <img className={className} src={iconURL} alt={`${endpoint} Icon`} />;
   }
 
-  const assetPath: string = knownEndpointAssets[currentEndpoint] ?? '';
+  const assetPath = getKnownEndpointAsset(currentEndpoint);
 
   if (!assetPath) {
     return <CustomMinimalIcon className={className} />;
