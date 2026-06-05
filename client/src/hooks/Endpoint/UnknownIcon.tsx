@@ -12,7 +12,7 @@ const knownEndpointAssets: Record<string, string> = {
   [KnownEndpoints.fireworks]: 'assets/fireworks.png',
   google: 'assets/google.svg',
   [KnownEndpoints.groq]: 'assets/groq.png',
-  [KnownEndpoints.helicone]: 'assets/helicone.png',
+  [KnownEndpoints.helicone]: 'assets/helicone.svg',
   [KnownEndpoints.huggingface]: 'assets/huggingface.svg',
   [KnownEndpoints.mistral]: 'assets/mistral.png',
   [KnownEndpoints.mlx]: 'assets/mlx.png',
@@ -26,12 +26,25 @@ const knownEndpointAssets: Record<string, string> = {
   [KnownEndpoints.unify]: 'assets/unify.webp',
 };
 
+const knownEndpointComponents = new Set<string>([KnownEndpoints.moonshot, KnownEndpoints.xai]);
+
 export function getKnownEndpointAsset(endpoint?: string | null): string {
   if (!endpoint) {
     return '';
   }
 
   return knownEndpointAssets[endpoint.toLowerCase()] ?? '';
+}
+
+export function hasKnownEndpointIcon(endpoint?: string | null): boolean {
+  if (!endpoint) {
+    return false;
+  }
+
+  const currentEndpoint = endpoint.toLowerCase();
+  return (
+    getKnownEndpointAsset(currentEndpoint) !== '' || knownEndpointComponents.has(currentEndpoint)
+  );
 }
 
 const knownEndpointClasses = {

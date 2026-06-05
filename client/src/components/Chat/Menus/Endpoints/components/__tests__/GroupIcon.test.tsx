@@ -5,11 +5,12 @@ jest.mock('~/hooks/Endpoint/Icons', () => {
   const React = jest.requireActual<typeof import('react')>('react');
   const createIcon =
     (iconKey: string) =>
-    ({ className }: { className?: string }) =>
+    ({ className, endpoint }: { className?: string; endpoint?: string | null }) =>
       React.createElement('span', {
         className,
         'data-testid': 'endpoint-icon',
         'data-icon-key': iconKey,
+        'data-endpoint': endpoint ?? '',
       });
 
   return {
@@ -34,6 +35,22 @@ describe('GroupIcon', () => {
       'src',
       'assets/openrouter.png',
     );
+  });
+
+  it('resolves known endpoint asset aliases to shipped file paths', () => {
+    render(<GroupIcon iconURL="Helicone" groupName="Helicone" />);
+
+    expect(screen.getByRole('img', { name: 'Helicone' })).toHaveAttribute(
+      'src',
+      'assets/helicone.svg',
+    );
+  });
+
+  it('renders known endpoint aliases backed by components', () => {
+    render(<GroupIcon iconURL="Moonshot" groupName="Moonshot" />);
+
+    expect(screen.getByTestId('endpoint-icon')).toHaveAttribute('data-icon-key', 'unknown');
+    expect(screen.getByTestId('endpoint-icon')).toHaveAttribute('data-endpoint', 'Moonshot');
   });
 
   it('renders configured image URLs directly', () => {
