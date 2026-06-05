@@ -1,6 +1,6 @@
-# LibreChat for New Jersey
+# New Jersey AI Assistant (NJ AIA)
 
-A LibreChat fork with customizations for the state of New Jersey.
+A fork of LibreChat's open-source AI platform, with customizations for the state of New Jersey.
 
 ## New Team Member Onboarding
 
@@ -50,9 +50,9 @@ You _should_ only need to do the following once:
    - `$ docker compose -f nj-dev-docker-compose.yml up -d`
 6. Create a `.env` file in the root directory & fill it with our `.env` from Bitwarden.
 
-### Building & Running LibreChat
+### Building & Running NJ AIA (AIA)
 
-Repeatable steps for getting LibreChat going:
+Repeatable steps for getting AIA going:
 
 1. Build everything
    - `$ npm run reinstall`
@@ -62,7 +62,7 @@ Repeatable steps for getting LibreChat going:
    - `$ npm run backend:dev`
 3. Start the frontend (w/ live rebuilds)
    - `$ npm run frontend:dev`
-4. Visit LibreChat @ http://localhost:3090
+4. Visit AIA @ http://localhost:3090
 
 NOTE: `reinstall`/`frontend` builds all the code in `/packages/`, but does not do live rebuilds. If you want live coding
 for
@@ -103,7 +103,7 @@ In order to be able to continue merging upstream LibreChat changes, we need to m
 ### Branching Strategy
 
 We use trunk-based development with a focus on merging changes from upstream. We have one branch, `newjersey`,
-which is where our version of LibreChat lives & deploys from. Releases are done via tagging commits on the `newjersey`
+which is where our NJ AIA lives & deploys from. Releases are done via tagging commits on the `newjersey`
 branch.
 
 ### Pull Requests
@@ -119,7 +119,7 @@ We want to keep our repository up-to-date with the latest changes
 from [upstream](https://github.com/danny-avila/LibreChat/tree/main).
 
 To that end, we have a weekly
-action ([Sync Upstream LibreChat](https://github.com/newjersey/LibreChat/actions/workflows/nj-sync-upstream.yml)) which
+action ([Sync Upstream LibreChat](https://github.com/newjersey/nj-ai-assistant/actions/workflows/nj-sync-upstream.yml)) which
 should fire each Wednesday. The action itself includes instructions on how to handle merge conflicts etc., but make sure
 to actually pay attention to the pull request it generates each week!
 
@@ -127,13 +127,13 @@ to actually pay attention to the pull request it generates each week!
 
 Prod release happens in two steps:
 
-1. Create a [release](https://github.com/newjersey/LibreChat/releases) in Github, and wait for it to build and push
+1. Create a [release](https://github.com/newjersey/nj-ai-assistant/releases) in Github, and wait for it to build and push
 2. [OPTIONAL] If environment variables have changed, run the [render-env workflow](./.github/workflows/render-env.yml)
 3. Run the [infra deploy workflow](./.github/workflows/nj-infra-deploy.yml) on the prod environment.
 
 ### Create a new release
 
-Go to [releases](https://github.com/newjersey/LibreChat/releases) and click "Draft new release."
+Go to [releases](https://github.com/newjersey/nj-ai-assistant/releases) and click "Draft new release."
 
 In the Select Tag dropdown, press Create New Tag. Format the new tag like `release-YYYYMMDD.X`. (The `.X` is an optional
 increment in case multiple tags are cut per day.)
@@ -186,7 +186,7 @@ setting a non-existent tag. The infra deploy workflow will still need to be ran 
 The following components of the NJ AI Assistant are managed via ClickOps (manually):
 
 - The Bedrock Guardrails
-- A Secrets Manager secret that stores the connection string between the prod LibreChat container and DocumentDB.
+- A Secrets Manager secret that stores the connection string between the prod AIA container and DocumentDB.
 
 The remaining infrastructure is deployed by CDK.
 
@@ -207,4 +207,4 @@ Guardrail configs are managed per-environment through the AWS console. To manage
 ### Secrets Manager Connection String
 
 The connection string for DocumentDB lives in AWS Secrets Manager under the name `ai-assistant/docdb/uri`. If the
-DocumentDB secret is rotated, it must be updated here for LibreChat to maintain connection.
+DocumentDB secret is rotated, it must be updated here for AIA to maintain connection.
