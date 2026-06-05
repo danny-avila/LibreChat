@@ -3,9 +3,14 @@ import { v4 as uuidv4 } from 'uuid';
 import { Constants, FileSources } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { agentSchema, createMethods } from '@librechat/data-schemas';
-import type { AgentModelParameters } from 'librechat-data-provider';
+import type {
+  Agent as LibreChatAgent,
+  AgentModelParameters,
+  TConversation,
+} from 'librechat-data-provider';
 import type { LoadAgentParams, LoadAgentDeps } from '../load';
 import { loadAgent } from '../load';
+import { loadAddedAgent } from '../added';
 
 let Agent: mongoose.Model<unknown>;
 let createAgent: ReturnType<typeof createMethods>['createAgent'];
@@ -321,6 +326,112 @@ describe('loadAgent', () => {
       deps,
     );
 
+    expect(result?.skills_enabled).toBe(true);
+    expect(result?.skills).toEqual([]);
+  });
+
+  test('should enable full skill scope for added ephemeral model spec with skills true', async () => {
+    const result = await loadAddedAgent(
+      {
+        req: {
+          user: { id: 'user123' },
+          config: {
+            config: {},
+            fileStrategy: FileSources.local,
+            imageOutputType: 'png',
+            modelSpecs: {
+              list: [
+                {
+                  name: 'added-skills-on',
+                  label: 'Added Skills On',
+                  preset: { endpoint: 'openai', model: 'gpt-4' },
+                  skills: true,
+                },
+              ],
+            },
+          },
+        },
+        conversation: {
+          endpoint: 'openai',
+          model: 'gpt-4',
+          spec: 'added-skills-on',
+        } as unknown as TConversation,
+      },
+      deps,
+    );
+
+    expect(result?.skills_enabled).toBe(true);
+    expect(result?.skills).toBeUndefined();
+  });
+
+  test('should initialize an empty allowlist for added ephemeral model spec skill names', async () => {
+    const result = await loadAddedAgent(
+      {
+        req: {
+          user: { id: 'user123' },
+          config: {
+            config: {},
+            fileStrategy: FileSources.local,
+            imageOutputType: 'png',
+            modelSpecs: {
+              list: [
+                {
+                  name: 'added-scoped-skills',
+                  label: 'Added Scoped Skills',
+                  preset: { endpoint: 'openai', model: 'gpt-4' },
+                  skills: ['finance-analyst', 'brand-writer'],
+                },
+              ],
+            },
+          },
+        },
+        conversation: {
+          endpoint: 'openai',
+          model: 'gpt-4',
+          spec: 'added-scoped-skills',
+        } as unknown as TConversation,
+      },
+      deps,
+    );
+
+    expect(result?.skills_enabled).toBe(true);
+    expect(result?.skills).toEqual([]);
+  });
+
+  test('should apply model spec skills when added agent mirrors ephemeral primary tools', async () => {
+    const { EPHEMERAL_AGENT_ID } = Constants;
+
+    const result = await loadAddedAgent(
+      {
+        req: {
+          user: { id: 'user123' },
+          config: {
+            config: {},
+            fileStrategy: FileSources.local,
+            imageOutputType: 'png',
+            modelSpecs: {
+              list: [
+                {
+                  name: 'mirrored-scoped-skills',
+                  label: 'Mirrored Scoped Skills',
+                  preset: { endpoint: 'openai', model: 'gpt-4' },
+                  skills: ['brand-writer'],
+                },
+              ],
+            },
+          },
+        },
+        conversation: {
+          endpoint: 'openai',
+          model: 'gpt-4',
+          spec: 'mirrored-scoped-skills',
+        } as unknown as TConversation,
+        primaryAgent: { id: EPHEMERAL_AGENT_ID as string, tools: ['web_search'] } as LibreChatAgent,
+      },
+      deps,
+    );
+
+    expect(result?.tools).toEqual(['web_search']);
     expect(result?.skills_enabled).toBe(true);
     expect(result?.skills).toEqual([]);
   });

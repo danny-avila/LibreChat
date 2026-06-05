@@ -486,6 +486,13 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     parentMessageId,
     allowedProviders,
     primaryAgentId: primaryConfig.id,
+    accessibleSkillIds,
+    editableSkillIds,
+    skillsCapabilityEnabled,
+    ephemeralSkillsToggle,
+    skillCreateAllowed,
+    skillStates,
+    defaultActiveOnShare,
     codeEnvAvailable,
   });
 
