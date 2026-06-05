@@ -7,7 +7,9 @@ import {
   isAgentsEndpoint,
   eReasoningParameterFormatSchema,
   eReasoningResponseKeySchema,
+  localizedStringSchema,
 } from './schemas';
+export type { LocalizedString } from './schemas';
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { specsConfigSchema, TSpecsConfig } from './models';
 import { fileConfigSchema } from './file-config';
@@ -900,8 +902,6 @@ const termsOfServiceSchema = z.object({
 export type TTermsOfService = z.infer<typeof termsOfServiceSchema>;
 
 // Schema for localized string (either simple string or language-keyed object)
-const localizedStringSchema = z.union([z.string(), z.record(z.string())]);
-export type LocalizedString = z.infer<typeof localizedStringSchema>;
 
 const mcpServersSchema = z
   .object({

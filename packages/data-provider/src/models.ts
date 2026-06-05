@@ -6,15 +6,17 @@ import {
   eModelEndpointSchema,
   AuthType,
   authTypeSchema,
+  localizedStringSchema,
 } from './schemas';
+import type { LocalizedString } from './schemas';
 
 export type TModelSpec = {
   name: string;
-  label: string;
+  label: LocalizedString;
   preset: TModelSpecPreset;
   order?: number;
   default?: boolean;
-  description?: string;
+  description?: LocalizedString;
   /**
    * Optional group name for organizing specs in the UI selector.
    * - If it matches an endpoint name (e.g., "openAI", "groq"), the spec appears nested under that endpoint
@@ -43,11 +45,11 @@ export type TModelSpec = {
 
 export const tModelSpecSchema = z.object({
   name: z.string(),
-  label: z.string(),
+  label: localizedStringSchema,
   preset: tModelSpecPresetSchema,
   order: z.number().optional(),
   default: z.boolean().optional(),
-  description: z.string().optional(),
+  description: localizedStringSchema.optional(),
   group: z.string().optional(),
   groupIcon: z.union([z.string(), eModelEndpointSchema]).optional(),
   showIconInMenu: z.boolean().optional(),

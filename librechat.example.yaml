@@ -656,6 +656,23 @@ endpoints:
 #       preset:
 #         endpoint: "openAI"
 #         model: "gpt-4o-mini"
+#
+#     # Example 6: Multilingual label and description
+#     # label and description accept either a plain string (as above) or a
+#     # language-keyed object. The UI picks the key matching the user's language
+#     # setting, falling back to 'en', then to the first available value.
+#     - name: "multilingual-assistant"
+#       label:
+#         en: "Smart Assistant"
+#         de: "Intelligenter Assistent"
+#         fr: "Assistant intelligent"
+#       description:
+#         en: "Best for complex reasoning tasks"
+#         de: "Ideal für komplexe Denkaufgaben"
+#         fr: "Idéal pour les tâches complexes"
+#       preset:
+#         endpoint: "openAI"
+#         model: "gpt-4o"
 
 # fileConfig:
 #   endpoints:

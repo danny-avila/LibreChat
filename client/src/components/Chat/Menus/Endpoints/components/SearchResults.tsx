@@ -7,6 +7,7 @@ import type { Endpoint } from '~/common';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
 import SpecIcon from './SpecIcon';
+import { useLocalizedConfig } from '~/hooks';
 import { cn } from '~/utils';
 
 interface SearchResultsProps {
@@ -16,6 +17,7 @@ interface SearchResultsProps {
 }
 
 export function SearchResults({ results, localize, searchValue }: SearchResultsProps) {
+  const getLocalizedValue = useLocalizedConfig();
   const {
     selectedValues,
     handleSelectSpec,
@@ -57,6 +59,10 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
         if ('name' in item && 'label' in item) {
           // Render model spec
           const spec = item as TModelSpec;
+          const resolvedLabel = getLocalizedValue(spec.label, spec.name);
+          const resolvedDescription = spec.description != null
+            ? getLocalizedValue(spec.description, '')
+            : undefined;
           return (
             <MenuItem
               key={spec.name}
@@ -64,13 +70,13 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
               aria-selected={selectedSpec === spec.name || undefined}
               className={cn(
                 'flex w-full cursor-pointer justify-between rounded-lg px-2 text-sm',
-                spec.description ? 'items-start' : 'items-center',
+                resolvedDescription ? 'items-start' : 'items-center',
               )}
             >
               <div
                 className={cn(
                   'flex w-full min-w-0 gap-2 px-1 py-1',
-                  spec.description ? 'items-start' : 'items-center',
+                  resolvedDescription ? 'items-start' : 'items-center',
                 )}
               >
                 {(spec.showIconInMenu ?? true) && (
@@ -79,9 +85,9 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                   </div>
                 )}
                 <div className="flex min-w-0 flex-col gap-1">
-                  <span className="truncate text-left">{spec.label}</span>
-                  {spec.description && (
-                    <span className="break-words text-xs font-normal">{spec.description}</span>
+                  <span className="truncate text-left">{resolvedLabel}</span>
+                  {resolvedDescription && (
+                    <span className="break-words text-xs font-normal">{resolvedDescription}</span>
                   )}
                 </div>
               </div>
@@ -90,7 +96,7 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                   <CheckCircle2
                     className={cn(
                       'size-4 shrink-0 text-text-primary',
-                      spec.description ? 'mt-1' : '',
+                      resolvedDescription ? 'mt-1' : '',
                     )}
                     aria-hidden="true"
                   />

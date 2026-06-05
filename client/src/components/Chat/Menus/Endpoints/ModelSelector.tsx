@@ -13,12 +13,13 @@ import { ModelSelectorChatProvider } from './ModelSelectorChatContext';
 import { getSelectedIcon, getDisplayValue } from './utils';
 import { CustomMenu as Menu } from './CustomMenu';
 import DialogManager from './DialogManager';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useLocalizedConfig } from '~/hooks';
 
 const defaultInterface = getConfigDefaults().interface;
 
 function ModelSelectorContent() {
   const localize = useLocalize();
+  const getLocalizedValue = useLocalizedConfig();
 
   const {
     // LibreChat
@@ -53,6 +54,7 @@ function ModelSelectorContent() {
     () =>
       getDisplayValue({
         localize,
+        getLocalizedValue,
         agentsMap,
         modelSpecs,
         selectedValues,
