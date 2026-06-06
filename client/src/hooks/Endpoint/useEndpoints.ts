@@ -16,9 +16,9 @@ import type {
   Agent,
 } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
+import { useHasAccess, useShowMarketplace } from '~/hooks';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { mapEndpoints, getIconKey } from '~/utils';
-import { useHasAccess } from '~/hooks';
 import { icons } from './Icons';
 
 const defaultInterface = getConfigDefaults().interface;
@@ -46,6 +46,7 @@ export const useEndpoints = ({
     permissionType: PermissionTypes.AGENTS,
     permission: Permissions.USE,
   });
+  const showAgentMarketplace = useShowMarketplace();
 
   const assistants: Assistant[] = useMemo(
     () => Object.values(assistantsMap?.[EModelEndpoint.assistants] ?? {}),
@@ -89,7 +90,7 @@ export const useEndpoints = ({
       const Icon = icons[iconKey];
       const endpointIconURL = getEndpointField(endpointsConfig, ep, 'iconURL');
       const hasModels =
-        (ep === EModelEndpoint.agents && (agents?.length ?? 0) > 0) ||
+        (ep === EModelEndpoint.agents && ((agents?.length ?? 0) > 0 || showAgentMarketplace)) ||
         (ep === EModelEndpoint.assistants && assistants?.length > 0) ||
         (ep !== EModelEndpoint.assistants &&
           ep !== EModelEndpoint.agents &&
@@ -109,6 +110,11 @@ export const useEndpoints = ({
             })
           : null,
       };
+
+      if (ep === EModelEndpoint.agents && showAgentMarketplace) {
+        result.showMarketplace = true;
+        result.searchAliases = ['agent marketplace', 'marketplace'];
+      }
 
       // Handle agents case
       if (ep === EModelEndpoint.agents && (agents?.length ?? 0) > 0) {
@@ -181,7 +187,15 @@ export const useEndpoints = ({
 
       return result;
     });
-  }, [filteredEndpoints, endpointsConfig, modelsQuery.data, agents, assistants, azureAssistants]);
+  }, [
+    agents,
+    assistants,
+    azureAssistants,
+    endpointsConfig,
+    filteredEndpoints,
+    modelsQuery.data,
+    showAgentMarketplace,
+  ]);
 
   return {
     mappedEndpoints,

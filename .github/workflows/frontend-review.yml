@@ -77,10 +77,14 @@ jobs:
           retention-days: 2
 
   test-ubuntu:
-    name: 'Tests: Ubuntu'
+    name: 'Tests: Ubuntu (shard ${{ matrix.shard }}/4)'
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
 
@@ -116,8 +120,8 @@ jobs:
           name: build-client-package
           path: packages/client/dist
 
-      - name: Run unit tests
-        run: npm run test:ci --verbose
+      - name: Run unit tests (shard ${{ matrix.shard }}/4)
+        run: npm run test:ci -- --shard=${{ matrix.shard }}/4
         working-directory: client
 
   test-windows:

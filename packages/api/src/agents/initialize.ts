@@ -24,15 +24,8 @@ import type { GenericTool, LCToolRegistry, ToolMap, LCTool } from '@librechat/ag
 import type { Response as ServerResponse } from 'express';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { InitializeResultBase, ServerRequest, EndpointDbMethods } from '~/types';
-import {
-  optionalChainWithEmptyCheck,
-  extractLibreChatParams,
-  getModelMaxTokens,
-  getThreadData,
-} from '~/utils';
-import { filterFilesByEndpointConfig } from '~/files';
-import { generateArtifactsPrompt } from '~/prompts';
-import { getProviderConfig } from '~/endpoints';
+import type { ResolvedManualSkill, ResolvedAlwaysApplySkill } from './skills';
+import type { TFilterFilesByAgentAccess } from './resources';
 import {
   injectSkillCatalog,
   resolveManualSkills,
@@ -41,13 +34,20 @@ import {
   MAX_PRIMED_SKILLS_PER_TURN,
 } from './skills';
 import {
+  optionalChainWithEmptyCheck,
+  extractLibreChatParams,
+  getModelMaxTokens,
+  getThreadData,
+} from '~/utils';
+import {
   registerCodeExecutionTools,
   registerFileAuthoringTools,
   isFileAuthoringToolDefinition,
 } from './tools';
+import { filterFilesByEndpointConfig } from '~/files';
+import { generateArtifactsPrompt } from '~/prompts';
+import { getProviderConfig } from '~/endpoints';
 import { primeResources } from './resources';
-import type { ResolvedManualSkill, ResolvedAlwaysApplySkill } from './skills';
-import type { TFilterFilesByAgentAccess } from './resources';
 
 /**
  * Fraction of context budget reserved as headroom when no explicit maxContextTokens is set.
@@ -56,6 +56,15 @@ import type { TFilterFilesByAgentAccess } from './resources';
  */
 const DEFAULT_RESERVE_RATIO = 0.05;
 const temporalSpecialVarRegex = /{{\s*(current_date|current_datetime|iso_datetime)\s*}}/i;
+const geminiModelVersionRegex = /^gemini-(\d+)(?:\.(\d+))?(?:-|$)/;
+const googleToolCombinationTextModels = [
+  'gemini-3-flash-preview',
+  'gemini-3-pro-preview',
+  'gemini-3.1-flash-lite',
+  'gemini-3.1-pro-preview',
+];
+const googleToolCombinationExcludedModalityRegex =
+  /(?:^|-)image(?:-|$)|(?:^|-)live(?:-|$)|(?:^|-)tts(?:-|$)/;
 
 function hasTemporalSpecialVars(text: string): boolean {
   return temporalSpecialVarRegex.test(text);
@@ -96,12 +105,71 @@ function hasGoogleSearchTool(tool: unknown): boolean {
   return 'googleSearch' in tool || 'googleSearchRetrieval' in tool;
 }
 
+function normalizeGoogleModelName(model: string): string {
+  const normalized = model.trim().toLowerCase();
+  return normalized.split('/').pop() ?? normalized;
+}
+
+function isKnownGoogleToolCombinationTextModel(model: string): boolean {
+  return googleToolCombinationTextModels.some(
+    (knownModel) => model === knownModel || model.startsWith(`${knownModel}-`),
+  );
+}
+
+function isGemini35OrLater(model: string): boolean {
+  const match = geminiModelVersionRegex.exec(model);
+  if (!match) {
+    return false;
+  }
+  const major = Number(match[1]);
+  const minor = Number(match[2] ?? '0');
+  return major > 3 || (major === 3 && minor >= 5);
+}
+
 function supportsGoogleToolCombination(model: unknown): boolean {
   if (typeof model !== 'string') {
     return false;
   }
-  const normalized = model.toLowerCase().split('/').pop() ?? model.toLowerCase();
-  return normalized.startsWith('gemini-3');
+  const normalized = normalizeGoogleModelName(model);
+  if (googleToolCombinationExcludedModalityRegex.test(normalized)) {
+    return false;
+  }
+  return isKnownGoogleToolCombinationTextModel(normalized) || isGemini35OrLater(normalized);
+}
+
+function isGoogleToolCombinationProvider(provider?: string): boolean {
+  return provider === Providers.GOOGLE || provider === Providers.VERTEXAI;
+}
+
+function shouldIncludeGoogleServerSideToolInvocations({
+  provider,
+  hasProviderTools,
+  hasAgentTools,
+}: {
+  provider?: string;
+  hasProviderTools: boolean;
+  hasAgentTools: boolean;
+}): boolean {
+  return isGoogleToolCombinationProvider(provider) && hasProviderTools && hasAgentTools;
+}
+
+function assertGoogleToolCombinationSupport(model: unknown): void {
+  if (!supportsGoogleToolCombination(model)) {
+    throw new Error(`{ "type": "${ErrorTypes.GOOGLE_TOOL_CONFLICT}"}`);
+  }
+}
+
+function enableGoogleServerSideToolInvocations({
+  agent,
+  llmConfig,
+}: {
+  agent: Agent;
+  llmConfig: Record<string, unknown>;
+}): void {
+  llmConfig.includeServerSideToolInvocations = true;
+  if (agent.model_parameters) {
+    (agent.model_parameters as Record<string, unknown>).includeServerSideToolInvocations = true;
+  }
 }
 
 function resolveProviderToolConflicts({
@@ -321,7 +389,11 @@ export interface InitializeAgentParams {
  */
 export interface InitializeAgentDbMethods extends EndpointDbMethods {
   /** Update usage tracking for multiple files */
-  updateFilesUsage: (files: Array<{ file_id: string }>, fileIds?: string[]) => Promise<unknown[]>;
+  updateFilesUsage: (
+    files: Array<{ file_id: string }>,
+    fileIds?: string[],
+    options?: { user?: string },
+  ) => Promise<unknown[]>;
   /** Get files from database */
   getFiles: (filter: unknown, sort: unknown, select: unknown) => Promise<unknown[]>;
   /** Filter files by agent access permissions (ownership or agent attachment) */
@@ -471,6 +543,7 @@ export async function initializeAgent(
     allowedProviders,
     isInitialAgent = false,
   } = params;
+  const requestFileOwnerId = req.user?.id;
 
   if (!db) {
     throw new Error('initializeAgent requires db methods to be passed');
@@ -572,10 +645,27 @@ export async function initializeAgent(
 
     const allToolFiles = toolFiles.concat(codeGeneratedFiles, userCodeFiles);
     if (requestFiles.length || allToolFiles.length) {
-      currentFiles = (await db.updateFilesUsage(requestFiles.concat(allToolFiles))) as IMongoFile[];
+      const requestUsageFiles =
+        requestFiles.length && requestFileOwnerId
+          ? ((await db.updateFilesUsage(requestFiles, undefined, {
+              user: requestFileOwnerId,
+            })) as IMongoFile[])
+          : [];
+      const requestUsageFileIds = new Set(requestUsageFiles.map((file) => file.file_id));
+      const trustedToolFiles = allToolFiles.filter(
+        (file) => !requestUsageFileIds.has(file.file_id),
+      );
+      const toolUsageFiles = trustedToolFiles.length
+        ? ((await db.updateFilesUsage(trustedToolFiles)) as IMongoFile[])
+        : [];
+      currentFiles = requestUsageFiles.concat(toolUsageFiles);
     }
   } else if (requestFiles.length) {
-    currentFiles = (await db.updateFilesUsage(requestFiles)) as IMongoFile[];
+    currentFiles = requestFileOwnerId
+      ? ((await db.updateFilesUsage(requestFiles, undefined, {
+          user: requestFileOwnerId,
+        })) as IMongoFile[])
+      : [];
   }
 
   if (currentFiles && currentFiles.length) {
@@ -965,13 +1055,16 @@ export async function initializeAgent(
     ? (providerTools as GenericTool[])
     : (structuredTools ?? []);
 
-  if (
-    (agent.provider === Providers.GOOGLE || agent.provider === Providers.VERTEXAI) &&
-    hasProviderTools &&
-    hasAgentTools
-  ) {
-    if (!supportsGoogleToolCombination(llmConfig.model)) {
-      throw new Error(`{ "type": "${ErrorTypes.GOOGLE_TOOL_CONFLICT}"}`);
+  if (isGoogleToolCombinationProvider(agent.provider) && hasProviderTools && hasAgentTools) {
+    assertGoogleToolCombinationSupport(llmConfig.model);
+    if (
+      shouldIncludeGoogleServerSideToolInvocations({
+        provider: agent.provider,
+        hasProviderTools,
+        hasAgentTools,
+      })
+    ) {
+      enableGoogleServerSideToolInvocations({ agent, llmConfig });
     }
     if (structuredTools?.length) {
       tools = structuredTools.concat(providerTools as GenericTool[]);
@@ -1041,6 +1134,21 @@ export async function initializeAgent(
     skillCount = skillResult.skillCount;
     executableSkillIds = skillResult.activeSkillIds;
     activeSkillNames = skillResult.activeSkillNames;
+  }
+
+  const hasFinalAgentTools =
+    (structuredTools?.length ?? 0) > 0 || (toolDefinitions?.length ?? 0) > 0;
+  if (isGoogleToolCombinationProvider(agent.provider) && hasProviderTools && hasFinalAgentTools) {
+    assertGoogleToolCombinationSupport(llmConfig.model);
+    if (
+      shouldIncludeGoogleServerSideToolInvocations({
+        provider: agent.provider,
+        hasProviderTools,
+        hasAgentTools: hasFinalAgentTools,
+      })
+    ) {
+      enableGoogleServerSideToolInvocations({ agent, llmConfig });
+    }
   }
 
   const agentMaxContextNum = Number(agentMaxContextTokens) || DEFAULT_MAX_CONTEXT_TOKENS;

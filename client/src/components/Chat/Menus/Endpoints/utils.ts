@@ -17,12 +17,15 @@ export function filterItems<
     name?: string;
     value?: string;
     models?: Array<{ name: string; isGlobal?: boolean }>;
+    searchAliases?: string[];
+    showMarketplace?: boolean;
   },
 >(
   items: T[],
   searchValue: string,
   agentsMap: TAgentsMap | undefined,
   assistantsMap: TAssistantsMap | undefined,
+  localize?: ReturnType<typeof useLocalize>,
 ): T[] | null {
   const searchTermLower = searchValue.trim().toLowerCase();
   if (!searchTermLower) {
@@ -33,7 +36,13 @@ export function filterItems<
     const itemMatches =
       item.label.toLowerCase().includes(searchTermLower) ||
       (item.name && item.name.toLowerCase().includes(searchTermLower)) ||
-      (item.value && item.value.toLowerCase().includes(searchTermLower));
+      (item.value && item.value.toLowerCase().includes(searchTermLower)) ||
+      item.searchAliases?.some((alias) => alias.toLowerCase().includes(searchTermLower)) ||
+      (item.showMarketplace === true &&
+        localize != null &&
+        [localize('com_agents_marketplace'), localize('com_ui_marketplace')].some((label) =>
+          label.toLowerCase().includes(searchTermLower),
+        ));
 
     if (itemMatches) {
       return true;

@@ -15,9 +15,11 @@ const CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_CHUNK_DELAY_MS) || 10;
 const CREATE_SKILL_MARKER = 'E2E_CREATE_SKILL:';
 const EDIT_SKILL_MARKER = 'E2E_EDIT_SKILL:';
 const ASSERT_MODEL_SPEC_SKILLS_MARKER = 'E2E_ASSERT_MODEL_SPEC_SKILLS';
+const ASSERT_PROVIDER_FILE_MARKER = 'E2E_ASSERT_PROVIDER_FILE:';
 const CREATE_FILE_AUTHORING_FINAL_TEXT = 'E2E file authoring complete';
 const EDIT_FILE_AUTHORING_FINAL_TEXT = 'E2E file edit complete';
 const MODEL_SPEC_SKILL_ASSERTION_FINAL_TEXT = 'E2E model spec skill assertion passed';
+const PROVIDER_FILE_ASSERTION_FINAL_TEXT = 'E2E provider file assertion passed';
 const CREATE_FILE_TOOL_NAME = 'create_file';
 const EDIT_FILE_TOOL_NAME = 'edit_file';
 const BASH_TOOL_NAME = 'bash_tool';
@@ -64,8 +66,13 @@ function getContentText(content) {
 }
 
 function getLatestUserText(messages) {
+  const message = getLatestUserMessage(messages);
+  return message ? getContentText(message.content) : '';
+}
+
+function getLatestUserMessage(messages) {
   if (!Array.isArray(messages)) {
-    return '';
+    return null;
   }
   for (let index = messages.length - 1; index >= 0; index--) {
     const message = messages[index];
@@ -74,10 +81,10 @@ function getLatestUserText(messages) {
     }
     const type = messageType(message);
     if (type === 'human' || type === 'user') {
-      return getContentText(message.content);
+      return message;
     }
   }
-  return '';
+  return null;
 }
 
 function getRequestedSkillName(text, marker) {
@@ -87,6 +94,14 @@ function getRequestedSkillName(text, marker) {
   }
   const afterMarker = text.slice(markerIndex + marker.length);
   return afterMarker.match(/[a-z0-9][a-z0-9-]*/)?.[0] ?? '';
+}
+
+function getMarkerValue(text, marker) {
+  const markerIndex = text.indexOf(marker);
+  if (markerIndex === -1) {
+    return '';
+  }
+  return text.slice(markerIndex + marker.length).trim().split(/\s+/, 1)[0] ?? '';
 }
 
 function collectToolNames(agents) {
@@ -132,6 +147,67 @@ function collectSkillPrimeMessages(messages) {
       trigger: message.additional_kwargs.trigger,
       content: getContentText(message.content),
     }));
+}
+
+function collectProviderFileNames(value, names = new Set()) {
+  if (value == null) {
+    return names;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectProviderFileNames(item, names);
+    }
+    return names;
+  }
+
+  if (typeof value !== 'object') {
+    return names;
+  }
+
+  if (value.type === 'input_file' && typeof value.filename === 'string') {
+    names.add(value.filename);
+  }
+
+  if (value.type === 'file' && typeof value.file?.filename === 'string') {
+    names.add(value.file.filename);
+  }
+
+  if (value.type === 'document' && typeof value.context === 'string') {
+    const match = value.context.match(/File:\s*"([^"]+)"/);
+    if (match?.[1]) {
+      names.add(match[1]);
+    }
+  }
+
+  for (const child of Object.values(value)) {
+    collectProviderFileNames(child, names);
+  }
+
+  return names;
+}
+
+function providerFileAssertionResponses({ messages, text }) {
+  const filename = getMarkerValue(text, ASSERT_PROVIDER_FILE_MARKER);
+  if (!filename) {
+    return null;
+  }
+
+  const latestUserMessage = getLatestUserMessage(messages);
+  const providerFileNames = collectProviderFileNames(latestUserMessage?.content);
+  if (providerFileNames.has(filename)) {
+    return {
+      responses: [`${PROVIDER_FILE_ASSERTION_FINAL_TEXT}: ${filename}`],
+    };
+  }
+
+  return {
+    responses: [
+      `E2E provider file assertion failed: expected ${filename}; saw ${
+        Array.from(providerFileNames).join(', ') || 'no provider files'
+      }`,
+    ],
+  };
 }
 
 function modelSpecSkillAssertionResponses({ agents, messages, toolNames }) {
@@ -235,6 +311,11 @@ function fileAuthoringResponses(operation, toolNames) {
 }
 
 function resolveResponses({ agents, messages, text, toolNames }) {
+  const providerFileAssertion = providerFileAssertionResponses({ messages, text });
+  if (providerFileAssertion) {
+    return providerFileAssertion;
+  }
+
   if (text.includes(ASSERT_MODEL_SPEC_SKILLS_MARKER)) {
     return modelSpecSkillAssertionResponses({ agents, messages, toolNames });
   }
