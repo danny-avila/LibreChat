@@ -1,7 +1,12 @@
 const { logger } = require('@librechat/data-schemas');
 
-const BASE = process.env.LANGFUSE_BASE_URL;
-const ENABLED = !!(BASE && process.env.LANGFUSE_PUBLIC_KEY && process.env.LANGFUSE_SECRET_KEY);
+// Mirror the agents tracer / Langfuse SDK base-URL resolution: LANGFUSE_BASE_URL,
+// then the legacy LANGFUSE_BASEURL alias, then Langfuse Cloud. Enablement keys
+// only on the credentials — a missing base URL just means Cloud — so a deployment
+// that traces with the default URL still gets feedback scores.
+const BASE =
+  process.env.LANGFUSE_BASE_URL ?? process.env.LANGFUSE_BASEURL ?? 'https://cloud.langfuse.com';
+const ENABLED = !!(process.env.LANGFUSE_PUBLIC_KEY && process.env.LANGFUSE_SECRET_KEY);
 const AUTH = ENABLED
   ? 'Basic ' +
     Buffer.from(`${process.env.LANGFUSE_PUBLIC_KEY}:${process.env.LANGFUSE_SECRET_KEY}`).toString(
