@@ -48,6 +48,14 @@ import type {
   TCheckSessionsAlive,
   TLoadCodeApiKey,
 } from './resources';
+import type {
+  ServerRequest,
+  EndpointDbMethods,
+  EndpointTokenConfig,
+  InitializeResultBase,
+} from '~/types';
+import type { LCAvailableTools, RequestScopedMCPConnectionStore } from '../mcp/types';
+import type { ResolvedManualSkill, ResolvedAlwaysApplySkill } from './skills';
 import {
   injectSkillCatalog,
   resolveManualSkills,
