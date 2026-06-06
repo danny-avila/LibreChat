@@ -19,7 +19,7 @@ import { ArtifactProvider, CodeBlockProvider } from '~/Providers';
 import MarkdownErrorBoundary from './MarkdownErrorBoundary';
 import { langSubset, preprocessLaTeX } from '~/utils';
 import { unicodeCitation } from '~/components/Web';
-import { code, a, p, img } from './MarkdownComponents';
+import { code, a, p, img, table } from './MarkdownComponents';
 import store from '~/store';
 
 type TContentProps = {
@@ -88,6 +88,7 @@ const Markdown = memo(function Markdown({ content = '', isLatestMessage }: TCont
                 a,
                 p,
                 img,
+                table,
                 artifact: Artifact,
                 citation: Citation,
                 'highlighted-text': HighlightedText,
