@@ -5,6 +5,8 @@ const { ContentTypes } = require('librechat-data-provider');
 const { unescapeLaTeX, countTokens } = require('@librechat/api');
 const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/Artifacts/update');
 const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
+const { sendFeedbackScore } = require('~/server/services/Langfuse');
+const { traceIdForMessage } = require('~/server/utils/langfuseTrace');
 const db = require('~/models');
 
 const router = express.Router();
@@ -390,6 +392,15 @@ router.put('/:conversationId/:messageId/feedback', validateMessageReq, async (re
       },
       { context: 'updateFeedback' },
     );
+
+    // Best-effort: mirror the rating to the message's Langfuse trace as a score.
+    // The trace id is derived deterministically from the message id (the run is
+    // created with `langfuse.deterministicTraceId`), so no lookup is needed.
+    // Fire-and-forget so feedback never blocks on Langfuse.
+    sendFeedbackScore({
+      traceId: traceIdForMessage(messageId),
+      feedback: updatedMessage.feedback,
+    }).catch((err) => logger.error('[langfuse] feedback score failed:', err));
 
     res.json({
       messageId,
