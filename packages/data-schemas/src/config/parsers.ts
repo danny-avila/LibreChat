@@ -47,17 +47,35 @@ function isPlainRecord(value: object): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null;
 }
 
+function defineRedactedErrorProperty(
+  error: Error & Record<string, unknown>,
+  key: 'name' | 'message' | 'stack',
+  value: string | undefined,
+): void {
+  if (value === undefined) {
+    return;
+  }
+
+  Object.defineProperty(error, key, {
+    value: redactMessage(value),
+    writable: true,
+    enumerable: false,
+    configurable: true,
+  });
+}
+
 function redactErrorValue(error: Error, seen: WeakMap<object, unknown>): Error {
   const redacted = Object.create(Object.getPrototypeOf(error)) as Error & Record<string, unknown>;
   seen.set(error, redacted);
 
-  redacted.name = error.name;
-  redacted.message = redactMessage(error.message);
-  if (typeof error.stack === 'string') {
-    redacted.stack = redactMessage(error.stack);
-  }
+  defineRedactedErrorProperty(redacted, 'name', error.name);
+  defineRedactedErrorProperty(redacted, 'message', error.message);
+  defineRedactedErrorProperty(redacted, 'stack', error.stack);
 
   Object.entries(error as Error & Record<string, unknown>).forEach(([key, value]) => {
+    if (key === 'name' || key === 'message' || key === 'stack') {
+      return;
+    }
     redacted[key] = redactLogValue(value, seen);
   });
   return redacted;

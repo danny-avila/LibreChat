@@ -122,8 +122,22 @@ describe('redactFormat', () => {
     expect(splat[0]).not.toBe(error);
     expect(splat[0].message).toBe('Bearer [REDACTED]');
     expect(splat[0].stack).toContain('Bearer [REDACTED]');
+    expect(Object.prototype.propertyIsEnumerable.call(splat[0], 'message')).toBe(false);
+    expect(Object.prototype.propertyIsEnumerable.call(splat[0], 'stack')).toBe(false);
     expect(error.message).toBe('Bearer secretvalue');
     expect(error.stack).toContain('Bearer secretvalue');
+  });
+
+  it('preserves contextual messages when redacting error splat arguments', () => {
+    const error = new Error('Bearer secretvalue');
+
+    const info = runRedactSplatFormat({
+      level: 'warn',
+      message: 'request failed',
+      [SPLAT_SYMBOL]: [error],
+    });
+
+    expect(info.message).toBe('request failed');
   });
 });
 
