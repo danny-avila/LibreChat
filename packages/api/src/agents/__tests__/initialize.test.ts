@@ -338,6 +338,29 @@ describe('initializeAgent — provider web_search precedence', () => {
     jest.clearAllMocks();
   });
 
+  async function initializeGoogleMixedToolAgent(model: string, provider = Providers.GOOGLE) {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider,
+      model,
+      providerTools: [nativeGoogleSearchTool],
+      loadedToolDefinitions: [mcpToolDefinition],
+    });
+    agent.tools = ['mcp_lookup'];
+
+    return initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([provider]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+  }
+
   it('keeps Anthropic native web_search when LibreChat search is not selected', async () => {
     const { agent, req, res, loadTools, db } = createMocks({
       provider: Providers.ANTHROPIC,
@@ -438,31 +461,126 @@ describe('initializeAgent — provider web_search precedence', () => {
     expect(result.tools).toEqual([nativeGoogleSearchTool]);
     expect(countGoogleSearchTools(result.tools)).toBe(1);
     expect(result.toolDefinitions).toContain(mcpToolDefinition);
+    expect(result.model_parameters).toEqual(
+      expect.objectContaining({
+        includeServerSideToolInvocations: true,
+      }),
+    );
   });
 
-  it('rejects Google native search with external tools for unsupported Gemini models', async () => {
+  it('includes the mixed-tool flag for Vertex AI native search with external tools', async () => {
     const { agent, req, res, loadTools, db } = createMocks({
-      provider: Providers.GOOGLE,
-      model: 'gemini-2.5-flash',
+      provider: Providers.VERTEXAI,
+      model: 'gemini-3.5-flash',
       providerTools: [nativeGoogleSearchTool],
       loadedToolDefinitions: [mcpToolDefinition],
     });
     agent.tools = ['mcp_lookup'];
 
-    await expect(
-      initializeAgent(
-        {
-          req,
-          res,
-          agent,
-          loadTools,
-          endpointOption: { endpoint: EModelEndpoint.agents },
-          allowedProviders: new Set([Providers.GOOGLE]),
-          isInitialAgent: true,
-        },
-        db,
-      ),
-    ).rejects.toThrow(/google_tool_conflict/);
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.VERTEXAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([nativeGoogleSearchTool]);
+    expect(result.toolDefinitions).toContain(mcpToolDefinition);
+    expect(result.model_parameters).toEqual(
+      expect.objectContaining({
+        includeServerSideToolInvocations: true,
+      }),
+    );
+  });
+
+  it.each([
+    'gemini-3-flash-preview',
+    'gemini-3-pro-preview',
+    'gemini-3.1-pro-preview',
+    'gemini-3.1-pro-preview-customtools',
+    'gemini-3.1-flash-lite',
+    'gemini-3.1-flash-lite-preview',
+    'gemini-3.5-flash',
+    'google/gemini-3.5-flash-latest',
+    'models/gemini-3.10-pro-preview',
+    'gemini-4-pro-preview',
+  ])('allows Google mixed tools for supported Gemini text model %s', async (model) => {
+    const result = await initializeGoogleMixedToolAgent(model);
+
+    expect(result.tools).toEqual([nativeGoogleSearchTool]);
+    expect(result.toolDefinitions).toContain(mcpToolDefinition);
+    expect(result.model_parameters).toEqual(
+      expect.objectContaining({
+        includeServerSideToolInvocations: true,
+      }),
+    );
+  });
+
+  it('sets the mixed-tool flag when the skill catalog adds the external tool', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.GOOGLE,
+      model: 'gemini-3.5-flash',
+      providerTools: [nativeGoogleSearchTool],
+    });
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const author = {
+      toString: () => req.user?.id,
+    } as unknown as import('mongoose').Types.ObjectId;
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.GOOGLE]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+      },
+      {
+        ...db,
+        listSkillsByAccess: jest.fn().mockResolvedValue({
+          skills: [
+            {
+              _id: skillId,
+              name: 'research-helper',
+              description: 'Research current information.',
+              author,
+            },
+          ],
+          has_more: false,
+          after: null,
+        }),
+      },
+    );
+
+    expect(result.tools).toEqual([nativeGoogleSearchTool]);
+    expect(result.toolDefinitions?.map((toolDefinition) => toolDefinition.name)).toContain('skill');
+    expect(result.model_parameters).toEqual(
+      expect.objectContaining({
+        includeServerSideToolInvocations: true,
+      }),
+    );
+  });
+
+  it.each([
+    'gemini-2.5-flash',
+    'gemini-3',
+    'gemini-3.1',
+    'gemini-3-pro-image-preview',
+    'gemini-3.1-flash-image',
+    'gemini-3.5-flash-live',
+    'gemini-4-pro-tts',
+  ])('rejects Google mixed tools for unsupported Gemini model %s', async (model) => {
+    await expect(initializeGoogleMixedToolAgent(model)).rejects.toThrow(/google_tool_conflict/);
   });
 
   it('prefers LibreChat web_search when Google native search is also enabled', async () => {
@@ -1681,6 +1799,9 @@ describe('initializeAgent — execute_code capability expansion', () => {
     ).resolves.toEqual(
       expect.objectContaining({
         tools: [{ googleSearch: {} }],
+        model_parameters: expect.objectContaining({
+          includeServerSideToolInvocations: true,
+        }),
         toolDefinitions: expect.arrayContaining([
           expect.objectContaining({ name: 'bash_tool' }),
           expect.objectContaining({ name: 'read_file' }),
@@ -1722,6 +1843,9 @@ describe('initializeAgent — execute_code capability expansion', () => {
     ).resolves.toEqual(
       expect.objectContaining({
         tools: [structuredTool, providerTool],
+        model_parameters: expect.objectContaining({
+          includeServerSideToolInvocations: true,
+        }),
       }),
     );
   });
