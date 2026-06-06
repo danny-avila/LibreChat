@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RotateCw } from 'lucide-react';
 import { Button } from '@librechat/client';
-import { useLocalize } from '~/hooks';
-import { useArtifactToolCallMutation } from '~/data-provider';
 import { buildLiveArtifactDocument, splitMcpToolKey } from '~/utils/liveArtifact';
+import { useArtifactToolCallMutation } from '~/data-provider';
+import { useLocalize } from '~/hooks';
 
 type ToolRequest = {
   id: string;
