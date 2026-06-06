@@ -201,6 +201,23 @@ describe('createSkillSyncTriggerOrchestrator', () => {
     );
   });
 
+  it('preserves configured tenant scope for admin base skillSync runs', async () => {
+    const config = skillSync();
+    const { orchestrator, runners } = createHarness();
+
+    orchestrator.getRunnerForAdminRequest({
+      config: { skillSync: config, config: { skillSync: config } },
+      user: { tenantId: 'tenant-a' },
+      skillSyncAllowServerCredentials: true,
+    });
+    const runnerConfig = await runners[0].input.getConfig();
+
+    expect(runnerConfig?.github?.runOnStartup).toBe(true);
+    expect(runnerConfig?.github?.sources[0]).toEqual(
+      expect.objectContaining({ id: 'tenant-skills', tenantId: 'other-tenant' }),
+    );
+  });
+
   it('does not allow admin override runners to use server credentials by default', async () => {
     const config = skillSync();
     const { orchestrator, runners } = createHarness();
