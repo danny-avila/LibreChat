@@ -1,8 +1,8 @@
 import { Constants, actionDelimiter, actionDomainSeparator } from 'librechat-data-provider';
 import type { ActionMetadata } from 'librechat-data-provider';
+import type { ActionToolLike } from './tools';
 import { mergeActionMetadataForUpdate } from './credentials';
 import { mergeAgentActionTools } from './tools';
-import type { ActionToolLike } from './tools';
 
 export const ACTION_CREDENTIAL_REFRESH_MESSAGE =
   'Action credentials must be re-entered when changing the domain, OpenAPI server URL, or authentication settings';
