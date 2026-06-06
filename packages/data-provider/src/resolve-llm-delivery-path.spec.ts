@@ -1,8 +1,8 @@
+import type { TDefaultLLMDeliveryPathConfig } from './file-config';
 import {
   resolveDefaultLLMDeliveryPath,
   SYSTEM_LLM_DELIVERY_DEFAULTS,
 } from './resolve-llm-delivery-path';
-import type { TDefaultLLMDeliveryPathConfig } from './file-config';
 
 describe('resolveDefaultLLMDeliveryPath', () => {
   it('should return system default for images when no config provided', () => {
