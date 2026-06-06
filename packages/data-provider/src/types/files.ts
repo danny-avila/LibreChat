@@ -1,6 +1,6 @@
-import { EToolResources } from './assistants';
-import type { CodeEnvRef } from '../codeEnvRef';
 import type { TDefaultLLMDeliveryPathConfig } from '../file-config';
+import type { CodeEnvRef } from '../codeEnvRef';
+import { EToolResources } from './assistants';
 
 export enum FileSources {
   local = 'local',
