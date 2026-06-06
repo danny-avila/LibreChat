@@ -57,6 +57,22 @@ async function getSyntheticReq({ userId = SYSTEM_USER_ID, tenantId, loadAppConfi
   };
 }
 
+function withBaseSkillSyncConfig(req, baseConfig) {
+  if (!req?.config || req.config.config?.skillSync !== undefined) {
+    return req;
+  }
+  return {
+    ...req,
+    config: {
+      ...req.config,
+      config: {
+        ...(req.config.config ?? {}),
+        skillSync: baseConfig?.skillSync,
+      },
+    },
+  };
+}
+
 function createRunner({ getConfig, loadAppConfig, allowServerCredentials = true } = {}) {
   const resolveAppConfig = loadAppConfig ?? loadCurrentAppConfig;
   const resolveConfig = getConfig ?? (() => getSyncConfig(resolveAppConfig));
@@ -155,11 +171,12 @@ const triggerOrchestrator = createSkillSyncTriggerOrchestrator({
 });
 
 function getGitHubSkillSyncRunnerForRequest(req) {
-  return triggerOrchestrator.getRunnerForAdminRequest(req);
+  return triggerOrchestrator.getRunnerForAdminRequest(withBaseSkillSyncConfig(req, appConfigRef));
 }
 
 async function maybeRunGitHubSkillSyncForRequest(req) {
-  return triggerOrchestrator.maybeRunForRequest(req);
+  const baseConfig = await loadCurrentAppConfig();
+  return triggerOrchestrator.maybeRunForRequest(withBaseSkillSyncConfig(req, baseConfig));
 }
 
 function initializeGitHubSkillSync(appConfig) {
