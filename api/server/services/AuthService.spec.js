@@ -545,6 +545,12 @@ describe('requestPasswordReset', () => {
       userId: user._id,
       type: 'password_reset',
     });
+    expect(deleteTokens).toHaveBeenCalledWith({
+      userId: user._id,
+      email: null,
+      identifier: null,
+      type: null,
+    });
     expect(createToken).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: user._id,
@@ -566,6 +572,9 @@ describe('resetPassword', () => {
       if (query.type === 'password_reset') {
         return null;
       }
+      if (query.type === null && query.email === null && query.identifier === null) {
+        return null;
+      }
       return { token: verificationHash, userId: 'user-reset', email: 'user@example.com' };
     });
     updateUser.mockResolvedValue({ email: 'user@example.com' });
@@ -580,6 +589,15 @@ describe('resetPassword', () => {
       },
       { sort: { createdAt: -1 } },
     );
+    expect(findToken).toHaveBeenCalledWith(
+      {
+        userId: 'user-reset',
+        email: null,
+        identifier: null,
+        type: null,
+      },
+      { sort: { createdAt: -1 } },
+    );
     expect(updateUser).not.toHaveBeenCalled();
     expect(deleteTokens).not.toHaveBeenCalled();
   });
@@ -589,6 +607,7 @@ describe('resetPassword', () => {
     findToken.mockResolvedValue({
       token: resetHash,
       userId: 'user-reset',
+      type: 'password_reset',
     });
     updateUser.mockResolvedValue({ email: 'user@example.com' });
 
@@ -605,6 +624,49 @@ describe('resetPassword', () => {
     expect(deleteTokens).toHaveBeenCalledWith({
       token: resetHash,
       type: 'password_reset',
+    });
+  });
+
+  it('should accept legacy reset tokens without affecting verification-shaped tokens', async () => {
+    const legacyResetHash = bcrypt.hashSync('legacy-reset-token', 10);
+    findToken.mockImplementation(async (query) => {
+      if (query.type === 'password_reset') {
+        return null;
+      }
+      if (query.type === null && query.email === null && query.identifier === null) {
+        return {
+          token: legacyResetHash,
+          userId: 'user-reset',
+        };
+      }
+      return null;
+    });
+    updateUser.mockResolvedValue({ email: 'user@example.com' });
+
+    const result = await resetPassword('user-reset', 'legacy-reset-token', 'new-password');
+
+    expect(result).toEqual({ message: 'Password reset was successful' });
+    expect(findToken).toHaveBeenCalledWith(
+      {
+        userId: 'user-reset',
+        type: 'password_reset',
+      },
+      { sort: { createdAt: -1 } },
+    );
+    expect(findToken).toHaveBeenCalledWith(
+      {
+        userId: 'user-reset',
+        email: null,
+        identifier: null,
+        type: null,
+      },
+      { sort: { createdAt: -1 } },
+    );
+    expect(deleteTokens).toHaveBeenCalledWith({
+      token: legacyResetHash,
+      email: null,
+      identifier: null,
+      type: null,
     });
   });
 });

@@ -50,8 +50,49 @@ const AuthTokenTypes = Object.freeze({
   PASSWORD_RESET: 'password_reset',
 });
 
+const latestAuthTokenOptions = Object.freeze({ sort: { createdAt: -1 } });
 const genericVerificationMessage = 'Please check your email to verify your email address.';
 const OPENID_SESSION_ID_TOKEN_EXPIRY_BUFFER_SECONDS = 30;
+
+const findPasswordResetToken = async (userId) => {
+  const typedToken = await findToken(
+    {
+      userId,
+      type: AuthTokenTypes.PASSWORD_RESET,
+    },
+    latestAuthTokenOptions,
+  );
+
+  if (typedToken) {
+    return typedToken;
+  }
+
+  return await findToken(
+    {
+      userId,
+      email: null,
+      identifier: null,
+      type: null,
+    },
+    latestAuthTokenOptions,
+  );
+};
+
+const getPasswordResetTokenDeleteQuery = (passwordResetToken) => {
+  if (!passwordResetToken.email && !passwordResetToken.type) {
+    return {
+      token: passwordResetToken.token,
+      email: null,
+      identifier: null,
+      type: null,
+    };
+  }
+
+  return {
+    token: passwordResetToken.token,
+    type: AuthTokenTypes.PASSWORD_RESET,
+  };
+};
 
 const getUnexpiredOpenIDSessionIdToken = (idToken) => {
   if (!idToken) {
@@ -343,7 +384,10 @@ const requestPasswordReset = async (req) => {
     };
   }
 
-  await deleteTokens({ userId: user._id, type: AuthTokenTypes.PASSWORD_RESET });
+  await Promise.all([
+    deleteTokens({ userId: user._id, type: AuthTokenTypes.PASSWORD_RESET }),
+    deleteTokens({ userId: user._id, email: null, identifier: null, type: null }),
+  ]);
 
   const [resetToken, hash] = createTokenHash();
 
@@ -393,13 +437,7 @@ const requestPasswordReset = async (req) => {
  * @returns
  */
 const resetPassword = async (userId, token, password) => {
-  let passwordResetToken = await findToken(
-    {
-      userId,
-      type: AuthTokenTypes.PASSWORD_RESET,
-    },
-    { sort: { createdAt: -1 } },
-  );
+  const passwordResetToken = await findPasswordResetToken(userId);
 
   if (!passwordResetToken) {
     return new Error('Invalid or expired password reset token');
@@ -427,7 +465,7 @@ const resetPassword = async (userId, token, password) => {
     });
   }
 
-  await deleteTokens({ token: passwordResetToken.token, type: AuthTokenTypes.PASSWORD_RESET });
+  await deleteTokens(getPasswordResetTokenDeleteQuery(passwordResetToken));
   logger.info(`[resetPassword] Password reset successful. [Email: ${user.email}]`);
   return { message: 'Password reset was successful' };
 };
