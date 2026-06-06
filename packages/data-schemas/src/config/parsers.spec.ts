@@ -12,7 +12,7 @@ type FormatterInfo = Record<string | symbol, unknown> & {
 
 type RedactInfo = Record<string | symbol, unknown> & {
   level: string;
-  message: string;
+  message: unknown;
 };
 
 function runRedactFormat(info: RedactInfo): RedactInfo {
@@ -107,6 +107,63 @@ describe('redactFormat', () => {
     expect(metadata.nested.url).toBe('https://example.test/?key=secretvalue&next=true');
   });
 
+  it('redacts values under sensitive splat metadata keys', () => {
+    const metadata = {
+      apiKey: 'secretvalue',
+      authorization: 'secretvalue',
+      nested: { token: 'secretvalue' },
+      safe: 'secretvalue',
+      'x-api-key': 'secretvalue',
+    };
+    const info = runRedactFormat({
+      level: 'info',
+      message: 'visible',
+      [SPLAT_SYMBOL]: [metadata],
+    });
+    const splat = info[SPLAT_SYMBOL] as Array<typeof metadata>;
+
+    expect(splat[0].apiKey).toBe('[REDACTED]');
+    expect(splat[0].authorization).toBe('[REDACTED]');
+    expect(splat[0].nested.token).toBe('[REDACTED]');
+    expect(splat[0]['x-api-key']).toBe('[REDACTED]');
+    expect(splat[0].safe).toBe('secretvalue');
+    expect(metadata.apiKey).toBe('secretvalue');
+    expect(metadata.nested.token).toBe('secretvalue');
+  });
+
+  it('redacts object messages before serialization', () => {
+    const message = {
+      apiKey: 'secretvalue',
+      nested: { url: 'https://example.test/?api_key=secretvalue&next=true' },
+    };
+    const info = runRedactFormat({
+      level: 'debug',
+      message,
+    });
+
+    expect(info.message).toEqual({
+      apiKey: '[REDACTED]',
+      nested: { url: 'https://example.test/?api_key=[REDACTED]&next=true' },
+    });
+    expect(message.apiKey).toBe('secretvalue');
+    expect(message.nested.url).toBe('https://example.test/?api_key=secretvalue&next=true');
+  });
+
+  it('redacts serializable non-plain splat values before interpolation', () => {
+    const info = runRedactSplatFormat({
+      level: 'info',
+      message: 'values %s %s',
+      [SPLAT_SYMBOL]: [
+        new URL('https://example.test/?api_key=secretvalue&next=true'),
+        Buffer.from('sk-abc123def'),
+      ],
+    });
+
+    expect(info.message).toBe(
+      'values https://example.test/?api_key=[REDACTED]&next=true sk-[REDACTED]',
+    );
+  });
+
   it('redacts error splat arguments without mutating the original error', () => {
     const error = new Error('Bearer secretvalue');
     error.stack = 'Error: Bearer secretvalue\n    at request';
@@ -138,6 +195,30 @@ describe('redactFormat', () => {
     });
 
     expect(info.message).toBe('request failed');
+  });
+
+  it('preserves and redacts non-enumerable error causes when cloning errors', () => {
+    const cause = new Error('Bearer cause-secret');
+    const error = new Error('outer');
+    Object.defineProperty(error, 'cause', {
+      value: cause,
+      writable: true,
+      enumerable: false,
+      configurable: true,
+    });
+
+    const info = runRedactFormat({
+      level: 'warn',
+      message: 'request failed',
+      [SPLAT_SYMBOL]: [error],
+    });
+    const splat = info[SPLAT_SYMBOL] as Array<Error & { cause?: Error }>;
+
+    expect(splat[0].cause).toBeInstanceOf(Error);
+    expect(splat[0].cause).not.toBe(cause);
+    expect(splat[0].cause?.message).toBe('Bearer [REDACTED]');
+    expect(Object.prototype.propertyIsEnumerable.call(splat[0], 'cause')).toBe(false);
+    expect(cause.message).toBe('Bearer cause-secret');
   });
 });
 

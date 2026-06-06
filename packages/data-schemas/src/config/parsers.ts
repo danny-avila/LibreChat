@@ -10,6 +10,7 @@ const CONSOLE_JSON_STRING_LENGTH: number =
   parseInt(process.env.CONSOLE_JSON_STRING_LENGTH || '', 10) || 255;
 const DEBUG_MESSAGE_LENGTH: number = parseInt(process.env.DEBUG_MESSAGE_LENGTH || '', 10) || 150;
 const LOG_CONTEXT_KEYS = ['tenantId', 'userId', 'requestId'] as const;
+const REDACTED_VALUE = '[REDACTED]';
 
 const sensitiveKeys: RegExp[] = [
   /\b(sk-)[a-zA-Z0-9_-]+/g, // OpenAI API key pattern
@@ -18,6 +19,10 @@ const sensitiveKeys: RegExp[] = [
   /\b(api_key=)[^\s"'&]+/gi, // URL query param: API key pattern
   /\b(key=)[^\s"'&]+/g, // URL query param: sensitive key pattern
 ];
+
+const sensitiveMetadataKey =
+  /^(authorization|proxy-authorization|x-api-key|api[-_]?key|access[-_]?token|refresh[-_]?token|id[-_]?token|token|secret|password)$/i;
+const errorStringProperties = new Set(['name', 'message', 'stack']);
 
 /**
  * Redacts sensitive information from a console message and trims it to a specified length if provided.
@@ -47,6 +52,14 @@ function isPlainRecord(value: object): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null;
 }
 
+function isSensitiveMetadataKey(key: string): boolean {
+  return sensitiveMetadataKey.test(key);
+}
+
+function redactRecordValue(key: string, value: unknown, seen: WeakMap<object, unknown>): unknown {
+  return isSensitiveMetadataKey(key) ? REDACTED_VALUE : redactLogValue(value, seen);
+}
+
 function defineRedactedErrorProperty(
   error: Error & Record<string, unknown>,
   key: 'name' | 'message' | 'stack',
@@ -64,6 +77,26 @@ function defineRedactedErrorProperty(
   });
 }
 
+function defineRedactedDescriptor(
+  target: Error & Record<string, unknown>,
+  key: string | symbol,
+  descriptor: PropertyDescriptor,
+  seen: WeakMap<object, unknown>,
+): void {
+  if (!('value' in descriptor)) {
+    Object.defineProperty(target, key, descriptor);
+    return;
+  }
+
+  Object.defineProperty(target, key, {
+    ...descriptor,
+    value:
+      typeof key === 'string'
+        ? redactRecordValue(key, descriptor.value, seen)
+        : redactLogValue(descriptor.value, seen),
+  });
+}
+
 function redactErrorValue(error: Error, seen: WeakMap<object, unknown>): Error {
   const redacted = Object.create(Object.getPrototypeOf(error)) as Error & Record<string, unknown>;
   seen.set(error, redacted);
@@ -72,13 +105,123 @@ function redactErrorValue(error: Error, seen: WeakMap<object, unknown>): Error {
   defineRedactedErrorProperty(redacted, 'message', error.message);
   defineRedactedErrorProperty(redacted, 'stack', error.stack);
 
-  Object.entries(error as Error & Record<string, unknown>).forEach(([key, value]) => {
-    if (key === 'name' || key === 'message' || key === 'stack') {
+  Reflect.ownKeys(error).forEach((key) => {
+    if (typeof key === 'string' && errorStringProperties.has(key)) {
       return;
     }
-    redacted[key] = redactLogValue(value, seen);
+    const descriptor = Object.getOwnPropertyDescriptor(error, key);
+    if (descriptor === undefined) {
+      return;
+    }
+    defineRedactedDescriptor(redacted, key, descriptor, seen);
   });
   return redacted;
+}
+
+function isBufferValue(value: object): value is Buffer {
+  return typeof Buffer !== 'undefined' && Buffer.isBuffer(value);
+}
+
+function getJsonValue(value: object): unknown {
+  const toJSON = (value as { toJSON?: unknown }).toJSON;
+  if (typeof toJSON !== 'function') {
+    return undefined;
+  }
+
+  try {
+    const jsonValue = toJSON.call(value);
+    return jsonValue === value ? undefined : jsonValue;
+  } catch {
+    return undefined;
+  }
+}
+
+function getCustomStringValue(value: object): string | undefined {
+  const toString = (value as { toString?: unknown }).toString;
+  if (typeof toString !== 'function' || toString === Object.prototype.toString) {
+    return undefined;
+  }
+
+  try {
+    const stringValue = toString.call(value);
+    return typeof stringValue === 'string' ? stringValue : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function redactMapValue(
+  value: Map<unknown, unknown>,
+  seen: WeakMap<object, unknown>,
+): Map<unknown, unknown> {
+  const redacted = new Map<unknown, unknown>();
+  seen.set(value, redacted);
+  value.forEach((mapValue, mapKey) => {
+    redacted.set(
+      mapKey,
+      typeof mapKey === 'string'
+        ? redactRecordValue(mapKey, mapValue, seen)
+        : redactLogValue(mapValue, seen),
+    );
+  });
+  return redacted;
+}
+
+function redactSetValue(value: Set<unknown>, seen: WeakMap<object, unknown>): Set<unknown> {
+  const redacted = new Set<unknown>();
+  seen.set(value, redacted);
+  value.forEach((setValue) => {
+    redacted.add(redactLogValue(setValue, seen));
+  });
+  return redacted;
+}
+
+function redactObjectEntries(
+  value: object,
+  seen: WeakMap<object, unknown>,
+): Record<string, unknown> | undefined {
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length === 0) {
+    return undefined;
+  }
+
+  const redacted: Record<string, unknown> = {};
+  seen.set(value, redacted);
+  entries.forEach(([key, recordValue]) => {
+    redacted[key] = redactRecordValue(key, recordValue, seen);
+  });
+  return redacted;
+}
+
+function redactNonPlainValue(value: object, seen: WeakMap<object, unknown>): unknown {
+  if (isBufferValue(value)) {
+    return redactMessage(value.toString('utf8'));
+  }
+
+  if (value instanceof URL || value instanceof URLSearchParams) {
+    return redactMessage(value.toString());
+  }
+
+  if (value instanceof Map) {
+    return redactMapValue(value, seen);
+  }
+
+  if (value instanceof Set) {
+    return redactSetValue(value, seen);
+  }
+
+  const jsonValue = getJsonValue(value);
+  if (jsonValue !== undefined) {
+    return redactLogValue(jsonValue, seen);
+  }
+
+  const redactedEntries = redactObjectEntries(value, seen);
+  if (redactedEntries !== undefined) {
+    return redactedEntries;
+  }
+
+  const stringValue = getCustomStringValue(value);
+  return stringValue !== undefined ? redactMessage(stringValue) : value;
 }
 
 function redactLogValue(value: unknown, seen = new WeakMap<object, unknown>()): unknown {
@@ -107,15 +250,10 @@ function redactLogValue(value: unknown, seen = new WeakMap<object, unknown>()): 
   }
 
   if (!isPlainRecord(value)) {
-    return value;
+    return redactNonPlainValue(value, seen);
   }
 
-  const redacted: Record<string, unknown> = {};
-  seen.set(value, redacted);
-  Object.entries(value).forEach(([key, recordValue]) => {
-    redacted[key] = redactLogValue(recordValue, seen);
-  });
-  return redacted;
+  return redactObjectEntries(value, seen) ?? {};
 }
 
 /**
@@ -127,13 +265,13 @@ function redactLogValue(value: unknown, seen = new WeakMap<object, unknown>()): 
 const redactFormat = winston.format((info: winston.Logform.TransformableInfo) => {
   const infoRecord = info as Record<string | symbol, unknown>;
 
-  if (typeof info.message === 'string') {
-    info.message = redactMessage(info.message);
+  if (info.message !== undefined) {
+    info.message = redactLogValue(info.message);
   }
 
   const symbolValue = infoRecord[MESSAGE_SYMBOL];
-  if (typeof symbolValue === 'string') {
-    infoRecord[MESSAGE_SYMBOL] = redactMessage(symbolValue);
+  if (symbolValue !== undefined) {
+    infoRecord[MESSAGE_SYMBOL] = redactLogValue(symbolValue);
   }
 
   if (infoRecord[SPLAT_SYMBOL] !== undefined) {
