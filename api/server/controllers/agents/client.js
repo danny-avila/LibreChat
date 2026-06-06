@@ -80,6 +80,7 @@ const { getMCPServerTools } = require('~/server/services/Config');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getMCPManager } = require('~/config');
 const db = require('~/models');
+const getLanguageName = require('~/server/utils/getLanguageName');
 
 const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
 
@@ -1723,13 +1724,20 @@ class AgentClient extends BaseClient {
     });
 
     try {
+      const languageName = getLanguageName(req);
+      let titlePrompt = endpointConfig?.titlePrompt;
+      if (!titlePrompt) {
+        titlePrompt = 'Generate a concise, descriptive title for this conversation';
+      }
+      titlePrompt += `\n\nGenerate the title in the language: ${languageName}`;
+
       const titleResult = await this.run.generateTitle({
         provider,
         clientOptions,
         inputText: text,
         contentParts: immediate ? [] : this.contentParts,
         titleMethod: endpointConfig?.titleMethod,
-        titlePrompt: endpointConfig?.titlePrompt,
+        titlePrompt,
         titlePromptTemplate: endpointConfig?.titlePromptTemplate,
         chainOptions: {
           runName: 'TitleRun',
