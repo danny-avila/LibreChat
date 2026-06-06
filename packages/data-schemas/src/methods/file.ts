@@ -1,8 +1,8 @@
-import logger from '../config/winston';
 import { EToolResources, FileContext } from 'librechat-data-provider';
 import type { FilterQuery, SortOrder, Model } from 'mongoose';
 import type { IMongoFile } from '~/types/file';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import logger from '../config/winston';
 
 /** Factory function that takes mongoose instance and returns the file methods */
 export function createFileMethods(mongoose: typeof import('mongoose')) {

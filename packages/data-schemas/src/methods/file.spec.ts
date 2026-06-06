@@ -2,10 +2,10 @@ import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { EToolResources, FileContext } from 'librechat-data-provider';
+import { _resetStrictCache } from '~/models/plugins/tenantIsolation';
+import { runAsSystem } from '~/config/tenantContext';
 import { createFileMethods } from './file';
 import { createModels } from '~/models';
-import { runAsSystem } from '~/config/tenantContext';
-import { _resetStrictCache } from '~/models/plugins/tenantIsolation';
 
 let File: mongoose.Model<unknown>;
 let fileMethods: ReturnType<typeof createFileMethods>;
