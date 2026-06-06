@@ -8,9 +8,14 @@ const AUTH = ENABLED
       'base64',
     )
   : null;
-// The agents tracer emits with environment = LANGFUSE_TRACING_ENVIRONMENT ?? NODE_ENV ?? 'development'.
-// The score must share that environment or Langfuse files it separately and the UI won't show it on the trace.
-const ENV = process.env.LANGFUSE_TRACING_ENVIRONMENT ?? process.env.NODE_ENV ?? 'development';
+// Match the environment the @librechat/agents tracer emits traces under: it
+// passes no environment, so @langfuse/otel falls back to
+// LANGFUSE_TRACING_ENVIRONMENT and otherwise to Langfuse's own "default". Mirror
+// that exactly (no NODE_ENV fallback) so the score is filed under the same
+// environment as the trace it annotates — otherwise e.g. NODE_ENV=production
+// would file the score under "production" while the trace stays on "default".
+// When unset we omit `environment` so Langfuse defaults both to "default".
+const ENV = process.env.LANGFUSE_TRACING_ENVIRONMENT;
 
 /**
  * Send (or remove) a thumbs up/down score for a message's Langfuse trace.
@@ -51,7 +56,7 @@ async function sendFeedbackScore({ traceId, feedback }) {
     dataType: 'BOOLEAN',
     comment: [feedback.tag, feedback.text].filter(Boolean).join(' — ') || undefined,
     metadata: { rating: feedback.rating, tag: feedback.tag },
-    environment: ENV,
+    ...(ENV ? { environment: ENV } : {}),
   };
 
   const res = await fetch(`${BASE}/api/public/scores`, {
