@@ -1,6 +1,7 @@
 const express = require('express');
 const request = require('supertest');
 
+const mockSetTwoFactorTempUser = jest.fn((req, res, next) => next());
 const mockTwoFactorTempLimiter = jest.fn((req, res, next) => next());
 const mockCheckBan = jest.fn((req, res, next) => next());
 const mockVerify2FAWithTempToken = jest.fn((req, res) => res.status(204).end());
@@ -52,6 +53,7 @@ jest.mock('~/server/middleware', () => {
   return {
     logHeaders: pass,
     loginLimiter: pass,
+    setTwoFactorTempUser: (...args) => mockSetTwoFactorTempUser(...args),
     twoFactorTempLimiter: (...args) => mockTwoFactorTempLimiter(...args),
     checkBan: (...args) => mockCheckBan(...args),
     requireLocalAuth: pass,
@@ -72,6 +74,7 @@ describe('POST /api/auth/2fa/verify-temp rate limiting', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockSetTwoFactorTempUser.mockImplementation((req, res, next) => next());
     mockTwoFactorTempLimiter.mockImplementation((req, res, next) => next());
     mockCheckBan.mockImplementation((req, res, next) => next());
     mockVerify2FAWithTempToken.mockImplementation((req, res) => res.status(204).end());
@@ -81,12 +84,16 @@ describe('POST /api/auth/2fa/verify-temp rate limiting', () => {
     app.use('/api/auth', authRouter);
   });
 
-  it('runs the temp limiter before checking bans and verifying temp 2FA tokens', async () => {
+  it('sets the temp user before limiting, checking bans, and verifying temp 2FA tokens', async () => {
     await request(app).post('/api/auth/2fa/verify-temp').send({ token: '123456' }).expect(204);
 
+    expect(mockSetTwoFactorTempUser).toHaveBeenCalledTimes(1);
     expect(mockTwoFactorTempLimiter).toHaveBeenCalledTimes(1);
     expect(mockCheckBan).toHaveBeenCalledTimes(1);
     expect(mockVerify2FAWithTempToken).toHaveBeenCalledTimes(1);
+    expect(mockSetTwoFactorTempUser.mock.invocationCallOrder[0]).toBeLessThan(
+      mockTwoFactorTempLimiter.mock.invocationCallOrder[0],
+    );
     expect(mockTwoFactorTempLimiter.mock.invocationCallOrder[0]).toBeLessThan(
       mockCheckBan.mock.invocationCallOrder[0],
     );
@@ -106,6 +113,7 @@ describe('POST /api/auth/2fa/verify-temp rate limiting', () => {
       .expect(429);
 
     expect(response.body).toEqual({ message: 'Too many verification attempts' });
+    expect(mockSetTwoFactorTempUser).toHaveBeenCalledTimes(1);
     expect(mockCheckBan).not.toHaveBeenCalled();
     expect(mockVerify2FAWithTempToken).not.toHaveBeenCalled();
   });
