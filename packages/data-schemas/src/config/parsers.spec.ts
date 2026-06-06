@@ -51,6 +51,9 @@ describe('redactMessage', () => {
     expect(redactMessage('https://example.test/?key=secretvalue&next=true')).toBe(
       'https://example.test/?key=[REDACTED]&next=true',
     );
+    expect(redactMessage('https://example.test/?api_key=secretvalue&next=true')).toBe(
+      'https://example.test/?api_key=[REDACTED]&next=true',
+    );
   });
 
   it('does not redact ordinary words containing sensitive prefixes', () => {
@@ -102,6 +105,25 @@ describe('redactFormat', () => {
     expect(splat[0].nested.url).toBe('https://example.test/?key=[REDACTED]&next=true');
     expect(metadata.auth).toBe('Bearer secretvalue');
     expect(metadata.nested.url).toBe('https://example.test/?key=secretvalue&next=true');
+  });
+
+  it('redacts error splat arguments without mutating the original error', () => {
+    const error = new Error('Bearer secretvalue');
+    error.stack = 'Error: Bearer secretvalue\n    at request';
+
+    const info = runRedactFormat({
+      level: 'warn',
+      message: 'request failed',
+      [SPLAT_SYMBOL]: [error],
+    });
+    const splat = info[SPLAT_SYMBOL] as Error[];
+
+    expect(splat[0]).toBeInstanceOf(Error);
+    expect(splat[0]).not.toBe(error);
+    expect(splat[0].message).toBe('Bearer [REDACTED]');
+    expect(splat[0].stack).toContain('Bearer [REDACTED]');
+    expect(error.message).toBe('Bearer secretvalue');
+    expect(error.stack).toContain('Bearer secretvalue');
   });
 });
 

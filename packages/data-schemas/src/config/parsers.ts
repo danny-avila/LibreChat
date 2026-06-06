@@ -15,6 +15,7 @@ const sensitiveKeys: RegExp[] = [
   /\b(sk-)[a-zA-Z0-9_-]+/g, // OpenAI API key pattern
   /\b(Bearer )[^\s"']+/g, // Header: Bearer token pattern
   /\b(api-key:? )[^\s"']+/gi, // Header: API key pattern
+  /\b(api_key=)[^\s"'&]+/gi, // URL query param: API key pattern
   /\b(key=)[^\s"'&]+/g, // URL query param: sensitive key pattern
 ];
 
@@ -46,6 +47,22 @@ function isPlainRecord(value: object): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null;
 }
 
+function redactErrorValue(error: Error, seen: WeakMap<object, unknown>): Error {
+  const redacted = Object.create(Object.getPrototypeOf(error)) as Error & Record<string, unknown>;
+  seen.set(error, redacted);
+
+  redacted.name = error.name;
+  redacted.message = redactMessage(error.message);
+  if (typeof error.stack === 'string') {
+    redacted.stack = redactMessage(error.stack);
+  }
+
+  Object.entries(error as Error & Record<string, unknown>).forEach(([key, value]) => {
+    redacted[key] = redactLogValue(value, seen);
+  });
+  return redacted;
+}
+
 function redactLogValue(value: unknown, seen = new WeakMap<object, unknown>()): unknown {
   if (typeof value === 'string') {
     return redactMessage(value);
@@ -65,6 +82,10 @@ function redactLogValue(value: unknown, seen = new WeakMap<object, unknown>()): 
     seen.set(value, redacted);
     value.forEach((item) => redacted.push(redactLogValue(item, seen)));
     return redacted;
+  }
+
+  if (value instanceof Error) {
+    return redactErrorValue(value, seen);
   }
 
   if (!isPlainRecord(value)) {
