@@ -186,7 +186,10 @@ describe('MCP OAuth Race Condition Fixes', () => {
       const [conn1, conn2] = await Promise.all([firstConnection, joinedConnection]);
 
       expect(conn1).toBe(conn2);
-      expect(oauthStart).toHaveBeenCalledWith(authorizationUrl);
+      expect(oauthStart).toHaveBeenCalledWith(
+        authorizationUrl,
+        expect.objectContaining({ expiresAt: expect.any(Number) }),
+      );
       expect(createSpy).toHaveBeenCalledTimes(1);
 
       createSpy.mockRestore();
