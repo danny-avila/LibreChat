@@ -45,6 +45,7 @@ const mockLogger = logger as jest.Mocked<typeof logger>;
 describe('MCP OAuth Race Condition Fixes', () => {
   afterEach(() => {
     jest.clearAllMocks();
+    jest.restoreAllMocks();
   });
 
   describe('Fix 1: Connection mutex coalesces concurrent attempts', () => {
