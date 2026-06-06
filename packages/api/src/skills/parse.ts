@@ -37,6 +37,10 @@ function getCaseInsensitive(frontmatter: Record<string, unknown>, key: string): 
   return entry?.[1];
 }
 
+function hasCaseInsensitive(frontmatter: Record<string, unknown>, key: string): boolean {
+  return Object.keys(frontmatter).some((candidate) => candidate.toLowerCase() === key);
+}
+
 function getRawFrontmatterValue(block: string, key: string): string | undefined {
   const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const pattern = new RegExp(`^\\s*${escapedKey}\\s*:\\s*(.*)$`, 'i');
@@ -62,7 +66,8 @@ function stripInlineComment(value: string): string {
 
 function normalizeFrontmatterKeys(frontmatter: Record<string, unknown>): Record<string, unknown> {
   return Object.entries(frontmatter).reduce<Record<string, unknown>>((acc, [key, value]) => {
-    acc[key.toLowerCase()] = value;
+    const normalizedKey = key.toLowerCase();
+    acc[normalizedKey === 'alwaysapply' ? 'alwaysApply' : normalizedKey] = value;
     return acc;
   }, {});
 }
@@ -119,8 +124,12 @@ export function parseSkillMarkdown(raw: string): ParsedSkillMarkdown {
   const nameValue = getCaseInsensitive(frontmatter, 'name');
   const descriptionValue = getCaseInsensitive(frontmatter, 'description');
   const whenToUseValue = getCaseInsensitive(frontmatter, 'when-to-use');
-  const alwaysApplyValue = getCaseInsensitive(frontmatter, 'always-apply');
-  const rawAlwaysApplyValue = getRawFrontmatterValue(block, 'always-apply');
+  const hasCanonicalAlwaysApply = hasCaseInsensitive(frontmatter, 'always-apply');
+  const hasAliasAlwaysApply = hasCaseInsensitive(frontmatter, 'alwaysapply');
+  const canonicalAlwaysApplyValue = getCaseInsensitive(frontmatter, 'always-apply');
+  const aliasAlwaysApplyValue = getCaseInsensitive(frontmatter, 'alwaysapply');
+  const rawCanonicalAlwaysApplyValue = getRawFrontmatterValue(block, 'always-apply');
+  const rawAliasAlwaysApplyValue = getRawFrontmatterValue(block, 'alwaysApply');
   const name = toScalarString(nameValue);
   let description = '';
   if (descriptionValue !== undefined) {
@@ -130,10 +139,15 @@ export function parseSkillMarkdown(raw: string): ParsedSkillMarkdown {
   }
   let alwaysApply: boolean | undefined;
   const invalidBooleans: string[] = [];
-  if (alwaysApplyValue !== undefined) {
-    alwaysApply = parseBoolean(alwaysApplyValue, rawAlwaysApplyValue);
-    if (alwaysApply === undefined && !hasBooleanPlaceholder(rawAlwaysApplyValue)) {
+  if (hasCanonicalAlwaysApply) {
+    alwaysApply = parseBoolean(canonicalAlwaysApplyValue, rawCanonicalAlwaysApplyValue);
+    if (alwaysApply === undefined && !hasBooleanPlaceholder(rawCanonicalAlwaysApplyValue)) {
       invalidBooleans.push('always-apply');
+    }
+  } else if (hasAliasAlwaysApply) {
+    alwaysApply = parseBoolean(aliasAlwaysApplyValue, rawAliasAlwaysApplyValue);
+    if (alwaysApply === undefined && !hasBooleanPlaceholder(rawAliasAlwaysApplyValue)) {
+      invalidBooleans.push('alwaysApply');
     }
   }
   return {
