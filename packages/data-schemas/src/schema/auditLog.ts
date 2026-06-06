@@ -1,7 +1,7 @@
 import { Schema } from 'mongoose';
 import { PrincipalType } from 'librechat-data-provider';
-import { AUDIT_ACTIONS } from '~/types/admin';
 import type { IAuditLog } from '~/types';
+import { AUDIT_ACTIONS } from '~/types/admin';
 
 /**
  * Append-only by schema contract: every field is `immutable`, every

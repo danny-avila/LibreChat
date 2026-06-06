@@ -1,8 +1,8 @@
 import mongoose, { Types } from 'mongoose';
 import { PrincipalType } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import type * as t from '~/types';
 import type { RecordAuditEntryInput } from '~/types';
+import type * as t from '~/types';
 import { createAuditLogMethods } from './auditLog';
 import auditLogSchema from '~/schema/auditLog';
 

@@ -1,10 +1,10 @@
-import { EventEmitter } from 'events';
 import { Types } from 'mongoose';
+import { EventEmitter } from 'events';
 import { PrincipalType } from 'librechat-data-provider';
 import type { AdminAuditLogEntry, AuditLogPage } from '@librechat/data-schemas';
 import type { Response } from 'express';
-import type { ServerRequest } from '~/types/http';
 import type { AdminAuditLogDeps } from './auditLog';
+import type { ServerRequest } from '~/types/http';
 import { createAdminAuditLogHandlers } from './auditLog';
 
 jest.mock('@librechat/data-schemas', () => ({
