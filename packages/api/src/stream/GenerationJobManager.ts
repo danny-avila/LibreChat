@@ -1,4 +1,4 @@
-import { parseTextParts } from 'librechat-data-provider';
+import { Constants, parseTextParts } from 'librechat-data-provider';
 import { logger, getTenantId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import type { Agents, TMessageContentParts } from 'librechat-data-provider';
 import type { StandardGraph } from '@librechat/agents';
@@ -22,6 +22,78 @@ import { InMemoryJobStore } from './implementations/InMemoryJobStore';
 
 /** Error surfaced to any client still attached when a stale/hung job is reaped. */
 const REAPED_JOB_ERROR = 'Generation timed out';
+const OAUTH_TOOL_CALL_PREFIX = `oauth${Constants.mcp_delimiter}`;
+
+function getToolCallName(toolCall: unknown): unknown {
+  return toolCall != null && typeof toolCall === 'object' && 'name' in toolCall
+    ? toolCall.name
+    : undefined;
+}
+
+function hasOAuthToolCall(toolCalls: unknown): boolean {
+  return (
+    Array.isArray(toolCalls) &&
+    toolCalls.some((toolCall) => {
+      const name = getToolCallName(toolCall);
+      return typeof name === 'string' && name.startsWith(OAUTH_TOOL_CALL_PREFIX);
+    })
+  );
+}
+
+function getReplayStepId(event: t.ServerSentEvent): unknown {
+  if (!('event' in event) || !event.data || typeof event.data !== 'object') {
+    return undefined;
+  }
+
+  if (event.event === 'on_run_step' || event.event === 'on_run_step_delta') {
+    return 'id' in event.data ? event.data.id : undefined;
+  }
+
+  if (event.event === 'on_run_step_completed') {
+    const result = 'result' in event.data ? event.data.result : undefined;
+    return result != null && typeof result === 'object' && 'id' in result ? result.id : undefined;
+  }
+
+  return undefined;
+}
+
+function isOAuthReplayEvent(event: t.ServerSentEvent): boolean {
+  if (!('event' in event) || !event.data || typeof event.data !== 'object') {
+    return false;
+  }
+
+  if (event.event === 'on_run_step') {
+    const stepDetails = 'stepDetails' in event.data ? event.data.stepDetails : undefined;
+    return (
+      stepDetails != null &&
+      typeof stepDetails === 'object' &&
+      'tool_calls' in stepDetails &&
+      hasOAuthToolCall(stepDetails.tool_calls)
+    );
+  }
+
+  if (event.event === 'on_run_step_delta') {
+    const delta = 'delta' in event.data ? event.data.delta : undefined;
+    if (delta == null || typeof delta !== 'object') {
+      return false;
+    }
+    return (
+      ('auth' in delta && delta.auth != null) ||
+      ('tool_calls' in delta && hasOAuthToolCall(delta.tool_calls))
+    );
+  }
+
+  if (event.event === 'on_run_step_completed') {
+    const result = 'result' in event.data ? event.data.result : undefined;
+    if (result == null || typeof result !== 'object' || !('tool_call' in result)) {
+      return false;
+    }
+    const name = getToolCallName(result.tool_call);
+    return typeof name === 'string' && name.startsWith(OAUTH_TOOL_CALL_PREFIX);
+  }
+
+  return false;
+}
 
 /**
  * Configuration options for GenerationJobManager
@@ -1065,17 +1137,7 @@ class GenerationJobManagerClass {
    * UI state on resume but are not represented by aggregated message content.
    */
   private async trackReplayEvent(streamId: string, event: t.ServerSentEvent): Promise<void> {
-    if (!('event' in event) || event.event !== 'on_run_step_delta') {
-      return;
-    }
-
-    const data = event.data;
-    if (!data || typeof data !== 'object' || !('delta' in data)) {
-      return;
-    }
-
-    const delta = (data as { delta?: { auth?: unknown } }).delta;
-    if (delta?.auth == null) {
+    if (!isOAuthReplayEvent(event)) {
       return;
     }
 
@@ -1093,16 +1155,16 @@ class GenerationJobManagerClass {
       }
     }
 
-    const stepId = (data as { id?: unknown }).id;
-    const existingIndex = replayEvents.findIndex((candidate) => {
-      if (!('event' in candidate) || candidate.event !== event.event) {
-        return false;
-      }
-      const candidateData = candidate.data;
-      return !!candidateData && typeof candidateData === 'object' && 'id' in candidateData
-        ? candidateData.id === stepId
-        : false;
-    });
+    const stepId = getReplayStepId(event);
+    const existingIndex =
+      stepId == null
+        ? -1
+        : replayEvents.findIndex((candidate) => {
+            if (!('event' in candidate) || candidate.event !== event.event) {
+              return false;
+            }
+            return getReplayStepId(candidate) === stepId;
+          });
 
     if (existingIndex >= 0) {
       replayEvents[existingIndex] = event;

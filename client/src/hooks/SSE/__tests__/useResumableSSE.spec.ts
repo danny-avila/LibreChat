@@ -540,6 +540,122 @@ describe('useResumableSSE - 404 error path', () => {
     unmount();
   });
 
+  it('renders OAuth run step events before created while retaining replay after hydration', async () => {
+    const submission = buildSubmission({
+      conversation: {},
+      userMessage: {
+        messageId: 'msg-1',
+        conversationId: null,
+        text: 'Hello',
+        isCreatedByUser: true,
+        sender: 'User',
+        parentMessageId: Constants.NO_PARENT,
+      },
+      initialResponse: {
+        messageId: 'msg-1_',
+        conversationId: null,
+        text: '',
+        isCreatedByUser: false,
+        sender: 'Assistant',
+      },
+    });
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const runStepEvent = {
+      event: StepEvents.ON_RUN_STEP,
+      data: {
+        id: 'step-oauth',
+        runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
+        index: 0,
+        stepDetails: {
+          type: 'tool_calls',
+          tool_calls: [{ id: 'call-oauth', name: 'oauth_mcp_Google-Workspace', args: '' }],
+        },
+      },
+    };
+    const runStepDeltaEvent = {
+      event: StepEvents.ON_RUN_STEP_DELTA,
+      data: {
+        id: 'step-oauth',
+        delta: {
+          type: 'tool_calls',
+          tool_calls: [{ id: 'call-oauth', name: 'oauth_mcp_Google-Workspace', args: '' }],
+          auth: 'https://auth.example.com/oauth',
+          expires_at: 1780791946,
+        },
+      },
+    };
+
+    const sse = getLastSSE();
+    await act(async () => {
+      sse._emit('message', { data: JSON.stringify(runStepEvent) });
+      sse._emit('message', { data: JSON.stringify(runStepDeltaEvent) });
+    });
+
+    expect(mockStepHandler).toHaveBeenCalledTimes(2);
+    expect(mockStepHandler).toHaveBeenNthCalledWith(
+      1,
+      runStepEvent,
+      expect.objectContaining({
+        userMessage: expect.objectContaining({
+          messageId: 'msg-1',
+          conversationId: 'stream-123',
+        }),
+      }),
+    );
+    expect(mockStepHandler).toHaveBeenNthCalledWith(
+      2,
+      runStepDeltaEvent,
+      expect.objectContaining({
+        userMessage: expect.objectContaining({
+          messageId: 'msg-1',
+          conversationId: 'stream-123',
+        }),
+      }),
+    );
+
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          created: true,
+          message: {
+            messageId: 'msg-1',
+            conversationId: 'stream-123',
+          },
+        }),
+      });
+    });
+
+    expect(mockStepHandler).toHaveBeenCalledTimes(4);
+    expect(mockStepHandler).toHaveBeenNthCalledWith(
+      3,
+      runStepEvent,
+      expect.objectContaining({
+        userMessage: expect.objectContaining({
+          messageId: 'msg-1',
+          conversationId: 'stream-123',
+        }),
+      }),
+    );
+    expect(mockStepHandler).toHaveBeenNthCalledWith(
+      4,
+      runStepDeltaEvent,
+      expect.objectContaining({
+        userMessage: expect.objectContaining({
+          messageId: 'msg-1',
+          conversationId: 'stream-123',
+        }),
+      }),
+    );
+    unmount();
+  });
+
   it('routes title stream events to the title handler', async () => {
     const submission = buildSubmission();
     const chatHelpers = buildChatHelpers();
