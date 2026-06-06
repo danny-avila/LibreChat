@@ -441,7 +441,10 @@ describe('MCPConnectionFactory', () => {
       await oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
 
       expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
-      expect(oauthOptions.oauthStart).toHaveBeenCalledWith('https://auth.example.com/existing');
+      expect(oauthOptions.oauthStart).toHaveBeenCalledWith(
+        'https://auth.example.com/existing',
+        expect.objectContaining({ expiresAt: expect.any(Number) }),
+      );
       expect(mockFlowManager.deleteFlow).not.toHaveBeenCalled();
       expect(mockConnectionInstance.emit).toHaveBeenCalledWith(
         'oauthFailed',
