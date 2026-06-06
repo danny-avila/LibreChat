@@ -269,15 +269,17 @@ describe('GitHub skill sync service', () => {
         ],
       },
     };
+    mockGetAppConfig.mockResolvedValue({ skillSync });
 
     const service = require('./sync');
     const started = await service.maybeRunGitHubSkillSyncForRequest({
-      config: { skillSync, config: { skillSync } },
+      config: { skillSync },
       user: { id: 'user-1', tenantId: 'tenant-a' },
     });
 
     expect(started).toBe(false);
     expect(mockCreatedRunners).toHaveLength(0);
+    expect(mockGetAppConfig).toHaveBeenCalledWith({ baseOnly: true });
   });
 
   it('creates an admin request runner from resolved skillSync config overrides', async () => {
@@ -314,6 +316,40 @@ describe('GitHub skill sync service', () => {
     expect(config.github.runOnStartup).toBe(true);
     expect(config.github.sources[0]).toEqual(
       expect.objectContaining({ id: 'tenant-skills', tenantId: 'tenant-a' }),
+    );
+  });
+
+  it('preserves base admin runner tenant scope when request config has no nested base copy', async () => {
+    const skillSync = {
+      github: {
+        enabled: true,
+        intervalMinutes: 60,
+        runOnStartup: true,
+        sources: [
+          {
+            id: 'base-skills',
+            owner: 'LibreChat',
+            repo: 'skills',
+            ref: 'main',
+            paths: ['skills'],
+            token: '${GITHUB_SKILLS_TOKEN}',
+            tenantId: 'base-tenant',
+          },
+        ],
+      },
+    };
+
+    const service = require('./sync');
+    service.initializeGitHubSkillSync({ skillSync });
+    service.getGitHubSkillSyncRunnerForRequest({
+      config: { skillSync },
+      user: { id: 'user-1', tenantId: 'tenant-a' },
+      skillSyncAllowServerCredentials: true,
+    });
+    const config = await mockCreatedRunners[1].deps.getConfig();
+
+    expect(config.github.sources[0]).toEqual(
+      expect.objectContaining({ id: 'base-skills', tenantId: 'base-tenant' }),
     );
   });
 
