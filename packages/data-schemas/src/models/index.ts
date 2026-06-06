@@ -1,3 +1,5 @@
+import { createSkillSyncCredentialModel } from './skillSyncCredential';
+import { createSkillSyncStatusModel } from './skillSyncStatus';
 import { createConversationTagModel } from './conversationTag';
 import { createAgentCategoryModel } from './agentCategory';
 import { createChatProjectModel } from './chatProject';
@@ -21,8 +23,6 @@ import { createActionModel } from './action';
 import { createBannerModel } from './banner';
 import { createPresetModel } from './preset';
 import { createPromptModel } from './prompt';
-import { createSkillSyncCredentialModel } from './skillSyncCredential';
-import { createSkillSyncStatusModel } from './skillSyncStatus';
 import { createMemoryModel } from './memory';
 import { createConfigModel } from './config';
 import { createTokenModel } from './token';
