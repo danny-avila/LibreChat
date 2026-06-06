@@ -1,3 +1,4 @@
+import type { useLocalize } from '~/hooks';
 import type { Endpoint } from '~/common';
 import { filterItems } from '../utils';
 
@@ -13,6 +14,21 @@ const agentsEndpoint: Endpoint = {
 describe('model selector utilities', () => {
   it('matches endpoint search aliases', () => {
     const results = filterItems([agentsEndpoint], 'marketplace', undefined, undefined);
+    expect(results).toEqual([agentsEndpoint]);
+  });
+
+  it('matches localized Marketplace labels', () => {
+    const localize = ((key: string) => {
+      if (key === 'com_agents_marketplace') {
+        return 'Tienda de Agentes';
+      }
+      if (key === 'com_ui_marketplace') {
+        return 'Tienda';
+      }
+      return key;
+    }) as ReturnType<typeof useLocalize>;
+
+    const results = filterItems([agentsEndpoint], 'tienda', undefined, undefined, localize);
     expect(results).toEqual([agentsEndpoint]);
   });
 });
