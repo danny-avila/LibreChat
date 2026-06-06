@@ -389,7 +389,11 @@ export interface InitializeAgentParams {
  */
 export interface InitializeAgentDbMethods extends EndpointDbMethods {
   /** Update usage tracking for multiple files */
-  updateFilesUsage: (files: Array<{ file_id: string }>, fileIds?: string[]) => Promise<unknown[]>;
+  updateFilesUsage: (
+    files: Array<{ file_id: string }>,
+    fileIds?: string[],
+    options?: { user?: string },
+  ) => Promise<unknown[]>;
   /** Get files from database */
   getFiles: (filter: unknown, sort: unknown, select: unknown) => Promise<unknown[]>;
   /** Filter files by agent access permissions (ownership or agent attachment) */
@@ -539,6 +543,7 @@ export async function initializeAgent(
     allowedProviders,
     isInitialAgent = false,
   } = params;
+  const requestFileOwnerId = req.user?.id;
 
   if (!db) {
     throw new Error('initializeAgent requires db methods to be passed');
@@ -640,10 +645,27 @@ export async function initializeAgent(
 
     const allToolFiles = toolFiles.concat(codeGeneratedFiles, userCodeFiles);
     if (requestFiles.length || allToolFiles.length) {
-      currentFiles = (await db.updateFilesUsage(requestFiles.concat(allToolFiles))) as IMongoFile[];
+      const requestUsageFiles =
+        requestFiles.length && requestFileOwnerId
+          ? ((await db.updateFilesUsage(requestFiles, undefined, {
+              user: requestFileOwnerId,
+            })) as IMongoFile[])
+          : [];
+      const requestUsageFileIds = new Set(requestUsageFiles.map((file) => file.file_id));
+      const trustedToolFiles = allToolFiles.filter(
+        (file) => !requestUsageFileIds.has(file.file_id),
+      );
+      const toolUsageFiles = trustedToolFiles.length
+        ? ((await db.updateFilesUsage(trustedToolFiles)) as IMongoFile[])
+        : [];
+      currentFiles = requestUsageFiles.concat(toolUsageFiles);
     }
   } else if (requestFiles.length) {
-    currentFiles = (await db.updateFilesUsage(requestFiles)) as IMongoFile[];
+    currentFiles = requestFileOwnerId
+      ? ((await db.updateFilesUsage(requestFiles, undefined, {
+          user: requestFileOwnerId,
+        })) as IMongoFile[])
+      : [];
   }
 
   if (currentFiles && currentFiles.length) {
