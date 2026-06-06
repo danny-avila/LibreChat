@@ -1,7 +1,7 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
-const { ContentTypes, isAgentsEndpoint } = require('librechat-data-provider');
+const { ContentTypes, isAssistantsEndpoint } = require('librechat-data-provider');
 const { unescapeLaTeX, countTokens } = require('@librechat/api');
 const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/Artifacts/update');
 const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
@@ -394,12 +394,14 @@ router.put('/:conversationId/:messageId/feedback', validateMessageReq, async (re
     );
 
     // Best-effort: mirror the rating to the message's Langfuse trace as a score.
-    // Only agent-endpoint runs emit a (deterministic) Langfuse trace, so only
-    // those messages have a trace to annotate — scoring other endpoints would
-    // leave orphan scores. The trace id is derived deterministically from the
-    // message id (the run is created with `langfuse.deterministicTraceId`), so no
-    // lookup is needed. Fire-and-forget so feedback never blocks on Langfuse.
-    if (isAgentsEndpoint(updatedMessage.endpoint)) {
+    // Every chat endpoint runs through the agents runtime (provider endpoints as
+    // ephemeral agents) and emits a deterministic AgentRun trace — except the
+    // Assistants endpoints, which use the OpenAI Assistants runtime and have no
+    // such trace. Skip those to avoid orphan scores. The trace id is derived
+    // deterministically from the message id (the run is created with
+    // `langfuse.deterministicTraceId`), so no lookup is needed. Fire-and-forget
+    // so feedback never blocks on Langfuse.
+    if (!isAssistantsEndpoint(updatedMessage.endpoint)) {
       sendFeedbackScore({
         traceId: traceIdForMessage(messageId),
         feedback: updatedMessage.feedback,
