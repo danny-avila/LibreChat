@@ -78,6 +78,63 @@ const findPasswordResetToken = async (userId) => {
   );
 };
 
+const findEmailVerificationToken = async (user) => {
+  const typedToken = await findToken(
+    {
+      userId: user._id,
+      email: user.email,
+      type: AuthTokenTypes.EMAIL_VERIFICATION,
+    },
+    latestAuthTokenOptions,
+  );
+
+  if (typedToken) {
+    return typedToken;
+  }
+
+  return await findToken(
+    {
+      userId: user._id,
+      email: user.email,
+      identifier: null,
+      type: null,
+    },
+    latestAuthTokenOptions,
+  );
+};
+
+const deleteEmailVerificationTokens = (user) =>
+  Promise.all([
+    deleteTokens({
+      userId: user._id,
+      email: user.email,
+      type: AuthTokenTypes.EMAIL_VERIFICATION,
+    }),
+    deleteTokens({
+      userId: user._id,
+      email: user.email,
+      identifier: null,
+      type: null,
+    }),
+  ]);
+
+const getEmailVerificationTokenDeleteQuery = (emailVerificationToken) => {
+  if (!emailVerificationToken.identifier && !emailVerificationToken.type) {
+    return {
+      token: emailVerificationToken.token,
+      userId: emailVerificationToken.userId,
+      email: emailVerificationToken.email,
+      identifier: null,
+      type: null,
+    };
+  }
+
+  return {
+    token: emailVerificationToken.token,
+    type: AuthTokenTypes.EMAIL_VERIFICATION,
+  };
+};
+
 const getPasswordResetTokenDeleteQuery = (passwordResetToken) => {
   if (!passwordResetToken.email && !passwordResetToken.type) {
     return {
@@ -208,11 +265,11 @@ const verifyEmail = async (req) => {
     return { message: 'Email already verified', status: 'success' };
   }
 
-  let emailVerificationData = await findToken({ email: decodedEmail }, { sort: { createdAt: -1 } });
+  const emailVerificationData = await findEmailVerificationToken(user);
 
   if (!emailVerificationData) {
     logger.warn(`[verifyEmail] [No email verification data found] [Email: ${decodedEmail}]`);
-    return new Error('Invalid or expired password reset token');
+    return new Error('Invalid or expired email verification token');
   }
 
   const isValid = bcrypt.compareSync(token, emailVerificationData.token);
@@ -231,7 +288,7 @@ const verifyEmail = async (req) => {
     return new Error('Failed to update user verification status');
   }
 
-  await deleteTokens({ token: emailVerificationData.token });
+  await deleteTokens(getEmailVerificationTokenDeleteQuery(emailVerificationData));
   logger.info(`[verifyEmail] Email verification successful [Email: ${decodedEmail}]`);
   return { message: 'Email verification was successful', status: 'success' };
 };
@@ -770,13 +827,14 @@ const setOpenIDAuthTokens = (
 const resendVerificationEmail = async (req) => {
   try {
     const { email } = req.body;
-    await deleteTokens({ email });
     const user = await findUser({ email }, 'email _id name');
 
     if (!user) {
       logger.warn(`[resendVerificationEmail] [No user found] [Email: ${email}]`);
       return { status: 200, message: genericVerificationMessage };
     }
+
+    await deleteEmailVerificationTokens(user);
 
     const [verifyToken, hash] = createTokenHash();
 

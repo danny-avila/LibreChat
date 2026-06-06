@@ -97,14 +97,17 @@ const {
   deleteTokens,
 } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
+const { sendEmail } = require('~/server/utils');
 const bcrypt = require('bcryptjs');
 const {
   setOpenIDAuthTokens,
   requestPasswordReset,
   registerUser,
   resetPassword,
+  resendVerificationEmail,
   setAuthTokens,
   setCloudFrontAuthCookies,
+  verifyEmail,
 } = require('./AuthService');
 
 /** Helper to build a mock Express response */
@@ -668,6 +671,169 @@ describe('resetPassword', () => {
       identifier: null,
       type: null,
     });
+  });
+});
+
+describe('verifyEmail', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should scope verification token lookup to the user and token category', async () => {
+    const verificationHash = bcrypt.hashSync('verification-token', 10);
+    const user = {
+      _id: 'user-verify',
+      email: 'user@example.com',
+      emailVerified: false,
+    };
+    findUser.mockResolvedValue(user);
+    findToken.mockImplementation(async (query) => {
+      if (query.type === 'email_verification') {
+        return {
+          userId: user._id,
+          email: user.email,
+          token: verificationHash,
+          type: 'email_verification',
+        };
+      }
+      return null;
+    });
+    updateUser.mockResolvedValue({ ...user, emailVerified: true });
+
+    const result = await verifyEmail({
+      body: {
+        email: encodeURIComponent(user.email),
+        token: 'verification-token',
+      },
+    });
+
+    expect(result).toEqual({
+      message: 'Email verification was successful',
+      status: 'success',
+    });
+    expect(findToken).toHaveBeenCalledWith(
+      {
+        userId: user._id,
+        email: user.email,
+        type: 'email_verification',
+      },
+      { sort: { createdAt: -1 } },
+    );
+    expect(deleteTokens).toHaveBeenCalledWith({
+      token: verificationHash,
+      type: 'email_verification',
+    });
+  });
+
+  it('should fall back only to legacy verification tokens for the same user', async () => {
+    const verificationHash = bcrypt.hashSync('legacy-verification-token', 10);
+    const user = {
+      _id: 'user-verify',
+      email: 'user@example.com',
+      emailVerified: false,
+    };
+    findUser.mockResolvedValue(user);
+    findToken.mockImplementation(async (query) => {
+      if (query.type === 'email_verification') {
+        return null;
+      }
+      if (query.type === null && query.identifier === null && query.userId === user._id) {
+        return {
+          userId: user._id,
+          email: user.email,
+          token: verificationHash,
+        };
+      }
+      return null;
+    });
+    updateUser.mockResolvedValue({ ...user, emailVerified: true });
+
+    const result = await verifyEmail({
+      body: {
+        email: encodeURIComponent(user.email),
+        token: 'legacy-verification-token',
+      },
+    });
+
+    expect(result).toEqual({
+      message: 'Email verification was successful',
+      status: 'success',
+    });
+    expect(findToken).toHaveBeenCalledWith(
+      {
+        userId: user._id,
+        email: user.email,
+        identifier: null,
+        type: null,
+      },
+      { sort: { createdAt: -1 } },
+    );
+    expect(deleteTokens).toHaveBeenCalledWith({
+      token: verificationHash,
+      userId: user._id,
+      email: user.email,
+      identifier: null,
+      type: null,
+    });
+  });
+});
+
+describe('resendVerificationEmail', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should not delete tokens when no user exists for the email', async () => {
+    findUser.mockResolvedValue(null);
+
+    const result = await resendVerificationEmail({
+      body: { email: 'missing@example.com' },
+    });
+
+    expect(result).toEqual({
+      status: 200,
+      message: 'Please check your email to verify your email address.',
+    });
+    expect(deleteTokens).not.toHaveBeenCalled();
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(createToken).not.toHaveBeenCalled();
+  });
+
+  it('should delete only verification tokens scoped to the resolved user', async () => {
+    const user = {
+      _id: 'user-verify',
+      email: 'user@example.com',
+      name: 'User Verify',
+    };
+    findUser.mockResolvedValue(user);
+
+    const result = await resendVerificationEmail({
+      body: { email: user.email },
+    });
+
+    expect(result).toEqual({
+      status: 200,
+      message: 'Please check your email to verify your email address.',
+    });
+    expect(deleteTokens).toHaveBeenCalledWith({
+      userId: user._id,
+      email: user.email,
+      type: 'email_verification',
+    });
+    expect(deleteTokens).toHaveBeenCalledWith({
+      userId: user._id,
+      email: user.email,
+      identifier: null,
+      type: null,
+    });
+    expect(deleteTokens).not.toHaveBeenCalledWith({ email: user.email });
+    expect(createToken).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: user._id,
+        email: user.email,
+        type: 'email_verification',
+      }),
+    );
   });
 });
 
