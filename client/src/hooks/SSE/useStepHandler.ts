@@ -20,14 +20,14 @@ import type {
 } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import type { AnnounceOptions } from '~/common';
-import { MESSAGE_UPDATE_INTERVAL } from '~/common';
-import { subagentProgressByToolCallId } from '~/store';
 import {
   foldSubagentEvent,
   foldSubagentEventIntoTicker,
   initSubagentAggregatorState,
   initSubagentTickerState,
 } from '~/utils/subagentContent';
+import { subagentProgressByToolCallId } from '~/store';
+import { MESSAGE_UPDATE_INTERVAL } from '~/common';
 
 type TUseStepHandler = {
   announcePolite: (options: AnnounceOptions) => void;
@@ -66,10 +66,14 @@ type AllContentTypes =
 const isOAuthToolCallName = (name?: string) =>
   typeof name === 'string' && name.startsWith(`oauth${Constants.mcp_delimiter}`);
 
-const isOAuthToolCallContent = (part?: Partial<TMessageContentParts>) =>
-  part?.type === ContentTypes.TOOL_CALL &&
-  'tool_call' in part &&
-  isOAuthToolCallName(part.tool_call?.name);
+const isOAuthToolCallContent = (part?: Partial<TMessageContentParts>) => {
+  if (part?.type !== ContentTypes.TOOL_CALL || !('tool_call' in part)) {
+    return false;
+  }
+  const { tool_call: toolCall } = part;
+  const name = toolCall != null && 'name' in toolCall ? toolCall.name : undefined;
+  return isOAuthToolCallName(name);
+};
 
 export default function useStepHandler({
   setMessages,

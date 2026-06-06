@@ -1,5 +1,5 @@
+import type { AgentState, VersionRecord } from '../types';
 import { isActiveVersion } from '../isActiveVersion';
-import type { AgentState, VersionRecord } from '../VersionPanel';
 
 describe('isActiveVersion', () => {
   const createVersion = (overrides = {}): VersionRecord => ({
