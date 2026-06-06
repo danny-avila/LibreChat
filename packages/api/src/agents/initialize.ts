@@ -56,6 +56,15 @@ import { primeResources } from './resources';
  */
 const DEFAULT_RESERVE_RATIO = 0.05;
 const temporalSpecialVarRegex = /{{\s*(current_date|current_datetime|iso_datetime)\s*}}/i;
+const geminiModelVersionRegex = /^gemini-(\d+)(?:\.(\d+))?(?:-|$)/;
+const googleToolCombinationTextModels = [
+  'gemini-3-flash-preview',
+  'gemini-3-pro-preview',
+  'gemini-3.1-flash-lite',
+  'gemini-3.1-pro-preview',
+];
+const googleToolCombinationExcludedModalityRegex =
+  /(?:^|-)image(?:-|$)|(?:^|-)live(?:-|$)|(?:^|-)tts(?:-|$)/;
 
 function hasTemporalSpecialVars(text: string): boolean {
   return temporalSpecialVarRegex.test(text);
@@ -96,12 +105,36 @@ function hasGoogleSearchTool(tool: unknown): boolean {
   return 'googleSearch' in tool || 'googleSearchRetrieval' in tool;
 }
 
+function normalizeGoogleModelName(model: string): string {
+  const normalized = model.trim().toLowerCase();
+  return normalized.split('/').pop() ?? normalized;
+}
+
+function isKnownGoogleToolCombinationTextModel(model: string): boolean {
+  return googleToolCombinationTextModels.some(
+    (knownModel) => model === knownModel || model.startsWith(`${knownModel}-`),
+  );
+}
+
+function isGemini35OrLater(model: string): boolean {
+  const match = geminiModelVersionRegex.exec(model);
+  if (!match) {
+    return false;
+  }
+  const major = Number(match[1]);
+  const minor = Number(match[2] ?? '0');
+  return major > 3 || (major === 3 && minor >= 5);
+}
+
 function supportsGoogleToolCombination(model: unknown): boolean {
   if (typeof model !== 'string') {
     return false;
   }
-  const normalized = model.toLowerCase().split('/').pop() ?? model.toLowerCase();
-  return normalized.startsWith('gemini-3');
+  const normalized = normalizeGoogleModelName(model);
+  if (googleToolCombinationExcludedModalityRegex.test(normalized)) {
+    return false;
+  }
+  return isKnownGoogleToolCombinationTextModel(normalized) || isGemini35OrLater(normalized);
 }
 
 function isGoogleToolCombinationProvider(provider?: string): boolean {
