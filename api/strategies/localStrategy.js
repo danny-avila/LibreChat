@@ -59,6 +59,16 @@ async function passportLogin(req, email, password, done) {
       await updateUser(user._id, {});
     }
 
+    if (user.isVerified === false) {
+      logError('Passport Local Strategy - Pending admin verification', { email });
+      logger.error(
+        `[Login] [Login failed] [Username: ${email}] [Request-IP: ${req.ip}] [Pending admin verification]`,
+      );
+      return done(null, user, {
+        message:'Your account is currently under verification by the administrator. Please contact the admin for approval.',
+      });
+    }
+
     if (!user.emailVerified && !unverifiedAllowed) {
       logError('Passport Local Strategy - Email not verified', { email });
       logger.error(`[Login] [Login failed] [Username: ${email}] [Request-IP: ${req.ip}]`);

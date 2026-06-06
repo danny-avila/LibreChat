@@ -90,7 +90,18 @@ const AuthContextProvider = ({
     },
     onError: (error: TResError | unknown) => {
       const resError = error as TResError;
-      doSetError(resError.message);
+      console.log('erorrr context:',resError)
+      const errorData = resError?.response?.data;
+      let errorCode: string | undefined = undefined;
+      // Check if the backend sent an array
+      if (Array.isArray(errorData) && errorData.length > 0) {
+        errorCode = errorData[0]?.errorCode;
+      }// check if it as a standard object
+      else if (errorData && typeof errorData === 'object') {
+        errorCode = errorData?.errorCode;
+      }
+      let errorMsg = errorCode === 'ERR_ADMIN_VERIFICATION_PENDING' ? errorCode : resError.message
+      doSetError(errorMsg);
       navigate('/login', { replace: true });
     },
   });

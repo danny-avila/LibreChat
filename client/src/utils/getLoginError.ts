@@ -7,7 +7,10 @@ const getLoginError = (errorText: string): TranslationKeys => {
     return defaultError;
   }
 
+  console.log('errortext:',errorText)
   switch (true) {
+    case errorText.includes('ERR_ADMIN_VERIFICATION_PENDING'):
+      return 'com_auth_error_login_admin_verfication';
     case errorText.includes('429'):
       return 'com_auth_error_login_rl';
     case errorText.includes('403'):

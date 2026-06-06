@@ -13,7 +13,15 @@ const requireLocalAuth = (req, res, next) => {
     }
     if (info && info.message) {
       logger.debug('[requireLocalAuth] Error: ' + info.message);
-      return res.status(422).send({ message: info.message });
+      let finalResponse;
+      if (info.message.includes('currently under verification by the administrator')) {
+        finalResponse = { errorCode: 'ERR_ADMIN_VERIFICATION_PENDING', message: info.message }
+      } else {
+        finalResponse = { message: info.message }
+      }
+      return res
+        .status(422)
+        .send(finalResponse);
     }
     req.user = user;
     next();
