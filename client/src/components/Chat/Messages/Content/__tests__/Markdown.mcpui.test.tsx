@@ -125,9 +125,9 @@ describe('Markdown table rendering', () => {
     );
 
     expect(screen.getByRole('table').parentElement).toHaveClass(
+      'markdown-table-wrapper',
       'w-full',
       'max-w-full',
-      'overflow-x-auto',
     );
   });
 
@@ -135,9 +135,9 @@ describe('Markdown table rendering', () => {
     render(<MarkdownLite content={tableMarkdown} />);
 
     expect(screen.getByRole('table').parentElement).toHaveClass(
+      'markdown-table-wrapper',
       'w-full',
       'max-w-full',
-      'overflow-x-auto',
     );
   });
 });

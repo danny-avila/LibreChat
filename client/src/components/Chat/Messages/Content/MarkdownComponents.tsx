@@ -191,7 +191,7 @@ type TTableProps = {
 
 export const table: React.ElementType = memo(function MarkdownTable({ children }: TTableProps) {
   return (
-    <div className="w-full max-w-full overflow-x-auto">
+    <div className="markdown-table-wrapper w-full max-w-full">
       <table>{children}</table>
     </div>
   );
