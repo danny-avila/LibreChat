@@ -16,8 +16,8 @@ import type {
   ISkillFileDocument,
   ISkillSummary,
 } from '~/types/skill';
-import { isValidObjectIdString } from '~/utils/objectId';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import { isValidObjectIdString } from '~/utils/objectId';
 import { stripYamlTrailingComment } from '~/utils/yaml';
 import { escapeRegExp } from '~/utils/string';
 import logger from '~/config/winston';

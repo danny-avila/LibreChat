@@ -1,9 +1,9 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createModels } from '../models';
-import { createSkillSyncMethods } from './skillSync';
 import type { ISkillSyncCredential } from '~/types/skillSync';
+import { createSkillSyncMethods } from './skillSync';
 import { encryptV2, decryptV2 } from '~/crypto';
+import { createModels } from '../models';
 
 jest.mock('~/crypto', () => ({
   encryptV2: jest.fn(async (value: string) => `encrypted:${value}`),

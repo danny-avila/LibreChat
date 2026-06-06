@@ -1,7 +1,7 @@
 import type { SkillSyncConfig } from 'librechat-data-provider';
-import { __resetShutdownStateForTests } from '~/app/shutdown';
-import { SKILL_SYNC_MAX_TIMER_INTERVAL_MINUTES, startGitHubSkillSyncScheduler } from './scheduler';
 import type { GitHubSkillSyncRunner } from './github';
+import { SKILL_SYNC_MAX_TIMER_INTERVAL_MINUTES, startGitHubSkillSyncScheduler } from './scheduler';
+import { __resetShutdownStateForTests } from '~/app/shutdown';
 
 const source = {
   id: 'librechat-skills',

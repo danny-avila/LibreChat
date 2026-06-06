@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { Types } from 'mongoose';
+import { getTenantId } from '@librechat/data-schemas';
 import type {
   ISkill,
   ISkillFile,
@@ -8,10 +9,9 @@ import type {
   ISkillSyncStatus,
   SkillSyncStatusInput,
 } from '@librechat/data-schemas';
-import { getTenantId } from '@librechat/data-schemas';
+import type { GitHubSkillSyncDeps } from './github';
 import { DEFAULT_SKILL_IMPORT_LIMITS } from '../limits';
 import { createGitHubSkillSyncRunner } from './github';
-import type { GitHubSkillSyncDeps } from './github';
 
 function response(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
   const normalizedHeaders = new Map(

@@ -1,6 +1,6 @@
 import type { SkillSyncConfig } from 'librechat-data-provider';
-import type { GitHubSkillSyncRunner } from './github';
 import type { SkillSyncTriggerRunnerFactoryInput } from './orchestrator';
+import type { GitHubSkillSyncRunner } from './github';
 import { createSkillSyncTriggerOrchestrator } from './orchestrator';
 
 type RunnerStatus = Awaited<ReturnType<GitHubSkillSyncRunner['getStatus']>>;
