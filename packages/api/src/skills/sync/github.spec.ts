@@ -288,6 +288,24 @@ describe('createGitHubSkillSyncRunner', () => {
     );
   });
 
+  it('drops an invalid alwaysApply alias when canonical always-apply is valid', async () => {
+    const deps = createDeps({
+      fetchFn: githubFetch(
+        '---\nname: research\ndescription: Research things\nalways-apply: true\nalwaysApply: yes\n---\nBody',
+      ),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('completed');
+    expect(deps.createSkill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        alwaysApply: true,
+        frontmatter: { 'always-apply': true },
+      }),
+    );
+  });
+
   it('discovers nested skill roots within the configured discovery depth', async () => {
     const skillMarkdown = '---\nname: tdd\ndescription: Test-driven development\n---\nBody';
     const fetchFn = jest.fn(async (input: RequestInfo | URL) => {
