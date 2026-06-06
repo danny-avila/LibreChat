@@ -2,10 +2,12 @@ const express = require('express');
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
 const {
+  ACTION_CREDENTIAL_REFRESH_MESSAGE,
+  buildActionOAuthTokenDeleteQueries,
   generateCheckAccess,
   isActionDomainAllowed,
-  mergeAgentActionTools,
-  mergeActionMetadataForUpdate,
+  legacyActionDomainEncode,
+  planAgentActionUpdate,
   validateActionOAuthMetadata,
 } = require('@librechat/api');
 const {
@@ -18,31 +20,17 @@ const {
   validateActionDomain,
   validateAndParseOpenAPISpec,
 } = require('librechat-data-provider');
-const {
-  legacyDomainEncode,
-  encryptMetadata,
-  domainParser,
-} = require('~/server/services/ActionService');
+const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
 const db = require('~/models');
 const { canAccessAgentResource } = require('~/server/middleware');
 
 const router = express.Router();
 
-const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
 async function deleteActionOAuthTokens(action_id) {
-  const escapedActionId = escapeRegExp(action_id);
-  await Promise.all([
-    db.deleteTokens({
-      type: 'oauth',
-      identifier: new RegExp(`^[^:]+:${escapedActionId}$`),
-    }),
-    db.deleteTokens({
-      type: 'oauth_refresh',
-      identifier: new RegExp(`^[^:]+:${escapedActionId}:refresh$`),
-    }),
-  ]);
+  await Promise.all(
+    buildActionOAuthTokenDeleteQueries(action_id).map((query) => db.deleteTokens(query)),
+  );
 }
 
 const checkAgentCreate = generateCheckAccess({
@@ -110,7 +98,7 @@ router.post(
         return res.status(400).json({ message: 'No functions provided' });
       }
 
-      let metadata = await encryptMetadata(removeNullishValues(_metadata, true));
+      const metadata = await encryptMetadata(removeNullishValues(_metadata, true));
       const appConfig = req.config;
 
       // SECURITY: Validate the OpenAPI spec and extract the server URL
@@ -153,12 +141,11 @@ router.post(
         return res.status(400).json({ message: 'No domain provided' });
       }
 
-      const legacyDomain = legacyDomainEncode(metadata.domain);
+      const legacyDomain = legacyActionDomainEncode(metadata.domain);
 
       const requestedActionId = _action_id;
-      let action_id = requestedActionId ?? nanoid();
+      const action_id = requestedActionId ?? nanoid();
       const initialPromises = [];
-      let targetChanged = false;
 
       // Permissions already validated by middleware - load agent directly
       initialPromises.push(db.getAgent({ id: agent_id }));
@@ -172,72 +159,43 @@ router.post(
         return res.status(404).json({ message: 'Agent not found for adding action' });
       }
 
-      if (actions_result && actions_result.length) {
-        const action = actions_result[0];
-        if (action.agent_id !== agent_id) {
+      const storedAction = actions_result?.[0];
+      if (storedAction) {
+        if (storedAction.agent_id !== agent_id) {
           return res.status(403).json({ message: 'Action does not belong to this agent' });
         }
+      }
 
-        const metadataUpdate = mergeActionMetadataForUpdate({
-          storedMetadata: action.metadata,
-          incomingMetadata: metadata,
+      const { actions: agentActions = [], tools: agentTools = [], author: agent_author } = agent;
+      const plannedUpdate = planAgentActionUpdate({
+        agentActions,
+        agentTools,
+        incomingFunctions: functions,
+        incomingMetadata: metadata,
+        actionId: action_id,
+        requestedActionId,
+        encodedDomain,
+        legacyDomain,
+        previousLegacyDomain: legacyActionDomainEncode(storedAction?.metadata?.domain),
+        storedAction,
+      });
+
+      if (plannedUpdate.requiresCredentialRefresh) {
+        return res.status(400).json({
+          message: ACTION_CREDENTIAL_REFRESH_MESSAGE,
         });
-
-        if (metadataUpdate.requiresCredentialRefresh) {
-          return res.status(400).json({
-            message:
-              'Action credentials must be re-entered when changing the domain, OpenAPI server URL, or authentication settings',
-          });
-        }
-
-        targetChanged = metadataUpdate.targetChanged;
-        metadata = metadataUpdate.metadata;
       }
 
       try {
-        await validateActionOAuthMetadata(metadata.auth, appConfig?.actions?.allowedAddresses);
+        await validateActionOAuthMetadata(
+          plannedUpdate.metadata.auth,
+          appConfig?.actions?.allowedAddresses,
+        );
       } catch (error) {
         return res.status(400).json({ message: error.message });
       }
 
-      const { actions: _actions = [], author: agent_author } = agent ?? {};
-      const actions = [];
-      let previousEncodedDomain = '';
-      for (const action of _actions) {
-        const [_action_domain, current_action_id] = action.split(actionDelimiter);
-        if (
-          (requestedActionId && current_action_id === requestedActionId) ||
-          current_action_id === action_id
-        ) {
-          previousEncodedDomain = _action_domain;
-          continue;
-        }
-
-        actions.push(action);
-      }
-
-      actions.push(`${encodedDomain}${actionDelimiter}${action_id}`);
-
-      /** @type {string[]}} */
-      const { tools: _tools = [] } = agent;
-      const previousAction = actions_result?.[0];
-      const previousLegacyDomain = previousAction
-        ? legacyDomainEncode(previousAction.metadata?.domain)
-        : '';
-
-      const tools = mergeAgentActionTools({
-        existingTools: _tools,
-        incomingFunctions: functions,
-        encodedDomain,
-        actionId: action_id,
-        requestedActionId,
-        legacyDomain,
-        previousEncodedDomain,
-        previousLegacyDomain,
-        previousRawSpec: previousAction?.metadata?.raw_spec,
-      });
-
-      if (targetChanged && requestedActionId) {
+      if (plannedUpdate.deleteOAuthTokens && requestedActionId) {
         // Keep the callback URL stable while preventing old OAuth tokens from following a new target.
         await deleteActionOAuthTokens(requestedActionId);
       }
@@ -245,7 +203,7 @@ router.post(
       // Force version update since actions are changing
       const updatedAgent = await db.updateAgent(
         { id: agent_id },
-        { tools, actions },
+        { tools: plannedUpdate.tools, actions: plannedUpdate.actions },
         {
           updatingUserId: req.user.id,
           forceVersion: true,
@@ -253,7 +211,11 @@ router.post(
       );
 
       // Only update user field for new actions
-      const actionUpdateData = { action_id, metadata, agent_id };
+      const actionUpdateData = {
+        action_id: plannedUpdate.actionId,
+        metadata: plannedUpdate.metadata,
+        agent_id,
+      };
       if (!actions_result || !actions_result.length) {
         // For new actions, use the agent owner's user ID
         actionUpdateData.user = agent_author || req.user.id;
