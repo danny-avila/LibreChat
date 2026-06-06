@@ -149,6 +149,35 @@ describe('Token Methods - Detailed Tests', () => {
       expect(found?.userId.toString()).toBe(user2Id.toString());
     });
 
+    test('should find tokens with explicitly absent optional fields', async () => {
+      const legacyUserId = new mongoose.Types.ObjectId();
+      await Token.create([
+        {
+          token: 'legacy-reset-token',
+          userId: legacyUserId,
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+        {
+          token: 'legacy-identified-token',
+          userId: legacyUserId,
+          identifier: 'oauth-legacy',
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+      ]);
+
+      const found = await methods.findToken({
+        userId: legacyUserId.toString(),
+        email: null,
+        identifier: null,
+        type: null,
+      });
+
+      expect(found).toBeDefined();
+      expect(found?.token).toBe('legacy-reset-token');
+    });
+
     test('should find token by identifier', async () => {
       const found = await methods.findToken({ identifier: 'oauth-123' });
 
@@ -596,6 +625,47 @@ describe('Token Methods - Detailed Tests', () => {
 
       const remainingTokens = await Token.find({});
       expect(remainingTokens).toHaveLength(3);
+    });
+
+    test('should delete only tokens with explicitly absent optional fields', async () => {
+      const legacyUserId = new mongoose.Types.ObjectId();
+      await Token.create([
+        {
+          token: 'legacy-reset-token',
+          userId: legacyUserId,
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+        {
+          token: 'legacy-identified-token',
+          userId: legacyUserId,
+          identifier: 'oauth-legacy',
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+        {
+          token: 'typed-reset-token',
+          userId: legacyUserId,
+          type: 'password_reset',
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+      ]);
+
+      const result = await methods.deleteTokens({
+        userId: legacyUserId.toString(),
+        email: null,
+        identifier: null,
+        type: null,
+      });
+
+      expect(result.deletedCount).toBe(1);
+
+      const remainingTokens = await Token.find({ userId: legacyUserId });
+      expect(remainingTokens).toHaveLength(2);
+      expect(remainingTokens.find((t) => t.token === 'legacy-reset-token')).toBeUndefined();
+      expect(remainingTokens.find((t) => t.token === 'legacy-identified-token')).toBeDefined();
+      expect(remainingTokens.find((t) => t.token === 'typed-reset-token')).toBeDefined();
     });
 
     test('should only delete tokens matching ALL provided fields (AND semantics)', async () => {

@@ -1,10 +1,11 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import type { Endpoint, SelectedValues } from '~/common';
 import { SearchResults } from '../SearchResults';
 
 const mockHandleSelectSpec = jest.fn();
 const mockHandleSelectModel = jest.fn();
 const mockHandleSelectEndpoint = jest.fn();
+const mockNavigate = jest.fn();
 let mockSelectedValues: SelectedValues;
 
 jest.mock('~/components/Chat/Menus/Endpoints/ModelSelectorContext', () => ({
@@ -29,6 +30,10 @@ jest.mock('~/components/Chat/Menus/Endpoints/CustomMenu', () => {
   };
 });
 
+jest.mock('react-router-dom', () => ({
+  useNavigate: () => mockNavigate,
+}));
+
 jest.mock('../SpecIcon', () => {
   const React = jest.requireActual<typeof import('react')>('react');
   return {
@@ -51,6 +56,17 @@ const noModelsEndpoint: Endpoint = {
   value: 'custom',
   label: 'Custom',
   hasModels: false,
+  icon: null,
+};
+
+const agentsMarketplaceEndpoint: Endpoint = {
+  value: 'agents',
+  label: 'My Agents',
+  hasModels: true,
+  models: [{ name: 'agent-1' }],
+  agentNames: { 'agent-1': 'Support Agent' },
+  showMarketplace: true,
+  searchAliases: ['agent marketplace', 'marketplace'],
   icon: null,
 };
 
@@ -105,5 +121,23 @@ describe('SearchResults', () => {
 
     const item = screen.getByRole('menuitem');
     expect(item).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('renders Marketplace from agent endpoint search results and navigates to agents', () => {
+    mockSelectedValues = { endpoint: '', model: '', modelSpec: '' };
+    render(
+      <SearchResults
+        results={[agentsMarketplaceEndpoint]}
+        localize={localize}
+        searchValue="marketplace"
+      />,
+    );
+
+    const item = screen.getByRole('menuitem', { name: 'com_agents_marketplace' });
+    expect(item).toBeInTheDocument();
+
+    fireEvent.click(item);
+    expect(mockNavigate).toHaveBeenCalledWith('/agents');
+    expect(mockHandleSelectModel).not.toHaveBeenCalled();
   });
 });
