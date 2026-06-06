@@ -13,6 +13,7 @@ const mockConfigMiddleware = jest.fn((req, res, next) => {
   req.config = mockResolvedConfig;
   next();
 });
+const mockGetAppConfig = jest.fn();
 const mockGetGitHubSkillSyncRunnerForRequest = jest.fn();
 const mockHandlers = {
   getSyncStatus: jest.fn((req, res) => res.status(200).json({ ok: true })),
@@ -44,6 +45,10 @@ jest.mock('~/server/middleware', () => ({
 
 jest.mock('~/server/middleware/config/app', () => mockConfigMiddleware);
 
+jest.mock('~/server/services/Config', () => ({
+  getAppConfig: mockGetAppConfig,
+}));
+
 jest.mock('~/models', () => ({
   upsertSkillSyncCredential: jest.fn(),
   deleteSkillSyncCredential: jest.fn(),
@@ -58,6 +63,7 @@ describe('admin skills sync routes', () => {
     jest.clearAllMocks();
     mockHasCapability.mockResolvedValue(true);
     mockResolvedConfig = { skillSync: { github: { enabled: false, sources: [] } } };
+    mockGetAppConfig.mockResolvedValue({ skillSync: undefined });
   });
 
   function createApp() {
@@ -112,7 +118,7 @@ describe('admin skills sync routes', () => {
     expect(req.skillSyncAllowServerCredentials).toBe(false);
   });
 
-  it('allows tenant admins to run resolved override sync without server credentials', async () => {
+  it('prevents tenant admins from running overrides that require server credentials', async () => {
     const skillSync = {
       github: {
         enabled: true,
@@ -137,12 +143,12 @@ describe('admin skills sync routes', () => {
       }
       return true;
     });
+    mockGetAppConfig.mockResolvedValue({ skillSync: undefined });
     const app = createApp();
 
-    await request(app).post('/api/admin/skills/sync/run').expect(200);
+    await request(app).post('/api/admin/skills/sync/run').expect(403);
 
-    const req = mockHandlers.runSync.mock.calls[0][0];
-    expect(req.skillSyncAllowServerCredentials).toBe(false);
+    expect(mockHandlers.runSync).not.toHaveBeenCalled();
   });
 
   it('prevents tenant admins from manually running base skill sync config', async () => {
@@ -163,7 +169,8 @@ describe('admin skills sync routes', () => {
         ],
       },
     };
-    mockResolvedConfig = { skillSync, config: { skillSync } };
+    mockResolvedConfig = { skillSync };
+    mockGetAppConfig.mockResolvedValue({ skillSync });
     mockHasCapability.mockImplementation(async (user, capability) => {
       if (capability === 'manage:skills') {
         return Boolean(user.tenantId);
@@ -195,12 +202,14 @@ describe('admin skills sync routes', () => {
         ],
       },
     };
-    mockResolvedConfig = { skillSync, config: { skillSync } };
+    mockResolvedConfig = { skillSync };
+    mockGetAppConfig.mockResolvedValue({ skillSync });
     const app = createApp();
 
     await request(app).post('/api/admin/skills/sync/run').expect(200);
 
     const req = mockHandlers.runSync.mock.calls[0][0];
     expect(req.skillSyncAllowServerCredentials).toBe(true);
+    expect(req.config.config.skillSync).toEqual(skillSync);
   });
 });
