@@ -41,7 +41,12 @@ function redactMessage(str: string, trimLength?: number): string {
   return redacted;
 }
 
-function redactLogValue(value: unknown, seen = new WeakSet<object>()): unknown {
+function isPlainRecord(value: object): value is Record<string, unknown> {
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function redactLogValue(value: unknown, seen = new WeakMap<object, unknown>()): unknown {
   if (typeof value === 'string') {
     return redactMessage(value);
   }
@@ -50,20 +55,28 @@ function redactLogValue(value: unknown, seen = new WeakSet<object>()): unknown {
     return value;
   }
 
-  if (seen.has(value)) {
-    return value;
+  const cached = seen.get(value);
+  if (cached !== undefined) {
+    return cached;
   }
-  seen.add(value);
 
   if (Array.isArray(value)) {
-    return value.map((item) => redactLogValue(item, seen));
+    const redacted: unknown[] = [];
+    seen.set(value, redacted);
+    value.forEach((item) => redacted.push(redactLogValue(item, seen)));
+    return redacted;
   }
 
-  const record = value as Record<string, unknown>;
-  Object.keys(record).forEach((key) => {
-    record[key] = redactLogValue(record[key], seen);
+  if (!isPlainRecord(value)) {
+    return value;
+  }
+
+  const redacted: Record<string, unknown> = {};
+  seen.set(value, redacted);
+  Object.entries(value).forEach(([key, recordValue]) => {
+    redacted[key] = redactLogValue(recordValue, seen);
   });
-  return record;
+  return redacted;
 }
 
 /**

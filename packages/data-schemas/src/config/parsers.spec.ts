@@ -87,20 +87,21 @@ describe('redactFormat', () => {
   });
 
   it('redacts string values in splat metadata', () => {
+    const metadata = {
+      auth: 'Bearer secretvalue',
+      nested: { url: 'https://example.test/?key=secretvalue&next=true' },
+    };
     const info = runRedactFormat({
       level: 'info',
       message: 'visible',
-      [SPLAT_SYMBOL]: [
-        {
-          auth: 'Bearer secretvalue',
-          nested: { url: 'https://example.test/?key=secretvalue&next=true' },
-        },
-      ],
+      [SPLAT_SYMBOL]: [metadata],
     });
     const splat = info[SPLAT_SYMBOL] as Array<{ auth: string; nested: { url: string } }>;
 
     expect(splat[0].auth).toBe('Bearer [REDACTED]');
     expect(splat[0].nested.url).toBe('https://example.test/?key=[REDACTED]&next=true');
+    expect(metadata.auth).toBe('Bearer secretvalue');
+    expect(metadata.nested.url).toBe('https://example.test/?key=secretvalue&next=true');
   });
 });
 

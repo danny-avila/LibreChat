@@ -8,6 +8,8 @@ import { createMessageMethods } from './message';
 import { createModels } from '../models';
 import logger from '~/config/winston';
 
+const waitForTimestampTick = () => new Promise((resolve) => setTimeout(resolve, 2));
+
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),
   warn: jest.fn(),
@@ -181,6 +183,8 @@ describe('Message Operations', () => {
         text: 'Second message',
         user: 'user123',
       });
+
+      await waitForTimestampTick();
 
       await saveMessage(mockCtx, {
         messageId: 'msg3',
