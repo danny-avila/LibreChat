@@ -11,6 +11,11 @@ const CONSOLE_JSON_STRING_LENGTH: number =
 const DEBUG_MESSAGE_LENGTH: number = parseInt(process.env.DEBUG_MESSAGE_LENGTH || '', 10) || 150;
 const LOG_CONTEXT_KEYS = ['tenantId', 'userId', 'requestId'] as const;
 const REDACTED_VALUE = '[REDACTED]';
+const REDACTION_TRUNCATED_KEY = '__redaction_truncated__';
+const MAX_REDACTION_DEPTH = 8;
+const MAX_REDACTION_ENTRIES = 50;
+const MAX_REDACTION_STRING_LENGTH = 8192;
+const MAX_REDACTION_BUFFER_BYTES = 8192;
 
 const sensitiveKeys: RegExp[] = [
   /\b(sk-)[a-zA-Z0-9_-]+/g, // OpenAI API key pattern
@@ -47,6 +52,15 @@ function redactMessage(str: string, trimLength?: number): string {
   return redacted;
 }
 
+function redactLogString(str: string): string {
+  if (str.length <= MAX_REDACTION_STRING_LENGTH) {
+    return redactMessage(str);
+  }
+
+  const redacted = redactMessage(str.substring(0, MAX_REDACTION_STRING_LENGTH));
+  return `${redacted}... [truncated ${str.length - MAX_REDACTION_STRING_LENGTH} chars]`;
+}
+
 function isPlainRecord(value: object): value is Record<string, unknown> {
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
@@ -56,8 +70,13 @@ function isSensitiveMetadataKey(key: string): boolean {
   return sensitiveMetadataKey.test(key);
 }
 
-function redactRecordValue(key: string, value: unknown, seen: WeakMap<object, unknown>): unknown {
-  return isSensitiveMetadataKey(key) ? REDACTED_VALUE : redactLogValue(value, seen);
+function redactRecordValue(
+  key: string,
+  value: unknown,
+  seen: WeakMap<object, unknown>,
+  depth: number,
+): unknown {
+  return isSensitiveMetadataKey(key) ? REDACTED_VALUE : redactLogValue(value, seen, depth);
 }
 
 function defineRedactedErrorProperty(
@@ -70,7 +89,7 @@ function defineRedactedErrorProperty(
   }
 
   Object.defineProperty(error, key, {
-    value: redactMessage(value),
+    value: redactLogString(value),
     writable: true,
     enumerable: false,
     configurable: true,
@@ -82,6 +101,7 @@ function defineRedactedDescriptor(
   key: string | symbol,
   descriptor: PropertyDescriptor,
   seen: WeakMap<object, unknown>,
+  depth: number,
 ): void {
   if (!('value' in descriptor)) {
     Object.defineProperty(target, key, descriptor);
@@ -92,12 +112,12 @@ function defineRedactedDescriptor(
     ...descriptor,
     value:
       typeof key === 'string'
-        ? redactRecordValue(key, descriptor.value, seen)
-        : redactLogValue(descriptor.value, seen),
+        ? redactRecordValue(key, descriptor.value, seen, depth)
+        : redactLogValue(descriptor.value, seen, depth),
   });
 }
 
-function redactErrorValue(error: Error, seen: WeakMap<object, unknown>): Error {
+function redactErrorValue(error: Error, seen: WeakMap<object, unknown>, depth: number): Error {
   const redacted = Object.create(Object.getPrototypeOf(error)) as Error & Record<string, unknown>;
   seen.set(error, redacted);
 
@@ -113,7 +133,7 @@ function redactErrorValue(error: Error, seen: WeakMap<object, unknown>): Error {
     if (descriptor === undefined) {
       return;
     }
-    defineRedactedDescriptor(redacted, key, descriptor, seen);
+    defineRedactedDescriptor(redacted, key, descriptor, seen, depth + 1);
   });
   return redacted;
 }
@@ -153,80 +173,114 @@ function getCustomStringValue(value: object): string | undefined {
 function redactMapValue(
   value: Map<unknown, unknown>,
   seen: WeakMap<object, unknown>,
+  depth: number,
 ): Map<unknown, unknown> {
   const redacted = new Map<unknown, unknown>();
   seen.set(value, redacted);
-  value.forEach((mapValue, mapKey) => {
+  let count = 0;
+  for (const [mapKey, mapValue] of value) {
+    if (count >= MAX_REDACTION_ENTRIES) {
+      redacted.set(REDACTION_TRUNCATED_KEY, 'Additional map entries omitted');
+      break;
+    }
     redacted.set(
       mapKey,
       typeof mapKey === 'string'
-        ? redactRecordValue(mapKey, mapValue, seen)
-        : redactLogValue(mapValue, seen),
+        ? redactRecordValue(mapKey, mapValue, seen, depth + 1)
+        : redactLogValue(mapValue, seen, depth + 1),
     );
-  });
+    count += 1;
+  }
   return redacted;
 }
 
-function redactSetValue(value: Set<unknown>, seen: WeakMap<object, unknown>): Set<unknown> {
+function redactSetValue(
+  value: Set<unknown>,
+  seen: WeakMap<object, unknown>,
+  depth: number,
+): Set<unknown> {
   const redacted = new Set<unknown>();
   seen.set(value, redacted);
-  value.forEach((setValue) => {
-    redacted.add(redactLogValue(setValue, seen));
-  });
+  let count = 0;
+  for (const setValue of value) {
+    if (count >= MAX_REDACTION_ENTRIES) {
+      redacted.add('Additional set values omitted');
+      break;
+    }
+    redacted.add(redactLogValue(setValue, seen, depth + 1));
+    count += 1;
+  }
   return redacted;
 }
 
 function redactObjectEntries(
   value: object,
   seen: WeakMap<object, unknown>,
+  depth: number,
 ): Record<string, unknown> | undefined {
-  const entries = Object.entries(value as Record<string, unknown>);
-  if (entries.length === 0) {
-    return undefined;
+  const record = value as Record<string, unknown>;
+  let redacted: Record<string, unknown> | undefined;
+  let count = 0;
+
+  for (const key in record) {
+    if (!Object.prototype.hasOwnProperty.call(record, key)) {
+      continue;
+    }
+    if (redacted === undefined) {
+      redacted = {};
+      seen.set(value, redacted);
+    }
+    if (count >= MAX_REDACTION_ENTRIES) {
+      redacted[REDACTION_TRUNCATED_KEY] = 'Additional object properties omitted';
+      break;
+    }
+    redacted[key] = redactRecordValue(key, record[key], seen, depth + 1);
+    count += 1;
   }
 
-  const redacted: Record<string, unknown> = {};
-  seen.set(value, redacted);
-  entries.forEach(([key, recordValue]) => {
-    redacted[key] = redactRecordValue(key, recordValue, seen);
-  });
   return redacted;
 }
 
-function redactNonPlainValue(value: object, seen: WeakMap<object, unknown>): unknown {
+function redactNonPlainValue(
+  value: object,
+  seen: WeakMap<object, unknown>,
+  depth: number,
+): unknown {
   if (isBufferValue(value)) {
-    return redactMessage(value.toString('utf8'));
+    return value.length > MAX_REDACTION_BUFFER_BYTES
+      ? `[REDACTED Buffer ${value.length} bytes]`
+      : redactLogString(value.toString('utf8'));
   }
 
   if (value instanceof URL || value instanceof URLSearchParams) {
-    return redactMessage(value.toString());
+    return redactLogString(value.toString());
   }
 
   if (value instanceof Map) {
-    return redactMapValue(value, seen);
+    return redactMapValue(value, seen, depth);
   }
 
   if (value instanceof Set) {
-    return redactSetValue(value, seen);
+    return redactSetValue(value, seen, depth);
   }
 
   const jsonValue = getJsonValue(value);
   if (jsonValue !== undefined) {
-    return redactLogValue(jsonValue, seen);
+    return redactLogValue(jsonValue, seen, depth + 1);
   }
 
-  const redactedEntries = redactObjectEntries(value, seen);
+  const redactedEntries = redactObjectEntries(value, seen, depth);
   if (redactedEntries !== undefined) {
     return redactedEntries;
   }
 
   const stringValue = getCustomStringValue(value);
-  return stringValue !== undefined ? redactMessage(stringValue) : value;
+  return stringValue !== undefined ? redactLogString(stringValue) : value;
 }
 
-function redactLogValue(value: unknown, seen = new WeakMap<object, unknown>()): unknown {
+function redactLogValue(value: unknown, seen = new WeakMap<object, unknown>(), depth = 0): unknown {
   if (typeof value === 'string') {
-    return redactMessage(value);
+    return redactLogString(value);
   }
 
   if (value === null || typeof value !== 'object') {
@@ -238,22 +292,32 @@ function redactLogValue(value: unknown, seen = new WeakMap<object, unknown>()): 
     return cached;
   }
 
+  if (depth >= MAX_REDACTION_DEPTH) {
+    return REDACTED_VALUE;
+  }
+
   if (Array.isArray(value)) {
     const redacted: unknown[] = [];
     seen.set(value, redacted);
-    value.forEach((item) => redacted.push(redactLogValue(item, seen)));
+    const length = Math.min(value.length, MAX_REDACTION_ENTRIES);
+    for (let index = 0; index < length; index++) {
+      redacted.push(redactLogValue(value[index], seen, depth + 1));
+    }
+    if (value.length > MAX_REDACTION_ENTRIES) {
+      redacted.push('Additional array values omitted');
+    }
     return redacted;
   }
 
   if (value instanceof Error) {
-    return redactErrorValue(value, seen);
+    return redactErrorValue(value, seen, depth);
   }
 
   if (!isPlainRecord(value)) {
-    return redactNonPlainValue(value, seen);
+    return redactNonPlainValue(value, seen, depth);
   }
 
-  return redactObjectEntries(value, seen) ?? {};
+  return redactObjectEntries(value, seen, depth) ?? {};
 }
 
 /**

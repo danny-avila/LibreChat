@@ -164,6 +164,61 @@ describe('redactFormat', () => {
     );
   });
 
+  it('summarizes large buffer splats instead of scanning the whole payload', () => {
+    const buffer = Buffer.concat([Buffer.alloc(9000, 'a'), Buffer.from('sk-abc123def')]);
+
+    const info = runRedactSplatFormat({
+      level: 'info',
+      message: 'payload %s',
+      [SPLAT_SYMBOL]: [buffer],
+    });
+
+    expect(info.message).toBe(`payload [REDACTED Buffer ${buffer.length} bytes]`);
+    expect(info.message).not.toContain('sk-abc123def');
+  });
+
+  it('bounds large object and array redaction work', () => {
+    const metadata: Record<string, unknown> = {};
+    Array.from({ length: 60 }).forEach((_, index) => {
+      metadata[`field${index}`] = index === 59 ? 'sk-abc123def' : `safe-${index}`;
+    });
+
+    const info = runRedactFormat({
+      level: 'info',
+      message: 'visible',
+      [SPLAT_SYMBOL]: [[metadata, ...Array.from({ length: 60 }, (_, index) => `safe-${index}`)]],
+    });
+    const splat = info[SPLAT_SYMBOL] as Array<Array<Record<string, unknown> | string>>;
+    const redactedObject = splat[0][0] as Record<string, unknown>;
+
+    expect(Object.keys(redactedObject)).toHaveLength(51);
+    expect(redactedObject.field49).toBe('safe-49');
+    expect(redactedObject.field59).toBeUndefined();
+    expect(redactedObject.__redaction_truncated__).toBe('Additional object properties omitted');
+    expect(splat[0]).toHaveLength(51);
+    expect(splat[0][50]).toBe('Additional array values omitted');
+    expect(JSON.stringify(splat)).not.toContain('sk-abc123def');
+  });
+
+  it('redacts over-deep object subtrees instead of traversing indefinitely', () => {
+    const root: Record<string, unknown> = {};
+    let current = root;
+    Array.from({ length: 12 }).forEach((_, index) => {
+      current.child = { label: `level-${index}` };
+      current = current.child as Record<string, unknown>;
+    });
+    current.apiKey = 'secretvalue';
+
+    const info = runRedactFormat({
+      level: 'info',
+      message: root,
+    });
+
+    const serialized = JSON.stringify(info.message);
+    expect(serialized).toContain('[REDACTED]');
+    expect(serialized).not.toContain('secretvalue');
+  });
+
   it('redacts error splat arguments without mutating the original error', () => {
     const error = new Error('Bearer secretvalue');
     error.stack = 'Error: Bearer secretvalue\n    at request';
