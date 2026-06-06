@@ -1,10 +1,10 @@
-import type { DeleteResult, FilterQuery, Model } from 'mongoose';
 import { RetentionMode } from 'librechat-data-provider';
-import logger from '~/config/winston';
+import type { DeleteResult, FilterQuery, Model } from 'mongoose';
+import type { AppConfig, IMessage } from '~/types';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { createFallbackRetentionDate } from '~/utils/retention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
-import type { AppConfig, IMessage } from '~/types';
+import logger from '~/config/winston';
 
 /** Simple UUID v4 regex to replace zod validation */
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

@@ -3,10 +3,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { RetentionMode } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { IMessage } from '..';
-import { createMessageMethods } from './message';
-import logger from '~/config/winston';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
+import { createMessageMethods } from './message';
 import { createModels } from '../models';
+import logger from '~/config/winston';
 
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),
