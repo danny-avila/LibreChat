@@ -12,25 +12,11 @@ const DEBUG_MESSAGE_LENGTH: number = parseInt(process.env.DEBUG_MESSAGE_LENGTH |
 const LOG_CONTEXT_KEYS = ['tenantId', 'userId', 'requestId'] as const;
 
 const sensitiveKeys: RegExp[] = [
-  /^(sk-)[^\s]+/, // OpenAI API key pattern
-  /(Bearer )[^\s]+/, // Header: Bearer token pattern
-  /(api-key:? )[^\s]+/, // Header: API key pattern
-  /(key=)[^\s]+/, // URL query param: sensitive key pattern (Google)
+  /\b(sk-)[a-zA-Z0-9_-]+/g, // OpenAI API key pattern
+  /\b(Bearer )[^\s"']+/g, // Header: Bearer token pattern
+  /\b(api-key:? )[^\s"']+/gi, // Header: API key pattern
+  /\b(key=)[^\s"'&]+/g, // URL query param: sensitive key pattern
 ];
-
-/**
- * Determines if a given value string is sensitive and returns matching regex patterns.
- *
- * @param valueStr - The value string to check.
- * @returns An array of regex patterns that match the value string.
- */
-function getMatchingSensitivePatterns(valueStr: string): RegExp[] {
-  if (valueStr) {
-    // Filter and return all regex patterns that match the value string
-    return sensitiveKeys.filter((regex) => regex.test(valueStr));
-  }
-  return [];
-}
 
 /**
  * Redacts sensitive information from a console message and trims it to a specified length if provided.
@@ -43,36 +29,32 @@ function redactMessage(str: string, trimLength?: number): string {
     return '';
   }
 
-  const patterns = getMatchingSensitivePatterns(str);
-  patterns.forEach((pattern) => {
-    str = str.replace(pattern, '$1[REDACTED]');
-  });
+  const redacted = sensitiveKeys.reduce(
+    (currentMessage, pattern) => currentMessage.replace(pattern, '$1[REDACTED]'),
+    str,
+  );
 
-  if (trimLength !== undefined && str.length > trimLength) {
-    return `${str.substring(0, trimLength)}...`;
+  if (trimLength !== undefined && redacted.length > trimLength) {
+    return `${redacted.substring(0, trimLength)}...`;
   }
 
-  return str;
+  return redacted;
 }
 
 /**
- * Redacts sensitive information from log messages if the log level is 'error'.
+ * Redacts sensitive information from log messages at every level.
  * Note: Intentionally mutates the object.
  * @param info - The log information object.
  * @returns The modified log information object.
  */
 const redactFormat = winston.format((info: winston.Logform.TransformableInfo) => {
-  if (info.level === 'error') {
-    // Type guard to ensure message is a string
-    if (typeof info.message === 'string') {
-      info.message = redactMessage(info.message);
-    }
+  if (typeof info.message === 'string') {
+    info.message = redactMessage(info.message);
+  }
 
-    // Handle MESSAGE_SYMBOL with type safety
-    const symbolValue = (info as Record<string | symbol, unknown>)[MESSAGE_SYMBOL];
-    if (typeof symbolValue === 'string') {
-      (info as Record<string | symbol, unknown>)[MESSAGE_SYMBOL] = redactMessage(symbolValue);
-    }
+  const symbolValue = (info as Record<string | symbol, unknown>)[MESSAGE_SYMBOL];
+  if (typeof symbolValue === 'string') {
+    (info as Record<string | symbol, unknown>)[MESSAGE_SYMBOL] = redactMessage(symbolValue);
   }
   return info;
 });
@@ -129,7 +111,7 @@ function appendRequestContext(line: string, metadata: Record<string, unknown>): 
  * Formats log messages for debugging purposes.
  * - Truncates long strings within log messages.
  * - Condenses arrays by truncating long strings and objects as strings within array items.
- * - Redacts sensitive information from log messages if the log level is 'error'.
+ * - Message redaction is applied by redactFormat before this formatter.
  * - Converts log information object to a formatted string.
  *
  * @param options - The options for formatting log messages.

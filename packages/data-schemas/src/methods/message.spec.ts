@@ -4,6 +4,7 @@ import { RetentionMode } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { IMessage } from '..';
 import { createMessageMethods } from './message';
+import logger from '~/config/winston';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import { createModels } from '../models';
 
@@ -65,6 +66,8 @@ describe('Message Operations', () => {
   };
 
   beforeEach(async () => {
+    jest.clearAllMocks();
+
     // Clear database
     await Message.deleteMany({});
 
@@ -106,6 +109,18 @@ describe('Message Operations', () => {
       mockMessageData.conversationId = 'invalid-id';
       const result = await saveMessage(mockCtx, mockMessageData);
       expect(result).toBeUndefined();
+    });
+
+    it('should not log message params for invalid conversation IDs', async () => {
+      mockMessageData.conversationId = 'invalid-id';
+      mockMessageData.text = 'Sensitive prompt text';
+
+      await saveMessage(mockCtx, mockMessageData, { context: 'message-save-test' });
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        'Invalid conversation ID: invalid-id (context: message-save-test)',
+      );
+      expect(logger.info).not.toHaveBeenCalled();
     });
   });
 

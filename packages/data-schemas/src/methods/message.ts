@@ -79,9 +79,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
 
     const conversationId = params.conversationId as string | undefined;
     if (!conversationId || !UUID_REGEX.test(conversationId)) {
-      logger.warn(`Invalid conversation ID: ${conversationId}`);
-      logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
-      logger.info(`---Invalid conversation ID Params: ${JSON.stringify(params, null, 2)}`);
+      logger.warn(
+        `Invalid conversation ID: ${conversationId} (context: ${metadata?.context ?? 'n/a'})`,
+      );
       return;
     }
 

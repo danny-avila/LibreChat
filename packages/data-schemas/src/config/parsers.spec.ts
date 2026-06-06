@@ -1,4 +1,4 @@
-import { debugTraverse } from './parsers';
+import { debugTraverse, redactFormat, redactMessage } from './parsers';
 
 const SPLAT_SYMBOL = Symbol.for('splat');
 const MESSAGE_SYMBOL = Symbol.for('message');
@@ -8,6 +8,15 @@ type FormatterInfo = Record<string | symbol, unknown> & {
   message: string;
   timestamp: string;
 };
+
+type RedactInfo = Record<string | symbol, unknown> & {
+  level: string;
+  message: string;
+};
+
+function runRedactFormat(info: RedactInfo): RedactInfo {
+  return (redactFormat().transform(info) || info) as RedactInfo;
+}
 
 function runFormatter(info: FormatterInfo): string {
   const transformed = debugTraverse.transform(info);
@@ -27,6 +36,40 @@ function buildInfo(level: string, meta: Record<string, unknown>): FormatterInfo 
     [SPLAT_SYMBOL]: [meta],
   };
 }
+
+describe('redactMessage', () => {
+  it('redacts sensitive token patterns anywhere in a message', () => {
+    expect(redactMessage('token: sk-abc123def')).toBe('token: sk-[REDACTED]');
+    expect(redactMessage('auth Bearer secretvalue')).toBe('auth Bearer [REDACTED]');
+    expect(redactMessage('api-key: secretvalue')).toBe('api-key: [REDACTED]');
+    expect(redactMessage('https://example.test/?key=secretvalue&next=true')).toBe(
+      'https://example.test/?key=[REDACTED]&next=true',
+    );
+  });
+
+  it('does not redact ordinary words containing sensitive prefixes', () => {
+    expect(redactMessage('task-runner failed')).toBe('task-runner failed');
+    expect(redactMessage('mask-value computed')).toBe('mask-value computed');
+    expect(redactMessage('monkey=10 bananas')).toBe('monkey=10 bananas');
+  });
+});
+
+describe('redactFormat', () => {
+  it.each(['error', 'warn', 'info', 'debug'])('redacts info.message for %s level', (level) => {
+    const info = runRedactFormat({ level, message: 'Bearer secretvalue' });
+    expect(info.message).toBe('Bearer [REDACTED]');
+  });
+
+  it('redacts the winston message symbol', () => {
+    const info = runRedactFormat({
+      level: 'info',
+      message: 'visible',
+      [MESSAGE_SYMBOL]: 'token: sk-abc123def',
+    });
+
+    expect(info[MESSAGE_SYMBOL]).toBe('token: sk-[REDACTED]');
+  });
+});
 
 describe('debugTraverse request context', () => {
   it('appends request context metadata for non-debug lines', () => {
