@@ -24,15 +24,8 @@ import type { GenericTool, LCToolRegistry, ToolMap, LCTool } from '@librechat/ag
 import type { Response as ServerResponse } from 'express';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { InitializeResultBase, ServerRequest, EndpointDbMethods } from '~/types';
-import {
-  optionalChainWithEmptyCheck,
-  extractLibreChatParams,
-  getModelMaxTokens,
-  getThreadData,
-} from '~/utils';
-import { filterFilesByEndpointConfig } from '~/files';
-import { generateArtifactsPrompt } from '~/prompts';
-import { getProviderConfig } from '~/endpoints';
+import type { ResolvedManualSkill, ResolvedAlwaysApplySkill } from './skills';
+import type { TFilterFilesByAgentAccess } from './resources';
 import {
   injectSkillCatalog,
   resolveManualSkills,
@@ -41,13 +34,20 @@ import {
   MAX_PRIMED_SKILLS_PER_TURN,
 } from './skills';
 import {
+  optionalChainWithEmptyCheck,
+  extractLibreChatParams,
+  getModelMaxTokens,
+  getThreadData,
+} from '~/utils';
+import {
   registerCodeExecutionTools,
   registerFileAuthoringTools,
   isFileAuthoringToolDefinition,
 } from './tools';
+import { filterFilesByEndpointConfig } from '~/files';
+import { generateArtifactsPrompt } from '~/prompts';
+import { getProviderConfig } from '~/endpoints';
 import { primeResources } from './resources';
-import type { ResolvedManualSkill, ResolvedAlwaysApplySkill } from './skills';
-import type { TFilterFilesByAgentAccess } from './resources';
 
 /**
  * Fraction of context budget reserved as headroom when no explicit maxContextTokens is set.
