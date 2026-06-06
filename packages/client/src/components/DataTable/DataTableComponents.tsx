@@ -1,7 +1,7 @@
 import React, { memo, forwardRef } from 'react';
 import { flexRender } from '@tanstack/react-table';
-import type { TableColumn } from './DataTable.types';
 import type { Row } from '@tanstack/react-table';
+import type { TableColumn } from './DataTable.types';
 import { TableCell, TableRow, TableRowHeader } from '../Table';
 import { Checkbox } from '../Checkbox';
 import { Skeleton } from '../Skeleton';
@@ -70,16 +70,16 @@ const TableRowComponent = <TData extends Record<string, unknown>>(
         const isDesktopOnly = meta?.desktopOnly;
         const isRowHeader = meta?.isRowHeader;
         const percent = meta?.width;
-        const widthStyle =
-          cell.column.id === 'select'
-            ? { width: '32px', maxWidth: '32px', minWidth: '32px' }
-            : percent
-              ? {
-                  width: `${percent}%`,
-                  maxWidth: `${percent}%`,
-                  minWidth: `${percent}%`, // Don't shrink on mobile
-                }
-              : undefined;
+        let widthStyle: React.CSSProperties | undefined;
+        if (cell.column.id === 'select') {
+          widthStyle = { width: '32px', maxWidth: '32px', minWidth: '32px' };
+        } else if (percent) {
+          widthStyle = {
+            width: `${percent}%`,
+            maxWidth: `${percent}%`,
+            minWidth: `${percent}%`, // Don't shrink on mobile
+          };
+        }
 
         const CellComponent = isRowHeader ? TableRowHeader : TableCell;
 

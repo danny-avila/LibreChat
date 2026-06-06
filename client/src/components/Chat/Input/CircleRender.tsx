@@ -16,18 +16,16 @@ const CircleRender = ({ rmsLevel, isCameraOn, state }) => {
     }
   };
 
-  const baseScale = isCameraOn ? 0.5 : 1;
-  const scaleMultiplier =
-    rmsLevel > 0.08
-      ? 1.8
-      : rmsLevel > 0.07
-        ? 1.6
-        : rmsLevel > 0.05
-          ? 1.4
-          : rmsLevel > 0.01
-            ? 1.2
-            : 1;
+  const getScaleMultiplier = (level: number): number => {
+    if (level > 0.08) return 1.8;
+    if (level > 0.07) return 1.6;
+    if (level > 0.05) return 1.4;
+    if (level > 0.01) return 1.2;
+    return 1;
+  };
 
+  const baseScale = isCameraOn ? 0.5 : 1;
+  const scaleMultiplier = getScaleMultiplier(rmsLevel);
   const transformScale = baseScale * scaleMultiplier;
 
   return getIconComponent(state);
