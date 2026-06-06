@@ -313,6 +313,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
       $inc: { usage: inc },
       $unset: { expiresAt: '', temp_file_id: '' },
     };
+    // Owner scoping is fail-closed: mismatches leave usage and TTL metadata unchanged.
     const query: FilterQuery<IMongoFile> = user ? { file_id, user } : { file_id };
     return File.findOneAndUpdate(query, updateOperation, {
       new: true,
@@ -406,6 +407,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
   ): Promise<IMongoFile[]> {
     const promises: Promise<IMongoFile | null>[] = [];
     const seen = new Set<string>();
+    // Preserve the same owner scope for every deduped ID in this batch.
     const user = options?.user;
 
     for (const file of files) {
