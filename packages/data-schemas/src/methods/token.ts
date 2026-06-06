@@ -61,7 +61,8 @@ export function createTokenMethods(mongoose: typeof import('mongoose')) {
         conditions.push({ token: query.token });
       }
       if (query.email !== undefined) {
-        conditions.push({ email: query.email.trim().toLowerCase() });
+        const email = query.email === null ? null : query.email.trim().toLowerCase();
+        conditions.push({ email });
       }
       if (query.type !== undefined) {
         conditions.push({ type: query.type });
@@ -98,13 +99,14 @@ export function createTokenMethods(mongoose: typeof import('mongoose')) {
       if (query.token) {
         conditions.push({ token: query.token });
       }
-      if (query.email) {
-        conditions.push({ email: query.email.trim().toLowerCase() });
+      if (query.email !== undefined) {
+        const email = query.email === null ? null : query.email.trim().toLowerCase();
+        conditions.push({ email });
       }
-      if (query.type) {
+      if (query.type !== undefined) {
         conditions.push({ type: query.type });
       }
-      if (query.identifier) {
+      if (query.identifier !== undefined) {
         conditions.push({ identifier: query.identifier });
       }
 
