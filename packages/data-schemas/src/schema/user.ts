@@ -233,6 +233,10 @@ const userSchema = new Schema<IUser>(
     lastActiveAt:{
       type: Date
     },
+    isVerified:{
+      type: Boolean,
+      default: false
+    },
   },
   { timestamps: true },
 );

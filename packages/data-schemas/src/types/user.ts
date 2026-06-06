@@ -82,6 +82,7 @@ export interface IUser extends Document {
       auth: string;
     };
   }>;
+  isVerified: boolean;
   activeSessionId?: Types.ObjectId | string | null;
   activeSessionExpiresAt?: Date | null;
   lastActiveAt: Date
