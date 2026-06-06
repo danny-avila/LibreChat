@@ -1,7 +1,7 @@
-import { logger, getTenantId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
-import type { StandardGraph } from '@librechat/agents';
 import { parseTextParts } from 'librechat-data-provider';
+import { logger, getTenantId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import type { Agents, TMessageContentParts } from 'librechat-data-provider';
+import type { StandardGraph } from '@librechat/agents';
 import type {
   SerializableJobData,
   IEventTransport,
@@ -9,6 +9,7 @@ import type {
   AbortResult,
   IJobStore,
 } from './interfaces/IJobStore';
+import type { GenerationJobStore } from '~/app/metrics';
 import type * as t from '~/types';
 import {
   recordGenerationJob,
@@ -16,7 +17,6 @@ import {
   recordGenerationStreamSubscription,
   setGenerationJobsInFlight,
 } from '~/app/metrics';
-import type { GenerationJobStore } from '~/app/metrics';
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
 
@@ -962,6 +962,7 @@ class GenerationJobManagerClass {
 
     await this.trackUserMessage(streamId, event);
     await this.trackTitleEvent(streamId, event);
+    await this.trackReplayEvent(streamId, event);
 
     // For Redis mode, persist chunk for later reconstruction (fire-and-forget for resumability)
     if (this._isRedis) {
@@ -1056,6 +1057,61 @@ class GenerationJobManagerClass {
 
     await this.jobStore.updateJob(streamId, {
       titleEvent: JSON.stringify(event),
+    });
+  }
+
+  /**
+   * Persist replay-only stream events that are needed to reconstruct active
+   * UI state on resume but are not represented by aggregated message content.
+   */
+  private async trackReplayEvent(streamId: string, event: t.ServerSentEvent): Promise<void> {
+    if (!('event' in event) || event.event !== 'on_run_step_delta') {
+      return;
+    }
+
+    const data = event.data;
+    if (!data || typeof data !== 'object' || !('delta' in data)) {
+      return;
+    }
+
+    const delta = (data as { delta?: { auth?: unknown } }).delta;
+    if (delta?.auth == null) {
+      return;
+    }
+
+    const jobData = await this.jobStore.getJob(streamId);
+    if (!jobData) {
+      return;
+    }
+
+    let replayEvents: t.ServerSentEvent[] = [];
+    if (jobData.replayEvents) {
+      try {
+        replayEvents = JSON.parse(jobData.replayEvents) as t.ServerSentEvent[];
+      } catch {
+        replayEvents = [];
+      }
+    }
+
+    const stepId = (data as { id?: unknown }).id;
+    const existingIndex = replayEvents.findIndex((candidate) => {
+      if (!('event' in candidate) || candidate.event !== event.event) {
+        return false;
+      }
+      const candidateData = candidate.data;
+      return !!candidateData && typeof candidateData === 'object' && 'id' in candidateData
+        ? candidateData.id === stepId
+        : false;
+    });
+
+    if (existingIndex >= 0) {
+      replayEvents[existingIndex] = event;
+    } else {
+      replayEvents.push(event);
+    }
+
+    await this.jobStore.updateJob(streamId, {
+      replayEvents: JSON.stringify(replayEvents),
     });
   }
 
@@ -1176,6 +1232,14 @@ class GenerationJobManagerClass {
         // Ignore malformed persisted title events.
       }
     }
+    let replayEvents: t.ResumeState['replayEvents'];
+    if (jobData.replayEvents) {
+      try {
+        replayEvents = JSON.parse(jobData.replayEvents) as t.ResumeState['replayEvents'];
+      } catch {
+        // Ignore malformed persisted replay events.
+      }
+    }
 
     logger.debug(`[GenerationJobManager] getResumeState:`, {
       streamId,
@@ -1191,6 +1255,7 @@ class GenerationJobManagerClass {
       conversationId: jobData.conversationId,
       sender: jobData.sender,
       titleEvent,
+      replayEvents,
     };
   }
 

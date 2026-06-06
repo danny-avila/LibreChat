@@ -22,16 +22,16 @@ import type {
   EventSubmission,
 } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
+import type { ActiveJobsResponse } from '~/data-provider';
 import {
   useGetUserBalance,
   useGetStartupConfig,
   queueTitleGeneration,
   streamStatusQueryKey,
 } from '~/data-provider';
-import type { ActiveJobsResponse } from '~/data-provider';
+import { clearAllDrafts, removeConvoFromAllQueries, upsertConvoInAllQueries } from '~/utils';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
-import { clearAllDrafts, removeConvoFromAllQueries, upsertConvoInAllQueries } from '~/utils';
 import store from '~/store';
 
 type ChatHelpers = Pick<
@@ -475,6 +475,18 @@ export default function useResumableSSE(
 
             if (data.resumeState?.titleEvent) {
               titleHandler(data.resumeState.titleEvent);
+            }
+
+            if (data.resumeState?.replayEvents?.length > 0) {
+              console.log(
+                `[ResumableSSE] Replaying ${data.resumeState.replayEvents.length} resume events`,
+              );
+              const submission = { ...currentSubmission, userMessage } as EventSubmission;
+              for (const replayEvent of data.resumeState.replayEvents) {
+                if (replayEvent.event != null) {
+                  stepHandler(replayEvent, submission);
+                }
+              }
             }
 
             if (data.pendingEvents?.length > 0) {
