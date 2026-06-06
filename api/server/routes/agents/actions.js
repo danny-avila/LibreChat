@@ -4,6 +4,7 @@ const { logger } = require('@librechat/data-schemas');
 const {
   generateCheckAccess,
   isActionDomainAllowed,
+  mergeAgentActionTools,
   mergeActionMetadataForUpdate,
   validateActionOAuthMetadata,
 } = require('@librechat/api');
@@ -27,6 +28,22 @@ const db = require('~/models');
 const { canAccessAgentResource } = require('~/server/middleware');
 
 const router = express.Router();
+
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+async function deleteActionOAuthTokens(action_id) {
+  const escapedActionId = escapeRegExp(action_id);
+  await Promise.all([
+    db.deleteTokens({
+      type: 'oauth',
+      identifier: new RegExp(`^[^:]+:${escapedActionId}$`),
+    }),
+    db.deleteTokens({
+      type: 'oauth_refresh',
+      identifier: new RegExp(`^[^:]+:${escapedActionId}:refresh$`),
+    }),
+  ]);
+}
 
 const checkAgentCreate = generateCheckAccess({
   permissionType: PermissionTypes.AGENTS,
@@ -141,6 +158,7 @@ router.post(
       const requestedActionId = _action_id;
       let action_id = requestedActionId ?? nanoid();
       const initialPromises = [];
+      let targetChanged = false;
 
       // Permissions already validated by middleware - load agent directly
       initialPromises.push(db.getAgent({ id: agent_id }));
@@ -172,11 +190,7 @@ router.post(
           });
         }
 
-        if (metadataUpdate.targetChanged) {
-          // OAuth tokens are keyed by action_id; rotate it so old tokens cannot follow a new target.
-          action_id = nanoid();
-        }
-
+        targetChanged = metadataUpdate.targetChanged;
         metadata = metadataUpdate.metadata;
       }
 
@@ -208,26 +222,25 @@ router.post(
       const { tools: _tools = [] } = agent;
       const previousAction = actions_result?.[0];
       const previousLegacyDomain = previousAction
-        ? legacyDomainEncode(previousAction.metadata.domain)
+        ? legacyDomainEncode(previousAction.metadata?.domain)
         : '';
 
-      const shouldRemoveAgentTool = (tool) => {
-        if (!tool) {
-          return false;
-        }
-        return (
-          tool.includes(encodedDomain) ||
-          tool.includes(legacyDomain) ||
-          (previousEncodedDomain && tool.includes(previousEncodedDomain)) ||
-          (previousLegacyDomain && tool.includes(previousLegacyDomain)) ||
-          tool.includes(action_id) ||
-          (requestedActionId && tool.includes(requestedActionId))
-        );
-      };
+      const tools = mergeAgentActionTools({
+        existingTools: _tools,
+        incomingFunctions: functions,
+        encodedDomain,
+        actionId: action_id,
+        requestedActionId,
+        legacyDomain,
+        previousEncodedDomain,
+        previousLegacyDomain,
+        previousRawSpec: previousAction?.metadata?.raw_spec,
+      });
 
-      const tools = _tools
-        .filter((tool) => !shouldRemoveAgentTool(tool))
-        .concat(functions.map((tool) => `${tool.function.name}${actionDelimiter}${encodedDomain}`));
+      if (targetChanged && requestedActionId) {
+        // Keep the callback URL stable while preventing old OAuth tokens from following a new target.
+        await deleteActionOAuthTokens(requestedActionId);
+      }
 
       // Force version update since actions are changing
       const updatedAgent = await db.updateAgent(
