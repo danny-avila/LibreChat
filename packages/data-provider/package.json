@@ -60,7 +60,7 @@
     "@rollup/plugin-terser": "^1.0.0",
     "@types/jest": "^29.5.2",
     "@types/js-yaml": "^4.0.9",
-    "@types/node": "^20.3.0",
+    "@types/node": "^24.12.4",
     "@types/react": "^18.2.18",
     "@types/winston": "^2.4.4",
     "jest": "^30.2.0",

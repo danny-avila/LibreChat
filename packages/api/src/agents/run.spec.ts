@@ -1,5 +1,6 @@
 import { Providers } from '@librechat/agents';
 import { ToolMessage, AIMessage, HumanMessage } from '@librechat/agents/langchain/messages';
+import { ReasoningResponseKey } from 'librechat-data-provider';
 
 import {
   extractDiscoveredToolsFromHistory,
@@ -147,6 +148,56 @@ describe('getReasoningKey', () => {
     } as Parameters<typeof getReasoningKey>[1];
 
     const reasoningKey = getReasoningKey(Providers.OPENAI, llmConfig);
+
+    expect(reasoningKey).toBe('reasoning');
+  });
+
+  it('keeps Vercel AI Gateway on ChatOpenAI normalized reasoning_content', () => {
+    const llmConfig = {
+      configuration: {
+        baseURL: 'https://ai-gateway.vercel.sh/v1',
+      },
+    } as Parameters<typeof getReasoningKey>[1];
+
+    const reasoningKey = getReasoningKey(Providers.OPENAI, llmConfig);
+
+    expect(reasoningKey).toBe('reasoning_content');
+  });
+
+  it('keeps Vercel custom endpoint names on ChatOpenAI normalized reasoning_content', () => {
+    const llmConfig = {} as Parameters<typeof getReasoningKey>[1];
+
+    const reasoningKey = getReasoningKey(Providers.OPENAI, llmConfig, 'Vercel');
+
+    expect(reasoningKey).toBe('reasoning_content');
+  });
+
+  it('uses explicit reasoning response keys for Vercel when configured', () => {
+    const llmConfig = {
+      configuration: {
+        baseURL: 'https://ai-gateway.vercel.sh/v1',
+      },
+    } as Parameters<typeof getReasoningKey>[1];
+
+    const reasoningKey = getReasoningKey(
+      Providers.OPENAI,
+      llmConfig,
+      'Vercel',
+      ReasoningResponseKey.reasoning,
+    );
+
+    expect(reasoningKey).toBe('reasoning');
+  });
+
+  it('uses explicit reasoning response keys for otherwise default OpenAI-compatible endpoints', () => {
+    const llmConfig = {} as Parameters<typeof getReasoningKey>[1];
+
+    const reasoningKey = getReasoningKey(
+      Providers.OPENAI,
+      llmConfig,
+      'Company Gateway',
+      ReasoningResponseKey.reasoning,
+    );
 
     expect(reasoningKey).toBe('reasoning');
   });

@@ -23,6 +23,7 @@ const {
   getMissingCustomUserVars,
   buildWebSearchDynamicContext,
   getCodeApiAuthHeaders,
+  isFileAuthoringToolDefinition,
 } = require('@librechat/api');
 const {
   Time,
@@ -595,11 +596,15 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
   const flowManager = getFlowStateManager(flowsCache);
   const configServers = await resolveConfigServers(req);
   const pendingOAuthServers = new Set();
+  const oauthToolCallIds = new Map();
+  const oauthStepIndexes = new Map();
 
-  const createOAuthEmitter = (serverName) => {
+  const createOAuthEmitter = (serverName, index) => {
     return async (authURL) => {
       const flowId = `${req.user.id}:${serverName}:${Date.now()}`;
       const stepId = 'step_oauth_login_' + serverName;
+      oauthToolCallIds.set(serverName, flowId);
+      oauthStepIndexes.set(serverName, index);
       const toolCall = {
         id: flowId,
         name: buildOAuthToolCallName(serverName),
@@ -610,7 +615,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
         runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
         id: stepId,
         type: StepTypes.TOOL_CALLS,
-        index: 0,
+        index,
         stepDetails: {
           type: StepTypes.TOOL_CALLS,
           tool_calls: [toolCall],
@@ -639,6 +644,40 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       } else {
         logger.warn(
           `[Tool Definitions] Cannot emit OAuth event for ${serverName}: no streamId and res not available`,
+        );
+      }
+    };
+  };
+
+  const createOAuthEndEmitter = (serverName) => {
+    return async () => {
+      const stepId = 'step_oauth_login_' + serverName;
+      const toolCall = {
+        id: oauthToolCallIds.get(serverName),
+        name: buildOAuthToolCallName(serverName),
+        args: '',
+        output: 'OAuth authentication completed',
+        type: 'tool_call',
+      };
+
+      const runStepCompletedEvent = {
+        event: GraphEvents.ON_RUN_STEP_COMPLETED,
+        data: {
+          result: {
+            id: stepId,
+            index: oauthStepIndexes.get(serverName) ?? 0,
+            tool_call: toolCall,
+          },
+        },
+      };
+
+      if (streamId) {
+        await GenerationJobManager.emitChunk(streamId, runStepCompletedEvent);
+      } else if (res && !res.writableEnded) {
+        sendEvent(res, runStepCompletedEvent);
+      } else {
+        logger.warn(
+          `[Tool Definitions] Cannot emit OAuth completion for ${serverName}: no streamId and res not available`,
         );
       }
     };
@@ -780,7 +819,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       `[Tool Definitions] OAuth required for ${serverNames.length} server(s): ${serverNames.join(', ')}. Emitting events and waiting.`,
     );
 
-    const oauthWaitPromises = serverNames.map(async (serverName) => {
+    const oauthWaitPromises = serverNames.map(async (serverName, index) => {
       try {
         const result = await reinitMCPServer({
           user: req.user,
@@ -789,7 +828,8 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
           userMCPAuthMap,
           flowManager,
           returnOnOAuth: false,
-          oauthStart: createOAuthEmitter(serverName),
+          oauthStart: createOAuthEmitter(serverName, index),
+          oauthEnd: createOAuthEndEmitter(serverName),
           connectionTimeout: Time.TWO_MINUTES,
         });
 
@@ -1380,6 +1420,13 @@ async function loadToolsForExecution({
     }
   }
 
+  const fileAuthoringToolNames = new Set(
+    toolRegistry
+      ? Array.from(toolRegistry.values())
+          .filter((definition) => isFileAuthoringToolDefinition(definition))
+          .map((definition) => definition.name)
+      : [],
+  );
   const specialToolNames = new Set([
     AgentConstants.TOOL_SEARCH,
     AgentConstants.PROGRAMMATIC_TOOL_CALLING,
@@ -1387,6 +1434,7 @@ async function loadToolsForExecution({
     AgentConstants.BASH_TOOL,
     AgentConstants.SKILL_TOOL,
     AgentConstants.READ_FILE,
+    ...fileAuthoringToolNames,
   ]);
 
   let ptcOrchestratedToolNames = [];

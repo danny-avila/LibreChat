@@ -987,12 +987,12 @@ function renderPptxSlidesBody(slides: PptxSlide[]): string {
       const titleHtml = slide.title
         ? `<h2 class="lc-pptx-slide-title">${escapeHtml(slide.title)}</h2>`
         : '';
-      const bodyHtml =
-        slide.body.length > 0
-          ? `<ul class="lc-pptx-slide-body">${slide.body.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>`
-          : !slide.title
-            ? '<p class="lc-pptx-slide-empty">(empty slide)</p>'
-            : '';
+      let bodyHtml = '';
+      if (slide.body.length > 0) {
+        bodyHtml = `<ul class="lc-pptx-slide-body">${slide.body.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>`;
+      } else if (!slide.title) {
+        bodyHtml = '<p class="lc-pptx-slide-empty">(empty slide)</p>';
+      }
       return `<li class="lc-pptx-slide">
   <span class="lc-pptx-slide-number">Slide ${slide.number}</span>
   ${titleHtml}

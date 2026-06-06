@@ -40,6 +40,75 @@ type ChatHelpers = Pick<
 >;
 
 const MAX_RETRIES = 5;
+const START_GENERATION_NETWORK_RETRIES = 3;
+const START_GENERATION_READINESS_TIMEOUT_MS = 120000;
+const SERVER_NOT_READY_CODE = 'SERVER_NOT_READY';
+
+type StartGenerationError = {
+  code?: string;
+  response?: {
+    status?: number;
+    data?: {
+      code?: string;
+    };
+    headers?: Record<string, string | number | string[] | undefined>;
+  };
+};
+
+const toStartGenerationError = (error: unknown): StartGenerationError | undefined =>
+  error != null && typeof error === 'object' ? (error as StartGenerationError) : undefined;
+
+const isRetryableNetworkError = (error: unknown) => {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const { code } = toStartGenerationError(error) ?? {};
+  return code === 'ERR_NETWORK' || code === 'ERR_INTERNET_DISCONNECTED';
+};
+
+const isServerNotReadyError = (error: unknown) => {
+  const candidate = toStartGenerationError(error);
+  return (
+    candidate?.response?.status === 503 && candidate.response?.data?.code === SERVER_NOT_READY_CODE
+  );
+};
+
+const getRetryAfterDelay = (error: unknown, fallbackDelay: number) => {
+  const headers = toStartGenerationError(error)?.response?.headers;
+  const rawValue = headers?.['retry-after'] ?? headers?.['Retry-After'];
+  const retryAfter = Array.isArray(rawValue) ? rawValue[0] : rawValue;
+  const seconds = typeof retryAfter === 'number' ? retryAfter : Number(retryAfter);
+
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return fallbackDelay;
+  }
+
+  return Math.min(seconds * 1000, 30000);
+};
+
+const waitForRetryDelay = (delay: number, signal?: AbortSignal): Promise<boolean> =>
+  new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve(false);
+      return;
+    }
+
+    function cleanup() {
+      signal?.removeEventListener('abort', onAbort);
+    }
+    function onAbort() {
+      clearTimeout(timeout);
+      cleanup();
+      resolve(false);
+    }
+    const timeout = setTimeout(() => {
+      cleanup();
+      resolve(true);
+    }, delay);
+
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 
 const hasConcreteConversationId = (conversationId?: string | null) =>
   !!conversationId &&
@@ -211,6 +280,7 @@ export default function useResumableSSE(
     messageHandler,
     contentHandler,
     createdHandler,
+    titleHandler,
     syncStepMessage,
     attachmentHandler,
     resetContentHandler,
@@ -317,6 +387,11 @@ export default function useResumableSSE(
             return;
           }
 
+          if (data.event === 'title') {
+            titleHandler(data);
+            return;
+          }
+
           if (data.event != null) {
             stepHandler(data, { ...currentSubmission, userMessage } as EventSubmission);
             return;
@@ -398,11 +473,17 @@ export default function useResumableSSE(
               }
             }
 
+            if (data.resumeState?.titleEvent) {
+              titleHandler(data.resumeState.titleEvent);
+            }
+
             if (data.pendingEvents?.length > 0) {
               console.log(`[ResumableSSE] Replaying ${data.pendingEvents.length} pending events`);
               const submission = { ...currentSubmission, userMessage } as EventSubmission;
               for (const pendingEvent of data.pendingEvents) {
-                if (pendingEvent.event != null) {
+                if (pendingEvent.event === 'title') {
+                  titleHandler(pendingEvent);
+                } else if (pendingEvent.event != null) {
                   stepHandler(pendingEvent, submission);
                 } else if (pendingEvent.type != null) {
                   contentHandler({ data: pendingEvent, submission });
@@ -670,6 +751,7 @@ export default function useResumableSSE(
       finalHandler,
       createdHandler,
       attachmentHandler,
+      titleHandler,
       stepHandler,
       contentHandler,
       resetContentHandler,
@@ -690,10 +772,11 @@ export default function useResumableSSE(
   /**
    * Start generation (POST request that returns streamId)
    * Uses request.post which has axios interceptors for automatic token refresh.
-   * Retries up to 3 times on network errors with exponential backoff.
+   * Retries transient network failures and startup readiness responses.
+   * Readiness retries honor Retry-After until cleanup or the readiness window expires.
    */
   const startGeneration = useCallback(
-    async (currentSubmission: TSubmission): Promise<string | null> => {
+    async (currentSubmission: TSubmission, signal?: AbortSignal): Promise<string | null> => {
       const payloadData = createPayload(currentSubmission);
       let { payload } = payloadData;
       payload = removeNullishValues(payload) as TPayload;
@@ -702,35 +785,64 @@ export default function useResumableSSE(
 
       const url = payloadData.server;
 
-      const maxRetries = 3;
       let lastError: unknown = null;
+      let requestAttempts = 0;
+      let networkAttempts = 0;
+      let readinessAttempts = 0;
+      const readinessDeadline = Date.now() + START_GENERATION_READINESS_TIMEOUT_MS;
 
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      while (!signal?.aborted) {
+        requestAttempts += 1;
         try {
           // Use request.post which handles auth token refresh via axios interceptors
           const data = (await request.post(url, payload)) as { streamId: string };
+          if (signal?.aborted) {
+            return null;
+          }
           console.log('[ResumableSSE] Generation started:', { streamId: data.streamId });
           return data.streamId;
         } catch (error) {
-          lastError = error;
-          // Check if it's a network error (retry) vs server error (don't retry)
-          const isNetworkError =
-            error instanceof Error &&
-            'code' in error &&
-            (error.code === 'ERR_NETWORK' || error.code === 'ERR_INTERNET_DISCONNECTED');
+          if (signal?.aborted) {
+            return null;
+          }
 
-          if (isNetworkError && attempt < maxRetries) {
-            const delay = Math.min(1000 * Math.pow(2, attempt - 1), 8000);
+          lastError = error;
+          const isNetworkError = isRetryableNetworkError(error);
+          const isServerNotReady = isServerNotReadyError(error);
+          const remainingReadinessMs = readinessDeadline - Date.now();
+          const shouldRetryNetwork =
+            isNetworkError && networkAttempts < START_GENERATION_NETWORK_RETRIES - 1;
+          const shouldRetryServerNotReady = isServerNotReady && remainingReadinessMs > 0;
+
+          if (shouldRetryNetwork || shouldRetryServerNotReady) {
+            networkAttempts += isNetworkError ? 1 : 0;
+            readinessAttempts += isServerNotReady ? 1 : 0;
+            const fallbackDelay = Math.min(1000 * Math.pow(2, requestAttempts - 1), 8000);
+            const retryDelay = isServerNotReady
+              ? Math.min(getRetryAfterDelay(error, fallbackDelay), remainingReadinessMs)
+              : fallbackDelay;
+            const reason = isServerNotReady ? 'Server not ready' : 'Network error';
+            const attempt = isServerNotReady ? readinessAttempts : networkAttempts;
+            const limit = isServerNotReady
+              ? `${Math.ceil(START_GENERATION_READINESS_TIMEOUT_MS / 1000)}s readiness window`
+              : `${START_GENERATION_NETWORK_RETRIES}`;
             console.log(
-              `[ResumableSSE] Network error starting generation, retrying in ${delay}ms (attempt ${attempt}/${maxRetries})`,
+              `[ResumableSSE] ${reason} starting generation, retrying in ${retryDelay}ms (attempt ${attempt}/${limit})`,
             );
-            await new Promise((resolve) => setTimeout(resolve, delay));
+            const shouldContinue = await waitForRetryDelay(retryDelay, signal);
+            if (!shouldContinue) {
+              return null;
+            }
             continue;
           }
 
           // Don't retry: either not a network error or max retries reached
           break;
         }
+      }
+
+      if (signal?.aborted) {
+        return null;
       }
 
       console.error('[ResumableSSE] Error starting generation:', lastError);
@@ -781,12 +893,21 @@ export default function useResumableSSE(
     });
 
     submissionRef.current = submission;
+    const startController = new AbortController();
+    const { signal } = startController;
 
     const initStream = async () => {
+      if (signal.aborted) {
+        return;
+      }
+
       setIsSubmitting(true);
       setShowStopButton(true);
 
       if (resumeStreamId) {
+        if (signal.aborted) {
+          return;
+        }
         // Resume: just subscribe to existing stream, don't start new generation
         console.log('[ResumableSSE] Resuming existing stream:', resumeStreamId);
         setStreamId(resumeStreamId);
@@ -796,14 +917,19 @@ export default function useResumableSSE(
       } else {
         // New generation: start and then subscribe
         console.log('[ResumableSSE] Starting NEW generation');
-        const newStreamId = await startGeneration(submission);
+        const newStreamId = await startGeneration(submission, signal);
+        if (signal.aborted) {
+          return;
+        }
         if (newStreamId) {
           setStreamId(newStreamId);
           // Optimistically add to active jobs
           addActiveJob(newStreamId);
-          // Queue title generation if this is a new conversation (first message)
+          // Queue title generation if this is a new conversation (first message).
+          // Skip temporary conversations — the server never generates titles for
+          // them, so polling would 404 indefinitely.
           const isNewConvo = submission.userMessage?.parentMessageId === Constants.NO_PARENT;
-          if (isNewConvo) {
+          if (isNewConvo && !submission.isTemporary) {
             queueTitleGeneration(newStreamId);
           }
           if (isInitialNewConversation(submission)) {
@@ -822,6 +948,7 @@ export default function useResumableSSE(
 
     return () => {
       console.log('[ResumableSSE] Cleanup - closing SSE, resetting UI state');
+      startController.abort();
       // Cleanup on unmount/navigation - close connection but DO NOT abort backend
       // Reset UI state so it doesn't leak to other conversations
       // If user returns to this conversation, useResumeOnLoad will restore the state

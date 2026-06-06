@@ -10,7 +10,7 @@ describe('getOpenAIConfig - Backward Compatibility', () => {
   describe('OpenAI endpoint', () => {
     it('should handle GPT-5 model with reasoning and web search', () => {
       const apiKey = 'sk-proj-somekey';
-      const endpoint = undefined;
+      const endpoint = EModelEndpoint.openAI;
       const options = {
         modelOptions: {
           model: 'gpt-5-nano',
@@ -138,7 +138,7 @@ describe('getOpenAIConfig - Backward Compatibility', () => {
 
     it('should handle Azure OpenAI with Responses API and reasoning', () => {
       const apiKey = 'some_azure_key';
-      const endpoint = undefined;
+      const endpoint = EModelEndpoint.azureOpenAI;
       const options = {
         modelOptions: {
           model: 'gpt-5',
@@ -395,6 +395,7 @@ describe('getOpenAIConfig - Backward Compatibility', () => {
         modelOptions: {
           model: '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
           user: 'some-user',
+          reasoning_effort: ReasoningEffort.high,
         },
         reverseProxyUrl:
           'https://gateway.ai.cloudflare.com/v1/${CF_ACCOUNT_ID}/${CF_GATEWAY_ID}/workers-ai/v1',
@@ -419,6 +420,9 @@ describe('getOpenAIConfig - Backward Compatibility', () => {
           user: 'some-user',
           disableStreaming: true,
           apiKey: 'someKey',
+          modelKwargs: {
+            reasoning_effort: ReasoningEffort.high,
+          },
         },
         configOptions: {
           baseURL:

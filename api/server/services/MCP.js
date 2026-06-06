@@ -34,6 +34,8 @@ const {
 const db = require('~/models');
 const { findToken, createToken, updateToken, deleteTokens } = db;
 const { getGraphApiToken } = require('./GraphTokenService');
+const { exchangeOboToken } = require('./OboTokenService');
+const { createOboTrustChecker } = require('./OboPolicyService');
 const { reinitMCPServer } = require('./Tools/mcp');
 const { getAppConfig } = require('./Config');
 const { getLogStores } = require('~/cache');
@@ -738,6 +740,8 @@ function createToolInstance({
         oauthStart,
         oauthEnd,
         graphTokenResolver: getGraphApiToken,
+        oboTokenResolver: exchangeOboToken,
+        oboTrustChecker: createOboTrustChecker(),
       });
 
       if (isAssistantsEndpoint(provider) && Array.isArray(result)) {

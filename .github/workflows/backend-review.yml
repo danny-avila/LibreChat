@@ -20,10 +20,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js 20.19
+      - name: Use Node.js 24.16.0
         uses: actions/setup-node@v4
         with:
-          node-version: '20.19'
+          node-version: '24.16.0'
 
       - name: Restore node_modules cache
         id: cache-node-modules
@@ -35,7 +35,7 @@ jobs:
             packages/api/node_modules
             packages/data-provider/node_modules
             packages/data-schemas/node_modules
-          key: node-modules-backend-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
+          key: node-modules-backend-${{ runner.os }}-24.16.0-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
@@ -103,10 +103,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js 20.19
+      - name: Use Node.js 24.16.0
         uses: actions/setup-node@v4
         with:
-          node-version: '20.19'
+          node-version: '24.16.0'
 
       - name: Restore node_modules cache
         id: cache-node-modules
@@ -118,7 +118,7 @@ jobs:
             packages/api/node_modules
             packages/data-provider/node_modules
             packages/data-schemas/node_modules
-          key: node-modules-backend-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
+          key: node-modules-backend-${{ runner.os }}-24.16.0-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
@@ -162,10 +162,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js 20.19
+      - name: Use Node.js 24.16.0
         uses: actions/setup-node@v4
         with:
-          node-version: '20.19'
+          node-version: '24.16.0'
 
       - name: Restore node_modules cache
         id: cache-node-modules
@@ -177,7 +177,7 @@ jobs:
             packages/api/node_modules
             packages/data-provider/node_modules
             packages/data-schemas/node_modules
-          key: node-modules-backend-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
+          key: node-modules-backend-${{ runner.os }}-24.16.0-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
@@ -215,10 +215,14 @@ jobs:
           fi
 
   test-api:
-    name: 'Tests: api'
+    name: 'Tests: api (shard ${{ matrix.shard }}/3)'
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     env:
       MONGO_URI: ${{ secrets.MONGO_URI }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -231,10 +235,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js 20.19
+      - name: Use Node.js 24.16.0
         uses: actions/setup-node@v4
         with:
-          node-version: '20.19'
+          node-version: '24.16.0'
 
       - name: Restore node_modules cache
         id: cache-node-modules
@@ -246,7 +250,7 @@ jobs:
             packages/api/node_modules
             packages/data-provider/node_modules
             packages/data-schemas/node_modules
-          key: node-modules-backend-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
+          key: node-modules-backend-${{ runner.os }}-24.16.0-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
@@ -278,8 +282,8 @@ jobs:
       - name: Prepare .env.test file
         run: cp api/test/.env.test.example api/test/.env.test
 
-      - name: Run unit tests
-        run: cd api && npm run test:ci
+      - name: Run unit tests (shard ${{ matrix.shard }}/3)
+        run: cd api && npm run test:ci -- --shard=${{ matrix.shard }}/3
 
   test-data-provider:
     name: 'Tests: data-provider'
@@ -289,10 +293,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js 20.19
+      - name: Use Node.js 24.16.0
         uses: actions/setup-node@v4
         with:
-          node-version: '20.19'
+          node-version: '24.16.0'
 
       - name: Restore node_modules cache
         id: cache-node-modules
@@ -304,7 +308,7 @@ jobs:
             packages/api/node_modules
             packages/data-provider/node_modules
             packages/data-schemas/node_modules
-          key: node-modules-backend-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
+          key: node-modules-backend-${{ runner.os }}-24.16.0-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
@@ -327,10 +331,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js 20.19
+      - name: Use Node.js 24.16.0
         uses: actions/setup-node@v4
         with:
-          node-version: '20.19'
+          node-version: '24.16.0'
 
       - name: Restore node_modules cache
         id: cache-node-modules
@@ -342,7 +346,7 @@ jobs:
             packages/api/node_modules
             packages/data-provider/node_modules
             packages/data-schemas/node_modules
-          key: node-modules-backend-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
+          key: node-modules-backend-${{ runner.os }}-24.16.0-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
@@ -364,21 +368,25 @@ jobs:
         run: cd packages/data-schemas && npm run test:ci
 
   test-packages-api:
-    name: 'Tests: @librechat/api'
+    name: 'Tests: @librechat/api (shard ${{ matrix.shard }}/4)'
     needs: build
     runs-on: ubuntu-latest
     # Suite typically completes in ~5 min on a warm runner, but tail-latency
     # cancellations have started showing up: tests are actively passing right
-    # up to the timeout, then the job is killed mid-suite. Bump headroom to
-    # absorb GitHub Actions runner variance.
+    # up to the timeout, then the job is killed mid-suite. Sharding splits the
+    # suite across runners; per-shard headroom still absorbs runner variance.
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js 20.19
+      - name: Use Node.js 24.16.0
         uses: actions/setup-node@v4
         with:
-          node-version: '20.19'
+          node-version: '24.16.0'
 
       - name: Restore node_modules cache
         id: cache-node-modules
@@ -390,7 +398,7 @@ jobs:
             packages/api/node_modules
             packages/data-provider/node_modules
             packages/data-schemas/node_modules
-          key: node-modules-backend-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
+          key: node-modules-backend-${{ runner.os }}-24.16.0-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
@@ -414,5 +422,5 @@ jobs:
           name: build-api
           path: packages/api/dist
 
-      - name: Run unit tests
-        run: cd packages/api && npm run test:ci
+      - name: Run unit tests (shard ${{ matrix.shard }}/4)
+        run: cd packages/api && npm run test:ci -- --shard=${{ matrix.shard }}/4

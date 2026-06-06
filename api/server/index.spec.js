@@ -83,6 +83,33 @@ describe('Telemetry wiring', () => {
   });
 });
 
+describe('Startup readiness wiring', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8');
+
+  it('configures generation streams before the server accepts requests', () => {
+    const streamConfigIndex = source.indexOf('configureGenerationStreams();');
+    const listenIndex = source.indexOf('const server = app.listen');
+    const postListenMcpIndex = source.indexOf('await initializeMCPs();');
+
+    expect(streamConfigIndex).toBeGreaterThan(-1);
+    expect(listenIndex).toBeGreaterThan(-1);
+    expect(postListenMcpIndex).toBeGreaterThan(-1);
+    expect(streamConfigIndex).toBeLessThan(listenIndex);
+    expect(streamConfigIndex).toBeLessThan(postListenMcpIndex);
+  });
+
+  it('mounts the chat-start readiness gate before agent routes', () => {
+    const readinessGateIndex = source.indexOf(
+      "app.use('/api/agents/chat', rejectChatStartsUntilReady);",
+    );
+    const agentsRouteIndex = source.indexOf("app.use('/api/agents', routes.agents);");
+
+    expect(readinessGateIndex).toBeGreaterThan(-1);
+    expect(agentsRouteIndex).toBeGreaterThan(-1);
+    expect(readinessGateIndex).toBeLessThan(agentsRouteIndex);
+  });
+});
+
 describe('Server Configuration', () => {
   // Increase the default timeout to allow for Mongo cleanup
   jest.setTimeout(30_000);

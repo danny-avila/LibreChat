@@ -4,7 +4,7 @@ import type * as t from './types';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
-import { isUserSourced, isOAuthServer } from './utils';
+import { isUserSourced, requiresOAuthMachinery } from './utils';
 import { MCPConnection } from './connection';
 import { mcpConfig } from './mcpConfig';
 
@@ -78,6 +78,8 @@ export abstract class UserConnectionManager {
       tokenMethods,
       oauthStart,
       oauthEnd,
+      oboTokenResolver,
+      oboTrustChecker,
       signal,
       returnOnOAuth = false,
       connectionTimeout,
@@ -159,7 +161,7 @@ export abstract class UserConnectionManager {
         allowedAddresses: registry.getAllowedAddresses(),
       };
 
-      const useOAuth = isOAuthServer(config);
+      const useOAuth = requiresOAuthMachinery(config);
       let connectionOptions: t.OAuthConnectionOptions | t.UserConnectionContext;
       if (useOAuth) {
         if (!flowManager) {
@@ -178,6 +180,8 @@ export abstract class UserConnectionManager {
           signal: signal,
           oauthStart: oauthStart,
           oauthEnd: oauthEnd,
+          oboTokenResolver: oboTokenResolver,
+          oboTrustChecker: oboTrustChecker,
           returnOnOAuth: returnOnOAuth,
           requestBody: requestBody,
           connectionTimeout: connectionTimeout,

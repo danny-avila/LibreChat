@@ -21,6 +21,7 @@ const {
   GenerationJobManager,
   createStreamServices,
   initializeFileStorage,
+  initializeDeploymentSkills,
   preAuthTenantMiddleware,
   setupGracefulShutdown,
   updateInterfacePermissions,
@@ -55,6 +56,30 @@ const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default 
 
 const app = express();
 let serverReady = false;
+
+const SERVER_NOT_READY_CODE = 'SERVER_NOT_READY';
+const CHAT_START_RETRY_AFTER_SECONDS = '1';
+
+const rejectChatStartsUntilReady = (req, res, next) => {
+  if (serverReady || req.method !== 'POST' || req.path === '/abort') {
+    return next();
+  }
+
+  res.set('Retry-After', CHAT_START_RETRY_AFTER_SECONDS);
+  return res.status(503).json({
+    code: SERVER_NOT_READY_CODE,
+    error: 'Server is still starting. Please retry shortly.',
+  });
+};
+
+const configureGenerationStreams = () => {
+  const streamServices = createStreamServices();
+  GenerationJobManager.configure({
+    ...streamServices,
+    cleanupOnComplete: !isEnabled(process.env.STREAM_KEEP_COMPLETED_JOBS),
+  });
+  GenerationJobManager.initialize();
+};
 
 const startServer = async () => {
   const { metricsMiddleware, metricsRouter } = createMetrics();
@@ -92,6 +117,7 @@ const startServer = async () => {
   });
   const appConfig = await getAppConfig({ baseOnly: true });
   initializeFileStorage(appConfig);
+  await initializeDeploymentSkills({ projectRoot: path.resolve(__dirname, '../..') });
   startExpiredFileSweep({ appConfig, loadAppConfig: getAppConfig });
   await runAsSystem(async () => {
     await performStartupChecks(appConfig);
@@ -201,6 +227,7 @@ const startServer = async () => {
   app.use('/api/messages', routes.messages);
   app.use('/api/convos', routes.convos);
   app.use('/api/presets', routes.presets);
+  app.use('/api/projects', routes.projects);
   app.use('/api/prompts', routes.prompts);
   app.use('/api/skills', routes.skills);
   app.use('/api/categories', routes.categories);
@@ -213,6 +240,7 @@ const startServer = async () => {
   app.use('/images/', createValidateImageRequest(appConfig.secureImageLinks), routes.staticRoute);
   app.use('/api/share', preAuthTenantMiddleware, routes.share);
   app.use('/api/roles', routes.roles);
+  app.use('/api/agents/chat', rejectChatStartsUntilReady);
   app.use('/api/agents', routes.agents);
   app.use('/api/banner', routes.banner);
   app.use('/api/memories', routes.memories);
@@ -220,6 +248,7 @@ const startServer = async () => {
 
   app.use('/api/tags', routes.tags);
   app.use('/api/mcp', routes.mcp);
+  app.use('/api/rum', routes.rum);
 
   app.use('/metrics', metricsRouter);
 
@@ -249,6 +278,8 @@ const startServer = async () => {
   /** Error handler (must be last - Express identifies error middleware by its 4-arg signature) */
   app.use(ErrorController);
 
+  configureGenerationStreams();
+
   const server = app.listen(port, host, async (err) => {
     if (err) {
       logger.error('Failed to start server:', err);
@@ -277,11 +308,6 @@ const startServer = async () => {
         await initializeOAuthReconnectManager();
       });
       await checkMigrations();
-
-      // Configure stream services (auto-detects Redis from USE_REDIS env var)
-      const streamServices = createStreamServices();
-      GenerationJobManager.configure(streamServices);
-      GenerationJobManager.initialize();
 
       const inspectFlags = process.execArgv.some((arg) => arg.startsWith('--inspect'));
       if (inspectFlags || isEnabled(process.env.MEM_DIAG)) {

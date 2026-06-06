@@ -24,6 +24,7 @@ interface ControlComboboxProps {
   disabled?: boolean;
   iconSide?: 'left' | 'right';
   selectId?: string;
+  placement?: Ariakit.SelectStoreProps['placement'];
 }
 
 const ROW_HEIGHT = 36;
@@ -45,6 +46,7 @@ function ControlCombobox({
   iconClassName,
   iconSide = 'left',
   selectId,
+  placement,
 }: ControlComboboxProps) {
   const [searchValue, setSearchValue] = useState('');
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -69,6 +71,7 @@ function ControlCombobox({
     defaultItems: items.map(getItem),
     value: selectedValue,
     setValue,
+    placement,
   });
 
   const matches = useMemo(() => {

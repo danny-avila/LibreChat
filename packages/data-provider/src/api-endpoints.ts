@@ -74,13 +74,12 @@ export const shareMessages = (shareId: string) => `${shareRoot}/${shareId}`;
 export const getSharedLink = (conversationId: string) => `${shareRoot}/link/${conversationId}`;
 export const getSharedLinks = (
   pageSize: number,
-  isPublic: boolean,
   sortBy: 'title' | 'createdAt',
   sortDirection: 'asc' | 'desc',
   search?: string,
   cursor?: string,
 ) =>
-  `${shareRoot}?pageSize=${pageSize}&isPublic=${isPublic}&sortBy=${sortBy}&sortDirection=${sortDirection}${
+  `${shareRoot}?pageSize=${pageSize}&sortBy=${sortBy}&sortDirection=${sortDirection}${
     search ? `&search=${search}` : ''
   }${cursor ? `&cursor=${cursor}` : ''}`;
 export const createSharedLink = (conversationId: string) => `${shareRoot}/${conversationId}`;
@@ -126,6 +125,17 @@ export const importConversation = () => `${conversationsRoot}/import`;
 export const forkConversation = () => `${conversationsRoot}/fork`;
 
 export const duplicateConversation = () => `${conversationsRoot}/duplicate`;
+
+export const projectsRoot = `${BASE_URL}/api/projects`;
+
+export const projects = (params: q.ProjectListParams = {}) => {
+  return `${projectsRoot}${buildQuery(params)}`;
+};
+
+export const projectById = (id: string) => `${projectsRoot}/${encodeURIComponent(id)}`;
+
+export const projectConversation = (conversationId: string) =>
+  `${projectsRoot}/conversations/${encodeURIComponent(conversationId)}`;
 
 export const search = (q: string, cursor?: string | null) =>
   `${BASE_URL}/api/search?q=${q}${cursor ? `&cursor=${cursor}` : ''}`;
