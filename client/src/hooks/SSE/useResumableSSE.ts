@@ -309,6 +309,17 @@ export default function useResumableSSE(
     (currentStreamId: string, currentSubmission: TSubmission, isResume = false) => {
       let { userMessage } = currentSubmission;
       let textIndex: number | null = null;
+      const preCreatedStepEvents: Array<Parameters<typeof stepHandler>[0]> = [];
+      const replayPreCreatedStepEvents = () => {
+        if (preCreatedStepEvents.length === 0) {
+          return;
+        }
+
+        const submission = { ...currentSubmission, userMessage } as EventSubmission;
+        for (const event of preCreatedStepEvents.splice(0)) {
+          stepHandler(event, submission);
+        }
+      };
 
       const baseUrl = `${apiBaseUrl()}/api/agents/chat/stream/${encodeURIComponent(currentStreamId)}`;
       const url = isResume ? `${baseUrl}?resume=true` : baseUrl;
@@ -376,6 +387,7 @@ export default function useResumableSSE(
               overrideParentMessageId: userMessage.overrideParentMessageId,
             };
             createdHandler(data, { ...currentSubmission, userMessage } as EventSubmission);
+            replayPreCreatedStepEvents();
             return;
           }
 
@@ -393,6 +405,10 @@ export default function useResumableSSE(
           }
 
           if (data.event != null) {
+            if (!isResume && !createdStreamIdsRef.current.has(currentStreamId)) {
+              preCreatedStepEvents.push(data);
+              return;
+            }
             stepHandler(data, { ...currentSubmission, userMessage } as EventSubmission);
             return;
           }

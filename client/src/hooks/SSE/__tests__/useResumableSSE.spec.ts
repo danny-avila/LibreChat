@@ -469,6 +469,77 @@ describe('useResumableSSE - 404 error path', () => {
     unmount();
   });
 
+  it('queues run step events until created hydrates the submission', async () => {
+    const submission = buildSubmission({
+      conversation: {},
+      userMessage: {
+        messageId: 'msg-1',
+        conversationId: null,
+        text: 'Hello',
+        isCreatedByUser: true,
+        sender: 'User',
+        parentMessageId: Constants.NO_PARENT,
+      },
+      initialResponse: {
+        messageId: 'msg-1_',
+        conversationId: null,
+        text: '',
+        isCreatedByUser: false,
+        sender: 'Assistant',
+      },
+    });
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const runStepEvent = {
+      event: StepEvents.ON_RUN_STEP,
+      data: {
+        id: 'step-oauth',
+        runId: 'msg-1_',
+        index: 0,
+        stepDetails: {
+          type: 'tool_calls',
+          tool_calls: [{ id: 'call-oauth', name: 'Google-Workspace', args: '' }],
+        },
+      },
+    };
+
+    const sse = getLastSSE();
+    await act(async () => {
+      sse._emit('message', { data: JSON.stringify(runStepEvent) });
+    });
+
+    expect(mockStepHandler).not.toHaveBeenCalled();
+
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          created: true,
+          message: {
+            messageId: 'msg-1',
+            conversationId: 'stream-123',
+          },
+        }),
+      });
+    });
+
+    expect(mockStepHandler).toHaveBeenCalledWith(
+      runStepEvent,
+      expect.objectContaining({
+        userMessage: expect.objectContaining({
+          messageId: 'msg-1',
+          conversationId: 'stream-123',
+        }),
+      }),
+    );
+    unmount();
+  });
+
   it('routes title stream events to the title handler', async () => {
     const submission = buildSubmission();
     const chatHelpers = buildChatHelpers();
