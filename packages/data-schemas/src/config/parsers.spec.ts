@@ -1,3 +1,4 @@
+import winston from 'winston';
 import { debugTraverse, redactFormat, redactMessage } from './parsers';
 
 const SPLAT_SYMBOL = Symbol.for('splat');
@@ -16,6 +17,11 @@ type RedactInfo = Record<string | symbol, unknown> & {
 
 function runRedactFormat(info: RedactInfo): RedactInfo {
   return (redactFormat().transform(info) || info) as RedactInfo;
+}
+
+function runRedactSplatFormat(info: RedactInfo): RedactInfo {
+  const format = winston.format.combine(redactFormat(), winston.format.splat());
+  return (format.transform(info) || info) as RedactInfo;
 }
 
 function runFormatter(info: FormatterInfo): string {
@@ -68,6 +74,33 @@ describe('redactFormat', () => {
     });
 
     expect(info[MESSAGE_SYMBOL]).toBe('token: sk-[REDACTED]');
+  });
+
+  it('redacts splat arguments before winston interpolates them', () => {
+    const info = runRedactSplatFormat({
+      level: 'info',
+      message: 'token %s',
+      [SPLAT_SYMBOL]: ['sk-abc123def'],
+    });
+
+    expect(info.message).toBe('token sk-[REDACTED]');
+  });
+
+  it('redacts string values in splat metadata', () => {
+    const info = runRedactFormat({
+      level: 'info',
+      message: 'visible',
+      [SPLAT_SYMBOL]: [
+        {
+          auth: 'Bearer secretvalue',
+          nested: { url: 'https://example.test/?key=secretvalue&next=true' },
+        },
+      ],
+    });
+    const splat = info[SPLAT_SYMBOL] as Array<{ auth: string; nested: { url: string } }>;
+
+    expect(splat[0].auth).toBe('Bearer [REDACTED]');
+    expect(splat[0].nested.url).toBe('https://example.test/?key=[REDACTED]&next=true');
   });
 });
 

@@ -41,6 +41,31 @@ function redactMessage(str: string, trimLength?: number): string {
   return redacted;
 }
 
+function redactLogValue(value: unknown, seen = new WeakSet<object>()): unknown {
+  if (typeof value === 'string') {
+    return redactMessage(value);
+  }
+
+  if (value === null || typeof value !== 'object') {
+    return value;
+  }
+
+  if (seen.has(value)) {
+    return value;
+  }
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    return value.map((item) => redactLogValue(item, seen));
+  }
+
+  const record = value as Record<string, unknown>;
+  Object.keys(record).forEach((key) => {
+    record[key] = redactLogValue(record[key], seen);
+  });
+  return record;
+}
+
 /**
  * Redacts sensitive information from log messages at every level.
  * Note: Intentionally mutates the object.
@@ -48,13 +73,19 @@ function redactMessage(str: string, trimLength?: number): string {
  * @returns The modified log information object.
  */
 const redactFormat = winston.format((info: winston.Logform.TransformableInfo) => {
+  const infoRecord = info as Record<string | symbol, unknown>;
+
   if (typeof info.message === 'string') {
     info.message = redactMessage(info.message);
   }
 
-  const symbolValue = (info as Record<string | symbol, unknown>)[MESSAGE_SYMBOL];
+  const symbolValue = infoRecord[MESSAGE_SYMBOL];
   if (typeof symbolValue === 'string') {
-    (info as Record<string | symbol, unknown>)[MESSAGE_SYMBOL] = redactMessage(symbolValue);
+    infoRecord[MESSAGE_SYMBOL] = redactMessage(symbolValue);
+  }
+
+  if (infoRecord[SPLAT_SYMBOL] !== undefined) {
+    infoRecord[SPLAT_SYMBOL] = redactLogValue(infoRecord[SPLAT_SYMBOL]);
   }
   return info;
 });
