@@ -1,5 +1,5 @@
-import skillSyncCredentialSchema from '~/schema/skillSyncCredential';
 import type { ISkillSyncCredentialDocument } from '~/types/skillSync';
+import skillSyncCredentialSchema from '~/schema/skillSyncCredential';
 
 export function createSkillSyncCredentialModel(mongoose: typeof import('mongoose')) {
   // GitHub skill sync is intentionally app-wide in v1; credentials are referenced by
