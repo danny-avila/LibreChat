@@ -1,6 +1,5 @@
 import { createHash } from 'crypto';
 import type { Model, Types } from 'mongoose';
-import { encryptV2, decryptV2 } from '~/crypto';
 import type {
   ISkillSyncStatus,
   SkillSyncProvider,
@@ -9,6 +8,7 @@ import type {
   ISkillSyncCredential,
   ISkillSyncCredentialDocument,
 } from '~/types/skillSync';
+import { encryptV2, decryptV2 } from '~/crypto';
 
 const LOCK_SOURCE_ID = '__global_lock__';
 
