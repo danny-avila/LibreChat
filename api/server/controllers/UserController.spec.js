@@ -111,11 +111,12 @@ afterEach(async () => {
 const {
   deleteUserController,
   getUserController,
+  resendVerificationController,
   verifyEmailController,
 } = require('./UserController');
 const { Group } = require('~/db/models');
 const { deleteConvos } = require('~/models');
-const { verifyEmail } = require('~/server/services/AuthService');
+const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
 
 describe('verifyEmailController', () => {
   const mockRes = {
@@ -139,6 +140,15 @@ describe('verifyEmailController', () => {
     expect(mockRes.json).toHaveBeenCalledWith({
       message: 'Invalid or expired email verification token',
     });
+  });
+
+  it('uses the service status for resend verification responses', async () => {
+    resendVerificationEmail.mockResolvedValue({ status: 500, message: 'Something went wrong.' });
+
+    await resendVerificationController({ body: { email: 'user@example.com' } }, mockRes);
+
+    expect(mockRes.status).toHaveBeenCalledWith(500);
+    expect(mockRes.json).toHaveBeenCalledWith({ message: 'Something went wrong.' });
   });
 });
 

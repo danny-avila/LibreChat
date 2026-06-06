@@ -212,7 +212,7 @@ const verifyEmail = async (req) => {
 
   if (!updatedUser) {
     logger.warn(`[verifyEmail] [User update failed] [Email: ${decodedEmail}]`);
-    return new Error('Failed to update user verification status');
+    return new Error(invalidEmailVerificationMessage);
   }
 
   await deleteTokens({ token: emailVerificationData.token });

@@ -518,6 +518,19 @@ describe('verifyEmail', () => {
     expect(deleteTokens).toHaveBeenCalledWith({ token: hashedToken });
   });
 
+  it('returns the generic error when a valid verification update fails', async () => {
+    const hashedToken = bcrypt.hashSync('real-token', 10);
+    findUser.mockResolvedValue({ _id: 'user-id', email, emailVerified: false });
+    findToken.mockResolvedValue({ userId: 'user-id', email, token: hashedToken });
+    updateUser.mockResolvedValue(null);
+
+    const result = await verifyEmail({ body: { email: encodedEmail, token: 'real-token' } });
+
+    expect(result).toBeInstanceOf(Error);
+    expect(result.message).toBe(invalidEmailVerificationMessage);
+    expect(deleteTokens).not.toHaveBeenCalled();
+  });
+
   it('allows idempotent success only when an already verified account presents a valid token', async () => {
     const hashedToken = bcrypt.hashSync('real-token', 10);
     findUser.mockResolvedValue({ _id: 'user-id', email, emailVerified: true });

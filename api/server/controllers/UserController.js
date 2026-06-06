@@ -404,7 +404,7 @@ const resendVerificationController = async (req, res) => {
     if (result instanceof Error) {
       return res.status(400).json({ message: result.message });
     } else {
-      return res.status(200).json(result);
+      return res.status(result.status ?? 200).json({ message: result.message });
     }
   } catch (e) {
     logger.error('[verifyEmailController]', e);
