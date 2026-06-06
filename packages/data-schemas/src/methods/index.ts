@@ -1,9 +1,14 @@
-import { createSessionMethods, DEFAULT_REFRESH_TOKEN_EXPIRY, type SessionMethods } from './session';
+import {
+  createSessionMethods,
+  ACTIVE_SESSION_EXISTS_CODE,
+  DEFAULT_REFRESH_TOKEN_EXPIRY,
+  type SessionMethods,
+} from './session';
 import { createTokenMethods, type TokenMethods } from './token';
 import { createRoleMethods, type RoleMethods } from './role';
 import { createUserMethods, DEFAULT_SESSION_EXPIRY, type UserMethods } from './user';
 
-export { DEFAULT_REFRESH_TOKEN_EXPIRY, DEFAULT_SESSION_EXPIRY };
+export { ACTIVE_SESSION_EXISTS_CODE, DEFAULT_REFRESH_TOKEN_EXPIRY, DEFAULT_SESSION_EXPIRY };
 import { createKeyMethods, type KeyMethods } from './key';
 import { createFileMethods, type FileMethods } from './file';
 /* Memories */
