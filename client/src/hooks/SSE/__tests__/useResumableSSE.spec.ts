@@ -1,5 +1,11 @@
 import { renderHook, act, waitFor } from '@testing-library/react';
-import { Constants, LocalStorageKeys, QueryKeys, request } from 'librechat-data-provider';
+import {
+  Constants,
+  LocalStorageKeys,
+  QueryKeys,
+  StepEvents,
+  request,
+} from 'librechat-data-provider';
 import type { TSubmission } from 'librechat-data-provider';
 
 type SSEEventListener = (e: Partial<MessageEvent> & { responseCode?: number }) => void;
@@ -634,6 +640,65 @@ describe('useResumableSSE - 404 error path', () => {
     });
 
     expect(mockTitleHandler).toHaveBeenCalledWith(titleEvent);
+    unmount();
+  });
+
+  it('replays OAuth run step delta events from resume state sync', async () => {
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const runStep = {
+      id: 'step-oauth',
+      runId: 'resp-1',
+      index: 0,
+      stepDetails: {
+        type: 'tool_calls',
+        tool_calls: [{ id: 'call-oauth', name: 'Google-Workspace', args: '' }],
+      },
+    };
+    const replayEvent = {
+      event: StepEvents.ON_RUN_STEP_DELTA,
+      data: {
+        id: 'step-oauth',
+        delta: {
+          type: 'tool_calls',
+          tool_calls: [{ name: 'Google-Workspace', args: '' }],
+          auth: 'https://auth.example.com/oauth',
+          expires_at: 1780791946,
+        },
+      },
+    };
+
+    const sse = getLastSSE();
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          sync: true,
+          resumeState: {
+            runSteps: [runStep],
+            replayEvents: [replayEvent],
+          },
+        }),
+      });
+    });
+
+    expect(mockStepHandler).toHaveBeenNthCalledWith(
+      1,
+      { event: StepEvents.ON_RUN_STEP, data: runStep },
+      expect.objectContaining({ userMessage: expect.objectContaining({ messageId: 'msg-1' }) }),
+    );
+    expect(mockStepHandler).toHaveBeenNthCalledWith(
+      2,
+      replayEvent,
+      expect.objectContaining({ userMessage: expect.objectContaining({ messageId: 'msg-1' }) }),
+    );
+
     unmount();
   });
 

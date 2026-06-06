@@ -492,6 +492,18 @@ export default function useResumableSSE(
               titleHandler(data.resumeState.titleEvent);
             }
 
+            if (data.resumeState?.replayEvents?.length > 0) {
+              console.log(
+                `[ResumableSSE] Replaying ${data.resumeState.replayEvents.length} resume events`,
+              );
+              const submission = { ...currentSubmission, userMessage } as EventSubmission;
+              for (const replayEvent of data.resumeState.replayEvents) {
+                if (replayEvent.event != null) {
+                  stepHandler(replayEvent, submission);
+                }
+              }
+            }
+
             if (data.pendingEvents?.length > 0) {
               console.log(`[ResumableSSE] Replaying ${data.pendingEvents.length} pending events`);
               const submission = { ...currentSubmission, userMessage } as EventSubmission;
