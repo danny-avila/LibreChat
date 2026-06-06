@@ -1,10 +1,10 @@
-import type { DeleteResult, FilterQuery, Model } from 'mongoose';
 import { RetentionMode } from 'librechat-data-provider';
-import logger from '~/config/winston';
+import type { DeleteResult, FilterQuery, Model } from 'mongoose';
+import type { AppConfig, IMessage } from '~/types';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { createFallbackRetentionDate } from '~/utils/retention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
-import type { AppConfig, IMessage } from '~/types';
+import logger from '~/config/winston';
 
 /** Simple UUID v4 regex to replace zod validation */
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -79,9 +79,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
 
     const conversationId = params.conversationId as string | undefined;
     if (!conversationId || !UUID_REGEX.test(conversationId)) {
-      logger.warn(`Invalid conversation ID: ${conversationId}`);
-      logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
-      logger.info(`---Invalid conversation ID Params: ${JSON.stringify(params, null, 2)}`);
+      logger.warn(
+        `Invalid conversation ID: ${conversationId} (context: ${metadata?.context ?? 'n/a'})`,
+      );
       return;
     }
 
