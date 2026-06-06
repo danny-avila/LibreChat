@@ -1,8 +1,9 @@
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { useRecoilValue } from 'recoil';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
+import { useRecoilCallback, useRecoilValue } from 'recoil';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   ChevronDown,
   ChevronRight,
@@ -13,8 +14,6 @@ import {
   Pencil,
   Trash2,
 } from 'lucide-react';
-import { QueryKeys } from 'librechat-data-provider';
-import type { TChatProject, TConversation } from 'librechat-data-provider';
 import {
   Button,
   Input,
@@ -29,15 +28,17 @@ import {
   NewChatIcon,
   useToastContext,
 } from '@librechat/client';
+import type { TChatProject, TConversation } from 'librechat-data-provider';
 import type { MenuItemProps } from '~/common';
 import {
   useProjectsInfiniteQuery,
+  useActiveJobs,
   useConversationsInfiniteQuery,
   useUpdateProjectMutation,
   useDeleteProjectMutation,
 } from '~/data-provider';
-import { useLocalize, useLocalStorage, useNewConvo } from '~/hooks';
 import ProjectCreateDialog from '~/components/Projects/ProjectCreateDialog';
+import { useLocalize, useLocalStorage, useNewConvo } from '~/hooks';
 import { clearMessagesCache, cn } from '~/utils';
 import { NotificationSeverity } from '~/common';
 import Convo from './Convo';
@@ -186,16 +187,23 @@ function ProjectDeleteDialog({
 
 const noop = () => {};
 
-function ProjectChatsInline({
-  projectId,
-  toggleNav,
-  onShowAll,
-}: {
+type ProjectChatsInlineProps = {
   projectId: string;
   toggleNav: () => void;
   onShowAll: () => void;
-}) {
+};
+
+const ProjectChatsInline = memo(function ProjectChatsInline({
+  projectId,
+  toggleNav,
+  onShowAll,
+}: ProjectChatsInlineProps) {
   const localize = useLocalize();
+  const { data: activeJobsData } = useActiveJobs();
+  const activeJobIds = useMemo(
+    () => new Set(activeJobsData?.activeJobIds ?? []),
+    [activeJobsData?.activeJobIds],
+  );
   const { data, isLoading } = useConversationsInfiniteQuery(
     { projectId, sortBy: 'updatedAt', sortDirection: 'desc' },
     { staleTime: 30000, cacheTime: 300000 },
@@ -235,7 +243,7 @@ function ProjectChatsInline({
           conversation={convo}
           retainView={noop}
           toggleNav={toggleNav}
-          isGenerating={false}
+          isGenerating={activeJobIds.has(convo.conversationId ?? '')}
         />
       ))}
       {hasMore && (
@@ -249,130 +257,152 @@ function ProjectChatsInline({
       )}
     </div>
   );
-}
+});
 
-function ProjectItem({
-  project,
-  toggleNav,
-  defaultExpanded,
-}: {
+ProjectChatsInline.displayName = 'ProjectChatsInline';
+
+type ProjectItemProps = {
   project: TChatProject;
   toggleNav: () => void;
   defaultExpanded: boolean;
-}) {
-  const localize = useLocalize();
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const { newConversation } = useNewConvo();
-  const conversation = useRecoilValue(store.conversationByIndex(0));
-  const menuId = useId();
-  const [expanded, setExpanded] = useState(defaultExpanded);
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isRenameOpen, setIsRenameOpen] = useState(false);
-  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+};
 
-  const openProject = useCallback(() => {
-    navigate(`/projects/${project._id}`);
-    toggleNav();
-  }, [navigate, project._id, toggleNav]);
+const ProjectItem = memo(
+  function ProjectItem({ project, toggleNav, defaultExpanded }: ProjectItemProps) {
+    const localize = useLocalize();
+    const navigate = useNavigate();
+    const queryClient = useQueryClient();
+    const { newConversation } = useNewConvo();
+    const getCurrentConversationId = useRecoilCallback(
+      ({ snapshot }) =>
+        async () => {
+          const conversation = await snapshot.getPromise(store.conversationByIndex(0));
+          return conversation?.conversationId;
+        },
+      [],
+    );
+    const menuId = useId();
+    const [expanded, setExpanded] = useState(defaultExpanded);
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const [isRenameOpen, setIsRenameOpen] = useState(false);
+    const [isDeleteOpen, setIsDeleteOpen] = useState(false);
 
-  const startChat = useCallback(() => {
-    clearMessagesCache(queryClient, conversation?.conversationId);
-    queryClient.invalidateQueries([QueryKeys.messages]);
-    newConversation({ template: { chatProjectId: project._id } });
-    toggleNav();
-  }, [conversation?.conversationId, newConversation, project._id, queryClient, toggleNav]);
+    const openProject = useCallback(() => {
+      navigate(`/projects/${project._id}`);
+      toggleNav();
+    }, [navigate, project._id, toggleNav]);
 
-  const menuItems = useMemo<MenuItemProps[]>(
-    () => [
-      {
-        id: `${menuId}-open`,
-        label: localize('com_ui_open_project'),
-        icon: <Folder className="size-4 text-text-secondary" aria-hidden="true" />,
-        onClick: openProject,
-      },
-      {
-        id: `${menuId}-rename`,
-        label: localize('com_ui_rename'),
-        icon: <Pencil className="size-4 text-text-secondary" aria-hidden="true" />,
-        onClick: () => setIsRenameOpen(true),
-      },
-      {
-        id: `${menuId}-delete`,
-        label: localize('com_ui_delete'),
-        icon: <Trash2 className="size-4 text-text-secondary" aria-hidden="true" />,
-        onClick: () => setIsDeleteOpen(true),
-      },
-    ],
-    [localize, menuId, openProject],
-  );
+    const startChat = useCallback(async () => {
+      const conversationId = await getCurrentConversationId();
+      clearMessagesCache(queryClient, conversationId);
+      queryClient.invalidateQueries([QueryKeys.messages]);
+      newConversation({ template: { chatProjectId: project._id } });
+      toggleNav();
+    }, [getCurrentConversationId, newConversation, project._id, queryClient, toggleNav]);
 
-  return (
-    <li className="list-none">
-      <div className="group/project-row relative flex h-9 items-center rounded-lg text-sm text-text-primary transition-colors hover:bg-surface-active-alt">
-        <button
-          type="button"
-          onClick={() => setExpanded((prev) => !prev)}
-          aria-expanded={expanded}
-          aria-label={project.name}
-          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg py-1.5 pl-1.5 pr-14 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
-        >
-          <ChevronRight
-            className={cn(
-              'h-3.5 w-3.5 shrink-0 text-text-secondary transition-transform duration-200',
-              expanded && 'rotate-90',
-            )}
-            aria-hidden="true"
-          />
-          <Folder className="h-4 w-4 shrink-0 text-text-secondary" aria-hidden="true" />
-          <span className="truncate">{project.name}</span>
-        </button>
-        <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-surface-active-alt opacity-0 transition-opacity group-focus-within/project-row:opacity-100 group-hover/project-row:opacity-100 has-[[data-state=open]]:opacity-100">
-          <TooltipAnchor
-            description={localize('com_ui_new_chat_in_project', { name: project.name })}
-            render={
-              <button
-                type="button"
-                aria-label={localize('com_ui_new_chat_in_project', { name: project.name })}
-                className={iconButtonClassName}
-                onClick={startChat}
-              >
-                <NewChatIcon className="h-4 w-4" />
-              </button>
-            }
-          />
-          <DropdownPopup
-            portal={true}
-            focusLoop={true}
-            unmountOnHide={true}
-            menuId={menuId}
-            isOpen={isMenuOpen}
-            setIsOpen={setIsMenuOpen}
-            className="z-[125] min-w-44"
-            iconClassName="mr-2 text-text-secondary"
-            trigger={
-              <Ariakit.MenuButton
-                aria-label={localize('com_ui_more_options')}
-                className={cn(
-                  iconButtonClassName,
-                  isMenuOpen && 'bg-surface-active-alt text-text-primary',
-                )}
-              >
-                <Ellipsis className="h-4 w-4" aria-hidden="true" />
-              </Ariakit.MenuButton>
-            }
-            items={menuItems}
-          />
+    const menuItems = useMemo<MenuItemProps[]>(
+      () => [
+        {
+          id: `${menuId}-open`,
+          label: localize('com_ui_open_project'),
+          icon: <Folder className="size-4 text-text-secondary" aria-hidden="true" />,
+          onClick: openProject,
+        },
+        {
+          id: `${menuId}-rename`,
+          label: localize('com_ui_rename'),
+          icon: <Pencil className="size-4 text-text-secondary" aria-hidden="true" />,
+          onClick: () => setIsRenameOpen(true),
+        },
+        {
+          id: `${menuId}-delete`,
+          label: localize('com_ui_delete'),
+          icon: <Trash2 className="size-4 text-text-secondary" aria-hidden="true" />,
+          onClick: () => setIsDeleteOpen(true),
+        },
+      ],
+      [localize, menuId, openProject],
+    );
+
+    return (
+      <li className="list-none">
+        <div className="group/project-row relative flex h-9 items-center rounded-lg text-sm text-text-primary transition-colors hover:bg-surface-active-alt">
+          <button
+            type="button"
+            onClick={() => setExpanded((prev) => !prev)}
+            aria-expanded={expanded}
+            aria-label={project.name}
+            className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg py-1.5 pl-1.5 pr-14 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
+          >
+            <ChevronRight
+              className={cn(
+                'h-3.5 w-3.5 shrink-0 text-text-secondary transition-transform duration-200',
+                expanded && 'rotate-90',
+              )}
+              aria-hidden="true"
+            />
+            <Folder className="h-4 w-4 shrink-0 text-text-secondary" aria-hidden="true" />
+            <span className="truncate">{project.name}</span>
+          </button>
+          <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-surface-active-alt opacity-0 transition-opacity group-focus-within/project-row:opacity-100 group-hover/project-row:opacity-100 has-[[data-state=open]]:opacity-100">
+            <TooltipAnchor
+              description={localize('com_ui_new_chat_in_project', { name: project.name })}
+              render={
+                <button
+                  type="button"
+                  aria-label={localize('com_ui_new_chat_in_project', { name: project.name })}
+                  className={iconButtonClassName}
+                  onClick={startChat}
+                >
+                  <NewChatIcon className="h-4 w-4" />
+                </button>
+              }
+            />
+            <DropdownPopup
+              portal={true}
+              focusLoop={true}
+              unmountOnHide={true}
+              menuId={menuId}
+              isOpen={isMenuOpen}
+              setIsOpen={setIsMenuOpen}
+              className="z-[125] min-w-44"
+              iconClassName="mr-2 text-text-secondary"
+              trigger={
+                <Ariakit.MenuButton
+                  aria-label={localize('com_ui_more_options')}
+                  className={cn(
+                    iconButtonClassName,
+                    isMenuOpen && 'bg-surface-active-alt text-text-primary',
+                  )}
+                >
+                  <Ellipsis className="h-4 w-4" aria-hidden="true" />
+                </Ariakit.MenuButton>
+              }
+              items={menuItems}
+            />
+          </div>
         </div>
-      </div>
-      {expanded && (
-        <ProjectChatsInline projectId={project._id} toggleNav={toggleNav} onShowAll={openProject} />
-      )}
-      <ProjectRenameDialog open={isRenameOpen} onOpenChange={setIsRenameOpen} project={project} />
-      <ProjectDeleteDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen} project={project} />
-    </li>
-  );
-}
+        {expanded && (
+          <ProjectChatsInline
+            projectId={project._id}
+            toggleNav={toggleNav}
+            onShowAll={openProject}
+          />
+        )}
+        <ProjectRenameDialog open={isRenameOpen} onOpenChange={setIsRenameOpen} project={project} />
+        <ProjectDeleteDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen} project={project} />
+      </li>
+    );
+  },
+  (prevProps, nextProps) =>
+    prevProps.project._id === nextProps.project._id &&
+    prevProps.project.name === nextProps.project.name &&
+    prevProps.project.updatedAt === nextProps.project.updatedAt &&
+    prevProps.defaultExpanded === nextProps.defaultExpanded &&
+    prevProps.toggleNav === nextProps.toggleNav,
+);
+
+ProjectItem.displayName = 'ProjectItem';
 
 interface ProjectsSectionProps {
   toggleNav: () => void;
