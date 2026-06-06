@@ -6,6 +6,7 @@ import type { TModelSpec } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
+import MarketplaceItem, { marketplaceSearchMatches } from './Marketplace';
 import SpecIcon from './SpecIcon';
 import { cn } from '~/utils';
 
@@ -102,11 +103,16 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
         } else {
           // For an endpoint item
           const endpoint = item as Endpoint;
-          if (endpoint.hasModels && endpoint.models && endpoint.models.length > 0) {
+          if (endpoint.hasModels) {
             const lowerQuery = searchValue.toLowerCase();
-            const filteredModels = endpoint.label.toLowerCase().includes(lowerQuery)
-              ? endpoint.models
-              : endpoint.models.filter((model) => {
+            const endpointMatches = endpoint.label.toLowerCase().includes(lowerQuery);
+            const showMarketplace =
+              endpoint.showMarketplace === true &&
+              (endpointMatches || marketplaceSearchMatches(searchValue, localize));
+            const models = endpoint.models ?? [];
+            const filteredModels = endpointMatches
+              ? models
+              : models.filter((model) => {
                   let modelName = model.name;
                   if (
                     isAgentsEndpoint(endpoint.value) &&
@@ -124,7 +130,7 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                   return modelName.toLowerCase().includes(lowerQuery);
                 });
 
-            if (!filteredModels.length) {
+            if (!filteredModels.length && !showMarketplace) {
               return null; // skip if no models match
             }
 
@@ -138,6 +144,12 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                   )}
                   {endpoint.label}
                 </div>
+                {showMarketplace && (
+                  <MarketplaceItem
+                    className="px-3 py-2 pl-6"
+                    label={localize('com_agents_marketplace')}
+                  />
+                )}
                 {filteredModels.map((model) => {
                   const modelId = model.name;
 

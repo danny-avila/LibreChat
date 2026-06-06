@@ -17,6 +17,7 @@ export function filterItems<
     name?: string;
     value?: string;
     models?: Array<{ name: string; isGlobal?: boolean }>;
+    searchAliases?: string[];
   },
 >(
   items: T[],
@@ -33,7 +34,8 @@ export function filterItems<
     const itemMatches =
       item.label.toLowerCase().includes(searchTermLower) ||
       (item.name && item.name.toLowerCase().includes(searchTermLower)) ||
-      (item.value && item.value.toLowerCase().includes(searchTermLower));
+      (item.value && item.value.toLowerCase().includes(searchTermLower)) ||
+      item.searchAliases?.some((alias) => alias.toLowerCase().includes(searchTermLower));
 
     if (itemMatches) {
       return true;
