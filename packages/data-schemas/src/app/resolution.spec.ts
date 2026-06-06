@@ -1,6 +1,6 @@
 import { INTERFACE_PERMISSION_FIELDS, PermissionTypes } from 'librechat-data-provider';
-import { mergeConfigOverrides } from './resolution';
 import type { AppConfig, IConfig } from '~/types';
+import { mergeConfigOverrides } from './resolution';
 
 function fakeConfig(
   overrides: Record<string, unknown>,

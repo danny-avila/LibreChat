@@ -6,8 +6,8 @@ import {
   INTERFACE_PERMISSION_FIELDS,
   PERMISSION_SUB_KEYS,
 } from 'librechat-data-provider';
-import type { TCustomConfig } from 'librechat-data-provider';
 import type { AppConfig, ConfigSection, IConfig } from '@librechat/data-schemas';
+import type { TCustomConfig } from 'librechat-data-provider';
 import type { Types, ClientSession } from 'mongoose';
 import type { Response } from 'express';
 import type { CapabilityUser } from '~/middleware/capabilities';
