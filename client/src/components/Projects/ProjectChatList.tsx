@@ -9,15 +9,16 @@ import {
   type ReactNode,
 } from 'react';
 import throttle from 'lodash/throttle';
-import { AutoSizer, CellMeasurer, CellMeasurerCache, List } from 'react-virtualized';
 import { Spinner } from '@librechat/client';
+import { AutoSizer, CellMeasurer, CellMeasurerCache, List } from 'react-virtualized';
 import type { TConversation } from 'librechat-data-provider';
 import type { MeasuredCellParent } from '~/components/Conversations/Conversations';
-import { useGetEndpointsQuery } from '~/data-provider';
+import ConversationEndpointIcon from '~/components/Conversations/ConversationEndpointIcon';
+import { areConversationRenderPropsEqual } from '~/components/Conversations/utils';
+import { DateLabel } from '~/components/Conversations/Conversations';
 import { useLocalize, useNavigateToConvo } from '~/hooks';
 import { groupConversationsByDate, cn } from '~/utils';
-import { DateLabel } from '~/components/Conversations/Conversations';
-import EndpointIcon from '~/components/Endpoints/EndpointIcon';
+import { useActiveJobs } from '~/data-provider';
 
 type ChatSortField = 'updatedAt' | 'createdAt';
 
@@ -72,35 +73,38 @@ const LoadingRow = memo(() => {
 
 LoadingRow.displayName = 'ProjectWorkspaceLoadingRow';
 
-const ConversationRow = memo(({ conversation }: { conversation: TConversation }) => {
-  const { navigateToConvo } = useNavigateToConvo();
-  const localize = useLocalize();
-  const { data: endpointsConfig } = useGetEndpointsQuery();
-  const title = conversation.title || localize('com_ui_untitled');
-  const updatedAt = conversation.updatedAt || conversation.createdAt;
-  const formattedDate = updatedAt ? new Date(updatedAt).toLocaleString() : '';
+const ConversationRow = memo(
+  ({ conversation, isGenerating }: { conversation: TConversation; isGenerating: boolean }) => {
+    const { navigateToConvo } = useNavigateToConvo();
+    const localize = useLocalize();
+    const title = conversation.title || localize('com_ui_untitled');
+    const updatedAt = conversation.updatedAt || conversation.createdAt;
+    const formattedDate = updatedAt ? new Date(updatedAt).toLocaleString() : '';
 
-  return (
-    <button
-      type="button"
-      className="flex w-full items-center gap-3 border-b border-border-light py-3 text-left outline-none transition-colors hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring-primary"
-      onClick={() => navigateToConvo(conversation)}
-    >
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center">
-        <EndpointIcon
-          conversation={conversation}
-          endpointsConfig={endpointsConfig ?? {}}
-          size={24}
-          context="menu-item"
-        />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium text-text-primary">{title}</span>
-        <span className="block truncate text-xs text-text-secondary">{formattedDate}</span>
-      </span>
-    </button>
-  );
-});
+    return (
+      <button
+        type="button"
+        className="flex w-full items-center gap-3 border-b border-border-light py-3 text-left outline-none transition-colors hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring-primary"
+        onClick={() => navigateToConvo(conversation)}
+      >
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center">
+          <ConversationEndpointIcon conversation={conversation} size={24} context="menu-item" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium text-text-primary">{title}</span>
+          <span className="block truncate text-xs text-text-secondary">{formattedDate}</span>
+        </span>
+        {isGenerating && (
+          <Spinner
+            className="h-4 w-4 shrink-0 text-text-primary"
+            aria-label={localize('com_ui_generating')}
+          />
+        )}
+      </button>
+    );
+  },
+  areConversationRenderPropsEqual,
+);
 
 ConversationRow.displayName = 'ProjectWorkspaceConversationRow';
 
@@ -113,6 +117,11 @@ const ProjectChatList = ({
   emptyLabel,
   loadMore,
 }: ProjectChatListProps) => {
+  const { data: activeJobsData } = useActiveJobs();
+  const activeJobIds = useMemo(
+    () => new Set(activeJobsData?.activeJobIds ?? []),
+    [activeJobsData?.activeJobIds],
+  );
   const flattenedItems = useMemo(() => {
     if (isLoading) {
       return [{ type: 'loading' as const }];
@@ -200,11 +209,14 @@ const ProjectChatList = ({
 
       return (
         <MeasuredRow key={key} {...rowProps}>
-          <ConversationRow conversation={item.convo} />
+          <ConversationRow
+            conversation={item.convo}
+            isGenerating={activeJobIds.has(item.convo.conversationId ?? '')}
+          />
         </MeasuredRow>
       );
     },
-    [cache, emptyLabel, flattenedItems],
+    [activeJobIds, cache, emptyLabel, flattenedItems],
   );
 
   const getRowHeight = useCallback(
