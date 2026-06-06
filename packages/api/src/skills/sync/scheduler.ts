@@ -1,7 +1,7 @@
-import type { SkillSyncConfig } from 'librechat-data-provider';
 import { logger } from '@librechat/data-schemas';
-import { registerShutdownTask } from '~/app/shutdown';
+import type { SkillSyncConfig } from 'librechat-data-provider';
 import type { GitHubSkillSyncRunner } from './github';
+import { registerShutdownTask } from '~/app/shutdown';
 
 const NODE_TIMER_MAX_MS = 2147483647;
 const SKILL_SYNC_MIN_INTERVAL_MINUTES = 5;
