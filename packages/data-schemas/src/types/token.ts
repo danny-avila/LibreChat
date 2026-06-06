@@ -27,7 +27,7 @@ export interface TokenQuery {
   token?: string;
   email?: string | null;
   type?: string | null;
-  identifier?: string | null;
+  identifier?: string | RegExp | null;
 }
 
 export interface TokenUpdateData {

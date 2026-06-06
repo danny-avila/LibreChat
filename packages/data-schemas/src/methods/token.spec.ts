@@ -580,6 +580,38 @@ describe('Token Methods - Detailed Tests', () => {
       expect(remainingTokens.find((t) => t.identifier === 'oauth-identifier-456')).toBeUndefined();
     });
 
+    test('should delete tokens matching an identifier pattern', async () => {
+      await Token.create([
+        {
+          token: 'action-access-token',
+          userId: oauthUserId,
+          type: 'oauth',
+          identifier: `${oauthUserId.toString()}:action-1`,
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+        {
+          token: 'other-action-token',
+          userId: oauthUserId,
+          type: 'oauth',
+          identifier: `${oauthUserId.toString()}:action-2`,
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+      ]);
+
+      const result = await methods.deleteTokens({
+        type: 'oauth',
+        identifier: /^[^:]+:action-1$/,
+      });
+
+      expect(result.deletedCount).toBe(1);
+
+      const remaining = await Token.find({ userId: oauthUserId, type: 'oauth' });
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0].identifier).toBe(`${oauthUserId.toString()}:action-2`);
+    });
+
     test('should not delete tokens when undefined fields are passed', async () => {
       // This is the critical test case for the bug fix
       const result = await methods.deleteTokens({

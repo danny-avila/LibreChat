@@ -39,6 +39,8 @@ export * from './memory';
 export * from './modelSpecs';
 /* Agents */
 export * from './agents';
+/* Actions */
+export * from './actions';
 /* Prompts */
 export * from './prompts';
 /* Projects */
