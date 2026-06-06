@@ -473,6 +473,108 @@ describe('registerUser', () => {
   });
 });
 
+describe('verifyEmail public response handling', () => {
+  const email = 'user@example.com';
+  const encodedEmail = encodeURIComponent(email);
+  const invalidEmailVerificationMessage = 'Invalid or expired email verification token';
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('does not reveal that an account is already verified without a valid token', async () => {
+    findUser.mockResolvedValue({ _id: 'user-id', email, emailVerified: true });
+    findToken.mockResolvedValue(null);
+
+    const result = await verifyEmail({ body: { email: encodedEmail, token: 'not-the-token' } });
+
+    expect(result).toBeInstanceOf(Error);
+    expect(result.message).toBe(invalidEmailVerificationMessage);
+    expect(updateUser).not.toHaveBeenCalled();
+    expect(deleteTokens).not.toHaveBeenCalled();
+  });
+
+  it('returns the same generic error for missing users and invalid tokens', async () => {
+    findUser.mockResolvedValueOnce(null);
+
+    const missingUserResult = await verifyEmail({
+      body: { email: encodedEmail, token: 'not-the-token' },
+    });
+
+    findUser.mockResolvedValueOnce({ _id: 'user-id', email, emailVerified: false });
+    findToken.mockResolvedValueOnce({
+      userId: 'user-id',
+      email,
+      token: bcrypt.hashSync('real-token', 10),
+    });
+
+    const invalidTokenResult = await verifyEmail({
+      body: { email: encodedEmail, token: 'not-the-token' },
+    });
+
+    expect(missingUserResult).toBeInstanceOf(Error);
+    expect(invalidTokenResult).toBeInstanceOf(Error);
+    expect(missingUserResult.message).toBe(invalidEmailVerificationMessage);
+    expect(invalidTokenResult.message).toBe(invalidEmailVerificationMessage);
+  });
+
+  it('verifies an unverified account when the token is valid', async () => {
+    const hashedToken = bcrypt.hashSync('real-token', 10);
+    findUser.mockResolvedValue({ _id: 'user-id', email, emailVerified: false });
+    findToken.mockResolvedValue({ userId: 'user-id', email, token: hashedToken });
+    updateUser.mockResolvedValue({ _id: 'user-id', emailVerified: true });
+
+    const result = await verifyEmail({ body: { email: encodedEmail, token: 'real-token' } });
+
+    expect(result).toEqual({
+      message: 'Email verification was successful',
+      status: 'success',
+    });
+    expect(updateUser).toHaveBeenCalledWith('user-id', { emailVerified: true });
+    expect(deleteTokens).toHaveBeenCalledWith({
+      token: hashedToken,
+      userId: 'user-id',
+      email,
+      identifier: null,
+      type: null,
+    });
+  });
+
+  it('returns the generic error when a valid verification update fails', async () => {
+    const hashedToken = bcrypt.hashSync('real-token', 10);
+    findUser.mockResolvedValue({ _id: 'user-id', email, emailVerified: false });
+    findToken.mockResolvedValue({ userId: 'user-id', email, token: hashedToken });
+    updateUser.mockResolvedValue(null);
+
+    const result = await verifyEmail({ body: { email: encodedEmail, token: 'real-token' } });
+
+    expect(result).toBeInstanceOf(Error);
+    expect(result.message).toBe(invalidEmailVerificationMessage);
+    expect(deleteTokens).not.toHaveBeenCalled();
+  });
+
+  it('allows idempotent success only when an already verified account presents a valid token', async () => {
+    const hashedToken = bcrypt.hashSync('real-token', 10);
+    findUser.mockResolvedValue({ _id: 'user-id', email, emailVerified: true });
+    findToken.mockResolvedValue({ userId: 'user-id', email, token: hashedToken });
+
+    const result = await verifyEmail({ body: { email: encodedEmail, token: 'real-token' } });
+
+    expect(result).toEqual({
+      message: 'Email verification was successful',
+      status: 'success',
+    });
+    expect(updateUser).not.toHaveBeenCalled();
+    expect(deleteTokens).toHaveBeenCalledWith({
+      token: hashedToken,
+      userId: 'user-id',
+      email,
+      identifier: null,
+      type: null,
+    });
+  });
+});
+
 describe('requestPasswordReset', () => {
   beforeEach(() => {
     jest.clearAllMocks();

@@ -52,6 +52,7 @@ const AuthTokenTypes = Object.freeze({
 
 const latestAuthTokenOptions = Object.freeze({ sort: { createdAt: -1 } });
 const genericVerificationMessage = 'Please check your email to verify your email address.';
+const invalidEmailVerificationMessage = 'Invalid or expired email verification token';
 const OPENID_SESSION_ID_TOKEN_EXPIRY_BUFFER_SECONDS = 30;
 
 const findPasswordResetToken = async (userId) => {
@@ -251,25 +252,46 @@ const sendVerificationEmail = async (user) => {
  */
 const verifyEmail = async (req) => {
   const { email, token } = req.body;
-  const decodedEmail = decodeURIComponent(email);
+
+  if (typeof email !== 'string' || typeof token !== 'string' || !email || !token) {
+    logger.warn('[verifyEmail] [Invalid email verification request]');
+    return new Error(invalidEmailVerificationMessage);
+  }
+
+  let decodedEmail;
+  try {
+    decodedEmail = decodeURIComponent(email);
+  } catch {
+    logger.warn(`[verifyEmail] [Invalid email encoding] [Email: ${email}]`);
+    return new Error(invalidEmailVerificationMessage);
+  }
 
   const user = await findUser({ email: decodedEmail }, 'email _id emailVerified');
 
   if (!user) {
     logger.warn(`[verifyEmail] [User not found] [Email: ${decodedEmail}]`);
-    return new Error('User not found');
-  }
-
-  if (user.emailVerified) {
-    logger.info(`[verifyEmail] Email already verified [Email: ${decodedEmail}]`);
-    return { message: 'Email already verified', status: 'success' };
+    return new Error(invalidEmailVerificationMessage);
   }
 
   const emailVerificationData = await findEmailVerificationToken(user);
 
   if (!emailVerificationData) {
     logger.warn(`[verifyEmail] [No email verification data found] [Email: ${decodedEmail}]`);
-    return new Error('Invalid or expired email verification token');
+    return new Error(invalidEmailVerificationMessage);
+  }
+
+  if (!emailVerificationData.token) {
+    logger.warn(
+      `[verifyEmail] [Email verification token data is invalid] [Email: ${decodedEmail}]`,
+    );
+    return new Error(invalidEmailVerificationMessage);
+  }
+
+  const tokenUserId = emailVerificationData.userId?.toString();
+  const userId = user._id?.toString();
+  if (!tokenUserId || tokenUserId !== userId) {
+    logger.warn(`[verifyEmail] [Email verification token user mismatch] [Email: ${decodedEmail}]`);
+    return new Error(invalidEmailVerificationMessage);
   }
 
   const isValid = bcrypt.compareSync(token, emailVerificationData.token);
@@ -278,14 +300,20 @@ const verifyEmail = async (req) => {
     logger.warn(
       `[verifyEmail] [Invalid or expired email verification token] [Email: ${decodedEmail}]`,
     );
-    return new Error('Invalid or expired email verification token');
+    return new Error(invalidEmailVerificationMessage);
+  }
+
+  if (user.emailVerified) {
+    await deleteTokens(getEmailVerificationTokenDeleteQuery(emailVerificationData));
+    logger.info(`[verifyEmail] Email already verified [Email: ${decodedEmail}]`);
+    return { message: 'Email verification was successful', status: 'success' };
   }
 
   const updatedUser = await updateUser(emailVerificationData.userId, { emailVerified: true });
 
   if (!updatedUser) {
     logger.warn(`[verifyEmail] [User update failed] [Email: ${decodedEmail}]`);
-    return new Error('Failed to update user verification status');
+    return new Error(invalidEmailVerificationMessage);
   }
 
   await deleteTokens(getEmailVerificationTokenDeleteQuery(emailVerificationData));
