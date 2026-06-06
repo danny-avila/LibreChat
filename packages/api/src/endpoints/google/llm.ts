@@ -264,6 +264,10 @@ function applyVertexMultiRegionEndpoint(config: VertexAIClientOptions & { endpoi
   }
 }
 
+function hasServiceKeyCredentials(serviceKey: Record<string, unknown>): boolean {
+  return Object.keys(serviceKey).length > 0;
+}
+
 export function getSafetySettings(
   model?: string,
 ): Array<{ category: string; threshold: string }> | undefined {
@@ -337,7 +341,12 @@ export function getGoogleConfig(
     typeof serviceKeyRaw === 'string' ? JSON.parse(serviceKeyRaw) : (serviceKeyRaw ?? {});
 
   const apiKey = creds[AuthKeys.GOOGLE_API_KEY] ?? null;
-  const project_id = !apiKey ? (serviceKey?.project_id ?? null) : null;
+  let project_id = null;
+  if (options.forceVertex === true) {
+    project_id = options.projectId ?? serviceKey?.project_id ?? null;
+  } else if (!apiKey) {
+    project_id = serviceKey?.project_id ?? null;
+  }
 
   const reverseProxyUrl = options.reverseProxyUrl;
   const authHeader = options.authHeader;
@@ -373,7 +382,7 @@ export function getGoogleConfig(
 
   let provider;
 
-  if (project_id) {
+  if (options.forceVertex === true || project_id) {
     provider = Providers.VERTEXAI;
   } else {
     provider = Providers.GOOGLE;
@@ -381,10 +390,13 @@ export function getGoogleConfig(
 
   // If we have a GCP project => Vertex AI
   if (provider === Providers.VERTEXAI) {
-    (llmConfig as VertexAIClientOptions).authOptions = {
-      credentials: { ...serviceKey },
-      projectId: project_id,
-    };
+    (llmConfig as VertexAIClientOptions).authOptions = removeNullishValues(
+      {
+        ...(hasServiceKeyCredentials(serviceKey) && { credentials: { ...serviceKey } }),
+        projectId: project_id,
+      },
+      true,
+    );
     const location = process.env.GOOGLE_LOC || 'us-central1';
     (llmConfig as VertexAIClientOptions).location = location;
   } else if (apiKey && provider === Providers.GOOGLE) {
