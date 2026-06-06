@@ -1,9 +1,9 @@
 import { logger } from '@librechat/data-schemas';
 import { FileSources, mergeFileConfig } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
+import type { TokenCountFn } from '~/utils/text';
 import type { ServerRequest } from '~/types';
 import { processTextWithTokenLimit } from '~/utils/text';
-import type { TokenCountFn } from '~/utils/text';
 
 /**
  * Extracts text context from attachments and returns formatted text.
