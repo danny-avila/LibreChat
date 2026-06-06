@@ -23,6 +23,8 @@ import {
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
 import useTimeout from './useTimeout';
 import store from '~/store';
+import { useToastContext } from '@librechat/client';
+import useLocalize from './useLocalize';
 
 const AuthContext = createContext<TAuthContext | undefined>(undefined);
 
@@ -33,6 +35,8 @@ const AuthContextProvider = ({
   authConfig?: TAuthConfig;
   children: ReactNode;
 }) => {
+  const { showToast } = useToastContext();
+  const localize = useLocalize();
   const [user, setUser] = useRecoilState(store.user);
   const [token, setToken] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -101,6 +105,9 @@ const AuthContextProvider = ({
         errorCode = errorData?.errorCode;
       }
       let errorMsg = errorCode === 'ERR_ADMIN_VERIFICATION_PENDING' ? errorCode : resError.message
+      if(errorCode === 'ERR_ADMIN_VERIFICATION_PENDING'){
+        showToast({ message:localize('com_auth_error_login_admin_verfication') , status: 'error' });
+      }
       doSetError(errorMsg);
       navigate('/login', { replace: true });
     },
