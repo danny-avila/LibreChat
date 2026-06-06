@@ -294,6 +294,7 @@ const callArtifactTool = async (req, res) => {
     } = require('~/server/services/MCP');
     const { getUserPluginAuthValue } = require('~/server/services/PluginService');
     const { getMCPManager } = require('~/config');
+    const { Providers } = require('@librechat/agents');
 
     const { tool, file_id: fileId, messageId, conversationId, partIndex, blockIndex } = req.body;
     const rawArgs = req.body.args;
@@ -400,6 +401,9 @@ const callArtifactTool = async (req, res) => {
       config: serverConfig,
       userMCPAuthMap,
       availableTools,
+      // A recognized provider so content_and_artifact results format with their
+      // artifact (images/UI resources) instead of plain-string-only.
+      provider: Providers.OPENAI,
       mcpPermissionContext: createMCPPermissionContext(req),
     });
     if (!toolInstance) {
