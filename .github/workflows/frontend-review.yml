@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'client/**'
+      - 'packages/client/**'
       - 'packages/data-provider/**'
 
 permissions:
@@ -75,6 +76,50 @@ jobs:
           name: build-client-package
           path: packages/client/dist
           retention-days: 2
+
+  typecheck:
+    name: TypeScript type checks (client)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 24.16.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.16.0'
+
+      - name: Restore node_modules cache
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            client/node_modules
+            packages/client/node_modules
+            packages/data-provider/node_modules
+          key: node-modules-frontend-${{ runner.os }}-24.16.0-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Download data-provider build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-data-provider
+          path: packages/data-provider/dist
+
+      - name: Download client-package build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-client-package
+          path: packages/client/dist
+
+      - name: Type check client
+        run: npm run typecheck
+        working-directory: client
 
   test-ubuntu:
     name: 'Tests: Ubuntu (shard ${{ matrix.shard }}/4)'

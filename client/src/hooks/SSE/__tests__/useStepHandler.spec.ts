@@ -1,5 +1,5 @@
-import { renderHook, act } from '@testing-library/react';
 import { RecoilRoot, useRecoilCallback } from 'recoil';
+import { renderHook, act } from '@testing-library/react';
 import {
   Constants,
   StepTypes,
@@ -17,8 +17,20 @@ import type {
   SubagentUpdateEvent,
   Agents,
 } from 'librechat-data-provider';
-import useStepHandler from '~/hooks/SSE/useStepHandler';
 import { subagentProgressByToolCallId } from '~/store/subagents';
+import useStepHandler from '~/hooks/SSE/useStepHandler';
+
+/** `Constants` is a heterogeneous enum (`string | number`); annotate as
+ *  `string` so the member is usable where a `string` field is expected. */
+const USE_PRELIM_RESPONSE_MESSAGE_ID: string = Constants.USE_PRELIM_RESPONSE_MESSAGE_ID;
+
+const getToolCallName = (part?: TMessageContentParts): string | undefined => {
+  if (part?.type !== ContentTypes.TOOL_CALL) {
+    return undefined;
+  }
+  const { tool_call: toolCall } = part;
+  return 'name' in toolCall ? toolCall.name : undefined;
+};
 
 type TSubmissionForTest = {
   userMessage: TMessage;
@@ -247,7 +259,7 @@ describe('useStepHandler', () => {
 
       const firstRunStep = createToolCallRunStep({
         id: 'step-oauth-eli',
-        runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
+        runId: USE_PRELIM_RESPONSE_MESSAGE_ID,
         index: 0,
         stepDetails: {
           type: StepTypes.TOOL_CALLS,
@@ -263,7 +275,7 @@ describe('useStepHandler', () => {
       });
       const secondRunStep = createToolCallRunStep({
         id: 'step-oauth-vespa',
-        runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
+        runId: USE_PRELIM_RESPONSE_MESSAGE_ID,
         index: 1,
         stepDetails: {
           type: StepTypes.TOOL_CALLS,
@@ -291,8 +303,8 @@ describe('useStepHandler', () => {
 
       const responseMsg = currentMessages.find((m) => !m.isCreatedByUser);
       expect(responseMsg?.content).toHaveLength(2);
-      expect(responseMsg?.content?.[0]?.tool_call?.name).toBe(`oauth${Constants.mcp_delimiter}ELI`);
-      expect(responseMsg?.content?.[1]?.tool_call?.name).toBe(
+      expect(getToolCallName(responseMsg?.content?.[0])).toBe(`oauth${Constants.mcp_delimiter}ELI`);
+      expect(getToolCallName(responseMsg?.content?.[1])).toBe(
         `oauth${Constants.mcp_delimiter}Vespa`,
       );
     });
@@ -314,7 +326,7 @@ describe('useStepHandler', () => {
             event: StepEvents.ON_RUN_STEP,
             data: createToolCallRunStep({
               id: 'step-oauth-eli',
-              runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
+              runId: USE_PRELIM_RESPONSE_MESSAGE_ID,
               index: 0,
               stepDetails: {
                 type: StepTypes.TOOL_CALLS,
@@ -336,7 +348,7 @@ describe('useStepHandler', () => {
             event: StepEvents.ON_RUN_STEP,
             data: createToolCallRunStep({
               id: 'step-oauth-vespa',
-              runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
+              runId: USE_PRELIM_RESPONSE_MESSAGE_ID,
               index: 1,
               stepDetails: {
                 type: StepTypes.TOOL_CALLS,
@@ -358,7 +370,7 @@ describe('useStepHandler', () => {
             event: StepEvents.ON_RUN_STEP,
             data: createRunStep({
               id: 'step-message',
-              runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
+              runId: USE_PRELIM_RESPONSE_MESSAGE_ID,
               index: 0,
             }),
           },

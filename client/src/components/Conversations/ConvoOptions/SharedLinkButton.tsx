@@ -2,6 +2,12 @@ import { useState, useRef } from 'react';
 import { Trans } from 'react-i18next';
 import { QrCode, RotateCw, Trash2 } from 'lucide-react';
 import {
+  PermissionTypes,
+  Permissions,
+  PermissionBits,
+  ResourceType,
+} from 'librechat-data-provider';
+import {
   Label,
   Button,
   Spinner,
@@ -13,19 +19,13 @@ import {
   useToastContext,
   OGDialogContent,
 } from '@librechat/client';
-import {
-  PermissionTypes,
-  Permissions,
-  PermissionBits,
-  ResourceType,
-} from 'librechat-data-provider';
 import type { TSharedLinkGetResponse } from 'librechat-data-provider';
-import GenericGrantAccessDialog from '~/components/Sharing/GenericGrantAccessDialog';
 import {
   useCreateSharedLinkMutation,
   useUpdateSharedLinkMutation,
   useDeleteSharedLinkMutation,
 } from '~/data-provider';
+import GenericGrantAccessDialog from '~/components/Sharing/GenericGrantAccessDialog';
 import { useHasAccess, useResourcePermissions, useLocalize } from '~/hooks';
 import { NotificationSeverity } from '~/common';
 import { buildShareLinkUrl } from '~/utils';
@@ -220,7 +220,7 @@ export default function SharedLinkButton({
               <GenericGrantAccessDialog
                 resourceType={ResourceType.SHARED_LINK}
                 resourceDbId={share?._id}
-                resourceName={share?.shareId}
+                resourceName={share?.shareId ?? undefined}
               >
                 <TooltipAnchor
                   description={localize('com_ui_shared_link_manage_access')}
