@@ -120,6 +120,77 @@ describe('MCP OAuth Race Condition Fixes', () => {
       createSpy.mockRestore();
     });
 
+    it('should re-issue the pending OAuth URL when joining an in-flight connection', async () => {
+      const { UserConnectionManager } = await import('~/mcp/UserConnectionManager');
+
+      class TestManager extends UserConnectionManager {}
+
+      const manager = new TestManager();
+
+      const mockConnection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        disconnect: jest.fn().mockResolvedValue(undefined),
+        isStale: jest.fn().mockReturnValue(false),
+      };
+
+      const mockAppConnections = { has: jest.fn().mockResolvedValue(false) };
+      manager.appConnections = mockAppConnections as never;
+
+      const mockConfig = {
+        type: 'streamable-http',
+        url: 'http://localhost:9999/',
+        updatedAt: undefined,
+        dbId: undefined,
+      };
+
+      jest
+        .spyOn(
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          require('~/mcp/registry/MCPServersRegistry').MCPServersRegistry,
+          'getInstance',
+        )
+        .mockReturnValue({
+          getServerConfig: jest.fn().mockResolvedValue(mockConfig),
+          shouldEnableSSRFProtection: jest.fn().mockReturnValue(false),
+          getAllowedDomains: jest.fn().mockReturnValue(null),
+          getAllowedAddresses: jest.fn().mockReturnValue(null),
+        });
+
+      const { MCPConnectionFactory } = await import('~/mcp/MCPConnectionFactory');
+      const createSpy = jest.spyOn(MCPConnectionFactory, 'create').mockImplementation(async () => {
+        await new Promise((r) => setTimeout(r, 100));
+        return mockConnection as never;
+      });
+
+      const store = new MockKeyv();
+      const flowManager = new FlowStateManager(store as unknown as Keyv, { ttl: 30000, ci: true });
+      const user = { id: 'user-oauth' };
+      const serverName = 'test-server';
+      const authorizationUrl = 'https://auth.example.com/existing';
+      await flowManager.initFlow(`${user.id}:${serverName}`, 'mcp_oauth', { authorizationUrl });
+
+      const firstConnection = manager.getUserConnection({
+        serverName,
+        user: user as never,
+        flowManager: flowManager as never,
+      });
+      const oauthStart = jest.fn().mockResolvedValue(undefined);
+      const joinedConnection = manager.getUserConnection({
+        serverName,
+        user: user as never,
+        flowManager: flowManager as never,
+        oauthStart,
+      });
+
+      const [conn1, conn2] = await Promise.all([firstConnection, joinedConnection]);
+
+      expect(conn1).toBe(conn2);
+      expect(oauthStart).toHaveBeenCalledWith(authorizationUrl);
+      expect(createSpy).toHaveBeenCalledTimes(1);
+
+      createSpy.mockRestore();
+    });
+
     it('should not coalesce when forceNew is true', async () => {
       const { UserConnectionManager } = await import('~/mcp/UserConnectionManager');
 

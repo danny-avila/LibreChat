@@ -398,7 +398,7 @@ describe('MCPConnectionFactory', () => {
       );
     });
 
-    it('should skip new OAuth flow initiation when a PENDING flow already exists (returnOnOAuth)', async () => {
+    it('should re-issue the stored OAuth URL when a PENDING flow already exists (returnOnOAuth)', async () => {
       const basicOptions = {
         serverName: 'test-server',
         serverConfig: mockServerConfig,
@@ -416,7 +416,10 @@ describe('MCPConnectionFactory', () => {
       mockFlowManager.getFlowState.mockResolvedValue({
         status: 'PENDING',
         type: 'mcp_oauth',
-        metadata: { codeVerifier: 'existing-verifier' },
+        metadata: {
+          codeVerifier: 'existing-verifier',
+          authorizationUrl: 'https://auth.example.com/existing',
+        },
         createdAt: Date.now(),
       });
       mockConnectionInstance.isConnected.mockResolvedValue(false);
@@ -438,6 +441,7 @@ describe('MCPConnectionFactory', () => {
       await oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
 
       expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
+      expect(oauthOptions.oauthStart).toHaveBeenCalledWith('https://auth.example.com/existing');
       expect(mockFlowManager.deleteFlow).not.toHaveBeenCalled();
       expect(mockConnectionInstance.emit).toHaveBeenCalledWith(
         'oauthFailed',

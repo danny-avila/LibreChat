@@ -1,9 +1,12 @@
 import { logger } from '@librechat/data-schemas';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
+import type { MCPOAuthFlowMetadata } from '~/mcp/oauth';
 import type * as t from './types';
+import { PENDING_STALE_MS } from '~/flow/manager';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
+import { MCPOAuthHandler } from '~/mcp/oauth';
 import { isUserSourced, requiresOAuthMachinery } from './utils';
 import { MCPConnection } from './connection';
 import { mcpConfig } from './mcpConfig';
@@ -48,6 +51,7 @@ export abstract class UserConnectionManager {
       const pending = this.pendingConnections.get(lockKey);
       if (pending) {
         logger.debug(`[MCP][User: ${userId}][${serverName}] Joining in-flight connection attempt`);
+        await this.reissuePendingOAuthStart(opts, userId);
         return pending;
       }
     }
@@ -64,6 +68,44 @@ export abstract class UserConnectionManager {
       if (!forceNew && this.pendingConnections.get(lockKey) === connectionPromise) {
         this.pendingConnections.delete(lockKey);
       }
+    }
+  }
+
+  private async reissuePendingOAuthStart(
+    { flowManager, oauthStart, serverName }: t.UserMCPConnectionOptions,
+    userId: string,
+  ): Promise<void> {
+    if (!flowManager || typeof oauthStart !== 'function') {
+      return;
+    }
+
+    try {
+      const flowId = MCPOAuthHandler.generateFlowId(userId, serverName);
+      const existingFlow = await flowManager.getFlowState(flowId, 'mcp_oauth');
+      if (existingFlow?.status !== 'PENDING') {
+        return;
+      }
+
+      const pendingAge = existingFlow.createdAt ? Date.now() - existingFlow.createdAt : Infinity;
+      if (pendingAge >= PENDING_STALE_MS) {
+        return;
+      }
+
+      const metadata = existingFlow.metadata as MCPOAuthFlowMetadata | undefined;
+      const authorizationUrl = metadata?.authorizationUrl;
+      if (!authorizationUrl) {
+        return;
+      }
+
+      logger.info(
+        `[MCP][User: ${userId}][${serverName}] Re-issuing stored authorization URL while joining in-flight connection`,
+      );
+      await oauthStart(authorizationUrl);
+    } catch (error) {
+      logger.warn(
+        `[MCP][User: ${userId}][${serverName}] Failed to re-issue pending OAuth URL`,
+        error,
+      );
     }
   }
 

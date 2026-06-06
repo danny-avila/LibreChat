@@ -504,6 +504,14 @@ export class MCPConnectionFactory {
               logger.debug(
                 `${this.logPrefix} Recent PENDING OAuth flow exists (${Math.round(pendingAge / 1000)}s old), skipping new initiation`,
               );
+              const flowMeta = existingFlow.metadata as MCPOAuthFlowMetadata | undefined;
+              const storedAuthUrl = flowMeta?.authorizationUrl;
+              if (storedAuthUrl && typeof this.oauthStart === 'function') {
+                logger.info(
+                  `${this.logPrefix} Re-issuing stored authorization URL while reusing PENDING flow`,
+                );
+                await this.oauthStart(storedAuthUrl);
+              }
               connection.emit('oauthFailed', new Error('OAuth flow initiated - return early'));
               return;
             }
