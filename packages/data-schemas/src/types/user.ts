@@ -82,7 +82,8 @@ export interface IUser extends Document {
       auth: string;
     };
   }>;
-  lastActiveAt: Date
+  lastActiveAt: Date;
+  isVerified: boolean;
 }
 
 export interface BalanceConfig {
