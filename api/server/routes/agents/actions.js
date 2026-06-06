@@ -4,6 +4,7 @@ const { logger } = require('@librechat/data-schemas');
 const {
   generateCheckAccess,
   isActionDomainAllowed,
+  mergeActionMetadataForUpdate,
   validateActionOAuthMetadata,
 } = require('@librechat/api');
 const {
@@ -137,13 +138,14 @@ router.post(
 
       const legacyDomain = legacyDomainEncode(metadata.domain);
 
-      const action_id = _action_id ?? nanoid();
+      const requestedActionId = _action_id;
+      let action_id = requestedActionId ?? nanoid();
       const initialPromises = [];
 
       // Permissions already validated by middleware - load agent directly
       initialPromises.push(db.getAgent({ id: agent_id }));
-      if (_action_id) {
-        initialPromises.push(db.getActions({ action_id }, true));
+      if (requestedActionId) {
+        initialPromises.push(db.getActions({ action_id: requestedActionId }, true));
       }
 
       /** @type {[Agent, [Action|undefined]]} */
@@ -157,7 +159,25 @@ router.post(
         if (action.agent_id !== agent_id) {
           return res.status(403).json({ message: 'Action does not belong to this agent' });
         }
-        metadata = { ...action.metadata, ...metadata };
+
+        const metadataUpdate = mergeActionMetadataForUpdate({
+          storedMetadata: action.metadata,
+          incomingMetadata: metadata,
+        });
+
+        if (metadataUpdate.requiresCredentialRefresh) {
+          return res.status(400).json({
+            message:
+              'Action credentials must be re-entered when changing the domain, OpenAPI server URL, or authentication settings',
+          });
+        }
+
+        if (metadataUpdate.targetChanged) {
+          // OAuth tokens are keyed by action_id; rotate it so old tokens cannot follow a new target.
+          action_id = nanoid();
+        }
+
+        metadata = metadataUpdate.metadata;
       }
 
       try {
@@ -168,9 +188,14 @@ router.post(
 
       const { actions: _actions = [], author: agent_author } = agent ?? {};
       const actions = [];
+      let previousEncodedDomain = '';
       for (const action of _actions) {
         const [_action_domain, current_action_id] = action.split(actionDelimiter);
-        if (current_action_id === action_id) {
+        if (
+          (requestedActionId && current_action_id === requestedActionId) ||
+          current_action_id === action_id
+        ) {
+          previousEncodedDomain = _action_domain;
           continue;
         }
 
@@ -181,13 +206,22 @@ router.post(
 
       /** @type {string[]}} */
       const { tools: _tools = [] } = agent;
+      const previousAction = actions_result?.[0];
+      const previousLegacyDomain = previousAction
+        ? legacyDomainEncode(previousAction.metadata.domain)
+        : '';
 
       const shouldRemoveAgentTool = (tool) => {
         if (!tool) {
           return false;
         }
         return (
-          tool.includes(encodedDomain) || tool.includes(legacyDomain) || tool.includes(action_id)
+          tool.includes(encodedDomain) ||
+          tool.includes(legacyDomain) ||
+          (previousEncodedDomain && tool.includes(previousEncodedDomain)) ||
+          (previousLegacyDomain && tool.includes(previousLegacyDomain)) ||
+          tool.includes(action_id) ||
+          (requestedActionId && tool.includes(requestedActionId))
         );
       };
 
@@ -206,14 +240,17 @@ router.post(
       );
 
       // Only update user field for new actions
-      const actionUpdateData = { metadata, agent_id };
+      const actionUpdateData = { action_id, metadata, agent_id };
       if (!actions_result || !actions_result.length) {
         // For new actions, use the agent owner's user ID
         actionUpdateData.user = agent_author || req.user.id;
       }
 
-      /** @type {[Action]} */
-      const updatedAction = await db.updateAction({ action_id, agent_id }, actionUpdateData);
+      /** @type {Action} */
+      const updatedAction = await db.updateAction(
+        { action_id: requestedActionId ?? action_id, agent_id },
+        actionUpdateData,
+      );
 
       const sensitiveFields = ['api_key', 'oauth_client_id', 'oauth_client_secret'];
       for (let field of sensitiveFields) {
