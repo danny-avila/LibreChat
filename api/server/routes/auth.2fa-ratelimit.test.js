@@ -11,7 +11,6 @@ jest.mock(
     createSetBalanceConfig: jest.fn(() => (req, res, next) => next()),
     forceRefreshCloudFrontAuthCookies: jest.fn(),
   }),
-  { virtual: true },
 );
 
 jest.mock('~/server/controllers/AuthController', () => ({
