@@ -1156,11 +1156,12 @@ class GenerationJobManagerClass {
     }
 
     const stepId = getReplayStepId(event);
+    const eventName = 'event' in event ? event.event : undefined;
     const existingIndex =
       stepId == null
         ? -1
         : replayEvents.findIndex((candidate) => {
-            if (!('event' in candidate) || candidate.event !== event.event) {
+            if (!('event' in candidate) || candidate.event !== eventName) {
               return false;
             }
             return getReplayStepId(candidate) === stepId;
