@@ -6,6 +6,7 @@ const { hasCapability, requireCapability } = require('~/server/middleware/roles/
 const { requireJwtAuth } = require('~/server/middleware');
 const { upsertSkillSyncCredential, deleteSkillSyncCredential } = require('~/models');
 const { getGitHubSkillSyncRunnerForRequest } = require('~/server/services/Skills/sync');
+const { getAppConfig } = require('~/server/services/Config');
 const configMiddleware = require('~/server/middleware/config/app');
 
 const router = express.Router();
@@ -39,6 +40,26 @@ function hasResolvedSkillSyncOverride(req) {
   const resolved = parseSkillSyncConfig(req.config?.skillSync);
   const base = parseSkillSyncConfig(req.config?.config?.skillSync);
   return Boolean(resolved?.github && !isSameSkillSyncConfig(resolved, base));
+}
+
+function hasServerCredentialReference(config) {
+  return Boolean(config?.github?.sources?.some((source) => source.credentialKey || source.token));
+}
+
+async function attachBaseSkillSyncConfig(req, res, next) {
+  try {
+    const baseConfig = await getAppConfig({ baseOnly: true });
+    req.config = {
+      ...(req.config ?? {}),
+      config: {
+        ...(req.config?.config ?? {}),
+        skillSync: baseConfig?.skillSync,
+      },
+    };
+    return next();
+  } catch {
+    return res.status(500).json({ message: 'Internal Server Error' });
+  }
 }
 
 async function hasSkillCapability(req, capability, { platformOnly = false } = {}) {
@@ -88,10 +109,16 @@ async function requireSyncRunCapability(req, res, next) {
       req.skillSyncAllowServerCredentials = true;
       return next();
     }
+    const resolved = parseSkillSyncConfig(req.config?.skillSync);
     if (
       hasResolvedSkillSyncOverride(req) &&
       (await hasSkillCapability(req, SystemCapabilities.MANAGE_SKILLS))
     ) {
+      if (hasServerCredentialReference(resolved)) {
+        return res.status(403).json({
+          message: 'Tenant-scoped skill sync runs cannot use server credentials',
+        });
+      }
       req.skillSyncAllowServerCredentials = false;
       return next();
     }
@@ -112,7 +139,7 @@ const handlers = createAdminSkillsSyncHandlers({
   deleteCredential: deleteSkillSyncCredential,
 });
 
-router.use(requireJwtAuth, requireAdminAccess, configMiddleware);
+router.use(requireJwtAuth, requireAdminAccess, configMiddleware, attachBaseSkillSyncConfig);
 
 router.get('/sync/status', requireReadSkills, attachCredentialReadAccess, handlers.getSyncStatus);
 router.post('/sync/run', requireSyncRunCapability, handlers.runSync);
