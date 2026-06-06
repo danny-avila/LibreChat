@@ -16,9 +16,9 @@ import type {
   Agent,
 } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
+import { useHasAccess, useShowMarketplace } from '~/hooks';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { mapEndpoints, getIconKey } from '~/utils';
-import { useHasAccess, useShowMarketplace } from '~/hooks';
 import { icons } from './Icons';
 
 const defaultInterface = getConfigDefaults().interface;

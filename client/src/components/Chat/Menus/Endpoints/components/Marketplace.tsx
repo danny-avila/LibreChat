@@ -1,8 +1,8 @@
 import { LayoutGrid } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { LocalizeFunction } from '~/common';
-import { cn } from '~/utils';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
+import { cn } from '~/utils';
 
 const marketplaceSearchAliases = ['agent marketplace', 'marketplace'];
 

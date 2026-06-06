@@ -4,9 +4,9 @@ import { CheckCircle2, EarthIcon } from 'lucide-react';
 import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TModelSpec } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
+import MarketplaceItem, { marketplaceSearchMatches } from './Marketplace';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
-import MarketplaceItem, { marketplaceSearchMatches } from './Marketplace';
 import SpecIcon from './SpecIcon';
 import { cn } from '~/utils';
 

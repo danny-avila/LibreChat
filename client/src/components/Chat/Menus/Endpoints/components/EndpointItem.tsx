@@ -6,10 +6,10 @@ import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librecha
 import type { TModelSpec } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { CustomMenu as Menu, CustomMenuItem as MenuItem, CustomMenuSeparator } from '../CustomMenu';
+import MarketplaceItem, { marketplaceSearchMatches } from './Marketplace';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { renderEndpointModels } from './EndpointModelItem';
 import { ModelSpecItem } from './ModelSpecItem';
-import MarketplaceItem, { marketplaceSearchMatches } from './Marketplace';
 import { filterModels } from '../utils';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
