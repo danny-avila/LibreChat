@@ -24,14 +24,6 @@ import type { GenericTool, LCToolRegistry, ToolMap, LCTool } from '@librechat/ag
 import type { IMongoFile, FileOwnerScope } from '@librechat/data-schemas';
 import type { Response as ServerResponse } from 'express';
 import type {
-  ServerRequest,
-  EndpointDbMethods,
-  EndpointTokenConfig,
-  InitializeResultBase,
-} from '~/types';
-import type { LCAvailableTools, RequestScopedMCPConnectionStore } from '../mcp/types';
-import type { ResolvedManualSkill, ResolvedAlwaysApplySkill } from './skills';
-import type {
   TFileUpdate,
   ProvisionState,
   TFilterFilesByAgentAccess,
@@ -40,6 +32,14 @@ import type {
   TCheckSessionsAlive,
   TLoadCodeApiKey,
 } from './resources';
+import type {
+  ServerRequest,
+  EndpointDbMethods,
+  EndpointTokenConfig,
+  InitializeResultBase,
+} from '~/types';
+import type { LCAvailableTools, RequestScopedMCPConnectionStore } from '../mcp/types';
+import type { ResolvedManualSkill, ResolvedAlwaysApplySkill } from './skills';
 import {
   injectSkillCatalog,
   resolveManualSkills,
