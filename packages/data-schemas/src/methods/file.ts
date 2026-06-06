@@ -1,8 +1,8 @@
-import logger from '../config/winston';
 import { EToolResources, FileContext } from 'librechat-data-provider';
 import type { FilterQuery, SortOrder, Model } from 'mongoose';
 import type { IMongoFile } from '~/types/file';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import logger from '../config/winston';
 
 /** Factory function that takes mongoose instance and returns the file methods */
 export function createFileMethods(mongoose: typeof import('mongoose')) {
@@ -305,14 +305,17 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
   async function updateFileUsage(data: {
     file_id: string;
     inc?: number;
+    user?: string;
   }): Promise<IMongoFile | null> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    const { file_id, inc = 1 } = data;
+    const { file_id, inc = 1, user } = data;
     const updateOperation = {
       $inc: { usage: inc },
       $unset: { expiresAt: '', temp_file_id: '' },
     };
-    return File.findOneAndUpdate({ file_id }, updateOperation, {
+    // Owner scoping is fail-closed: mismatches leave usage and TTL metadata unchanged.
+    const query: FilterQuery<IMongoFile> = user ? { file_id, user } : { file_id };
+    return File.findOneAndUpdate(query, updateOperation, {
       new: true,
     }).lean<IMongoFile>();
   }
@@ -400,9 +403,12 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
   async function updateFilesUsage(
     files: Array<{ file_id: string }>,
     fileIds?: string[],
+    options?: { user?: string },
   ): Promise<IMongoFile[]> {
     const promises: Promise<IMongoFile | null>[] = [];
     const seen = new Set<string>();
+    // Preserve the same owner scope for every deduped ID in this batch.
+    const user = options?.user;
 
     for (const file of files) {
       const { file_id } = file;
@@ -410,7 +416,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
         continue;
       }
       seen.add(file_id);
-      promises.push(updateFileUsage({ file_id }));
+      promises.push(updateFileUsage({ file_id, user }));
     }
 
     if (!fileIds) {
@@ -423,7 +429,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
         continue;
       }
       seen.add(file_id);
-      promises.push(updateFileUsage({ file_id }));
+      promises.push(updateFileUsage({ file_id, user }));
     }
 
     const results = await Promise.all(promises);

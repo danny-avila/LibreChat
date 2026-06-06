@@ -132,7 +132,9 @@ async function buildEndpointOption(req, res, next) {
     req.body.endpointOption = await builder(endpoint, parsedBody, endpointType);
 
     if (req.body.files && !isAgents) {
-      req.body.endpointOption.attachments = updateFilesUsage(req.body.files);
+      req.body.endpointOption.attachments = updateFilesUsage(req.body.files, undefined, {
+        user: req.user.id,
+      });
     }
 
     next();

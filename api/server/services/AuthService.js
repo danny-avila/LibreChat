@@ -45,9 +45,112 @@ const domains = {
   server: process.env.DOMAIN_SERVER,
 };
 
+const AuthTokenTypes = Object.freeze({
+  EMAIL_VERIFICATION: 'email_verification',
+  PASSWORD_RESET: 'password_reset',
+});
+
+const latestAuthTokenOptions = Object.freeze({ sort: { createdAt: -1 } });
 const genericVerificationMessage = 'Please check your email to verify your email address.';
 const invalidEmailVerificationMessage = 'Invalid or expired email verification token';
 const OPENID_SESSION_ID_TOKEN_EXPIRY_BUFFER_SECONDS = 30;
+
+const findPasswordResetToken = async (userId) => {
+  const typedToken = await findToken(
+    {
+      userId,
+      type: AuthTokenTypes.PASSWORD_RESET,
+    },
+    latestAuthTokenOptions,
+  );
+
+  if (typedToken) {
+    return typedToken;
+  }
+
+  return await findToken(
+    {
+      userId,
+      email: null,
+      identifier: null,
+      type: null,
+    },
+    latestAuthTokenOptions,
+  );
+};
+
+const findEmailVerificationToken = async (user) => {
+  const typedToken = await findToken(
+    {
+      userId: user._id,
+      email: user.email,
+      type: AuthTokenTypes.EMAIL_VERIFICATION,
+    },
+    latestAuthTokenOptions,
+  );
+
+  if (typedToken) {
+    return typedToken;
+  }
+
+  return await findToken(
+    {
+      userId: user._id,
+      email: user.email,
+      identifier: null,
+      type: null,
+    },
+    latestAuthTokenOptions,
+  );
+};
+
+const deleteEmailVerificationTokens = (user) =>
+  Promise.all([
+    deleteTokens({
+      userId: user._id,
+      email: user.email,
+      type: AuthTokenTypes.EMAIL_VERIFICATION,
+    }),
+    deleteTokens({
+      userId: user._id,
+      email: user.email,
+      identifier: null,
+      type: null,
+    }),
+  ]);
+
+const getEmailVerificationTokenDeleteQuery = (emailVerificationToken) => {
+  if (!emailVerificationToken.identifier && !emailVerificationToken.type) {
+    return {
+      token: emailVerificationToken.token,
+      userId: emailVerificationToken.userId,
+      email: emailVerificationToken.email,
+      identifier: null,
+      type: null,
+    };
+  }
+
+  return {
+    token: emailVerificationToken.token,
+    type: AuthTokenTypes.EMAIL_VERIFICATION,
+  };
+};
+
+const getPasswordResetTokenDeleteQuery = (passwordResetToken) => {
+  if (!passwordResetToken.email && !passwordResetToken.type) {
+    return {
+      token: passwordResetToken.token,
+      email: null,
+      identifier: null,
+      type: null,
+    };
+  }
+
+  return {
+    token: passwordResetToken.token,
+    type: AuthTokenTypes.PASSWORD_RESET,
+  };
+};
 
 const getUnexpiredOpenIDSessionIdToken = (idToken) => {
   if (!idToken) {
@@ -134,6 +237,7 @@ const sendVerificationEmail = async (user) => {
   await createToken({
     userId: user._id,
     email: user.email,
+    type: AuthTokenTypes.EMAIL_VERIFICATION,
     token: hash,
     createdAt: Date.now(),
     expiresIn: 900,
@@ -169,10 +273,7 @@ const verifyEmail = async (req) => {
     return new Error(invalidEmailVerificationMessage);
   }
 
-  const emailVerificationData = await findToken(
-    { email: decodedEmail },
-    { sort: { createdAt: -1 } },
-  );
+  const emailVerificationData = await findEmailVerificationToken(user);
 
   if (!emailVerificationData) {
     logger.warn(`[verifyEmail] [No email verification data found] [Email: ${decodedEmail}]`);
@@ -203,7 +304,7 @@ const verifyEmail = async (req) => {
   }
 
   if (user.emailVerified) {
-    await deleteTokens({ token: emailVerificationData.token });
+    await deleteTokens(getEmailVerificationTokenDeleteQuery(emailVerificationData));
     logger.info(`[verifyEmail] Email already verified [Email: ${decodedEmail}]`);
     return { message: 'Email verification was successful', status: 'success' };
   }
@@ -215,7 +316,7 @@ const verifyEmail = async (req) => {
     return new Error(invalidEmailVerificationMessage);
   }
 
-  await deleteTokens({ token: emailVerificationData.token });
+  await deleteTokens(getEmailVerificationTokenDeleteQuery(emailVerificationData));
   logger.info(`[verifyEmail] Email verification successful [Email: ${decodedEmail}]`);
   return { message: 'Email verification was successful', status: 'success' };
 };
@@ -368,12 +469,16 @@ const requestPasswordReset = async (req) => {
     };
   }
 
-  await deleteTokens({ userId: user._id });
+  await Promise.all([
+    deleteTokens({ userId: user._id, type: AuthTokenTypes.PASSWORD_RESET }),
+    deleteTokens({ userId: user._id, email: null, identifier: null, type: null }),
+  ]);
 
   const [resetToken, hash] = createTokenHash();
 
   await createToken({
     userId: user._id,
+    type: AuthTokenTypes.PASSWORD_RESET,
     token: hash,
     createdAt: Date.now(),
     expiresIn: 900,
@@ -417,12 +522,7 @@ const requestPasswordReset = async (req) => {
  * @returns
  */
 const resetPassword = async (userId, token, password) => {
-  let passwordResetToken = await findToken(
-    {
-      userId,
-    },
-    { sort: { createdAt: -1 } },
-  );
+  const passwordResetToken = await findPasswordResetToken(userId);
 
   if (!passwordResetToken) {
     return new Error('Invalid or expired password reset token');
@@ -450,7 +550,7 @@ const resetPassword = async (userId, token, password) => {
     });
   }
 
-  await deleteTokens({ token: passwordResetToken.token });
+  await deleteTokens(getPasswordResetTokenDeleteQuery(passwordResetToken));
   logger.info(`[resetPassword] Password reset successful. [Email: ${user.email}]`);
   return { message: 'Password reset was successful' };
 };
@@ -755,13 +855,14 @@ const setOpenIDAuthTokens = (
 const resendVerificationEmail = async (req) => {
   try {
     const { email } = req.body;
-    await deleteTokens({ email });
     const user = await findUser({ email }, 'email _id name');
 
     if (!user) {
       logger.warn(`[resendVerificationEmail] [No user found] [Email: ${email}]`);
       return { status: 200, message: genericVerificationMessage };
     }
+
+    await deleteEmailVerificationTokens(user);
 
     const [verifyToken, hash] = createTokenHash();
 
@@ -784,6 +885,7 @@ const resendVerificationEmail = async (req) => {
     await createToken({
       userId: user._id,
       email: user.email,
+      type: AuthTokenTypes.EMAIL_VERIFICATION,
       token: hash,
       createdAt: Date.now(),
       expiresIn: 900,
