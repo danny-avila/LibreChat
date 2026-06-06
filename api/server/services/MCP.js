@@ -269,11 +269,29 @@ function createOAuthStart({ flowId, flowManager, callback }) {
    * @returns {Promise<boolean>} Returns true to indicate the event was sent successfully.
    */
   return async function (authURL) {
-    await flowManager.createFlowWithHandler(flowId, 'oauth_login', async () => {
+    let emitted = false;
+    const emitOAuthStart = (message) => {
       callback?.(authURL);
-      logger.debug('Sent OAuth login request to client');
+      emitted = true;
+      logger.debug(message);
+    };
+
+    const existingFlow = await flowManager.getFlowState(flowId, 'oauth_login');
+    if (existingFlow) {
+      emitOAuthStart('Re-sent OAuth login request to client');
+      return true;
+    }
+
+    await flowManager.createFlowWithHandler(flowId, 'oauth_login', async () => {
+      emitOAuthStart('Sent OAuth login request to client');
       return true;
     });
+
+    if (!emitted) {
+      emitOAuthStart('Re-sent OAuth login request to client');
+    }
+
+    return true;
   };
 }
 
@@ -949,6 +967,7 @@ module.exports = {
   resolveConfigServers,
   resolveMcpConfigNames,
   resolveAllMcpConfigs,
+  createOAuthStart,
   checkOAuthFlowStatus,
   getServerConnectionStatus,
   createUnavailableToolStub,
