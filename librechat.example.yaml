@@ -606,6 +606,8 @@ endpoints:
 #     - name: "gpt-4o"
 #       label: "GPT-4 Optimized"
 #       description: "Most capable GPT-4 model with multimodal support"
+#       # default: true      # Hard admin default; takes precedence over prior user choices
+#       # softDefault: true  # First-time default only; skipped after a user selects a model/spec/agent
 #       group: "openAI"  # String value matching the endpoint name
 #       preset:
 #         endpoint: "openAI"
