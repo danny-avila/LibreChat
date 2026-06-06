@@ -221,6 +221,15 @@ const userSchema = new Schema<IUser>(
       type: [PushSubscriptionSchema],
       default: [],
     },
+    activeSessionId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Session',
+      default: null,
+    },
+    activeSessionExpiresAt: {
+      type: Date,
+      default: null,
+    },
     lastActiveAt:{
       type: Date
     },

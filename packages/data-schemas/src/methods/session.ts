@@ -12,6 +12,8 @@ export class SessionError extends Error {
   }
 }
 
+export const ACTIVE_SESSION_EXISTS_CODE = 'ACTIVE_SESSION_EXISTS';
+
 /** Default refresh token expiry: 7 days in milliseconds */
 export const DEFAULT_REFRESH_TOKEN_EXPIRY = 1000 * 60 * 60 * 24 * 7;
 
@@ -32,14 +34,78 @@ export function createSessionMethods(mongoose: typeof import('mongoose')) {
 
     try {
       const Session = mongoose.models.Session;
+      const User = mongoose.models.User;
+      const existingSession = await Session.findOne({
+        user: userId,
+        expiration: { $gt: new Date() },
+      }).lean();
+
+      if (existingSession) {
+        await User.updateOne(
+          {
+            _id: userId,
+            $or: [
+              { activeSessionId: { $exists: false } },
+              { activeSessionId: null },
+              { activeSessionExpiresAt: { $lte: new Date() } },
+            ],
+          },
+          {
+            $set: {
+              activeSessionId: existingSession._id,
+              activeSessionExpiresAt: existingSession.expiration,
+            },
+          },
+        );
+        throw new SessionError(
+          'You are already logged in on one device. Logout to access in this device.',
+          ACTIVE_SESSION_EXISTS_CODE,
+        );
+      }
+
       const currentSession = new Session({
         user: userId,
         expiration: options.expiration || new Date(Date.now() + expiresIn),
       });
-      const refreshToken = await generateRefreshToken(currentSession);
+      const now = new Date();
+      const claimedUser = await User.findOneAndUpdate(
+        {
+          _id: userId,
+          $or: [
+            { activeSessionId: { $exists: false } },
+            { activeSessionId: null },
+            { activeSessionExpiresAt: { $lte: now } },
+          ],
+        },
+        {
+          $set: {
+            activeSessionId: currentSession._id,
+            activeSessionExpiresAt: currentSession.expiration,
+          },
+        },
+        { new: true },
+      ).lean();
+
+      if (!claimedUser) {
+        throw new SessionError(
+          'You are already logged in on one device. Logout to access in this device.',
+          ACTIVE_SESSION_EXISTS_CODE,
+        );
+      }
+
+      let refreshToken;
+      try {
+        refreshToken = await generateRefreshToken(currentSession);
+      } catch (error) {
+        await releaseActiveSession(userId, currentSession._id.toString());
+        throw error;
+      }
 
       return { session: currentSession, refreshToken };
     } catch (error) {
+      if (error instanceof SessionError) {
+        throw error;
+      }
       logger.error('[createSession] Error creating session:', error);
       throw new SessionError('Failed to create session', 'CREATE_SESSION_FAILED');
     }
@@ -120,7 +186,12 @@ export function createSessionMethods(mongoose: typeof import('mongoose')) {
       }
 
       sessionDoc.expiration = newExpiration || new Date(Date.now() + expiresIn);
-      return await sessionDoc.save();
+      const updatedSession = await sessionDoc.save();
+      await mongoose.models.User.updateOne(
+        { _id: updatedSession.user, activeSessionId: updatedSession._id },
+        { $set: { activeSessionExpiresAt: updatedSession.expiration } },
+      );
+      return updatedSession;
     } catch (error) {
       logger.error('[updateExpiration] Error updating session:', error);
       throw new SessionError('Failed to update session expiration', 'UPDATE_EXPIRATION_FAILED');
@@ -150,13 +221,16 @@ export function createSessionMethods(mongoose: typeof import('mongoose')) {
         query._id = params.sessionId;
       }
 
-      const result = await Session.deleteOne(query);
+      const deletedSession = await Session.findOneAndDelete(query).lean();
 
-      if (result.deletedCount === 0) {
+      if (!deletedSession) {
         logger.warn('[deleteSession] No session found to delete');
+        return { deletedCount: 0 };
       }
 
-      return result;
+      await releaseActiveSession(deletedSession.user.toString(), deletedSession._id.toString());
+
+      return { deletedCount: 1 };
     } catch (error) {
       logger.error('[deleteSession] Error deleting session:', error);
       throw new SessionError('Failed to delete session', 'DELETE_SESSION_FAILED');
@@ -190,6 +264,15 @@ export function createSessionMethods(mongoose: typeof import('mongoose')) {
       }
 
       const result = await Session.deleteMany(query);
+      await mongoose.models.User.updateOne(
+        { _id: userIdString },
+        {
+          $unset: {
+            activeSessionId: '',
+            activeSessionExpiresAt: '',
+          },
+        },
+      );
 
       if (result.deletedCount && result.deletedCount > 0) {
         logger.debug(
@@ -258,6 +341,18 @@ export function createSessionMethods(mongoose: typeof import('mongoose')) {
       logger.error('[countActiveSessions] Error counting active sessions:', error);
       throw new SessionError('Failed to count active sessions', 'COUNT_SESSIONS_FAILED');
     }
+  }
+
+  async function releaseActiveSession(userId: string, sessionId: string): Promise<void> {
+    await mongoose.models.User.updateOne(
+      { _id: userId, activeSessionId: sessionId },
+      {
+        $unset: {
+          activeSessionId: '',
+          activeSessionExpiresAt: '',
+        },
+      },
+    );
   }
 
   return {

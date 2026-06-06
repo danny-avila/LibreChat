@@ -87,10 +87,15 @@ function Login() {
       </div>
     );
   }
-
   return (
     <>
-      {error != null && <ErrorMessage>{localize(getLoginError(error))}</ErrorMessage>}
+      {error != null && (
+        <ErrorMessage>
+          {error === 'You are already logged in on one device. Logout to access in this device.'
+            ? error
+            : localize(getLoginError(error))}
+        </ErrorMessage>
+      )}
       {startupConfig?.emailLoginEnabled === true && (
         <LoginForm
           onSubmit={login}

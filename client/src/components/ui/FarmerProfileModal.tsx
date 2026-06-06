@@ -13,8 +13,10 @@ import {
   Input,
   Label,
 } from '@librechat/client';
+import { LogOut } from 'lucide-react';
 import type { IFarmerProfile } from 'librechat-data-provider';
 import { useSaveFarmerProfileMutation } from '~/data-provider';
+import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 import { STATES, DISTRICTS, BLOCKS, VILLAGES, CROPS, KVKS } from '~/utils/metaData';
@@ -63,6 +65,7 @@ const FarmerProfileModal = ({
   onDecline: () => void;
 }) => {
   const localize = useLocalize();
+  const { logout } = useAuthContext();
   const [langcode, setLangcode] = useRecoilState(store.lang);
   const {
     register,
@@ -714,9 +717,19 @@ const FarmerProfileModal = ({
         className="flex max-h-[90vh] w-11/12 max-w-2xl flex-col overflow-y-hidden sm:w-3/4 md:w-2/3 lg:w-1/2"
       >
         <OGDialogHeader>
-          <OGDialogTitle className="text-lg font-bold text-text-primary">
-            {localize('com_farmer_profile_registration')}
-          </OGDialogTitle>
+          <div className="flex flex-row items-center justify-between w-full">
+            <OGDialogTitle className="text-lg font-bold text-text-primary">
+              {localize('com_farmer_profile_registration')}
+            </OGDialogTitle>
+            <button
+              type="button"
+              onClick={() => logout()}
+              className="inline-flex items-center gap-2 rounded-lg border border-border-heavy bg-surface-secondary px-3 py-1.5 text-xs font-semibold text-text-primary hover:bg-red-500 hover:text-white hover:border-red-500 transition-all duration-200 shrink-0"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              {localize('com_nav_log_out')}
+            </button>
+          </div>
         </OGDialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="flex min-h-0 flex-1 flex-col">

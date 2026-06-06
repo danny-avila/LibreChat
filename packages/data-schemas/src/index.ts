@@ -4,7 +4,12 @@ export * from './crypto';
 export * from './schema';
 export * from './utils';
 export { createModels } from './models';
-export { createMethods, DEFAULT_REFRESH_TOKEN_EXPIRY, DEFAULT_SESSION_EXPIRY } from './methods';
+export {
+  createMethods,
+  ACTIVE_SESSION_EXISTS_CODE,
+  DEFAULT_REFRESH_TOKEN_EXPIRY,
+  DEFAULT_SESSION_EXPIRY,
+} from './methods';
 export type * from './types';
 export type * from './methods';
 export { default as logger } from './config/winston';

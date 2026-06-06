@@ -94,7 +94,6 @@ const AuthContextProvider = ({
     },
     onError: (error: TResError | unknown) => {
       const resError = error as TResError;
-      console.log('erorrr context:',resError)
       const errorData = resError?.response?.data;
       let errorCode: string | undefined = undefined;
       // Check if the backend sent an array
