@@ -317,11 +317,17 @@ function toCleanFrontmatter(
   delete clean.name;
   delete clean.description;
   // Drop a placeholder/non-boolean always-apply (e.g. `always-apply:` or
-  // `always-apply: # TODO`, which js-yaml yields as null). The boolean is
-  // already captured in the dedicated alwaysApply field, and persisting a
-  // null here would leave ambiguous/invalid frontmatter on the synced skill.
+  // `always-apply: # TODO`, which js-yaml yields as null). Apply the same
+  // cleanup to the accepted `alwaysApply` alias so a malformed alias does not
+  // survive after the canonical key has already supplied the effective flag.
+  // The boolean is already captured in the dedicated alwaysApply field, and
+  // persisting a null here would leave ambiguous/invalid frontmatter on the
+  // synced skill.
   if ('always-apply' in clean && typeof clean['always-apply'] !== 'boolean') {
     delete clean['always-apply'];
+  }
+  if ('alwaysApply' in clean && typeof clean.alwaysApply !== 'boolean') {
+    delete clean.alwaysApply;
   }
   return clean;
 }
