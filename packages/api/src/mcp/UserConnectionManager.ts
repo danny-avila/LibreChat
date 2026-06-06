@@ -1,7 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
-import type { FlowState } from '~/flow/types';
 import type { MCPOAuthFlowMetadata } from '~/mcp/oauth';
+import type { FlowState } from '~/flow/types';
 import type * as t from './types';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
@@ -180,9 +180,7 @@ export abstract class UserConnectionManager {
     await oauthStart(authURL, options);
   }
 
-  private getPendingOAuthStart(
-    flow: FlowState | undefined,
-  ): PendingOAuthStart | undefined {
+  private getPendingOAuthStart(flow: FlowState | undefined): PendingOAuthStart | undefined {
     if (flow?.status !== 'PENDING') {
       return undefined;
     }
