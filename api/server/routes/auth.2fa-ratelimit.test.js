@@ -5,13 +5,10 @@ const mockTwoFactorTempLimiter = jest.fn((req, res, next) => next());
 const mockCheckBan = jest.fn((req, res, next) => next());
 const mockVerify2FAWithTempToken = jest.fn((req, res) => res.status(204).end());
 
-jest.mock(
-  '@librechat/api',
-  () => ({
-    createSetBalanceConfig: jest.fn(() => (req, res, next) => next()),
-    forceRefreshCloudFrontAuthCookies: jest.fn(),
-  }),
-);
+jest.mock('@librechat/api', () => ({
+  createSetBalanceConfig: jest.fn(() => (req, res, next) => next()),
+  forceRefreshCloudFrontAuthCookies: jest.fn(),
+}));
 
 jest.mock('~/server/controllers/AuthController', () => ({
   refreshController: jest.fn((req, res) => res.status(204).end()),
