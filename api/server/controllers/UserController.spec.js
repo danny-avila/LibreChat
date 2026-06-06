@@ -108,9 +108,39 @@ afterEach(async () => {
   }
 });
 
-const { deleteUserController, getUserController } = require('./UserController');
+const {
+  deleteUserController,
+  getUserController,
+  verifyEmailController,
+} = require('./UserController');
 const { Group } = require('~/db/models');
 const { deleteConvos } = require('~/models');
+const { verifyEmail } = require('~/server/services/AuthService');
+
+describe('verifyEmailController', () => {
+  const mockRes = {
+    status: jest.fn().mockReturnThis(),
+    json: jest.fn().mockReturnThis(),
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('returns the generic verification error message from service failures', async () => {
+    verifyEmail.mockResolvedValue(new Error('Invalid or expired email verification token'));
+
+    await verifyEmailController(
+      { body: { email: 'user%40example.com', token: 'not-the-token' } },
+      mockRes,
+    );
+
+    expect(mockRes.status).toHaveBeenCalledWith(400);
+    expect(mockRes.json).toHaveBeenCalledWith({
+      message: 'Invalid or expired email verification token',
+    });
+  });
+});
 
 describe('getUserController', () => {
   const mockRes = {
