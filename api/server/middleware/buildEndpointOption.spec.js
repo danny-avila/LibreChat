@@ -35,6 +35,7 @@ jest.mock('~/server/services/Endpoints/agents', () => ({
 jest.mock('~/models', () => ({
   updateFilesUsage: jest.fn(),
 }));
+const { updateFilesUsage } = require('~/models');
 
 const mockGetEndpointsConfig = jest.fn();
 jest.mock('~/server/services/Config', () => ({
@@ -415,6 +416,29 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
     const parsedResult = parseCompactConvo.mock.results[0].value;
     expect(parsedResult.maxOutputTokens).toBeUndefined();
     expect(parsedResult.max_tokens).toBe(4096);
+  });
+
+  it('should scope non-agent chat attachment usage updates to the authenticated user', async () => {
+    const attachments = Promise.resolve([]);
+    updateFilesUsage.mockReturnValueOnce(attachments);
+    mockGetEndpointsConfig.mockResolvedValue({});
+
+    const req = createReq(
+      {
+        endpoint: EModelEndpoint.assistants,
+        assistant_id: 'asst_123',
+        files: [{ file_id: 'forged-file-id' }],
+      },
+      { modelSpecs: null },
+    );
+    req.user = { id: 'user-1' };
+
+    await buildEndpointOption(req, createRes(), jest.fn());
+
+    expect(updateFilesUsage).toHaveBeenCalledWith(req.body.files, undefined, {
+      user: 'user-1',
+    });
+    expect(req.body.endpointOption.attachments).toBe(attachments);
   });
 
   it('should not enter the enforce branch when modelSpecs.list is empty', async () => {

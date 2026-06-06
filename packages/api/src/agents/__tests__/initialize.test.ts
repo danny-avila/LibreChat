@@ -33,7 +33,8 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 import { Providers } from '@librechat/agents';
-import { EModelEndpoint, Tools } from 'librechat-data-provider';
+import { EModelEndpoint, EToolResources, Tools } from 'librechat-data-provider';
+import type { IMongoFile } from '@librechat/data-schemas';
 import type { Agent } from 'librechat-data-provider';
 import type { ServerRequest, InitializeResultBase, EndpointTokenConfig } from '~/types';
 import type { InitializeAgentDbMethods } from '../initialize';
@@ -749,6 +750,44 @@ describe('initializeAgent — attachment scoping', () => {
     expect(result.attachments).toEqual([agentContextFile, requestFile]);
     expect(result.requestAttachments).toEqual([requestFile]);
     expect(result.agentContextAttachments).toEqual([agentContextFile]);
+  });
+
+  it('owner-scopes request file usage updates while preserving trusted tool files', async () => {
+    const requestFile = { file_id: 'request-file', filename: 'request.txt' } as IMongoFile;
+    const toolFile = { file_id: 'tool-file', filename: 'tool.txt' } as IMongoFile;
+    const { agent, req, res, loadTools, db } = createMocks();
+
+    agent.tools = [EToolResources.file_search];
+    mockExtractLibreChatParams.mockReturnValueOnce({
+      resendFiles: true,
+      maxContextTokens: undefined,
+      modelOptions: { model: agent.model },
+    });
+    (db.getConvoFiles as jest.Mock).mockResolvedValueOnce([toolFile.file_id]);
+    (db.getToolFilesByIds as jest.Mock).mockResolvedValueOnce([toolFile]);
+    (db.updateFilesUsage as jest.Mock)
+      .mockResolvedValueOnce([requestFile])
+      .mockResolvedValueOnce([toolFile]);
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        requestFiles: [requestFile],
+        conversationId: 'conversation-1',
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(db.updateFilesUsage).toHaveBeenNthCalledWith(1, [requestFile], undefined, {
+      user: 'user-1',
+    });
+    expect(db.updateFilesUsage).toHaveBeenNthCalledWith(2, [toolFile]);
   });
 });
 
