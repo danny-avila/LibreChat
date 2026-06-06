@@ -201,12 +201,18 @@ export interface UserConnectionContext {
   connectionTimeout?: number;
 }
 
+export interface OAuthStartOptions {
+  expiresAt?: number;
+}
+
+export type OAuthStartHandler = (authURL: string, options?: OAuthStartOptions) => Promise<void>;
+
 export interface OAuthConnectionOptions extends UserConnectionContext {
   useOAuth: true;
   flowManager: FlowStateManager<o.MCPOAuthTokens | null>;
   tokenMethods?: TokenMethods;
   signal?: AbortSignal;
-  oauthStart?: (authURL: string) => Promise<void>;
+  oauthStart?: OAuthStartHandler;
   oauthEnd?: () => Promise<void>;
   returnOnOAuth?: boolean;
   oboTokenResolver?: OboTokenResolver;
@@ -221,7 +227,7 @@ export interface UserMCPConnectionOptions extends UserConnectionContext {
   flowManager?: FlowStateManager<o.MCPOAuthTokens | null>;
   tokenMethods?: TokenMethods;
   signal?: AbortSignal;
-  oauthStart?: (authURL: string) => Promise<void>;
+  oauthStart?: OAuthStartHandler;
   oauthEnd?: () => Promise<void>;
   returnOnOAuth?: boolean;
   oboTokenResolver?: OboTokenResolver;
@@ -234,7 +240,7 @@ export interface ToolDiscoveryOptions {
   flowManager?: FlowStateManager<o.MCPOAuthTokens | null>;
   tokenMethods?: TokenMethods;
   signal?: AbortSignal;
-  oauthStart?: (authURL: string) => Promise<void>;
+  oauthStart?: OAuthStartHandler;
   customUserVars?: Record<string, string>;
   requestBody?: RequestBody;
   connectionTimeout?: number;

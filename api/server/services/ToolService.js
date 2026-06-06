@@ -598,9 +598,13 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
   const pendingOAuthServers = new Set();
   const oauthToolCallIds = new Map();
   const oauthStepIndexes = new Map();
+  const getOAuthPromptExpiresAt = (options) =>
+    typeof options?.expiresAt === 'number' && Number.isFinite(options.expiresAt)
+      ? options.expiresAt
+      : Date.now() + Time.TWO_MINUTES;
 
   const createOAuthEmitter = (serverName, index) => {
-    return async (authURL) => {
+    return async (authURL, options) => {
       const flowId = `${req.user.id}:${serverName}:${Date.now()}`;
       const stepId = 'step_oauth_login_' + serverName;
       oauthToolCallIds.set(serverName, flowId);
@@ -628,7 +632,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
           type: StepTypes.TOOL_CALLS,
           tool_calls: [{ ...toolCall, args: '' }],
           auth: authURL,
-          expires_at: Date.now() + Time.TWO_MINUTES,
+          expires_at: getOAuthPromptExpiresAt(options),
         },
       };
 

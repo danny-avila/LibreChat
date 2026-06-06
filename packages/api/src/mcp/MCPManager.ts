@@ -327,7 +327,7 @@ Please follow these instructions when using tools from the respective MCP server
     tokenMethods?: TokenMethods;
     customUserVars?: Record<string, string>;
     flowManager: FlowStateManager<MCPOAuthTokens | null>;
-    oauthStart?: (authURL: string) => Promise<void>;
+    oauthStart?: t.OAuthStartHandler;
     oauthEnd?: () => Promise<void>;
     graphTokenResolver?: GraphTokenResolver;
     oboTokenResolver?: OboTokenResolver;

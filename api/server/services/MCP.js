@@ -191,6 +191,12 @@ function isEmptyObjectSchema(jsonSchema) {
   );
 }
 
+function getOAuthPromptExpiresAt(options) {
+  return typeof options?.expiresAt === 'number' && Number.isFinite(options.expiresAt)
+    ? options.expiresAt
+    : Date.now() + Time.TWO_MINUTES;
+}
+
 /**
  * @param {object} params
  * @param {ServerResponse} params.res - The Express response object for sending events.
@@ -201,9 +207,10 @@ function isEmptyObjectSchema(jsonSchema) {
 function createRunStepDeltaEmitter({ res, stepId, toolCall, streamId = null }) {
   /**
    * @param {string} authURL - The URL to redirect the user for OAuth authentication.
+   * @param {{ expiresAt?: number }} [options]
    * @returns {Promise<void>}
    */
-  return async function (authURL) {
+  return async function (authURL, options) {
     /** @type {{ id: string; delta: AgentToolCallDelta }} */
     const data = {
       id: stepId,
@@ -211,7 +218,7 @@ function createRunStepDeltaEmitter({ res, stepId, toolCall, streamId = null }) {
         type: StepTypes.TOOL_CALLS,
         tool_calls: [{ ...toolCall, args: '' }],
         auth: authURL,
-        expires_at: Date.now() + Time.TWO_MINUTES,
+        expires_at: getOAuthPromptExpiresAt(options),
       },
     };
     const eventData = { event: GraphEvents.ON_RUN_STEP_DELTA, data };
@@ -260,18 +267,23 @@ function createRunStepEmitter({ res, runId, stepId, toolCall, index, streamId = 
  * @param {object} params
  * @param {string} params.flowId - The ID of the login flow.
  * @param {FlowStateManager<any>} params.flowManager - The flow manager instance.
- * @param {(authURL: string) => void} [params.callback]
+ * @param {(authURL: string, options?: { expiresAt?: number }) => void} [params.callback]
  */
 function createOAuthStart({ flowId, flowManager, callback }) {
   /**
    * Creates a function to handle OAuth login requests.
    * @param {string} authURL - The URL to redirect the user for OAuth authentication.
+   * @param {{ expiresAt?: number }} [options]
    * @returns {Promise<boolean>} Returns true to indicate the event was sent successfully.
    */
-  return async function (authURL) {
+  return async function (authURL, options) {
     let emitted = false;
     const emitOAuthStart = (message) => {
-      callback?.(authURL);
+      if (options) {
+        callback?.(authURL, options);
+      } else {
+        callback?.(authURL);
+      }
       emitted = true;
       logger.debug(message);
     };
@@ -342,13 +354,13 @@ function createAbortHandler({ userId, serverName, toolName, flowManager }) {
 /**
  * @param {Object} params
  * @param {() => void} params.runStepEmitter
- * @param {(authURL: string) => void} params.runStepDeltaEmitter
- * @returns {(authURL: string) => void}
+ * @param {(authURL: string, options?: { expiresAt?: number }) => void} params.runStepDeltaEmitter
+ * @returns {(authURL: string, options?: { expiresAt?: number }) => void}
  */
 function createOAuthCallback({ runStepEmitter, runStepDeltaEmitter }) {
-  return function (authURL) {
+  return function (authURL, options) {
     runStepEmitter();
-    runStepDeltaEmitter(authURL);
+    runStepDeltaEmitter(authURL, options);
   };
 }
 
