@@ -45,6 +45,11 @@ const domains = {
   server: process.env.DOMAIN_SERVER,
 };
 
+const AuthTokenTypes = Object.freeze({
+  EMAIL_VERIFICATION: 'email_verification',
+  PASSWORD_RESET: 'password_reset',
+});
+
 const genericVerificationMessage = 'Please check your email to verify your email address.';
 const OPENID_SESSION_ID_TOKEN_EXPIRY_BUFFER_SECONDS = 30;
 
@@ -133,6 +138,7 @@ const sendVerificationEmail = async (user) => {
   await createToken({
     userId: user._id,
     email: user.email,
+    type: AuthTokenTypes.EMAIL_VERIFICATION,
     token: hash,
     createdAt: Date.now(),
     expiresIn: 900,
@@ -337,12 +343,13 @@ const requestPasswordReset = async (req) => {
     };
   }
 
-  await deleteTokens({ userId: user._id });
+  await deleteTokens({ userId: user._id, type: AuthTokenTypes.PASSWORD_RESET });
 
   const [resetToken, hash] = createTokenHash();
 
   await createToken({
     userId: user._id,
+    type: AuthTokenTypes.PASSWORD_RESET,
     token: hash,
     createdAt: Date.now(),
     expiresIn: 900,
@@ -389,6 +396,7 @@ const resetPassword = async (userId, token, password) => {
   let passwordResetToken = await findToken(
     {
       userId,
+      type: AuthTokenTypes.PASSWORD_RESET,
     },
     { sort: { createdAt: -1 } },
   );
@@ -419,7 +427,7 @@ const resetPassword = async (userId, token, password) => {
     });
   }
 
-  await deleteTokens({ token: passwordResetToken.token });
+  await deleteTokens({ token: passwordResetToken.token, type: AuthTokenTypes.PASSWORD_RESET });
   logger.info(`[resetPassword] Password reset successful. [Email: ${user.email}]`);
   return { message: 'Password reset was successful' };
 };
@@ -753,6 +761,7 @@ const resendVerificationEmail = async (req) => {
     await createToken({
       userId: user._id,
       email: user.email,
+      type: AuthTokenTypes.EMAIL_VERIFICATION,
       token: hash,
       createdAt: Date.now(),
       expiresIn: 900,

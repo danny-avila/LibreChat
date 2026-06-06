@@ -1,32 +1,44 @@
-jest.mock('@librechat/data-schemas', () => ({
-  logger: { info: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() },
-  getTenantId: jest.fn(() => undefined),
-  DEFAULT_SESSION_EXPIRY: 900000,
-  DEFAULT_REFRESH_TOKEN_EXPIRY: 604800000,
-}));
-jest.mock('librechat-data-provider', () => ({
-  ErrorTypes: {},
-  SystemRoles: { USER: 'USER', ADMIN: 'ADMIN' },
-  errorsToString: jest.fn(),
-}));
-jest.mock('@librechat/api', () => ({
-  isEnabled: jest.fn((val) => val === 'true' || val === true),
-  checkEmailConfig: jest.fn(),
-  isEmailDomainAllowed: jest.fn(),
-  math: jest.fn((val, fallback) => (val ? Number(val) : fallback)),
-  shouldUseSecureCookie: jest.fn(() => false),
-  resolveAppConfigForUser: jest.fn(async (_getAppConfig, _user) => ({})),
-  setCloudFrontCookies: jest.fn(() => true),
-  getCloudFrontConfig: jest.fn(() => ({
-    domain: 'https://cdn.example.com',
-    imageSigning: 'cookies',
-    cookieDomain: '.example.com',
-    privateKey: 'test-private-key',
-    keyPairId: 'K123ABC',
-  })),
-  parseCloudFrontCookieScope: jest.fn(() => null),
-  CLOUDFRONT_SCOPE_COOKIE: 'LibreChat-CloudFront-Scope',
-}));
+jest.mock(
+  '@librechat/data-schemas',
+  () => ({
+    logger: { info: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() },
+    getTenantId: jest.fn(() => undefined),
+    DEFAULT_SESSION_EXPIRY: 900000,
+    DEFAULT_REFRESH_TOKEN_EXPIRY: 604800000,
+  }),
+  { virtual: true },
+);
+jest.mock(
+  'librechat-data-provider',
+  () => ({
+    ErrorTypes: {},
+    SystemRoles: { USER: 'USER', ADMIN: 'ADMIN' },
+    errorsToString: jest.fn(),
+  }),
+  { virtual: true },
+);
+jest.mock(
+  '@librechat/api',
+  () => ({
+    isEnabled: jest.fn((val) => val === 'true' || val === true),
+    checkEmailConfig: jest.fn(),
+    isEmailDomainAllowed: jest.fn(),
+    math: jest.fn((val, fallback) => (val ? Number(val) : fallback)),
+    shouldUseSecureCookie: jest.fn(() => false),
+    resolveAppConfigForUser: jest.fn(async (_getAppConfig, _user) => ({})),
+    setCloudFrontCookies: jest.fn(() => true),
+    getCloudFrontConfig: jest.fn(() => ({
+      domain: 'https://cdn.example.com',
+      imageSigning: 'cookies',
+      cookieDomain: '.example.com',
+      privateKey: 'test-private-key',
+      keyPairId: 'K123ABC',
+    })),
+    parseCloudFrontCookieScope: jest.fn(() => null),
+    CLOUDFRONT_SCOPE_COOKIE: 'LibreChat-CloudFront-Scope',
+  }),
+  { virtual: true },
+);
 jest.mock('~/models', () => ({
   findUser: jest.fn(),
   findToken: jest.fn(),
@@ -73,6 +85,7 @@ const jwt = require('jsonwebtoken');
 const { logger, getTenantId } = require('@librechat/data-schemas');
 const {
   findUser,
+  findToken,
   createUser,
   updateUser,
   countUsers,
@@ -80,12 +93,16 @@ const {
   generateToken,
   generateRefreshToken,
   createSession,
+  createToken,
+  deleteTokens,
 } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
+const bcrypt = require('bcryptjs');
 const {
   setOpenIDAuthTokens,
   requestPasswordReset,
   registerUser,
+  resetPassword,
   setAuthTokens,
   setCloudFrontAuthCookies,
 } = require('./AuthService');
@@ -515,6 +532,80 @@ describe('requestPasswordReset', () => {
 
     expect(result).not.toBeInstanceOf(Error);
     expect(result.message).toContain('If an account with that email exists');
+  });
+
+  it('should only delete existing password reset tokens when issuing a new reset link', async () => {
+    const user = { _id: 'user-reset', email: 'user@example.com' };
+    findUser.mockResolvedValue(user);
+
+    const req = { body: { email: 'user@example.com' }, ip: '127.0.0.1' };
+    await requestPasswordReset(req);
+
+    expect(deleteTokens).toHaveBeenCalledWith({
+      userId: user._id,
+      type: 'password_reset',
+    });
+    expect(createToken).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: user._id,
+        type: 'password_reset',
+      }),
+    );
+  });
+});
+
+describe('resetPassword', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    checkEmailConfig.mockReturnValue(false);
+  });
+
+  it('should only accept password reset tokens for password reset', async () => {
+    const verificationHash = bcrypt.hashSync('verification-token', 10);
+    findToken.mockImplementation(async (query) => {
+      if (query.type === 'password_reset') {
+        return null;
+      }
+      return { token: verificationHash, userId: 'user-reset', email: 'user@example.com' };
+    });
+    updateUser.mockResolvedValue({ email: 'user@example.com' });
+
+    const result = await resetPassword('user-reset', 'verification-token', 'new-password');
+
+    expect(result).toBeInstanceOf(Error);
+    expect(findToken).toHaveBeenCalledWith(
+      {
+        userId: 'user-reset',
+        type: 'password_reset',
+      },
+      { sort: { createdAt: -1 } },
+    );
+    expect(updateUser).not.toHaveBeenCalled();
+    expect(deleteTokens).not.toHaveBeenCalled();
+  });
+
+  it('should delete only the used password reset token after a successful reset', async () => {
+    const resetHash = bcrypt.hashSync('reset-token', 10);
+    findToken.mockResolvedValue({
+      token: resetHash,
+      userId: 'user-reset',
+    });
+    updateUser.mockResolvedValue({ email: 'user@example.com' });
+
+    const result = await resetPassword('user-reset', 'reset-token', 'new-password');
+
+    expect(result).toEqual({ message: 'Password reset was successful' });
+    expect(findToken).toHaveBeenCalledWith(
+      {
+        userId: 'user-reset',
+        type: 'password_reset',
+      },
+      { sort: { createdAt: -1 } },
+    );
+    expect(deleteTokens).toHaveBeenCalledWith({
+      token: resetHash,
+      type: 'password_reset',
+    });
   });
 });
 
