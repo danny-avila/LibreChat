@@ -1,7 +1,4 @@
-import {
-  AuthTypeEnum,
-  validateAndParseOpenAPISpec,
-} from 'librechat-data-provider';
+import { AuthTypeEnum, validateAndParseOpenAPISpec } from 'librechat-data-provider';
 import type { ActionAuth, ActionMetadata } from 'librechat-data-provider';
 
 const authBoundaryFields: Array<keyof ActionAuth> = [
@@ -73,7 +70,10 @@ function getSpecServerTarget(rawSpec: string | undefined): string {
   return normalizeUrlTarget(result.serverUrl);
 }
 
-function didDomainChange(storedMetadata: ActionMetadata, incomingMetadata: ActionMetadata): boolean {
+function didDomainChange(
+  storedMetadata: ActionMetadata,
+  incomingMetadata: ActionMetadata,
+): boolean {
   if (!hasOwn(incomingMetadata, 'domain')) {
     return false;
   }
