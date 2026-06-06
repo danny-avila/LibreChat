@@ -4,8 +4,8 @@ import type { FlowStateManager } from '~/flow/manager';
 import type { MCPOAuthTokens } from '~/mcp/oauth';
 import type * as t from '~/mcp/types';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
-import { MCPConnection } from '~/mcp/connection';
 import { MCPOAuthHandler, MCPTokenStorage } from '~/mcp/oauth';
+import { MCPConnection } from '~/mcp/connection';
 import { processMCPEnv } from '~/utils';
 
 jest.mock('~/mcp/connection');

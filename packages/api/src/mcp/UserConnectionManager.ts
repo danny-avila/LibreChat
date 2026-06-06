@@ -2,12 +2,12 @@ import { logger } from '@librechat/data-schemas';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { MCPOAuthFlowMetadata } from '~/mcp/oauth';
 import type * as t from './types';
-import { PENDING_STALE_MS } from '~/flow/manager';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
-import { MCPOAuthHandler } from '~/mcp/oauth';
 import { isUserSourced, requiresOAuthMachinery } from './utils';
+import { PENDING_STALE_MS } from '~/flow/manager';
+import { MCPOAuthHandler } from '~/mcp/oauth';
 import { MCPConnection } from './connection';
 import { mcpConfig } from './mcpConfig';
 

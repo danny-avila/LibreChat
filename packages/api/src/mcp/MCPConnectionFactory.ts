@@ -13,8 +13,8 @@ import {
   ReauthenticationRequiredError,
   resolveOboToken,
 } from '~/mcp/oauth';
-import { PENDING_STALE_MS, normalizeExpiresAt } from '~/flow/manager';
 import { sanitizeUrlForLogging, isClientRejectionMessage, isOAuthServer } from './utils';
+import { PENDING_STALE_MS, normalizeExpiresAt } from '~/flow/manager';
 import { withTimeout } from '~/utils/promise';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
