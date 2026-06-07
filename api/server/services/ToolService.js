@@ -551,7 +551,7 @@ function getMCPServerNamesFromTools(tools) {
       continue;
     }
 
-    const delimiterIndex = tool.lastIndexOf(Constants.mcp_delimiter);
+    const delimiterIndex = tool.indexOf(Constants.mcp_delimiter);
     if (delimiterIndex === -1) {
       continue;
     }

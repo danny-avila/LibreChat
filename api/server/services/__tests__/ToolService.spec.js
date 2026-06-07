@@ -565,7 +565,7 @@ describe('ToolService - Action Capability Gating', () => {
     });
 
     it('should re-emit pending MCP OAuth prompts when selected MCP tools are already concrete', async () => {
-      const serverName = 'Google-Workspace';
+      const serverName = `Google${Constants.mcp_delimiter}Workspace`;
       const authorizationUrl = 'https://auth.example.com/Google-Workspace';
       const mcpTool = `search${Constants.mcp_delimiter}${serverName}`;
       const capabilities = [AgentCapabilities.tools];

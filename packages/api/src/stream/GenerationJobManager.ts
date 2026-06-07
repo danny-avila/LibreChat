@@ -77,10 +77,11 @@ function isOAuthReplayEvent(event: t.ServerSentEvent): boolean {
     if (delta == null || typeof delta !== 'object') {
       return false;
     }
-    return (
-      ('auth' in delta && delta.auth != null) ||
-      ('tool_calls' in delta && hasOAuthToolCall(delta.tool_calls))
-    );
+    if (!('tool_calls' in delta) || !hasOAuthToolCall(delta.tool_calls)) {
+      return false;
+    }
+
+    return true;
   }
 
   if (event.event === 'on_run_step_completed') {
