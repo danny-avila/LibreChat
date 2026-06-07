@@ -1,5 +1,5 @@
 const express = require('express');
-const { isEnabled, GenerationJobManager } = require('@librechat/api');
+const { isEnabled, GenerationJobManager, hasPersistableAbortContent } = require('@librechat/api');
 const { createSseStreamTelemetry } = require('@librechat/api/telemetry');
 const { logger } = require('@librechat/data-schemas');
 const {
@@ -271,7 +271,8 @@ router.post('/chat/abort', async (req, res) => {
     if (
       abortResult.success &&
       abortResult.jobData?.userMessage?.messageId &&
-      abortResult.jobData?.responseMessageId
+      abortResult.jobData?.responseMessageId &&
+      hasPersistableAbortContent(abortResult.content)
     ) {
       const { jobData, content, text } = abortResult;
       const responseMessage = {

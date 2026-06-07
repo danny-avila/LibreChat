@@ -554,15 +554,25 @@ export default function useEventHandlers({
       const serverConversation = conversation as TConversation;
 
       try {
-        // Handle early abort - aborted during tool loading before any messages saved
-        // Don't update conversation state, just reset UI and stay on new chat
+        // Handle early abort - aborted before any response message was saved.
         if ((data as Record<string, unknown>).earlyAbort) {
-          console.log(
-            '[finalHandler] Early abort detected - no messages saved, staying on new chat',
-          );
+          console.log('[finalHandler] Early abort detected - no response message saved');
           setShowStopButton(false);
           setIsSubmitting(false);
-          // Navigate to new chat if not already there
+
+          const currentConvoId = submissionConvo.conversationId;
+          const isExistingConvo = currentConvoId && currentConvoId !== Constants.NEW_CONVO;
+          if (isExistingConvo) {
+            setMessages([...messages]);
+            queryClient.setQueryData<TMessage[]>(
+              [QueryKeys.messages, currentConvoId],
+              [...messages],
+            );
+            setDraft({ id: currentConvoId, value: requestMessage?.text });
+            return;
+          }
+
+          setDraft({ id: String(Constants.NEW_CONVO), value: requestMessage?.text });
           if (location.pathname !== `/c/${Constants.NEW_CONVO}`) {
             navigate(`/c/${Constants.NEW_CONVO}`, { replace: true });
           }
