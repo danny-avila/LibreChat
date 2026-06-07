@@ -1,6 +1,4 @@
 import type { TEndpointsConfig } from './types';
-import { EModelEndpoint, isDocumentSupportedProvider } from './schemas';
-import { getEndpointFileConfig, mergeFileConfig } from './file-config';
 import {
   allowedAddressesSchema,
   configSchema,
@@ -8,6 +6,8 @@ import {
   resolveEndpointType,
   webSearchSchema,
 } from './config';
+import { EModelEndpoint, isDocumentSupportedProvider } from './schemas';
+import { getEndpointFileConfig, mergeFileConfig } from './file-config';
 
 const endpointsConfig: TEndpointsConfig = {
   [EModelEndpoint.openAI]: { userProvide: false, order: 0 },
@@ -54,6 +54,36 @@ describe('bedrockEndpointSchema', () => {
       return;
     }
     expect(result.data.endpoints?.bedrock?.guardrailConfig).toEqual(guardrailConfig);
+  });
+});
+
+describe('baseEndpointSchema toolNameMaxLength', () => {
+  it('accepts endpoint-wide and provider-specific tool name limits', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        all: { toolNameMaxLength: 80 },
+        [EModelEndpoint.openAI]: { toolNameMaxLength: 64 },
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
+    }
+    expect(result.data.endpoints?.all?.toolNameMaxLength).toBe(80);
+    expect(result.data.endpoints?.[EModelEndpoint.openAI]?.toolNameMaxLength).toBe(64);
+  });
+
+  it('rejects tool name limits below the alias minimum', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        all: { toolNameMaxLength: 8 },
+      },
+    });
+
+    expect(result.success).toBe(false);
   });
 });
 

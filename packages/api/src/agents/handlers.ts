@@ -15,17 +15,17 @@ import type { StructuredToolInterface } from '@librechat/agents/langchain/tools'
 import type { CodeEnvRef } from 'librechat-data-provider';
 import type { SkillFileRecord } from './skillFiles';
 import type { ServerRequest } from '~/types';
-import { logAxiosError, runOutsideTracing } from '~/utils';
-import { buildSkillPrimeMessage } from './skills';
-import { cleanCodeToolOutput } from './cleanup';
-import { primeSkillFiles } from './skillFiles';
 import {
   CREATE_FILE_TOOL_NAME,
   EDIT_FILE_TOOL_NAME,
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
   isCodeSessionToolName,
 } from './tools';
+import { logAxiosError, runOutsideTracing } from '~/utils';
 import { parseFrontmatter } from '../skills/import';
+import { buildSkillPrimeMessage } from './skills';
+import { cleanCodeToolOutput } from './cleanup';
+import { primeSkillFiles } from './skillFiles';
 
 export interface ToolEndCallbackData {
   output: {
@@ -54,6 +54,7 @@ export interface ToolExecuteOptions {
     agentId?: string,
   ) => Promise<{
     loadedTools: StructuredToolInterface[];
+    toolMap?: Map<string, StructuredToolInterface>;
     /** Additional configurable properties to merge (e.g., userMCPAuthMap) */
     configurable?: Record<string, unknown>;
   }>;
@@ -3156,11 +3157,12 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
         await runOutsideTracing(async () => {
           try {
             const toolNames = [...new Set(toolCalls.map((tc: ToolCallRequest) => tc.name))];
-            const { loadedTools, configurable: toolConfigurable } = await loadTools(
-              toolNames,
-              agentId,
-            );
-            const toolMap = new Map(loadedTools.map((t) => [t.name, t]));
+            const {
+              loadedTools,
+              toolMap: loadedToolMap,
+              configurable: toolConfigurable,
+            } = await loadTools(toolNames, agentId);
+            const toolMap = loadedToolMap ?? new Map(loadedTools.map((t) => [t.name, t]));
             const sourceConfigurable = configurable as Record<string, unknown> | undefined;
             const loadedConfigurable = toolConfigurable as Record<string, unknown> | undefined;
             const mergedConfigurable = mergeToolConfigurables(

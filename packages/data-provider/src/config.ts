@@ -10,11 +10,11 @@ import {
 } from './schemas';
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { specsConfigSchema, TSpecsConfig } from './models';
+import { REFILL_INTERVAL_UNITS } from './balance';
 import { fileConfigSchema } from './file-config';
 import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
-import { REFILL_INTERVAL_UNITS } from './balance';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
@@ -413,6 +413,8 @@ export const baseEndpointSchema = z.object({
   titleTiming: z.union([z.literal('immediate'), z.literal('final')]).optional(),
   /** Maximum characters allowed in a single tool result before truncation. */
   maxToolResultChars: z.number().positive().optional(),
+  /** Maximum provider-facing tool/function name length. */
+  toolNameMaxLength: z.number().int().min(16).optional(),
 });
 
 export type TBaseEndpoint = z.infer<typeof baseEndpointSchema>;

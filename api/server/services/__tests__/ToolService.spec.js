@@ -13,6 +13,24 @@ const mockGetMCPServerTools = jest.fn();
 const mockGetCachedTools = jest.fn();
 const mockSendEvent = jest.fn();
 const mockEmitChunk = jest.fn();
+const mockMCPDelimiter = Constants.mcp_delimiter;
+const mockNormalizeServerName = jest.fn((serverName) =>
+  serverName.replace(/[^a-zA-Z0-9_.-]/g, '_').replace(/^_+|_+$/g, ''),
+);
+const mockParseMCPToolName = jest.fn((toolName) => {
+  const delimiterIndex = toolName.lastIndexOf(mockMCPDelimiter);
+  if (delimiterIndex === -1) {
+    return undefined;
+  }
+  return {
+    rawName: toolName.slice(0, delimiterIndex),
+    serverName: toolName.slice(delimiterIndex + mockMCPDelimiter.length),
+  };
+});
+const mockResolveToolNameForExecution = jest.fn(
+  (toolName, toolRegistry) => toolRegistry?.get(toolName)?.canonicalName ?? toolName,
+);
+const mockResolveToolNameMaxLength = jest.fn(() => 64);
 jest.mock('~/server/services/Config', () => ({
   getEndpointsConfig: (...args) => mockGetEndpointsConfig(...args),
   getMCPServerTools: (...args) => mockGetMCPServerTools(...args),
@@ -25,6 +43,10 @@ jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   loadToolDefinitions: (...args) => mockLoadToolDefinitions(...args),
   getUserMCPAuthMap: (...args) => mockGetUserMCPAuthMap(...args),
+  normalizeServerName: (...args) => mockNormalizeServerName(...args),
+  parseMCPToolName: (...args) => mockParseMCPToolName(...args),
+  resolveToolNameMaxLength: (...args) => mockResolveToolNameMaxLength(...args),
+  resolveToolNameForExecution: (...args) => mockResolveToolNameForExecution(...args),
   sendEvent: (...args) => mockSendEvent(...args),
   GenerationJobManager: {
     emitChunk: (...args) => mockEmitChunk(...args),
@@ -639,6 +661,45 @@ describe('ToolService - Action Capability Gating', () => {
       });
 
       expect(mockLoadActionSets).not.toHaveBeenCalled();
+    });
+
+    it('maps provider aliases to loaded MCP tools with normalized server names', async () => {
+      const req = createMockReq([AgentCapabilities.tools]);
+      req.config = {};
+      const rawName = 'fetch_report';
+      const serverName = 'Research Server';
+      const canonicalName = `${rawName}${Constants.mcp_delimiter}${serverName}`;
+      const normalizedToolName = `${rawName}${Constants.mcp_delimiter}Research_Server`;
+      const providerToolName = 'mcp_fetch_report_abc123';
+      const loadedTool = { name: normalizedToolName, _call: jest.fn() };
+      const toolRegistry = new Map([
+        [
+          providerToolName,
+          {
+            name: providerToolName,
+            canonicalName,
+            providerToolName,
+            mcpRawName: rawName,
+          },
+        ],
+      ]);
+      mockLoadToolsUtil.mockResolvedValueOnce({ loadedTools: [loadedTool], toolContextMap: {} });
+
+      const result = await loadToolsForExecution({
+        req,
+        res: {},
+        agent: { id: 'agent_mcp' },
+        toolNames: [providerToolName],
+        toolRegistry,
+        actionsEnabled: false,
+      });
+
+      expect(mockLoadToolsUtil).toHaveBeenCalledWith(
+        expect.objectContaining({ tools: [canonicalName] }),
+      );
+      expect(result.toolMap.get(normalizedToolName)).toBe(loadedTool);
+      expect(result.toolMap.get(providerToolName)).toBe(loadedTool);
+      expect(result.toolMap.get(canonicalName)).toBe(loadedTool);
     });
   });
 
