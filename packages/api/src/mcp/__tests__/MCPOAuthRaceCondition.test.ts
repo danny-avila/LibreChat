@@ -146,7 +146,6 @@ describe('MCP OAuth Race Condition Fixes', () => {
       const mockConfig = {
         type: 'streamable-http',
         url: 'http://localhost:9999/',
-        requiresOAuth: true,
         updatedAt: undefined,
         dbId: undefined,
       };
@@ -227,6 +226,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
       const mockConfig = {
         type: 'streamable-http',
         url: 'http://localhost:9999/',
+        requiresOAuth: true,
         updatedAt: undefined,
         dbId: undefined,
       };
