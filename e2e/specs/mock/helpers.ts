@@ -19,7 +19,17 @@ type RefreshTokenBody = {
 };
 
 export function isAgentsStream(response: Response) {
-  return response.url().includes('/api/agents') && response.status() === 200;
+  return isAgentGenerationStart(response);
+}
+
+export function isAgentGenerationStart(response: Response) {
+  const { pathname } = new URL(response.url());
+  return (
+    response.request().method() === 'POST' &&
+    pathname.includes('/api/agents/chat/') &&
+    !pathname.endsWith('/abort') &&
+    response.status() === 200
+  );
 }
 
 const modelSelectorTrigger = (page: Page) =>
