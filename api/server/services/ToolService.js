@@ -23,6 +23,8 @@ const {
   getMissingCustomUserVars,
   buildWebSearchDynamicContext,
   getCodeApiAuthHeaders,
+  normalizeServerName,
+  parseMCPToolName,
   resolveToolNameMaxLength,
   resolveToolNameForExecution,
   isFileAuthoringToolDefinition,
@@ -1379,6 +1381,19 @@ async function loadToolsForExecution({
     runtimeNamesByLoadName.set(loadName, runtimeNames);
   };
 
+  const addNormalizedMCPRuntimeNames = (loadName, runtimeNames) => {
+    const parsed = parseMCPToolName(loadName);
+    if (!parsed) {
+      return;
+    }
+
+    const normalizedLoadName = `${parsed.rawName}${Constants.mcp_delimiter}${normalizeServerName(parsed.serverName)}`;
+    for (const runtimeName of runtimeNames) {
+      addRuntimeNameForLoadName(normalizedLoadName, runtimeName);
+    }
+    addRuntimeNameForLoadName(normalizedLoadName, normalizedLoadName);
+  };
+
   const addLoadedTool = (tool) => {
     allLoadedTools.push(tool);
     if (!tool?.name) {
@@ -1494,6 +1509,7 @@ async function loadToolsForExecution({
     const resolvedName = resolveToolNameForExecution(name, toolRegistry);
     addRuntimeNameForLoadName(resolvedName, name);
     addRuntimeNameForLoadName(resolvedName, resolvedName);
+    addNormalizedMCPRuntimeNames(resolvedName, [name, resolvedName]);
     resolvedToolNamesToLoad.push(resolvedName);
     if (resolvedName !== name) {
       logger.debug(`[loadToolsForExecution] Resolved tool name "${name}" -> "${resolvedName}"`);
