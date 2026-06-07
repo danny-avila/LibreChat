@@ -12,7 +12,11 @@ export type SendFeedbackScoreParams = {
 };
 
 const DEFAULT_BASE_URL = 'https://cloud.langfuse.com';
-const BASE = process.env.LANGFUSE_BASE_URL ?? process.env.LANGFUSE_BASEURL ?? DEFAULT_BASE_URL;
+const BASE =
+  process.env.LANGFUSE_BASE_URL ??
+  process.env.LANGFUSE_HOST ??
+  process.env.LANGFUSE_BASEURL ??
+  DEFAULT_BASE_URL;
 
 function isFalseEnv(value?: string): boolean {
   return value != null && ['0', 'false', 'no', 'off'].includes(value.trim().toLowerCase());

@@ -13,6 +13,7 @@ const langfuseEnvKeys = [
   'LANGFUSE_PUBLIC_KEY',
   'LANGFUSE_SECRET_KEY',
   'LANGFUSE_BASE_URL',
+  'LANGFUSE_HOST',
   'LANGFUSE_BASEURL',
   'LANGFUSE_TRACING_ENABLED',
   'LANGFUSE_SAMPLE_RATE',
@@ -86,6 +87,21 @@ describe('Langfuse feedback scores', () => {
       comment: 'helpful — nice',
       metadata: { rating: 'thumbsUp', tag: 'helpful' },
     });
+  });
+
+  it('posts feedback scores to the configured Langfuse host', async () => {
+    process.env.LANGFUSE_HOST = 'http://langfuse-server:3000';
+    const { sendFeedbackScore } = await loadFeedback();
+
+    await sendFeedbackScore({
+      traceId: 'trace-id',
+      feedback: { rating: 'thumbsUp' },
+    });
+
+    expect(getFetchMock()).toHaveBeenCalledWith(
+      'http://langfuse-server:3000/api/public/scores',
+      expect.objectContaining({ method: 'POST' }),
+    );
   });
 
   it('skips scores when Langfuse tracing is disabled', async () => {
