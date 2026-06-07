@@ -15,6 +15,7 @@ import {
   removeNullishValues,
 } from 'librechat-data-provider';
 import type {
+  Agents,
   TMessage,
   TPayload,
   TSubmission,
@@ -257,6 +258,56 @@ const hydrateSubmissionMessages = (
     ? hydrateMessageConversationId(submission.initialResponse, conversationId)
     : submission.initialResponse,
 });
+
+const buildResumeEventSubmission = (
+  currentSubmission: TSubmission,
+  currentUserMessage: TMessage,
+  resumeState?: Agents.ResumeState | null,
+): EventSubmission => {
+  if (!resumeState) {
+    return { ...currentSubmission, userMessage: currentUserMessage } as EventSubmission;
+  }
+
+  const conversationId =
+    resumeState.conversationId ??
+    resumeState.userMessage?.conversationId ??
+    currentUserMessage.conversationId ??
+    currentSubmission.conversation?.conversationId;
+
+  const userMessage = {
+    ...currentUserMessage,
+    ...resumeState.userMessage,
+    conversationId,
+    isCreatedByUser: true,
+  } as TMessage;
+
+  const responseMessageId =
+    resumeState.responseMessageId ??
+    currentSubmission.initialResponse?.messageId ??
+    `${userMessage.messageId}_`;
+
+  const initialResponse = {
+    ...(currentSubmission.initialResponse as TMessage),
+    messageId: responseMessageId,
+    parentMessageId: userMessage.messageId,
+    conversationId,
+    content:
+      resumeState.aggregatedContent ??
+      (currentSubmission.initialResponse as TMessage | undefined)?.content,
+    sender: resumeState.sender ?? currentSubmission.initialResponse?.sender,
+    isCreatedByUser: false,
+  } as TMessage;
+
+  return {
+    ...currentSubmission,
+    conversation: {
+      ...currentSubmission.conversation,
+      conversationId,
+    },
+    userMessage,
+    initialResponse,
+  } as EventSubmission;
+};
 
 /**
  * Hook for resumable SSE streams.
@@ -505,13 +556,16 @@ export default function useResumableSSE(
 
             const runId = v4();
             setActiveRunId(runId);
+            const resumeSubmission = buildResumeEventSubmission(
+              currentSubmission,
+              userMessage,
+              data.resumeState,
+            );
+            userMessage = resumeSubmission.userMessage;
 
             if (data.resumeState?.runSteps) {
               for (const runStep of data.resumeState.runSteps) {
-                stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, {
-                  ...currentSubmission,
-                  userMessage,
-                } as EventSubmission);
+                stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, resumeSubmission);
               }
             }
 
@@ -581,24 +635,22 @@ export default function useResumableSSE(
               console.log(
                 `[ResumableSSE] Replaying ${data.resumeState.replayEvents.length} resume events`,
               );
-              const submission = { ...currentSubmission, userMessage } as EventSubmission;
               for (const replayEvent of data.resumeState.replayEvents) {
                 if (replayEvent.event != null) {
-                  stepHandler(replayEvent, submission);
+                  stepHandler(replayEvent, resumeSubmission);
                 }
               }
             }
 
             if (data.pendingEvents?.length > 0) {
               console.log(`[ResumableSSE] Replaying ${data.pendingEvents.length} pending events`);
-              const submission = { ...currentSubmission, userMessage } as EventSubmission;
               for (const pendingEvent of data.pendingEvents) {
                 if (pendingEvent.event === 'title') {
                   titleHandler(pendingEvent);
                 } else if (pendingEvent.event != null) {
-                  stepHandler(pendingEvent, submission);
+                  stepHandler(pendingEvent, resumeSubmission);
                 } else if (pendingEvent.type != null) {
-                  contentHandler({ data: pendingEvent, submission });
+                  contentHandler({ data: pendingEvent, submission: resumeSubmission });
                 }
               }
             }

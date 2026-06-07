@@ -929,6 +929,102 @@ describe('useResumableSSE - 404 error path', () => {
     unmount();
   });
 
+  it('anchors preliminary OAuth replay events to the response message from resume state sync', async () => {
+    const submission = buildSubmission({
+      userMessage: {
+        messageId: 'original-user',
+        conversationId: CONV_ID,
+        text: 'Original prompt',
+        isCreatedByUser: true,
+        sender: 'User',
+        parentMessageId: Constants.NO_PARENT,
+      },
+      initialResponse: {
+        messageId: 'original-response',
+        conversationId: CONV_ID,
+        text: 'Original response',
+        isCreatedByUser: false,
+        sender: 'Assistant',
+        parentMessageId: 'original-user',
+      },
+    });
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const runStep = {
+      id: 'step-oauth',
+      runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
+      index: 0,
+      stepDetails: {
+        type: 'tool_calls',
+        tool_calls: [{ id: 'call-oauth', name: 'oauth_mcp_Google-Workspace', args: '' }],
+      },
+    };
+    const replayEvent = {
+      event: StepEvents.ON_RUN_STEP_DELTA,
+      data: {
+        id: 'step-oauth',
+        delta: {
+          type: 'tool_calls',
+          tool_calls: [{ id: 'call-oauth', name: 'oauth_mcp_Google-Workspace', args: '' }],
+          auth: 'https://auth.example.com/oauth',
+          expires_at: 1780791946,
+        },
+      },
+    };
+
+    const sse = getLastSSE();
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          sync: true,
+          resumeState: {
+            runSteps: [runStep],
+            replayEvents: [replayEvent],
+            responseMessageId: 'follow-up-response',
+            conversationId: CONV_ID,
+            userMessage: {
+              messageId: 'follow-up-user',
+              parentMessageId: 'original-response',
+              conversationId: CONV_ID,
+              text: 'Follow-up prompt',
+            },
+          },
+        }),
+      });
+    });
+
+    expect(mockStepHandler).toHaveBeenNthCalledWith(
+      1,
+      { event: StepEvents.ON_RUN_STEP, data: runStep },
+      expect.objectContaining({
+        userMessage: expect.objectContaining({ messageId: 'follow-up-user' }),
+        initialResponse: expect.objectContaining({
+          messageId: 'follow-up-response',
+          parentMessageId: 'follow-up-user',
+        }),
+      }),
+    );
+    expect(mockStepHandler).toHaveBeenNthCalledWith(
+      2,
+      replayEvent,
+      expect.objectContaining({
+        userMessage: expect.objectContaining({ messageId: 'follow-up-user' }),
+        initialResponse: expect.objectContaining({
+          messageId: 'follow-up-response',
+          parentMessageId: 'follow-up-user',
+        }),
+      }),
+    );
+
+    unmount();
+  });
+
   it.each([undefined, 500, 503])(
     'does not call errorHandler for responseCode %s (reconnect path)',
     async (responseCode) => {
