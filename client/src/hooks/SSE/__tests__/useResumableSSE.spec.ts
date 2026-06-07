@@ -6,7 +6,7 @@ import {
   StepEvents,
   request,
 } from 'librechat-data-provider';
-import type { TSubmission } from 'librechat-data-provider';
+import type { TMessage, TSubmission } from 'librechat-data-provider';
 
 type SSEEventListener = (e: Partial<MessageEvent> & { responseCode?: number }) => void;
 
@@ -162,7 +162,7 @@ const CONV_ID = 'conv-abc-123';
 type PartialSubmission = {
   conversation: { conversationId?: string };
   userMessage: Record<string, unknown>;
-  messages: never[];
+  messages: TMessage[];
   isTemporary: boolean;
   initialResponse: Record<string, unknown>;
   endpointOption: { endpoint: string };
@@ -196,7 +196,7 @@ const buildSubmission = (overrides: Partial<PartialSubmission> = {}): TSubmissio
 
 const buildChatHelpers = () => ({
   setMessages: jest.fn(),
-  getMessages: jest.fn(() => []),
+  getMessages: jest.fn<TMessage[], []>(() => []),
   setConversation: jest.fn(),
   setIsSubmitting: mockSetIsSubmitting,
   newConversation: jest.fn(),
@@ -1032,7 +1032,7 @@ describe('useResumableSSE - 404 error path', () => {
       text: 'Original prompt',
       isCreatedByUser: true,
       sender: 'User',
-      parentMessageId: Constants.NO_PARENT,
+      parentMessageId: '00000000-0000-0000-0000-000000000000',
     };
     const originalResponse = {
       messageId: 'original-response',
@@ -1047,7 +1047,6 @@ describe('useResumableSSE - 404 error path', () => {
         conversation: { conversationId: CONV_ID },
         userMessage: originalUser,
         initialResponse: originalResponse,
-        messages: [originalUser, originalResponse] as never[],
       }),
       resumeStreamId: CONV_ID,
     } as TSubmission & { resumeStreamId: string };
