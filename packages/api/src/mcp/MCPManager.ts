@@ -10,18 +10,18 @@ import type { FlowStateManager } from '~/flow/manager';
 import type { MCPOAuthTokens } from './oauth';
 import type { RequestBody } from '~/types';
 import type * as t from './types';
+import { isUserSourced, requiresOAuthMachinery, requiresUserScopedConnection } from './utils';
 import { MCPServersInitializer } from './registry/MCPServersInitializer';
+import { OboTokenResolutionError, resolveOboToken } from '~/mcp/oauth';
 import { MCPServerInspector } from './registry/MCPServerInspector';
 import { MCPServersRegistry } from './registry/MCPServersRegistry';
 import { UserConnectionManager } from './UserConnectionManager';
 import { ConnectionsRepository } from './ConnectionsRepository';
 import { MCPConnectionFactory } from './MCPConnectionFactory';
-import { OboTokenResolutionError, resolveOboToken } from '~/mcp/oauth';
 import { preProcessGraphTokens } from '~/utils/graph';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils/env';
-import { isUserSourced, requiresOAuthMachinery, requiresUserScopedConnection } from './utils';
 
 function createOboToolCallErrorMessage(
   logPrefix: string,
@@ -327,7 +327,7 @@ Please follow these instructions when using tools from the respective MCP server
     tokenMethods?: TokenMethods;
     customUserVars?: Record<string, string>;
     flowManager: FlowStateManager<MCPOAuthTokens | null>;
-    oauthStart?: (authURL: string) => Promise<void>;
+    oauthStart?: t.OAuthStartHandler;
     oauthEnd?: () => Promise<void>;
     graphTokenResolver?: GraphTokenResolver;
     oboTokenResolver?: OboTokenResolver;

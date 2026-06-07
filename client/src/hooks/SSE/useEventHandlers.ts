@@ -68,6 +68,81 @@ type TTitleEvent = {
 const hasRealTitle = (title?: string | null): title is string =>
   title != null && title !== '' && title !== 'New Chat';
 
+export const buildCreatedInitialResponse = ({
+  initialResponse,
+  userMessage,
+  isRegenerate = false,
+}: Pick<EventSubmission, 'initialResponse' | 'userMessage' | 'isRegenerate'>): TMessage => ({
+  ...initialResponse,
+  parentMessageId:
+    isRegenerate && initialResponse.parentMessageId
+      ? initialResponse.parentMessageId
+      : userMessage.messageId,
+  messageId:
+    isRegenerate && initialResponse.messageId
+      ? initialResponse.messageId
+      : `${userMessage.messageId}_`,
+  conversationId: userMessage.conversationId ?? initialResponse.conversationId,
+});
+
+export const isInitialNewConversationSubmission = ({
+  userMessage,
+}: Pick<EventSubmission, 'userMessage'>): boolean =>
+  userMessage?.parentMessageId === Constants.NO_PARENT;
+
+export const mergeRegenerateFinalMessages = ({
+  messages,
+  responseMessage,
+  initialResponseId,
+}: {
+  messages: TMessage[];
+  responseMessage: TMessage;
+  initialResponseId?: string | null;
+}): TMessage[] => {
+  const finalMessages: TMessage[] = [];
+  let inserted = false;
+
+  for (const message of messages) {
+    if (!message?.messageId || message.messageId === initialResponseId) {
+      continue;
+    }
+
+    if (message.messageId === responseMessage.messageId) {
+      finalMessages.push(responseMessage);
+      inserted = true;
+      continue;
+    }
+
+    finalMessages.push(message);
+  }
+
+  if (!inserted) {
+    finalMessages.push(responseMessage);
+  }
+
+  return finalMessages;
+};
+
+export const getExistingConversationAbortMessages = ({
+  messages,
+  currentMessages,
+  regenerateMessages,
+  isRegenerate = false,
+}: Pick<EventSubmission, 'messages' | 'regenerateMessages' | 'isRegenerate'> & {
+  currentMessages?: TMessage[];
+}): TMessage[] => {
+  if (!isRegenerate) {
+    return [...messages];
+  }
+
+  if (regenerateMessages?.length) {
+    return [...regenerateMessages];
+  }
+
+  const sourceMessages = currentMessages?.length ? currentMessages : messages;
+  return [...sourceMessages];
+};
+
 export type EventHandlerParams = {
   isAddedRequest?: boolean;
   setCompleted: React.Dispatch<React.SetStateAction<Set<unknown>>>;
@@ -409,12 +484,11 @@ export default function useEventHandlers({
        * drops it, which is the right behavior: by finalize the real
        * `skill` tool_call is in `content` and takes over rendering.
        */
-      const initialResponse = {
-        ...submission.initialResponse,
-        parentMessageId: userMessage.messageId,
-        messageId: userMessage.messageId + '_',
-        conversationId: userMessage.conversationId ?? submission.initialResponse.conversationId,
-      };
+      const initialResponse = buildCreatedInitialResponse({
+        initialResponse: submission.initialResponse,
+        userMessage,
+        isRegenerate,
+      });
       if (isRegenerate) {
         setMessages([...messages, initialResponse]);
       } else {
@@ -538,15 +612,40 @@ export default function useEventHandlers({
       const serverConversation = conversation as TConversation;
 
       try {
-        // Handle early abort - aborted during tool loading before any messages saved
-        // Don't update conversation state, just reset UI and stay on new chat
+        // Handle early abort - aborted before any response message was saved.
         if ((data as Record<string, unknown>).earlyAbort) {
-          console.log(
-            '[finalHandler] Early abort detected - no messages saved, staying on new chat',
-          );
+          console.log('[finalHandler] Early abort detected - no response message saved');
           setShowStopButton(false);
           setIsSubmitting(false);
-          // Navigate to new chat if not already there
+
+          const currentConvoId = submissionConvo.conversationId;
+          const isInitialNewConvo = isInitialNewConversationSubmission(submission);
+          const isExistingConvo =
+            currentConvoId && currentConvoId !== Constants.NEW_CONVO && !isInitialNewConvo;
+          if (isExistingConvo) {
+            const abortMessages = getExistingConversationAbortMessages({
+              messages,
+              isRegenerate,
+              currentMessages: getMessages(),
+              regenerateMessages: submission.regenerateMessages,
+            });
+            setMessages(abortMessages);
+            queryClient.setQueryData<TMessage[]>(
+              [QueryKeys.messages, currentConvoId],
+              abortMessages,
+            );
+            setDraft({ id: currentConvoId, value: requestMessage?.text });
+            return;
+          }
+
+          if (currentConvoId && currentConvoId !== Constants.NEW_CONVO) {
+            removeConvoFromAllQueries(queryClient, currentConvoId);
+            queryClient.removeQueries({ queryKey: [QueryKeys.conversation, currentConvoId] });
+            queryClient.removeQueries({ queryKey: [QueryKeys.messages, currentConvoId] });
+          }
+          setMessages([]);
+          queryClient.setQueryData<TMessage[]>([QueryKeys.messages, Constants.NEW_CONVO], []);
+          setDraft({ id: String(Constants.NEW_CONVO), value: requestMessage?.text });
           if (location.pathname !== `/c/${Constants.NEW_CONVO}`) {
             navigate(`/c/${Constants.NEW_CONVO}`, { replace: true });
           }
@@ -622,7 +721,11 @@ export default function useEventHandlers({
         if (runMessages) {
           finalMessages = [...runMessages];
         } else if (isRegenerate && responseMessage) {
-          finalMessages = [...messages, responseMessage];
+          finalMessages = mergeRegenerateFinalMessages({
+            messages: submission.regenerateMessages ?? currentMessages ?? messages,
+            responseMessage,
+            initialResponseId: submission.initialResponse.messageId,
+          });
         } else if (requestMessage != null && responseMessage != null) {
           finalMessages = [...messages, requestMessage, responseMessage];
         }

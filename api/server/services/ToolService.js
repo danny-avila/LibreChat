@@ -2,8 +2,6 @@ const { logger } = require('@librechat/data-schemas');
 const { tool: toolFn, DynamicStructuredTool } = require('@librechat/agents/langchain/tools');
 const {
   sleep,
-  StepTypes,
-  GraphEvents,
   createToolSearch,
   createBashExecutionTool,
   Constants: AgentConstants,
@@ -18,11 +16,17 @@ const {
   isActionDomainAllowed,
   buildWebSearchContext,
   buildImageToolContext,
-  buildOAuthToolCallName,
   buildToolClassification,
   getMissingCustomUserVars,
   buildWebSearchDynamicContext,
   getCodeApiAuthHeaders,
+  getReplayablePendingMCPOAuthStart,
+  getMCPServerNamesFromTools,
+  buildMCPAuthToolCall,
+  buildMCPAuthStepId,
+  buildMCPAuthRunStepEvent,
+  buildMCPAuthRunStepDeltaEvent,
+  buildMCPAuthRunStepCompletedEvent,
   isFileAuthoringToolDefinition,
 } = require('@librechat/api');
 const {
@@ -596,44 +600,35 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
   const flowManager = getFlowStateManager(flowsCache);
   const configServers = await resolveConfigServers(req);
   const pendingOAuthServers = new Set();
+  const pendingOAuthStarts = new Map();
+  const emittedOAuthStarts = new Map();
   const oauthToolCallIds = new Map();
   const oauthStepIndexes = new Map();
 
   const createOAuthEmitter = (serverName, index) => {
-    return async (authURL) => {
-      const flowId = `${req.user.id}:${serverName}:${Date.now()}`;
-      const stepId = 'step_oauth_login_' + serverName;
+    return async (authURL, options) => {
+      if (emittedOAuthStarts.get(serverName) === authURL) {
+        return;
+      }
+      emittedOAuthStarts.set(serverName, authURL);
+
+      const flowId =
+        oauthToolCallIds.get(serverName) ?? `${req.user.id}:${serverName}:${Date.now()}`;
+      const stepId = buildMCPAuthStepId(serverName);
       oauthToolCallIds.set(serverName, flowId);
       oauthStepIndexes.set(serverName, index);
-      const toolCall = {
+      const toolCall = buildMCPAuthToolCall({
         id: flowId,
-        name: buildOAuthToolCallName(serverName),
-        type: 'tool_call_chunk',
-      };
+        serverName,
+      });
 
-      const runStepData = {
-        runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
-        id: stepId,
-        type: StepTypes.TOOL_CALLS,
-        index,
-        stepDetails: {
-          type: StepTypes.TOOL_CALLS,
-          tool_calls: [toolCall],
-        },
-      };
-
-      const runStepDeltaData = {
-        id: stepId,
-        delta: {
-          type: StepTypes.TOOL_CALLS,
-          tool_calls: [{ ...toolCall, args: '' }],
-          auth: authURL,
-          expires_at: Date.now() + Time.TWO_MINUTES,
-        },
-      };
-
-      const runStepEvent = { event: GraphEvents.ON_RUN_STEP, data: runStepData };
-      const runStepDeltaEvent = { event: GraphEvents.ON_RUN_STEP_DELTA, data: runStepDeltaData };
+      const runStepEvent = buildMCPAuthRunStepEvent({ stepId, toolCall, index });
+      const runStepDeltaEvent = buildMCPAuthRunStepDeltaEvent({
+        authURL,
+        stepId,
+        toolCall,
+        options,
+      });
 
       if (streamId) {
         await GenerationJobManager.emitChunk(streamId, runStepEvent);
@@ -651,25 +646,19 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
   const createOAuthEndEmitter = (serverName) => {
     return async () => {
-      const stepId = 'step_oauth_login_' + serverName;
-      const toolCall = {
+      const stepId = buildMCPAuthStepId(serverName);
+      const toolCall = buildMCPAuthToolCall({
         id: oauthToolCallIds.get(serverName),
-        name: buildOAuthToolCallName(serverName),
         args: '',
         output: 'OAuth authentication completed',
+        serverName,
         type: 'tool_call',
-      };
-
-      const runStepCompletedEvent = {
-        event: GraphEvents.ON_RUN_STEP_COMPLETED,
-        data: {
-          result: {
-            id: stepId,
-            index: oauthStepIndexes.get(serverName) ?? 0,
-            tool_call: toolCall,
-          },
-        },
-      };
+      });
+      const runStepCompletedEvent = buildMCPAuthRunStepCompletedEvent({
+        stepId,
+        toolCall,
+        index: oauthStepIndexes.get(serverName) ?? 0,
+      });
 
       if (streamId) {
         await GenerationJobManager.emitChunk(streamId, runStepCompletedEvent);
@@ -683,7 +672,45 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     };
   };
 
+  const getPendingOAuthStartForEmit = async (serverName) => {
+    const cachedOAuthStart = pendingOAuthStarts.get(serverName);
+    if (cachedOAuthStart?.options?.expiresAt != null) {
+      return cachedOAuthStart;
+    }
+
+    const pendingOAuthStart = await getReplayablePendingMCPOAuthStart({
+      flowManager,
+      userId: req.user.id,
+      serverName,
+    });
+    if (!pendingOAuthStart) {
+      return cachedOAuthStart;
+    }
+
+    if (!cachedOAuthStart || pendingOAuthStart.authURL === cachedOAuthStart.authURL) {
+      pendingOAuthStarts.set(serverName, pendingOAuthStart);
+      return pendingOAuthStart;
+    }
+
+    return cachedOAuthStart;
+  };
+
   const getOrFetchMCPServerTools = async (userId, serverName) => {
+    const addPendingOAuthServer = async () => {
+      const pendingOAuthStart = await getReplayablePendingMCPOAuthStart({
+        flowManager,
+        userId,
+        serverName,
+      });
+      if (!pendingOAuthStart) {
+        return false;
+      }
+
+      pendingOAuthServers.add(serverName);
+      pendingOAuthStarts.set(serverName, pendingOAuthStart);
+      return true;
+    };
+
     let serverConfig;
     try {
       serverConfig =
@@ -718,11 +745,19 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
     const cached = await getMCPServerTools(userId, serverName);
     if (cached) {
+      await addPendingOAuthServer();
       return cached;
     }
 
-    const oauthStart = async () => {
+    if (await addPendingOAuthServer()) {
+      return null;
+    }
+
+    const oauthStart = async (authURL, options) => {
       pendingOAuthServers.add(serverName);
+      if (typeof authURL === 'string' && authURL.length > 0) {
+        pendingOAuthStarts.set(serverName, { authURL, options });
+      }
     };
 
     const result = await reinitMCPServer({
@@ -813,6 +848,22 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     },
   );
 
+  for (const serverName of getMCPServerNamesFromTools(filteredTools)) {
+    if (pendingOAuthServers.has(serverName)) {
+      continue;
+    }
+
+    const pendingOAuthStart = await getReplayablePendingMCPOAuthStart({
+      flowManager,
+      userId: req.user.id,
+      serverName,
+    });
+    if (pendingOAuthStart) {
+      pendingOAuthServers.add(serverName);
+      pendingOAuthStarts.set(serverName, pendingOAuthStart);
+    }
+  }
+
   if (pendingOAuthServers.size > 0 && (res || streamId)) {
     const serverNames = Array.from(pendingOAuthServers);
     logger.info(
@@ -821,6 +872,12 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
     const oauthWaitPromises = serverNames.map(async (serverName, index) => {
       try {
+        const pendingOAuthStart = await getPendingOAuthStartForEmit(serverName);
+        const oauthStart = createOAuthEmitter(serverName, index);
+        if (pendingOAuthStart) {
+          await oauthStart(pendingOAuthStart.authURL, pendingOAuthStart.options);
+        }
+
         const result = await reinitMCPServer({
           user: req.user,
           serverName,
@@ -828,7 +885,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
           userMCPAuthMap,
           flowManager,
           returnOnOAuth: false,
-          oauthStart: createOAuthEmitter(serverName, index),
+          oauthStart,
           oauthEnd: createOAuthEndEmitter(serverName),
           connectionTimeout: Time.TWO_MINUTES,
         });

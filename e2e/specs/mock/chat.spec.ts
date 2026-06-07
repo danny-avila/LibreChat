@@ -36,6 +36,44 @@ test.describe('core chat loop', () => {
     await expect(page.getByTestId('convo-item').first()).toBeVisible();
   });
 
+  test('can switch back to the previous branch after regenerating an earlier response', async ({
+    page,
+  }) => {
+    test.setTimeout(90000);
+    const firstMessage = 'branch root from e2e';
+    const followUpMessage = 'follow-up on original branch from e2e';
+
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+
+    let response = await sendMessage(page, firstMessage);
+    expect(response.ok()).toBeTruthy();
+    await expect(mockReply(page)).toBeVisible();
+
+    response = await sendMessage(page, followUpMessage);
+    expect(response.ok()).toBeTruthy();
+    await expect(page.getByText(followUpMessage)).toBeVisible();
+
+    const firstAssistantMessage = page
+      .getByTestId('messages-view')
+      .locator('.message-render')
+      .nth(1);
+    await firstAssistantMessage.hover();
+    const regenerateButton = firstAssistantMessage.locator('button[title="Regenerate"]').last();
+    await expect(regenerateButton).toBeVisible();
+
+    const [regenerateResponse] = await Promise.all([
+      page.waitForResponse(isAgentsStream, { timeout: 30000 }),
+      regenerateButton.click(),
+    ]);
+    expect(regenerateResponse.ok()).toBeTruthy();
+
+    await expect(page.getByText('2 / 2')).toBeVisible();
+    await page.getByRole('button', { name: 'Previous sibling message' }).click();
+    await expect(page.getByText('1 / 2')).toBeVisible();
+    await expect(page.getByText(followUpMessage)).toBeVisible();
+  });
+
   test('keeps upload-to-provider CSV attached to the sent message and model input', async ({
     page,
   }) => {

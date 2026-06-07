@@ -474,6 +474,369 @@ describe('useStepHandler', () => {
       );
     });
 
+    it('keeps the pending user message when replayed OAuth tool calls merge immediately', () => {
+      const rootUser = createUserMessage({ messageId: 'root-user' });
+      const selectedResponse = createResponseMessage({
+        messageId: 'selected-response',
+        parentMessageId: rootUser.messageId,
+      });
+      const followUpUser = createUserMessage({
+        messageId: 'follow-up-user',
+        parentMessageId: selectedResponse.messageId,
+      });
+      const followUpResponse = createResponseMessage({
+        messageId: 'follow-up-response',
+        parentMessageId: followUpUser.messageId,
+      });
+      const siblingResponse = createResponseMessage({
+        messageId: 'sibling-response',
+        parentMessageId: rootUser.messageId,
+      });
+      const pendingUser = createUserMessage({
+        messageId: 'pending-user',
+        parentMessageId: followUpResponse.messageId,
+      });
+      const initialResponse = createResponseMessage({
+        messageId: 'pending-user_',
+        parentMessageId: pendingUser.messageId,
+      });
+
+      let currentMessages = [
+        rootUser,
+        selectedResponse,
+        followUpUser,
+        followUpResponse,
+        siblingResponse,
+      ];
+      mockGetMessages.mockImplementation(() => currentMessages);
+      mockSetMessages.mockImplementation((messages) => {
+        currentMessages = messages;
+      });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createToolCallRunStep({
+        id: 'step-oauth-login',
+        runId: USE_PRELIM_RESPONSE_MESSAGE_ID,
+        stepDetails: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [
+            {
+              id: 'tool-call-oauth',
+              name: `oauth${Constants.mcp_delimiter}Google-Workspace`,
+              args: '',
+              type: ToolCallTypes.TOOL_CALL,
+            },
+          ],
+        },
+      });
+      const submission = createSubmission({
+        userMessage: pendingUser,
+        messages: currentMessages,
+        initialResponse,
+      });
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      expect(currentMessages.map((message) => message.messageId)).toEqual([
+        rootUser.messageId,
+        selectedResponse.messageId,
+        followUpUser.messageId,
+        followUpResponse.messageId,
+        siblingResponse.messageId,
+        pendingUser.messageId,
+        initialResponse.messageId,
+      ]);
+      expect(currentMessages.at(-1)).toEqual(
+        expect.objectContaining({
+          messageId: initialResponse.messageId,
+          parentMessageId: pendingUser.messageId,
+          content: expect.arrayContaining([
+            expect.objectContaining({
+              type: ContentTypes.TOOL_CALL,
+              tool_call: expect.objectContaining({
+                name: `oauth${Constants.mcp_delimiter}Google-Workspace`,
+              }),
+            }),
+          ]),
+        }),
+      );
+    });
+
+    it('should not insert regenerate transport userMessage before preliminary OAuth steps', () => {
+      const originalUser = createUserMessage({ messageId: 'original-user-message' });
+      const originalResponse = createResponseMessage({
+        messageId: 'original-response-message',
+        parentMessageId: originalUser.messageId,
+      });
+      const initialResponse = createResponseMessage({
+        messageId: 'original-response-message_',
+        parentMessageId: originalUser.messageId,
+      });
+      const regenerateUserMessage = createUserMessage({
+        messageId: 'synthetic-regenerate-user-message',
+        parentMessageId: originalResponse.messageId,
+      });
+
+      let currentMessages = [originalUser];
+      mockGetMessages.mockImplementation(() => currentMessages);
+      mockSetMessages.mockImplementation((messages) => {
+        currentMessages = messages;
+      });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createToolCallRunStep({
+        id: 'step-oauth-login',
+        runId: USE_PRELIM_RESPONSE_MESSAGE_ID,
+        stepDetails: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [
+            {
+              id: 'tool-call-oauth',
+              name: `oauth${Constants.mcp_delimiter}Google-Workspace`,
+              args: '',
+              type: ToolCallTypes.TOOL_CALL,
+            },
+          ],
+        },
+      });
+      const submission = createSubmission({
+        userMessage: regenerateUserMessage,
+        isRegenerate: true,
+        messages: [originalUser, originalResponse],
+        initialResponse,
+      });
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      expect(currentMessages).toHaveLength(2);
+      expect(currentMessages.map((message) => message.messageId)).toEqual([
+        originalUser.messageId,
+        initialResponse.messageId,
+      ]);
+      expect(currentMessages).not.toContainEqual(
+        expect.objectContaining({ messageId: regenerateUserMessage.messageId }),
+      );
+      expect(currentMessages[1]?.content).toContainEqual(
+        expect.objectContaining({
+          type: ContentTypes.TOOL_CALL,
+          tool_call: expect.objectContaining({
+            name: `oauth${Constants.mcp_delimiter}Google-Workspace`,
+          }),
+        }),
+      );
+    });
+
+    it('should preserve regenerate history when OAuth steps arrive before optimistic state commits', () => {
+      const originalUser = createUserMessage({ messageId: 'original-user-message' });
+      const originalResponse = createResponseMessage({
+        messageId: 'original-response-message',
+        parentMessageId: originalUser.messageId,
+      });
+      const initialResponse = createResponseMessage({
+        messageId: 'original-response-message_',
+        parentMessageId: originalUser.messageId,
+      });
+      const regenerateUserMessage = createUserMessage({
+        messageId: 'synthetic-regenerate-user-message',
+        parentMessageId: originalResponse.messageId,
+      });
+
+      mockGetMessages.mockReturnValue([]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createToolCallRunStep({
+        id: 'step-oauth-login',
+        runId: USE_PRELIM_RESPONSE_MESSAGE_ID,
+        stepDetails: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [
+            {
+              id: 'tool-call-oauth',
+              name: `oauth${Constants.mcp_delimiter}Google-Workspace`,
+              args: '',
+              type: ToolCallTypes.TOOL_CALL,
+            },
+          ],
+        },
+      });
+      const submission = createSubmission({
+        userMessage: regenerateUserMessage,
+        isRegenerate: true,
+        messages: [originalUser],
+        initialResponse,
+      });
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1][0];
+      expect(lastCall).toHaveLength(2);
+      expect(lastCall.map((message: TMessage) => message.messageId)).toEqual([
+        originalUser.messageId,
+        initialResponse.messageId,
+      ]);
+      expect(lastCall).not.toContainEqual(
+        expect.objectContaining({ messageId: regenerateUserMessage.messageId }),
+      );
+      expect(lastCall[1]?.content).toContainEqual(
+        expect.objectContaining({
+          type: ContentTypes.TOOL_CALL,
+          tool_call: expect.objectContaining({
+            name: `oauth${Constants.mcp_delimiter}Google-Workspace`,
+          }),
+        }),
+      );
+    });
+
+    it('does not seed non-tail regenerate run steps from the latest assistant message', () => {
+      const originalUser = createUserMessage({ messageId: 'original-user-message' });
+      const originalResponse = createResponseMessage({
+        messageId: 'original-response-message',
+        parentMessageId: originalUser.messageId,
+        content: [
+          {
+            type: ContentTypes.TEXT,
+            text: 'Original response',
+          },
+        ],
+      });
+      const followUpUser = createUserMessage({
+        messageId: 'follow-up-user-message',
+        parentMessageId: originalResponse.messageId,
+      });
+      const latestResponse = createResponseMessage({
+        messageId: 'latest-response-message',
+        parentMessageId: followUpUser.messageId,
+        content: [
+          {
+            type: ContentTypes.TEXT,
+            text: 'Latest response content must not leak into regenerate',
+          },
+        ],
+      });
+      const initialResponse = createResponseMessage({
+        messageId: 'original-response-message_',
+        parentMessageId: originalUser.messageId,
+        content: [],
+      });
+      const regenerateUserMessage = createUserMessage({
+        messageId: 'server-regenerate-user-message',
+        parentMessageId: originalResponse.messageId,
+      });
+
+      let currentMessages = [originalUser, originalResponse, followUpUser, latestResponse];
+      mockGetMessages.mockImplementation(() => currentMessages);
+      mockSetMessages.mockImplementation((messages) => {
+        currentMessages = messages;
+      });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createRunStep({
+        id: 'step-message-create',
+        runId: 'server-regenerated-response-message',
+      });
+      const submission = createSubmission({
+        userMessage: regenerateUserMessage,
+        isRegenerate: true,
+        messages: [originalUser],
+        initialResponse,
+      });
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      const regeneratedResponse = currentMessages.find(
+        (message) => message.messageId === 'server-regenerated-response-message',
+      );
+      expect(regeneratedResponse).toEqual(
+        expect.objectContaining({
+          parentMessageId: originalUser.messageId,
+          content: [],
+        }),
+      );
+      expect(regeneratedResponse?.content).not.toEqual(latestResponse.content);
+      expect(currentMessages.map((message) => message.messageId)).toEqual([
+        originalUser.messageId,
+        'server-regenerated-response-message',
+      ]);
+    });
+
+    it('preserves sibling assistant responses when regenerating one response', () => {
+      const originalUser = createUserMessage({ messageId: 'original-user-message' });
+      const selectedResponse = createResponseMessage({
+        messageId: 'selected-response-message',
+        parentMessageId: originalUser.messageId,
+        content: [
+          {
+            type: ContentTypes.TEXT,
+            text: 'Selected response',
+          },
+        ],
+      });
+      const siblingResponse = createResponseMessage({
+        messageId: 'sibling-response-message',
+        parentMessageId: originalUser.messageId,
+        content: [
+          {
+            type: ContentTypes.TEXT,
+            text: 'Sibling response should stay visible',
+          },
+        ],
+      });
+      const initialResponse = createResponseMessage({
+        messageId: 'selected-response-message_',
+        parentMessageId: originalUser.messageId,
+        content: [],
+      });
+      const regenerateUserMessage = createUserMessage({
+        messageId: 'server-regenerate-user-message',
+        parentMessageId: selectedResponse.messageId,
+        responseMessageId: initialResponse.messageId,
+      });
+
+      let currentMessages = [originalUser, selectedResponse, siblingResponse];
+      mockGetMessages.mockImplementation(() => currentMessages);
+      mockSetMessages.mockImplementation((messages) => {
+        currentMessages = messages;
+      });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createRunStep({
+        id: 'step-message-create',
+        runId: 'server-regenerated-response-message',
+      });
+      const submission = createSubmission({
+        userMessage: regenerateUserMessage,
+        isRegenerate: true,
+        messages: [originalUser, selectedResponse, siblingResponse],
+        initialResponse,
+      });
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      expect(currentMessages.map((message) => message.messageId)).toEqual([
+        originalUser.messageId,
+        siblingResponse.messageId,
+        'server-regenerated-response-message',
+      ]);
+      expect(currentMessages).not.toContainEqual(
+        expect.objectContaining({ messageId: selectedResponse.messageId }),
+      );
+    });
+
     it('should propagate step metadata (agentId, groupId) for parallel rendering', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);

@@ -6,6 +6,7 @@ const {
   buildMessageFiles,
   resolveTitleTiming,
   GenerationJobManager,
+  filterPersistableAbortContent,
   decrementPendingRequest,
   sanitizeMessageForTransmit,
   checkAndIncrementPendingRequest,
@@ -75,6 +76,31 @@ async function attachConversationCreatedAt(req, { userId, conversationId, isNewC
   }
 }
 
+function getPreliminaryResponseMessageId({ messageId, responseMessageId }) {
+  if (typeof responseMessageId === 'string' && responseMessageId.length > 0) {
+    return responseMessageId;
+  }
+
+  if (typeof messageId !== 'string' || messageId.length === 0) {
+    return null;
+  }
+
+  return `${messageId.replace(/_+$/, '')}_`;
+}
+
+function getPreliminaryUserMessage({ messageId, parentMessageId, text }, conversationId) {
+  if (typeof messageId !== 'string' || messageId.length === 0) {
+    return null;
+  }
+
+  return {
+    messageId,
+    parentMessageId,
+    conversationId,
+    text,
+  };
+}
+
 /**
  * Resumable Agent Controller - Generation runs independently of HTTP connection.
  * Returns streamId immediately, client subscribes separately via SSE.
@@ -134,6 +160,16 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
     await attachConversationCreatedAt(req, { userId, conversationId, isNewConvo });
 
+    const preliminaryUserMessage = getPreliminaryUserMessage(req.body, conversationId);
+    const preliminaryResponseMessageId = getPreliminaryResponseMessageId(req.body);
+    if (preliminaryUserMessage || preliminaryResponseMessageId) {
+      await GenerationJobManager.updateMetadata(streamId, {
+        conversationId,
+        responseMessageId: preliminaryResponseMessageId,
+        userMessage: preliminaryUserMessage,
+      });
+    }
+
     // Note: We no longer use res.on('close') to abort since we send JSON immediately.
     // The response closes normally after res.json(), which is not an abort condition.
     // Abort handling is done through GenerationJobManager via the SSE stream connection.
@@ -155,6 +191,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         return;
       }
 
+      const persistableContent = filterPersistableAbortContent(aggregatedContent);
+      if (persistableContent.length === 0) {
+        logger.debug('[ResumableAgentController] No persistable content to save partial response');
+        return;
+      }
+
       const resumeState = await GenerationJobManager.getResumeState(streamId);
       if (!resumeState?.userMessage) {
         logger.debug('[ResumableAgentController] No user message to save partial response for');
@@ -170,7 +212,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           conversationId: responseConversationId,
           parentMessageId: resumeState.userMessage.messageId,
           sender: client?.sender ?? 'AI',
-          content: aggregatedContent,
+          content: persistableContent,
           unfinished: true,
           error: false,
           isCreatedByUser: false,
@@ -194,7 +236,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         );
 
         logger.debug(
-          `[ResumableAgentController] Saved partial response for ${streamId}, content parts: ${aggregatedContent.length}`,
+          `[ResumableAgentController] Saved partial response for ${streamId}, content parts: ${persistableContent.length}`,
         );
       } catch (error) {
         logger.error('[ResumableAgentController] Error saving partial response:', error);

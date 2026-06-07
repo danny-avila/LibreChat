@@ -20,7 +20,7 @@ const { getLogStores } = require('~/cache');
  * @param {boolean} [params.forceNew]
  * @param {number} [params.connectionTimeout]
  * @param {FlowStateManager<any>} [params.flowManager]
- * @param {(authURL: string) => Promise<void>} [params.oauthStart]
+ * @param {(authURL: string, options?: { expiresAt?: number }) => Promise<void>} [params.oauthStart]
  * @param {() => Promise<void>} [params.oauthEnd]
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  */

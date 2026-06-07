@@ -13,8 +13,8 @@ import {
   ReauthenticationRequiredError,
   resolveOboToken,
 } from '~/mcp/oauth';
-import { PENDING_STALE_MS, normalizeExpiresAt } from '~/flow/manager';
 import { sanitizeUrlForLogging, isClientRejectionMessage, isOAuthServer } from './utils';
+import { PENDING_STALE_MS, normalizeExpiresAt } from '~/flow/manager';
 import { withTimeout } from '~/utils/promise';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
@@ -46,7 +46,7 @@ export class MCPConnectionFactory {
   protected readonly flowManager?: FlowStateManager<MCPOAuthTokens | null>;
   protected readonly tokenMethods?: TokenMethods;
   protected readonly signal?: AbortSignal;
-  protected readonly oauthStart?: (authURL: string) => Promise<void>;
+  protected readonly oauthStart?: t.OAuthStartHandler;
   protected readonly oauthEnd?: () => Promise<void>;
   protected readonly returnOnOAuth?: boolean;
   protected readonly connectionTimeout?: number;
@@ -484,6 +484,15 @@ export class MCPConnectionFactory {
     };
   }
 
+  private getOAuthReplayExpiresAt(createdAt?: number): number | undefined {
+    if (!createdAt) {
+      return undefined;
+    }
+
+    const expiresAt = createdAt + PENDING_STALE_MS;
+    return expiresAt > Date.now() ? expiresAt : undefined;
+  }
+
   /** Sets up OAuth event handlers for the connection */
   protected handleOAuthEvents(connection: MCPConnection): () => void {
     const oauthHandler = async (data: { serverUrl?: string }) => {
@@ -504,7 +513,24 @@ export class MCPConnectionFactory {
               logger.debug(
                 `${this.logPrefix} Recent PENDING OAuth flow exists (${Math.round(pendingAge / 1000)}s old), skipping new initiation`,
               );
-              connection.emit('oauthFailed', new Error('OAuth flow initiated - return early'));
+              const flowMeta = existingFlow.metadata as MCPOAuthFlowMetadata | undefined;
+              const storedAuthUrl = flowMeta?.authorizationUrl;
+              if (storedAuthUrl && typeof this.oauthStart === 'function') {
+                const expiresAt = this.getOAuthReplayExpiresAt(existingFlow.createdAt);
+                if (!expiresAt) {
+                  logger.debug(`${this.logPrefix} PENDING OAuth flow expired before replay`);
+                  connection.emit(
+                    'oauthFailed',
+                    new Error('Pending OAuth flow expired before replay'),
+                  );
+                  return;
+                }
+                logger.info(
+                  `${this.logPrefix} Re-issuing stored authorization URL while reusing PENDING flow`,
+                );
+                await this.oauthStart(storedAuthUrl, { expiresAt });
+              }
+              connection.emit('oauthFailed', new Error('Pending OAuth flow reused - return early'));
               return;
             }
 
@@ -771,10 +797,14 @@ export class MCPConnectionFactory {
 
             const storedAuthUrl = flowMeta?.authorizationUrl;
             if (storedAuthUrl && typeof this.oauthStart === 'function') {
+              const expiresAt = this.getOAuthReplayExpiresAt(existingFlow.createdAt);
+              if (!expiresAt) {
+                throw new Error('Pending OAuth flow expired before replay');
+              }
               logger.info(
                 `${this.logPrefix} Re-issuing stored authorization URL to caller while joining PENDING flow`,
               );
-              await this.oauthStart(storedAuthUrl);
+              await this.oauthStart(storedAuthUrl, { expiresAt });
             }
 
             reusedStoredClient = flowMeta?.reusedStoredClient === true;
