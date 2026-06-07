@@ -57,6 +57,36 @@ describe('bedrockEndpointSchema', () => {
   });
 });
 
+describe('baseEndpointSchema toolNameMaxLength', () => {
+  it('accepts endpoint-wide and provider-specific tool name limits', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        all: { toolNameMaxLength: 80 },
+        [EModelEndpoint.openAI]: { toolNameMaxLength: 64 },
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
+    }
+    expect(result.data.endpoints?.all?.toolNameMaxLength).toBe(80);
+    expect(result.data.endpoints?.[EModelEndpoint.openAI]?.toolNameMaxLength).toBe(64);
+  });
+
+  it('rejects tool name limits below the alias minimum', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        all: { toolNameMaxLength: 8 },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+});
+
 describe('resolveEndpointType', () => {
   describe('non-agents endpoints', () => {
     it('returns the config type for a custom endpoint', () => {

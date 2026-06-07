@@ -54,6 +54,7 @@ export interface ToolExecuteOptions {
     agentId?: string,
   ) => Promise<{
     loadedTools: StructuredToolInterface[];
+    toolMap?: Map<string, StructuredToolInterface>;
     /** Additional configurable properties to merge (e.g., userMCPAuthMap) */
     configurable?: Record<string, unknown>;
   }>;
@@ -3156,11 +3157,12 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
         await runOutsideTracing(async () => {
           try {
             const toolNames = [...new Set(toolCalls.map((tc: ToolCallRequest) => tc.name))];
-            const { loadedTools, configurable: toolConfigurable } = await loadTools(
-              toolNames,
-              agentId,
-            );
-            const toolMap = new Map(loadedTools.map((t) => [t.name, t]));
+            const {
+              loadedTools,
+              toolMap: loadedToolMap,
+              configurable: toolConfigurable,
+            } = await loadTools(toolNames, agentId);
+            const toolMap = loadedToolMap ?? new Map(loadedTools.map((t) => [t.name, t]));
             const sourceConfigurable = configurable as Record<string, unknown> | undefined;
             const loadedConfigurable = toolConfigurable as Record<string, unknown> | undefined;
             const mergedConfigurable = mergeToolConfigurables(

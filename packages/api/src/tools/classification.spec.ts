@@ -8,6 +8,13 @@ import {
   getServerNameFromTool,
   agentHasDeferredTools,
 } from './classification';
+import { resolveToolNameForExecution } from './names';
+
+type MCPNameMetadata = {
+  canonicalName?: string;
+  providerToolName?: string;
+  mcpRawName?: string;
+};
 
 describe('classification.ts', () => {
   describe('getServerNameFromTool', () => {
@@ -77,6 +84,60 @@ describe('classification.ts', () => {
       const registry = buildToolRegistryFromAgentOptions(tools, agentToolOptions);
 
       expect(registry.get('tool1')?.allowed_callers).toEqual(['direct']);
+    });
+
+    it('should alias long MCP names and preserve canonical tool options', () => {
+      const rawName = 'search_records_with_a_very_long_raw_name';
+      const canonicalName = `${rawName}_mcp_server_with_a_very_long_name_that_exceeds_limits`;
+      const tools = [{ name: canonicalName, description: 'Long MCP tool' }];
+
+      const agentToolOptions: AgentToolOptions = {
+        [canonicalName]: {
+          defer_loading: true,
+          allowed_callers: ['code_execution'],
+        },
+      };
+
+      const registry = buildToolRegistryFromAgentOptions(tools, agentToolOptions, 64);
+      const [providerToolName, toolDef] = Array.from(registry.entries())[0];
+      const metadata = toolDef as typeof toolDef & MCPNameMetadata;
+
+      expect(providerToolName).not.toBe(canonicalName);
+      expect(providerToolName.length).toBeLessThanOrEqual(64);
+      expect(toolDef.name).toBe(providerToolName);
+      expect(toolDef.defer_loading).toBe(true);
+      expect(toolDef.allowed_callers).toEqual(['code_execution']);
+      expect(metadata.canonicalName).toBe(canonicalName);
+      expect(metadata.providerToolName).toBe(providerToolName);
+      expect(metadata.mcpRawName).toBe(rawName);
+      expect(resolveToolNameForExecution(providerToolName, registry)).toBe(canonicalName);
+      expect(resolveToolNameForExecution(rawName, registry)).toBe(canonicalName);
+    });
+
+    it('should not resolve ambiguous raw MCP names', () => {
+      const rawName = 'search_records';
+      const firstCanonicalName = `${rawName}_mcp_server_one`;
+      const secondCanonicalName = `${rawName}_mcp_server_two`;
+      const registry = buildToolRegistryFromAgentOptions(
+        [{ name: firstCanonicalName }, { name: secondCanonicalName }],
+        {},
+      );
+
+      expect(resolveToolNameForExecution(rawName, registry)).toBe(rawName);
+    });
+
+    it('should expose duplicate canonical MCP definitions once', () => {
+      const canonicalName =
+        'search_records_with_a_very_long_raw_name_mcp_server_with_a_very_long_name';
+      const registry = buildToolRegistryFromAgentOptions(
+        [{ name: canonicalName }, { name: canonicalName }],
+        {},
+        64,
+      );
+
+      expect(registry.size).toBe(1);
+      const [providerToolName] = Array.from(registry.keys());
+      expect(resolveToolNameForExecution(providerToolName, registry)).toBe(canonicalName);
     });
   });
 

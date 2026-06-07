@@ -39,6 +39,8 @@ export interface LoadToolDefinitionsParams {
   programmaticToolsEnabled?: boolean;
   /** Whether code execution is enabled and requested by this agent */
   codeExecutionEnabled?: boolean;
+  /** Provider-facing maximum tool/function name length */
+  toolNameMaxLength?: number;
 }
 
 export interface ActionToolDefinition {
@@ -83,6 +85,7 @@ export async function loadToolDefinitions(
     deferredToolsEnabled = false,
     programmaticToolsEnabled = false,
     codeExecutionEnabled = false,
+    toolNameMaxLength,
   } = params;
   const { getOrFetchMCPServerTools, isBuiltInTool, getActionToolDefinitions } = deps;
 
@@ -205,6 +208,7 @@ export async function loadToolDefinitions(
     deferredToolsEnabled,
     programmaticToolsEnabled,
     codeExecutionEnabled,
+    toolNameMaxLength,
     definitionsOnly: true,
     agentToolOptions: toolOptions,
   });

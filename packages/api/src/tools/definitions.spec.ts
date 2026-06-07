@@ -1,11 +1,18 @@
 import { loadToolDefinitions } from './definitions';
 import { toolkitExpansion, toolkitParent } from './toolkits/mapping';
 import { getToolDefinition } from './registry/definitions';
+import { resolveToolNameForExecution } from './names';
 import type {
   LoadToolDefinitionsParams,
   LoadToolDefinitionsDeps,
   ActionToolDefinition,
 } from './definitions';
+
+type MCPNameMetadata = {
+  canonicalName?: string;
+  providerToolName?: string;
+  mcpRawName?: string;
+};
 
 describe('definitions.ts', () => {
   const mockGetOrFetchMCPServerTools = jest.fn().mockResolvedValue(null);
@@ -518,6 +525,53 @@ describe('definitions.ts', () => {
         expect(mockGetOrFetchMCPServerTools).toHaveBeenCalledWith('user-123', 'server-one');
         expect(result.toolDefinitions).toHaveLength(1);
         expect(result.toolDefinitions[0].name).toBe('list_items_mcp_server-one');
+      });
+
+      it('should expose aliases for MCP tools that exceed provider name limits', async () => {
+        const rawName = 'search_records_with_a_very_long_raw_name';
+        const serverName = 'server_with_a_very_long_name_that_exceeds_provider_limits';
+        const canonicalName = `${rawName}_mcp_${serverName}`;
+        const mockServerTools = {
+          [canonicalName]: {
+            function: {
+              name: canonicalName,
+              description: 'Search records',
+              parameters: {
+                type: 'object',
+                properties: {
+                  query: { type: 'string' },
+                },
+              },
+            },
+          },
+        };
+
+        mockGetOrFetchMCPServerTools.mockResolvedValue(mockServerTools);
+
+        const result = await loadToolDefinitions(
+          {
+            userId: 'user-123',
+            agentId: 'agent-123',
+            tools: [canonicalName],
+            toolNameMaxLength: 64,
+          },
+          {
+            getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+            isBuiltInTool: mockIsBuiltInTool,
+          },
+        );
+
+        expect(result.toolDefinitions).toHaveLength(1);
+        const toolDef = result.toolDefinitions[0];
+        const metadata = toolDef as typeof toolDef & MCPNameMetadata;
+
+        expect(toolDef.name).not.toBe(canonicalName);
+        expect(toolDef.name.length).toBeLessThanOrEqual(64);
+        expect(metadata.canonicalName).toBe(canonicalName);
+        expect(metadata.providerToolName).toBe(toolDef.name);
+        expect(metadata.mcpRawName).toBe(rawName);
+        expect(resolveToolNameForExecution(toolDef.name, result.toolRegistry)).toBe(canonicalName);
+        expect(resolveToolNameForExecution(rawName, result.toolRegistry)).toBe(canonicalName);
       });
 
       it('should include hyphenated server name tools in registry with correct serverName', async () => {

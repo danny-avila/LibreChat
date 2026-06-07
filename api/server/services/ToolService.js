@@ -23,6 +23,8 @@ const {
   getMissingCustomUserVars,
   buildWebSearchDynamicContext,
   getCodeApiAuthHeaders,
+  resolveToolNameMaxLength,
+  resolveToolNameForExecution,
   isFileAuthoringToolDefinition,
 } = require('@librechat/api');
 const {
@@ -542,6 +544,10 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
   }
 
   const appConfig = req.config;
+  const toolNameMaxLength = resolveToolNameMaxLength({
+    appConfig,
+    provider: agent.provider,
+  });
   const enabledCapabilities = await resolveAgentCapabilities(req, appConfig, agent.id);
 
   const checkCapability = (capability) => enabledCapabilities.has(capability);
@@ -805,6 +811,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       deferredToolsEnabled,
       programmaticToolsEnabled,
       codeExecutionEnabled,
+      toolNameMaxLength,
     },
     {
       isBuiltInTool,
@@ -862,6 +869,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
           deferredToolsEnabled,
           programmaticToolsEnabled,
           codeExecutionEnabled,
+          toolNameMaxLength,
         },
         {
           isBuiltInTool,
@@ -1011,6 +1019,10 @@ async function loadAgentTools({
   }
 
   const appConfig = req.config;
+  const toolNameMaxLength = resolveToolNameMaxLength({
+    appConfig,
+    provider: agent.provider,
+  });
   const enabledCapabilities = await resolveAgentCapabilities(req, appConfig, agent.id);
   const checkCapability = (capability) => {
     const enabled = enabledCapabilities.has(capability);
@@ -1110,6 +1122,7 @@ async function loadAgentTools({
       programmaticToolsEnabled,
       codeExecutionEnabled,
       authHeaders: () => getCodeApiAuthHeaders(req),
+      toolNameMaxLength,
     });
 
   const agentTools = [];
@@ -1353,7 +1366,34 @@ async function loadToolsForExecution({
 }) {
   const appConfig = req.config;
   const allLoadedTools = [];
+  const runtimeToolMap = new Map();
+  const runtimeNamesByLoadName = new Map();
   const configurable = { userMCPAuthMap };
+
+  const addRuntimeNameForLoadName = (loadName, runtimeName) => {
+    if (!loadName || !runtimeName) {
+      return;
+    }
+    const runtimeNames = runtimeNamesByLoadName.get(loadName) ?? new Set();
+    runtimeNames.add(runtimeName);
+    runtimeNamesByLoadName.set(loadName, runtimeNames);
+  };
+
+  const addLoadedTool = (tool) => {
+    allLoadedTools.push(tool);
+    if (!tool?.name) {
+      return;
+    }
+
+    runtimeToolMap.set(tool.name, tool);
+    const runtimeNames = runtimeNamesByLoadName.get(tool.name);
+    if (!runtimeNames) {
+      return;
+    }
+    for (const runtimeName of runtimeNames) {
+      runtimeToolMap.set(runtimeName, tool);
+    }
+  };
 
   const isToolSearch = toolNames.includes(AgentConstants.TOOL_SEARCH);
   const ptcToolNames = [
@@ -1385,7 +1425,7 @@ async function loadToolsForExecution({
       mode: 'local',
       toolRegistry,
     });
-    allLoadedTools.push(toolSearchTool);
+    addLoadedTool(toolSearchTool);
     configurable.toolRegistry = toolRegistry;
   }
 
@@ -1401,7 +1441,7 @@ async function loadToolsForExecution({
           authHeaders: () => getCodeApiAuthHeaders(req),
         });
         ptcTool.name = name;
-        allLoadedTools.push(ptcTool);
+        addLoadedTool(ptcTool);
       }
     } catch (error) {
       logger.error('[loadToolsForExecution] Error creating PTC tool:', error);
@@ -1414,7 +1454,7 @@ async function loadToolsForExecution({
       const bashTool = createBashExecutionTool({
         authHeaders: () => getCodeApiAuthHeaders(req),
       });
-      allLoadedTools.push(bashTool);
+      addLoadedTool(bashTool);
     } catch (error) {
       logger.error('[loadToolsForExecution] Failed to create bash_tool', error);
     }
@@ -1449,9 +1489,21 @@ async function loadToolsForExecution({
     ? [...new Set([...requestedNonSpecialToolNames, ...ptcOrchestratedToolNames])]
     : requestedNonSpecialToolNames;
 
+  const resolvedToolNamesToLoad = [];
+  for (const name of allToolNamesToLoad) {
+    const resolvedName = resolveToolNameForExecution(name, toolRegistry);
+    addRuntimeNameForLoadName(resolvedName, name);
+    addRuntimeNameForLoadName(resolvedName, resolvedName);
+    resolvedToolNamesToLoad.push(resolvedName);
+    if (resolvedName !== name) {
+      logger.debug(`[loadToolsForExecution] Resolved tool name "${name}" -> "${resolvedName}"`);
+    }
+  }
+  const uniqueToolNamesToLoad = [...new Set(resolvedToolNamesToLoad)];
+
   const actionToolNames = [];
   const regularToolNames = [];
-  for (const name of allToolNamesToLoad) {
+  for (const name of uniqueToolNamesToLoad) {
     (isActionTool(name) ? actionToolNames : regularToolNames).push(name);
   }
 
@@ -1481,7 +1533,9 @@ async function loadToolsForExecution({
     });
 
     if (loadedTools) {
-      allLoadedTools.push(...loadedTools);
+      for (const tool of loadedTools) {
+        addLoadedTool(tool);
+      }
     }
   }
 
@@ -1494,7 +1548,9 @@ async function loadToolsForExecution({
       streamId,
       actionToolNames,
     });
-    allLoadedTools.push(...actionTools);
+    for (const tool of actionTools) {
+      addLoadedTool(tool);
+    }
   } else if (actionToolNames.length > 0 && agent && !actionsEnabled) {
     logger.warn(
       `[loadToolsForExecution] Capability "${AgentCapabilities.actions}" disabled. ` +
@@ -1504,13 +1560,12 @@ async function loadToolsForExecution({
 
   if (isPTC && allLoadedTools.length > 0) {
     const ptcToolMap = new Map();
-    for (const tool of allLoadedTools) {
+    for (const [name, tool] of runtimeToolMap.entries()) {
       if (
-        tool.name &&
-        tool.name !== AgentConstants.PROGRAMMATIC_TOOL_CALLING &&
-        tool.name !== AgentConstants.BASH_PROGRAMMATIC_TOOL_CALLING
+        name !== AgentConstants.PROGRAMMATIC_TOOL_CALLING &&
+        name !== AgentConstants.BASH_PROGRAMMATIC_TOOL_CALLING
       ) {
-        ptcToolMap.set(tool.name, tool);
+        ptcToolMap.set(name, tool);
       }
     }
     configurable.ptcToolMap = ptcToolMap;
@@ -1519,6 +1574,7 @@ async function loadToolsForExecution({
   return {
     configurable,
     loadedTools: allLoadedTools,
+    toolMap: runtimeToolMap,
   };
 }
 

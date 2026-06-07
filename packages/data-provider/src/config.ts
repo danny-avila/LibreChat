@@ -413,6 +413,8 @@ export const baseEndpointSchema = z.object({
   titleTiming: z.union([z.literal('immediate'), z.literal('final')]).optional(),
   /** Maximum characters allowed in a single tool result before truncation. */
   maxToolResultChars: z.number().positive().optional(),
+  /** Maximum provider-facing tool/function name length. */
+  toolNameMaxLength: z.number().int().min(16).optional(),
 });
 
 export type TBaseEndpoint = z.infer<typeof baseEndpointSchema>;
