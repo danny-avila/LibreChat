@@ -15,6 +15,8 @@ const {
   getUserMCPAuthMap,
   loadToolDefinitions,
   GenerationJobManager,
+  MCPOAuthHandler,
+  PENDING_STALE_MS,
   isActionDomainAllowed,
   buildWebSearchContext,
   buildImageToolContext,
@@ -513,6 +515,34 @@ const isBuiltInTool = (toolName) =>
       nativeTools.has(toolName),
   );
 
+async function hasReplayablePendingMCPOAuthFlow({ flowManager, userId, serverName }) {
+  if (!flowManager || typeof flowManager.getFlowState !== 'function') {
+    return false;
+  }
+
+  try {
+    const flowId = MCPOAuthHandler.generateFlowId(userId, serverName);
+    const flowState = await flowManager.getFlowState(flowId, 'mcp_oauth');
+    if (flowState?.status !== 'PENDING') {
+      return false;
+    }
+
+    const createdAt = typeof flowState.createdAt === 'number' ? flowState.createdAt : 0;
+    if (!createdAt || Date.now() - createdAt >= PENDING_STALE_MS) {
+      return false;
+    }
+
+    const authorizationUrl = flowState.metadata?.authorizationUrl;
+    return typeof authorizationUrl === 'string' && authorizationUrl.length > 0;
+  } catch (error) {
+    logger.warn(
+      `[Tool Definitions] Failed to inspect pending OAuth flow for ${serverName}:`,
+      error,
+    );
+    return false;
+  }
+}
+
 /**
  * Loads only tool definitions without creating tool instances.
  * This is the efficient path for event-driven mode where tools are loaded on-demand.
@@ -722,6 +752,9 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
     const cached = await getMCPServerTools(userId, serverName);
     if (cached) {
+      if (await hasReplayablePendingMCPOAuthFlow({ flowManager, userId, serverName })) {
+        pendingOAuthServers.add(serverName);
+      }
       return cached;
     }
 
