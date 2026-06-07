@@ -393,7 +393,7 @@ describe('createDeploymentSkillMethods', () => {
 
     const methods = createDeploymentSkillMethods(base);
     const mergedIds = mergeDeploymentSkillIds([dbId, otherId]);
-    const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
 
     const byName = await methods.getSkillByName?.(shadowedSkill.name, mergedIds, {
       preferUserInvocable: true,
