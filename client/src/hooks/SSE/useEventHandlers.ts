@@ -19,9 +19,9 @@ import type {
   EventSubmission,
   TStartupConfig,
 } from 'librechat-data-provider';
-import type { TResData, TFinalResData, ConvoGenerator } from '~/common';
 import type { InfiniteData } from '@tanstack/react-query';
 import type { SetterOrUpdater } from 'recoil';
+import type { TResData, TFinalResData, ConvoGenerator } from '~/common';
 import type { ConversationCursorData } from '~/utils';
 import {
   logger,
@@ -38,6 +38,7 @@ import {
   queueTitleGeneration,
   markTitleGenerationProcessed,
 } from '~/data-provider';
+import { shouldResetSubagentAtomsOnConversationChange } from './cleanup';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
@@ -45,7 +46,6 @@ import { useApplyAgentTemplate } from '~/hooks/Agents';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
 import { useLiveAnnouncer } from '~/Providers';
-import { shouldResetSubagentAtomsOnConversationChange } from './cleanup';
 import store from '~/store';
 
 type TSyncData = {
@@ -663,25 +663,9 @@ export default function useEventHandlers({
         /** A title applied locally (e.g. an immediate-mode title fetched while the
          *  response was still streaming) must survive the final event, whose
          *  `conversation` was built before the title was saved and so carries no
-         *  title yet — otherwise the chat reverts to "New Chat" until reload.
-         *  Skip preservation for a stopped (unfinished) turn: the server cancels
-         *  and discards that title, so the local one would diverge from server state. */
-        const titlePreservable = responseMessage?.unfinished !== true;
-        const finalConversationId = conversation.conversationId;
-        const shouldRollbackStreamedTitle =
-          !titlePreservable && finalConversationId && !hasRealTitle(serverConversation.title);
-
-        if (shouldRollbackStreamedTitle && finalConversationId) {
-          updateConvoInAllQueries(queryClient, finalConversationId, (convo) => ({
-            ...convo,
-            title: null,
-          }));
-          if (location.pathname.includes(finalConversationId)) {
-            const startupConfig = queryClient.getQueryData<TStartupConfig>(startupConfigKey(true));
-            document.title = startupConfig?.appTitle ?? 'LibreChat';
-          }
-        }
-
+         *  title yet — otherwise the chat reverts to "New Chat" until reload. This
+         *  holds for a stopped turn too: the server persists a title that finished
+         *  generating before the Stop, so the local one stays in sync. */
         if (setConversation && isAddedRequest !== true) {
           setConversation((prevState) => {
             const update = {
@@ -692,7 +676,7 @@ export default function useEventHandlers({
               update.model = prevState.model;
             }
             const prevTitle = prevState?.title;
-            if (titlePreservable && !hasRealTitle(conversation.title) && hasRealTitle(prevTitle)) {
+            if (!hasRealTitle(conversation.title) && hasRealTitle(prevTitle)) {
               update.title = prevTitle;
             }
             if (conversation.conversationId) {
@@ -704,11 +688,7 @@ export default function useEventHandlers({
                     ...serverConversation,
                   } as TConversation;
                   const cachedTitle = cachedConvo?.title;
-                  if (
-                    titlePreservable &&
-                    !hasRealTitle(serverConversation.title) &&
-                    hasRealTitle(cachedTitle)
-                  ) {
+                  if (!hasRealTitle(serverConversation.title) && hasRealTitle(cachedTitle)) {
                     merged.title = cachedTitle;
                   }
                   return merged;
