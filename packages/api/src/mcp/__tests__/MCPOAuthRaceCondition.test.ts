@@ -78,7 +78,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
         dbId: undefined,
       };
 
-      jest
+      const registrySpy = jest
         .spyOn(
           // eslint-disable-next-line @typescript-eslint/no-require-imports
           require('~/mcp/registry/MCPServersRegistry').MCPServersRegistry,
@@ -98,27 +98,33 @@ describe('MCP OAuth Race Condition Fixes', () => {
         return mockConnection as never;
       });
 
-      const store = new MockKeyv();
-      const flowManager = new FlowStateManager(store as unknown as Keyv, { ttl: 30000, ci: true });
-      const user = { id: 'user-1' };
-      const opts = {
-        serverName: 'test-server',
-        user: user as never,
-        flowManager: flowManager as never,
-      };
+      try {
+        const store = new MockKeyv();
+        const flowManager = new FlowStateManager(store as unknown as Keyv, {
+          ttl: 30000,
+          ci: true,
+        });
+        const user = { id: 'user-1' };
+        const opts = {
+          serverName: 'test-server',
+          user: user as never,
+          flowManager: flowManager as never,
+        };
 
-      const [conn1, conn2, conn3] = await Promise.all([
-        manager.getUserConnection(opts),
-        manager.getUserConnection(opts),
-        manager.getUserConnection(opts),
-      ]);
+        const [conn1, conn2, conn3] = await Promise.all([
+          manager.getUserConnection(opts),
+          manager.getUserConnection(opts),
+          manager.getUserConnection(opts),
+        ]);
 
-      expect(conn1).toBe(conn2);
-      expect(conn2).toBe(conn3);
-      expect(createSpy).toHaveBeenCalledTimes(1);
-      expect(manager.createCallCount).toBe(1);
-
-      createSpy.mockRestore();
+        expect(conn1).toBe(conn2);
+        expect(conn2).toBe(conn3);
+        expect(createSpy).toHaveBeenCalledTimes(1);
+        expect(manager.createCallCount).toBe(1);
+      } finally {
+        createSpy.mockRestore();
+        registrySpy.mockRestore();
+      }
     });
 
     it('should re-issue the pending OAuth URL when joining an in-flight connection', async () => {
@@ -163,36 +169,42 @@ describe('MCP OAuth Race Condition Fixes', () => {
         return mockConnection as never;
       });
 
-      const store = new MockKeyv();
-      const flowManager = new FlowStateManager(store as unknown as Keyv, { ttl: 30000, ci: true });
-      const user = { id: 'user-oauth' };
-      const serverName = 'test-server';
-      const authorizationUrl = 'https://auth.example.com/existing';
-      await flowManager.initFlow(`${user.id}:${serverName}`, 'mcp_oauth', { authorizationUrl });
+      try {
+        const store = new MockKeyv();
+        const flowManager = new FlowStateManager(store as unknown as Keyv, {
+          ttl: 30000,
+          ci: true,
+        });
+        const user = { id: 'user-oauth' };
+        const serverName = 'test-server';
+        const authorizationUrl = 'https://auth.example.com/existing';
+        await flowManager.initFlow(`${user.id}:${serverName}`, 'mcp_oauth', { authorizationUrl });
 
-      const firstConnection = manager.getUserConnection({
-        serverName,
-        user: user as never,
-        flowManager: flowManager as never,
-      });
-      const oauthStart = jest.fn().mockResolvedValue(undefined);
-      const joinedConnection = manager.getUserConnection({
-        serverName,
-        user: user as never,
-        flowManager: flowManager as never,
-        oauthStart,
-      });
+        const firstConnection = manager.getUserConnection({
+          serverName,
+          user: user as never,
+          flowManager: flowManager as never,
+        });
+        const oauthStart = jest.fn().mockResolvedValue(undefined);
+        const joinedConnection = manager.getUserConnection({
+          serverName,
+          user: user as never,
+          flowManager: flowManager as never,
+          oauthStart,
+        });
 
-      const [conn1, conn2] = await Promise.all([firstConnection, joinedConnection]);
+        const [conn1, conn2] = await Promise.all([firstConnection, joinedConnection]);
 
-      expect(conn1).toBe(conn2);
-      expect(oauthStart).toHaveBeenCalledWith(
-        authorizationUrl,
-        expect.objectContaining({ expiresAt: expect.any(Number) }),
-      );
-      expect(createSpy).toHaveBeenCalledTimes(1);
-
-      createSpy.mockRestore();
+        expect(conn1).toBe(conn2);
+        expect(oauthStart).toHaveBeenCalledWith(
+          authorizationUrl,
+          expect.objectContaining({ expiresAt: expect.any(Number) }),
+        );
+        expect(createSpy).toHaveBeenCalledTimes(1);
+      } finally {
+        createSpy.mockRestore();
+        registrySpy.mockRestore();
+      }
     });
 
     it('should not coalesce when forceNew is true', async () => {
@@ -219,7 +231,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
         dbId: undefined,
       };
 
-      jest
+      const registrySpy = jest
         .spyOn(
           // eslint-disable-next-line @typescript-eslint/no-require-imports
           require('~/mcp/registry/MCPServersRegistry').MCPServersRegistry,
@@ -233,33 +245,41 @@ describe('MCP OAuth Race Condition Fixes', () => {
         });
 
       const { MCPConnectionFactory } = await import('~/mcp/MCPConnectionFactory');
-      jest.spyOn(MCPConnectionFactory, 'create').mockImplementation(async () => {
+      const createSpy = jest.spyOn(MCPConnectionFactory, 'create').mockImplementation(async () => {
         callCount++;
         await new Promise((r) => setTimeout(r, 50));
         return makeConnection() as never;
       });
 
-      const store = new MockKeyv();
-      const flowManager = new FlowStateManager(store as unknown as Keyv, { ttl: 30000, ci: true });
-      const user = { id: 'user-2' };
+      try {
+        const store = new MockKeyv();
+        const flowManager = new FlowStateManager(store as unknown as Keyv, {
+          ttl: 30000,
+          ci: true,
+        });
+        const user = { id: 'user-2' };
 
-      const [conn1, conn2] = await Promise.all([
-        manager.getUserConnection({
-          serverName: 'test-server',
-          forceNew: true,
-          user: user as never,
-          flowManager: flowManager as never,
-        }),
-        manager.getUserConnection({
-          serverName: 'test-server',
-          forceNew: true,
-          user: user as never,
-          flowManager: flowManager as never,
-        }),
-      ]);
+        const [conn1, conn2] = await Promise.all([
+          manager.getUserConnection({
+            serverName: 'test-server',
+            forceNew: true,
+            user: user as never,
+            flowManager: flowManager as never,
+          }),
+          manager.getUserConnection({
+            serverName: 'test-server',
+            forceNew: true,
+            user: user as never,
+            flowManager: flowManager as never,
+          }),
+        ]);
 
-      expect(callCount).toBe(2);
-      expect(conn1).not.toBe(conn2);
+        expect(callCount).toBe(2);
+        expect(conn1).not.toBe(conn2);
+      } finally {
+        createSpy.mockRestore();
+        registrySpy.mockRestore();
+      }
     });
   });
 
