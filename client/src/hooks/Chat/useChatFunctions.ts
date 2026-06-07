@@ -70,6 +70,67 @@ const getAppendParentMessageId = ({
   return failedUserMessage.parentMessageId ?? Constants.NO_PARENT;
 };
 
+type RegenerateTargetResponseArgs = {
+  messages: TMessage[];
+  parentMessageId?: string | null;
+  targetResponseMessageId?: string | null;
+  latestMessage?: TMessage | null;
+};
+
+const isAssistantResponseForParent = (
+  message: TMessage | null | undefined,
+  parentMessageId?: string | null,
+): message is TMessage =>
+  !!message &&
+  !message.isCreatedByUser &&
+  !!parentMessageId &&
+  message.parentMessageId === parentMessageId;
+
+export function getPreliminaryRegenerateResponseMessageId(
+  responseMessageId?: string | null,
+): string | null {
+  if (typeof responseMessageId !== 'string' || responseMessageId.length === 0) {
+    return null;
+  }
+
+  return `${responseMessageId.replace(/_+$/, '')}_`;
+}
+
+export function getRegenerateTargetResponseMessage({
+  messages,
+  parentMessageId,
+  targetResponseMessageId,
+  latestMessage,
+}: RegenerateTargetResponseArgs): TMessage | null {
+  if (!parentMessageId) {
+    return null;
+  }
+
+  if (targetResponseMessageId) {
+    const targetResponse = messages.find(
+      (message) =>
+        message.messageId === targetResponseMessageId &&
+        isAssistantResponseForParent(message, parentMessageId),
+    );
+    if (targetResponse) {
+      return targetResponse;
+    }
+  }
+
+  if (isAssistantResponseForParent(latestMessage, parentMessageId)) {
+    return latestMessage;
+  }
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (isAssistantResponseForParent(message, parentMessageId)) {
+      return message;
+    }
+  }
+
+  return null;
+}
+
 export default function useChatFunctions({
   index = 0,
   files,
@@ -144,6 +205,7 @@ export default function useChatFunctions({
       isEdited = false,
       overrideMessages,
       overrideFiles,
+      targetResponseMessageId,
       overrideManualSkills,
       addedConvo,
     } = {},
@@ -244,6 +306,14 @@ export default function useChatFunctions({
     const targetParentMessage = currentMessages.find(
       (msg) => msg.messageId === targetParentMessageId,
     );
+    const targetResponseMessage = isRegenerate
+      ? getRegenerateTargetResponseMessage({
+          messages: currentMessages,
+          parentMessageId: messageId,
+          targetResponseMessageId,
+          latestMessage,
+        })
+      : null;
 
     let thread_id = targetParentMessage?.thread_id ?? latestMessage?.thread_id;
     if (thread_id == null) {
@@ -327,8 +397,10 @@ export default function useChatFunctions({
 
     const responseMessageId =
       editedMessageId ??
-      (latestMessage?.messageId && isRegenerate
-        ? latestMessage.messageId.replace(/_+$/, '') + '_'
+      (isRegenerate
+        ? getPreliminaryRegenerateResponseMessageId(
+            targetResponseMessage?.messageId ?? targetResponseMessageId,
+          )
         : null) ??
       null;
     const initialResponseId =
@@ -446,8 +518,15 @@ export default function useChatFunctions({
     logger.dir('message_stream', submission, { depth: null });
   };
 
-  const regenerate = ({ parentMessageId }, options?: { addedConvo?: TConversation | null }) => {
+  const regenerate = (
+    message: Partial<Pick<TMessage, 'messageId' | 'parentMessageId' | 'isCreatedByUser'>>,
+    options?: { addedConvo?: TConversation | null },
+  ) => {
     const messages = getMessages();
+    const parentMessageId =
+      message.isCreatedByUser === true ? message.messageId : message.parentMessageId;
+    const targetResponseMessageId =
+      message.isCreatedByUser === true ? undefined : message.messageId;
     const parentMessage = messages?.find((element) => element.messageId == parentMessageId);
 
     if (parentMessage && parentMessage.isCreatedByUser) {
@@ -456,6 +535,7 @@ export default function useChatFunctions({
         {
           isRegenerate: true,
           addedConvo: options?.addedConvo ?? undefined,
+          targetResponseMessageId,
           /** Carry the original user message's manual skill picks forward
            *  so the regenerated response is primed with the same skills.
            *  The compose-time atom was drained on the first submit; without
