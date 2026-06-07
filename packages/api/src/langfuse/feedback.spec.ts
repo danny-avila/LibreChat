@@ -8,7 +8,6 @@ jest.mock(
   { virtual: true },
 );
 
-const originalFetch = global.fetch;
 const langfuseEnvKeys = [
   'LANGFUSE_PUBLIC_KEY',
   'LANGFUSE_SECRET_KEY',
@@ -19,6 +18,7 @@ const langfuseEnvKeys = [
   'LANGFUSE_SAMPLE_RATE',
   'LANGFUSE_TRACING_ENVIRONMENT',
 ];
+let fetchMock: jest.SpiedFunction<typeof fetch>;
 
 function clearLangfuseEnv() {
   for (const key of langfuseEnvKeys) {
@@ -36,26 +36,21 @@ async function loadFeedback(): Promise<typeof import('./feedback')> {
   return import('./feedback');
 }
 
-function getFetchMock(): jest.MockedFunction<typeof fetch> {
-  return global.fetch as jest.MockedFunction<typeof fetch>;
+function getFetchMock(): jest.SpiedFunction<typeof fetch> {
+  return fetchMock;
 }
 
 describe('Langfuse feedback scores', () => {
   beforeEach(() => {
     clearLangfuseEnv();
     setLangfuseCredentials();
-    global.fetch = jest
-      .fn()
-      .mockResolvedValue(new Response(null, { status: 200 })) as jest.MockedFunction<typeof fetch>;
+    fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue(new Response(null, { status: 200 }));
   });
 
   afterEach(() => {
     clearLangfuseEnv();
+    fetchMock.mockRestore();
     jest.clearAllMocks();
-  });
-
-  afterAll(() => {
-    global.fetch = originalFetch;
   });
 
   it('posts feedback scores when Langfuse tracing is enabled by default', async () => {
