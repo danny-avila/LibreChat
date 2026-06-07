@@ -1,11 +1,6 @@
 const { tool } = require('@librechat/agents/langchain/tools');
 const { logger, getTenantId } = require('@librechat/data-schemas');
-const {
-  Providers,
-  StepTypes,
-  GraphEvents,
-  Constants: AgentConstants,
-} = require('@librechat/agents');
+const { Providers, Constants: AgentConstants } = require('@librechat/agents');
 const {
   sendEvent,
   MCPOAuthHandler,
@@ -14,7 +9,11 @@ const {
   normalizeJsonSchema,
   GenerationJobManager,
   resolveJsonSchemaRefs,
-  buildOAuthToolCallName,
+  buildMCPAuthStepId,
+  buildMCPAuthToolCall,
+  buildMCPAuthRunStepEvent,
+  buildMCPAuthRunStepDeltaEvent,
+  buildMCPAuthRunStepEndDeltaEvent,
   checkAccessWithRequestCache,
 } = require('@librechat/api');
 const {
@@ -191,12 +190,6 @@ function isEmptyObjectSchema(jsonSchema) {
   );
 }
 
-function getOAuthPromptExpiresAt(options) {
-  return typeof options?.expiresAt === 'number' && Number.isFinite(options.expiresAt)
-    ? options.expiresAt
-    : Date.now() + Time.TWO_MINUTES;
-}
-
 /**
  * @param {object} params
  * @param {ServerResponse} params.res - The Express response object for sending events.
@@ -211,17 +204,7 @@ function createRunStepDeltaEmitter({ res, stepId, toolCall, streamId = null }) {
    * @returns {Promise<void>}
    */
   return async function (authURL, options) {
-    /** @type {{ id: string; delta: AgentToolCallDelta }} */
-    const data = {
-      id: stepId,
-      delta: {
-        type: StepTypes.TOOL_CALLS,
-        tool_calls: [{ ...toolCall, args: '' }],
-        auth: authURL,
-        expires_at: getOAuthPromptExpiresAt(options),
-      },
-    };
-    const eventData = { event: GraphEvents.ON_RUN_STEP_DELTA, data };
+    const eventData = buildMCPAuthRunStepDeltaEvent({ authURL, stepId, toolCall, options });
     if (streamId) {
       await GenerationJobManager.emitChunk(streamId, eventData);
     } else {
@@ -242,18 +225,7 @@ function createRunStepDeltaEmitter({ res, stepId, toolCall, streamId = null }) {
  */
 function createRunStepEmitter({ res, runId, stepId, toolCall, index, streamId = null }) {
   return async function () {
-    /** @type {import('@librechat/agents').RunStep} */
-    const data = {
-      runId: runId ?? Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
-      id: stepId,
-      type: StepTypes.TOOL_CALLS,
-      index: index ?? 0,
-      stepDetails: {
-        type: StepTypes.TOOL_CALLS,
-        tool_calls: [toolCall],
-      },
-    };
-    const eventData = { event: GraphEvents.ON_RUN_STEP, data };
+    const eventData = buildMCPAuthRunStepEvent({ runId, stepId, toolCall, index });
     if (streamId) {
       await GenerationJobManager.emitChunk(streamId, eventData);
     } else {
@@ -316,15 +288,7 @@ function createOAuthStart({ flowId, flowManager, callback }) {
  */
 function createOAuthEnd({ res, stepId, toolCall, streamId = null }) {
   return async function () {
-    /** @type {{ id: string; delta: AgentToolCallDelta }} */
-    const data = {
-      id: stepId,
-      delta: {
-        type: StepTypes.TOOL_CALLS,
-        tool_calls: [{ ...toolCall }],
-      },
-    };
-    const eventData = { event: GraphEvents.ON_RUN_STEP_DELTA, data };
+    const eventData = buildMCPAuthRunStepEndDeltaEvent({ stepId, toolCall });
     if (streamId) {
       await GenerationJobManager.emitChunk(streamId, eventData);
     } else {
@@ -403,12 +367,11 @@ async function reconnectServer({
   const runId = Constants.USE_PRELIM_RESPONSE_MESSAGE_ID;
   const flowId = `${user.id}:${serverName}:${Date.now()}`;
   const flowManager = getFlowStateManager(getLogStores(CacheKeys.FLOWS));
-  const stepId = 'step_oauth_login_' + serverName;
-  const toolCall = {
+  const stepId = buildMCPAuthStepId(serverName);
+  const toolCall = buildMCPAuthToolCall({
     id: flowId,
-    name: buildOAuthToolCallName(serverName),
-    type: 'tool_call_chunk',
-  };
+    serverName,
+  });
 
   // Set up abort handler to clean up OAuth flows if request is aborted
   const oauthFlowId = MCPOAuthHandler.generateFlowId(user.id, serverName);

@@ -16,6 +16,31 @@ function createInMemoryManager(): GenerationJobManagerClass {
   return manager;
 }
 
+class SnapshotReplayJobStore extends InMemoryJobStore {
+  async getJob(streamId: string) {
+    const job = await super.getJob(streamId);
+    return job ? { ...job } : null;
+  }
+
+  async updateJob(streamId: string, updates: Parameters<InMemoryJobStore['updateJob']>[1]) {
+    if (updates.replayEvents) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    await super.updateJob(streamId, updates);
+  }
+}
+
+function createSnapshotReplayManager(): GenerationJobManagerClass {
+  const manager = new GenerationJobManagerClass();
+  manager.configure({
+    jobStore: new SnapshotReplayJobStore({ ttlAfterComplete: 60000 }),
+    eventTransport: new InMemoryEventTransport(),
+    isRedis: false,
+  });
+  manager.initialize();
+  return manager;
+}
+
 describe('GenerationJobManager resume replay events', () => {
   let manager: GenerationJobManagerClass | undefined;
 
@@ -141,5 +166,53 @@ describe('GenerationJobManager resume replay events', () => {
     const resumeState = await manager.getResumeState(streamId);
 
     expect(resumeState?.replayEvents).toBeUndefined();
+  });
+
+  test('serializes replay event updates for concurrent MCP OAuth prompts', async () => {
+    manager = createSnapshotReplayManager();
+    const streamId = `oauth-delta-concurrent-${Date.now()}`;
+    await manager.createJob(streamId, 'user-1', streamId);
+
+    const createRunStepEvent = (serverName: string, index: number) =>
+      ({
+        event: 'on_run_step',
+        data: {
+          id: `step-oauth-${serverName}`,
+          runId: 'USE_PRELIM_RESPONSE_MESSAGE_ID',
+          index,
+          stepDetails: {
+            type: 'tool_calls',
+            tool_calls: [{ id: `call-${serverName}`, name: `oauth_mcp_${serverName}`, args: '' }],
+          },
+        },
+      }) satisfies ServerSentEvent;
+
+    const createAuthEvent = (serverName: string) =>
+      ({
+        event: 'on_run_step_delta',
+        data: {
+          id: `step-oauth-${serverName}`,
+          delta: {
+            type: 'tool_calls',
+            tool_calls: [{ name: `oauth_mcp_${serverName}`, args: '' }],
+            auth: `https://auth.example.com/${serverName}`,
+            expires_at: 1780791946,
+          },
+        },
+      }) satisfies ServerSentEvent;
+
+    const events = [
+      createRunStepEvent('Google-Workspace', 0),
+      createAuthEvent('Google-Workspace'),
+      createRunStepEvent('clickhouse-docs', 1),
+      createAuthEvent('clickhouse-docs'),
+    ];
+
+    await Promise.all(events.map((event) => manager!.emitChunk(streamId, event)));
+
+    const resumeState = await manager.getResumeState(streamId);
+
+    expect(resumeState?.replayEvents).toHaveLength(events.length);
+    expect(resumeState?.replayEvents).toEqual(expect.arrayContaining(events));
   });
 });
