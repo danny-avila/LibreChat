@@ -174,6 +174,9 @@ class GenerationJobManagerClass {
   /** Jobs actively generating in this process. */
   private runningJobs = new Set<string>();
 
+  /** Serializes replay-event read/modify/write updates per stream. */
+  private replayEventWriteQueues = new Map<string, Promise<void>>();
+
   private cleanupInterval: NodeJS.Timeout | null = null;
 
   /** Whether we're using Redis stores */
@@ -641,6 +644,7 @@ class GenerationJobManagerClass {
     // Clear content state and run step buffer (Redis only)
     this.jobStore.clearContentState(streamId);
     this.runStepBuffers?.delete(streamId);
+    this.replayEventWriteQueues.delete(streamId);
 
     // For error jobs, DON'T delete immediately - keep around so late-connecting
     // clients can receive the error. This handles the race condition where error
@@ -782,6 +786,7 @@ class GenerationJobManagerClass {
     await this.eventTransport.emitDone(streamId, abortFinalEvent);
     this.jobStore.clearContentState(streamId);
     this.runStepBuffers?.delete(streamId);
+    this.replayEventWriteQueues.delete(streamId);
 
     // Immediate cleanup if configured (default: true)
     if (this._cleanupOnComplete) {
@@ -1147,6 +1152,25 @@ class GenerationJobManagerClass {
       return;
     }
 
+    const previousWrite = this.replayEventWriteQueues.get(streamId) ?? Promise.resolve();
+    const nextWrite = previousWrite
+      .catch(() => {
+        // Keep the queue moving even if a prior replay metadata write failed.
+      })
+      .then(() => this.persistReplayEvent(streamId, event));
+
+    this.replayEventWriteQueues.set(streamId, nextWrite);
+
+    try {
+      await nextWrite;
+    } finally {
+      if (this.replayEventWriteQueues.get(streamId) === nextWrite) {
+        this.replayEventWriteQueues.delete(streamId);
+      }
+    }
+  }
+
+  private async persistReplayEvent(streamId: string, event: t.ServerSentEvent): Promise<void> {
     const jobData = await this.jobStore.getJob(streamId);
     if (!jobData) {
       return;
@@ -1541,6 +1565,7 @@ class GenerationJobManagerClass {
     this.runningJobs.clear();
     this.syncRunningJobMetrics();
     this.runStepBuffers?.clear();
+    this.replayEventWriteQueues.clear();
 
     logger.debug('[GenerationJobManager] Destroyed');
   }

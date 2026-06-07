@@ -2,8 +2,6 @@ const { logger } = require('@librechat/data-schemas');
 const { tool: toolFn, DynamicStructuredTool } = require('@librechat/agents/langchain/tools');
 const {
   sleep,
-  StepTypes,
-  GraphEvents,
   createToolSearch,
   createBashExecutionTool,
   Constants: AgentConstants,
@@ -18,12 +16,17 @@ const {
   isActionDomainAllowed,
   buildWebSearchContext,
   buildImageToolContext,
-  buildOAuthToolCallName,
   buildToolClassification,
   getMissingCustomUserVars,
   buildWebSearchDynamicContext,
   getCodeApiAuthHeaders,
   getReplayablePendingMCPOAuthStart,
+  getMCPServerNamesFromTools,
+  buildMCPAuthToolCall,
+  buildMCPAuthStepId,
+  buildMCPAuthRunStepEvent,
+  buildMCPAuthRunStepDeltaEvent,
+  buildMCPAuthRunStepCompletedEvent,
   isFileAuthoringToolDefinition,
 } = require('@librechat/api');
 const {
@@ -514,25 +517,6 @@ const isBuiltInTool = (toolName) =>
       nativeTools.has(toolName),
   );
 
-function getMCPServerNamesFromTools(tools) {
-  const serverNames = new Set();
-
-  for (const tool of tools ?? []) {
-    if (typeof tool !== 'string') {
-      continue;
-    }
-
-    const delimiterIndex = tool.indexOf(Constants.mcp_delimiter);
-    if (delimiterIndex === -1) {
-      continue;
-    }
-
-    serverNames.add(tool.slice(delimiterIndex + Constants.mcp_delimiter.length));
-  }
-
-  return serverNames;
-}
-
 /**
  * Loads only tool definitions without creating tool instances.
  * This is the efficient path for event-driven mode where tools are loaded on-demand.
@@ -620,10 +604,6 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
   const emittedOAuthStarts = new Map();
   const oauthToolCallIds = new Map();
   const oauthStepIndexes = new Map();
-  const getOAuthPromptExpiresAt = (options) =>
-    typeof options?.expiresAt === 'number' && Number.isFinite(options.expiresAt)
-      ? options.expiresAt
-      : Date.now() + Time.TWO_MINUTES;
 
   const createOAuthEmitter = (serverName, index) => {
     return async (authURL, options) => {
@@ -634,38 +614,21 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
       const flowId =
         oauthToolCallIds.get(serverName) ?? `${req.user.id}:${serverName}:${Date.now()}`;
-      const stepId = 'step_oauth_login_' + serverName;
+      const stepId = buildMCPAuthStepId(serverName);
       oauthToolCallIds.set(serverName, flowId);
       oauthStepIndexes.set(serverName, index);
-      const toolCall = {
+      const toolCall = buildMCPAuthToolCall({
         id: flowId,
-        name: buildOAuthToolCallName(serverName),
-        type: 'tool_call_chunk',
-      };
+        serverName,
+      });
 
-      const runStepData = {
-        runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
-        id: stepId,
-        type: StepTypes.TOOL_CALLS,
-        index,
-        stepDetails: {
-          type: StepTypes.TOOL_CALLS,
-          tool_calls: [toolCall],
-        },
-      };
-
-      const runStepDeltaData = {
-        id: stepId,
-        delta: {
-          type: StepTypes.TOOL_CALLS,
-          tool_calls: [{ ...toolCall, args: '' }],
-          auth: authURL,
-          expires_at: getOAuthPromptExpiresAt(options),
-        },
-      };
-
-      const runStepEvent = { event: GraphEvents.ON_RUN_STEP, data: runStepData };
-      const runStepDeltaEvent = { event: GraphEvents.ON_RUN_STEP_DELTA, data: runStepDeltaData };
+      const runStepEvent = buildMCPAuthRunStepEvent({ stepId, toolCall, index });
+      const runStepDeltaEvent = buildMCPAuthRunStepDeltaEvent({
+        authURL,
+        stepId,
+        toolCall,
+        options,
+      });
 
       if (streamId) {
         await GenerationJobManager.emitChunk(streamId, runStepEvent);
@@ -683,25 +646,19 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
   const createOAuthEndEmitter = (serverName) => {
     return async () => {
-      const stepId = 'step_oauth_login_' + serverName;
-      const toolCall = {
+      const stepId = buildMCPAuthStepId(serverName);
+      const toolCall = buildMCPAuthToolCall({
         id: oauthToolCallIds.get(serverName),
-        name: buildOAuthToolCallName(serverName),
         args: '',
         output: 'OAuth authentication completed',
+        serverName,
         type: 'tool_call',
-      };
-
-      const runStepCompletedEvent = {
-        event: GraphEvents.ON_RUN_STEP_COMPLETED,
-        data: {
-          result: {
-            id: stepId,
-            index: oauthStepIndexes.get(serverName) ?? 0,
-            tool_call: toolCall,
-          },
-        },
-      };
+      });
+      const runStepCompletedEvent = buildMCPAuthRunStepCompletedEvent({
+        stepId,
+        toolCall,
+        index: oauthStepIndexes.get(serverName) ?? 0,
+      });
 
       if (streamId) {
         await GenerationJobManager.emitChunk(streamId, runStepCompletedEvent);

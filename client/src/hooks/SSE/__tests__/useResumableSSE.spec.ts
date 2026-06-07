@@ -85,6 +85,7 @@ jest.mock('~/data-provider', () => ({
 }));
 
 const mockErrorHandler = jest.fn();
+const mockFinalHandler = jest.fn();
 const mockCreatedHandler = jest.fn();
 const mockStepHandler = jest.fn();
 const mockTitleHandler = jest.fn();
@@ -94,7 +95,7 @@ const mockClearStepMaps = jest.fn();
 jest.mock('~/hooks/SSE/useEventHandlers', () =>
   jest.fn(() => ({
     errorHandler: mockErrorHandler,
-    finalHandler: jest.fn(),
+    finalHandler: mockFinalHandler,
     createdHandler: mockCreatedHandler,
     attachmentHandler: jest.fn(),
     stepHandler: mockStepHandler,
@@ -207,6 +208,7 @@ describe('useResumableSSE - 404 error path', () => {
     mockSSEInstances.length = 0;
     localStorage.clear();
     mockErrorHandler.mockClear();
+    mockFinalHandler.mockClear();
     mockCreatedHandler.mockClear();
     mockStepHandler.mockClear();
     mockTitleHandler.mockClear();
@@ -1043,6 +1045,100 @@ describe('useResumableSSE - 404 error path', () => {
         messageId: 'follow-up-response',
         parentMessageId: 'follow-up-user',
         content: expect.any(Array),
+      }),
+    );
+
+    unmount();
+  });
+
+  it('uses the resumed submission for final events after sync', async () => {
+    const originalUser = {
+      messageId: 'original-user',
+      conversationId: CONV_ID,
+      text: 'Original prompt',
+      isCreatedByUser: true,
+      sender: 'User',
+      parentMessageId: String(Constants.NO_PARENT),
+    };
+    const originalResponse = {
+      messageId: 'original-response',
+      conversationId: CONV_ID,
+      text: 'Original response',
+      isCreatedByUser: false,
+      sender: 'Assistant',
+      parentMessageId: 'original-user',
+    };
+    const submission = {
+      ...buildSubmission({
+        conversation: { conversationId: CONV_ID },
+        userMessage: originalUser,
+        initialResponse: originalResponse,
+      }),
+      resumeStreamId: CONV_ID,
+    } as TSubmission & { resumeStreamId: string };
+    const chatHelpers = buildChatHelpers();
+    chatHelpers.getMessages.mockReturnValue([originalUser, originalResponse]);
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const sse = getLastSSE();
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          sync: true,
+          resumeState: {
+            runSteps: [],
+            replayEvents: [],
+            responseMessageId: 'follow-up-response',
+            conversationId: CONV_ID,
+            userMessage: {
+              messageId: 'follow-up-user',
+              parentMessageId: 'original-response',
+              conversationId: CONV_ID,
+              text: 'Follow-up prompt',
+            },
+          },
+        }),
+      });
+    });
+
+    const finalPayload = {
+      final: true,
+      conversation: { conversationId: CONV_ID },
+      requestMessage: {
+        messageId: 'follow-up-user',
+        parentMessageId: 'original-response',
+        conversationId: CONV_ID,
+        text: 'Follow-up prompt',
+        isCreatedByUser: true,
+      },
+      responseMessage: {
+        messageId: 'follow-up-response',
+        parentMessageId: 'follow-up-user',
+        conversationId: CONV_ID,
+        text: 'Done',
+        isCreatedByUser: false,
+      },
+    };
+
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify(finalPayload),
+      });
+    });
+
+    expect(mockFinalHandler).toHaveBeenCalledWith(
+      finalPayload,
+      expect.objectContaining({
+        userMessage: expect.objectContaining({ messageId: 'follow-up-user' }),
+        initialResponse: expect.objectContaining({
+          messageId: 'follow-up-response',
+          parentMessageId: 'follow-up-user',
+        }),
       }),
     );
 
