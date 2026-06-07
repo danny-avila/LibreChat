@@ -376,6 +376,10 @@ export default function useChatFunctions({
       currentMessages = currentMessages.filter((msg) => msg.messageId !== responseMessageId);
     }
 
+    const submissionMessages = isRegenerate
+      ? currentMessages.filter((msg) => msg.messageId !== initialResponse.messageId)
+      : currentMessages;
+
     logger.log('message_state', initialResponse);
     const submission: TSubmission = {
       conversation: {
@@ -389,7 +393,7 @@ export default function useChatFunctions({
         responseMessageId,
         overrideParentMessageId: isRegenerate ? messageId : null,
       },
-      messages: currentMessages,
+      messages: submissionMessages,
       isEdited: isEditOrContinue,
       isContinued,
       isRegenerate,
@@ -402,9 +406,9 @@ export default function useChatFunctions({
     };
 
     if (isRegenerate) {
-      setMessages([...submission.messages, initialResponse]);
+      setMessages([...submissionMessages, initialResponse]);
     } else {
-      setMessages([...submission.messages, currentMsg, initialResponse]);
+      setMessages([...submissionMessages, currentMsg, initialResponse]);
     }
 
     setSubmission(submission);

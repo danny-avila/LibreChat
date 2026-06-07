@@ -959,6 +959,97 @@ describe('useResumableSSE - 404 error path', () => {
     unmount();
   });
 
+  it('merges resumed user and response messages into loaded conversation history', async () => {
+    const originalUser = {
+      messageId: 'original-user',
+      conversationId: CONV_ID,
+      text: 'Original prompt',
+      isCreatedByUser: true,
+      sender: 'User',
+      parentMessageId: Constants.NO_PARENT,
+    };
+    const originalResponse = {
+      messageId: 'original-response',
+      conversationId: CONV_ID,
+      text: 'Original response',
+      isCreatedByUser: false,
+      sender: 'Assistant',
+      parentMessageId: 'original-user',
+    };
+    const submission = {
+      ...buildSubmission({
+        conversation: { conversationId: CONV_ID },
+        userMessage: originalUser,
+        initialResponse: originalResponse,
+        messages: [originalUser, originalResponse] as never[],
+      }),
+      resumeStreamId: CONV_ID,
+    } as TSubmission & { resumeStreamId: string };
+    const chatHelpers = buildChatHelpers();
+    chatHelpers.getMessages.mockReturnValue([originalUser, originalResponse]);
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const sse = getLastSSE();
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          sync: true,
+          resumeState: {
+            runSteps: [],
+            replayEvents: [],
+            aggregatedContent: [
+              {
+                type: 'tool_call',
+                tool_call: {
+                  id: 'call-oauth',
+                  name: 'oauth_mcp_Google-Workspace',
+                  args: '',
+                },
+              },
+            ],
+            responseMessageId: 'follow-up-response',
+            conversationId: CONV_ID,
+            userMessage: {
+              messageId: 'follow-up-user',
+              parentMessageId: 'original-response',
+              conversationId: CONV_ID,
+              text: 'Follow-up prompt',
+            },
+          },
+        }),
+      });
+    });
+
+    const lastMessages = chatHelpers.setMessages.mock.calls.at(-1)?.[0];
+    expect(lastMessages.map((message: { messageId: string }) => message.messageId)).toEqual([
+      'original-user',
+      'original-response',
+      'follow-up-user',
+      'follow-up-response',
+    ]);
+    expect(lastMessages[2]).toEqual(
+      expect.objectContaining({
+        messageId: 'follow-up-user',
+        parentMessageId: 'original-response',
+        text: 'Follow-up prompt',
+      }),
+    );
+    expect(lastMessages[3]).toEqual(
+      expect.objectContaining({
+        messageId: 'follow-up-response',
+        parentMessageId: 'follow-up-user',
+        content: expect.any(Array),
+      }),
+    );
+
+    unmount();
+  });
+
   it.each([undefined, 500, 503])(
     'does not call errorHandler for responseCode %s (reconnect path)',
     async (responseCode) => {

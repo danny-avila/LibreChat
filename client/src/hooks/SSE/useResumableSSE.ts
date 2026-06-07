@@ -295,6 +295,45 @@ const buildResumeEventSubmission = (
   } as EventSubmission;
 };
 
+const mergeResumeMessages = (
+  messages: TMessage[],
+  userMessage: TMessage,
+  responseMessage: TMessage,
+): TMessage[] => {
+  const nextMessages = [...messages];
+  const userIndex = nextMessages.findIndex(
+    (message) => message.messageId === userMessage.messageId,
+  );
+  const responseIndex = nextMessages.findIndex(
+    (message) => message.messageId === responseMessage.messageId,
+  );
+
+  if (userIndex >= 0) {
+    nextMessages[userIndex] = { ...nextMessages[userIndex], ...userMessage };
+  }
+
+  if (responseIndex >= 0) {
+    nextMessages[responseIndex] = { ...nextMessages[responseIndex], ...responseMessage };
+  }
+
+  if (userIndex >= 0 && responseIndex >= 0) {
+    return nextMessages;
+  }
+
+  if (userIndex >= 0) {
+    const insertAt = userIndex + 1;
+    nextMessages.splice(insertAt, 0, responseMessage);
+    return nextMessages;
+  }
+
+  if (responseIndex >= 0) {
+    nextMessages.splice(responseIndex, 0, userMessage);
+    return nextMessages;
+  }
+
+  return [...nextMessages, userMessage, responseMessage];
+};
+
 /**
  * Hook for resumable SSE streams.
  * Separates generation start (POST) from stream subscription (GET EventSource).
@@ -581,20 +620,20 @@ export default function useResumableSSE(
               });
 
               if (responseIdx >= 0) {
-                const updated = [...messages];
-                const oldContent = updated[responseIdx]?.content;
-                updated[responseIdx] = {
-                  ...updated[responseIdx],
+                const oldContent = messages[responseIdx]?.content;
+                const responseMessage = {
+                  ...messages[responseIdx],
                   content: data.resumeState.aggregatedContent,
-                };
+                } as TMessage;
+                const updated = mergeResumeMessages(messages, userMessage, responseMessage);
                 console.log('[ResumableSSE] SYNC updating message', {
-                  messageId: updated[responseIdx]?.messageId,
+                  messageId: responseMessage.messageId,
                   oldContentLength: Array.isArray(oldContent) ? oldContent.length : 0,
                   newContentLength: data.resumeState.aggregatedContent?.length,
                 });
                 setMessages(updated);
                 resetContentHandler();
-                syncStepMessage(updated[responseIdx]);
+                syncStepMessage(responseMessage);
                 console.log('[ResumableSSE] SYNC complete, handlers synced');
               } else {
                 const responseId = serverResponseId ?? `${userMsgId}_`;
@@ -606,7 +645,7 @@ export default function useResumableSSE(
                   content: data.resumeState.aggregatedContent,
                   isCreatedByUser: false,
                 } as TMessage;
-                setMessages([...messages, newMessage]);
+                setMessages(mergeResumeMessages(messages, userMessage, newMessage));
                 resetContentHandler();
                 syncStepMessage(newMessage);
               }
