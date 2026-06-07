@@ -65,6 +65,15 @@ async function writeDeploymentSkill(
   return skillDir;
 }
 
+function encodeTestCursor(row: { _id: Types.ObjectId; updatedAt: Date }): string {
+  return Buffer.from(
+    JSON.stringify({
+      updatedAt: row.updatedAt.toISOString(),
+      _id: row._id.toString(),
+    }),
+  ).toString('base64');
+}
+
 afterEach(async () => {
   const emptyRoot = await makeTempRoot();
   await initializeDeploymentSkills({ projectRoot: emptyRoot, env: {} });
@@ -460,20 +469,20 @@ describe('createDeploymentSkillMethods', () => {
     const dbId = new Types.ObjectId();
     const nextId = new Types.ObjectId();
     const dbAuthor = new Types.ObjectId();
+    const shadowedUpdatedAt = new Date('2026-01-02T00:00:00.000Z');
     const shadowedSkill = {
       _id: dbId,
       name: 'analysis-kit',
       body: 'persisted duplicate body',
       author: dbAuthor,
-      updatedAt: new Date('2026-01-02T00:00:00.000Z'),
     };
     const nextSkill = {
       _id: nextId,
       name: 'db-next',
       body: 'next persisted body',
       author: dbAuthor,
-      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
     };
+    const shadowedCursor = encodeTestCursor({ _id: dbId, updatedAt: shadowedUpdatedAt });
     const base: DeploymentSkillBaseMethods = {
       listAlwaysApplySkills: jest.fn(async (params) => {
         if (params.cursor) {
@@ -486,7 +495,7 @@ describe('createDeploymentSkillMethods', () => {
         return {
           skills: [shadowedSkill],
           has_more: true,
-          after: 'db-cursor',
+          after: shadowedCursor,
         };
       }),
     };
@@ -501,7 +510,7 @@ describe('createDeploymentSkillMethods', () => {
     });
     expect(first?.skills).toEqual([]);
     expect(first?.has_more).toBe(true);
-    expect(first?.after).toEqual(expect.any(String));
+    expect(first?.after).toBe(shadowedCursor);
 
     const second = await methods.listAlwaysApplySkills?.({
       accessibleIds: mergedIds,
@@ -515,6 +524,92 @@ describe('createDeploymentSkillMethods', () => {
       limit: 1,
       cursor: first?.after,
     });
+    warnSpy.mockRestore();
+  });
+
+  it('waits to return older deployment rows until the DB page boundary advances', async () => {
+    const root = await makeTempRoot();
+    await writeDeploymentSkill(root, {
+      skillsDir: 'config/skills',
+      name: 'analysis-kit',
+      alwaysApply: false,
+    });
+    await initializeDeploymentSkills({
+      projectRoot: root,
+      env: { [DEPLOYMENT_SKILLS_DIR_ENV]: 'config/skills' },
+    });
+
+    const hiddenId = new Types.ObjectId();
+    const visibleId = new Types.ObjectId();
+    const nextId = new Types.ObjectId();
+    const dbAuthor = new Types.ObjectId();
+    const hiddenSkill = {
+      _id: hiddenId,
+      name: 'analysis-kit',
+      description: 'A persisted duplicate skill.',
+      author: dbAuthor,
+      version: 1,
+      fileCount: 0,
+      updatedAt: new Date('2026-12-03T00:00:00.000Z'),
+    };
+    const visibleSkill = {
+      _id: visibleId,
+      name: 'db-visible',
+      description: 'A visible persisted skill.',
+      author: dbAuthor,
+      version: 1,
+      fileCount: 0,
+      updatedAt: new Date('2026-12-02T00:00:00.000Z'),
+    };
+    const nextSkill = {
+      _id: nextId,
+      name: 'db-next',
+      description: 'The next persisted skill.',
+      author: dbAuthor,
+      version: 1,
+      fileCount: 0,
+      updatedAt: new Date('2026-12-01T00:00:00.000Z'),
+    };
+    const visibleCursor = encodeTestCursor({
+      _id: visibleId,
+      updatedAt: visibleSkill.updatedAt,
+    });
+    const base: DeploymentSkillBaseMethods = {
+      listSkillsByAccess: jest.fn(async (params) => {
+        if (params.cursor) {
+          return {
+            skills: [nextSkill],
+            has_more: false,
+            after: null,
+          };
+        }
+        return {
+          skills: [hiddenSkill, visibleSkill],
+          has_more: true,
+          after: visibleCursor,
+        };
+      }),
+    };
+
+    const methods = createDeploymentSkillMethods(base);
+    const mergedIds = mergeDeploymentSkillIds([hiddenId, visibleId, nextId]);
+    const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+
+    const first = await methods.listSkillsByAccess?.({
+      accessibleIds: mergedIds,
+      limit: 2,
+    });
+    expect(first?.skills.map((skill) => skill.name)).toEqual(['db-visible']);
+    expect(first?.has_more).toBe(true);
+    expect(first?.after).toBe(visibleCursor);
+
+    const second = await methods.listSkillsByAccess?.({
+      accessibleIds: mergedIds,
+      limit: 2,
+      cursor: first?.after,
+    });
+    expect(second?.skills.map((skill) => skill.name)).toEqual(['db-next', 'analysis-kit']);
+    expect(second?.has_more).toBe(false);
     warnSpy.mockRestore();
   });
 });

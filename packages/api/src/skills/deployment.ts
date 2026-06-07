@@ -182,9 +182,8 @@ export type DeploymentSkillBaseMethods = {
 };
 
 type Cursor = { updatedAt: Date; _id: Types.ObjectId };
-type CollisionFilterResult<T extends Pick<SkillSummaryRow, '_id' | 'updatedAt'>> = {
+type CollisionFilterResult<T> = {
   rows: T[];
-  cursorFallback: T | null;
 };
 
 type LoadDeploymentSkillsOptions = {
@@ -487,13 +486,17 @@ export function createDeploymentSkillMethods<T extends DeploymentSkillBaseMethod
         : { skills: [], has_more: false, after: null };
       const deploymentNames = registry.namesByAccess(params.accessibleIds);
       const filteredDb = filterDeploymentNameCollisions(dbResult.skills, deploymentNames, 'list');
-      const deploymentRows = registry.listByAccess(params).map(toSkillSummaryRow);
+      const dbPageBoundary = getDbPageBoundary(dbResult);
+      const deploymentRows = limitRowsToDbPageBoundary(
+        registry.listByAccess(params).map(toSkillSummaryRow),
+        dbPageBoundary,
+      );
       return mergeSkillPage({
         dbResult: {
           ...dbResult,
           skills: filteredDb.rows,
         },
-        dbCursorFallback: filteredDb.cursorFallback,
+        dbPageBoundary,
         deploymentRows,
         limit: params.limit,
       });
@@ -513,13 +516,17 @@ export function createDeploymentSkillMethods<T extends DeploymentSkillBaseMethod
         deploymentNames,
         'always-apply',
       );
+      const dbPageBoundary = getDbPageBoundary(dbResult);
       return mergeAlwaysApplyPage({
         dbResult: {
           ...dbResult,
           skills: filteredDb.rows,
         },
-        dbCursorFallback: filteredDb.cursorFallback,
-        deploymentRows: registry.listAlwaysApply(params).map(toAlwaysApplyRow),
+        dbPageBoundary,
+        deploymentRows: limitRowsToDbPageBoundary(
+          registry.listAlwaysApply(params).map(toAlwaysApplyRow),
+          dbPageBoundary,
+        ),
         limit: params.limit,
       });
     },
@@ -827,12 +834,12 @@ function validateUniqueNames(skills: DeploymentSkill[]): void {
 
 function mergeSkillPage({
   dbResult,
-  dbCursorFallback,
+  dbPageBoundary,
   deploymentRows,
   limit,
 }: {
   dbResult: ListSkillsByAccessResult;
-  dbCursorFallback?: SkillSummaryRow | null;
+  dbPageBoundary?: Cursor | null;
   deploymentRows: SkillSummaryRow[];
   limit: number;
 }): ListSkillsByAccessResult {
@@ -840,7 +847,7 @@ function mergeSkillPage({
   const merged = [...deploymentRows, ...dbResult.skills].sort(compareBySkillCursor);
   const sliced = merged.slice(0, boundedLimit);
   const hasMore = merged.length > boundedLimit || dbResult.has_more === true;
-  const cursorRow = getMergedPageCursor(sliced, boundedLimit, dbCursorFallback);
+  const cursorRow = getMergedPageCursor(sliced, boundedLimit, dbPageBoundary);
   return {
     skills: sliced,
     has_more: hasMore,
@@ -850,12 +857,12 @@ function mergeSkillPage({
 
 function mergeAlwaysApplyPage({
   dbResult,
-  dbCursorFallback,
+  dbPageBoundary,
   deploymentRows,
   limit,
 }: {
   dbResult: ListAlwaysApplyResult;
-  dbCursorFallback?: AlwaysApplySkillRow | null;
+  dbPageBoundary?: Cursor | null;
   deploymentRows: AlwaysApplySkillRow[];
   limit: number;
 }): ListAlwaysApplyResult {
@@ -863,7 +870,7 @@ function mergeAlwaysApplyPage({
   const merged = [...deploymentRows, ...dbResult.skills].sort(compareBySkillCursor);
   const sliced = merged.slice(0, boundedLimit);
   const hasMore = merged.length > boundedLimit || dbResult.has_more === true;
-  const cursorRow = getMergedPageCursor(sliced, boundedLimit, dbCursorFallback);
+  const cursorRow = getMergedPageCursor(sliced, boundedLimit, dbPageBoundary);
   return {
     skills: sliced,
     has_more: hasMore,
@@ -874,16 +881,38 @@ function mergeAlwaysApplyPage({
 function getMergedPageCursor<T extends Pick<SkillSummaryRow, '_id' | 'updatedAt'>>(
   sliced: T[],
   boundedLimit: number,
-  dbCursorFallback?: T | null,
-): T | null {
+  dbPageBoundary?: Cursor | null,
+): Pick<SkillSummaryRow, '_id' | 'updatedAt'> | null {
   const lastReturned = sliced.length > 0 ? sliced[sliced.length - 1] : null;
-  if (sliced.length >= boundedLimit || !dbCursorFallback) {
-    return lastReturned;
+  if (sliced.length < boundedLimit && dbPageBoundary) {
+    return dbPageBoundary;
   }
-  if (!lastReturned) {
-    return dbCursorFallback;
+  return lastReturned;
+}
+
+function getDbPageBoundary<T extends Pick<SkillSummaryRow, '_id' | 'updatedAt'>>(dbResult: {
+  skills: T[];
+  has_more?: boolean;
+  after?: string | null;
+}): Cursor | null {
+  if (dbResult.has_more !== true) {
+    return null;
   }
-  return compareBySkillCursor(dbCursorFallback, lastReturned) > 0 ? dbCursorFallback : lastReturned;
+  const last = dbResult.skills.length > 0 ? dbResult.skills[dbResult.skills.length - 1] : null;
+  if (last?.updatedAt) {
+    return { _id: last._id, updatedAt: last.updatedAt };
+  }
+  return decodeCursor(dbResult.after);
+}
+
+function limitRowsToDbPageBoundary<T extends Pick<SkillSummaryRow, '_id' | 'updatedAt'>>(
+  rows: T[],
+  dbPageBoundary: Cursor | null,
+): T[] {
+  if (!dbPageBoundary) {
+    return rows;
+  }
+  return rows.filter((row) => compareBySkillCursor(row, dbPageBoundary) <= 0);
 }
 
 function toSkillSummaryRow(skill: DeploymentSkill): SkillSummaryRow {
@@ -935,7 +964,7 @@ function filterDeploymentNameCollisions<
   T extends { name: string } & Pick<SkillSummaryRow, '_id' | 'updatedAt'>,
 >(rows: T[], deploymentNames: Set<string>, context: string): CollisionFilterResult<T> {
   if (rows.length === 0 || deploymentNames.size === 0) {
-    return { rows, cursorFallback: null };
+    return { rows };
   }
   const hiddenNames = new Set<string>();
   const filtered = rows.filter((row) => {
@@ -960,10 +989,7 @@ function filterDeploymentNameCollisions<
       );
     }
   }
-  return {
-    rows: filtered,
-    cursorFallback: hiddenNames.size > 0 ? rows[rows.length - 1] : null,
-  };
+  return { rows: filtered };
 }
 
 function compareBySkillCursor(
