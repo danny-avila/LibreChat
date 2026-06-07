@@ -150,8 +150,12 @@ async function conversationIdFromPage(page: Page): Promise<string> {
   return id;
 }
 
-async function fetchMessages(page: Page, conversationId: string): Promise<E2EMessage[]> {
-  const token = await getAccessToken(page);
+async function fetchMessages(
+  page: Page,
+  conversationId: string,
+  accessToken?: string,
+): Promise<E2EMessage[]> {
+  const token = accessToken ?? (await getAccessToken(page));
   return fetchJson<E2EMessage[]>(
     page,
     `/api/messages/${encodeURIComponent(conversationId)}`,
@@ -166,8 +170,9 @@ async function waitForMessages(
   description: string,
 ): Promise<E2EMessage[]> {
   let latest: E2EMessage[] = [];
+  const token = await getAccessToken(page);
   for (let attempt = 0; attempt < 80; attempt++) {
-    latest = await fetchMessages(page, conversationId);
+    latest = await fetchMessages(page, conversationId, token);
     if (predicate(latest)) {
       return latest;
     }

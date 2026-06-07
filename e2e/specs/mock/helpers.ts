@@ -24,9 +24,10 @@ export function isAgentsStream(response: Response) {
 
 export function isAgentGenerationStart(response: Response) {
   const { pathname } = new URL(response.url());
+  const isAgentsChat = pathname === '/api/agents/chat' || pathname.startsWith('/api/agents/chat/');
   return (
     response.request().method() === 'POST' &&
-    pathname.includes('/api/agents/chat/') &&
+    isAgentsChat &&
     !pathname.endsWith('/abort') &&
     response.status() === 200
   );
