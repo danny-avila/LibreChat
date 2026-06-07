@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import type { Page, Response } from '@playwright/test';
+import type { Page, Response, Route } from '@playwright/test';
 import {
   isAgentGenerationStart,
   MOCK_ENDPOINTS,
@@ -48,6 +48,7 @@ const slowReplyPrefix = (label: string) => `E2E slow reply ${label}`;
 const messagesView = (page: Page) => page.getByTestId('messages-view');
 const messageRender = (page: Page, text: string) =>
   page.locator('.message-render').filter({ hasText: text }).last();
+const conversationPath = (conversationId: string) => `/c/${encodeURIComponent(conversationId)}`;
 
 function contentText(part: TextContentPart): string {
   if (typeof part.text === 'string') {
@@ -121,9 +122,41 @@ function expectNoFoldedMessages(messages: E2EMessage[]) {
   ).toEqual(roots.map(() => expect.objectContaining({ isCreatedByUser: true })));
 }
 
+async function expectVisibleMessages(page: Page, texts: string[]) {
+  for (const text of texts) {
+    await expect(messagesView(page).getByText(text)).toBeVisible({ timeout: 30000 });
+  }
+}
+
+async function reloadAndExpectMessages(page: Page, texts: string[]) {
+  await page.reload({ timeout: 10000 });
+  await expectVisibleMessages(page, texts);
+}
+
+async function revisitConversationAndExpectMessages(
+  page: Page,
+  conversationId: string,
+  texts: string[],
+) {
+  await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+  await page.goto(conversationPath(conversationId), { timeout: 10000 });
+  await expectVisibleMessages(page, texts);
+}
+
 async function openMockChat(page: Page) {
   await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
   await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+}
+
+function isAgentGenerationResponse(response: Response, expectedStatus: number) {
+  const { pathname } = new URL(response.url());
+  const isAgentsChat = pathname === '/api/agents/chat' || pathname.startsWith('/api/agents/chat/');
+  return (
+    response.request().method() === 'POST' &&
+    isAgentsChat &&
+    !pathname.endsWith('/abort') &&
+    response.status() === expectedStatus
+  );
 }
 
 async function waitForGenerationStart(page: Page, action: () => Promise<void>): Promise<Response> {
@@ -139,6 +172,24 @@ async function sendAndExpectReply(page: Page, prompt: string, expectedReply: str
   const response = await sendMessage(page, prompt);
   expect(response.ok()).toBeTruthy();
   await expect(messagesView(page).getByText(expectedReply)).toBeVisible({ timeout: 30000 });
+}
+
+async function submitMessageExpectingGenerationFailure(
+  page: Page,
+  prompt: string,
+  expectedStatus: number,
+) {
+  const input = page.getByRole('textbox', { name: 'Message input' });
+  await expect(input).toBeEnabled({ timeout: 30000 });
+  await input.click();
+  await input.fill(prompt);
+  const [response] = await Promise.all([
+    page.waitForResponse((res) => isAgentGenerationResponse(res, expectedStatus), {
+      timeout: 30000,
+    }),
+    input.press('Enter'),
+  ]);
+  return response;
 }
 
 async function conversationIdFromPage(page: Page): Promise<string> {
@@ -202,6 +253,28 @@ async function clickSibling(page: Page, messageTextValue: string, direction: 'Pr
   await render.getByRole('button', { name: `${direction} sibling message` }).click();
 }
 
+async function expectCanCycleSiblingTexts(page: Page, previousText: string, nextText: string) {
+  const previous = messagesView(page).getByText(previousText);
+  const next = messagesView(page).getByText(nextText);
+  if (await previous.isVisible()) {
+    await clickSibling(page, previousText, 'Next');
+    await expect(next).toBeVisible();
+    await clickSibling(page, nextText, 'Previous');
+    await expect(previous).toBeVisible();
+    return;
+  }
+
+  if (await next.isVisible()) {
+    await clickSibling(page, nextText, 'Previous');
+    await expect(previous).toBeVisible();
+    await clickSibling(page, previousText, 'Next');
+    await expect(next).toBeVisible();
+    return;
+  }
+
+  throw new Error(`Expected either sibling "${previousText}" or "${nextText}" to be visible`);
+}
+
 async function clickForkVisibleMessages(
   page: Page,
   messageTextValue: string,
@@ -226,7 +299,7 @@ async function clickForkVisibleMessages(
 }
 
 test.describe('message tree stream operations', () => {
-  test.describe.configure({ timeout: 120000 });
+  test.setTimeout(180000);
 
   test('streams follow-ups and keeps an aborted response as the next parent', async ({ page }) => {
     const label = uniqueLabel('abort');
@@ -283,11 +356,13 @@ test.describe('message tree stream operations', () => {
     expectParent(messages, afterAbortPrompt, abortReply, true);
     expectParent(messages, afterAbortReply, afterAbortPrompt, false);
 
-    await page.reload({ timeout: 10000 });
-    await expect(messagesView(page).getByText(firstReply)).toBeVisible({ timeout: 30000 });
-    await expect(messagesView(page).getByText(secondReply)).toBeVisible();
-    await expect(messagesView(page).getByText(abortReply)).toBeVisible();
-    await expect(messagesView(page).getByText(afterAbortReply)).toBeVisible();
+    await reloadAndExpectMessages(page, [firstReply, secondReply, abortReply, afterAbortReply]);
+    await revisitConversationAndExpectMessages(page, conversationId, [
+      firstReply,
+      secondReply,
+      abortReply,
+      afterAbortReply,
+    ]);
   });
 
   test('regenerates assistant siblings, cycles branches, follows up, and forks the visible branch', async ({
@@ -336,6 +411,11 @@ test.describe('message tree stream operations', () => {
       [firstReply, regeneratedReply].sort(),
     );
 
+    await reloadAndExpectMessages(page, [regeneratedReply, followReply]);
+    await revisitConversationAndExpectMessages(page, originalConversationId, [
+      regeneratedReply,
+      followReply,
+    ]);
     await clickSibling(page, regeneratedReply, 'Previous');
     await expect(messagesView(page).getByText(firstReply)).toBeVisible();
     const fork = await clickForkVisibleMessages(page, firstReply);
@@ -352,16 +432,21 @@ test.describe('message tree stream operations', () => {
     expect(messages.some((message) => messageText(message).includes(followReply))).toBe(false);
   });
 
-  test('save-and-submit from the middle of a long thread retains and cycles both branches', async ({
+  test('long threads retain regenerated and save-and-submit branches after revisit', async ({
     page,
   }) => {
     const label = uniqueLabel('save-submit');
     const rootPrompt = replyPrompt(`${label}-root`);
     const rootReply = replyText(`${label}-root`);
+    const firstPrompt = replyPrompt(`${label}-first`);
+    const firstReply = replyText(`${label}-first`);
     const middlePrompt = replyPrompt(`${label}-middle`);
     const middleReply = replyText(`${label}-middle`);
-    const tailPrompt = replyPrompt(`${label}-tail`);
-    const tailReply = replyText(`${label}-tail`);
+    const fourthPrompt = replyPrompt(`${label}-fourth`);
+    const fourthReply = replyText(`${label}-fourth`);
+    const tailPrompt = countedPrompt(`${label}-tail`);
+    const tailReply = countedReplyText(`${label}-tail`, 1);
+    const regeneratedTailReply = countedReplyText(`${label}-tail`, 2);
     const editedMiddlePrompt = replyPrompt(`${label}-middle-edited`);
     const editedMiddleReply = replyText(`${label}-middle-edited`);
     const afterEditPrompt = replyPrompt(`${label}-after-edit`);
@@ -370,8 +455,17 @@ test.describe('message tree stream operations', () => {
     await openMockChat(page);
     await sendAndExpectReply(page, rootPrompt, rootReply);
     const conversationId = await conversationIdFromPage(page);
+    await sendAndExpectReply(page, firstPrompt, firstReply);
     await sendAndExpectReply(page, middlePrompt, middleReply);
+    await sendAndExpectReply(page, fourthPrompt, fourthReply);
     await sendAndExpectReply(page, tailPrompt, tailReply);
+
+    await waitForGenerationStart(page, () =>
+      clickMessageTitleButton(page, tailReply, 'Regenerate'),
+    );
+    await expect(messagesView(page).getByText(regeneratedTailReply)).toBeVisible({
+      timeout: 30000,
+    });
 
     await clickMessageTitleButton(page, middlePrompt, 'Edit');
     const editor = page.getByTestId('message-text-editor');
@@ -389,19 +483,23 @@ test.describe('message tree stream operations', () => {
       'save-and-submit edited branch',
     );
     expectNoFoldedMessages(messages);
-    expectParent(messages, middlePrompt, rootReply, true);
+    expectParent(messages, firstPrompt, rootReply, true);
+    expectParent(messages, firstReply, firstPrompt, false);
+    expectParent(messages, middlePrompt, firstReply, true);
     expectParent(messages, middleReply, middlePrompt, false);
-    expectParent(messages, tailPrompt, middleReply, true);
+    expectParent(messages, fourthPrompt, middleReply, true);
+    expectParent(messages, fourthReply, fourthPrompt, false);
+    expectParent(messages, tailPrompt, fourthReply, true);
     expectParent(messages, tailReply, tailPrompt, false);
-    expectParent(messages, editedMiddlePrompt, rootReply, true);
+    expectParent(messages, regeneratedTailReply, tailPrompt, false);
+    expectParent(messages, editedMiddlePrompt, firstReply, true);
     expectParent(messages, editedMiddleReply, editedMiddlePrompt, false);
 
     await clickSibling(page, editedMiddlePrompt, 'Previous');
-    await expect(messagesView(page).getByText(middlePrompt)).toBeVisible();
-    await expect(messagesView(page).getByText(tailReply)).toBeVisible();
+    await expectVisibleMessages(page, [middlePrompt, fourthReply]);
+    await expectCanCycleSiblingTexts(page, tailReply, regeneratedTailReply);
     await clickSibling(page, middlePrompt, 'Next');
-    await expect(messagesView(page).getByText(editedMiddlePrompt)).toBeVisible();
-    await expect(messagesView(page).getByText(editedMiddleReply)).toBeVisible();
+    await expectVisibleMessages(page, [editedMiddlePrompt, editedMiddleReply]);
 
     await sendAndExpectReply(page, afterEditPrompt, afterEditReply);
     messages = await waitForMessages(
@@ -414,6 +512,22 @@ test.describe('message tree stream operations', () => {
     expectParent(messages, afterEditPrompt, editedMiddleReply, true);
     expectParent(messages, afterEditReply, afterEditPrompt, false);
     expect(messages.some((message) => messageText(message).includes(tailReply))).toBe(true);
+    expect(messages.some((message) => messageText(message).includes(regeneratedTailReply))).toBe(
+      true,
+    );
+
+    await reloadAndExpectMessages(page, [rootReply, firstReply, editedMiddleReply, afterEditReply]);
+    await revisitConversationAndExpectMessages(page, conversationId, [
+      rootReply,
+      firstReply,
+      editedMiddleReply,
+      afterEditReply,
+    ]);
+    await clickSibling(page, editedMiddlePrompt, 'Previous');
+    await expectVisibleMessages(page, [middlePrompt, fourthReply]);
+    await expectCanCycleSiblingTexts(page, tailReply, regeneratedTailReply);
+    await clickSibling(page, middlePrompt, 'Next');
+    await expectVisibleMessages(page, [editedMiddlePrompt, editedMiddleReply, afterEditReply]);
   });
 
   test('error responses remain valid parents for follow-ups', async ({ page }) => {
@@ -444,5 +558,78 @@ test.describe('message tree stream operations', () => {
     expectParent(messages, errorText, errorPrompt, false);
     expectParent(messages, afterErrorPrompt, errorText, true);
     expectParent(messages, afterErrorReply, afterErrorPrompt, false);
+
+    await reloadAndExpectMessages(page, [baseReply, errorText, afterErrorReply]);
+    await revisitConversationAndExpectMessages(page, conversationId, [
+      baseReply,
+      errorText,
+      afterErrorReply,
+    ]);
+  });
+
+  test('generation-start failures recover without folding the next follow-up', async ({ page }) => {
+    const label = uniqueLabel('start-error');
+    const basePrompt = replyPrompt(`${label}-base`);
+    const baseReply = replyText(`${label}-base`);
+    const failedPrompt = replyPrompt(`${label}-failed-start`);
+    const failedText = `E2E generation start failure ${label}`;
+    const afterFailurePrompt = replyPrompt(`${label}-after-start-failure`);
+    const afterFailureReply = replyText(`${label}-after-start-failure`);
+
+    await openMockChat(page);
+    await sendAndExpectReply(page, basePrompt, baseReply);
+    const conversationId = await conversationIdFromPage(page);
+
+    const failGenerationStart = async (route: Route) => {
+      const request = route.request();
+      const { pathname } = new URL(request.url());
+      const isAgentsChat =
+        pathname === '/api/agents/chat' || pathname.startsWith('/api/agents/chat/');
+      if (
+        request.method() !== 'POST' ||
+        !isAgentsChat ||
+        pathname.endsWith('/abort') ||
+        !request.postData()?.includes(failedPrompt)
+      ) {
+        await route.continue();
+        return;
+      }
+
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: failedText }),
+      });
+    };
+    await page.route('**/api/agents/chat**', failGenerationStart);
+
+    const failure = await submitMessageExpectingGenerationFailure(page, failedPrompt, 500);
+    expect(failure.ok()).toBe(false);
+    await expect(messagesView(page).getByText(failedText)).toBeVisible({ timeout: 30000 });
+    await expect(page.getByRole('textbox', { name: 'Message input' })).toBeEnabled({
+      timeout: 30000,
+    });
+    await page.unroute('**/api/agents/chat**', failGenerationStart);
+
+    await sendAndExpectReply(page, afterFailurePrompt, afterFailureReply);
+    const messages = await waitForMessages(
+      page,
+      conversationId,
+      (items) => items.some((message) => messageText(message).includes(afterFailureReply)),
+      'follow-up after generation-start failure',
+    );
+    expectNoFoldedMessages(messages);
+    expectParent(messages, afterFailurePrompt, baseReply, true);
+    expectParent(messages, afterFailureReply, afterFailurePrompt, false);
+    expect(messages.some((message) => messageText(message).includes(failedPrompt))).toBe(false);
+    expect(messages.some((message) => messageText(message).includes(failedText))).toBe(false);
+
+    await reloadAndExpectMessages(page, [baseReply, afterFailureReply]);
+    await expect(messagesView(page).getByText(failedText)).toBeHidden();
+    await revisitConversationAndExpectMessages(page, conversationId, [
+      baseReply,
+      afterFailureReply,
+    ]);
+    await expect(messagesView(page).getByText(failedText)).toBeHidden();
   });
 });

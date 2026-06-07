@@ -19,9 +19,9 @@ import type {
   EventSubmission,
   TStartupConfig,
 } from 'librechat-data-provider';
-import type { TResData, TFinalResData, ConvoGenerator } from '~/common';
 import type { InfiniteData } from '@tanstack/react-query';
 import type { SetterOrUpdater } from 'recoil';
+import type { TResData, TFinalResData, ConvoGenerator } from '~/common';
 import type { ConversationCursorData } from '~/utils';
 import {
   logger,
@@ -30,6 +30,7 @@ import {
   getAllContentText,
   upsertConvoInAllQueries,
   updateConvoInAllQueries,
+  markStreamStartFailedMetadata,
   removeConvoFromAllQueries,
   findConversationInInfinite,
 } from '~/utils';
@@ -38,6 +39,7 @@ import {
   queueTitleGeneration,
   markTitleGenerationProcessed,
 } from '~/data-provider';
+import { shouldResetSubagentAtomsOnConversationChange } from './cleanup';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
@@ -45,7 +47,6 @@ import { useApplyAgentTemplate } from '~/hooks/Agents';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
 import { useLiveAnnouncer } from '~/Providers';
-import { shouldResetSubagentAtomsOnConversationChange } from './cleanup';
 import store from '~/store';
 
 type TSyncData = {
@@ -774,7 +775,10 @@ export default function useEventHandlers({
         queryClient.setQueryData<TMessage[]>([QueryKeys.messages, convoId], finalMessages);
       };
 
-      const parseErrorResponse = (data: TResData | Partial<TMessage>): TMessage => {
+      const parseErrorResponse = (
+        data: TResData | Partial<TMessage>,
+        options?: { streamStartFailed?: boolean },
+      ): TMessage => {
         const metadata = data['responseMessage'] ?? data;
         const errorMessage: Partial<TMessage> = {
           ...initialResponse,
@@ -782,6 +786,10 @@ export default function useEventHandlers({
           error: true,
           parentMessageId: userMessage.messageId,
         };
+
+        if (options?.streamStartFailed === true) {
+          errorMessage.metadata = markStreamStartFailedMetadata(errorMessage.metadata);
+        }
 
         if (errorMessage.messageId === undefined || errorMessage.messageId === '') {
           errorMessage.messageId = v4();
@@ -792,11 +800,14 @@ export default function useEventHandlers({
 
       if (!data) {
         const convoId = conversationId || `_${v4()}`;
-        const errorMetadata = parseErrorResponse({
-          text: 'Error connecting to server, try refreshing the page.',
-          ...submission,
-          conversationId: convoId,
-        });
+        const errorMetadata = parseErrorResponse(
+          {
+            text: 'Error connecting to server, try refreshing the page.',
+            ...submission,
+            conversationId: convoId,
+          },
+          { streamStartFailed: true },
+        );
         const errorResponse = createErrorMessage({
           errorMetadata,
           getMessages,
@@ -816,7 +827,7 @@ export default function useEventHandlers({
       const receivedConvoId = data.conversationId ?? '';
       if (!conversationId && !receivedConvoId) {
         const convoId = `_${v4()}`;
-        const errorResponse = parseErrorResponse(data);
+        const errorResponse = parseErrorResponse(data, { streamStartFailed: true });
         setErrorMessages(convoId, errorResponse);
         if (newConversation) {
           newConversation({
@@ -827,7 +838,7 @@ export default function useEventHandlers({
         setIsSubmitting(false);
         return;
       } else if (!receivedConvoId) {
-        const errorResponse = parseErrorResponse(data);
+        const errorResponse = parseErrorResponse(data, { streamStartFailed: true });
         setErrorMessages(conversationId, errorResponse);
         setIsSubmitting(false);
         return;

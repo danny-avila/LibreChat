@@ -22,16 +22,16 @@ import type {
   EventSubmission,
 } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
+import type { ActiveJobsResponse } from '~/data-provider';
 import {
   useGetUserBalance,
   useGetStartupConfig,
   queueTitleGeneration,
   streamStatusQueryKey,
 } from '~/data-provider';
-import type { ActiveJobsResponse } from '~/data-provider';
+import { clearAllDrafts, removeConvoFromAllQueries, upsertConvoInAllQueries } from '~/utils';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
-import { clearAllDrafts, removeConvoFromAllQueries, upsertConvoInAllQueries } from '~/utils';
 import store from '~/store';
 
 type ChatHelpers = Pick<
@@ -263,6 +263,7 @@ export default function useResumableSSE(
   const [_completed, setCompleted] = useState(new Set());
   const [streamId, setStreamId] = useState<string | null>(null);
   const setAbortScroll = useSetRecoilState(store.abortScrollFamily(runIndex));
+  const setSubmission = useSetRecoilState(store.submissionByIndex(runIndex));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(runIndex));
 
   const sseRef = useRef<SSE | null>(null);
@@ -859,10 +860,12 @@ export default function useResumableSSE(
       } else {
         errorHandler({ data: undefined, submission: currentSubmission as EventSubmission });
       }
+      setShowStopButton(false);
       setIsSubmitting(false);
+      setSubmission(null);
       return null;
     },
-    [clearStepMaps, errorHandler, setIsSubmitting],
+    [clearStepMaps, errorHandler, setIsSubmitting, setShowStopButton, setSubmission],
   );
 
   useEffect(() => {

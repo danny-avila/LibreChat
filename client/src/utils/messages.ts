@@ -17,6 +17,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { LocalizeFunction } from '~/common';
 
 export const TEXT_KEY_DIVIDER = '|||';
+export const STREAM_START_FAILED_METADATA_KEY = 'streamStartFailed';
 
 type SiblingIndexLookup = (parentMessageId: string | null | undefined) => number;
 
@@ -135,6 +136,16 @@ export const getAllContentText = (message?: TMessage | null): string => {
 
   return '';
 };
+
+export const hasStreamStartFailed = (message?: Pick<TMessage, 'metadata'> | null): boolean =>
+  message?.metadata?.[STREAM_START_FAILED_METADATA_KEY] === true;
+
+export const markStreamStartFailedMetadata = (
+  metadata?: TMessage['metadata'],
+): TMessage['metadata'] => ({
+  ...(metadata ?? {}),
+  [STREAM_START_FAILED_METADATA_KEY]: true,
+});
 
 const getLatestContentForKey = (message: TMessage): string => {
   const formatText = (str: string, index: number): string => {
