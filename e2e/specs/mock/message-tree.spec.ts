@@ -143,6 +143,105 @@ async function revisitConversationAndExpectMessages(
   await expectVisibleMessages(page, texts);
 }
 
+async function mockActiveOAuthResumeStream({
+  page,
+  authUrl,
+  conversationId,
+  parentMessageId,
+  pendingPrompt,
+  pendingUserMessageId,
+}: {
+  page: Page;
+  authUrl: string;
+  conversationId: string;
+  parentMessageId: string;
+  pendingPrompt: string;
+  pendingUserMessageId: string;
+}) {
+  const pendingResponseMessageId = `${pendingUserMessageId}_`;
+  const toolCallId = `${pendingUserMessageId}:Google-Workspace`;
+  const stepId = 'step_oauth_login_Google-Workspace';
+  const resumeState = {
+    runSteps: [],
+    aggregatedContent: [],
+    responseMessageId: pendingResponseMessageId,
+    conversationId,
+    userMessage: {
+      messageId: pendingUserMessageId,
+      parentMessageId,
+      conversationId,
+      text: pendingPrompt,
+    },
+    replayEvents: [
+      {
+        event: 'on_run_step',
+        data: {
+          runId: 'USE_PRELIM_RESPONSE_MESSAGE_ID',
+          id: stepId,
+          type: 'tool_calls',
+          index: 0,
+          stepDetails: {
+            type: 'tool_calls',
+            tool_calls: [
+              {
+                id: toolCallId,
+                name: 'oauth_mcp_Google-Workspace',
+                type: 'tool_call_chunk',
+              },
+            ],
+          },
+        },
+      },
+      {
+        event: 'on_run_step_delta',
+        data: {
+          id: stepId,
+          delta: {
+            type: 'tool_calls',
+            tool_calls: [
+              {
+                id: toolCallId,
+                name: 'oauth_mcp_Google-Workspace',
+                type: 'tool_call_chunk',
+                args: '',
+              },
+            ],
+            auth: authUrl,
+            expires_at: Date.now() + 120000,
+          },
+        },
+      },
+    ],
+  };
+
+  await page.route(`**/api/agents/chat/status/${conversationId}`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        active: true,
+        streamId: conversationId,
+        status: 'running',
+        aggregatedContent: [],
+        createdAt: Date.now(),
+        resumeState,
+      }),
+    }),
+  );
+
+  await page.route(`**/api/agents/chat/stream/${conversationId}**`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'text/event-stream',
+      body: `event: message\ndata: ${JSON.stringify({
+        sync: true,
+        resumeState,
+        pendingEvents: [],
+      })}\n\n`,
+    }),
+  );
+}
+
 async function openMockChat(page: Page) {
   await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
   await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
@@ -430,6 +529,53 @@ test.describe('message tree stream operations', () => {
     expect(messages.some((message) => messageText(message).includes(firstReply))).toBe(true);
     expect(messages.some((message) => messageText(message).includes(regeneratedReply))).toBe(false);
     expect(messages.some((message) => messageText(message).includes(followReply))).toBe(false);
+  });
+
+  test('resumes pending OAuth on the selected older branch after reload', async ({ page }) => {
+    const label = uniqueLabel('oauth-branch');
+    const rootPrompt = countedPrompt(`${label}-root`);
+    const firstReply = countedReplyText(`${label}-root`, 1);
+    const regeneratedReply = countedReplyText(`${label}-root`, 2);
+    const followPrompt = replyPrompt(`${label}-follow`);
+    const followReply = replyText(`${label}-follow`);
+    const pendingPrompt = replyPrompt(`${label}-oauth`);
+
+    await openMockChat(page);
+    await sendAndExpectReply(page, rootPrompt, firstReply);
+    const conversationId = await conversationIdFromPage(page);
+    await sendAndExpectReply(page, followPrompt, followReply);
+
+    await waitForGenerationStart(page, () =>
+      clickMessageTitleButton(page, firstReply, 'Regenerate'),
+    );
+    await expect(messagesView(page).getByText(regeneratedReply)).toBeVisible({ timeout: 30000 });
+
+    await clickSibling(page, regeneratedReply, 'Previous');
+    await expectVisibleMessages(page, [firstReply, followPrompt, followReply]);
+    await expect(messagesView(page).getByText(regeneratedReply)).toBeHidden();
+
+    const messages = await waitForMessages(
+      page,
+      conversationId,
+      (items) =>
+        items.some((message) => messageText(message).includes(followReply)) &&
+        items.some((message) => messageText(message).includes(regeneratedReply)),
+      'two-branch conversation',
+    );
+    const branchOneTail = findMessage(messages, followReply, false);
+
+    await mockActiveOAuthResumeStream({
+      page,
+      conversationId,
+      parentMessageId: branchOneTail.messageId,
+      pendingPrompt,
+      pendingUserMessageId: `${label}-pending-user`,
+      authUrl: `https://auth.example.test/${label}`,
+    });
+
+    await page.reload({ timeout: 10000 });
+    await expectVisibleMessages(page, [firstReply, followPrompt, followReply, pendingPrompt]);
+    await expect(messagesView(page).getByText(regeneratedReply)).toBeHidden();
   });
 
   test('long threads retain regenerated and save-and-submit branches after revisit', async ({

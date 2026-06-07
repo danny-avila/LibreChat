@@ -474,6 +474,97 @@ describe('useStepHandler', () => {
       );
     });
 
+    it('keeps the pending user message when replayed OAuth tool calls merge immediately', () => {
+      const rootUser = createUserMessage({ messageId: 'root-user' });
+      const selectedResponse = createResponseMessage({
+        messageId: 'selected-response',
+        parentMessageId: rootUser.messageId,
+      });
+      const followUpUser = createUserMessage({
+        messageId: 'follow-up-user',
+        parentMessageId: selectedResponse.messageId,
+      });
+      const followUpResponse = createResponseMessage({
+        messageId: 'follow-up-response',
+        parentMessageId: followUpUser.messageId,
+      });
+      const siblingResponse = createResponseMessage({
+        messageId: 'sibling-response',
+        parentMessageId: rootUser.messageId,
+      });
+      const pendingUser = createUserMessage({
+        messageId: 'pending-user',
+        parentMessageId: followUpResponse.messageId,
+      });
+      const initialResponse = createResponseMessage({
+        messageId: 'pending-user_',
+        parentMessageId: pendingUser.messageId,
+      });
+
+      let currentMessages = [
+        rootUser,
+        selectedResponse,
+        followUpUser,
+        followUpResponse,
+        siblingResponse,
+      ];
+      mockGetMessages.mockImplementation(() => currentMessages);
+      mockSetMessages.mockImplementation((messages) => {
+        currentMessages = messages;
+      });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createToolCallRunStep({
+        id: 'step-oauth-login',
+        runId: USE_PRELIM_RESPONSE_MESSAGE_ID,
+        stepDetails: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [
+            {
+              id: 'tool-call-oauth',
+              name: `oauth${Constants.mcp_delimiter}Google-Workspace`,
+              args: '',
+              type: ToolCallTypes.TOOL_CALL,
+            },
+          ],
+        },
+      });
+      const submission = createSubmission({
+        userMessage: pendingUser,
+        messages: currentMessages,
+        initialResponse,
+      });
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      expect(currentMessages.map((message) => message.messageId)).toEqual([
+        rootUser.messageId,
+        selectedResponse.messageId,
+        followUpUser.messageId,
+        followUpResponse.messageId,
+        siblingResponse.messageId,
+        pendingUser.messageId,
+        initialResponse.messageId,
+      ]);
+      expect(currentMessages.at(-1)).toEqual(
+        expect.objectContaining({
+          messageId: initialResponse.messageId,
+          parentMessageId: pendingUser.messageId,
+          content: expect.arrayContaining([
+            expect.objectContaining({
+              type: ContentTypes.TOOL_CALL,
+              tool_call: expect.objectContaining({
+                name: `oauth${Constants.mcp_delimiter}Google-Workspace`,
+              }),
+            }),
+          ]),
+        }),
+      );
+    });
+
     it('should not insert regenerate transport userMessage before preliminary OAuth steps', () => {
       const originalUser = createUserMessage({ messageId: 'original-user-message' });
       const originalResponse = createResponseMessage({

@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react';
-import { useSetRecoilState, useRecoilValue } from 'recoil';
+import { useSetRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
 import { Constants, tMessageSchema, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessage, TConversation, TSubmission, Agents } from 'librechat-data-provider';
 import type { StreamStatusResponse } from '~/data-provider';
 import { useStreamStatus } from '~/data-provider';
+import { getBranchSiblingIndexesForTarget } from '~/utils';
 import store from '~/store';
 
 function hasSubmissionUserMessage(
@@ -148,6 +149,22 @@ export default function useResumeOnLoad(
   const resumableEnabled = !isAssistantsEndpoint(actualEndpoint);
   // Track conversations we've already processed (either resumed or skipped)
   const processedConvoRef = useRef<string | null>(null);
+  const restoreResumeBranch = useRecoilCallback(
+    ({ set }) =>
+      (resumeState: Agents.ResumeState, messages: TMessage[], activeConversationId: string) => {
+        const targetParentId = resumeState.userMessage?.parentMessageId;
+        const branchIndexes = getBranchSiblingIndexesForTarget(
+          messages,
+          targetParentId,
+          activeConversationId,
+        );
+
+        for (const { parentMessageId, siblingIdx } of branchIndexes) {
+          set(store.messagesSiblingIdxFamily(parentMessageId), siblingIdx);
+        }
+      },
+    [],
+  );
 
   // Check for active stream when conversation changes
   const submissionConvoId = currentSubmission?.conversation?.conversationId;
@@ -266,6 +283,7 @@ export default function useResumeOnLoad(
 
     // Build submission from resume state if available
     if (streamStatus.resumeState) {
+      restoreResumeBranch(streamStatus.resumeState, messages, conversationId);
       const submission = buildSubmissionFromResumeState(
         streamStatus.resumeState,
         streamStatus.streamId,
@@ -308,6 +326,7 @@ export default function useResumeOnLoad(
     streamStatus,
     getMessages,
     setSubmission,
+    restoreResumeBranch,
   ]);
 
   // Reset processedConvoRef when conversation changes to allow re-checking

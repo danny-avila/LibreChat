@@ -448,6 +448,7 @@ export default function useStepHandler({
       const getEventMessages = (candidateMessages: TMessage[]) =>
         submission.isRegenerate ? candidateMessages : getCurrentMessages(candidateMessages);
       const messages = getEventMessages(submissionMessages);
+      const { userMessage } = submission;
       const getRegenerateResponseIds = (responseMessageId: string) => {
         const ids = new Set<string>();
         const addId = (id?: string | null) => {
@@ -466,13 +467,39 @@ export default function useStepHandler({
         submission.isRegenerate &&
         !message.isCreatedByUser &&
         getRegenerateResponseIds(responseMessageId).has(message.messageId);
-      const getResponseBaseMessages = (
+      const ensureUserMessagePresent = (
         candidateMessages: TMessage[],
         responseMessageId: string,
       ) => {
+        if (
+          submission.isRegenerate ||
+          !userMessage?.messageId ||
+          candidateMessages.some((message) => message.messageId === userMessage.messageId)
+        ) {
+          return candidateMessages;
+        }
+
+        const responseIndex = candidateMessages.findIndex(
+          (message) => message.messageId === responseMessageId,
+        );
+        if (responseIndex < 0) {
+          return [...candidateMessages, userMessage as TMessage];
+        }
+
+        const nextMessages = [...candidateMessages];
+        nextMessages.splice(responseIndex, 0, userMessage as TMessage);
+        return nextMessages;
+      };
+      const getResponseBaseMessages = (
+        candidateMessages: TMessage[],
+        responseMessageId: string,
+        ensureUserMessage = false,
+      ) => {
         const currentMessages = getEventMessages(candidateMessages);
         if (!submission.isRegenerate) {
-          return currentMessages;
+          return ensureUserMessage
+            ? ensureUserMessagePresent(currentMessages, responseMessageId)
+            : currentMessages;
         }
         return currentMessages.filter(
           (message) => !shouldRemoveRegenerateResponse(message, responseMessageId),
@@ -482,8 +509,13 @@ export default function useStepHandler({
         candidateMessages: TMessage[],
         updatedResponse: TMessage,
         responseMessageId: string,
+        options?: { ensureUserMessage?: boolean },
       ) => {
-        const currentMessages = getResponseBaseMessages(candidateMessages, responseMessageId);
+        const currentMessages = getResponseBaseMessages(
+          candidateMessages,
+          responseMessageId,
+          options?.ensureUserMessage === true,
+        );
         const hasResponseMessage = currentMessages.some(
           (msg) => msg.messageId === responseMessageId,
         );
@@ -493,7 +525,6 @@ export default function useStepHandler({
             )
           : [...currentMessages, updatedResponse];
       };
-      const { userMessage } = submission;
       let parentMessageId =
         submission.isRegenerate && submission.initialResponse?.parentMessageId
           ? submission.initialResponse.parentMessageId
@@ -608,7 +639,11 @@ export default function useStepHandler({
           });
 
           messageMap.current.set(responseMessageId, updatedResponse);
-          setMessages(mergeResponseMessage(messages, updatedResponse, responseMessageId));
+          setMessages(
+            mergeResponseMessage(messages, updatedResponse, responseMessageId, {
+              ensureUserMessage: true,
+            }),
+          );
         }
 
         if (runStep.summary != null) {
@@ -811,7 +846,11 @@ export default function useStepHandler({
           });
 
           messageMap.current.set(responseMessageId, updatedResponse);
-          setMessages(mergeResponseMessage(messages, updatedResponse, responseMessageId));
+          setMessages(
+            mergeResponseMessage(messages, updatedResponse, responseMessageId, {
+              ensureUserMessage: true,
+            }),
+          );
         }
       } else if (stepEvent.event === StepEvents.ON_RUN_STEP_COMPLETED) {
         const { result } = stepEvent.data;
@@ -850,7 +889,11 @@ export default function useStepHandler({
           );
 
           messageMap.current.set(responseMessageId, updatedResponse);
-          setMessages(mergeResponseMessage(messages, updatedResponse, responseMessageId));
+          setMessages(
+            mergeResponseMessage(messages, updatedResponse, responseMessageId, {
+              ensureUserMessage: true,
+            }),
+          );
         }
       } else if (stepEvent.event === StepEvents.ON_SUBAGENT_UPDATE) {
         applySubagentUpdate(stepEvent.data);
