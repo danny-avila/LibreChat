@@ -84,7 +84,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  GITNEXUS_VERSION: '1.5.3'
+  GITNEXUS_VERSION: '1.6.5'
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/librechat-gitnexus
 
 jobs:

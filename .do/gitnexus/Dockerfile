@@ -7,7 +7,7 @@
 
 FROM node:24.16.0-slim
 
-ARG GITNEXUS_VERSION=1.5.3
+ARG GITNEXUS_VERSION=1.6.5
 
 # 1. Build native addons with Bookworm toolchain, then remove build tools.
 #    curl stays for the docker healthcheck; Caddy lives in its own container.
