@@ -511,8 +511,13 @@ export default function useStepHandler({
           // Remove any existing response placeholder
           let updatedMessages = currentMessages.filter((m) => m.messageId !== responseMessageId);
 
-          // Ensure userMessage is present (multi-tab: Tab 2 may not have it yet)
-          if (!updatedMessages.some((m) => m.messageId === userMessage.messageId)) {
+          // Ensure userMessage is present (multi-tab: Tab 2 may not have it yet).
+          // Regenerate reuses an existing user turn; its submission userMessage is only
+          // a transport placeholder and must not become a new visible branch.
+          if (
+            !submission.isRegenerate &&
+            !updatedMessages.some((m) => m.messageId === userMessage.messageId)
+          ) {
             updatedMessages = [...updatedMessages, userMessage as TMessage];
           }
 
