@@ -127,6 +127,14 @@ describe('useChatFunctions regenerate', () => {
     expect(submission.initialResponse?.messageId).toBe('assistant-1_');
     expect(submission.initialResponse?.parentMessageId).toBe('user-1');
     expect(submission.messages.map((message) => message.messageId)).toEqual(['user-1']);
+    expect(submission.regenerateMessages?.map((message) => message.messageId)).toEqual([
+      'user-1',
+      'assistant-1',
+      'user-2',
+      'assistant-2',
+      'user-3',
+      'assistant-3',
+    ]);
     expect(
       setMessages.mock.calls.at(-1)?.[0].map((message: TMessage) => message.messageId),
     ).toEqual(['user-1', 'assistant-1_']);
