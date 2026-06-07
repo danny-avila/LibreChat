@@ -743,7 +743,7 @@ class GenerationJobManagerClass {
 
     /** Detect "early abort" - aborted before any generation happened (e.g., during tool loading)
     In this case, no messages were saved to DB, so frontend shouldn't navigate to conversation */
-    const isEarlyAbort = !shouldPersistAbortContent;
+    const isEarlyAbort = !shouldPersistAbortContent && jobData.createdEventEmitted !== true;
 
     /** Final event for abort */
     const userMessageId = jobData.userMessage?.messageId;
@@ -1221,6 +1221,7 @@ class GenerationJobManagerClass {
 
     const { message } = event;
     const updates: Partial<SerializableJobData> = {
+      createdEventEmitted: true,
       userMessage: {
         messageId: message.messageId,
         parentMessageId: message.parentMessageId,

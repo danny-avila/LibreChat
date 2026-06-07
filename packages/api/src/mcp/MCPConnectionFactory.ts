@@ -519,6 +519,10 @@ export class MCPConnectionFactory {
                 const expiresAt = this.getOAuthReplayExpiresAt(existingFlow.createdAt);
                 if (!expiresAt) {
                   logger.debug(`${this.logPrefix} PENDING OAuth flow expired before replay`);
+                  connection.emit(
+                    'oauthFailed',
+                    new Error('Pending OAuth flow expired before replay'),
+                  );
                   return;
                 }
                 logger.info(

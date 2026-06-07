@@ -266,4 +266,58 @@ describe('useResumeOnLoad', () => {
 
     expect(observedSiblingIndexes[observedSiblingIndexes.length - 1]).toBe(1);
   });
+
+  it('restores the assistant sibling selected by a pending regenerate response', async () => {
+    const rootUser = buildUserMessage(CONVERSATION_ID, 'root-user');
+    const olderResponse = {
+      messageId: 'older-response',
+      parentMessageId: rootUser.messageId,
+      conversationId: CONVERSATION_ID,
+      text: 'Older response',
+      isCreatedByUser: false,
+    } as TMessage;
+    const newerResponse = {
+      messageId: 'newer-response',
+      parentMessageId: rootUser.messageId,
+      conversationId: CONVERSATION_ID,
+      text: 'Newer response',
+      isCreatedByUser: false,
+    } as TMessage;
+    const observedSiblingIndexes: number[] = [];
+
+    mockUseStreamStatus.mockReturnValue({
+      isSuccess: true,
+      isFetching: false,
+      data: {
+        active: true,
+        status: 'running',
+        streamId: CONVERSATION_ID,
+        resumeState: {
+          runSteps: [],
+          aggregatedContent: [],
+          replayEvents: [],
+          responseMessageId: `${olderResponse.messageId}_`,
+          conversationId: CONVERSATION_ID,
+          userMessage: {
+            messageId: rootUser.messageId,
+            parentMessageId: rootUser.parentMessageId,
+            conversationId: CONVERSATION_ID,
+            text: rootUser.text,
+          },
+        },
+      },
+    });
+
+    renderUseResumeOnLoad({
+      messages: [rootUser, olderResponse, newerResponse],
+      siblingIndexParentId: rootUser.messageId,
+      onSiblingIndex: (siblingIndex) => observedSiblingIndexes.push(siblingIndex),
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(observedSiblingIndexes[observedSiblingIndexes.length - 1]).toBe(1);
+  });
 });

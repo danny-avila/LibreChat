@@ -913,6 +913,7 @@ export class RedisJobStore implements IJobStore {
       error: data.error || undefined,
       userMessage: data.userMessage ? JSON.parse(data.userMessage) : undefined,
       responseMessageId: data.responseMessageId || undefined,
+      createdEventEmitted: data.createdEventEmitted === '1',
       sender: data.sender || undefined,
       syncSent: data.syncSent === '1',
       finalEvent: data.finalEvent || undefined,

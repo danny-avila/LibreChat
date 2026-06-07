@@ -30,6 +30,9 @@ export interface SerializableJobData {
   /** Response message ID for reconnection */
   responseMessageId?: string;
 
+  /** Whether the user-message created event has been emitted */
+  createdEventEmitted?: boolean;
+
   /** Sender name for UI display */
   sender?: string;
 

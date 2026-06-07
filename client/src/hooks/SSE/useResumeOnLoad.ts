@@ -43,6 +43,41 @@ function resumeStateMatchesSubmission(
   return !!responseMessageId && resumeState.responseMessageId === responseMessageId;
 }
 
+function getResumeBranchTargetMessageId(
+  resumeState: Agents.ResumeState,
+  messages: TMessage[],
+): string | null | undefined {
+  const responseMessageId = resumeState.responseMessageId;
+  if (!responseMessageId) {
+    return resumeState.userMessage?.parentMessageId;
+  }
+
+  const unpaddedResponseMessageId = responseMessageId.replace(/_+$/, '');
+  let hasResponseMessage = false;
+  let hasUnpaddedResponseMessage = false;
+
+  for (const message of messages) {
+    if (message.messageId === responseMessageId) {
+      hasResponseMessage = true;
+      break;
+    }
+
+    if (message.messageId === unpaddedResponseMessageId) {
+      hasUnpaddedResponseMessage = true;
+    }
+  }
+
+  if (hasResponseMessage) {
+    return responseMessageId;
+  }
+
+  if (hasUnpaddedResponseMessage) {
+    return unpaddedResponseMessageId;
+  }
+
+  return resumeState.userMessage?.parentMessageId;
+}
+
 /**
  * Build a submission object from resume state for reconnected streams.
  * This provides the minimum data needed for useResumableSSE to subscribe.
@@ -152,10 +187,10 @@ export default function useResumeOnLoad(
   const restoreResumeBranch = useRecoilCallback(
     ({ set }) =>
       (resumeState: Agents.ResumeState, messages: TMessage[], activeConversationId: string) => {
-        const targetParentId = resumeState.userMessage?.parentMessageId;
+        const targetMessageId = getResumeBranchTargetMessageId(resumeState, messages);
         const branchIndexes = getBranchSiblingIndexesForTarget(
           messages,
-          targetParentId,
+          targetMessageId,
           activeConversationId,
         );
 

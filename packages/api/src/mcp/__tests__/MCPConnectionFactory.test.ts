@@ -5,6 +5,7 @@ import type { MCPOAuthTokens } from '~/mcp/oauth';
 import type * as t from '~/mcp/types';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPOAuthHandler, MCPTokenStorage } from '~/mcp/oauth';
+import { PENDING_STALE_MS } from '~/flow/manager';
 import { MCPConnection } from '~/mcp/connection';
 import { processMCPEnv } from '~/utils';
 
@@ -449,6 +450,65 @@ describe('MCPConnectionFactory', () => {
       expect(mockConnectionInstance.emit).toHaveBeenCalledWith(
         'oauthFailed',
         expect.objectContaining({ message: 'Pending OAuth flow reused - return early' }),
+      );
+    });
+
+    it('should emit oauthFailed when a PENDING flow expires before replay (returnOnOAuth)', async () => {
+      const createdAt = 1000;
+      const firstNow = createdAt + PENDING_STALE_MS - 1;
+      const expiredNow = createdAt + PENDING_STALE_MS;
+      jest
+        .spyOn(Date, 'now')
+        .mockReturnValueOnce(firstNow)
+        .mockReturnValueOnce(expiredNow)
+        .mockReturnValue(expiredNow);
+
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig: mockServerConfig,
+        user: mockUser,
+      };
+
+      const oauthOptions: t.OAuthConnectionOptions = {
+        user: mockUser,
+        useOAuth: true,
+        returnOnOAuth: true,
+        oauthStart: jest.fn(),
+        flowManager: mockFlowManager,
+      };
+
+      mockFlowManager.getFlowState.mockResolvedValue({
+        status: 'PENDING',
+        type: 'mcp_oauth',
+        metadata: {
+          codeVerifier: 'existing-verifier',
+          authorizationUrl: 'https://auth.example.com/existing',
+        },
+        createdAt,
+      });
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+      let oauthRequiredHandler: (data: Record<string, unknown>) => Promise<void>;
+      mockConnectionInstance.on.mockImplementation((event, handler) => {
+        if (event === 'oauthRequired') {
+          oauthRequiredHandler = handler as (data: Record<string, unknown>) => Promise<void>;
+        }
+        return mockConnectionInstance;
+      });
+
+      try {
+        await MCPConnectionFactory.create(basicOptions, oauthOptions);
+      } catch {
+        // Expected to fail
+      }
+
+      await oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
+
+      expect(oauthOptions.oauthStart).not.toHaveBeenCalled();
+      expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
+      expect(mockConnectionInstance.emit).toHaveBeenCalledWith(
+        'oauthFailed',
+        expect.objectContaining({ message: 'Pending OAuth flow expired before replay' }),
       );
     });
 
