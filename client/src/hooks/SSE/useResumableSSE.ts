@@ -131,10 +131,7 @@ const hasConcreteConversationId = (conversationId?: string | null) =>
 
 const isInitialNewConversation = (submission: TSubmission) => {
   const conversationId = submission.conversation?.conversationId;
-  return (
-    submission.userMessage?.parentMessageId === Constants.NO_PARENT &&
-    !hasConcreteConversationId(conversationId)
-  );
+  return !hasConcreteConversationId(conversationId);
 };
 
 const getToolCallName = (toolCall: unknown) =>
@@ -1039,7 +1036,7 @@ export default function useResumableSSE(
           // Queue title generation if this is a new conversation (first message).
           // Skip temporary conversations — the server never generates titles for
           // them, so polling would 404 indefinitely.
-          const isNewConvo = submission.userMessage?.parentMessageId === Constants.NO_PARENT;
+          const isNewConvo = isInitialNewConversation(submission);
           if (isNewConvo && !submission.isTemporary) {
             queueTitleGeneration(newStreamId);
           }

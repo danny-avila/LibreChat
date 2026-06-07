@@ -452,6 +452,46 @@ describe('useResumableSSE - 404 error path', () => {
     unmount();
   });
 
+  it('replaces the new-chat URL when the stream id is known despite a stale parent id', async () => {
+    window.history.pushState({}, '', '/c/new');
+    const submission = buildSubmission({
+      conversation: {},
+      userMessage: {
+        messageId: 'msg-1',
+        conversationId: null,
+        text: 'Hello',
+        isCreatedByUser: true,
+        sender: 'User',
+        parentMessageId: 'stale-parent-message',
+      },
+      initialResponse: {
+        messageId: 'msg-1_',
+        conversationId: null,
+        text: '',
+        isCreatedByUser: false,
+        sender: 'Assistant',
+      },
+    });
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(window.location.pathname).toBe('/c/stream-123');
+    expect(mockSetQueryData).toHaveBeenCalledWith(
+      [QueryKeys.messages, 'stream-123'],
+      expect.arrayContaining([
+        expect.objectContaining({ messageId: 'msg-1', conversationId: 'stream-123' }),
+      ]),
+    );
+
+    unmount();
+    window.history.pushState({}, '', '/');
+  });
+
   it('hydrates the submission conversation id before created handlers run', async () => {
     const submission = buildSubmission({
       conversation: {},
