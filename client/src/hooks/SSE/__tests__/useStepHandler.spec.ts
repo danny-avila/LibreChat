@@ -541,6 +541,70 @@ describe('useStepHandler', () => {
       );
     });
 
+    it('should preserve regenerate history when OAuth steps arrive before optimistic state commits', () => {
+      const originalUser = createUserMessage({ messageId: 'original-user-message' });
+      const originalResponse = createResponseMessage({
+        messageId: 'original-response-message',
+        parentMessageId: originalUser.messageId,
+      });
+      const initialResponse = createResponseMessage({
+        messageId: 'original-response-message_',
+        parentMessageId: originalUser.messageId,
+      });
+      const regenerateUserMessage = createUserMessage({
+        messageId: 'synthetic-regenerate-user-message',
+        parentMessageId: originalResponse.messageId,
+      });
+
+      mockGetMessages.mockReturnValue([]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createToolCallRunStep({
+        id: 'step-oauth-login',
+        runId: USE_PRELIM_RESPONSE_MESSAGE_ID,
+        stepDetails: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [
+            {
+              id: 'tool-call-oauth',
+              name: `oauth${Constants.mcp_delimiter}Google-Workspace`,
+              args: '',
+              type: ToolCallTypes.TOOL_CALL,
+            },
+          ],
+        },
+      });
+      const submission = createSubmission({
+        userMessage: regenerateUserMessage,
+        isRegenerate: true,
+        messages: [originalUser],
+        initialResponse,
+      });
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1][0];
+      expect(lastCall).toHaveLength(2);
+      expect(lastCall.map((message: TMessage) => message.messageId)).toEqual([
+        originalUser.messageId,
+        initialResponse.messageId,
+      ]);
+      expect(lastCall).not.toContainEqual(
+        expect.objectContaining({ messageId: regenerateUserMessage.messageId }),
+      );
+      expect(lastCall[1]?.content).toContainEqual(
+        expect.objectContaining({
+          type: ContentTypes.TOOL_CALL,
+          tool_call: expect.objectContaining({
+            name: `oauth${Constants.mcp_delimiter}Google-Workspace`,
+          }),
+        }),
+      );
+    });
+
     it('should propagate step metadata (agentId, groupId) for parallel rendering', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);

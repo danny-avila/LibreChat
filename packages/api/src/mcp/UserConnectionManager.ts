@@ -1,21 +1,14 @@
 import { logger } from '@librechat/data-schemas';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
-import type { MCPOAuthFlowMetadata } from '~/mcp/oauth';
-import type { FlowState } from '~/flow/types';
+import type { PendingOAuthStart } from '~/mcp/oauth';
 import type * as t from './types';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
+import { getReplayablePendingMCPOAuthStart } from '~/mcp/oauth';
 import { isUserSourced, requiresOAuthMachinery } from './utils';
-import { PENDING_STALE_MS } from '~/flow/manager';
-import { MCPOAuthHandler } from '~/mcp/oauth';
 import { MCPConnection } from './connection';
 import { mcpConfig } from './mcpConfig';
-
-type PendingOAuthStart = {
-  authURL: string;
-  options?: t.OAuthStartOptions;
-};
 
 type PendingOAuthState = {
   oauthStarts: Set<t.OAuthStartHandler>;
@@ -188,36 +181,11 @@ export abstract class UserConnectionManager {
     await oauthStart(authURL, options);
   }
 
-  private getPendingOAuthStart(flow: FlowState | null | undefined): PendingOAuthStart | undefined {
-    if (flow?.status !== 'PENDING') {
-      return undefined;
-    }
-
-    const expiresAt = flow.createdAt + PENDING_STALE_MS;
-    if (expiresAt <= Date.now()) {
-      return undefined;
-    }
-
-    const metadata = flow.metadata as MCPOAuthFlowMetadata | undefined;
-    const authorizationUrl = metadata?.authorizationUrl;
-    if (!authorizationUrl) {
-      return undefined;
-    }
-
-    return { authURL: authorizationUrl, options: { expiresAt } };
-  }
-
   private async getFlowPendingOAuthStart(
     { flowManager, serverName }: Pick<t.UserMCPConnectionOptions, 'flowManager' | 'serverName'>,
     userId: string,
   ): Promise<PendingOAuthStart | undefined> {
-    if (!flowManager) {
-      return undefined;
-    }
-
-    const flowId = MCPOAuthHandler.generateFlowId(userId, serverName);
-    const existingFlow = await flowManager.getFlowState(flowId, 'mcp_oauth');
-    return this.getPendingOAuthStart(existingFlow);
+    return getReplayablePendingMCPOAuthStart({ flowManager, userId, serverName });
   }
 
   private async reissuePendingOAuthStart(

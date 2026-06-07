@@ -36,9 +36,9 @@ jest.mock('~/components/Endpoints/MinimalIcon', () => ({
 }));
 
 const endpointsConfig = {
-  [EModelEndpoint.agents]: {},
-  [EModelEndpoint.google]: {},
-} as unknown as TEndpointsConfig;
+  [EModelEndpoint.agents]: { order: 0 },
+  [EModelEndpoint.google]: { order: 1 },
+} as TEndpointsConfig;
 
 const agent = {
   id: 'agent_123',

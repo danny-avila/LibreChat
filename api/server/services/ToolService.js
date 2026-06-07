@@ -15,8 +15,6 @@ const {
   getUserMCPAuthMap,
   loadToolDefinitions,
   GenerationJobManager,
-  MCPOAuthHandler,
-  PENDING_STALE_MS,
   isActionDomainAllowed,
   buildWebSearchContext,
   buildImageToolContext,
@@ -25,6 +23,7 @@ const {
   getMissingCustomUserVars,
   buildWebSearchDynamicContext,
   getCodeApiAuthHeaders,
+  getReplayablePendingMCPOAuthStart,
   isFileAuthoringToolDefinition,
 } = require('@librechat/api');
 const {
@@ -514,39 +513,6 @@ const isBuiltInTool = (toolName) =>
       toolkits.some((t) => t.pluginKey === toolName) ||
       nativeTools.has(toolName),
   );
-
-async function getReplayablePendingMCPOAuthStart({ flowManager, userId, serverName }) {
-  if (!flowManager || typeof flowManager.getFlowState !== 'function') {
-    return null;
-  }
-
-  try {
-    const flowId = MCPOAuthHandler.generateFlowId(userId, serverName);
-    const flowState = await flowManager.getFlowState(flowId, 'mcp_oauth');
-    if (flowState?.status !== 'PENDING') {
-      return null;
-    }
-
-    const createdAt = typeof flowState.createdAt === 'number' ? flowState.createdAt : 0;
-    const expiresAt = createdAt + PENDING_STALE_MS;
-    if (!createdAt || expiresAt <= Date.now()) {
-      return null;
-    }
-
-    const authorizationUrl = flowState.metadata?.authorizationUrl;
-    if (typeof authorizationUrl !== 'string' || authorizationUrl.length === 0) {
-      return null;
-    }
-
-    return { authURL: authorizationUrl, options: { expiresAt } };
-  } catch (error) {
-    logger.warn(
-      `[Tool Definitions] Failed to inspect pending OAuth flow for ${serverName}:`,
-      error,
-    );
-    return null;
-  }
-}
 
 function getMCPServerNamesFromTools(tools) {
   const serverNames = new Set();

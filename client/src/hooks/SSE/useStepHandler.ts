@@ -444,7 +444,7 @@ export default function useStepHandler({
 
   const stepHandler = useCallback(
     (stepEvent: TStepEvent, submission: EventSubmission) => {
-      const messages = getMessages() || [];
+      const messages = getCurrentMessages(submission.messages ?? []);
       const { userMessage } = submission;
       let parentMessageId = userMessage.messageId;
 
@@ -505,11 +505,18 @@ export default function useStepHandler({
 
           // Get fresh messages to handle multi-tab scenarios where messages may have loaded
           // after this handler started (Tab 2 may have more complete history now)
-          const freshMessages = getMessages() || [];
-          const currentMessages = freshMessages.length > messages.length ? freshMessages : messages;
+          const currentMessages = getCurrentMessages(messages);
 
           // Remove any existing response placeholder
-          let updatedMessages = currentMessages.filter((m) => m.messageId !== responseMessageId);
+          let updatedMessages = currentMessages.filter(
+            (m) =>
+              m.messageId !== responseMessageId &&
+              !(
+                submission.isRegenerate &&
+                !m.isCreatedByUser &&
+                m.parentMessageId === parentMessageId
+              ),
+          );
 
           // Ensure userMessage is present (multi-tab: Tab 2 may not have it yet).
           // Regenerate reuses an existing user turn; its submission userMessage is only
