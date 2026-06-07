@@ -476,6 +476,7 @@ export default function useChatFunctions({
           initialResponseId: initialResponse.messageId,
         })
       : currentMessages;
+    const regenerateMessages = isRegenerate ? [...currentMessages] : undefined;
 
     logger.log('message_state', initialResponse);
     const submission: TSubmission = {
@@ -491,6 +492,7 @@ export default function useChatFunctions({
         overrideParentMessageId: isRegenerate ? messageId : null,
       },
       messages: submissionMessages,
+      regenerateMessages,
       isEdited: isEditOrContinue,
       isContinued,
       isRegenerate,

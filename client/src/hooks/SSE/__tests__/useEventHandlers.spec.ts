@@ -3,6 +3,7 @@ import type { EventSubmission, TMessage } from 'librechat-data-provider';
 import {
   buildCreatedInitialResponse,
   isInitialNewConversationSubmission,
+  mergeRegenerateFinalMessages,
 } from '~/hooks/SSE/useEventHandlers';
 
 describe('buildCreatedInitialResponse', () => {
@@ -75,5 +76,63 @@ describe('isInitialNewConversationSubmission', () => {
         } as TMessage,
       } as EventSubmission),
     ).toBe(false);
+  });
+});
+
+describe('mergeRegenerateFinalMessages', () => {
+  const userMessage = (messageId: string, parentMessageId: string = Constants.NO_PARENT) =>
+    ({
+      messageId,
+      parentMessageId,
+      conversationId: 'conversation-1',
+      isCreatedByUser: true,
+      sender: 'User',
+      text: messageId,
+    }) as TMessage;
+
+  const assistantMessage = (messageId: string, parentMessageId: string) =>
+    ({
+      messageId,
+      parentMessageId,
+      conversationId: 'conversation-1',
+      isCreatedByUser: false,
+      sender: 'Assistant',
+      text: messageId,
+    }) as TMessage;
+
+  it('keeps the original branch siblings when a non-tail regenerate finalizes', () => {
+    const rootUser = userMessage('user-1');
+    const originalResponse = assistantMessage('assistant-1', rootUser.messageId);
+    const followUpUser = userMessage('user-2', originalResponse.messageId);
+    const followUpResponse = assistantMessage('assistant-2', followUpUser.messageId);
+    const finalResponse = assistantMessage('assistant-3', rootUser.messageId);
+
+    expect(
+      mergeRegenerateFinalMessages({
+        messages: [rootUser, originalResponse, followUpUser, followUpResponse],
+        responseMessage: finalResponse,
+        initialResponseId: 'assistant-1_',
+      }).map((message) => message.messageId),
+    ).toEqual([
+      rootUser.messageId,
+      originalResponse.messageId,
+      followUpUser.messageId,
+      followUpResponse.messageId,
+      finalResponse.messageId,
+    ]);
+  });
+
+  it('replaces the streamed preliminary response when it is present', () => {
+    const rootUser = userMessage('user-1');
+    const preliminaryResponse = assistantMessage('assistant-1_', rootUser.messageId);
+    const finalResponse = assistantMessage('assistant-3', rootUser.messageId);
+
+    expect(
+      mergeRegenerateFinalMessages({
+        messages: [rootUser, preliminaryResponse],
+        responseMessage: finalResponse,
+        initialResponseId: preliminaryResponse.messageId,
+      }).map((message) => message.messageId),
+    ).toEqual([rootUser.messageId, finalResponse.messageId]);
   });
 });

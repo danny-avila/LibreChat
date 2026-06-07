@@ -147,6 +147,8 @@ export type TSubmission = {
   isContinued?: boolean;
   isTemporary: boolean;
   messages: TMessage[];
+  /** Client-only full message context used to restore branch siblings after scoped regenerate. */
+  regenerateMessages?: TMessage[];
   isRegenerate?: boolean;
   initialResponse?: TMessage;
   conversation: Partial<TConversation>;

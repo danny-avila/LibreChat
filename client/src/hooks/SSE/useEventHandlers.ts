@@ -90,6 +90,39 @@ export const isInitialNewConversationSubmission = ({
 }: Pick<EventSubmission, 'userMessage'>): boolean =>
   userMessage?.parentMessageId === Constants.NO_PARENT;
 
+export const mergeRegenerateFinalMessages = ({
+  messages,
+  responseMessage,
+  initialResponseId,
+}: {
+  messages: TMessage[];
+  responseMessage: TMessage;
+  initialResponseId?: string | null;
+}): TMessage[] => {
+  const finalMessages: TMessage[] = [];
+  let inserted = false;
+
+  for (const message of messages) {
+    if (!message?.messageId || message.messageId === initialResponseId) {
+      continue;
+    }
+
+    if (message.messageId === responseMessage.messageId) {
+      finalMessages.push(responseMessage);
+      inserted = true;
+      continue;
+    }
+
+    finalMessages.push(message);
+  }
+
+  if (!inserted) {
+    finalMessages.push(responseMessage);
+  }
+
+  return finalMessages;
+};
+
 export type EventHandlerParams = {
   isAddedRequest?: boolean;
   setCompleted: React.Dispatch<React.SetStateAction<Set<unknown>>>;
@@ -662,7 +695,11 @@ export default function useEventHandlers({
         if (runMessages) {
           finalMessages = [...runMessages];
         } else if (isRegenerate && responseMessage) {
-          finalMessages = [...messages, responseMessage];
+          finalMessages = mergeRegenerateFinalMessages({
+            messages: submission.regenerateMessages ?? currentMessages ?? messages,
+            responseMessage,
+            initialResponseId: submission.initialResponse.messageId,
+          });
         } else if (requestMessage != null && responseMessage != null) {
           finalMessages = [...messages, requestMessage, responseMessage];
         }
