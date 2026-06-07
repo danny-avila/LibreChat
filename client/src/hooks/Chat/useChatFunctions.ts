@@ -26,9 +26,14 @@ import type {
 } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import type { TAskFunction, ExtendedFile } from '~/common';
+import {
+  logger,
+  hasStreamStartFailed,
+  createDualMessageContent,
+  getRouteChatProjectId,
+} from '~/utils';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
-import { logger, createDualMessageContent, getRouteChatProjectId } from '~/utils';
 import store, { useGetEphemeralAgent } from '~/store';
 import { startupConfigKey } from '~/data-provider';
 import useUserKey from '~/hooks/Input/useUserKey';
@@ -38,6 +43,31 @@ const logChatRequest = (request: Record<string, unknown>) => {
   logger.log('=====================================\nAsk function called with:');
   logger.dir(request);
   logger.log('=====================================');
+};
+
+const getAppendParentMessageId = ({
+  latestMessage,
+  currentMessages,
+}: {
+  latestMessage: TMessage | null;
+  currentMessages: TMessage[];
+}) => {
+  if (!latestMessage) {
+    return Constants.NO_PARENT;
+  }
+
+  if (!hasStreamStartFailed(latestMessage)) {
+    return latestMessage.messageId;
+  }
+
+  const failedUserMessage = currentMessages.find(
+    (message) => message.messageId === latestMessage.parentMessageId,
+  );
+  if (failedUserMessage?.isCreatedByUser !== true) {
+    return latestMessage.messageId;
+  }
+
+  return failedUserMessage.parentMessageId ?? Constants.NO_PARENT;
 };
 
 export default function useChatFunctions({
@@ -165,7 +195,7 @@ export default function useChatFunctions({
     }
     const isEditOrContinue = isEdited || isContinued;
 
-    let currentMessages: TMessage[] | null = overrideMessages ?? getMessages() ?? [];
+    let currentMessages: TMessage[] = overrideMessages ?? getMessages() ?? [];
 
     if (conversation?.promptPrefix) {
       conversation.promptPrefix = replaceSpecialVars({
@@ -184,7 +214,8 @@ export default function useChatFunctions({
     // construct the query message
     // this is not a real messageId, it is used as placeholder before real messageId returned
     const intermediateId = overrideUserMessageId ?? v4();
-    parentMessageId = parentMessageId ?? latestMessage?.messageId ?? Constants.NO_PARENT;
+    parentMessageId =
+      parentMessageId ?? getAppendParentMessageId({ latestMessage, currentMessages });
 
     logChatRequest({
       index,

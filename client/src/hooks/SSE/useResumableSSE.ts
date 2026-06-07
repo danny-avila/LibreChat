@@ -22,22 +22,36 @@ import type {
   EventSubmission,
 } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
+import type { ActiveJobsResponse } from '~/data-provider';
+import type { TResData } from '~/common';
+import {
+  clearAllDrafts,
+  removeConvoFromAllQueries,
+  upsertConvoInAllQueries,
+  markStreamStartFailedMetadata,
+} from '~/utils';
 import {
   useGetUserBalance,
   useGetStartupConfig,
   queueTitleGeneration,
   streamStatusQueryKey,
 } from '~/data-provider';
-import type { ActiveJobsResponse } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
-import { clearAllDrafts, removeConvoFromAllQueries, upsertConvoInAllQueries } from '~/utils';
 import store from '~/store';
 
 type ChatHelpers = Pick<
   EventHandlerParams,
   'setMessages' | 'getMessages' | 'setConversation' | 'setIsSubmitting' | 'newConversation'
 >;
+
+const getStreamStartFailureData = (errorData?: Record<string, unknown>): TResData =>
+  ({
+    text: errorData
+      ? JSON.stringify(errorData)
+      : 'Error connecting to server, try refreshing the page.',
+    metadata: markStreamStartFailedMetadata(),
+  }) as unknown as TResData;
 
 const MAX_RETRIES = 5;
 const START_GENERATION_NETWORK_RETRIES = 3;
@@ -263,6 +277,7 @@ export default function useResumableSSE(
   const [_completed, setCompleted] = useState(new Set());
   const [streamId, setStreamId] = useState<string | null>(null);
   const setAbortScroll = useSetRecoilState(store.abortScrollFamily(runIndex));
+  const setSubmission = useSetRecoilState(store.submissionByIndex(runIndex));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(runIndex));
 
   const sseRef = useRef<SSE | null>(null);
@@ -849,20 +864,16 @@ export default function useResumableSSE(
 
       const axiosError = lastError as { response?: { data?: Record<string, unknown> } };
       const errorData = axiosError?.response?.data;
-      if (errorData) {
-        errorHandler({
-          data: { text: JSON.stringify(errorData) } as unknown as Parameters<
-            typeof errorHandler
-          >[0]['data'],
-          submission: currentSubmission as EventSubmission,
-        });
-      } else {
-        errorHandler({ data: undefined, submission: currentSubmission as EventSubmission });
-      }
+      errorHandler({
+        data: getStreamStartFailureData(errorData),
+        submission: currentSubmission as EventSubmission,
+      });
+      setShowStopButton(false);
       setIsSubmitting(false);
+      setSubmission(null);
       return null;
     },
-    [clearStepMaps, errorHandler, setIsSubmitting],
+    [clearStepMaps, errorHandler, setIsSubmitting, setShowStopButton, setSubmission],
   );
 
   useEffect(() => {

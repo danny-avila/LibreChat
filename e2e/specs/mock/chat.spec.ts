@@ -87,6 +87,7 @@ test.describe('core chat loop', () => {
     ).toBeVisible();
     await expect(fileChip).toBeVisible();
 
+    await expect(page).toHaveURL(/\/c\/[0-9a-fA-F-]{36}$/);
     const conversationUrl = page.url();
     await page.reload({ timeout: 10000 });
     await expect(page).toHaveURL(conversationUrl);

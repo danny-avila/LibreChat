@@ -1,4 +1,4 @@
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import { Constants, LocalStorageKeys, QueryKeys, request } from 'librechat-data-provider';
 import type { TSubmission } from 'librechat-data-provider';
 
@@ -48,6 +48,33 @@ const mockQueryClient = {
   }),
 };
 
+const mockActiveRunAtom = { key: 'activeRun' };
+const mockAbortScrollAtom = { key: 'abortScroll' };
+const mockSubmissionAtom = { key: 'submission' };
+const mockShowStopButtonAtom = { key: 'showStopButton' };
+const mockSetActiveRun = jest.fn();
+const mockSetAbortScroll = jest.fn();
+const mockSetSubmission = jest.fn();
+const mockSetShowStopButton = jest.fn();
+const mockUseSetRecoilStateMock = jest.fn((atom: unknown) => {
+  if (atom === mockActiveRunAtom) {
+    return mockSetActiveRun;
+  }
+  if (atom === mockAbortScrollAtom) {
+    return mockSetAbortScroll;
+  }
+  if (atom === mockSubmissionAtom) {
+    return mockSetSubmission;
+  }
+  if (atom === mockShowStopButtonAtom) {
+    return mockSetShowStopButton;
+  }
+  return jest.fn();
+});
+function mockUseSetRecoilState(atom: unknown) {
+  return mockUseSetRecoilStateMock(atom);
+}
+
 jest.mock('@tanstack/react-query', () => ({
   ...jest.requireActual('@tanstack/react-query'),
   useQueryClient: () => mockQueryClient,
@@ -55,15 +82,16 @@ jest.mock('@tanstack/react-query', () => ({
 
 jest.mock('recoil', () => ({
   ...jest.requireActual('recoil'),
-  useSetRecoilState: () => jest.fn(),
+  useSetRecoilState: mockUseSetRecoilState,
 }));
 
 jest.mock('~/store', () => ({
   __esModule: true,
   default: {
-    activeRunFamily: jest.fn(),
-    abortScrollFamily: jest.fn(),
-    showStopButtonByIndex: jest.fn(),
+    activeRunFamily: jest.fn(() => mockActiveRunAtom),
+    abortScrollFamily: jest.fn(() => mockAbortScrollAtom),
+    submissionByIndex: jest.fn(() => mockSubmissionAtom),
+    showStopButtonByIndex: jest.fn(() => mockShowStopButtonAtom),
   },
 }));
 
@@ -211,6 +239,11 @@ describe('useResumableSSE - 404 error path', () => {
     mockInvalidateQueries.mockClear();
     mockRemoveQueries.mockClear();
     mockFindAll.mockClear();
+    mockUseSetRecoilStateMock.mockClear();
+    mockSetActiveRun.mockClear();
+    mockSetAbortScroll.mockClear();
+    mockSetSubmission.mockClear();
+    mockSetShowStopButton.mockClear();
     (request.post as jest.Mock).mockReset();
     (request.post as jest.Mock).mockResolvedValue({ streamId: 'stream-123' });
   });
@@ -535,6 +568,39 @@ describe('useResumableSSE - 404 error path', () => {
     expect(mockSSEInstances).toHaveLength(0);
     expect(mockErrorHandler).not.toHaveBeenCalled();
     jest.useRealTimers();
+  });
+
+  it('clears submission and stop state when starting generation fails', async () => {
+    (request.post as jest.Mock).mockRejectedValueOnce({
+      response: {
+        status: 500,
+        data: { message: 'failed to start' },
+      },
+    });
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await waitFor(() => {
+      expect(mockSetSubmission).toHaveBeenCalledWith(null);
+    });
+
+    expect(mockSSEInstances).toHaveLength(0);
+    expect(mockErrorHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          text: JSON.stringify({ message: 'failed to start' }),
+          metadata: { streamStartFailed: true },
+        },
+        submission,
+      }),
+    );
+    expect(mockSetIsSubmitting).toHaveBeenCalledWith(true);
+    expect(mockSetIsSubmitting).toHaveBeenCalledWith(false);
+    expect(mockSetShowStopButton).toHaveBeenCalledWith(true);
+    expect(mockSetShowStopButton).toHaveBeenCalledWith(false);
+    unmount();
   });
 
   it('replays title events from resume state sync', async () => {
