@@ -154,7 +154,9 @@ export abstract class UserConnectionManager {
             ? await this.getFlowPendingOAuthStart(opts, userId)
             : undefined;
         const replayOAuthStart =
-          pendingOAuthStart?.authURL === lastOAuthStart.authURL ? pendingOAuthStart : lastOAuthStart;
+          pendingOAuthStart?.authURL === lastOAuthStart.authURL
+            ? pendingOAuthStart
+            : lastOAuthStart;
         await this.emitPendingOAuthStart(
           pendingOAuth,
           oauthStart,
@@ -206,10 +208,7 @@ export abstract class UserConnectionManager {
   }
 
   private async getFlowPendingOAuthStart(
-    {
-      flowManager,
-      serverName,
-    }: Pick<t.UserMCPConnectionOptions, 'flowManager' | 'serverName'>,
+    { flowManager, serverName }: Pick<t.UserMCPConnectionOptions, 'flowManager' | 'serverName'>,
     userId: string,
   ): Promise<PendingOAuthStart | undefined> {
     if (!flowManager) {

@@ -74,6 +74,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
       const mockConfig = {
         type: 'streamable-http',
         url: 'http://localhost:9999/',
+        requiresOAuth: true,
         updatedAt: undefined,
         dbId: undefined,
       };
@@ -253,7 +254,9 @@ describe('MCP OAuth Race Condition Fixes', () => {
       const createSpy = jest
         .spyOn(MCPConnectionFactory, 'create')
         .mockImplementation(async (_basicOptions, oauthOptions) => {
-          await oauthOptions.oauthStart?.(authorizationUrl);
+          if (oauthOptions && 'oauthStart' in oauthOptions) {
+            await oauthOptions.oauthStart?.(authorizationUrl);
+          }
           await connectionReleased;
           return mockConnection as never;
         });
