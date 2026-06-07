@@ -448,7 +448,7 @@ describe('MCPConnectionFactory', () => {
       expect(mockFlowManager.deleteFlow).not.toHaveBeenCalled();
       expect(mockConnectionInstance.emit).toHaveBeenCalledWith(
         'oauthFailed',
-        expect.objectContaining({ message: 'OAuth flow initiated - return early' }),
+        expect.objectContaining({ message: 'Pending OAuth flow reused - return early' }),
       );
     });
 

@@ -526,7 +526,7 @@ export class MCPConnectionFactory {
                 );
                 await this.oauthStart(storedAuthUrl, { expiresAt });
               }
-              connection.emit('oauthFailed', new Error('OAuth flow initiated - return early'));
+              connection.emit('oauthFailed', new Error('Pending OAuth flow reused - return early'));
               return;
             }
 
