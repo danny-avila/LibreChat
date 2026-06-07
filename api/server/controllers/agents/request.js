@@ -274,6 +274,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
        *  `completeJob` also aborts on *successful* completion and would otherwise
        *  cancel a title that is merely slower than a short response. */
       const titleAbortController = new AbortController();
+      /** Separate from `titleAbortController`: a user Stop cancels the in-flight
+       *  title model call but keeps a title that already finished generating.
+       *  Only a superseded/failed stream aborts this to discard such a title so it
+       *  cannot clobber the conversation now owned by the newer run. */
+      const titleDiscardController = new AbortController();
       const abortTitleOnJobAbort = () => titleAbortController.abort();
       if (job.abortController.signal.aborted) {
         titleAbortController.abort();
@@ -363,6 +368,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             immediate: true,
             convoReady,
             signal: titleAbortController.signal,
+            discardSignal: titleDiscardController.signal,
             onTitleGenerated: emitTitleEvent,
           }).catch((err) => {
             logger.error('[ResumableAgentController] Error in immediate title generation', err);
@@ -439,6 +445,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           // unblock its persistence wait without letting it save (the newer job
           // owns the conversation now).
           titleAbortController.abort();
+          titleDiscardController.abort();
           job.abortController.signal.removeEventListener('abort', abortTitleOnJobAbort);
           acceptsTitleEvents = false;
           resolveConvoReady();
@@ -554,6 +561,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         // `_waitForRun` would otherwise never resolve, deferring client disposal
         // until the 45s title timeout, and no title should persist for a failed turn.
         titleAbortController.abort();
+        titleDiscardController.abort();
         job.abortController.signal.removeEventListener('abort', abortTitleOnJobAbort);
         acceptsTitleEvents = false;
         resolveConvoReady();
