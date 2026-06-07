@@ -3,6 +3,7 @@ import os from 'os';
 import path from 'path';
 import { Types } from 'mongoose';
 import type { CodeEnvRef } from 'librechat-data-provider';
+import type { DeploymentSkillBaseMethods } from '../deployment';
 import {
   DEPLOYMENT_SKILLS_DIR_ENV,
   createDeploymentSkillMethods,
@@ -12,7 +13,6 @@ import {
   mergeDeploymentSkillIds,
   resolveDeploymentSkillDirectory,
 } from '../deployment';
-import type { DeploymentSkillBaseMethods } from '../deployment';
 
 const DESCRIPTION = 'Use this skill when the deployment needs a shared testing fixture.';
 
