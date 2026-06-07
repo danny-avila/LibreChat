@@ -52,6 +52,25 @@ function serializeCredential(
   };
 }
 
+function isCredentialError(status: ISkillSyncStatus): boolean {
+  if (status.errorCode === 'MISSING_CREDENTIAL') {
+    return true;
+  }
+  return /credential|token environment variable|server github credentials/i.test(
+    status.errorMessage ?? '',
+  );
+}
+
+function serializeErrorMessage(
+  status: ISkillSyncStatus,
+  { includeCredentialMetadata }: { includeCredentialMetadata: boolean },
+): string | undefined {
+  if (includeCredentialMetadata || !isCredentialError(status)) {
+    return status.errorMessage;
+  }
+  return 'GitHub skill sync credentials are not available';
+}
+
 function serializeSourceStatus(
   status: ISkillSyncStatus & { credentialPresent?: boolean },
   { includeCredentialMetadata = true }: { includeCredentialMetadata?: boolean } = {},
@@ -72,7 +91,7 @@ function serializeSourceStatus(
     lastSuccessAt: toIso(status.lastSuccessAt),
     lastFailureAt: toIso(status.lastFailureAt),
     errorCode: status.errorCode,
-    errorMessage: status.errorMessage,
+    errorMessage: serializeErrorMessage(status, { includeCredentialMetadata }),
     syncedSkillCount: status.syncedSkillCount,
     syncedFileCount: status.syncedFileCount,
     deletedSkillCount: status.deletedSkillCount,
@@ -116,7 +135,7 @@ export function createAdminSkillsSyncHandlers(deps: AdminSkillSyncDeps) {
   }
 
   async function runSync(req: AdminSkillsRequest, res: Response) {
-    const includeCredentialMetadata = req.skillSyncAllowServerCredentials === true;
+    const includeCredentialMetadata = req.skillSyncCanReadCredentials === true;
     const result = await getRunner(req).runOnce();
     const response: TGitHubSkillSyncManualRunResponse = {
       status: result.status,
