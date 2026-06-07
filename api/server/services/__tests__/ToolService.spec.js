@@ -101,6 +101,7 @@ const {
   resolveAgentCapabilities,
 } = require('../ToolService');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
+const { PENDING_STALE_MS } = require('@librechat/api');
 
 function createMockReq(capabilities) {
   return {
@@ -716,6 +717,54 @@ describe('ToolService - Action Capability Gating', () => {
           }),
         }),
       );
+    });
+
+    it('should preserve pending-flow expiry for OAuth URLs captured during discovery', async () => {
+      const serverName = 'Google-Workspace';
+      const authorizationUrl = 'https://auth.example.com/Google-Workspace';
+      const mcpTool = `search${Constants.mcp_delimiter}${serverName}`;
+      const capabilities = [AgentCapabilities.tools];
+      const req = createMockReq(capabilities);
+      const res = { writableEnded: false };
+      const createdAt = Date.now() - 45_000;
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockGetServerConfig.mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://demo.librechat.ai/mcp',
+        requiresOAuth: true,
+      });
+      mockGetMCPServerTools.mockResolvedValue(null);
+      mockFlowManager.getFlowState.mockResolvedValueOnce(null).mockResolvedValueOnce({
+        status: 'PENDING',
+        createdAt,
+        metadata: { authorizationUrl },
+      });
+      mockLoadToolDefinitions.mockImplementation(async (params, deps) => {
+        await deps.getOrFetchMCPServerTools(params.userId, serverName);
+        return {
+          toolDefinitions: [],
+          toolRegistry: new Map(),
+          hasDeferredTools: false,
+        };
+      });
+      reinitMCPServer
+        .mockImplementationOnce(async ({ oauthStart }) => {
+          await oauthStart(authorizationUrl);
+          return { availableTools: null };
+        })
+        .mockResolvedValue({ availableTools: null });
+
+      await loadAgentTools({
+        req,
+        res,
+        agent: { id: 'agent_123', tools: [mcpTool] },
+        definitionsOnly: true,
+      });
+
+      const authDeltaEvent = mockSendEvent.mock.calls
+        .map(([, event]) => event)
+        .find((event) => event.data?.delta?.auth === authorizationUrl);
+      expect(authDeltaEvent?.data.delta.expires_at).toBe(createdAt + PENDING_STALE_MS);
     });
 
     it('should use request-scoped MCP config before falling back to the registry', async () => {
