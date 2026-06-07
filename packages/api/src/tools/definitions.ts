@@ -6,8 +6,8 @@
  */
 
 import { Constants, isActionTool } from 'librechat-data-provider';
-import type { AgentToolOptions } from 'librechat-data-provider';
 import type { LCToolRegistry, JsonSchemaType, LCTool, GenericTool } from '@librechat/agents';
+import type { AgentToolOptions } from 'librechat-data-provider';
 import type { ToolDefinition } from './classification';
 import { resolveJsonSchemaRefs, normalizeJsonSchema } from '~/mcp/zod';
 import { buildToolClassification } from './classification';

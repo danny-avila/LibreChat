@@ -1,6 +1,4 @@
 import type { TEndpointsConfig } from './types';
-import { EModelEndpoint, isDocumentSupportedProvider } from './schemas';
-import { getEndpointFileConfig, mergeFileConfig } from './file-config';
 import {
   allowedAddressesSchema,
   configSchema,
@@ -8,6 +6,8 @@ import {
   resolveEndpointType,
   webSearchSchema,
 } from './config';
+import { EModelEndpoint, isDocumentSupportedProvider } from './schemas';
+import { getEndpointFileConfig, mergeFileConfig } from './file-config';
 
 const endpointsConfig: TEndpointsConfig = {
   [EModelEndpoint.openAI]: { userProvide: false, order: 0 },

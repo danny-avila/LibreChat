@@ -1,12 +1,12 @@
-import { loadToolDefinitions } from './definitions';
-import { toolkitExpansion, toolkitParent } from './toolkits/mapping';
-import { getToolDefinition } from './registry/definitions';
-import { resolveToolNameForExecution } from './names';
 import type {
   LoadToolDefinitionsParams,
   LoadToolDefinitionsDeps,
   ActionToolDefinition,
 } from './definitions';
+import { toolkitExpansion, toolkitParent } from './toolkits/mapping';
+import { getToolDefinition } from './registry/definitions';
+import { resolveToolNameForExecution } from './names';
+import { loadToolDefinitions } from './definitions';
 
 type MCPNameMetadata = {
   canonicalName?: string;
