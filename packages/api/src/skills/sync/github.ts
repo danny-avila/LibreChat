@@ -97,6 +97,11 @@ type PreparedExistingRemoteSkill = PreparedRemoteSkill & {
   existing: ISkill & { _id: Types.ObjectId };
 };
 
+type PreparedDiscoveredSkill = {
+  discovered: DiscoveredSkill;
+  prepared: PreparedRemoteSkill;
+};
+
 type SaveBufferResult = {
   filepath: string;
   source: string;
@@ -1057,6 +1062,96 @@ function findMovedSourceSkill(params: {
   );
 }
 
+function getMirrorNameKey(params: {
+  tenantId?: string;
+  author: string;
+  name: string | undefined;
+}): string {
+  return `${params.tenantId ?? ''}:${params.author}:${params.name ?? ''}`;
+}
+
+function assertNoDuplicatePreparedSkillNames(
+  source: SkillSyncGitHubSourceConfig,
+  preparedSkills: PreparedDiscoveredSkill[],
+): void {
+  const sourceTenantId = source.tenantId ?? undefined;
+  const seen = new Map<string, string>();
+  for (const { discovered, prepared } of preparedSkills) {
+    const key = getMirrorNameKey({
+      tenantId: sourceTenantId,
+      author: prepared.createInput.author.toString(),
+      name: prepared.createInput.name,
+    });
+    const previousRoot = seen.get(key);
+    if (previousRoot) {
+      throw new SkillSyncError(
+        'DUPLICATE_SKILL_NAME',
+        `GitHub source "${source.id}" contains multiple skills named "${prepared.createInput.name}"`,
+      );
+    }
+    seen.set(key, discovered.rootPath);
+  }
+}
+
+async function deleteNameConflictingStaleSkills(params: {
+  deps: GitHubSkillSyncDeps;
+  source: SkillSyncGitHubSourceConfig;
+  preparedSkills: PreparedDiscoveredSkill[];
+  existingSyncedSkills: Array<ISkill & { _id: Types.ObjectId }>;
+  discoveredUpstreamIds: Set<string>;
+  assertNotCancelled: AssertNotCancelled;
+}): Promise<{
+  remainingSkills: Array<ISkill & { _id: Types.ObjectId }>;
+  deletedSkillCount: number;
+  deletedFileCount: number;
+}> {
+  const sourceTenantId = params.source.tenantId ?? undefined;
+  const conflictingUpdateKeys = new Set(
+    params.preparedSkills
+      .filter(({ prepared }) => prepared.existing)
+      .map(({ prepared }) =>
+        getMirrorNameKey({
+          tenantId: sourceTenantId,
+          author: prepared.createInput.author.toString(),
+          name: prepared.update.name,
+        }),
+      ),
+  );
+  if (conflictingUpdateKeys.size === 0) {
+    return {
+      remainingSkills: params.existingSyncedSkills,
+      deletedSkillCount: 0,
+      deletedFileCount: 0,
+    };
+  }
+
+  const remainingSkills: Array<ISkill & { _id: Types.ObjectId }> = [];
+  let deletedSkillCount = 0;
+  let deletedFileCount = 0;
+  for (const skill of params.existingSyncedSkills) {
+    params.assertNotCancelled();
+    const upstreamId = getSourceMetadataString(skill, 'upstreamId');
+    const shouldDelete =
+      (skill.tenantId ?? undefined) === sourceTenantId &&
+      (!upstreamId || !params.discoveredUpstreamIds.has(upstreamId)) &&
+      conflictingUpdateKeys.has(
+        getMirrorNameKey({
+          tenantId: sourceTenantId,
+          author: skill.author.toString(),
+          name: skill.name,
+        }),
+      );
+    if (!shouldDelete) {
+      remainingSkills.push(skill);
+      continue;
+    }
+    deletedFileCount += await deleteSyncedSkill(params.deps, skill);
+    deletedSkillCount++;
+  }
+
+  return { remainingSkills, deletedSkillCount, deletedFileCount };
+}
+
 async function syncSkillFiles(params: {
   deps: GitHubSkillSyncDeps;
   token: string;
@@ -1256,6 +1351,7 @@ async function syncSource(params: {
       deletedFileCount: 0,
     };
     const syncedAt = new Date();
+    const preparedSkills: PreparedDiscoveredSkill[] = [];
 
     for (const discovered of discoveredSkills) {
       assertNotCancelled();
@@ -1277,6 +1373,27 @@ async function syncSource(params: {
         commitSha: commit.sha,
         syncedAt,
       });
+      preparedSkills.push({ discovered, prepared });
+    }
+
+    const discoveredUpstreamIds = new Set(
+      preparedSkills.map(({ discovered }) => makeUpstreamId(source, discovered.rootPath)),
+    );
+    assertNoDuplicatePreparedSkillNames(source, preparedSkills);
+    const staleConflictCleanup = await deleteNameConflictingStaleSkills({
+      deps,
+      source,
+      preparedSkills,
+      existingSyncedSkills: await getExistingSyncedSkills(),
+      discoveredUpstreamIds,
+      assertNotCancelled,
+    });
+    existingSyncedSkills = staleConflictCleanup.remainingSkills;
+    counts.deletedSkillCount += staleConflictCleanup.deletedSkillCount;
+    counts.deletedFileCount += staleConflictCleanup.deletedFileCount;
+
+    for (const { discovered, prepared } of preparedSkills) {
+      assertNotCancelled();
       const movedExisting = prepared.existing
         ? null
         : findMovedSourceSkill({

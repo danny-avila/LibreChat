@@ -12,7 +12,10 @@ function createResponse() {
   };
 }
 
-function createHandlers() {
+function createHandlers({
+  statusErrorCode,
+  statusErrorMessage,
+}: { statusErrorCode?: string; statusErrorMessage?: string } = {}) {
   const runner = {
     getStatus: jest.fn(async () => ({
       enabled: true,
@@ -34,8 +37,8 @@ function createHandlers() {
           syncedFileCount: 0,
           deletedSkillCount: 0,
           deletedFileCount: 0,
-          errorCode: undefined,
-          errorMessage: undefined,
+          errorCode: statusErrorCode,
+          errorMessage: statusErrorMessage,
           startedAt: undefined,
           finishedAt: undefined,
           lastSuccessAt: undefined,
@@ -68,8 +71,8 @@ function createHandlers() {
           syncedFileCount: 2,
           deletedSkillCount: 0,
           deletedFileCount: 0,
-          errorCode: undefined,
-          errorMessage: undefined,
+          errorCode: statusErrorCode,
+          errorMessage: statusErrorMessage,
           startedAt: undefined,
           finishedAt: undefined,
           lastSuccessAt: undefined,
@@ -109,8 +112,32 @@ describe('createAdminSkillsSyncHandlers', () => {
     );
   });
 
+  it('redacts credential-related errors from tenant-scoped status reads', async () => {
+    const { handlers } = createHandlers({
+      statusErrorCode: 'MISSING_CREDENTIAL',
+      statusErrorMessage: 'Missing GitHub token environment variable "GITHUB_SKILLS_TOKEN"',
+    });
+    const res = createResponse();
+
+    await handlers.getSyncStatus({ skillSyncCanReadCredentials: false } as never, res);
+
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sources: [
+          expect.objectContaining({
+            errorCode: 'MISSING_CREDENTIAL',
+            errorMessage: 'GitHub skill sync credentials are not available',
+          }),
+        ],
+      }),
+    );
+  });
+
   it('includes credential summaries and source credential metadata for platform status reads', async () => {
-    const { handlers } = createHandlers();
+    const { handlers } = createHandlers({
+      statusErrorCode: 'MISSING_CREDENTIAL',
+      statusErrorMessage: 'Missing GitHub credential "github-skills-prod"',
+    });
     const res = createResponse();
 
     await handlers.getSyncStatus({ skillSyncCanReadCredentials: true } as never, res);
@@ -122,6 +149,7 @@ describe('createAdminSkillsSyncHandlers', () => {
           expect.objectContaining({
             credentialKey: 'github-skills-prod',
             credentialPresent: true,
+            errorMessage: 'Missing GitHub credential "github-skills-prod"',
           }),
         ],
       }),
@@ -129,10 +157,19 @@ describe('createAdminSkillsSyncHandlers', () => {
   });
 
   it('omits source credential metadata from tenant-scoped manual run responses', async () => {
-    const { handlers } = createHandlers();
+    const { handlers } = createHandlers({
+      statusErrorCode: 'MISSING_CREDENTIAL',
+      statusErrorMessage: 'Missing GitHub credential "github-skills-prod"',
+    });
     const res = createResponse();
 
-    await handlers.runSync({ skillSyncAllowServerCredentials: false } as never, res);
+    await handlers.runSync(
+      {
+        skillSyncAllowServerCredentials: true,
+        skillSyncCanReadCredentials: false,
+      } as never,
+      res,
+    );
 
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -140,6 +177,7 @@ describe('createAdminSkillsSyncHandlers', () => {
           expect.objectContaining({
             credentialKey: undefined,
             credentialPresent: false,
+            errorMessage: 'GitHub skill sync credentials are not available',
           }),
         ],
       }),

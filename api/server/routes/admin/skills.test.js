@@ -210,6 +210,7 @@ describe('admin skills sync routes', () => {
 
     const req = mockHandlers.runSync.mock.calls[0][0];
     expect(req.skillSyncAllowServerCredentials).toBe(true);
+    expect(req.skillSyncCanReadCredentials).toBe(true);
     expect(req.config.config.skillSync).toEqual(skillSync);
   });
 });
