@@ -396,14 +396,7 @@ router.put('/:conversationId/:messageId/feedback', validateMessageReq, async (re
       { context: 'updateFeedback' },
     );
 
-    // Best-effort: mirror the rating to the message's Langfuse trace as a score.
-    // Every chat endpoint runs through the agents runtime (provider endpoints as
-    // ephemeral agents) and emits a deterministic AgentRun trace — except the
-    // Assistants endpoints, which use the OpenAI Assistants runtime and have no
-    // such trace. Skip those to avoid orphan scores. The trace id is derived
-    // deterministically from the message id (the run is created with
-    // `langfuse.deterministicTraceId`), so no lookup is needed. Fire-and-forget
-    // so feedback never blocks on Langfuse.
+    // Best-effort: Assistants messages do not have deterministic AgentRun traces.
     if (!isAssistantsEndpoint(updatedMessage.endpoint)) {
       sendFeedbackScore({
         traceId: traceIdForMessage(messageId),
