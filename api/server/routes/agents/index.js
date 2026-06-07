@@ -43,8 +43,6 @@ router.use(requireJwtAuth);
 router.use(checkBan);
 router.use(uaParser);
 
-router.use('/', v1);
-
 /**
  * Stream endpoints - mounted before chatRouter to bypass rate limiters
  * These are GET requests and don't need message body validation or rate limiting
@@ -313,6 +311,8 @@ router.post('/chat/abort', async (req, res) => {
   logger.warn(`[AgentStream] Job not found for streamId: ${jobStreamId}`);
   return res.status(404).json({ error: 'Job not found', streamId: jobStreamId });
 });
+
+router.use('/', v1);
 
 const chatRouter = express.Router();
 chatRouter.use(configMiddleware);
