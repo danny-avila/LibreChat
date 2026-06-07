@@ -444,9 +444,57 @@ export default function useStepHandler({
 
   const stepHandler = useCallback(
     (stepEvent: TStepEvent, submission: EventSubmission) => {
-      const messages = getMessages() || [];
+      const submissionMessages = submission.messages ?? [];
+      const getEventMessages = (candidateMessages: TMessage[]) =>
+        submission.isRegenerate ? candidateMessages : getCurrentMessages(candidateMessages);
+      const messages = getEventMessages(submissionMessages);
+      const getRegenerateResponseIds = (responseMessageId: string) => {
+        const ids = new Set<string>();
+        const addId = (id?: string | null) => {
+          if (!id) {
+            return;
+          }
+          ids.add(id);
+          ids.add(id.replace(/_+$/, ''));
+        };
+        addId(responseMessageId);
+        addId(submission.initialResponse?.messageId);
+        addId(submission.userMessage?.responseMessageId);
+        return ids;
+      };
+      const shouldRemoveRegenerateResponse = (message: TMessage, responseMessageId: string) =>
+        submission.isRegenerate &&
+        !message.isCreatedByUser &&
+        getRegenerateResponseIds(responseMessageId).has(message.messageId);
+      const getResponseBaseMessages = (candidateMessages: TMessage[], responseMessageId: string) => {
+        const currentMessages = getEventMessages(candidateMessages);
+        if (!submission.isRegenerate) {
+          return currentMessages;
+        }
+        return currentMessages.filter(
+          (message) => !shouldRemoveRegenerateResponse(message, responseMessageId),
+        );
+      };
+      const mergeResponseMessage = (
+        candidateMessages: TMessage[],
+        updatedResponse: TMessage,
+        responseMessageId: string,
+      ) => {
+        const currentMessages = getResponseBaseMessages(candidateMessages, responseMessageId);
+        const hasResponseMessage = currentMessages.some(
+          (msg) => msg.messageId === responseMessageId,
+        );
+        return hasResponseMessage
+          ? currentMessages.map((msg) =>
+              msg.messageId === responseMessageId ? updatedResponse : msg,
+            )
+          : [...currentMessages, updatedResponse];
+      };
       const { userMessage } = submission;
-      let parentMessageId = userMessage.messageId;
+      let parentMessageId =
+        submission.isRegenerate && submission.initialResponse?.parentMessageId
+          ? submission.initialResponse.parentMessageId
+          : userMessage.messageId;
 
       const currentTime = Date.now();
       if (currentTime - lastAnnouncementTimeRef.current > MESSAGE_UPDATE_INTERVAL) {
@@ -480,10 +528,13 @@ export default function useStepHandler({
         let response = messageMap.current.get(responseMessageId);
 
         if (!response) {
-          // Find the actual response message - check if last message is a response, otherwise use initialResponse
+          // Find the actual response message. Regenerate submissions can target
+          // an earlier branch while the visible history still ends at a later
+          // assistant message, so never seed a regenerated response from the
+          // conversation tail.
           const lastMessage = messages[messages.length - 1] as TMessage;
           const responseMessage =
-            lastMessage && !lastMessage.isCreatedByUser
+            !submission.isRegenerate && lastMessage && !lastMessage.isCreatedByUser
               ? lastMessage
               : (submission?.initialResponse as TMessage);
 
@@ -505,11 +556,12 @@ export default function useStepHandler({
 
           // Get fresh messages to handle multi-tab scenarios where messages may have loaded
           // after this handler started (Tab 2 may have more complete history now)
-          const freshMessages = getMessages() || [];
-          const currentMessages = freshMessages.length > messages.length ? freshMessages : messages;
+          const currentMessages = getResponseBaseMessages(messages, responseMessageId);
 
           // Remove any existing response placeholder
-          let updatedMessages = currentMessages.filter((m) => m.messageId !== responseMessageId);
+          let updatedMessages = currentMessages.filter(
+            (message) => !shouldRemoveRegenerateResponse(message, responseMessageId),
+          );
 
           // Ensure userMessage is present (multi-tab: Tab 2 may not have it yet).
           // Regenerate reuses an existing user turn; its submission userMessage is only
@@ -553,17 +605,7 @@ export default function useStepHandler({
           });
 
           messageMap.current.set(responseMessageId, updatedResponse);
-          const currentMessages = getCurrentMessages(messages);
-          const hasResponseMessage = currentMessages.some(
-            (msg) => msg.messageId === responseMessageId,
-          );
-          const updatedMessages = hasResponseMessage
-            ? currentMessages.map((msg) =>
-                msg.messageId === responseMessageId ? updatedResponse : msg,
-              )
-            : [...currentMessages, updatedResponse];
-
-          setMessages(updatedMessages);
+          setMessages(mergeResponseMessage(messages, updatedResponse, responseMessageId));
         }
 
         if (runStep.summary != null) {
@@ -585,8 +627,10 @@ export default function useStepHandler({
           );
 
           messageMap.current.set(responseMessageId, updatedResponse);
-          const currentMessages = getMessages() || [];
-          setMessages([...currentMessages.slice(0, -1), updatedResponse]);
+          const currentMessages = submission.isRegenerate ? messages : getMessages() || [];
+          setMessages(
+            mergeResponseMessage(currentMessages, updatedResponse, responseMessageId),
+          );
         }
 
         const bufferedDeltas = pendingDeltaBuffer.current.get(runStep.id);
@@ -624,8 +668,10 @@ export default function useStepHandler({
             agentUpdateMeta,
           );
           messageMap.current.set(responseMessageId, updatedResponse);
-          const currentMessages = getMessages() || [];
-          setMessages([...currentMessages.slice(0, -1), updatedResponse]);
+          const currentMessages = submission.isRegenerate ? messages : getMessages() || [];
+          setMessages(
+            mergeResponseMessage(currentMessages, updatedResponse, responseMessageId),
+          );
         }
       } else if (stepEvent.event === StepEvents.ON_MESSAGE_DELTA) {
         const messageDelta = stepEvent.data;
@@ -667,8 +713,10 @@ export default function useStepHandler({
             getStepMetadata(runStep),
           );
           messageMap.current.set(responseMessageId, updatedResponse);
-          const currentMessages = getMessages() || [];
-          setMessages([...currentMessages.slice(0, -1), updatedResponse]);
+          const currentMessages = submission.isRegenerate ? messages : getMessages() || [];
+          setMessages(
+            mergeResponseMessage(currentMessages, updatedResponse, responseMessageId),
+          );
         }
       } else if (stepEvent.event === StepEvents.ON_REASONING_DELTA) {
         const reasoningDelta = stepEvent.data;
@@ -710,8 +758,10 @@ export default function useStepHandler({
             getStepMetadata(runStep),
           );
           messageMap.current.set(responseMessageId, updatedResponse);
-          const currentMessages = getMessages() || [];
-          setMessages([...currentMessages.slice(0, -1), updatedResponse]);
+          const currentMessages = submission.isRegenerate ? messages : getMessages() || [];
+          setMessages(
+            mergeResponseMessage(currentMessages, updatedResponse, responseMessageId),
+          );
         }
       } else if (stepEvent.event === StepEvents.ON_RUN_STEP_DELTA) {
         const runStepDelta = stepEvent.data;
@@ -766,17 +816,7 @@ export default function useStepHandler({
           });
 
           messageMap.current.set(responseMessageId, updatedResponse);
-          const currentMessages = getCurrentMessages(messages);
-          const hasResponseMessage = currentMessages.some(
-            (msg) => msg.messageId === responseMessageId,
-          );
-          const updatedMessages = hasResponseMessage
-            ? currentMessages.map((msg) =>
-                msg.messageId === responseMessageId ? updatedResponse : msg,
-              )
-            : [...currentMessages, updatedResponse];
-
-          setMessages(updatedMessages);
+          setMessages(mergeResponseMessage(messages, updatedResponse, responseMessageId));
         }
       } else if (stepEvent.event === StepEvents.ON_RUN_STEP_COMPLETED) {
         const { result } = stepEvent.data;
@@ -815,17 +855,7 @@ export default function useStepHandler({
           );
 
           messageMap.current.set(responseMessageId, updatedResponse);
-          const currentMessages = getCurrentMessages(messages);
-          const hasResponseMessage = currentMessages.some(
-            (msg) => msg.messageId === responseMessageId,
-          );
-          const updatedMessages = hasResponseMessage
-            ? currentMessages.map((msg) =>
-                msg.messageId === responseMessageId ? updatedResponse : msg,
-              )
-            : [...currentMessages, updatedResponse];
-
-          setMessages(updatedMessages);
+          setMessages(mergeResponseMessage(messages, updatedResponse, responseMessageId));
         }
       } else if (stepEvent.event === StepEvents.ON_SUBAGENT_UPDATE) {
         applySubagentUpdate(stepEvent.data);
@@ -868,8 +898,10 @@ export default function useStepHandler({
               summarizeDeltaRaf.current = null;
               const latest = messageMap.current.get(responseMessageId);
               if (latest) {
-                const msgs = getMessages() || [];
-                setMessages([...msgs.slice(0, -1), latest]);
+                const currentMessages = submission.isRegenerate ? messages : getMessages() || [];
+            setMessages(
+              mergeResponseMessage(currentMessages, latest, responseMessageId),
+            );
               }
             });
           }
@@ -887,8 +919,7 @@ export default function useStepHandler({
           return;
         }
 
-        const currentMessages = getMessages() || [];
-        const targetIndex = currentMessages.findIndex((m) => m.messageId === completeMessageId);
+        const currentMessages = submission.isRegenerate ? messages : getMessages() || [];
 
         if (completeData.error) {
           const filtered = targetMessage.content.filter(
@@ -899,11 +930,9 @@ export default function useStepHandler({
             announcePolite({ message: 'summarize_failed', isStatus: true });
             const cleaned = { ...targetMessage, content: filtered };
             messageMap.current.set(completeMessageId, cleaned);
-            if (targetIndex >= 0) {
-              const updated = [...currentMessages];
-              updated[targetIndex] = cleaned;
-              setMessages(updated);
-            }
+            setMessages(
+              mergeResponseMessage(currentMessages, cleaned, completeMessageId),
+            );
           }
         } else {
           let didFinalize = false;
@@ -917,13 +946,13 @@ export default function useStepHandler({
             }
             return part;
           });
-          if (didFinalize && targetIndex >= 0) {
+          if (didFinalize) {
             announcePolite({ message: 'summarize_completed', isStatus: true });
             const finalized = { ...targetMessage, content: updatedContent };
             messageMap.current.set(completeMessageId, finalized);
-            const updated = [...currentMessages];
-            updated[targetIndex] = finalized;
-            setMessages(updated);
+            setMessages(
+              mergeResponseMessage(currentMessages, finalized, completeMessageId),
+            );
           }
         }
       } else {
