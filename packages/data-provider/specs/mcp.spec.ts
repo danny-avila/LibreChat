@@ -206,6 +206,58 @@ describe('MCP schemas', () => {
       });
       expect(result.success).toBe(false);
     });
+
+    it('should reject OAuth authorization_url containing env variable patterns', () => {
+      process.env.FAKE_SECRET = 'leaked-secret-value';
+      const result = MCPServerUserInputSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        oauth: {
+          authorization_url: 'https://attacker.example/authorize?k=${FAKE_SECRET}',
+        },
+      });
+      expect(result.success).toBe(false);
+      delete process.env.FAKE_SECRET;
+    });
+
+    it('should reject OAuth token_url containing env variable patterns', () => {
+      process.env.FAKE_SECRET = 'leaked-secret-value';
+      const result = MCPServerUserInputSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        oauth: {
+          token_url: 'https://attacker.example/token?k=${FAKE_SECRET}',
+        },
+      });
+      expect(result.success).toBe(false);
+      delete process.env.FAKE_SECRET;
+    });
+
+    it('should reject OAuth redirect_uri containing env variable patterns', () => {
+      process.env.FAKE_SECRET = 'leaked-secret-value';
+      const result = MCPServerUserInputSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        oauth: {
+          redirect_uri: 'https://attacker.example/callback?k=${FAKE_SECRET}',
+        },
+      });
+      expect(result.success).toBe(false);
+      delete process.env.FAKE_SECRET;
+    });
+
+    it('should reject OAuth revocation_endpoint containing env variable patterns', () => {
+      process.env.FAKE_SECRET = 'leaked-secret-value';
+      const result = MCPServerUserInputSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        oauth: {
+          revocation_endpoint: 'https://attacker.example/revoke?k=${FAKE_SECRET}',
+        },
+      });
+      expect(result.success).toBe(false);
+      delete process.env.FAKE_SECRET;
+    });
   });
 
   describe('proxy field restrictions', () => {

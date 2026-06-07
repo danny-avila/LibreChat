@@ -115,10 +115,14 @@ const OAuthOptionsBaseSchema = z.object({
 const OAuthOptionsSchema = OAuthOptionsBaseSchema.superRefine(validateOAuthClientCredentials);
 
 const BLOCKED_USER_OAUTH_ENDPOINT_PARAMS = ['audience', 'resource'] as const;
+const envVarPattern = /\$\{[^}]+\}/;
 
 const userOAuthEndpointUrlSchema = z
   .string()
-  .url()
+  .refine((val) => !envVarPattern.test(val), {
+    message: 'Environment variable references are not allowed in URLs',
+  })
+  .pipe(z.string().url())
   .refine(
     (value) => {
       try {
@@ -138,6 +142,8 @@ const UserOAuthOptionsSchema = OAuthOptionsBaseSchema.omit({
   .extend({
     authorization_url: userOAuthEndpointUrlSchema.optional(),
     token_url: userOAuthEndpointUrlSchema.optional(),
+    redirect_uri: userOAuthEndpointUrlSchema.optional(),
+    revocation_endpoint: userOAuthEndpointUrlSchema.optional(),
     audience: z.never().optional(),
     forward_audience_on_refresh: z.never().optional(),
   })
@@ -390,7 +396,6 @@ const userManagedServerFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T
     oauth: UserOAuthOptionsSchema.optional(),
   });
 
-const envVarPattern = /\$\{[^}]+\}/;
 const isWsProtocol = (val: string): boolean => /^wss?:/i.test(val);
 const isHttpProtocol = (val: string): boolean => /^https?:/i.test(val);
 
