@@ -601,6 +601,7 @@ export default function useResumableSSE(
               data.resumeState,
             );
             currentSubmission = resumeSubmission;
+            submissionRef.current = resumeSubmission;
             userMessage = resumeSubmission.userMessage;
 
             if (data.resumeState?.runSteps) {

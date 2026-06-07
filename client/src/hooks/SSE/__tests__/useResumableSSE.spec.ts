@@ -1211,6 +1211,108 @@ describe('useResumableSSE - 404 error path', () => {
     unmount();
   });
 
+  it('uses the resumed submission for final events after reconnecting from sync', async () => {
+    jest.useFakeTimers();
+    const originalUser = {
+      messageId: 'original-user',
+      conversationId: CONV_ID,
+      text: 'Original prompt',
+      isCreatedByUser: true,
+      sender: 'User',
+      parentMessageId: String(Constants.NO_PARENT),
+    };
+    const originalResponse = {
+      messageId: 'original-response',
+      conversationId: CONV_ID,
+      text: 'Original response',
+      isCreatedByUser: false,
+      sender: 'Assistant',
+      parentMessageId: 'original-user',
+    };
+    const submission = {
+      ...buildSubmission({
+        conversation: { conversationId: CONV_ID },
+        userMessage: originalUser,
+        initialResponse: originalResponse,
+      }),
+      resumeStreamId: CONV_ID,
+    } as TSubmission & { resumeStreamId: string };
+    const chatHelpers = buildChatHelpers();
+    chatHelpers.getMessages.mockReturnValue([originalUser, originalResponse]);
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const initialSSE = getLastSSE();
+    await act(async () => {
+      initialSSE._emit('message', {
+        data: JSON.stringify({
+          sync: true,
+          resumeState: {
+            runSteps: [],
+            replayEvents: [],
+            responseMessageId: 'follow-up-response',
+            conversationId: CONV_ID,
+            userMessage: {
+              messageId: 'follow-up-user',
+              parentMessageId: 'original-response',
+              conversationId: CONV_ID,
+              text: 'Follow-up prompt',
+            },
+          },
+        }),
+      });
+    });
+
+    await act(async () => {
+      initialSSE._emit('error');
+    });
+    await advanceRetryTimer(1000);
+
+    expect(mockSSEInstances).toHaveLength(2);
+    const reconnectedSSE = getLastSSE();
+    const finalPayload = {
+      final: true,
+      conversation: { conversationId: CONV_ID },
+      requestMessage: {
+        messageId: 'follow-up-user',
+        parentMessageId: 'original-response',
+        conversationId: CONV_ID,
+        text: 'Follow-up prompt',
+        isCreatedByUser: true,
+      },
+      responseMessage: {
+        messageId: 'follow-up-response',
+        parentMessageId: 'follow-up-user',
+        conversationId: CONV_ID,
+        text: 'Done',
+        isCreatedByUser: false,
+      },
+    };
+
+    await act(async () => {
+      reconnectedSSE._emit('message', {
+        data: JSON.stringify(finalPayload),
+      });
+    });
+
+    expect(mockFinalHandler).toHaveBeenLastCalledWith(
+      finalPayload,
+      expect.objectContaining({
+        userMessage: expect.objectContaining({ messageId: 'follow-up-user' }),
+        initialResponse: expect.objectContaining({
+          messageId: 'follow-up-response',
+          parentMessageId: 'follow-up-user',
+        }),
+      }),
+    );
+
+    unmount();
+  });
+
   it.each([undefined, 500, 503])(
     'does not call errorHandler for responseCode %s (reconnect path)',
     async (responseCode) => {

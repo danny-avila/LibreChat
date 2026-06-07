@@ -2,6 +2,7 @@ import { Constants } from 'librechat-data-provider';
 import type { EventSubmission, TMessage } from 'librechat-data-provider';
 import {
   buildCreatedInitialResponse,
+  getExistingConversationAbortMessages,
   isInitialNewConversationSubmission,
   mergeRegenerateFinalMessages,
 } from '~/hooks/SSE/useEventHandlers';
@@ -134,5 +135,41 @@ describe('mergeRegenerateFinalMessages', () => {
         initialResponseId: preliminaryResponse.messageId,
       }).map((message) => message.messageId),
     ).toEqual([rootUser.messageId, finalResponse.messageId]);
+  });
+});
+
+describe('getExistingConversationAbortMessages', () => {
+  const message = (messageId: string) =>
+    ({
+      messageId,
+      conversationId: 'conversation-1',
+      text: messageId,
+    }) as TMessage;
+
+  it('restores the full pre-regenerate branch on early abort', () => {
+    const originalMessages = [message('user-1'), message('assistant-1'), message('user-2')];
+    const scopedRegenerateMessages = [message('user-1')];
+    const currentStreamMessages = [message('user-1'), message('assistant-1_')];
+
+    expect(
+      getExistingConversationAbortMessages({
+        messages: scopedRegenerateMessages,
+        currentMessages: currentStreamMessages,
+        regenerateMessages: originalMessages,
+        isRegenerate: true,
+      }).map(({ messageId }) => messageId),
+    ).toEqual(['user-1', 'assistant-1', 'user-2']);
+  });
+
+  it('keeps the existing non-regenerate abort rollback behavior', () => {
+    const submissionMessages = [message('user-1')];
+    const currentMessages = [message('user-1'), message('assistant-1')];
+
+    expect(
+      getExistingConversationAbortMessages({
+        messages: submissionMessages,
+        currentMessages,
+      }).map(({ messageId }) => messageId),
+    ).toEqual(['user-1']);
   });
 });

@@ -123,6 +123,26 @@ export const mergeRegenerateFinalMessages = ({
   return finalMessages;
 };
 
+export const getExistingConversationAbortMessages = ({
+  messages,
+  currentMessages,
+  regenerateMessages,
+  isRegenerate = false,
+}: Pick<EventSubmission, 'messages' | 'regenerateMessages' | 'isRegenerate'> & {
+  currentMessages?: TMessage[];
+}): TMessage[] => {
+  if (!isRegenerate) {
+    return [...messages];
+  }
+
+  if (regenerateMessages?.length) {
+    return [...regenerateMessages];
+  }
+
+  const sourceMessages = currentMessages?.length ? currentMessages : messages;
+  return [...sourceMessages];
+};
+
 export type EventHandlerParams = {
   isAddedRequest?: boolean;
   setCompleted: React.Dispatch<React.SetStateAction<Set<unknown>>>;
@@ -603,10 +623,16 @@ export default function useEventHandlers({
           const isExistingConvo =
             currentConvoId && currentConvoId !== Constants.NEW_CONVO && !isInitialNewConvo;
           if (isExistingConvo) {
-            setMessages([...messages]);
+            const abortMessages = getExistingConversationAbortMessages({
+              messages,
+              isRegenerate,
+              currentMessages: getMessages(),
+              regenerateMessages: submission.regenerateMessages,
+            });
+            setMessages(abortMessages);
             queryClient.setQueryData<TMessage[]>(
               [QueryKeys.messages, currentConvoId],
-              [...messages],
+              abortMessages,
             );
             setDraft({ id: currentConvoId, value: requestMessage?.text });
             return;

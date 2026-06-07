@@ -672,6 +672,29 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
     };
   };
 
+  const getPendingOAuthStartForEmit = async (serverName) => {
+    const cachedOAuthStart = pendingOAuthStarts.get(serverName);
+    if (cachedOAuthStart?.options?.expiresAt != null) {
+      return cachedOAuthStart;
+    }
+
+    const pendingOAuthStart = await getReplayablePendingMCPOAuthStart({
+      flowManager,
+      userId: req.user.id,
+      serverName,
+    });
+    if (!pendingOAuthStart) {
+      return cachedOAuthStart;
+    }
+
+    if (!cachedOAuthStart || pendingOAuthStart.authURL === cachedOAuthStart.authURL) {
+      pendingOAuthStarts.set(serverName, pendingOAuthStart);
+      return pendingOAuthStart;
+    }
+
+    return cachedOAuthStart;
+  };
+
   const getOrFetchMCPServerTools = async (userId, serverName) => {
     const addPendingOAuthServer = async () => {
       const pendingOAuthStart = await getReplayablePendingMCPOAuthStart({
@@ -849,13 +872,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
     const oauthWaitPromises = serverNames.map(async (serverName, index) => {
       try {
-        const pendingOAuthStart =
-          pendingOAuthStarts.get(serverName) ??
-          (await getReplayablePendingMCPOAuthStart({
-            flowManager,
-            userId: req.user.id,
-            serverName,
-          }));
+        const pendingOAuthStart = await getPendingOAuthStartForEmit(serverName);
         const oauthStart = createOAuthEmitter(serverName, index);
         if (pendingOAuthStart) {
           await oauthStart(pendingOAuthStart.authURL, pendingOAuthStart.options);
