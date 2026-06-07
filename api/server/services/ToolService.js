@@ -777,6 +777,11 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       return cached;
     }
 
+    if (await hasReplayablePendingMCPOAuthFlow({ flowManager, userId, serverName })) {
+      pendingOAuthServers.add(serverName);
+      return null;
+    }
+
     const oauthStart = async () => {
       pendingOAuthServers.add(serverName);
     };
