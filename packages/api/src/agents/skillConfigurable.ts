@@ -53,6 +53,7 @@ export interface SkillConfigurableContext {
 
 export interface SkillConfigurableLoadResult {
   loadedTools: unknown[];
+  toolMap?: Map<string, unknown>;
   configurable?: Record<string, unknown>;
 }
 
@@ -63,6 +64,7 @@ export interface EnrichWithSkillConfigurableParams {
 
 export function enrichWithSkillConfigurable(params: EnrichWithSkillConfigurableParams): {
   loadedTools: unknown[];
+  toolMap?: Map<string, unknown>;
   configurable: Record<string, unknown>;
 };
 export function enrichWithSkillConfigurable(
@@ -74,7 +76,11 @@ export function enrichWithSkillConfigurable(
   activeSkillNames?: Set<string>,
   skillAuthoringAvailable?: boolean,
   fileAuthoringToolNames?: Set<string>,
-): { loadedTools: unknown[]; configurable: Record<string, unknown> };
+): {
+  loadedTools: unknown[];
+  toolMap?: Map<string, unknown>;
+  configurable: Record<string, unknown>;
+};
 export function enrichWithSkillConfigurable(
   first: EnrichWithSkillConfigurableParams | SkillConfigurableLoadResult,
   req?: { user?: { id?: string } },
@@ -84,7 +90,11 @@ export function enrichWithSkillConfigurable(
   activeSkillNames?: Set<string>,
   skillAuthoringAvailable?: boolean,
   fileAuthoringToolNames?: Set<string>,
-): { loadedTools: unknown[]; configurable: Record<string, unknown> } {
+): {
+  loadedTools: unknown[];
+  toolMap?: Map<string, unknown>;
+  configurable: Record<string, unknown>;
+} {
   const { result, context } =
     'result' in first && 'context' in first
       ? first

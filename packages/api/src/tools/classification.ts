@@ -6,7 +6,6 @@
  */
 
 import { logger } from '@librechat/data-schemas';
-import { Constants } from 'librechat-data-provider';
 import {
   Providers,
   createToolSearch,
@@ -22,6 +21,8 @@ import type {
   LCTool,
 } from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
+import type { LCToolWithMCPNameMetadata } from './names';
+import { parseMCPToolName, createProviderToolName, DEFAULT_TOOL_NAME_MAX_LENGTH } from './names';
 import { sanitizeGeminiSchema } from '~/mcp/zod';
 
 export type { LCTool, LCToolRegistry, AllowedCaller, JsonSchemaType };
@@ -32,6 +33,10 @@ export interface ToolDefinition {
   parameters?: JsonSchemaType;
   /** MCP server name extracted from tool name */
   serverName?: string;
+  /** Original LibreChat MCP key: toolName_mcp_serverName */
+  canonicalName?: string;
+  /** Raw MCP tool name before LibreChat appends the server suffix */
+  mcpRawName?: string;
 }
 
 /**
@@ -41,11 +46,60 @@ export interface ToolDefinition {
  * @returns The server name or undefined if not an MCP tool
  */
 export function getServerNameFromTool(toolName: string): string | undefined {
-  const parts = toolName.split(Constants.mcp_delimiter);
-  if (parts.length >= 2) {
-    return parts[parts.length - 1];
+  return parseMCPToolName(toolName)?.serverName;
+}
+
+function createRegistryTool({
+  tool,
+  agentToolOptions,
+  usedToolNames,
+  toolNameMaxLength,
+}: {
+  tool: ToolDefinition;
+  agentToolOptions?: AgentToolOptions;
+  usedToolNames: Set<string>;
+  toolNameMaxLength: number;
+}): LCToolWithMCPNameMetadata {
+  const { description, parameters } = tool;
+  const canonicalName = tool.canonicalName ?? tool.name;
+  const parsed = parseMCPToolName(canonicalName);
+  const providerToolName = createProviderToolName({
+    canonicalName,
+    usedToolNames,
+    maxLength: toolNameMaxLength,
+  });
+  usedToolNames.add(providerToolName);
+
+  const agentOptions = agentToolOptions?.[canonicalName] ?? agentToolOptions?.[providerToolName];
+
+  const allowed_callers: AllowedCaller[] =
+    agentOptions?.allowed_callers && agentOptions.allowed_callers.length > 0
+      ? agentOptions.allowed_callers
+      : ['direct'];
+
+  const defer_loading = agentOptions?.defer_loading === true;
+
+  const toolDef: LCToolWithMCPNameMetadata = {
+    name: providerToolName,
+    allowed_callers,
+    defer_loading,
+    toolType: 'mcp',
+    canonicalName,
+    providerToolName,
+    mcpRawName: tool.mcpRawName ?? parsed?.rawName,
+  };
+
+  if (description) {
+    toolDef.description = description;
   }
-  return undefined;
+  if (parameters) {
+    toolDef.parameters = parameters;
+  }
+  if (tool.serverName || parsed?.serverName) {
+    toolDef.serverName = tool.serverName ?? parsed?.serverName;
+  }
+
+  return toolDef;
 }
 
 /**
@@ -58,38 +112,26 @@ export function getServerNameFromTool(toolName: string): string | undefined {
 export function buildToolRegistryFromAgentOptions(
   tools: ToolDefinition[],
   agentToolOptions: AgentToolOptions,
+  toolNameMaxLength = DEFAULT_TOOL_NAME_MAX_LENGTH,
 ): LCToolRegistry {
   const registry: LCToolRegistry = new Map();
+  const usedToolNames = new Set<string>();
+  const usedCanonicalNames = new Set<string>();
 
   for (const tool of tools) {
-    const { name, description, parameters } = tool;
-    const agentOptions = agentToolOptions[name];
-
-    const allowed_callers: AllowedCaller[] =
-      agentOptions?.allowed_callers && agentOptions.allowed_callers.length > 0
-        ? agentOptions.allowed_callers
-        : ['direct'];
-
-    const defer_loading = agentOptions?.defer_loading === true;
-
-    const toolDef: LCTool = {
-      name,
-      allowed_callers,
-      defer_loading,
-      toolType: 'mcp',
-    };
-
-    if (description) {
-      toolDef.description = description;
+    const canonicalName = tool.canonicalName ?? tool.name;
+    if (usedCanonicalNames.has(canonicalName)) {
+      continue;
     }
-    if (parameters) {
-      toolDef.parameters = parameters;
-    }
-    if (tool.serverName) {
-      toolDef.serverName = tool.serverName;
-    }
+    usedCanonicalNames.add(canonicalName);
 
-    registry.set(name, toolDef);
+    const toolDef = createRegistryTool({
+      tool,
+      agentToolOptions,
+      usedToolNames,
+      toolNameMaxLength,
+    });
+    registry.set(toolDef.name, toolDef);
   }
 
   return registry;
@@ -111,7 +153,12 @@ interface MCPToolInstance {
  * @returns Tool definition
  */
 export function extractMCPToolDefinition(tool: MCPToolInstance): ToolDefinition {
-  const def: ToolDefinition = { name: tool.name };
+  const parsed = parseMCPToolName(tool.name);
+  const def: ToolDefinition = {
+    name: tool.name,
+    canonicalName: tool.name,
+    mcpRawName: parsed?.rawName,
+  };
 
   if (tool.description) {
     def.description = tool.description;
@@ -121,9 +168,8 @@ export function extractMCPToolDefinition(tool: MCPToolInstance): ToolDefinition 
     def.parameters = tool.mcpJsonSchema;
   }
 
-  const serverName = getServerNameFromTool(tool.name);
-  if (serverName) {
-    def.serverName = serverName;
+  if (parsed?.serverName) {
+    def.serverName = parsed.serverName;
   }
 
   return def;
@@ -156,21 +202,29 @@ export function cleanupMCPToolSchemas(tools: MCPToolInstance[]): void {
 function buildToolRegistry(
   mcpToolDefs: ToolDefinition[],
   agentToolOptions?: AgentToolOptions,
+  toolNameMaxLength = DEFAULT_TOOL_NAME_MAX_LENGTH,
 ): LCToolRegistry {
   if (agentToolOptions && Object.keys(agentToolOptions).length > 0) {
-    return buildToolRegistryFromAgentOptions(mcpToolDefs, agentToolOptions);
+    return buildToolRegistryFromAgentOptions(mcpToolDefs, agentToolOptions, toolNameMaxLength);
   }
 
   /** No agent options - build basic definitions for event-driven mode */
   const registry: LCToolRegistry = new Map<string, LCTool>();
+  const usedToolNames = new Set<string>();
+  const usedCanonicalNames = new Set<string>();
   for (const toolDef of mcpToolDefs) {
-    registry.set(toolDef.name, {
-      name: toolDef.name,
-      description: toolDef.description,
-      parameters: toolDef.parameters,
-      serverName: toolDef.serverName,
-      toolType: 'mcp',
+    const canonicalName = toolDef.canonicalName ?? toolDef.name;
+    if (usedCanonicalNames.has(canonicalName)) {
+      continue;
+    }
+    usedCanonicalNames.add(canonicalName);
+
+    const registryTool = createRegistryTool({
+      tool: toolDef,
+      usedToolNames,
+      toolNameMaxLength,
     });
+    registry.set(registryTool.name, registryTool);
   }
   return registry;
 }
@@ -197,6 +251,8 @@ export interface BuildToolClassificationParams {
   provider?: Providers | string;
   /** Optional host-supplied Code API auth headers for remote programmatic execution. */
   authHeaders?: () => Promise<Record<string, string>> | Record<string, string>;
+  /** Provider-facing maximum tool/function name length. */
+  toolNameMaxLength?: number;
 }
 
 /** Result from building tool classification */
@@ -265,6 +321,7 @@ export async function buildToolClassification(
     programmaticToolsEnabled = false,
     codeExecutionEnabled = false,
     authHeaders,
+    toolNameMaxLength = DEFAULT_TOOL_NAME_MAX_LENGTH,
   } = params;
   const isGoogle = provider === Providers.GOOGLE || provider === Providers.VERTEXAI;
   const additionalTools: GenericTool[] = [];
@@ -280,7 +337,11 @@ export async function buildToolClassification(
   }
 
   const mcpToolDefs = mcpTools.map(extractMCPToolDefinition);
-  const toolRegistry: LCToolRegistry = buildToolRegistry(mcpToolDefs, agentToolOptions);
+  const toolRegistry: LCToolRegistry = buildToolRegistry(
+    mcpToolDefs,
+    agentToolOptions,
+    toolNameMaxLength,
+  );
 
   /** Clean up temporary mcpJsonSchema property from tools now that registry is populated */
   cleanupMCPToolSchemas(mcpTools);
