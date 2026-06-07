@@ -285,6 +285,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         isCreatedByUser: updatedMessage.isCreatedByUser,
         tokenCount: updatedMessage.tokenCount,
         feedback: updatedMessage.feedback,
+        endpoint: updatedMessage.endpoint,
       };
     } catch (err) {
       logger.error('Error updating message:', err);
