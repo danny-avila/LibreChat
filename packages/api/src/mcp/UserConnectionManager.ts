@@ -180,7 +180,7 @@ export abstract class UserConnectionManager {
     await oauthStart(authURL, options);
   }
 
-  private getPendingOAuthStart(flow: FlowState | undefined): PendingOAuthStart | undefined {
+  private getPendingOAuthStart(flow: FlowState | null | undefined): PendingOAuthStart | undefined {
     if (flow?.status !== 'PENDING') {
       return undefined;
     }
