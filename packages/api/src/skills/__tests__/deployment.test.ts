@@ -444,4 +444,77 @@ describe('createDeploymentSkillMethods', () => {
     );
     warnSpy.mockRestore();
   });
+
+  it('preserves pagination when an always-apply DB page only contains shadowed skills', async () => {
+    const root = await makeTempRoot();
+    await writeDeploymentSkill(root, {
+      skillsDir: 'config/skills',
+      name: 'analysis-kit',
+      alwaysApply: false,
+    });
+    await initializeDeploymentSkills({
+      projectRoot: root,
+      env: { [DEPLOYMENT_SKILLS_DIR_ENV]: 'config/skills' },
+    });
+
+    const dbId = new Types.ObjectId();
+    const nextId = new Types.ObjectId();
+    const dbAuthor = new Types.ObjectId();
+    const shadowedSkill = {
+      _id: dbId,
+      name: 'analysis-kit',
+      body: 'persisted duplicate body',
+      author: dbAuthor,
+      updatedAt: new Date('2026-01-02T00:00:00.000Z'),
+    };
+    const nextSkill = {
+      _id: nextId,
+      name: 'db-next',
+      body: 'next persisted body',
+      author: dbAuthor,
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    };
+    const base: DeploymentSkillBaseMethods = {
+      listAlwaysApplySkills: jest.fn(async (params) => {
+        if (params.cursor) {
+          return {
+            skills: [nextSkill],
+            has_more: false,
+            after: null,
+          };
+        }
+        return {
+          skills: [shadowedSkill],
+          has_more: true,
+          after: 'db-cursor',
+        };
+      }),
+    };
+
+    const methods = createDeploymentSkillMethods(base);
+    const mergedIds = mergeDeploymentSkillIds([dbId, nextId]);
+    const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+
+    const first = await methods.listAlwaysApplySkills?.({
+      accessibleIds: mergedIds,
+      limit: 1,
+    });
+    expect(first?.skills).toEqual([]);
+    expect(first?.has_more).toBe(true);
+    expect(first?.after).toEqual(expect.any(String));
+
+    const second = await methods.listAlwaysApplySkills?.({
+      accessibleIds: mergedIds,
+      limit: 1,
+      cursor: first?.after,
+    });
+    expect(second?.skills.map((skill) => skill.name)).toEqual(['db-next']);
+    expect(second?.has_more).toBe(false);
+    expect(base.listAlwaysApplySkills).toHaveBeenNthCalledWith(2, {
+      accessibleIds: [dbId, nextId],
+      limit: 1,
+      cursor: first?.after,
+    });
+    warnSpy.mockRestore();
+  });
 });
