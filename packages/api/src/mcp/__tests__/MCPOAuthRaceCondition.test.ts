@@ -150,7 +150,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
         dbId: undefined,
       };
 
-      jest
+      const registrySpy = jest
         .spyOn(
           // eslint-disable-next-line @typescript-eslint/no-require-imports
           require('~/mcp/registry/MCPServersRegistry').MCPServersRegistry,
