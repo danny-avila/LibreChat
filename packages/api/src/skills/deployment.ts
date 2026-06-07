@@ -327,6 +327,7 @@ export class DeploymentSkillRegistry {
 }
 
 let registry = new DeploymentSkillRegistry(null, []);
+const warnedDeploymentNameCollisions = new Set<string>();
 
 export function getDeploymentSkillRegistry(): DeploymentSkillRegistry {
   return registry;
@@ -914,10 +915,19 @@ function filterDeploymentNameCollisions<T extends { name: string }>(
     return false;
   });
   if (hiddenNames.size > 0) {
-    const hiddenList = Array.from(hiddenNames).join(', ');
-    logger.warn(
-      `[deploymentSkills] Hid ${rows.length - filtered.length} persisted ${context} skill row(s) shadowed by deployment skill name(s): ${hiddenList}`,
-    );
+    const unwarnedNames = Array.from(hiddenNames).filter((name) => {
+      const key = `${context}:${name}`;
+      if (warnedDeploymentNameCollisions.has(key)) {
+        return false;
+      }
+      warnedDeploymentNameCollisions.add(key);
+      return true;
+    });
+    if (unwarnedNames.length > 0) {
+      logger.warn(
+        `[deploymentSkills] Hid persisted ${context} skill row(s) shadowed by deployment skill name(s): ${unwarnedNames.join(', ')}`,
+      );
+    }
   }
   return filtered;
 }

@@ -2,6 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { Types } from 'mongoose';
+import { logger } from '@librechat/data-schemas';
 import type { CodeEnvRef } from 'librechat-data-provider';
 import type { DeploymentSkillBaseMethods } from '../deployment';
 import {
@@ -392,6 +393,7 @@ describe('createDeploymentSkillMethods', () => {
 
     const methods = createDeploymentSkillMethods(base);
     const mergedIds = mergeDeploymentSkillIds([dbId, otherId]);
+    const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => undefined);
 
     const byName = await methods.getSkillByName?.(shadowedSkill.name, mergedIds, {
       preferUserInvocable: true,
@@ -412,6 +414,16 @@ describe('createDeploymentSkillMethods', () => {
       ['db-skill', otherId.toString()],
     ]);
 
+    await methods.listSkillsByAccess?.({
+      accessibleIds: mergedIds,
+      limit: 10,
+    });
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('persisted list skill row(s) shadowed'),
+    );
+
     const alwaysApply = await methods.listAlwaysApplySkills?.({
       accessibleIds: mergedIds,
       limit: 10,
@@ -420,5 +432,16 @@ describe('createDeploymentSkillMethods', () => {
       ['analysis-kit', deploymentId.toString()],
       ['db-always', otherId.toString()],
     ]);
+
+    await methods.listAlwaysApplySkills?.({
+      accessibleIds: mergedIds,
+      limit: 10,
+    });
+    expect(warnSpy).toHaveBeenCalledTimes(2);
+    expect(warnSpy).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('persisted always-apply skill row(s) shadowed'),
+    );
+    warnSpy.mockRestore();
   });
 });
