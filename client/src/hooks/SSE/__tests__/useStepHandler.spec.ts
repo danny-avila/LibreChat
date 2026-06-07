@@ -680,6 +680,72 @@ describe('useStepHandler', () => {
       ]);
     });
 
+    it('preserves sibling assistant responses when regenerating one response', () => {
+      const originalUser = createUserMessage({ messageId: 'original-user-message' });
+      const selectedResponse = createResponseMessage({
+        messageId: 'selected-response-message',
+        parentMessageId: originalUser.messageId,
+        content: [
+          {
+            type: ContentTypes.TEXT,
+            text: 'Selected response',
+          },
+        ],
+      });
+      const siblingResponse = createResponseMessage({
+        messageId: 'sibling-response-message',
+        parentMessageId: originalUser.messageId,
+        content: [
+          {
+            type: ContentTypes.TEXT,
+            text: 'Sibling response should stay visible',
+          },
+        ],
+      });
+      const initialResponse = createResponseMessage({
+        messageId: 'selected-response-message_',
+        parentMessageId: originalUser.messageId,
+        content: [],
+      });
+      const regenerateUserMessage = createUserMessage({
+        messageId: 'server-regenerate-user-message',
+        parentMessageId: selectedResponse.messageId,
+        responseMessageId: initialResponse.messageId,
+      });
+
+      let currentMessages = [originalUser, selectedResponse, siblingResponse];
+      mockGetMessages.mockImplementation(() => currentMessages);
+      mockSetMessages.mockImplementation((messages) => {
+        currentMessages = messages;
+      });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createRunStep({
+        id: 'step-message-create',
+        runId: 'server-regenerated-response-message',
+      });
+      const submission = createSubmission({
+        userMessage: regenerateUserMessage,
+        isRegenerate: true,
+        messages: [originalUser, selectedResponse, siblingResponse],
+        initialResponse,
+      });
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      expect(currentMessages.map((message) => message.messageId)).toEqual([
+        originalUser.messageId,
+        siblingResponse.messageId,
+        'server-regenerated-response-message',
+      ]);
+      expect(currentMessages).not.toContainEqual(
+        expect.objectContaining({ messageId: selectedResponse.messageId }),
+      );
+    });
+
     it('should propagate step metadata (agentId, groupId) for parallel rendering', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);

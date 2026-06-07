@@ -19,7 +19,7 @@ import {
 } from '~/app/metrics';
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
-import { hasPersistableAbortContent } from './abortContent';
+import { filterPersistableAbortContent } from './abortContent';
 
 /** Error surfaced to any client still attached when a stale/hung job is reaped. */
 const REAPED_JOB_ERROR = 'Generation timed out';
@@ -730,8 +730,8 @@ class GenerationJobManagerClass {
     /** Content before clearing state */
     const result = await this.jobStore.getContentParts(streamId);
     const content = result?.content ?? [];
-    const shouldPersistAbortContent = hasPersistableAbortContent(content);
-    const abortContent = shouldPersistAbortContent ? content : [];
+    const abortContent = filterPersistableAbortContent(content);
+    const shouldPersistAbortContent = abortContent.length > 0;
 
     /** Collected usage for all models */
     const collectedUsage = this.jobStore.getCollectedUsage(streamId);

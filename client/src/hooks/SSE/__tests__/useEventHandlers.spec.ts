@@ -1,5 +1,9 @@
-import type { TMessage } from 'librechat-data-provider';
-import { buildCreatedInitialResponse } from '~/hooks/SSE/useEventHandlers';
+import { Constants } from 'librechat-data-provider';
+import type { EventSubmission, TMessage } from 'librechat-data-provider';
+import {
+  buildCreatedInitialResponse,
+  isInitialNewConversationSubmission,
+} from '~/hooks/SSE/useEventHandlers';
 
 describe('buildCreatedInitialResponse', () => {
   const userMessage = {
@@ -47,5 +51,29 @@ describe('buildCreatedInitialResponse', () => {
         parentMessageId: 'original-user-message',
       }),
     );
+  });
+});
+
+describe('isInitialNewConversationSubmission', () => {
+  it('treats a root user message as an optimistic new chat', () => {
+    expect(
+      isInitialNewConversationSubmission({
+        userMessage: {
+          messageId: 'user-1',
+          parentMessageId: Constants.NO_PARENT,
+        } as TMessage,
+      } as EventSubmission),
+    ).toBe(true);
+  });
+
+  it('does not treat follow-up turns as optimistic new chats', () => {
+    expect(
+      isInitialNewConversationSubmission({
+        userMessage: {
+          messageId: 'user-2',
+          parentMessageId: 'assistant-1',
+        } as TMessage,
+      } as EventSubmission),
+    ).toBe(false);
   });
 });
