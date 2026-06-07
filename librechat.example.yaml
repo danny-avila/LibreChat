@@ -770,3 +770,52 @@ endpoints:
 #     # instructions: "You are a memory management assistant. Store and manage user information accurately."
 #     # model_parameters:
 #     #   temperature: 0.1
+
+# Message PII filter
+# Registers a UserPromptSubmit hook in @librechat/agents that scrubs
+# credential-shaped substrings from user prompts before the agent reaches
+# the LLM. Per-user/group/role/tenant overrides flow through the existing
+# AppConfig override system, same as every other librechat.yaml section.
+#
+# onMatch modes:
+#   silent - server-side redact, no UI feedback
+#   warn   - server-side redact + sendEvent(piiMatches) for client toast
+#   block  - server always denies on match
+#
+# messagePiiFilter:
+#   onMatch: warn
+#
+#   # Starter patterns ported from danny-avila/LibreChat#13561's winston log
+#   # redaction. Omit the field to enable all 5; pass an empty list to enable
+#   # none and rely entirely on customPatterns.
+#   # Available ids: sk_prefix, bearer_header, api_key_header, api_key_query, key_query
+#   starterPatterns: [sk_prefix, bearer_header, api_key_header, api_key_query, key_query]
+#
+#   # Operator-defined regex additions. Each entry needs a stable id (used in
+#   # logs and the SSE payload), a human-readable label (shown to users in the
+#   # warn toast), and a JavaScript-flavor regex.
+#   customPatterns:
+#     - id: anthropic_api_key
+#       label: Anthropic API key
+#       regex: "sk-ant-[A-Za-z0-9_-]{20,}"
+#     - id: aws_access_key
+#       label: AWS access key
+#       regex: "(AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{12,16}"
+#     - id: github_token
+#       label: GitHub token
+#       regex: "gh[poshru]_[A-Za-z0-9]{36,255}"
+#     - id: slack_token
+#       label: Slack token
+#       regex: "xox[bpasr]-[A-Za-z0-9-]{10,200}"
+#     - id: google_api_key
+#       label: Google API key
+#       regex: "AIza[A-Za-z0-9_-]{35}"
+#     - id: stripe_key
+#       label: Stripe key
+#       regex: "(sk|pk|rk)_(live|test|prod)_[A-Za-z0-9]{10,99}"
+#     - id: jwt
+#       label: JWT
+#       regex: "eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+"
+#
+#   # Replacement string inserted after the matched prefix. Defaults to [REDACTED].
+#   redactionText: "[REDACTED]"

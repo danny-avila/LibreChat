@@ -10,11 +10,11 @@ import {
 } from './schemas';
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { specsConfigSchema, TSpecsConfig } from './models';
+import { REFILL_INTERVAL_UNITS } from './balance';
 import { fileConfigSchema } from './file-config';
 import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
-import { REFILL_INTERVAL_UNITS } from './balance';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
@@ -1417,6 +1417,44 @@ export const summarizationConfigSchema = z.object({
 
 export type SummarizationConfig = z.infer<typeof summarizationConfigSchema>;
 
+export const messagePiiOnMatchSchema = z.enum(['silent', 'warn', 'block']);
+
+export type MessagePiiOnMatch = z.infer<typeof messagePiiOnMatchSchema>;
+
+export const messagePiiCustomPatternSchema = z
+  .object({
+    id: z.string().min(1),
+    label: z.string().min(1),
+    regex: z
+      .string()
+      .min(1)
+      .refine(
+        (value) => {
+          try {
+            new RegExp(value, 'g');
+            return true;
+          } catch {
+            return false;
+          }
+        },
+        { message: 'regex must compile via `new RegExp(value, "g")`' },
+      ),
+  })
+  .strict();
+
+export type MessagePiiCustomPattern = z.infer<typeof messagePiiCustomPatternSchema>;
+
+export const messagePiiFilterSchema = z
+  .object({
+    onMatch: messagePiiOnMatchSchema,
+    starterPatterns: z.array(z.string()).optional(),
+    customPatterns: z.array(messagePiiCustomPatternSchema).optional(),
+    redactionText: z.string().default('[REDACTED]'),
+  })
+  .strict();
+
+export type MessagePiiFilterConfig = z.infer<typeof messagePiiFilterSchema>;
+
 const customEndpointsSchema = z.array(endpointSchema.partial()).optional();
 
 export const configSchema = z.object({
@@ -1426,6 +1464,7 @@ export const configSchema = z.object({
   webSearch: webSearchSchema.optional(),
   memory: memorySchema.optional(),
   summarization: summarizationConfigSchema.optional(),
+  messagePiiFilter: messagePiiFilterSchema.optional(),
   secureImageLinks: z.boolean().optional(),
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
   includedTools: z.array(z.string()).optional(),

@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import { Run, Providers, Constants } from '@librechat/agents';
+import { Run, HookRegistry, Providers, Constants } from '@librechat/agents';
 import {
   KnownEndpoints,
   MAX_SUBAGENT_DEPTH,
@@ -777,6 +777,7 @@ export async function createRun({
   runId,
   signal,
   agents,
+  hooks,
   messages,
   requestBody,
   user,
@@ -810,6 +811,8 @@ export async function createRun({
    * (e.g. "Ollama") in the summarization config to SDK-recognized providers.
    */
   appConfig?: AppConfig;
+  /** Optional hook registry, passed through to `Run.create`. */
+  hooks?: HookRegistry;
 } & Pick<
   RunConfig,
   'tokenCounter' | 'customHandlers' | 'indexTokenCountMap' | 'initialSessions'
@@ -1045,6 +1048,7 @@ export async function createRun({
     // feedback route in api/server/routes/messages.js). No-op unless Langfuse
     // tracing is enabled. Requires @librechat/agents >= 3.2.21.
     langfuse: { deterministicTraceId: true },
+    ...(hooks != null && { hooks }),
     ...(enableToolOutputReferences && {
       toolOutputReferences: { enabled: true },
     }),

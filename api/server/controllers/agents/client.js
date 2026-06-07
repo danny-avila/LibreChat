@@ -2,7 +2,9 @@ require('events').EventEmitter.defaultMaxListeners = 100;
 const { logger } = require('@librechat/data-schemas');
 const { getBufferString, HumanMessage } = require('@librechat/agents/langchain/messages');
 const {
+  sendEvent,
   createRun,
+  createMessagePiiFilterHooks,
   isEnabled,
   checkAccess,
   buildToolSet,
@@ -1055,6 +1057,8 @@ class AgentClient extends BaseClient {
           );
         }
 
+        const piiFilterResult = createMessagePiiFilterHooks(appConfig?.messagePiiFilter);
+
         run = await createRun({
           agents,
           messages,
@@ -1070,6 +1074,7 @@ class AgentClient extends BaseClient {
           summarizationConfig: appConfig?.summarization,
           appConfig,
           tokenCounter,
+          hooks: piiFilterResult?.registry,
         });
 
         if (!run) {
@@ -1100,6 +1105,35 @@ class AgentClient extends BaseClient {
         });
 
         config.signal = null;
+
+        if (
+          piiFilterResult != null &&
+          this.options.res != null &&
+          !this.options.res.writableEnded
+        ) {
+          const piiHaltReason = run.getHaltReason?.();
+          if (piiHaltReason === 'message_pii_filter_block') {
+            // Surface a friendly error on block mode so the frontend
+            // doesn't render an empty assistant bubble. The existing
+            // error event vocabulary is whatever the host expects; use
+            // a typed payload so a downstream toast/banner can render
+            // a real message rather than the silent halt LibreChat
+            // would otherwise show.
+            sendEvent(this.options.res, {
+              type: 'pii_blocked',
+              reason: piiHaltReason,
+              matches: piiFilterResult.collector.matches,
+            });
+          } else if (
+            appConfig?.messagePiiFilter?.onMatch === 'warn' &&
+            piiFilterResult.collector.matches.length > 0
+          ) {
+            sendEvent(this.options.res, {
+              type: 'pii_matches',
+              matches: piiFilterResult.collector.matches,
+            });
+          }
+        }
       };
 
       const hideSequentialOutputs = config.configurable.hide_sequential_outputs;
