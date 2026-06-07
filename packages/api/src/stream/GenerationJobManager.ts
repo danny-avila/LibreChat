@@ -19,6 +19,7 @@ import {
 } from '~/app/metrics';
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
+import { hasPersistableAbortContent } from './abortContent';
 
 /** Error surfaced to any client still attached when a stale/hung job is reaped. */
 const REAPED_JOB_ERROR = 'Generation timed out';
@@ -725,16 +726,20 @@ class GenerationJobManagerClass {
     /** Content before clearing state */
     const result = await this.jobStore.getContentParts(streamId);
     const content = result?.content ?? [];
+    const shouldPersistAbortContent = hasPersistableAbortContent(content);
+    const abortContent = shouldPersistAbortContent ? content : [];
 
     /** Collected usage for all models */
     const collectedUsage = this.jobStore.getCollectedUsage(streamId);
 
     /** Text from content parts for fallback token counting */
-    const text = parseTextParts(content as TMessageContentParts[]);
+    const text = shouldPersistAbortContent
+      ? parseTextParts(abortContent as TMessageContentParts[])
+      : '';
 
     /** Detect "early abort" - aborted before any generation happened (e.g., during tool loading)
     In this case, no messages were saved to DB, so frontend shouldn't navigate to conversation */
-    const isEarlyAbort = content.length === 0 && !jobData.responseMessageId;
+    const isEarlyAbort = !shouldPersistAbortContent;
 
     /** Final event for abort */
     const userMessageId = jobData.userMessage?.messageId;
@@ -759,7 +764,7 @@ class GenerationJobManagerClass {
             messageId: jobData.responseMessageId ?? `${userMessageId ?? 'aborted'}_`,
             parentMessageId: userMessageId,
             conversationId: jobData.conversationId,
-            content,
+            content: abortContent,
             sender: jobData.sender ?? 'AI',
             unfinished: true,
             error: false,
@@ -799,7 +804,7 @@ class GenerationJobManagerClass {
     return {
       success: true,
       jobData,
-      content,
+      content: abortContent,
       finalEvent: abortFinalEvent,
       text,
       collectedUsage,

@@ -282,6 +282,60 @@ describe('AbortJob - Text and CollectedUsage', () => {
     await GenerationJobManager.destroy();
   });
 
+  it('should treat OAuth-only content as an early abort', async () => {
+    const { GenerationJobManager } = await import('../GenerationJobManager');
+    const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
+    const { InMemoryEventTransport } = await import('../implementations/InMemoryEventTransport');
+
+    GenerationJobManager.configure({
+      jobStore: new InMemoryJobStore(),
+      eventTransport: new InMemoryEventTransport(),
+      isRedis: false,
+      cleanupOnComplete: false,
+    });
+
+    GenerationJobManager.initialize();
+
+    const streamId = `oauth-abort-${Date.now()}`;
+    await GenerationJobManager.createJob(streamId, 'user-1');
+    await GenerationJobManager.updateMetadata(streamId, {
+      responseMessageId: 'response-message-1',
+      userMessage: {
+        messageId: 'user-message-1',
+        parentMessageId: 'parent-message-1',
+        conversationId: streamId,
+        text: 'Use Google Workspace',
+      },
+    });
+
+    GenerationJobManager.setContentParts(streamId, [
+      {
+        type: 'tool_call',
+        tool_call: {
+          type: 'tool_call',
+          id: 'oauth-call-1',
+          name: 'oauth_mcp_Google-Workspace',
+          args: '',
+          auth: 'https://auth.example.com/oauth',
+        },
+      },
+    ] as never);
+
+    const abortResult = await GenerationJobManager.abortJob(streamId);
+
+    expect(abortResult.success).toBe(true);
+    expect(abortResult.content).toEqual([]);
+    expect(abortResult.text).toBe('');
+    expect(abortResult.finalEvent).toEqual(
+      expect.objectContaining({
+        earlyAbort: true,
+        responseMessage: null,
+      }),
+    );
+
+    await GenerationJobManager.destroy();
+  });
+
   it('should return both text and collectedUsage on abort', async () => {
     const { GenerationJobManager } = await import('../GenerationJobManager');
     const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
