@@ -30,16 +30,22 @@ function setLangfuseCredentials() {
   process.env.LANGFUSE_SECRET_KEY = 'secret-key';
 }
 
-function loadService() {
+async function loadFeedback(): Promise<typeof import('./feedback')> {
   jest.resetModules();
-  return require('./Langfuse');
+  return import('./feedback');
+}
+
+function getFetchMock(): jest.MockedFunction<typeof fetch> {
+  return global.fetch as jest.MockedFunction<typeof fetch>;
 }
 
 describe('Langfuse feedback scores', () => {
   beforeEach(() => {
     clearLangfuseEnv();
     setLangfuseCredentials();
-    global.fetch = jest.fn().mockResolvedValue({ ok: true });
+    global.fetch = jest
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 200 })) as jest.MockedFunction<typeof fetch>;
   });
 
   afterEach(() => {
@@ -52,14 +58,14 @@ describe('Langfuse feedback scores', () => {
   });
 
   it('posts feedback scores when Langfuse tracing is enabled by default', async () => {
-    const { sendFeedbackScore } = loadService();
+    const { sendFeedbackScore } = await loadFeedback();
 
     await sendFeedbackScore({
       traceId: 'trace-id',
       feedback: { rating: 'thumbsUp', tag: 'helpful', text: 'nice' },
     });
 
-    expect(global.fetch).toHaveBeenCalledWith(
+    expect(getFetchMock()).toHaveBeenCalledWith(
       'https://cloud.langfuse.com/api/public/scores',
       expect.objectContaining({
         method: 'POST',
@@ -70,7 +76,8 @@ describe('Langfuse feedback scores', () => {
         body: expect.any(String),
       }),
     );
-    expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toMatchObject({
+    const [, init] = getFetchMock().mock.calls[0];
+    expect(JSON.parse(init?.body as string)).toMatchObject({
       id: 'feedback-trace-id',
       traceId: 'trace-id',
       name: 'user-feedback',
@@ -83,25 +90,25 @@ describe('Langfuse feedback scores', () => {
 
   it('skips scores when Langfuse tracing is disabled', async () => {
     process.env.LANGFUSE_TRACING_ENABLED = 'false';
-    const { sendFeedbackScore } = loadService();
+    const { sendFeedbackScore } = await loadFeedback();
 
     await sendFeedbackScore({
       traceId: 'trace-id',
       feedback: { rating: 'thumbsDown' },
     });
 
-    expect(global.fetch).not.toHaveBeenCalled();
+    expect(getFetchMock()).not.toHaveBeenCalled();
   });
 
   it('skips scores when Langfuse sampling is set to zero', async () => {
     process.env.LANGFUSE_SAMPLE_RATE = '0';
-    const { sendFeedbackScore } = loadService();
+    const { sendFeedbackScore } = await loadFeedback();
 
     await sendFeedbackScore({
       traceId: 'trace-id',
       feedback: { rating: 'thumbsUp' },
     });
 
-    expect(global.fetch).not.toHaveBeenCalled();
+    expect(getFetchMock()).not.toHaveBeenCalled();
   });
 });

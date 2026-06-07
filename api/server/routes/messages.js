@@ -2,11 +2,14 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
 const { ContentTypes, isAssistantsEndpoint } = require('librechat-data-provider');
-const { unescapeLaTeX, countTokens } = require('@librechat/api');
+const {
+  unescapeLaTeX,
+  countTokens,
+  sendFeedbackScore,
+  traceIdForMessage,
+} = require('@librechat/api');
 const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/Artifacts/update');
 const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
-const { sendFeedbackScore } = require('~/server/services/Langfuse');
-const { traceIdForMessage } = require('~/server/utils/langfuseTrace');
 const db = require('~/models');
 
 const router = express.Router();

@@ -55,6 +55,8 @@ export * from './storage';
 export * from './tools';
 /* web search */
 export * from './web';
+/* Langfuse */
+export * from './langfuse';
 /* Cache */
 export * from './cache';
 /* Shared Links */
