@@ -149,11 +149,17 @@ export abstract class UserConnectionManager {
     const lastOAuthStart = pendingOAuth.lastOAuthStart;
     if (lastOAuthStart) {
       try {
+        const pendingOAuthStart =
+          lastOAuthStart.options?.expiresAt == null
+            ? await this.getFlowPendingOAuthStart(opts, userId)
+            : undefined;
+        const replayOAuthStart =
+          pendingOAuthStart?.authURL === lastOAuthStart.authURL ? pendingOAuthStart : lastOAuthStart;
         await this.emitPendingOAuthStart(
           pendingOAuth,
           oauthStart,
-          lastOAuthStart.authURL,
-          lastOAuthStart.options,
+          replayOAuthStart.authURL,
+          replayOAuthStart.options,
         );
       } catch (error) {
         logger.warn(
@@ -199,6 +205,22 @@ export abstract class UserConnectionManager {
     return { authURL: authorizationUrl, options: { expiresAt } };
   }
 
+  private async getFlowPendingOAuthStart(
+    {
+      flowManager,
+      serverName,
+    }: Pick<t.UserMCPConnectionOptions, 'flowManager' | 'serverName'>,
+    userId: string,
+  ): Promise<PendingOAuthStart | undefined> {
+    if (!flowManager) {
+      return undefined;
+    }
+
+    const flowId = MCPOAuthHandler.generateFlowId(userId, serverName);
+    const existingFlow = await flowManager.getFlowState(flowId, 'mcp_oauth');
+    return this.getPendingOAuthStart(existingFlow);
+  }
+
   private async reissuePendingOAuthStart(
     { flowManager, oauthStart, serverName }: t.UserMCPConnectionOptions,
     userId: string,
@@ -209,9 +231,10 @@ export abstract class UserConnectionManager {
     }
 
     try {
-      const flowId = MCPOAuthHandler.generateFlowId(userId, serverName);
-      const existingFlow = await flowManager.getFlowState(flowId, 'mcp_oauth');
-      const pendingOAuthStart = this.getPendingOAuthStart(existingFlow);
+      const pendingOAuthStart = await this.getFlowPendingOAuthStart(
+        { flowManager, serverName },
+        userId,
+      );
       if (!pendingOAuthStart) {
         return;
       }

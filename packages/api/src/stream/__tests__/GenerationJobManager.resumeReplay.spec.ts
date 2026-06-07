@@ -94,6 +94,7 @@ describe('GenerationJobManager resume replay events', () => {
       data: {
         id: 'step-oauth',
         delta: {
+          tool_calls: [{ name: 'oauth_mcp_Google-Workspace', args: '' }],
           auth: 'https://auth.example.com/first',
           expires_at: 1780791946,
         },
@@ -105,6 +106,7 @@ describe('GenerationJobManager resume replay events', () => {
       data: {
         id: 'step-oauth',
         delta: {
+          tool_calls: [{ name: 'oauth_mcp_Google-Workspace', args: '' }],
           auth: 'https://auth.example.com/latest',
           expires_at: 1780792000,
         },
@@ -116,5 +118,28 @@ describe('GenerationJobManager resume replay events', () => {
     const resumeState = await manager.getResumeState(streamId);
 
     expect(resumeState?.replayEvents).toEqual([replacementEvent]);
+  });
+
+  test('does not replay non-MCP action auth deltas', async () => {
+    manager = createInMemoryManager();
+    const streamId = `action-auth-delta-${Date.now()}`;
+    await manager.createJob(streamId, 'user-1', streamId);
+
+    await manager.emitChunk(streamId, {
+      event: 'on_run_step_delta',
+      data: {
+        id: 'step-action-auth',
+        delta: {
+          type: 'tool_calls',
+          tool_calls: [{ name: 'google_calendar_action_api_example_com', args: '' }],
+          auth: 'https://auth.example.com/action',
+          expires_at: 1780791946,
+        },
+      },
+    });
+
+    const resumeState = await manager.getResumeState(streamId);
+
+    expect(resumeState?.replayEvents).toBeUndefined();
   });
 });

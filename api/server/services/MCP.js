@@ -267,7 +267,7 @@ function createRunStepEmitter({ res, runId, stepId, toolCall, index, streamId = 
  * @param {object} params
  * @param {string} params.flowId - The ID of the login flow.
  * @param {FlowStateManager<any>} params.flowManager - The flow manager instance.
- * @param {(authURL: string, options?: { expiresAt?: number }) => void} [params.callback]
+ * @param {(authURL: string, options?: { expiresAt?: number }) => void | Promise<void>} [params.callback]
  */
 function createOAuthStart({ flowId, flowManager, callback }) {
   /**
@@ -278,11 +278,11 @@ function createOAuthStart({ flowId, flowManager, callback }) {
    */
   return async function (authURL, options) {
     let emitted = false;
-    const emitOAuthStart = (message) => {
+    const emitOAuthStart = async (message) => {
       if (options) {
-        callback?.(authURL, options);
+        await callback?.(authURL, options);
       } else {
-        callback?.(authURL);
+        await callback?.(authURL);
       }
       emitted = true;
       logger.debug(message);
@@ -290,17 +290,17 @@ function createOAuthStart({ flowId, flowManager, callback }) {
 
     const existingFlow = await flowManager.getFlowState(flowId, 'oauth_login');
     if (existingFlow) {
-      emitOAuthStart('Re-sent OAuth login request to client');
+      await emitOAuthStart('Re-sent OAuth login request to client');
       return true;
     }
 
     await flowManager.createFlowWithHandler(flowId, 'oauth_login', async () => {
-      emitOAuthStart('Sent OAuth login request to client');
+      await emitOAuthStart('Sent OAuth login request to client');
       return true;
     });
 
     if (!emitted) {
-      emitOAuthStart('Re-sent OAuth login request to client');
+      await emitOAuthStart('Re-sent OAuth login request to client');
     }
 
     return true;
@@ -353,14 +353,14 @@ function createAbortHandler({ userId, serverName, toolName, flowManager }) {
 
 /**
  * @param {Object} params
- * @param {() => void} params.runStepEmitter
- * @param {(authURL: string, options?: { expiresAt?: number }) => void} params.runStepDeltaEmitter
- * @returns {(authURL: string, options?: { expiresAt?: number }) => void}
+ * @param {() => Promise<void>} params.runStepEmitter
+ * @param {(authURL: string, options?: { expiresAt?: number }) => Promise<void>} params.runStepDeltaEmitter
+ * @returns {(authURL: string, options?: { expiresAt?: number }) => Promise<void>}
  */
 function createOAuthCallback({ runStepEmitter, runStepDeltaEmitter }) {
-  return function (authURL, options) {
-    runStepEmitter();
-    runStepDeltaEmitter(authURL, options);
+  return async function (authURL, options) {
+    await runStepEmitter();
+    await runStepDeltaEmitter(authURL, options);
   };
 }
 
