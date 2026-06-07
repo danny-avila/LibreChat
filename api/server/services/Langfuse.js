@@ -6,7 +6,23 @@ const { logger } = require('@librechat/data-schemas');
 // that traces with the default URL still gets feedback scores.
 const BASE =
   process.env.LANGFUSE_BASE_URL ?? process.env.LANGFUSE_BASEURL ?? 'https://cloud.langfuse.com';
-const ENABLED = !!(process.env.LANGFUSE_PUBLIC_KEY && process.env.LANGFUSE_SECRET_KEY);
+
+function isFalseEnv(value) {
+  return value != null && ['0', 'false', 'no', 'off'].includes(value.trim().toLowerCase());
+}
+
+function isSampleRateEnabled(value) {
+  if (value == null || value.trim() === '') {
+    return true;
+  }
+  const parsed = Number(value);
+  return !Number.isFinite(parsed) || parsed !== 0;
+}
+
+const ENABLED =
+  !!(process.env.LANGFUSE_PUBLIC_KEY && process.env.LANGFUSE_SECRET_KEY) &&
+  !isFalseEnv(process.env.LANGFUSE_TRACING_ENABLED) &&
+  isSampleRateEnabled(process.env.LANGFUSE_SAMPLE_RATE);
 const AUTH = ENABLED
   ? 'Basic ' +
     Buffer.from(`${process.env.LANGFUSE_PUBLIC_KEY}:${process.env.LANGFUSE_SECRET_KEY}`).toString(
