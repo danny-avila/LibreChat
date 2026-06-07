@@ -101,6 +101,27 @@ export function getRegenerateTargetResponseMessage({
   return null;
 }
 
+export function getRegenerateSubmissionMessages({
+  messages,
+  targetResponseMessage,
+  initialResponseId,
+}: {
+  messages: TMessage[];
+  targetResponseMessage?: TMessage | null;
+  initialResponseId?: string | null;
+}): TMessage[] {
+  if (targetResponseMessage?.messageId) {
+    const targetIndex = messages.findIndex(
+      (message) => message.messageId === targetResponseMessage.messageId,
+    );
+    if (targetIndex >= 0) {
+      return messages.slice(0, targetIndex);
+    }
+  }
+
+  return messages.filter((msg) => msg.messageId !== initialResponseId);
+}
+
 export default function useChatFunctions({
   index = 0,
   files,
@@ -449,7 +470,11 @@ export default function useChatFunctions({
     }
 
     const submissionMessages = isRegenerate
-      ? currentMessages.filter((msg) => msg.messageId !== initialResponse.messageId)
+      ? getRegenerateSubmissionMessages({
+          messages: currentMessages,
+          targetResponseMessage,
+          initialResponseId: initialResponse.messageId,
+        })
       : currentMessages;
 
     logger.log('message_state', initialResponse);

@@ -1,5 +1,6 @@
 import type { TMessage } from 'librechat-data-provider';
 import {
+  getRegenerateSubmissionMessages,
   getPreliminaryRegenerateResponseMessageId,
   getRegenerateTargetResponseMessage,
 } from '../useChatFunctions';
@@ -69,5 +70,24 @@ describe('regenerate response targeting', () => {
         latestMessage: messages[3],
       })?.messageId,
     ).toBe('assistant-2');
+  });
+
+  it('truncates regenerate history before the targeted assistant response', () => {
+    const messages = [
+      userMessage('user-1'),
+      assistantMessage('assistant-1', 'user-1'),
+      userMessage('user-2', 'assistant-1'),
+      assistantMessage('assistant-2', 'user-2'),
+      userMessage('user-3', 'assistant-2'),
+      assistantMessage('assistant-3', 'user-3'),
+    ];
+
+    expect(
+      getRegenerateSubmissionMessages({
+        messages,
+        targetResponseMessage: messages[1],
+        initialResponseId: 'assistant-1_',
+      }).map((message) => message.messageId),
+    ).toEqual(['user-1']);
   });
 });

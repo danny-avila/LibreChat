@@ -605,6 +605,81 @@ describe('useStepHandler', () => {
       );
     });
 
+    it('does not seed non-tail regenerate run steps from the latest assistant message', () => {
+      const originalUser = createUserMessage({ messageId: 'original-user-message' });
+      const originalResponse = createResponseMessage({
+        messageId: 'original-response-message',
+        parentMessageId: originalUser.messageId,
+        content: [
+          {
+            type: ContentTypes.TEXT,
+            text: 'Original response',
+          },
+        ],
+      });
+      const followUpUser = createUserMessage({
+        messageId: 'follow-up-user-message',
+        parentMessageId: originalResponse.messageId,
+      });
+      const latestResponse = createResponseMessage({
+        messageId: 'latest-response-message',
+        parentMessageId: followUpUser.messageId,
+        content: [
+          {
+            type: ContentTypes.TEXT,
+            text: 'Latest response content must not leak into regenerate',
+          },
+        ],
+      });
+      const initialResponse = createResponseMessage({
+        messageId: 'original-response-message_',
+        parentMessageId: originalUser.messageId,
+        content: [],
+      });
+      const regenerateUserMessage = createUserMessage({
+        messageId: 'server-regenerate-user-message',
+        parentMessageId: originalResponse.messageId,
+      });
+
+      let currentMessages = [originalUser, originalResponse, followUpUser, latestResponse];
+      mockGetMessages.mockImplementation(() => currentMessages);
+      mockSetMessages.mockImplementation((messages) => {
+        currentMessages = messages;
+      });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createRunStep({
+        id: 'step-message-create',
+        runId: 'server-regenerated-response-message',
+      });
+      const submission = createSubmission({
+        userMessage: regenerateUserMessage,
+        isRegenerate: true,
+        messages: [originalUser],
+        initialResponse,
+      });
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      const regeneratedResponse = currentMessages.find(
+        (message) => message.messageId === 'server-regenerated-response-message',
+      );
+      expect(regeneratedResponse).toEqual(
+        expect.objectContaining({
+          parentMessageId: originalUser.messageId,
+          content: [],
+        }),
+      );
+      expect(regeneratedResponse?.content).not.toEqual(latestResponse.content);
+      expect(currentMessages.map((message) => message.messageId)).toEqual([
+        originalUser.messageId,
+        'server-regenerated-response-message',
+      ]);
+    });
+
     it('should propagate step metadata (agentId, groupId) for parallel rendering', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
