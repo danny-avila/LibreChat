@@ -239,6 +239,28 @@ describe('GitHub skill sync service', () => {
         ],
       },
     };
+    mockRunnerStatus = {
+      enabled: true,
+      intervalMinutes: 60,
+      runOnStartup: false,
+      sources: [
+        {
+          provider: 'github',
+          sourceId: 'tenant-skills',
+          status: 'idle',
+          credentialPresent: false,
+          owner: 'LibreChat',
+          repo: 'skills',
+          ref: 'main',
+          paths: ['skills'],
+          syncedSkillCount: 0,
+          syncedFileCount: 0,
+          deletedSkillCount: 0,
+          deletedFileCount: 0,
+        },
+      ],
+      credentials: [],
+    };
 
     const service = require('./sync');
     const started = await service.maybeRunGitHubSkillSyncForRequest({

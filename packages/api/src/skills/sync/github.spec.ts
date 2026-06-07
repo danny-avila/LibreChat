@@ -8,6 +8,8 @@ import type {
   CreateSkillResult,
   ISkillSyncStatus,
   SkillSyncStatusInput,
+  UpdateSkillInput,
+  UpdateSkillResult,
 } from '@librechat/data-schemas';
 import type { GitHubSkillSyncDeps } from './github';
 import { DEFAULT_SKILL_IMPORT_LIMITS } from '../limits';
@@ -302,6 +304,75 @@ describe('createGitHubSkillSyncRunner', () => {
       expect.objectContaining({
         alwaysApply: true,
         frontmatter: { 'always-apply': true },
+      }),
+    );
+  });
+
+  it('fails duplicate discovered skill names before publishing partial mirrors', async () => {
+    const duplicateFetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes('/commits/')) {
+        return response({ sha: 'commit-sha', commit: { tree: { sha: 'tree-sha' } } });
+      }
+      if (url.includes('/git/trees/tree-sha')) {
+        return response({
+          sha: 'tree-sha',
+          truncated: false,
+          tree: [
+            {
+              path: 'skills',
+              mode: '040000',
+              type: 'tree',
+              sha: 'skills-tree-sha',
+              url: 'https://api.github.test/tree/skills',
+            },
+          ],
+        });
+      }
+      if (url.includes('/git/trees/skills-tree-sha')) {
+        return response({
+          sha: 'skills-tree-sha',
+          truncated: false,
+          tree: [
+            {
+              path: 'research/SKILL.md',
+              mode: '100644',
+              type: 'blob',
+              sha: 'skill-a-sha',
+              size: 50,
+              url: 'https://api.github.test/blob/skill-a',
+            },
+            {
+              path: 'analysis/SKILL.md',
+              mode: '100644',
+              type: 'blob',
+              sha: 'skill-b-sha',
+              size: 50,
+              url: 'https://api.github.test/blob/skill-b',
+            },
+          ],
+        });
+      }
+      if (url.includes('/git/blobs/skill-a-sha')) {
+        return response(blob('---\nname: duplicate\ndescription: First\n---\nBody'));
+      }
+      if (url.includes('/git/blobs/skill-b-sha')) {
+        return response(blob('---\nname: duplicate\ndescription: Second\n---\nBody'));
+      }
+      return response({ message: 'not found' }, 404);
+    }) as unknown as typeof fetch;
+    const deps = createDeps({ fetchFn: duplicateFetch });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('failed');
+    expect(deps.createSkill).not.toHaveBeenCalled();
+    expect(deps.updateSkill).not.toHaveBeenCalled();
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'failed',
+        errorCode: 'DUPLICATE_SKILL_NAME',
+        errorMessage: 'GitHub source "librechat-skills" contains multiple skills named "duplicate"',
       }),
     );
   });
@@ -719,6 +790,85 @@ describe('createGitHubSkillSyncRunner', () => {
     });
     expect(deps.deleteSkill).toHaveBeenCalledTimes(1);
     expect(deps.deleteSkill).toHaveBeenCalledWith(staleId.toString());
+  });
+
+  it('deletes stale name-conflicting mirrors before applying same-commit renames', async () => {
+    const staleId = new Types.ObjectId();
+    const existingId = new Types.ObjectId();
+    const author = makeSourceAuthorId();
+    const existingSkill = (
+      upstreamId: string,
+      _id: Types.ObjectId,
+      name: string,
+    ): ISkill & { _id: Types.ObjectId } => {
+      const skill = makeSkill({
+        name,
+        description: `${name} skill`,
+        body: 'Old body',
+        author,
+        authorName: 'GitHub Sync',
+        source: 'github',
+        sourceMetadata: { provider: 'github', sourceId: 'librechat-skills', upstreamId },
+      });
+      skill._id = _id;
+      return skill;
+    };
+    const staleSkill = existingSkill('librechat-skills:skills/removed', staleId, 'renamed');
+    const syncedSkill = existingSkill('librechat-skills:skills/research', existingId, 'research');
+    const existingById = new Map([[existingId.toString(), syncedSkill]]);
+    const deletedIds = new Set<string>();
+    const listSkillsBySource = jest.fn(async () =>
+      [staleSkill, syncedSkill].filter((skill) => !deletedIds.has(skill._id.toString())),
+    );
+    const deleteSkill = jest.fn(async (id: string) => {
+      deletedIds.add(id);
+      return { deleted: true };
+    });
+    const updateSkill = jest.fn(
+      async ({
+        id,
+        update,
+      }: {
+        id: string;
+        expectedVersion: number;
+        update: UpdateSkillInput;
+      }): Promise<UpdateSkillResult> => {
+        if (!deletedIds.has(staleId.toString()) && update.name === 'renamed') {
+          throw new Error('duplicate key');
+        }
+        const skill = existingById.get(id);
+        if (!skill) {
+          return { status: 'not_found' as const };
+        }
+        const updated = { ...skill, ...update, version: skill.version + 1 };
+        existingById.set(id, updated);
+        return { status: 'updated' as const, skill: updated, warnings: [] };
+      },
+    );
+    const deps = createDeps({
+      fetchFn: githubFetch('---\nname: renamed\ndescription: Renamed skill\n---\nBody'),
+      findSkillBySourceIdentity: jest.fn(async ({ upstreamId }) =>
+        upstreamId === 'librechat-skills:skills/research' ? syncedSkill : null,
+      ),
+      getSkillById: jest.fn(async (id) => existingById.get(id.toString()) ?? null),
+      listSkillsBySource,
+      deleteSkill,
+      updateSkill,
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('completed');
+    expect(deleteSkill).toHaveBeenCalledWith(staleId.toString());
+    expect(updateSkill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: existingId.toString(),
+        update: expect.objectContaining({ name: 'renamed' }),
+      }),
+    );
+    expect(deleteSkill.mock.invocationCallOrder[0]).toBeLessThan(
+      updateSkill.mock.invocationCallOrder[0],
+    );
   });
 
   it("does not mirror-delete another tenant's skills from an ambient source run", async () => {

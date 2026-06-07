@@ -42,10 +42,6 @@ function hasResolvedSkillSyncOverride(req) {
   return Boolean(resolved?.github && !isSameSkillSyncConfig(resolved, base));
 }
 
-function hasServerCredentialReference(config) {
-  return Boolean(config?.github?.sources?.some((source) => source.credentialKey || source.token));
-}
-
 async function attachBaseSkillSyncConfig(req, res, next) {
   try {
     const baseConfig = await getAppConfig({ baseOnly: true });
@@ -107,20 +103,16 @@ async function requireSyncRunCapability(req, res, next) {
     });
     if (canManagePlatform) {
       req.skillSyncAllowServerCredentials = true;
+      req.skillSyncCanReadCredentials = true;
       return next();
     }
-    const resolved = parseSkillSyncConfig(req.config?.skillSync);
     if (
       hasResolvedSkillSyncOverride(req) &&
       (await hasSkillCapability(req, SystemCapabilities.MANAGE_SKILLS))
     ) {
-      if (hasServerCredentialReference(resolved)) {
-        return res.status(403).json({
-          message: 'Tenant-scoped skill sync runs cannot use server credentials',
-        });
-      }
-      req.skillSyncAllowServerCredentials = false;
-      return next();
+      return res.status(403).json({
+        message: 'Tenant-scoped manual skill sync requires platform credential access',
+      });
     }
     return res.status(403).json({ message: 'Forbidden' });
   } catch {
