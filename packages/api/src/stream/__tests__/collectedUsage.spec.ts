@@ -360,6 +360,7 @@ describe('AbortJob - Text and CollectedUsage', () => {
         parentMessageId: 'parent-message-1',
         conversationId: streamId,
         text: 'Use Google Workspace',
+        sender: 'User',
         isCreatedByUser: true,
       },
     });
