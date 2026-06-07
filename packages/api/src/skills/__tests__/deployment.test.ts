@@ -324,4 +324,101 @@ describe('createDeploymentSkillMethods', () => {
       (await methods.getSkillFileByPath?.(deploymentId, 'references/guide.txt'))?.codeEnvRef,
     ).toEqual(codeEnvRef);
   });
+
+  it('lets deployment skills shadow persisted skills with the same name', async () => {
+    const root = await makeTempRoot();
+    await writeDeploymentSkill(root, {
+      skillsDir: 'config/skills',
+      name: 'analysis-kit',
+      alwaysApply: true,
+    });
+    await initializeDeploymentSkills({
+      projectRoot: root,
+      env: { [DEPLOYMENT_SKILLS_DIR_ENV]: 'config/skills' },
+    });
+
+    const deploymentId = getDeploymentSkillIds()[0];
+    const dbId = new Types.ObjectId();
+    const otherId = new Types.ObjectId();
+    const dbAuthor = new Types.ObjectId();
+    const shadowedSkill = {
+      _id: dbId,
+      name: 'analysis-kit',
+      description: 'A persisted duplicate skill.',
+      body: 'persisted duplicate body',
+      author: dbAuthor,
+      version: 9,
+      fileCount: 0,
+      updatedAt: new Date(Date.now() + 60_000),
+    };
+    const otherSkill = {
+      _id: otherId,
+      name: 'db-skill',
+      description: 'A persisted non-duplicate skill.',
+      body: 'persisted body',
+      author: dbAuthor,
+      version: 1,
+      fileCount: 0,
+      updatedAt: new Date(0),
+    };
+    const base: DeploymentSkillBaseMethods = {
+      getSkillByName: jest.fn(async (name) => (name === shadowedSkill.name ? shadowedSkill : null)),
+      listSkillsByAccess: jest.fn(async () => ({
+        skills: [shadowedSkill, otherSkill],
+        has_more: false,
+        after: null,
+      })),
+      listAlwaysApplySkills: jest.fn(async () => ({
+        skills: [
+          {
+            _id: dbId,
+            name: shadowedSkill.name,
+            body: shadowedSkill.body,
+            author: dbAuthor,
+            updatedAt: shadowedSkill.updatedAt,
+          },
+          {
+            _id: otherId,
+            name: 'db-always',
+            body: 'db always',
+            author: dbAuthor,
+            updatedAt: otherSkill.updatedAt,
+          },
+        ],
+        has_more: false,
+        after: null,
+      })),
+    };
+
+    const methods = createDeploymentSkillMethods(base);
+    const mergedIds = mergeDeploymentSkillIds([dbId, otherId]);
+
+    const byName = await methods.getSkillByName?.(shadowedSkill.name, mergedIds, {
+      preferUserInvocable: true,
+    });
+    expect(byName).toMatchObject({
+      _id: deploymentId,
+      name: shadowedSkill.name,
+      source: 'deployment',
+    });
+    expect(base.getSkillByName).not.toHaveBeenCalled();
+
+    const listed = await methods.listSkillsByAccess?.({
+      accessibleIds: mergedIds,
+      limit: 10,
+    });
+    expect(listed?.skills.map((skill) => [skill.name, skill._id.toString()]).sort()).toEqual([
+      ['analysis-kit', deploymentId.toString()],
+      ['db-skill', otherId.toString()],
+    ]);
+
+    const alwaysApply = await methods.listAlwaysApplySkills?.({
+      accessibleIds: mergedIds,
+      limit: 10,
+    });
+    expect(alwaysApply?.skills.map((skill) => [skill.name, skill._id.toString()]).sort()).toEqual([
+      ['analysis-kit', deploymentId.toString()],
+      ['db-always', otherId.toString()],
+    ]);
+  });
 });

@@ -251,6 +251,17 @@ export class DeploymentSkillRegistry {
     return skill;
   }
 
+  namesByAccess(accessibleIds: Types.ObjectId[]): Set<string> {
+    const accessibleSet = new Set(accessibleIds.map((id) => id.toString()));
+    const names = new Set<string>();
+    for (const skill of this.list()) {
+      if (accessibleSet.has(skill._id.toString())) {
+        names.add(skill.name);
+      }
+    }
+    return names;
+  }
+
   listByAccess(params: ListSkillsByAccessParams): DeploymentSkill[] {
     const accessibleSet = new Set(params.accessibleIds.map((id) => id.toString()));
     const cursor = decodeCursor(params.cursor);
@@ -451,14 +462,14 @@ export function createDeploymentSkillMethods<T extends DeploymentSkillBaseMethod
       accessibleIds: Types.ObjectId[],
       options?: SkillLookupOptions,
     ): Promise<SkillDetailRow | null> => {
+      const deployment = registry.getByName(name, accessibleIds, options);
+      if (deployment) {
+        return toSkillDetailRow(deployment);
+      }
       const dbSkill = base.getSkillByName
         ? await base.getSkillByName(name, stripDeploymentIds(accessibleIds), options)
         : null;
-      const deployment = registry.getByName(name, accessibleIds, options);
-      return pickPreferredSkill(
-        [dbSkill, deployment ? toSkillDetailRow(deployment) : null],
-        options,
-      );
+      return dbSkill;
     },
     listSkillsByAccess: async (
       params: ListSkillsByAccessParams,
@@ -469,9 +480,14 @@ export function createDeploymentSkillMethods<T extends DeploymentSkillBaseMethod
             accessibleIds: stripDeploymentIds(params.accessibleIds),
           })
         : { skills: [], has_more: false, after: null };
+      const deploymentNames = registry.namesByAccess(params.accessibleIds);
+      const deploymentRows = registry.listByAccess(params).map(toSkillSummaryRow);
       return mergeSkillPage({
-        dbResult,
-        deploymentRows: registry.listByAccess(params).map(toSkillSummaryRow),
+        dbResult: {
+          ...dbResult,
+          skills: filterDeploymentNameCollisions(dbResult.skills, deploymentNames, 'list'),
+        },
+        deploymentRows,
         limit: params.limit,
       });
     },
@@ -484,8 +500,12 @@ export function createDeploymentSkillMethods<T extends DeploymentSkillBaseMethod
             accessibleIds: stripDeploymentIds(params.accessibleIds),
           })
         : { skills: [], has_more: false, after: null };
+      const deploymentNames = registry.namesByAccess(params.accessibleIds);
       return mergeAlwaysApplyPage({
-        dbResult,
+        dbResult: {
+          ...dbResult,
+          skills: filterDeploymentNameCollisions(dbResult.skills, deploymentNames, 'always-apply'),
+        },
         deploymentRows: registry.listAlwaysApply(params).map(toAlwaysApplyRow),
         limit: params.limit,
       });
@@ -832,31 +852,6 @@ function mergeAlwaysApplyPage({
   };
 }
 
-function pickPreferredSkill(
-  rows: Array<SkillDetailRow | null>,
-  options?: SkillLookupOptions,
-): SkillDetailRow | null {
-  const candidates = rows.filter((row): row is SkillDetailRow => row != null);
-  if (candidates.length === 0) {
-    return null;
-  }
-  const preferred = candidates.filter((row) => matchesLookupPreference(row, options));
-  return (preferred.length > 0 ? preferred : candidates).sort(compareBySkillCursor)[0];
-}
-
-function matchesLookupPreference(
-  row: Pick<SkillSummaryRow, 'disableModelInvocation' | 'userInvocable'>,
-  options?: SkillLookupOptions,
-): boolean {
-  if (options?.preferUserInvocable === true && row.userInvocable === false) {
-    return false;
-  }
-  if (options?.preferModelInvocable === true && row.disableModelInvocation === true) {
-    return false;
-  }
-  return true;
-}
-
 function toSkillSummaryRow(skill: DeploymentSkill): SkillSummaryRow {
   const { body: _body, frontmatter: _frontmatter, files: _files, ...row } = skill;
   return row;
@@ -900,6 +895,31 @@ function stripDeploymentIds(ids: Types.ObjectId[]): Types.ObjectId[] {
 function hasAccessibleId(ids: Types.ObjectId[], skillId: Types.ObjectId): boolean {
   const key = skillId.toString();
   return ids.some((id) => id.toString() === key);
+}
+
+function filterDeploymentNameCollisions<T extends { name: string }>(
+  rows: T[],
+  deploymentNames: Set<string>,
+  context: string,
+): T[] {
+  if (rows.length === 0 || deploymentNames.size === 0) {
+    return rows;
+  }
+  const hiddenNames = new Set<string>();
+  const filtered = rows.filter((row) => {
+    if (!deploymentNames.has(row.name)) {
+      return true;
+    }
+    hiddenNames.add(row.name);
+    return false;
+  });
+  if (hiddenNames.size > 0) {
+    const hiddenList = Array.from(hiddenNames).join(', ');
+    logger.warn(
+      `[deploymentSkills] Hid ${rows.length - filtered.length} persisted ${context} skill row(s) shadowed by deployment skill name(s): ${hiddenList}`,
+    );
+  }
+  return filtered;
 }
 
 function compareBySkillCursor(
