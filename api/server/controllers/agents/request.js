@@ -6,6 +6,7 @@ const {
   buildMessageFiles,
   resolveTitleTiming,
   GenerationJobManager,
+  filterPersistableAbortContent,
   decrementPendingRequest,
   sanitizeMessageForTransmit,
   checkAndIncrementPendingRequest,
@@ -190,6 +191,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         return;
       }
 
+      const persistableContent = filterPersistableAbortContent(aggregatedContent);
+      if (persistableContent.length === 0) {
+        logger.debug('[ResumableAgentController] No persistable content to save partial response');
+        return;
+      }
+
       const resumeState = await GenerationJobManager.getResumeState(streamId);
       if (!resumeState?.userMessage) {
         logger.debug('[ResumableAgentController] No user message to save partial response for');
@@ -205,7 +212,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           conversationId: responseConversationId,
           parentMessageId: resumeState.userMessage.messageId,
           sender: client?.sender ?? 'AI',
-          content: aggregatedContent,
+          content: persistableContent,
           unfinished: true,
           error: false,
           isCreatedByUser: false,
@@ -229,7 +236,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         );
 
         logger.debug(
-          `[ResumableAgentController] Saved partial response for ${streamId}, content parts: ${aggregatedContent.length}`,
+          `[ResumableAgentController] Saved partial response for ${streamId}, content parts: ${persistableContent.length}`,
         );
       } catch (error) {
         logger.error('[ResumableAgentController] Error saving partial response:', error);

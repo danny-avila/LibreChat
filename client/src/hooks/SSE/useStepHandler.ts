@@ -466,7 +466,10 @@ export default function useStepHandler({
         submission.isRegenerate &&
         !message.isCreatedByUser &&
         getRegenerateResponseIds(responseMessageId).has(message.messageId);
-      const getResponseBaseMessages = (candidateMessages: TMessage[], responseMessageId: string) => {
+      const getResponseBaseMessages = (
+        candidateMessages: TMessage[],
+        responseMessageId: string,
+      ) => {
         const currentMessages = getEventMessages(candidateMessages);
         if (!submission.isRegenerate) {
           return currentMessages;
@@ -628,9 +631,7 @@ export default function useStepHandler({
 
           messageMap.current.set(responseMessageId, updatedResponse);
           const currentMessages = submission.isRegenerate ? messages : getMessages() || [];
-          setMessages(
-            mergeResponseMessage(currentMessages, updatedResponse, responseMessageId),
-          );
+          setMessages(mergeResponseMessage(currentMessages, updatedResponse, responseMessageId));
         }
 
         const bufferedDeltas = pendingDeltaBuffer.current.get(runStep.id);
@@ -669,9 +670,7 @@ export default function useStepHandler({
           );
           messageMap.current.set(responseMessageId, updatedResponse);
           const currentMessages = submission.isRegenerate ? messages : getMessages() || [];
-          setMessages(
-            mergeResponseMessage(currentMessages, updatedResponse, responseMessageId),
-          );
+          setMessages(mergeResponseMessage(currentMessages, updatedResponse, responseMessageId));
         }
       } else if (stepEvent.event === StepEvents.ON_MESSAGE_DELTA) {
         const messageDelta = stepEvent.data;
@@ -714,9 +713,7 @@ export default function useStepHandler({
           );
           messageMap.current.set(responseMessageId, updatedResponse);
           const currentMessages = submission.isRegenerate ? messages : getMessages() || [];
-          setMessages(
-            mergeResponseMessage(currentMessages, updatedResponse, responseMessageId),
-          );
+          setMessages(mergeResponseMessage(currentMessages, updatedResponse, responseMessageId));
         }
       } else if (stepEvent.event === StepEvents.ON_REASONING_DELTA) {
         const reasoningDelta = stepEvent.data;
@@ -759,9 +756,7 @@ export default function useStepHandler({
           );
           messageMap.current.set(responseMessageId, updatedResponse);
           const currentMessages = submission.isRegenerate ? messages : getMessages() || [];
-          setMessages(
-            mergeResponseMessage(currentMessages, updatedResponse, responseMessageId),
-          );
+          setMessages(mergeResponseMessage(currentMessages, updatedResponse, responseMessageId));
         }
       } else if (stepEvent.event === StepEvents.ON_RUN_STEP_DELTA) {
         const runStepDelta = stepEvent.data;
@@ -899,9 +894,7 @@ export default function useStepHandler({
               const latest = messageMap.current.get(responseMessageId);
               if (latest) {
                 const currentMessages = submission.isRegenerate ? messages : getMessages() || [];
-            setMessages(
-              mergeResponseMessage(currentMessages, latest, responseMessageId),
-            );
+                setMessages(mergeResponseMessage(currentMessages, latest, responseMessageId));
               }
             });
           }
@@ -930,9 +923,7 @@ export default function useStepHandler({
             announcePolite({ message: 'summarize_failed', isStatus: true });
             const cleaned = { ...targetMessage, content: filtered };
             messageMap.current.set(completeMessageId, cleaned);
-            setMessages(
-              mergeResponseMessage(currentMessages, cleaned, completeMessageId),
-            );
+            setMessages(mergeResponseMessage(currentMessages, cleaned, completeMessageId));
           }
         } else {
           let didFinalize = false;
@@ -950,9 +941,7 @@ export default function useStepHandler({
             announcePolite({ message: 'summarize_completed', isStatus: true });
             const finalized = { ...targetMessage, content: updatedContent };
             messageMap.current.set(completeMessageId, finalized);
-            setMessages(
-              mergeResponseMessage(currentMessages, finalized, completeMessageId),
-            );
+            setMessages(mergeResponseMessage(currentMessages, finalized, completeMessageId));
           }
         }
       } else {

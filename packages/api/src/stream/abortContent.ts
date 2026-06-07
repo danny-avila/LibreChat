@@ -3,7 +3,8 @@ import type { Agents, TMessageContentParts } from 'librechat-data-provider';
 
 const OAUTH_TOOL_CALL_PREFIX = `oauth${Constants.mcp_delimiter}`;
 
-type AbortContentPart = Agents.MessageContentComplex | TMessageContentParts | null | undefined;
+type PersistableAbortContentPart = Agents.MessageContentComplex | TMessageContentParts;
+type AbortContentPart = PersistableAbortContentPart | null | undefined;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === 'object';
@@ -48,7 +49,9 @@ function isOAuthPromptContentPart(part: AbortContentPart): boolean {
   return typeof name === 'string' && name.startsWith(OAUTH_TOOL_CALL_PREFIX);
 }
 
-function isPersistableAbortContentPart(part: AbortContentPart): boolean {
+function isPersistableAbortContentPart(
+  part: AbortContentPart,
+): part is PersistableAbortContentPart {
   if (!isRecord(part)) {
     return false;
   }
@@ -69,5 +72,9 @@ function isPersistableAbortContentPart(part: AbortContentPart): boolean {
 }
 
 export function hasPersistableAbortContent(content: unknown): boolean {
-  return Array.isArray(content) && content.some((part) => isPersistableAbortContentPart(part));
+  return filterPersistableAbortContent(content).length > 0;
+}
+
+export function filterPersistableAbortContent(content: unknown): PersistableAbortContentPart[] {
+  return Array.isArray(content) ? content.filter(isPersistableAbortContentPart) : [];
 }

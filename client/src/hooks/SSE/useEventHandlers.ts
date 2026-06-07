@@ -85,6 +85,11 @@ export const buildCreatedInitialResponse = ({
   conversationId: userMessage.conversationId ?? initialResponse.conversationId,
 });
 
+export const isInitialNewConversationSubmission = ({
+  userMessage,
+}: Pick<EventSubmission, 'userMessage'>): boolean =>
+  userMessage?.parentMessageId === Constants.NO_PARENT;
+
 export type EventHandlerParams = {
   isAddedRequest?: boolean;
   setCompleted: React.Dispatch<React.SetStateAction<Set<unknown>>>;
@@ -561,7 +566,9 @@ export default function useEventHandlers({
           setIsSubmitting(false);
 
           const currentConvoId = submissionConvo.conversationId;
-          const isExistingConvo = currentConvoId && currentConvoId !== Constants.NEW_CONVO;
+          const isInitialNewConvo = isInitialNewConversationSubmission(submission);
+          const isExistingConvo =
+            currentConvoId && currentConvoId !== Constants.NEW_CONVO && !isInitialNewConvo;
           if (isExistingConvo) {
             setMessages([...messages]);
             queryClient.setQueryData<TMessage[]>(
@@ -572,6 +579,13 @@ export default function useEventHandlers({
             return;
           }
 
+          if (currentConvoId && currentConvoId !== Constants.NEW_CONVO) {
+            removeConvoFromAllQueries(queryClient, currentConvoId);
+            queryClient.removeQueries({ queryKey: [QueryKeys.conversation, currentConvoId] });
+            queryClient.removeQueries({ queryKey: [QueryKeys.messages, currentConvoId] });
+          }
+          setMessages([]);
+          queryClient.setQueryData<TMessage[]>([QueryKeys.messages, Constants.NEW_CONVO], []);
           setDraft({ id: String(Constants.NEW_CONVO), value: requestMessage?.text });
           if (location.pathname !== `/c/${Constants.NEW_CONVO}`) {
             navigate(`/c/${Constants.NEW_CONVO}`, { replace: true });
