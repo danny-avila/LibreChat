@@ -1,5 +1,5 @@
-import type { EventEmitter } from 'events';
 import type { Agents } from 'librechat-data-provider';
+import type { EventEmitter } from 'events';
 import type { ServerSentEvent } from '~/types';
 
 export interface GenerationJobMetadata {
