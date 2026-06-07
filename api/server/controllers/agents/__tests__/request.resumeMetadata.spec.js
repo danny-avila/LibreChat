@@ -107,8 +107,8 @@ describe('ResumableAgentController resume metadata', () => {
         text: 'Check Google Workspace availability.',
       },
     });
-    expect(
-      mockGenerationJobManager.updateMetadata.mock.invocationCallOrder[0],
-    ).toBeLessThan(initializeClient.mock.invocationCallOrder[0]);
+    expect(mockGenerationJobManager.updateMetadata.mock.invocationCallOrder[0]).toBeLessThan(
+      initializeClient.mock.invocationCallOrder[0],
+    );
   });
 });
