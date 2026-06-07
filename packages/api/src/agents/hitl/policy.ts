@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
-import type { ToolPolicyConfig } from '@librechat/agents';
 import type { Agents, TToolApprovalPolicy } from 'librechat-data-provider';
+import type { ToolPolicyConfig } from '@librechat/agents';
 
 /**
  * Default decisions offered to the user for a paused tool call.
