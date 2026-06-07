@@ -33,13 +33,45 @@ export interface RoleDeps {
   };
 }
 
-export function createRoleMethods(mongoose: typeof import('mongoose'), deps: RoleDeps = {}) {
+export function createRoleMethods(
+  mongoose: typeof import('mongoose'),
+  deps: RoleDeps = {},
+): {
+  listRoles: (options?: {
+    limit?: number;
+    offset?: number;
+  }) => Promise<Pick<IRole, '_id' | 'name' | 'description'>[]>;
+  countRoles: () => Promise<number>;
+  initializeRoles: () => Promise<void>;
+  getRoleByName: (roleName: string, fieldsToSelect?: string | string[] | null) => Promise<IRole>;
+  findRolesByNames: (
+    roleNames: string[],
+    fieldsToSelect?: string | string[] | null,
+  ) => Promise<IRole[]>;
+  updateRoleByName: (roleName: string, updates: Partial<IRole>) => Promise<IRole>;
+  updateAccessPermissions: (
+    roleName: string,
+    permissionsUpdate: Record<string, Record<string, boolean>>,
+    roleData?: IRole,
+  ) => Promise<void>;
+  migrateRoleSchema: (roleName?: string) => Promise<number>;
+  createRoleByName: (roleData: Partial<IRole>) => Promise<IRole>;
+  deleteRoleByName: (roleName: string) => Promise<IRole | null>;
+  updateUsersByRole: (oldRole: string, newRole: string) => Promise<void>;
+  findUserIdsByRole: (roleName: string) => Promise<string[]>;
+  updateUsersRoleByIds: (userIds: string[], newRole: string) => Promise<void>;
+  listUsersByRole: (
+    roleName: string,
+    options?: { limit?: number; offset?: number },
+  ) => Promise<IUser[]>;
+  countUsersByRole: (roleName: string) => Promise<number>;
+} {
   /**
    * Initialize default roles in the system.
    * Creates the default roles (ADMIN, USER) if they don't exist in the database.
    * Updates existing roles with new permission types if they're missing.
    */
-  async function initializeRoles() {
+  async function initializeRoles(): Promise<void> {
     const Role = mongoose.models.Role;
 
     for (const roleName of [SystemRoles.ADMIN, SystemRoles.USER]) {
@@ -92,7 +124,10 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
    * If the role with the given name doesn't exist and the name is a system defined role,
    * create it and return the lean version.
    */
-  async function getRoleByName(roleName: string, fieldsToSelect: string | string[] | null = null) {
+  async function getRoleByName(
+    roleName: string,
+    fieldsToSelect: string | string[] | null = null,
+  ): Promise<IRole> {
     const cache = deps.getCache?.(CacheKeys.ROLES);
     try {
       if (cache) {
@@ -137,7 +172,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
   async function findRolesByNames(
     roleNames: string[],
     fieldsToSelect: string | string[] | null = null,
-  ) {
+  ): Promise<IRole[]> {
     try {
       const uniqueRoleNames = [
         ...new Set(roleNames.map((roleName) => roleName.trim()).filter(Boolean)),
@@ -177,7 +212,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
   /**
    * Update role values by name.
    */
-  async function updateRoleByName(roleName: string, updates: Partial<IRole>) {
+  async function updateRoleByName(roleName: string, updates: Partial<IRole>): Promise<IRole> {
     const cache = deps.getCache?.(CacheKeys.ROLES);
     try {
       const Role = mongoose.models.Role;
@@ -218,7 +253,7 @@ export function createRoleMethods(mongoose: typeof import('mongoose'), deps: Rol
     roleName: string,
     permissionsUpdate: Record<string, Record<string, boolean>>,
     roleData?: IRole,
-  ) {
+  ): Promise<void> {
     const updates: Record<string, Record<string, boolean>> = {};
     for (const [permissionType, permissions] of Object.entries(permissionsUpdate)) {
       if (

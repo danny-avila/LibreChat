@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
-import { Constants, FileSources } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import { Constants, FileSources } from 'librechat-data-provider';
 import { agentSchema, createMethods } from '@librechat/data-schemas';
 import type {
   Agent as LibreChatAgent,
@@ -9,8 +9,8 @@ import type {
   TConversation,
 } from 'librechat-data-provider';
 import type { LoadAgentParams, LoadAgentDeps } from '../load';
-import { loadAgent } from '../load';
 import { loadAddedAgent } from '../added';
+import { loadAgent } from '../load';
 
 let Agent: mongoose.Model<unknown>;
 let createAgent: ReturnType<typeof createMethods>['createAgent'];
@@ -19,7 +19,7 @@ let getAgent: ReturnType<typeof createMethods>['getAgent'];
 const mockGetMCPServerTools = jest.fn();
 
 const deps: LoadAgentDeps = {
-  getAgent: (searchParameter) => getAgent(searchParameter),
+  getAgent: (searchParameter) => getAgent(searchParameter) as Promise<LibreChatAgent | null>,
   getMCPServerTools: mockGetMCPServerTools,
 };
 

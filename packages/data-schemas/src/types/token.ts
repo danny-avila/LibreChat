@@ -19,7 +19,7 @@ export interface TokenCreateData {
   identifier?: string;
   token: string;
   expiresIn: number;
-  metadata?: Map<string, unknown>;
+  metadata?: Record<string, unknown> | Map<string, unknown>;
 }
 
 export interface TokenQuery {
@@ -37,7 +37,7 @@ export interface TokenUpdateData {
   token?: string;
   expiresAt?: Date;
   expiresIn?: number;
-  metadata?: Map<string, unknown>;
+  metadata?: Record<string, unknown> | Map<string, unknown>;
 }
 
 export interface TokenDeleteResult {

@@ -2,7 +2,7 @@ import { Schema } from 'mongoose';
 import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
 import type { IConfig } from '~/types';
 
-const configSchema = new Schema<IConfig>(
+const configSchema: Schema<IConfig> = new Schema<IConfig>(
   {
     principalType: {
       type: String,

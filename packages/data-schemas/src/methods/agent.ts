@@ -246,7 +246,83 @@ async function generateActionMetadataHash(
   return hashHex;
 }
 
-export function createAgentMethods(mongoose: typeof import('mongoose'), deps: AgentDeps) {
+export function createAgentMethods(
+  mongoose: typeof import('mongoose'),
+  deps: AgentDeps,
+): {
+  getAgent: (searchParameter: FilterQuery<IAgent>) => Promise<IAgent | null>;
+  getAgents: (searchParameter: FilterQuery<IAgent>) => Promise<IAgent[]>;
+  createAgent: (agentData: Record<string, unknown>) => Promise<IAgent>;
+  hasAgentWithMCPServerName: ({
+    agentIds,
+    serverName,
+  }: {
+    agentIds: Types.ObjectId[];
+    serverName: string;
+  }) => Promise<boolean>;
+  getMCPServerNamesByAgentIds: (agentIds: Types.ObjectId[]) => Promise<string[]>;
+  updateAgent: (
+    searchParameter: FilterQuery<IAgent>,
+    updateData: Record<string, unknown>,
+    options?: {
+      updatingUserId?: string | null;
+      forceVersion?: boolean;
+      skipVersioning?: boolean;
+    },
+  ) => Promise<IAgent | null>;
+  deleteAgent: (searchParameter: FilterQuery<IAgent>) => Promise<IAgent | null>;
+  deleteUserAgents: (userId: string) => Promise<void>;
+  revertAgentVersion: (
+    searchParameter: FilterQuery<IAgent>,
+    versionIndex: number,
+  ) => Promise<IAgent>;
+  countPromotedAgents: () => Promise<number>;
+  addAgentResourceFile: ({
+    agent_id,
+    tool_resource,
+    file_id,
+    updatingUserId,
+  }: {
+    agent_id: string;
+    tool_resource: string;
+    file_id: string;
+    updatingUserId?: string;
+  }) => Promise<IAgent>;
+  getListAgentsByAccess: ({
+    accessibleIds,
+    otherParams,
+    limit,
+    after,
+    includeSkillConfig,
+  }: {
+    accessibleIds?: Types.ObjectId[];
+    otherParams?: Record<string, unknown>;
+    limit?: number | null;
+    after?: string | null;
+    includeSkillConfig?: boolean;
+  }) => Promise<{
+    object: string;
+    data: Array<Record<string, unknown>>;
+    first_id: string | null;
+    last_id: string | null;
+    has_more: boolean;
+    after: string | null;
+  }>;
+  removeAgentResourceFiles: ({
+    agent_id,
+    files,
+  }: {
+    agent_id: string;
+    files: Array<{ tool_resource: string; file_id: string }>;
+  }) => Promise<IAgent>;
+  generateActionMetadataHash: typeof generateActionMetadataHash;
+  removeAgentFromUserFavorites: (resourceId: string, userIds: string[]) => Promise<void>;
+  removeAgentResourceFilesFromAllAgents: ({
+    file_ids,
+  }: {
+    file_ids: string[];
+  }) => Promise<{ matchedCount: number; modifiedCount: number }>;
+} {
   const { removeAllPermissions, getActions, getSoleOwnedResourceIds } = deps;
 
   /**
