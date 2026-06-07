@@ -75,6 +75,31 @@ async function attachConversationCreatedAt(req, { userId, conversationId, isNewC
   }
 }
 
+function getPreliminaryResponseMessageId({ messageId, responseMessageId }) {
+  if (typeof responseMessageId === 'string' && responseMessageId.length > 0) {
+    return responseMessageId;
+  }
+
+  if (typeof messageId !== 'string' || messageId.length === 0) {
+    return null;
+  }
+
+  return `${messageId.replace(/_+$/, '')}_`;
+}
+
+function getPreliminaryUserMessage({ messageId, parentMessageId, text }, conversationId) {
+  if (typeof messageId !== 'string' || messageId.length === 0) {
+    return null;
+  }
+
+  return {
+    messageId,
+    parentMessageId,
+    conversationId,
+    text,
+  };
+}
+
 /**
  * Resumable Agent Controller - Generation runs independently of HTTP connection.
  * Returns streamId immediately, client subscribes separately via SSE.
@@ -133,6 +158,16 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     res.json({ streamId, conversationId, status: 'started' });
 
     await attachConversationCreatedAt(req, { userId, conversationId, isNewConvo });
+
+    const preliminaryUserMessage = getPreliminaryUserMessage(req.body, conversationId);
+    const preliminaryResponseMessageId = getPreliminaryResponseMessageId(req.body);
+    if (preliminaryUserMessage || preliminaryResponseMessageId) {
+      await GenerationJobManager.updateMetadata(streamId, {
+        conversationId,
+        responseMessageId: preliminaryResponseMessageId,
+        userMessage: preliminaryUserMessage,
+      });
+    }
 
     // Note: We no longer use res.on('close') to abort since we send JSON immediately.
     // The response closes normally after res.json(), which is not an abort condition.
