@@ -543,6 +543,25 @@ async function hasReplayablePendingMCPOAuthFlow({ flowManager, userId, serverNam
   }
 }
 
+function getMCPServerNamesFromTools(tools) {
+  const serverNames = new Set();
+
+  for (const tool of tools ?? []) {
+    if (typeof tool !== 'string') {
+      continue;
+    }
+
+    const delimiterIndex = tool.lastIndexOf(Constants.mcp_delimiter);
+    if (delimiterIndex === -1) {
+      continue;
+    }
+
+    serverNames.add(tool.slice(delimiterIndex + Constants.mcp_delimiter.length));
+  }
+
+  return serverNames;
+}
+
 /**
  * Loads only tool definitions without creating tool instances.
  * This is the efficient path for event-driven mode where tools are loaded on-demand.
@@ -849,6 +868,16 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       getActionToolDefinitions,
     },
   );
+
+  for (const serverName of getMCPServerNamesFromTools(filteredTools)) {
+    if (pendingOAuthServers.has(serverName)) {
+      continue;
+    }
+
+    if (await hasReplayablePendingMCPOAuthFlow({ flowManager, userId: req.user.id, serverName })) {
+      pendingOAuthServers.add(serverName);
+    }
+  }
 
   if (pendingOAuthServers.size > 0 && (res || streamId)) {
     const serverNames = Array.from(pendingOAuthServers);

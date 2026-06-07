@@ -502,6 +502,59 @@ describe('ToolService - Action Capability Gating', () => {
       );
     });
 
+    it('should re-emit pending MCP OAuth prompts when selected MCP tools are already concrete', async () => {
+      const serverName = 'Google-Workspace';
+      const authorizationUrl = 'https://auth.example.com/Google-Workspace';
+      const mcpTool = `search${Constants.mcp_delimiter}${serverName}`;
+      const capabilities = [AgentCapabilities.tools];
+      const req = createMockReq(capabilities);
+      const res = { writableEnded: false };
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockFlowManager.getFlowState.mockResolvedValue({
+        status: 'PENDING',
+        createdAt: Date.now(),
+        metadata: { authorizationUrl },
+      });
+      mockLoadToolDefinitions.mockResolvedValue({
+        toolDefinitions: [mcpTool],
+        toolRegistry: new Map(),
+        hasDeferredTools: false,
+      });
+      reinitMCPServer.mockImplementation(async ({ oauthStart }) => {
+        await oauthStart(authorizationUrl);
+        return { availableTools: { [mcpTool]: {} } };
+      });
+
+      const result = await loadAgentTools({
+        req,
+        res,
+        agent: { id: 'agent_123', tools: [mcpTool] },
+        definitionsOnly: true,
+      });
+
+      expect(result.toolDefinitions).toEqual([mcpTool]);
+      expect(mockGetMCPServerTools).not.toHaveBeenCalled();
+      expect(reinitMCPServer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName,
+          returnOnOAuth: false,
+          oauthStart: expect.any(Function),
+        }),
+      );
+      expect(mockSendEvent).toHaveBeenCalledWith(
+        res,
+        expect.objectContaining({
+          event: 'on_run_step_delta',
+          data: expect.objectContaining({
+            id: `step_oauth_login_${serverName}`,
+            delta: expect.objectContaining({
+              auth: authorizationUrl,
+            }),
+          }),
+        }),
+      );
+    });
+
     it('should use request-scoped MCP config before falling back to the registry', async () => {
       const serverName = 'config-server';
       const mcpTool = `search${Constants.mcp_delimiter}${serverName}`;
