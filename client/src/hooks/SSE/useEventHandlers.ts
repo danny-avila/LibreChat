@@ -68,6 +68,23 @@ type TTitleEvent = {
 const hasRealTitle = (title?: string | null): title is string =>
   title != null && title !== '' && title !== 'New Chat';
 
+export const buildCreatedInitialResponse = ({
+  initialResponse,
+  userMessage,
+  isRegenerate = false,
+}: Pick<EventSubmission, 'initialResponse' | 'userMessage' | 'isRegenerate'>): TMessage => ({
+  ...initialResponse,
+  parentMessageId:
+    isRegenerate && initialResponse.parentMessageId
+      ? initialResponse.parentMessageId
+      : userMessage.messageId,
+  messageId:
+    isRegenerate && initialResponse.messageId
+      ? initialResponse.messageId
+      : `${userMessage.messageId}_`,
+  conversationId: userMessage.conversationId ?? initialResponse.conversationId,
+});
+
 export type EventHandlerParams = {
   isAddedRequest?: boolean;
   setCompleted: React.Dispatch<React.SetStateAction<Set<unknown>>>;
@@ -409,12 +426,11 @@ export default function useEventHandlers({
        * drops it, which is the right behavior: by finalize the real
        * `skill` tool_call is in `content` and takes over rendering.
        */
-      const initialResponse = {
-        ...submission.initialResponse,
-        parentMessageId: userMessage.messageId,
-        messageId: userMessage.messageId + '_',
-        conversationId: userMessage.conversationId ?? submission.initialResponse.conversationId,
-      };
+      const initialResponse = buildCreatedInitialResponse({
+        initialResponse: submission.initialResponse,
+        userMessage,
+        isRegenerate,
+      });
       if (isRegenerate) {
         setMessages([...messages, initialResponse]);
       } else {

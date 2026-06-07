@@ -515,31 +515,36 @@ const isBuiltInTool = (toolName) =>
       nativeTools.has(toolName),
   );
 
-async function hasReplayablePendingMCPOAuthFlow({ flowManager, userId, serverName }) {
+async function getReplayablePendingMCPOAuthStart({ flowManager, userId, serverName }) {
   if (!flowManager || typeof flowManager.getFlowState !== 'function') {
-    return false;
+    return null;
   }
 
   try {
     const flowId = MCPOAuthHandler.generateFlowId(userId, serverName);
     const flowState = await flowManager.getFlowState(flowId, 'mcp_oauth');
     if (flowState?.status !== 'PENDING') {
-      return false;
+      return null;
     }
 
     const createdAt = typeof flowState.createdAt === 'number' ? flowState.createdAt : 0;
-    if (!createdAt || Date.now() - createdAt >= PENDING_STALE_MS) {
-      return false;
+    const expiresAt = createdAt + PENDING_STALE_MS;
+    if (!createdAt || expiresAt <= Date.now()) {
+      return null;
     }
 
     const authorizationUrl = flowState.metadata?.authorizationUrl;
-    return typeof authorizationUrl === 'string' && authorizationUrl.length > 0;
+    if (typeof authorizationUrl !== 'string' || authorizationUrl.length === 0) {
+      return null;
+    }
+
+    return { authURL: authorizationUrl, options: { expiresAt } };
   } catch (error) {
     logger.warn(
       `[Tool Definitions] Failed to inspect pending OAuth flow for ${serverName}:`,
       error,
     );
-    return false;
+    return null;
   }
 }
 
@@ -645,6 +650,8 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
   const flowManager = getFlowStateManager(flowsCache);
   const configServers = await resolveConfigServers(req);
   const pendingOAuthServers = new Set();
+  const pendingOAuthStarts = new Map();
+  const emittedOAuthStarts = new Map();
   const oauthToolCallIds = new Map();
   const oauthStepIndexes = new Map();
   const getOAuthPromptExpiresAt = (options) =>
@@ -654,7 +661,13 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
   const createOAuthEmitter = (serverName, index) => {
     return async (authURL, options) => {
-      const flowId = `${req.user.id}:${serverName}:${Date.now()}`;
+      if (emittedOAuthStarts.get(serverName) === authURL) {
+        return;
+      }
+      emittedOAuthStarts.set(serverName, authURL);
+
+      const flowId =
+        oauthToolCallIds.get(serverName) ?? `${req.user.id}:${serverName}:${Date.now()}`;
       const stepId = 'step_oauth_login_' + serverName;
       oauthToolCallIds.set(serverName, flowId);
       oauthStepIndexes.set(serverName, index);
@@ -737,6 +750,21 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
   };
 
   const getOrFetchMCPServerTools = async (userId, serverName) => {
+    const addPendingOAuthServer = async () => {
+      const pendingOAuthStart = await getReplayablePendingMCPOAuthStart({
+        flowManager,
+        userId,
+        serverName,
+      });
+      if (!pendingOAuthStart) {
+        return false;
+      }
+
+      pendingOAuthServers.add(serverName);
+      pendingOAuthStarts.set(serverName, pendingOAuthStart);
+      return true;
+    };
+
     let serverConfig;
     try {
       serverConfig =
@@ -771,19 +799,19 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
     const cached = await getMCPServerTools(userId, serverName);
     if (cached) {
-      if (await hasReplayablePendingMCPOAuthFlow({ flowManager, userId, serverName })) {
-        pendingOAuthServers.add(serverName);
-      }
+      await addPendingOAuthServer();
       return cached;
     }
 
-    if (await hasReplayablePendingMCPOAuthFlow({ flowManager, userId, serverName })) {
-      pendingOAuthServers.add(serverName);
+    if (await addPendingOAuthServer()) {
       return null;
     }
 
-    const oauthStart = async () => {
+    const oauthStart = async (authURL, options) => {
       pendingOAuthServers.add(serverName);
+      if (typeof authURL === 'string' && authURL.length > 0) {
+        pendingOAuthStarts.set(serverName, { authURL, options });
+      }
     };
 
     const result = await reinitMCPServer({
@@ -879,8 +907,14 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       continue;
     }
 
-    if (await hasReplayablePendingMCPOAuthFlow({ flowManager, userId: req.user.id, serverName })) {
+    const pendingOAuthStart = await getReplayablePendingMCPOAuthStart({
+      flowManager,
+      userId: req.user.id,
+      serverName,
+    });
+    if (pendingOAuthStart) {
       pendingOAuthServers.add(serverName);
+      pendingOAuthStarts.set(serverName, pendingOAuthStart);
     }
   }
 
@@ -892,6 +926,18 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
     const oauthWaitPromises = serverNames.map(async (serverName, index) => {
       try {
+        const pendingOAuthStart =
+          pendingOAuthStarts.get(serverName) ??
+          (await getReplayablePendingMCPOAuthStart({
+            flowManager,
+            userId: req.user.id,
+            serverName,
+          }));
+        const oauthStart = createOAuthEmitter(serverName, index);
+        if (pendingOAuthStart) {
+          await oauthStart(pendingOAuthStart.authURL, pendingOAuthStart.options);
+        }
+
         const result = await reinitMCPServer({
           user: req.user,
           serverName,
@@ -899,7 +945,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
           userMCPAuthMap,
           flowManager,
           returnOnOAuth: false,
-          oauthStart: createOAuthEmitter(serverName, index),
+          oauthStart,
           oauthEnd: createOAuthEndEmitter(serverName),
           connectionTimeout: Time.TWO_MINUTES,
         });
