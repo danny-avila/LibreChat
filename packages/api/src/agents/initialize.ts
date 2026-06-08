@@ -9,7 +9,7 @@ import {
   paramEndpoints,
   isAgentsEndpoint,
   replaceSpecialVars,
-  replaceCustomVariables,
+  replaceCustomVars,
   providerEndpointMap,
 } from 'librechat-data-provider';
 import type {
@@ -986,7 +986,7 @@ export async function initializeAgent(
       now: req.conversationCreatedAt,
     });
     if (endpointOption?.customVariables) {
-      resolvedInstructions = replaceCustomVariables({
+      resolvedInstructions = replaceCustomVars({
         text: resolvedInstructions,
         customVariables: endpointOption.customVariables,
       });

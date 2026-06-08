@@ -459,7 +459,7 @@ export function replaceSpecialVars({
 
 const CUSTOM_VAR_PATTERN = /{{([a-zA-Z0-9_]+)}}/g;
 
-export function replaceCustomVariables({
+export function replaceCustomVars({
   text,
   customVariables,
 }: {

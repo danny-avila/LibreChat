@@ -1,6 +1,6 @@
 import {
   replaceSpecialVars,
-  replaceCustomVariables,
+  replaceCustomVars,
   parseConvo,
   parseCompactConvo,
   parseTextParts,
@@ -167,26 +167,26 @@ describe('replaceSpecialVars', () => {
   });
 });
 
-describe('replaceCustomVariables', () => {
+describe('replaceCustomVars', () => {
   test('should return the original text if text is empty or falsy', () => {
-    expect(replaceCustomVariables({ text: '', customVariables: { a: '1' } })).toBe('');
+    expect(replaceCustomVars({ text: '', customVariables: { a: '1' } })).toBe('');
     expect(
-      replaceCustomVariables({ text: null as unknown as string, customVariables: { a: '1' } }),
+      replaceCustomVars({ text: null as unknown as string, customVariables: { a: '1' } }),
     ).toBe(null);
     expect(
-      replaceCustomVariables({ text: undefined as unknown as string, customVariables: { a: '1' } }),
+      replaceCustomVars({ text: undefined as unknown as string, customVariables: { a: '1' } }),
     ).toBe(undefined);
   });
 
   test('should return the original text if customVariables is null or undefined', () => {
     const text = 'Hello {{name}}';
-    expect(replaceCustomVariables({ text, customVariables: null })).toBe(text);
-    expect(replaceCustomVariables({ text, customVariables: undefined })).toBe(text);
-    expect(replaceCustomVariables({ text })).toBe(text);
+    expect(replaceCustomVars({ text, customVariables: null })).toBe(text);
+    expect(replaceCustomVars({ text, customVariables: undefined })).toBe(text);
+    expect(replaceCustomVars({ text })).toBe(text);
   });
 
   test('should replace a single custom variable', () => {
-    const result = replaceCustomVariables({
+    const result = replaceCustomVars({
       text: 'Hello {{name}}!',
       customVariables: { name: 'Alice' },
     });
@@ -194,7 +194,7 @@ describe('replaceCustomVariables', () => {
   });
 
   test('should replace multiple different custom variables', () => {
-    const result = replaceCustomVariables({
+    const result = replaceCustomVars({
       text: '{{greeting}} {{name}}, welcome to {{place}}',
       customVariables: { greeting: 'Hi', name: 'Bob', place: 'NYC' },
     });
@@ -202,7 +202,7 @@ describe('replaceCustomVariables', () => {
   });
 
   test('should leave unmatched variables as-is when not in customVariables', () => {
-    const result = replaceCustomVariables({
+    const result = replaceCustomVars({
       text: '{{known}} and {{unknown}}',
       customVariables: { known: 'yes' },
     });
@@ -211,14 +211,14 @@ describe('replaceCustomVariables', () => {
 
   test('should NOT replace special variables even if present in customVariables', () => {
     Object.keys(specialVariables).forEach((key) => {
-      const result = replaceCustomVariables({
+      const result = replaceCustomVars({
         text: `{{${key}}}`,
         customVariables: { [key]: 'should_not_replace' },
       });
       expect(result).toBe(`{{${key}}}`);
     });
 
-    const combined = replaceCustomVariables({
+    const combined = replaceCustomVars({
       text: '{{current_date}} {{current_user}} {{my_var}}',
       customVariables: { current_date: 'WRONG', current_user: 'WRONG', my_var: 'RIGHT' },
     });
