@@ -2010,6 +2010,25 @@ describe('AgentClient - titleConvo', () => {
       expect(processedMessage.content).not.toContain('Response 1');
     });
 
+    it('should cap memory input tokens and preserve recent content', async () => {
+      const { HumanMessage, AIMessage } = require('@librechat/agents/langchain/messages');
+      mockReq.config.memory.maxInputTokens = 12;
+      const messages = [
+        new HumanMessage(`OLDER_CONTENT ${'a'.repeat(600)}`),
+        new AIMessage('Intermediate response'),
+        new HumanMessage('Please remember LATEST_MEMORY_MARKER'),
+      ];
+
+      await client.runMemory(messages);
+
+      expect(mockProcessMemory).toHaveBeenCalledTimes(1);
+      const processedMessage = mockProcessMemory.mock.calls[0][0][0];
+
+      expect(processedMessage.content).toContain('LATEST_MEMORY_MARKER');
+      expect(processedMessage.content).not.toContain('OLDER_CONTENT');
+      expect(Math.ceil(processedMessage.content.length / 4)).toBeLessThanOrEqual(12);
+    });
+
     it('should return early if processMemory is not set', async () => {
       const { HumanMessage } = require('@librechat/agents/langchain/messages');
       client.processMemory = null;
