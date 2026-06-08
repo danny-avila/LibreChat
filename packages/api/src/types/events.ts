@@ -46,4 +46,18 @@ export type FinalEvent = {
   error?: { message: string };
 };
 
-export type ServerSentEvent = StreamEvent | CreatedEvent | FinalEvent;
+/**
+ * Surfaces PII / credential pattern matches detected by the
+ * messagePiiFilter (server-side pre-redaction or agents-side hook).
+ * Frontend renders the configured `warn`-mode toast off this event.
+ */
+export type PiiMatchesEvent = {
+  type: 'pii_matches';
+  matches: Array<{
+    patternId: string;
+    patternLabel: string;
+    count: number;
+  }>;
+};
+
+export type ServerSentEvent = StreamEvent | CreatedEvent | FinalEvent | PiiMatchesEvent;

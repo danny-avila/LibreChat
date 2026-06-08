@@ -927,36 +927,37 @@ class GenerationJobManagerClass {
           }
         }
         runtime.earlyEventBuffer = [];
-      } else if (this._isRedis && !options?.skipBufferReplay && jobData?.userMessage) {
+      } else if (this._isRedis && !options?.skipBufferReplay) {
         /**
-         * Cross-replica fallback: the created event was buffered on the generating
-         * instance and published via Redis pub/sub before this subscriber was active.
-         * Reconstruct from persisted metadata. Only fields stored by trackUserMessage()
-         * are available (messageId, parentMessageId, conversationId, text);
-         * sender/isCreatedByUser are invariant for user messages and added back here.
+         * Cross-replica fallback. Events emitted on the generating
+         * instance were buffered there and published via Redis pub/sub
+         * before this subscriber was active, so reconstruct from
+         * persisted metadata. The two reconstructions are independent
+         * because they are persisted at different points in the
+         * request lifecycle: `pii_matches` is written by the
+         * pre-redaction step in the request controller (before the
+         * agent run starts), while `userMessage` is written by the
+         * agent's `onStart` callback after the user message is
+         * created. A subscriber that connects between those two
+         * moments must still receive the pii_matches reconstruction
+         * even though `jobData.userMessage` is not yet set.
          */
-        logger.debug(
-          `[GenerationJobManager] Cross-replica subscribe: emitting created event from metadata for ${streamId}`,
-        );
-        const createdEvent: t.CreatedEvent = {
-          created: true,
-          message: {
-            ...jobData.userMessage,
-            sender: 'User',
-            isCreatedByUser: true,
-          },
-          streamId,
-        };
-        onChunk(createdEvent);
-
-        /**
-         * Replay pii_matches from persisted metadata so the warn-mode
-         * toast still fires for subscribers that connect on a
-         * different replica than the one that emitted the live event.
-         * The same-replica path is already covered by earlyEventBuffer
-         * replay above; this branch only runs when no buffer exists.
-         */
-        if (jobData.piiMatches && jobData.piiMatches.length > 0) {
+        if (jobData?.userMessage) {
+          logger.debug(
+            `[GenerationJobManager] Cross-replica subscribe: emitting created event from metadata for ${streamId}`,
+          );
+          const createdEvent: t.CreatedEvent = {
+            created: true,
+            message: {
+              ...jobData.userMessage,
+              sender: 'User',
+              isCreatedByUser: true,
+            },
+            streamId,
+          };
+          onChunk(createdEvent);
+        }
+        if (jobData?.piiMatches && jobData.piiMatches.length > 0) {
           logger.debug(
             `[GenerationJobManager] Cross-replica subscribe: emitting pii_matches from metadata for ${streamId}`,
           );

@@ -33,6 +33,7 @@ const {
   resolveAgentScopedSkillIds,
   createOpenAIContentAggregator,
   isChatCompletionValidationFailure,
+  applyMessagePiiRedactionToMessages,
 } = require('@librechat/api');
 const {
   buildSummarizationHandlers,
@@ -175,6 +176,30 @@ const OpenAIChatCompletionController = async (req, res) => {
       'invalid_request_error',
       'model_not_found',
     );
+  }
+
+  // Apply messagePiiFilter to user messages before any downstream
+  // work (formatting, run creation, LLM dispatch, Langfuse trace). The
+  // chat endpoint pre-redacts in api/server/controllers/agents/request.js;
+  // this is the same guarantee for OpenAI-compatible API clients.
+  const piiConfig = appConfig?.messagePiiFilter;
+  if (piiConfig != null && typeof piiConfig.onMatch === 'string') {
+    const { matches } = applyMessagePiiRedactionToMessages(request.messages, piiConfig);
+    if (matches.length > 0) {
+      const labels = matches.map((m) => m.patternLabel).join(', ');
+      if (piiConfig.onMatch === 'block') {
+        return sendErrorResponse(
+          res,
+          400,
+          `Message blocked by PII filter: ${labels}. Edit and retry.`,
+          'invalid_request_error',
+          'message_pii_filter_block',
+        );
+      }
+      logger.info(
+        `[messagePiiFilter] redacted ${matches.length} match(es) on OpenAI API (mode=${piiConfig.onMatch}, patterns=${matches.map((m) => m.patternId).join(',')})`,
+      );
+    }
   }
 
   const responseId = `chatcmpl-${nanoid()}`;

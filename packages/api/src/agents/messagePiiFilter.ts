@@ -187,3 +187,56 @@ export function serializeMessagePiiFilterForClient(
     })),
   };
 }
+
+/**
+ * Walk an OpenAI-style messages array and apply PII redaction to user
+ * message content in place. Used by the OpenAI-compatible and
+ * Responses agent controllers, which receive a messages array instead
+ * of the chat endpoint's single `req.body.text`.
+ *
+ * Handles both content shapes: plain strings and arrays of content
+ * parts (text, image_url, etc.). Only `text`-bearing parts are
+ * scrubbed. Mutates the array in place and returns the aggregated
+ * match set so the caller can choose the mode reaction (HTTP 400 for
+ * block, log for warn/silent).
+ */
+export function applyMessagePiiRedactionToMessages(
+  messages: Array<{
+    role?: string;
+    content?: string | Array<{ type?: string; text?: string; [key: string]: unknown }>;
+  }>,
+  config: MessagePiiFilterConfig | undefined,
+): { matches: PatternMatch[] } {
+  if (config == null || !Array.isArray(messages) || messages.length === 0) {
+    return { matches: [] };
+  }
+  const aggregate = new Map<string, PatternMatch>();
+  const accumulate = (text: string): string => {
+    const result = applyMessagePiiRedaction(text, config);
+    for (const m of result.matches) {
+      const prior = aggregate.get(m.patternId);
+      if (prior == null) {
+        aggregate.set(m.patternId, { ...m });
+      } else {
+        prior.count += m.count;
+      }
+    }
+    return result.text;
+  };
+
+  for (const msg of messages) {
+    if (msg == null || msg.role !== 'user') {
+      continue;
+    }
+    if (typeof msg.content === 'string') {
+      msg.content = accumulate(msg.content);
+    } else if (Array.isArray(msg.content)) {
+      for (const part of msg.content) {
+        if (part != null && typeof part.text === 'string') {
+          part.text = accumulate(part.text);
+        }
+      }
+    }
+  }
+  return { matches: Array.from(aggregate.values()) };
+}

@@ -41,6 +41,7 @@ const {
   sendResponsesErrorResponse,
   createResponsesEventHandlers,
   createAggregatorEventHandlers,
+  applyMessagePiiRedactionToMessages,
 } = require('@librechat/api');
 const {
   createResponsesToolEndCallback,
@@ -574,6 +575,30 @@ const createResponse = async (req, res) => {
     const inputMessages = convertToInternalMessages(
       typeof request.input === 'string' ? request.input : request.input,
     );
+
+    // Apply messagePiiFilter to user input before saving, formatting,
+    // or dispatching to the model. The chat endpoint pre-redacts in
+    // api/server/controllers/agents/request.js; this is the same
+    // guarantee for Responses API clients.
+    const piiConfig = appConfig?.messagePiiFilter;
+    if (piiConfig != null && typeof piiConfig.onMatch === 'string') {
+      const { matches } = applyMessagePiiRedactionToMessages(inputMessages, piiConfig);
+      if (matches.length > 0) {
+        const labels = matches.map((m) => m.patternLabel).join(', ');
+        if (piiConfig.onMatch === 'block') {
+          return sendResponsesErrorResponse(
+            res,
+            400,
+            `Message blocked by PII filter: ${labels}. Edit and retry.`,
+            'invalid_request',
+            'message_pii_filter_block',
+          );
+        }
+        logger.info(
+          `[messagePiiFilter] redacted ${matches.length} match(es) on Responses API (mode=${piiConfig.onMatch}, patterns=${matches.map((m) => m.patternId).join(',')})`,
+        );
+      }
+    }
 
     // Merge previous messages with new input
     const allMessages = [...previousMessages, ...inputMessages];
