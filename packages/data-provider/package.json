@@ -70,7 +70,7 @@
     "rollup": "^4.34.9",
     "rollup-plugin-peer-deps-external": "^2.2.4",
     "rollup-plugin-typescript2": "^0.37.0",
-    "typescript": "^5.0.4"
+    "typescript": "^5.9.3"
   },
   "peerDependencies": {
     "@tanstack/react-query": "^4.28.0"
