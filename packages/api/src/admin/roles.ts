@@ -123,7 +123,17 @@ export interface AdminRolesDeps {
   ) => Promise<void>;
 }
 
-export function createAdminRolesHandlers(deps: AdminRolesDeps) {
+export function createAdminRolesHandlers(deps: AdminRolesDeps): {
+  listRoles: (req: ServerRequest, res: Response) => Promise<Response>;
+  getRole: (req: ServerRequest, res: Response) => Promise<Response>;
+  createRole: (req: ServerRequest, res: Response) => Promise<Response>;
+  updateRole: (req: ServerRequest, res: Response) => Promise<Response>;
+  updateRolePermissions: (req: ServerRequest, res: Response) => Promise<Response>;
+  deleteRole: (req: ServerRequest, res: Response) => Promise<Response>;
+  getRoleMembers: (req: ServerRequest, res: Response) => Promise<Response>;
+  addRoleMember: (req: ServerRequest, res: Response) => Promise<Response>;
+  removeRoleMember: (req: ServerRequest, res: Response) => Promise<Response>;
+} {
   const {
     listRoles,
     countRoles,

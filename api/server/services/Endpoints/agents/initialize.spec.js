@@ -6,6 +6,7 @@ const {
   PrincipalModel,
   MAX_SUBAGENT_DEPTH,
   MAX_SUBAGENT_GRAPH_NODES,
+  Constants,
 } = require('librechat-data-provider');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
@@ -68,9 +69,10 @@ jest.mock('~/cache', () => ({
 }));
 
 const { initializeClient } = require('./initialize');
+const { getSkillToolDeps } = require('./skillDeps');
 const { logger } = require('@librechat/data-schemas');
 const { User, AclEntry } = require('~/db/models');
-const { createAgent } = require('~/models');
+const { createAgent, createSkill } = require('~/models');
 
 jest.spyOn(logger, 'warn').mockImplementation(() => {});
 
@@ -225,6 +227,92 @@ describe('initializeClient — processAgent ACL gate', () => {
     expect(agentClientArgs.agentContextAttachmentsByAgentId.get(AUTHORIZED_ID)).toEqual([
       handoffContextAttachment,
     ]);
+  });
+
+  it('does not enable skill authoring for VIEW-only shared skills', async () => {
+    const { skill } = await createSkill({
+      name: 'shared-view-only',
+      description: 'Use for read-only sharing.',
+      body: '# Shared view-only skill\n',
+      author: new mongoose.Types.ObjectId(),
+      authorName: 'Skill Owner',
+    });
+    await AclEntry.create({
+      principalType: PrincipalType.USER,
+      principalId: testUser._id,
+      principalModel: PrincipalModel.USER,
+      resourceType: ResourceType.SKILL,
+      resourceId: skill._id,
+      permBits: PermissionBits.VIEW,
+      grantedBy: testUser._id,
+    });
+
+    const endpointOption = makeEndpointOption();
+    endpointOption.agent = Promise.resolve({
+      id: PRIMARY_ID,
+      name: 'Primary',
+      provider: 'openai',
+      model: 'gpt-4',
+      tools: [],
+      skills_enabled: true,
+    });
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
+    const req = makeReq();
+    req.config.endpoints.agents = { capabilities: ['skills'] };
+    const canCreateSkillSpy = jest
+      .spyOn(getSkillToolDeps(), 'canCreateSkill')
+      .mockResolvedValue(false);
+
+    try {
+      await initializeClient({
+        req,
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption,
+      });
+    } finally {
+      canCreateSkillSpy.mockRestore();
+    }
+
+    const initializeParams = mockInitializeAgent.mock.calls[0][0];
+    expect(initializeParams.accessibleSkillIds.map(String)).toContain(skill._id.toString());
+    expect(initializeParams.skillAuthoringAvailable).toBe(false);
+  });
+
+  it('enables skill authoring when model specs enable skills for an ephemeral agent', async () => {
+    const endpointOption = makeEndpointOption();
+    endpointOption.spec = 'spec-skills';
+    endpointOption.agent = Promise.resolve({
+      id: Constants.EPHEMERAL_AGENT_ID,
+      name: 'Ephemeral Primary',
+      provider: 'openai',
+      model: 'gpt-4',
+      tools: [],
+    });
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
+    const req = makeReq();
+    req.config.endpoints.agents = { capabilities: ['skills'] };
+    req.config.modelSpecs = {
+      list: [{ name: 'spec-skills', skills: true }],
+    };
+    const canCreateSkillSpy = jest
+      .spyOn(getSkillToolDeps(), 'canCreateSkill')
+      .mockResolvedValue(true);
+
+    try {
+      await initializeClient({
+        req,
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption,
+      });
+    } finally {
+      canCreateSkillSpy.mockRestore();
+    }
+
+    const initializeParams = mockInitializeAgent.mock.calls[0][0];
+    expect(initializeParams.agent.skills_enabled).toBe(true);
+    expect(initializeParams.skillAuthoringAvailable).toBe(true);
   });
 });
 

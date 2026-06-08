@@ -36,6 +36,50 @@ const OVERRIDE_KEY_MAP: Partial<Record<keyof TCustomConfig, keyof AppConfig>> = 
   turnstile: 'turnstileConfig',
 };
 
+function isSafePath(path: string): boolean {
+  const segments = path.split('.');
+  if (
+    path.length === 0 ||
+    path.startsWith('.') ||
+    path.endsWith('.') ||
+    path.includes('..') ||
+    segments.some((segment) => segment.length === 0 || UNSAFE_KEYS.has(segment))
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function remapOverridePath(path: string): string {
+  const [first, ...rest] = path.split('.');
+  const mappedFirst = OVERRIDE_KEY_MAP[first as keyof typeof OVERRIDE_KEY_MAP] ?? first;
+  return [mappedFirst, ...rest].join('.');
+}
+
+function deletePath<T extends AnyObject>(target: T, path: string): T {
+  if (!isSafePath(path)) {
+    return target;
+  }
+
+  const segments = path.split('.');
+  const result = { ...target } as AnyObject;
+  let cursor: AnyObject = result;
+
+  for (let index = 0; index < segments.length - 1; index++) {
+    const segment = segments[index];
+    const value = cursor[segment];
+    if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+      return result as T;
+    }
+    const cloned = { ...(value as AnyObject) };
+    cursor[segment] = cloned;
+    cursor = cloned;
+  }
+
+  delete cursor[segments[segments.length - 1]];
+  return result as T;
+}
+
 function mergeArrayByKey(
   target: AnyObject[],
   source: AnyObject[],
@@ -144,6 +188,14 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
 
   let merged = { ...baseConfig };
   for (const config of sorted) {
+    if (Array.isArray(config.tombstones)) {
+      for (const path of config.tombstones) {
+        if (typeof path === 'string') {
+          merged = deletePath(merged, remapOverridePath(path));
+        }
+      }
+    }
+
     if (config.overrides && typeof config.overrides === 'object') {
       const remapped: AnyObject = {};
       for (const [key, value] of Object.entries(config.overrides)) {

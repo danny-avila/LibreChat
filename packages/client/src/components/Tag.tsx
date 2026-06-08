@@ -47,4 +47,14 @@ const TagPrimitiveRoot = React.forwardRef<HTMLDivElement, TagProps>(
 
 TagPrimitiveRoot.displayName = 'Tag';
 
-export const Tag = React.memo(TagPrimitiveRoot);
+export const Tag: React.MemoExoticComponent<
+  React.ForwardRefExoticComponent<
+    Omit<React.DetailedHTMLProps<React.HTMLAttributes<HTMLDivElement>, HTMLDivElement>, 'ref'> & {
+      label: string;
+      labelClassName?: string;
+      CancelButton?: React.ReactNode;
+      LabelNode?: React.ReactNode;
+      onRemove?: (e: React.MouseEvent<HTMLButtonElement>) => void;
+    } & React.RefAttributes<HTMLDivElement>
+  >
+> = React.memo(TagPrimitiveRoot);

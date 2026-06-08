@@ -25,7 +25,6 @@ const compat = new FlatCompat({
 export default [
   {
     ignores: [
-      'client/vite.config.ts',
       'client/dist/**/*',
       'client/public/**/*',
       'client/coverage/**/*',
@@ -121,7 +120,7 @@ export default [
       'jsx-a11y/img-redundant-alt': 'off',
       'jsx-a11y/no-noninteractive-tabindex': 'off',
       // common rules
-      'no-nested-ternary': 'warn',
+      'no-nested-ternary': 'error',
       'no-constant-binary-expression': 'warn',
       'no-unused-vars': [
         'warn',
@@ -170,11 +169,14 @@ export default [
     },
   },
   {
-    files: ['**/rollup.config.js', '**/.eslintrc.js', '**/jest.config.js'],
+    files: ['**/rollup.config.js', '**/.eslintrc.js', '**/jest.config.js', 'client/vite.config.ts'],
     languageOptions: {
       globals: {
         ...globals.node,
       },
+    },
+    rules: {
+      'import/no-cycle': 'off',
     },
   },
   {
@@ -217,7 +219,7 @@ export default [
     })),
   {
     files: ['**/*.ts', '**/*.tsx'],
-    ignores: ['packages/**/*'],
+    ignores: ['packages/**/*', 'client/vite.config.ts'],
     plugins: {
       '@typescript-eslint': typescriptEslintEslintPlugin,
       jest: fixupPluginRules(jest),

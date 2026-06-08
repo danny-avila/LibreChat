@@ -88,6 +88,21 @@ class MockIntersectionObserver {
 
 const originalIO = global.IntersectionObserver;
 
+class PointerEventPolyfill extends MouseEvent {
+  pointerId: number;
+  constructor(type: string, params: MouseEventInit & { pointerId?: number } = {}) {
+    super(type, params);
+    this.pointerId = params.pointerId ?? 0;
+  }
+}
+
+if (typeof (global as { PointerEvent?: unknown }).PointerEvent === 'undefined') {
+  (global as unknown as { PointerEvent: typeof PointerEventPolyfill }).PointerEvent =
+    PointerEventPolyfill;
+  (window as unknown as { PointerEvent: typeof PointerEventPolyfill }).PointerEvent =
+    PointerEventPolyfill;
+}
+
 import MessageNav from '../MessageNav';
 
 function buildMessage(overrides: Partial<TestMessage> = {}): TestMessage {
@@ -605,6 +620,311 @@ describe('MessageNav', () => {
       expect(aScrollTouched).toBe(true);
 
       rafSpy.mockRestore();
+    });
+  });
+
+  describe('focus management', () => {
+    it('moves focus to the target message when an indicator is clicked', () => {
+      const messages = [
+        buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
+        buildMessage({ messageId: 'b', text: 'bravo' }),
+        buildMessage({ messageId: 'c', text: 'charlie', isCreatedByUser: true }),
+      ];
+      const { container } = renderNav(messages);
+
+      const indicator = container.querySelectorAll('[data-msg-id]')[1] as HTMLButtonElement;
+      act(() => {
+        fireEvent.click(indicator);
+      });
+
+      const message = document.getElementById('b');
+      expect(message).toHaveAttribute('tabindex', '-1');
+      expect(document.activeElement).toBe(message);
+    });
+
+    it('focuses the current indicator when Shift+Alt+M is pressed', () => {
+      const messages = [
+        buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
+        buildMessage({ messageId: 'b', text: 'bravo' }),
+        buildMessage({ messageId: 'c', text: 'charlie', isCreatedByUser: true }),
+      ];
+      const { container } = renderNav(messages);
+
+      const io = MockIntersectionObserver.last();
+      act(() => {
+        io!.trigger([{ target: document.getElementById('b')!, isIntersecting: true }]);
+        jest.advanceTimersByTime(32);
+      });
+
+      act(() => {
+        fireEvent.keyDown(document, { code: 'KeyM', altKey: true, shiftKey: true });
+      });
+
+      expect(document.activeElement).toBe(container.querySelector('[data-msg-id="b"]'));
+    });
+
+    it('focuses the current indicator via the produced key on non-QWERTY layouts', () => {
+      const messages = [
+        buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
+        buildMessage({ messageId: 'b', text: 'bravo' }),
+        buildMessage({ messageId: 'c', text: 'charlie', isCreatedByUser: true }),
+      ];
+      const { container } = renderNav(messages);
+
+      const io = MockIntersectionObserver.last();
+      act(() => {
+        io!.trigger([{ target: document.getElementById('b')!, isIntersecting: true }]);
+        jest.advanceTimersByTime(32);
+      });
+
+      act(() => {
+        fireEvent.keyDown(document, { key: 'm', code: 'Semicolon', altKey: true, shiftKey: true });
+      });
+
+      expect(document.activeElement).toBe(container.querySelector('[data-msg-id="b"]'));
+    });
+
+    it('consumes Shift+Alt+M only when the nav is rendered', () => {
+      const messages = [
+        buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
+        buildMessage({ messageId: 'b', text: 'bravo' }),
+        buildMessage({ messageId: 'c', text: 'charlie', isCreatedByUser: true }),
+      ];
+      renderNav(messages);
+
+      let notPrevented = true;
+      act(() => {
+        notPrevented = fireEvent.keyDown(document, {
+          code: 'KeyM',
+          altKey: true,
+          shiftKey: true,
+        });
+      });
+
+      expect(notPrevented).toBe(false);
+    });
+
+    it('does not consume Shift+Alt+M when the nav is not rendered', () => {
+      renderNav([buildMessage({ messageId: 'solo', text: 'only one', isCreatedByUser: true })]);
+
+      let notPrevented = true;
+      act(() => {
+        notPrevented = fireEvent.keyDown(document, {
+          code: 'KeyM',
+          altKey: true,
+          shiftKey: true,
+        });
+      });
+
+      expect(notPrevented).toBe(true);
+    });
+
+    it('ignores the keyboard shortcut without the alt and shift modifiers', () => {
+      const messages = [
+        buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
+        buildMessage({ messageId: 'b', text: 'bravo' }),
+        buildMessage({ messageId: 'c', text: 'charlie', isCreatedByUser: true }),
+      ];
+      const { container } = renderNav(messages);
+
+      act(() => {
+        fireEvent.keyDown(document, { code: 'KeyM' });
+      });
+
+      const navButtons = container.querySelectorAll('[data-msg-id]');
+      expect(Array.from(navButtons)).not.toContain(document.activeElement);
+    });
+  });
+
+  describe('drag to scroll', () => {
+    function setupDraggableNav() {
+      const messages = Array.from({ length: 5 }, (_, i) =>
+        buildMessage({
+          messageId: `m-${i}`,
+          text: `message ${i}`,
+          isCreatedByUser: i % 2 === 0,
+        }),
+      );
+      const result = renderNav(messages);
+      const column = result.container.querySelector('nav > div') as HTMLDivElement;
+      column.getBoundingClientRect = () => ({ top: 0, bottom: 50, height: 50 }) as DOMRect;
+
+      const ribs = Array.from(column.querySelectorAll('[data-msg-id]')) as HTMLElement[];
+
+      const writes: number[] = [];
+      Object.defineProperty(result.scrollable, 'scrollTop', {
+        get: () => 0,
+        set: (v: number) => {
+          writes.push(v);
+        },
+        configurable: true,
+      });
+
+      return { ...result, column, ribs, writes };
+    }
+
+    it('scrubs the conversation while dragging past the threshold', () => {
+      const { column, writes } = setupDraggableNav();
+
+      act(() => {
+        fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 25 });
+      });
+
+      expect(writes.length).toBeGreaterThan(0);
+    });
+
+    it('keeps tracking the drag after the pointer leaves the narrow column', () => {
+      const { column, writes } = setupDraggableNav();
+
+      act(() => {
+        fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
+        // pointer has moved off the column; the move bubbles to the document listener
+        fireEvent.pointerMove(document.body, { pointerId: 1, buttons: 1, clientY: 25 });
+      });
+
+      expect(writes.length).toBeGreaterThan(0);
+    });
+
+    it('maps the pointer proportionally across the full set of messages', () => {
+      const { column } = setupDraggableNav();
+      const getById = jest.spyOn(document, 'getElementById');
+
+      act(() => {
+        fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 25 });
+      });
+      expect(getById.mock.calls.map((c) => c[0])).toContain('m-2');
+
+      getById.mockClear();
+      act(() => {
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 50 });
+      });
+      expect(getById.mock.calls.map((c) => c[0])).toContain('m-4');
+
+      getById.mockRestore();
+    });
+
+    it('does not scrub for movement under the threshold', () => {
+      const { column, writes } = setupDraggableNav();
+
+      act(() => {
+        fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 2 });
+      });
+
+      expect(writes.length).toBe(0);
+    });
+
+    it('ignores pointer moves after the interaction ends', () => {
+      const { column, writes } = setupDraggableNav();
+
+      act(() => {
+        fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
+        fireEvent.pointerUp(document, { pointerId: 1, clientY: 0 });
+      });
+      act(() => {
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 40 });
+      });
+
+      expect(writes.length).toBe(0);
+    });
+
+    it('ends the drag when the primary button is released during a move', () => {
+      const { column, writes } = setupDraggableNav();
+
+      act(() => {
+        fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 25 });
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 0, clientY: 30 });
+      });
+      const before = writes.length;
+      act(() => {
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 45 });
+      });
+
+      expect(writes.length).toBe(before);
+    });
+
+    it('ends the drag when the window loses focus', () => {
+      const { column, writes } = setupDraggableNav();
+
+      act(() => {
+        fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 25 });
+        window.dispatchEvent(new Event('blur'));
+      });
+      const before = writes.length;
+      act(() => {
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 45 });
+      });
+
+      expect(writes.length).toBe(before);
+    });
+
+    it('tears down a previous drag when a new pointer starts', () => {
+      const { column, writes } = setupDraggableNav();
+
+      act(() => {
+        fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 25 });
+      });
+      act(() => {
+        fireEvent.pointerDown(column, { pointerId: 2, button: 0, buttons: 1, clientY: 0 });
+      });
+      const before = writes.length;
+      act(() => {
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 45 });
+      });
+
+      expect(writes.length).toBe(before);
+    });
+
+    it('selects via the native click when a press does not become a drag', () => {
+      const { column, ribs } = setupDraggableNav();
+
+      act(() => {
+        fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
+        fireEvent.pointerUp(document, { pointerId: 1, clientY: 0 });
+      });
+      act(() => {
+        fireEvent.click(ribs[0]);
+      });
+
+      expect(document.activeElement).toBe(document.getElementById('m-0'));
+    });
+
+    it('suppresses the click that immediately follows a drag', () => {
+      const { column, ribs } = setupDraggableNav();
+
+      act(() => {
+        fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 25 });
+        fireEvent.pointerUp(document, { pointerId: 1, clientY: 25 });
+      });
+
+      act(() => {
+        fireEvent.click(ribs[0]);
+      });
+
+      expect(document.activeElement).not.toBe(document.getElementById('m-0'));
+    });
+
+    it('clears click suppression after the drag so a later activation is honored', () => {
+      const { column, ribs } = setupDraggableNav();
+
+      act(() => {
+        fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 25 });
+        fireEvent.pointerUp(document, { pointerId: 1, clientY: 25 });
+        jest.advanceTimersByTime(1);
+      });
+
+      act(() => {
+        fireEvent.click(ribs[0]);
+      });
+
+      expect(document.activeElement).toBe(document.getElementById('m-0'));
     });
   });
 

@@ -20,14 +20,14 @@ import type {
 } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import type { AnnounceOptions } from '~/common';
-import { MESSAGE_UPDATE_INTERVAL } from '~/common';
-import { subagentProgressByToolCallId } from '~/store';
 import {
   foldSubagentEvent,
   foldSubagentEventIntoTicker,
   initSubagentAggregatorState,
   initSubagentTickerState,
 } from '~/utils/subagentContent';
+import { subagentProgressByToolCallId } from '~/store';
+import { MESSAGE_UPDATE_INTERVAL } from '~/common';
 
 type TUseStepHandler = {
   announcePolite: (options: AnnounceOptions) => void;
@@ -62,6 +62,18 @@ type AllContentTypes =
   | ContentTypes.IMAGE_URL
   | ContentTypes.SUMMARY
   | ContentTypes.ERROR;
+
+const isOAuthToolCallName = (name?: string) =>
+  typeof name === 'string' && name.startsWith(`oauth${Constants.mcp_delimiter}`);
+
+const isOAuthToolCallContent = (part?: Partial<TMessageContentParts>) => {
+  if (part?.type !== ContentTypes.TOOL_CALL || !('tool_call' in part)) {
+    return false;
+  }
+  const { tool_call: toolCall } = part;
+  const name = toolCall != null && 'name' in toolCall ? toolCall.name : undefined;
+  return isOAuthToolCallName(name);
+};
 
 export default function useStepHandler({
   setMessages,
@@ -99,6 +111,14 @@ export default function useStepHandler({
    * `atomFamily` — atoms persist for the app lifetime.
    */
   const knownSubagentAtomKeys = useRef(new Set<string>());
+
+  const getCurrentMessages = useCallback(
+    (messages: TMessage[]) => {
+      const freshMessages = getMessages();
+      return freshMessages && freshMessages.length >= messages.length ? freshMessages : messages;
+    },
+    [getMessages],
+  );
 
   /** Both content parts and ticker lines are aggregated incrementally
    *  into the atom as each `ON_SUBAGENT_UPDATE` arrives — we never
@@ -270,9 +290,20 @@ export default function useStepHandler({
       return message;
     }
 
-    const updatedContent = [...(message.content || [])] as Array<
+    const incomingOAuthToolCall =
+      contentType === ContentTypes.TOOL_CALL &&
+      'tool_call' in contentPart &&
+      isOAuthToolCallName(contentPart.tool_call?.name);
+
+    let updatedContent = [...(message.content || [])] as Array<
       Partial<TMessageContentParts> | undefined
     >;
+
+    const oauthPromptOccupiesSlot = isOAuthToolCallContent(updatedContent[index]);
+    if (!incomingOAuthToolCall && oauthPromptOccupiesSlot) {
+      updatedContent = updatedContent.filter((part) => !isOAuthToolCallContent(part));
+    }
+
     if (!updatedContent[index] && contentType !== ContentTypes.TOOL_CALL) {
       updatedContent[index] = { type: contentPart.type as AllContentTypes };
     }
@@ -413,9 +444,105 @@ export default function useStepHandler({
 
   const stepHandler = useCallback(
     (stepEvent: TStepEvent, submission: EventSubmission) => {
-      const messages = getMessages() || [];
+      const submissionMessages = submission.messages ?? [];
+      const getEventMessages = (candidateMessages: TMessage[]) =>
+        submission.isRegenerate ? candidateMessages : getCurrentMessages(candidateMessages);
+      const messages = getEventMessages(submissionMessages);
       const { userMessage } = submission;
-      let parentMessageId = userMessage.messageId;
+      const getRegenerateResponseIds = (responseMessageId: string) => {
+        const ids = new Set<string>();
+        const addId = (id?: string | null) => {
+          if (!id) {
+            return;
+          }
+          ids.add(id);
+          ids.add(id.replace(/_+$/, ''));
+        };
+        addId(responseMessageId);
+        addId(submission.initialResponse?.messageId);
+        addId(submission.userMessage?.responseMessageId);
+        return ids;
+      };
+      const shouldRemoveRegenerateResponse = (message: TMessage, responseMessageId: string) =>
+        submission.isRegenerate &&
+        !message.isCreatedByUser &&
+        getRegenerateResponseIds(responseMessageId).has(message.messageId);
+      const shouldRemoveInitialResponse = (message: TMessage, responseMessageId: string) => {
+        const initialResponseId = submission.initialResponse?.messageId;
+        return (
+          !submission.isRegenerate &&
+          !message.isCreatedByUser &&
+          initialResponseId != null &&
+          initialResponseId !== responseMessageId &&
+          message.messageId === initialResponseId &&
+          message.parentMessageId === userMessage.messageId
+        );
+      };
+      const ensureUserMessagePresent = (
+        candidateMessages: TMessage[],
+        responseMessageId: string,
+      ) => {
+        if (
+          submission.isRegenerate ||
+          !userMessage?.messageId ||
+          candidateMessages.some((message) => message.messageId === userMessage.messageId)
+        ) {
+          return candidateMessages;
+        }
+
+        const responseIndex = candidateMessages.findIndex(
+          (message) => message.messageId === responseMessageId,
+        );
+        if (responseIndex < 0) {
+          return [...candidateMessages, userMessage as TMessage];
+        }
+
+        const nextMessages = [...candidateMessages];
+        nextMessages.splice(responseIndex, 0, userMessage as TMessage);
+        return nextMessages;
+      };
+      const getResponseBaseMessages = (
+        candidateMessages: TMessage[],
+        responseMessageId: string,
+        ensureUserMessage = false,
+      ) => {
+        const currentMessages = getEventMessages(candidateMessages);
+        if (!submission.isRegenerate) {
+          const nextMessages = currentMessages.filter(
+            (message) => !shouldRemoveInitialResponse(message, responseMessageId),
+          );
+          return ensureUserMessage
+            ? ensureUserMessagePresent(nextMessages, responseMessageId)
+            : nextMessages;
+        }
+        return currentMessages.filter(
+          (message) => !shouldRemoveRegenerateResponse(message, responseMessageId),
+        );
+      };
+      const mergeResponseMessage = (
+        candidateMessages: TMessage[],
+        updatedResponse: TMessage,
+        responseMessageId: string,
+        options?: { ensureUserMessage?: boolean },
+      ) => {
+        const currentMessages = getResponseBaseMessages(
+          candidateMessages,
+          responseMessageId,
+          options?.ensureUserMessage === true,
+        );
+        const hasResponseMessage = currentMessages.some(
+          (msg) => msg.messageId === responseMessageId,
+        );
+        return hasResponseMessage
+          ? currentMessages.map((msg) =>
+              msg.messageId === responseMessageId ? updatedResponse : msg,
+            )
+          : [...currentMessages, updatedResponse];
+      };
+      let parentMessageId =
+        submission.isRegenerate && submission.initialResponse?.parentMessageId
+          ? submission.initialResponse.parentMessageId
+          : userMessage.messageId;
 
       const currentTime = Date.now();
       if (currentTime - lastAnnouncementTimeRef.current > MESSAGE_UPDATE_INTERVAL) {
@@ -449,10 +576,13 @@ export default function useStepHandler({
         let response = messageMap.current.get(responseMessageId);
 
         if (!response) {
-          // Find the actual response message - check if last message is a response, otherwise use initialResponse
+          // Find the actual response message. Regenerate submissions can target
+          // an earlier branch while the visible history still ends at a later
+          // assistant message, so never seed a regenerated response from the
+          // conversation tail.
           const lastMessage = messages[messages.length - 1] as TMessage;
           const responseMessage =
-            lastMessage && !lastMessage.isCreatedByUser
+            !submission.isRegenerate && lastMessage && !lastMessage.isCreatedByUser
               ? lastMessage
               : (submission?.initialResponse as TMessage);
 
@@ -474,14 +604,23 @@ export default function useStepHandler({
 
           // Get fresh messages to handle multi-tab scenarios where messages may have loaded
           // after this handler started (Tab 2 may have more complete history now)
-          const freshMessages = getMessages() || [];
-          const currentMessages = freshMessages.length > messages.length ? freshMessages : messages;
+          const currentMessages = getResponseBaseMessages(messages, responseMessageId, true);
 
           // Remove any existing response placeholder
-          let updatedMessages = currentMessages.filter((m) => m.messageId !== responseMessageId);
+          let updatedMessages = currentMessages.filter(
+            (message) =>
+              message.messageId !== responseMessageId &&
+              !shouldRemoveRegenerateResponse(message, responseMessageId) &&
+              !shouldRemoveInitialResponse(message, responseMessageId),
+          );
 
-          // Ensure userMessage is present (multi-tab: Tab 2 may not have it yet)
-          if (!updatedMessages.some((m) => m.messageId === userMessage.messageId)) {
+          // Ensure userMessage is present (multi-tab: Tab 2 may not have it yet).
+          // Regenerate reuses an existing user turn; its submission userMessage is only
+          // a transport placeholder and must not become a new visible branch.
+          if (
+            !submission.isRegenerate &&
+            !updatedMessages.some((m) => m.messageId === userMessage.messageId)
+          ) {
             updatedMessages = [...updatedMessages, userMessage as TMessage];
           }
 
@@ -517,11 +656,11 @@ export default function useStepHandler({
           });
 
           messageMap.current.set(responseMessageId, updatedResponse);
-          const updatedMessages = messages.map((msg) =>
-            msg.messageId === responseMessageId ? updatedResponse : msg,
+          setMessages(
+            mergeResponseMessage(messages, updatedResponse, responseMessageId, {
+              ensureUserMessage: true,
+            }),
           );
-
-          setMessages(updatedMessages);
         }
 
         if (runStep.summary != null) {
@@ -543,8 +682,11 @@ export default function useStepHandler({
           );
 
           messageMap.current.set(responseMessageId, updatedResponse);
-          const currentMessages = getMessages() || [];
-          setMessages([...currentMessages.slice(0, -1), updatedResponse]);
+          setMessages(
+            mergeResponseMessage(messages, updatedResponse, responseMessageId, {
+              ensureUserMessage: true,
+            }),
+          );
         }
 
         const bufferedDeltas = pendingDeltaBuffer.current.get(runStep.id);
@@ -582,8 +724,11 @@ export default function useStepHandler({
             agentUpdateMeta,
           );
           messageMap.current.set(responseMessageId, updatedResponse);
-          const currentMessages = getMessages() || [];
-          setMessages([...currentMessages.slice(0, -1), updatedResponse]);
+          setMessages(
+            mergeResponseMessage(messages, updatedResponse, responseMessageId, {
+              ensureUserMessage: true,
+            }),
+          );
         }
       } else if (stepEvent.event === StepEvents.ON_MESSAGE_DELTA) {
         const messageDelta = stepEvent.data;
@@ -625,8 +770,11 @@ export default function useStepHandler({
             getStepMetadata(runStep),
           );
           messageMap.current.set(responseMessageId, updatedResponse);
-          const currentMessages = getMessages() || [];
-          setMessages([...currentMessages.slice(0, -1), updatedResponse]);
+          setMessages(
+            mergeResponseMessage(messages, updatedResponse, responseMessageId, {
+              ensureUserMessage: true,
+            }),
+          );
         }
       } else if (stepEvent.event === StepEvents.ON_REASONING_DELTA) {
         const reasoningDelta = stepEvent.data;
@@ -668,8 +816,11 @@ export default function useStepHandler({
             getStepMetadata(runStep),
           );
           messageMap.current.set(responseMessageId, updatedResponse);
-          const currentMessages = getMessages() || [];
-          setMessages([...currentMessages.slice(0, -1), updatedResponse]);
+          setMessages(
+            mergeResponseMessage(messages, updatedResponse, responseMessageId, {
+              ensureUserMessage: true,
+            }),
+          );
         }
       } else if (stepEvent.event === StepEvents.ON_RUN_STEP_DELTA) {
         const runStepDelta = stepEvent.data;
@@ -724,11 +875,11 @@ export default function useStepHandler({
           });
 
           messageMap.current.set(responseMessageId, updatedResponse);
-          const updatedMessages = messages.map((msg) =>
-            msg.messageId === responseMessageId ? updatedResponse : msg,
+          setMessages(
+            mergeResponseMessage(messages, updatedResponse, responseMessageId, {
+              ensureUserMessage: true,
+            }),
           );
-
-          setMessages(updatedMessages);
         }
       } else if (stepEvent.event === StepEvents.ON_RUN_STEP_COMPLETED) {
         const { result } = stepEvent.data;
@@ -767,11 +918,11 @@ export default function useStepHandler({
           );
 
           messageMap.current.set(responseMessageId, updatedResponse);
-          const updatedMessages = messages.map((msg) =>
-            msg.messageId === responseMessageId ? updatedResponse : msg,
+          setMessages(
+            mergeResponseMessage(messages, updatedResponse, responseMessageId, {
+              ensureUserMessage: true,
+            }),
           );
-
-          setMessages(updatedMessages);
         }
       } else if (stepEvent.event === StepEvents.ON_SUBAGENT_UPDATE) {
         applySubagentUpdate(stepEvent.data);
@@ -814,8 +965,8 @@ export default function useStepHandler({
               summarizeDeltaRaf.current = null;
               const latest = messageMap.current.get(responseMessageId);
               if (latest) {
-                const msgs = getMessages() || [];
-                setMessages([...msgs.slice(0, -1), latest]);
+                const currentMessages = submission.isRegenerate ? messages : getMessages() || [];
+                setMessages(mergeResponseMessage(currentMessages, latest, responseMessageId));
               }
             });
           }
@@ -833,9 +984,6 @@ export default function useStepHandler({
           return;
         }
 
-        const currentMessages = getMessages() || [];
-        const targetIndex = currentMessages.findIndex((m) => m.messageId === completeMessageId);
-
         if (completeData.error) {
           const filtered = targetMessage.content.filter(
             (part) =>
@@ -844,12 +992,9 @@ export default function useStepHandler({
           if (filtered.length !== targetMessage.content.length) {
             announcePolite({ message: 'summarize_failed', isStatus: true });
             const cleaned = { ...targetMessage, content: filtered };
+            const currentMessages = submission.isRegenerate ? messages : getMessages() || [];
             messageMap.current.set(completeMessageId, cleaned);
-            if (targetIndex >= 0) {
-              const updated = [...currentMessages];
-              updated[targetIndex] = cleaned;
-              setMessages(updated);
-            }
+            setMessages(mergeResponseMessage(currentMessages, cleaned, completeMessageId));
           }
         } else {
           let didFinalize = false;
@@ -863,13 +1008,12 @@ export default function useStepHandler({
             }
             return part;
           });
-          if (didFinalize && targetIndex >= 0) {
+          if (didFinalize) {
             announcePolite({ message: 'summarize_completed', isStatus: true });
             const finalized = { ...targetMessage, content: updatedContent };
+            const currentMessages = submission.isRegenerate ? messages : getMessages() || [];
             messageMap.current.set(completeMessageId, finalized);
-            const updated = [...currentMessages];
-            updated[targetIndex] = finalized;
-            setMessages(updated);
+            setMessages(mergeResponseMessage(currentMessages, finalized, completeMessageId));
           }
         }
       } else {
@@ -883,6 +1027,7 @@ export default function useStepHandler({
       announcePolite,
       setMessages,
       calculateContentIndex,
+      getCurrentMessages,
       applySubagentUpdate,
     ],
   );

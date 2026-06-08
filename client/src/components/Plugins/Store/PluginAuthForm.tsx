@@ -1,6 +1,6 @@
 import { Save } from 'lucide-react';
 import { useForm } from 'react-hook-form';
-import { HoverCard, HoverCardTrigger } from '@librechat/client';
+import { HoverCard, HoverCardTrigger, SecretInput } from '@librechat/client';
 import { TPlugin, TPluginAuthConfig, TPluginAction } from 'librechat-data-provider';
 import PluginTooltip from './PluginTooltip';
 import { useLocalize } from '~/hooks';
@@ -40,6 +40,31 @@ function PluginAuthForm({ plugin, onSubmit, isEntityTool }: TPluginAuthFormProps
           {authConfig.map((config: TPluginAuthConfig, i: number) => {
             const authField = config.authField.split('||')[0];
             const isOptional = config.optional === true;
+            const inputClassName =
+              'flex h-10 max-h-10 w-full resize-none rounded-md border border-gray-200 bg-transparent px-3 py-2 text-sm text-gray-700 shadow-[0_0_10px_rgba(0,0,0,0.05)] outline-none placeholder:text-gray-400 focus:border-gray-400 focus:bg-gray-50 focus:outline-none focus:ring-0 focus:ring-gray-400 focus:ring-opacity-0 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:bg-gray-700 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 focus:dark:bg-gray-600 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0';
+            const sharedProps = {
+              id: authField,
+              'aria-invalid': !!errors[authField],
+              'aria-describedby': `${authField}-error`,
+              'aria-label': config.label,
+              'aria-required': !isOptional,
+              /* autoFocus is generally disorienting, but here the required field must be navigated to
+               * anyway, and the form emulates a modal opening where users expect focus to shift. */
+              autoFocus: i === 0,
+              className: inputClassName,
+              ...register(
+                authField,
+                isOptional
+                  ? {}
+                  : {
+                      required: `${config.label} is required.`,
+                      minLength: {
+                        value: 1,
+                        message: `${config.label} must be at least 1 character long`,
+                      },
+                    },
+              ),
+            };
             return (
               <div key={`${authField}-${i}`} className="flex w-full flex-col gap-1">
                 <label
@@ -50,33 +75,17 @@ function PluginAuthForm({ plugin, onSubmit, isEntityTool }: TPluginAuthFormProps
                 </label>
                 <HoverCard openDelay={300}>
                   <HoverCardTrigger className="grid w-full items-center gap-2">
-                    <input
-                      type="text"
-                      autoComplete="off"
-                      id={authField}
-                      aria-invalid={!!errors[authField]}
-                      aria-describedby={`${authField}-error`}
-                      aria-label={config.label}
-                      aria-required={!isOptional}
-                      /* autoFocus is generally disabled due to the fact that it can disorient users,
-                       * but in this case, the required field must be navigated to anyways, and the component's functionality
-                       * emulates that of a new modal opening, where users would expect focus to be shifted to the new content */
-                      // eslint-disable-next-line jsx-a11y/no-autofocus
-                      autoFocus={i === 0}
-                      {...register(
-                        authField,
-                        isOptional
-                          ? {}
-                          : {
-                              required: `${config.label} is required.`,
-                              minLength: {
-                                value: 1,
-                                message: `${config.label} must be at least 1 character long`,
-                              },
-                            },
-                      )}
-                      className="flex h-10 max-h-10 w-full resize-none rounded-md border border-gray-200 bg-transparent px-3 py-2 text-sm text-gray-700 shadow-[0_0_10px_rgba(0,0,0,0.05)] outline-none placeholder:text-gray-400 focus:border-gray-400 focus:bg-gray-50 focus:outline-none focus:ring-0 focus:ring-gray-400 focus:ring-opacity-0 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:bg-gray-700 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 focus:dark:bg-gray-600 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0"
-                    />
+                    {config.sensitive === false ? (
+                      <input type="text" autoComplete="off" {...sharedProps} />
+                    ) : (
+                      <SecretInput
+                        autoComplete="new-password"
+                        data-lpignore="true"
+                        data-1p-ignore="true"
+                        controlsOnHover
+                        {...sharedProps}
+                      />
+                    )}
                   </HoverCardTrigger>
                   <PluginTooltip content={config.description} position="right" />
                 </HoverCard>
