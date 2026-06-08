@@ -154,6 +154,44 @@ const OboOptionsSchema = z.object({
   scopes: z.string().min(1),
 });
 
+/** Validates that a string compiles to a valid regular expression. */
+const isValidRegex = (value: string): boolean => {
+  try {
+    new RegExp(value);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * A single tool-filter matcher: either an exact tool name or a regular
+ * expression wrapped in `{ regex: "..." }`. Matching is performed against the
+ * server's original (un-prefixed) tool names. Regex patterns are validated at
+ * parse time so misconfigurations surface immediately on config load.
+ */
+export const ToolFilterPatternSchema = z.union([
+  z.string(),
+  z.object({
+    regex: z.string().refine(isValidRegex, { message: 'Invalid regular expression pattern' }),
+  }),
+]);
+
+/**
+ * Optional allow/block filtering of the tools an MCP server exposes.
+ * `include` is applied first (allowlist), then `exclude` (blocklist).
+ * An absent or empty filter exposes every tool (backward compatible).
+ */
+export const ToolFilterSchema = z.object({
+  /** Allowlist — only tools matching at least one entry are kept. */
+  include: z.array(ToolFilterPatternSchema).optional(),
+  /** Blocklist — tools matching any entry are removed (after `include`). */
+  exclude: z.array(ToolFilterPatternSchema).optional(),
+});
+
+export type ToolFilterPattern = z.infer<typeof ToolFilterPatternSchema>;
+export type ToolFilter = z.infer<typeof ToolFilterSchema>;
+
 const BaseOptionsSchema = z.object({
   /** Display name for the MCP server - only letters, numbers, and spaces allowed */
   title: z
@@ -176,6 +214,13 @@ const BaseOptionsSchema = z.object({
   initTimeout: z.number().int().nonnegative().optional(),
   /** Controls visibility in chat dropdown menu (MCPSelect) */
   chatMenu: z.boolean().optional(),
+  /**
+   * Optional filtering of the tools this server exposes to the model, used to
+   * reduce context-window consumption from large tool sets. `include` (allowlist)
+   * is applied first, then `exclude` (blocklist). Each entry is an exact tool
+   * name or a `{ regex: "..." }` pattern. Omitting this exposes all tools.
+   */
+  toolFilter: ToolFilterSchema.optional(),
   /**
    * Controls server instruction behavior:
    * - undefined/not set: No instructions included (default)
@@ -389,6 +434,7 @@ const omitServerManagedFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T
     requiresOAuth: true,
     customUserVars: true,
     oauth_headers: true,
+    toolFilter: true,
   });
 
 const userManagedServerFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T) =>

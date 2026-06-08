@@ -9,6 +9,7 @@ import {
   getMissingCustomUserVars,
   hasCustomUserVars,
   isUserSourced,
+  isToolAllowed,
 } from '~/mcp/utils';
 import type { ParsedServerConfig } from '~/mcp/types';
 
@@ -437,5 +438,55 @@ describe('getMissingCustomUserVars', () => {
     expect(
       getMissingCustomUserVars(config, { THINGY_TOKEN: 'abc123', UNRELATED: 'value' }),
     ).toEqual([]);
+  });
+});
+
+describe('isToolAllowed', () => {
+  it('allows every tool when no filter is provided', () => {
+    expect(isToolAllowed('anyTool')).toBe(true);
+    expect(isToolAllowed('anyTool', undefined)).toBe(true);
+  });
+
+  it('allows every tool when include and exclude are empty', () => {
+    expect(isToolAllowed('anyTool', { include: [], exclude: [] })).toBe(true);
+  });
+
+  it('keeps only tools matching an exact-name include entry', () => {
+    const filter = { include: ['search'] };
+    expect(isToolAllowed('search', filter)).toBe(true);
+    expect(isToolAllowed('searchJira', filter)).toBe(false);
+  });
+
+  it('keeps tools matching a regex include entry', () => {
+    const filter = { include: [{ regex: '.*Jira.*' }] };
+    expect(isToolAllowed('searchJira', filter)).toBe(true);
+    expect(isToolAllowed('createJiraIssue', filter)).toBe(true);
+    expect(isToolAllowed('searchConfluence', filter)).toBe(false);
+  });
+
+  it('combines string and regex include entries', () => {
+    const filter = { include: ['search', { regex: '.*Jira.*' }] };
+    expect(isToolAllowed('search', filter)).toBe(true);
+    expect(isToolAllowed('createJiraIssue', filter)).toBe(true);
+    expect(isToolAllowed('deleteConfluencePage', filter)).toBe(false);
+  });
+
+  it('removes tools matching an exclude entry', () => {
+    const filter = { exclude: ['lookupJiraAccountId'] };
+    expect(isToolAllowed('lookupJiraAccountId', filter)).toBe(false);
+    expect(isToolAllowed('searchJira', filter)).toBe(true);
+  });
+
+  it('applies include before exclude', () => {
+    const filter = { include: [{ regex: '.*Jira.*' }], exclude: ['lookupJiraAccountId'] };
+    expect(isToolAllowed('searchJira', filter)).toBe(true);
+    expect(isToolAllowed('lookupJiraAccountId', filter)).toBe(false);
+    expect(isToolAllowed('searchConfluence', filter)).toBe(false);
+  });
+
+  it('treats an invalid regex as a non-match rather than throwing', () => {
+    const filter = { include: [{ regex: '[' }] };
+    expect(() => isToolAllowed('search', filter)).not.toThrow();
+    expect(isToolAllowed('search', filter)).toBe(false);
   });
 });

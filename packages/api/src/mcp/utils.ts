@@ -1,4 +1,6 @@
 import { Constants } from 'librechat-data-provider';
+import { logger } from '@librechat/data-schemas';
+import type { ToolFilter, ToolFilterPattern } from 'librechat-data-provider';
 import type { ParsedServerConfig } from '~/mcp/types';
 
 export const mcpToolPattern = new RegExp(`^.+${Constants.mcp_delimiter}.+$`);
@@ -139,6 +141,61 @@ export function redactAllServerSecrets(
     result[key] = redactServerSecrets(config);
   }
   return result;
+}
+
+/**
+ * Caches compiled tool-filter regexes so repeated checks (every tool against
+ * every pattern, on each `fetchTools`/`getToolFunctions` call) don't recompile.
+ * Patterns originate from admin config, so the set is bounded. A `null` entry
+ * marks a pattern that failed to compile — it is logged once and never retried.
+ */
+const compiledToolFilterRegexes = new Map<string, RegExp | null>();
+
+function getToolFilterRegex(pattern: string): RegExp | null {
+  const cached = compiledToolFilterRegexes.get(pattern);
+  if (cached !== undefined) {
+    return cached;
+  }
+  let regex: RegExp | null;
+  try {
+    regex = new RegExp(pattern);
+  } catch {
+    regex = null;
+    logger.warn(
+      `[MCP] Ignoring invalid toolFilter regex pattern "${pattern}"; it will not match any tool.`,
+    );
+  }
+  compiledToolFilterRegexes.set(pattern, regex);
+  return regex;
+}
+
+/** Tests a single tool name against one filter pattern (exact match or regex). */
+function matchesToolPattern(toolName: string, pattern: ToolFilterPattern): boolean {
+  if (typeof pattern === 'string') {
+    return toolName === pattern;
+  }
+  const regex = getToolFilterRegex(pattern.regex);
+  return regex != null && regex.test(toolName);
+}
+
+/**
+ * Determines whether a tool should be exposed given an optional `toolFilter`.
+ * `include` (allowlist) is applied first: when present and non-empty, the tool
+ * must match at least one entry. `exclude` (blocklist) is applied after: a tool
+ * matching any entry is rejected. An absent or empty filter allows every tool.
+ */
+export function isToolAllowed(toolName: string, filter?: ToolFilter): boolean {
+  if (!filter) {
+    return true;
+  }
+  const { include, exclude } = filter;
+  if (include && include.length > 0 && !include.some((p) => matchesToolPattern(toolName, p))) {
+    return false;
+  }
+  if (exclude && exclude.length > 0 && exclude.some((p) => matchesToolPattern(toolName, p))) {
+    return false;
+  }
+  return true;
 }
 
 /**
