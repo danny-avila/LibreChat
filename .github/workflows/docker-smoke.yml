@@ -10,6 +10,9 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'api/**'
+      - 'client/**'
+      - 'config/**'
+      - 'skill/**'
       - 'packages/api/**'
       - 'packages/client/**'
       - 'packages/data-provider/**'
@@ -78,10 +81,12 @@ jobs:
 
       # Boot the real entrypoint against a real MongoDB so the *entire* server
       # require graph loads (api/db throws at module scope without MONGO_URI, and
-      # is imported before models/services/routes), then gate on /health AND the
-      # container staying alive — so ANY startup crash (missing module, ReferenceError,
-      # bad config) fails the smoke, not just missing-module strings.
-      - name: Boot production image against MongoDB and poll /health
+      # is imported before models/services/routes), then gate on /readyz AND the
+      # container staying alive. /readyz only returns 200 after the post-listen
+      # startup (initializeMCPs + checkMigrations) sets serverReady, and those
+      # steps process.exit(1) on failure — so ANY startup crash (missing module,
+      # ReferenceError, bad config, post-listen failure) fails the smoke.
+      - name: Boot production image against MongoDB and poll /readyz
         run: |
           set -u
           docker network create lc-smoke
@@ -103,9 +108,9 @@ jobs:
               echo "::error::API container exited during startup (exit code $(docker inspect -f '{{.State.ExitCode}}' lc-api 2>/dev/null))"
               break
             fi
-            if [ "$(curl -fsS -o /dev/null -w '%{http_code}' http://localhost:3080/health 2>/dev/null || true)" = "200" ]; then
+            if [ "$(curl -sS -o /dev/null -w '%{http_code}' http://localhost:3080/readyz 2>/dev/null || true)" = "200" ]; then
               healthy="yes"
-              echo "/health returned 200 — server booted cleanly."
+              echo "/readyz returned 200 — server fully booted (post-listen startup complete)."
               break
             fi
             sleep 2
@@ -118,6 +123,6 @@ jobs:
           docker network rm lc-smoke >/dev/null 2>&1 || true
 
           if [ -z "$healthy" ]; then
-            echo "::error::Production image failed to boot to a healthy /health within timeout"
+            echo "::error::Production image failed to reach a ready /readyz within timeout"
             exit 1
           fi
