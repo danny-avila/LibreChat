@@ -31,6 +31,13 @@ async function messagePiiFilter(req, res, next) {
     if (result.matches.length === 0) {
       return next();
     }
+    // Mutate req.body.text FIRST so every code path below (block's
+    // denyRequest, warn/silent's downstream middleware + controller)
+    // sees the redacted text. denyRequest emits a `created` SSE event
+    // built from req.body.text and conditionally persists that user
+    // message; running it on the original would leak the credential
+    // even though the assistant turn is refused.
+    req.body.text = result.text;
     if (config.onMatch === 'block') {
       const labels = result.matches.map((m) => m.patternLabel).join(', ');
       logger.info(
@@ -42,7 +49,6 @@ async function messagePiiFilter(req, res, next) {
         message: `Message blocked by PII filter: ${labels}. Edit and retry.`,
       });
     }
-    req.body.text = result.text;
     if (config.onMatch === 'warn') {
       req._piiPreRedactMatches = result.matches;
     }
