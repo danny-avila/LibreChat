@@ -685,6 +685,7 @@ endpoints:
 #       fileSizeLimit: 5
 #   serverFileSizeLimit: 100  # Global server file size limit in MB
 #   avatarSizeLimit: 2  # Limit for user avatar image size in MB
+#   deleteFilesOnConversationDelete: false  # When true, deleting a conversation also deletes its files (DB + storage), except files shared with other conversations or agents
 #   imageGeneration: # Image Gen settings, either percentage or px
 #     percentage: 100
 #     px: 1024

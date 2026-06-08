@@ -15,6 +15,11 @@ import type { DeleteResult } from 'mongoose';
 
 export interface ConversationMethods {
   getConvoFiles(conversationId: string): Promise<string[]>;
+  findConvosWithFiles(params: {
+    user: string;
+    excludeConversationId: string;
+    fileIds: string[];
+  }): Promise<string[]>;
   searchConversation(conversationId: string): Promise<IConversation | null>;
   deleteNullOrEmptyConversations(): Promise<{
     conversations: { deletedCount?: number };
@@ -172,6 +177,51 @@ export function createConversationMethods(
     } catch (error) {
       logger.error('[getConvoFiles] Error getting conversation files', error);
       throw new Error('Error getting conversation files');
+    }
+  }
+
+  /**
+   * Returns the subset of the given file ids that are still referenced by the
+   * user's other conversations (every conversation except `excludeConversationId`).
+   * Read-only; used to keep shared files from being deleted alongside a single
+   * conversation.
+   */
+  async function findConvosWithFiles({
+    user,
+    excludeConversationId,
+    fileIds,
+  }: {
+    user: string;
+    excludeConversationId: string;
+    fileIds: string[];
+  }): Promise<string[]> {
+    if (!fileIds || fileIds.length === 0) {
+      return [];
+    }
+    try {
+      const Conversation = mongoose.models.Conversation as Model<IConversation>;
+      const convos = await Conversation.find(
+        {
+          user,
+          conversationId: { $ne: excludeConversationId },
+          files: { $in: fileIds },
+        },
+        'files',
+      ).lean<Array<Pick<IConversation, 'files'>>>();
+
+      const candidateSet = new Set(fileIds);
+      const referenced = new Set<string>();
+      for (const convo of convos) {
+        for (const fileId of convo.files ?? []) {
+          if (candidateSet.has(fileId)) {
+            referenced.add(fileId);
+          }
+        }
+      }
+      return [...referenced];
+    } catch (error) {
+      logger.error('[findConvosWithFiles] Error finding conversations with files', error);
+      throw new Error('Error finding conversations with files');
     }
   }
 
@@ -783,6 +833,7 @@ export function createConversationMethods(
 
   return {
     getConvoFiles,
+    findConvosWithFiles,
     searchConversation,
     deleteNullOrEmptyConversations,
     saveConvo,

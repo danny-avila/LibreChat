@@ -17,6 +17,10 @@ jest.mock('~/server/routes/files/multer', () => require(MOCKS).multerSetup());
 jest.mock('multer', () => require(MOCKS).multerLib());
 jest.mock('~/server/services/Endpoints/azureAssistants', () => require(MOCKS).assistantEndpoint());
 jest.mock('~/server/services/Endpoints/assistants', () => require(MOCKS).assistantEndpoint());
+jest.mock('~/server/services/Files/process', () => ({
+  processDeleteRequest: jest.fn(),
+  getConvoFilesToDelete: jest.fn(),
+}));
 
 describe('Convos Routes', () => {
   let app;
@@ -430,6 +434,113 @@ describe('Convos Routes', () => {
     });
   });
 
+  describe('DELETE / with deleteFilesOnConversationDelete', () => {
+    const {
+      processDeleteRequest,
+      getConvoFilesToDelete,
+    } = require('~/server/services/Files/process');
+
+    /** Builds an app that injects the given fileConfig into req.config. */
+    const buildAppWithConfig = (fileConfig) => {
+      const localApp = express();
+      localApp.use(express.json());
+      localApp.use((req, res, next) => {
+        req.user = { id: 'test-user-123' };
+        req.config = { fileConfig };
+        next();
+      });
+      localApp.use('/api/convos', require('../convos'));
+      return localApp;
+    };
+
+    beforeEach(() => {
+      deleteConvos.mockResolvedValue({ deletedCount: 1 });
+      deleteToolCalls.mockResolvedValue({ deletedCount: 0 });
+      deleteConvoSharedLinksWithCleanup.mockResolvedValue({ deletedCount: 0 });
+    });
+
+    it('does not delete files when the flag is absent', async () => {
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({ arg: { conversationId: 'conv-flag-off' } });
+
+      expect(response.status).toBe(201);
+      expect(getConvoFilesToDelete).not.toHaveBeenCalled();
+      expect(processDeleteRequest).not.toHaveBeenCalled();
+    });
+
+    it('does not delete files when the flag is false', async () => {
+      const localApp = buildAppWithConfig({ deleteFilesOnConversationDelete: false });
+
+      const response = await request(localApp)
+        .delete('/api/convos')
+        .send({ arg: { conversationId: 'conv-flag-false' } });
+
+      expect(response.status).toBe(201);
+      expect(getConvoFilesToDelete).not.toHaveBeenCalled();
+      expect(processDeleteRequest).not.toHaveBeenCalled();
+    });
+
+    it('deletes the exclusively-owned files when the flag is true', async () => {
+      const files = [{ file_id: 'fileA', source: 'local' }];
+      getConvoFilesToDelete.mockResolvedValue(files);
+      const localApp = buildAppWithConfig({ deleteFilesOnConversationDelete: true });
+
+      const response = await request(localApp)
+        .delete('/api/convos')
+        .send({ arg: { conversationId: 'conv-flag-on' } });
+
+      expect(response.status).toBe(201);
+      expect(getConvoFilesToDelete).toHaveBeenCalledWith({
+        userId: 'test-user-123',
+        conversationId: 'conv-flag-on',
+      });
+      expect(processDeleteRequest).toHaveBeenCalledWith(
+        expect.objectContaining({ files }),
+      );
+    });
+
+    it('collects the files before deleteConvos removes the messages', async () => {
+      getConvoFilesToDelete.mockResolvedValue([{ file_id: 'fileA', source: 'local' }]);
+      const localApp = buildAppWithConfig({ deleteFilesOnConversationDelete: true });
+
+      await request(localApp)
+        .delete('/api/convos')
+        .send({ arg: { conversationId: 'conv-order' } });
+
+      expect(getConvoFilesToDelete).toHaveBeenCalledBefore(deleteConvos);
+    });
+
+    it('is a no-op when the conversation has no files', async () => {
+      getConvoFilesToDelete.mockResolvedValue([]);
+      const localApp = buildAppWithConfig({ deleteFilesOnConversationDelete: true });
+
+      const response = await request(localApp)
+        .delete('/api/convos')
+        .send({ arg: { conversationId: 'conv-no-files' } });
+
+      expect(response.status).toBe(201);
+      expect(processDeleteRequest).not.toHaveBeenCalled();
+    });
+
+    it('still returns 201 when file deletion fails (error swallowed)', async () => {
+      getConvoFilesToDelete.mockResolvedValue([{ file_id: 'fileA', source: 'local' }]);
+      processDeleteRequest.mockRejectedValue(new Error('storage boom'));
+      const localApp = buildAppWithConfig({ deleteFilesOnConversationDelete: true });
+
+      const response = await request(localApp)
+        .delete('/api/convos')
+        .send({ arg: { conversationId: 'conv-file-error' } });
+
+      expect(response.status).toBe(201);
+      const { logger } = require('@librechat/data-schemas');
+      expect(logger.error).toHaveBeenCalledWith(
+        '[/convos] Failed to delete files associated with conversation',
+        expect.any(Error),
+      );
+    });
+  });
+
   describe('POST /archive', () => {
     it('should archive a conversation successfully', async () => {
       const mockConversationId = 'conv-123';
@@ -598,6 +709,30 @@ expect.extend({
         pass
           ? `Expected ${received.getMockName()} not to have been called after ${other.getMockName()}`
           : `Expected ${received.getMockName()} to have been called after ${other.getMockName()}`,
+    };
+  },
+  toHaveBeenCalledBefore(received, other) {
+    const receivedCalls = received.mock.invocationCallOrder;
+    const otherCalls = other.mock.invocationCallOrder;
+
+    if (receivedCalls.length === 0 || otherCalls.length === 0) {
+      return {
+        pass: false,
+        message: () =>
+          `Expected ${received.getMockName()} to have been called before ${other.getMockName()}, but one of them was never called`,
+      };
+    }
+
+    const firstReceivedCall = receivedCalls[0];
+    const lastOtherCall = otherCalls[otherCalls.length - 1];
+    const pass = firstReceivedCall < lastOtherCall;
+
+    return {
+      pass,
+      message: () =>
+        pass
+          ? `Expected ${received.getMockName()} not to have been called before ${other.getMockName()}`
+          : `Expected ${received.getMockName()} to have been called before ${other.getMockName()}`,
     };
   },
 });
