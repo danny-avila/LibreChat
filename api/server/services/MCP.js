@@ -1,11 +1,6 @@
 const { tool } = require('@librechat/agents/langchain/tools');
 const { logger, getTenantId } = require('@librechat/data-schemas');
-const {
-  Providers,
-  StepTypes,
-  GraphEvents,
-  Constants: AgentConstants,
-} = require('@librechat/agents');
+const { Providers, Constants: AgentConstants } = require('@librechat/agents');
 const {
   sendEvent,
   MCPOAuthHandler,
@@ -14,17 +9,32 @@ const {
   normalizeJsonSchema,
   GenerationJobManager,
   resolveJsonSchemaRefs,
-  buildOAuthToolCallName,
+  buildMCPAuthStepId,
+  buildMCPAuthToolCall,
+  buildMCPAuthRunStepEvent,
+  buildMCPAuthRunStepDeltaEvent,
+  buildMCPAuthRunStepEndDeltaEvent,
+  checkAccessWithRequestCache,
 } = require('@librechat/api');
-const { Time, CacheKeys, Constants, isAssistantsEndpoint } = require('librechat-data-provider');
+const {
+  Time,
+  CacheKeys,
+  Constants,
+  Permissions,
+  PermissionTypes,
+  isAssistantsEndpoint,
+} = require('librechat-data-provider');
 const {
   getOAuthReconnectionManager,
   getMCPServersRegistry,
   getFlowStateManager,
   getMCPManager,
 } = require('~/config');
-const { findToken, createToken, updateToken, deleteTokens } = require('~/models');
+const db = require('~/models');
+const { findToken, createToken, updateToken, deleteTokens } = db;
 const { getGraphApiToken } = require('./GraphTokenService');
+const { exchangeOboToken } = require('./OboTokenService');
+const { createOboTrustChecker } = require('./OboPolicyService');
 const { reinitMCPServer } = require('./Tools/mcp');
 const { getAppConfig } = require('./Config');
 const { getLogStores } = require('~/cache');
@@ -35,6 +45,31 @@ const RECONNECT_THROTTLE_MS = 10_000;
 
 const missingToolCache = new Map();
 const MISSING_TOOL_TTL_MS = 10_000;
+
+async function userCanUseMCPServers(user, req) {
+  if (!user?.id || !user?.role) {
+    return false;
+  }
+
+  try {
+    return await checkAccessWithRequestCache({
+      req,
+      user,
+      permissionType: PermissionTypes.MCP_SERVERS,
+      permissions: [Permissions.USE],
+      getRoleByName: db.getRoleByName,
+    });
+  } catch (error) {
+    logger.error(`[MCP][User: ${user.id}] Failed MCP permission check`, error);
+    return false;
+  }
+}
+
+function createMCPPermissionContext(req) {
+  return {
+    canUseServers: (user = req?.user) => userCanUseMCPServers(user, req),
+  };
+}
 
 function evictStale(map, ttl) {
   if (map.size <= MAX_CACHE_SIZE) {
@@ -165,20 +200,11 @@ function isEmptyObjectSchema(jsonSchema) {
 function createRunStepDeltaEmitter({ res, stepId, toolCall, streamId = null }) {
   /**
    * @param {string} authURL - The URL to redirect the user for OAuth authentication.
+   * @param {{ expiresAt?: number }} [options]
    * @returns {Promise<void>}
    */
-  return async function (authURL) {
-    /** @type {{ id: string; delta: AgentToolCallDelta }} */
-    const data = {
-      id: stepId,
-      delta: {
-        type: StepTypes.TOOL_CALLS,
-        tool_calls: [{ ...toolCall, args: '' }],
-        auth: authURL,
-        expires_at: Date.now() + Time.TWO_MINUTES,
-      },
-    };
-    const eventData = { event: GraphEvents.ON_RUN_STEP_DELTA, data };
+  return async function (authURL, options) {
+    const eventData = buildMCPAuthRunStepDeltaEvent({ authURL, stepId, toolCall, options });
     if (streamId) {
       await GenerationJobManager.emitChunk(streamId, eventData);
     } else {
@@ -199,18 +225,7 @@ function createRunStepDeltaEmitter({ res, stepId, toolCall, streamId = null }) {
  */
 function createRunStepEmitter({ res, runId, stepId, toolCall, index, streamId = null }) {
   return async function () {
-    /** @type {import('@librechat/agents').RunStep} */
-    const data = {
-      runId: runId ?? Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
-      id: stepId,
-      type: StepTypes.TOOL_CALLS,
-      index: index ?? 0,
-      stepDetails: {
-        type: StepTypes.TOOL_CALLS,
-        tool_calls: [toolCall],
-      },
-    };
-    const eventData = { event: GraphEvents.ON_RUN_STEP, data };
+    const eventData = buildMCPAuthRunStepEvent({ runId, stepId, toolCall, index });
     if (streamId) {
       await GenerationJobManager.emitChunk(streamId, eventData);
     } else {
@@ -224,20 +239,43 @@ function createRunStepEmitter({ res, runId, stepId, toolCall, index, streamId = 
  * @param {object} params
  * @param {string} params.flowId - The ID of the login flow.
  * @param {FlowStateManager<any>} params.flowManager - The flow manager instance.
- * @param {(authURL: string) => void} [params.callback]
+ * @param {(authURL: string, options?: { expiresAt?: number }) => void | Promise<void>} [params.callback]
  */
 function createOAuthStart({ flowId, flowManager, callback }) {
   /**
    * Creates a function to handle OAuth login requests.
    * @param {string} authURL - The URL to redirect the user for OAuth authentication.
+   * @param {{ expiresAt?: number }} [options]
    * @returns {Promise<boolean>} Returns true to indicate the event was sent successfully.
    */
-  return async function (authURL) {
+  return async function (authURL, options) {
+    let emitted = false;
+    const emitOAuthStart = async (message) => {
+      if (options) {
+        await callback?.(authURL, options);
+      } else {
+        await callback?.(authURL);
+      }
+      emitted = true;
+      logger.debug(message);
+    };
+
+    const existingFlow = await flowManager.getFlowState(flowId, 'oauth_login');
+    if (existingFlow) {
+      await emitOAuthStart('Re-sent OAuth login request to client');
+      return true;
+    }
+
     await flowManager.createFlowWithHandler(flowId, 'oauth_login', async () => {
-      callback?.(authURL);
-      logger.debug('Sent OAuth login request to client');
+      await emitOAuthStart('Sent OAuth login request to client');
       return true;
     });
+
+    if (!emitted) {
+      await emitOAuthStart('Re-sent OAuth login request to client');
+    }
+
+    return true;
   };
 }
 
@@ -250,15 +288,7 @@ function createOAuthStart({ flowId, flowManager, callback }) {
  */
 function createOAuthEnd({ res, stepId, toolCall, streamId = null }) {
   return async function () {
-    /** @type {{ id: string; delta: AgentToolCallDelta }} */
-    const data = {
-      id: stepId,
-      delta: {
-        type: StepTypes.TOOL_CALLS,
-        tool_calls: [{ ...toolCall }],
-      },
-    };
-    const eventData = { event: GraphEvents.ON_RUN_STEP_DELTA, data };
+    const eventData = buildMCPAuthRunStepEndDeltaEvent({ stepId, toolCall });
     if (streamId) {
       await GenerationJobManager.emitChunk(streamId, eventData);
     } else {
@@ -287,14 +317,14 @@ function createAbortHandler({ userId, serverName, toolName, flowManager }) {
 
 /**
  * @param {Object} params
- * @param {() => void} params.runStepEmitter
- * @param {(authURL: string) => void} params.runStepDeltaEmitter
- * @returns {(authURL: string) => void}
+ * @param {() => Promise<void>} params.runStepEmitter
+ * @param {(authURL: string, options?: { expiresAt?: number }) => Promise<void>} params.runStepDeltaEmitter
+ * @returns {(authURL: string, options?: { expiresAt?: number }) => Promise<void>}
  */
 function createOAuthCallback({ runStepEmitter, runStepDeltaEmitter }) {
-  return function (authURL) {
-    runStepEmitter();
-    runStepDeltaEmitter(authURL);
+  return async function (authURL, options) {
+    await runStepEmitter();
+    await runStepDeltaEmitter(authURL, options);
   };
 }
 
@@ -337,12 +367,11 @@ async function reconnectServer({
   const runId = Constants.USE_PRELIM_RESPONSE_MESSAGE_ID;
   const flowId = `${user.id}:${serverName}:${Date.now()}`;
   const flowManager = getFlowStateManager(getLogStores(CacheKeys.FLOWS));
-  const stepId = 'step_oauth_login_' + serverName;
-  const toolCall = {
+  const stepId = buildMCPAuthStepId(serverName);
+  const toolCall = buildMCPAuthToolCall({
     id: flowId,
-    name: buildOAuthToolCallName(serverName),
-    type: 'tool_call_chunk',
-  };
+    serverName,
+  });
 
   // Set up abort handler to clean up OAuth flows if request is aborted
   const oauthFlowId = MCPOAuthHandler.generateFlowId(user.id, serverName);
@@ -409,6 +438,7 @@ async function reconnectServer({
  *
  * @param {Object} params
  * @param {ServerResponse} params.res - The Express response object for sending events.
+ * @param {{ canUseServers: (user?: IUser) => Promise<boolean> }} [params.mcpPermissionContext] - Request-scoped MCP permission context.
  * @param {IUser} params.user - The user from the request object.
  * @param {string} params.serverName
  * @param {string} params.model
@@ -422,6 +452,7 @@ async function reconnectServer({
  */
 async function createMCPTools({
   res,
+  mcpPermissionContext,
   user,
   index,
   signal,
@@ -476,6 +507,7 @@ async function createMCPTools({
   for (const tool of result.tools) {
     const toolInstance = await createMCPTool({
       res,
+      mcpPermissionContext,
       user,
       provider,
       userMCPAuthMap,
@@ -497,6 +529,7 @@ async function createMCPTools({
  * Creates a single tool from the specified MCP Server via `toolKey`.
  * @param {Object} params
  * @param {ServerResponse} params.res - The Express response object for sending events.
+ * @param {{ canUseServers: (user?: IUser) => Promise<boolean> }} [params.mcpPermissionContext] - Request-scoped MCP permission context.
  * @param {IUser} params.user - The user from the request object.
  * @param {string} params.toolKey - The toolKey for the tool.
  * @param {string} params.model - The model for the tool.
@@ -511,6 +544,7 @@ async function createMCPTools({
  */
 async function createMCPTool({
   res,
+  mcpPermissionContext,
   user,
   index,
   signal,
@@ -586,6 +620,8 @@ async function createMCPTool({
 
   return createToolInstance({
     res,
+    mcpPermissionContext,
+    user,
     provider,
     toolName,
     serverName,
@@ -597,6 +633,8 @@ async function createMCPTool({
 
 function createToolInstance({
   res,
+  mcpPermissionContext,
+  user: capturedUser = null,
   toolName,
   serverName,
   serverConfig: capturedServerConfig,
@@ -624,18 +662,26 @@ function createToolInstance({
 
   /** @type {(toolArguments: Object | string, config?: GraphRunnableConfig) => Promise<unknown>} */
   const _call = async (toolArguments, config) => {
-    const userId = config?.configurable?.user?.id || config?.configurable?.user_id;
+    const permissionUser = config?.configurable?.user ?? capturedUser;
+    const userId =
+      config?.configurable?.user?.id || config?.configurable?.user_id || capturedUser?.id;
     /** @type {ReturnType<typeof createAbortHandler>} */
     let abortHandler = null;
     /** @type {AbortSignal} */
     let derivedSignal = null;
 
     try {
+      const provider = (config?.metadata?.provider || capturedProvider)?.toLowerCase();
+      const canUseMCP = mcpPermissionContext
+        ? await mcpPermissionContext.canUseServers(permissionUser)
+        : await userCanUseMCPServers(permissionUser);
+      if (!canUseMCP) {
+        throw new Error('Forbidden: Insufficient MCP server permissions');
+      }
       const flowsCache = getLogStores(CacheKeys.FLOWS);
       const flowManager = getFlowStateManager(flowsCache);
       derivedSignal = config?.signal ? AbortSignal.any([config.signal]) : undefined;
       const mcpManager = getMCPManager(userId);
-      const provider = (config?.metadata?.provider || capturedProvider)?.toLowerCase();
 
       const { args: _args, stepId, ...toolCall } = config.toolCall ?? {};
       const flowId = `${serverName}:oauth_login:${config.metadata.thread_id}:${config.metadata.run_id}`;
@@ -687,6 +733,8 @@ function createToolInstance({
         oauthStart,
         oauthEnd,
         graphTokenResolver: getGraphApiToken,
+        oboTokenResolver: exchangeOboToken,
+        oboTrustChecker: createOboTrustChecker(),
       });
 
       if (isAssistantsEndpoint(provider) && Array.isArray(result)) {
@@ -888,10 +936,13 @@ async function getServerConnectionStatus(
 module.exports = {
   createMCPTool,
   createMCPTools,
+  createMCPPermissionContext,
+  userCanUseMCPServers,
   getMCPSetupData,
   resolveConfigServers,
   resolveMcpConfigNames,
   resolveAllMcpConfigs,
+  createOAuthStart,
   checkOAuthFlowStatus,
   getServerConnectionStatus,
   createUnavailableToolStub,

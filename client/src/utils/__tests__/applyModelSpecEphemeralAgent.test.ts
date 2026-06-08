@@ -118,6 +118,16 @@ describe('applyModelSpecEphemeralAgent', () => {
       const agent = updateEphemeralAgent.mock.calls[0][1] as TEphemeralAgent;
       expect(agent.artifacts).toBe('custom-renderer');
     });
+
+    it('should not copy model spec subagents into client ephemeral agent state', () => {
+      const subagents = { enabled: true, allowSelf: true, agent_ids: ['agent_private'] };
+      const modelSpec = createModelSpec({ subagents });
+
+      applyModelSpecEphemeralAgent({ convoId: null, modelSpec, updateEphemeralAgent });
+
+      const agent = updateEphemeralAgent.mock.calls[0][1] as TEphemeralAgent;
+      expect(agent.subagents).toBeUndefined();
+    });
   });
 
   // ─── Existing Conversations: Per-Conversation Persistence ──────────

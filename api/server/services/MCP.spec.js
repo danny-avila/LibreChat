@@ -38,12 +38,14 @@ jest.mock('@librechat/api', () => {
 
 const { logger } = require('@librechat/data-schemas');
 const { MCPOAuthHandler } = require('@librechat/api');
-const { CacheKeys, Constants } = require('librechat-data-provider');
+const { CacheKeys, Constants, Permissions, PermissionTypes } = require('librechat-data-provider');
 const D = Constants.mcp_delimiter;
 const {
   createMCPTool,
   createMCPTools,
+  createMCPPermissionContext,
   getMCPSetupData,
+  createOAuthStart,
   checkOAuthFlowStatus,
   getServerConnectionStatus,
   createUnavailableToolStub,
@@ -71,6 +73,8 @@ jest.mock('~/models', () => ({
   findToken: jest.fn(),
   createToken: jest.fn(),
   updateToken: jest.fn(),
+  deleteTokens: jest.fn(),
+  getRoleByName: jest.fn(),
 }));
 
 jest.mock('./Tools/mcp', () => ({
@@ -95,6 +99,85 @@ describe('tests for the new helper functions used by the MCP connection status e
     mockGetFlowStateManager = require('~/config').getFlowStateManager;
     mockGetLogStores = require('~/cache').getLogStores;
     mockGetOAuthReconnectionManager = require('~/config').getOAuthReconnectionManager;
+  });
+
+  describe('createOAuthStart', () => {
+    const flowId = 'test-server:oauth_login:thread-1:run-1';
+    const authUrl = 'https://auth.example.com/oauth?state=test';
+
+    it('should create a login flow and emit the OAuth URL for the first request', async () => {
+      const callback = jest.fn();
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue(null),
+        createFlowWithHandler: jest.fn(async (_flowId, _type, handler) => handler()),
+      };
+
+      const oauthStart = createOAuthStart({
+        flowId,
+        flowManager: mockFlowManager,
+        callback,
+      });
+
+      await expect(oauthStart(authUrl)).resolves.toBe(true);
+
+      expect(mockFlowManager.getFlowState).toHaveBeenCalledWith(flowId, 'oauth_login');
+      expect(mockFlowManager.createFlowWithHandler).toHaveBeenCalledWith(
+        flowId,
+        'oauth_login',
+        expect.any(Function),
+      );
+      expect(callback).toHaveBeenCalledWith(authUrl);
+      expect(logger.debug).toHaveBeenCalledWith('Sent OAuth login request to client');
+    });
+
+    it('should replay the OAuth URL when the login flow already exists', async () => {
+      const callback = jest.fn();
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({
+          status: 'COMPLETED',
+          result: true,
+        }),
+        createFlowWithHandler: jest.fn(),
+      };
+
+      const oauthStart = createOAuthStart({
+        flowId,
+        flowManager: mockFlowManager,
+        callback,
+      });
+
+      await expect(oauthStart(authUrl)).resolves.toBe(true);
+
+      expect(mockFlowManager.getFlowState).toHaveBeenCalledWith(flowId, 'oauth_login');
+      expect(mockFlowManager.createFlowWithHandler).not.toHaveBeenCalled();
+      expect(callback).toHaveBeenCalledWith(authUrl);
+      expect(logger.debug).toHaveBeenCalledWith('Re-sent OAuth login request to client');
+    });
+
+    it('should replay the OAuth URL when flow creation is deduped internally', async () => {
+      const callback = jest.fn();
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue(null),
+        createFlowWithHandler: jest.fn().mockResolvedValue(true),
+      };
+
+      const oauthStart = createOAuthStart({
+        flowId,
+        flowManager: mockFlowManager,
+        callback,
+      });
+
+      await expect(oauthStart(authUrl)).resolves.toBe(true);
+
+      expect(mockFlowManager.getFlowState).toHaveBeenCalledWith(flowId, 'oauth_login');
+      expect(mockFlowManager.createFlowWithHandler).toHaveBeenCalledWith(
+        flowId,
+        'oauth_login',
+        expect.any(Function),
+      );
+      expect(callback).toHaveBeenCalledWith(authUrl);
+      expect(logger.debug).toHaveBeenCalledWith('Re-sent OAuth login request to client');
+    });
   });
 
   describe('getMCPSetupData', () => {
@@ -660,12 +743,14 @@ describe('tests for the new helper functions used by the MCP connection status e
 
 describe('User parameter passing tests', () => {
   let mockReinitMCPServer;
+  let mockGetMCPManager;
   let mockGetFlowStateManager;
   let mockGetLogStores;
 
   beforeEach(() => {
     jest.clearAllMocks();
     mockReinitMCPServer = require('./Tools/mcp').reinitMCPServer;
+    mockGetMCPManager = require('~/config').getMCPManager;
     mockGetFlowStateManager = require('~/config').getFlowStateManager;
     mockGetLogStores = require('~/cache').getLogStores;
 
@@ -812,6 +897,125 @@ describe('User parameter passing tests', () => {
 
       // Verify reinitMCPServer was NOT called since tool was in cache
       expect(mockReinitMCPServer).not.toHaveBeenCalled();
+    });
+
+    it('should reject tool execution when user lacks MCP server use permission', async () => {
+      const mockUser = { id: 'mcp-denied-user', role: 'USER' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const { getRoleByName } = require('~/models');
+      getRoleByName.mockResolvedValue({
+        permissions: {
+          [PermissionTypes.MCP_SERVERS]: {
+            [Permissions.USE]: false,
+          },
+        },
+      });
+
+      const mcpTool = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: `test-tool${D}test-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: {
+          [`test-tool${D}test-server`]: {
+            function: {
+              description: 'Cached tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+      });
+
+      await expect(
+        mcpTool.invoke(
+          {},
+          {
+            configurable: {
+              user: mockUser,
+            },
+            metadata: {
+              provider: 'openai',
+            },
+            toolCall: {},
+          },
+        ),
+      ).rejects.toThrow(
+        '[MCP][test-server][test-tool] tool call failed: Forbidden: Insufficient MCP server permissions',
+      );
+      expect(mockGetMCPManager).not.toHaveBeenCalled();
+    });
+
+    it('should reuse request-scoped MCP permission checks across tool executions', async () => {
+      const mockUser = { id: 'mcp-allowed-user', role: 'USER' };
+      const mockReq = { user: mockUser };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const { getRoleByName } = require('~/models');
+      getRoleByName.mockResolvedValue({
+        permissions: {
+          [PermissionTypes.MCP_SERVERS]: {
+            [Permissions.USE]: true,
+          },
+        },
+      });
+
+      const mockCallTool = jest.fn().mockResolvedValue(['ok', null]);
+      mockGetMCPManager.mockReturnValue({
+        callTool: mockCallTool,
+      });
+
+      const availableTools = {
+        [`search${D}test-server`]: {
+          function: {
+            description: 'Search tool',
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+        [`fetch${D}test-server`]: {
+          function: {
+            description: 'Fetch tool',
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+      };
+      const mcpPermissionContext = createMCPPermissionContext(mockReq);
+
+      const searchTool = await createMCPTool({
+        mcpPermissionContext,
+        res: mockRes,
+        user: mockUser,
+        toolKey: `search${D}test-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools,
+      });
+      const fetchTool = await createMCPTool({
+        mcpPermissionContext,
+        res: mockRes,
+        user: mockUser,
+        toolKey: `fetch${D}test-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools,
+      });
+
+      const invocationConfig = {
+        configurable: {
+          user: mockUser,
+        },
+        metadata: {
+          provider: 'openai',
+          thread_id: 'thread-1',
+          run_id: 'run-1',
+        },
+        toolCall: {},
+      };
+
+      await expect(searchTool.invoke({}, invocationConfig)).resolves.toBe('ok');
+      await expect(fetchTool.invoke({}, invocationConfig)).resolves.toBe('ok');
+
+      expect(getRoleByName).toHaveBeenCalledTimes(1);
+      expect(mockCallTool).toHaveBeenCalledTimes(2);
     });
   });
 

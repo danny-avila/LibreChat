@@ -7,13 +7,20 @@
  */
 const { logger } = require('@librechat/data-schemas');
 const {
+  checkAccess,
   MCPErrorCodes,
   redactServerSecrets,
   redactAllServerSecrets,
   isMCPDomainNotAllowedError,
   isMCPInspectionFailedError,
 } = require('@librechat/api');
-const { Constants, MCPServerUserInputSchema } = require('librechat-data-provider');
+const {
+  Constants,
+  Permissions,
+  PermissionTypes,
+  MCPServerUserInputSchema,
+  MCP_USER_INPUT_FIELDS,
+} = require('librechat-data-provider');
 const {
   resolveConfigServers,
   resolveMcpConfigNames,
@@ -21,6 +28,7 @@ const {
 } = require('~/server/services/MCP');
 const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
 const { getMCPManager, getMCPServersRegistry } = require('~/config');
+const db = require('~/models');
 
 /**
  * Handles MCP-specific errors and sends appropriate HTTP responses.
@@ -146,6 +154,7 @@ const getMCPTools = async (req, res) => {
               authField: key,
               label: value.title || key,
               description: value.description || '',
+              sensitive: value.sensitive,
             }));
             server.authenticated = false;
           }
@@ -202,6 +211,63 @@ const getMCPServersList = async (req, res) => {
 };
 
 /**
+ * Returns true when the request body's parsed config configures OBO. We block
+ * non-permission holders from creating or updating any DB-stored MCP server
+ * that mints per-user delegated tokens.
+ */
+function configHasObo(parsedConfig) {
+  return (
+    !!parsedConfig &&
+    typeof parsedConfig === 'object' &&
+    'obo' in parsedConfig &&
+    parsedConfig.obo != null
+  );
+}
+
+/**
+ * Fields a user without `CONFIGURE_OBO` may modify on an OBO server (allowlist).
+ * Any field not on this list is locked: changes to it (add, modify, or remove)
+ * require the permission. Allowlisting is fail-closed — when upstream introduces
+ * a new MCP server config field, it lands in the locked set by default until
+ * explicitly opted in here. Anything that could redirect the OBO token flow
+ * (`url`, `proxy`, `headers`), change scopes (`obo`), or reroute auth (`oauth`,
+ * `apiKey`, `customUserVars`) MUST stay locked.
+ */
+const OBO_USER_EDITABLE_FIELDS = new Set(['title', 'description', 'iconPath']);
+
+/**
+ * Returns true when any non-allowlisted user-input field differs between the
+ * existing server config and the new payload. Treats add, remove, and modify
+ * as changes (stable JSON compare, with absence on either side counting as a
+ * change unless both sides are absent). The comparison surface is
+ * `MCP_USER_INPUT_FIELDS` (schema-derived from `MCPServerUserInputSchema`),
+ * so new fields on the schema are picked up automatically and stay locked
+ * by default until added to the allowlist above.
+ */
+function violatesOboLockdown(existingConfig, newConfig) {
+  for (const field of MCP_USER_INPUT_FIELDS) {
+    if (OBO_USER_EDITABLE_FIELDS.has(field)) continue;
+    const existing = existingConfig?.[field];
+    const next = newConfig?.[field];
+    if (existing === undefined && next === undefined) continue;
+    if (JSON.stringify(existing) !== JSON.stringify(next)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function callerCanConfigureObo(req) {
+  return checkAccess({
+    req,
+    user: req.user,
+    permissionType: PermissionTypes.MCP_SERVERS,
+    permissions: [Permissions.CONFIGURE_OBO],
+    getRoleByName: db.getRoleByName,
+  });
+}
+
+/**
  * Create MCP server
  * @route POST /api/mcp/servers
  */
@@ -216,6 +282,14 @@ const createMCPServerController = async (req, res) => {
         message: 'Invalid configuration',
         errors: validation.error.errors,
       });
+    }
+    if (configHasObo(validation.data) && !(await callerCanConfigureObo(req))) {
+      logger.warn(
+        `[createMCPServer] User ${userId} attempted to configure OBO without ${Permissions.CONFIGURE_OBO} permission`,
+      );
+      return res
+        .status(403)
+        .json({ message: 'Forbidden: Insufficient permissions to configure OBO' });
     }
     const reservedServerNames = await resolveMcpConfigNames(req);
     const result = await getMCPServersRegistry().addServer(
@@ -284,6 +358,36 @@ const updateMCPServerController = async (req, res) => {
         errors: validation.error.errors,
       });
     }
+
+    /**
+     * On an existing OBO server, lock down every user-input field except the
+     * cosmetic allowlist (title, description, iconPath) for callers without
+     * CONFIGURE_OBO. This closes the OBO redirect vector — without it, a user
+     * with UPDATE could change `url` (or `proxy`/`headers`/`customUserVars`)
+     * to point OBO-minted tokens at an attacker-controlled endpoint. Adds,
+     * modifies, and removes are all caught.
+     */
+    const existingConfig = await getMCPServersRegistry().getServerConfig(serverName, userId);
+    if (configHasObo(existingConfig) && !(await callerCanConfigureObo(req))) {
+      if (violatesOboLockdown(existingConfig, validation.data)) {
+        logger.warn(
+          `[updateMCPServer] User ${userId} attempted to modify a locked field on OBO server '${serverName}' without ${Permissions.CONFIGURE_OBO} permission`,
+        );
+        return res
+          .status(403)
+          .json({ message: 'Forbidden: Insufficient permissions to configure OBO' });
+      }
+    } else if (configHasObo(validation.data) && !(await callerCanConfigureObo(req))) {
+      // Adding OBO to a non-OBO server (or first-time configuration) still
+      // requires the permission, even if existing has no OBO.
+      logger.warn(
+        `[updateMCPServer] User ${userId} attempted to add OBO to '${serverName}' without ${Permissions.CONFIGURE_OBO} permission`,
+      );
+      return res
+        .status(403)
+        .json({ message: 'Forbidden: Insufficient permissions to configure OBO' });
+    }
+
     const parsedConfig = await getMCPServersRegistry().updateServer(
       serverName,
       validation.data,

@@ -562,6 +562,7 @@ export function useMCPServerManager({
                   authField: key,
                   label: config.title,
                   description: config.description,
+                  sensitive: config.sensitive,
                 }))
               : []),
           authenticated: serverData?.authenticated ?? false,
@@ -578,6 +579,9 @@ export function useMCPServerManager({
 
       const hasCustomUserVars =
         serverConfig?.customUserVars && Object.keys(serverConfig.customUserVars).length > 0;
+      const hasPendingOAuth =
+        serverStatus?.requiresOAuth === true && serverStatus.connectionState === 'connecting';
+      const canCancelOAuth = isCancellable(serverName) || hasPendingOAuth;
 
       return {
         serverName,
@@ -591,8 +595,8 @@ export function useMCPServerManager({
             } as TPlugin)
           : undefined,
         onConfigClick: handleConfigClick,
-        isInitializing: isInitializing(serverName),
-        canCancel: isCancellable(serverName),
+        isInitializing: isInitializing(serverName) || hasPendingOAuth,
+        canCancel: canCancelOAuth,
         onCancel: handleCancelClick,
         hasCustomUserVars,
       };
@@ -609,6 +613,7 @@ export function useMCPServerManager({
         fieldsSchema[field.authField] = {
           title: field.label || field.authField,
           description: field.description,
+          sensitive: field.sensitive,
         };
       });
     }

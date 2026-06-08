@@ -1,5 +1,5 @@
-import debounce from 'lodash/debounce';
 import { useEffect, useRef, useCallback } from 'react';
+import debounce from 'lodash/debounce';
 import { useRecoilValue, useRecoilState } from 'recoil';
 import type { TEndpointOption } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
@@ -11,12 +11,12 @@ import {
   checkIfScrollable,
 } from '~/utils';
 import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
+import { useLatestMessage } from '~/hooks/Messages/useLatestMessage';
 import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import useFileHandling from '~/hooks/Files/useFileHandling';
 import { useInteractionHealthCheck } from '~/data-provider';
 import { useChatContext } from '~/Providers/ChatContext';
-import { useLatestMessage } from '~/hooks/Messages/useLatestMessage';
 import { globalAudioId } from '~/common';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -28,11 +28,13 @@ export default function useTextarea({
   submitButtonRef,
   setIsScrollable,
   disabled = false,
+  placeholder,
 }: {
   textAreaRef: React.RefObject<HTMLTextAreaElement>;
   submitButtonRef: React.RefObject<HTMLButtonElement>;
   setIsScrollable: React.Dispatch<React.SetStateAction<boolean>>;
   disabled?: boolean;
+  placeholder?: string;
 }) {
   const localize = useLocalize();
   const getSender = useGetSender();
@@ -57,7 +59,8 @@ export default function useTextarea({
   });
   const entityName = entity?.name ?? '';
 
-  const isNotAppendable = latestMessage?.error === true && !isAssistant;
+  const isNotAppendable =
+    latestMessage?.error === true && latestMessage.isCreatedByUser === true && !isAssistant;
   // && (conversationId?.length ?? 0) > 6; // also ensures that we don't show the wrong placeholder
 
   useEffect(() => {
@@ -95,6 +98,10 @@ export default function useTextarea({
         return localize('com_endpoint_message_not_appendable');
       }
 
+      if (placeholder) {
+        return placeholder;
+      }
+
       const sender =
         isAssistant || isAgent
           ? getEntityName({ name: entityName, isAgent, localize })
@@ -105,17 +112,17 @@ export default function useTextarea({
       })}`;
     };
 
-    const placeholder = getPlaceholderText();
+    const placeholderText = getPlaceholderText();
 
-    if (textAreaRef.current?.getAttribute('placeholder') === placeholder) {
+    if (textAreaRef.current?.getAttribute('placeholder') === placeholderText) {
       return;
     }
 
     const setPlaceholder = () => {
-      const placeholder = getPlaceholderText();
+      const placeholderText = getPlaceholderText();
 
-      if (textAreaRef.current?.getAttribute('placeholder') !== placeholder) {
-        textAreaRef.current?.setAttribute('placeholder', placeholder);
+      if (textAreaRef.current?.getAttribute('placeholder') !== placeholderText) {
+        textAreaRef.current?.setAttribute('placeholder', placeholderText);
         forceResize(textAreaRef.current);
       }
     };
@@ -137,6 +144,7 @@ export default function useTextarea({
     conversation,
     latestMessage,
     isNotAppendable,
+    placeholder,
   ]);
 
   const handleKeyDown = useCallback(

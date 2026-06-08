@@ -1,7 +1,7 @@
+import { Constants, parseTextParts } from 'librechat-data-provider';
 import { logger, getTenantId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
-import type { StandardGraph } from '@librechat/agents';
-import { parseTextParts } from 'librechat-data-provider';
 import type { Agents, TMessageContentParts } from 'librechat-data-provider';
+import type { StandardGraph } from '@librechat/agents';
 import type {
   SerializableJobData,
   IEventTransport,
@@ -9,6 +9,7 @@ import type {
   AbortResult,
   IJobStore,
 } from './interfaces/IJobStore';
+import type { GenerationJobStore } from '~/app/metrics';
 import type * as t from '~/types';
 import {
   recordGenerationJob,
@@ -16,9 +17,85 @@ import {
   recordGenerationStreamSubscription,
   setGenerationJobsInFlight,
 } from '~/app/metrics';
-import type { GenerationJobStore } from '~/app/metrics';
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
+import { filterPersistableAbortContent } from './abortContent';
+
+/** Error surfaced to any client still attached when a stale/hung job is reaped. */
+const REAPED_JOB_ERROR = 'Generation timed out';
+const OAUTH_TOOL_CALL_PREFIX = `oauth${Constants.mcp_delimiter}`;
+
+function getToolCallName(toolCall: unknown): unknown {
+  return toolCall != null && typeof toolCall === 'object' && 'name' in toolCall
+    ? toolCall.name
+    : undefined;
+}
+
+function hasOAuthToolCall(toolCalls: unknown): boolean {
+  return (
+    Array.isArray(toolCalls) &&
+    toolCalls.some((toolCall) => {
+      const name = getToolCallName(toolCall);
+      return typeof name === 'string' && name.startsWith(OAUTH_TOOL_CALL_PREFIX);
+    })
+  );
+}
+
+function getReplayStepId(event: t.ServerSentEvent): unknown {
+  if (!('event' in event) || !event.data || typeof event.data !== 'object') {
+    return undefined;
+  }
+
+  if (event.event === 'on_run_step' || event.event === 'on_run_step_delta') {
+    return 'id' in event.data ? event.data.id : undefined;
+  }
+
+  if (event.event === 'on_run_step_completed') {
+    const result = 'result' in event.data ? event.data.result : undefined;
+    return result != null && typeof result === 'object' && 'id' in result ? result.id : undefined;
+  }
+
+  return undefined;
+}
+
+function isOAuthReplayEvent(event: t.ServerSentEvent): boolean {
+  if (!('event' in event) || !event.data || typeof event.data !== 'object') {
+    return false;
+  }
+
+  if (event.event === 'on_run_step') {
+    const stepDetails = 'stepDetails' in event.data ? event.data.stepDetails : undefined;
+    return (
+      stepDetails != null &&
+      typeof stepDetails === 'object' &&
+      'tool_calls' in stepDetails &&
+      hasOAuthToolCall(stepDetails.tool_calls)
+    );
+  }
+
+  if (event.event === 'on_run_step_delta') {
+    const delta = 'delta' in event.data ? event.data.delta : undefined;
+    if (delta == null || typeof delta !== 'object') {
+      return false;
+    }
+    if (!('tool_calls' in delta) || !hasOAuthToolCall(delta.tool_calls)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  if (event.event === 'on_run_step_completed') {
+    const result = 'result' in event.data ? event.data.result : undefined;
+    if (result == null || typeof result !== 'object' || !('tool_call' in result)) {
+      return false;
+    }
+    const name = getToolCallName(result.tool_call);
+    return typeof name === 'string' && name.startsWith(OAUTH_TOOL_CALL_PREFIX);
+  }
+
+  return false;
+}
 
 /**
  * Configuration options for GenerationJobManager
@@ -96,6 +173,9 @@ class GenerationJobManagerClass {
 
   /** Jobs actively generating in this process. */
   private runningJobs = new Set<string>();
+
+  /** Serializes replay-event read/modify/write updates per stream. */
+  private replayEventWriteQueues = new Map<string, Promise<void>>();
 
   private cleanupInterval: NodeJS.Timeout | null = null;
 
@@ -388,6 +468,10 @@ class GenerationJobManagerClass {
         userMessage: jobData.userMessage,
         responseMessageId: jobData.responseMessageId,
         sender: jobData.sender,
+        endpoint: jobData.endpoint,
+        iconURL: jobData.iconURL,
+        model: jobData.model,
+        promptTokens: jobData.promptTokens,
       },
       readyPromise: runtime.readyPromise,
       resolveReady: runtime.resolveReady,
@@ -564,6 +648,7 @@ class GenerationJobManagerClass {
     // Clear content state and run step buffer (Redis only)
     this.jobStore.clearContentState(streamId);
     this.runStepBuffers?.delete(streamId);
+    this.replayEventWriteQueues.delete(streamId);
 
     // For error jobs, DON'T delete immediately - keep around so late-connecting
     // clients can receive the error. This handles the race condition where error
@@ -649,16 +734,20 @@ class GenerationJobManagerClass {
     /** Content before clearing state */
     const result = await this.jobStore.getContentParts(streamId);
     const content = result?.content ?? [];
+    const abortContent = filterPersistableAbortContent(content);
+    const shouldPersistAbortContent = abortContent.length > 0;
 
     /** Collected usage for all models */
     const collectedUsage = this.jobStore.getCollectedUsage(streamId);
 
     /** Text from content parts for fallback token counting */
-    const text = parseTextParts(content as TMessageContentParts[]);
+    const text = shouldPersistAbortContent
+      ? parseTextParts(abortContent as TMessageContentParts[])
+      : '';
 
     /** Detect "early abort" - aborted before any generation happened (e.g., during tool loading)
     In this case, no messages were saved to DB, so frontend shouldn't navigate to conversation */
-    const isEarlyAbort = content.length === 0 && !jobData.responseMessageId;
+    const isEarlyAbort = !shouldPersistAbortContent && jobData.createdEventEmitted !== true;
 
     /** Final event for abort */
     const userMessageId = jobData.userMessage?.messageId;
@@ -683,8 +772,11 @@ class GenerationJobManagerClass {
             messageId: jobData.responseMessageId ?? `${userMessageId ?? 'aborted'}_`,
             parentMessageId: userMessageId,
             conversationId: jobData.conversationId,
-            content,
+            content: abortContent,
             sender: jobData.sender ?? 'AI',
+            endpoint: jobData.endpoint,
+            iconURL: jobData.iconURL,
+            model: jobData.model,
             unfinished: true,
             error: false,
             isCreatedByUser: false,
@@ -701,6 +793,7 @@ class GenerationJobManagerClass {
     await this.eventTransport.emitDone(streamId, abortFinalEvent);
     this.jobStore.clearContentState(streamId);
     this.runStepBuffers?.delete(streamId);
+    this.replayEventWriteQueues.delete(streamId);
 
     // Immediate cleanup if configured (default: true)
     if (this._cleanupOnComplete) {
@@ -723,7 +816,7 @@ class GenerationJobManagerClass {
     return {
       success: true,
       jobData,
-      content,
+      content: abortContent,
       finalEvent: abortFinalEvent,
       text,
       collectedUsage,
@@ -952,7 +1045,14 @@ class GenerationJobManagerClass {
       return;
     }
 
+    // Refresh job activity so the store's stale-job failsafe reaps on inactivity
+    // (a hung generation), not on age (a long but live stream). Parity with
+    // RedisJobStore refreshing the running TTL on each appendChunk.
+    this.jobStore.recordActivity?.(streamId);
+
     await this.trackUserMessage(streamId, event);
+    await this.trackTitleEvent(streamId, event);
+    await this.trackReplayEvent(streamId, event);
 
     // For Redis mode, persist chunk for later reconstruction (fire-and-forget for resumability)
     if (this._isRedis) {
@@ -1036,6 +1136,86 @@ class GenerationJobManagerClass {
   }
 
   /**
+   * Persist the last title event so resume sync can replay it. Content
+   * aggregation only reconstructs message parts, so UI-only events need their
+   * own metadata slot.
+   */
+  private async trackTitleEvent(streamId: string, event: t.ServerSentEvent): Promise<void> {
+    if (!('event' in event) || event.event !== 'title') {
+      return;
+    }
+
+    await this.jobStore.updateJob(streamId, {
+      titleEvent: JSON.stringify(event),
+    });
+  }
+
+  /**
+   * Persist replay-only stream events that are needed to reconstruct active
+   * UI state on resume but are not represented by aggregated message content.
+   */
+  private async trackReplayEvent(streamId: string, event: t.ServerSentEvent): Promise<void> {
+    if (!isOAuthReplayEvent(event)) {
+      return;
+    }
+
+    const previousWrite = this.replayEventWriteQueues.get(streamId) ?? Promise.resolve();
+    const nextWrite = previousWrite
+      .catch(() => {
+        // Keep the queue moving even if a prior replay metadata write failed.
+      })
+      .then(() => this.persistReplayEvent(streamId, event));
+
+    this.replayEventWriteQueues.set(streamId, nextWrite);
+
+    try {
+      await nextWrite;
+    } finally {
+      if (this.replayEventWriteQueues.get(streamId) === nextWrite) {
+        this.replayEventWriteQueues.delete(streamId);
+      }
+    }
+  }
+
+  private async persistReplayEvent(streamId: string, event: t.ServerSentEvent): Promise<void> {
+    const jobData = await this.jobStore.getJob(streamId);
+    if (!jobData) {
+      return;
+    }
+
+    let replayEvents: t.ServerSentEvent[] = [];
+    if (jobData.replayEvents) {
+      try {
+        replayEvents = JSON.parse(jobData.replayEvents) as t.ServerSentEvent[];
+      } catch {
+        replayEvents = [];
+      }
+    }
+
+    const stepId = getReplayStepId(event);
+    const eventName = 'event' in event ? event.event : undefined;
+    const existingIndex =
+      stepId == null
+        ? -1
+        : replayEvents.findIndex((candidate) => {
+            if (!('event' in candidate) || candidate.event !== eventName) {
+              return false;
+            }
+            return getReplayStepId(candidate) === stepId;
+          });
+
+    if (existingIndex >= 0) {
+      replayEvents[existingIndex] = event;
+    } else {
+      replayEvents.push(event);
+    }
+
+    await this.jobStore.updateJob(streamId, {
+      replayEvents: JSON.stringify(replayEvents),
+    });
+  }
+
+  /**
    * Persist user message metadata from the created event.
    * Awaited in emitChunk so the HSET commits before the PUBLISH,
    * guaranteeing any cross-replica getJob() after the pub/sub window
@@ -1048,6 +1228,7 @@ class GenerationJobManagerClass {
 
     const { message } = event;
     const updates: Partial<SerializableJobData> = {
+      createdEventEmitted: true,
       userMessage: {
         messageId: message.messageId,
         parentMessageId: message.parentMessageId,
@@ -1144,6 +1325,22 @@ class GenerationJobManagerClass {
     const result = await this.jobStore.getContentParts(streamId);
     const aggregatedContent = result?.content ?? [];
     const runSteps = await this.jobStore.getRunSteps(streamId);
+    let titleEvent: t.ResumeState['titleEvent'];
+    if (jobData.titleEvent) {
+      try {
+        titleEvent = JSON.parse(jobData.titleEvent) as t.ResumeState['titleEvent'];
+      } catch {
+        // Ignore malformed persisted title events.
+      }
+    }
+    let replayEvents: t.ResumeState['replayEvents'];
+    if (jobData.replayEvents) {
+      try {
+        replayEvents = JSON.parse(jobData.replayEvents) as t.ResumeState['replayEvents'];
+      } catch {
+        // Ignore malformed persisted replay events.
+      }
+    }
 
     logger.debug(`[GenerationJobManager] getResumeState:`, {
       streamId,
@@ -1158,6 +1355,10 @@ class GenerationJobManagerClass {
       responseMessageId: jobData.responseMessageId,
       conversationId: jobData.conversationId,
       sender: jobData.sender,
+      iconURL: jobData.iconURL,
+      model: jobData.model,
+      titleEvent,
+      replayEvents,
     };
   }
 
@@ -1234,6 +1435,26 @@ class GenerationJobManagerClass {
     // Cleanup runtime state for deleted jobs
     for (const streamId of this.runtimeState.keys()) {
       if (!(await this.jobStore.hasJob(streamId))) {
+        /**
+         * Abort any still-pending generation whose job has been reaped (e.g. a
+         * stale "running" job removed by the store's failsafe timeout). This
+         * unwinds the hung in-flight work so its client/graph references can be
+         * garbage collected, rather than leaking via the pending promise.
+         */
+        const runtime = this.runtimeState.get(streamId);
+        if (runtime && !runtime.abortController.signal.aborted) {
+          runtime.abortController.abort();
+        }
+        // If a client is still attached when the job is reaped, send a terminal
+        // error first so the SSE connection closes instead of hanging open with no
+        // final/done event (the route only ends the response from onDone/onError).
+        if (this.eventTransport.getSubscriberCount(streamId) > 0) {
+          try {
+            await this.eventTransport.emitError(streamId, REAPED_JOB_ERROR);
+          } catch (err) {
+            logger.error(`[GenerationJobManager] Failed to notify reaped stream ${streamId}:`, err);
+          }
+        }
         this.runtimeState.delete(streamId);
         runningJobsChanged = this.runningJobs.delete(streamId) || runningJobsChanged;
         this.runStepBuffers?.delete(streamId);
@@ -1354,10 +1575,11 @@ class GenerationJobManagerClass {
     this.runningJobs.clear();
     this.syncRunningJobMetrics();
     this.runStepBuffers?.clear();
+    this.replayEventWriteQueues.clear();
 
     logger.debug('[GenerationJobManager] Destroyed');
   }
 }
 
-export const GenerationJobManager = new GenerationJobManagerClass();
+export const GenerationJobManager: GenerationJobManagerClass = new GenerationJobManagerClass();
 export { GenerationJobManagerClass };

@@ -43,7 +43,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GITNEXUS_VERSION: '1.5.3'
+  GITNEXUS_VERSION: '1.6.5'
 
 jobs:
   index:
@@ -64,6 +64,9 @@ jobs:
       github.event.pull_request.user.login == 'danny-avila'
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    # Best-effort index: a tool-internal crash must not block PRs. Fail soft on
+    # PR events; push/dispatch runs still fail loudly so regressions stay visible.
+    continue-on-error: ${{ github.event_name == 'pull_request' }}
     steps:
       - name: Validate dispatch inputs
         if: github.event_name == 'workflow_dispatch'
@@ -136,7 +139,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: '24.16.0'
 
       - name: Install GitNexus CLI
         working-directory: ${{ runner.temp }}
@@ -162,7 +165,7 @@ jobs:
             --no-save \
             --no-package-lock \
             "gitnexus@${{ env.GITNEXUS_VERSION }}" \
-            "@ladybugdb/core@0.15.2"
+            "@ladybugdb/core@0.16.1"
           test -x "$RUNNER_TEMP/gitnexus-cli/node_modules/.bin/gitnexus"
 
       - name: Checkout repository

@@ -195,6 +195,43 @@ describe('Agent Abort Endpoint', () => {
         expect(response.status).toBe(200);
         expect(mockSaveMessage).not.toHaveBeenCalled();
       });
+
+      it('should skip message saving when abort content is only an OAuth prompt', async () => {
+        const jobStreamId = 'test-stream-123';
+
+        mockGenerationJobManager.getJob.mockResolvedValue({
+          metadata: { userId: 'test-user-123' },
+        });
+
+        mockGenerationJobManager.abortJob.mockResolvedValue({
+          success: true,
+          jobData: {
+            userMessage: { messageId: 'user-msg-123' },
+            responseMessageId: 'response-msg-456',
+            conversationId: jobStreamId,
+          },
+          content: [
+            {
+              type: 'tool_call',
+              tool_call: {
+                type: 'tool_call',
+                id: 'oauth-call-1',
+                name: 'oauth_mcp_Google-Workspace',
+                args: '',
+                auth: 'https://auth.example.com/oauth',
+              },
+            },
+          ],
+          text: '',
+        });
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .send({ conversationId: jobStreamId });
+
+        expect(response.status).toBe(200);
+        expect(mockSaveMessage).not.toHaveBeenCalled();
+      });
     });
 
     describe('Partial Response Saving', () => {
@@ -215,6 +252,7 @@ describe('Agent Abort Endpoint', () => {
             conversationId: jobStreamId,
             sender: 'TestAgent',
             endpoint: 'anthropic',
+            iconURL: 'https://example.com/spec-icon.png',
             model: 'claude-3',
           },
           content: [{ type: 'text', text: 'Partial response...' }],
@@ -238,6 +276,7 @@ describe('Agent Abort Endpoint', () => {
             text: 'Partial response...',
             sender: 'TestAgent',
             endpoint: 'anthropic',
+            iconURL: 'https://example.com/spec-icon.png',
             model: 'claude-3',
             unfinished: true,
             error: false,
@@ -264,8 +303,8 @@ describe('Agent Abort Endpoint', () => {
             responseMessageId: 'response-msg-456',
             conversationId: jobStreamId,
           },
-          content: [],
-          text: '',
+          content: [{ type: 'text', text: 'Partial response...' }],
+          text: 'Partial response...',
         });
 
         mockSaveMessage.mockRejectedValue(new Error('Database error'));

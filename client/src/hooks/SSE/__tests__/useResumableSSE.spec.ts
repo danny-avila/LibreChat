@@ -1,6 +1,12 @@
-import { renderHook, act } from '@testing-library/react';
-import { Constants, LocalStorageKeys, QueryKeys } from 'librechat-data-provider';
-import type { TSubmission } from 'librechat-data-provider';
+import { renderHook, act, waitFor } from '@testing-library/react';
+import {
+  Constants,
+  LocalStorageKeys,
+  QueryKeys,
+  StepEvents,
+  request,
+} from 'librechat-data-provider';
+import type { TMessage, TSubmission } from 'librechat-data-provider';
 
 type SSEEventListener = (e: Partial<MessageEvent> & { responseCode?: number }) => void;
 
@@ -48,6 +54,33 @@ const mockQueryClient = {
   }),
 };
 
+const mockActiveRunAtom = { key: 'activeRun' };
+const mockAbortScrollAtom = { key: 'abortScroll' };
+const mockSubmissionAtom = { key: 'submission' };
+const mockShowStopButtonAtom = { key: 'showStopButton' };
+const mockSetActiveRun = jest.fn();
+const mockSetAbortScroll = jest.fn();
+const mockSetSubmission = jest.fn();
+const mockSetShowStopButton = jest.fn();
+const mockUseSetRecoilStateMock = jest.fn((atom: unknown) => {
+  if (atom === mockActiveRunAtom) {
+    return mockSetActiveRun;
+  }
+  if (atom === mockAbortScrollAtom) {
+    return mockSetAbortScroll;
+  }
+  if (atom === mockSubmissionAtom) {
+    return mockSetSubmission;
+  }
+  if (atom === mockShowStopButtonAtom) {
+    return mockSetShowStopButton;
+  }
+  return jest.fn();
+});
+function mockUseSetRecoilState(atom: unknown) {
+  return mockUseSetRecoilStateMock(atom);
+}
+
 jest.mock('@tanstack/react-query', () => ({
   ...jest.requireActual('@tanstack/react-query'),
   useQueryClient: () => mockQueryClient,
@@ -55,15 +88,16 @@ jest.mock('@tanstack/react-query', () => ({
 
 jest.mock('recoil', () => ({
   ...jest.requireActual('recoil'),
-  useSetRecoilState: () => jest.fn(),
+  useSetRecoilState: mockUseSetRecoilState,
 }));
 
 jest.mock('~/store', () => ({
   __esModule: true,
   default: {
-    activeRunFamily: jest.fn(),
-    abortScrollFamily: jest.fn(),
-    showStopButtonByIndex: jest.fn(),
+    activeRunFamily: jest.fn(() => mockActiveRunAtom),
+    abortScrollFamily: jest.fn(() => mockAbortScrollAtom),
+    submissionByIndex: jest.fn(() => mockSubmissionAtom),
+    showStopButtonByIndex: jest.fn(() => mockShowStopButtonAtom),
   },
 }));
 
@@ -79,26 +113,35 @@ jest.mock('~/data-provider', () => ({
 }));
 
 const mockErrorHandler = jest.fn();
+const mockFinalHandler = jest.fn();
 const mockCreatedHandler = jest.fn();
+const mockStepHandler = jest.fn();
+const mockTitleHandler = jest.fn();
 const mockSetIsSubmitting = jest.fn();
 const mockClearStepMaps = jest.fn();
 
-jest.mock('~/hooks/SSE/useEventHandlers', () =>
-  jest.fn(() => ({
-    errorHandler: mockErrorHandler,
-    finalHandler: jest.fn(),
-    createdHandler: mockCreatedHandler,
-    attachmentHandler: jest.fn(),
-    stepHandler: jest.fn(),
-    contentHandler: jest.fn(),
-    resetContentHandler: jest.fn(),
-    syncStepMessage: jest.fn(),
-    clearStepMaps: mockClearStepMaps,
-    messageHandler: jest.fn(),
-    setIsSubmitting: mockSetIsSubmitting,
-    setShowStopButton: jest.fn(),
-  })),
-);
+jest.mock('~/hooks/SSE/useEventHandlers', () => {
+  const actual = jest.requireActual('~/hooks/SSE/useEventHandlers');
+  return {
+    __esModule: true,
+    ...actual,
+    default: jest.fn(() => ({
+      errorHandler: mockErrorHandler,
+      finalHandler: mockFinalHandler,
+      createdHandler: mockCreatedHandler,
+      attachmentHandler: jest.fn(),
+      stepHandler: mockStepHandler,
+      titleHandler: mockTitleHandler,
+      contentHandler: jest.fn(),
+      resetContentHandler: jest.fn(),
+      syncStepMessage: jest.fn(),
+      clearStepMaps: mockClearStepMaps,
+      messageHandler: jest.fn(),
+      setIsSubmitting: mockSetIsSubmitting,
+      setShowStopButton: jest.fn(),
+    })),
+  };
+});
 
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
@@ -125,7 +168,7 @@ const CONV_ID = 'conv-abc-123';
 type PartialSubmission = {
   conversation: { conversationId?: string };
   userMessage: Record<string, unknown>;
-  messages: never[];
+  messages: TMessage[];
   isTemporary: boolean;
   initialResponse: Record<string, unknown>;
   endpointOption: { endpoint: string };
@@ -159,7 +202,7 @@ const buildSubmission = (overrides: Partial<PartialSubmission> = {}): TSubmissio
 
 const buildChatHelpers = () => ({
   setMessages: jest.fn(),
-  getMessages: jest.fn(() => []),
+  getMessages: jest.fn<TMessage[], []>(() => []),
   setConversation: jest.fn(),
   setIsSubmitting: mockSetIsSubmitting,
   newConversation: jest.fn(),
@@ -171,12 +214,37 @@ const getLastSSE = (): MockSSEInstance => {
   return sse;
 };
 
+const serverNotReadyError = (retryAfter = '0') => ({
+  response: {
+    status: 503,
+    data: { code: 'SERVER_NOT_READY' },
+    headers: { 'retry-after': retryAfter },
+  },
+});
+
+const flushMicrotasks = async () => {
+  await act(async () => {
+    await Promise.resolve();
+  });
+};
+
+const advanceRetryTimer = async (ms: number) => {
+  await act(async () => {
+    jest.advanceTimersByTime(ms);
+    await Promise.resolve();
+  });
+  await flushMicrotasks();
+};
+
 describe('useResumableSSE - 404 error path', () => {
   beforeEach(() => {
     mockSSEInstances.length = 0;
     localStorage.clear();
     mockErrorHandler.mockClear();
+    mockFinalHandler.mockClear();
     mockCreatedHandler.mockClear();
+    mockStepHandler.mockClear();
+    mockTitleHandler.mockClear();
     mockClearStepMaps.mockClear();
     mockSetIsSubmitting.mockClear();
     mockSetQueryData.mockClear();
@@ -184,6 +252,17 @@ describe('useResumableSSE - 404 error path', () => {
     mockInvalidateQueries.mockClear();
     mockRemoveQueries.mockClear();
     mockFindAll.mockClear();
+    mockUseSetRecoilStateMock.mockClear();
+    mockSetActiveRun.mockClear();
+    mockSetAbortScroll.mockClear();
+    mockSetSubmission.mockClear();
+    mockSetShowStopButton.mockClear();
+    (request.post as jest.Mock).mockReset();
+    (request.post as jest.Mock).mockResolvedValue({ streamId: 'stream-123' });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   const seedDraft = (conversationId: string) => {
@@ -380,6 +459,46 @@ describe('useResumableSSE - 404 error path', () => {
     unmount();
   });
 
+  it('replaces the new-chat URL when the stream id is known despite a stale parent id', async () => {
+    window.history.pushState({}, '', '/c/new');
+    const submission = buildSubmission({
+      conversation: {},
+      userMessage: {
+        messageId: 'msg-1',
+        conversationId: null,
+        text: 'Hello',
+        isCreatedByUser: true,
+        sender: 'User',
+        parentMessageId: 'stale-parent-message',
+      },
+      initialResponse: {
+        messageId: 'msg-1_',
+        conversationId: null,
+        text: '',
+        isCreatedByUser: false,
+        sender: 'Assistant',
+      },
+    });
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(window.location.pathname).toBe('/c/stream-123');
+    expect(mockSetQueryData).toHaveBeenCalledWith(
+      [QueryKeys.messages, 'stream-123'],
+      expect.arrayContaining([
+        expect.objectContaining({ messageId: 'msg-1', conversationId: 'stream-123' }),
+      ]),
+    );
+
+    unmount();
+    window.history.pushState({}, '', '/');
+  });
+
   it('hydrates the submission conversation id before created handlers run', async () => {
     const submission = buildSubmission({
       conversation: {},
@@ -427,6 +546,937 @@ describe('useResumableSSE - 404 error path', () => {
         userMessage: expect.objectContaining({ conversationId: 'stream-123' }),
       }),
     );
+    unmount();
+  });
+
+  it('queues run step events until created hydrates the submission', async () => {
+    const submission = buildSubmission({
+      conversation: {},
+      userMessage: {
+        messageId: 'msg-1',
+        conversationId: null,
+        text: 'Hello',
+        isCreatedByUser: true,
+        sender: 'User',
+        parentMessageId: Constants.NO_PARENT,
+      },
+      initialResponse: {
+        messageId: 'msg-1_',
+        conversationId: null,
+        text: '',
+        isCreatedByUser: false,
+        sender: 'Assistant',
+      },
+    });
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const runStepEvent = {
+      event: StepEvents.ON_RUN_STEP,
+      data: {
+        id: 'step-oauth',
+        runId: 'msg-1_',
+        index: 0,
+        stepDetails: {
+          type: 'tool_calls',
+          tool_calls: [{ id: 'call-oauth', name: 'Google-Workspace', args: '' }],
+        },
+      },
+    };
+
+    const sse = getLastSSE();
+    await act(async () => {
+      sse._emit('message', { data: JSON.stringify(runStepEvent) });
+    });
+
+    expect(mockStepHandler).not.toHaveBeenCalled();
+
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          created: true,
+          message: {
+            messageId: 'msg-1',
+            conversationId: 'stream-123',
+          },
+        }),
+      });
+    });
+
+    expect(mockStepHandler).toHaveBeenCalledWith(
+      runStepEvent,
+      expect.objectContaining({
+        userMessage: expect.objectContaining({
+          messageId: 'msg-1',
+          conversationId: 'stream-123',
+        }),
+      }),
+    );
+    unmount();
+  });
+
+  it('renders OAuth run step events before created while retaining replay after hydration', async () => {
+    const submission = buildSubmission({
+      conversation: {},
+      userMessage: {
+        messageId: 'msg-1',
+        conversationId: null,
+        text: 'Hello',
+        isCreatedByUser: true,
+        sender: 'User',
+        parentMessageId: Constants.NO_PARENT,
+      },
+      initialResponse: {
+        messageId: 'msg-1_',
+        conversationId: null,
+        text: '',
+        isCreatedByUser: false,
+        sender: 'Assistant',
+      },
+    });
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const runStepEvent = {
+      event: StepEvents.ON_RUN_STEP,
+      data: {
+        id: 'step-oauth',
+        runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
+        index: 0,
+        stepDetails: {
+          type: 'tool_calls',
+          tool_calls: [{ id: 'call-oauth', name: 'oauth_mcp_Google-Workspace', args: '' }],
+        },
+      },
+    };
+    const runStepDeltaEvent = {
+      event: StepEvents.ON_RUN_STEP_DELTA,
+      data: {
+        id: 'step-oauth',
+        delta: {
+          type: 'tool_calls',
+          tool_calls: [{ id: 'call-oauth', name: 'oauth_mcp_Google-Workspace', args: '' }],
+          auth: 'https://auth.example.com/oauth',
+          expires_at: 1780791946,
+        },
+      },
+    };
+
+    const sse = getLastSSE();
+    await act(async () => {
+      sse._emit('message', { data: JSON.stringify(runStepEvent) });
+      sse._emit('message', { data: JSON.stringify(runStepDeltaEvent) });
+    });
+
+    expect(mockStepHandler).toHaveBeenCalledTimes(2);
+    expect(mockStepHandler).toHaveBeenNthCalledWith(
+      1,
+      runStepEvent,
+      expect.objectContaining({
+        userMessage: expect.objectContaining({
+          messageId: 'msg-1',
+          conversationId: 'stream-123',
+        }),
+      }),
+    );
+    expect(mockStepHandler).toHaveBeenNthCalledWith(
+      2,
+      runStepDeltaEvent,
+      expect.objectContaining({
+        userMessage: expect.objectContaining({
+          messageId: 'msg-1',
+          conversationId: 'stream-123',
+        }),
+      }),
+    );
+
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          created: true,
+          message: {
+            messageId: 'msg-1',
+            conversationId: 'stream-123',
+          },
+        }),
+      });
+    });
+
+    expect(mockStepHandler).toHaveBeenCalledTimes(4);
+    expect(mockStepHandler).toHaveBeenNthCalledWith(
+      3,
+      runStepEvent,
+      expect.objectContaining({
+        userMessage: expect.objectContaining({
+          messageId: 'msg-1',
+          conversationId: 'stream-123',
+        }),
+      }),
+    );
+    expect(mockStepHandler).toHaveBeenNthCalledWith(
+      4,
+      runStepDeltaEvent,
+      expect.objectContaining({
+        userMessage: expect.objectContaining({
+          messageId: 'msg-1',
+          conversationId: 'stream-123',
+        }),
+      }),
+    );
+    unmount();
+  });
+
+  it('replays pre-created OAuth completion against the hydrated response id', async () => {
+    const previousUser = {
+      messageId: 'previous-user',
+      conversationId: CONV_ID,
+      text: 'hi',
+      isCreatedByUser: true,
+      sender: 'User',
+      parentMessageId: Constants.NO_PARENT,
+    } as TMessage;
+    const previousResponse = {
+      messageId: 'previous-response',
+      conversationId: CONV_ID,
+      text: 'hello',
+      isCreatedByUser: false,
+      sender: 'Assistant',
+      parentMessageId: previousUser.messageId,
+    } as TMessage;
+    const submission = buildSubmission({
+      conversation: { conversationId: CONV_ID },
+      userMessage: {
+        messageId: 'optimistic-user',
+        conversationId: CONV_ID,
+        text: 'thanks!',
+        isCreatedByUser: true,
+        sender: 'User',
+        parentMessageId: previousResponse.messageId,
+      },
+      messages: [previousUser, previousResponse],
+      initialResponse: {
+        messageId: 'optimistic-user_',
+        conversationId: CONV_ID,
+        text: '',
+        isCreatedByUser: false,
+        sender: 'Assistant',
+        parentMessageId: 'optimistic-user',
+      },
+    });
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const runStepEvent = {
+      event: StepEvents.ON_RUN_STEP,
+      data: {
+        id: 'step-oauth',
+        runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
+        index: 0,
+        type: 'tool_calls',
+        stepDetails: {
+          type: 'tool_calls',
+          tool_calls: [{ id: 'call-oauth', name: 'oauth_mcp_Google-Workspace', args: '' }],
+        },
+      },
+    };
+    const runStepDeltaEvent = {
+      event: StepEvents.ON_RUN_STEP_DELTA,
+      data: {
+        id: 'step-oauth',
+        delta: {
+          type: 'tool_calls',
+          tool_calls: [{ id: 'call-oauth', name: 'oauth_mcp_Google-Workspace', args: '' }],
+          auth: 'https://auth.example.com/oauth',
+          expires_at: 1780791946,
+        },
+      },
+    };
+    const completedEvent = {
+      event: StepEvents.ON_RUN_STEP_COMPLETED,
+      data: {
+        result: {
+          id: 'step-oauth',
+          index: 0,
+          tool_call: {
+            id: 'call-oauth',
+            name: 'oauth_mcp_Google-Workspace',
+            args: '',
+            output: 'OAuth authentication completed',
+            type: 'tool_call',
+          },
+        },
+      },
+    };
+    const createdEvent = {
+      created: true,
+      message: {
+        messageId: 'server-user',
+        parentMessageId: previousResponse.messageId,
+        conversationId: CONV_ID,
+        sender: 'User',
+        text: 'thanks!',
+        isCreatedByUser: true,
+      },
+      streamId: CONV_ID,
+    };
+
+    const sse = getLastSSE();
+    await act(async () => {
+      sse._emit('message', { data: JSON.stringify(runStepEvent) });
+      sse._emit('message', { data: JSON.stringify(runStepDeltaEvent) });
+      sse._emit('message', { data: JSON.stringify(completedEvent) });
+    });
+
+    expect(mockStepHandler).toHaveBeenCalledTimes(3);
+    expect(mockStepHandler).toHaveBeenNthCalledWith(
+      3,
+      completedEvent,
+      expect.objectContaining({
+        initialResponse: expect.objectContaining({
+          messageId: 'optimistic-user_',
+          parentMessageId: 'optimistic-user',
+        }),
+      }),
+    );
+
+    await act(async () => {
+      sse._emit('message', { data: JSON.stringify(createdEvent) });
+    });
+
+    expect(mockCreatedHandler).toHaveBeenCalledWith(
+      createdEvent,
+      expect.objectContaining({
+        userMessage: expect.objectContaining({
+          messageId: 'server-user',
+          parentMessageId: previousResponse.messageId,
+        }),
+        initialResponse: expect.objectContaining({
+          messageId: 'server-user_',
+          parentMessageId: 'server-user',
+        }),
+      }),
+    );
+    expect(mockStepHandler).toHaveBeenCalledTimes(6);
+    for (let callIndex = 4; callIndex <= 6; callIndex++) {
+      expect(mockStepHandler).toHaveBeenNthCalledWith(
+        callIndex,
+        expect.any(Object),
+        expect.objectContaining({
+          userMessage: expect.objectContaining({
+            messageId: 'server-user',
+            parentMessageId: previousResponse.messageId,
+          }),
+          initialResponse: expect.objectContaining({
+            messageId: 'server-user_',
+            parentMessageId: 'server-user',
+          }),
+        }),
+      );
+    }
+
+    unmount();
+  });
+
+  it('routes title stream events to the title handler', async () => {
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const titleEvent = {
+      event: 'title',
+      data: {
+        conversationId: CONV_ID,
+        title: 'Streamed Title',
+      },
+    };
+    const sse = getLastSSE();
+    await act(async () => {
+      sse._emit('message', { data: JSON.stringify(titleEvent) });
+    });
+
+    expect(mockTitleHandler).toHaveBeenCalledWith(titleEvent);
+    expect(mockStepHandler).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('continues retrying chat start while the server reports startup readiness pending', async () => {
+    jest.useFakeTimers();
+    for (let i = 0; i < 9; i++) {
+      (request.post as jest.Mock).mockRejectedValueOnce(serverNotReadyError('1'));
+    }
+    (request.post as jest.Mock).mockResolvedValueOnce({ streamId: 'stream-ready' });
+
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await flushMicrotasks();
+
+    for (let i = 0; i < 9; i++) {
+      await advanceRetryTimer(1000);
+    }
+
+    expect(request.post).toHaveBeenCalledTimes(10);
+    expect(mockSSEInstances).toHaveLength(1);
+    expect(mockSSEInstances[0].stream).toHaveBeenCalledTimes(1);
+    expect(mockErrorHandler).not.toHaveBeenCalled();
+    unmount();
+    jest.useRealTimers();
+  });
+
+  it('cancels startup readiness retries on cleanup before opening a stream', async () => {
+    jest.useFakeTimers();
+    (request.post as jest.Mock)
+      .mockRejectedValueOnce(serverNotReadyError('1'))
+      .mockResolvedValueOnce({ streamId: 'stale-stream' });
+
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await flushMicrotasks();
+    unmount();
+    await advanceRetryTimer(1000);
+
+    expect(request.post).toHaveBeenCalledTimes(1);
+    expect(mockSSEInstances).toHaveLength(0);
+    expect(mockErrorHandler).not.toHaveBeenCalled();
+    jest.useRealTimers();
+  });
+
+  it('clears submission and stop state when starting generation fails', async () => {
+    (request.post as jest.Mock).mockRejectedValueOnce({
+      response: {
+        status: 500,
+        data: { message: 'failed to start' },
+      },
+    });
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await waitFor(() => {
+      expect(mockSetSubmission).toHaveBeenCalledWith(null);
+    });
+
+    expect(mockSSEInstances).toHaveLength(0);
+    expect(mockErrorHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          text: JSON.stringify({ message: 'failed to start' }),
+          metadata: { streamStartFailed: true },
+        },
+        submission,
+      }),
+    );
+    expect(mockSetIsSubmitting).toHaveBeenCalledWith(true);
+    expect(mockSetIsSubmitting).toHaveBeenCalledWith(false);
+    expect(mockSetShowStopButton).toHaveBeenCalledWith(true);
+    expect(mockSetShowStopButton).toHaveBeenCalledWith(false);
+    unmount();
+  });
+
+  it('replays title events from resume state sync', async () => {
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const titleEvent = {
+      event: 'title',
+      data: {
+        conversationId: CONV_ID,
+        title: 'Resumed Title',
+      },
+    };
+    const sse = getLastSSE();
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          sync: true,
+          resumeState: {
+            runSteps: [],
+            titleEvent,
+          },
+        }),
+      });
+    });
+
+    expect(mockTitleHandler).toHaveBeenCalledWith(titleEvent);
+    unmount();
+  });
+
+  it('replays OAuth run step delta events from resume state sync', async () => {
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const runStep = {
+      id: 'step-oauth',
+      runId: 'resp-1',
+      index: 0,
+      stepDetails: {
+        type: 'tool_calls',
+        tool_calls: [{ id: 'call-oauth', name: 'Google-Workspace', args: '' }],
+      },
+    };
+    const replayEvent = {
+      event: StepEvents.ON_RUN_STEP_DELTA,
+      data: {
+        id: 'step-oauth',
+        delta: {
+          type: 'tool_calls',
+          tool_calls: [{ name: 'Google-Workspace', args: '' }],
+          auth: 'https://auth.example.com/oauth',
+          expires_at: 1780791946,
+        },
+      },
+    };
+
+    const sse = getLastSSE();
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          sync: true,
+          resumeState: {
+            runSteps: [runStep],
+            replayEvents: [replayEvent],
+          },
+        }),
+      });
+    });
+
+    expect(mockStepHandler).toHaveBeenNthCalledWith(
+      1,
+      { event: StepEvents.ON_RUN_STEP, data: runStep },
+      expect.objectContaining({ userMessage: expect.objectContaining({ messageId: 'msg-1' }) }),
+    );
+    expect(mockStepHandler).toHaveBeenNthCalledWith(
+      2,
+      replayEvent,
+      expect.objectContaining({ userMessage: expect.objectContaining({ messageId: 'msg-1' }) }),
+    );
+
+    unmount();
+  });
+
+  it('anchors preliminary OAuth replay events to the response message from resume state sync', async () => {
+    const submission = buildSubmission({
+      userMessage: {
+        messageId: 'original-user',
+        conversationId: CONV_ID,
+        text: 'Original prompt',
+        isCreatedByUser: true,
+        sender: 'User',
+        parentMessageId: Constants.NO_PARENT,
+      },
+      initialResponse: {
+        messageId: 'original-response',
+        conversationId: CONV_ID,
+        text: 'Original response',
+        isCreatedByUser: false,
+        sender: 'Assistant',
+        parentMessageId: 'original-user',
+      },
+    });
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const runStep = {
+      id: 'step-oauth',
+      runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
+      index: 0,
+      stepDetails: {
+        type: 'tool_calls',
+        tool_calls: [{ id: 'call-oauth', name: 'oauth_mcp_Google-Workspace', args: '' }],
+      },
+    };
+    const replayEvent = {
+      event: StepEvents.ON_RUN_STEP_DELTA,
+      data: {
+        id: 'step-oauth',
+        delta: {
+          type: 'tool_calls',
+          tool_calls: [{ id: 'call-oauth', name: 'oauth_mcp_Google-Workspace', args: '' }],
+          auth: 'https://auth.example.com/oauth',
+          expires_at: 1780791946,
+        },
+      },
+    };
+
+    const sse = getLastSSE();
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          sync: true,
+          resumeState: {
+            runSteps: [runStep],
+            replayEvents: [replayEvent],
+            responseMessageId: 'follow-up-response',
+            conversationId: CONV_ID,
+            iconURL: 'https://example.com/spec-icon.png',
+            model: 'gpt-4.1',
+            userMessage: {
+              messageId: 'follow-up-user',
+              parentMessageId: 'original-response',
+              conversationId: CONV_ID,
+              text: 'Follow-up prompt',
+            },
+          },
+        }),
+      });
+    });
+
+    expect(mockStepHandler).toHaveBeenNthCalledWith(
+      1,
+      { event: StepEvents.ON_RUN_STEP, data: runStep },
+      expect.objectContaining({
+        userMessage: expect.objectContaining({ messageId: 'follow-up-user' }),
+        initialResponse: expect.objectContaining({
+          messageId: 'follow-up-response',
+          parentMessageId: 'follow-up-user',
+        }),
+      }),
+    );
+    expect(mockStepHandler).toHaveBeenNthCalledWith(
+      2,
+      replayEvent,
+      expect.objectContaining({
+        userMessage: expect.objectContaining({ messageId: 'follow-up-user' }),
+        initialResponse: expect.objectContaining({
+          messageId: 'follow-up-response',
+          parentMessageId: 'follow-up-user',
+        }),
+      }),
+    );
+
+    unmount();
+  });
+
+  it('merges resumed user and response messages into loaded conversation history', async () => {
+    const originalUser = {
+      messageId: 'original-user',
+      conversationId: CONV_ID,
+      text: 'Original prompt',
+      isCreatedByUser: true,
+      sender: 'User',
+      parentMessageId: '00000000-0000-0000-0000-000000000000',
+    };
+    const originalResponse = {
+      messageId: 'original-response',
+      conversationId: CONV_ID,
+      text: 'Original response',
+      isCreatedByUser: false,
+      sender: 'Assistant',
+      parentMessageId: 'original-user',
+    };
+    const submission = {
+      ...buildSubmission({
+        conversation: { conversationId: CONV_ID },
+        userMessage: originalUser,
+        initialResponse: originalResponse,
+      }),
+      resumeStreamId: CONV_ID,
+    } as TSubmission & { resumeStreamId: string };
+    const chatHelpers = buildChatHelpers();
+    chatHelpers.getMessages.mockReturnValue([originalUser, originalResponse]);
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const sse = getLastSSE();
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          sync: true,
+          resumeState: {
+            runSteps: [],
+            replayEvents: [],
+            aggregatedContent: [
+              {
+                type: 'tool_call',
+                tool_call: {
+                  id: 'call-oauth',
+                  name: 'oauth_mcp_Google-Workspace',
+                  args: '',
+                },
+              },
+            ],
+            responseMessageId: 'follow-up-response',
+            conversationId: CONV_ID,
+            iconURL: 'https://example.com/spec-icon.png',
+            model: 'gpt-4.1',
+            userMessage: {
+              messageId: 'follow-up-user',
+              parentMessageId: 'original-response',
+              conversationId: CONV_ID,
+              text: 'Follow-up prompt',
+            },
+          },
+        }),
+      });
+    });
+
+    const lastMessages = chatHelpers.setMessages.mock.calls.at(-1)?.[0];
+    expect(lastMessages.map((message: { messageId: string }) => message.messageId)).toEqual([
+      'original-user',
+      'original-response',
+      'follow-up-user',
+      'follow-up-response',
+    ]);
+    expect(lastMessages[2]).toEqual(
+      expect.objectContaining({
+        messageId: 'follow-up-user',
+        parentMessageId: 'original-response',
+        text: 'Follow-up prompt',
+      }),
+    );
+    expect(lastMessages[3]).toEqual(
+      expect.objectContaining({
+        messageId: 'follow-up-response',
+        parentMessageId: 'follow-up-user',
+        content: expect.any(Array),
+        iconURL: 'https://example.com/spec-icon.png',
+        model: 'gpt-4.1',
+      }),
+    );
+
+    unmount();
+  });
+
+  it('uses the resumed submission for final events after sync', async () => {
+    const originalUser = {
+      messageId: 'original-user',
+      conversationId: CONV_ID,
+      text: 'Original prompt',
+      isCreatedByUser: true,
+      sender: 'User',
+      parentMessageId: String(Constants.NO_PARENT),
+    };
+    const originalResponse = {
+      messageId: 'original-response',
+      conversationId: CONV_ID,
+      text: 'Original response',
+      isCreatedByUser: false,
+      sender: 'Assistant',
+      parentMessageId: 'original-user',
+    };
+    const submission = {
+      ...buildSubmission({
+        conversation: { conversationId: CONV_ID },
+        userMessage: originalUser,
+        initialResponse: originalResponse,
+      }),
+      resumeStreamId: CONV_ID,
+    } as TSubmission & { resumeStreamId: string };
+    const chatHelpers = buildChatHelpers();
+    chatHelpers.getMessages.mockReturnValue([originalUser, originalResponse]);
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const sse = getLastSSE();
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          sync: true,
+          resumeState: {
+            runSteps: [],
+            replayEvents: [],
+            responseMessageId: 'follow-up-response',
+            conversationId: CONV_ID,
+            userMessage: {
+              messageId: 'follow-up-user',
+              parentMessageId: 'original-response',
+              conversationId: CONV_ID,
+              text: 'Follow-up prompt',
+            },
+          },
+        }),
+      });
+    });
+
+    const finalPayload = {
+      final: true,
+      conversation: { conversationId: CONV_ID },
+      requestMessage: {
+        messageId: 'follow-up-user',
+        parentMessageId: 'original-response',
+        conversationId: CONV_ID,
+        text: 'Follow-up prompt',
+        isCreatedByUser: true,
+      },
+      responseMessage: {
+        messageId: 'follow-up-response',
+        parentMessageId: 'follow-up-user',
+        conversationId: CONV_ID,
+        text: 'Done',
+        isCreatedByUser: false,
+      },
+    };
+
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify(finalPayload),
+      });
+    });
+
+    expect(mockFinalHandler).toHaveBeenCalledWith(
+      finalPayload,
+      expect.objectContaining({
+        userMessage: expect.objectContaining({ messageId: 'follow-up-user' }),
+        initialResponse: expect.objectContaining({
+          messageId: 'follow-up-response',
+          parentMessageId: 'follow-up-user',
+        }),
+      }),
+    );
+
+    unmount();
+  });
+
+  it('uses the resumed submission for final events after reconnecting from sync', async () => {
+    jest.useFakeTimers();
+    const originalUser = {
+      messageId: 'original-user',
+      conversationId: CONV_ID,
+      text: 'Original prompt',
+      isCreatedByUser: true,
+      sender: 'User',
+      parentMessageId: String(Constants.NO_PARENT),
+    };
+    const originalResponse = {
+      messageId: 'original-response',
+      conversationId: CONV_ID,
+      text: 'Original response',
+      isCreatedByUser: false,
+      sender: 'Assistant',
+      parentMessageId: 'original-user',
+    };
+    const submission = {
+      ...buildSubmission({
+        conversation: { conversationId: CONV_ID },
+        userMessage: originalUser,
+        initialResponse: originalResponse,
+      }),
+      resumeStreamId: CONV_ID,
+    } as TSubmission & { resumeStreamId: string };
+    const chatHelpers = buildChatHelpers();
+    chatHelpers.getMessages.mockReturnValue([originalUser, originalResponse]);
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const initialSSE = getLastSSE();
+    await act(async () => {
+      initialSSE._emit('message', {
+        data: JSON.stringify({
+          sync: true,
+          resumeState: {
+            runSteps: [],
+            replayEvents: [],
+            responseMessageId: 'follow-up-response',
+            conversationId: CONV_ID,
+            userMessage: {
+              messageId: 'follow-up-user',
+              parentMessageId: 'original-response',
+              conversationId: CONV_ID,
+              text: 'Follow-up prompt',
+            },
+          },
+        }),
+      });
+    });
+
+    await act(async () => {
+      initialSSE._emit('error');
+    });
+    await advanceRetryTimer(1000);
+
+    expect(mockSSEInstances).toHaveLength(2);
+    const reconnectedSSE = getLastSSE();
+    const finalPayload = {
+      final: true,
+      conversation: { conversationId: CONV_ID },
+      requestMessage: {
+        messageId: 'follow-up-user',
+        parentMessageId: 'original-response',
+        conversationId: CONV_ID,
+        text: 'Follow-up prompt',
+        isCreatedByUser: true,
+      },
+      responseMessage: {
+        messageId: 'follow-up-response',
+        parentMessageId: 'follow-up-user',
+        conversationId: CONV_ID,
+        text: 'Done',
+        isCreatedByUser: false,
+      },
+    };
+
+    await act(async () => {
+      reconnectedSSE._emit('message', {
+        data: JSON.stringify(finalPayload),
+      });
+    });
+
+    expect(mockFinalHandler).toHaveBeenLastCalledWith(
+      finalPayload,
+      expect.objectContaining({
+        userMessage: expect.objectContaining({ messageId: 'follow-up-user' }),
+        initialResponse: expect.objectContaining({
+          messageId: 'follow-up-response',
+          parentMessageId: 'follow-up-user',
+        }),
+      }),
+    );
+
     unmount();
   });
 

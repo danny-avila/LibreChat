@@ -58,22 +58,42 @@ function inputTokensIncludesCache(provider?: string): boolean {
  * `total_tokens === input_tokens + output_tokens`. Compliant providers
  * (OpenAI, Anthropic, Google API via agents' `CustomChatGoogleGenerativeAI`)
  * include any reasoning/thinking tokens inside `output_tokens` already,
- * so the invariant holds.
+ * so the invariant holds and this function is a no-op for them.
  *
- * Vertex AI Gemini through `@langchain/google-common`'s streaming path
- * emits `output_tokens = candidatesTokenCount` and drops `thoughtsTokenCount`,
- * leaving `total - input > output`. When that gap shows up we use the
- * invariant to recover the correct billable output (`total - input`).
- * Compliant providers have a zero gap, so this is a no-op for them.
+ * **Vertex AI undercount (issue #13006):** `@langchain/google-common`'s streaming
+ * path emits `output_tokens = candidatesTokenCount` and drops `thoughtsTokenCount`,
+ * so `total - input > output`. The gap is recovered as `total - input`.
  *
- * Tracked in: https://github.com/danny-avila/LibreChat/issues/13006
+ * **Bedrock / Anthropic cache inflation:** additive providers keep cache tokens
+ * separate from `input_tokens`, making
+ * `total = input + output + cache_read + cache_creation`. Without adjustment
+ * the Vertex recovery fires on every cached step and returns
+ * `output + cache_read + cache_creation` instead of `output`, inflating
+ * completion counts by orders of magnitude. The fix subtracts the cache
+ * adjustment before the gap test — but only for additive providers; subset
+ * providers (Google, OpenAI, …) already include cache inside `input_tokens`
+ * so their `cacheAdjustment` is zero and the Vertex recovery is unaffected.
  */
 function resolveCompletionTokens(usage: UsageMetadata): number {
   const output = Number(usage.output_tokens) || 0;
   const total = Number(usage.total_tokens) || 0;
   const input = Number(usage.input_tokens) || 0;
-  if (total > input + output) {
-    return total - input;
+
+  // For additive providers (Bedrock, Anthropic), cache tokens are separate
+  // from input_tokens and are included in total_tokens, widening the gap
+  // independently of any missing thinking tokens. Subtract them so the gap
+  // check only fires when output_tokens genuinely undercounts (Vertex case).
+  // Subset providers fold cache into input_tokens, so their adjustment is 0.
+  const cacheRead =
+    Number(usage.input_token_details?.cache_read) || Number(usage.cache_read_input_tokens) || 0;
+  const cacheCreation =
+    Number(usage.input_token_details?.cache_creation) ||
+    Number(usage.cache_creation_input_tokens) ||
+    0;
+  const cacheAdjustment = inputTokensIncludesCache(usage.provider) ? 0 : cacheRead + cacheCreation;
+
+  if (total > input + output + cacheAdjustment) {
+    return total - input - cacheAdjustment;
   }
   return output;
 }
