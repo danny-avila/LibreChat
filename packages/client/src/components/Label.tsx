@@ -2,7 +2,11 @@ import * as React from 'react';
 import * as LabelPrimitive from '@radix-ui/react-label';
 import { cn } from '~/utils';
 
-const Label = React.forwardRef<
+const Label: React.ForwardRefExoticComponent<
+  Omit<LabelPrimitive.LabelProps & React.RefAttributes<HTMLLabelElement>, 'ref'> & {
+    className?: string;
+  } & React.RefAttributes<HTMLLabelElement>
+> = React.forwardRef<
   React.ElementRef<typeof LabelPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof LabelPrimitive.Root> & {
     className?: string;
