@@ -253,7 +253,7 @@ export class MCPTokenStorage {
           identifier: `${identifier}:client`,
           token: encryptedClientInfo,
           expiresIn: 365 * 24 * 60 * 60,
-          metadata,
+          metadata: metadata ? { ...metadata } : undefined,
         };
 
         // Check if client info already exists and update if it does

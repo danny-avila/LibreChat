@@ -14,7 +14,8 @@ export const SYSTEM_TENANT_ID = '__SYSTEM__';
  * Callbacks passed to `tenantStorage.run()` must be `async` for the context to propagate
  * through Mongoose query execution. Sync callbacks returning a Mongoose thenable will lose context.
  */
-export const tenantStorage = new AsyncLocalStorage<TenantContext>();
+export const tenantStorage: AsyncLocalStorage<TenantContext> =
+  new AsyncLocalStorage<TenantContext>();
 
 /** Returns the current tenant ID from async context, or undefined if none is set */
 export function getTenantId(): string | undefined {

@@ -579,6 +579,9 @@ export function useMCPServerManager({
 
       const hasCustomUserVars =
         serverConfig?.customUserVars && Object.keys(serverConfig.customUserVars).length > 0;
+      const hasPendingOAuth =
+        serverStatus?.requiresOAuth === true && serverStatus.connectionState === 'connecting';
+      const canCancelOAuth = isCancellable(serverName) || hasPendingOAuth;
 
       return {
         serverName,
@@ -592,8 +595,8 @@ export function useMCPServerManager({
             } as TPlugin)
           : undefined,
         onConfigClick: handleConfigClick,
-        isInitializing: isInitializing(serverName),
-        canCancel: isCancellable(serverName),
+        isInitializing: isInitializing(serverName) || hasPendingOAuth,
+        canCancel: canCancelOAuth,
         onCancel: handleCancelClick,
         hasCustomUserVars,
       };

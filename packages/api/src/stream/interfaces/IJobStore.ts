@@ -1,5 +1,5 @@
-import type { Agents } from 'librechat-data-provider';
 import type { StandardGraph } from '@librechat/agents';
+import type { Agents } from 'librechat-data-provider';
 
 /**
  * Job status enum
@@ -30,6 +30,9 @@ export interface SerializableJobData {
   /** Response message ID for reconnection */
   responseMessageId?: string;
 
+  /** Whether the user-message created event has been emitted */
+  createdEventEmitted?: boolean;
+
   /** Sender name for UI display */
   sender?: string;
 
@@ -41,6 +44,9 @@ export interface SerializableJobData {
 
   /** Serialized title event for replay during active-stream resume */
   titleEvent?: string;
+
+  /** Serialized replay-only stream events for active-stream resume */
+  replayEvents?: string;
 
   /** Endpoint metadata for abort handling - avoids storing functions */
   endpoint?: string;
@@ -149,6 +155,11 @@ export interface ResumeState {
       title?: string;
     };
   };
+  replayEvents?: Array<{
+    event: string;
+    data?: unknown;
+    [key: string]: unknown;
+  }>;
 }
 
 /**

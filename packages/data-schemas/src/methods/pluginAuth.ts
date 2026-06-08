@@ -8,7 +8,30 @@ import type {
 } from '~/types';
 
 // Factory function that takes mongoose instance and returns the methods
-export function createPluginAuthMethods(mongoose: typeof import('mongoose')) {
+export function createPluginAuthMethods(mongoose: typeof import('mongoose')): {
+  findOnePluginAuth: ({
+    userId,
+    authField,
+    pluginKey,
+  }: FindPluginAuthParams) => Promise<IPluginAuth | null>;
+  findPluginAuthsByKeys: ({
+    userId,
+    pluginKeys,
+  }: FindPluginAuthsByKeysParams) => Promise<IPluginAuth[]>;
+  updatePluginAuth: ({
+    userId,
+    authField,
+    pluginKey,
+    value,
+  }: UpdatePluginAuthParams) => Promise<IPluginAuth>;
+  deletePluginAuth: ({
+    userId,
+    authField,
+    pluginKey,
+    all,
+  }: DeletePluginAuthParams) => Promise<DeleteResult>;
+  deleteAllUserPluginAuths: (userId: string) => Promise<DeleteResult>;
+} {
   /**
    * Finds a single plugin auth entry by userId and authField (and optionally pluginKey)
    */

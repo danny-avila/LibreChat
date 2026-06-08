@@ -5,7 +5,6 @@ import rootPkg from '../../package.json';
 import peerDepsExternal from 'rollup-plugin-peer-deps-external';
 import commonjs from '@rollup/plugin-commonjs';
 import replace from '@rollup/plugin-replace';
-import terser from '@rollup/plugin-terser';
 
 const plugins = [
   peerDepsExternal(),
@@ -27,7 +26,6 @@ const plugins = [
     tsconfig: './tsconfig.json',
     useTsconfigDeclarationDir: true,
   }),
-  terser(),
 ];
 
 export default [

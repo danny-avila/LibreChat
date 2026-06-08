@@ -45,6 +45,7 @@ const {
   createMCPTools,
   createMCPPermissionContext,
   getMCPSetupData,
+  createOAuthStart,
   checkOAuthFlowStatus,
   getServerConnectionStatus,
   createUnavailableToolStub,
@@ -98,6 +99,85 @@ describe('tests for the new helper functions used by the MCP connection status e
     mockGetFlowStateManager = require('~/config').getFlowStateManager;
     mockGetLogStores = require('~/cache').getLogStores;
     mockGetOAuthReconnectionManager = require('~/config').getOAuthReconnectionManager;
+  });
+
+  describe('createOAuthStart', () => {
+    const flowId = 'test-server:oauth_login:thread-1:run-1';
+    const authUrl = 'https://auth.example.com/oauth?state=test';
+
+    it('should create a login flow and emit the OAuth URL for the first request', async () => {
+      const callback = jest.fn();
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue(null),
+        createFlowWithHandler: jest.fn(async (_flowId, _type, handler) => handler()),
+      };
+
+      const oauthStart = createOAuthStart({
+        flowId,
+        flowManager: mockFlowManager,
+        callback,
+      });
+
+      await expect(oauthStart(authUrl)).resolves.toBe(true);
+
+      expect(mockFlowManager.getFlowState).toHaveBeenCalledWith(flowId, 'oauth_login');
+      expect(mockFlowManager.createFlowWithHandler).toHaveBeenCalledWith(
+        flowId,
+        'oauth_login',
+        expect.any(Function),
+      );
+      expect(callback).toHaveBeenCalledWith(authUrl);
+      expect(logger.debug).toHaveBeenCalledWith('Sent OAuth login request to client');
+    });
+
+    it('should replay the OAuth URL when the login flow already exists', async () => {
+      const callback = jest.fn();
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({
+          status: 'COMPLETED',
+          result: true,
+        }),
+        createFlowWithHandler: jest.fn(),
+      };
+
+      const oauthStart = createOAuthStart({
+        flowId,
+        flowManager: mockFlowManager,
+        callback,
+      });
+
+      await expect(oauthStart(authUrl)).resolves.toBe(true);
+
+      expect(mockFlowManager.getFlowState).toHaveBeenCalledWith(flowId, 'oauth_login');
+      expect(mockFlowManager.createFlowWithHandler).not.toHaveBeenCalled();
+      expect(callback).toHaveBeenCalledWith(authUrl);
+      expect(logger.debug).toHaveBeenCalledWith('Re-sent OAuth login request to client');
+    });
+
+    it('should replay the OAuth URL when flow creation is deduped internally', async () => {
+      const callback = jest.fn();
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue(null),
+        createFlowWithHandler: jest.fn().mockResolvedValue(true),
+      };
+
+      const oauthStart = createOAuthStart({
+        flowId,
+        flowManager: mockFlowManager,
+        callback,
+      });
+
+      await expect(oauthStart(authUrl)).resolves.toBe(true);
+
+      expect(mockFlowManager.getFlowState).toHaveBeenCalledWith(flowId, 'oauth_login');
+      expect(mockFlowManager.createFlowWithHandler).toHaveBeenCalledWith(
+        flowId,
+        'oauth_login',
+        expect.any(Function),
+      );
+      expect(callback).toHaveBeenCalledWith(authUrl);
+      expect(logger.debug).toHaveBeenCalledWith('Re-sent OAuth login request to client');
+    });
   });
 
   describe('getMCPSetupData', () => {

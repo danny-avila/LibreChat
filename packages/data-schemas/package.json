@@ -4,19 +4,29 @@
   "description": "Mongoose schemas and models for LibreChat",
   "type": "module",
   "main": "dist/index.cjs",
-  "module": "dist/index.es.js",
-  "types": "./dist/types/index.d.ts",
+  "module": "dist/index.mjs",
+  "types": "./dist/index.d.cts",
   "sideEffects": false,
   "exports": {
     ".": {
-      "import": "./dist/index.es.js",
-      "require": "./dist/index.cjs",
-      "types": "./dist/types/index.d.ts"
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
     "./capabilities": {
-      "import": "./dist/admin/capabilities.es.js",
-      "require": "./dist/admin/capabilities.cjs",
-      "types": "./dist/types/admin/capabilities.d.ts"
+      "import": {
+        "types": "./dist/capabilities.d.mts",
+        "default": "./dist/admin/capabilities.mjs"
+      },
+      "require": {
+        "types": "./dist/capabilities.d.cts",
+        "default": "./dist/admin/capabilities.cjs"
+      }
     }
   },
   "files": [
@@ -24,13 +34,13 @@
   ],
   "scripts": {
     "clean": "rimraf dist",
-    "build": "npm run clean && rollup -c --silent --bundleConfigAsCjs",
-    "build:watch": "rollup -c -w",
+    "build": "npm run clean && tsdown",
+    "build:watch": "tsdown --watch",
     "test": "jest --coverage --watch",
     "test:ci": "jest --coverage --ci",
     "verify": "npm run test:ci",
     "b:clean": "bun run rimraf dist",
-    "b:build": "bun run b:clean && bun run rollup -c --silent --bundleConfigAsCjs"
+    "b:build": "bun run b:clean && bun run tsdown"
   },
   "repository": {
     "type": "git",
@@ -61,7 +71,8 @@
     "rollup-plugin-peer-deps-external": "^2.2.4",
     "rollup-plugin-typescript2": "^0.37.0",
     "ts-node": "^10.9.2",
-    "typescript": "^5.0.4"
+    "tsdown": "^0.22.2",
+    "typescript": "^5.9.3"
   },
   "peerDependencies": {
     "jsonwebtoken": "^9.0.2",

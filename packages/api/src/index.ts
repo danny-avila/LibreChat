@@ -39,6 +39,8 @@ export * from './memory';
 export * from './modelSpecs';
 /* Agents */
 export * from './agents';
+/* Actions */
+export * from './actions';
 /* Prompts */
 export * from './prompts';
 /* Projects */
@@ -55,6 +57,8 @@ export * from './storage';
 export * from './tools';
 /* web search */
 export * from './web';
+/* Langfuse */
+export * from './langfuse';
 /* Cache */
 export * from './cache';
 /* Shared Links */

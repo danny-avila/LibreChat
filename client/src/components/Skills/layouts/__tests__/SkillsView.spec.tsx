@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import SkillsView from '../SkillsView';
 
-const mockUseHasAccess = jest.fn(() => true);
+const mockUseHasAccess = jest.fn((..._args: unknown[]) => true);
 
 jest.mock(
   'librechat-data-provider',

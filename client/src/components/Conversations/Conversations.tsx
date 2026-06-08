@@ -1,11 +1,11 @@
 import { useMemo, memo, type FC, useCallback, useEffect, useRef } from 'react';
 import throttle from 'lodash/throttle';
-import { ChevronDown } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
-import { useQueryClient } from '@tanstack/react-query';
+import { ChevronDown } from 'lucide-react';
 import { QueryKeys } from 'librechat-data-provider';
-import { Spinner, TooltipAnchor, NewChatIcon, useMediaQuery } from '@librechat/client';
+import { useQueryClient } from '@tanstack/react-query';
 import { List, AutoSizer, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
+import { Spinner, TooltipAnchor, NewChatIcon, useMediaQuery } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
 import {
   useLocalize,
@@ -14,9 +14,9 @@ import {
   useShowMarketplace,
   useNewConvo,
 } from '~/hooks';
+import { groupConversationsByDate, clearMessagesCache, cn } from '~/utils';
 import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
 import { useActiveJobs } from '~/data-provider';
-import { groupConversationsByDate, clearMessagesCache, cn } from '~/utils';
 import Convo from './Convo';
 import store from '~/store';
 
@@ -159,38 +159,6 @@ type FlattenedItem =
   | { type: 'header'; groupName: string }
   | { type: 'convo'; convo: TConversation }
   | { type: 'loading' };
-
-const MemoizedConvo = memo(
-  ({
-    conversation,
-    retainView,
-    toggleNav,
-    isGenerating,
-  }: {
-    conversation: TConversation;
-    retainView: () => void;
-    toggleNav: () => void;
-    isGenerating: boolean;
-  }) => {
-    return (
-      <Convo
-        conversation={conversation}
-        retainView={retainView}
-        toggleNav={toggleNav}
-        isGenerating={isGenerating}
-      />
-    );
-  },
-  (prevProps, nextProps) => {
-    return (
-      prevProps.conversation.conversationId === nextProps.conversation.conversationId &&
-      prevProps.conversation.title === nextProps.conversation.title &&
-      prevProps.conversation.endpoint === nextProps.conversation.endpoint &&
-      prevProps.conversation.chatProjectId === nextProps.conversation.chatProjectId &&
-      prevProps.isGenerating === nextProps.isGenerating
-    );
-  },
-);
 
 const Conversations: FC<ConversationsProps> = ({
   conversations: rawConversations,
@@ -352,7 +320,7 @@ const Conversations: FC<ConversationsProps> = ({
         const isGenerating = activeJobIds.has(item.convo.conversationId ?? '');
         return (
           <MeasuredRow key={key} {...rowProps}>
-            <MemoizedConvo
+            <Convo
               conversation={item.convo}
               retainView={moveToTop}
               toggleNav={toggleNav}

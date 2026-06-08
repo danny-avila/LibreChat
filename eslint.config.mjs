@@ -120,7 +120,7 @@ export default [
       'jsx-a11y/img-redundant-alt': 'off',
       'jsx-a11y/no-noninteractive-tabindex': 'off',
       // common rules
-      'no-nested-ternary': 'warn',
+      'no-nested-ternary': 'error',
       'no-constant-binary-expression': 'warn',
       'no-unused-vars': [
         'warn',

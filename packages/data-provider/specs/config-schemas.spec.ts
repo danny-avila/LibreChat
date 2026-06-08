@@ -836,6 +836,7 @@ describe('specsConfigSchema', () => {
           name: 'spec-1',
           label: 'Spec 1',
           hideBadgeRow: true,
+          softDefault: true,
           preset: { endpoint: EModelEndpoint.openAI },
         },
       ],
@@ -843,6 +844,7 @@ describe('specsConfigSchema', () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.list[0].hideBadgeRow).toBe(true);
+      expect(result.data.list[0].softDefault).toBe(true);
     }
   });
 

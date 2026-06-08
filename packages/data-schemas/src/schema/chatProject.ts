@@ -1,7 +1,7 @@
 import { Schema } from 'mongoose';
 import type { IChatProjectDocument } from '~/types';
 
-const chatProjectSchema = new Schema<IChatProjectDocument>(
+const chatProjectSchema: Schema<IChatProjectDocument> = new Schema<IChatProjectDocument>(
   {
     name: {
       type: String,

@@ -2,7 +2,7 @@ import { Schema } from 'mongoose';
 import { REFILL_INTERVAL_UNITS } from 'librechat-data-provider';
 import type * as t from '~/types';
 
-const balanceSchema = new Schema<t.IBalance>({
+const balanceSchema: Schema<t.IBalance> = new Schema<t.IBalance>({
   user: {
     type: Schema.Types.ObjectId,
     ref: 'User',
