@@ -5,8 +5,8 @@ import {
   mergeConfigOverrides,
   BASE_CONFIG_PRINCIPAL_ID,
 } from '@librechat/data-schemas';
-import type { Types } from 'mongoose';
 import type { AppConfig, IConfig } from '@librechat/data-schemas';
+import type { Types } from 'mongoose';
 
 const BASE_CONFIG_KEY = '_BASE_';
 
@@ -73,7 +73,10 @@ export function _resetOverrideStrictCache(): void {
 }
 
 function overrideCacheKey(role?: string, userId?: string, tenantId?: string): string {
-  const tenant = tenantId || '__default__';
+  // Fall back to the ALS tenant context before `__default__`: callers that rely on the
+  // tenant middleware (the common path) pass no explicit tenantId, so without this the
+  // entry is keyed under the shared `__default__` bucket and leaks across tenants.
+  const tenant = tenantId || getTenantId() || '__default__';
   if (userId && role) {
     return `_OVERRIDE_:${tenant}:${role}:${userId}`;
   }
@@ -88,7 +91,11 @@ function overrideCacheKey(role?: string, userId?: string, tenantId?: string): st
 
 // ── Service factory ──────────────────────────────────────────────────
 
-export function createAppConfigService(deps: AppConfigServiceDeps) {
+export function createAppConfigService(deps: AppConfigServiceDeps): {
+  getAppConfig: (options?: GetAppConfigOptions) => Promise<AppConfig>;
+  clearAppConfigCache: () => Promise<void>;
+  clearOverrideCache: (tenantId?: string) => Promise<void>;
+} {
   const {
     loadBaseConfig,
     setCachedTools,
@@ -174,16 +181,16 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
       return baseConfig;
     }
 
-    // Strict-isolation + no tenant (param or ALS) = pathological path (middleware bypass or
-    // unauthenticated startup). Pre-tenant calls use baseOnly:true; admin calls carry tenantId.
-    // If ALS has a tenant, Mongoose scopes queries to that tenant's overrides — must fall through.
-    // Not cached: the cache key doesn't include ALS context, so a cached __default__ entry would
-    // be served to later ALS-scoped calls that share the same param-derived key.
+    // Strict isolation + no tenant anywhere (neither param nor ALS) is pathological: a
+    // middleware bypass or an unauthenticated startup call. Pre-tenant calls should use
+    // baseOnly:true and admin calls carry an explicit tenantId. Return the base config
+    // without caching it under the shared `__default__` bucket. When ALS has a tenant,
+    // overrideCacheKey scopes the key to it, so we fall through and cache per-tenant.
     if (principals.length === 0 && !tenantId && !getTenantId() && isStrictOverrideMode()) {
       return baseConfig;
     }
 
-    if (!tenantId && isStrictOverrideMode() && !_warnedNoTenantInStrictMode) {
+    if (!tenantId && !getTenantId() && isStrictOverrideMode() && !_warnedNoTenantInStrictMode) {
       _warnedNoTenantInStrictMode = true;
       logger.warn(
         '[getAppConfig] No tenantId in strict mode — falling back to __default__. ' +

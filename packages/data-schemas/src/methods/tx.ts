@@ -158,6 +158,7 @@ export const tokenValues: Record<string, { prompt: number; completion: number }>
     'claude-opus-4-5': { prompt: 5, completion: 25 },
     'claude-opus-4-6': { prompt: 5, completion: 25 },
     'claude-opus-4-7': { prompt: 5, completion: 25 },
+    'claude-opus-4-8': { prompt: 5, completion: 25 },
     'claude-sonnet-4': { prompt: 3, completion: 15 },
     'claude-sonnet-4-5': { prompt: 3, completion: 15 },
     'claude-sonnet-4-6': { prompt: 3, completion: 15 },
@@ -294,6 +295,7 @@ export const cacheTokenValues: Record<string, { write: number; read: number }> =
   'claude-opus-4-5': { write: 6.25, read: 0.5 },
   'claude-opus-4-6': { write: 6.25, read: 0.5 },
   'claude-opus-4-7': { write: 6.25, read: 0.5 },
+  'claude-opus-4-8': { write: 6.25, read: 0.5 },
   'gpt-4o': { write: 2.5, read: 1.25 },
   'gpt-4o-mini': { write: 0.15, read: 0.075 },
   'gpt-4.1': { write: 2, read: 0.5 },
@@ -344,7 +346,68 @@ export const premiumTokenValues: Record<
   'gemini-3.1': { threshold: 200000, prompt: 4, completion: 18 },
 };
 
-export function createTxMethods(_mongoose: typeof import('mongoose'), txDeps: TxDeps) {
+export function createTxMethods(
+  _mongoose: typeof import('mongoose'),
+  txDeps: TxDeps,
+): {
+  tokenValues: Record<
+    string,
+    {
+      prompt: number;
+      completion: number;
+    }
+  >;
+  premiumTokenValues: Record<
+    string,
+    {
+      threshold: number;
+      prompt: number;
+      completion: number;
+    }
+  >;
+  getValueKey: (model: string, endpoint?: string) => string | undefined;
+  getMultiplier: ({
+    model,
+    valueKey,
+    endpoint,
+    tokenType,
+    inputTokenCount,
+    endpointTokenConfig,
+  }: {
+    model?: string;
+    valueKey?: string;
+    endpoint?: string;
+    tokenType?: 'prompt' | 'completion';
+    inputTokenCount?: number;
+    endpointTokenConfig?: Record<string, Record<string, number>>;
+  }) => number;
+  getPremiumRate: (
+    valueKey: string,
+    tokenType: string,
+    inputTokenCount?: number | null,
+  ) => number | null;
+  getCacheMultiplier: ({
+    valueKey,
+    cacheType,
+    model,
+    endpoint,
+    endpointTokenConfig,
+  }: {
+    valueKey?: string;
+    cacheType?: 'write' | 'read';
+    model?: string;
+    endpoint?: string;
+    endpointTokenConfig?: Record<string, Record<string, number>>;
+  }) => number | null;
+  defaultRate: number;
+  cacheTokenValues: Record<
+    string,
+    {
+      write: number;
+      read: number;
+    }
+  >;
+} {
   const { matchModelName, findMatchingPattern } = txDeps;
 
   /**

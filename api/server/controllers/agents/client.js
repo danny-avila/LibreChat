@@ -21,6 +21,7 @@ const {
   applyContextToAgent,
   isMemoryAgentEnabled,
   recordCollectedUsage,
+  isDeepSeekReasoningProvider,
   GenerationJobManager,
   getTransactionsConfig,
   resolveRecursionLimit,
@@ -29,6 +30,7 @@ const {
   createMultiAgentMapper,
   filterMalformedContentParts,
   countFormattedMessageTokens,
+  prependFileContext,
   hydrateMissingIndexTokenCounts,
   injectSkillPrimes,
   isSkillPrimeMessage,
@@ -81,6 +83,14 @@ class AgentClient extends BaseClient {
     /** @type {AgentRun} */
     this.run;
 
+    /** Resolves with the agent run once `chatCompletion` initializes it (or
+     *  `null` if initialization fails), letting immediate-mode title generation
+     *  await the run instead of throwing when fired before the run exists.
+     *  @type {Promise<AgentRun | null> | null} */
+    this._runReady = null;
+    /** @type {((run: AgentRun | null) => void) | null} */
+    this._resolveRun = null;
+
     const {
       agentConfigs,
       contentParts,
@@ -126,6 +136,8 @@ class AgentClient extends BaseClient {
     this.usage;
     /** @type {Record<string, number>} */
     this.indexTokenCountMap = {};
+    /** @type {Array<Record<string, unknown>> | null} */
+    this.memoryPayload = null;
     /** @type {(messages: BaseMessage[]) => Promise<void>} */
     this.processMemory;
   }
@@ -200,6 +212,7 @@ class AgentClient extends BaseClient {
         {
           spec: this.options.spec,
           iconURL: this.options.iconURL,
+          chatProjectId: this.options.chatProjectId,
           endpoint: this.options.endpoint,
           agent_id: this.options.agent.id,
           modelLabel: this.options.modelLabel,
@@ -305,38 +318,50 @@ class AgentClient extends BaseClient {
     }
 
     /** @type {Record<number, number>} */
-    const canonicalTokenCountMap = {};
+    const indexTokenCountMap = {};
     /** @type {Record<string, number>} */
     const tokenCountMap = {};
+    const memoryPayload = [];
+    let hasFileContext = false;
     let promptTokenTotal = 0;
+    const encoding = this.getEncoding();
     const formattedMessages = orderedMessages.map((message, i) => {
       const formattedMessage = formatMessage({
         message,
         userName: this.options?.name,
         assistantName: this.options?.modelLabel,
       });
+      const memoryFormattedMessage = formatMessage({
+        message,
+        userName: this.options?.name,
+        assistantName: this.options?.modelLabel,
+      });
 
-      /** For non-latest messages, prepend file context directly to message content */
-      if (message.fileContext && i !== orderedMessages.length - 1) {
-        if (typeof formattedMessage.content === 'string') {
-          formattedMessage.content = message.fileContext + '\n' + formattedMessage.content;
-        } else {
-          const textPart = formattedMessage.content.find((part) => part.type === 'text');
-          textPart
-            ? (textPart.text = message.fileContext + '\n' + textPart.text)
-            : formattedMessage.content.unshift({ type: 'text', text: message.fileContext });
-        }
+      /**
+       * Bind file context to the message it belongs to. Historical attachments
+       * are resent inline, so the current turn's text attachment must be inline
+       * too instead of living only in the dynamic system tail.
+       */
+      if (message.fileContext) {
+        hasFileContext = true;
+        prependFileContext(formattedMessage, message.fileContext);
       }
 
-      const dbTokenCount = orderedMessages[i].tokenCount;
-      const needsTokenCount = !dbTokenCount || message.fileContext;
+      memoryPayload.push(memoryFormattedMessage);
 
-      if (needsTokenCount || (this.isVisionModel && (message.image_urls || message.files))) {
-        orderedMessages[i].tokenCount = countFormattedMessageTokens(
-          formattedMessage,
-          this.getEncoding(),
-        );
+      const dbTokenCount = Number(orderedMessages[i].tokenCount);
+      const hasDbTokenCount = Number.isFinite(dbTokenCount) && dbTokenCount > 0;
+      const needsCanonicalTokenCount =
+        !hasDbTokenCount || (this.isVisionModel && (message.image_urls || message.files));
+
+      let canonicalTokenCount = hasDbTokenCount ? dbTokenCount : 0;
+      if (needsCanonicalTokenCount) {
+        canonicalTokenCount = countFormattedMessageTokens(memoryFormattedMessage, encoding);
       }
+
+      const promptMessageTokenCount = message.fileContext
+        ? countFormattedMessageTokens(formattedMessage, encoding)
+        : canonicalTokenCount;
 
       /* If message has files, calculate image token cost */
       if (this.message_file_map && this.message_file_map[message.messageId]) {
@@ -352,13 +377,19 @@ class AgentClient extends BaseClient {
         }
       }
 
-      const tokenCount = Number(orderedMessages[i].tokenCount);
-      const normalizedTokenCount = Number.isFinite(tokenCount) && tokenCount > 0 ? tokenCount : 0;
-      canonicalTokenCountMap[i] = normalizedTokenCount;
-      promptTokenTotal += normalizedTokenCount;
+      const normalizedCanonicalTokenCount =
+        Number.isFinite(canonicalTokenCount) && canonicalTokenCount > 0 ? canonicalTokenCount : 0;
+      const normalizedPromptTokenCount =
+        Number.isFinite(promptMessageTokenCount) && promptMessageTokenCount > 0
+          ? promptMessageTokenCount
+          : 0;
+
+      orderedMessages[i].tokenCount = normalizedCanonicalTokenCount;
+      indexTokenCountMap[i] = normalizedPromptTokenCount;
+      promptTokenTotal += normalizedPromptTokenCount;
 
       if (message.messageId) {
-        tokenCountMap[message.messageId] = normalizedTokenCount;
+        tokenCountMap[message.messageId] = normalizedCanonicalTokenCount;
       }
 
       if (isEnabled(process.env.AGENT_DEBUG_LOGGING)) {
@@ -367,9 +398,10 @@ class AgentClient extends BaseClient {
           Array.isArray(message.content) && message.content.some((p) => p && p.type === 'summary');
         const suffix = hasSummary ? '[S]' : '';
         const id = (message.messageId ?? message.id ?? '').slice(-8);
-        const recalced = needsTokenCount ? orderedMessages[i].tokenCount : null;
+        const recalced = needsCanonicalTokenCount ? normalizedCanonicalTokenCount : null;
+        const promptRecalced = message.fileContext ? normalizedPromptTokenCount : null;
         logger.debug(
-          `[AgentClient] msg[${i}] ${role}${suffix} id=…${id} db=${dbTokenCount} needsRecount=${needsTokenCount} recalced=${recalced} tokens=${normalizedTokenCount}`,
+          `[AgentClient] msg[${i}] ${role}${suffix} id=…${id} db=${dbTokenCount} needsRecount=${needsCanonicalTokenCount} recalced=${recalced} promptRecalced=${promptRecalced} tokens=${normalizedPromptTokenCount}`,
         );
       }
 
@@ -377,21 +409,17 @@ class AgentClient extends BaseClient {
     });
 
     payload = formattedMessages;
+    this.memoryPayload = hasFileContext ? memoryPayload : null;
     messages = orderedMessages;
     promptTokens = promptTokenTotal;
 
     /**
      * Build shared run context - applies to ALL agents in the run.
-     * This includes file context from the latest message and augmented prompt (RAG).
+     * Request attachment file context is already bound inline to the latest
+     * user message above; only side-channel context belongs here.
      * Memory context is handled separately and applied per-agent based on config.
      */
     const sharedRunContextParts = [];
-
-    /** File context from the latest message (attachments) */
-    const latestMessage = orderedMessages[orderedMessages.length - 1];
-    if (latestMessage?.fileContext) {
-      sharedRunContextParts.push(latestMessage.fileContext);
-    }
 
     /** Augmented prompt from RAG/context handlers */
     if (this.contextHandlers) {
@@ -418,8 +446,8 @@ class AgentClient extends BaseClient {
       tokenCountFn: (text) => countTokens(text),
     });
 
-    /** Preserve canonical pre-format token counts for all history entering graph formatting */
-    this.indexTokenCountMap = canonicalTokenCountMap;
+    /** Preserve prompt token counts for graph formatting and pruning. */
+    this.indexTokenCountMap = indexTokenCountMap;
 
     /** Extract contextMeta from the parent response (second-to-last in ordered chain;
      *  last is the current user message). Seeds the pruner's calibration EMA for this run. */
@@ -876,12 +904,27 @@ class AgentClient extends BaseClient {
         agents: [this.options.agent, ...(this.agentConfigs ? this.agentConfigs.values() : [])],
       });
 
+      /** Spoof `Providers.DEEPSEEK` so the SDK preserves `reasoning_content` on tool turns (#13366). */
+      const hasDeepSeekAgent = (agent) =>
+        agent != null &&
+        isDeepSeekReasoningProvider(agent.provider, agent.model_parameters?.model ?? agent.model);
+      const needsDeepSeekFormat =
+        hasDeepSeekAgent(this.options.agent) ||
+        (this.agentConfigs != null &&
+          Array.from(this.agentConfigs.values()).some(hasDeepSeekAgent));
+      const formatOptions = needsDeepSeekFormat ? { provider: Providers.DEEPSEEK } : undefined;
       let {
         messages: initialMessages,
         indexTokenCountMap,
         summary: initialSummary,
         boundaryTokenAdjustment,
-      } = formatAgentMessages(payload, this.indexTokenCountMap, toolSet, skillPrimeResult?.skills);
+      } = formatAgentMessages(
+        payload,
+        this.indexTokenCountMap,
+        toolSet,
+        skillPrimeResult?.skills,
+        formatOptions,
+      );
       if (boundaryTokenAdjustment) {
         logger.debug(
           `[AgentClient] Boundary token adjustment: ${boundaryTokenAdjustment.original} → ${boundaryTokenAdjustment.adjusted} (${boundaryTokenAdjustment.remainingChars}/${boundaryTokenAdjustment.totalChars} chars)`,
@@ -945,6 +988,17 @@ class AgentClient extends BaseClient {
         tokenCounter,
       });
 
+      const memoryMessages =
+        this.processMemory && this.memoryPayload
+          ? formatAgentMessages(
+              this.memoryPayload,
+              undefined,
+              toolSet,
+              skillPrimeResult?.skills,
+              formatOptions,
+            ).messages
+          : initialMessages;
+
       /**
        * @param {BaseMessage[]} messages
        */
@@ -985,7 +1039,7 @@ class AgentClient extends BaseClient {
         // }
 
         if (this.processMemory) {
-          memoryPromise = this.runMemory(messages);
+          memoryPromise = this.runMemory(memoryMessages);
         }
 
         /** Seed calibration state from previous run if encoding matches */
@@ -1023,6 +1077,10 @@ class AgentClient extends BaseClient {
         }
 
         this.run = run;
+        if (this._resolveRun) {
+          this._resolveRun(run);
+          this._resolveRun = null;
+        }
 
         const streamId = this.options.req?._resumableStreamId;
         if (streamId && run.Graph) {
@@ -1154,6 +1212,10 @@ class AgentClient extends BaseClient {
           err,
         );
       }
+      if (this._resolveRun) {
+        this._resolveRun(this.run ?? null);
+        this._resolveRun = null;
+      }
       run = null;
       config = null;
       memoryPromise = null;
@@ -1161,14 +1223,58 @@ class AgentClient extends BaseClient {
   }
 
   /**
-   *
+   * Resolves with the agent run once it is initialized, or `null` if
+   * initialization fails. Lets immediate-mode title generation await the run
+   * instead of throwing when fired before `chatCompletion` assigns `this.run`.
+   * Rejects promptly if the provided signal aborts before the run is ready.
+   * @param {AbortSignal} [signal]
+   * @returns {Promise<AgentRun | null>}
+   */
+  _waitForRun(signal) {
+    if (this.run) {
+      return Promise.resolve(this.run);
+    }
+    if (!this._runReady) {
+      this._runReady = new Promise((resolve) => {
+        this._resolveRun = resolve;
+      });
+    }
+    if (!signal) {
+      return this._runReady;
+    }
+    if (signal.aborted) {
+      return Promise.reject(new Error('Aborted before run initialization'));
+    }
+    return new Promise((resolve, reject) => {
+      const onAbort = () => reject(new Error('Aborted before run initialization'));
+      signal.addEventListener('abort', onAbort, { once: true });
+      this._runReady.then((run) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(run);
+      });
+    });
+  }
+
+  /**
    * @param {Object} params
    * @param {string} params.text
-   * @param {string} params.conversationId
+   * @param {AbortController} params.abortController
+   * @param {boolean} [params.immediate] When true, the title is generated as soon
+   *   as the request is made — the run is awaited (instead of throwing) and the
+   *   title derives from the user's input only (`contentParts` is empty).
    */
-  async titleConvo({ text, abortController }) {
+  async titleConvo({ text, abortController, immediate = false }) {
     if (!this.run) {
-      throw new Error('Run not initialized');
+      if (!immediate) {
+        throw new Error('Run not initialized');
+      }
+      await this._waitForRun(abortController?.signal);
+      if (!this.run) {
+        logger.debug(
+          '[api/server/controllers/agents/client.js #titleConvo] Run unavailable for immediate title generation',
+        );
+        return;
+      }
     }
     const { handleLLMEnd, collected: collectedMetadata } = createMetadataAggregator();
     const { req, agent } = this.options;
@@ -1308,7 +1414,7 @@ class AgentClient extends BaseClient {
         provider,
         clientOptions,
         inputText: text,
-        contentParts: this.contentParts,
+        contentParts: immediate ? [] : this.contentParts,
         titleMethod: endpointConfig?.titleMethod,
         titlePrompt: endpointConfig?.titlePrompt,
         titlePromptTemplate: endpointConfig?.titlePromptTemplate,

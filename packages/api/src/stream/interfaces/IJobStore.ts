@@ -1,5 +1,5 @@
-import type { Agents } from 'librechat-data-provider';
 import type { StandardGraph } from '@librechat/agents';
+import type { Agents } from 'librechat-data-provider';
 
 /**
  * Job status enum
@@ -30,6 +30,9 @@ export interface SerializableJobData {
   /** Response message ID for reconnection */
   responseMessageId?: string;
 
+  /** Whether the user-message created event has been emitted */
+  createdEventEmitted?: boolean;
+
   /** Sender name for UI display */
   sender?: string;
 
@@ -38,6 +41,12 @@ export interface SerializableJobData {
 
   /** Serialized final event for replay */
   finalEvent?: string;
+
+  /** Serialized title event for replay during active-stream resume */
+  titleEvent?: string;
+
+  /** Serialized replay-only stream events for active-stream resume */
+  replayEvents?: string;
 
   /** Endpoint metadata for abort handling - avoids storing functions */
   endpoint?: string;
@@ -139,6 +148,20 @@ export interface ResumeState {
   responseMessageId?: string;
   conversationId?: string;
   sender?: string;
+  iconURL?: string;
+  model?: string;
+  titleEvent?: {
+    event: 'title';
+    data?: {
+      conversationId?: string;
+      title?: string;
+    };
+  };
+  replayEvents?: Array<{
+    event: string;
+    data?: unknown;
+    [key: string]: unknown;
+  }>;
 }
 
 /**
@@ -180,6 +203,18 @@ export interface IJobStore {
 
   /** Cleanup expired jobs */
   cleanup(): Promise<number>;
+
+  /**
+   * Record generation activity for a job (e.g. a chunk was emitted), refreshing
+   * its "last active" timestamp so the stale-running-job failsafe does not reap a
+   * stream that is still producing output.
+   *
+   * In-memory: updates an internal last-activity timestamp used by cleanup().
+   * Redis: no-op — the running-job TTL is already refreshed on each appendChunk.
+   *
+   * @param streamId - The stream identifier
+   */
+  recordActivity?(streamId: string): void;
 
   /** Get total job count */
   getJobCount(): Promise<number>;

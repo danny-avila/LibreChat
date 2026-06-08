@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '24.16.0'
       - run: cd packages/data-provider && npm ci
       - run: cd packages/data-provider && npm run build
       - name: Pack package
@@ -50,7 +50,7 @@ jobs:
     steps:
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '24.16.0'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install npm with OIDC support

@@ -14,6 +14,9 @@ jest.mock('../Parts', () => ({
   Text: ({ text }: { text?: string }) => <div data-testid="text">{text}</div>,
   SkillCall: () => <div data-testid="skill-call" />,
   ReadFileCall: () => <div data-testid="read-file-call" />,
+  FileAuthoringCall: ({ toolName }: { toolName: string }) => (
+    <div data-testid="file-authoring-call" data-tool-name={toolName} />
+  ),
   BashCall: ({ commandField }: { commandField?: string }) => (
     <div data-testid="bash-call" data-command-field={commandField ?? 'command'} />
   ),
@@ -100,5 +103,32 @@ describe('Part tool renderer selection', () => {
 
     expect(screen.getByTestId('execute-code')).toBeInTheDocument();
     expect(screen.queryByTestId('bash-call')).not.toBeInTheDocument();
+  });
+
+  it('routes create_file calls through the file-authoring renderer', () => {
+    renderPart(
+      toolCallPart('create_file', '{"file_path":"skills/demo/SKILL.md","content":"# Demo"}'),
+    );
+
+    expect(screen.getByTestId('file-authoring-call')).toHaveAttribute(
+      'data-tool-name',
+      'create_file',
+    );
+    expect(screen.queryByTestId('tool-call')).not.toBeInTheDocument();
+  });
+
+  it('routes edit_file calls through the file-authoring renderer', () => {
+    renderPart(
+      toolCallPart(
+        'edit_file',
+        '{"file_path":"skills/demo/SKILL.md","old_text":"Demo","new_text":"Updated"}',
+      ),
+    );
+
+    expect(screen.getByTestId('file-authoring-call')).toHaveAttribute(
+      'data-tool-name',
+      'edit_file',
+    );
+    expect(screen.queryByTestId('tool-call')).not.toBeInTheDocument();
   });
 });

@@ -503,7 +503,7 @@ export function resolveHeaders(options?: {
   user?: Partial<IUser> | { id: string };
   body?: RequestBody;
   customUserVars?: Record<string, string>;
-}) {
+}): Record<string, string> {
   const { headers, user, body, customUserVars } = options ?? {};
   const inputHeaders = headers ?? {};
 

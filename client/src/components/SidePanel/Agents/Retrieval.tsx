@@ -9,15 +9,15 @@ import {
   HoverCardPortal,
   HoverCardTrigger,
 } from '@librechat/client';
+import type { AssistantForm } from '~/common';
 import OptionHover from '~/components/SidePanel/Parameters/OptionHover';
-import type { AgentForm } from '~/common';
 import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';
 import { cn } from '~/utils/';
 
 export default function Retrieval({ retrievalModels }: { retrievalModels: Set<string> }) {
   const localize = useLocalize();
-  const methods = useFormContext<AgentForm>();
+  const methods = useFormContext<AssistantForm>();
   const { control, setValue, getValues } = methods;
   const model = useWatch({ control, name: 'model' });
 
@@ -44,11 +44,13 @@ export default function Retrieval({ retrievalModels }: { retrievalModels: Set<st
                 onCheckedChange={field.onChange}
                 className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer"
                 value={field.value?.toString()}
+                aria-labelledby="retrieval-label"
               />
             )}
           />
           <div className="flex items-center space-x-2">
             <label
+              id="retrieval-label"
               className={cn(
                 'form-check-label text-token-text-primary w-full select-none',
                 isDisabled ? 'cursor-no-drop opacity-50' : 'cursor-pointer',

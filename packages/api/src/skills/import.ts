@@ -1,10 +1,8 @@
-import crypto from 'crypto';
 import path from 'path';
 import JSZip from 'jszip';
-import { ResourceType, AccessRoleIds, PrincipalType } from 'librechat-data-provider';
+import crypto from 'crypto';
 import { logger, stripYamlTrailingComment } from '@librechat/data-schemas';
-import type { Request, Response } from 'express';
-import type { Types } from 'mongoose';
+import { ResourceType, AccessRoleIds, PrincipalType } from 'librechat-data-provider';
 import type {
   ISkill,
   ISkillFile,
@@ -12,6 +10,8 @@ import type {
   CreateSkillResult,
   UpsertSkillFileInput,
 } from '@librechat/data-schemas';
+import type { Request, Response } from 'express';
+import type { Types } from 'mongoose';
 import { resolveRequestTenantId } from '~/middleware/tenant';
 
 /** Security limits for zip processing. */
@@ -64,11 +64,12 @@ function parseBooleanScalar(value: string): boolean | undefined {
  * `packages/data-schemas/src/methods/skill.ts` covers the wire contract;
  * this parser only needs to hand `createSkill` the columns it populates.
  *
- * When a known boolean field (currently just `always-apply`) is present
+ * When a known boolean field (currently `always-apply` plus the accepted
+ * `alwaysApply` alias) is present
  * with a value that isn't recognizable as `true`/`false`, the parser
  * records it on `invalidBooleans[]` so the import handler can surface
  * a 400 instead of silently dropping the flag. Without this signal,
- * authoring mistakes like `always-apply: yes` would be lossy-converted
+ * authoring mistakes like `alwaysApply: yes` would be lossy-converted
  * to "not always-applied" and the user would never learn their
  * frontmatter was malformed.
  *
@@ -94,19 +95,23 @@ export function parseFrontmatter(raw: string): {
   let name = '';
   let description = '';
   let alwaysApply: boolean | undefined;
-  const invalidBooleans: string[] = [];
+  let hasValidCanonicalAlwaysApply = false;
+  const invalidCanonicalAlwaysApply: string[] = [];
+  const invalidAliasAlwaysApply: string[] = [];
   for (const line of block.split('\n')) {
     const colon = line.indexOf(':');
     if (colon === -1) {
       continue;
     }
-    const key = line.slice(0, colon).trim().toLowerCase();
+    const rawKey = line.slice(0, colon).trim();
+    const key = rawKey.toLowerCase();
     const rawValue = line.slice(colon + 1).trim();
     if (key === 'name') {
       name = unquoteYaml(rawValue);
     } else if (key === 'description') {
       description = unquoteYaml(rawValue);
-    } else if (key === 'always-apply') {
+    } else if (key === 'always-apply' || key === 'alwaysapply') {
+      const isCanonical = key === 'always-apply';
       // Operate on the raw post-colon text (no outer `unquoteYaml`): a
       // line like `always-apply: "true" # note` must have its comment
       // stripped BEFORE unquoting. Running `unquoteYaml` on the whole
@@ -122,12 +127,24 @@ export function parseFrontmatter(raw: string): {
       }
       const parsed = parseBooleanScalar(unquoteYaml(stripped));
       if (parsed === undefined) {
-        invalidBooleans.push(key);
+        if (isCanonical) {
+          invalidCanonicalAlwaysApply.push(rawKey);
+        } else {
+          invalidAliasAlwaysApply.push(rawKey);
+        }
       } else {
-        alwaysApply = parsed;
+        if (isCanonical) {
+          hasValidCanonicalAlwaysApply = true;
+          alwaysApply = parsed;
+        } else if (!hasValidCanonicalAlwaysApply && invalidCanonicalAlwaysApply.length === 0) {
+          alwaysApply = parsed;
+        }
       }
     }
   }
+  const invalidBooleans = hasValidCanonicalAlwaysApply
+    ? invalidCanonicalAlwaysApply
+    : [...invalidCanonicalAlwaysApply, ...invalidAliasAlwaysApply];
   return { name, description, alwaysApply, invalidBooleans };
 }
 
@@ -214,7 +231,7 @@ interface ServerRequest extends Request {
  * Grants SKILL_OWNER to the uploader.
  */
 export function createImportHandler(deps: ImportSkillDeps) {
-  return async function importSkillHandler(req: ServerRequest, res: Response) {
+  return async function importSkillHandler(req: ServerRequest, res: Response): Promise<Response> {
     const { file } = req;
     if (!file) {
       return res.status(400).json({ error: 'No file provided' });
@@ -662,6 +679,6 @@ const MIME_MAP: Record<string, string> = {
   '.pdf': 'application/pdf',
 };
 
-function guessMimeType(filename: string): string {
+export function guessMimeType(filename: string): string {
   return MIME_MAP[path.extname(filename).toLowerCase()] || 'application/octet-stream';
 }

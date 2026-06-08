@@ -25,6 +25,7 @@ const mockRegistryInstance = {
   getAllowedDomains: jest.fn().mockReturnValue(null),
   getAllowedAddresses: jest.fn().mockReturnValue(null),
 };
+let mockMCPUseAllowed = true;
 
 jest.mock('@librechat/api', () => {
   const actual = jest.requireActual('@librechat/api');
@@ -46,7 +47,15 @@ jest.mock('@librechat/api', () => {
       deleteUserTokens: jest.fn(),
     },
     getUserMCPAuthMap: jest.fn(),
-    generateCheckAccess: jest.fn(() => (req, res, next) => next()),
+    generateCheckAccess: jest.fn(({ permissionType, permissions }) => (req, res, next) => {
+      const { PermissionTypes, Permissions } = require('librechat-data-provider');
+      const isMCPUseCheck =
+        permissionType === PermissionTypes.MCP_SERVERS && permissions.includes(Permissions.USE);
+      if (isMCPUseCheck && !mockMCPUseAllowed) {
+        return res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
+      }
+      return next();
+    }),
     MCPServersRegistry: {
       getInstance: () => mockRegistryInstance,
     },
@@ -145,6 +154,7 @@ describe('MCP Routes', () => {
   let app;
   let mongoServer;
   let mcpRouter;
+  let currentUser;
 
   beforeAll(async () => {
     mongoServer = await MongoMemoryServer.create();
@@ -159,7 +169,7 @@ describe('MCP Routes', () => {
     app.use(cookieParser());
 
     app.use((req, res, next) => {
-      req.user = { id: 'test-user-id' };
+      req.user = currentUser ?? { id: 'test-user-id' };
       next();
     });
 
@@ -173,19 +183,93 @@ describe('MCP Routes', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    currentUser = undefined;
+    require('@librechat/api').MCPOAuthHandler.generateFlowId.mockImplementation(
+      (userId, serverName) => `${userId}:${serverName}`,
+    );
     mockResolveAllMcpConfigs.mockResolvedValue({});
     mockResolveMcpConfigNames.mockResolvedValue([]);
+    mockMCPUseAllowed = true;
+    /**
+     * Reset registry method implementations every test. `clearAllMocks` resets
+     * call records but NOT implementations, so a `.mockRejectedValue(...)` set
+     * by an earlier test leaks into later ones — including the new
+     * `getServerConfig` lookup in updateMCPServerController.
+     */
+    mockRegistryInstance.getServerConfig.mockReset().mockResolvedValue(undefined);
+    mockRegistryInstance.addServer.mockReset();
+    mockRegistryInstance.updateServer.mockReset();
+    mockRegistryInstance.removeServer.mockReset();
   });
 
   describe('GET /:serverName/oauth/initiate', () => {
     const { MCPOAuthHandler } = require('@librechat/api');
     const { getLogStores } = require('~/cache');
 
-    it('should initiate OAuth flow successfully', async () => {
+    it('should reuse stored authorization URL without starting a new OAuth flow', async () => {
       const mockFlowManager = {
         getFlowState: jest.fn().mockResolvedValue({
+          status: 'PENDING',
+          createdAt: Date.now(),
+          metadata: {
+            serverName: 'test-server',
+            userId: 'test-user-id',
+            authorizationUrl: 'https://oauth.example.com/auth?state=stored-state',
+          },
+        }),
+      };
+
+      getLogStores.mockReturnValue({});
+      require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+
+      const response = await request(app).get('/api/mcp/test-server/oauth/initiate').query({
+        userId: 'test-user-id',
+        flowId: 'test-user-id:test-server',
+      });
+
+      expect(response.status).toBe(302);
+      expect(response.headers.location).toBe('https://oauth.example.com/auth?state=stored-state');
+      expect(response.headers['set-cookie']?.join('')).toContain('oauth_csrf=');
+      expect(MCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
+      expect(MCPOAuthHandler.storeStateMapping).not.toHaveBeenCalled();
+      expect(mockRegistryInstance.getServerConfig).not.toHaveBeenCalled();
+    });
+
+    it('should reject stored authorization URL when flow is no longer pending', async () => {
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({
+          status: 'COMPLETED',
+          createdAt: Date.now(),
+          metadata: {
+            serverName: 'test-server',
+            userId: 'test-user-id',
+            authorizationUrl: 'https://oauth.example.com/auth?state=stored-state',
+          },
+        }),
+      };
+
+      getLogStores.mockReturnValue({});
+      require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+
+      const response = await request(app).get('/api/mcp/test-server/oauth/initiate').query({
+        userId: 'test-user-id',
+        flowId: 'test-user-id:test-server',
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'Invalid flow state' });
+      expect(MCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
+      expect(MCPOAuthHandler.storeStateMapping).not.toHaveBeenCalled();
+    });
+
+    it('should initiate OAuth flow when stored authorization URL is missing', async () => {
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({
+          status: 'PENDING',
+          createdAt: Date.now(),
           metadata: {
             serverUrl: 'https://test-server.com',
+            state: 'old-state-value',
             oauth: { clientId: 'test-client-id' },
           },
         }),
@@ -220,6 +304,23 @@ describe('MCP Routes', () => {
         undefined,
         null,
       );
+      expect(MCPOAuthHandler.deleteStateMapping).toHaveBeenCalledWith(
+        'old-state-value',
+        mockFlowManager,
+      );
+      expect(mockFlowManager.initFlow).toHaveBeenCalledWith(
+        'test-user-id:test-server',
+        'mcp_oauth',
+        expect.objectContaining({
+          state: 'random-state-value',
+          authorizationUrl: 'https://oauth.example.com/auth',
+        }),
+      );
+      expect(MCPOAuthHandler.storeStateMapping).toHaveBeenCalledWith(
+        'random-state-value',
+        'test-user-id:test-server',
+        mockFlowManager,
+      );
     });
 
     it('should return 403 when userId does not match authenticated user', async () => {
@@ -232,6 +333,27 @@ describe('MCP Routes', () => {
       expect(response.body).toEqual({ error: 'User mismatch' });
     });
 
+    it('should return 403 when flowId does not match authenticated user and server', async () => {
+      const response = await request(app).get('/api/mcp/test-server/oauth/initiate').query({
+        userId: 'test-user-id',
+        flowId: 'other-user-id:test-server',
+      });
+
+      expect(response.status).toBe(403);
+      expect(response.body).toEqual({ error: 'Flow mismatch' });
+      expect(getLogStores).not.toHaveBeenCalled();
+    });
+
+    it('should return 403 when flowId query value is not a string', async () => {
+      const response = await request(app)
+        .get('/api/mcp/test-server/oauth/initiate')
+        .query('userId=test-user-id&flowId=test-user-id:test-server&flowId=other-flow');
+
+      expect(response.status).toBe(403);
+      expect(response.body).toEqual({ error: 'Flow mismatch' });
+      expect(getLogStores).not.toHaveBeenCalled();
+    });
+
     it('should return 404 when flow state is not found', async () => {
       const mockFlowManager = {
         getFlowState: jest.fn().mockResolvedValue(null),
@@ -242,7 +364,7 @@ describe('MCP Routes', () => {
 
       const response = await request(app).get('/api/mcp/test-server/oauth/initiate').query({
         userId: 'test-user-id',
-        flowId: 'non-existent-flow-id',
+        flowId: 'test-user-id:test-server',
       });
 
       expect(response.status).toBe(404);
@@ -1957,6 +2079,16 @@ describe('MCP Routes', () => {
   });
 
   describe('GET /tools', () => {
+    it('should deny MCP tools when user lacks MCP server use permission', async () => {
+      mockMCPUseAllowed = false;
+
+      const response = await request(app).get('/api/mcp/tools');
+
+      expect(response.status).toBe(403);
+      expect(response.body).toEqual({ message: 'Forbidden: Insufficient permissions' });
+      expect(mockResolveAllMcpConfigs).not.toHaveBeenCalled();
+    });
+
     it('should continue returning MCP tools when one server cache lookup fails', async () => {
       const { Constants } = require('librechat-data-provider');
       const { logger } = require('@librechat/data-schemas');
@@ -2318,6 +2450,224 @@ describe('MCP Routes', () => {
 
       expect(response.status).toBe(500);
       expect(response.body).toEqual({ message: 'Database connection failed' });
+    });
+
+    describe('OBO permission gate', () => {
+      const oboConfig = {
+        type: 'streamable-http',
+        url: 'https://mcp-server.example.com/mcp',
+        title: 'OBO Server',
+        obo: { scopes: 'api://mcp-server-id/Mcp.Tools.ReadWrite' },
+      };
+      const db = require('~/models');
+
+      beforeEach(() => {
+        currentUser = { id: 'test-user-id', role: 'USER' };
+        mockRegistryInstance.addServer.mockResolvedValue({
+          serverName: 'obo-server',
+          config: oboConfig,
+        });
+      });
+
+      it('rejects POST with obo body when role lacks CONFIGURE_OBO', async () => {
+        db.getRoleByName.mockResolvedValue({
+          name: 'USER',
+          permissions: {
+            MCP_SERVERS: {
+              USE: true,
+              CREATE: true,
+              SHARE: false,
+              SHARE_PUBLIC: false,
+              CONFIGURE_OBO: false,
+            },
+          },
+        });
+
+        const response = await request(app).post('/api/mcp/servers').send({ config: oboConfig });
+
+        expect(response.status).toBe(403);
+        expect(response.body.message).toMatch(/Insufficient permissions to configure OBO/);
+        expect(mockRegistryInstance.addServer).not.toHaveBeenCalled();
+      });
+
+      it('allows POST with obo body when role has CONFIGURE_OBO', async () => {
+        db.getRoleByName.mockResolvedValue({
+          name: 'USER',
+          permissions: {
+            MCP_SERVERS: {
+              USE: true,
+              CREATE: true,
+              SHARE: false,
+              SHARE_PUBLIC: false,
+              CONFIGURE_OBO: true,
+            },
+          },
+        });
+
+        const response = await request(app).post('/api/mcp/servers').send({ config: oboConfig });
+
+        expect(response.status).toBe(201);
+        expect(mockRegistryInstance.addServer).toHaveBeenCalled();
+      });
+
+      it('allows POST without obo body regardless of CONFIGURE_OBO', async () => {
+        db.getRoleByName.mockResolvedValue({
+          name: 'USER',
+          permissions: {
+            MCP_SERVERS: {
+              USE: true,
+              CREATE: true,
+              CONFIGURE_OBO: false,
+            },
+          },
+        });
+
+        const nonOboConfig = {
+          type: 'streamable-http',
+          url: 'https://mcp-server.example.com/mcp',
+          title: 'Plain Server',
+        };
+        mockRegistryInstance.addServer.mockResolvedValue({
+          serverName: 'plain-server',
+          config: nonOboConfig,
+        });
+
+        const response = await request(app).post('/api/mcp/servers').send({ config: nonOboConfig });
+
+        expect(response.status).toBe(201);
+        expect(db.getRoleByName).not.toHaveBeenCalled();
+        expect(mockRegistryInstance.addServer).toHaveBeenCalled();
+      });
+
+      it('rejects PATCH with obo body when role lacks CONFIGURE_OBO', async () => {
+        db.getRoleByName.mockResolvedValue({
+          name: 'USER',
+          permissions: {
+            MCP_SERVERS: {
+              USE: true,
+              CREATE: true,
+              CONFIGURE_OBO: false,
+            },
+          },
+        });
+
+        const response = await request(app)
+          .patch('/api/mcp/servers/obo-server')
+          .send({ config: oboConfig });
+
+        expect(response.status).toBe(403);
+        expect(response.body.message).toMatch(/Insufficient permissions to configure OBO/);
+        expect(mockRegistryInstance.updateServer).not.toHaveBeenCalled();
+      });
+
+      it('allows PATCH without CONFIGURE_OBO when OBO is unchanged', async () => {
+        // Editor without CONFIGURE_OBO should still be able to edit non-OBO fields
+        // (title, URL, description) on an OBO server as long as the OBO block is
+        // re-sent unchanged. Closes the regression where any save of an OBO server
+        // by such a user was rejected even when OBO itself was not being modified.
+        db.getRoleByName.mockResolvedValue({
+          name: 'USER',
+          permissions: {
+            MCP_SERVERS: {
+              USE: true,
+              CREATE: true,
+              CONFIGURE_OBO: false,
+            },
+          },
+        });
+        mockRegistryInstance.getServerConfig.mockResolvedValue({
+          ...oboConfig,
+          obo: { scopes: 'api://mcp-server-id/Mcp.Tools.ReadWrite' },
+        });
+        mockRegistryInstance.updateServer.mockResolvedValue({
+          ...oboConfig,
+          title: 'Renamed OBO Server',
+        });
+
+        const response = await request(app)
+          .patch('/api/mcp/servers/obo-server')
+          .send({
+            config: {
+              ...oboConfig,
+              title: 'Renamed OBO Server',
+              obo: { scopes: 'api://mcp-server-id/Mcp.Tools.ReadWrite' },
+            },
+          });
+
+        expect(response.status).toBe(200);
+        expect(mockRegistryInstance.updateServer).toHaveBeenCalled();
+      });
+
+      it('rejects PATCH that removes OBO from an existing OBO server without CONFIGURE_OBO', async () => {
+        // Closes the silent-downgrade vector: a user with UPDATE but not
+        // CONFIGURE_OBO must not be able to convert an OBO server to non-OBO,
+        // because doing so de-secures the server end-to-end.
+        db.getRoleByName.mockResolvedValue({
+          name: 'USER',
+          permissions: {
+            MCP_SERVERS: {
+              USE: true,
+              CREATE: true,
+              CONFIGURE_OBO: false,
+            },
+          },
+        });
+        mockRegistryInstance.getServerConfig.mockResolvedValue({
+          ...oboConfig,
+          obo: { scopes: 'api://mcp-server-id/Mcp.Tools.ReadWrite' },
+        });
+
+        // Submit body that omits the obo field (auth_type changed away from OBO)
+        const downgradePayload = {
+          type: 'streamable-http',
+          url: 'https://mcp-server.example.com/mcp',
+          title: 'OBO Server',
+        };
+        const response = await request(app)
+          .patch('/api/mcp/servers/obo-server')
+          .send({ config: downgradePayload });
+
+        expect(response.status).toBe(403);
+        expect(response.body.message).toMatch(/Insufficient permissions to configure OBO/);
+        expect(mockRegistryInstance.updateServer).not.toHaveBeenCalled();
+      });
+
+      it('rejects PATCH that redirects the URL of an existing OBO server without CONFIGURE_OBO', async () => {
+        // Closes the OBO redirect vector — the original trust-boundary concern
+        // CONFIGURE_OBO was introduced to address. A user with UPDATE but
+        // without the permission must not be able to point an existing OBO
+        // server at an attacker-controlled endpoint, which would cause OBO
+        // tokens minted for other users to be exfiltrated to that endpoint.
+        // The same allowlist policy also covers `proxy`, `headers`, transport
+        // type, and auth blocks.
+        db.getRoleByName.mockResolvedValue({
+          name: 'USER',
+          permissions: {
+            MCP_SERVERS: {
+              USE: true,
+              CREATE: true,
+              CONFIGURE_OBO: false,
+            },
+          },
+        });
+        mockRegistryInstance.getServerConfig.mockResolvedValue({
+          ...oboConfig,
+          obo: { scopes: 'api://mcp-server-id/Mcp.Tools.ReadWrite' },
+        });
+
+        const redirectPayload = {
+          ...oboConfig,
+          url: 'https://attacker.example.com/mcp',
+          obo: { scopes: 'api://mcp-server-id/Mcp.Tools.ReadWrite' },
+        };
+        const response = await request(app)
+          .patch('/api/mcp/servers/obo-server')
+          .send({ config: redirectPayload });
+
+        expect(response.status).toBe(403);
+        expect(response.body.message).toMatch(/Insufficient permissions to configure OBO/);
+        expect(mockRegistryInstance.updateServer).not.toHaveBeenCalled();
+      });
     });
 
     it('should fail closed when config-managed names cannot be resolved', async () => {

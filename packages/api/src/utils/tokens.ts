@@ -95,10 +95,19 @@ const cohereModels = {
 
 const googleModels = {
   /* Max I/O is combined so we subtract the amount from max response tokens for actual total */
-  gemma: 8196,
+  gemma: 32768,
   'gemma-2': 32768,
   'gemma-3': 32768,
   'gemma-3-27b': 131072,
+  'gemma4:31b': 256000,
+  'gemma4-31b': 256000,
+  'gemma-4-31b': 256000,
+  'gemma4:26b': 256000,
+  'gemma4-26b': 256000,
+  'gemma-4-26b-a4b': 256000,
+  'gemma-4-26b': 256000,
+  gemma4: 128000,
+  'gemma-4': 128000,
   gemini: 30720, // -2048 from max
   'gemini-pro-vision': 12288,
   'gemini-1.5': 1000000,
@@ -146,6 +155,7 @@ const anthropicModels = {
   'claude-sonnet-4-6': 1000000,
   'claude-opus-4-6': 1000000,
   'claude-opus-4-7': 1000000,
+  'claude-opus-4-8': 1000000,
 };
 
 const deepseekModels = {
@@ -351,7 +361,7 @@ const aggregateModels = {
   ...openAIModels,
 };
 
-export const maxTokensMap = {
+export const maxTokensMap: Record<string, Record<string, number>> = {
   [EModelEndpoint.azureOpenAI]: openAIModels,
   [EModelEndpoint.openAI]: aggregateModels,
   [EModelEndpoint.agents]: aggregateModels,
@@ -394,6 +404,7 @@ const anthropicMaxOutputs = {
   'claude-opus-4-5': 64000,
   'claude-opus-4-6': 128000,
   'claude-opus-4-7': 128000,
+  'claude-opus-4-8': 128000,
   'claude-3.5-sonnet': 8192,
   'claude-3-5-sonnet': 8192,
   'claude-3.7-sonnet': 128000,
@@ -410,7 +421,7 @@ const deepseekMaxOutputs = {
   'deepseek.r1': 64000,
 };
 
-export const maxOutputTokensMap = {
+export const maxOutputTokensMap: Record<string, Record<string, number>> = {
   [EModelEndpoint.anthropic]: anthropicMaxOutputs,
   [EModelEndpoint.azureOpenAI]: modelMaxOutputs,
   [EModelEndpoint.openAI]: { ...modelMaxOutputs, ...deepseekMaxOutputs },
@@ -495,7 +506,7 @@ export function getModelTokenValue(
  */
 export function getModelMaxTokens(
   modelName: string,
-  endpoint = EModelEndpoint.openAI,
+  endpoint: EModelEndpoint = EModelEndpoint.openAI,
   endpointTokenConfig?: EndpointTokenConfig,
 ): number | undefined {
   const tokensMap = endpointTokenConfig ?? maxTokensMap[endpoint as keyof typeof maxTokensMap];
@@ -512,7 +523,7 @@ export function getModelMaxTokens(
  */
 export function getModelMaxOutputTokens(
   modelName: string,
-  endpoint = EModelEndpoint.openAI,
+  endpoint: EModelEndpoint = EModelEndpoint.openAI,
   endpointTokenConfig?: EndpointTokenConfig,
 ): number | undefined {
   const tokensMap =
@@ -535,7 +546,7 @@ export function getModelMaxOutputTokens(
  */
 export function matchModelName(
   modelName: string,
-  endpoint = EModelEndpoint.openAI,
+  endpoint: EModelEndpoint = EModelEndpoint.openAI,
 ): string | undefined {
   if (typeof modelName !== 'string') {
     return undefined;
@@ -554,7 +565,29 @@ export function matchModelName(
   return matchedPattern || modelName;
 }
 
-export const modelSchema = z.object({
+export const modelSchema: z.ZodObject<
+  {
+    id: z.ZodString;
+    pricing: z.ZodObject<
+      {
+        prompt: z.ZodString;
+        completion: z.ZodString;
+      },
+      'strip',
+      z.ZodTypeAny,
+      {
+        prompt: string;
+        completion: string;
+      },
+      {
+        prompt: string;
+        completion: string;
+      }
+    >;
+    context_length: z.ZodNumber;
+  },
+  'strip'
+> = z.object({
   id: z.string(),
   pricing: z.object({
     prompt: z.string(),
@@ -563,7 +596,54 @@ export const modelSchema = z.object({
   context_length: z.number(),
 });
 
-export const inputSchema = z.object({
+export const inputSchema: z.ZodObject<
+  {
+    data: z.ZodArray<
+      z.ZodObject<
+        {
+          id: z.ZodString;
+          pricing: z.ZodObject<
+            {
+              prompt: z.ZodString;
+              completion: z.ZodString;
+            },
+            'strip',
+            z.ZodTypeAny,
+            {
+              prompt: string;
+              completion: string;
+            },
+            {
+              prompt: string;
+              completion: string;
+            }
+          >;
+          context_length: z.ZodNumber;
+        },
+        'strip',
+        z.ZodTypeAny,
+        {
+          id: string;
+          pricing: {
+            prompt: string;
+            completion: string;
+          };
+          context_length: number;
+        },
+        {
+          id: string;
+          pricing: {
+            prompt: string;
+            completion: string;
+          };
+          context_length: number;
+        }
+      >,
+      'many'
+    >;
+  },
+  'strip'
+> = z.object({
   data: z.array(modelSchema),
 });
 

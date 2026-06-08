@@ -4,7 +4,7 @@ import supersub from 'remark-supersub';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import type { PluggableList } from 'unified';
-import { code, codeNoExecution, a, p } from './MarkdownComponents';
+import { code, codeNoExecution, a, p, table } from './MarkdownComponents';
 import { CodeBlockProvider } from '~/Providers';
 import { langSubset } from '~/utils';
 
@@ -72,6 +72,7 @@ class MarkdownErrorBoundary extends React.Component<
                 code: codeExecution ? code : codeNoExecution,
                 a,
                 p,
+                table,
               } as {
                 [nodeType: string]: React.ElementType;
               }
