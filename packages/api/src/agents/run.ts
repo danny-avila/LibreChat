@@ -1040,6 +1040,11 @@ export async function createRun({
     calibrationRatio,
     indexTokenCountMap,
     eagerEventToolExecution: { enabled: true },
+    // Derive the Langfuse trace id deterministically from runId so message
+    // feedback can be scored against the trace without a lookup (see the
+    // feedback route in api/server/routes/messages.js). No-op unless Langfuse
+    // tracing is enabled. Requires @librechat/agents >= 3.2.21.
+    langfuse: { deterministicTraceId: true },
     ...(enableToolOutputReferences && {
       toolOutputReferences: { enabled: true },
     }),

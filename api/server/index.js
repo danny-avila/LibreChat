@@ -21,6 +21,7 @@ const {
   GenerationJobManager,
   createStreamServices,
   initializeFileStorage,
+  initializeDeploymentSkills,
   preAuthTenantMiddleware,
   setupGracefulShutdown,
   updateInterfacePermissions,
@@ -116,6 +117,7 @@ const startServer = async () => {
   });
   const appConfig = await getAppConfig({ baseOnly: true });
   initializeFileStorage(appConfig);
+  await initializeDeploymentSkills({ projectRoot: path.resolve(__dirname, '../..') });
   startExpiredFileSweep({ appConfig, loadAppConfig: getAppConfig });
   await runAsSystem(async () => {
     await performStartupChecks(appConfig);

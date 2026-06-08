@@ -47,7 +47,9 @@ const {
 } = require('~/server/services/PermissionService');
 const {
   getSkillToolDeps,
+  getSkillDbMethods,
   canAuthorSkillFiles,
+  withDeploymentSkillIds,
   buildAgentToolContext,
   enrichLoadedToolsWithAgentContext,
 } = require('~/server/services/Endpoints/agents/skillDeps');
@@ -229,6 +231,7 @@ const OpenAIChatCompletionController = async (req, res) => {
       endpoint: agent.provider,
       model_parameters: agent.model_parameters ?? {},
     };
+    const skillDbMethods = getSkillDbMethods();
 
     // `filterFilesByAgentAccess` is intentionally omitted: it calls
     // `checkPermission` with `resourceType: AGENT`, but this route
@@ -246,21 +249,23 @@ const OpenAIChatCompletionController = async (req, res) => {
       getUserCodeFiles: db.getUserCodeFiles,
       getToolFilesByIds: db.getToolFilesByIds,
       getCodeGeneratedFiles: db.getCodeGeneratedFiles,
-      listSkillsByAccess: db.listSkillsByAccess,
-      listAlwaysApplySkills: db.listAlwaysApplySkills,
-      getSkillByName: db.getSkillByName,
+      listSkillsByAccess: skillDbMethods.listSkillsByAccess,
+      listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
+      getSkillByName: skillDbMethods.getSkillByName,
     };
 
     const enabledCapabilities = new Set(agentsEConfig?.capabilities);
     const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
     const ephemeralSkillsToggle = req.body?.ephemeralAgent?.skills === true;
     const accessibleSkillIds = skillsCapabilityEnabled
-      ? await findAccessibleResources({
-          userId: req.user.id,
-          role: req.user.role,
-          resourceType: ResourceType.SKILL,
-          requiredPermissions: PermissionBits.VIEW,
-        })
+      ? withDeploymentSkillIds(
+          await findAccessibleResources({
+            userId: req.user.id,
+            role: req.user.role,
+            resourceType: ResourceType.SKILL,
+            requiredPermissions: PermissionBits.VIEW,
+          }),
+        )
       : [];
     const editableSkillIds = skillsCapabilityEnabled
       ? await findAccessibleResources({

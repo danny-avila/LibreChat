@@ -137,6 +137,95 @@ interface InitiatedTemplateResult {
   newEndpointType: EModelEndpoint | undefined;
 }
 
+type StoredModelSelection = Pick<
+  t.TConversation,
+  'endpoint' | 'model' | 'spec' | 'agent_id' | 'assistant_id'
+>;
+
+function hasSelectionValue(value?: string | null): boolean {
+  return typeof value === 'string' && value.trim() !== '';
+}
+
+function parseStoredModelSelection(
+  value: string | null,
+): Partial<StoredModelSelection> | undefined {
+  if (!value) {
+    return;
+  }
+
+  try {
+    return JSON.parse(value) as Partial<StoredModelSelection>;
+  } catch {
+    return;
+  }
+}
+
+function hasStoredPrefixValue(prefix: string): boolean {
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key?.startsWith(prefix)) {
+      continue;
+    }
+
+    if (hasSelectionValue(localStorage.getItem(key))) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function hasStoredModelValue(): boolean {
+  const storedModelValue = localStorage.getItem(LocalStorageKeys.LAST_MODEL);
+  if (!storedModelValue) {
+    return false;
+  }
+
+  try {
+    const storedModels = JSON.parse(storedModelValue) as Record<string, string | null | undefined>;
+    return Object.values(storedModels).some(hasSelectionValue);
+  } catch {
+    return false;
+  }
+}
+
+export function hasModelSelection(selection?: Partial<StoredModelSelection> | null): boolean {
+  if (!selection) {
+    return false;
+  }
+
+  return (
+    hasSelectionValue(selection.spec) ||
+    hasSelectionValue(selection.agent_id) ||
+    hasSelectionValue(selection.assistant_id) ||
+    hasSelectionValue(selection.model) ||
+    hasSelectionValue(selection.endpoint)
+  );
+}
+
+function hasStoredModelSelection(): boolean {
+  if (hasSelectionValue(localStorage.getItem(LocalStorageKeys.LAST_SPEC))) {
+    return true;
+  }
+
+  if (hasStoredModelValue()) {
+    return true;
+  }
+
+  if (
+    hasStoredPrefixValue(LocalStorageKeys.AGENT_ID_PREFIX) ||
+    hasStoredPrefixValue(LocalStorageKeys.ASST_ID_PREFIX)
+  ) {
+    return true;
+  }
+
+  const lastConversationSetup = parseStoredModelSelection(
+    localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP + '_0'),
+  );
+
+  return hasModelSelection(lastConversationSetup);
+}
+
 /** Get the conditional logic for switching conversations */
 export function getConvoSwitchLogic(params: ConversationInitParams): InitiatedTemplateResult {
   const { conversation, newEndpoint, endpointsConfig, modularChat = false } = params;
@@ -269,13 +358,14 @@ export function applyModelSpecEphemeralAgent({
 
 /**
  * Gets default model spec from config and user preferences.
- * Priority: admin default → last selected → first spec (when prioritize=true or modelSelect disabled).
- * Otherwise: admin default or last conversation spec.
+ * Priority: hard admin default → prior user selection → soft first-time default.
+ * Legacy first-spec prioritization remains only when no soft default is configured.
  */
 export function getDefaultModelSpec(startupConfig?: t.TStartupConfig):
   | {
       default?: t.TModelSpec;
       last?: t.TModelSpec;
+      softDefault?: t.TModelSpec;
     }
   | undefined {
   const { modelSpecs, interface: interfaceConfig } = startupConfig ?? {};
@@ -284,20 +374,34 @@ export function getDefaultModelSpec(startupConfig?: t.TStartupConfig):
     return;
   }
   const defaultSpec = list?.find((spec) => spec.default);
+  const softDefaultSpec = list?.find((spec) => spec.softDefault);
   if (prioritize === true || !interfaceConfig?.modelSelect) {
     const lastSelectedSpecName = localStorage.getItem(LocalStorageKeys.LAST_SPEC);
     const lastSelectedSpec = list?.find((spec) => spec.name === lastSelectedSpecName);
-    return { default: defaultSpec || lastSelectedSpec || list?.[0] };
+    if (defaultSpec) {
+      return { default: defaultSpec };
+    }
+    if (lastSelectedSpec) {
+      return { last: lastSelectedSpec };
+    }
+    if (softDefaultSpec) {
+      return hasStoredModelSelection() ? undefined : { softDefault: softDefaultSpec };
+    }
+    return { default: list?.[0] };
   } else if (defaultSpec) {
     return { default: defaultSpec };
   }
-  const lastConversationSetup = JSON.parse(
-    localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP + '_0') ?? '{}',
+  const lastConversationSetup = parseStoredModelSelection(
+    localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP + '_0'),
   );
-  if (!lastConversationSetup.spec) {
+  const lastConversationSpecName = lastConversationSetup?.spec;
+  if (!hasSelectionValue(lastConversationSpecName)) {
+    if (softDefaultSpec && !hasStoredModelSelection()) {
+      return { softDefault: softDefaultSpec };
+    }
     return;
   }
-  return { last: list?.find((spec) => spec.name === lastConversationSetup.spec) };
+  return { last: list?.find((spec) => spec.name === lastConversationSpecName) };
 }
 
 export function getModelSpecPreset(modelSpec?: t.TModelSpec) {

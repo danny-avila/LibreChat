@@ -346,7 +346,68 @@ export const premiumTokenValues: Record<
   'gemini-3.1': { threshold: 200000, prompt: 4, completion: 18 },
 };
 
-export function createTxMethods(_mongoose: typeof import('mongoose'), txDeps: TxDeps) {
+export function createTxMethods(
+  _mongoose: typeof import('mongoose'),
+  txDeps: TxDeps,
+): {
+  tokenValues: Record<
+    string,
+    {
+      prompt: number;
+      completion: number;
+    }
+  >;
+  premiumTokenValues: Record<
+    string,
+    {
+      threshold: number;
+      prompt: number;
+      completion: number;
+    }
+  >;
+  getValueKey: (model: string, endpoint?: string) => string | undefined;
+  getMultiplier: ({
+    model,
+    valueKey,
+    endpoint,
+    tokenType,
+    inputTokenCount,
+    endpointTokenConfig,
+  }: {
+    model?: string;
+    valueKey?: string;
+    endpoint?: string;
+    tokenType?: 'prompt' | 'completion';
+    inputTokenCount?: number;
+    endpointTokenConfig?: Record<string, Record<string, number>>;
+  }) => number;
+  getPremiumRate: (
+    valueKey: string,
+    tokenType: string,
+    inputTokenCount?: number | null,
+  ) => number | null;
+  getCacheMultiplier: ({
+    valueKey,
+    cacheType,
+    model,
+    endpoint,
+    endpointTokenConfig,
+  }: {
+    valueKey?: string;
+    cacheType?: 'write' | 'read';
+    model?: string;
+    endpoint?: string;
+    endpointTokenConfig?: Record<string, Record<string, number>>;
+  }) => number | null;
+  defaultRate: number;
+  cacheTokenValues: Record<
+    string,
+    {
+      write: number;
+      read: number;
+    }
+  >;
+} {
   const { matchModelName, findMatchingPattern } = txDeps;
 
   /**

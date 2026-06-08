@@ -1,11 +1,6 @@
 const { tool } = require('@librechat/agents/langchain/tools');
 const { logger, getTenantId } = require('@librechat/data-schemas');
-const {
-  Providers,
-  StepTypes,
-  GraphEvents,
-  Constants: AgentConstants,
-} = require('@librechat/agents');
+const { Providers, Constants: AgentConstants } = require('@librechat/agents');
 const {
   sendEvent,
   MCPOAuthHandler,
@@ -14,7 +9,11 @@ const {
   normalizeJsonSchema,
   GenerationJobManager,
   resolveJsonSchemaRefs,
-  buildOAuthToolCallName,
+  buildMCPAuthStepId,
+  buildMCPAuthToolCall,
+  buildMCPAuthRunStepEvent,
+  buildMCPAuthRunStepDeltaEvent,
+  buildMCPAuthRunStepEndDeltaEvent,
   checkAccessWithRequestCache,
 } = require('@librechat/api');
 const {
@@ -201,20 +200,11 @@ function isEmptyObjectSchema(jsonSchema) {
 function createRunStepDeltaEmitter({ res, stepId, toolCall, streamId = null }) {
   /**
    * @param {string} authURL - The URL to redirect the user for OAuth authentication.
+   * @param {{ expiresAt?: number }} [options]
    * @returns {Promise<void>}
    */
-  return async function (authURL) {
-    /** @type {{ id: string; delta: AgentToolCallDelta }} */
-    const data = {
-      id: stepId,
-      delta: {
-        type: StepTypes.TOOL_CALLS,
-        tool_calls: [{ ...toolCall, args: '' }],
-        auth: authURL,
-        expires_at: Date.now() + Time.TWO_MINUTES,
-      },
-    };
-    const eventData = { event: GraphEvents.ON_RUN_STEP_DELTA, data };
+  return async function (authURL, options) {
+    const eventData = buildMCPAuthRunStepDeltaEvent({ authURL, stepId, toolCall, options });
     if (streamId) {
       await GenerationJobManager.emitChunk(streamId, eventData);
     } else {
@@ -235,18 +225,7 @@ function createRunStepDeltaEmitter({ res, stepId, toolCall, streamId = null }) {
  */
 function createRunStepEmitter({ res, runId, stepId, toolCall, index, streamId = null }) {
   return async function () {
-    /** @type {import('@librechat/agents').RunStep} */
-    const data = {
-      runId: runId ?? Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
-      id: stepId,
-      type: StepTypes.TOOL_CALLS,
-      index: index ?? 0,
-      stepDetails: {
-        type: StepTypes.TOOL_CALLS,
-        tool_calls: [toolCall],
-      },
-    };
-    const eventData = { event: GraphEvents.ON_RUN_STEP, data };
+    const eventData = buildMCPAuthRunStepEvent({ runId, stepId, toolCall, index });
     if (streamId) {
       await GenerationJobManager.emitChunk(streamId, eventData);
     } else {
@@ -260,20 +239,43 @@ function createRunStepEmitter({ res, runId, stepId, toolCall, index, streamId = 
  * @param {object} params
  * @param {string} params.flowId - The ID of the login flow.
  * @param {FlowStateManager<any>} params.flowManager - The flow manager instance.
- * @param {(authURL: string) => void} [params.callback]
+ * @param {(authURL: string, options?: { expiresAt?: number }) => void | Promise<void>} [params.callback]
  */
 function createOAuthStart({ flowId, flowManager, callback }) {
   /**
    * Creates a function to handle OAuth login requests.
    * @param {string} authURL - The URL to redirect the user for OAuth authentication.
+   * @param {{ expiresAt?: number }} [options]
    * @returns {Promise<boolean>} Returns true to indicate the event was sent successfully.
    */
-  return async function (authURL) {
+  return async function (authURL, options) {
+    let emitted = false;
+    const emitOAuthStart = async (message) => {
+      if (options) {
+        await callback?.(authURL, options);
+      } else {
+        await callback?.(authURL);
+      }
+      emitted = true;
+      logger.debug(message);
+    };
+
+    const existingFlow = await flowManager.getFlowState(flowId, 'oauth_login');
+    if (existingFlow) {
+      await emitOAuthStart('Re-sent OAuth login request to client');
+      return true;
+    }
+
     await flowManager.createFlowWithHandler(flowId, 'oauth_login', async () => {
-      callback?.(authURL);
-      logger.debug('Sent OAuth login request to client');
+      await emitOAuthStart('Sent OAuth login request to client');
       return true;
     });
+
+    if (!emitted) {
+      await emitOAuthStart('Re-sent OAuth login request to client');
+    }
+
+    return true;
   };
 }
 
@@ -286,15 +288,7 @@ function createOAuthStart({ flowId, flowManager, callback }) {
  */
 function createOAuthEnd({ res, stepId, toolCall, streamId = null }) {
   return async function () {
-    /** @type {{ id: string; delta: AgentToolCallDelta }} */
-    const data = {
-      id: stepId,
-      delta: {
-        type: StepTypes.TOOL_CALLS,
-        tool_calls: [{ ...toolCall }],
-      },
-    };
-    const eventData = { event: GraphEvents.ON_RUN_STEP_DELTA, data };
+    const eventData = buildMCPAuthRunStepEndDeltaEvent({ stepId, toolCall });
     if (streamId) {
       await GenerationJobManager.emitChunk(streamId, eventData);
     } else {
@@ -323,14 +317,14 @@ function createAbortHandler({ userId, serverName, toolName, flowManager }) {
 
 /**
  * @param {Object} params
- * @param {() => void} params.runStepEmitter
- * @param {(authURL: string) => void} params.runStepDeltaEmitter
- * @returns {(authURL: string) => void}
+ * @param {() => Promise<void>} params.runStepEmitter
+ * @param {(authURL: string, options?: { expiresAt?: number }) => Promise<void>} params.runStepDeltaEmitter
+ * @returns {(authURL: string, options?: { expiresAt?: number }) => Promise<void>}
  */
 function createOAuthCallback({ runStepEmitter, runStepDeltaEmitter }) {
-  return function (authURL) {
-    runStepEmitter();
-    runStepDeltaEmitter(authURL);
+  return async function (authURL, options) {
+    await runStepEmitter();
+    await runStepDeltaEmitter(authURL, options);
   };
 }
 
@@ -373,12 +367,11 @@ async function reconnectServer({
   const runId = Constants.USE_PRELIM_RESPONSE_MESSAGE_ID;
   const flowId = `${user.id}:${serverName}:${Date.now()}`;
   const flowManager = getFlowStateManager(getLogStores(CacheKeys.FLOWS));
-  const stepId = 'step_oauth_login_' + serverName;
-  const toolCall = {
+  const stepId = buildMCPAuthStepId(serverName);
+  const toolCall = buildMCPAuthToolCall({
     id: flowId,
-    name: buildOAuthToolCallName(serverName),
-    type: 'tool_call_chunk',
-  };
+    serverName,
+  });
 
   // Set up abort handler to clean up OAuth flows if request is aborted
   const oauthFlowId = MCPOAuthHandler.generateFlowId(user.id, serverName);
@@ -949,6 +942,7 @@ module.exports = {
   resolveConfigServers,
   resolveMcpConfigNames,
   resolveAllMcpConfigs,
+  createOAuthStart,
   checkOAuthFlowStatus,
   getServerConnectionStatus,
   createUnavailableToolStub,

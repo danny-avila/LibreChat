@@ -56,7 +56,9 @@ const {
 } = require('~/server/services/PermissionService');
 const {
   getSkillToolDeps,
+  getSkillDbMethods,
   canAuthorSkillFiles,
+  withDeploymentSkillIds,
   buildAgentToolContext,
   enrichLoadedToolsWithAgentContext,
 } = require('~/server/services/Endpoints/agents/skillDeps');
@@ -351,6 +353,7 @@ const createResponse = async (req, res) => {
 
     // Create tool loader
     const loadTools = createToolLoader(abortController.signal);
+    const skillDbMethods = getSkillDbMethods();
 
     // Initialize the agent first to check for disableStreaming
     const endpointOption = {
@@ -374,9 +377,9 @@ const createResponse = async (req, res) => {
       getUserCodeFiles: db.getUserCodeFiles,
       getToolFilesByIds: db.getToolFilesByIds,
       getCodeGeneratedFiles: db.getCodeGeneratedFiles,
-      listSkillsByAccess: db.listSkillsByAccess,
-      listAlwaysApplySkills: db.listAlwaysApplySkills,
-      getSkillByName: db.getSkillByName,
+      listSkillsByAccess: skillDbMethods.listSkillsByAccess,
+      listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
+      getSkillByName: skillDbMethods.getSkillByName,
     };
 
     const enabledCapabilities = new Set(
@@ -385,12 +388,14 @@ const createResponse = async (req, res) => {
     const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
     const ephemeralSkillsToggle = req.body?.ephemeralAgent?.skills === true;
     const accessibleSkillIds = skillsCapabilityEnabled
-      ? await findAccessibleResources({
-          userId: req.user.id,
-          role: req.user.role,
-          resourceType: ResourceType.SKILL,
-          requiredPermissions: PermissionBits.VIEW,
-        })
+      ? withDeploymentSkillIds(
+          await findAccessibleResources({
+            userId: req.user.id,
+            role: req.user.role,
+            resourceType: ResourceType.SKILL,
+            requiredPermissions: PermissionBits.VIEW,
+          }),
+        )
       : [];
     const editableSkillIds = skillsCapabilityEnabled
       ? await findAccessibleResources({

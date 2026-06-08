@@ -84,7 +84,7 @@
     "rollup-plugin-peer-deps-external": "^2.2.4",
     "sanitize-html": "^2.13.0",
     "ts-node": "^10.9.2",
-    "typescript": "^5.0.4",
+    "typescript": "^5.9.3",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "yauzl": "^3.2.1"
   },
@@ -104,7 +104,7 @@
     "@azure/storage-blob": "^12.30.0",
     "@google/genai": "^2.0.1",
     "@keyv/redis": "^4.3.3",
-    "@librechat/agents": "^3.2.2",
+    "@librechat/agents": "^3.2.31",
     "@librechat/data-schemas": "*",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@opentelemetry/api": "^1.9.0",

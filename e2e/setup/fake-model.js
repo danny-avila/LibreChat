@@ -9,22 +9,40 @@
  * without a live provider or a standalone HTTP mock server: responses are decided
  * from the conversation and the agents' advertised tools.
  */
+const { FakeChatModel } = require('@librechat/agents');
+
 const MOCK_REPLY = process.env.MOCK_LLM_REPLY || 'E2E mock reply: pong';
 const CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_CHUNK_DELAY_MS) || 10;
 
 const CREATE_SKILL_MARKER = 'E2E_CREATE_SKILL:';
 const EDIT_SKILL_MARKER = 'E2E_EDIT_SKILL:';
+const ASSERT_MODEL_SPEC_SKILLS_MARKER = 'E2E_ASSERT_MODEL_SPEC_SKILLS';
+const ASSERT_PROVIDER_FILE_MARKER = 'E2E_ASSERT_PROVIDER_FILE:';
+const REPLY_MARKER = 'E2E_REPLY:';
+const COUNTED_REPLY_MARKER = 'E2E_COUNTED_REPLY:';
+const SLOW_REPLY_MARKER = 'E2E_SLOW_REPLY:';
+const FORCED_ERROR_MARKER = 'E2E_FORCED_ERROR:';
 const CREATE_FILE_AUTHORING_FINAL_TEXT = 'E2E file authoring complete';
 const EDIT_FILE_AUTHORING_FINAL_TEXT = 'E2E file edit complete';
+const MODEL_SPEC_SKILL_ASSERTION_FINAL_TEXT = 'E2E model spec skill assertion passed';
+const PROVIDER_FILE_ASSERTION_FINAL_TEXT = 'E2E provider file assertion passed';
+const SLOW_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_SLOW_CHUNK_DELAY_MS) || 35;
+const SLOW_REPLY_CHUNKS = 160;
 const CREATE_FILE_TOOL_NAME = 'create_file';
 const EDIT_FILE_TOOL_NAME = 'edit_file';
 const BASH_TOOL_NAME = 'bash_tool';
+const SKILL_TOOL_NAME = 'skill';
 const CREATE_SKILL_TOOL_CALL_ID = 'call_e2e_create_skill';
 const EDIT_SKILL_TOOL_CALL_ID = 'call_e2e_edit_skill';
+const MODEL_SPEC_ACCESSIBLE_SKILL = 'e2e-model-spec-allowed';
+const MODEL_SPEC_MISSING_SKILL = 'e2e-model-spec-missing';
+const MODEL_SPEC_INACCESSIBLE_SKILL = 'e2e-model-spec-inaccessible';
+const ALWAYS_APPLY_BODY_MARKER = 'E2E_ALWAYS_APPLY_BODY_MARKER';
 const SKILL_DESCRIPTION =
   'Use this skill to verify LibreChat skill file authoring in mock end-to-end tests.';
 const EDITED_SKILL_DESCRIPTION =
   'Use this edited skill to verify LibreChat skill file authoring in mock end-to-end tests.';
+const countedReplies = new Map();
 
 function messageType(message) {
   if (typeof message.getType === 'function') {
@@ -57,8 +75,13 @@ function getContentText(content) {
 }
 
 function getLatestUserText(messages) {
+  const message = getLatestUserMessage(messages);
+  return message ? getContentText(message.content) : '';
+}
+
+function getLatestUserMessage(messages) {
   if (!Array.isArray(messages)) {
-    return '';
+    return null;
   }
   for (let index = messages.length - 1; index >= 0; index--) {
     const message = messages[index];
@@ -67,10 +90,10 @@ function getLatestUserText(messages) {
     }
     const type = messageType(message);
     if (type === 'human' || type === 'user') {
-      return getContentText(message.content);
+      return message;
     }
   }
-  return '';
+  return null;
 }
 
 function getRequestedSkillName(text, marker) {
@@ -80,6 +103,19 @@ function getRequestedSkillName(text, marker) {
   }
   const afterMarker = text.slice(markerIndex + marker.length);
   return afterMarker.match(/[a-z0-9][a-z0-9-]*/)?.[0] ?? '';
+}
+
+function getMarkerValue(text, marker) {
+  const markerIndex = text.indexOf(marker);
+  if (markerIndex === -1) {
+    return '';
+  }
+  return (
+    text
+      .slice(markerIndex + marker.length)
+      .trim()
+      .split(/\s+/, 1)[0] ?? ''
+  );
 }
 
 function collectToolNames(agents) {
@@ -106,6 +142,192 @@ function collectToolNames(agents) {
     }
   }
   return names;
+}
+
+function collectAdditionalInstructions(agents) {
+  return (agents ?? [])
+    .map((agent) =>
+      typeof agent?.additional_instructions === 'string' ? agent.additional_instructions : '',
+    )
+    .filter(Boolean)
+    .join('\n');
+}
+
+function collectSkillPrimeMessages(messages) {
+  return (messages ?? [])
+    .filter((message) => message?.additional_kwargs?.source === 'skill')
+    .map((message) => ({
+      name: message.additional_kwargs.skillName,
+      trigger: message.additional_kwargs.trigger,
+      content: getContentText(message.content),
+    }));
+}
+
+function collectProviderFileNames(value, names = new Set()) {
+  if (value == null) {
+    return names;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectProviderFileNames(item, names);
+    }
+    return names;
+  }
+
+  if (typeof value !== 'object') {
+    return names;
+  }
+
+  if (value.type === 'input_file' && typeof value.filename === 'string') {
+    names.add(value.filename);
+  }
+
+  if (value.type === 'file' && typeof value.file?.filename === 'string') {
+    names.add(value.file.filename);
+  }
+
+  if (value.type === 'document' && typeof value.context === 'string') {
+    const match = value.context.match(/File:\s*"([^"]+)"/);
+    if (match?.[1]) {
+      names.add(match[1]);
+    }
+  }
+
+  for (const child of Object.values(value)) {
+    collectProviderFileNames(child, names);
+  }
+
+  return names;
+}
+
+function providerFileAssertionResponses({ messages, text }) {
+  const filename = getMarkerValue(text, ASSERT_PROVIDER_FILE_MARKER);
+  if (!filename) {
+    return null;
+  }
+
+  const latestUserMessage = getLatestUserMessage(messages);
+  const providerFileNames = collectProviderFileNames(latestUserMessage?.content);
+  if (providerFileNames.has(filename)) {
+    return {
+      responses: [`${PROVIDER_FILE_ASSERTION_FINAL_TEXT}: ${filename}`],
+    };
+  }
+
+  return {
+    responses: [
+      `E2E provider file assertion failed: expected ${filename}; saw ${
+        Array.from(providerFileNames).join(', ') || 'no provider files'
+      }`,
+    ],
+  };
+}
+
+function replyResponses(text) {
+  const errorName = getMarkerValue(text, FORCED_ERROR_MARKER);
+  if (errorName) {
+    return {
+      responses: [`E2E forced error prelude ${errorName}`],
+      thrownError: `E2E forced stream error ${errorName}`,
+    };
+  }
+
+  const replyName = getMarkerValue(text, REPLY_MARKER);
+  if (replyName) {
+    return {
+      responses: [`E2E reply ${replyName}`],
+    };
+  }
+
+  const countedName = getMarkerValue(text, COUNTED_REPLY_MARKER);
+  if (countedName) {
+    const count = (countedReplies.get(countedName) ?? 0) + 1;
+    countedReplies.set(countedName, count);
+    return {
+      responses: [`E2E counted reply ${countedName} #${count}`],
+    };
+  }
+
+  const slowName = getMarkerValue(text, SLOW_REPLY_MARKER);
+  if (slowName) {
+    const chunks = Array.from(
+      { length: SLOW_REPLY_CHUNKS },
+      (_, index) => `chunk-${String(index).padStart(3, '0')}`,
+    ).join(' ');
+    return {
+      responses: [`E2E slow reply ${slowName} ${chunks}`],
+      sleep: SLOW_CHUNK_DELAY_MS,
+    };
+  }
+
+  return null;
+}
+
+function overrideModel({ graph, responses, sleep, toolCalls, thrownError }) {
+  if (!thrownError) {
+    graph.overrideTestModel(responses, sleep ?? CHUNK_DELAY_MS, toolCalls);
+    return;
+  }
+
+  class ThrowingFakeChatModel extends FakeChatModel {
+    async *_streamResponseChunks(messages, options, runManager) {
+      yield* super._streamResponseChunks(
+        messages,
+        { ...options, thrownErrorString: thrownError },
+        runManager,
+      );
+    }
+  }
+
+  graph.overrideModel = new ThrowingFakeChatModel({
+    responses,
+    sleep: sleep ?? CHUNK_DELAY_MS,
+    emitCustomEvent: true,
+    toolCalls,
+  });
+}
+
+function modelSpecSkillAssertionResponses({ agents, messages, toolNames }) {
+  const failures = [];
+  const additionalInstructions = collectAdditionalInstructions(agents);
+  const skillPrimeMessages = collectSkillPrimeMessages(messages);
+  const alwaysApplyPrime = skillPrimeMessages.find(
+    (message) => message.name === MODEL_SPEC_ACCESSIBLE_SKILL && message.trigger === 'always-apply',
+  );
+
+  if (!toolNames.has(SKILL_TOOL_NAME)) {
+    failures.push(`${SKILL_TOOL_NAME} tool was not advertised`);
+  }
+  if (!additionalInstructions.includes(MODEL_SPEC_ACCESSIBLE_SKILL)) {
+    failures.push(`${MODEL_SPEC_ACCESSIBLE_SKILL} was not present in the model-visible catalog`);
+  }
+  if (additionalInstructions.includes(MODEL_SPEC_MISSING_SKILL)) {
+    failures.push(`${MODEL_SPEC_MISSING_SKILL} leaked into the model-visible catalog`);
+  }
+  if (additionalInstructions.includes(MODEL_SPEC_INACCESSIBLE_SKILL)) {
+    failures.push(`${MODEL_SPEC_INACCESSIBLE_SKILL} leaked into the model-visible catalog`);
+  }
+  if (!alwaysApplyPrime) {
+    failures.push(`${MODEL_SPEC_ACCESSIBLE_SKILL} was not always-apply primed`);
+  } else if (!alwaysApplyPrime.content.includes(ALWAYS_APPLY_BODY_MARKER)) {
+    failures.push(`${MODEL_SPEC_ACCESSIBLE_SKILL} always-apply body was missing its marker`);
+  }
+  if (skillPrimeMessages.some((message) => message.name === MODEL_SPEC_MISSING_SKILL)) {
+    failures.push(`${MODEL_SPEC_MISSING_SKILL} was unexpectedly primed`);
+  }
+  if (skillPrimeMessages.some((message) => message.name === MODEL_SPEC_INACCESSIBLE_SKILL)) {
+    failures.push(`${MODEL_SPEC_INACCESSIBLE_SKILL} was unexpectedly primed`);
+  }
+
+  if (failures.length > 0) {
+    return {
+      responses: [`E2E model spec skill assertion failed: ${failures.join('; ')}`],
+    };
+  }
+  return {
+    responses: [`${MODEL_SPEC_SKILL_ASSERTION_FINAL_TEXT}: ${MODEL_SPEC_ACCESSIBLE_SKILL}`],
+  };
 }
 
 function buildSkillBody(skillName) {
@@ -166,7 +388,21 @@ function fileAuthoringResponses(operation, toolNames) {
   };
 }
 
-function resolveResponses(text, toolNames) {
+function resolveResponses({ agents, messages, text, toolNames }) {
+  const reply = replyResponses(text);
+  if (reply) {
+    return reply;
+  }
+
+  const providerFileAssertion = providerFileAssertionResponses({ messages, text });
+  if (providerFileAssertion) {
+    return providerFileAssertion;
+  }
+
+  if (text.includes(ASSERT_MODEL_SPEC_SKILLS_MARKER)) {
+    return modelSpecSkillAssertionResponses({ agents, messages, toolNames });
+  }
+
   const createSkillName = getRequestedSkillName(text, CREATE_SKILL_MARKER);
   if (createSkillName) {
     return fileAuthoringResponses(
@@ -208,6 +444,11 @@ module.exports = function fakeModelHook(run, context) {
 
   const text = getLatestUserText(context?.messages);
   const toolNames = collectToolNames(context?.agents);
-  const { responses, toolCalls } = resolveResponses(text, toolNames);
-  graph.overrideTestModel(responses, CHUNK_DELAY_MS, toolCalls);
+  const { responses, sleep, toolCalls, thrownError } = resolveResponses({
+    agents: context?.agents,
+    messages: context?.messages,
+    text,
+    toolNames,
+  });
+  overrideModel({ graph, responses, sleep, toolCalls, thrownError });
 };

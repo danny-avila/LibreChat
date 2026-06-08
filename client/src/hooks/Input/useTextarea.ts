@@ -1,5 +1,5 @@
-import debounce from 'lodash/debounce';
 import { useEffect, useRef, useCallback } from 'react';
+import debounce from 'lodash/debounce';
 import { useRecoilValue, useRecoilState } from 'recoil';
 import type { TEndpointOption } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
@@ -11,12 +11,12 @@ import {
   checkIfScrollable,
 } from '~/utils';
 import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
+import { useLatestMessage } from '~/hooks/Messages/useLatestMessage';
 import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import useFileHandling from '~/hooks/Files/useFileHandling';
 import { useInteractionHealthCheck } from '~/data-provider';
 import { useChatContext } from '~/Providers/ChatContext';
-import { useLatestMessage } from '~/hooks/Messages/useLatestMessage';
 import { globalAudioId } from '~/common';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -59,7 +59,8 @@ export default function useTextarea({
   });
   const entityName = entity?.name ?? '';
 
-  const isNotAppendable = latestMessage?.error === true && !isAssistant;
+  const isNotAppendable =
+    latestMessage?.error === true && latestMessage.isCreatedByUser === true && !isAssistant;
   // && (conversationId?.length ?? 0) > 6; // also ensures that we don't show the wrong placeholder
 
   useEffect(() => {

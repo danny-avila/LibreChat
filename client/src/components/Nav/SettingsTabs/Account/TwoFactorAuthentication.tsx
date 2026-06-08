@@ -11,6 +11,7 @@ import {
   Progress,
 } from '@librechat/client';
 import type { TUser, TVerify2FARequest } from 'librechat-data-provider';
+import type { Variants } from 'framer-motion';
 import {
   useConfirmTwoFactorMutation,
   useDisableTwoFactorMutation,
@@ -24,7 +25,7 @@ import store from '~/store';
 
 export type Phase = 'setup' | 'qr' | 'verify' | 'backup' | 'disable';
 
-const phaseVariants = {
+const phaseVariants: Variants = {
   initial: { opacity: 0, scale: 0.95 },
   animate: { opacity: 1, scale: 1, transition: { duration: 0.3, ease: 'easeOut' } },
   exit: { opacity: 0, scale: 0.95, transition: { duration: 0.3, ease: 'easeIn' } },

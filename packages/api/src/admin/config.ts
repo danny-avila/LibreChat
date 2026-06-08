@@ -82,6 +82,14 @@ export interface AdminConfigDeps {
     priority: number,
     session?: ClientSession,
   ) => Promise<IConfig | null>;
+  tombstoneConfigField: (
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+    principalModel: PrincipalModel,
+    fieldPath: string,
+    priority: number,
+    session?: ClientSession,
+  ) => Promise<IConfig | null>;
   unsetConfigField: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
@@ -163,6 +171,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
     findConfigByPrincipal,
     upsertConfig,
     patchConfigFields,
+    tombstoneConfigField: writeConfigTombstone,
     unsetConfigField,
     deleteConfig,
     toggleConfigActive,
@@ -480,6 +489,80 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
   }
 
   /**
+   * POST /:principalType/:principalId/fields/tombstone — Suppress an inherited config path.
+   */
+  async function tombstoneConfigField(req: ServerRequest, res: Response) {
+    try {
+      const { principalType, principalId } = req.params as {
+        principalType: string;
+        principalId: string;
+      };
+
+      if (!validatePrincipalType(principalType)) {
+        return res.status(400).json({ error: `Invalid principalType: ${principalType}` });
+      }
+
+      const { fieldPath, priority } = req.body as {
+        fieldPath?: string;
+        priority?: number;
+      };
+
+      if (!fieldPath || typeof fieldPath !== 'string') {
+        return res.status(400).json({ error: 'fieldPath is required' });
+      }
+
+      if (priority != null && (typeof priority !== 'number' || priority < 0)) {
+        return res.status(400).json({ error: 'priority must be a non-negative number' });
+      }
+
+      if (!isValidFieldPath(fieldPath)) {
+        return res.status(400).json({ error: `Invalid or unsafe field path: ${fieldPath}` });
+      }
+
+      const user = getCapabilityUser(req);
+      if (!user) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      const section = getTopLevelSection(fieldPath);
+
+      if (!(await hasConfigCapability(user, section as ConfigSection, 'manage'))) {
+        return res.status(403).json({
+          error: `Insufficient permissions for config section: ${section}`,
+        });
+      }
+
+      if (isInterfacePermissionPath(fieldPath)) {
+        logger.warn(
+          `[adminConfig] Ignoring tombstone for interface permission field "${fieldPath}" — use role permissions instead`,
+        );
+        return res.status(200).json({ message: 'No actionable field path provided' });
+      }
+
+      const existing =
+        priority == null
+          ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
+          : null;
+
+      const config = await writeConfigTombstone(
+        principalType,
+        principalId,
+        principalModel(principalType),
+        fieldPath,
+        priority ?? existing?.priority ?? DEFAULT_PRIORITY,
+      );
+
+      invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
+        logger.error('[adminConfig] Cache invalidation failed after field tombstone:', err),
+      );
+      return res.status(200).json({ config });
+    } catch (error) {
+      logger.error('[adminConfig] tombstoneConfigField error:', error);
+      return res.status(500).json({ error: 'Failed to tombstone config field' });
+    }
+  }
+
+  /**
    * DELETE /:principalType/:principalId/fields?fieldPath=dotted.path
    */
   async function deleteConfigField(req: ServerRequest, res: Response) {
@@ -624,6 +707,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
     getConfig,
     upsertConfigOverrides,
     patchConfigField,
+    tombstoneConfigField,
     deleteConfigField,
     deleteConfigOverrides,
     toggleConfig,

@@ -14,6 +14,7 @@ export type TModelSpec = {
   preset: TModelSpecPreset;
   order?: number;
   default?: boolean;
+  softDefault?: boolean;
   description?: string;
   /**
    * Optional group name for organizing specs in the UI selector.
@@ -39,6 +40,7 @@ export type TModelSpec = {
   executeCode?: boolean;
   artifacts?: string | boolean;
   mcpServers?: string[];
+  skills?: boolean | string[];
 };
 
 export const tModelSpecSchema = z.object({
@@ -47,6 +49,7 @@ export const tModelSpecSchema = z.object({
   preset: tModelSpecPresetSchema,
   order: z.number().optional(),
   default: z.boolean().optional(),
+  softDefault: z.boolean().optional(),
   description: z.string().optional(),
   group: z.string().optional(),
   groupIcon: z.union([z.string(), eModelEndpointSchema]).optional(),
@@ -60,6 +63,7 @@ export const tModelSpecSchema = z.object({
   executeCode: z.boolean().optional(),
   artifacts: z.union([z.string(), z.boolean()]).optional(),
   mcpServers: z.array(z.string()).optional(),
+  skills: z.union([z.boolean(), z.array(z.string())]).optional(),
 });
 
 export const specsConfigSchema = z.object({

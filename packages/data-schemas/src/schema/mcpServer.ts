@@ -1,7 +1,7 @@
 import { Schema } from 'mongoose';
 import type { MCPServerDocument } from '~/types';
 
-const mcpServerSchema = new Schema<MCPServerDocument>(
+const mcpServerSchema: Schema<MCPServerDocument> = new Schema<MCPServerDocument>(
   {
     serverName: {
       type: String,

@@ -12,6 +12,10 @@ const {
   getStorageMetadata,
   resolveRequestTenantId,
   enrichWithSkillConfigurable,
+  mergeDeploymentSkillIds,
+  createDeploymentSkillMethods,
+  isDeploymentSkillFileSource,
+  getDeploymentSkillDownloadStream,
 } = require('@librechat/api');
 const {
   Permissions,
@@ -26,6 +30,34 @@ const {
 const { checkPermission, grantPermission } = require('~/server/services/PermissionService');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 const db = require('~/models');
+
+const deploymentSkillMethods = createDeploymentSkillMethods({
+  getSkillById: db.getSkillById,
+  getSkillByName: db.getSkillByName,
+  listSkillsByAccess: db.listSkillsByAccess,
+  listAlwaysApplySkills: db.listAlwaysApplySkills,
+  listSkillFiles: db.listSkillFiles,
+  getSkillFileByPath: db.getSkillFileByPath,
+  updateSkillFileContent: db.updateSkillFileContent,
+  updateSkillFileCodeEnvIds: db.updateSkillFileCodeEnvIds,
+});
+
+function getSkillDbMethods() {
+  return deploymentSkillMethods;
+}
+
+function withDeploymentSkillIds(ids = []) {
+  return mergeDeploymentSkillIds(ids);
+}
+
+function getSkillStrategyFunctions(source) {
+  if (isDeploymentSkillFileSource(source)) {
+    return {
+      getDownloadStream: (_req, filepath) => getDeploymentSkillDownloadStream(filepath),
+    };
+  }
+  return getStrategyFunctions(source);
+}
 
 function resolveSkillStorage(req, { isImage = false } = {}) {
   const source = getFileStrategy(req.config, { context: FileContext.skill_file, isImage });
@@ -128,6 +160,12 @@ function isAgentSkillsEnabledForRun({ agent, skillsCapabilityEnabled, ephemeralS
     return false;
   }
   if (isEphemeralAgentId(agent.id)) {
+    if (agent.skills_enabled === false) {
+      return false;
+    }
+    if (agent.skills_enabled === true) {
+      return true;
+    }
     return ephemeralSkillsToggle === true;
   }
   return agent.skills_enabled === true;
@@ -284,7 +322,7 @@ function enrichLoadedToolsWithAgentContext({ result, req, ctx = {}, fallback = {
 
 /** Skill-related properties for ToolExecuteOptions (stable references, allocated once). */
 const skillToolDeps = {
-  getSkillByName: db.getSkillByName,
+  getSkillByName: deploymentSkillMethods.getSkillByName,
   getAuthorSkillByName,
   createSkill: db.createSkill,
   updateSkill: db.updateSkill,
@@ -293,14 +331,14 @@ const skillToolDeps = {
   canEditSkill,
   grantSkillOwner,
   saveSkillFileContent,
-  listSkillFiles: db.listSkillFiles,
-  getStrategyFunctions,
+  listSkillFiles: deploymentSkillMethods.listSkillFiles,
+  getStrategyFunctions: getSkillStrategyFunctions,
   batchUploadCodeEnvFiles,
   getSessionInfo,
   checkIfActive,
-  updateSkillFileCodeEnvIds: db.updateSkillFileCodeEnvIds,
-  getSkillFileByPath: db.getSkillFileByPath,
-  updateSkillFileContent: db.updateSkillFileContent,
+  updateSkillFileCodeEnvIds: deploymentSkillMethods.updateSkillFileCodeEnvIds,
+  getSkillFileByPath: deploymentSkillMethods.getSkillFileByPath,
+  updateSkillFileContent: deploymentSkillMethods.updateSkillFileContent,
   /**
    * `read_file` falls back to a sandbox `cat` for `/mnt/data/...` paths
    * and for `{firstSegment}/...` paths whose first segment isn't a known
@@ -321,6 +359,9 @@ module.exports = {
   getSkillToolDeps,
   canAuthorSkillFiles,
   isAgentSkillsEnabledForRun,
+  getSkillDbMethods,
+  withDeploymentSkillIds,
+  getSkillStrategyFunctions,
   enrichWithSkillConfigurable,
   buildSkillPrimedIdsByName,
   buildAgentToolContext,
