@@ -4,7 +4,7 @@ import type { Request, Response, NextFunction } from 'express';
 jest.mock('@librechat/data-schemas', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
-import { createMessagePiiFilter } from './messagePiiFilter';
+import { createMessagePiiFilter, findPiiMatchInMessages } from './messagePiiFilter';
 
 type CapturedResponse = { status?: number; body?: unknown };
 
@@ -158,5 +158,65 @@ describe('messagePiiFilter middleware', () => {
     const matching = runMiddleware(config, { text: 'token ORG-DEADBEEF here' });
     expect(matching.nextCalls).toBe(0);
     expect(matching.capturedRes.status).toBe(400);
+  });
+});
+
+describe('findPiiMatchInMessages', () => {
+  it('returns null for missing or empty messages', () => {
+    expect(findPiiMatchInMessages(undefined, {})).toBeNull();
+    expect(findPiiMatchInMessages([], {})).toBeNull();
+  });
+
+  it('returns null when no config is provided', () => {
+    expect(
+      findPiiMatchInMessages([{ role: 'user', content: 'sk-proj-FAKE123' }], undefined),
+    ).toBeNull();
+  });
+
+  it('skips non-user messages', () => {
+    const hit = findPiiMatchInMessages(
+      [
+        { role: 'system', content: 'sk-proj-FAKE1234567890ABCDEF' },
+        { role: 'assistant', content: 'sk-proj-FAKE1234567890ABCDEF' },
+      ],
+      {},
+    );
+    expect(hit).toBeNull();
+  });
+
+  it('matches a string-content user message', () => {
+    const hit = findPiiMatchInMessages(
+      [{ role: 'user', content: 'my key is sk-proj-FAKE1234567890ABCDEF' }],
+      {},
+    );
+    expect(hit).toEqual({ id: 'sk_prefix', label: 'sk- prefix token' });
+  });
+
+  it('matches a content-parts user message (text part)', () => {
+    const hit = findPiiMatchInMessages(
+      [
+        {
+          role: 'user',
+          content: [
+            { type: 'image_url', image_url: { url: 'data:...' } },
+            { type: 'text', text: 'Authorization: Bearer abc.def.ghi' },
+          ],
+        },
+      ],
+      {},
+    );
+    expect(hit).toEqual({ id: 'bearer_header', label: 'Bearer token' });
+  });
+
+  it('returns null when no user message matches', () => {
+    expect(findPiiMatchInMessages([{ role: 'user', content: 'hello world' }], {})).toBeNull();
+  });
+
+  it('honors customPatterns from config', () => {
+    const hit = findPiiMatchInMessages([{ role: 'user', content: 'token ORG-DEADBEEF here' }], {
+      starterPatterns: [],
+      customPatterns: [{ id: 'org', label: 'Org token', regex: '\\bORG-[A-Z0-9]{6,}' }],
+    });
+    expect(hit).toEqual({ id: 'org', label: 'Org token' });
   });
 });

@@ -64,6 +64,53 @@ function findMatch(text: string, patterns: CompiledPattern[]): CompiledPattern |
   return null;
 }
 
+export interface PiiMatch {
+  id: string;
+  label: string;
+}
+
+type ContentPart = { type?: string; text?: string; [key: string]: unknown };
+type ChatLikeMessage = {
+  role?: string;
+  content?: string | ContentPart[];
+};
+
+export function findPiiMatchInMessages(
+  messages: ChatLikeMessage[] | undefined,
+  config: MessagePiiFilterConfig | undefined,
+): PiiMatch | null {
+  if (config == null || !Array.isArray(messages) || messages.length === 0) {
+    return null;
+  }
+  const patterns = compile(config);
+  if (patterns.length === 0) {
+    return null;
+  }
+  for (const msg of messages) {
+    if (msg == null || msg.role !== 'user') {
+      continue;
+    }
+    if (typeof msg.content === 'string') {
+      const hit = findMatch(msg.content, patterns);
+      if (hit != null) {
+        return { id: hit.id, label: hit.label };
+      }
+      continue;
+    }
+    if (Array.isArray(msg.content)) {
+      for (const part of msg.content) {
+        if (part != null && typeof part.text === 'string') {
+          const hit = findMatch(part.text, patterns);
+          if (hit != null) {
+            return { id: hit.id, label: hit.label };
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
 export interface CreateMessagePiiFilterOptions {
   getConfig: (req: ServerRequest) => MessagePiiFilterConfig | undefined;
 }

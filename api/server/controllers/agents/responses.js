@@ -41,6 +41,7 @@ const {
   sendResponsesErrorResponse,
   createResponsesEventHandlers,
   createAggregatorEventHandlers,
+  findPiiMatchInMessages,
 } = require('@librechat/api');
 const {
   createResponsesToolEndCallback,
@@ -574,6 +575,17 @@ const createResponse = async (req, res) => {
     const inputMessages = convertToInternalMessages(
       typeof request.input === 'string' ? request.input : request.input,
     );
+
+    const piiHit = findPiiMatchInMessages(inputMessages, appConfig?.messagePiiFilter);
+    if (piiHit != null) {
+      return sendResponsesErrorResponse(
+        res,
+        400,
+        `Message contains a ${piiHit.label}. Remove it and try again.`,
+        'invalid_request',
+        'message_pii_filter_block',
+      );
+    }
 
     // Merge previous messages with new input
     const allMessages = [...previousMessages, ...inputMessages];
