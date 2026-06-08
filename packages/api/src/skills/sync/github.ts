@@ -118,6 +118,11 @@ type StoredSkillFileRef = {
   tenantId?: string;
 };
 
+type DeletedSyncedSkillJournal = {
+  skill: ISkill & { _id: Types.ObjectId };
+  files: Array<ISkillFile & { _id: Types.ObjectId }>;
+};
+
 type SyncSkillFilesJournal = {
   staleFiles: StoredSkillFileRef[];
   savedFiles: StoredSkillFileRef[];
@@ -970,6 +975,36 @@ function toSkillFileInput(file: ISkillFile & { _id: Types.ObjectId }): UpsertSki
   };
 }
 
+function toCreateSkillInput(skill: ISkill & { _id: Types.ObjectId }): CreateSkillInput {
+  return {
+    name: skill.name,
+    displayTitle: skill.displayTitle,
+    description: skill.description,
+    body: skill.body,
+    frontmatter: skill.frontmatter,
+    category: skill.category,
+    author: skill.author,
+    authorName: skill.authorName,
+    source: PROVIDER,
+    sourceMetadata: skill.sourceMetadata,
+    alwaysApply: skill.alwaysApply,
+    tenantId: skill.tenantId,
+  };
+}
+
+function toStoredFileRefFromSkillFile(
+  file: ISkillFile & { _id: Types.ObjectId },
+): StoredSkillFileRef {
+  return {
+    filepath: file.filepath,
+    source: file.source,
+    storageKey: file.storageKey,
+    storageRegion: file.storageRegion,
+    author: file.author,
+    tenantId: file.tenantId,
+  };
+}
+
 function getStoredFileKey(file: StoredSkillFileRef): string {
   return [file.source, file.filepath, file.storageKey ?? '', file.storageRegion ?? ''].join(':');
 }
@@ -1018,6 +1053,43 @@ async function restoreExistingSkillFiles(params: {
   });
 }
 
+async function deleteSyncedSkillForRestore(
+  deps: GitHubSkillSyncDeps,
+  skill: ISkill & { _id: Types.ObjectId },
+): Promise<{ deletedFileCount: number; deletedSkill: DeletedSyncedSkillJournal }> {
+  const files = await deps.listSkillFiles(skill._id);
+  await deps.deleteSkill(skill._id.toString());
+  return {
+    deletedFileCount: files.length,
+    deletedSkill: { skill, files },
+  };
+}
+
+async function restoreDeletedSyncedSkill(
+  deps: GitHubSkillSyncDeps,
+  deleted: DeletedSyncedSkillJournal,
+): Promise<void> {
+  const restored = await deps.createSkill(toCreateSkillInput(deleted.skill));
+  for (const file of deleted.files) {
+    await deps.upsertSkillFile({
+      ...toSkillFileInput(file),
+      skillId: restored.skill._id,
+    });
+  }
+  await ensurePublicViewer(deps, restored.skill._id);
+}
+
+async function cleanupDeletedSyncedSkillFiles(
+  deps: GitHubSkillSyncDeps,
+  deleted: DeletedSyncedSkillJournal,
+): Promise<void> {
+  await cleanupStoredFiles({
+    deps,
+    files: deleted.files.map(toStoredFileRefFromSkillFile),
+    logMessage: '[GitHubSkillSync] Failed to clean up deleted stale mirrored skill file:',
+  });
+}
+
 function comparableSourceMetadata(metadata: Record<string, unknown> | undefined): string {
   const { commitSha: _commitSha, syncedAt: _syncedAt, ...rest } = metadata ?? {};
   return JSON.stringify(rest);
@@ -1062,6 +1134,48 @@ function findMovedSourceSkill(params: {
   );
 }
 
+function hasNameConflictingStaleSkill(params: {
+  source: SkillSyncGitHubSourceConfig;
+  prepared: PreparedDiscoveredSkill;
+  existingSyncedSkills: Array<ISkill & { _id: Types.ObjectId }>;
+  discoveredUpstreamIds: Set<string>;
+}): boolean {
+  return Boolean(
+    findMovedSourceSkill({
+      source: params.source,
+      prepared: params.prepared.prepared,
+      existingSyncedSkills: params.existingSyncedSkills,
+      seenUpstreamIds: params.discoveredUpstreamIds,
+    }),
+  );
+}
+
+function orderPreparedSkillsForSafeStaleDeletes(params: {
+  source: SkillSyncGitHubSourceConfig;
+  preparedSkills: PreparedDiscoveredSkill[];
+  existingSyncedSkills: Array<ISkill & { _id: Types.ObjectId }>;
+  discoveredUpstreamIds: Set<string>;
+}): PreparedDiscoveredSkill[] {
+  const regular: PreparedDiscoveredSkill[] = [];
+  const nameConflicting: PreparedDiscoveredSkill[] = [];
+  for (const prepared of params.preparedSkills) {
+    if (
+      prepared.prepared.existing &&
+      hasNameConflictingStaleSkill({
+        source: params.source,
+        prepared,
+        existingSyncedSkills: params.existingSyncedSkills,
+        discoveredUpstreamIds: params.discoveredUpstreamIds,
+      })
+    ) {
+      nameConflicting.push(prepared);
+      continue;
+    }
+    regular.push(prepared);
+  }
+  return [...regular, ...nameConflicting];
+}
+
 function getMirrorNameKey(params: {
   tenantId?: string;
   author: string;
@@ -1092,10 +1206,10 @@ function assertNoDuplicatePreparedSkillNames(
   }
 }
 
-async function deleteNameConflictingStaleSkills(params: {
+async function deleteNameConflictingStaleSkill(params: {
   deps: GitHubSkillSyncDeps;
   source: SkillSyncGitHubSourceConfig;
-  preparedSkills: PreparedDiscoveredSkill[];
+  prepared: PreparedRemoteSkill;
   existingSyncedSkills: Array<ISkill & { _id: Types.ObjectId }>;
   discoveredUpstreamIds: Set<string>;
   assertNotCancelled: AssertNotCancelled;
@@ -1103,20 +1217,15 @@ async function deleteNameConflictingStaleSkills(params: {
   remainingSkills: Array<ISkill & { _id: Types.ObjectId }>;
   deletedSkillCount: number;
   deletedFileCount: number;
+  deletedSkill?: DeletedSyncedSkillJournal;
 }> {
-  const sourceTenantId = params.source.tenantId ?? undefined;
-  const conflictingUpdateKeys = new Set(
-    params.preparedSkills
-      .filter(({ prepared }) => prepared.existing)
-      .map(({ prepared }) =>
-        getMirrorNameKey({
-          tenantId: sourceTenantId,
-          author: prepared.createInput.author.toString(),
-          name: prepared.update.name,
-        }),
-      ),
-  );
-  if (conflictingUpdateKeys.size === 0) {
+  const staleSkill = findMovedSourceSkill({
+    source: params.source,
+    prepared: params.prepared,
+    existingSyncedSkills: params.existingSyncedSkills,
+    seenUpstreamIds: params.discoveredUpstreamIds,
+  });
+  if (!staleSkill) {
     return {
       remainingSkills: params.existingSyncedSkills,
       deletedSkillCount: 0,
@@ -1124,31 +1233,21 @@ async function deleteNameConflictingStaleSkills(params: {
     };
   }
 
-  const remainingSkills: Array<ISkill & { _id: Types.ObjectId }> = [];
-  let deletedSkillCount = 0;
-  let deletedFileCount = 0;
-  for (const skill of params.existingSyncedSkills) {
-    params.assertNotCancelled();
-    const upstreamId = getSourceMetadataString(skill, 'upstreamId');
-    const shouldDelete =
-      (skill.tenantId ?? undefined) === sourceTenantId &&
-      (!upstreamId || !params.discoveredUpstreamIds.has(upstreamId)) &&
-      conflictingUpdateKeys.has(
-        getMirrorNameKey({
-          tenantId: sourceTenantId,
-          author: skill.author.toString(),
-          name: skill.name,
-        }),
-      );
-    if (!shouldDelete) {
-      remainingSkills.push(skill);
-      continue;
-    }
-    deletedFileCount += await deleteSyncedSkill(params.deps, skill);
-    deletedSkillCount++;
-  }
+  params.assertNotCancelled();
+  const { deletedFileCount, deletedSkill } = await deleteSyncedSkillForRestore(
+    params.deps,
+    staleSkill,
+  );
+  const staleSkillId = staleSkill._id.toString();
 
-  return { remainingSkills, deletedSkillCount, deletedFileCount };
+  return {
+    remainingSkills: params.existingSyncedSkills.filter(
+      (skill) => skill._id.toString() !== staleSkillId,
+    ),
+    deletedSkillCount: 1,
+    deletedFileCount,
+    deletedSkill,
+  };
 }
 
 async function syncSkillFiles(params: {
@@ -1379,19 +1478,14 @@ async function syncSource(params: {
       preparedSkills.map(({ discovered }) => makeUpstreamId(source, discovered.rootPath)),
     );
     assertNoDuplicatePreparedSkillNames(source, preparedSkills);
-    const staleConflictCleanup = await deleteNameConflictingStaleSkills({
-      deps,
+    const orderedPreparedSkills = orderPreparedSkillsForSafeStaleDeletes({
       source,
       preparedSkills,
       existingSyncedSkills: await getExistingSyncedSkills(),
       discoveredUpstreamIds,
-      assertNotCancelled,
     });
-    existingSyncedSkills = staleConflictCleanup.remainingSkills;
-    counts.deletedSkillCount += staleConflictCleanup.deletedSkillCount;
-    counts.deletedFileCount += staleConflictCleanup.deletedFileCount;
 
-    for (const { discovered, prepared } of preparedSkills) {
+    for (const { discovered, prepared } of orderedPreparedSkills) {
       assertNotCancelled();
       const movedExisting = prepared.existing
         ? null
@@ -1427,6 +1521,9 @@ async function syncSource(params: {
         const previousFiles = await deps.listSkillFiles(effectivePrepared.existing._id);
         const journal: SyncSkillFilesJournal = { staleFiles: [], savedFiles: [] };
         let fileCounts: SyncSkillFilesResult;
+        let staleConflictCleanup:
+          | Awaited<ReturnType<typeof deleteNameConflictingStaleSkill>>
+          | undefined;
         try {
           fileCounts = await syncSkillFiles({
             deps,
@@ -1439,6 +1536,19 @@ async function syncSource(params: {
             assertNotCancelled,
             journal,
           });
+          if (prepared.existing) {
+            staleConflictCleanup = await deleteNameConflictingStaleSkill({
+              deps,
+              source,
+              prepared: effectivePrepared,
+              existingSyncedSkills: await getExistingSyncedSkills(),
+              discoveredUpstreamIds,
+              assertNotCancelled,
+            });
+            existingSyncedSkills = staleConflictCleanup.remainingSkills;
+            counts.deletedSkillCount += staleConflictCleanup.deletedSkillCount;
+            counts.deletedFileCount += staleConflictCleanup.deletedFileCount;
+          }
           await commitExistingRemoteSkillAfterFileSync(
             deps,
             {
@@ -1459,6 +1569,15 @@ async function syncSource(params: {
               cleanupError,
             ),
           );
+          if (staleConflictCleanup?.deletedSkill) {
+            await restoreDeletedSyncedSkill(deps, staleConflictCleanup.deletedSkill).catch(
+              (cleanupError) =>
+                logger.error(
+                  '[GitHubSkillSync] Failed to restore stale mirrored skill after sync failure:',
+                  cleanupError,
+                ),
+            );
+          }
           throw error;
         }
         await cleanupStoredFiles({
@@ -1466,6 +1585,9 @@ async function syncSource(params: {
           files: fileCounts.staleFiles,
           logMessage: '[GitHubSkillSync] Failed to clean up replaced synced file:',
         });
+        if (staleConflictCleanup?.deletedSkill) {
+          await cleanupDeletedSyncedSkillFiles(deps, staleConflictCleanup.deletedSkill);
+        }
         counts.syncedSkillCount++;
         counts.syncedFileCount += fileCounts.syncedFileCount;
         counts.deletedFileCount += fileCounts.deletedFileCount;

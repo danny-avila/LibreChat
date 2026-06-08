@@ -865,7 +865,7 @@ describe('createGitHubSkillSyncRunner', () => {
     expect(deps.deleteSkill).toHaveBeenCalledWith(staleId.toString());
   });
 
-  it('deletes stale name-conflicting mirrors before applying same-commit renames', async () => {
+  it('deletes stale name-conflicting mirrors after file sync and before same-commit renames', async () => {
     const staleId = new Types.ObjectId();
     const existingId = new Types.ObjectId();
     const author = makeSourceAuthorId();
@@ -939,8 +939,212 @@ describe('createGitHubSkillSyncRunner', () => {
         update: expect.objectContaining({ name: 'renamed' }),
       }),
     );
+    expect((deps.upsertSkillFile as jest.Mock).mock.invocationCallOrder[0]).toBeLessThan(
+      deleteSkill.mock.invocationCallOrder[0],
+    );
     expect(deleteSkill.mock.invocationCallOrder[0]).toBeLessThan(
       updateSkill.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('does not delete stale name-conflicting mirrors before another skill file sync fails', async () => {
+    const renamedMarkdown = '---\nname: renamed\ndescription: Renamed skill\n---\nBody';
+    const brokenMarkdown = '---\nname: broken\ndescription: Broken skill\n---\nBody';
+    const fetchFn = jest.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes('/commits/')) {
+        return response({ sha: 'commit-sha', commit: { tree: { sha: 'tree-sha' } } });
+      }
+      if (url.includes('/git/trees/tree-sha')) {
+        return response({
+          sha: 'tree-sha',
+          truncated: false,
+          tree: [
+            {
+              path: 'skills',
+              mode: '040000',
+              type: 'tree',
+              sha: 'skills-tree-sha',
+              url: 'https://api.github.test/tree/skills',
+            },
+          ],
+        });
+      }
+      if (url.includes('/git/trees/skills-tree-sha')) {
+        return response({
+          sha: 'skills-tree-sha',
+          truncated: false,
+          tree: [
+            {
+              path: 'research/SKILL.md',
+              mode: '100644',
+              type: 'blob',
+              sha: 'research-skill-sha',
+              size: Buffer.byteLength(renamedMarkdown),
+              url: 'https://api.github.test/blob/research-skill',
+            },
+            {
+              path: 'research/scripts/run.sh',
+              mode: '100644',
+              type: 'blob',
+              sha: 'research-file-sha',
+              size: 7,
+              url: 'https://api.github.test/blob/research-file',
+            },
+            {
+              path: 'broken/SKILL.md',
+              mode: '100644',
+              type: 'blob',
+              sha: 'broken-skill-sha',
+              size: Buffer.byteLength(brokenMarkdown),
+              url: 'https://api.github.test/blob/broken-skill',
+            },
+            {
+              path: 'broken/scripts/run.sh',
+              mode: '100644',
+              type: 'blob',
+              sha: 'broken-file-sha',
+              size: 7,
+              url: 'https://api.github.test/blob/broken-file',
+            },
+          ],
+        });
+      }
+      if (url.includes('/git/blobs/research-skill-sha')) {
+        return response(blob(renamedMarkdown));
+      }
+      if (url.includes('/git/blobs/broken-skill-sha')) {
+        return response(blob(brokenMarkdown));
+      }
+      if (url.includes('/git/blobs/research-file-sha')) {
+        return response(blob('echo ok'));
+      }
+      if (url.includes('/git/blobs/broken-file-sha')) {
+        return response(blob('echo ok'));
+      }
+      return response({ message: 'not found' }, 404);
+    }) as unknown as typeof fetch;
+    const staleId = new Types.ObjectId();
+    const existingId = new Types.ObjectId();
+    const author = makeSourceAuthorId();
+    const makeExisting = (
+      upstreamId: string,
+      _id: Types.ObjectId,
+      name: string,
+    ): ISkill & { _id: Types.ObjectId } => {
+      const skill = makeSkill({
+        name,
+        description: `${name} skill`,
+        body: 'Old body',
+        author,
+        authorName: 'GitHub Sync',
+        source: 'github',
+        sourceMetadata: { provider: 'github', sourceId: 'librechat-skills', upstreamId },
+      });
+      skill._id = _id;
+      return skill;
+    };
+    const staleSkill = makeExisting('librechat-skills:skills/removed', staleId, 'renamed');
+    const syncedSkill = makeExisting('librechat-skills:skills/research', existingId, 'research');
+    const createdIds: string[] = [];
+    const deleteSkill = jest.fn(async (id: string) => ({ deleted: createdIds.includes(id) }));
+    const deps = createDeps({
+      fetchFn,
+      findSkillBySourceIdentity: jest.fn(async ({ upstreamId }) =>
+        upstreamId === 'librechat-skills:skills/research' ? syncedSkill : null,
+      ),
+      getSkillById: jest.fn(async (id) =>
+        id.toString() === existingId.toString() ? syncedSkill : null,
+      ),
+      listSkillsBySource: jest.fn(async () => [staleSkill, syncedSkill]),
+      createSkill: jest.fn(async (input: CreateSkillInput): Promise<CreateSkillResult> => {
+        const skill = makeSkill(input);
+        createdIds.push(skill._id.toString());
+        return { skill, warnings: [] };
+      }),
+      saveBuffer: jest.fn(async () => {
+        throw new Error('storage unavailable');
+      }),
+      deleteSkill,
+      updateSkill: jest.fn(),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('failed');
+    expect(deleteSkill).not.toHaveBeenCalledWith(staleId.toString());
+    expect(deps.updateSkill).not.toHaveBeenCalled();
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'failed',
+        errorMessage: 'storage unavailable',
+      }),
+    );
+  });
+
+  it('restores a stale name-conflicting mirror when the rename update fails after deletion', async () => {
+    const staleId = new Types.ObjectId();
+    const existingId = new Types.ObjectId();
+    const author = makeSourceAuthorId();
+    const makeExisting = (
+      upstreamId: string,
+      _id: Types.ObjectId,
+      name: string,
+    ): ISkill & { _id: Types.ObjectId } => {
+      const skill = makeSkill({
+        name,
+        description: `${name} skill`,
+        body: 'Old body',
+        author,
+        authorName: 'GitHub Sync',
+        source: 'github',
+        sourceMetadata: { provider: 'github', sourceId: 'librechat-skills', upstreamId },
+      });
+      skill._id = _id;
+      return skill;
+    };
+    const staleSkill = makeExisting('librechat-skills:skills/removed', staleId, 'renamed');
+    const syncedSkill = makeExisting('librechat-skills:skills/research', existingId, 'research');
+    const deletedIds = new Set<string>();
+    let restoredSkill: (ISkill & { _id: Types.ObjectId }) | undefined;
+    const createSkill = jest.fn(async (input: CreateSkillInput): Promise<CreateSkillResult> => {
+      restoredSkill = makeSkill(input);
+      return { skill: restoredSkill, warnings: [] };
+    });
+    const deleteSkill = jest.fn(async (id: string) => {
+      deletedIds.add(id);
+      return { deleted: true };
+    });
+    const deps = createDeps({
+      fetchFn: githubFetch('---\nname: renamed\ndescription: Renamed skill\n---\nBody'),
+      findSkillBySourceIdentity: jest.fn(async ({ upstreamId }) =>
+        upstreamId === 'librechat-skills:skills/research' ? syncedSkill : null,
+      ),
+      getSkillById: jest.fn(async (id) =>
+        id.toString() === existingId.toString() ? syncedSkill : null,
+      ),
+      listSkillsBySource: jest.fn(async () =>
+        [staleSkill, syncedSkill].filter((skill) => !deletedIds.has(skill._id.toString())),
+      ),
+      createSkill,
+      deleteSkill,
+      updateSkill: jest.fn(async () => ({ status: 'conflict' as const, current: syncedSkill })),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('failed');
+    expect(deleteSkill).toHaveBeenCalledWith(staleId.toString());
+    expect(createSkill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'renamed',
+        sourceMetadata: expect.objectContaining({
+          upstreamId: 'librechat-skills:skills/removed',
+        }),
+      }),
+    );
+    expect(deps.grantPermission).toHaveBeenCalledWith(
+      expect.objectContaining({ resourceId: restoredSkill?._id }),
     );
   });
 
