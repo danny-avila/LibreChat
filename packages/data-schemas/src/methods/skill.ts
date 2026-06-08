@@ -905,6 +905,15 @@ export function createSkillMethods(
   }) => Promise<UpdateSkillResult>;
   deleteSkill: (id: string) => Promise<{ deleted: boolean }>;
   deleteUserSkills: (userId: Types.ObjectId | string) => Promise<number>;
+  findSkillBySourceIdentity: (params: {
+    source: 'github' | 'notion';
+    upstreamId: string;
+    tenantId?: string;
+  }) => Promise<(ISkill & { _id: Types.ObjectId }) | null>;
+  listSkillsBySource: (params: {
+    source: 'github' | 'notion';
+    sourceId: string;
+  }) => Promise<Array<ISkill & { _id: Types.ObjectId }>>;
   listSkillFiles: (
     skillId: Types.ObjectId | string,
   ) => Promise<Array<ISkillFile & { _id: Types.ObjectId }>>;
