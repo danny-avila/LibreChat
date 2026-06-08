@@ -533,7 +533,7 @@ endpoints:
       # For AI image, video, music/audio, text-to-speech, and LLM tasks.
       # Pick model IDs from https://runapi.ai/models.md
       apiKey: '${RUNAPI_API_KEY}'
-      baseURL: 'https://api.runapi.ai/v1'
+      baseURL: 'https://runapi.ai/v1'
       models:
         default: ['gpt-5.5']
         fetch: true
