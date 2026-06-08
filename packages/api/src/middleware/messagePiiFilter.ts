@@ -30,14 +30,22 @@ function selectStarter(ids?: string[]): CompiledPattern[] {
   return out;
 }
 
+const COMPILE_CACHE = new WeakMap<object, CompiledPattern[]>();
+
 function compile(config: MessagePiiFilterConfig): CompiledPattern[] {
+  const cached = COMPILE_CACHE.get(config);
+  if (cached != null) {
+    return cached;
+  }
   const starter = selectStarter(config.starterPatterns);
   const custom = (config.customPatterns ?? []).map((p) => ({
     id: p.id,
     label: p.label,
     pattern: new RegExp(p.regex, 'g'),
   }));
-  return [...starter, ...custom];
+  const result = [...starter, ...custom];
+  COMPILE_CACHE.set(config, result);
+  return result;
 }
 
 function findMatch(text: string, patterns: CompiledPattern[]): CompiledPattern | null {
