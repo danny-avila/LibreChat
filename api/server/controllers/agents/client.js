@@ -1106,27 +1106,25 @@ class AgentClient extends BaseClient {
 
         config.signal = null;
 
-        if (
-          piiFilterResult != null &&
-          this.options.res != null &&
-          !this.options.res.writableEnded
-        ) {
+        if (piiFilterResult != null) {
           const piiHaltReason = run.getHaltReason?.();
           if (piiHaltReason === 'message_pii_filter_block') {
-            // Surface a friendly error on block mode so the frontend
-            // doesn't render an empty assistant bubble. The existing
-            // error event vocabulary is whatever the host expects; use
-            // a typed payload so a downstream toast/banner can render
-            // a real message rather than the silent halt LibreChat
-            // would otherwise show.
-            sendEvent(this.options.res, {
-              type: 'pii_blocked',
-              reason: piiHaltReason,
-              matches: piiFilterResult.collector.matches,
-            });
-          } else if (
+            // Throwing here routes through the existing error UX in the
+            // sendCompletion catch block, which pushes a ContentTypes.ERROR
+            // part into the assistant turn. The user sees a real error
+            // message in chat instead of an empty bubble + stalled
+            // spinner. Labels are joined so the message names what was
+            // matched (e.g. "Anthropic API key, GitHub token").
+            const labels = piiFilterResult.collector.matches.map((m) => m.patternLabel).join(', ');
+            throw new Error(
+              `Message blocked by PII filter${labels.length > 0 ? `: ${labels}` : ''}. Edit and retry.`,
+            );
+          }
+          if (
             appConfig?.messagePiiFilter?.onMatch === 'warn' &&
-            piiFilterResult.collector.matches.length > 0
+            piiFilterResult.collector.matches.length > 0 &&
+            this.options.res != null &&
+            !this.options.res.writableEnded
           ) {
             sendEvent(this.options.res, {
               type: 'pii_matches',
