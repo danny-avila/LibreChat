@@ -203,6 +203,21 @@ export function sanitizeModelSpecs<T extends Partial<TSpecsConfig> | null | unde
       const preset = modelSpec?.preset;
       const sanitizedModelSpec = { ...modelSpec };
       delete (sanitizedModelSpec as { skills?: unknown }).skills;
+      const subagents = sanitizedModelSpec.subagents;
+      if (subagents && typeof subagents === 'object') {
+        const sanitizedSubagents: TModelSpec['subagents'] = {};
+        if (subagents.enabled !== undefined) {
+          sanitizedSubagents.enabled = subagents.enabled;
+        }
+        if (subagents.allowSelf !== undefined) {
+          sanitizedSubagents.allowSelf = subagents.allowSelf;
+        }
+        if (Object.keys(sanitizedSubagents).length > 0) {
+          sanitizedModelSpec.subagents = sanitizedSubagents;
+        } else {
+          delete sanitizedModelSpec.subagents;
+        }
+      }
       if (!preset || typeof preset !== 'object') {
         return sanitizedModelSpec;
       }

@@ -616,6 +616,12 @@ endpoints:
 #       # accessible skill catalog, false to force skills off, or a name list as
 #       # a strict allowlist for catalog, manual, and always-apply resolution.
 #       # skills: ["brand-guidelines", "code-review"]
+#       # Subagents can be enabled per model spec. `allowSelf: true` lets the
+#       # ephemeral agent spawn a fresh isolated copy of itself for focused work.
+#       # subagents:
+#       #   enabled: true
+#       #   allowSelf: true
+#       #   agent_ids: []
 #
 #     # Example 2: Nested under a custom endpoint (grouped with groq endpoint)
 #     - name: "llama3-70b-8192"

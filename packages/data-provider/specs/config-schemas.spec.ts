@@ -10,6 +10,7 @@ import {
   fileStrategiesSchema,
   summarizationTriggerSchema,
   summarizationConfigSchema,
+  MAX_SUBAGENTS,
 } from '../src/config';
 import {
   tModelSpecPresetSchema,
@@ -838,6 +839,7 @@ describe('specsConfigSchema', () => {
           hideBadgeRow: true,
           softDefault: true,
           preset: { endpoint: EModelEndpoint.openAI },
+          subagents: { enabled: true, allowSelf: true, agent_ids: ['agent_researcher'] },
         },
       ],
     });
@@ -845,11 +847,31 @@ describe('specsConfigSchema', () => {
     if (result.success) {
       expect(result.data.list[0].hideBadgeRow).toBe(true);
       expect(result.data.list[0].softDefault).toBe(true);
+      expect(result.data.list[0].subagents).toEqual({
+        enabled: true,
+        allowSelf: true,
+        agent_ids: ['agent_researcher'],
+      });
     }
   });
 
   it('still rejects null list', () => {
     const result = specsConfigSchema.safeParse({ list: null });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects model spec subagent ids above the shared cap', () => {
+    const oversized = Array.from({ length: MAX_SUBAGENTS + 1 }, (_, i) => `agent_${i}`);
+    const result = specsConfigSchema.safeParse({
+      list: [
+        {
+          name: 'spec-1',
+          label: 'Spec 1',
+          preset: { endpoint: EModelEndpoint.openAI },
+          subagents: { enabled: true, agent_ids: oversized },
+        },
+      ],
+    });
     expect(result.success).toBe(false);
   });
 });

@@ -10,11 +10,11 @@ import type {
   ReasoningResponseKey,
   ReasoningParameterFormat,
 } from './schemas';
+import type { Agent, AgentSubagentsConfig } from './types/assistants';
 import type { RefillIntervalUnit } from './balance';
 import type { SettingDefinition } from './generate';
 import type { TMinimalFeedback } from './feedback';
 import type { ContentTypes } from './types/runs';
-import type { Agent } from './types/assistants';
 
 export * from './schemas';
 
@@ -107,6 +107,7 @@ export type TEphemeralAgent = {
   execute_code?: boolean;
   artifacts?: string;
   skills?: boolean;
+  subagents?: AgentSubagentsConfig;
 };
 
 export type TPayload = Partial<TMessage> &
