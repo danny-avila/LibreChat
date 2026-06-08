@@ -72,7 +72,7 @@
     "rollup-plugin-typescript2": "^0.37.0",
     "ts-node": "^10.9.2",
     "tsdown": "^0.22.2",
-    "typescript": "^5.0.4"
+    "typescript": "^5.9.3"
   },
   "peerDependencies": {
     "jsonwebtoken": "^9.0.2",

@@ -84,7 +84,7 @@
     "rollup-plugin-peer-deps-external": "^2.2.4",
     "sanitize-html": "^2.13.0",
     "ts-node": "^10.9.2",
-    "typescript": "^5.0.4",
+    "typescript": "^5.9.3",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "yauzl": "^3.2.1"
   },

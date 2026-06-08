@@ -112,6 +112,6 @@
     "rollup-plugin-postcss": "^4.0.2",
     "rollup-plugin-typescript2": "^0.37.0",
     "tailwindcss-radix": "^2.8.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.9.3"
   }
 }

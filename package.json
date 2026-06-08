@@ -147,7 +147,7 @@
     "prettier": "^3.5.0",
     "prettier-plugin-tailwindcss": "^0.6.11",
     "turbo": "^2.9.16",
-    "typescript-eslint": "^8.24.0"
+    "typescript-eslint": "^8.60.1"
   },
   "overrides": {
     "@xmldom/xmldom": "^0.8.13",
