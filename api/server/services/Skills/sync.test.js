@@ -159,7 +159,7 @@ describe('GitHub skill sync service', () => {
     expect(mockGetAppConfig).toHaveBeenCalledWith({ baseOnly: true });
   });
 
-  it('starts a request-scoped sync for resolved admin skillSync config', async () => {
+  it('does not let user skill-list sync use server credentials from resolved config', async () => {
     const skillSync = {
       github: {
         enabled: true,
@@ -178,28 +178,6 @@ describe('GitHub skill sync service', () => {
         ],
       },
     };
-    mockRunnerStatus = {
-      enabled: true,
-      intervalMinutes: 60,
-      runOnStartup: false,
-      sources: [
-        {
-          provider: 'github',
-          sourceId: 'tenant-skills',
-          status: 'idle',
-          credentialPresent: true,
-          owner: 'LibreChat',
-          repo: 'skills',
-          ref: 'main',
-          paths: ['skills'],
-          syncedSkillCount: 0,
-          syncedFileCount: 0,
-          deletedSkillCount: 0,
-          deletedFileCount: 0,
-        },
-      ],
-      credentials: [],
-    };
 
     const service = require('./sync');
     const started = await service.maybeRunGitHubSkillSyncForRequest({
@@ -209,9 +187,9 @@ describe('GitHub skill sync service', () => {
 
     const requestRunner = mockCreatedRunners[0].runner;
     const requestConfig = await mockCreatedRunners[0].deps.getConfig();
-    expect(started).toBe(true);
-    expect(mockCreatedRunners[0].deps.allowServerCredentials).toBe(true);
-    expect(requestRunner.runOnce).toHaveBeenCalledTimes(1);
+    expect(started).toBe(false);
+    expect(mockCreatedRunners[0].deps.allowServerCredentials).toBe(false);
+    expect(requestRunner.runOnce).not.toHaveBeenCalled();
     expect(requestConfig.github.runOnStartup).toBe(false);
     expect(requestConfig.github.sources[0]).toEqual(
       expect.objectContaining({
@@ -269,7 +247,7 @@ describe('GitHub skill sync service', () => {
     });
 
     expect(started).toBe(false);
-    expect(mockCreatedRunners[0].deps.allowServerCredentials).toBe(true);
+    expect(mockCreatedRunners[0].deps.allowServerCredentials).toBe(false);
     expect(mockCreatedRunners[0].runner.runOnce).not.toHaveBeenCalled();
   });
 
