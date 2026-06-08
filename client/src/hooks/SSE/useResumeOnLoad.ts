@@ -78,6 +78,10 @@ function getResumeBranchTargetMessageId(
   return resumeState.userMessage?.parentMessageId;
 }
 
+function preferDefinedString(value?: string | null, fallback?: string): string | undefined {
+  return value != null && value !== '' ? value : fallback;
+}
+
 /**
  * Build a submission object from resume state for reconnected streams.
  * This provides the minimum data needed for useResumableSSE to subscribe.
@@ -136,7 +140,8 @@ function buildSubmissionFromResumeState(
     isCreatedByUser: false,
     role: 'assistant',
     sender: existingResponseMessage?.sender ?? resumeState.sender,
-    model: existingResponseMessage?.model,
+    model: preferDefinedString(existingResponseMessage?.model, resumeState.model),
+    iconURL: preferDefinedString(existingResponseMessage?.iconURL, resumeState.iconURL),
   } as TMessage;
 
   const conversation: TConversation = {

@@ -217,6 +217,8 @@ export namespace Agents {
     responseMessageId?: string;
     conversationId?: string;
     sender?: string;
+    iconURL?: string;
+    model?: string;
     titleEvent?: {
       event: 'title';
       data?: {
