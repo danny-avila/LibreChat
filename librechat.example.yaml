@@ -528,6 +528,19 @@ endpoints:
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
 
+    # RunAPI Example
+    - name: 'RunAPI'
+      # For AI image, video, music/audio, text-to-speech, and LLM tasks.
+      # Pick model IDs from https://runapi.ai/models.md
+      apiKey: '${RUNAPI_API_KEY}'
+      baseURL: 'https://api.runapi.ai/v1'
+      models:
+        default: ['gpt-5.5']
+        fetch: true
+      titleConvo: true
+      titleModel: 'gpt-5.5'
+      modelDisplayLabel: 'RunAPI'
+
     # Helicone Example
     - name: 'Helicone'
       # For `apiKey` and `baseURL`, you can use environment variables that you define.
