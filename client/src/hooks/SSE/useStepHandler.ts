@@ -467,6 +467,17 @@ export default function useStepHandler({
         submission.isRegenerate &&
         !message.isCreatedByUser &&
         getRegenerateResponseIds(responseMessageId).has(message.messageId);
+      const shouldRemoveInitialResponse = (message: TMessage, responseMessageId: string) => {
+        const initialResponseId = submission.initialResponse?.messageId;
+        return (
+          !submission.isRegenerate &&
+          !message.isCreatedByUser &&
+          initialResponseId != null &&
+          initialResponseId !== responseMessageId &&
+          message.messageId === initialResponseId &&
+          message.parentMessageId === userMessage.messageId
+        );
+      };
       const ensureUserMessagePresent = (
         candidateMessages: TMessage[],
         responseMessageId: string,
@@ -497,9 +508,12 @@ export default function useStepHandler({
       ) => {
         const currentMessages = getEventMessages(candidateMessages);
         if (!submission.isRegenerate) {
+          const nextMessages = currentMessages.filter(
+            (message) => !shouldRemoveInitialResponse(message, responseMessageId),
+          );
           return ensureUserMessage
-            ? ensureUserMessagePresent(currentMessages, responseMessageId)
-            : currentMessages;
+            ? ensureUserMessagePresent(nextMessages, responseMessageId)
+            : nextMessages;
         }
         return currentMessages.filter(
           (message) => !shouldRemoveRegenerateResponse(message, responseMessageId),
@@ -590,11 +604,14 @@ export default function useStepHandler({
 
           // Get fresh messages to handle multi-tab scenarios where messages may have loaded
           // after this handler started (Tab 2 may have more complete history now)
-          const currentMessages = getResponseBaseMessages(messages, responseMessageId);
+          const currentMessages = getResponseBaseMessages(messages, responseMessageId, true);
 
           // Remove any existing response placeholder
           let updatedMessages = currentMessages.filter(
-            (message) => !shouldRemoveRegenerateResponse(message, responseMessageId),
+            (message) =>
+              message.messageId !== responseMessageId &&
+              !shouldRemoveRegenerateResponse(message, responseMessageId) &&
+              !shouldRemoveInitialResponse(message, responseMessageId),
           );
 
           // Ensure userMessage is present (multi-tab: Tab 2 may not have it yet).
@@ -665,8 +682,11 @@ export default function useStepHandler({
           );
 
           messageMap.current.set(responseMessageId, updatedResponse);
-          const currentMessages = submission.isRegenerate ? messages : getMessages() || [];
-          setMessages(mergeResponseMessage(currentMessages, updatedResponse, responseMessageId));
+          setMessages(
+            mergeResponseMessage(messages, updatedResponse, responseMessageId, {
+              ensureUserMessage: true,
+            }),
+          );
         }
 
         const bufferedDeltas = pendingDeltaBuffer.current.get(runStep.id);
@@ -704,8 +724,11 @@ export default function useStepHandler({
             agentUpdateMeta,
           );
           messageMap.current.set(responseMessageId, updatedResponse);
-          const currentMessages = submission.isRegenerate ? messages : getMessages() || [];
-          setMessages(mergeResponseMessage(currentMessages, updatedResponse, responseMessageId));
+          setMessages(
+            mergeResponseMessage(messages, updatedResponse, responseMessageId, {
+              ensureUserMessage: true,
+            }),
+          );
         }
       } else if (stepEvent.event === StepEvents.ON_MESSAGE_DELTA) {
         const messageDelta = stepEvent.data;
@@ -747,8 +770,11 @@ export default function useStepHandler({
             getStepMetadata(runStep),
           );
           messageMap.current.set(responseMessageId, updatedResponse);
-          const currentMessages = submission.isRegenerate ? messages : getMessages() || [];
-          setMessages(mergeResponseMessage(currentMessages, updatedResponse, responseMessageId));
+          setMessages(
+            mergeResponseMessage(messages, updatedResponse, responseMessageId, {
+              ensureUserMessage: true,
+            }),
+          );
         }
       } else if (stepEvent.event === StepEvents.ON_REASONING_DELTA) {
         const reasoningDelta = stepEvent.data;
@@ -790,8 +816,11 @@ export default function useStepHandler({
             getStepMetadata(runStep),
           );
           messageMap.current.set(responseMessageId, updatedResponse);
-          const currentMessages = submission.isRegenerate ? messages : getMessages() || [];
-          setMessages(mergeResponseMessage(currentMessages, updatedResponse, responseMessageId));
+          setMessages(
+            mergeResponseMessage(messages, updatedResponse, responseMessageId, {
+              ensureUserMessage: true,
+            }),
+          );
         }
       } else if (stepEvent.event === StepEvents.ON_RUN_STEP_DELTA) {
         const runStepDelta = stepEvent.data;
@@ -955,8 +984,6 @@ export default function useStepHandler({
           return;
         }
 
-        const currentMessages = submission.isRegenerate ? messages : getMessages() || [];
-
         if (completeData.error) {
           const filtered = targetMessage.content.filter(
             (part) =>
@@ -965,6 +992,7 @@ export default function useStepHandler({
           if (filtered.length !== targetMessage.content.length) {
             announcePolite({ message: 'summarize_failed', isStatus: true });
             const cleaned = { ...targetMessage, content: filtered };
+            const currentMessages = submission.isRegenerate ? messages : getMessages() || [];
             messageMap.current.set(completeMessageId, cleaned);
             setMessages(mergeResponseMessage(currentMessages, cleaned, completeMessageId));
           }
@@ -983,6 +1011,7 @@ export default function useStepHandler({
           if (didFinalize) {
             announcePolite({ message: 'summarize_completed', isStatus: true });
             const finalized = { ...targetMessage, content: updatedContent };
+            const currentMessages = submission.isRegenerate ? messages : getMessages() || [];
             messageMap.current.set(completeMessageId, finalized);
             setMessages(mergeResponseMessage(currentMessages, finalized, completeMessageId));
           }
