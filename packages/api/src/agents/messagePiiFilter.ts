@@ -13,6 +13,16 @@ import {
 import type { UserPromptSubmitHookOutput } from '@librechat/agents';
 
 /**
+ * Mirrors the `.default('[REDACTED]')` on `messagePiiFilterSchema`
+ * (packages/data-provider/src/config.ts). Coalesced at every helper
+ * entry point because the LibreChat config loader keeps the raw YAML
+ * object instead of applying Zod parsed defaults back to it, so an
+ * operator who omits `redactionText` ends up with `undefined` here at
+ * runtime even though the schema documents a default.
+ */
+const DEFAULT_PII_REDACTION_TEXT = '[REDACTED]';
+
+/**
  * Per-request match collector. The factory creates one for each
  * request; the controller reads it after `processStream` resolves to
  * surface matches to the client (e.g. via SSE for `warn` mode) or to
@@ -86,7 +96,7 @@ export function createMessagePiiFilterHooks(
     return undefined;
   }
 
-  const { redactionText } = config;
+  const redactionText = config.redactionText ?? DEFAULT_PII_REDACTION_TEXT;
   const mode = config.onMatch;
   const collector: PiiMatchCollector = options.collector ?? { matches: [] };
   const { onMatches } = options;
@@ -158,7 +168,10 @@ export function applyMessagePiiRedaction(
   if (patterns.length === 0) {
     return { text, matches: [] };
   }
-  return redactSensitiveText(text, { patterns, redactionText: config.redactionText });
+  return redactSensitiveText(text, {
+    patterns,
+    redactionText: config.redactionText ?? DEFAULT_PII_REDACTION_TEXT,
+  });
 }
 
 /**
@@ -178,7 +191,7 @@ export function serializeMessagePiiFilterForClient(
   }
   return {
     onMatch: config.onMatch,
-    redactionText: config.redactionText ?? '[REDACTED]',
+    redactionText: config.redactionText ?? DEFAULT_PII_REDACTION_TEXT,
     patterns: patterns.map((p) => ({
       id: p.id,
       label: p.label,
