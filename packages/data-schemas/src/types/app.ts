@@ -62,6 +62,8 @@ export interface AppConfig {
   summarization?: SummarizationConfig;
   /** Web search configuration */
   webSearch?: TCustomConfig['webSearch'];
+  /** Message PII filter configuration */
+  messagePiiFilter?: TCustomConfig['messagePiiFilter'];
   /** File storage strategy ('local', 's3', 'firebase', 'azure_blob', 'cloudfront') */
   fileStrategy: FileStorage;
   /** File strategies configuration */

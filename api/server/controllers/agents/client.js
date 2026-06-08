@@ -2,7 +2,6 @@ require('events').EventEmitter.defaultMaxListeners = 100;
 const { logger } = require('@librechat/data-schemas');
 const { getBufferString, HumanMessage } = require('@librechat/agents/langchain/messages');
 const {
-  sendEvent,
   createRun,
   createMessagePiiFilterHooks,
   isEnabled,
@@ -1057,7 +1056,20 @@ class AgentClient extends BaseClient {
           );
         }
 
-        const piiFilterResult = createMessagePiiFilterHooks(appConfig?.messagePiiFilter);
+        const piiFilterResult = createMessagePiiFilterHooks(appConfig?.messagePiiFilter, {
+          onMatches: (matches) => {
+            // Agents use the resumable-stream architecture: the POST
+            // response (this.options.res) ends immediately after the
+            // controller returns a streamId, and the long-lived SSE
+            // bytes flow through a separate GET endpoint fed by
+            // GenerationJobManager. Writing to this.options.res here
+            // is silently swallowed because it's already ended.
+            const streamId = this.options.req?._resumableStreamId;
+            if (streamId != null) {
+              GenerationJobManager.emitChunk(streamId, { type: 'pii_matches', matches });
+            }
+          },
+        });
 
         run = await createRun({
           agents,
@@ -1119,17 +1131,6 @@ class AgentClient extends BaseClient {
             throw new Error(
               `Message blocked by PII filter${labels.length > 0 ? `: ${labels}` : ''}. Edit and retry.`,
             );
-          }
-          if (
-            appConfig?.messagePiiFilter?.onMatch === 'warn' &&
-            piiFilterResult.collector.matches.length > 0 &&
-            this.options.res != null &&
-            !this.options.res.writableEnded
-          ) {
-            sendEvent(this.options.res, {
-              type: 'pii_matches',
-              matches: piiFilterResult.collector.matches,
-            });
           }
         }
       };

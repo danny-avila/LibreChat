@@ -25,6 +25,13 @@ export type CreatePiiFilterOptions = {
    * collector returned alongside the registry.
    */
   collector?: PiiMatchCollector;
+  /**
+   * Invoked from inside the hook (while the response is still open)
+   * with the matches detected for this prompt. Used by the controller
+   * to emit a `pii_matches` SSE event for warn mode before
+   * processStream closes the response.
+   */
+  onMatches?: (matches: PatternMatch[]) => void;
 };
 
 export type CreatePiiFilterResult = {
@@ -32,7 +39,7 @@ export type CreatePiiFilterResult = {
   collector: PiiMatchCollector;
 };
 
-function buildPatternList(config: MessagePiiFilterConfig): SensitivePattern[] {
+export function buildPatternList(config: MessagePiiFilterConfig): SensitivePattern[] {
   const starter = selectStarterPatterns(config.starterPatterns).map(
     (p): SensitivePattern => ({
       id: p.id,
@@ -78,6 +85,7 @@ export function createMessagePiiFilterHooks(
   const { redactionText } = config;
   const mode = config.onMatch;
   const collector: PiiMatchCollector = options.collector ?? { matches: [] };
+  const { onMatches } = options;
   const registry = new HookRegistry();
 
   registry.register('UserPromptSubmit', {
@@ -93,6 +101,9 @@ export function createMessagePiiFilterHooks(
 
         if (mode !== 'silent') {
           collector.matches.push(...matches);
+          if (mode === 'warn' && onMatches != null) {
+            onMatches(matches);
+          }
         }
 
         if (mode === 'block') {
@@ -122,4 +133,26 @@ export function createMessagePiiFilterHooks(
   });
 
   return { registry, collector };
+}
+
+/**
+ * Apply the configured PII filter directly to a text blob, bypassing
+ * the agents hook plumbing. Used by the agents request controller to
+ * pre-redact `req.body.text` before the user message is created/saved,
+ * so the chat-history display and persisted message both have the
+ * redacted text. Mode semantics are interpreted by the caller. This
+ * helper just runs the scrubber and returns the result.
+ */
+export function applyMessagePiiRedaction(
+  text: string,
+  config: MessagePiiFilterConfig | undefined,
+): { text: string; matches: PatternMatch[] } {
+  if (config == null || typeof text !== 'string' || text.length === 0) {
+    return { text: text ?? '', matches: [] };
+  }
+  const patterns = buildPatternList(config);
+  if (patterns.length === 0) {
+    return { text, matches: [] };
+  }
+  return redactSensitiveText(text, { patterns, redactionText: config.redactionText });
 }

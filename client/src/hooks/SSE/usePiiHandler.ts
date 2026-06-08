@@ -18,7 +18,7 @@ export default function usePiiHandler() {
       }
       showToast({
         message: localize('com_ui_pii_redacted', { 0: labels }),
-        status: 'info',
+        status: 'warning',
       });
     },
     [localize, showToast],
