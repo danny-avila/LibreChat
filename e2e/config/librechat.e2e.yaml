@@ -27,6 +27,8 @@ endpoints:
       modelDisplayLabel: 'Mock Provider B'
 
 modelSpecs:
+  prioritize: true
+  enforce: true
   list:
     - name: 'e2e-mock-provider-a'
       label: 'Mock Provider A'

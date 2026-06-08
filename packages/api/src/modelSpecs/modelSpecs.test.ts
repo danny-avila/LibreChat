@@ -92,14 +92,24 @@ describe('modelSpecs helpers', () => {
 
     const { parsedBody } = applyModelSpecPreset({
       modelSpec,
-      parsedBody: modelSpec.preset,
+      parsedBody: {
+        endpoint: EModelEndpoint.openAI,
+        spec: 'enforced-openai',
+        model: 'client-model',
+        temperature: 0.8,
+        topP: 0.9,
+        chatProjectId: 'project-1',
+      },
       endpoint: EModelEndpoint.openAI,
       includePresetDefaults: true,
     });
 
     expect(parsedBody.spec).toBe('enforced-openai');
+    expect(parsedBody.model).toBe('gpt-4o');
     expect(parsedBody.promptPrefix).toBe('private prompt prefix');
     expect(parsedBody.temperature).toBe(0.2);
+    expect(parsedBody.topP).toBeUndefined();
+    expect(parsedBody.chatProjectId).toBe('project-1');
   });
 
   it('should restore private examples when parser supplies an empty default', () => {

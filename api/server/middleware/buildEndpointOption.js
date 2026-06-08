@@ -78,7 +78,7 @@ async function buildEndpointOption(req, res, next) {
     try {
       const result = applyModelSpecPreset({
         modelSpec: currentModelSpec,
-        parsedBody: currentModelSpec.preset,
+        parsedBody,
         endpoint,
         endpointType,
         defaultParamsEndpoint,
