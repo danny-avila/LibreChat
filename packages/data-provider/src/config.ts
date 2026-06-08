@@ -1211,6 +1211,7 @@ export type TStartupConfig = {
     branch?: string | null;
     buildDate?: string | null;
   };
+  messagePiiFilter?: MessagePiiFilterClientConfig;
 };
 
 export enum OCRStrategy {
@@ -1454,6 +1455,24 @@ export const messagePiiFilterSchema = z
   .strict();
 
 export type MessagePiiFilterConfig = z.infer<typeof messagePiiFilterSchema>;
+
+/**
+ * Wire format of MessagePiiFilterConfig as exposed to the browser via the
+ * startup config endpoint. Patterns are serialized as { source, flags }
+ * because RegExp doesn't survive JSON; the client reconstructs them with
+ * `new RegExp(source, flags)`. Only present when the operator has
+ * configured `messagePiiFilter` in librechat.yaml.
+ */
+export type MessagePiiFilterClientConfig = {
+  onMatch: 'warn' | 'silent' | 'block';
+  redactionText: string;
+  patterns: Array<{
+    id: string;
+    label: string;
+    source: string;
+    flags: string;
+  }>;
+};
 
 const customEndpointsSchema = z.array(endpointSchema.partial()).optional();
 

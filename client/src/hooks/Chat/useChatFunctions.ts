@@ -33,6 +33,7 @@ import {
   getRouteChatProjectId,
 } from '~/utils';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
+import useClientPiiFilter from '~/hooks/SSE/useClientPiiFilter';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import store, { useGetEphemeralAgent } from '~/store';
 import { startupConfigKey } from '~/data-provider';
@@ -184,6 +185,7 @@ export default function useChatFunctions({
   const { getExpiry } = useUserKey(immutableConversation?.endpoint ?? '');
   const setIsSubmitting = useSetRecoilState(store.isSubmittingFamily(index));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
+  const { apply: applyClientPiiFilter } = useClientPiiFilter();
 
   /**
    * Atomically read + reset the per-conversation queue of manually-invoked
@@ -237,6 +239,12 @@ export default function useChatFunctions({
     if (!!isSubmitting || text === '') {
       return;
     }
+
+    const piiResult = applyClientPiiFilter(text);
+    if (piiResult.blocked) {
+      return;
+    }
+    text = piiResult.text;
 
     const conversation = cloneDeep(immutableConversation);
 

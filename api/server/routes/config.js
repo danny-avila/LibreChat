@@ -6,6 +6,7 @@ const {
   resolveBuildInfo,
   resolveTitleTiming,
   sanitizeModelSpecs,
+  serializeMessagePiiFilterForClient,
 } = require('@librechat/api');
 const { EModelEndpoint, defaultSocialLogins } = require('librechat-data-provider');
 const { logger, getTenantId, SystemCapabilities } = require('@librechat/data-schemas');
@@ -287,6 +288,11 @@ router.get('/', async function (req, res) {
     const buildInfo = buildBuildInfoPayload(appConfig?.interfaceConfig);
     if (buildInfo) {
       payload.buildInfo = buildInfo;
+    }
+
+    const messagePiiFilter = serializeMessagePiiFilterForClient(appConfig?.messagePiiFilter);
+    if (messagePiiFilter) {
+      payload.messagePiiFilter = messagePiiFilter;
     }
 
     if (!payload.allowAccountDeletion) {

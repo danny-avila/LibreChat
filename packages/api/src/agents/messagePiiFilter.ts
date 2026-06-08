@@ -1,11 +1,15 @@
 import { logger } from '@librechat/data-schemas';
-import { selectStarterPatterns, type MessagePiiFilterConfig } from 'librechat-data-provider';
 import {
   HookRegistry,
   redactSensitiveText,
   type SensitivePattern,
   type PatternMatch,
 } from '@librechat/agents';
+import {
+  selectStarterPatterns,
+  type MessagePiiFilterConfig,
+  type MessagePiiFilterClientConfig,
+} from 'librechat-data-provider';
 import type { UserPromptSubmitHookOutput } from '@librechat/agents';
 
 /**
@@ -155,4 +159,31 @@ export function applyMessagePiiRedaction(
     return { text, matches: [] };
   }
   return redactSensitiveText(text, { patterns, redactionText: config.redactionText });
+}
+
+/**
+ * Build the browser-safe wire format of the configured filter for the
+ * startup config endpoint. Returns undefined when no patterns would be
+ * selected so the client-side hook can no-op cleanly.
+ */
+export function serializeMessagePiiFilterForClient(
+  config: MessagePiiFilterConfig | undefined,
+): MessagePiiFilterClientConfig | undefined {
+  if (config == null) {
+    return undefined;
+  }
+  const patterns = buildPatternList(config);
+  if (patterns.length === 0) {
+    return undefined;
+  }
+  return {
+    onMatch: config.onMatch,
+    redactionText: config.redactionText ?? '[REDACTED]',
+    patterns: patterns.map((p) => ({
+      id: p.id,
+      label: p.label,
+      source: p.pattern.source,
+      flags: p.pattern.flags,
+    })),
+  };
 }
