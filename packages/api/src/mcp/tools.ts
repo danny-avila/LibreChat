@@ -20,7 +20,19 @@ export interface MCPToolCacheDeps {
   ) => Promise<boolean>;
 }
 
-export function createMCPToolCacheService(deps: MCPToolCacheDeps) {
+export function createMCPToolCacheService(deps: MCPToolCacheDeps): {
+  updateMCPServerTools: (params: {
+    userId: string;
+    serverName: string;
+    tools: MCPToolInput[] | null;
+  }) => Promise<LCAvailableTools>;
+  mergeAppTools: (appTools: LCAvailableTools) => Promise<void>;
+  cacheMCPServerTools: (params: {
+    userId: string;
+    serverName: string;
+    serverTools: LCAvailableTools;
+  }) => Promise<void>;
+} {
   const { getCachedTools, setCachedTools } = deps;
 
   async function updateMCPServerTools(params: {

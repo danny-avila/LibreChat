@@ -1572,5 +1572,5 @@ class GenerationJobManagerClass {
   }
 }
 
-export const GenerationJobManager = new GenerationJobManagerClass();
+export const GenerationJobManager: GenerationJobManagerClass = new GenerationJobManagerClass();
 export { GenerationJobManagerClass };

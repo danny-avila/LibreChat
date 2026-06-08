@@ -182,7 +182,7 @@ function convertToZodUnion(
 export function resolveJsonSchemaRefs<T extends Record<string, unknown>>(
   schema: T,
   definitions?: Record<string, unknown>,
-  visited = new Set<string>(),
+  visited: Set<string> = new Set<string>(),
 ): T {
   // Handle null, undefined, or non-object values first
   if (!schema || typeof schema !== 'object') {
@@ -568,7 +568,7 @@ export function convertJsonSchemaToZod(
 export function convertWithResolvedRefs(
   schema: JsonSchemaType & Record<string, unknown>,
   options?: ConvertJsonSchemaToZodOptions,
-) {
+): z.ZodType | undefined {
   const resolved = resolveJsonSchemaRefs(schema);
   return convertJsonSchemaToZod(resolved, options);
 }

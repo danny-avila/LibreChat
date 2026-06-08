@@ -10,7 +10,14 @@ import {
   type TUser,
 } from 'librechat-data-provider';
 
-export const PRIVATE_MODEL_SPEC_PRESET_FIELDS = [
+export const PRIVATE_MODEL_SPEC_PRESET_FIELDS: readonly [
+  'promptPrefix',
+  'instructions',
+  'additional_instructions',
+  'system',
+  'context',
+  'examples',
+] = [
   'promptPrefix',
   'instructions',
   'additional_instructions',
@@ -23,7 +30,7 @@ export type PrivateModelSpecPresetField = (typeof PRIVATE_MODEL_SPEC_PRESET_FIEL
 export type ModelSpecParsedBody = Partial<TConversation | TPreset | TModelSpecPreset> &
   Record<string, unknown>;
 
-export const ENFORCED_MODEL_SPEC_REQUEST_FIELDS = [
+export const ENFORCED_MODEL_SPEC_REQUEST_FIELDS: readonly ['chatProjectId'] = [
   'chatProjectId',
 ] as const satisfies readonly (keyof ModelSpecParsedBody)[];
 

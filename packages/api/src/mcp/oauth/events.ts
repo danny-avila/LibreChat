@@ -15,7 +15,10 @@ export type OAuthToolCall = {
   output?: string;
 };
 
-export function getOAuthPromptExpiresAt(options?: OAuthPromptOptions, now = Date.now()): number {
+export function getOAuthPromptExpiresAt(
+  options?: OAuthPromptOptions,
+  now: number = Date.now(),
+): number {
   return typeof options?.expiresAt === 'number' && Number.isFinite(options.expiresAt)
     ? options.expiresAt
     : now + Time.TWO_MINUTES;
