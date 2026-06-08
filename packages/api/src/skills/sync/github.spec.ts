@@ -1461,6 +1461,118 @@ describe('createGitHubSkillSyncRunner', () => {
     expect(deps.deleteSkill).not.toHaveBeenCalledWith(otherTenantSkill._id.toString());
   });
 
+  it('does not match still-discovered mirrors as moved skills when new skills sync first', async () => {
+    const newSkillMarkdown = '---\nname: research\ndescription: New research skill\n---\nNew';
+    const renamedSkillMarkdown = '---\nname: renamed\ndescription: Renamed skill\n---\nRenamed';
+    const fetchFn = jest.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes('/commits/')) {
+        return response({ sha: 'commit-sha', commit: { tree: { sha: 'tree-sha' } } });
+      }
+      if (url.includes('/git/trees/tree-sha')) {
+        return response({
+          sha: 'tree-sha',
+          truncated: false,
+          tree: [
+            {
+              path: 'skills',
+              mode: '040000',
+              type: 'tree',
+              sha: 'skills-tree-sha',
+              url: 'https://api.github.test/tree/skills',
+            },
+          ],
+        });
+      }
+      if (url.includes('/git/trees/skills-tree-sha')) {
+        return response({
+          sha: 'skills-tree-sha',
+          truncated: false,
+          tree: [
+            {
+              path: 'new/SKILL.md',
+              mode: '100644',
+              type: 'blob',
+              sha: 'new-skill-sha',
+              size: Buffer.byteLength(newSkillMarkdown),
+              url: 'https://api.github.test/blob/new-skill',
+            },
+            {
+              path: 'research/SKILL.md',
+              mode: '100644',
+              type: 'blob',
+              sha: 'renamed-skill-sha',
+              size: Buffer.byteLength(renamedSkillMarkdown),
+              url: 'https://api.github.test/blob/renamed-skill',
+            },
+          ],
+        });
+      }
+      if (url.includes('/git/blobs/new-skill-sha')) {
+        return response(blob(newSkillMarkdown));
+      }
+      if (url.includes('/git/blobs/renamed-skill-sha')) {
+        return response(blob(renamedSkillMarkdown));
+      }
+      return response({ message: 'not found' }, 404);
+    }) as unknown as typeof fetch;
+    const existing = makeSkill({
+      name: 'research',
+      description: 'Old research skill',
+      body: 'Old body',
+      author: makeSourceAuthorId(),
+      authorName: 'GitHub Sync',
+      source: 'github',
+      sourceMetadata: {
+        provider: 'github',
+        sourceId: 'librechat-skills',
+        upstreamId: 'librechat-skills:skills/research',
+        owner: 'LibreChat',
+        repo: 'skills',
+        ref: 'main',
+        skillPath: 'skills/research',
+      },
+    }) as ISkill & { _id: Types.ObjectId };
+    const deps = createDeps({
+      fetchFn,
+      findSkillBySourceIdentity: jest.fn(async ({ upstreamId }) =>
+        upstreamId === 'librechat-skills:skills/research' ? existing : null,
+      ),
+      listSkillsBySource: jest.fn(async () => [existing]),
+      getSkillById: jest.fn(async (id) =>
+        id.toString() === existing._id.toString() ? existing : null,
+      ),
+      updateSkill: jest.fn(async ({ update }) => ({
+        status: 'updated' as const,
+        skill: { ...existing, ...update, version: existing.version + 1 },
+        warnings: [],
+      })),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('completed');
+    expect(deps.createSkill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'research',
+        sourceMetadata: expect.objectContaining({
+          upstreamId: 'librechat-skills:skills/new',
+        }),
+      }),
+    );
+    expect(deps.updateSkill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: existing._id.toString(),
+        update: expect.objectContaining({
+          name: 'renamed',
+          sourceMetadata: expect.objectContaining({
+            upstreamId: 'librechat-skills:skills/research',
+          }),
+        }),
+      }),
+    );
+  });
+
   it('reuses a same-named source mirror when a skill moves configured paths', async () => {
     const existing = makeSkill({
       name: 'research',

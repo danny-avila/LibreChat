@@ -216,6 +216,23 @@ describe('createSkillSyncTriggerOrchestrator', () => {
     );
   });
 
+  it('preserves configured tenant scope for platform admin override runners', async () => {
+    const config = skillSync();
+    const { orchestrator, runners } = createHarness();
+
+    orchestrator.getRunnerForAdminRequest({
+      config: { skillSync: config, config: {} },
+      user: {},
+      skillSyncAllowServerCredentials: true,
+    });
+    const runnerConfig = await runners[0].input.getConfig();
+
+    expect(runnerConfig?.github?.runOnStartup).toBe(true);
+    expect(runnerConfig?.github?.sources[0]).toEqual(
+      expect.objectContaining({ id: 'tenant-skills', tenantId: 'other-tenant' }),
+    );
+  });
+
   it('preserves configured tenant scope for admin base skillSync runs', async () => {
     const config = skillSync();
     const { orchestrator, runners } = createHarness();

@@ -96,7 +96,9 @@ function withRequestTenant(
       ...(disableRunOnStartup ? { runOnStartup: false } : {}),
       sources: config.github.sources.map((source) => ({
         ...source,
-        tenantId,
+        // Tenant-scoped requests derive their tenant from the request; platform
+        // requests have no tenant and preserve an explicitly configured source.
+        tenantId: tenantId ?? source.tenantId,
       })),
     },
   };

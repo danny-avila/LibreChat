@@ -1111,7 +1111,7 @@ function findMovedSourceSkill(params: {
   source: SkillSyncGitHubSourceConfig;
   prepared: PreparedRemoteSkill;
   existingSyncedSkills: Array<ISkill & { _id: Types.ObjectId }>;
-  seenUpstreamIds: Set<string>;
+  excludedUpstreamIds: Set<string>;
 }): (ISkill & { _id: Types.ObjectId }) | null {
   const sourceTenantId = params.source.tenantId ?? undefined;
   const sourceAuthor = params.prepared.createInput.author.toString();
@@ -1129,7 +1129,7 @@ function findMovedSourceSkill(params: {
       if (!upstreamId) {
         return false;
       }
-      return !params.seenUpstreamIds.has(upstreamId);
+      return !params.excludedUpstreamIds.has(upstreamId);
     }) ?? null
   );
 }
@@ -1145,7 +1145,7 @@ function hasNameConflictingStaleSkill(params: {
       source: params.source,
       prepared: params.prepared.prepared,
       existingSyncedSkills: params.existingSyncedSkills,
-      seenUpstreamIds: params.discoveredUpstreamIds,
+      excludedUpstreamIds: params.discoveredUpstreamIds,
     }),
   );
 }
@@ -1223,7 +1223,7 @@ async function deleteNameConflictingStaleSkill(params: {
     source: params.source,
     prepared: params.prepared,
     existingSyncedSkills: params.existingSyncedSkills,
-    seenUpstreamIds: params.discoveredUpstreamIds,
+    excludedUpstreamIds: params.discoveredUpstreamIds,
   });
   if (!staleSkill) {
     return {
@@ -1493,7 +1493,7 @@ async function syncSource(params: {
             source,
             prepared,
             existingSyncedSkills: await getExistingSyncedSkills(),
-            seenUpstreamIds,
+            excludedUpstreamIds: discoveredUpstreamIds,
           });
       const effectivePrepared: PreparedRemoteSkill = movedExisting
         ? { ...prepared, existing: movedExisting }
