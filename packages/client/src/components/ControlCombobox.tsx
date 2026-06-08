@@ -205,5 +205,5 @@ function ControlCombobox({
   );
 }
 
-const _default_1: MemoExoticComponent<typeof ControlCombobox> = memo(ControlCombobox);
-export default _default_1;
+const ControlComboboxMemo: MemoExoticComponent<typeof ControlCombobox> = memo(ControlCombobox);
+export default ControlComboboxMemo;

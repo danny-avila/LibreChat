@@ -13,6 +13,7 @@
         "scripts/**",
         "rollup.config.js",
         "server-rollup.config.js",
+        "tsdown.config.mjs",
         "tsconfig.json",
         "tsconfig.build.json",
         "vite.config.ts",
