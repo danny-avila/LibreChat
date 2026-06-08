@@ -1,3 +1,4 @@
+import { logger } from '@librechat/data-schemas';
 import type {
   NextFunction,
   RequestHandler,
@@ -38,11 +39,16 @@ function compile(config: MessagePiiFilterConfig): CompiledPattern[] {
     return cached;
   }
   const starter = selectStarter(config.starterPatterns);
-  const custom = (config.customPatterns ?? []).map((p) => ({
-    id: p.id,
-    label: p.label,
-    pattern: new RegExp(p.regex, 'g'),
-  }));
+  const custom: CompiledPattern[] = [];
+  for (const p of config.customPatterns ?? []) {
+    try {
+      custom.push({ id: p.id, label: p.label, pattern: new RegExp(p.regex, 'g') });
+    } catch (err) {
+      logger.warn(
+        `[messagePiiFilter] dropping invalid customPattern ${JSON.stringify(p.id)}: ${(err as Error).message}`,
+      );
+    }
+  }
   const result = [...starter, ...custom];
   COMPILE_CACHE.set(config, result);
   return result;

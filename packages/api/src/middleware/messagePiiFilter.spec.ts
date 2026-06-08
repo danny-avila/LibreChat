@@ -1,5 +1,9 @@
 import type { MessagePiiFilterConfig } from 'librechat-data-provider';
 import type { Request, Response, NextFunction } from 'express';
+
+jest.mock('@librechat/data-schemas', () => ({
+  logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
+}));
 import { createMessagePiiFilter } from './messagePiiFilter';
 
 type CapturedResponse = { status?: number; body?: unknown };
@@ -138,5 +142,21 @@ describe('messagePiiFilter middleware', () => {
     const b = runMiddleware(config, { text: 'plain' });
     expect(a.nextCalls).toBe(1);
     expect(b.nextCalls).toBe(1);
+  });
+
+  it('drops an invalid customPattern regex without throwing and keeps other patterns active', () => {
+    const config = {
+      starterPatterns: [],
+      customPatterns: [
+        { id: 'broken', label: 'Broken', regex: '(' },
+        { id: 'org', label: 'Org token', regex: '\\bORG-[A-Z0-9]{6,}' },
+      ],
+    } as unknown as MessagePiiFilterConfig;
+    const benign = runMiddleware(config, { text: 'plain text' });
+    expect(benign.nextCalls).toBe(1);
+    expect(benign.capturedRes.status).toBeUndefined();
+    const matching = runMiddleware(config, { text: 'token ORG-DEADBEEF here' });
+    expect(matching.nextCalls).toBe(0);
+    expect(matching.capturedRes.status).toBe(400);
   });
 });
