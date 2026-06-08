@@ -23,6 +23,7 @@ const COUNTED_REPLY_MARKER = 'E2E_COUNTED_REPLY:';
 const SLOW_REPLY_MARKER = 'E2E_SLOW_REPLY:';
 const RESUME_ICON_REPLY_MARKER = 'E2E_RESUME_ICON_REPLY:';
 const FORCED_ERROR_MARKER = 'E2E_FORCED_ERROR:';
+const MARKDOWN_REPLY_MARKER = 'E2E_MARKDOWN_REPLY';
 const CREATE_FILE_AUTHORING_FINAL_TEXT = 'E2E file authoring complete';
 const EDIT_FILE_AUTHORING_FINAL_TEXT = 'E2E file edit complete';
 const MODEL_SPEC_SKILL_ASSERTION_FINAL_TEXT = 'E2E model spec skill assertion passed';
@@ -228,6 +229,24 @@ function providerFileAssertionResponses({ messages, text }) {
 }
 
 function replyResponses(text) {
+  if (text.includes(MARKDOWN_REPLY_MARKER)) {
+    return {
+      responses: [
+        [
+          '## E2E markdown heading',
+          '',
+          '**E2E bold text**',
+          '',
+          '- E2E list item',
+          '',
+          '```javascript',
+          'const e2eSyntaxHighlight = "ok";',
+          '```',
+        ].join('\n'),
+      ],
+    };
+  }
+
   const errorName = getMarkerValue(text, FORCED_ERROR_MARKER);
   if (errorName) {
     return {
