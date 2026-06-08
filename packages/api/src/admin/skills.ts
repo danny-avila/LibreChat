@@ -1,16 +1,20 @@
+import { SystemCapabilities } from '@librechat/data-schemas';
+import { skillSyncConfigSchema } from 'librechat-data-provider';
 import type {
   TGitHubSkillSyncStatusResponse,
   TGitHubSkillSyncSourceStatus,
   TGitHubSkillSyncCredentialSummary,
   TGitHubSkillSyncManualRunResponse,
+  SkillSyncConfig,
 } from 'librechat-data-provider';
 import type {
   ISkillSyncStatus,
   SkillSyncProvider,
   SkillSyncCredentialSummary,
   UpsertSkillSyncCredentialInput,
+  SystemCapability,
 } from '@librechat/data-schemas';
-import type { Request, Response } from 'express';
+import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import type { Types } from 'mongoose';
 import type { GitHubSkillSyncRunner } from '~/skills/sync';
 
@@ -23,6 +27,31 @@ type AdminSkillsRequest = Request & {
   skillSyncCanReadCredentials?: boolean;
 };
 
+type SkillSyncConfigContainer = {
+  skillSync?: unknown;
+  config?: {
+    skillSync?: unknown;
+  } & Record<string, unknown>;
+} & Record<string, unknown>;
+
+type AdminSkillSyncAccessRequest = Request & {
+  user?: {
+    _id?: Types.ObjectId | { toString(): string };
+    id?: string;
+    role?: string;
+    tenantId?: string;
+  };
+  config?: SkillSyncConfigContainer;
+  skillSyncAllowServerCredentials?: boolean;
+  skillSyncCanReadCredentials?: boolean;
+};
+
+type SkillSyncCapabilityUser = {
+  id: string;
+  role: string;
+  tenantId?: string;
+};
+
 export type AdminSkillSyncDeps = {
   runner?: GitHubSkillSyncRunner;
   getRunner?: (req: Request) => GitHubSkillSyncRunner;
@@ -31,6 +60,11 @@ export type AdminSkillSyncDeps = {
     provider: SkillSyncProvider,
     credentialKey: string,
   ) => Promise<{ deleted: boolean }>;
+};
+
+export type AdminSkillSyncAccessDeps = {
+  getAppConfig: (options: { baseOnly: true }) => Promise<{ skillSync?: unknown } | undefined>;
+  hasCapability: (user: SkillSyncCapabilityUser, capability: SystemCapability) => Promise<boolean>;
 };
 
 const CREDENTIAL_KEY_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
@@ -107,6 +141,161 @@ function isCredentialKey(value: unknown): value is string {
 
 function getUserObjectId(req: AdminSkillsRequest): Types.ObjectId | undefined {
   return req.user?._id;
+}
+
+function getCapabilityUser(
+  req: AdminSkillSyncAccessRequest,
+  { platformOnly = false }: { platformOnly?: boolean } = {},
+): SkillSyncCapabilityUser | null {
+  const id = req.user?.id ?? req.user?._id?.toString?.();
+  if (!id) {
+    return null;
+  }
+  return {
+    id,
+    role: req.user?.role ?? '',
+    ...(platformOnly ? {} : { tenantId: req.user?.tenantId }),
+  };
+}
+
+function parseSkillSyncConfig(raw: unknown): SkillSyncConfig | undefined {
+  if (!raw || typeof raw !== 'object') {
+    return undefined;
+  }
+  const parsed = skillSyncConfigSchema.safeParse(raw);
+  return parsed.success ? parsed.data : undefined;
+}
+
+function isSameSkillSyncConfig(left: SkillSyncConfig, right: SkillSyncConfig): boolean {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
+function hasResolvedSkillSyncOverride(req: AdminSkillSyncAccessRequest): boolean {
+  const resolved = parseSkillSyncConfig(req.config?.skillSync);
+  const base = parseSkillSyncConfig(req.config?.config?.skillSync);
+  return Boolean(resolved?.github && !isSameSkillSyncConfig(resolved, base));
+}
+
+function sendInternalServerError(res: Response): void {
+  res.status(500).json({ message: 'Internal Server Error' });
+}
+
+export function createAdminSkillsSyncAccess(deps: AdminSkillSyncAccessDeps) {
+  async function hasSkillCapability(
+    req: AdminSkillSyncAccessRequest,
+    capability: SystemCapability,
+    { platformOnly = false }: { platformOnly?: boolean } = {},
+  ): Promise<boolean> {
+    const user = getCapabilityUser(req, { platformOnly });
+    if (!user) {
+      return false;
+    }
+    return deps.hasCapability(user, capability);
+  }
+
+  function requireSkillCapability(
+    capability: SystemCapability,
+    { platformOnly = false }: { platformOnly?: boolean } = {},
+  ): RequestHandler {
+    return async (
+      req: AdminSkillSyncAccessRequest,
+      res: Response,
+      next: NextFunction,
+    ): Promise<void> => {
+      try {
+        const user = getCapabilityUser(req, { platformOnly });
+        if (!user) {
+          res.status(401).json({ message: 'Authentication required' });
+          return;
+        }
+        if (await deps.hasCapability(user, capability)) {
+          next();
+          return;
+        }
+        res.status(403).json({ message: 'Forbidden' });
+      } catch {
+        sendInternalServerError(res);
+      }
+    };
+  }
+
+  const attachBaseSkillSyncConfig: RequestHandler = async (
+    req: AdminSkillSyncAccessRequest,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
+    try {
+      const baseConfig = await deps.getAppConfig({ baseOnly: true });
+      const existingConfig = req.config ?? {};
+      req.config = {
+        ...existingConfig,
+        config: {
+          ...(existingConfig.config ?? {}),
+          skillSync: baseConfig?.skillSync,
+        },
+      };
+      next();
+    } catch {
+      sendInternalServerError(res);
+    }
+  };
+
+  const attachCredentialReadAccess: RequestHandler = async (
+    req: AdminSkillSyncAccessRequest,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
+    try {
+      const canReadCredentials = await hasSkillCapability(req, SystemCapabilities.READ_SKILLS, {
+        platformOnly: true,
+      });
+      req.skillSyncCanReadCredentials = canReadCredentials;
+      req.skillSyncAllowServerCredentials = canReadCredentials;
+      next();
+    } catch {
+      sendInternalServerError(res);
+    }
+  };
+
+  const requireSyncRunCapability: RequestHandler = async (
+    req: AdminSkillSyncAccessRequest,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
+    try {
+      const canManagePlatform = await hasSkillCapability(req, SystemCapabilities.MANAGE_SKILLS, {
+        platformOnly: true,
+      });
+      if (canManagePlatform) {
+        req.skillSyncAllowServerCredentials = true;
+        req.skillSyncCanReadCredentials = true;
+        next();
+        return;
+      }
+      if (
+        hasResolvedSkillSyncOverride(req) &&
+        (await hasSkillCapability(req, SystemCapabilities.MANAGE_SKILLS))
+      ) {
+        res.status(403).json({
+          message: 'Tenant-scoped manual skill sync requires platform credential access',
+        });
+        return;
+      }
+      res.status(403).json({ message: 'Forbidden' });
+    } catch {
+      sendInternalServerError(res);
+    }
+  };
+
+  return {
+    attachBaseSkillSyncConfig,
+    attachCredentialReadAccess,
+    requireReadSkills: requireSkillCapability(SystemCapabilities.READ_SKILLS),
+    requirePlatformManageSkills: requireSkillCapability(SystemCapabilities.MANAGE_SKILLS, {
+      platformOnly: true,
+    }),
+    requireSyncRunCapability,
+  };
 }
 
 export function createAdminSkillsSyncHandlers(deps: AdminSkillSyncDeps) {
