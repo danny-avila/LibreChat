@@ -1,5 +1,5 @@
-import type { EventEmitter } from 'events';
 import type { Agents } from 'librechat-data-provider';
+import type { EventEmitter } from 'events';
 import type { ServerSentEvent } from '~/types';
 
 export interface GenerationJobMetadata {
@@ -20,6 +20,18 @@ export interface GenerationJobMetadata {
   model?: string;
   /** Prompt token count for abort token spending */
   promptTokens?: number;
+  /**
+   * PII matches detected by messagePiiFilter pre-redaction. When set
+   * via `updateMetadata`, the cross-replica subscribe fallback emits
+   * a `pii_matches` SSE event from this payload (parallel to the
+   * `created` event reconstruction) so the warn-mode toast survives
+   * a subscriber landing on a different replica than the emitter.
+   */
+  piiMatches?: Array<{
+    patternId: string;
+    patternLabel: string;
+    count: number;
+  }>;
 }
 
 export type GenerationJobStatus = 'running' | 'complete' | 'error' | 'aborted';

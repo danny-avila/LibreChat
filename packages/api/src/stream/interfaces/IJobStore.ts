@@ -33,6 +33,19 @@ export interface SerializableJobData {
   /** Whether the user-message created event has been emitted */
   createdEventEmitted?: boolean;
 
+  /**
+   * PII matches detected by the messagePiiFilter pre-redaction step.
+   * Persisted so a subscriber that connects on a different replica
+   * than the one that emitted the live `pii_matches` SSE event can
+   * still receive the warn-mode toast via the cross-replica
+   * reconstruction path in `GenerationJobManager.subscribe`.
+   */
+  piiMatches?: Array<{
+    patternId: string;
+    patternLabel: string;
+    count: number;
+  }>;
+
   /** Sender name for UI display */
   sender?: string;
 

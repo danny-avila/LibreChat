@@ -184,6 +184,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         type: 'pii_matches',
         matches: piiPreRedactMatches,
       });
+      // Persist on the job so a subscriber landing on a different
+      // replica than this one gets the toast via the cross-replica
+      // reconstruction in GenerationJobManager.subscribe.
+      await GenerationJobManager.updateMetadata(streamId, {
+        piiMatches: piiPreRedactMatches,
+      });
     }
 
     // Send JSON response IMMEDIATELY so client can connect to SSE stream

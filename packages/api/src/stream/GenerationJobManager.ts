@@ -948,6 +948,20 @@ class GenerationJobManagerClass {
           streamId,
         };
         onChunk(createdEvent);
+
+        /**
+         * Replay pii_matches from persisted metadata so the warn-mode
+         * toast still fires for subscribers that connect on a
+         * different replica than the one that emitted the live event.
+         * The same-replica path is already covered by earlyEventBuffer
+         * replay above; this branch only runs when no buffer exists.
+         */
+        if (jobData.piiMatches && jobData.piiMatches.length > 0) {
+          logger.debug(
+            `[GenerationJobManager] Cross-replica subscribe: emitting pii_matches from metadata for ${streamId}`,
+          );
+          onChunk({ type: 'pii_matches', matches: jobData.piiMatches });
+        }
       }
 
       try {
@@ -1268,6 +1282,9 @@ class GenerationJobManagerClass {
     }
     if (metadata.promptTokens !== undefined) {
       updates.promptTokens = metadata.promptTokens;
+    }
+    if (metadata.piiMatches) {
+      updates.piiMatches = metadata.piiMatches;
     }
     await this.jobStore.updateJob(streamId, updates);
   }

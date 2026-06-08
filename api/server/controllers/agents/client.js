@@ -1064,9 +1064,19 @@ class AgentClient extends BaseClient {
             // bytes flow through a separate GET endpoint fed by
             // GenerationJobManager. Writing to this.options.res here
             // is silently swallowed because it's already ended.
+            // Persisting on the job in parallel with the live emit
+            // lets the cross-replica subscribe fallback replay the
+            // toast for a subscriber that lands on a different
+            // replica than this one.
             const streamId = this.options.req?._resumableStreamId;
             if (streamId != null) {
               GenerationJobManager.emitChunk(streamId, { type: 'pii_matches', matches });
+              GenerationJobManager.updateMetadata(streamId, { piiMatches: matches }).catch((err) =>
+                logger.warn(
+                  `[messagePiiFilter] Failed to persist piiMatches on job ${streamId}:`,
+                  err,
+                ),
+              );
             }
           },
         });
