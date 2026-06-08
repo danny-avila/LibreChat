@@ -1,5 +1,6 @@
-const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
+const { createHash } = require('crypto');
+const rateLimit = require('express-rate-limit');
 const { ViolationTypes } = require('librechat-data-provider');
 const { limiterCache, removePorts } = require('@librechat/api');
 const { logViolation } = require('~/cache');
@@ -18,6 +19,23 @@ const score = TWO_FACTOR_TEMP_VIOLATION_SCORE ?? LOGIN_VIOLATION_SCORE;
 const windowInMinutes = windowMs / 60000;
 const message = `Too many verification attempts, please try again after ${windowInMinutes} minutes.`;
 
+const hashLimiterKey = (value) => createHash('sha256').update(value).digest('hex');
+
+const getUserLimiterKey = (req) => {
+  const userId = req.user?.id ?? req.user?._id;
+  if (userId) {
+    return `user:${userId.toString()}`;
+  }
+
+  const tempToken = req.body?.tempToken;
+  if (typeof tempToken === 'string' && tempToken) {
+    return `temp:${hashLimiterKey(tempToken)}`;
+  }
+
+  const ip = removePorts(req);
+  return ip ? `ip:${ip}` : 'ip:unknown';
+};
+
 const getTempTokenUserId = (tempToken) => {
   if (!tempToken) {
     return null;
@@ -31,11 +49,12 @@ const getTempTokenUserId = (tempToken) => {
   }
 };
 
-const handler = async (req, res) => {
+const createHandler = (limiter) => async (req, res) => {
   const type = ViolationTypes.LOGINS;
   const errorMessage = {
     type,
     max,
+    limiter,
     windowInMinutes,
   };
 
@@ -50,14 +69,33 @@ const handler = async (req, res) => {
   return res.status(429).json({ message });
 };
 
-const limiterOptions = {
+const ipLimiterOptions = {
   windowMs,
   max,
-  handler,
+  handler: createHandler('ip'),
   keyGenerator: removePorts,
   store: limiterCache('two_factor_temp_limiter'),
 };
 
-const twoFactorTempLimiter = rateLimit(limiterOptions);
+const userLimiterOptions = {
+  windowMs,
+  max,
+  handler: createHandler('user'),
+  keyGenerator: getUserLimiterKey,
+  store: limiterCache('two_factor_temp_user_limiter'),
+};
+
+const twoFactorTempIpLimiter = rateLimit(ipLimiterOptions);
+const twoFactorTempUserLimiter = rateLimit(userLimiterOptions);
+
+const twoFactorTempLimiter = (req, res, next) => {
+  twoFactorTempIpLimiter(req, res, (err) => {
+    if (err) {
+      return next(err);
+    }
+
+    return twoFactorTempUserLimiter(req, res, next);
+  });
+};
 
 module.exports = twoFactorTempLimiter;
