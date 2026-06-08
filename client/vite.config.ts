@@ -19,6 +19,10 @@ export default defineConfig(({ command }) => ({
     port: process.env.PORT && Number(process.env.PORT) || 3090,
     strictPort: false,
     proxy: {
+      '/api/users/verification-request': {
+        target: 'http://localhost:4000',
+        changeOrigin: true,
+      },
       '/api': {
         target: backendURL,
         changeOrigin: true,

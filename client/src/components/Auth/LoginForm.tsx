@@ -25,6 +25,9 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
   } = useForm<TLoginUser>();
   const [showResendLink, setShowResendLink] = useState<boolean>(false);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [showRequestVerification, setShowRequestVerification] = useState<boolean>(false);
+  const [verificationRequestSent, setVerificationRequestSent] = useState<boolean>(false);
+  const [verificationRequestLoading, setVerificationRequestLoading] = useState<boolean>(false);
 
   const { data: config } = useGetStartupConfig();
   const useUsernameLogin = config?.ldap?.username;
@@ -35,7 +38,10 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
     if (error && error.includes('422') && !showResendLink) {
       setShowResendLink(true);
     }
-  }, [error, showResendLink]);
+    if (error && error === 'ERR_ADMIN_VERIFICATION_PENDING' && !showRequestVerification && !verificationRequestSent) {
+      setShowRequestVerification(true);
+    }
+  }, [error, showResendLink, showRequestVerification, verificationRequestSent]);
 
   const resendLinkMutation = useResendVerificationEmail({
     onMutate: () => {
@@ -65,6 +71,31 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
     resendLinkMutation.mutate({ email });
   };
 
+  const handleRequestVerification = async () => {
+    const email = getValues('email');
+    if (!email) {
+      return setShowRequestVerification(false);
+    }
+
+    setVerificationRequestLoading(true);
+    try {
+      const response = await fetch('/api/users/verification-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: email }),
+      });
+      if (response.ok) {
+        setVerificationRequestSent(true);
+        setShowRequestVerification(false);
+        setError(undefined);
+      }
+    } catch (e) {
+      console.error('Failed to send verification request:', e);
+    } finally {
+      setVerificationRequestLoading(false);
+    }
+  };
+
   return (
     <>
       {showResendLink && (
@@ -78,6 +109,24 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
           >
             {localize('com_auth_email_resend_link')}
           </button>
+        </div>
+      )}
+      {showRequestVerification && (
+        <div className="mt-2 rounded-md border border-yellow-500 bg-yellow-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200">
+          Your account is pending verification. 
+          <button
+            type="button"
+            className="ml-2 text-blue-600 hover:underline"
+            onClick={handleRequestVerification}
+            disabled={verificationRequestLoading}
+          >
+            {verificationRequestLoading ? 'Requesting...' : 'Request Verification'}
+          </button>
+        </div>
+      )}
+      {verificationRequestSent && (
+        <div className="mt-2 rounded-md border border-green-500 bg-green-500/10 px-3 py-2 text-sm text-green-600 dark:text-green-400">
+          Verification request sent to administrators.
         </div>
       )}
       <form
