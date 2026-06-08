@@ -37,8 +37,8 @@ import {
   queueTitleGeneration,
   streamStatusQueryKey,
 } from '~/data-provider';
-import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers, { buildCreatedInitialResponse } from './useEventHandlers';
+import { useAuthContext } from '~/hooks/AuthContext';
 import store from '~/store';
 
 type ChatHelpers = Pick<
@@ -556,7 +556,7 @@ export default function useResumableSSE(
               overrideParentMessageId: userMessage.overrideParentMessageId,
             };
             const createdInitialResponse = buildCreatedInitialResponse({
-              initialResponse: currentSubmission.initialResponse,
+              initialResponse: currentSubmission.initialResponse as TMessage,
               userMessage,
               isRegenerate: currentSubmission.isRegenerate,
             });
