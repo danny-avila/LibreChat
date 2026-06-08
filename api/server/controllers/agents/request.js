@@ -10,7 +10,6 @@ const {
   decrementPendingRequest,
   sanitizeMessageForTransmit,
   checkAndIncrementPendingRequest,
-  applyMessagePiiRedaction,
 } = require('@librechat/api');
 const { disposeClient, clientRegistry, requestDataMap } = require('~/server/cleanup');
 const { handleAbortError } = require('~/server/middleware');
@@ -121,28 +120,15 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
   const userId = req.user.id;
 
-  // Pre-redact PII before user message is constructed/saved so the
-  // persisted message, the `created` SSE event, and the prompt sent
-  // to the LLM all carry the redacted text. The agents-side hook
-  // remains the redaction site for block mode (which denies rather
-  // than rewrites).
-  let piiPreRedactMatches = null;
-  let piiBlockReason = null;
-  const piiConfig = req.config?.messagePiiFilter;
-  if (piiConfig != null && typeof piiConfig.onMatch === 'string') {
-    const result = applyMessagePiiRedaction(text, piiConfig);
-    if (result.matches.length > 0) {
-      // All modes redact the persisted/displayed user message so the
-      // raw credential never reaches MongoDB or the `created` SSE event.
-      // Mode differs only in what happens after redaction.
-      text = result.text;
-      req.body.text = result.text;
-      if (piiConfig.onMatch === 'warn') {
-        piiPreRedactMatches = result.matches;
-      } else if (piiConfig.onMatch === 'block') {
-        piiBlockReason = result.matches.map((m) => m.patternLabel).join(', ');
-      }
-    }
+  // Pre-redaction + block-mode rejection run in the
+  // `messagePiiFilter` middleware before `moderateText` so any
+  // credential-shaped text is scrubbed (or refused) before it can
+  // leave the server toward the moderation endpoint. The middleware
+  // mutates `req.body.text` in place and attaches the matches array
+  // here for the post-job SSE emit.
+  const piiPreRedactMatches = req._piiPreRedactMatches ?? null;
+  if (piiPreRedactMatches != null) {
+    text = req.body.text;
   }
 
   /** When to generate the conversation title. `immediate` (default) fires title
@@ -323,16 +309,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         userMessage = data.userMessage;
       }
       // conversationId is pre-generated, no need to update from callback
-
-      // Block-mode abort. BaseClient calls getReqData twice: the first time
-      // before saveMessageToDatabase fires (data.userMessage is set), the
-      // second time after (data.userMessagePromise is set). Throw on the
-      // SECOND call so the already-redacted user message has been queued for
-      // persistence; then the throw propagates up through sendMessage's
-      // catch and routes through the existing emitError path.
-      if (piiBlockReason != null && data.userMessagePromise != null) {
-        throw new Error(`Message blocked by PII filter: ${piiBlockReason}. Edit and retry.`);
-      }
     };
 
     // Start background generation - readyPromise resolves immediately now

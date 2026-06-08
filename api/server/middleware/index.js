@@ -14,6 +14,7 @@ const requireJwtAuth = require('./requireJwtAuth');
 const configMiddleware = require('./config/app');
 const validateModel = require('./validateModel');
 const moderateText = require('./moderateText');
+const messagePiiFilter = require('./messagePiiFilter');
 const logHeaders = require('./logHeaders');
 const setHeaders = require('./setHeaders');
 const validate = require('./validate');
@@ -35,6 +36,7 @@ module.exports = {
   setHeaders,
   logHeaders,
   moderateText,
+  messagePiiFilter,
   validateModel,
   requireJwtAuth,
   setTwoFactorTempUser,
