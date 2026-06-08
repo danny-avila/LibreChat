@@ -9,11 +9,18 @@ on:
       - 'Dockerfile.multi'
       - 'package.json'
       - 'package-lock.json'
+      - 'api/package.json'
+      - 'packages/api/**'
       - 'packages/client/**'
       - 'packages/data-provider/**'
+      - 'packages/data-schemas/**'
 
 permissions:
   contents: read
+
+concurrency:
+  group: docker-smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   client-package-target:
@@ -34,3 +41,55 @@ jobs:
           platforms: linux/amd64
           push: false
           target: client-package-build
+
+  api-runtime-smoke:
+    name: API runtime smoke (production image boots)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build the real production image (final `api-build` stage), which installs
+      # with `npm ci --omit=dev` — the same prune that, in prod, exposed runtime
+      # dependencies the tsdown bundle externalizes but were never declared.
+      - name: Build production image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.multi
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: librechat-api-smoke:ci
+          cache-from: type=gha,scope=docker-smoke-api
+          cache-to: type=gha,mode=max,scope=docker-smoke-api
+
+      # Loads the entire externalized require graph of the built @librechat/api
+      # bundle inside the pruned production image. A missing or ESM-incompatible
+      # runtime dependency (e.g. the `get-stream` regression) fails here with a
+      # non-zero exit — deterministically, with no database required.
+      - name: Verify production image resolves all runtime modules
+        run: |
+          docker run --rm librechat-api-smoke:ci \
+            node -e "require('@librechat/api'); require('@librechat/api/telemetry'); console.log('module resolution OK')"
+
+      # Boot the actual entrypoint. The server loads its full require graph before
+      # connecting to Mongo, so a module-load crash surfaces within seconds even
+      # without a database; Mongo/config errors are expected here and ignored.
+      - name: Boot server and assert no module-load crash
+        run: |
+          docker run -d --name lc-api-smoke librechat-api-smoke:ci
+          sleep 20
+          logs="$(docker logs lc-api-smoke 2>&1 || true)"
+          docker rm -f lc-api-smoke >/dev/null 2>&1 || true
+          echo "----- container logs -----"
+          echo "$logs"
+          echo "--------------------------"
+          if echo "$logs" | grep -qiE "Cannot find module|MODULE_NOT_FOUND|ERR_MODULE_NOT_FOUND|ERR_REQUIRE_ESM"; then
+            echo "::error::Server crashed at module load — a runtime dependency is missing from the production image"
+            exit 1
+          fi
+          echo "Server booted past module loading with no missing-module errors."
