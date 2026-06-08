@@ -169,6 +169,21 @@ describe('createSkillSyncTriggerOrchestrator', () => {
     expect(runners[0].runner.runOnce).not.toHaveBeenCalled();
   });
 
+  it('starts request sync with server credentials when the caller opts in', async () => {
+    const config = skillSync();
+    const { orchestrator, runners } = createHarness();
+
+    const started = await orchestrator.maybeRunForRequest({
+      config: { skillSync: config, config: {} },
+      user: { tenantId: 'tenant-a' },
+      skillSyncAllowServerCredentials: true,
+    });
+
+    expect(started).toBe(true);
+    expect(runners[0].input.allowServerCredentials).toBe(true);
+    expect(runners[0].runner.runOnce).toHaveBeenCalledTimes(1);
+  });
+
   it('does not start request sync for base YAML skillSync config', async () => {
     const config = skillSync();
     const { createRunner, orchestrator } = createHarness();

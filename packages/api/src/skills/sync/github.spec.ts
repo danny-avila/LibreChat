@@ -377,6 +377,79 @@ describe('createGitHubSkillSyncRunner', () => {
     );
   });
 
+  it('fails duplicate root and nested skill names before publishing partial mirrors', async () => {
+    const duplicateFetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes('/commits/')) {
+        return response({ sha: 'commit-sha', commit: { tree: { sha: 'tree-sha' } } });
+      }
+      if (url.includes('/git/trees/tree-sha')) {
+        return response({
+          sha: 'tree-sha',
+          truncated: false,
+          tree: [
+            {
+              path: 'SKILL.md',
+              mode: '100644',
+              type: 'blob',
+              sha: 'root-skill-sha',
+              size: 50,
+              url: 'https://api.github.test/blob/root-skill',
+            },
+            {
+              path: 'child/SKILL.md',
+              mode: '100644',
+              type: 'blob',
+              sha: 'child-skill-sha',
+              size: 50,
+              url: 'https://api.github.test/blob/child-skill',
+            },
+          ],
+        });
+      }
+      if (url.includes('/git/blobs/root-skill-sha')) {
+        return response(blob('---\nname: duplicate\ndescription: Root\n---\nBody'));
+      }
+      if (url.includes('/git/blobs/child-skill-sha')) {
+        return response(blob('---\nname: duplicate\ndescription: Child\n---\nBody'));
+      }
+      return response({ message: 'not found' }, 404);
+    }) as unknown as typeof fetch;
+    const deps = createDeps({
+      fetchFn: duplicateFetch,
+      getConfig: () => ({
+        github: {
+          enabled: true,
+          intervalMinutes: 60,
+          runOnStartup: false,
+          sources: [
+            {
+              id: 'librechat-skills',
+              owner: 'LibreChat',
+              repo: 'skills',
+              ref: 'main',
+              paths: [''],
+              credentialKey: 'github-skills-prod',
+            },
+          ],
+        },
+      }),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('failed');
+    expect(deps.createSkill).not.toHaveBeenCalled();
+    expect(deps.updateSkill).not.toHaveBeenCalled();
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'failed',
+        errorCode: 'DUPLICATE_SKILL_NAME',
+        errorMessage: 'GitHub source "librechat-skills" contains multiple skills named "duplicate"',
+      }),
+    );
+  });
+
   it('discovers nested skill roots within the configured discovery depth', async () => {
     const skillMarkdown = '---\nname: tdd\ndescription: Test-driven development\n---\nBody';
     const fetchFn = jest.fn(async (input: RequestInfo | URL) => {

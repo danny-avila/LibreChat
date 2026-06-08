@@ -176,7 +176,10 @@ function getGitHubSkillSyncRunnerForRequest(req) {
 
 async function maybeRunGitHubSkillSyncForRequest(req) {
   const baseConfig = await loadCurrentAppConfig();
-  return triggerOrchestrator.maybeRunForRequest(withBaseSkillSyncConfig(req, baseConfig));
+  return triggerOrchestrator.maybeRunForRequest({
+    ...withBaseSkillSyncConfig(req, baseConfig),
+    skillSyncAllowServerCredentials: true,
+  });
 }
 
 function initializeGitHubSkillSync(appConfig) {

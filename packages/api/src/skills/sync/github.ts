@@ -1082,8 +1082,7 @@ function assertNoDuplicatePreparedSkillNames(
       author: prepared.createInput.author.toString(),
       name: prepared.createInput.name,
     });
-    const previousRoot = seen.get(key);
-    if (previousRoot) {
+    if (seen.has(key)) {
       throw new SkillSyncError(
         'DUPLICATE_SKILL_NAME',
         `GitHub source "${source.id}" contains multiple skills named "${prepared.createInput.name}"`,
