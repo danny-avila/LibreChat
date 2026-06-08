@@ -172,7 +172,7 @@ function createDeps(
     }),
     getCredentialToken: jest.fn(async () => 'github_pat_secret'),
     getCredentialSummary: jest.fn(async () => ({
-      provider: 'github',
+      provider: 'github' as const,
       credentialKey: 'github-skills-prod',
       credentialPresent: true,
       tokenFingerprint: 'abc123',
@@ -1512,7 +1512,7 @@ describe('createGitHubSkillSyncRunner', () => {
       tryAcquireLock: jest.fn(async () => false),
       listCredentials: jest.fn(async () => [
         {
-          provider: 'github',
+          provider: 'github' as const,
           credentialKey: 'github-skills-prod',
           credentialPresent: true,
           tokenFingerprint: 'abc123',
