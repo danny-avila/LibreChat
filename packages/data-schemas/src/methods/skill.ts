@@ -16,8 +16,8 @@ import type {
   ISkillFileDocument,
   ISkillSummary,
 } from '~/types/skill';
-import { isValidObjectIdString } from '~/utils/objectId';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import { isValidObjectIdString } from '~/utils/objectId';
 import { stripYamlTrailingComment } from '~/utils/yaml';
 import { escapeRegExp } from '~/utils/string';
 import logger from '~/config/winston';
@@ -855,7 +855,78 @@ export function validateAlwaysApplyInBody(body: string | undefined): ValidationI
   return [];
 }
 
-export function createSkillMethods(mongoose: typeof import('mongoose'), deps: SkillDeps) {
+export function createSkillMethods(
+  mongoose: typeof import('mongoose'),
+  deps: SkillDeps,
+): {
+  createSkill: (data: CreateSkillInput) => Promise<CreateSkillResult>;
+  getSkillById: (id: string | Types.ObjectId) => Promise<(ISkill & { _id: Types.ObjectId }) | null>;
+  getSkillByName: (
+    name: string,
+    accessibleIds: Types.ObjectId[],
+    options?: {
+      /**
+       * Manual paths (`$` popover, always-apply once Phase 5 lands) set
+       * this so a same-name newer `userInvocable: false` duplicate can't
+       * shadow the older user-invocable doc the popover surfaced.
+       * Disable-model-invocation status is irrelevant here — manually-
+       * primed disabled skills are explicitly supported (iter 4).
+       */
+      preferUserInvocable?: boolean;
+      /**
+       * Model paths (`skill` / `read_file` tool handlers) set this so a
+       * same-name newer `disable-model-invocation: true` duplicate can't
+       * shadow the cataloged model-invocable doc. User-invocability is
+       * irrelevant here — `userInvocable: false` skills are model-only
+       * and remain valid model-invocation targets.
+       *
+       * Both flags fall back to the newest match when no preferred doc
+       * exists, so handlers can still fire their explicit-rejection
+       * error paths (e.g. "cannot be invoked by the model" in the
+       * disabled-only case).
+       */
+      preferModelInvocable?: boolean;
+    },
+  ) => Promise<(ISkill & { _id: Types.ObjectId }) | null>;
+  getAuthorSkillByName: (
+    params: GetAuthorSkillByNameParams,
+  ) => Promise<(ISkill & { _id: Types.ObjectId }) | null>;
+  listSkillsByAccess: (params: ListSkillsByAccessParams) => Promise<ListSkillsByAccessResult>;
+  listAlwaysApplySkills: (
+    params: ListAlwaysApplySkillsParams,
+  ) => Promise<ListAlwaysApplySkillsResult>;
+  updateSkill: (params: {
+    id: string;
+    expectedVersion: number;
+    update: UpdateSkillInput;
+  }) => Promise<UpdateSkillResult>;
+  deleteSkill: (id: string) => Promise<{ deleted: boolean }>;
+  deleteUserSkills: (userId: Types.ObjectId | string) => Promise<number>;
+  listSkillFiles: (
+    skillId: Types.ObjectId | string,
+  ) => Promise<Array<ISkillFile & { _id: Types.ObjectId }>>;
+  upsertSkillFile: (row: UpsertSkillFileInput) => Promise<ISkillFile & { _id: Types.ObjectId }>;
+  deleteSkillFile: (
+    skillId: Types.ObjectId | string,
+    relativePath: string,
+  ) => Promise<{ deleted: boolean }>;
+  getSkillFileByPath: (
+    skillId: Types.ObjectId | string,
+    relativePath: string,
+  ) => Promise<(ISkillFile & { _id: Types.ObjectId }) | null>;
+  updateSkillFileContent: (
+    skillId: Types.ObjectId | string,
+    relativePath: string,
+    update: { content?: string; isBinary?: boolean },
+  ) => Promise<void>;
+  updateSkillFileCodeEnvIds: (
+    updates: Array<{
+      skillId: Types.ObjectId | string;
+      relativePath: string;
+      codeEnvRef: CodeEnvRef;
+    }>,
+  ) => Promise<{ matchedCount: number; modifiedCount: number }>;
+} {
   const { ObjectId } = mongoose.Types;
 
   function buildSkillFilter(

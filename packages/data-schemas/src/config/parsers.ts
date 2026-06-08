@@ -330,23 +330,25 @@ function redactLogValue(value: unknown, seen = new WeakMap<object, unknown>(), d
  * @param info - The log information object.
  * @returns The modified log information object.
  */
-const redactFormat = winston.format((info: winston.Logform.TransformableInfo) => {
-  const infoRecord = info as Record<string | symbol, unknown>;
+const redactFormat: winston.Logform.FormatWrap = winston.format(
+  (info: winston.Logform.TransformableInfo) => {
+    const infoRecord = info as Record<string | symbol, unknown>;
 
-  if (info.message !== undefined) {
-    info.message = redactLogValue(info.message);
-  }
+    if (info.message !== undefined) {
+      info.message = redactLogValue(info.message);
+    }
 
-  const symbolValue = infoRecord[MESSAGE_SYMBOL];
-  if (symbolValue !== undefined) {
-    infoRecord[MESSAGE_SYMBOL] = redactLogValue(symbolValue);
-  }
+    const symbolValue = infoRecord[MESSAGE_SYMBOL];
+    if (symbolValue !== undefined) {
+      infoRecord[MESSAGE_SYMBOL] = redactLogValue(symbolValue);
+    }
 
-  if (infoRecord[SPLAT_SYMBOL] !== undefined) {
-    infoRecord[SPLAT_SYMBOL] = redactLogValue(infoRecord[SPLAT_SYMBOL]);
-  }
-  return info;
-});
+    if (infoRecord[SPLAT_SYMBOL] !== undefined) {
+      infoRecord[SPLAT_SYMBOL] = redactLogValue(infoRecord[SPLAT_SYMBOL]);
+    }
+    return info;
+  },
+);
 
 /**
  * Truncates long strings, especially base64 image data, within log messages.
@@ -406,7 +408,7 @@ function appendRequestContext(line: string, metadata: Record<string, unknown>): 
  * @param options - The options for formatting log messages.
  * @returns The formatted log message.
  */
-const debugTraverse = winston.format.printf(
+const debugTraverse: winston.Logform.Format = winston.format.printf(
   ({ level, message, timestamp, ...metadata }: Record<string, unknown>) => {
     if (!message) {
       return `${timestamp} ${level}`;
@@ -507,41 +509,43 @@ const debugTraverse = winston.format.printf(
  * Truncates long string values in JSON log objects.
  * Prevents outputting extremely long values (e.g., base64, blobs).
  */
-const jsonTruncateFormat = winston.format((info: winston.Logform.TransformableInfo) => {
-  const truncateLongStrings = (str: string, maxLength: number): string =>
-    str.length > maxLength ? str.substring(0, maxLength) + '...' : str;
+const jsonTruncateFormat: winston.Logform.FormatWrap = winston.format(
+  (info: winston.Logform.TransformableInfo) => {
+    const truncateLongStrings = (str: string, maxLength: number): string =>
+      str.length > maxLength ? str.substring(0, maxLength) + '...' : str;
 
-  const seen = new WeakSet<object>();
+    const seen = new WeakSet<object>();
 
-  const truncateObject = (obj: unknown): unknown => {
-    if (typeof obj !== 'object' || obj === null) {
-      return obj;
-    }
-
-    // Handle circular references - now with proper object type
-    if (seen.has(obj)) {
-      return '[Circular]';
-    }
-    seen.add(obj);
-
-    if (Array.isArray(obj)) {
-      return obj.map((item) => truncateObject(item));
-    }
-
-    // We know this is an object at this point
-    const objectRecord = obj as Record<string, unknown>;
-    const newObj: Record<string, unknown> = {};
-    Object.entries(objectRecord).forEach(([key, value]) => {
-      if (typeof value === 'string') {
-        newObj[key] = truncateLongStrings(value, CONSOLE_JSON_STRING_LENGTH);
-      } else {
-        newObj[key] = truncateObject(value);
+    const truncateObject = (obj: unknown): unknown => {
+      if (typeof obj !== 'object' || obj === null) {
+        return obj;
       }
-    });
-    return newObj;
-  };
 
-  return truncateObject(info) as winston.Logform.TransformableInfo;
-});
+      // Handle circular references - now with proper object type
+      if (seen.has(obj)) {
+        return '[Circular]';
+      }
+      seen.add(obj);
+
+      if (Array.isArray(obj)) {
+        return obj.map((item) => truncateObject(item));
+      }
+
+      // We know this is an object at this point
+      const objectRecord = obj as Record<string, unknown>;
+      const newObj: Record<string, unknown> = {};
+      Object.entries(objectRecord).forEach(([key, value]) => {
+        if (typeof value === 'string') {
+          newObj[key] = truncateLongStrings(value, CONSOLE_JSON_STRING_LENGTH);
+        } else {
+          newObj[key] = truncateObject(value);
+        }
+      });
+      return newObj;
+    };
+
+    return truncateObject(info) as winston.Logform.TransformableInfo;
+  },
+);
 
 export { redactFormat, redactMessage, debugTraverse, jsonTruncateFormat };

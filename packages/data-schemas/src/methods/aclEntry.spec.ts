@@ -1,11 +1,11 @@
 import mongoose from 'mongoose';
+import { MongoMemoryServer } from 'mongodb-memory-server';
 import {
   ResourceType,
   PrincipalType,
   PrincipalModel,
   PermissionBits,
 } from 'librechat-data-provider';
-import { MongoMemoryServer } from 'mongodb-memory-server';
 import type * as t from '~/types';
 import { createAclEntryMethods, permissionBitSupersets } from './aclEntry';
 import aclEntrySchema from '~/schema/aclEntry';
@@ -1259,14 +1259,14 @@ describe('AclEntry Model Tests', () => {
         grantedById,
       );
 
-      const results = await methods.aggregateAclEntries([
+      const results = (await methods.aggregateAclEntries([
         { $group: { _id: '$resourceType', count: { $sum: 1 } } },
         { $sort: { _id: 1 } },
-      ]);
+      ])) as Array<{ _id: string; count: number }>;
 
       expect(results).toHaveLength(2);
-      const agentResult = results.find((r: { _id: string }) => r._id === ResourceType.AGENT);
-      expect(agentResult.count).toBe(2);
+      const agentResult = results.find((r) => r._id === ResourceType.AGENT);
+      expect(agentResult?.count).toBe(2);
     });
 
     test('should return empty array for non-matching pipeline', async () => {
