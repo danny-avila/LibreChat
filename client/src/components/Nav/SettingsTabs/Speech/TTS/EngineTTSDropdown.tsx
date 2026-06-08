@@ -1,6 +1,7 @@
 import React from 'react';
 import { useRecoilState } from 'recoil';
 import { Dropdown } from '@librechat/client';
+import { TTSProviders } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -16,6 +17,10 @@ const EngineTTSDropdown: React.FC<EngineTTSDropdownProps> = ({ external }) => {
     ? [
         { value: 'browser', label: localize('com_nav_browser') },
         { value: 'external', label: localize('com_nav_external') },
+        { value: TTSProviders.OPENAI, label: localize('com_ui_openai') },
+        { value: TTSProviders.AZURE_OPENAI, label: localize('com_ui_azure') },
+        { value: TTSProviders.ELEVENLABS, label: 'ElevenLabs' },
+        { value: TTSProviders.LOCALAI, label: 'LocalAI' },
       ]
     : [{ value: 'browser', label: localize('com_nav_browser') }];
 

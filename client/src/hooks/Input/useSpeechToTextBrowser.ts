@@ -2,7 +2,6 @@ import { useEffect, useRef, useMemo } from 'react';
 import { useRecoilState } from 'recoil';
 import { useToastContext } from '@librechat/client';
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
-import { useGetCustomConfigSpeechQuery } from 'librechat-data-provider/react-query';
 import useGetAudioSettings from './useGetAudioSettings';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -15,12 +14,11 @@ const useSpeechToTextBrowser = (
   const { showToast } = useToastContext();
   const { speechToTextEndpoint } = useGetAudioSettings();
   const isBrowserSTTEnabled = speechToTextEndpoint === 'browser';
-  const { data: speechConfig } = useGetCustomConfigSpeechQuery({ enabled: true });
-  const sttExternal = Boolean(speechConfig?.sttExternal);
 
   const lastTranscript = useRef<string | null>(null);
   const lastInterim = useRef<string | null>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>();
+  const [sttExternal] = useRecoilState(store.sttExternal);
   const [autoSendText] = useRecoilState(store.autoSendText);
   const [languageSTT] = useRecoilState<string>(store.languageSTT);
   const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);

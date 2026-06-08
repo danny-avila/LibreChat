@@ -3,6 +3,7 @@ import { useRecoilState } from 'recoil';
 import * as Tabs from '@radix-ui/react-tabs';
 import { Lightbulb, Cog } from 'lucide-react';
 import { useOnClickOutside, useMediaQuery } from '@librechat/client';
+import { STTProviders, TTSProviders } from 'librechat-data-provider';
 import { useGetCustomConfigSpeechQuery } from 'librechat-data-provider/react-query';
 import {
   CloudBrowserVoicesSwitch,
@@ -23,6 +24,7 @@ import {
 } from './STT';
 import ConversationModeSwitch from './ConversationModeSwitch';
 import { useLocalize } from '~/hooks';
+import { isExternalAvailable } from '~/hooks/Input/audioEndpoints';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -33,8 +35,8 @@ function Speech() {
   const { data } = useGetCustomConfigSpeechQuery();
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
 
-  const [sttExternal, setSttExternal] = useState(false);
-  const [ttsExternal, setTtsExternal] = useState(false);
+  const [sttExternal, setSttExternal] = useRecoilState(store.sttExternal);
+  const [ttsExternal, setTtsExternal] = useRecoilState(store.ttsExternal);
   const [advancedMode, setAdvancedMode] = useRecoilState(store.advancedMode);
   const [autoTranscribeAudio, setAutoTranscribeAudio] = useRecoilState(store.autoTranscribeAudio);
   const [conversationMode, setConversationMode] = useRecoilState(store.conversationMode);
@@ -55,7 +57,7 @@ function Speech() {
   const [playbackRate, setPlaybackRate] = useRecoilState(store.playbackRate);
 
   const updateSetting = useCallback(
-    (key: string, newValue: string | number) => {
+    (key: string, newValue: string | number | boolean) => {
       const settings = {
         sttExternal: { value: sttExternal, setFunc: setSttExternal },
         ttsExternal: { value: ttsExternal, setFunc: setTtsExternal },
@@ -140,11 +142,28 @@ function Speech() {
   // Reset engineTTS if it is set to a removed/invalid value (e.g., 'edge')
   // TODO: remove this once the 'edge' engine is fully deprecated
   useEffect(() => {
-    const validEngines = ['browser', 'external'];
+    if (!data) {
+      return;
+    }
+    const validEngines = isExternalAvailable(data.ttsExternal)
+      ? ['browser', 'external', ...Object.values(TTSProviders)]
+      : ['browser'];
     if (!validEngines.includes(engineTTS)) {
       setEngineTTS('browser');
     }
-  }, [engineTTS, setEngineTTS]);
+  }, [data, engineTTS, setEngineTTS]);
+
+  useEffect(() => {
+    if (!data) {
+      return;
+    }
+    const validEngines = isExternalAvailable(data.sttExternal)
+      ? ['browser', 'external', ...Object.values(STTProviders)]
+      : ['browser'];
+    if (!validEngines.includes(engineSTT)) {
+      setEngineSTT('browser');
+    }
+  }, [data, engineSTT, setEngineSTT]);
 
   const contentRef = useRef(null);
   useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);

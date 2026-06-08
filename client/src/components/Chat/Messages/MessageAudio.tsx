@@ -1,19 +1,18 @@
 import { memo } from 'react';
-import { useRecoilValue } from 'recoil';
 import type { TMessageAudio } from '~/common';
 import { BrowserTTS, ExternalTTS } from '~/components/Audio/TTS';
 import { TTSEndpoints } from '~/common';
-import store from '~/store';
+import { useGetAudioSettings } from '~/hooks';
 
 function MessageAudio(props: TMessageAudio) {
-  const engineTTS = useRecoilValue<string>(store.engineTTS);
+  const { textToSpeechEndpoint } = useGetAudioSettings();
 
   const TTSComponents = {
     [TTSEndpoints.browser]: BrowserTTS,
     [TTSEndpoints.external]: ExternalTTS,
   };
 
-  const SelectedTTS = TTSComponents[engineTTS];
+  const SelectedTTS = TTSComponents[textToSpeechEndpoint];
   if (!SelectedTTS) {
     return null;
   }

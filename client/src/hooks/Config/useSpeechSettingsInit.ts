@@ -14,6 +14,8 @@ export default function useSpeechSettingsInit(isAuthenticated: boolean) {
   const setters = useRef({
     conversationMode: useSetRecoilState(store.conversationMode),
     advancedMode: useSetRecoilState(store.advancedMode),
+    sttExternal: useSetRecoilState(store.sttExternal),
+    ttsExternal: useSetRecoilState(store.ttsExternal),
     speechToText: useSetRecoilState(store.speechToText),
     textToSpeech: useSetRecoilState(store.textToSpeech),
     cacheTTS: useSetRecoilState(store.cacheTTS),
@@ -36,9 +38,9 @@ export default function useSpeechSettingsInit(isAuthenticated: boolean) {
     logger.log('Initializing speech settings from config:', data);
 
     Object.entries(data).forEach(([key, value]) => {
-      if (key === 'sttExternal' || key === 'ttsExternal') return;
-
-      if (localStorage.getItem(key) !== null) return;
+      if (key !== 'sttExternal' && key !== 'ttsExternal' && localStorage.getItem(key) !== null) {
+        return;
+      }
 
       const setter = setters[key as keyof typeof setters];
       if (setter) {

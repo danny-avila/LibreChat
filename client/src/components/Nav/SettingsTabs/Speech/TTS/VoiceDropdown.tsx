@@ -1,7 +1,6 @@
-import { useRecoilValue } from 'recoil';
 import { BrowserVoiceDropdown, ExternalVoiceDropdown } from '~/components/Audio/Voices';
 import { TTSEndpoints } from '~/common';
-import store from '~/store';
+import { useGetAudioSettings } from '~/hooks';
 
 const voiceDropdownComponentsMap = {
   [TTSEndpoints.browser]: BrowserVoiceDropdown,
@@ -9,8 +8,8 @@ const voiceDropdownComponentsMap = {
 };
 
 export default function VoiceDropdown() {
-  const engineTTS = useRecoilValue<string>(store.engineTTS);
-  const VoiceDropdownComponent = voiceDropdownComponentsMap[engineTTS];
+  const { textToSpeechEndpoint } = useGetAudioSettings();
+  const VoiceDropdownComponent = voiceDropdownComponentsMap[textToSpeechEndpoint];
 
   if (!VoiceDropdownComponent) {
     return null;

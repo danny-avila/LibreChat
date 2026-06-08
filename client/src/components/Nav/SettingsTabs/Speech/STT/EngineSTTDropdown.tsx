@@ -1,6 +1,7 @@
 import React from 'react';
 import { useRecoilState } from 'recoil';
 import { Dropdown } from '@librechat/client';
+import { STTProviders } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -16,6 +17,8 @@ const EngineSTTDropdown: React.FC<EngineSTTDropdownProps> = ({ external }) => {
     ? [
         { value: 'browser', label: localize('com_nav_browser') },
         { value: 'external', label: localize('com_nav_external') },
+        { value: STTProviders.OPENAI, label: localize('com_ui_openai') },
+        { value: STTProviders.AZURE_OPENAI, label: localize('com_ui_azure') },
       ]
     : [{ value: 'browser', label: localize('com_nav_browser') }];
 
