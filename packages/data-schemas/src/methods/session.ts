@@ -34,74 +34,33 @@ export function createSessionMethods(mongoose: typeof import('mongoose')) {
 
     try {
       const Session = mongoose.models.Session;
-      const User = mongoose.models.User;
+      // const User = mongoose.models.User;
       const existingSession = await Session.findOne({
         user: userId,
         expiration: { $gt: new Date() },
       }).lean();
 
       if (existingSession) {
-        await User.updateOne(
-          {
-            _id: userId,
-            $or: [
-              { activeSessionId: { $exists: false } },
-              { activeSessionId: null },
-              { activeSessionExpiresAt: { $lte: new Date() } },
-            ],
-          },
-          {
-            $set: {
-              activeSessionId: existingSession._id,
-              activeSessionExpiresAt: existingSession.expiration,
-            },
-          },
-        );
         throw new SessionError(
           'You are already logged in on one device. Logout to access in this device.',
           ACTIVE_SESSION_EXISTS_CODE,
         );
       }
-
       const currentSession = new Session({
         user: userId,
         expiration: options.expiration || new Date(Date.now() + expiresIn),
       });
-      const now = new Date();
-      const claimedUser = await User.findOneAndUpdate(
-        {
-          _id: userId,
-          $or: [
-            { activeSessionId: { $exists: false } },
-            { activeSessionId: null },
-            { activeSessionExpiresAt: { $lte: now } },
-          ],
-        },
-        {
-          $set: {
-            activeSessionId: currentSession._id,
-            activeSessionExpiresAt: currentSession.expiration,
-          },
-        },
-        { new: true },
-      ).lean();
 
-      if (!claimedUser) {
-        throw new SessionError(
-          'You are already logged in on one device. Logout to access in this device.',
-          ACTIVE_SESSION_EXISTS_CODE,
-        );
-      }
+      const refreshToken = await generateRefreshToken(currentSession);
 
-      let refreshToken;
-      try {
-        refreshToken = await generateRefreshToken(currentSession);
-      } catch (error) {
-        await releaseActiveSession(userId, currentSession._id.toString());
-        throw error;
-      }
+      currentSession.refreshTokenHash = await hashToken(refreshToken);
 
-      return { session: currentSession, refreshToken };
+      await currentSession.save();
+
+      return {
+        session: currentSession,
+        refreshToken,
+      };
     } catch (error) {
       if (error instanceof SessionError) {
         throw error;
@@ -111,7 +70,7 @@ export function createSessionMethods(mongoose: typeof import('mongoose')) {
     }
   }
 
-  /**
+  /**~
    * Finds a session by various parameters
    */
   async function findSession(

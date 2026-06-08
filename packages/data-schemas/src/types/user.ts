@@ -83,9 +83,7 @@ export interface IUser extends Document {
     };
   }>;
   isVerified: boolean;
-  activeSessionId?: Types.ObjectId | string | null;
-  activeSessionExpiresAt?: Date | null;
-  lastActiveAt: Date
+  lastActiveAt: Date;
 }
 
 export interface BalanceConfig {
