@@ -91,7 +91,9 @@ export function createMessagePiiFilterHooks(
           return {};
         }
 
-        collector.matches.push(...matches);
+        if (mode !== 'silent') {
+          collector.matches.push(...matches);
+        }
 
         if (mode === 'block') {
           logger.info(
@@ -108,13 +110,11 @@ export function createMessagePiiFilterHooks(
         // silent + warn both redact server-side. The difference is
         // that warn surfaces the matches to the UI via the controller
         // (which reads collector.matches after processStream resolves).
-        if (mode === 'warn') {
-          logger.info(
-            `[messagePiiFilter] redacted ${matches.length} match(es) (mode=warn, patterns=${matches
-              .map((m) => m.patternId)
-              .join(',')})`,
-          );
-        }
+        logger.info(
+          `[messagePiiFilter] redacted ${matches.length} match(es) (mode=${mode}, patterns=${matches
+            .map((m) => m.patternId)
+            .join(',')})`,
+        );
 
         return { updatedPrompt: text };
       },

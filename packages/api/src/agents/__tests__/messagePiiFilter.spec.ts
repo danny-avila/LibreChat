@@ -47,7 +47,8 @@ describe('createMessagePiiFilterHooks', () => {
 
       expect(result.updatedPrompt).toBe('key sk-[REDACTED] please');
       expect(result.decision).toBeUndefined();
-      expect(built!.collector.matches).toHaveLength(1);
+      // Silent mode skips collector population (no consumer reads it)
+      expect(built!.collector.matches).toEqual([]);
     });
 
     it('is a no-op when nothing matches', async () => {
@@ -110,7 +111,7 @@ describe('createMessagePiiFilterHooks', () => {
       expect(result.updatedPrompt).toBe('auth Bearer [REDACTED] and key sk-ant-1234567890ABC');
     });
 
-    it('layers customPatterns on top of starters', async () => {
+    it('uses customPatterns only when starterPatterns is empty', async () => {
       const built = createMessagePiiFilterHooks(
         silent({
           starterPatterns: [],
@@ -123,7 +124,25 @@ describe('createMessagePiiFilterHooks', () => {
       });
 
       expect(result.updatedPrompt).toBe('token [REDACTED] ok');
-      expect(built!.collector.matches.map((m) => m.patternId)).toEqual(['acme']);
+    });
+
+    it('layers customPatterns on top of starters (both fire in one prompt)', async () => {
+      const built = createMessagePiiFilterHooks(
+        silent({
+          onMatch: 'warn',
+          customPatterns: [{ id: 'acme', label: 'Acme token', regex: '\\bACME-[A-Z0-9]{6,}' }],
+        }),
+      );
+      const result = await executeHooks({
+        registry: built!.registry,
+        input: promptInput('starter sk-anything-here and custom ACME-DEADBEEF12'),
+      });
+
+      const ids = built!.collector.matches.map((m) => m.patternId).sort();
+      expect(ids).toContain('sk_prefix');
+      expect(ids).toContain('acme');
+      expect(result.updatedPrompt).toContain('sk-[REDACTED]');
+      expect(result.updatedPrompt).toContain('[REDACTED]');
     });
 
     it('honors a custom redactionText', async () => {
