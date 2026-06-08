@@ -401,6 +401,17 @@ router.put('/:conversationId/:messageId/feedback', validateMessageReq, async (re
       sendFeedbackScore({
         traceId: traceIdForMessage(messageId),
         feedback: updatedMessage.feedback,
+        metadata: {
+          messageId: updatedMessage.messageId ?? messageId,
+          parentMessageId: updatedMessage.parentMessageId,
+          conversationId: updatedMessage.conversationId ?? conversationId,
+          sessionId: updatedMessage.conversationId ?? conversationId,
+          userId: req?.user?.id,
+          endpoint: updatedMessage.endpoint,
+          sender: updatedMessage.sender,
+          isCreatedByUser: updatedMessage.isCreatedByUser,
+          tokenCount: updatedMessage.tokenCount,
+        },
       }).catch((err) => logger.error('[langfuse] feedback score failed:', err));
     }
 
