@@ -68,7 +68,6 @@ const PushSubscriptionSchema = new Schema(
   { _id: false },
 );
 
-
 const userSchema = new Schema<IUser>(
   {
     name: {
@@ -221,21 +220,12 @@ const userSchema = new Schema<IUser>(
       type: [PushSubscriptionSchema],
       default: [],
     },
-    activeSessionId: {
-      type: Schema.Types.ObjectId,
-      ref: 'Session',
-      default: null,
-    },
-    activeSessionExpiresAt: {
+    lastActiveAt: {
       type: Date,
-      default: null,
     },
-    lastActiveAt:{
-      type: Date
-    },
-    isVerified:{
+    isVerified: {
       type: Boolean,
-      default: false
+      default: false,
     },
   },
   { timestamps: true },
