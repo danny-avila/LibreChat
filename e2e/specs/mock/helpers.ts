@@ -58,7 +58,7 @@ export async function selectModelSpec(page: Page, label: string) {
     return;
   }
   await trigger.click();
-  await page.getByRole('option', { name: new RegExp(`^${escapeRegExp(label)}\\b`) }).click();
+  await page.getByRole('option', { name: new RegExp(`(^|\\s)${escapeRegExp(label)}\\b`) }).click();
   await expect(trigger).toContainText(label);
 }
 

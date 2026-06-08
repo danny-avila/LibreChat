@@ -208,6 +208,9 @@ const shouldHydrateMessage = (message: TMessage) =>
 const hydrateMessageConversationId = (message: TMessage, conversationId: string): TMessage =>
   shouldHydrateMessage(message) ? { ...message, conversationId } : message;
 
+const preferDefinedString = (value?: string | null, fallback?: string): string | undefined =>
+  value != null && value !== '' ? value : fallback;
+
 const getOptimisticMessages = (
   submission: TSubmission,
   conversationId: string,
@@ -295,6 +298,8 @@ const buildResumeEventSubmission = (
       resumeState.aggregatedContent ??
       (currentSubmission.initialResponse as TMessage | undefined)?.content,
     sender: resumeState.sender ?? currentSubmission.initialResponse?.sender,
+    iconURL: preferDefinedString(currentSubmission.initialResponse?.iconURL, resumeState.iconURL),
+    model: preferDefinedString(currentSubmission.initialResponse?.model, resumeState.model),
     isCreatedByUser: false,
   } as TMessage;
 
@@ -652,6 +657,11 @@ export default function useResumableSSE(
                 const responseMessage = {
                   ...messages[responseIdx],
                   content: data.resumeState.aggregatedContent,
+                  iconURL: preferDefinedString(
+                    messages[responseIdx]?.iconURL,
+                    data.resumeState.iconURL,
+                  ),
+                  model: preferDefinedString(messages[responseIdx]?.model, data.resumeState.model),
                 } as TMessage;
                 const updated = mergeResumeMessages(messages, userMessage, responseMessage);
                 console.log('[ResumableSSE] SYNC updating message', {
@@ -672,6 +682,8 @@ export default function useResumableSSE(
                   text: '',
                   content: data.resumeState.aggregatedContent,
                   isCreatedByUser: false,
+                  iconURL: data.resumeState.iconURL,
+                  model: data.resumeState.model,
                 } as TMessage;
                 setMessages(mergeResumeMessages(messages, userMessage, newMessage));
                 resetContentHandler();

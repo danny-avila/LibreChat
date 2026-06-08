@@ -283,6 +283,7 @@ router.post('/chat/abort', async (req, res) => {
         text: text || '',
         sender: jobData.sender || 'AI',
         endpoint: jobData.endpoint,
+        iconURL: jobData.iconURL,
         model: jobData.model,
         unfinished: true,
         error: false,

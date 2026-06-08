@@ -204,6 +204,63 @@ describe('useResumeOnLoad', () => {
     expect(observedSubmissions[observedSubmissions.length - 1]).toBe(submission);
   });
 
+  it('restores model spec icon metadata on the resumed assistant placeholder', async () => {
+    const observedSubmissions: Array<TSubmission | null> = [];
+    mockUseStreamStatus.mockReturnValue({
+      isSuccess: true,
+      isFetching: false,
+      data: {
+        active: true,
+        status: 'running',
+        streamId: CONVERSATION_ID,
+        resumeState: {
+          runSteps: [],
+          aggregatedContent: [{ type: 'text', text: 'Streaming...' }],
+          responseMessageId: RESPONSE_MESSAGE_ID,
+          conversationId: CONVERSATION_ID,
+          sender: 'Spec Agent',
+          iconURL: 'https://example.com/spec-icon.png',
+          model: 'gpt-4.1',
+          userMessage: {
+            messageId: USER_MESSAGE_ID,
+            parentMessageId: Constants.NO_PARENT,
+            conversationId: CONVERSATION_ID,
+            text: 'Hello',
+          },
+        },
+      },
+    });
+
+    renderUseResumeOnLoad({
+      messages: [
+        buildUserMessage(CONVERSATION_ID),
+        {
+          messageId: RESPONSE_MESSAGE_ID,
+          parentMessageId: USER_MESSAGE_ID,
+          conversationId: CONVERSATION_ID,
+          text: '',
+          isCreatedByUser: false,
+          iconURL: '',
+          model: '',
+        } as TMessage,
+      ],
+      onSubmission: (currentSubmission) => observedSubmissions.push(currentSubmission),
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(observedSubmissions[observedSubmissions.length - 1]?.initialResponse).toEqual(
+      expect.objectContaining({
+        messageId: RESPONSE_MESSAGE_ID,
+        sender: 'Spec Agent',
+        iconURL: 'https://example.com/spec-icon.png',
+        model: 'gpt-4.1',
+      }),
+    );
+  });
+
   it('restores the branch that owns a pending OAuth resume user message', async () => {
     const rootUser = buildUserMessage(CONVERSATION_ID, 'root-user');
     const branchOneResponse = {
