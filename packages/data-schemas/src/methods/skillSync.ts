@@ -48,6 +48,48 @@ export type SkillSyncStatusInput = {
   deletedFileCount?: number;
 };
 
+export type SkillSyncLockInput = {
+  provider: SkillSyncProvider;
+  lockOwner: string;
+  leaseMs: number;
+  tenantId?: string;
+};
+
+export type SkillSyncReleaseLockInput = {
+  provider: SkillSyncProvider;
+  lockOwner: string;
+  tenantId?: string;
+};
+
+export type SkillSyncMethods = {
+  upsertSkillSyncCredential: (
+    input: UpsertSkillSyncCredentialInput,
+  ) => Promise<SkillSyncCredentialSummary>;
+  deleteSkillSyncCredential: (
+    provider: SkillSyncProvider,
+    credentialKey: string,
+  ) => Promise<{ deleted: boolean }>;
+  listSkillSyncCredentials: (provider: SkillSyncProvider) => Promise<SkillSyncCredentialSummary[]>;
+  getSkillSyncCredentialToken: (
+    provider: SkillSyncProvider,
+    credentialKey: string,
+  ) => Promise<string | null>;
+  getSkillSyncCredentialSummary: (
+    provider: SkillSyncProvider,
+    credentialKey: string,
+  ) => Promise<SkillSyncCredentialSummary | null>;
+  listSkillSyncStatuses: (provider: SkillSyncProvider) => Promise<ISkillSyncStatus[]>;
+  getSkillSyncStatus: (
+    provider: SkillSyncProvider,
+    sourceId: string,
+    tenantId?: string,
+  ) => Promise<ISkillSyncStatus | null>;
+  upsertSkillSyncStatus: (input: SkillSyncStatusInput) => Promise<ISkillSyncStatus>;
+  tryAcquireSkillSyncLock: (params: SkillSyncLockInput) => Promise<boolean>;
+  refreshSkillSyncLock: (params: SkillSyncLockInput) => Promise<boolean>;
+  releaseSkillSyncLock: (params: SkillSyncReleaseLockInput) => Promise<void>;
+};
+
 function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
@@ -72,7 +114,7 @@ function summarizeCredential(
   };
 }
 
-export function createSkillSyncMethods(mongoose: typeof import('mongoose')) {
+export function createSkillSyncMethods(mongoose: typeof import('mongoose')): SkillSyncMethods {
   async function upsertSkillSyncCredential(
     input: UpsertSkillSyncCredentialInput,
   ): Promise<SkillSyncCredentialSummary> {
@@ -217,12 +259,7 @@ export function createSkillSyncMethods(mongoose: typeof import('mongoose')) {
     return row;
   }
 
-  async function tryAcquireSkillSyncLock(params: {
-    provider: SkillSyncProvider;
-    lockOwner: string;
-    leaseMs: number;
-    tenantId?: string;
-  }): Promise<boolean> {
+  async function tryAcquireSkillSyncLock(params: SkillSyncLockInput): Promise<boolean> {
     const Status = mongoose.models.SkillSyncStatus as Model<ISkillSyncStatusDocument>;
     const now = new Date();
     const lockExpiresAt = new Date(now.getTime() + params.leaseMs);
@@ -285,12 +322,7 @@ export function createSkillSyncMethods(mongoose: typeof import('mongoose')) {
     }
   }
 
-  async function refreshSkillSyncLock(params: {
-    provider: SkillSyncProvider;
-    lockOwner: string;
-    leaseMs: number;
-    tenantId?: string;
-  }): Promise<boolean> {
+  async function refreshSkillSyncLock(params: SkillSyncLockInput): Promise<boolean> {
     const Status = mongoose.models.SkillSyncStatus as Model<ISkillSyncStatusDocument>;
     const now = new Date();
     const row = await Status.findOneAndUpdate(
@@ -312,11 +344,7 @@ export function createSkillSyncMethods(mongoose: typeof import('mongoose')) {
     return Boolean(row);
   }
 
-  async function releaseSkillSyncLock(params: {
-    provider: SkillSyncProvider;
-    lockOwner: string;
-    tenantId?: string;
-  }): Promise<void> {
+  async function releaseSkillSyncLock(params: SkillSyncReleaseLockInput): Promise<void> {
     const Status = mongoose.models.SkillSyncStatus as Model<ISkillSyncStatusDocument>;
     await Status.updateOne(
       {
@@ -352,5 +380,3 @@ export function createSkillSyncMethods(mongoose: typeof import('mongoose')) {
     releaseSkillSyncLock,
   };
 }
-
-export type SkillSyncMethods = ReturnType<typeof createSkillSyncMethods>;
