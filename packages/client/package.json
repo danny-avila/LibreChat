@@ -6,15 +6,22 @@
     "type": "git",
     "url": "https://github.com/danny-avila/LibreChat"
   },
-  "main": "dist/index.js",
-  "module": "dist/index.es.js",
-  "types": "dist/types/index.d.ts",
+  "main": "dist/index.cjs",
+  "module": "dist/index.mjs",
+  "types": "./dist/index.d.cts",
   "exports": {
     ".": {
-      "import": "./dist/index.es.js",
-      "require": "./dist/index.js",
-      "types": "./dist/types/index.d.ts"
-    }
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./style.css": "./dist/style.css",
+    "./package.json": "./package.json"
   },
   "files": [
     "dist"
@@ -22,11 +29,11 @@
   "scripts": {
     "clean": "rimraf dist",
     "b:clean": "bun run rimraf dist",
-    "build": "npm run clean && rollup -c --bundleConfigAsCjs",
-    "build:dev": "npm run clean && NODE_ENV=development rollup -c --bundleConfigAsCjs",
-    "b:build": "bun run b:clean && bun run rollup -c --silent --bundleConfigAsCjs",
-    "build:watch": "rollup -c -w --bundleConfigAsCjs",
-    "dev": "rollup -c -w --bundleConfigAsCjs"
+    "build": "npm run clean && tsdown",
+    "build:dev": "npm run clean && NODE_ENV=development tsdown",
+    "b:build": "bun run b:clean && bun run tsdown",
+    "build:watch": "tsdown --watch",
+    "dev": "tsdown --watch"
   },
   "peerDependencies": {
     "@ariakit/react": "^0.4.16",
@@ -90,6 +97,7 @@
     "@tanstack/react-virtual": "^3.13.13",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^14.0.0",
+    "@tsdown/css": "^0.22.2",
     "@types/jest": "^29.5.14",
     "@types/react": "^18.2.11",
     "@types/react-dom": "^18.2.4",
@@ -112,6 +120,7 @@
     "rollup-plugin-postcss": "^4.0.2",
     "rollup-plugin-typescript2": "^0.37.0",
     "tailwindcss-radix": "^2.8.0",
+    "tsdown": "^0.22.2",
     "typescript": "^5.9.3"
   }
 }
