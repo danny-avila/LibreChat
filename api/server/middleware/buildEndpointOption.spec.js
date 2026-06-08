@@ -189,6 +189,9 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
         endpointType: EModelEndpoint.custom,
         spec: 'claude-opus-4.5',
         model: 'anthropic/claude-opus-4.5',
+        temperature: 0.1,
+        topP: 0.2,
+        chatProjectId: 'project-1',
       },
       {
         modelSpecs: {
@@ -197,6 +200,7 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
         },
       },
     );
+    req.baseUrl = '/api/agents/chat';
 
     await buildEndpointOption(req, createRes(), jest.fn());
 
@@ -210,7 +214,10 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
     const enforcedResult = parseCompactConvo.mock.results[1].value;
     expect(enforcedResult.maxOutputTokens).toBe(8192);
     expect(enforcedResult.temperature).toBe(0.7);
+    expect(enforcedResult.topP).toBeUndefined();
     expect(enforcedResult.maxContextTokens).toBe(50000);
+    expect(enforcedResult.chatProjectId).toBe('project-1');
+    expect(req.body.endpointOption.chatProjectId).toBe('project-1');
   });
 
   it('should restore private model spec preset fields in non-enforced mode', async () => {

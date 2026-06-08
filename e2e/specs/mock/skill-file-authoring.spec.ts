@@ -92,7 +92,7 @@ test.describe('skill file authoring tools', () => {
     expect(response.ok()).toBeTruthy();
 
     await expect(page).toHaveURL(/\/c\/(?!new)/, { timeout: 15000 });
-    const conversationUrl = page.url();
+    const conversationPath = new URL(page.url()).pathname;
     await expect(
       page.getByTestId('messages-view').getByText(`${FINAL_TEXT}: ${skillName}`),
     ).toBeVisible({ timeout: 30000 });
@@ -113,7 +113,7 @@ test.describe('skill file authoring tools', () => {
     expect(editedSkill.body).toContain(EDITED_DESCRIPTION);
 
     await page.reload({ timeout: 10000 });
-    await expect(page).toHaveURL(conversationUrl);
+    await expect(page).toHaveURL((url) => url.pathname === conversationPath);
     await expect(
       page.getByTestId('messages-view').getByText(`${FINAL_TEXT}: ${skillName}`),
     ).toBeVisible({ timeout: 30000 });

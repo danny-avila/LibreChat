@@ -33,7 +33,7 @@ test.describe('chat projects', () => {
     await expect(page.getByRole('button', { name }).first()).toBeVisible();
   });
 
-  test('starts a project-scoped chat and files it under the project', async ({ page }) => {
+  test('starts a project-scoped chat and persists it under the project', async ({ page }) => {
     test.setTimeout(120000);
     const name = uniqueName('E2E Project');
     const projectId = await createProject(page, name);
@@ -64,6 +64,18 @@ test.describe('chat projects', () => {
     const projectRow = page.getByRole('button', { name }).first();
     if ((await projectRow.getAttribute('aria-expanded')) !== 'true') {
       await projectRow.click();
+    }
+    await expect(
+      page.getByTestId(`project-chats-${projectId}`).getByTestId('convo-item').first(),
+    ).toBeVisible();
+
+    const conversationUrl = page.url();
+    await page.reload({ timeout: 10000 });
+    await expect(page).toHaveURL(conversationUrl);
+
+    const reloadedProjectRow = page.getByRole('button', { name }).first();
+    if ((await reloadedProjectRow.getAttribute('aria-expanded')) !== 'true') {
+      await reloadedProjectRow.click();
     }
     await expect(
       page.getByTestId(`project-chats-${projectId}`).getByTestId('convo-item').first(),
