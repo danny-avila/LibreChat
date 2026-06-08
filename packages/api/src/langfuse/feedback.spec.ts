@@ -59,6 +59,16 @@ describe('Langfuse feedback scores', () => {
     await sendFeedbackScore({
       traceId: 'trace-id',
       feedback: { rating: 'thumbsUp', tag: 'helpful', text: 'nice' },
+      metadata: {
+        messageId: 'message-id',
+        conversationId: 'conversation-id',
+        sessionId: 'conversation-id',
+        userId: 'user-id',
+        endpoint: 'agents',
+        empty: '',
+        missing: undefined,
+      },
+      observationId: 'observation-id',
     });
 
     expect(getFetchMock()).toHaveBeenCalledWith(
@@ -80,8 +90,19 @@ describe('Langfuse feedback scores', () => {
       value: 1,
       dataType: 'BOOLEAN',
       comment: 'helpful — nice',
-      metadata: { rating: 'thumbsUp', tag: 'helpful' },
+      observationId: 'observation-id',
+      metadata: {
+        rating: 'thumbsUp',
+        tag: 'helpful',
+        messageId: 'message-id',
+        conversationId: 'conversation-id',
+        sessionId: 'conversation-id',
+        userId: 'user-id',
+        endpoint: 'agents',
+      },
     });
+    expect(JSON.parse(init?.body as string).metadata).not.toHaveProperty('empty');
+    expect(JSON.parse(init?.body as string).metadata).not.toHaveProperty('missing');
   });
 
   it('posts feedback scores to the configured Langfuse host', async () => {

@@ -6,9 +6,13 @@ export type LangfuseFeedback = {
   text?: string;
 };
 
+export type LangfuseFeedbackMetadata = Record<string, string | number | boolean | null | undefined>;
+
 export type SendFeedbackScoreParams = {
   traceId: string;
   feedback?: LangfuseFeedback | null;
+  metadata?: LangfuseFeedbackMetadata;
+  observationId?: string;
 };
 
 const DEFAULT_BASE_URL = 'https://cloud.langfuse.com';
@@ -42,9 +46,26 @@ const AUTHORIZATION = ENABLED
   : undefined;
 const ENVIRONMENT = process.env.LANGFUSE_TRACING_ENVIRONMENT;
 
+function cleanMetadata(
+  metadata: LangfuseFeedbackMetadata,
+): Record<string, string | number | boolean> {
+  return Object.entries(metadata).reduce<Record<string, string | number | boolean>>(
+    (result, [key, value]) => {
+      if (value == null || (typeof value === 'string' && value.trim() === '')) {
+        return result;
+      }
+      result[key] = value;
+      return result;
+    },
+    {},
+  );
+}
+
 export async function sendFeedbackScore({
   traceId,
   feedback,
+  metadata = {},
+  observationId,
 }: SendFeedbackScoreParams): Promise<void> {
   if (!ENABLED || !AUTHORIZATION || !traceId) {
     return;
@@ -70,7 +91,8 @@ export async function sendFeedbackScore({
     value: feedback.rating === 'thumbsUp' ? 1 : 0,
     dataType: 'BOOLEAN',
     comment: [feedback.tag, feedback.text].filter(Boolean).join(' — ') || undefined,
-    metadata: { rating: feedback.rating, tag: feedback.tag },
+    metadata: cleanMetadata({ ...metadata, rating: feedback.rating, tag: feedback.tag }),
+    ...(observationId ? { observationId } : {}),
     ...(ENVIRONMENT ? { environment: ENVIRONMENT } : {}),
   };
 
