@@ -9,7 +9,7 @@ on:
       - 'Dockerfile.multi'
       - 'package.json'
       - 'package-lock.json'
-      - 'api/package.json'
+      - 'api/**'
       - 'packages/api/**'
       - 'packages/client/**'
       - 'packages/data-provider/**'
@@ -76,20 +76,48 @@ jobs:
           docker run --rm librechat-api-smoke:ci \
             node -e "require('@librechat/api'); require('@librechat/api/telemetry'); console.log('module resolution OK')"
 
-      # Boot the actual entrypoint. The server loads its full require graph before
-      # connecting to Mongo, so a module-load crash surfaces within seconds even
-      # without a database; Mongo/config errors are expected here and ignored.
-      - name: Boot server and assert no module-load crash
+      # Boot the real entrypoint against a real MongoDB so the *entire* server
+      # require graph loads (api/db throws at module scope without MONGO_URI, and
+      # is imported before models/services/routes), then gate on /health AND the
+      # container staying alive — so ANY startup crash (missing module, ReferenceError,
+      # bad config) fails the smoke, not just missing-module strings.
+      - name: Boot production image against MongoDB and poll /health
         run: |
-          docker run -d --name lc-api-smoke librechat-api-smoke:ci
-          sleep 20
-          logs="$(docker logs lc-api-smoke 2>&1 || true)"
-          docker rm -f lc-api-smoke >/dev/null 2>&1 || true
-          echo "----- container logs -----"
-          echo "$logs"
-          echo "--------------------------"
-          if echo "$logs" | grep -qiE "Cannot find module|MODULE_NOT_FOUND|ERR_MODULE_NOT_FOUND|ERR_REQUIRE_ESM"; then
-            echo "::error::Server crashed at module load — a runtime dependency is missing from the production image"
+          set -u
+          docker network create lc-smoke
+          docker run -d --name lc-mongo --network lc-smoke mongo:8.0.20
+          docker run -d --name lc-api --network lc-smoke -p 3080:3080 \
+            -e HOST=0.0.0.0 -e PORT=3080 \
+            -e NODE_ENV=production \
+            -e MONGO_URI=mongodb://lc-mongo:27017/LibreChat \
+            -e CREDS_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+            -e CREDS_IV=0123456789abcdef0123456789abcdef \
+            -e JWT_SECRET=docker-smoke-jwt-secret \
+            -e JWT_REFRESH_SECRET=docker-smoke-jwt-refresh-secret \
+            -e SEARCH=false \
+            librechat-api-smoke:ci
+
+          healthy=""
+          for i in $(seq 1 60); do
+            if [ "$(docker inspect -f '{{.State.Running}}' lc-api 2>/dev/null)" != "true" ]; then
+              echo "::error::API container exited during startup (exit code $(docker inspect -f '{{.State.ExitCode}}' lc-api 2>/dev/null))"
+              break
+            fi
+            if [ "$(curl -fsS -o /dev/null -w '%{http_code}' http://localhost:3080/health 2>/dev/null || true)" = "200" ]; then
+              healthy="yes"
+              echo "/health returned 200 — server booted cleanly."
+              break
+            fi
+            sleep 2
+          done
+
+          echo "----- last 100 lines of api container logs -----"
+          docker logs lc-api 2>&1 | tail -100 || true
+          echo "------------------------------------------------"
+          docker rm -f lc-api lc-mongo >/dev/null 2>&1 || true
+          docker network rm lc-smoke >/dev/null 2>&1 || true
+
+          if [ -z "$healthy" ]; then
+            echo "::error::Production image failed to boot to a healthy /health within timeout"
             exit 1
           fi
-          echo "Server booted past module loading with no missing-module errors."
