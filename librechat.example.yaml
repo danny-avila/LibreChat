@@ -786,10 +786,12 @@ endpoints:
 #   onMatch: warn
 #
 #   # Starter patterns ported from danny-avila/LibreChat#13561's winston log
-#   # redaction. Omit the field to enable all 5; pass an empty list to enable
-#   # none and rely entirely on customPatterns.
-#   # Available ids: sk_prefix, bearer_header, api_key_header, api_key_query, key_query
-#   starterPatterns: [sk_prefix, bearer_header, api_key_header, api_key_query, key_query]
+#   # redaction. Omit the field to enable the low-false-positive default set
+#   # (sk_prefix, bearer_header, api_key_header). Pass an explicit list to
+#   # subset the default set or to opt in to the higher-false-positive query
+#   # patterns (api_key_query, key_query); pass an empty list to disable
+#   # starters entirely and rely on customPatterns alone.
+#   starterPatterns: [sk_prefix, bearer_header, api_key_header]
 #
 #   # Operator-defined regex additions. Each entry needs a stable id (used in
 #   # logs and the SSE payload), a human-readable label (shown to users in the

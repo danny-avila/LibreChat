@@ -702,6 +702,8 @@ export default function useResumableSSE(
                   titleHandler(pendingEvent);
                 } else if (pendingEvent.event != null) {
                   stepHandler(pendingEvent, resumeSubmission);
+                } else if (pendingEvent.type === 'pii_matches') {
+                  piiMatchesHandler(pendingEvent);
                 } else if (pendingEvent.type != null) {
                   contentHandler({ data: pendingEvent, submission: resumeSubmission });
                 }
