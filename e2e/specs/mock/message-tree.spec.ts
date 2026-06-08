@@ -67,6 +67,10 @@ function messageText(message: E2EMessage): string {
   return message.content?.map(contentText).filter(Boolean).join('\n') ?? '';
 }
 
+function sseMessage(payload: unknown): string {
+  return `event: message\ndata: ${JSON.stringify(payload)}\n\n`;
+}
+
 function findMessage(messages: E2EMessage[], text: string, isCreatedByUser?: boolean): E2EMessage {
   const message = messages.find((candidate) => {
     const roleMatches =
@@ -150,6 +154,8 @@ async function mockActiveOAuthResumeStream({
   parentMessageId,
   pendingPrompt,
   pendingUserMessageId,
+  postAuthRunId,
+  postAuthText,
 }: {
   page: Page;
   authUrl: string;
@@ -157,10 +163,13 @@ async function mockActiveOAuthResumeStream({
   parentMessageId: string;
   pendingPrompt: string;
   pendingUserMessageId: string;
+  postAuthRunId?: string;
+  postAuthText?: string;
 }) {
   const pendingResponseMessageId = `${pendingUserMessageId}_`;
   const toolCallId = `${pendingUserMessageId}:Google-Workspace`;
   const stepId = 'step_oauth_login_Google-Workspace';
+  const messageStepId = 'step_post_auth_message';
   const resumeState = {
     runSteps: [],
     aggregatedContent: [],
@@ -213,6 +222,48 @@ async function mockActiveOAuthResumeStream({
       },
     ],
   };
+  const streamPayloads: unknown[] = [
+    {
+      sync: true,
+      resumeState,
+      pendingEvents: [],
+    },
+  ];
+
+  if (postAuthText) {
+    streamPayloads.push(
+      {
+        event: 'on_run_step',
+        data: {
+          runId: postAuthRunId ?? 'USE_PRELIM_RESPONSE_MESSAGE_ID',
+          id: messageStepId,
+          type: 'message_creation',
+          index: 0,
+          stepDetails: {
+            type: 'message_creation',
+            message_creation: {
+              message_id: `${pendingResponseMessageId}-post-auth`,
+            },
+          },
+          usage: null,
+        },
+      },
+      {
+        event: 'on_message_delta',
+        data: {
+          id: messageStepId,
+          delta: {
+            content: [
+              {
+                type: 'text',
+                text: postAuthText,
+              },
+            ],
+          },
+        },
+      },
+    );
+  }
 
   await page.route(`**/api/agents/chat/status/${conversationId}`, (route) =>
     route.fulfill({
@@ -233,11 +284,169 @@ async function mockActiveOAuthResumeStream({
     route.fulfill({
       status: 200,
       contentType: 'text/event-stream',
-      body: `event: message\ndata: ${JSON.stringify({
-        sync: true,
-        resumeState,
-        pendingEvents: [],
-      })}\n\n`,
+      body: streamPayloads.map(sseMessage).join(''),
+    }),
+  );
+}
+
+async function mockPreCreatedOAuthStream({
+  page,
+  authUrl,
+  conversationId,
+  parentMessageId,
+  prompt,
+  serverUserMessageId,
+  responseMessageId,
+  postAuthText,
+}: {
+  page: Page;
+  authUrl: string;
+  conversationId: string;
+  parentMessageId: string;
+  prompt: string;
+  serverUserMessageId: string;
+  responseMessageId: string;
+  postAuthText: string;
+}) {
+  const toolCallId = `${serverUserMessageId}:Google-Workspace`;
+  const oauthStepId = 'step_oauth_login_Google-Workspace';
+  const reasoningStepId = 'step_post_auth_reasoning';
+  const messageStepId = 'step_post_auth_message';
+  const payloads = [
+    {
+      event: 'on_run_step',
+      data: {
+        runId: 'USE_PRELIM_RESPONSE_MESSAGE_ID',
+        id: oauthStepId,
+        type: 'tool_calls',
+        index: 0,
+        stepDetails: {
+          type: 'tool_calls',
+          tool_calls: [
+            {
+              id: toolCallId,
+              name: 'oauth_mcp_Google-Workspace',
+              type: 'tool_call_chunk',
+            },
+          ],
+        },
+      },
+    },
+    {
+      event: 'on_run_step_delta',
+      data: {
+        id: oauthStepId,
+        delta: {
+          type: 'tool_calls',
+          tool_calls: [
+            {
+              id: toolCallId,
+              name: 'oauth_mcp_Google-Workspace',
+              type: 'tool_call_chunk',
+              args: '',
+            },
+          ],
+          auth: authUrl,
+          expires_at: Date.now() + 120000,
+        },
+      },
+    },
+    {
+      event: 'on_run_step_completed',
+      data: {
+        result: {
+          id: oauthStepId,
+          index: 0,
+          tool_call: {
+            id: toolCallId,
+            name: 'oauth_mcp_Google-Workspace',
+            args: '',
+            output: 'OAuth authentication completed',
+            type: 'tool_call',
+          },
+        },
+      },
+    },
+    {
+      created: true,
+      message: {
+        messageId: serverUserMessageId,
+        parentMessageId,
+        conversationId,
+        sender: 'User',
+        text: prompt,
+        isCreatedByUser: true,
+      },
+      streamId: conversationId,
+    },
+    {
+      event: 'on_run_step',
+      data: {
+        runId: responseMessageId,
+        id: reasoningStepId,
+        type: 'message_creation',
+        index: 0,
+        stepDetails: {
+          type: 'message_creation',
+          message_creation: {
+            message_id: `${responseMessageId}-reasoning`,
+          },
+        },
+        usage: null,
+      },
+    },
+    {
+      event: 'on_reasoning_delta',
+      data: {
+        id: reasoningStepId,
+        delta: {
+          content: [
+            {
+              type: 'think',
+              think: 'The user completed OAuth.',
+            },
+          ],
+        },
+      },
+    },
+    {
+      event: 'on_run_step',
+      data: {
+        runId: responseMessageId,
+        id: messageStepId,
+        type: 'message_creation',
+        index: 1,
+        stepDetails: {
+          type: 'message_creation',
+          message_creation: {
+            message_id: `${responseMessageId}-message`,
+          },
+        },
+        usage: null,
+      },
+    },
+    {
+      event: 'on_message_delta',
+      data: {
+        id: messageStepId,
+        delta: {
+          content: [
+            {
+              type: 'text',
+              text: postAuthText,
+              index: 1,
+            },
+          ],
+        },
+      },
+    },
+  ];
+
+  await page.route(`**/api/agents/chat/stream/${conversationId}**`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'text/event-stream',
+      body: payloads.map(sseMessage).join(''),
     }),
   );
 }
@@ -576,6 +785,77 @@ test.describe('message tree stream operations', () => {
     await page.reload({ timeout: 10000 });
     await expectVisibleMessages(page, [firstReply, followPrompt, followReply, pendingPrompt]);
     await expect(messagesView(page).getByText(regeneratedReply)).toBeHidden();
+  });
+
+  test('keeps existing messages visible when resumed OAuth streams post-auth content', async ({
+    page,
+  }) => {
+    const label = uniqueLabel('oauth-post-auth');
+    const rootPrompt = replyPrompt(`${label}-root`);
+    const rootReply = replyText(`${label}-root`);
+    const pendingPrompt = replyPrompt(`${label}-pending`);
+    const postAuthText = `E2E post-auth OAuth reply ${label}`;
+
+    await openMockChat(page);
+    await sendAndExpectReply(page, rootPrompt, rootReply);
+    const conversationId = await conversationIdFromPage(page);
+
+    const messages = await waitForMessages(
+      page,
+      conversationId,
+      (items) => items.some((message) => messageText(message).includes(rootReply)),
+      'root reply before OAuth resume',
+    );
+    const branchTail = findMessage(messages, rootReply, false);
+
+    await mockActiveOAuthResumeStream({
+      page,
+      conversationId,
+      parentMessageId: branchTail.messageId,
+      pendingPrompt,
+      pendingUserMessageId: `${label}-pending-user`,
+      authUrl: `https://auth.example.test/${label}`,
+      postAuthRunId: `${label}-stable-response`,
+      postAuthText,
+    });
+
+    await page.reload({ timeout: 10000 });
+    await expectVisibleMessages(page, [rootPrompt, rootReply, pendingPrompt, postAuthText]);
+  });
+
+  test('keeps existing messages visible when OAuth completes before created', async ({ page }) => {
+    const label = uniqueLabel('oauth-pre-created');
+    const rootPrompt = replyPrompt(`${label}-root`);
+    const rootReply = replyText(`${label}-root`);
+    const followPrompt = replyPrompt(`${label}-follow`);
+    const postAuthText = `E2E pre-created OAuth reply ${label}`;
+
+    await openMockChat(page);
+    await sendAndExpectReply(page, rootPrompt, rootReply);
+    const conversationId = await conversationIdFromPage(page);
+
+    const messages = await waitForMessages(
+      page,
+      conversationId,
+      (items) => items.some((message) => messageText(message).includes(rootReply)),
+      'root reply before pre-created OAuth stream',
+    );
+    const branchTail = findMessage(messages, rootReply, false);
+
+    await mockPreCreatedOAuthStream({
+      page,
+      conversationId,
+      parentMessageId: branchTail.messageId,
+      prompt: followPrompt,
+      serverUserMessageId: `${label}-server-user`,
+      responseMessageId: `${label}-response`,
+      authUrl: `https://auth.example.test/${label}`,
+      postAuthText,
+    });
+
+    const response = await sendMessage(page, followPrompt);
+    expect(response.ok()).toBeTruthy();
+    await expectVisibleMessages(page, [rootPrompt, rootReply, followPrompt, postAuthText]);
   });
 
   test('long threads retain regenerated and save-and-submit branches after revisit', async ({

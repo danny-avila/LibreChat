@@ -565,6 +565,178 @@ describe('useStepHandler', () => {
       );
     });
 
+    it('keeps pending OAuth ancestry when content arrives after an orphaned refresh', () => {
+      const rootUser = createUserMessage({ messageId: 'root-user' });
+      const existingResponse = createResponseMessage({
+        messageId: 'existing-response',
+        parentMessageId: rootUser.messageId,
+      });
+      const pendingUser = createUserMessage({
+        messageId: 'pending-user',
+        parentMessageId: existingResponse.messageId,
+      });
+      const initialResponse = createResponseMessage({
+        messageId: 'pending-user_',
+        parentMessageId: pendingUser.messageId,
+      });
+
+      let currentMessages = [rootUser, existingResponse];
+      mockGetMessages.mockImplementation(() => currentMessages);
+      mockSetMessages.mockImplementation((messages) => {
+        currentMessages = messages;
+      });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const submission = createSubmission({
+        userMessage: pendingUser,
+        messages: [rootUser, existingResponse],
+        initialResponse,
+      });
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP,
+            data: createToolCallRunStep({
+              id: 'step-oauth-login',
+              runId: USE_PRELIM_RESPONSE_MESSAGE_ID,
+              stepDetails: {
+                type: StepTypes.TOOL_CALLS,
+                tool_calls: [
+                  {
+                    id: 'tool-call-oauth',
+                    name: `oauth${Constants.mcp_delimiter}Google-Workspace`,
+                    args: '',
+                    type: ToolCallTypes.TOOL_CALL,
+                  },
+                ],
+              },
+            }),
+          },
+          submission,
+        );
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP,
+            data: createRunStep({
+              id: 'step-message',
+              runId: USE_PRELIM_RESPONSE_MESSAGE_ID,
+              index: 0,
+            }),
+          },
+          submission,
+        );
+      });
+
+      currentMessages = [initialResponse];
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta('step-message', 'Ready') },
+          submission,
+        );
+      });
+
+      expect(currentMessages.map((message) => message.messageId)).toEqual([
+        rootUser.messageId,
+        existingResponse.messageId,
+        pendingUser.messageId,
+        initialResponse.messageId,
+      ]);
+      expect(currentMessages.at(-1)).toEqual(
+        expect.objectContaining({
+          parentMessageId: pendingUser.messageId,
+          content: [{ type: ContentTypes.TEXT, text: 'Ready' }],
+        }),
+      );
+    });
+
+    it('replaces the preliminary OAuth response when post-auth streaming uses a stable response id', () => {
+      const rootUser = createUserMessage({ messageId: 'root-user' });
+      const existingResponse = createResponseMessage({
+        messageId: 'existing-response',
+        parentMessageId: rootUser.messageId,
+      });
+      const pendingUser = createUserMessage({
+        messageId: 'pending-user',
+        parentMessageId: existingResponse.messageId,
+      });
+      const preliminaryResponse = createResponseMessage({
+        messageId: 'pending-user_',
+        parentMessageId: pendingUser.messageId,
+        content: [
+          {
+            type: ContentTypes.TOOL_CALL,
+            tool_call: {
+              id: 'tool-call-oauth',
+              name: `oauth${Constants.mcp_delimiter}Google-Workspace`,
+              type: ToolCallTypes.TOOL_CALL,
+              args: '',
+            },
+          },
+        ],
+      });
+      const stableResponse = createResponseMessage({
+        messageId: 'stable-response',
+        parentMessageId: pendingUser.messageId,
+      });
+
+      let currentMessages = [rootUser, existingResponse, preliminaryResponse];
+      mockGetMessages.mockImplementation(() => currentMessages);
+      mockSetMessages.mockImplementation((messages) => {
+        currentMessages = messages;
+      });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const submission = createSubmission({
+        userMessage: pendingUser,
+        messages: [rootUser, existingResponse],
+        initialResponse: preliminaryResponse,
+      });
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP,
+            data: createRunStep({
+              id: 'step-message',
+              runId: stableResponse.messageId,
+              index: 0,
+            }),
+          },
+          submission,
+        );
+      });
+
+      expect(currentMessages.map((message) => message.messageId)).toEqual([
+        rootUser.messageId,
+        existingResponse.messageId,
+        pendingUser.messageId,
+        stableResponse.messageId,
+      ]);
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta('step-message', 'Ready') },
+          submission,
+        );
+      });
+
+      expect(currentMessages.map((message) => message.messageId)).toEqual([
+        rootUser.messageId,
+        existingResponse.messageId,
+        pendingUser.messageId,
+        stableResponse.messageId,
+      ]);
+      expect(currentMessages.at(-1)).toEqual(
+        expect.objectContaining({
+          messageId: stableResponse.messageId,
+          parentMessageId: pendingUser.messageId,
+          content: [{ type: ContentTypes.TEXT, text: 'Ready' }],
+        }),
+      );
+    });
+
     it('should not insert regenerate transport userMessage before preliminary OAuth steps', () => {
       const originalUser = createUserMessage({ messageId: 'original-user-message' });
       const originalResponse = createResponseMessage({

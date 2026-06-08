@@ -120,23 +120,28 @@ const mockTitleHandler = jest.fn();
 const mockSetIsSubmitting = jest.fn();
 const mockClearStepMaps = jest.fn();
 
-jest.mock('~/hooks/SSE/useEventHandlers', () =>
-  jest.fn(() => ({
-    errorHandler: mockErrorHandler,
-    finalHandler: mockFinalHandler,
-    createdHandler: mockCreatedHandler,
-    attachmentHandler: jest.fn(),
-    stepHandler: mockStepHandler,
-    titleHandler: mockTitleHandler,
-    contentHandler: jest.fn(),
-    resetContentHandler: jest.fn(),
-    syncStepMessage: jest.fn(),
-    clearStepMaps: mockClearStepMaps,
-    messageHandler: jest.fn(),
-    setIsSubmitting: mockSetIsSubmitting,
-    setShowStopButton: jest.fn(),
-  })),
-);
+jest.mock('~/hooks/SSE/useEventHandlers', () => {
+  const actual = jest.requireActual('~/hooks/SSE/useEventHandlers');
+  return {
+    __esModule: true,
+    ...actual,
+    default: jest.fn(() => ({
+      errorHandler: mockErrorHandler,
+      finalHandler: mockFinalHandler,
+      createdHandler: mockCreatedHandler,
+      attachmentHandler: jest.fn(),
+      stepHandler: mockStepHandler,
+      titleHandler: mockTitleHandler,
+      contentHandler: jest.fn(),
+      resetContentHandler: jest.fn(),
+      syncStepMessage: jest.fn(),
+      clearStepMaps: mockClearStepMaps,
+      messageHandler: jest.fn(),
+      setIsSubmitting: mockSetIsSubmitting,
+      setShowStopButton: jest.fn(),
+    })),
+  };
+});
 
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
@@ -728,6 +733,162 @@ describe('useResumableSSE - 404 error path', () => {
         }),
       }),
     );
+    unmount();
+  });
+
+  it('replays pre-created OAuth completion against the hydrated response id', async () => {
+    const previousUser = {
+      messageId: 'previous-user',
+      conversationId: CONV_ID,
+      text: 'hi',
+      isCreatedByUser: true,
+      sender: 'User',
+      parentMessageId: Constants.NO_PARENT,
+    } as TMessage;
+    const previousResponse = {
+      messageId: 'previous-response',
+      conversationId: CONV_ID,
+      text: 'hello',
+      isCreatedByUser: false,
+      sender: 'Assistant',
+      parentMessageId: previousUser.messageId,
+    } as TMessage;
+    const submission = buildSubmission({
+      conversation: { conversationId: CONV_ID },
+      userMessage: {
+        messageId: 'optimistic-user',
+        conversationId: CONV_ID,
+        text: 'thanks!',
+        isCreatedByUser: true,
+        sender: 'User',
+        parentMessageId: previousResponse.messageId,
+      },
+      messages: [previousUser, previousResponse],
+      initialResponse: {
+        messageId: 'optimistic-user_',
+        conversationId: CONV_ID,
+        text: '',
+        isCreatedByUser: false,
+        sender: 'Assistant',
+        parentMessageId: 'optimistic-user',
+      },
+    });
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const runStepEvent = {
+      event: StepEvents.ON_RUN_STEP,
+      data: {
+        id: 'step-oauth',
+        runId: Constants.USE_PRELIM_RESPONSE_MESSAGE_ID,
+        index: 0,
+        type: 'tool_calls',
+        stepDetails: {
+          type: 'tool_calls',
+          tool_calls: [{ id: 'call-oauth', name: 'oauth_mcp_Google-Workspace', args: '' }],
+        },
+      },
+    };
+    const runStepDeltaEvent = {
+      event: StepEvents.ON_RUN_STEP_DELTA,
+      data: {
+        id: 'step-oauth',
+        delta: {
+          type: 'tool_calls',
+          tool_calls: [{ id: 'call-oauth', name: 'oauth_mcp_Google-Workspace', args: '' }],
+          auth: 'https://auth.example.com/oauth',
+          expires_at: 1780791946,
+        },
+      },
+    };
+    const completedEvent = {
+      event: StepEvents.ON_RUN_STEP_COMPLETED,
+      data: {
+        result: {
+          id: 'step-oauth',
+          index: 0,
+          tool_call: {
+            id: 'call-oauth',
+            name: 'oauth_mcp_Google-Workspace',
+            args: '',
+            output: 'OAuth authentication completed',
+            type: 'tool_call',
+          },
+        },
+      },
+    };
+    const createdEvent = {
+      created: true,
+      message: {
+        messageId: 'server-user',
+        parentMessageId: previousResponse.messageId,
+        conversationId: CONV_ID,
+        sender: 'User',
+        text: 'thanks!',
+        isCreatedByUser: true,
+      },
+      streamId: CONV_ID,
+    };
+
+    const sse = getLastSSE();
+    await act(async () => {
+      sse._emit('message', { data: JSON.stringify(runStepEvent) });
+      sse._emit('message', { data: JSON.stringify(runStepDeltaEvent) });
+      sse._emit('message', { data: JSON.stringify(completedEvent) });
+    });
+
+    expect(mockStepHandler).toHaveBeenCalledTimes(3);
+    expect(mockStepHandler).toHaveBeenNthCalledWith(
+      3,
+      completedEvent,
+      expect.objectContaining({
+        initialResponse: expect.objectContaining({
+          messageId: 'optimistic-user_',
+          parentMessageId: 'optimistic-user',
+        }),
+      }),
+    );
+
+    await act(async () => {
+      sse._emit('message', { data: JSON.stringify(createdEvent) });
+    });
+
+    expect(mockCreatedHandler).toHaveBeenCalledWith(
+      createdEvent,
+      expect.objectContaining({
+        userMessage: expect.objectContaining({
+          messageId: 'server-user',
+          parentMessageId: previousResponse.messageId,
+        }),
+        initialResponse: expect.objectContaining({
+          messageId: 'server-user_',
+          parentMessageId: 'server-user',
+        }),
+      }),
+    );
+    expect(mockStepHandler).toHaveBeenCalledTimes(6);
+    for (let callIndex = 4; callIndex <= 6; callIndex++) {
+      expect(mockStepHandler).toHaveBeenNthCalledWith(
+        callIndex,
+        expect.any(Object),
+        expect.objectContaining({
+          userMessage: expect.objectContaining({
+            messageId: 'server-user',
+            parentMessageId: previousResponse.messageId,
+          }),
+          initialResponse: expect.objectContaining({
+            messageId: 'server-user_',
+            parentMessageId: 'server-user',
+          }),
+        }),
+      );
+    }
+
     unmount();
   });
 
