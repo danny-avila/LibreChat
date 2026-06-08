@@ -43,6 +43,7 @@ import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
 import { useApplyAgentTemplate } from '~/hooks/Agents';
+import usePiiHandler from '~/hooks/SSE/usePiiHandler';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
 import { useLiveAnnouncer } from '~/Providers';
@@ -285,6 +286,7 @@ export default function useEventHandlers({
     lastAnnouncementTimeRef,
   });
   const attachmentHandler = useAttachmentHandler(queryClient);
+  const { piiMatchesHandler } = usePiiHandler();
 
   /** Wipe the per-subagent Recoil atoms on conversation navigation.
    *  Historical subagent dialogs rehydrate from the persisted
@@ -1079,5 +1081,6 @@ export default function useEventHandlers({
     attachmentHandler,
     abortConversation,
     resetContentHandler,
+    piiMatchesHandler,
   };
 }

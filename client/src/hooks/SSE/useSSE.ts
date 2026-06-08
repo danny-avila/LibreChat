@@ -45,6 +45,7 @@ export default function useSSE(
     titleHandler,
     attachmentHandler,
     abortConversation,
+    piiMatchesHandler,
   } = useEventHandlers({
     setMessages,
     getMessages,
@@ -123,6 +124,8 @@ export default function useSSE(
         setActiveRunId(runId);
         /* synchronize messages to Assistants API as well as with real DB ID's */
         syncHandler(data, { ...submission, userMessage } as EventSubmission);
+      } else if (data.type === 'pii_matches') {
+        piiMatchesHandler(data);
       } else if (data.type != null) {
         const { text, index } = data;
         if (text != null && index !== textIndex) {

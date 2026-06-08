@@ -453,6 +453,7 @@ export default function useResumableSSE(
     syncStepMessage,
     attachmentHandler,
     resetContentHandler,
+    piiMatchesHandler,
   } = useEventHandlers({
     setMessages,
     getMessages,
@@ -709,6 +710,11 @@ export default function useResumableSSE(
 
             setIsSubmitting(true);
             setShowStopButton(true);
+            return;
+          }
+
+          if (data.type === 'pii_matches') {
+            piiMatchesHandler(data);
             return;
           }
 
@@ -975,6 +981,7 @@ export default function useResumableSSE(
       clearStepMaps,
       messageHandler,
       errorHandler,
+      piiMatchesHandler,
       setIsSubmitting,
       getMessages,
       setMessages,
