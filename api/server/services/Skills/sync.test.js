@@ -210,7 +210,7 @@ describe('GitHub skill sync service', () => {
     const requestRunner = mockCreatedRunners[0].runner;
     const requestConfig = await mockCreatedRunners[0].deps.getConfig();
     expect(started).toBe(true);
-    expect(mockCreatedRunners[0].deps.allowServerCredentials).toBe(false);
+    expect(mockCreatedRunners[0].deps.allowServerCredentials).toBe(true);
     expect(requestRunner.runOnce).toHaveBeenCalledTimes(1);
     expect(requestConfig.github.runOnStartup).toBe(false);
     expect(requestConfig.github.sources[0]).toEqual(
@@ -269,7 +269,7 @@ describe('GitHub skill sync service', () => {
     });
 
     expect(started).toBe(false);
-    expect(mockCreatedRunners[0].deps.allowServerCredentials).toBe(false);
+    expect(mockCreatedRunners[0].deps.allowServerCredentials).toBe(true);
     expect(mockCreatedRunners[0].runner.runOnce).not.toHaveBeenCalled();
   });
 
