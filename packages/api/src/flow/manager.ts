@@ -4,7 +4,7 @@ import type { StoredDataNoRaw } from 'keyv';
 import type { FlowState, FlowMetadata, FlowManagerOptions } from './types';
 import { registerShutdownTask } from '../app/shutdown';
 
-export const PENDING_STALE_MS = 2 * 60 * 1000;
+export const PENDING_STALE_MS: number = 2 * 60 * 1000;
 
 const SECONDS_THRESHOLD = 1e10;
 

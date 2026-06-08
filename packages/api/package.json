@@ -3,25 +3,28 @@
   "version": "1.7.31",
   "type": "commonjs",
   "description": "MCP services for LibreChat",
-  "main": "dist/index.js",
-  "module": "dist/index.es.js",
-  "types": "./dist/types/index.d.ts",
+  "main": "dist/index.cjs",
+  "types": "./dist/index.d.cts",
   "exports": {
     ".": {
-      "require": "./dist/index.js",
-      "types": "./dist/types/index.d.ts"
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
     "./telemetry": {
-      "require": "./dist/telemetry.js",
-      "types": "./dist/types/telemetry/index.d.ts"
+      "require": {
+        "types": "./dist/telemetry.d.cts",
+        "default": "./dist/telemetry.cjs"
+      }
     }
   },
   "scripts": {
     "clean": "rimraf dist",
-    "build": "npm run clean && rollup -c --bundleConfigAsCjs",
-    "build:dev": "npm run clean && NODE_ENV=development rollup -c --bundleConfigAsCjs",
-    "build:watch": "NODE_ENV=development rollup -c -w --bundleConfigAsCjs",
-    "build:watch:prod": "rollup -c -w --bundleConfigAsCjs",
+    "build": "npm run clean && tsdown",
+    "build:dev": "npm run clean && tsdown",
+    "build:watch": "tsdown --watch",
+    "build:watch:prod": "tsdown --watch",
     "test": "jest --coverage --watch --testPathIgnorePatterns=\"\\.*integration\\.|\\.*helper\\.|__tests__/helpers/|\\.*manual\\.spec\\.\"",
     "test:ci": "jest --coverage --ci --testPathIgnorePatterns=\"\\.*integration\\.|\\.*helper\\.|__tests__/helpers/|\\.*manual\\.spec\\.\"",
     "test:cache-integration:core": "jest --testPathPatterns=\"src/cache/.*\\.cache_integration\\.spec\\.ts$\" --coverage=false",
@@ -32,8 +35,8 @@
     "test:s3-integration": "jest --testPathPatterns=\"src/storage/s3/.*\\.integration\\.spec\\.ts$\" --coverage=false --runInBand",
     "verify": "npm run test:ci",
     "b:clean": "bun run rimraf dist",
-    "b:build": "bun run b:clean && bun run rollup -c --silent --bundleConfigAsCjs",
-    "b:build:dev": "bun run b:clean && NODE_ENV=development bun run rollup -c --silent --bundleConfigAsCjs",
+    "b:build": "bun run b:clean && bun run tsdown",
+    "b:build:dev": "bun run b:clean && bun run tsdown",
     "start:everything-sse": "node -r dotenv/config --loader ./tsconfig-paths-bootstrap.mjs --experimental-specifier-resolution=node ./src/examples/everything/sse.ts",
     "start:everything": "node -r dotenv/config --loader ./tsconfig-paths-bootstrap.mjs --experimental-specifier-resolution=node ./src/demo/everything.ts",
     "start:filesystem": "node -r dotenv/config --loader ./tsconfig-paths-bootstrap.mjs --experimental-specifier-resolution=node ./src/demo/filesystem.ts",
@@ -84,6 +87,7 @@
     "rollup-plugin-peer-deps-external": "^2.2.4",
     "sanitize-html": "^2.13.0",
     "ts-node": "^10.9.2",
+    "tsdown": "^0.22.2",
     "typescript": "^5.9.3",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "yauzl": "^3.2.1"

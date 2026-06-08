@@ -5,8 +5,8 @@ import {
   INTERFACE_PERMISSION_FIELDS,
   PERMISSION_SUB_KEYS,
 } from 'librechat-data-provider';
-import type { TCustomConfig } from 'librechat-data-provider';
 import type { AppConfig, ConfigSection, IConfig } from '@librechat/data-schemas';
+import type { TCustomConfig } from 'librechat-data-provider';
 import type { Types, ClientSession } from 'mongoose';
 import type { Response } from 'express';
 import type { CapabilityUser } from '~/middleware/capabilities';
@@ -165,7 +165,17 @@ function getCapabilityUser(req: ServerRequest): CapabilityUser | null {
 
 // ── Handler factory ──────────────────────────────────────────────────
 
-export function createAdminConfigHandlers(deps: AdminConfigDeps) {
+export function createAdminConfigHandlers(deps: AdminConfigDeps): {
+  listConfigs: (req: ServerRequest, res: Response) => Promise<Response>;
+  getBaseConfig: (req: ServerRequest, res: Response) => Promise<Response>;
+  getConfig: (req: ServerRequest, res: Response) => Promise<Response>;
+  upsertConfigOverrides: (req: ServerRequest, res: Response) => Promise<Response>;
+  patchConfigField: (req: ServerRequest, res: Response) => Promise<Response>;
+  tombstoneConfigField: (req: ServerRequest, res: Response) => Promise<Response>;
+  deleteConfigField: (req: ServerRequest, res: Response) => Promise<Response>;
+  deleteConfigOverrides: (req: ServerRequest, res: Response) => Promise<Response>;
+  toggleConfig: (req: ServerRequest, res: Response) => Promise<Response>;
+} {
   const {
     listAllConfigs,
     findConfigByPrincipal,
@@ -183,7 +193,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
   /**
    * GET / — List all active config overrides.
    */
-  async function listConfigs(req: ServerRequest, res: Response) {
+  async function listConfigs(req: ServerRequest, res: Response): Promise<Response> {
     try {
       const user = getCapabilityUser(req);
       if (!user) {
@@ -206,7 +216,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
    * GET /base — Return the raw AppConfig (YAML + DB base merged).
    * This is the full config structure admins can edit, NOT the startup payload.
    */
-  async function getBaseConfig(req: ServerRequest, res: Response) {
+  async function getBaseConfig(req: ServerRequest, res: Response): Promise<Response> {
     try {
       const user = getCapabilityUser(req);
       if (!user) {
@@ -236,7 +246,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
   /**
    * GET /:principalType/:principalId — Get config for a specific principal.
    */
-  async function getConfig(req: ServerRequest, res: Response) {
+  async function getConfig(req: ServerRequest, res: Response): Promise<Response> {
     try {
       const { principalType, principalId } = req.params as {
         principalType: string;
@@ -273,7 +283,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
   /**
    * PUT /:principalType/:principalId — Replace entire overrides for a principal.
    */
-  async function upsertConfigOverrides(req: ServerRequest, res: Response) {
+  async function upsertConfigOverrides(req: ServerRequest, res: Response): Promise<Response> {
     try {
       const { principalType, principalId } = req.params as {
         principalType: string;
@@ -382,7 +392,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
   /**
    * PATCH /:principalType/:principalId/fields — Set individual fields via dot-paths.
    */
-  async function patchConfigField(req: ServerRequest, res: Response) {
+  async function patchConfigField(req: ServerRequest, res: Response): Promise<Response> {
     try {
       const { principalType, principalId } = req.params as {
         principalType: string;
@@ -491,7 +501,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
   /**
    * POST /:principalType/:principalId/fields/tombstone — Suppress an inherited config path.
    */
-  async function tombstoneConfigField(req: ServerRequest, res: Response) {
+  async function tombstoneConfigField(req: ServerRequest, res: Response): Promise<Response> {
     try {
       const { principalType, principalId } = req.params as {
         principalType: string;
@@ -565,7 +575,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
   /**
    * DELETE /:principalType/:principalId/fields?fieldPath=dotted.path
    */
-  async function deleteConfigField(req: ServerRequest, res: Response) {
+  async function deleteConfigField(req: ServerRequest, res: Response): Promise<Response> {
     try {
       const { principalType, principalId } = req.params as {
         principalType: string;
@@ -623,7 +633,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
   /**
    * DELETE /:principalType/:principalId — Delete an entire config override.
    */
-  async function deleteConfigOverrides(req: ServerRequest, res: Response) {
+  async function deleteConfigOverrides(req: ServerRequest, res: Response): Promise<Response> {
     try {
       const { principalType, principalId } = req.params as {
         principalType: string;
@@ -661,7 +671,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
   /**
    * PATCH /:principalType/:principalId/active — Toggle isActive.
    */
-  async function toggleConfig(req: ServerRequest, res: Response) {
+  async function toggleConfig(req: ServerRequest, res: Response): Promise<Response> {
     try {
       const { principalType, principalId } = req.params as {
         principalType: string;

@@ -61,7 +61,7 @@ export class MCPManager extends UserConnectionManager {
   }
 
   /** Initializes the MCPManager by setting up server registry and app connections */
-  public async initialize(configs: t.MCPServers) {
+  public async initialize(configs: t.MCPServers): Promise<void> {
     await MCPServersInitializer.initialize(configs);
     this.appConnections = new ConnectionsRepository(undefined);
   }
