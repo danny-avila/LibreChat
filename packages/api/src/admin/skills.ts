@@ -109,6 +109,7 @@ function serializeSourceStatus(
   status: ISkillSyncStatus & { credentialPresent?: boolean },
   { includeCredentialMetadata = true }: { includeCredentialMetadata?: boolean } = {},
 ): TGitHubSkillSyncSourceStatus {
+  const includePrivateSourceMetadata = includeCredentialMetadata;
   return {
     provider: status.provider,
     sourceId: status.sourceId,
@@ -116,10 +117,10 @@ function serializeSourceStatus(
     status: status.status,
     credentialKey: includeCredentialMetadata ? status.credentialKey : undefined,
     credentialPresent: includeCredentialMetadata ? (status.credentialPresent ?? false) : false,
-    owner: status.owner,
-    repo: status.repo,
-    ref: status.ref,
-    paths: status.paths,
+    owner: includePrivateSourceMetadata ? status.owner : undefined,
+    repo: includePrivateSourceMetadata ? status.repo : undefined,
+    ref: includePrivateSourceMetadata ? status.ref : undefined,
+    paths: includePrivateSourceMetadata ? status.paths : undefined,
     startedAt: toIso(status.startedAt),
     finishedAt: toIso(status.finishedAt),
     lastSuccessAt: toIso(status.lastSuccessAt),

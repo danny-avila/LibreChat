@@ -111,6 +111,10 @@ describe('createAdminSkillsSyncHandlers', () => {
           expect.objectContaining({
             credentialKey: undefined,
             credentialPresent: false,
+            owner: undefined,
+            repo: undefined,
+            ref: undefined,
+            paths: undefined,
           }),
         ],
       }),
@@ -154,6 +158,10 @@ describe('createAdminSkillsSyncHandlers', () => {
           expect.objectContaining({
             credentialKey: 'github-skills-prod',
             credentialPresent: true,
+            owner: 'LibreChat',
+            repo: 'skills',
+            ref: 'main',
+            paths: ['skills'],
             errorMessage: 'Missing GitHub credential "github-skills-prod"',
           }),
         ],
