@@ -129,6 +129,25 @@ describe('useArtifacts', () => {
 
       expect(mockSetCurrentArtifactId).toHaveBeenCalledWith('artifact-2');
     });
+
+    it('should automatically select the latest non-code artifact when a code file is newest', () => {
+      const artifacts = {
+        'artifact-1': createArtifact({ id: 'artifact-1', lastUpdateTime: 1000 }),
+        'artifact-2': createArtifact({
+          id: 'artifact-2',
+          type: 'application/vnd.code',
+          title: 'helper.py',
+          lastUpdateTime: 2000,
+        }),
+      };
+
+      (useRecoilValue as jest.Mock).mockReturnValue(artifacts);
+
+      renderHook(() => useArtifacts());
+
+      expect(mockSetCurrentArtifactId).toHaveBeenCalledWith('artifact-1');
+      expect(mockSetCurrentArtifactId).not.toHaveBeenCalledWith('artifact-2');
+    });
   });
 
   describe('tab switching - enclosed artifacts', () => {
@@ -420,6 +439,53 @@ describe('useArtifacts', () => {
       expect(mockSetCurrentArtifactId).toHaveBeenCalledWith('artifact-2');
     });
 
+    it('should not advance to a new CODE artifact during streaming', () => {
+      const artifact1 = createArtifact({ id: 'artifact-1', lastUpdateTime: 1000, content: 'c1' });
+
+      (useRecoilValue as jest.Mock).mockReturnValue({ 'artifact-1': artifact1 });
+      (useRecoilState as jest.Mock).mockReturnValue(['artifact-1', mockSetCurrentArtifactId]);
+      (useArtifactsContext as jest.Mock).mockReturnValue({
+        ...defaultContext,
+        isSubmitting: true,
+        latestMessageId: 'msg-1',
+      });
+
+      const { rerender } = renderHook(() => useArtifacts());
+      mockSetCurrentArtifactId.mockClear();
+
+      const artifact2 = createArtifact({
+        id: 'artifact-2',
+        type: 'application/vnd.code',
+        title: 'helper.py',
+        lastUpdateTime: 2000,
+        content: 'print("hi")',
+      });
+      (useRecoilValue as jest.Mock).mockReturnValue({
+        'artifact-1': artifact1,
+        'artifact-2': artifact2,
+      });
+
+      rerender();
+
+      expect(mockSetCurrentArtifactId).not.toHaveBeenCalledWith('artifact-2');
+    });
+
+    it('should keep a manually selected CODE artifact selected', () => {
+      const artifact = createArtifact({
+        id: 'artifact-1',
+        type: 'application/vnd.code',
+        title: 'helper.py',
+      });
+
+      (useRecoilValue as jest.Mock).mockReturnValue({ 'artifact-1': artifact });
+      (useRecoilState as jest.Mock).mockReturnValue(['artifact-1', mockSetCurrentArtifactId]);
+
+      const { result } = renderHook(() => useArtifacts());
+
+      expect(result.current.currentArtifact).toBe(artifact);
+      expect(mockSetCurrentArtifactId).not.toHaveBeenCalledWith('artifact-1');
+    });
+
     it('should keep selection null after an explicit reset', () => {
       const artifact1 = createArtifact({ id: 'artifact-1', lastUpdateTime: 1000 });
 
@@ -689,6 +755,26 @@ describe('useArtifacts', () => {
 
       /** The orderedArtifactIds effect always runs when artifacts change */
       expect(mockSetCurrentArtifactId).toHaveBeenCalledWith('artifact-1');
+    });
+
+    it('should not auto-select an idle CODE artifact', () => {
+      const artifact = createArtifact({
+        id: 'artifact-1',
+        type: 'application/vnd.code',
+        title: 'helper.py',
+      });
+      (useRecoilValue as jest.Mock).mockReturnValue({ 'artifact-1': artifact });
+      (useRecoilState as jest.Mock).mockReturnValue([null, mockSetCurrentArtifactId]);
+
+      (useArtifactsContext as jest.Mock).mockReturnValue({
+        ...defaultContext,
+        isSubmitting: false,
+        latestMessageText: 'Some text',
+      });
+
+      renderHook(() => useArtifacts());
+
+      expect(mockSetCurrentArtifactId).not.toHaveBeenCalled();
     });
 
     it('should not process when latestMessageId is null', () => {

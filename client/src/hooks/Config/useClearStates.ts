@@ -5,14 +5,12 @@ import store from '~/store';
 export default function useClearStates() {
   const clearConversations = store.useClearConvoState();
   const clearSubmissions = store.useClearSubmissionState();
-  const clearLatestMessages = store.useClearLatestMessages();
 
   const clearStates = useRecoilCallback(
     ({ reset, snapshot }) =>
       async (skipFirst?: boolean) => {
         await clearSubmissions(skipFirst);
         await clearConversations(skipFirst);
-        await clearLatestMessages(skipFirst);
 
         const keys = await snapshot.getPromise(store.conversationKeysAtom);
 
@@ -32,6 +30,8 @@ export default function useClearStates() {
           reset(store.showMentionPopoverFamily(key));
           reset(store.showPlusPopoverFamily(key));
           reset(store.showPromptsPopoverFamily(key));
+          reset(store.showSkillsPopoverFamily(key));
+          reset(store.pendingManualSkillsByConvoId(key.toString()));
           reset(store.activePromptByIndex(key));
           reset(store.globalAudioURLFamily(key));
           reset(store.globalAudioFetchingFamily(key));

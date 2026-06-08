@@ -7,9 +7,9 @@ import {
   estimateOpenAIImageTokens,
   estimateAnthropicImageTokens,
 } from '@librechat/agents';
+import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { MessageContentComplex } from '@librechat/agents';
 import type { Agent, TMessage } from 'librechat-data-provider';
-import type { BaseMessage } from '@langchain/core/messages';
 import type { ServerRequest } from '~/types';
 import Tokenizer from '~/utils/tokenizer';
 import { logAxiosError } from '~/utils';
@@ -55,6 +55,42 @@ type ContentBlock = {
   text?: string;
   tool_call?: { name?: string; args?: string; output?: string };
 };
+
+export type FormattedMessageContentPart = {
+  type?: string;
+  text?: string;
+  [key: string]: unknown;
+};
+
+export type FormattedMessageWithContent = {
+  content?: string | FormattedMessageContentPart[];
+};
+
+export function prependFileContext(
+  formattedMessage: FormattedMessageWithContent,
+  fileContext?: string | null,
+): void {
+  if (!fileContext) {
+    return;
+  }
+
+  if (typeof formattedMessage.content === 'string') {
+    formattedMessage.content = `${fileContext}\n${formattedMessage.content}`;
+    return;
+  }
+
+  if (!Array.isArray(formattedMessage.content)) {
+    return;
+  }
+
+  const textPart = formattedMessage.content.find((part) => part.type === ContentTypes.TEXT);
+  if (textPart != null && typeof textPart.text === 'string') {
+    textPart.text = `${fileContext}\n${textPart.text}`;
+    return;
+  }
+
+  formattedMessage.content.unshift({ type: ContentTypes.TEXT, text: fileContext });
+}
 
 function estimateImageDataTokens(data: string, isClaude: boolean): number {
   const dims = extractImageDimensions(data);

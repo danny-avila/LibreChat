@@ -5,6 +5,7 @@ export * from './app';
 export * from './user';
 export * from './token';
 export * from './convo';
+export * from './chatProject';
 export * from './session';
 export * from './balance';
 export * from './banner';
@@ -23,6 +24,8 @@ export * from './pluginAuth';
 export * from './memory';
 /* Prompts */
 export * from './prompts';
+/* Skills */
+export * from './skill';
 /* Access Control */
 export * from './accessRole';
 export * from './aclEntry';

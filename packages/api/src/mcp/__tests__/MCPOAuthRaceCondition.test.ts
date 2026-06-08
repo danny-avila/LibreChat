@@ -31,6 +31,8 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('~/auth', () => ({
   createSSRFSafeUndiciConnect: jest.fn(() => undefined),
+  isOAuthUrlAllowed: jest.fn(() => false),
+  isSSRFTarget: jest.fn(() => false),
   resolveHostnameSSRF: jest.fn(async () => false),
 }));
 
@@ -85,6 +87,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
           getServerConfig: jest.fn().mockResolvedValue(mockConfig),
           shouldEnableSSRFProtection: jest.fn().mockReturnValue(false),
           getAllowedDomains: jest.fn().mockReturnValue(null),
+          getAllowedAddresses: jest.fn().mockReturnValue(null),
         });
 
       const { MCPConnectionFactory } = await import('~/mcp/MCPConnectionFactory');
@@ -151,6 +154,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
           getServerConfig: jest.fn().mockResolvedValue(mockConfig),
           shouldEnableSSRFProtection: jest.fn().mockReturnValue(false),
           getAllowedDomains: jest.fn().mockReturnValue(null),
+          getAllowedAddresses: jest.fn().mockReturnValue(null),
         });
 
       const { MCPConnectionFactory } = await import('~/mcp/MCPConnectionFactory');

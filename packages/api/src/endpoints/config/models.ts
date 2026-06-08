@@ -22,7 +22,11 @@ interface ResolvedEndpoint {
 }
 
 export interface LoadConfigModelsDeps {
-  getAppConfig: (params: { role?: string | null; tenantId?: string }) => Promise<AppConfig>;
+  getAppConfig: (params: {
+    role?: string;
+    userId?: string;
+    tenantId?: string;
+  }) => Promise<AppConfig>;
   getUserKeyValues: GetUserKeyValuesFunction;
   fetchModels?: (params: FetchModelsParams) => Promise<string[]>;
 }
@@ -31,10 +35,13 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
   const { getAppConfig, getUserKeyValues, fetchModels = defaultFetchModels } = deps;
 
   return async function loadConfigModels(req: ServerRequest): Promise<TModelsConfig> {
-    const appConfig = await getAppConfig({
-      role: req.user?.role,
-      tenantId: req.user?.tenantId,
-    });
+    const appConfig =
+      req.config ??
+      (await getAppConfig({
+        role: req.user?.role,
+        userId: req.user?.id,
+        tenantId: req.user?.tenantId,
+      }));
     if (!appConfig) {
       return {};
     }

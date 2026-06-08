@@ -22,7 +22,7 @@ afterAll(async () => {
 });
 
 describe('dropSupersededTenantIndexes', () => {
-  describe('with pre-existing single-field unique indexes (simulates upgrade)', () => {
+  describe('with pre-existing superseded unique indexes (simulates upgrade)', () => {
     beforeAll(async () => {
       const db = mongoose.connection.db!;
 
@@ -35,6 +35,10 @@ describe('dropSupersededTenantIndexes', () => {
         { unique: true, sparse: true, name: 'facebookId_1' },
       );
       await users.createIndex({ openidId: 1 }, { unique: true, sparse: true, name: 'openidId_1' });
+      await users.createIndex(
+        { openidId: 1, tenantId: 1 },
+        { unique: true, name: 'openidId_1_tenantId_1' },
+      );
       await users.createIndex({ samlId: 1 }, { unique: true, sparse: true, name: 'samlId_1' });
       await users.createIndex({ ldapId: 1 }, { unique: true, sparse: true, name: 'ldapId_1' });
       await users.createIndex({ githubId: 1 }, { unique: true, sparse: true, name: 'githubId_1' });
@@ -139,6 +143,7 @@ describe('dropSupersededTenantIndexes', () => {
       expect(indexNames).not.toContain('email_1');
       expect(indexNames).not.toContain('googleId_1');
       expect(indexNames).not.toContain('openidId_1');
+      expect(indexNames).not.toContain('openidId_1_tenantId_1');
       expect(indexNames).toContain('_id_');
     });
 
@@ -290,11 +295,12 @@ describe('dropSupersededTenantIndexes', () => {
       }
     });
 
-    it('users collection lists all 9 OAuth ID indexes plus email', () => {
-      expect(SUPERSEDED_INDEXES.users).toHaveLength(9);
+    it('users collection lists all superseded OAuth and email indexes', () => {
+      expect(SUPERSEDED_INDEXES.users).toHaveLength(10);
       expect(SUPERSEDED_INDEXES.users).toContain('email_1');
       expect(SUPERSEDED_INDEXES.users).toContain('googleId_1');
       expect(SUPERSEDED_INDEXES.users).toContain('openidId_1');
+      expect(SUPERSEDED_INDEXES.users).toContain('openidId_1_tenantId_1');
     });
   });
 });

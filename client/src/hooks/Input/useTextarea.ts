@@ -16,6 +16,7 @@ import useGetSender from '~/hooks/Conversations/useGetSender';
 import useFileHandling from '~/hooks/Files/useFileHandling';
 import { useInteractionHealthCheck } from '~/data-provider';
 import { useChatContext } from '~/Providers/ChatContext';
+import { useLatestMessage } from '~/hooks/Messages/useLatestMessage';
 import { globalAudioId } from '~/common';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -27,11 +28,13 @@ export default function useTextarea({
   submitButtonRef,
   setIsScrollable,
   disabled = false,
+  placeholder,
 }: {
   textAreaRef: React.RefObject<HTMLTextAreaElement>;
   submitButtonRef: React.RefObject<HTMLButtonElement>;
   setIsScrollable: React.Dispatch<React.SetStateAction<boolean>>;
   disabled?: boolean;
+  placeholder?: string;
 }) {
   const localize = useLocalize();
   const getSender = useGetSender();
@@ -43,7 +46,7 @@ export default function useTextarea({
   const enterToSend = useRecoilValue(store.enterToSend);
 
   const { index, conversation, isSubmitting, filesLoading, setFilesLoading } = useChatContext();
-  const latestMessage = useRecoilValue(store.latestMessageFamily(index));
+  const latestMessage = useLatestMessage(index);
   const [activePrompt, setActivePrompt] = useRecoilState(store.activePromptByIndex(index));
 
   const { endpoint = '' } = conversation || {};
@@ -94,6 +97,10 @@ export default function useTextarea({
         return localize('com_endpoint_message_not_appendable');
       }
 
+      if (placeholder) {
+        return placeholder;
+      }
+
       const sender =
         isAssistant || isAgent
           ? getEntityName({ name: entityName, isAgent, localize })
@@ -104,17 +111,17 @@ export default function useTextarea({
       })}`;
     };
 
-    const placeholder = getPlaceholderText();
+    const placeholderText = getPlaceholderText();
 
-    if (textAreaRef.current?.getAttribute('placeholder') === placeholder) {
+    if (textAreaRef.current?.getAttribute('placeholder') === placeholderText) {
       return;
     }
 
     const setPlaceholder = () => {
-      const placeholder = getPlaceholderText();
+      const placeholderText = getPlaceholderText();
 
-      if (textAreaRef.current?.getAttribute('placeholder') !== placeholder) {
-        textAreaRef.current?.setAttribute('placeholder', placeholder);
+      if (textAreaRef.current?.getAttribute('placeholder') !== placeholderText) {
+        textAreaRef.current?.setAttribute('placeholder', placeholderText);
         forceResize(textAreaRef.current);
       }
     };
@@ -136,6 +143,7 @@ export default function useTextarea({
     conversation,
     latestMessage,
     isNotAppendable,
+    placeholder,
   ]);
 
   const handleKeyDown = useCallback(

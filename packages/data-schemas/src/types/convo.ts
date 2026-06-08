@@ -6,6 +6,7 @@ export interface IConversation extends Document {
   title?: string;
   user?: string;
   messages?: Types.ObjectId[];
+  isTemporary?: boolean;
   // Fields provided by conversationPreset (adjust types as needed)
   endpoint?: string;
   endpointType?: string;
@@ -41,6 +42,7 @@ export interface IConversation extends Document {
   greeting?: string;
   spec?: string;
   tags?: string[];
+  chatProjectId?: string | null;
   tools?: string[];
   maxContextTokens?: number;
   max_tokens?: number;

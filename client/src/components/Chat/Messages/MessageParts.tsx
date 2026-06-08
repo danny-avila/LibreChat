@@ -107,7 +107,12 @@ export default function Message(props: TMessageProps) {
           <div
             id={messageId ?? ''}
             aria-label={getMessageAriaLabel(message, localize)}
-            className={cn(baseClasses.common, baseClasses.chat, 'message-render')}
+            className={cn(
+              baseClasses.common,
+              baseClasses.chat,
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy',
+              'message-render',
+            )}
           >
             {!hasParallelContent && (
               <div className="relative flex flex-shrink-0 flex-col items-center">
@@ -141,6 +146,7 @@ export default function Message(props: TMessageProps) {
                     attachments={attachments}
                     isSubmitting={isSubmitting}
                     searchResults={searchResults}
+                    manualSkills={message.manualSkills}
                     messageId={message.messageId}
                     setSiblingIdx={setSiblingIdx}
                     isCreatedByUser={message.isCreatedByUser}

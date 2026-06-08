@@ -14,7 +14,7 @@ const { createAgent, createFile } = require('~/models');
 
 // Only mock the external dependencies that we don't want to test
 jest.mock('~/server/services/Files/process', () => ({
-  processDeleteRequest: jest.fn().mockResolvedValue({}),
+  processDeleteRequest: jest.fn().mockResolvedValue({ deletedFileIds: [], failedFileIds: [] }),
   filterFile: jest.fn(),
   processFileUpload: jest.fn(),
   processAgentFileUpload: jest.fn().mockImplementation(async ({ res }) => {
@@ -333,7 +333,7 @@ describe('File Routes - Agent Files Endpoint', () => {
       expect(response.body).toHaveLength(2);
     });
 
-    it('should return files uploaded by other users to shared agent for author', async () => {
+    it('should not return files owned by other users through agent file references', async () => {
       const anotherUserId = new mongoose.Types.ObjectId();
       const otherUserFileId = uuidv4();
 
@@ -380,9 +380,9 @@ describe('File Routes - Agent Files Endpoint', () => {
 
       expect(response.status).toBe(200);
       expect(Array.isArray(response.body)).toBe(true);
-      expect(response.body).toHaveLength(2);
+      expect(response.body).toHaveLength(1);
       expect(response.body.map((f) => f.file_id)).toContain(fileId1);
-      expect(response.body.map((f) => f.file_id)).toContain(otherUserFileId);
+      expect(response.body.map((f) => f.file_id)).not.toContain(otherUserFileId);
     });
   });
 

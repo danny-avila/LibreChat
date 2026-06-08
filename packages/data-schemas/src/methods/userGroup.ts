@@ -23,7 +23,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     if (session) {
       query.session(session);
     }
-    return await query.lean();
+    return await query.lean<IGroup>();
   }
 
   /**
@@ -45,7 +45,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     if (session) {
       query.session(session);
     }
-    return await query.lean();
+    return await query.lean<IGroup>();
   }
 
   /**
@@ -68,7 +68,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     if (session) {
       query.session(session);
     }
-    return await query.lean();
+    return await query.lean<IGroup[]>();
   }
 
   /**
@@ -86,7 +86,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     session?: ClientSession,
   ): Promise<IGroup[]> {
     const Group = mongoose.models.Group as Model<IGroup>;
-    const regex = new RegExp(namePattern, 'i');
+    const regex = new RegExp(escapeRegExp(namePattern), 'i');
     const query: Record<string, unknown> = {
       $or: [{ name: regex }, { email: regex }, { description: regex }],
     };
@@ -99,7 +99,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     if (session) {
       dbQuery.session(session);
     }
-    return await dbQuery.lean();
+    return await dbQuery.lean<IGroup[]>();
   }
 
   /**
@@ -119,7 +119,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     if (session) {
       userQuery.session(session);
     }
-    const user = (await userQuery.lean()) as { idOnTheSource?: string } | null;
+    const user = await userQuery.lean<{ idOnTheSource?: string }>();
 
     if (!user) {
       return [];
@@ -131,7 +131,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     if (session) {
       query.session(session);
     }
-    return await query.lean();
+    return await query.lean<IGroup[]>();
   }
 
   /**
@@ -190,10 +190,10 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
 
     const options = { new: true, ...(session ? { session } : {}) };
 
-    const user = (await User.findById(userId, 'idOnTheSource', options).lean()) as {
+    const user = await User.findById(userId, 'idOnTheSource', options).lean<{
       idOnTheSource?: string;
       _id: Types.ObjectId;
-    } | null;
+    }>();
     if (!user) {
       throw new Error(`User not found: ${userId}`);
     }
@@ -203,7 +203,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
       groupId,
       { $addToSet: { memberIds: userIdOnTheSource } },
       options,
-    ).lean();
+    ).lean<IGroup>();
 
     return { user: user as IUser, group: updatedGroup };
   }
@@ -228,10 +228,10 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
 
     const options = { new: true, ...(session ? { session } : {}) };
 
-    const user = (await User.findById(userId, 'idOnTheSource', options).lean()) as {
+    const user = await User.findById(userId, 'idOnTheSource', options).lean<{
       idOnTheSource?: string;
       _id: Types.ObjectId;
-    } | null;
+    }>();
     if (!user) {
       throw new Error(`User not found: ${userId}`);
     }
@@ -241,7 +241,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
       groupId,
       { $pullAll: { memberIds: [userIdOnTheSource] } },
       options,
-    ).lean();
+    ).lean<IGroup>();
 
     return { user: user as IUser, group: updatedGroup };
   }
@@ -305,7 +305,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
       if (session) {
         query.session(session);
       }
-      const user = await query.lean();
+      const user = await query.lean<IUser>();
       userRole = user?.role;
     }
 
@@ -349,7 +349,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     if (session) {
       query.session(session);
     }
-    const user = (await query.lean()) as { idOnTheSource?: string; _id: Types.ObjectId } | null;
+    const user = await query.lean<{ idOnTheSource?: string; _id: Types.ObjectId }>();
 
     if (!user) {
       throw new Error(`User not found: ${userId}`);
@@ -396,10 +396,12 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     if (session) {
       groupsQuery.session(session);
     }
-    const existingGroups = (await groupsQuery.lean()) as Array<{
-      _id: Types.ObjectId;
-      idOnTheSource?: string;
-    }>;
+    const existingGroups = await groupsQuery.lean<
+      Array<{
+        _id: Types.ObjectId;
+        idOnTheSource?: string;
+      }>
+    >();
 
     for (const group of existingGroups) {
       if (group.idOnTheSource && !entraIdMap.has(group.idOnTheSource)) {
@@ -414,7 +416,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     if (session) {
       userQuery.session(session);
     }
-    const updatedUser = await userQuery.lean();
+    const updatedUser = await userQuery.lean<IUser>();
 
     if (!updatedUser) {
       throw new Error(`User not found after update: ${userId}`);
@@ -434,8 +436,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
    * @returns Relevance score (0-100)
    */
   function calculateRelevanceScore(item: TPrincipalSearchResult, searchPattern: string): number {
-    const exactRegex = new RegExp(`^${searchPattern}$`, 'i');
-    const startsWithPattern = searchPattern.toLowerCase();
+    const normalizedPattern = searchPattern.toLowerCase();
 
     /** Get searchable text based on type */
     const searchableFields =
@@ -451,16 +452,16 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
       let score = 0;
 
       /** Exact match gets highest score */
-      if (exactRegex.test(field)) {
+      if (fieldLower === normalizedPattern) {
         score = 100;
-      } else if (fieldLower.startsWith(startsWithPattern)) {
+      } else if (fieldLower.startsWith(normalizedPattern)) {
         /** Starts with query gets high score */
         score = 80;
-      } else if (fieldLower.includes(startsWithPattern)) {
+      } else if (fieldLower.includes(normalizedPattern)) {
         /** Contains query gets medium score */
         score = 50;
       } else {
-        /** Default score for regex match */
+        /** Default score for database match */
         score = 10;
       }
 
@@ -549,6 +550,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     }
 
     const trimmedPattern = searchPattern.trim();
+    const escapedPattern = escapeRegExp(trimmedPattern);
     const promises: Promise<TPrincipalSearchResult[]>[] = [];
 
     if (!typeFilter || typeFilter.includes(PrincipalType.USER)) {
@@ -556,7 +558,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
       const userFields = 'name email username avatar provider idOnTheSource';
       /** For now, we'll use a direct query instead of searchUsers */
       const User = mongoose.models.User as Model<IUser>;
-      const regex = new RegExp(trimmedPattern, 'i');
+      const regex = new RegExp(escapedPattern, 'i');
       const userQuery = User.find({
         $or: [{ name: regex }, { email: regex }, { username: regex }],
       })
@@ -568,7 +570,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
       }
 
       promises.push(
-        userQuery.lean().then((users) =>
+        userQuery.lean<IUser[]>().then((users) =>
           users.map((user) => {
             const userWithId = user as IUser & { idOnTheSource?: string };
             return transformUserToTPrincipalSearchResult({
@@ -599,7 +601,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     if (!typeFilter || typeFilter.includes(PrincipalType.ROLE)) {
       const Role = mongoose.models.Role as Model<IRole>;
       if (Role) {
-        const regex = new RegExp(trimmedPattern, 'i');
+        const regex = new RegExp(escapedPattern, 'i');
         const roleQuery = Role.find({ name: regex }).select('name').limit(limitPerType);
 
         if (session) {
@@ -607,7 +609,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
         }
 
         promises.push(
-          roleQuery.lean().then((roles) =>
+          roleQuery.lean<Array<{ name: string }>>().then((roles) =>
             roles.map((role) => ({
               /** Role name as ID */
               id: role.name,
@@ -650,7 +652,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     if (session) {
       query.session(session);
     }
-    return query.lean();
+    return query.lean<IGroup>();
   }
 
   /**
@@ -665,7 +667,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
   ): Promise<IGroup | null> {
     const Group = mongoose.models.Group as Model<IGroup>;
     const options = { new: true, ...(session ? { session } : {}) };
-    return Group.findByIdAndUpdate(groupId, { $set: data }, options).lean();
+    return Group.findByIdAndUpdate(groupId, { $set: data }, options).lean<IGroup>();
   }
 
   /**
@@ -722,7 +724,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
       .skip(offset)
       .limit(limit)
       .session(session ?? null)
-      .lean();
+      .lean<IGroup[]>();
   }
 
   /**
@@ -750,7 +752,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
   ): Promise<IGroup | null> {
     const Group = mongoose.models.Group as Model<IGroup>;
     const options = session ? { session } : {};
-    return await Group.findByIdAndDelete(groupId, options).lean();
+    return await Group.findByIdAndDelete(groupId, options).lean<IGroup>();
   }
 
   /**
@@ -771,7 +773,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
       groupId,
       { $pull: { memberIds: memberId } },
       options,
-    ).lean();
+    ).lean<IGroup>();
   }
 
   return {

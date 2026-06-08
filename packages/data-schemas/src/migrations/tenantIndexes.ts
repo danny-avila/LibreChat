@@ -17,6 +17,7 @@ const SUPERSEDED_INDEXES: Record<string, string[]> = {
     'googleId_1',
     'facebookId_1',
     'openidId_1',
+    'openidId_1_tenantId_1',
     'samlId_1',
     'ldapId_1',
     'githubId_1',

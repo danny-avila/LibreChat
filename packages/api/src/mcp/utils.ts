@@ -3,9 +3,69 @@ import type { ParsedServerConfig } from '~/mcp/types';
 
 export const mcpToolPattern = new RegExp(`^.+${Constants.mcp_delimiter}.+$`);
 
+/** Whether a server should use MCP OAuth handling. */
+export function isOAuthServer(
+  config: Pick<ParsedServerConfig, 'requiresOAuth' | 'oauth'>,
+): boolean {
+  if (config.requiresOAuth === false) {
+    return false;
+  }
+  return config.requiresOAuth === true || config.oauth != null;
+}
+
+/**
+ * Whether a server needs the OAuth-style connection wiring (flow manager,
+ * token methods, OBO/OAuth resolvers). Distinct from `isOAuthServer`: OBO
+ * servers reuse the same wiring even though they don't run an OAuth handshake,
+ * because the runtime needs `oboTokenResolver`/`oboTrustChecker` plumbed through.
+ *
+ * Without this, an OBO server with `requiresOAuth: false` would land in the
+ * non-OAuth branch of MCPManager.discoverServerTools / UserConnectionManager,
+ * which omits the OBO resolver — `usesObo` then evaluates to false in the
+ * factory and the connection sends a bare request that the upstream rejects.
+ */
+export function requiresOAuthMachinery(
+  config: Pick<ParsedServerConfig, 'requiresOAuth' | 'oauth' | 'obo'>,
+): boolean {
+  return isOAuthServer(config) || config.obo != null;
+}
+
 /** Checks that `customUserVars` is present AND non-empty (guards against truthy `{}`) */
 export function hasCustomUserVars(config: Pick<ParsedServerConfig, 'customUserVars'>): boolean {
   return !!config.customUserVars && Object.keys(config.customUserVars).length > 0;
+}
+
+/**
+ * Returns true when a server requires a per-user connection instead of an
+ * app-shared connection.
+ */
+export function requiresUserScopedConnection(
+  config: Pick<ParsedServerConfig, 'requiresOAuth' | 'customUserVars' | 'obo'>,
+): boolean {
+  return config.requiresOAuth === true || config.obo != null || hasCustomUserVars(config);
+}
+
+/**
+ * Returns the names of `customUserVars` declared on the server config for which
+ * the user has not supplied a non-blank value (unset, empty, or whitespace-only
+ * values count as missing, since they still fail auth). An empty array means
+ * every declared variable is satisfied (or the server declares none).
+ *
+ * Used to gate tool exposure: a server that requires user-provided credentials
+ * should not surface its tools to the model until those values are set,
+ * otherwise every tool call fails authentication. See issue #10969.
+ */
+export function getMissingCustomUserVars(
+  config: Pick<ParsedServerConfig, 'customUserVars'>,
+  providedVars?: Record<string, string> | null,
+): string[] {
+  if (!hasCustomUserVars(config)) {
+    return [];
+  }
+  return Object.keys(config.customUserVars ?? {}).filter((key) => {
+    const value = providedVars?.[key];
+    return value == null || (typeof value === 'string' && value.trim() === '');
+  });
 }
 
 /**
@@ -59,6 +119,10 @@ export function redactServerSecrets(config: ParsedServerConfig): Partial<ParsedS
   if (config.oauth) {
     const { client_secret: _secret, ...safeOAuth } = config.oauth;
     safe.oauth = safeOAuth;
+  }
+
+  if (config.obo) {
+    safe.obo = config.obo;
   }
 
   return Object.fromEntries(

@@ -7,7 +7,7 @@ import CodeBlock from '~/components/Messages/Content/CodeBlock';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
 import { useFileDownload } from '~/data-provider';
 import { useCodeBlockContext } from '~/Providers';
-import { handleDoubleClick } from '~/utils';
+import { handleDoubleClick, triggerDownload } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -127,7 +127,7 @@ export const a: React.ElementType = memo(function MarkdownAnchor({ href, childre
     return { file_id: '', filename: '', filepath: '' };
   }, [user?.id, href]);
 
-  const { refetch: downloadFile } = useFileDownload(user?.id ?? '', file_id);
+  const { refetch: downloadFile } = useFileDownload(user?.id ?? '', file_id, { direct: false });
   const props: { target?: string; onClick?: React.MouseEventHandler } = { target: '_blank' };
 
   if (!file_id || !filename) {
@@ -150,13 +150,7 @@ export const a: React.ElementType = memo(function MarkdownAnchor({ href, childre
         });
         return;
       }
-      const link = document.createElement('a');
-      link.href = stream.data;
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(stream.data);
+      triggerDownload(stream.data, filename);
     } catch (error) {
       console.error('Error downloading file:', error);
     }

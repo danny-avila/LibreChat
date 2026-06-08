@@ -37,4 +37,33 @@ export enum StepEvents {
   ON_SUMMARIZE_START = 'on_summarize_start',
   ON_SUMMARIZE_DELTA = 'on_summarize_delta',
   ON_SUMMARIZE_COMPLETE = 'on_summarize_complete',
+  ON_SUBAGENT_UPDATE = 'on_subagent_update',
+}
+
+/** Lifecycle phase carried on subagent-progress envelopes (mirrors SDK SubagentUpdatePhase). */
+export type SubagentUpdatePhase =
+  | 'start'
+  | 'run_step'
+  | 'run_step_delta'
+  | 'run_step_completed'
+  | 'message_delta'
+  | 'reasoning_delta'
+  | 'stop'
+  | 'error';
+
+/** Single streamed subagent update forwarded by the SDK's SubagentExecutor. */
+export interface SubagentUpdateEvent {
+  runId: string;
+  subagentRunId: string;
+  /** Parent-side `tool_call_id` for the `subagent` tool invocation that
+   *  triggered this run. Surfaces from the SDK (`3.1.67-dev.2`+) so hosts
+   *  can correlate child progress to the parent tool call deterministically. */
+  parentToolCallId?: string;
+  subagentType: string;
+  subagentAgentId: string;
+  parentAgentId?: string;
+  phase: SubagentUpdatePhase;
+  data?: unknown;
+  label?: string;
+  timestamp: string;
 }

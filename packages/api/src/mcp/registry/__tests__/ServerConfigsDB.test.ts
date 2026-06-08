@@ -124,6 +124,13 @@ describe('ServerConfigsDB', () => {
       expect(result.config.dbId).toBeDefined();
     });
 
+    it('should reserve operator-managed server names when creating a DB server', async () => {
+      const config = createSSEConfig('My Test Server', 'A test server');
+      const result = await serverConfigsDB.add('temp-name', config, userId, ['my-test-server']);
+
+      expect(result.serverName).toBe('my-test-server-2');
+    });
+
     it('should grant owner ACL to the user', async () => {
       const config = createSSEConfig('ACL Test Server');
       const result = await serverConfigsDB.add('temp-name', config, userId);
@@ -963,6 +970,17 @@ describe('ServerConfigsDB', () => {
     });
 
     describe('user access', () => {
+      it('should reuse resolved principals for direct and agent access lookups', async () => {
+        const findByIdSpy = jest.spyOn(mongoose.models.User, 'findById');
+
+        try {
+          await serverConfigsDB.getAll(userId, 'USER');
+          expect(findByIdSpy).toHaveBeenCalledTimes(1);
+        } finally {
+          findByIdSpy.mockRestore();
+        }
+      });
+
       it('should return servers directly accessible by user', async () => {
         const config1 = createSSEConfig('User Server 1');
         const config2 = createSSEConfig('User Server 2');
@@ -1295,6 +1313,34 @@ describe('ServerConfigsDB', () => {
       expect(created.config.updatedAt).toBeDefined();
       expect(typeof created.config.updatedAt).toBe('number');
       expect(created.config.updatedAt).toBeLessThanOrEqual(Date.now());
+    });
+
+    it('should strip admin-only OAuth audience fields from existing DB-backed user configs', async () => {
+      const config = createSSEConfig('Legacy Audience Test', undefined, {
+        client_id: 'public-client-id',
+      });
+      const created = await serverConfigsDB.add('temp', config, userId);
+
+      await mongoose.models.MCPServer.updateOne(
+        { serverName: created.serverName },
+        {
+          $set: {
+            'config.oauth.audience': 'https://api.example.com',
+            'config.oauth.forward_audience_on_refresh': false,
+            'config.oauth.authorization_url':
+              'https://auth.example.com/authorize?audience=https%3A%2F%2Fapi.example.com&client=ok',
+            'config.oauth.token_url':
+              'https://auth.example.com/token?resource=https%3A%2F%2Fapi.example.com&foo=bar',
+          },
+        },
+      );
+
+      const result = await serverConfigsDB.get(created.serverName, userId);
+      expect(result?.oauth?.client_id).toBe('public-client-id');
+      expect(result?.oauth?.authorization_url).toBe('https://auth.example.com/authorize?client=ok');
+      expect(result?.oauth?.token_url).toBe('https://auth.example.com/token?foo=bar');
+      expect(result?.oauth?.audience).toBeUndefined();
+      expect(result?.oauth?.forward_audience_on_refresh).toBeUndefined();
     });
   });
 

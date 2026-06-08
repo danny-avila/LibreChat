@@ -1,8 +1,12 @@
-import { Types } from 'mongoose';
+import mongoose, { Types } from 'mongoose';
+import { MongoMemoryServer } from 'mongodb-memory-server';
+import { logger, createMethods, createModels } from '@librechat/data-schemas';
 import { ErrorTypes } from 'librechat-data-provider';
-import { logger } from '@librechat/data-schemas';
 import type { IUser, UserMethods } from '@librechat/data-schemas';
-import { findOpenIDUser } from './openid';
+import type { CommandStartedEvent } from 'mongodb';
+import type { FilterQuery } from 'mongoose';
+import { recordOpenIDUserLookup } from '~/app/metrics';
+import { findOpenIDUser, getOpenIdEmail, getOpenIdIssuer, normalizeOpenIdIssuer } from './openid';
 
 function newId() {
   return new Types.ObjectId();
@@ -16,14 +20,72 @@ jest.mock('@librechat/data-schemas', () => ({
   },
 }));
 
+jest.mock('~/app/metrics', () => ({
+  isMetricsConfigured: jest.fn(() => true),
+  recordOpenIDUserLookup: jest.fn(),
+}));
+
+describe('normalizeOpenIdIssuer', () => {
+  it('normalizes blank, trailing-slash, and discovery-document issuers', () => {
+    expect(normalizeOpenIdIssuer('')).toBeUndefined();
+    expect(normalizeOpenIdIssuer('   ')).toBeUndefined();
+    expect(normalizeOpenIdIssuer('https://issuer.example.com/')).toBe('https://issuer.example.com');
+    expect(
+      normalizeOpenIdIssuer('https://issuer.example.com/.well-known/openid-configuration/'),
+    ).toBe('https://issuer.example.com');
+    expect(
+      normalizeOpenIdIssuer('https://issuer.example.com/realm/.well-known/openid-configuration'),
+    ).toBe('https://issuer.example.com/realm');
+  });
+});
+
+describe('getOpenIdIssuer', () => {
+  const originalOpenIdIssuer = process.env.OPENID_ISSUER;
+
+  afterEach(() => {
+    if (originalOpenIdIssuer == null) {
+      delete process.env.OPENID_ISSUER;
+      return;
+    }
+
+    process.env.OPENID_ISSUER = originalOpenIdIssuer;
+  });
+
+  it('prefers token issuer and falls back to metadata and env issuer', () => {
+    process.env.OPENID_ISSUER = 'https://env.example.com/.well-known/openid-configuration';
+
+    expect(
+      getOpenIdIssuer(
+        { iss: 'https://token.example.com/' },
+        { serverMetadata: () => ({ issuer: 'https://metadata.example.com' }) },
+      ),
+    ).toBe('https://token.example.com');
+    expect(
+      getOpenIdIssuer({}, { serverMetadata: () => ({ issuer: 'https://metadata.example.com/' }) }),
+    ).toBe('https://metadata.example.com');
+    expect(getOpenIdIssuer({})).toBe('https://env.example.com');
+  });
+});
+
 describe('findOpenIDUser', () => {
   let mockFindUser: jest.MockedFunction<UserMethods['findUser']>;
+  const originalOpenIdIssuer = process.env.OPENID_ISSUER;
+  const issuer = 'https://issuer.example.com';
 
   beforeEach(() => {
     mockFindUser = jest.fn();
+    delete process.env.OPENID_ISSUER;
     jest.clearAllMocks();
     (logger.warn as jest.Mock).mockClear();
     (logger.info as jest.Mock).mockClear();
+  });
+
+  afterAll(() => {
+    if (originalOpenIdIssuer == null) {
+      delete process.env.OPENID_ISSUER;
+      return;
+    }
+    process.env.OPENID_ISSUER = originalOpenIdIssuer;
   });
 
   describe('Primary condition searches', () => {
@@ -32,6 +94,7 @@ describe('findOpenIDUser', () => {
         _id: newId(),
         provider: 'openid',
         openidId: 'openid_123',
+        openidIssuer: issuer,
         email: 'user@example.com',
         username: 'testuser',
       } as IUser;
@@ -40,18 +103,21 @@ describe('findOpenIDUser', () => {
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
+        openidIssuer: issuer,
         findUser: mockFindUser,
         email: 'user@example.com',
       });
 
       expect(mockFindUser).toHaveBeenCalledWith({
-        $or: [{ openidId: 'openid_123' }],
+        openidId: 'openid_123',
+        openidIssuer: issuer,
       });
       expect(result).toEqual({
         user: mockUser,
         error: null,
         migration: false,
       });
+      expect(recordOpenIDUserLookup).toHaveBeenCalledWith('found', expect.any(Number));
     });
 
     it('should find user by idOnTheSource', async () => {
@@ -63,16 +129,22 @@ describe('findOpenIDUser', () => {
         username: 'testuser',
       } as IUser;
 
-      mockFindUser.mockResolvedValueOnce(mockUser);
+      mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce(mockUser);
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
+        openidIssuer: issuer,
         findUser: mockFindUser,
         idOnTheSource: 'source_123',
       });
 
-      expect(mockFindUser).toHaveBeenCalledWith({
-        $or: [{ openidId: 'openid_123' }, { idOnTheSource: 'source_123' }],
+      expect(mockFindUser).toHaveBeenNthCalledWith(1, {
+        openidId: 'openid_123',
+        openidIssuer: issuer,
+      });
+      expect(mockFindUser).toHaveBeenNthCalledWith(2, {
+        idOnTheSource: 'source_123',
+        openidIssuer: issuer,
       });
       expect(result).toEqual({
         user: mockUser,
@@ -87,6 +159,7 @@ describe('findOpenIDUser', () => {
         provider: 'openid',
         openidId: 'openid_123',
         idOnTheSource: 'source_123',
+        openidIssuer: issuer,
         email: 'user@example.com',
         username: 'testuser',
       } as IUser;
@@ -95,13 +168,16 @@ describe('findOpenIDUser', () => {
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
+        openidIssuer: issuer,
         findUser: mockFindUser,
         idOnTheSource: 'source_123',
         email: 'user@example.com',
       });
 
+      expect(mockFindUser).toHaveBeenCalledTimes(1);
       expect(mockFindUser).toHaveBeenCalledWith({
-        $or: [{ openidId: 'openid_123' }, { idOnTheSource: 'source_123' }],
+        openidId: 'openid_123',
+        openidIssuer: issuer,
       });
       expect(result).toEqual({
         user: mockUser,
@@ -109,10 +185,39 @@ describe('findOpenIDUser', () => {
         migration: false,
       });
     });
-  });
 
-  describe('Email-based searches', () => {
-    it('should find user by email when primary conditions fail and openidId matches', async () => {
+    it('should bind primary lookup to issuer', async () => {
+      const mockUser: IUser = {
+        _id: newId(),
+        provider: 'openid',
+        openidId: 'openid_123',
+        openidIssuer: 'https://issuer.example.com',
+        email: 'user@example.com',
+        username: 'testuser',
+      } as IUser;
+
+      mockFindUser.mockResolvedValueOnce(mockUser);
+
+      const result = await findOpenIDUser({
+        openidId: 'openid_123',
+        openidIssuer: 'https://issuer.example.com/',
+        findUser: mockFindUser,
+        email: 'user@example.com',
+      });
+
+      expect(mockFindUser).toHaveBeenCalledWith({
+        openidId: 'openid_123',
+        openidIssuer: 'https://issuer.example.com',
+      });
+      expect(result).toEqual({
+        user: mockUser,
+        error: null,
+        migration: false,
+      });
+    });
+
+    it('should allow legacy issuer-less lookup only for the configured OpenID login issuer', async () => {
+      process.env.OPENID_ISSUER = 'https://issuer.example.com/';
       const mockUser: IUser = {
         _id: newId(),
         provider: 'openid',
@@ -125,14 +230,105 @@ describe('findOpenIDUser', () => {
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
+        openidIssuer: 'https://issuer.example.com',
+        findUser: mockFindUser,
+      });
+
+      expect(mockFindUser).toHaveBeenNthCalledWith(1, {
+        openidId: 'openid_123',
+        openidIssuer: 'https://issuer.example.com',
+      });
+      expect(mockFindUser).toHaveBeenNthCalledWith(2, {
+        openidId: 'openid_123',
+        openidIssuer: { $exists: false },
+      });
+      expect(result).toEqual({
+        user: { ...mockUser, openidIssuer: 'https://issuer.example.com' },
+        error: null,
+        migration: true,
+      });
+    });
+
+    it('should allow legacy issuer-less lookup when login issuer is a discovery document URL', async () => {
+      process.env.OPENID_ISSUER = 'https://issuer.example.com/.well-known/openid-configuration';
+      const mockUser: IUser = {
+        _id: newId(),
+        provider: 'openid',
+        openidId: 'openid_123',
+        email: 'user@example.com',
+        username: 'testuser',
+      } as IUser;
+
+      mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce(mockUser);
+
+      const result = await findOpenIDUser({
+        openidId: 'openid_123',
+        openidIssuer: 'https://issuer.example.com',
+        findUser: mockFindUser,
+      });
+
+      expect(mockFindUser).toHaveBeenNthCalledWith(1, {
+        openidId: 'openid_123',
+        openidIssuer: 'https://issuer.example.com',
+      });
+      expect(mockFindUser).toHaveBeenNthCalledWith(2, {
+        openidId: 'openid_123',
+        openidIssuer: { $exists: false },
+      });
+      expect(result).toEqual({
+        user: { ...mockUser, openidIssuer: 'https://issuer.example.com' },
+        error: null,
+        migration: true,
+      });
+    });
+
+    it('should skip primary ID lookup when issuer context is missing', async () => {
+      mockFindUser.mockResolvedValueOnce(null);
+
+      const result = await findOpenIDUser({
+        openidId: 'openid_123',
+        idOnTheSource: 'source_123',
+        findUser: mockFindUser,
+        email: 'user@example.com',
+      });
+
+      expect(mockFindUser).toHaveBeenCalledTimes(1);
+      expect(mockFindUser).toHaveBeenCalledWith({ email: 'user@example.com' });
+      expect(result).toEqual({
+        user: null,
+        error: null,
+        migration: false,
+      });
+    });
+  });
+
+  describe('Email-based searches', () => {
+    it('should find user by email when primary conditions fail and openidId matches', async () => {
+      const mockUser: IUser = {
+        _id: newId(),
+        provider: 'openid',
+        openidId: 'openid_123',
+        openidIssuer: issuer,
+        email: 'user@example.com',
+        username: 'testuser',
+      } as IUser;
+
+      mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce(mockUser);
+
+      const result = await findOpenIDUser({
+        openidId: 'openid_123',
+        openidIssuer: issuer,
         findUser: mockFindUser,
         email: 'user@example.com',
       });
 
       expect(mockFindUser).toHaveBeenNthCalledWith(1, {
-        $or: [{ openidId: 'openid_123' }],
+        openidId: 'openid_123',
+        openidIssuer: issuer,
       });
-      expect(mockFindUser).toHaveBeenNthCalledWith(2, { email: 'user@example.com' });
+      expect(mockFindUser).toHaveBeenNthCalledWith(2, {
+        email: 'user@example.com',
+      });
       expect(result).toEqual({
         user: mockUser,
         error: null,
@@ -147,6 +343,7 @@ describe('findOpenIDUser', () => {
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
+        openidIssuer: issuer,
         findUser: mockFindUser,
         email: 'user@example.com',
       });
@@ -164,12 +361,14 @@ describe('findOpenIDUser', () => {
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
+        openidIssuer: issuer,
         findUser: mockFindUser,
       });
 
       expect(mockFindUser).toHaveBeenCalledTimes(1);
       expect(mockFindUser).toHaveBeenCalledWith({
-        $or: [{ openidId: 'openid_123' }],
+        openidId: 'openid_123',
+        openidIssuer: issuer,
       });
       expect(result).toEqual({
         user: null,
@@ -194,6 +393,7 @@ describe('findOpenIDUser', () => {
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
+        openidIssuer: issuer,
         findUser: mockFindUser,
         email: 'user@example.com',
       });
@@ -218,6 +418,7 @@ describe('findOpenIDUser', () => {
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
+        openidIssuer: issuer,
         findUser: mockFindUser,
         email: 'user@example.com',
       });
@@ -234,6 +435,7 @@ describe('findOpenIDUser', () => {
         _id: newId(),
         provider: 'openid',
         openidId: 'openid_123',
+        openidIssuer: issuer,
         email: 'user@example.com',
         username: 'testuser',
       } as IUser;
@@ -242,6 +444,7 @@ describe('findOpenIDUser', () => {
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
+        openidIssuer: issuer,
         findUser: mockFindUser,
         email: 'user@example.com',
       });
@@ -249,6 +452,58 @@ describe('findOpenIDUser', () => {
       expect(result).toEqual({
         user: mockUser,
         error: null,
+        migration: false,
+      });
+    });
+
+    it('should reject email fallback when stored openidIssuer does not match token issuer', async () => {
+      const mockUser: IUser = {
+        _id: newId(),
+        provider: 'openid',
+        openidId: 'openid_123',
+        openidIssuer: 'https://issuer-a.example.com',
+        email: 'user@example.com',
+        username: 'testuser',
+      } as IUser;
+
+      mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce(mockUser);
+
+      const result = await findOpenIDUser({
+        openidId: 'openid_123',
+        openidIssuer: 'https://issuer-b.example.com',
+        findUser: mockFindUser,
+        email: 'user@example.com',
+      });
+
+      expect(result).toEqual({
+        user: null,
+        error: ErrorTypes.AUTH_FAILED,
+        migration: false,
+      });
+    });
+
+    it('should reject legacy email fallback when token issuer is not the configured OpenID login issuer', async () => {
+      process.env.OPENID_ISSUER = 'https://issuer-a.example.com';
+      const mockUser: IUser = {
+        _id: newId(),
+        provider: 'openid',
+        openidId: 'openid_123',
+        email: 'user@example.com',
+        username: 'testuser',
+      } as IUser;
+
+      mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce(mockUser);
+
+      const result = await findOpenIDUser({
+        openidId: 'openid_123',
+        openidIssuer: 'https://issuer-b.example.com',
+        findUser: mockFindUser,
+        email: 'user@example.com',
+      });
+
+      expect(result).toEqual({
+        user: null,
+        error: ErrorTypes.AUTH_FAILED,
         migration: false,
       });
     });
@@ -269,6 +524,7 @@ describe('findOpenIDUser', () => {
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
+        openidIssuer: issuer,
         findUser: mockFindUser,
         email: 'user@example.com',
       });
@@ -278,6 +534,35 @@ describe('findOpenIDUser', () => {
           ...mockUser,
           provider: 'openid',
           openidId: 'openid_123',
+          openidIssuer: issuer,
+        },
+        error: null,
+        migration: true,
+      });
+    });
+
+    it('should persist issuer when migrating a user by email', async () => {
+      const mockUser: IUser = {
+        _id: newId(),
+        email: 'user@example.com',
+        username: 'testuser',
+      } as IUser;
+
+      mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce(mockUser);
+
+      const result = await findOpenIDUser({
+        openidId: 'openid_123',
+        openidIssuer: 'https://issuer.example.com',
+        findUser: mockFindUser,
+        email: 'user@example.com',
+      });
+
+      expect(result).toEqual({
+        user: {
+          ...mockUser,
+          provider: 'openid',
+          openidId: 'openid_123',
+          openidIssuer: 'https://issuer.example.com',
         },
         error: null,
         migration: true,
@@ -297,6 +582,7 @@ describe('findOpenIDUser', () => {
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
+        openidIssuer: issuer,
         findUser: mockFindUser,
         email: 'user@example.com',
       });
@@ -321,6 +607,7 @@ describe('findOpenIDUser', () => {
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
+        openidIssuer: issuer,
         findUser: mockFindUser,
         email: 'user@example.com',
       });
@@ -388,12 +675,14 @@ describe('findOpenIDUser', () => {
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
+        openidIssuer: issuer,
         findUser: mockFindUser,
         idOnTheSource: '',
       });
 
       expect(mockFindUser).toHaveBeenCalledWith({
-        $or: [{ openidId: 'openid_123' }],
+        openidId: 'openid_123',
+        openidIssuer: issuer,
       });
       expect(result).toEqual({
         user: null,
@@ -420,6 +709,7 @@ describe('findOpenIDUser', () => {
         _id: newId(),
         provider: 'openid',
         openidId: 'openid_123',
+        openidIssuer: issuer,
         email: 'user@example.com',
         username: 'testuser',
       } as IUser;
@@ -428,6 +718,7 @@ describe('findOpenIDUser', () => {
 
       const result = await findOpenIDUser({
         openidId: 'openid_123',
+        openidIssuer: issuer,
         findUser: mockFindUser,
         email: 'User@Example.COM',
       });
@@ -446,9 +737,11 @@ describe('findOpenIDUser', () => {
       await expect(
         findOpenIDUser({
           openidId: 'openid_123',
+          openidIssuer: issuer,
           findUser: mockFindUser,
         }),
       ).rejects.toThrow('Database error');
+      expect(recordOpenIDUserLookup).toHaveBeenCalledWith('error', expect.any(Number));
     });
 
     it('should reject email fallback when openidId is empty and user has a stored openidId', async () => {
@@ -476,5 +769,226 @@ describe('findOpenIDUser', () => {
         migration: false,
       });
     });
+  });
+});
+
+type CapturedFindCommand = {
+  find?: unknown;
+  filter?: unknown;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function planContainsStage(value: unknown, stage: string): boolean {
+  if (!isRecord(value)) return false;
+  if (value.stage === stage) return true;
+
+  return Object.values(value).some((entry) => {
+    if (Array.isArray(entry)) return entry.some((item) => planContainsStage(item, stage));
+    return planContainsStage(entry, stage);
+  });
+}
+
+function getTotalDocsExamined(explain: unknown): number | undefined {
+  if (!isRecord(explain)) return undefined;
+  const executionStats = explain.executionStats;
+  if (!isRecord(executionStats)) return undefined;
+  const totalDocsExamined = executionStats.totalDocsExamined;
+  return typeof totalDocsExamined === 'number' ? totalDocsExamined : undefined;
+}
+
+describe('findOpenIDUser Mongo compatibility', () => {
+  let mongoServer: MongoMemoryServer;
+  let User: mongoose.Model<IUser>;
+  let methods: ReturnType<typeof createMethods>;
+
+  const issuer = 'https://issuer.example.com';
+  const originalOpenIdIssuer = process.env.OPENID_ISSUER;
+
+  async function seedUsers(count: number) {
+    await User.insertMany(
+      Array.from({ length: count }, (_, index) => ({
+        email: `filler-${index}@example.com`,
+        provider: 'openid',
+        openidId: `filler-sub-${index}`,
+        openidIssuer: issuer,
+        idOnTheSource: `filler-oid-${index}`,
+      })),
+    );
+  }
+
+  async function captureFindFilters<T>(run: () => Promise<T>): Promise<{
+    result: T;
+    filters: unknown[];
+  }> {
+    const filters: unknown[] = [];
+    const client = mongoose.connection.getClient();
+    const listener = (event: CommandStartedEvent) => {
+      const command = event.command as CapturedFindCommand;
+      if (event.commandName === 'find' && command.find === User.collection.name) {
+        filters.push(command.filter);
+      }
+    };
+
+    client.on('commandStarted', listener);
+    try {
+      const result = await run();
+      return { result, filters };
+    } finally {
+      client.off('commandStarted', listener);
+    }
+  }
+
+  beforeAll(async () => {
+    mongoServer = await MongoMemoryServer.create();
+    await mongoose.connect(mongoServer.getUri(), { monitorCommands: true });
+    createModels(mongoose);
+    User = mongoose.models.User as mongoose.Model<IUser>;
+    methods = createMethods(mongoose);
+  });
+
+  afterAll(async () => {
+    if (originalOpenIdIssuer == null) {
+      delete process.env.OPENID_ISSUER;
+    } else {
+      process.env.OPENID_ISSUER = originalOpenIdIssuer;
+    }
+    await mongoose.disconnect();
+    await mongoServer.stop();
+  });
+
+  beforeEach(async () => {
+    process.env.OPENID_ISSUER = issuer;
+    await mongoose.connection.dropDatabase();
+    await User.syncIndexes();
+  });
+
+  it('keeps exact issuer lookup indexable on a seeded user collection', async () => {
+    await seedUsers(1500);
+    await User.create({
+      email: 'target@example.com',
+      provider: 'openid',
+      openidId: 'target-sub',
+      openidIssuer: issuer,
+      idOnTheSource: 'target-oid',
+    });
+
+    const { result, filters } = await captureFindFilters(() =>
+      findOpenIDUser({
+        openidId: 'target-sub',
+        idOnTheSource: 'target-oid',
+        openidIssuer: issuer,
+        findUser: methods.findUser,
+      }),
+    );
+
+    expect(result.user?.email).toBe('target@example.com');
+    expect(filters).toEqual([{ openidId: 'target-sub', openidIssuer: issuer }]);
+
+    const explain = await User.findOne(filters[0] as FilterQuery<IUser>).explain('executionStats');
+    expect(planContainsStage(explain, 'IXSCAN')).toBe(true);
+    expect(getTotalDocsExamined(explain)).toBeLessThanOrEqual(1);
+  });
+
+  it('resolves legacy issuer-less users without nested or disjunctive filters', async () => {
+    await User.create({
+      email: 'legacy@example.com',
+      provider: 'openid',
+      openidId: 'legacy-sub',
+      idOnTheSource: 'legacy-oid',
+    });
+
+    const { result, filters } = await captureFindFilters(() =>
+      findOpenIDUser({
+        openidId: 'legacy-sub',
+        idOnTheSource: 'legacy-oid',
+        openidIssuer: issuer,
+        findUser: methods.findUser,
+      }),
+    );
+
+    expect(result.user?.email).toBe('legacy@example.com');
+    expect(result.migration).toBe(true);
+    expect(filters).toEqual([
+      { openidId: 'legacy-sub', openidIssuer: issuer },
+      { idOnTheSource: 'legacy-oid', openidIssuer: issuer },
+      { openidId: 'legacy-sub', openidIssuer: { $exists: false } },
+    ]);
+  });
+});
+
+describe('getOpenIdEmail', () => {
+  const originalEmailClaim = process.env.OPENID_EMAIL_CLAIM;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    delete process.env.OPENID_EMAIL_CLAIM;
+  });
+
+  afterAll(() => {
+    if (originalEmailClaim == null) {
+      delete process.env.OPENID_EMAIL_CLAIM;
+      return;
+    }
+    process.env.OPENID_EMAIL_CLAIM = originalEmailClaim;
+  });
+
+  it('uses the default claim order', () => {
+    expect(
+      getOpenIdEmail({
+        email: 'user@example.com',
+        preferred_username: 'preferred@example.com',
+        upn: 'upn@example.com',
+      }),
+    ).toBe('user@example.com');
+  });
+
+  it('returns undefined when default claims are absent', () => {
+    expect(getOpenIdEmail({})).toBeUndefined();
+  });
+
+  it('skips empty fallback claims', () => {
+    expect(
+      getOpenIdEmail({
+        email: '',
+        preferred_username: 'preferred@example.com',
+        upn: 'upn@example.com',
+      }),
+    ).toBe('preferred@example.com');
+  });
+
+  it('uses OPENID_EMAIL_CLAIM when present', () => {
+    process.env.OPENID_EMAIL_CLAIM = 'custom_identifier';
+
+    expect(
+      getOpenIdEmail({
+        email: 'user@example.com',
+        custom_identifier: 'agent@corp.example.com',
+      }),
+    ).toBe('agent@corp.example.com');
+  });
+
+  it('falls back with a warning when OPENID_EMAIL_CLAIM is missing', () => {
+    process.env.OPENID_EMAIL_CLAIM = 'missing_identifier';
+
+    expect(getOpenIdEmail({ email: 'user@example.com' }, 'remoteAgentAuth')).toBe(
+      'user@example.com',
+    );
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('OPENID_EMAIL_CLAIM="missing_identifier" not present in userinfo'),
+    );
+  });
+
+  it('falls back with a warning when OPENID_EMAIL_CLAIM is not a string', () => {
+    process.env.OPENID_EMAIL_CLAIM = 'groups';
+
+    expect(getOpenIdEmail({ email: 'user@example.com', groups: ['a'] })).toBe('user@example.com');
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'OPENID_EMAIL_CLAIM="groups" resolved to a non-string value (type: object)',
+      ),
+    );
   });
 });

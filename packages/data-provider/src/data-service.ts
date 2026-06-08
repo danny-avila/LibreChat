@@ -6,6 +6,7 @@ import * as ag from './types/agents';
 import * as m from './types/mutations';
 import * as q from './types/queries';
 import * as f from './types/files';
+import * as sk from './types/skills';
 import * as mcp from './types/mcpServers';
 import * as config from './config';
 import request from './request';
@@ -33,6 +34,30 @@ export function updateFavorites(favorites: q.TUserFavorite[]): Promise<q.TUserFa
   return request.post(`${endpoints.apiBaseUrl()}/api/user/settings/favorites`, { favorites });
 }
 
+/**
+ * Skill favorites (star-a-skill). The backend route is phase 2 — see the
+ * original UI PR for the client surface. Until then, these resolve with
+ * an empty list so the UI hooks compile and the Star button is a no-op.
+ */
+export function getSkillFavorites(): Promise<string[]> {
+  return Promise.resolve([] as string[]);
+}
+
+export function updateSkillFavorites(skillFavorites: string[]): Promise<string[]> {
+  return Promise.resolve(skillFavorites);
+}
+
+/** Per-user skill active/inactive overrides. */
+export function getSkillStates(): Promise<sk.TSkillStatesResponse> {
+  return request.get(endpoints.skillStates());
+}
+
+export function updateSkillStates(
+  skillStates: sk.TSkillStatesResponse,
+): Promise<sk.TSkillStatesResponse> {
+  return request.post(endpoints.skillStates(), { skillStates });
+}
+
 export function getSharedMessages(shareId: string): Promise<t.TSharedMessagesResponse> {
   return request.get(endpoints.shareMessages(shareId));
 }
@@ -40,11 +65,9 @@ export function getSharedMessages(shareId: string): Promise<t.TSharedMessagesRes
 export const listSharedLinks = async (
   params: q.SharedLinksListParams,
 ): Promise<q.SharedLinksResponse> => {
-  const { pageSize, isPublic, sortBy, sortDirection, search, cursor } = params;
+  const { pageSize, sortBy, sortDirection, search, cursor } = params;
 
-  return request.get(
-    endpoints.getSharedLinks(pageSize, isPublic, sortBy, sortDirection, search, cursor),
-  );
+  return request.get(endpoints.getSharedLinks(pageSize, sortBy, sortDirection, search, cursor));
 };
 
 export function getSharedLink(conversationId: string): Promise<t.TSharedLinkGetResponse> {
@@ -58,8 +81,11 @@ export function createSharedLink(
   return request.post(endpoints.createSharedLink(conversationId), { targetMessageId });
 }
 
-export function updateSharedLink(shareId: string): Promise<t.TSharedLinkResponse> {
-  return request.patch(endpoints.updateSharedLink(shareId));
+export function updateSharedLink(
+  shareId: string,
+  targetMessageId?: string,
+): Promise<t.TSharedLinkResponse> {
+  return request.patch(endpoints.updateSharedLink(shareId), { targetMessageId });
 }
 
 export function deleteSharedLink(shareId: string): Promise<m.TDeleteSharedLinkResponse> {
@@ -200,12 +226,18 @@ export function cancelMCPOAuth(serverName: string): Promise<m.CancelMCPOAuthResp
 
 /* Config */
 
-export const getStartupConfig = (): Promise<
+export type StartupConfigOptions = {
+  context?: config.StartupConfigContext;
+};
+
+export const getStartupConfig = (
+  options?: StartupConfigOptions,
+): Promise<
   config.TStartupConfig & {
     mcpCustomUserVars?: Record<string, { title: string; description: string }>;
   }
 > => {
-  return request.get(endpoints.config());
+  return request.get(endpoints.config(options?.context));
 };
 
 export const getAIEndpoints = (): Promise<t.TEndpointsConfig> => {
@@ -375,6 +407,22 @@ export const getToolCalls = (params: q.GetToolCallParams): Promise<q.ToolCallRes
 
 export const getFiles = (): Promise<f.TFile[]> => {
   return request.get(endpoints.files());
+};
+
+/**
+ * Poll the lifecycle of an inline file preview. Returns the smallest
+ * shape needed to drive the UI:
+ *   - `status` always present (defaults to `'ready'` server-side for
+ *     legacy records that pre-date the field).
+ *   - `text` and `textFormat` only when `status === 'ready'` and text
+ *     was extracted (preserves the HTML-or-null security contract).
+ *   - `previewError` only when `status === 'failed'`.
+ *
+ * Called from `useFilePreview`; React Query's `refetchInterval`
+ * polls while `status === 'pending'` and stops on terminal status.
+ */
+export const getFilePreview = (fileId: string): Promise<f.TFilePreview> => {
+  return request.get(endpoints.filePreview(fileId));
 };
 
 export const getAgentFiles = (agentId: string): Promise<f.TFile[]> => {
@@ -656,6 +704,13 @@ export const getFileDownload = async (userId: string, file_id: string): Promise<
   });
 };
 
+export const getFileDownloadURL = async (
+  userId: string,
+  file_id: string,
+): Promise<f.FileDownloadURLResponse> => {
+  return request.get(`${endpoints.files()}/download-url/${userId}/${file_id}`);
+};
+
 export const getCodeOutputDownload = async (url: string): Promise<AxiosResponse> => {
   return request.getResponse(url, {
     responseType: 'blob',
@@ -737,6 +792,34 @@ export function archiveConversation(
   payload: t.TArchiveConversationRequest,
 ): Promise<t.TArchiveConversationResponse> {
   return request.post(endpoints.archiveConversation(), { arg: payload });
+}
+
+export function listProjects(params?: q.ProjectListParams): Promise<q.ProjectListResponse> {
+  return request.get(endpoints.projects(params ?? {}));
+}
+
+export function createProject(payload: t.TCreateChatProjectRequest): Promise<t.TChatProject> {
+  return request.post(endpoints.projects(), payload);
+}
+
+export function getProjectById(projectId: string): Promise<t.TChatProject> {
+  return request.get(endpoints.projectById(projectId));
+}
+
+export function updateProject(payload: t.TUpdateChatProjectRequest): Promise<t.TChatProject> {
+  const { projectId, ...data } = payload;
+  return request.patch(endpoints.projectById(projectId), data);
+}
+
+export function deleteProject(projectId: string): Promise<t.TDeleteChatProjectResponse> {
+  return request.delete(endpoints.projectById(projectId));
+}
+
+export function assignConversationToProject(
+  payload: t.TAssignConversationToProjectRequest,
+): Promise<t.TAssignConversationToProjectResponse> {
+  const { conversationId, projectId } = payload;
+  return request.put(endpoints.projectConversation(conversationId), { projectId });
 }
 
 export function genTitle(payload: m.TGenTitleRequest): Promise<m.TGenTitleResponse> {
@@ -859,6 +942,143 @@ export function getRandomPrompts(
   return request.get(endpoints.getRandomPrompts(variables.limit, variables.skip));
 }
 
+/* Skills */
+
+export function listSkills(params?: sk.TSkillListRequest): Promise<sk.TSkillListResponse> {
+  return request.get(endpoints.listSkillsWithFilters(params ?? {}));
+}
+
+export function getSkill(id: string): Promise<sk.TSkill> {
+  return request.get(endpoints.getSkill(id));
+}
+
+export function createSkill(payload: sk.TCreateSkill): Promise<sk.TSkill> {
+  return request.post(endpoints.skills(), payload);
+}
+
+export function updateSkill(variables: sk.TUpdateSkillVariables): Promise<sk.TUpdateSkillResponse> {
+  return request.patch(endpoints.getSkill(variables.id), {
+    expectedVersion: variables.expectedVersion,
+    ...variables.payload,
+  });
+}
+
+export function deleteSkill(id: string): Promise<sk.TDeleteSkillResponse> {
+  return request.delete(endpoints.getSkill(id));
+}
+
+export function listSkillFiles(skillId: string): Promise<sk.TListSkillFilesResponse> {
+  return request.get(endpoints.skillFiles(skillId));
+}
+
+export function uploadSkillFile(skillId: string, formData: FormData): Promise<sk.TSkillFile> {
+  return request.postMultiPart(endpoints.skillFiles(skillId), formData);
+}
+
+/**
+ * Import a skill from a .md, .zip, or .skill file. The backend extracts the
+ * archive, creates the skill from SKILL.md, and persists all additional files.
+ * Single HTTP request — no client-side zip processing needed.
+ */
+export function importSkill(formData: FormData): Promise<sk.TSkill> {
+  return request.postMultiPart(endpoints.importSkill(), formData);
+}
+
+export function getSkillFileContent(
+  skillId: string,
+  relativePath: string,
+): Promise<sk.TSkillFileContentResponse> {
+  return request.get(endpoints.skillFile(skillId, relativePath));
+}
+
+export function deleteSkillFile(
+  skillId: string,
+  relativePath: string,
+): Promise<sk.TDeleteSkillFileResponse> {
+  return request.delete(endpoints.skillFile(skillId, relativePath));
+}
+
+/* -------------------------------------------------------------------------- */
+/* Skill Tree (nodes) — phase 2 backend                                       */
+/* -------------------------------------------------------------------------- */
+/* These were introduced by the original UI PR and are shipped as stubs in    */
+/* phase 1 so the tree UI compiles. Each resolves with empty/no-op data until */
+/* the backend persists a folder hierarchy. The call surface matches what the */
+/* tree hooks expect so wiring real endpoints later is a one-line swap.       */
+
+export const getSkillTree = (_skillId: string): Promise<t.TSkillTreeResponse> => {
+  return Promise.resolve({ nodes: [] });
+};
+
+export const createSkillNode = (
+  skillId: string,
+  data: FormData | t.TCreateSkillNodeRequest,
+): Promise<t.TSkillNode> => {
+  const name = data instanceof FormData ? (data.get('name') as string) || 'untitled' : data.name;
+  const type = data instanceof FormData ? 'file' : data.type;
+  const now = new Date().toISOString();
+  return Promise.resolve({
+    _id: `pending-${now}`,
+    skillId,
+    parentId: null,
+    type,
+    name,
+    order: 0,
+    author: '',
+    createdAt: now,
+    updatedAt: now,
+  });
+};
+
+export const updateSkillNode = (variables: {
+  skillId: string;
+  nodeId: string;
+  data: t.TUpdateSkillNodeRequest;
+}): Promise<t.TSkillNode> => {
+  const now = new Date().toISOString();
+  return Promise.resolve({
+    _id: variables.nodeId,
+    skillId: variables.skillId,
+    parentId: variables.data.parentId ?? null,
+    type: 'file',
+    name: variables.data.name ?? '',
+    order: variables.data.order ?? 0,
+    author: '',
+    createdAt: now,
+    updatedAt: now,
+  });
+};
+
+export const deleteSkillNode = (_variables: { skillId: string; nodeId: string }): Promise<void> => {
+  return Promise.resolve();
+};
+
+export const getSkillNodeContent = (_variables: {
+  skillId: string;
+  nodeId: string;
+}): Promise<{ content: string; mimeType: string }> => {
+  return Promise.resolve({ content: '', mimeType: 'text/plain' });
+};
+
+export const updateSkillNodeContent = (variables: {
+  skillId: string;
+  nodeId: string;
+  content: string;
+}): Promise<t.TSkillNode> => {
+  const now = new Date().toISOString();
+  return Promise.resolve({
+    _id: variables.nodeId,
+    skillId: variables.skillId,
+    parentId: null,
+    type: 'file',
+    name: '',
+    order: 0,
+    author: '',
+    createdAt: now,
+    updatedAt: now,
+  });
+};
+
 /* Roles */
 export function listRoles(): Promise<q.ListRolesResponse> {
   return request.get(`${endpoints.adminRoles()}?limit=200`);
@@ -914,6 +1134,12 @@ export function updateMarketplacePermissions(
   variables: m.UpdateMarketplacePermVars,
 ): Promise<m.UpdatePermResponse> {
   return request.put(endpoints.updateMarketplacePermissions(variables.roleName), variables.updates);
+}
+
+export function updateSkillPermissions(
+  variables: m.UpdateSkillPermVars,
+): Promise<m.UpdatePermResponse> {
+  return request.put(endpoints.updateSkillPermissions(variables.roleName), variables.updates);
 }
 
 /* Tags */

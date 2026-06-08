@@ -4,6 +4,8 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { EToolResources, FileContext } from 'librechat-data-provider';
 import { createFileMethods } from './file';
 import { createModels } from '~/models';
+import { runAsSystem } from '~/config/tenantContext';
+import { _resetStrictCache } from '~/models/plugins/tenantIsolation';
 
 let File: mongoose.Model<unknown>;
 let fileMethods: ReturnType<typeof createFileMethods>;
@@ -86,6 +88,84 @@ describe('File Methods', () => {
     });
   });
 
+  describe('claimCodeFile', () => {
+    it('claims code output files independently per tenant', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      const tenantA = await fileMethods.claimCodeFile({
+        filename: 'report.csv',
+        conversationId: 'conversation-1',
+        file_id: 'file-tenant-a',
+        user: userId,
+        tenantId: 'tenant-a',
+      });
+      const tenantB = await fileMethods.claimCodeFile({
+        filename: 'report.csv',
+        conversationId: 'conversation-1',
+        file_id: 'file-tenant-b',
+        user: userId,
+        tenantId: 'tenant-b',
+      });
+      const tenantAAgain = await fileMethods.claimCodeFile({
+        filename: 'report.csv',
+        conversationId: 'conversation-1',
+        file_id: 'file-tenant-a-new',
+        user: userId,
+        tenantId: 'tenant-a',
+      });
+
+      expect(tenantA.file_id).toBe('file-tenant-a');
+      expect(tenantA.tenantId).toBe('tenant-a');
+      expect(tenantB.file_id).toBe('file-tenant-b');
+      expect(tenantB.tenantId).toBe('tenant-b');
+      expect(tenantAAgain.file_id).toBe('file-tenant-a');
+    });
+
+    it('keeps non-tenant code output claims in the legacy namespace', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      const legacy = await fileMethods.claimCodeFile({
+        filename: 'legacy.csv',
+        conversationId: 'conversation-1',
+        file_id: 'legacy-file',
+        user: userId,
+      });
+      const tenant = await fileMethods.claimCodeFile({
+        filename: 'legacy.csv',
+        conversationId: 'conversation-1',
+        file_id: 'tenant-file',
+        user: userId,
+        tenantId: 'tenant-a',
+      });
+
+      expect(legacy.file_id).toBe('legacy-file');
+      expect(legacy.tenantId).toBeNull();
+      expect(tenant.file_id).toBe('tenant-file');
+      expect(tenant.tenantId).toBe('tenant-a');
+    });
+
+    it('treats null tenantId as the legacy code output namespace', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      const legacy = await fileMethods.claimCodeFile({
+        filename: 'nullable-legacy.csv',
+        conversationId: 'conversation-1',
+        file_id: 'legacy-null-file',
+        user: userId,
+        tenantId: null,
+      });
+      const legacyAgain = await fileMethods.claimCodeFile({
+        filename: 'nullable-legacy.csv',
+        conversationId: 'conversation-1',
+        file_id: 'legacy-null-file-new',
+        user: userId,
+      });
+
+      expect(legacy.file_id).toBe('legacy-null-file');
+      expect(legacyAgain.file_id).toBe('legacy-null-file');
+    });
+  });
+
   describe('findFileById', () => {
     it('should find a file by file_id', async () => {
       const fileId = uuidv4();
@@ -150,6 +230,69 @@ describe('File Methods', () => {
       const files = await fileMethods.getFiles({ file_id: fileId });
       expect(files).toHaveLength(1);
       expect(files![0].text).toBeUndefined();
+    });
+  });
+
+  describe('getExpiredFiles', () => {
+    it('returns only files whose expiredAt date has passed', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const now = new Date('2030-01-01T00:00:00.000Z');
+      const expiredFileId = uuidv4();
+      const futureFileId = uuidv4();
+      const permanentFileId = uuidv4();
+      const missingExpiryFileId = uuidv4();
+
+      await fileMethods.createFile(
+        {
+          file_id: expiredFileId,
+          user: userId,
+          filename: 'expired.txt',
+          filepath: '/uploads/expired.txt',
+          type: 'text/plain',
+          bytes: 100,
+          expiredAt: new Date('2029-12-31T23:59:59.000Z'),
+        },
+        true,
+      );
+      await fileMethods.createFile(
+        {
+          file_id: futureFileId,
+          user: userId,
+          filename: 'future.txt',
+          filepath: '/uploads/future.txt',
+          type: 'text/plain',
+          bytes: 100,
+          expiredAt: new Date('2030-01-01T00:00:01.000Z'),
+        },
+        true,
+      );
+      await fileMethods.createFile(
+        {
+          file_id: permanentFileId,
+          user: userId,
+          filename: 'permanent.txt',
+          filepath: '/uploads/permanent.txt',
+          type: 'text/plain',
+          bytes: 100,
+          expiredAt: null,
+        },
+        true,
+      );
+      await fileMethods.createFile(
+        {
+          file_id: missingExpiryFileId,
+          user: userId,
+          filename: 'missing-expiry.txt',
+          filepath: '/uploads/missing-expiry.txt',
+          type: 'text/plain',
+          bytes: 100,
+        },
+        true,
+      );
+
+      const files = await fileMethods.getExpiredFiles(100, now);
+
+      expect(files.map((file) => file.file_id)).toEqual([expiredFileId]);
     });
   });
 
@@ -219,7 +362,14 @@ describe('File Methods', () => {
         type: 'text/x-python',
         bytes: 100,
         context: FileContext.execute_code,
-        metadata: { fileIdentifier: 'some-identifier' },
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: userId.toString(),
+            storage_session_id: 'session-x',
+            file_id: codeFileId,
+          },
+        },
       });
 
       // execute_code files are explicitly excluded from getToolFilesByIds
@@ -228,6 +378,154 @@ describe('File Methods', () => {
       const files = await fileMethods.getToolFilesByIds([codeFileId], toolSet);
 
       expect(files).toHaveLength(0);
+    });
+  });
+
+  describe('getCodeGeneratedFiles', () => {
+    /* The function filters by `file_id IN threadFileIds` — the file_ids
+     * referenced by messages in the current conversation thread —
+     * rather than by `messageId IN threadMessageIds`. The change
+     * matters when a code-output file is shared across sibling branches
+     * (regenerations); the File record's own `messageId` points at
+     * whichever sibling FIRST created it (preserved deliberately by
+     * processCodeOutput for provenance), but `threadFileIds` reaches
+     * any sibling that references the file via `messages.files[]`. */
+
+    it('finds a code-output file referenced by the current thread', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const conversationId = uuidv4();
+      const fileId = uuidv4();
+
+      await fileMethods.createFile({
+        file_id: fileId,
+        user: userId,
+        conversationId,
+        messageId: 'msg-original-creator',
+        filename: 'output.csv',
+        filepath: '/uploads/output.csv',
+        type: 'text/csv',
+        bytes: 100,
+        context: FileContext.execute_code,
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: userId.toString(),
+            storage_session_id: 'sess',
+            file_id: fileId,
+          },
+        },
+      });
+
+      const files = await fileMethods.getCodeGeneratedFiles(conversationId, [fileId]);
+      expect(files).toHaveLength(1);
+      expect(files[0].file_id).toBe(fileId);
+    });
+
+    it('reaches a file whose creator messageId is on a sibling branch (regression)', async () => {
+      /* Branched-conversation case: sibling A creates the file (its
+       * messageId is preserved on the File record), sibling N
+       * recreates the same filename — claimCodeFile finds the existing
+       * record and the messageId stays at A. The current thread (parent
+       * = N) doesn't include A. Filtering by threadFileIds (which
+       * includes the file_id N's message references) reaches it. */
+      const userId = new mongoose.Types.ObjectId();
+      const conversationId = uuidv4();
+      const fileId = uuidv4();
+
+      await fileMethods.createFile({
+        file_id: fileId,
+        user: userId,
+        conversationId,
+        /* The file's messageId points at sibling A — NOT in the
+         * current thread [siblingN, root]. The old `messageId IN`
+         * filter would have excluded the file here. */
+        messageId: 'siblingA',
+        filename: 'output.csv',
+        filepath: '/uploads/output.csv',
+        type: 'text/csv',
+        bytes: 100,
+        context: FileContext.execute_code,
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: userId.toString(),
+            storage_session_id: 'sess',
+            file_id: fileId,
+          },
+        },
+      });
+
+      const files = await fileMethods.getCodeGeneratedFiles(conversationId, [fileId]);
+      expect(files).toHaveLength(1);
+      expect(files[0].file_id).toBe(fileId);
+    });
+
+    it('returns empty when threadFileIds is missing or empty', async () => {
+      const conversationId = uuidv4();
+      expect(await fileMethods.getCodeGeneratedFiles(conversationId)).toEqual([]);
+      expect(await fileMethods.getCodeGeneratedFiles(conversationId, [])).toEqual([]);
+    });
+
+    it('does not cross conversation boundaries even with matching file_id', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const fileId = uuidv4();
+
+      await fileMethods.createFile({
+        file_id: fileId,
+        user: userId,
+        conversationId: 'other-conv',
+        messageId: 'msg-creator',
+        filename: 'output.csv',
+        filepath: '/uploads/output.csv',
+        type: 'text/csv',
+        bytes: 100,
+        context: FileContext.execute_code,
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: userId.toString(),
+            storage_session_id: 'sess',
+            file_id: fileId,
+          },
+        },
+      });
+
+      const files = await fileMethods.getCodeGeneratedFiles('this-conv', [fileId]);
+      expect(files).toEqual([]);
+    });
+
+    it('excludes non-execute_code files even when file_id matches', async () => {
+      /* `tool_resources.execute_code.file_ids` is the source of
+       * threadFileIds, but `messages.files[]` includes files of
+       * every context. The `context: execute_code` filter prevents
+       * a user-uploaded chat file from being mistakenly fetched via
+       * this function (it'd go through getUserCodeFiles instead). */
+      const userId = new mongoose.Types.ObjectId();
+      const conversationId = uuidv4();
+      const fileId = uuidv4();
+
+      await fileMethods.createFile({
+        file_id: fileId,
+        user: userId,
+        conversationId,
+        messageId: 'msg-1',
+        filename: 'note.txt',
+        filepath: '/uploads/note.txt',
+        type: 'text/plain',
+        bytes: 100,
+        context: FileContext.message_attachment,
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: userId.toString(),
+            storage_session_id: 'sess',
+            file_id: fileId,
+          },
+        },
+      });
+
+      const files = await fileMethods.getCodeGeneratedFiles(conversationId, [fileId]);
+      expect(files).toEqual([]);
     });
   });
 
@@ -255,6 +553,89 @@ describe('File Methods', () => {
       expect(updated?.filename).toBe('updated.txt');
       expect(updated?.bytes).toBe(200);
       expect(updated?.expiresAt).toBeUndefined();
+    });
+
+    /* The optional `extraFilter` enables conditional updates — used by
+     * the deferred-preview render's `finalizePreview` to guard against
+     * an older render of the same `file_id` overwriting a newer turn's
+     * record on cross-turn filename reuse. (Codex P1 review on PR
+     * #12957.) */
+    describe('extraFilter (conditional update)', () => {
+      it('commits when the extra filter matches the current document', async () => {
+        const fileId = uuidv4();
+        const userId = new mongoose.Types.ObjectId();
+        await fileMethods.createFile({
+          file_id: fileId,
+          user: userId,
+          filename: 'data.xlsx',
+          filepath: '/uploads/data.xlsx',
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          bytes: 100,
+          status: 'pending',
+          previewRevision: 'rev-A',
+        });
+
+        const updated = await fileMethods.updateFile(
+          { file_id: fileId, status: 'ready', text: '<table></table>' },
+          { previewRevision: 'rev-A' },
+        );
+
+        expect(updated).not.toBeNull();
+        expect(updated?.status).toBe('ready');
+        expect(updated?.text).toBe('<table></table>');
+      });
+
+      it('returns null and skips the write when the extra filter does NOT match', async () => {
+        const fileId = uuidv4();
+        const userId = new mongoose.Types.ObjectId();
+        await fileMethods.createFile({
+          file_id: fileId,
+          user: userId,
+          filename: 'data.xlsx',
+          filepath: '/uploads/data.xlsx',
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          bytes: 100,
+          status: 'pending',
+          previewRevision: 'rev-B', // newer turn has rotated the revision
+        });
+
+        /* An older render that started while revision was 'rev-A' tries
+         * to commit. The newer turn has since rotated to 'rev-B'. The
+         * conditional update silently no-ops. */
+        const updated = await fileMethods.updateFile(
+          { file_id: fileId, status: 'ready', text: '<stale/>' },
+          { previewRevision: 'rev-A' },
+        );
+
+        expect(updated).toBeNull();
+
+        /* Critical: the newer record's text MUST be untouched. */
+        const fresh = await fileMethods.findFileById(fileId);
+        expect(fresh?.previewRevision).toBe('rev-B');
+        expect(fresh?.status).toBe('pending');
+        expect(fresh?.text).toBeUndefined();
+      });
+
+      it('falls back to single-key update when extraFilter is omitted (back-compat)', async () => {
+        const fileId = uuidv4();
+        const userId = new mongoose.Types.ObjectId();
+        await fileMethods.createFile({
+          file_id: fileId,
+          user: userId,
+          filename: 'plain.txt',
+          filepath: '/uploads/plain.txt',
+          type: 'text/plain',
+          bytes: 50,
+        });
+
+        const updated = await fileMethods.updateFile({
+          file_id: fileId,
+          bytes: 99,
+        });
+
+        expect(updated).not.toBeNull();
+        expect(updated?.bytes).toBe(99);
+      });
     });
   });
 
@@ -525,8 +906,193 @@ describe('File Methods', () => {
       }
     });
 
+    it('should persist storage metadata when provided', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const fileId = uuidv4();
+
+      await fileMethods.createFile({
+        file_id: fileId,
+        user: userId,
+        filename: 'region-file.txt',
+        filepath: '/old-path/file.txt',
+        type: 'text/plain',
+        bytes: 100,
+      });
+
+      await fileMethods.batchUpdateFiles([
+        {
+          file_id: fileId,
+          filepath: '/new-path/file.txt',
+          storageKey: 'i/r/us-east-2/images/user123/file.txt',
+          storageRegion: 'us-east-2',
+        },
+      ]);
+
+      const file = await fileMethods.findFileById(fileId);
+      expect(file?.filepath).toBe('/new-path/file.txt');
+      expect(file?.storageKey).toBe('i/r/us-east-2/images/user123/file.txt');
+      expect(file?.storageRegion).toBe('us-east-2');
+    });
+
+    it('should not overwrite existing storage metadata when omitted', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const fileId = uuidv4();
+
+      await fileMethods.createFile({
+        file_id: fileId,
+        user: userId,
+        filename: 'existing-metadata.txt',
+        filepath: '/old-path/file.txt',
+        storageKey: 'r/eu-central-1/uploads/user123/file.txt',
+        storageRegion: 'eu-central-1',
+        type: 'text/plain',
+        bytes: 100,
+      });
+
+      await fileMethods.batchUpdateFiles([
+        {
+          file_id: fileId,
+          filepath: '/new-path/file.txt',
+        },
+      ]);
+
+      const file = await fileMethods.findFileById(fileId);
+      expect(file?.filepath).toBe('/new-path/file.txt');
+      expect(file?.storageKey).toBe('r/eu-central-1/uploads/user123/file.txt');
+      expect(file?.storageRegion).toBe('eu-central-1');
+    });
+
     it('should handle empty updates array gracefully', async () => {
       await expect(fileMethods.batchUpdateFiles([])).resolves.toBeUndefined();
+    });
+  });
+
+  describe('sweepOrphanedPreviews', () => {
+    /* The deferred-preview flow runs the deferred render in-process. If the
+     * backend restarts mid-extraction, records stay at `status: 'pending'`
+     * forever. The boot-time sweep transitions stale ones to 'failed'
+     * with `previewError: 'orphaned'` so the frontend stops polling. */
+    const userId = new mongoose.Types.ObjectId();
+
+    /**
+     * Stamp a precise `updatedAt` on a file record. Mongoose timestamps
+     * insist on the current time during create, so we backdate via a
+     * direct collection write afterwards.
+     */
+    async function makeFile(opts: {
+      ageMs: number;
+      status?: 'pending' | 'ready' | 'failed';
+    }): Promise<string> {
+      const fileId = uuidv4();
+      await fileMethods.createFile({
+        file_id: fileId,
+        user: userId,
+        filename: `${fileId}.xlsx`,
+        filepath: `/uploads/${fileId}.xlsx`,
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        bytes: 1024,
+        ...(opts.status ? { status: opts.status } : {}),
+      });
+      const backdated = new Date(Date.now() - opts.ageMs);
+      await File.collection.updateOne({ file_id: fileId }, { $set: { updatedAt: backdated } });
+      return fileId;
+    }
+
+    it('marks stale pending records as failed with previewError:orphaned', async () => {
+      const stale = await makeFile({ ageMs: 10 * 60 * 1000, status: 'pending' });
+      const fresh = await makeFile({ ageMs: 30 * 1000, status: 'pending' });
+
+      const count = await fileMethods.sweepOrphanedPreviews();
+      expect(count).toBe(1);
+
+      const staleAfter = (await fileMethods.findFileById(stale)) as {
+        status?: string;
+        previewError?: string;
+      } | null;
+      expect(staleAfter?.status).toBe('failed');
+      expect(staleAfter?.previewError).toBe('orphaned');
+
+      const freshAfter = (await fileMethods.findFileById(fresh)) as {
+        status?: string;
+      } | null;
+      expect(freshAfter?.status).toBe('pending');
+    });
+
+    it('does not touch records that are already ready or failed (idempotent)', async () => {
+      const ready = await makeFile({ ageMs: 60 * 60 * 1000, status: 'ready' });
+      const failed = await makeFile({ ageMs: 60 * 60 * 1000, status: 'failed' });
+
+      const count = await fileMethods.sweepOrphanedPreviews();
+      expect(count).toBe(0);
+
+      const readyAfter = (await fileMethods.findFileById(ready)) as { status?: string } | null;
+      const failedAfter = (await fileMethods.findFileById(failed)) as { status?: string } | null;
+      expect(readyAfter?.status).toBe('ready');
+      expect(failedAfter?.status).toBe('failed');
+    });
+
+    it('does not touch legacy records with no status field (back-compat)', async () => {
+      const legacy = await makeFile({ ageMs: 60 * 60 * 1000 }); // no status set
+      const count = await fileMethods.sweepOrphanedPreviews();
+      expect(count).toBe(0);
+      const after = (await fileMethods.findFileById(legacy)) as { status?: string } | null;
+      expect(after?.status).toBeUndefined();
+    });
+
+    it('respects a custom maxAgeMs cutoff', async () => {
+      const old10s = await makeFile({ ageMs: 10 * 1000, status: 'pending' });
+      const old1m = await makeFile({ ageMs: 60 * 1000, status: 'pending' });
+
+      // Cutoff = 30s — only the 60s-old record should be swept.
+      const count = await fileMethods.sweepOrphanedPreviews(30 * 1000);
+      expect(count).toBe(1);
+
+      const tenSecAfter = (await fileMethods.findFileById(old10s)) as { status?: string } | null;
+      const oneMinAfter = (await fileMethods.findFileById(old1m)) as {
+        status?: string;
+        previewError?: string;
+      } | null;
+      expect(tenSecAfter?.status).toBe('pending');
+      expect(oneMinAfter?.status).toBe('failed');
+      expect(oneMinAfter?.previewError).toBe('orphaned');
+    });
+
+    it('returns 0 when there are no stale pending records', async () => {
+      await makeFile({ ageMs: 30 * 1000, status: 'pending' });
+      const count = await fileMethods.sweepOrphanedPreviews();
+      expect(count).toBe(0);
+    });
+
+    describe('strict tenant isolation (boot-time recovery)', () => {
+      afterEach(() => {
+        delete process.env.TENANT_ISOLATION_STRICT;
+        _resetStrictCache();
+      });
+
+      it('throws under strict mode without runAsSystem', async () => {
+        await runAsSystem(() => makeFile({ ageMs: 10 * 60 * 1000, status: 'pending' }));
+        process.env.TENANT_ISOLATION_STRICT = 'true';
+        _resetStrictCache();
+        await expect(fileMethods.sweepOrphanedPreviews()).rejects.toThrow(
+          /Query attempted without tenant context in strict mode/,
+        );
+      });
+
+      it('succeeds under strict mode when wrapped in runAsSystem', async () => {
+        const stale = await runAsSystem(() =>
+          makeFile({ ageMs: 10 * 60 * 1000, status: 'pending' }),
+        );
+        process.env.TENANT_ISOLATION_STRICT = 'true';
+        _resetStrictCache();
+        const count = await runAsSystem(() => fileMethods.sweepOrphanedPreviews());
+        expect(count).toBe(1);
+        const after = (await runAsSystem(() => fileMethods.findFileById(stale))) as {
+          status?: string;
+          previewError?: string;
+        } | null;
+        expect(after?.status).toBe('failed');
+        expect(after?.previewError).toBe('orphaned');
+      });
     });
   });
 });

@@ -39,6 +39,9 @@ export interface SerializableJobData {
   /** Serialized final event for replay */
   finalEvent?: string;
 
+  /** Serialized title event for replay during active-stream resume */
+  titleEvent?: string;
+
   /** Endpoint metadata for abort handling - avoids storing functions */
   endpoint?: string;
   iconURL?: string;
@@ -98,6 +101,16 @@ export interface UsageMetadata {
    * Present for Claude models. Mutually exclusive with input_token_details.
    */
   cache_read_input_tokens?: number;
+  /**
+   * Breakdown of output token counts. Per the LangChain core contract,
+   * `output_tokens` is the sum of all output token types — these fields
+   * are subsets of `output_tokens`, *not* additional charges.
+   */
+  output_token_details?: {
+    /** Reasoning/thinking tokens generated as chain-of-thought (o1, Gemini thinking, etc.) */
+    reasoning?: number;
+    audio?: number;
+  };
 }
 
 /**
@@ -129,6 +142,13 @@ export interface ResumeState {
   responseMessageId?: string;
   conversationId?: string;
   sender?: string;
+  titleEvent?: {
+    event: 'title';
+    data?: {
+      conversationId?: string;
+      title?: string;
+    };
+  };
 }
 
 /**
@@ -170,6 +190,18 @@ export interface IJobStore {
 
   /** Cleanup expired jobs */
   cleanup(): Promise<number>;
+
+  /**
+   * Record generation activity for a job (e.g. a chunk was emitted), refreshing
+   * its "last active" timestamp so the stale-running-job failsafe does not reap a
+   * stream that is still producing output.
+   *
+   * In-memory: updates an internal last-activity timestamp used by cleanup().
+   * Redis: no-op — the running-job TTL is already refreshed on each appendChunk.
+   *
+   * @param streamId - The stream identifier
+   */
+  recordActivity?(streamId: string): void;
 
   /** Get total job count */
   getJobCount(): Promise<number>;

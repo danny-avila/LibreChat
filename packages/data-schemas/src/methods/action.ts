@@ -14,11 +14,7 @@ export function createActionMethods(mongoose: typeof import('mongoose')) {
   ): Promise<IAction | null> {
     const Action = mongoose.models.Action as Model<IAction>;
     const options = { new: true, upsert: true };
-    return (await Action.findOneAndUpdate(
-      searchParams,
-      updateData,
-      options,
-    ).lean()) as IAction | null;
+    return await Action.findOneAndUpdate(searchParams, updateData, options).lean<IAction>();
   }
 
   /**
@@ -29,7 +25,7 @@ export function createActionMethods(mongoose: typeof import('mongoose')) {
     includeSensitive = false,
   ): Promise<IAction[]> {
     const Action = mongoose.models.Action as Model<IAction>;
-    const actions = (await Action.find(searchParams).lean()) as IAction[];
+    const actions = await Action.find(searchParams).lean<IAction[]>();
 
     if (!includeSensitive) {
       for (let i = 0; i < actions.length; i++) {
@@ -54,7 +50,7 @@ export function createActionMethods(mongoose: typeof import('mongoose')) {
    */
   async function deleteAction(searchParams: FilterQuery<IAction>): Promise<IAction | null> {
     const Action = mongoose.models.Action as Model<IAction>;
-    return (await Action.findOneAndDelete(searchParams).lean()) as IAction | null;
+    return await Action.findOneAndDelete(searchParams).lean<IAction>();
   }
 
   /**

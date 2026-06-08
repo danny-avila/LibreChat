@@ -37,6 +37,51 @@ beforeEach(async () => {
   await mongoose.connection.dropDatabase();
 });
 
+describe('User schema indexes', () => {
+  test('should define an issuer-bound idOnTheSource lookup index', async () => {
+    await User.syncIndexes();
+
+    const indexes = await User.collection.indexes();
+
+    expect(indexes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: { idOnTheSource: 1, openidIssuer: 1, tenantId: 1 },
+        }),
+      ]),
+    );
+  });
+
+  test('should allow the same OpenID subject from different issuers', async () => {
+    await User.syncIndexes();
+
+    await User.create({
+      email: 'issuer-a@example.com',
+      provider: 'openid',
+      openidId: 'shared-sub',
+      openidIssuer: 'https://issuer-a.example.com',
+    });
+
+    await expect(
+      User.create({
+        email: 'issuer-b@example.com',
+        provider: 'openid',
+        openidId: 'shared-sub',
+        openidIssuer: 'https://issuer-b.example.com',
+      }),
+    ).resolves.toBeTruthy();
+
+    await expect(
+      User.create({
+        email: 'issuer-a-duplicate@example.com',
+        provider: 'openid',
+        openidId: 'shared-sub',
+        openidIssuer: 'https://issuer-a.example.com',
+      }),
+    ).rejects.toThrow(/duplicate key/);
+  });
+});
+
 describe('User Methods - Database Tests', () => {
   describe('findUser', () => {
     test('should find user by exact email', async () => {
@@ -443,6 +488,34 @@ describe('User Methods - Database Tests', () => {
       const results = await methods.searchUsers({ searchPattern: '   ' });
 
       expect(results).toEqual([]);
+    });
+
+    test('should treat regex metacharacters as literal search text', async () => {
+      await User.create({
+        name: 'Literal .* User',
+        email: 'literal-star@test.com',
+        username: 'literal-star',
+        provider: 'local',
+      });
+
+      const results = await methods.searchUsers({ searchPattern: '.*' });
+
+      expect(results).toHaveLength(1);
+      expect((results[0] as unknown as t.IUser).name).toBe('Literal .* User');
+    });
+
+    test('should handle invalid regex syntax as literal search text', async () => {
+      await User.create({
+        name: 'Regex [invalid User',
+        email: 'regex-invalid@test.com',
+        username: 'regex-invalid',
+        provider: 'local',
+      });
+
+      const results = await methods.searchUsers({ searchPattern: '[invalid' });
+
+      expect(results).toHaveLength(1);
+      expect((results[0] as unknown as t.IUser).name).toBe('Regex [invalid User');
     });
 
     test('should apply field selection', async () => {

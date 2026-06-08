@@ -12,6 +12,7 @@ import { MarketplaceProvider } from '~/components/Agents/MarketplaceContext';
 import AgentMarketplace from '~/components/Agents/Marketplace';
 import { OAuthSuccess, OAuthError } from '~/components/OAuth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
+import WithRum from '~/lib/rum/WithRum';
 import RouteErrorBoundary from './RouteErrorBoundary';
 import StartupLayout from './Layouts/Startup';
 import LoginLayout from './Layouts/Login';
@@ -23,7 +24,9 @@ import Root from './Root';
 
 const AuthLayout = () => (
   <AuthContextProvider>
-    <Outlet />
+    <WithRum>
+      <Outlet />
+    </WithRum>
     <ApiErrorWatcher />
   </AuthContextProvider>
 );
@@ -31,6 +34,21 @@ const AuthLayout = () => (
 const loadInlinePromptsView = () =>
   import('~/components/Prompts/layouts/InlinePromptsView').then((m) => ({
     Component: m.default,
+  }));
+
+const loadSkillsView = () =>
+  import('~/components/Skills/layouts/SkillsView').then((m) => ({
+    Component: m.default,
+  }));
+
+const loadProjectsView = () =>
+  import('~/components/Projects').then((m) => ({
+    Component: m.ProjectsView,
+  }));
+
+const loadProjectWorkspace = () =>
+  import('~/components/Projects').then((m) => ({
+    Component: m.ProjectWorkspace,
   }));
 
 const baseEl = document.querySelector('base');
@@ -127,6 +145,30 @@ export const router = createBrowserRouter(
             {
               path: 'prompts/:promptId',
               lazy: loadInlinePromptsView,
+            },
+            {
+              path: 'skills',
+              lazy: loadSkillsView,
+            },
+            {
+              path: 'skills/new',
+              lazy: loadSkillsView,
+            },
+            {
+              path: 'skills/:skillId',
+              lazy: loadSkillsView,
+            },
+            {
+              path: 'skills/:skillId/edit',
+              lazy: loadSkillsView,
+            },
+            {
+              path: 'projects',
+              lazy: loadProjectsView,
+            },
+            {
+              path: 'projects/:projectId',
+              lazy: loadProjectWorkspace,
             },
             {
               path: 'agents',

@@ -74,6 +74,9 @@ const userSchema = new Schema<IUser>(
     openidId: {
       type: String,
     },
+    openidIssuer: {
+      type: String,
+    },
     samlId: {
       type: String,
     },
@@ -145,6 +148,11 @@ const userSchema = new Schema<IUser>(
       ],
       default: [],
     },
+    skillStates: {
+      type: Map,
+      of: Boolean,
+      default: () => new Map(),
+    },
     /** Field for external source identification (for consistency with TPrincipal schema) */
     idOnTheSource: {
       type: String,
@@ -160,6 +168,7 @@ const userSchema = new Schema<IUser>(
 
 userSchema.index({ email: 1, tenantId: 1 }, { unique: true });
 userSchema.index({ role: 1, tenantId: 1 });
+userSchema.index({ idOnTheSource: 1, openidIssuer: 1, tenantId: 1 });
 
 const oAuthIdFields = [
   'googleId',
@@ -173,6 +182,14 @@ const oAuthIdFields = [
 ] as const;
 
 for (const field of oAuthIdFields) {
+  if (field === 'openidId') {
+    userSchema.index(
+      { openidId: 1, openidIssuer: 1, tenantId: 1 },
+      { unique: true, partialFilterExpression: { openidId: { $exists: true } } },
+    );
+    continue;
+  }
+
   userSchema.index(
     { [field]: 1, tenantId: 1 },
     { unique: true, partialFilterExpression: { [field]: { $exists: true } } },

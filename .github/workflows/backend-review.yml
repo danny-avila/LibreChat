@@ -1,14 +1,12 @@
 name: Backend Unit Tests
 on:
   pull_request:
-    branches:
-      - main
-      - dev
-      - dev-staging
-      - release/*
     paths:
       - 'api/**'
       - 'packages/**'
+
+permissions:
+  contents: read
 
 env:
   NODE_ENV: CI
@@ -22,10 +20,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js 20.19
+      - name: Use Node.js 24.16.0
         uses: actions/setup-node@v4
         with:
-          node-version: '20.19'
+          node-version: '24.16.0'
 
       - name: Restore node_modules cache
         id: cache-node-modules
@@ -37,7 +35,7 @@ jobs:
             packages/api/node_modules
             packages/data-provider/node_modules
             packages/data-schemas/node_modules
-          key: node-modules-backend-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
+          key: node-modules-backend-${{ runner.os }}-24.16.0-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
@@ -105,10 +103,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js 20.19
+      - name: Use Node.js 24.16.0
         uses: actions/setup-node@v4
         with:
-          node-version: '20.19'
+          node-version: '24.16.0'
 
       - name: Restore node_modules cache
         id: cache-node-modules
@@ -120,7 +118,7 @@ jobs:
             packages/api/node_modules
             packages/data-provider/node_modules
             packages/data-schemas/node_modules
-          key: node-modules-backend-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
+          key: node-modules-backend-${{ runner.os }}-24.16.0-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
@@ -164,10 +162,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js 20.19
+      - name: Use Node.js 24.16.0
         uses: actions/setup-node@v4
         with:
-          node-version: '20.19'
+          node-version: '24.16.0'
 
       - name: Restore node_modules cache
         id: cache-node-modules
@@ -179,7 +177,7 @@ jobs:
             packages/api/node_modules
             packages/data-provider/node_modules
             packages/data-schemas/node_modules
-          key: node-modules-backend-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
+          key: node-modules-backend-${{ runner.os }}-24.16.0-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
@@ -233,10 +231,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js 20.19
+      - name: Use Node.js 24.16.0
         uses: actions/setup-node@v4
         with:
-          node-version: '20.19'
+          node-version: '24.16.0'
 
       - name: Restore node_modules cache
         id: cache-node-modules
@@ -248,7 +246,7 @@ jobs:
             packages/api/node_modules
             packages/data-provider/node_modules
             packages/data-schemas/node_modules
-          key: node-modules-backend-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
+          key: node-modules-backend-${{ runner.os }}-24.16.0-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
@@ -291,10 +289,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js 20.19
+      - name: Use Node.js 24.16.0
         uses: actions/setup-node@v4
         with:
-          node-version: '20.19'
+          node-version: '24.16.0'
 
       - name: Restore node_modules cache
         id: cache-node-modules
@@ -306,7 +304,7 @@ jobs:
             packages/api/node_modules
             packages/data-provider/node_modules
             packages/data-schemas/node_modules
-          key: node-modules-backend-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
+          key: node-modules-backend-${{ runner.os }}-24.16.0-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
@@ -329,10 +327,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js 20.19
+      - name: Use Node.js 24.16.0
         uses: actions/setup-node@v4
         with:
-          node-version: '20.19'
+          node-version: '24.16.0'
 
       - name: Restore node_modules cache
         id: cache-node-modules
@@ -344,7 +342,7 @@ jobs:
             packages/api/node_modules
             packages/data-provider/node_modules
             packages/data-schemas/node_modules
-          key: node-modules-backend-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
+          key: node-modules-backend-${{ runner.os }}-24.16.0-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
@@ -369,14 +367,18 @@ jobs:
     name: 'Tests: @librechat/api'
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Suite typically completes in ~5 min on a warm runner, but tail-latency
+    # cancellations have started showing up: tests are actively passing right
+    # up to the timeout, then the job is killed mid-suite. Bump headroom to
+    # absorb GitHub Actions runner variance.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js 20.19
+      - name: Use Node.js 24.16.0
         uses: actions/setup-node@v4
         with:
-          node-version: '20.19'
+          node-version: '24.16.0'
 
       - name: Restore node_modules cache
         id: cache-node-modules
@@ -388,7 +390,7 @@ jobs:
             packages/api/node_modules
             packages/data-provider/node_modules
             packages/data-schemas/node_modules
-          key: node-modules-backend-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
+          key: node-modules-backend-${{ runner.os }}-24.16.0-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'

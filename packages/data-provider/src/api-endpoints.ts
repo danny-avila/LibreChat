@@ -1,3 +1,4 @@
+import type { StartupConfigContext } from './config';
 import type { AssistantsEndpoint } from './schemas';
 import * as q from './types/queries';
 import { ResourceType } from './accessPermissions';
@@ -73,13 +74,12 @@ export const shareMessages = (shareId: string) => `${shareRoot}/${shareId}`;
 export const getSharedLink = (conversationId: string) => `${shareRoot}/link/${conversationId}`;
 export const getSharedLinks = (
   pageSize: number,
-  isPublic: boolean,
   sortBy: 'title' | 'createdAt',
   sortDirection: 'asc' | 'desc',
   search?: string,
   cursor?: string,
 ) =>
-  `${shareRoot}?pageSize=${pageSize}&isPublic=${isPublic}&sortBy=${sortBy}&sortDirection=${sortDirection}${
+  `${shareRoot}?pageSize=${pageSize}&sortBy=${sortBy}&sortDirection=${sortDirection}${
     search ? `&search=${search}` : ''
   }${cursor ? `&cursor=${cursor}` : ''}`;
 export const createSharedLink = (conversationId: string) => `${shareRoot}/${conversationId}`;
@@ -125,6 +125,17 @@ export const importConversation = () => `${conversationsRoot}/import`;
 export const forkConversation = () => `${conversationsRoot}/fork`;
 
 export const duplicateConversation = () => `${conversationsRoot}/duplicate`;
+
+export const projectsRoot = `${BASE_URL}/api/projects`;
+
+export const projects = (params: q.ProjectListParams = {}) => {
+  return `${projectsRoot}${buildQuery(params)}`;
+};
+
+export const projectById = (id: string) => `${projectsRoot}/${encodeURIComponent(id)}`;
+
+export const projectConversation = (conversationId: string) =>
+  `${projectsRoot}/conversations/${encodeURIComponent(conversationId)}`;
 
 export const search = (q: string, cursor?: string | null) =>
   `${BASE_URL}/api/search?q=${q}${cursor ? `&cursor=${cursor}` : ''}`;
@@ -212,7 +223,8 @@ export const mcpOAuthBind = (serverName: string) => `${BASE_URL}/api/mcp/${serve
 export const actionOAuthBind = (actionId: string) =>
   `${BASE_URL}/api/actions/${actionId}/oauth/bind`;
 
-export const config = () => `${BASE_URL}/api/config`;
+export const config = (context?: StartupConfigContext) =>
+  `${BASE_URL}/api/config${buildQuery({ context })}`;
 
 export const prompts = () => `${BASE_URL}/api/prompts`;
 
@@ -284,6 +296,11 @@ export const fileUpload = () => `${BASE_URL}/api/files`;
 export const fileDelete = () => `${BASE_URL}/api/files`;
 export const fileDownload = (userId: string, fileId: string) =>
   `${BASE_URL}/api/files/download/${userId}/${fileId}`;
+/* Deferred-preview lifecycle endpoint. Returns
+ * `{ status, text?, textFormat?, previewError? }` so the frontend can
+ * poll while background HTML extraction is in flight. See PR #12957. */
+export const filePreview = (fileId: string) =>
+  `${BASE_URL}/api/files/${encodeURIComponent(fileId)}/preview`;
 export const fileConfig = () => `${BASE_URL}/api/files/config`;
 export const agentFiles = (agentId: string) => `${BASE_URL}/api/files/agent/${agentId}`;
 
@@ -359,6 +376,50 @@ export const getCategories = () => `${BASE_URL}/api/categories`;
 
 export const getAllPromptGroups = () => `${prompts()}/all`;
 
+/* Skills */
+export const skills = () => `${BASE_URL}/api/skills`;
+export const importSkill = () => `${skills()}/import`;
+
+export const getSkill = (id: string) => `${skills()}/${encodeURIComponent(id)}`;
+
+export const listSkillsWithFilters = (
+  filter: Record<string, string | number | undefined | null>,
+) => {
+  const cleaned = Object.entries(filter).reduce(
+    (acc, [key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        acc[key] = String(value);
+      }
+      return acc;
+    },
+    {} as Record<string, string>,
+  );
+  const query =
+    Object.keys(cleaned).length > 0 ? `?${new URLSearchParams(cleaned).toString()}` : '';
+  return `${skills()}${query}`;
+};
+
+export const skillFiles = (id: string) => `${getSkill(id)}/files`;
+
+export const skillFile = (id: string, relativePath: string) =>
+  `${skillFiles(id)}/${encodeURIComponent(relativePath)}`;
+
+/**
+ * Skill filesystem tree (phase 2). URL shape mirrors the original UI PR so
+ * the tree hooks keep their call surface. `path` is pre-encoded by the
+ * caller (e.g. `${nodeId}/content`).
+ */
+export const skillTree = ({ skillId, path = '' }: { skillId: string; path?: string }) => {
+  let url = `${BASE_URL}/api/skills/${encodeURIComponent(skillId)}/tree`;
+  if (path) {
+    url += `/${path}`;
+  }
+  return url;
+};
+
+/* Skill active states (per-user overrides) */
+export const skillStates = () => `${BASE_URL}/api/user/settings/skills/active`;
+
 /* Roles */
 export const roles = () => `${BASE_URL}/api/roles`;
 export const adminRoles = () => `${BASE_URL}/api/admin/roles`;
@@ -374,6 +435,7 @@ export const updateRemoteAgentsPermissions = (roleName: string) =>
 
 export const updateMarketplacePermissions = (roleName: string) =>
   `${getRole(roleName)}/marketplace`;
+export const updateSkillPermissions = (roleName: string) => `${getRole(roleName)}/skills`;
 
 /* Conversation Tags */
 export const conversationTags = (tag?: string) =>

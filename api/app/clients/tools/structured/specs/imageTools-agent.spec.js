@@ -12,8 +12,8 @@ const axios = require('axios');
 const OpenAI = require('openai');
 const undici = require('undici');
 const fetch = require('node-fetch');
-const { ToolMessage } = require('@langchain/core/messages');
 const { ContentTypes } = require('librechat-data-provider');
+const { ToolMessage } = require('@librechat/agents/langchain/messages');
 const StableDiffusionAPI = require('../StableDiffusion');
 const FluxAPI = require('../FluxAPI');
 const DALLE3 = require('../DALLE3');
@@ -99,6 +99,24 @@ describe('image tools - agent mode ToolMessage format', () => {
       expect(dalle.responseFormat).not.toBe('content_and_artifact');
     });
 
+    it('keeps tenant context without retaining the request object', () => {
+      const req = {
+        user: { id: 'user-1', tenantId: 'tenant-a' },
+        body: { conversationId: 'convo-1', isTemporary: 'true' },
+        config: { interfaceConfig: { retentionMode: 'all' } },
+        socket: {},
+      };
+      const dalle = new DALLE3({ isAgent: false, processFileURL: jest.fn(), req });
+
+      expect(dalle.tenantId).toBe('tenant-a');
+      expect(dalle.req).toBeUndefined();
+      expect(dalle.retentionRequest).toEqual({
+        user: { id: 'user-1', tenantId: 'tenant-a' },
+        body: { conversationId: 'convo-1', isTemporary: 'true' },
+        config: { interfaceConfig: { retentionMode: 'all' } },
+      });
+    });
+
     it('invoke() returns ToolMessage with base64 in artifact, not serialized in content', async () => {
       const dalle = new DALLE3({ isAgent: true });
       const result = await dalle.invoke(
@@ -170,6 +188,93 @@ describe('image tools - agent mode ToolMessage format', () => {
     it('does not set responseFormat when isAgent is false', () => {
       const flux = new FluxAPI({ isAgent: false, processFileURL: jest.fn() });
       expect(flux.responseFormat).not.toBe('content_and_artifact');
+    });
+
+    it('keeps tenant context without retaining the request object', () => {
+      const req = {
+        user: { id: 'user-1', tenantId: 'tenant-a' },
+        body: { conversationId: 'convo-1', isTemporary: 'true' },
+        config: { interfaceConfig: { retentionMode: 'all' } },
+        socket: {},
+      };
+      const flux = new FluxAPI({ isAgent: false, processFileURL: jest.fn(), req });
+
+      expect(flux.tenantId).toBe('tenant-a');
+      expect(flux.req).toBeUndefined();
+      expect(flux.retentionRequest).toEqual({
+        user: { id: 'user-1', tenantId: 'tenant-a' },
+        body: { conversationId: 'convo-1', isTemporary: 'true' },
+        config: { interfaceConfig: { retentionMode: 'all' } },
+      });
+    });
+
+    it('passes minimal retention context when saving generated images', async () => {
+      const processFileURL = jest.fn().mockResolvedValue({ filepath: '/images/generated.png' });
+      const req = {
+        user: { id: 'user-1', tenantId: 'tenant-a' },
+        body: { conversationId: 'convo-1', isTemporary: 'true' },
+        config: { interfaceConfig: { retentionMode: 'all' } },
+        socket: {},
+      };
+      const flux = new FluxAPI({
+        isAgent: false,
+        processFileURL,
+        req,
+        userId: 'user-1',
+        fileStrategy: 'local',
+      });
+      const invokePromise = flux.invoke(
+        makeToolCall('flux', { prompt: 'a box', endpoint: '/v1/flux-dev' }),
+      );
+      await jest.runAllTimersAsync();
+      await invokePromise;
+
+      expect(processFileURL).toHaveBeenCalledWith(
+        expect.objectContaining({
+          req: {
+            user: { id: 'user-1', tenantId: 'tenant-a' },
+            body: { conversationId: 'convo-1', isTemporary: 'true' },
+            config: { interfaceConfig: { retentionMode: 'all' } },
+          },
+        }),
+      );
+    });
+
+    it('passes minimal retention context when saving finetuned generated images', async () => {
+      const processFileURL = jest.fn().mockResolvedValue({ filepath: '/images/generated.png' });
+      const req = {
+        user: { id: 'user-1', tenantId: 'tenant-a' },
+        body: { conversationId: 'convo-1', isTemporary: 'true' },
+        config: { interfaceConfig: { retentionMode: 'all' } },
+        socket: {},
+      };
+      const flux = new FluxAPI({
+        isAgent: false,
+        processFileURL,
+        req,
+        userId: 'user-1',
+        fileStrategy: 'local',
+      });
+      const invokePromise = flux.invoke(
+        makeToolCall('flux', {
+          action: 'generate_finetuned',
+          prompt: 'a box',
+          finetune_id: 'ft-abc123',
+          endpoint: '/v1/flux-pro-finetuned',
+        }),
+      );
+      await jest.runAllTimersAsync();
+      await invokePromise;
+
+      expect(processFileURL).toHaveBeenCalledWith(
+        expect.objectContaining({
+          req: {
+            user: { id: 'user-1', tenantId: 'tenant-a' },
+            body: { conversationId: 'convo-1', isTemporary: 'true' },
+            config: { interfaceConfig: { retentionMode: 'all' } },
+          },
+        }),
+      );
     });
 
     it('invoke() returns ToolMessage with base64 in artifact, not serialized in content', async () => {

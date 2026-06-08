@@ -1,4 +1,4 @@
-import { TokenMethods } from '@librechat/data-schemas';
+import { logger, TokenMethods } from '@librechat/data-schemas';
 import { FlowStateManager, MCPConnection, MCPOAuthTokens, MCPOptions } from '../..';
 import { MCPManager } from '../MCPManager';
 import { OAuthReconnectionManager } from './OAuthReconnectionManager';
@@ -544,6 +544,54 @@ describe('OAuthReconnectionManager', () => {
       expect(mockMCPManager.getUserConnection).toHaveBeenCalledWith(
         expect.objectContaining({ serverName: 'server3' }),
       );
+    });
+  });
+
+  describe('fire-and-forget reconnect safety', () => {
+    let reconnectionTracker: OAuthReconnectionTracker;
+
+    beforeEach(async () => {
+      reconnectionTracker = new OAuthReconnectionTracker();
+      reconnectionManager = await OAuthReconnectionManager.createInstance(
+        flowManager,
+        tokenMethods,
+        reconnectionTracker,
+      );
+    });
+
+    /**
+     * Regression test for discussion #12078: a registry rejection from
+     * `getServerConfig` during a reconnect storm previously escaped as an
+     * unhandled promise rejection (Node 15+ terminates the process). The
+     * rejection must be caught and the tracker must be cleaned up so the
+     * server does not stay stuck in `active` state for the full
+     * `RECONNECTION_TIMEOUT_MS` window before retries become possible again.
+     */
+    it('should clean up tracker state when getServerConfig rejects', async () => {
+      const userId = 'user-123';
+      const oauthServers = new Set(['server1']);
+      (mockRegistryInstance.getOAuthServers as jest.Mock).mockResolvedValue(oauthServers);
+
+      tokenMethods.findToken.mockResolvedValue({
+        userId,
+        identifier: 'mcp:server1',
+        expiresAt: new Date(Date.now() + 3600000),
+      } as unknown as MCPOAuthTokens);
+
+      const boom = new Error('boom');
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockRejectedValue(boom);
+
+      await expect(reconnectionManager.reconnectServers(userId)).resolves.toBeUndefined();
+
+      // Flush any microtasks attached inside safeTryReconnect / tryReconnect
+      await new Promise((resolve) => setImmediate(resolve));
+
+      // The rejection must be reported (warn from the inner catch) and the
+      // tracker must be returned to a state that allows future retries.
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Failed to reconnect'));
+      expect(reconnectionTracker.isActive(userId, 'server1')).toBe(false);
+      expect(reconnectionTracker.isFailed(userId, 'server1')).toBe(true);
+      expect(mockMCPManager.disconnectUserConnection).toHaveBeenCalledWith(userId, 'server1');
     });
   });
 

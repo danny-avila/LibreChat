@@ -1,24 +1,72 @@
+/**
+ * Stub `buildBashExecutionToolDescription` since the installed SDK version
+ * may pre-date the export. Kept as a partial mock so `Providers` and the
+ * rest of the namespace come through `jest.requireActual`.
+ */
+jest.mock('@librechat/agents', () => ({
+  ...jest.requireActual('@librechat/agents'),
+  ReadFileToolDefinition: {
+    name: 'read_file',
+    description: 'read skill files using {skillName}/{filePath} and SKILL.md',
+    parameters: {
+      type: 'object',
+      properties: {
+        file_path: {
+          type: 'string',
+          description: 'For skill files: "{skillName}/{path}".',
+        },
+      },
+    },
+    responseFormat: 'content',
+  },
+  BashExecutionToolDefinition: {
+    name: 'bash_tool',
+    description: 'bash',
+    schema: { type: 'object', properties: {} },
+  },
+  buildBashExecutionToolDescription: ({
+    enableToolOutputReferences,
+  }: {
+    enableToolOutputReferences?: boolean;
+  } = {}): string =>
+    enableToolOutputReferences === true ? 'bash {{tool<idx>turn<turn>}}' : 'bash',
+}));
+
 import { Providers } from '@librechat/agents';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, Tools } from 'librechat-data-provider';
 import type { Agent } from 'librechat-data-provider';
 import type { ServerRequest, InitializeResultBase, EndpointTokenConfig } from '~/types';
 import type { InitializeAgentDbMethods } from '../initialize';
 import { DEFAULT_MAX_CONTEXT_TOKENS } from '../initialize';
 
-// Mock logger
+// Mock logger — `format` must be a callable factory so @librechat/data-schemas
+// dist module-load completes cleanly; see api/test/__mocks__/logger.js.
 jest.mock('winston', () => ({
   createLogger: jest.fn(() => ({
     debug: jest.fn(),
     warn: jest.fn(),
     error: jest.fn(),
+    info: jest.fn(),
   })),
-  format: {
-    combine: jest.fn(),
-    colorize: jest.fn(),
-    simple: jest.fn(),
-  },
+  format: Object.assign(
+    jest.fn((fn) => () => ({ transform: fn })),
+    {
+      combine: jest.fn(),
+      colorize: jest.fn(),
+      simple: jest.fn(),
+      label: jest.fn(),
+      timestamp: jest.fn(),
+      printf: jest.fn(),
+      errors: jest.fn(),
+      splat: jest.fn(),
+      json: jest.fn(),
+    },
+  ),
+  addColors: jest.fn(),
   transports: {
     Console: jest.fn(),
+    DailyRotateFile: jest.fn(),
+    File: jest.fn(),
   },
 }));
 
@@ -78,6 +126,13 @@ function createMocks(overrides?: {
   maxOutputTokens?: number;
   endpointTokenConfig?: EndpointTokenConfig;
   useRealTokenLookup?: boolean;
+  providerTools?: unknown[];
+  loadedToolDefinitions?: Array<{
+    name: string;
+    description?: string;
+    parameters?: object;
+  }>;
+  structuredTools?: unknown[];
 }) {
   const {
     provider = Providers.OPENAI,
@@ -88,6 +143,9 @@ function createMocks(overrides?: {
     maxOutputTokens = 4096,
     endpointTokenConfig,
     useRealTokenLookup = false,
+    providerTools,
+    loadedToolDefinitions = [],
+    structuredTools = [],
   } = overrides ?? {};
 
   const resolvedOverrideProvider = overrideProvider ?? provider;
@@ -110,6 +168,7 @@ function createMocks(overrides?: {
   const mockGetOptions = jest.fn().mockResolvedValue({
     llmConfig: { model, maxTokens: maxOutputTokens },
     endpointTokenConfig,
+    ...(providerTools !== undefined ? { tools: providerTools } : {}),
   } satisfies InitializeResultBase);
 
   mockGetProviderConfig.mockReturnValue({
@@ -133,11 +192,12 @@ function createMocks(overrides?: {
   mockOptionalChainWithEmptyCheck.mockImplementation(realUtils.optionalChainWithEmptyCheck);
 
   const loadTools = jest.fn().mockResolvedValue({
-    tools: [],
+    tools: structuredTools,
     toolContextMap: {},
+    dynamicToolContextMap: {},
     userMCPAuthMap: undefined,
     toolRegistry: undefined,
-    toolDefinitions: [],
+    toolDefinitions: loadedToolDefinitions,
     hasDeferredTools: false,
   });
 
@@ -151,6 +211,36 @@ function createMocks(overrides?: {
   };
 
   return { agent, req, res, loadTools, db };
+}
+
+function countNamedWebSearchTools(tools: unknown[] | undefined): number {
+  return (
+    tools?.filter((tool) => {
+      if (tool == null || typeof tool !== 'object') {
+        return false;
+      }
+      const { name } = tool as { name?: unknown };
+      return name === Tools.web_search;
+    }).length ?? 0
+  );
+}
+
+function countGoogleSearchTools(tools: unknown[] | undefined): number {
+  return (
+    tools?.filter((tool) => {
+      if (tool == null || typeof tool !== 'object') {
+        return false;
+      }
+      return 'googleSearch' in tool || 'googleSearchRetrieval' in tool;
+    }).length ?? 0
+  );
+}
+
+function countWebSearchDefinitions(toolDefinitions: Array<{ name: string }> | undefined): number {
+  return (
+    toolDefinitions?.filter((toolDefinition) => toolDefinition.name === Tools.web_search).length ??
+    0
+  );
 }
 
 describe('initializeAgent — custom provider token lookup', () => {
@@ -224,6 +314,323 @@ describe('initializeAgent — custom provider token lookup', () => {
     // optionalChainWithEmptyCheck → Math.max formula. The toHaveBeenCalledWith
     // assertion above catches the actual provider-resolution regression.
     expect(result.maxContextTokens).toBe(Math.round((65536 - 4096) * 0.95));
+  });
+});
+
+describe('initializeAgent — provider web_search precedence', () => {
+  const nativeWebSearchTool = {
+    type: 'web_search_20250305',
+    name: Tools.web_search,
+  };
+  const nativeGoogleSearchTool = { googleSearch: {} };
+  const libreChatWebSearchDefinition = {
+    name: Tools.web_search,
+    description: 'Search the web',
+    parameters: { type: 'object', properties: {} },
+  };
+  const mcpToolDefinition = {
+    name: 'mcp_lookup',
+    description: 'Lookup context',
+    parameters: { type: 'object', properties: {} },
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('keeps Anthropic native web_search when LibreChat search is not selected', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.ANTHROPIC,
+      providerTools: [nativeWebSearchTool],
+    });
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.ANTHROPIC]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([nativeWebSearchTool]);
+    expect(countNamedWebSearchTools(result.tools)).toBe(1);
+    expect(countWebSearchDefinitions(result.toolDefinitions)).toBe(0);
+  });
+
+  it('keeps LibreChat web_search definitions when native Anthropic search is not enabled', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.ANTHROPIC,
+      loadedToolDefinitions: [libreChatWebSearchDefinition],
+    });
+    agent.tools = [Tools.web_search];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.ANTHROPIC]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([]);
+    expect(countNamedWebSearchTools(result.tools)).toBe(0);
+    expect(countWebSearchDefinitions(result.toolDefinitions)).toBe(1);
+  });
+
+  it('prefers LibreChat web_search when Anthropic native search is also enabled', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.ANTHROPIC,
+      providerTools: [nativeWebSearchTool],
+      loadedToolDefinitions: [libreChatWebSearchDefinition],
+    });
+    agent.tools = [Tools.web_search];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.ANTHROPIC]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([]);
+    expect(countNamedWebSearchTools(result.tools)).toBe(0);
+    expect(countWebSearchDefinitions(result.toolDefinitions)).toBe(1);
+  });
+
+  it('keeps Google native search when LibreChat web_search is not selected', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.GOOGLE,
+      model: 'gemini-3.5-flash',
+      providerTools: [nativeGoogleSearchTool],
+      loadedToolDefinitions: [mcpToolDefinition],
+    });
+    agent.tools = ['mcp_lookup'];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.GOOGLE]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([nativeGoogleSearchTool]);
+    expect(countGoogleSearchTools(result.tools)).toBe(1);
+    expect(result.toolDefinitions).toContain(mcpToolDefinition);
+  });
+
+  it('rejects Google native search with external tools for unsupported Gemini models', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.GOOGLE,
+      model: 'gemini-2.5-flash',
+      providerTools: [nativeGoogleSearchTool],
+      loadedToolDefinitions: [mcpToolDefinition],
+    });
+    agent.tools = ['mcp_lookup'];
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.GOOGLE]),
+          isInitialAgent: true,
+        },
+        db,
+      ),
+    ).rejects.toThrow(/google_tool_conflict/);
+  });
+
+  it('prefers LibreChat web_search when Google native search is also enabled', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.GOOGLE,
+      providerTools: [nativeGoogleSearchTool],
+      loadedToolDefinitions: [libreChatWebSearchDefinition],
+    });
+    agent.tools = [Tools.web_search];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.GOOGLE]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([]);
+    expect(countGoogleSearchTools(result.tools)).toBe(0);
+    expect(countWebSearchDefinitions(result.toolDefinitions)).toBe(1);
+  });
+
+  it('leaves providers without a native web search conflict unchanged', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.OPENAI,
+      providerTools: [nativeWebSearchTool],
+      loadedToolDefinitions: [libreChatWebSearchDefinition],
+    });
+    agent.tools = [Tools.web_search];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([nativeWebSearchTool]);
+    expect(countNamedWebSearchTools(result.tools)).toBe(1);
+    expect(countWebSearchDefinitions(result.toolDefinitions)).toBe(1);
+  });
+});
+
+describe('initializeAgent — stable and dynamic instruction fields', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('moves instructions with temporal special vars into the dynamic tail using the conversation anchor', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.instructions = 'Conversation opened at {{iso_datetime}}';
+    req.conversationCreatedAt = '2023-12-31T23:59:58.000Z';
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.instructions).toBeUndefined();
+    expect(result.additional_instructions).toBe('Conversation opened at 2023-12-31T23:59:58.000Z');
+  });
+
+  it('keeps non-temporal special vars in stable instructions', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.instructions = 'You are helping {{current_user}}.';
+    req.user = { id: 'user-1', name: 'Test User' } as never;
+    req.conversationCreatedAt = '2023-12-31T23:59:58.000Z';
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.instructions).toBe('You are helping Test User.');
+    expect(result.additional_instructions).toBeUndefined();
+  });
+
+  it('appends generated artifact guidance without replacing existing dynamic instructions', async () => {
+    const { generateArtifactsPrompt } = jest.requireMock('~/prompts') as {
+      generateArtifactsPrompt: jest.Mock;
+    };
+    generateArtifactsPrompt.mockReturnValue('Artifact guidance');
+
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.additional_instructions = 'Existing dynamic';
+    agent.artifacts = 'enabled' as never;
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.additional_instructions).toBe('Existing dynamic\n\nArtifact guidance');
+  });
+});
+
+describe('initializeAgent — attachment scoping', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('keeps request attachments separate from agent context attachments', async () => {
+    const { primeResources } = jest.requireMock('../resources') as {
+      primeResources: jest.Mock;
+    };
+    const requestFile = { file_id: 'request-file', filename: 'request.txt' };
+    const agentContextFile = { file_id: 'agent-context-file', filename: 'agent-context.txt' };
+    primeResources.mockResolvedValueOnce({
+      attachments: [agentContextFile, requestFile],
+      requestAttachments: [requestFile],
+      agentContextAttachments: [agentContextFile],
+      tool_resources: undefined,
+    });
+
+    const { agent, req, res, loadTools, db } = createMocks();
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.attachments).toEqual([agentContextFile, requestFile]);
+    expect(result.requestAttachments).toEqual([requestFile]);
+    expect(result.agentContextAttachments).toEqual([agentContextFile]);
   });
 });
 
@@ -423,37 +830,257 @@ describe('initializeAgent — maxContextTokens', () => {
   });
 });
 
-describe('initializeAgent — custom variable replacement', () => {
+describe('initializeAgent — manual skill priming (Phase 3)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it('replaces custom variables in agent instructions', async () => {
-    const { agent, req, res, loadTools, db } = createMocks();
-    agent.instructions = 'Hello {{name}}, welcome to {{department}}';
+  /**
+   * Minimal listSkillsByAccess that satisfies `injectSkillCatalog` so the
+   * manualSkills resolver branch runs. Returns an empty page — we don't care
+   * about the catalog here, only that `accessibleSkillIds` is non-empty so
+   * the manual-invocation block gets reached.
+   */
+  const emptyListSkillsByAccess: InitializeAgentDbMethods['listSkillsByAccess'] = async () => ({
+    skills: [],
+    has_more: false,
+    after: null,
+  });
 
-    await initializeAgent(
+  it('attaches resolved manual skill primes to the initialized agent', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    /**
+     * Ownership-based active-state default only kicks in when
+     * `skill.author.toString() === userId`. The default mock user id is a
+     * literal string, not an ObjectId, so align the skill author with it so
+     * `resolveSkillActive` treats the skill as owned and active.
+     */
+    const ownerAuthor = {
+      toString: () => req.user?.id,
+    } as unknown as import('mongoose').Types.ObjectId;
+
+    const getSkillByName: InitializeAgentDbMethods['getSkillByName'] = jest.fn().mockResolvedValue({
+      _id: skillId,
+      name: 'brand-guidelines',
+      body: '# Brand guidelines\nUse blue.',
+      author: ownerAuthor,
+    });
+
+    const result = await initializeAgent(
       {
         req,
         res,
         agent,
         loadTools,
-        endpointOption: {
-          endpoint: EModelEndpoint.agents,
-          customVariables: { name: 'Alice', department: 'Engineering' },
-        },
+        endpointOption: { endpoint: EModelEndpoint.agents },
         allowedProviders: new Set([Providers.OPENAI]),
         isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['brand-guidelines'],
       },
-      db,
+      { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
     );
 
-    expect(agent.instructions).toBe('Hello Alice, welcome to Engineering');
+    expect(result.manualSkillPrimes).toEqual([
+      { _id: skillId, name: 'brand-guidelines', body: '# Brand guidelines\nUse blue.' },
+    ]);
+    /* `preferUserInvocable` keeps name-collision lookups consistent with
+       the popover for manual paths — model-only (`userInvocable: false`)
+       duplicates can't shadow the user-invocable doc the user picked. */
+    expect(getSkillByName).toHaveBeenCalledWith('brand-guidelines', [skillId], {
+      preferUserInvocable: true,
+    });
   });
 
-  it('does not replace custom variable placeholders when customVariables is absent', async () => {
+  it('leaves manualSkillPrimes undefined when no manualSkills are provided', async () => {
     const { agent, req, res, loadTools, db } = createMocks();
-    agent.instructions = 'Value is {{some_var}}';
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+      },
+      { ...db, listSkillsByAccess: emptyListSkillsByAccess },
+    );
+
+    expect(result.manualSkillPrimes).toBeUndefined();
+  });
+
+  it('returns empty array when every manual skill is unresolvable (no primes, no throw)', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+
+    const getSkillByName: InitializeAgentDbMethods['getSkillByName'] = jest
+      .fn()
+      .mockResolvedValue(null);
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['does-not-exist'],
+      },
+      { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
+    );
+
+    expect(result.manualSkillPrimes).toEqual([]);
+  });
+
+  it('skips resolution entirely when accessibleSkillIds is empty (user has no skill access)', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    const getSkillByName: InitializeAgentDbMethods['getSkillByName'] = jest.fn();
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [],
+        manualSkills: ['anything'],
+      },
+      { ...db, getSkillByName },
+    );
+
+    expect(result.manualSkillPrimes).toBeUndefined();
+    expect(getSkillByName).not.toHaveBeenCalled();
+  });
+
+  it('silently no-ops when getSkillByName is not provided in db methods', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['foo'],
+      },
+      { ...db, listSkillsByAccess: emptyListSkillsByAccess },
+    );
+
+    expect(result.manualSkillPrimes).toBeUndefined();
+  });
+});
+
+describe('initializeAgent — skill `allowed-tools` union (Phase 6)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  /**
+   * Same minimal pager used in the Phase 3 suite — the catalog isn't what
+   * we're exercising; we just need accessibleSkillIds to be non-empty so the
+   * resolver path runs.
+   */
+  const emptyListSkillsByAccess: InitializeAgentDbMethods['listSkillsByAccess'] = async () => ({
+    skills: [],
+    has_more: false,
+    after: null,
+  });
+
+  /** Helper: build a getSkillByName that returns a single skill with allowedTools. */
+  const buildGetSkillByName = (
+    name: string,
+    allowedTools: string[] | undefined,
+    skillId: import('mongoose').Types.ObjectId,
+    userId: string,
+  ): InitializeAgentDbMethods['getSkillByName'] =>
+    jest.fn().mockResolvedValue({
+      _id: skillId,
+      name,
+      body: `body of ${name}`,
+      author: { toString: () => userId } as unknown as import('mongoose').Types.ObjectId,
+      ...(allowedTools !== undefined ? { allowedTools } : {}),
+    });
+
+  it('passes the union of agent.tools + allowed-tools to loadTools and merges resulting toolDefinitions', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['web_search'];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+
+    /* Mock loadTools to echo back what was requested as toolDefinitions —
+       lets the test assert both the input list and the output merge. */
+    loadTools.mockImplementation(async ({ tools }: { tools: string[] }) => ({
+      tools: [],
+      toolContextMap: {},
+      userMCPAuthMap: undefined,
+      toolRegistry: undefined,
+      toolDefinitions: tools.map((name: string) => ({ name, description: '', parameters: {} })),
+      hasDeferredTools: false,
+      actionsEnabled: undefined,
+    }));
+
+    const getSkillByName = buildGetSkillByName(
+      'tool-skill',
+      ['execute_code', 'read_file'],
+      skillId,
+      req.user!.id,
+    );
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['tool-skill'],
+      },
+      { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
+    );
+
+    /* Single loadTools call with the union — agent.tools + extras, dedup
+       not needed because unionPrimeAllowedTools already excluded
+       agent-baseline names. Order: agent first, then extras. */
+    expect(loadTools).toHaveBeenCalledTimes(1);
+    expect(loadTools.mock.calls[0][0].tools).toEqual(['web_search', 'execute_code', 'read_file']);
+
+    /* All three tools should appear in the merged toolDefinitions. */
+    const definedNames = result.toolDefinitions?.map((d) => d.name) ?? [];
+    expect(definedNames).toEqual(
+      expect.arrayContaining(['web_search', 'execute_code', 'read_file']),
+    );
+  });
+
+  it('does not call loadTools twice when the skill declares no allowed-tools', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['web_search'];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+
+    const getSkillByName = buildGetSkillByName('plain', undefined, skillId, req.user!.id);
 
     await initializeAgent(
       {
@@ -464,10 +1091,866 @@ describe('initializeAgent — custom variable replacement', () => {
         endpointOption: { endpoint: EModelEndpoint.agents },
         allowedProviders: new Set([Providers.OPENAI]),
         isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['plain'],
+      },
+      { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
+    );
+
+    expect(loadTools).toHaveBeenCalledTimes(1);
+    expect(loadTools.mock.calls[0][0].tools).toEqual(['web_search']);
+  });
+
+  it('skips extras already on the agent (agent baseline wins; no double-loading)', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['web_search', 'execute_code'];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+
+    const getSkillByName = buildGetSkillByName(
+      'overlap',
+      ['web_search', 'read_file'], // web_search overlaps; read_file is new
+      skillId,
+      req.user!.id,
+    );
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['overlap'],
+      },
+      { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
+    );
+
+    /* web_search is on the agent — not duplicated; only read_file is "extra". */
+    expect(loadTools.mock.calls[0][0].tools).toEqual(['web_search', 'execute_code', 'read_file']);
+  });
+
+  it('retries loadTools without extras when the union call returns undefined (production loaders swallow errors)', async () => {
+    /* Production loaders (`createToolLoader` in `initialize.js`,
+       `openai.js`, `responses.js`) wrap `loadAgentTools` in try/catch
+       and return `undefined` on failure. Without explicit handling we'd
+       fall through to the empty fallback and silently drop the agent's
+       baseline tools. This test pins the retry-on-undefined behavior. */
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['web_search'];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+
+    let call = 0;
+    loadTools.mockImplementation(async ({ tools }: { tools: string[] }) => {
+      call += 1;
+      if (call === 1) {
+        return undefined; // simulate swallowed error in createToolLoader
+      }
+      return {
+        tools: [],
+        toolContextMap: {},
+        userMCPAuthMap: undefined,
+        toolRegistry: undefined,
+        toolDefinitions: tools.map((name) => ({ name, description: '', parameters: {} })),
+        hasDeferredTools: false,
+        actionsEnabled: undefined,
+      };
+    });
+
+    const getSkillByName = buildGetSkillByName(
+      'silent-fail-skill',
+      ['mcp__broken__tool'],
+      skillId,
+      req.user!.id,
+    );
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['silent-fail-skill'],
+      },
+      { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
+    );
+
+    /* Two calls: union first (returned undefined → silent fail), then
+       base-only retry (succeeded). Agent's web_search survives. */
+    expect(loadTools).toHaveBeenCalledTimes(2);
+    expect(loadTools.mock.calls[0][0].tools).toEqual(['web_search', 'mcp__broken__tool']);
+    expect(loadTools.mock.calls[1][0].tools).toEqual(['web_search']);
+
+    const definedNames = result.toolDefinitions?.map((d) => d.name) ?? [];
+    expect(definedNames).toContain('web_search');
+    expect(definedNames).not.toContain('mcp__broken__tool');
+  });
+
+  it('retries loadTools without extras when the union call throws (agent tools must still load)', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['web_search'];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+
+    /* First call (with extras) fails; second call (without extras) succeeds. */
+    let call = 0;
+    loadTools.mockImplementation(async ({ tools }: { tools: string[] }) => {
+      call += 1;
+      if (call === 1) {
+        throw new Error('MCP connection failed for skill-added tool');
+      }
+      return {
+        tools: [],
+        toolContextMap: {},
+        userMCPAuthMap: undefined,
+        toolRegistry: undefined,
+        toolDefinitions: tools.map((name) => ({ name, description: '', parameters: {} })),
+        hasDeferredTools: false,
+        actionsEnabled: undefined,
+      };
+    });
+
+    const getSkillByName = buildGetSkillByName(
+      'bad-tool-skill',
+      ['mcp__broken__tool'],
+      skillId,
+      req.user!.id,
+    );
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['bad-tool-skill'],
+      },
+      { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
+    );
+
+    /* Two calls: union first (threw), then base-only retry (succeeded). */
+    expect(loadTools).toHaveBeenCalledTimes(2);
+    expect(loadTools.mock.calls[0][0].tools).toEqual(['web_search', 'mcp__broken__tool']);
+    expect(loadTools.mock.calls[1][0].tools).toEqual(['web_search']);
+
+    /* Agent's own tool survives; the broken extra is silently dropped. */
+    const definedNames = result.toolDefinitions?.map((d) => d.name) ?? [];
+    expect(definedNames).toContain('web_search');
+    expect(definedNames).not.toContain('mcp__broken__tool');
+  });
+
+  it('falls back to host-provided skill authoring tools when BOTH loadTools calls return undefined', async () => {
+    /* Worst-case silent-failure path: production loaders catch errors
+       and return undefined. If the agent's own tools fail to load AND
+       the retry without extras also fails, loaded registry tools drop out,
+       but host-provided file authoring remains available for skill access. */
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['web_search'];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+
+    /* Both calls (with extras + without extras) silently return undefined. */
+    loadTools.mockResolvedValue(undefined);
+
+    const getSkillByName = buildGetSkillByName(
+      'broken-skill',
+      ['some-tool'],
+      skillId,
+      req.user!.id,
+    );
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+        skillAuthoringAvailable: true,
+        manualSkills: ['broken-skill'],
+      },
+      { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
+    );
+
+    /* Two attempts (initial + retry), both undefined. Registry-backed tools
+       fall away, but read/create/edit_file are registered by the initializer
+       so skill authoring still works. */
+    expect(loadTools).toHaveBeenCalledTimes(2);
+    const definedNames = result.toolDefinitions?.map((d) => d.name) ?? [];
+    expect(definedNames).toEqual(['read_file', 'create_file', 'edit_file']);
+  });
+
+  it('propagates the error when loadTools fails AND there are no skill-added extras to drop', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['web_search'];
+    /* No skills, no extras — a thrown loadTools is the agent's own problem,
+       not ours to absorb. */
+    loadTools.mockRejectedValueOnce(new Error('agent tool registry corrupted'));
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+          accessibleSkillIds: undefined,
+        },
+        db,
+      ),
+    ).rejects.toThrow('agent tool registry corrupted');
+    expect(loadTools).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not invoke loadTools twice when the agent has no tools and the skill adds none', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = [];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+
+    const getSkillByName = buildGetSkillByName('plain', [], skillId, req.user!.id);
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['plain'],
+      },
+      { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
+    );
+
+    expect(loadTools).toHaveBeenCalledTimes(1);
+    expect(loadTools.mock.calls[0][0].tools).toEqual([]);
+  });
+});
+
+describe('initializeAgent — execute_code capability expansion', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('expands execute_code into bash_tool + read_file when codeEnvAvailable=true', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['execute_code'];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
       },
       db,
     );
 
-    expect(agent.instructions).toBe('Value is {{some_var}}');
+    const names = (result.toolDefinitions ?? []).map((d) => d.name);
+    expect(names).toContain('bash_tool');
+    expect(names).toContain('read_file');
+    expect(names).toContain('create_file');
+    expect(names).toContain('edit_file');
+    /* The legacy `execute_code` tool def is no longer registered by this
+       path — the string stays in `agent.tools` as the capability trigger
+       but never appears in the tool definitions the LLM sees. */
+    expect(names).not.toContain('execute_code');
+    const readFile = result.toolDefinitions?.find((d) => d.name === 'read_file');
+    expect(readFile?.description).toContain('code-execution sandbox');
+    expect(readFile?.description).not.toContain('{skillName}');
+    expect(readFile?.description).not.toContain('SKILL.md');
+    const createFile = result.toolDefinitions?.find((d) => d.name === 'create_file');
+    expect(createFile?.description).toContain('code-execution sandbox');
+    expect(createFile?.description).toContain('/mnt/data/');
+    expect(createFile?.description).not.toContain('skills/');
+    expect(result.skillAuthoringAvailable).toBe(false);
+    expect(result.fileAuthoringToolNames).toEqual(new Set(['create_file', 'edit_file']));
   });
+
+  it('upgrades read_file to the skill-aware description when active skills are in scope', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['execute_code'];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const author = { toString: () => req.user?.id } as unknown as import('mongoose').Types.ObjectId;
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+        accessibleSkillIds: [skillId],
+      },
+      {
+        ...db,
+        listSkillsByAccess: jest.fn().mockResolvedValue({
+          skills: [
+            {
+              _id: skillId,
+              name: 'data-cleaner',
+              description: 'Clean tabular data.',
+              author,
+            },
+          ],
+          has_more: false,
+          after: null,
+        }),
+      },
+    );
+
+    const readFile = result.toolDefinitions?.find((d) => d.name === 'read_file');
+    expect(readFile?.description).toContain('{skillName}/{filePath}');
+    expect(readFile?.description).toContain('skills/{skillName}/');
+    expect(readFile?.description).toContain('SKILL.md');
+    const names = result.toolDefinitions?.map((d) => d.name) ?? [];
+    expect(names).toContain('skill');
+    expect(names).toContain('create_file');
+    expect(names).toContain('edit_file');
+  });
+
+  it('keeps skill authoring tools hidden for read-only skill access', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = [];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const author = { toString: () => req.user?.id } as unknown as import('mongoose').Types.ObjectId;
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: false,
+        accessibleSkillIds: [skillId],
+        skillAuthoringAvailable: false,
+      },
+      {
+        ...db,
+        listSkillsByAccess: jest.fn().mockResolvedValue({
+          skills: [
+            {
+              _id: skillId,
+              name: 'read-only-skill',
+              description: 'Read-only skill.',
+              author,
+            },
+          ],
+          has_more: false,
+          after: null,
+        }),
+      },
+    );
+
+    const names = result.toolDefinitions?.map((d) => d.name) ?? [];
+    expect(names).toContain('skill');
+    expect(names).toContain('read_file');
+    expect(names).not.toContain('create_file');
+    expect(names).not.toContain('edit_file');
+    expect(names).not.toContain('bash_tool');
+    expect(result.skillAuthoringAvailable).toBe(false);
+  });
+
+  it('registers skill authoring tools for first-time skill creators', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = [];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [],
+        skillAuthoringAvailable: true,
+        codeEnvAvailable: false,
+      },
+      db,
+    );
+
+    const names = (result.toolDefinitions ?? []).map((d) => d.name);
+    expect(names).toContain('create_file');
+    expect(names).toContain('edit_file');
+    expect(names).toContain('read_file');
+    expect(names).not.toContain('bash_tool');
+    const readFile = result.toolDefinitions?.find((d) => d.name === 'read_file');
+    expect(readFile?.description).toContain('skills/{skillName}/');
+    expect(readFile?.description).toContain('SKILL.md');
+    const createFile = result.toolDefinitions?.find((d) => d.name === 'create_file');
+    expect(createFile?.description).toContain('skills/');
+    expect(result.skillAuthoringAvailable).toBe(true);
+    expect(result.fileAuthoringToolNames).toEqual(new Set(['create_file', 'edit_file']));
+  });
+
+  it('does not register bash_tool + read_file when codeEnvAvailable=false', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['execute_code'];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: false,
+      },
+      db,
+    );
+
+    const names = (result.toolDefinitions ?? []).map((d) => d.name);
+    expect(names).not.toContain('bash_tool');
+    expect(names).not.toContain('read_file');
+    expect(names).not.toContain('create_file');
+    expect(names).not.toContain('edit_file');
+  });
+
+  it('does not register bash_tool + read_file when agent does not request execute_code', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['web_search'];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      db,
+    );
+
+    const names = (result.toolDefinitions ?? []).map((d) => d.name);
+    expect(names).not.toContain('bash_tool');
+    expect(names).not.toContain('read_file');
+    expect(names).not.toContain('create_file');
+    expect(names).not.toContain('edit_file');
+  });
+
+  it('narrows codeEnvAvailable on InitializedAgent to the per-agent effective value', async () => {
+    /* The admin-level `params.codeEnvAvailable` is AND-ed with
+       `agent.tools.includes('execute_code')` and stored on the returned
+       agent. Downstream runtime code (JS controllers, `primeInvokedSkills`)
+       reads the narrowed value from the stored context so skills-only
+       agents never accidentally trip sandbox-side logic. */
+    const { agent, req, res, loadTools, db } = createMocks();
+
+    // Admin cap on, agent asks for execute_code → effective true.
+    agent.tools = ['execute_code'];
+    const execAgent = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      db,
+    );
+    expect(execAgent.codeEnvAvailable).toBe(true);
+
+    // Admin cap on, agent does NOT ask for execute_code → effective false.
+    agent.tools = ['web_search'];
+    const skillsOnlyAgent = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      db,
+    );
+    expect(skillsOnlyAgent.codeEnvAvailable).toBe(false);
+
+    // Admin cap off, agent asks for execute_code → still effective false.
+    agent.tools = ['execute_code'];
+    const capOffAgent = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: false,
+      },
+      db,
+    );
+    expect(capOffAgent.codeEnvAvailable).toBe(false);
+
+    // Neither → effective false.
+    agent.tools = ['web_search'];
+    const neitherAgent = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: false,
+      },
+      db,
+    );
+    expect(neitherAgent.codeEnvAvailable).toBe(false);
+  });
+
+  it('allows Google provider tools alongside execute_code definitions', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.GOOGLE,
+      overrideProvider: Providers.GOOGLE,
+      model: 'gemini-3.5-flash',
+    });
+    agent.tools = ['execute_code'];
+
+    /* Surface an options.tools array from the provider config — this is
+       the `googleSearch` / `urlContext` built-in LLM tooling that
+       Google/Vertex exposes via provider options. */
+    mockGetProviderConfig.mockReturnValue({
+      getOptions: jest.fn().mockResolvedValue({
+        llmConfig: { model: 'gemini-3.5-flash', maxTokens: 4096 },
+        tools: [{ googleSearch: {} }],
+      } satisfies InitializeResultBase),
+      overrideProvider: Providers.GOOGLE,
+    });
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.GOOGLE]),
+          isInitialAgent: true,
+          codeEnvAvailable: true,
+        },
+        db,
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        tools: [{ googleSearch: {} }],
+        toolDefinitions: expect.arrayContaining([
+          expect.objectContaining({ name: 'bash_tool' }),
+          expect.objectContaining({ name: 'read_file' }),
+        ]),
+      }),
+    );
+  });
+
+  it('combines Google provider tools with structured external tools', async () => {
+    const structuredTool = {
+      name: 'weather',
+      description: 'Get weather',
+      schema: { type: 'object', properties: {} },
+    };
+    const providerTool = { googleSearch: {} };
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.GOOGLE,
+      overrideProvider: Providers.GOOGLE,
+      model: 'gemini-3.5-flash',
+      providerTools: [providerTool],
+      structuredTools: [structuredTool],
+    });
+    agent.tools = ['weather'];
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.GOOGLE]),
+          isInitialAgent: true,
+          codeEnvAvailable: false,
+        },
+        db,
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        tools: [structuredTool, providerTool],
+      }),
+    );
+  });
+});
+
+describe('initializeAgent — code-generated file thread filter (regression)', () => {
+  /* Sibling-branched conversation regression. Pre-fix the priming chain
+   * filtered code-generated files by `messageId IN threadMessageIds`,
+   * which excluded files whose creator messageId lived on a sibling
+   * branch (preserved on the File record by `processCodeOutput` for
+   * provenance). The fix anchors `getCodeGeneratedFiles` on
+   * `threadFileIds` instead — file_ids referenced by the thread's
+   * `messages.files[]` arrays. This block locks the new contract at
+   * the integration boundary: assert the right call shape, not the
+   * underlying Mongo query (covered separately by
+   * `data-schemas/methods/file.spec`). */
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockExtractLibreChatParams.mockReset();
+    mockGetThreadData.mockReset();
+  });
+
+  function setupExecuteCodeAgent() {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.OPENAI,
+    });
+    agent.tools = ['execute_code'];
+
+    /* `resendFiles: true` is the gate that opens the thread-file
+     * priming block in initialize.ts. Without it the whole
+     * codeGeneratedFiles fetch is skipped. */
+    mockExtractLibreChatParams.mockReturnValue({
+      resendFiles: true,
+      maxContextTokens: undefined,
+      modelOptions: { model: 'test-model' },
+    });
+
+    return { agent, req, res, loadTools, db };
+  }
+
+  it('passes threadFileIds (not threadMessageIds) to getCodeGeneratedFiles', async () => {
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    /* Simulate the branched scenario: parent message N is a sibling
+     * regeneration. `getThreadData` walks back from N and collects
+     * messageIds [N, root] plus fileIds referenced by N.files[]. */
+    mockGetThreadData.mockReturnValue({
+      messageIds: ['msgN', 'msgRoot'],
+      fileIds: ['file-pptx-skill', 'file-output-csv'],
+    });
+
+    const getCodeGeneratedFiles = jest.fn().mockResolvedValue([]);
+    const getUserCodeFiles = jest.fn().mockResolvedValue([]);
+    const getMessages = jest
+      .fn()
+      .mockResolvedValue([{ messageId: 'msgN', parentMessageId: 'msgRoot', files: [] }]);
+
+    const dbWithThreadCalls: InitializeAgentDbMethods = {
+      ...db,
+      getMessages,
+      getCodeGeneratedFiles,
+      getUserCodeFiles,
+    };
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        parentMessageId: 'msgN',
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      dbWithThreadCalls,
+    );
+
+    expect(getCodeGeneratedFiles).toHaveBeenCalledTimes(1);
+    expect(getCodeGeneratedFiles).toHaveBeenCalledWith('conv-1', [
+      'file-pptx-skill',
+      'file-output-csv',
+    ]);
+    /* Both functions now share the same primary anchor — symmetric
+     * design that closes the sibling-branch hole. */
+    expect(getUserCodeFiles).toHaveBeenCalledWith(['file-pptx-skill', 'file-output-csv']);
+  });
+
+  it('selects messages.attachments alongside messages.files (regression)', async () => {
+    /* Code-execution outputs land on `messages.attachments` via
+     * `processCodeOutput`; user uploads land on `messages.files`.
+     * Selecting only `files` silently dropped every code-output
+     * file_id from the thread walk, so the next turn's
+     * `tool_resources.execute_code.file_ids` came up empty and the
+     * sandbox saw `_injected_files: []`. The visible symptom: "the
+     * previous file isn't persisted between executions" on a single
+     * linear thread. Lock the select string so a future field
+     * trim doesn't silently re-introduce the bug. */
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    mockGetThreadData.mockReturnValue({ messageIds: [], fileIds: [] });
+
+    const getCodeGeneratedFiles = jest.fn().mockResolvedValue([]);
+    const getUserCodeFiles = jest.fn().mockResolvedValue([]);
+    const getMessages = jest.fn().mockResolvedValue([]);
+
+    const dbWithThreadCalls: InitializeAgentDbMethods = {
+      ...db,
+      getMessages,
+      getCodeGeneratedFiles,
+      getUserCodeFiles,
+    };
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        parentMessageId: 'msgN',
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      dbWithThreadCalls,
+    );
+
+    expect(getMessages).toHaveBeenCalledTimes(1);
+    const [, selectFields] = getMessages.mock.calls[0];
+    /* Asserting on a substring instead of exact equality keeps the
+     * test resilient to future ordering / new fields, while still
+     * catching a regression where `attachments` is dropped. */
+    expect(selectFields).toMatch(/\battachments\b/);
+    expect(selectFields).toMatch(/\bfiles\b/);
+    expect(selectFields).toMatch(/\bmessageId\b/);
+    expect(selectFields).toMatch(/\bparentMessageId\b/);
+  });
+
+  it('skips the code-generated fetch entirely when threadFileIds is empty', async () => {
+    /* Empty `messages.files[]` across the thread — nothing to look up.
+     * The function returns early without hitting Mongo, mirroring the
+     * pre-fix behavior for empty-thread cases. */
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    mockGetThreadData.mockReturnValue({
+      messageIds: ['msgN', 'msgRoot'],
+      fileIds: [],
+    });
+
+    const getCodeGeneratedFiles = jest.fn().mockResolvedValue([]);
+    const getUserCodeFiles = jest.fn().mockResolvedValue([]);
+    const getMessages = jest
+      .fn()
+      .mockResolvedValue([{ messageId: 'msgN', parentMessageId: 'msgRoot', files: [] }]);
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        parentMessageId: 'msgN',
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      { ...db, getMessages, getCodeGeneratedFiles, getUserCodeFiles },
+    );
+
+    expect(getCodeGeneratedFiles).toHaveBeenCalledWith('conv-1', []);
+    /* `getUserCodeFiles` is gated on a non-empty array at the call site,
+     * so it shouldn't be invoked at all. `getCodeGeneratedFiles`'s own
+     * empty-guard is exercised by data-schemas tests. */
+    expect(getUserCodeFiles).not.toHaveBeenCalled();
+  });
+});
+
+describe('initializeAgent — custom variable replacement', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+    });
+
+    it('replaces custom variables in agent instructions', async () => {
+        const { agent, req, res, loadTools, db } = createMocks();
+        agent.instructions = 'Hello {{name}}, welcome to {{department}}';
+
+        await initializeAgent(
+            {
+                req,
+                res,
+                agent,
+                loadTools,
+                endpointOption: {
+                    endpoint: EModelEndpoint.agents,
+                    customVariables: { name: 'Alice', department: 'Engineering' },
+                },
+                allowedProviders: new Set([Providers.OPENAI]),
+                isInitialAgent: true,
+            },
+            db,
+        );
+
+        expect(agent.instructions).toBe('Hello Alice, welcome to Engineering');
+    });
+
+    it('does not replace custom variable placeholders when customVariables is absent', async () => {
+        const { agent, req, res, loadTools, db } = createMocks();
+        agent.instructions = 'Value is {{some_var}}';
+
+        await initializeAgent(
+            {
+                req,
+                res,
+                agent,
+                loadTools,
+                endpointOption: { endpoint: EModelEndpoint.agents },
+                allowedProviders: new Set([Providers.OPENAI]),
+                isInitialAgent: true,
+            },
+            db,
+        );
+
+        expect(agent.instructions).toBe('Value is {{some_var}}');
+    });
 });

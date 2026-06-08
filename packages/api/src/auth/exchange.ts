@@ -30,7 +30,10 @@ export interface AdminExchangeUser {
 }
 
 /**
- * Data stored in cache for admin OAuth exchange
+ * Data stored in cache for admin OAuth exchange.
+ *
+ * `expiresAt` is the absolute expiry of `token` (ms epoch). Used by admin
+ * panel clients to drive proactive refresh before the bearer expires.
  */
 export interface AdminExchangeData {
   userId: string;
@@ -39,6 +42,7 @@ export interface AdminExchangeData {
   refreshToken?: string;
   origin?: string;
   codeChallenge?: string;
+  expiresAt?: number;
 }
 
 /**
@@ -48,6 +52,7 @@ export interface AdminExchangeResponse {
   token: string;
   refreshToken?: string;
   user: AdminExchangeUser;
+  expiresAt?: number;
 }
 
 /**
@@ -94,6 +99,7 @@ export function verifyCodeChallenge(verifier: string, challenge: string): boolea
  * @param refreshToken - Optional refresh token for OpenID users
  * @param origin - The admin panel origin (scheme://host:port) for origin binding
  * @param codeChallenge - PKCE code_challenge (hex-encoded SHA-256 of code_verifier)
+ * @param expiresAt - Optional absolute expiry of `token` (ms epoch); admin panel uses for proactive refresh
  * @returns The generated exchange code
  */
 export async function generateAdminExchangeCode(
@@ -103,6 +109,7 @@ export async function generateAdminExchangeCode(
   refreshToken?: string,
   origin?: string,
   codeChallenge?: string,
+  expiresAt?: number,
 ): Promise<string> {
   const exchangeCode = crypto.randomBytes(32).toString('hex');
 
@@ -113,6 +120,7 @@ export async function generateAdminExchangeCode(
     refreshToken,
     origin,
     codeChallenge,
+    expiresAt,
   };
 
   await cache.set(exchangeCode, data);
@@ -165,6 +173,7 @@ export async function exchangeAdminCode(
     token: data.token,
     refreshToken: data.refreshToken,
     user: data.user,
+    expiresAt: data.expiresAt,
   };
 }
 
@@ -173,9 +182,36 @@ export const PKCE_CHALLENGE_TTL = 5 * 60 * 1000;
 /** Regex pattern for valid PKCE challenges: 64 hex characters (SHA-256 hex digest) */
 export const PKCE_CHALLENGE_PATTERN = /^[a-f0-9]{64}$/;
 
-/** Removes `code_challenge` from a single URL string, preserving other query params. */
-const stripChallengeFromUrl = (url: string): string =>
-  url.replace(/\?code_challenge=[^&]*&/, '?').replace(/[?&]code_challenge=[^&]*/, '');
+const ADMIN_OAUTH_STRIPPED_QUERY_PARAMS = new Set(['code_challenge', 'redirect_uri', 'redirectTo']);
+
+const getQueryParamName = (param: string): string => {
+  const separatorIndex = param.indexOf('=');
+  return separatorIndex === -1 ? param : param.slice(0, separatorIndex);
+};
+
+/** Removes admin-panel-only query params from a single URL string. */
+const stripAdminOAuthParamsFromUrl = (url: string): string => {
+  const hashIndex = url.indexOf('#');
+  const urlWithoutHash = hashIndex === -1 ? url : url.slice(0, hashIndex);
+  const hash = hashIndex === -1 ? '' : url.slice(hashIndex);
+  const queryIndex = urlWithoutHash.indexOf('?');
+
+  if (queryIndex === -1) {
+    return url;
+  }
+
+  const path = urlWithoutHash.slice(0, queryIndex);
+  const query = urlWithoutHash.slice(queryIndex + 1);
+  const params = query.split('&').filter((param) => {
+    if (!param) {
+      return false;
+    }
+
+    return !ADMIN_OAUTH_STRIPPED_QUERY_PARAMS.has(getQueryParamName(param));
+  });
+
+  return params.length > 0 ? `${path}?${params.join('&')}${hash}` : `${path}${hash}`;
+};
 
 /** Minimal request shape needed by {@link stripCodeChallenge}. */
 export interface PkceStrippableRequest {
@@ -185,29 +221,31 @@ export interface PkceStrippableRequest {
 }
 
 /**
- * Strips `code_challenge` from the request query and URL strings.
+ * Strips admin-panel-only params from the request query and URL strings.
  *
  * openid-client v6's Passport Strategy uses `currentUrl.searchParams.size === 0`
  * to distinguish an initial authorization request from an OAuth callback.
- * The admin-panel-specific `code_challenge` query parameter would cause the
- * strategy to misclassify the request as a callback and return 401.
+ * Admin-panel-specific query params would cause the strategy to misclassify the
+ * request as a callback and return 401.
  *
  * Applied defensively to all providers to ensure the admin-panel-private
- * `code_challenge` parameter never reaches any Passport strategy.
+ * parameters never reach any Passport strategy.
  */
 export function stripCodeChallenge(req: PkceStrippableRequest): void {
   delete req.query.code_challenge;
-  req.originalUrl = stripChallengeFromUrl(req.originalUrl);
-  req.url = stripChallengeFromUrl(req.url);
+  delete req.query.redirect_uri;
+  delete req.query.redirectTo;
+  req.originalUrl = stripAdminOAuthParamsFromUrl(req.originalUrl);
+  req.url = stripAdminOAuthParamsFromUrl(req.url);
 }
 
 /**
- * Stores the admin-panel PKCE challenge in cache, then strips `code_challenge`
- * from the request so it doesn't interfere with the Passport strategy.
+ * Stores the admin-panel PKCE challenge in cache, then strips admin-panel-only
+ * params from the request so they don't interfere with the Passport strategy.
  *
  * Must be called before `passport.authenticate()` — the two operations are
  * logically atomic: read the challenge from the query, persist it, then remove
- * the parameter from the request URL.
+ * those parameters from the request URL.
  * @param cache - The Keyv cache instance for storing PKCE challenges.
  * @param req - The Express request to read and mutate.
  * @param state - The OAuth state value (cache key).

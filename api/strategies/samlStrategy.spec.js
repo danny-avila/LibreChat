@@ -30,6 +30,19 @@ jest.mock('@librechat/api', () => ({
     tokenCredits: 1000,
     startBalance: 1000,
   })),
+  getAvatarFileStrategy: jest.fn((config, fallbackStrategy) => {
+    const { FileSources } = jest.requireActual('librechat-data-provider');
+    if (config?.fileStrategies) {
+      return config.fileStrategies.avatar ?? config.fileStrategies.default ?? config.fileStrategy;
+    }
+    return config?.fileStrategy ?? fallbackStrategy ?? FileSources.local;
+  }),
+  getAvatarSaveParams: jest.fn((strategy, params) => {
+    const { FileSources } = jest.requireActual('librechat-data-provider');
+    return strategy === FileSources.s3 || strategy === FileSources.cloudfront
+      ? { ...params, basePath: 'avatars' }
+      : params;
+  }),
   resolveAppConfigForUser: jest.fn(async (_getAppConfig, _user) => ({})),
 }));
 jest.mock('~/server/services/Config/EndpointService', () => ({
@@ -40,6 +53,9 @@ jest.mock('~/server/services/Files/strategies', () => ({
     saveBuffer: jest.fn().mockResolvedValue('/fake/path/to/avatar.png'),
   })),
 }));
+jest.mock('~/server/services/Files/images/avatar', () => ({
+  resizeAvatar: jest.fn().mockResolvedValue(Buffer.from('safe avatar')),
+}));
 jest.mock('~/config/paths', () => ({
   root: '/fake/root/path',
 }));
@@ -48,8 +64,10 @@ const fs = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
 const { Strategy: SamlStrategy } = require('@node-saml/passport-saml');
+const { FileSources } = require('librechat-data-provider');
 const { findUser } = require('~/models');
 const { resolveAppConfigForUser } = require('@librechat/api');
+const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { getAppConfig } = require('~/server/services/Config');
 const { setupSaml, getCertificateContent } = require('./samlStrategy');
 
@@ -274,12 +292,7 @@ u7wlOSk+oFzDIO/UILIA
     delete process.env.SAML_PICTURE_CLAIM;
     delete process.env.SAML_NAME_CLAIM;
 
-    // Simulate image download
-    const fakeBuffer = Buffer.from('fake image');
-    fetch.mockResolvedValue({
-      ok: true,
-      buffer: jest.fn().mockResolvedValue(fakeBuffer),
-    });
+    resizeAvatar.mockResolvedValue(Buffer.from('safe avatar'));
 
     await setupSaml();
   });
@@ -433,12 +446,88 @@ u7wlOSk+oFzDIO/UILIA
     expect(result.details.message).toBe(require('librechat-data-provider').ErrorTypes.AUTH_FAILED);
   });
 
-  it('should attempt to download and save the avatar if picture is provided', async () => {
+  it('should process and save the avatar through the shared avatar path if picture is provided', async () => {
+    const { getStrategyFunctions } = require('~/server/services/Files/strategies');
     const profile = { ...baseProfile };
 
     const { user } = await validate(profile);
+    const strategyResult =
+      getStrategyFunctions.mock.results[getStrategyFunctions.mock.results.length - 1];
+    const { saveBuffer } = strategyResult.value;
+    const [saveParams] = saveBuffer.mock.calls[0];
 
-    expect(fetch).toHaveBeenCalled();
+    expect(resizeAvatar).toHaveBeenCalledWith({
+      userId: 'mock-user-id',
+      input: 'https://example.com/avatar.png',
+    });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(saveParams).toEqual(
+      expect.objectContaining({
+        fileName: 'hashed-token.png',
+        userId: 'mock-user-id',
+        buffer: expect.any(Buffer),
+      }),
+    );
+    expect(saveParams).not.toHaveProperty('basePath');
+    expect(user.avatar).toBe('/fake/path/to/avatar.png');
+  });
+
+  it('continues login when shared avatar processing rejects the picture URL', async () => {
+    const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+    const profile = { ...baseProfile };
+    resizeAvatar.mockRejectedValueOnce(new Error('avatar processing failed'));
+
+    const { user } = await validate(profile);
+
+    expect(user).toBeTruthy();
+    expect(user.avatar).toBeUndefined();
+    expect(getStrategyFunctions).not.toHaveBeenCalled();
+  });
+
+  it('uses the configured SAML picture claim for shared avatar processing', async () => {
+    process.env.SAML_PICTURE_CLAIM = 'avatar_url';
+    verifyCallback = null;
+    await setupSaml();
+
+    const profile = {
+      ...baseProfile,
+      picture: 'https://example.com/ignored.png',
+      avatar_url: 'https://idp.example.com/custom-avatar.png',
+    };
+
+    await validate(profile);
+
+    expect(resizeAvatar).toHaveBeenCalledWith({
+      userId: 'mock-user-id',
+      input: 'https://idp.example.com/custom-avatar.png',
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('should save CloudFront SAML avatars under the shared avatar prefix', async () => {
+    const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+    getAppConfig.mockResolvedValueOnce({ fileStrategies: { avatar: FileSources.cloudfront } });
+    const profile = { ...baseProfile };
+
+    const { user } = await validate(profile);
+    const strategyResult =
+      getStrategyFunctions.mock.results[getStrategyFunctions.mock.results.length - 1];
+    const { saveBuffer } = strategyResult.value;
+    const [saveParams] = saveBuffer.mock.calls[0];
+
+    expect(getStrategyFunctions).toHaveBeenLastCalledWith(FileSources.cloudfront);
+    expect(resizeAvatar).toHaveBeenCalledWith({
+      userId: 'mock-user-id',
+      input: 'https://example.com/avatar.png',
+    });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(saveParams).toEqual(
+      expect.objectContaining({
+        basePath: 'avatars',
+        fileName: 'hashed-token.png',
+        userId: 'mock-user-id',
+      }),
+    );
     expect(user.avatar).toBe('/fake/path/to/avatar.png');
   });
 
@@ -449,6 +538,7 @@ u7wlOSk+oFzDIO/UILIA
     await validate(profile);
 
     expect(fetch).not.toHaveBeenCalled();
+    expect(resizeAvatar).not.toHaveBeenCalled();
   });
 
   it('should pass the found user to resolveAppConfigForUser', async () => {
