@@ -225,7 +225,7 @@ export function createSkillSyncTriggerOrchestrator(deps: SkillSyncTriggerOrchest
     const requestRunner = deps.createRunner({
       getConfig: async () => config,
       loadAppConfig: async () => request.config,
-      allowServerCredentials: false,
+      allowServerCredentials: Boolean(request.skillSyncAllowServerCredentials),
     });
     const status = await requestRunner.getStatus();
     if (!shouldRunRequestSync(status, { minIntervalMs, staleRunningMs })) {
