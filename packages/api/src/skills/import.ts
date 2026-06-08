@@ -1,10 +1,8 @@
-import crypto from 'crypto';
 import path from 'path';
 import JSZip from 'jszip';
-import { ResourceType, AccessRoleIds, PrincipalType } from 'librechat-data-provider';
+import crypto from 'crypto';
 import { logger, stripYamlTrailingComment } from '@librechat/data-schemas';
-import type { Request, Response } from 'express';
-import type { Types } from 'mongoose';
+import { ResourceType, AccessRoleIds, PrincipalType } from 'librechat-data-provider';
 import type {
   ISkill,
   ISkillFile,
@@ -12,6 +10,8 @@ import type {
   CreateSkillResult,
   UpsertSkillFileInput,
 } from '@librechat/data-schemas';
+import type { Request, Response } from 'express';
+import type { Types } from 'mongoose';
 import { resolveRequestTenantId } from '~/middleware/tenant';
 
 /** Security limits for zip processing. */
@@ -231,7 +231,7 @@ interface ServerRequest extends Request {
  * Grants SKILL_OWNER to the uploader.
  */
 export function createImportHandler(deps: ImportSkillDeps) {
-  return async function importSkillHandler(req: ServerRequest, res: Response) {
+  return async function importSkillHandler(req: ServerRequest, res: Response): Promise<Response> {
     const { file } = req;
     if (!file) {
       return res.status(400).json({ error: 'No file provided' });

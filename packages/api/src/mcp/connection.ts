@@ -2,27 +2,27 @@ import { isIP } from 'node:net';
 import { EventEmitter } from 'events';
 import { logger } from '@librechat/data-schemas';
 import { fetch as undiciFetch, Agent, ProxyAgent } from 'undici';
-import {
-  StdioClientTransport,
-  getDefaultEnvironment,
-} from '@modelcontextprotocol/sdk/client/stdio.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { WebSocketClientTransport } from '@modelcontextprotocol/sdk/client/websocket.js';
 import { ResourceListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import {
+  StdioClientTransport,
+  getDefaultEnvironment,
+} from '@modelcontextprotocol/sdk/client/stdio.js';
 import type {
   RequestInit as UndiciRequestInit,
   RequestInfo as UndiciRequestInfo,
   Response as UndiciResponse,
   Dispatcher,
 } from 'undici';
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { MCPOAuthTokens } from './oauth/types';
 import type * as t from './types';
 import { createSSRFSafeUndiciConnect, isSSRFTarget, resolveHostnameSSRF } from '~/auth';
-import { isAddressAllowed } from '~/auth/domain';
 import { runOutsideTracing } from '~/utils/tracing';
+import { isAddressAllowed } from '~/auth/domain';
 import { sanitizeUrlForLogging } from './utils';
 import { withTimeout } from '~/utils/promise';
 import { mcpConfig } from './mcpConfig';
@@ -2183,7 +2183,50 @@ export class MCPConnection extends EventEmitter {
     }
   }
 
-  async fetchTools() {
+  async fetchTools(): Promise<
+    {
+      inputSchema: {
+        [x: string]: unknown;
+        type: 'object';
+        properties?: Record<string, object> | undefined;
+        required?: string[] | undefined;
+      };
+      name: string;
+      description?: string | undefined;
+      outputSchema?:
+        | {
+            [x: string]: unknown;
+            type: 'object';
+            properties?: Record<string, object> | undefined;
+            required?: string[] | undefined;
+          }
+        | undefined;
+      annotations?:
+        | {
+            title?: string | undefined;
+            readOnlyHint?: boolean | undefined;
+            destructiveHint?: boolean | undefined;
+            idempotentHint?: boolean | undefined;
+            openWorldHint?: boolean | undefined;
+          }
+        | undefined;
+      execution?:
+        | {
+            taskSupport?: 'optional' | 'required' | 'forbidden' | undefined;
+          }
+        | undefined;
+      _meta?: Record<string, unknown> | undefined;
+      icons?:
+        | {
+            src: string;
+            mimeType?: string | undefined;
+            sizes?: string[] | undefined;
+            theme?: 'light' | 'dark' | undefined;
+          }[]
+        | undefined;
+      title?: string | undefined;
+    }[]
+  > {
     try {
       const { tools } = await this.client.listTools();
       return tools;

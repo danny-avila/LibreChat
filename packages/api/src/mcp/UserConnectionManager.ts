@@ -419,7 +419,7 @@ export abstract class UserConnectionManager {
   }
 
   /** Returns all connections for a specific user */
-  public getUserConnections(userId: string) {
+  public getUserConnections(userId: string): Map<string, MCPConnection> | undefined {
     return this.userConnections.get(userId);
   }
 

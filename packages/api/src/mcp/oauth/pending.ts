@@ -30,7 +30,7 @@ export type ReplayablePendingMCPOAuthStartOptions = {
 
 export function getReplayablePendingMCPOAuthStartFromFlow(
   flow: PendingOAuthFlowState | null | undefined,
-  now = Date.now(),
+  now: number = Date.now(),
 ): PendingOAuthStart | undefined {
   if (flow?.status !== 'PENDING') {
     return undefined;
