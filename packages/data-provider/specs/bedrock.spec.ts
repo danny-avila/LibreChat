@@ -43,6 +43,13 @@ describe('supportsAdaptiveThinking', () => {
     expect(supportsAdaptiveThinking('claude-sonnet-6')).toBe(true);
   });
 
+  test('should return true for Mythos-class models (Fable / Mythos)', () => {
+    expect(supportsAdaptiveThinking('claude-fable-5')).toBe(true);
+    expect(supportsAdaptiveThinking('claude-mythos-5')).toBe(true);
+    expect(supportsAdaptiveThinking('anthropic.claude-fable-5')).toBe(true);
+    expect(supportsAdaptiveThinking('us.anthropic.claude-fable-5')).toBe(true);
+  });
+
   test('should return false for claude-opus-4-5', () => {
     expect(supportsAdaptiveThinking('claude-opus-4-5')).toBe(false);
   });
@@ -161,6 +168,12 @@ describe('supportsContext1m', () => {
     expect(supportsContext1m('claude-opus-5')).toBe(true);
   });
 
+  test('should return true for Mythos-class models (Fable / Mythos)', () => {
+    expect(supportsContext1m('claude-fable-5')).toBe(true);
+    expect(supportsContext1m('claude-mythos-5')).toBe(true);
+    expect(supportsContext1m('anthropic.claude-fable-5')).toBe(true);
+  });
+
   test('should return false for claude-opus-4-5', () => {
     expect(supportsContext1m('claude-opus-4-5')).toBe(false);
   });
@@ -235,6 +248,12 @@ describe('omitsThinkingByDefault', () => {
     expect(omitsThinkingByDefault('claude-opus-9')).toBe(true);
   });
 
+  test('returns true for Mythos-class models (Fable / Mythos)', () => {
+    expect(omitsThinkingByDefault('claude-fable-5')).toBe(true);
+    expect(omitsThinkingByDefault('claude-mythos-5')).toBe(true);
+    expect(omitsThinkingByDefault('anthropic.claude-fable-5')).toBe(true);
+  });
+
   test('returns false for claude-opus-4-6 (adaptive but pre-4.7)', () => {
     expect(omitsThinkingByDefault('claude-opus-4-6')).toBe(false);
   });
@@ -278,6 +297,19 @@ describe('omitsSamplingParameters', () => {
       'anthropic.claude-opus-4-8',
       'us.anthropic.claude-opus-4-8',
       'claude-opus-5',
+    ];
+
+    models.forEach((model) => {
+      expect(omitsSamplingParameters(model)).toBe(true);
+    });
+  });
+
+  test('returns true for Mythos-class models (Fable / Mythos)', () => {
+    const models = [
+      'claude-fable-5',
+      'claude-mythos-5',
+      'anthropic.claude-fable-5',
+      'us.anthropic.claude-fable-5',
     ];
 
     models.forEach((model) => {
@@ -616,6 +648,33 @@ describe('bedrockInputParser', () => {
       expect(result.temperature).toBe(0.7);
       expect(result.topP).toBe(0.9);
       expect(additionalFields.top_k).toBe(40);
+    });
+
+    test('should set adaptive thinking and strip sampling params for Fable 5 Bedrock models', () => {
+      const input = {
+        model: 'anthropic.claude-fable-5',
+        effort: 'high',
+        temperature: 0.7,
+        topP: 0.9,
+        topK: 40,
+        top_p: 0.8,
+        additionalModelRequestFields: {
+          custom_flag: true,
+          temperature: 0.5,
+          top_k: 20,
+        },
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(result.temperature).toBeUndefined();
+      expect(result.topP).toBeUndefined();
+      expect(additionalFields.temperature).toBeUndefined();
+      expect(additionalFields.top_p).toBeUndefined();
+      expect(additionalFields.top_k).toBeUndefined();
+      expect(additionalFields.custom_flag).toBe(true);
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
+      expect(additionalFields.output_config).toEqual({ effort: 'high' });
+      expect(additionalFields.anthropic_beta).toEqual(BEDROCK_CLAUDE_4_BETAS);
     });
 
     test('should set thinking.display to "summarized" so Opus 4.7 returns reasoning blocks', () => {
