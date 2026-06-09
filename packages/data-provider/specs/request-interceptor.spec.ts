@@ -468,6 +468,31 @@ describe('axios 401 interceptor — Authorization header guard', () => {
     expect(hrefWrites[0]).toBe('/login?redirect_to=%2Fc%2Frace');
   });
 
+  it('keeps redirect deduping when the storage timestamp is corrupted', async () => {
+    expect.assertions(2);
+    setTokenHeader('expired-token');
+    const hrefWrites = setTrackedWindowLocation({
+      href: 'http://localhost/c/race',
+      pathname: '/c/race',
+      search: '',
+      hash: '',
+    } as Partial<Location>);
+
+    mockAdapter.mockImplementation((config: InternalAxiosRequestConfig) => {
+      if (config.url?.includes('/api/auth/refresh') === true) {
+        return createAdapterResponse(config, { token: '' });
+      }
+      return create401Error(config);
+    });
+
+    await axios.get('/api/messages').catch(() => undefined);
+    window.localStorage.setItem('librechat.auth.redirect.startedAt', 'not-a-number');
+    await axios.get('/api/convos').catch(() => undefined);
+
+    expect(getCallsForUrl('/api/auth/refresh')).toHaveLength(1);
+    expect(hrefWrites).toEqual(['/login?redirect_to=%2Fc%2Frace']);
+  });
+
   it('refreshes a near-expiry bearer token before sending a request', async () => {
     expect.assertions(4);
     setTokenHeader(createJwt(Date.now() + 60_000));

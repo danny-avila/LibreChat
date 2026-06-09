@@ -100,7 +100,9 @@ const getAuthRedirectStartedAt = () => {
   const state = getAuthRecoveryState();
   try {
     const startedAt = window.localStorage.getItem(AUTH_REDIRECT_STORAGE_KEY);
-    return Math.max(startedAt != null ? Number(startedAt) : 0, state.lastRedirectStartedAt);
+    const storedStartedAt = startedAt != null ? Number(startedAt) : 0;
+    const finiteStartedAt = Number.isFinite(storedStartedAt) ? storedStartedAt : 0;
+    return Math.max(finiteStartedAt, state.lastRedirectStartedAt);
   } catch {
     return state.lastRedirectStartedAt;
   }
