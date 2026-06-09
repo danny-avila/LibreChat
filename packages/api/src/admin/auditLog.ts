@@ -257,7 +257,11 @@ function parseFilters(
   };
 }
 
-export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps) {
+export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps): {
+  listAuditLog: (req: ServerRequest, res: Response) => Promise<Response>;
+  getAuditLogEntry: (req: ServerRequest, res: Response) => Promise<Response>;
+  exportAuditLogCsv: (req: ServerRequest, res: Response) => Promise<Response | void>;
+} {
   const { listAuditLogPage, findAuditLogEntry, streamAuditLogEntries } = deps;
 
   async function listAuditLogHandler(req: ServerRequest, res: Response) {
