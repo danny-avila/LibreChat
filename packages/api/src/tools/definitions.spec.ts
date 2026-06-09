@@ -1,12 +1,12 @@
 import { Providers } from '@librechat/agents';
-import { loadToolDefinitions } from './definitions';
-import { toolkitExpansion, toolkitParent } from './toolkits/mapping';
-import { getToolDefinition } from './registry/definitions';
 import type {
   LoadToolDefinitionsParams,
   LoadToolDefinitionsDeps,
   ActionToolDefinition,
 } from './definitions';
+import { toolkitExpansion, toolkitParent } from './toolkits/mapping';
+import { getToolDefinition } from './registry/definitions';
+import { loadToolDefinitions } from './definitions';
 
 describe('definitions.ts', () => {
   const mockGetOrFetchMCPServerTools = jest.fn().mockResolvedValue(null);
