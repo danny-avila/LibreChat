@@ -1508,7 +1508,6 @@
   "com_ui_upload_image_input": "Last opp bilde",
   "com_ui_upload_invalid": "Ugyldig fil for opplasting. Må vere eit bilde som ikkje overskrid grensa.",
   "com_ui_upload_invalid_var": "Ugyldig fil for opplasting. Må vere eit bilde som ikkje overskrid {{0}} MB.",
-  "com_ui_upload_ocr_text": "Last opp som tekst",
   "com_ui_upload_provider": "Last opp til leverandør",
   "com_ui_upload_success": "Fila blei lasta opp.",
   "com_ui_upload_type": "Vel opplastingstype",

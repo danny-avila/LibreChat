@@ -988,7 +988,6 @@
   "com_ui_upload_image_input": "이미지 업로드",
   "com_ui_upload_invalid": "업로드할 수 없는 파일입니다. 이미지 파일이어야 하며 용량 제한을 초과하지 않아야 합니다",
   "com_ui_upload_invalid_var": "업로드할 수 없는 파일입니다. {{0}} MB 이하의 이미지 파일만 가능합니다",
-  "com_ui_upload_ocr_text": "텍스트로 업로드",
   "com_ui_upload_success": "파일 업로드 성공",
   "com_ui_upload_type": "업로드 유형 선택",
   "com_ui_usage": "사용량",

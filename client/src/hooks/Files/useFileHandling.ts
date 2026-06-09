@@ -76,6 +76,9 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     () => endpointOverride ?? conversation?.endpoint ?? 'default',
     [endpointOverride, conversation?.endpoint],
   );
+  const activeAgentId = agent_id || conversation?.agent_id || '';
+  const activeAssistantId = assistant_id || conversation?.assistant_id || '';
+  const shouldDefaultToFileSearch = Boolean(activeAgentId) && !activeAssistantId;
 
   const { data: fileConfig = null } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
@@ -286,6 +289,12 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   const handleFiles = async (_files: FileList | File[], _toolResource?: string) => {
     abortControllerRef.current = new AbortController();
     const fileList = Array.from(_files);
+    const explicitToolResource = _toolResource?.trim() || undefined;
+    const hasNonImageFile = fileList.some((file) => !file.type.startsWith('image/'));
+    const defaultToolResource =
+      shouldDefaultToFileSearch && hasNonImageFile ? EToolResources.file_search : undefined;
+    const effectiveToolResource = explicitToolResource ?? defaultToolResource;
+
     /* Validate files */
     let filesAreValid: boolean;
     try {
@@ -301,7 +310,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
         setError,
         fileConfig,
         endpointFileConfig,
-        toolResource: _toolResource,
+        toolResource: effectiveToolResource,
       });
     } catch (error) {
       console.error('file validation error', error);
@@ -331,8 +340,8 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
           size: originalFile.size,
         };
 
-        if (_toolResource != null && _toolResource !== '') {
-          initialExtendedFile.tool_resource = _toolResource;
+        if (effectiveToolResource != null && effectiveToolResource !== '') {
+          initialExtendedFile.tool_resource = effectiveToolResource;
         }
 
         // Add file immediately to show in UI

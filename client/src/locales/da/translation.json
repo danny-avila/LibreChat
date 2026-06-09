@@ -837,7 +837,6 @@
   "com_ui_upload_image_input": "Upload billede",
   "com_ui_upload_invalid": "Ugyldig fil til upload. Skal være et billede, der ikke overskrider grænsen",
   "com_ui_upload_invalid_var": "Ugyldig fil til upload. Skal være et billede, der ikke overstiger {{0}} MB",
-  "com_ui_upload_ocr_text": "Upload som tekst",
   "com_ui_upload_success": "Filen blev uploadet",
   "com_ui_upload_type": "Vælg uploadtype",
   "com_ui_use_2fa_code": "Brug 2FA-kode i stedet",

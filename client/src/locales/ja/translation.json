@@ -1637,7 +1637,6 @@
   "com_ui_upload_image_input": "画像をアップロード",
   "com_ui_upload_invalid": "アップロードに無効なファイルです。制限を超えない画像である必要があります。",
   "com_ui_upload_invalid_var": "アップロードに無効なファイルです。 {{0}} MBまでの画像である必要があります。",
-  "com_ui_upload_ocr_text": "テキストとしてアップロード",
   "com_ui_upload_provider": "プロバイダーへのアップロード",
   "com_ui_upload_success": "アップロード成功",
   "com_ui_upload_type": "アップロード種別を選択",

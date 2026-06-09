@@ -1565,7 +1565,6 @@
   "com_ui_upload_image_input": "Bild hochladen",
   "com_ui_upload_invalid": "Ungültige Datei zum Hochladen. Muss ein Bild sein und das Limit nicht überschreiten",
   "com_ui_upload_invalid_var": "Ungültige Datei zum Hochladen. Muss ein Bild sein und {{0}} MB nicht überschreiten",
-  "com_ui_upload_ocr_text": "Hochladen als Text",
   "com_ui_upload_provider": "Hochladen zum KI-Anbieter",
   "com_ui_upload_success": "Datei erfolgreich hochgeladen",
   "com_ui_upload_type": "Upload-Typ auswählen",

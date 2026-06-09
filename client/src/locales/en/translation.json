@@ -1719,7 +1719,6 @@
   "com_ui_upload_image_input": "Upload Image",
   "com_ui_upload_invalid": "Invalid file for upload. Must be an image not exceeding the limit",
   "com_ui_upload_invalid_var": "Invalid file for upload. Must be an image not exceeding {{0}} MB",
-  "com_ui_upload_ocr_text": "Upload as Text",
   "com_ui_upload_provider": "Upload to Provider",
   "com_ui_upload_success": "Successfully uploaded file",
   "com_ui_upload_type": "Select Upload Type",

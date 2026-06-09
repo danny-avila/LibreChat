@@ -109,7 +109,6 @@ export default function useDragHelpers() {
       const capabilities = agentsConfig?.capabilities ?? defaultAgentCapabilities;
       const fileSearchEnabled = capabilities.includes(AgentCapabilities.file_search) === true;
       const codeEnabled = capabilities.includes(AgentCapabilities.execute_code) === true;
-      const contextEnabled = capabilities.includes(AgentCapabilities.context) === true;
 
       let fileSearchAllowedByAgent = true;
       let codeAllowedByAgent = true;
@@ -133,8 +132,7 @@ export default function useDragHelpers() {
       const shouldShowModal =
         allImages ||
         (fileSearchEnabled && fileSearchAllowedByAgent) ||
-        (codeEnabled && codeAllowedByAgent) ||
-        contextEnabled;
+        (codeEnabled && codeAllowedByAgent);
 
       if (!shouldShowModal) {
         // Fallback: directly handle files without showing modal

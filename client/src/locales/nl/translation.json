@@ -690,7 +690,6 @@
   "com_ui_upload_image_input": "Afbeelding Uploaden",
   "com_ui_upload_invalid": "Ongeldig bestand voor upload. Moet een afbeelding zijn die de limiet niet overschrijdt",
   "com_ui_upload_invalid_var": "Ongeldig bestand voor upload. Moet een afbeelding zijn die niet groter is dan {{0}} MB",
-  "com_ui_upload_ocr_text": "Upload als Tekst",
   "com_ui_upload_success": "Bestand succesvol geüpload",
   "com_ui_upload_type": "Upload Type Selecteren",
   "com_ui_usage": "Gebruik",

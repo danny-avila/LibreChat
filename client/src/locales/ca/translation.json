@@ -816,7 +816,6 @@
   "com_ui_upload_image_input": "Puja imatge",
   "com_ui_upload_invalid": "Fitxer no vàlid. Ha de ser una imatge dins el límit",
   "com_ui_upload_invalid_var": "Fitxer no vàlid. Ha de ser una imatge que no superi {{0}} MB",
-  "com_ui_upload_ocr_text": "Puja com a text",
   "com_ui_upload_success": "Fitxer pujat amb èxit",
   "com_ui_upload_type": "Selecciona tipus de pujada",
   "com_ui_use_2fa_code": "Utilitza codi 2FA",

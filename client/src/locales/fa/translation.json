@@ -1422,7 +1422,6 @@
   "com_ui_upload_image_input": "آپلود تصویر",
   "com_ui_upload_invalid": "فایل برای آپلود نامعتبر است. باید تصویری باشد که از حد مجاز بیشتر نباشد",
   "com_ui_upload_invalid_var": "فایل برای آپلود نامعتبر است. باید تصویری بیش از حد نباشد {{0}} مگابایت",
-  "com_ui_upload_ocr_text": "آپلود به عنوان متن",
   "com_ui_upload_provider": "آپلود به ارائه‌دهنده",
   "com_ui_upload_success": "فایل با موفقیت آپلود شد",
   "com_ui_upload_type": "نوع آپلود را انتخاب کنید",

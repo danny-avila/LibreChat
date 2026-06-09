@@ -1151,7 +1151,6 @@
   "com_ui_upload_image_input": "Inserir Imagem",
   "com_ui_upload_invalid": "Arquivo inválido para upload. Deve ser uma imagem não excedendo o limite",
   "com_ui_upload_invalid_var": "Arquivo inválido para upload. Deve ser uma imagem não excedendo {{0}} MB",
-  "com_ui_upload_ocr_text": "Carregar como texto",
   "com_ui_upload_provider": "Anexar Ficheiros",
   "com_ui_upload_success": "Arquivo carregado com sucesso",
   "com_ui_upload_type": "Escolher tipo de Carregamento",

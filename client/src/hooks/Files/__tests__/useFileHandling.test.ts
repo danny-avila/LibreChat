@@ -1,5 +1,10 @@
 import { renderHook, act } from '@testing-library/react';
-import { Constants, EModelEndpoint, getEndpointFileConfig } from 'librechat-data-provider';
+import {
+  Constants,
+  EModelEndpoint,
+  EToolResources,
+  getEndpointFileConfig,
+} from 'librechat-data-provider';
 
 beforeAll(() => {
   global.URL.createObjectURL = jest.fn(() => 'blob:mock-url');
@@ -263,6 +268,34 @@ describe('useFileHandling', () => {
       expect(formData.get('assistant_id')).toBeNull();
     });
 
+    it('defaults non-image agent uploads to file_search when no explicit tool resource is provided', async () => {
+      mockConversation = {
+        conversationId: 'convo-1',
+        endpoint: EModelEndpoint.agents,
+        endpointType: EModelEndpoint.agents,
+        agent_id: 'agent-123',
+      };
+
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      const pdfFile = new File(['pdf-data'], 'proposal.pdf', { type: 'application/pdf' });
+
+      await act(async () => {
+        await result.current.handleFiles([pdfFile]);
+      });
+
+      expect(mockValidateFiles).toHaveBeenCalledTimes(1);
+      const validateCall = mockValidateFiles.mock.calls[0][0];
+      expect(validateCall.toolResource).toBe(EToolResources.file_search);
+
+      expect(mockMutate).toHaveBeenCalledTimes(1);
+      const formData: FormData = mockMutate.mock.calls[0][0];
+      expect(formData.get('tool_resource')).toBe(EToolResources.file_search);
+      expect(formData.get('agent_id')).toBe('agent-123');
+      expect(formData.get('message_file')).toBe('true');
+    });
+
     it('enters assistants path without override when conversation is assistants', async () => {
       mockConversation = {
         conversationId: 'convo-1',
@@ -285,6 +318,35 @@ describe('useFileHandling', () => {
       const formData: FormData = mockMutate.mock.calls[0][0];
       expect(formData.get('endpoint')).toBe('assistants');
       expect(formData.get('message_file')).toBe('true');
+    });
+
+    it('does not default assistant uploads to file_search', async () => {
+      mockConversation = {
+        conversationId: 'convo-1',
+        endpoint: 'assistants',
+        endpointType: 'assistants',
+        assistant_id: 'asst-456',
+        model: 'gpt-4',
+      };
+
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      const pdfFile = new File(['pdf-data'], 'proposal.pdf', { type: 'application/pdf' });
+
+      await act(async () => {
+        await result.current.handleFiles([pdfFile]);
+      });
+
+      expect(mockValidateFiles).toHaveBeenCalledTimes(1);
+      const validateCall = mockValidateFiles.mock.calls[0][0];
+      expect(validateCall.toolResource).toBeUndefined();
+
+      expect(mockMutate).toHaveBeenCalledTimes(1);
+      const formData: FormData = mockMutate.mock.calls[0][0];
+      expect(formData.get('tool_resource')).toBeNull();
+      expect(formData.get('message_file')).toBe('true');
+      expect(formData.get('assistant_id')).toBe('asst-456');
     });
 
     it('falls back to "default" when no conversation endpoint and no override', async () => {

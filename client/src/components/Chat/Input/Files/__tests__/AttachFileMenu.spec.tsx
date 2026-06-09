@@ -100,7 +100,6 @@ function setupMocks(overrides: { provider?: string } = {}) {
     com_ui_upload_code_environment: 'Upload to Code Environment',
     com_ui_upload_file_search: 'Upload for File Search',
     com_ui_upload_image_input: 'Upload Image',
-    com_ui_upload_ocr_text: 'Upload as Text',
     com_ui_upload_provider: 'Upload to Provider',
   };
   mockUseLocalize.mockReturnValue((key: string) => translations[key] || key);
@@ -265,7 +264,7 @@ describe('AttachFileMenu', () => {
   });
 
   describe('Agent Capabilities', () => {
-    it('shows OCR Text option when context is enabled', () => {
+    it('does not show OCR Text option when context is enabled', () => {
       setupMocks();
       mockUseAgentCapabilities.mockReturnValue({
         contextEnabled: true,
@@ -274,7 +273,7 @@ describe('AttachFileMenu', () => {
       });
       renderMenu({ endpointType: EModelEndpoint.openAI });
       openMenu();
-      expect(screen.getByText('Upload as Text')).toBeInTheDocument();
+      expect(screen.queryByText('Upload as Text')).not.toBeInTheDocument();
     });
 
     it('shows File Search option when enabled and allowed by agent', () => {
@@ -338,7 +337,7 @@ describe('AttachFileMenu', () => {
       renderMenu({ endpointType: EModelEndpoint.openAI });
       openMenu();
       expect(screen.getByText('Upload to Provider')).toBeInTheDocument();
-      expect(screen.getByText('Upload as Text')).toBeInTheDocument();
+      expect(screen.queryByText('Upload as Text')).not.toBeInTheDocument();
       expect(screen.getByText('Upload for File Search')).toBeInTheDocument();
       expect(screen.getByText('Upload to Code Environment')).toBeInTheDocument();
     });

@@ -859,7 +859,6 @@
   "com_ui_upload_image_input": "Laadi pilt üles",
   "com_ui_upload_invalid": "Fail on üleslaadimiseks vigane. Peab olema pilt, mis ei ületa piirangut",
   "com_ui_upload_invalid_var": "Fail on üleslaadimiseks vigane. Peab olema pilt, mis ei ületa {{0}} MB",
-  "com_ui_upload_ocr_text": "Laadi üles tekstina",
   "com_ui_upload_success": "Faili üleslaadimine õnnestus",
   "com_ui_upload_type": "Vali üleslaadimise tüüp",
   "com_ui_use_2fa_code": "Kasuta hoopis 2FA koodi",

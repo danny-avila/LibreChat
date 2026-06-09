@@ -1544,7 +1544,6 @@
   "com_ui_upload_image_input": "Carica immagine",
   "com_ui_upload_invalid": "File non valido per il caricamento. Deve essere un'immagine che non supera il limite",
   "com_ui_upload_invalid_var": "File non valido per il caricamento. Deve essere un'immagine non superiore a {{0}} MB",
-  "com_ui_upload_ocr_text": "Carica come testo",
   "com_ui_upload_provider": "Carica sul provider",
   "com_ui_upload_success": "File caricato con successo",
   "com_ui_upload_type": "Seleziona Tipo di Caricamento",

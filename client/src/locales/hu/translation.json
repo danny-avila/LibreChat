@@ -764,7 +764,6 @@
   "com_ui_upload_image_input": "Kép feltöltése",
   "com_ui_upload_invalid": "Érvénytelen fájl feltöltéshez. Képnek kell lennie, amely nem haladja meg a korlátot",
   "com_ui_upload_invalid_var": "Érvénytelen fájl feltöltéshez. Képnek kell lennie, amely nem haladja meg a {{0}} MB-ot",
-  "com_ui_upload_ocr_text": "Feltöltés szövegként",
   "com_ui_upload_success": "Fájl sikeresen feltöltve",
   "com_ui_upload_type": "Feltöltési típus kiválasztása",
   "com_ui_use_2fa_code": "2FA kód használata helyette",

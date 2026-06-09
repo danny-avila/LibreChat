@@ -1434,7 +1434,6 @@
   "com_ui_upload_image_input": "Prześlij obraz",
   "com_ui_upload_invalid": "Nieprawidłowy plik do przesłania. Musi być obrazem nieprzekraczającym limitu",
   "com_ui_upload_invalid_var": "Nieprawidłowy plik do przesłania. Musi być obrazem nieprzekraczającym {{0}} MB",
-  "com_ui_upload_ocr_text": "Prześlij jako Tekst",
   "com_ui_upload_provider": "Prześlij do Dostawcy",
   "com_ui_upload_success": "Pomyślnie przesłano plik",
   "com_ui_upload_type": "Wybierz typ przesyłania",
