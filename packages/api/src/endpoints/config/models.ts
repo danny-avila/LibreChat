@@ -184,7 +184,13 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
               baseURL: resolvedBaseURL,
               user: req.user?.id,
               userObject: req.user,
-              headers: endpointHeaders,
+              // Do not forward header overrides when the base URL is
+              // user-supplied: configured templates such as
+              // {{LIBRECHAT_OPENID_ID_TOKEN}} would otherwise resolve and be
+              // sent to a destination the user controls, leaking the user's
+              // identity token. Header overrides are only safe for endpoints
+              // whose base URL is admin-trusted.
+              headers: baseURLIsUserProvided ? undefined : endpointHeaders,
               direct: endpoint.directEndpoint,
               userIdQuery: models.userIdQuery,
               skipCache: true,

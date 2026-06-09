@@ -7,8 +7,8 @@ import {
 import type { TEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { BaseInitializeParams, InitializeResultBase, EndpointTokenConfig } from '~/types';
-import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { isUserProvided, checkUserKeyExpiry } from '~/utils';
+import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { getCustomEndpointConfig } from '~/app/config';
 import { fetchModels } from '~/endpoints/models';
 import { validateEndpointURL } from '~/auth';
@@ -154,7 +154,24 @@ export async function initializeCustom({
     endpointConfig.models?.fetch &&
     !endpointTokenConfig
   ) {
-    await fetchModels({ apiKey, baseURL, name: endpoint, user: userId, tokenKey });
+    await fetchModels({
+      apiKey,
+      baseURL,
+      name: endpoint,
+      user: userId,
+      tokenKey,
+      userObject: req.user,
+      // Mirror the security guard in `loadConfigModels`: never forward
+      // header overrides when the base URL is user-supplied — configured
+      // templates like {{LIBRECHAT_OPENID_ID_TOKEN}} would otherwise resolve
+      // and leak the user's identity token to a destination the user controls.
+      headers: userProvidesURL ? undefined : endpointConfig.headers,
+      // When headers are configured the response can become user-specific,
+      // so user-scope the model cache to avoid one user's filtered list
+      // being served to another. (Token config caching above already keys by
+      // user when key/URL are user-provided.)
+      skipCache: !!endpointConfig.headers,
+    });
     endpointTokenConfig = (await cache.get(tokenKey)) as EndpointTokenConfig | undefined;
   }
 
