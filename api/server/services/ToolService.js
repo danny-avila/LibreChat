@@ -840,6 +840,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       deferredToolsEnabled,
       programmaticToolsEnabled,
       codeExecutionEnabled,
+      provider: agent.provider,
     },
     {
       isBuiltInTool,
@@ -919,6 +920,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
           deferredToolsEnabled,
           programmaticToolsEnabled,
           codeExecutionEnabled,
+          provider: agent.provider,
         },
         {
           isBuiltInTool,
