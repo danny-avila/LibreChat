@@ -32,8 +32,13 @@ type UserScopedConnectionConfig = Pick<
   env?: Record<string, string>;
   headers?: Record<string, string>;
   oauth?: PlaceholderValue;
+  oauth_headers?: Record<string, string>;
   url?: string;
 };
+
+function placeholderBearingFields(config: UserScopedConnectionConfig): PlaceholderValue[] {
+  return [config.args, config.env, config.headers, config.oauth, config.oauth_headers, config.url];
+}
 
 /** Whether a server should use MCP OAuth handling. */
 export function isOAuthServer(
@@ -127,9 +132,7 @@ export function hasRuntimeContextPlaceholders(config: UserScopedConnectionConfig
     return false;
   }
 
-  return [config.args, config.env, config.headers, config.oauth, config.url].some(
-    hasRuntimeContextPlaceholder,
-  );
+  return placeholderBearingFields(config).some(hasRuntimeContextPlaceholder);
 }
 
 export function hasRuntimeUrlPlaceholders(config: UserScopedConnectionConfig): boolean {
@@ -145,7 +148,7 @@ export function hasRuntimeBodyPlaceholders(config: UserScopedConnectionConfig): 
     return false;
   }
 
-  return [config.args, config.env, config.headers, config.oauth, config.url].some((value) =>
+  return placeholderBearingFields(config).some((value) =>
     hasPlaceholder(value, RUNTIME_BODY_PLACEHOLDER_PATTERN),
   );
 }
@@ -156,7 +159,7 @@ export function getRuntimeBodyPlaceholderFields(config: UserScopedConnectionConf
   }
 
   const fields = new Set<string>();
-  for (const value of [config.args, config.env, config.headers, config.oauth, config.url]) {
+  for (const value of placeholderBearingFields(config)) {
     addRuntimeBodyPlaceholderFields(value, fields);
   }
   return Array.from(fields);
@@ -185,9 +188,7 @@ export function requiresEphemeralUserConnection(config: UserScopedConnectionConf
     return false;
   }
 
-  return [config.args, config.env, config.headers, config.oauth, config.url].some(
-    hasEphemeralConnectionPlaceholder,
-  );
+  return placeholderBearingFields(config).some(hasEphemeralConnectionPlaceholder);
 }
 
 /**

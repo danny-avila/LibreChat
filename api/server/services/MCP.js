@@ -18,6 +18,7 @@ const {
   isUserSourced,
   checkAccessWithRequestCache,
   requiresEphemeralUserConnection,
+  containsGraphTokenPlaceholder,
 } = require('@librechat/api');
 const {
   Time,
@@ -166,22 +167,32 @@ function getServerCustomUserVars(userMCPAuthMap, serverName) {
 /**
  * Best-effort early gate; the authoritative check is
  * `assertResolvedRuntimeConfigAllowed` in `@librechat/api`, whose resolution
- * this must mirror (minus the async Graph pre-pass).
+ * this must mirror. Graph placeholders resolve later (async), so a URL still
+ * carrying one defers to the authoritative check instead of rejecting here.
  */
-function resolveDomainValidationConfig({
+async function isEarlyDomainAllowed({
   serverConfig,
   user,
   requestBody,
   userMCPAuthMap,
   serverName,
+  allowedDomains,
+  allowedAddresses,
 }) {
-  return processMCPEnv({
+  const validationConfig = processMCPEnv({
     user,
     body: requestBody,
     dbSourced: isUserSourced(serverConfig),
     options: serverConfig,
     customUserVars: getServerCustomUserVars(userMCPAuthMap, serverName),
   });
+  if (
+    typeof validationConfig?.url === 'string' &&
+    containsGraphTokenPlaceholder(validationConfig.url)
+  ) {
+    return true;
+  }
+  return await isMCPDomainAllowed(validationConfig, allowedDomains, allowedAddresses);
 }
 
 /**
@@ -366,6 +377,7 @@ function createOAuthCallback({ runStepEmitter, runStepDeltaEmitter }) {
  * @param {number} [params.index]
  * @param {string | null} [params.streamId] - The stream ID for resumable mode.
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
+ * @param {import('@librechat/api').ParsedServerConfig} [params.serverConfig] - Used to bypass reconnect throttling for request-scoped servers.
  * @returns { Promise<Array<typeof tool | { _call: (toolInput: Object | string) => unknown}>> } An object with `_call` method to execute the tool input.
  */
 async function reconnectServer({
@@ -374,6 +386,7 @@ async function reconnectServer({
   index,
   signal,
   serverName,
+  serverConfig,
   configServers,
   userMCPAuthMap,
   requestBody,
@@ -383,15 +396,20 @@ async function reconnectServer({
     `[MCP][reconnectServer] serverName: ${serverName}, user: ${user?.id}, hasUserMCPAuthMap: ${!!userMCPAuthMap}`,
   );
 
-  const throttleKey = `${user.id}:${serverName}`;
-  const now = Date.now();
-  const lastAttempt = lastReconnectAttempts.get(throttleKey) ?? 0;
-  if (now - lastAttempt < RECONNECT_THROTTLE_MS) {
-    logger.debug(`[MCP][reconnectServer] Throttled reconnect for ${serverName}`);
-    return null;
+  // Request-scoped servers reconnect on every message by design; throttling them
+  // would stub out healthy tools for messages sent within the throttle window.
+  const requestScoped = serverConfig ? requiresEphemeralUserConnection(serverConfig) : false;
+  if (!requestScoped) {
+    const throttleKey = `${user.id}:${serverName}`;
+    const now = Date.now();
+    const lastAttempt = lastReconnectAttempts.get(throttleKey) ?? 0;
+    if (now - lastAttempt < RECONNECT_THROTTLE_MS) {
+      logger.debug(`[MCP][reconnectServer] Throttled reconnect for ${serverName}`);
+      return null;
+    }
+    lastReconnectAttempts.set(throttleKey, now);
+    evictStale(lastReconnectAttempts, RECONNECT_THROTTLE_MS);
   }
-  lastReconnectAttempts.set(throttleKey, now);
-  evictStale(lastReconnectAttempts, RECONNECT_THROTTLE_MS);
 
   const runId = Constants.USE_PRELIM_RESPONSE_MESSAGE_ID;
   const flowId = `${user.id}:${serverName}:${Date.now()}`;
@@ -506,18 +524,15 @@ async function createMCPTools({
     });
     const allowedDomains = appConfig?.mcpSettings?.allowedDomains;
     const allowedAddresses = appConfig?.mcpSettings?.allowedAddresses;
-    const validationConfig = resolveDomainValidationConfig({
+    const isDomainAllowed = await isEarlyDomainAllowed({
       serverConfig,
       user,
       requestBody,
       userMCPAuthMap,
       serverName,
-    });
-    const isDomainAllowed = await isMCPDomainAllowed(
-      validationConfig,
       allowedDomains,
       allowedAddresses,
-    );
+    });
     if (!isDomainAllowed) {
       logger.warn(`[MCP][${serverName}] Domain not allowed, skipping all tools`);
       return [];
@@ -530,6 +545,7 @@ async function createMCPTools({
     index,
     signal,
     serverName,
+    serverConfig,
     configServers,
     userMCPAuthMap,
     requestBody,
@@ -617,18 +633,15 @@ async function createMCPTool({
     });
     const allowedDomains = appConfig?.mcpSettings?.allowedDomains;
     const allowedAddresses = appConfig?.mcpSettings?.allowedAddresses;
-    const validationConfig = resolveDomainValidationConfig({
+    const isDomainAllowed = await isEarlyDomainAllowed({
       serverConfig,
       user,
       requestBody,
       userMCPAuthMap,
       serverName,
-    });
-    const isDomainAllowed = await isMCPDomainAllowed(
-      validationConfig,
       allowedDomains,
       allowedAddresses,
-    );
+    });
     if (!isDomainAllowed) {
       logger.warn(`[MCP][${serverName}] Domain no longer allowed, skipping tool: ${toolName}`);
       return undefined;
@@ -655,6 +668,7 @@ async function createMCPTool({
       index,
       signal,
       serverName,
+      serverConfig,
       configServers,
       userMCPAuthMap,
       requestBody,

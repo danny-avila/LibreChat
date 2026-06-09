@@ -99,6 +99,7 @@ export function mcpOptionsContainGraphTokenPlaceholder(options: {
   headers?: Record<string, string>;
   env?: Record<string, string>;
   oauth?: Record<string, string | string[] | boolean | number | null | undefined>;
+  oauth_headers?: Record<string, string>;
   url?: string;
 }): boolean {
   if (options.url && containsGraphTokenPlaceholder(options.url)) {
@@ -111,6 +112,9 @@ export function mcpOptionsContainGraphTokenPlaceholder(options: {
     return true;
   }
   if (recordContainsGraphTokenPlaceholder(options.env)) {
+    return true;
+  }
+  if (recordContainsGraphTokenPlaceholder(options.oauth_headers)) {
     return true;
   }
   return valueContainsGraphTokenPlaceholder(options.oauth);
@@ -253,6 +257,7 @@ export async function preProcessGraphTokens<
     headers?: Record<string, string>;
     env?: Record<string, string>;
     oauth?: Record<string, string | string[] | boolean | number | null | undefined>;
+    oauth_headers?: Record<string, string>;
     url?: string;
   },
 >(options: T, graphOptions: GraphTokenOptions): Promise<T> {
@@ -276,6 +281,10 @@ export async function preProcessGraphTokens<
 
   if (result.env) {
     result.env = await resolveGraphTokensInRecord(result.env, graphOptions);
+  }
+
+  if (result.oauth_headers) {
+    result.oauth_headers = await resolveGraphTokensInRecord(result.oauth_headers, graphOptions);
   }
 
   if (result.oauth) {

@@ -431,6 +431,18 @@ describe('hasRuntimeContextPlaceholders', () => {
     ).toBe(true);
   });
 
+  it('detects trusted runtime placeholders in oauth_headers', () => {
+    expect(
+      hasRuntimeContextPlaceholders({
+        source: 'yaml',
+        url: 'https://example.com/mcp',
+        oauth_headers: {
+          'X-User': '{{LIBRECHAT_USER_ID}}',
+        },
+      }),
+    ).toBe(true);
+  });
+
   it('ignores custom user variable placeholders', () => {
     expect(
       hasRuntimeContextPlaceholders({
@@ -545,6 +557,18 @@ describe('getMissingRuntimeBodyPlaceholderFields', () => {
 });
 
 describe('requiresEphemeralUserConnection', () => {
+  it('returns true when request-varying placeholders affect oauth_headers', () => {
+    expect(
+      requiresEphemeralUserConnection({
+        source: 'yaml',
+        url: 'https://example.com/mcp',
+        oauth_headers: {
+          Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+        },
+      }),
+    ).toBe(true);
+  });
+
   it('returns true when request-varying placeholders affect connection fields', () => {
     expect(
       requiresEphemeralUserConnection({
