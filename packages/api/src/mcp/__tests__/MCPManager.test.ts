@@ -1425,7 +1425,9 @@ describe('MCPManager', () => {
       (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(runtimeUrlConfig);
       mockProcessMCPEnv.mockImplementation(({ options, user }) => ({
         ...options,
-        url: options.url?.replace('{{LIBRECHAT_USER_ID}}', user?.id ?? ''),
+        ...('url' in options && {
+          url: options.url?.replace('{{LIBRECHAT_USER_ID}}', user?.id ?? ''),
+        }),
       }));
       mockDetectOAuthRequirement.mockResolvedValue({
         requiresOAuth: true,
