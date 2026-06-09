@@ -10,7 +10,7 @@ import { Constants, isActionTool } from 'librechat-data-provider';
 import type { LCToolRegistry, JsonSchemaType, LCTool, GenericTool } from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { ToolDefinition } from './classification';
-import { resolveJsonSchemaRefs, normalizeJsonSchema, flattenJsonSchemaUnions } from '~/mcp/zod';
+import { resolveJsonSchemaRefs, normalizeJsonSchema, sanitizeGeminiSchema } from '~/mcp/zod';
 import { buildToolClassification } from './classification';
 import { getToolDefinition } from './registry/definitions';
 import { toolkitExpansion } from './toolkits/mapping';
@@ -98,7 +98,7 @@ export async function loadToolDefinitions(
       return undefined;
     }
     const normalized = normalizeJsonSchema(resolveJsonSchemaRefs(mcpParams));
-    return isGoogle ? flattenJsonSchemaUnions(normalized) : normalized;
+    return isGoogle ? sanitizeGeminiSchema(normalized) : normalized;
   };
 
   const emptyResult: LoadToolDefinitionsResult = {

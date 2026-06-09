@@ -351,6 +351,42 @@ function mergeRequired(a: unknown, b: unknown): string[] | undefined {
 }
 
 /**
+ * JSON Schema keywords absent from Gemini's function-calling Schema subset
+ * (https://ai.google.dev/api/caching#Schema); they trigger 400s and are stripped.
+ */
+const GEMINI_UNSUPPORTED_KEYS = new Set(['additionalProperties', 'default', '$schema', '$id']);
+
+/**
+ * Merges the members of an `allOf` (schema intersection) into the parent: combines
+ * `properties`/`required` and fills any scalar keyword the parent doesn't already set.
+ */
+function mergeAllOf(schema: Record<string, unknown>): Record<string, unknown> {
+  const members = (schema.allOf as unknown[]).filter(
+    (member): member is Record<string, unknown> => member != null && typeof member === 'object',
+  );
+  const result = { ...schema };
+  delete result.allOf;
+  let properties = mergeProperties(result.properties, undefined);
+  let required = mergeRequired(result.required, undefined);
+  for (const member of members) {
+    properties = mergeProperties(properties, member.properties);
+    required = mergeRequired(required, member.required);
+    for (const [key, value] of Object.entries(member)) {
+      if (key !== 'properties' && key !== 'required' && !(key in result)) {
+        result[key] = value;
+      }
+    }
+  }
+  if (properties) {
+    result.properties = properties;
+  }
+  if (required) {
+    result.required = required;
+  }
+  return result;
+}
+
+/**
  * Collapses a single `anyOf`/`oneOf` level into its parent by keeping the first
  * non-null member, marking the field nullable when a `null` member was present.
  * Parent and branch `properties`/`required` are merged so fields declared outside
@@ -361,8 +397,12 @@ function collapseSchemaUnion(schema: Record<string, unknown>): Record<string, un
   let current = schema;
   let guard = 0;
 
-  while (guard < 100) {
+  while (guard < 200) {
     guard += 1;
+    if (Array.isArray(current.allOf)) {
+      current = mergeAllOf(current);
+      continue;
+    }
     let unionKey: 'anyOf' | 'oneOf' | null = null;
     if (Array.isArray(current.anyOf)) {
       unionKey = 'anyOf';
@@ -415,28 +455,34 @@ function collapseTypeArray(types: unknown[]): { type?: string; nullable: boolean
 }
 
 /**
- * Flattens union constructs (`anyOf`/`oneOf` and multi-entry `type` arrays) into a
- * single concrete schema for Gemini/Vertex AI compatibility.
+ * Sanitizes a JSON schema to Gemini/Vertex AI's function-calling Schema subset
+ * (https://ai.google.dev/api/caching#Schema), recursively. Gemini accepts only a
+ * restricted slice of JSON Schema, and `@langchain/google-common`'s
+ * `zod_to_gemini_parameters` additionally throws on any union — so MCP tools that
+ * ship richer schemas crash on the Google endpoint while working on OpenAI/Claude.
  *
- * `@langchain/google-common`'s `zod_to_gemini_parameters` throws "Gemini cannot
- * handle union types" on any genuine union, so MCP tools shipping union-typed
- * schemas (e.g. discriminated unions) crash on the Google endpoint while working
- * fine on OpenAI/Claude. This transform is lossy by design — it keeps the first
- * non-null union member and marks the field nullable when a `null` member was
- * present. Gate it on the Google/Vertex provider; never apply it to providers that
- * accept unions. Run it after `normalizeJsonSchema`.
+ * Transforms (all lossy and Gemini-specific — gate on the Google/Vertex provider,
+ * run after `normalizeJsonSchema`):
+ * - Collapses `anyOf`/`oneOf` to the first non-null member (merging parent + branch
+ *   `properties`/`required`), and merges `allOf` intersections.
+ * - Collapses multi-entry `type` arrays to a single type, tracking `nullable`.
+ * - Keeps only string `enum` values — Gemini's `enum` is `Type.STRING`-only — and
+ *   drops the keyword entirely for non-string types (e.g. a boolean `const`
+ *   normalized to `enum: [true]`).
+ * - Folds `exclusiveMinimum`/`exclusiveMaximum` into `minimum`/`maximum`.
+ * - Strips unsupported keywords (`additionalProperties`, `default`, `const`, `$schema`, `$id`).
  *
- * @param schema - The JSON schema to flatten
- * @returns The schema with unions collapsed to single members
+ * @param schema - The JSON schema to sanitize
+ * @returns The Gemini-compatible schema
  */
-export function flattenJsonSchemaUnions<T extends Record<string, unknown>>(schema: T): T {
+export function sanitizeGeminiSchema<T extends Record<string, unknown>>(schema: T): T {
   if (!schema || typeof schema !== 'object') {
     return schema;
   }
 
   if (Array.isArray(schema)) {
     return schema.map((item) =>
-      item && typeof item === 'object' ? flattenJsonSchemaUnions(item) : item,
+      item && typeof item === 'object' ? sanitizeGeminiSchema(item) : item,
     ) as unknown as T;
   }
 
@@ -447,6 +493,10 @@ export function flattenJsonSchemaUnions<T extends Record<string, unknown>>(schem
   const result: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(collapsed)) {
+    if (GEMINI_UNSUPPORTED_KEYS.has(key)) {
+      continue;
+    }
+
     if (key === 'type' && Array.isArray(value)) {
       const single = collapseTypeArray(value).type;
       if (single !== undefined) {
@@ -460,9 +510,36 @@ export function flattenJsonSchemaUnions<T extends Record<string, unknown>>(schem
       continue;
     }
 
-    // Gemini enums must be homogeneous primitives; drop the `null` nullability absorbed.
-    if (key === 'enum' && Array.isArray(value) && nullable) {
-      result['enum'] = value.filter((entry) => entry !== null);
+    // Gemini has no `const`; a string const becomes a single-value (string) enum,
+    // a non-string const is dropped (Gemini enum is string-only).
+    if (key === 'const') {
+      if (typeof value === 'string' && !('enum' in collapsed)) {
+        result['enum'] = [value];
+      }
+      continue;
+    }
+
+    // Gemini has no exclusive bounds; fold them into the inclusive ones it accepts.
+    if (key === 'exclusiveMinimum') {
+      if (typeof value === 'number' && !('minimum' in collapsed)) {
+        result['minimum'] = value;
+      }
+      continue;
+    }
+    if (key === 'exclusiveMaximum') {
+      if (typeof value === 'number' && !('maximum' in collapsed)) {
+        result['maximum'] = value;
+      }
+      continue;
+    }
+
+    // Gemini `enum` is Type.STRING-only: keep string values, drop the keyword for
+    // non-string types (covers null-stripping for nullable string enums too).
+    if (key === 'enum' && Array.isArray(value)) {
+      const stringValues = value.filter((entry) => typeof entry === 'string');
+      if (stringValues.length > 0) {
+        result['enum'] = stringValues;
+      }
       continue;
     }
 
@@ -471,7 +548,7 @@ export function flattenJsonSchemaUnions<T extends Record<string, unknown>>(schem
       for (const [propKey, propValue] of Object.entries(value as Record<string, unknown>)) {
         newProps[propKey] =
           propValue && typeof propValue === 'object'
-            ? flattenJsonSchemaUnions(propValue as Record<string, unknown>)
+            ? sanitizeGeminiSchema(propValue as Record<string, unknown>)
             : propValue;
       }
       result[key] = newProps;
@@ -479,7 +556,7 @@ export function flattenJsonSchemaUnions<T extends Record<string, unknown>>(schem
     }
 
     if (value && typeof value === 'object') {
-      result[key] = flattenJsonSchemaUnions(value as Record<string, unknown>);
+      result[key] = sanitizeGeminiSchema(value as Record<string, unknown>);
       continue;
     }
 

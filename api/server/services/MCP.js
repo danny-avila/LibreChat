@@ -9,7 +9,7 @@ const {
   normalizeJsonSchema,
   GenerationJobManager,
   resolveJsonSchemaRefs,
-  flattenJsonSchemaUnions,
+  sanitizeGeminiSchema,
   buildMCPAuthStepId,
   buildMCPAuthToolCall,
   buildMCPAuthRunStepEvent,
@@ -650,9 +650,9 @@ function createToolInstance({
   let schema = parameters ? normalizeJsonSchema(resolveJsonSchemaRefs(parameters)) : null;
 
   if (schema && isGoogle) {
-    // Gemini/Vertex AI reject union schemas; collapse them so MCP tools that ship
-    // unions don't crash the Google endpoint (they work as-is on OpenAI/Claude).
-    schema = flattenJsonSchemaUnions(schema);
+    // Gemini/Vertex AI accept only a subset of JSON Schema; sanitize so MCP tools with
+    // unions, non-string enums, etc. don't 400 (they work as-is on OpenAI/Claude).
+    schema = sanitizeGeminiSchema(schema);
   }
 
   if (!schema || (isGoogle && isEmptyObjectSchema(schema))) {
