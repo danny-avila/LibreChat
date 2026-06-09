@@ -1905,7 +1905,7 @@ export class MCPConnection extends EventEmitter {
             `${this.getLogPrefix()} Server URL for OAuth: ${serverUrl ? sanitizeUrlForLogging(serverUrl) : 'undefined'}`,
           );
 
-          const oauthTimeout = this.options.initTimeout ?? 60000 * 2;
+          const oauthTimeout = mcpConfig.OAUTH_HANDLING_TIMEOUT;
           /** Promise that will resolve when OAuth is handled */
           const oauthHandledPromise = new Promise<void>((resolve, reject) => {
             let timeoutId: NodeJS.Timeout | null = null;

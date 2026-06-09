@@ -7,6 +7,10 @@ import { math, isEnabled } from '~/utils';
 export const mcpConfig: {
   OAUTH_ON_AUTH_ERROR: boolean;
   OAUTH_DETECTION_TIMEOUT: number;
+  /** How long (ms) to wait for the user to complete an OAuth flow before timing out. Default: 10 minutes */
+  OAUTH_HANDLING_TIMEOUT: number;
+  /** TTL (ms) for OAuth flow state. Must outlive OAUTH_HANDLING_TIMEOUT so the state survives the wait. Default: 15 minutes */
+  OAUTH_FLOW_TTL: number;
   CONNECTION_CHECK_TTL: number;
   /** Idle timeout (ms) after which user connections are disconnected. Default: 15 minutes */
   USER_CONNECTION_IDLE_TIMEOUT: number;
@@ -27,6 +31,10 @@ export const mcpConfig: {
 } = {
   OAUTH_ON_AUTH_ERROR: isEnabled(process.env.MCP_OAUTH_ON_AUTH_ERROR ?? true),
   OAUTH_DETECTION_TIMEOUT: math(process.env.MCP_OAUTH_DETECTION_TIMEOUT ?? 5000),
+  /** How long (ms) to wait for the user to complete an OAuth flow before timing out. Default: 10 minutes */
+  OAUTH_HANDLING_TIMEOUT: math(process.env.MCP_OAUTH_HANDLING_TIMEOUT ?? 10 * 60 * 1000),
+  /** TTL (ms) for OAuth flow state. Must outlive OAUTH_HANDLING_TIMEOUT so the state survives the wait. Default: 15 minutes */
+  OAUTH_FLOW_TTL: math(process.env.MCP_OAUTH_FLOW_TTL ?? 15 * 60 * 1000),
   CONNECTION_CHECK_TTL: math(process.env.MCP_CONNECTION_CHECK_TTL ?? 60000),
   /** Idle timeout (ms) after which user connections are disconnected. Default: 15 minutes */
   USER_CONNECTION_IDLE_TIMEOUT: math(

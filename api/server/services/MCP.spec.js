@@ -329,8 +329,8 @@ describe('tests for the new helper functions used by the MCP connection status e
     it('should detect failed flow when TTL not specified and flow exceeds default TTL', async () => {
       const mockFlowState = {
         status: 'PENDING',
-        createdAt: Date.now() - 200000, // 200 seconds ago (> 180s default TTL)
-        // ttl not specified, should use 180000 default
+        createdAt: Date.now() - 16 * 60 * 1000, // 16 minutes ago (> 15min default TTL)
+        // ttl not specified, should use the OAUTH_FLOW_TTL default
       };
       const mockFlowManager = { getFlowState: jest.fn(() => mockFlowState) };
       mockGetFlowStateManager.mockReturnValue(mockFlowManager);

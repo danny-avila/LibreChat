@@ -3,6 +3,7 @@ const { logger, getTenantId } = require('@librechat/data-schemas');
 const { Providers, Constants: AgentConstants } = require('@librechat/agents');
 const {
   sendEvent,
+  mcpConfig,
   MCPOAuthHandler,
   isMCPDomainAllowed,
   normalizeServerName,
@@ -852,7 +853,7 @@ async function checkOAuthFlowStatus(userId, serverName) {
     }
 
     const flowAge = Date.now() - flowState.createdAt;
-    const flowTTL = flowState.ttl || 180000; // Default 3 minutes
+    const flowTTL = flowState.ttl || mcpConfig.OAUTH_FLOW_TTL;
 
     if (flowState.status === 'FAILED' || flowAge > flowTTL) {
       const wasCancelled = flowState.error && flowState.error.includes('cancelled');

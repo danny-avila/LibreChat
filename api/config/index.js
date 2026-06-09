@@ -1,6 +1,6 @@
 const { EventSource } = require('eventsource');
-const { Time } = require('librechat-data-provider');
 const {
+  mcpConfig,
   MCPManager,
   FlowStateManager,
   MCPServersRegistry,
@@ -20,7 +20,7 @@ let flowManager = null;
 function getFlowStateManager(flowsCache) {
   if (!flowManager) {
     flowManager = new FlowStateManager(flowsCache, {
-      ttl: Time.ONE_MINUTE * 3,
+      ttl: mcpConfig.OAUTH_FLOW_TTL,
     });
   }
   return flowManager;
