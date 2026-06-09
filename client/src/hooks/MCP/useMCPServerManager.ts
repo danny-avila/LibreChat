@@ -209,13 +209,15 @@ export function useMCPServerManager({
       };
 
       /** Honor the server's configured MCP_OAUTH_HANDLING_TIMEOUT (surfaced on the
-       * connection-status response) so a tuned deadline isn't capped at the default. */
+       * connection-status response) so a tuned deadline isn't capped at the default.
+       * The cache may be empty at start, so this is refreshed from the first status
+       * refetch below rather than captured once. */
       const connectionData = queryClient.getQueryData([QueryKeys.mcpConnectionStatus]) as
         | { oauthTimeout?: number }
         | undefined;
-      const OAUTH_TIMEOUT_MS = connectionData?.oauthTimeout ?? 600000; // default 10 minutes
+      let oauthTimeoutMs = connectionData?.oauthTimeout ?? 600000; // default 10 minutes
       // Backstop only; the elapsed-time guard governs. Sized above the worst-case poll count.
-      const maxAttempts = Math.ceil(OAUTH_TIMEOUT_MS / 5000) + 5;
+      let maxAttempts = Math.ceil(oauthTimeoutMs / 5000) + 5;
 
       const pollOnce = async () => {
         try {
@@ -227,7 +229,7 @@ export function useMCPServerManager({
             ? Date.now() - state.oauthStartTime
             : pollAttempts * 5000; // Rough estimate if no start time
 
-          if (pollAttempts > maxAttempts || elapsedTime > OAUTH_TIMEOUT_MS) {
+          if (pollAttempts > maxAttempts || elapsedTime > oauthTimeoutMs) {
             console.warn(
               `[MCP Manager] OAuth timeout for ${serverName} after ${(elapsedTime / 1000).toFixed(0)}s (attempt ${pollAttempts})`,
             );
@@ -247,6 +249,12 @@ export function useMCPServerManager({
           const freshConnectionData = queryClient.getQueryData([
             QueryKeys.mcpConnectionStatus,
           ]) as any;
+          // Pick up the configured timeout once the status response lands (cache may have
+          // been empty when polling started), so a tuned deadline is honored mid-flight.
+          if (typeof freshConnectionData?.oauthTimeout === 'number') {
+            oauthTimeoutMs = freshConnectionData.oauthTimeout;
+            maxAttempts = Math.ceil(oauthTimeoutMs / 5000) + 5;
+          }
           const freshConnectionStatus = freshConnectionData?.connectionStatus || {};
 
           const serverStatus = freshConnectionStatus[serverName];
@@ -277,7 +285,7 @@ export function useMCPServerManager({
           }
 
           // Check for OAuth timeout (should align with maxAttempts)
-          if (state?.oauthStartTime && Date.now() - state.oauthStartTime > OAUTH_TIMEOUT_MS) {
+          if (state?.oauthStartTime && Date.now() - state.oauthStartTime > oauthTimeoutMs) {
             showToast({
               message: localize('com_ui_mcp_oauth_timeout', { 0: serverName }),
               status: 'error',
