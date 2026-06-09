@@ -25,6 +25,7 @@ const {
   recordCollectedUsage,
   getTransactionsConfig,
   resolveRecursionLimit,
+  findPiiMatchInMessages,
   discoverConnectedAgents,
   getRemoteAgentPermissions,
   createToolExecuteHandler,
@@ -33,7 +34,6 @@ const {
   resolveAgentScopedSkillIds,
   createOpenAIContentAggregator,
   isChatCompletionValidationFailure,
-  findPiiMatchInMessages,
 } = require('@librechat/api');
 const {
   buildSummarizationHandlers,
@@ -178,14 +178,14 @@ const OpenAIChatCompletionController = async (req, res) => {
     );
   }
 
-  const piiHit = findPiiMatchInMessages(request.messages, appConfig?.messagePiiFilter);
+  const piiHit = findPiiMatchInMessages(request.messages, appConfig?.messageFilter?.pii);
   if (piiHit != null) {
     return sendErrorResponse(
       res,
       400,
       `Message contains a ${piiHit.label}. Remove it and try again.`,
       'invalid_request_error',
-      'message_pii_filter_block',
+      'message_filter_pii_block',
     );
   }
 

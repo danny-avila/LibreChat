@@ -1420,7 +1420,7 @@ export type SummarizationConfig = z.infer<typeof summarizationConfigSchema>;
 
 const customEndpointsSchema = z.array(endpointSchema.partial()).optional();
 
-const messagePiiCustomPatternSchema = z.object({
+const messageFilterPiiCustomPatternSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
   regex: z
@@ -1439,12 +1439,18 @@ const messagePiiCustomPatternSchema = z.object({
     ),
 });
 
-export const messagePiiFilterSchema = z.object({
+export const messageFilterPiiSchema = z.object({
   starterPatterns: z.array(z.string()).optional(),
-  customPatterns: z.array(messagePiiCustomPatternSchema).optional(),
+  customPatterns: z.array(messageFilterPiiCustomPatternSchema).optional(),
 });
 
-export type MessagePiiFilterConfig = z.infer<typeof messagePiiFilterSchema>;
+export type MessageFilterPiiConfig = z.infer<typeof messageFilterPiiSchema>;
+
+export const messageFilterSchema = z.object({
+  pii: messageFilterPiiSchema.optional(),
+});
+
+export type MessageFilterConfig = z.infer<typeof messageFilterSchema>;
 
 export const configSchema = z.object({
   version: z.string(),
@@ -1493,7 +1499,7 @@ export const configSchema = z.object({
   rateLimits: rateLimitSchema.optional(),
   fileConfig: fileConfigSchema.optional(),
   modelSpecs: specsConfigSchema.optional(),
-  messagePiiFilter: messagePiiFilterSchema.optional(),
+  messageFilter: messageFilterSchema.optional(),
   endpoints: z
     .object({
       allowedAddresses: allowedAddressesSchema,

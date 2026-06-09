@@ -22,6 +22,7 @@ const {
   extractManualSkills,
   injectSkillPrimes,
   createToolExecuteHandler,
+  findPiiMatchInMessages,
   discoverConnectedAgents,
   getRemoteAgentPermissions,
   // Responses API
@@ -41,7 +42,6 @@ const {
   sendResponsesErrorResponse,
   createResponsesEventHandlers,
   createAggregatorEventHandlers,
-  findPiiMatchInMessages,
 } = require('@librechat/api');
 const {
   createResponsesToolEndCallback,
@@ -576,14 +576,14 @@ const createResponse = async (req, res) => {
       typeof request.input === 'string' ? request.input : request.input,
     );
 
-    const piiHit = findPiiMatchInMessages(inputMessages, appConfig?.messagePiiFilter);
+    const piiHit = findPiiMatchInMessages(inputMessages, appConfig?.messageFilter?.pii);
     if (piiHit != null) {
       return sendResponsesErrorResponse(
         res,
         400,
         `Message contains a ${piiHit.label}. Remove it and try again.`,
         'invalid_request',
-        'message_pii_filter_block',
+        'message_filter_pii_block',
       );
     }
 

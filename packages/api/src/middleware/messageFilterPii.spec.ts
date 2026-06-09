@@ -1,20 +1,20 @@
-import type { MessagePiiFilterConfig } from 'librechat-data-provider';
+import type { MessageFilterPiiConfig } from 'librechat-data-provider';
 import type { Request, Response, NextFunction } from 'express';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
-import { createMessagePiiFilter, findPiiMatchInMessages } from './messagePiiFilter';
+import { createMessageFilterPii, findPiiMatchInMessages } from './messageFilterPii';
 
 type CapturedResponse = { status?: number; body?: unknown };
 
 function runMiddleware(
-  config: MessagePiiFilterConfig | undefined,
+  config: MessageFilterPiiConfig | undefined,
   body: unknown,
 ): { capturedRes: CapturedResponse; nextCalls: number } {
   const captured: CapturedResponse = {};
   let nextCalls = 0;
-  const mw = createMessagePiiFilter({ getConfig: () => config });
+  const mw = createMessageFilterPii({ getConfig: () => config });
   const req = { body } as unknown as Request;
   const res = {
     status(code: number) {
@@ -33,7 +33,7 @@ function runMiddleware(
   return { capturedRes: captured, nextCalls };
 }
 
-describe('messagePiiFilter middleware', () => {
+describe('messageFilterPii middleware', () => {
   it('passes through when no config is provided', () => {
     const { capturedRes, nextCalls } = runMiddleware(undefined, {
       text: 'my key is sk-proj-FAKE1234567890ABCDEF',
@@ -68,7 +68,7 @@ describe('messagePiiFilter middleware', () => {
     expect(nextCalls).toBe(0);
     expect(capturedRes.status).toBe(400);
     expect(capturedRes.body).toEqual({
-      error: 'message_pii_filter_block',
+      error: 'message_filter_pii_block',
       message: 'Message contains a sk- prefix token. Remove it and try again.',
     });
   });
@@ -80,7 +80,7 @@ describe('messagePiiFilter middleware', () => {
     );
     expect(nextCalls).toBe(0);
     expect(capturedRes.status).toBe(400);
-    expect(capturedRes.body).toMatchObject({ error: 'message_pii_filter_block' });
+    expect(capturedRes.body).toMatchObject({ error: 'message_filter_pii_block' });
   });
 
   it('rejects with 400 when an api-key header is present', () => {
@@ -118,7 +118,7 @@ describe('messagePiiFilter middleware', () => {
     expect(nextCalls).toBe(0);
     expect(capturedRes.status).toBe(400);
     expect(capturedRes.body).toEqual({
-      error: 'message_pii_filter_block',
+      error: 'message_filter_pii_block',
       message: 'Message contains a Org token. Remove it and try again.',
     });
   });
@@ -135,7 +135,7 @@ describe('messagePiiFilter middleware', () => {
   });
 
   it('returns the same compiled pattern array for repeat calls with the same config (memoization)', () => {
-    const config: MessagePiiFilterConfig = {
+    const config: MessageFilterPiiConfig = {
       customPatterns: [{ id: 'org', label: 'Org token', regex: '\\bORG-[A-Z0-9]{6,}' }],
     };
     const a = runMiddleware(config, { text: 'plain' });
@@ -151,7 +151,7 @@ describe('messagePiiFilter middleware', () => {
         { id: 'broken', label: 'Broken', regex: '(' },
         { id: 'org', label: 'Org token', regex: '\\bORG-[A-Z0-9]{6,}' },
       ],
-    } as unknown as MessagePiiFilterConfig;
+    } as unknown as MessageFilterPiiConfig;
     const benign = runMiddleware(config, { text: 'plain text' });
     expect(benign.nextCalls).toBe(1);
     expect(benign.capturedRes.status).toBeUndefined();

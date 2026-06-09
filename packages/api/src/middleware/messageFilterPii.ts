@@ -5,7 +5,7 @@ import type {
   Request as ServerRequest,
   Response as ServerResponse,
 } from 'express';
-import type { MessagePiiFilterConfig } from 'librechat-data-provider';
+import type { MessageFilterPiiConfig } from 'librechat-data-provider';
 
 type CompiledPattern = { id: string; label: string; pattern: RegExp };
 
@@ -33,7 +33,7 @@ function selectStarter(ids?: string[]): CompiledPattern[] {
 
 const COMPILE_CACHE = new WeakMap<object, CompiledPattern[]>();
 
-function compile(config: MessagePiiFilterConfig): CompiledPattern[] {
+function compile(config: MessageFilterPiiConfig): CompiledPattern[] {
   const cached = COMPILE_CACHE.get(config);
   if (cached != null) {
     return cached;
@@ -45,7 +45,7 @@ function compile(config: MessagePiiFilterConfig): CompiledPattern[] {
       custom.push({ id: p.id, label: p.label, pattern: new RegExp(p.regex, 'g') });
     } catch (err) {
       logger.warn(
-        `[messagePiiFilter] dropping invalid customPattern ${JSON.stringify(p.id)}: ${(err as Error).message}`,
+        `[messageFilter.pii] dropping invalid customPattern ${JSON.stringify(p.id)}: ${(err as Error).message}`,
       );
     }
   }
@@ -77,7 +77,7 @@ type ChatLikeMessage = {
 
 export function findPiiMatchInMessages(
   messages: ChatLikeMessage[] | undefined,
-  config: MessagePiiFilterConfig | undefined,
+  config: MessageFilterPiiConfig | undefined,
 ): PiiMatch | null {
   if (config == null || !Array.isArray(messages) || messages.length === 0) {
     return null;
@@ -111,12 +111,12 @@ export function findPiiMatchInMessages(
   return null;
 }
 
-export interface CreateMessagePiiFilterOptions {
-  getConfig: (req: ServerRequest) => MessagePiiFilterConfig | undefined;
+export interface CreateMessageFilterPiiOptions {
+  getConfig: (req: ServerRequest) => MessageFilterPiiConfig | undefined;
 }
 
-export function createMessagePiiFilter(options: CreateMessagePiiFilterOptions): RequestHandler {
-  return function messagePiiFilter(req: ServerRequest, res: ServerResponse, next: NextFunction) {
+export function createMessageFilterPii(options: CreateMessageFilterPiiOptions): RequestHandler {
+  return function messageFilterPii(req: ServerRequest, res: ServerResponse, next: NextFunction) {
     const config = options.getConfig(req);
     if (config == null) {
       next();
@@ -138,7 +138,7 @@ export function createMessagePiiFilter(options: CreateMessagePiiFilterOptions): 
       return;
     }
     res.status(400).json({
-      error: 'message_pii_filter_block',
+      error: 'message_filter_pii_block',
       message: `Message contains a ${match.label}. Remove it and try again.`,
     });
   };
