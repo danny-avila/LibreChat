@@ -155,7 +155,7 @@ export class MCPManager extends UserConnectionManager {
     const useSSRFProtection = registry.shouldEnableSSRFProtection();
     const allowedDomains = registry.getAllowedDomains();
     const allowedAddresses = registry.getAllowedAddresses();
-    const resolvedServerConfig = await this.assertResolvedRuntimeConfigAllowed({
+    await this.assertResolvedRuntimeConfigAllowed({
       config: serverConfig,
       user,
       customUserVars: args.customUserVars,
@@ -166,12 +166,12 @@ export class MCPManager extends UserConnectionManager {
       logPrefix: `${logPrefix} [Discovery]`,
     });
 
-    const useOAuth = requiresOAuthMachinery(resolvedServerConfig);
-    const dbSourced = isUserSourced(resolvedServerConfig);
+    const useOAuth = requiresOAuthMachinery(serverConfig);
+    const dbSourced = isUserSourced(serverConfig);
     const basic: t.BasicConnectionOptions = {
       dbSourced,
       serverName,
-      serverConfig: resolvedServerConfig,
+      serverConfig,
       useSSRFProtection,
       allowedDomains,
       allowedAddresses,

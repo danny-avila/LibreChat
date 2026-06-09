@@ -11,10 +11,13 @@ const {
   resolveJsonSchemaRefs,
   buildMCPAuthStepId,
   buildMCPAuthToolCall,
+  processMCPEnv,
   buildMCPAuthRunStepEvent,
   buildMCPAuthRunStepDeltaEvent,
   buildMCPAuthRunStepEndDeltaEvent,
+  isUserSourced,
   checkAccessWithRequestCache,
+  requiresEphemeralUserConnection,
 } = require('@librechat/api');
 const {
   Time,
@@ -154,6 +157,26 @@ async function resolveAllMcpConfigs(userId, user) {
   }
 
   return await registry.getAllServerConfigs(userId, configServers);
+}
+
+function getServerCustomUserVars(userMCPAuthMap, serverName) {
+  return userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
+}
+
+function resolveDomainValidationConfig({
+  serverConfig,
+  user,
+  requestBody,
+  userMCPAuthMap,
+  serverName,
+}) {
+  return processMCPEnv({
+    user,
+    body: requestBody,
+    dbSourced: isUserSourced(serverConfig),
+    options: serverConfig,
+    customUserVars: getServerCustomUserVars(userMCPAuthMap, serverName),
+  });
 }
 
 /**
@@ -469,6 +492,7 @@ async function createMCPTools({
 }) {
   const serverConfig =
     config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id, configServers));
+
   if (serverConfig?.url) {
     const appConfig = await getAppConfig({
       role: user?.role,
@@ -477,8 +501,15 @@ async function createMCPTools({
     });
     const allowedDomains = appConfig?.mcpSettings?.allowedDomains;
     const allowedAddresses = appConfig?.mcpSettings?.allowedAddresses;
-    const isDomainAllowed = await isMCPDomainAllowed(
+    const validationConfig = resolveDomainValidationConfig({
       serverConfig,
+      user,
+      requestBody,
+      userMCPAuthMap,
+      serverName,
+    });
+    const isDomainAllowed = await isMCPDomainAllowed(
+      validationConfig,
       allowedDomains,
       allowedAddresses,
     );
@@ -568,6 +599,9 @@ async function createMCPTool({
 
   const serverConfig =
     config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id, configServers));
+  const requestScopedTools = serverConfig ? requiresEphemeralUserConnection(serverConfig) : false;
+  const useMissingToolCache = !requestScopedTools;
+
   if (serverConfig?.url) {
     const appConfig = await getAppConfig({
       role: user?.role,
@@ -576,8 +610,15 @@ async function createMCPTool({
     });
     const allowedDomains = appConfig?.mcpSettings?.allowedDomains;
     const allowedAddresses = appConfig?.mcpSettings?.allowedAddresses;
-    const isDomainAllowed = await isMCPDomainAllowed(
+    const validationConfig = resolveDomainValidationConfig({
       serverConfig,
+      user,
+      requestBody,
+      userMCPAuthMap,
+      serverName,
+    });
+    const isDomainAllowed = await isMCPDomainAllowed(
+      validationConfig,
       allowedDomains,
       allowedAddresses,
     );
@@ -590,7 +631,7 @@ async function createMCPTool({
   /** @type {LCTool | undefined} */
   let toolDefinition = availableTools?.[toolKey]?.function;
   if (!toolDefinition) {
-    const cachedAt = missingToolCache.get(toolKey);
+    const cachedAt = useMissingToolCache ? missingToolCache.get(toolKey) : undefined;
     if (cachedAt && Date.now() - cachedAt < MISSING_TOOL_TTL_MS) {
       logger.debug(
         `[MCP][${serverName}][${toolName}] Tool in negative cache, returning unavailable stub.`,
@@ -614,7 +655,7 @@ async function createMCPTool({
     });
     toolDefinition = result?.availableTools?.[toolKey]?.function;
 
-    if (!toolDefinition) {
+    if (!toolDefinition && useMissingToolCache) {
       missingToolCache.set(toolKey, Date.now());
       evictStale(missingToolCache, MISSING_TOOL_TTL_MS);
     }

@@ -1285,7 +1285,12 @@ describe('MCPManager', () => {
       });
 
       expect(MCPConnectionFactory.discoverTools).toHaveBeenCalledWith(
-        expect.objectContaining({ serverName }),
+        expect.objectContaining({
+          serverName,
+          serverConfig: expect.objectContaining({
+            url: 'https://my-mcp.server.com?key={{MY_CUSTOM_KEY}}',
+          }),
+        }),
         expect.objectContaining({
           user: mockUser,
           customUserVars,
@@ -1615,6 +1620,56 @@ describe('MCPManager', () => {
         null,
       );
       expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+    });
+
+    it('should validate resolved runtime URLs without passing resolved configs to the factory', async () => {
+      const runtimeUrlConfig: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://{{LIBRECHAT_BODY_CONVERSATIONID}}.example.com/mcp',
+        source: 'yaml',
+        requiresOAuth: false,
+      };
+      mockAppConnections({
+        has: jest.fn().mockResolvedValue(false),
+      });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(runtimeUrlConfig);
+      (mockRegistryInstance.getAllowedDomains as jest.Mock).mockReturnValue(['*.example.com']);
+      mockProcessMCPEnv.mockImplementation(({ options, body }) => ({
+        ...options,
+        ...('url' in options && {
+          url: options.url?.replace(
+            '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+            body?.conversationId ?? '',
+          ),
+        }),
+      }));
+      mockIsMCPDomainAllowed.mockResolvedValue(true);
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(mockConnection);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await manager.getUserConnection({
+        serverName,
+        user: mockUser,
+        requestBody: { conversationId: 'tenant-a' },
+      });
+
+      expect(mockIsMCPDomainAllowed).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: 'https://tenant-a.example.com/mcp',
+        }),
+        ['*.example.com'],
+        null,
+      );
+      expect(MCPConnectionFactory.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverConfig: expect.objectContaining({
+            url: 'https://{{LIBRECHAT_BODY_CONVERSATIONID}}.example.com/mcp',
+          }),
+        }),
+        expect.objectContaining({
+          requestBody: { conversationId: 'tenant-a' },
+        }),
+      );
     });
 
     it('should keep graph placeholders unresolved for user-sourced connection configs', async () => {

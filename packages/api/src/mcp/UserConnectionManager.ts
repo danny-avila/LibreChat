@@ -383,7 +383,7 @@ export abstract class UserConnectionManager {
       const registry = MCPServersRegistry.getInstance();
       const allowedDomains = registry.getAllowedDomains();
       const allowedAddresses = registry.getAllowedAddresses();
-      const resolvedRuntimeConfig = await this.assertResolvedRuntimeConfigAllowed({
+      await this.assertResolvedRuntimeConfigAllowed({
         config: runtimeConfig,
         user,
         customUserVars,
@@ -394,15 +394,15 @@ export abstract class UserConnectionManager {
         logPrefix: `[MCP][User: ${userId}][${serverName}]`,
       });
       const basic: t.BasicConnectionOptions = {
-        serverConfig: resolvedRuntimeConfig,
+        serverConfig: runtimeConfig,
         serverName: serverName,
-        dbSourced: isUserSourced(resolvedRuntimeConfig),
+        dbSourced: isUserSourced(runtimeConfig),
         useSSRFProtection: registry.shouldEnableSSRFProtection(),
         allowedDomains,
         allowedAddresses,
       };
 
-      const useOAuth = requiresOAuthMachinery(resolvedRuntimeConfig);
+      const useOAuth = requiresOAuthMachinery(runtimeConfig);
       let connectionOptions: t.OAuthConnectionOptions | t.UserConnectionContext;
       if (useOAuth) {
         if (!flowManager) {
