@@ -197,24 +197,26 @@ export function useMCPServerManager({
       let pollAttempts = 0;
       let timeoutId: NodeJS.Timeout | null = null;
 
-      /** OAuth typically completes in 5 seconds to 3 minutes
-       * We enforce a strict 3-minute timeout with gradual backoff
+      /** OAuth can take several minutes if the user steps away from the consent screen.
+       * Poll for the full server-side handling window (MCP_OAUTH_HANDLING_TIMEOUT
+       * default = 10 minutes) with gradual backoff, so the button stays usable as long
+       * as the server will accept the callback.
        */
       const getPollInterval = (attempt: number): number => {
         if (attempt < 12) return 5000; // First minute: every 5s (12 polls)
         if (attempt < 22) return 6000; // Second minute: every 6s (10 polls)
-        return 7500; // Final minute: every 7.5s (8 polls)
+        return 7500; // Thereafter: every 7.5s
       };
 
-      const maxAttempts = 30; // Exactly 3 minutes (180 seconds) total
-      const OAUTH_TIMEOUT_MS = 180000; // 3 minutes in milliseconds
+      const OAUTH_TIMEOUT_MS = 600000; // 10 minutes (MCP_OAUTH_HANDLING_TIMEOUT default)
+      const maxAttempts = 86; // ~10 minutes total with the backoff schedule above
 
       const pollOnce = async () => {
         try {
           pollAttempts++;
           const state = getServerInitState(serverInitStates, serverName);
 
-          /** Stop polling after 3 minutes or max attempts */
+          /** Stop polling once the handling window or max attempts is exceeded */
           const elapsedTime = state?.oauthStartTime
             ? Date.now() - state.oauthStartTime
             : pollAttempts * 5000; // Rough estimate if no start time
