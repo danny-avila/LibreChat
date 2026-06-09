@@ -5,6 +5,7 @@ import {
   ThinkingDisplay,
   AnthropicEffort,
   anthropicSettings,
+  isMythosClassModel,
   resolveThinkingDisplay,
   supportsAdaptiveThinking,
 } from 'librechat-data-provider';
@@ -50,7 +51,7 @@ function checkPromptCacheSupport(modelName: string): boolean {
     /claude-(?:sonnet|opus|haiku)-[4-9]/.test(modelMatch) ||
     /claude-[4-9]-(?:sonnet|opus|haiku)?/.test(modelMatch) ||
     /claude-4(?:-(?:sonnet|opus|haiku))?/.test(modelMatch) ||
-    /claude-(?:fable|mythos)[-.]?\d/.test(modelMatch)
+    isMythosClassModel(modelMatch)
   );
 }
 

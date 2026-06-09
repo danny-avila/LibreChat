@@ -1,4 +1,4 @@
-import { ThinkingDisplay } from '../src/schemas';
+import { ThinkingDisplay, isMythosClassModel, MYTHOS_CLASS_FAMILIES } from '../src/schemas';
 import {
   BEDROCK_OUTPUT_128K_BETA,
   supportsAdaptiveThinking,
@@ -13,6 +13,23 @@ import {
 } from '../src/bedrock';
 
 const BEDROCK_CLAUDE_4_BETAS = [BEDROCK_OUTPUT_128K_BETA, BEDROCK_FINE_GRAINED_TOOL_STREAMING_BETA];
+
+describe('isMythosClassModel (single source of truth for Fable/Mythos)', () => {
+  test('matches every declared family across naming variants', () => {
+    MYTHOS_CLASS_FAMILIES.forEach((family) => {
+      expect(isMythosClassModel(`claude-${family}-5`)).toBe(true);
+      expect(isMythosClassModel(`anthropic.claude-${family}-5`)).toBe(true);
+      expect(isMythosClassModel(`us.anthropic.claude-${family}-5`)).toBe(true);
+      expect(isMythosClassModel(`claude-${family}-5-20260609`)).toBe(true);
+    });
+  });
+
+  test('does not match opus/sonnet/haiku or unrelated models', () => {
+    ['claude-opus-4-8', 'claude-sonnet-4-6', 'claude-haiku-4-5', 'gpt-4o', ''].forEach((model) => {
+      expect(isMythosClassModel(model)).toBe(false);
+    });
+  });
+});
 
 describe('supportsAdaptiveThinking', () => {
   test('should return true for claude-opus-4-6', () => {
@@ -674,7 +691,8 @@ describe('bedrockInputParser', () => {
       expect(additionalFields.custom_flag).toBe(true);
       expect(additionalFields.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
       expect(additionalFields.output_config).toEqual({ effort: 'high' });
-      expect(additionalFields.anthropic_beta).toEqual(BEDROCK_CLAUDE_4_BETAS);
+      /** Mythos-class models do not receive the legacy output-128k / fine-grained-tool-streaming betas. */
+      expect(additionalFields.anthropic_beta).toBeUndefined();
     });
 
     test('should set thinking.display to "summarized" so Opus 4.7 returns reasoning blocks', () => {

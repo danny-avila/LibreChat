@@ -2430,6 +2430,41 @@ describe('Claude Model Tests', () => {
       tokenValues['claude-mythos-5'].completion,
     );
   });
+
+  it('should pin Claude Mythos 5 pricing to $10 / $50 per MTok', () => {
+    expect(tokenValues['claude-mythos-5']).toEqual({ prompt: 10, completion: 50 });
+  });
+
+  it('should handle Claude Mythos 5 model name variations', () => {
+    const modelVariations = [
+      'claude-mythos-5',
+      'claude-mythos-5-20260609',
+      'claude-mythos-5-latest',
+      'anthropic/claude-mythos-5',
+      'claude-mythos-5/anthropic',
+      'anthropic.claude-mythos-5',
+    ];
+
+    modelVariations.forEach((model) => {
+      const valueKey = getValueKey(model);
+      expect(valueKey).toBe('claude-mythos-5');
+      expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(
+        tokenValues['claude-mythos-5'].prompt,
+      );
+      expect(getMultiplier({ model, tokenType: 'completion' })).toBe(
+        tokenValues['claude-mythos-5'].completion,
+      );
+    });
+  });
+
+  it('should return correct cache rates for Claude Mythos 5', () => {
+    expect(getCacheMultiplier({ model: 'claude-mythos-5', cacheType: 'write' })).toBe(
+      cacheTokenValues['claude-mythos-5'].write,
+    );
+    expect(getCacheMultiplier({ model: 'claude-mythos-5', cacheType: 'read' })).toBe(
+      cacheTokenValues['claude-mythos-5'].read,
+    );
+  });
 });
 
 describe('Premium Token Pricing', () => {
