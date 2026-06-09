@@ -1,6 +1,7 @@
 import { Constants } from 'librechat-data-provider';
 import type { JsonSchemaType } from '@librechat/data-schemas';
 import type { MCPConnection } from '~/mcp/connection';
+import { sanitizeToolSchema } from '~/mcp/zod';
 import type * as t from '~/mcp/types';
 import { isMCPDomainAllowed, extractMCPServerDomain } from '~/auth/domain';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
@@ -156,7 +157,7 @@ export class MCPServerInspector {
         ['function']: {
           name,
           description: tool.description,
-          parameters: tool.inputSchema as JsonSchemaType,
+          parameters: sanitizeToolSchema(tool.inputSchema as JsonSchemaType),
         },
       };
     });

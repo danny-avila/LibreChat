@@ -1,6 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import { Constants } from 'librechat-data-provider';
 import type { JsonSchemaType } from '@librechat/agents';
+import { sanitizeToolSchema } from './zod';
 import type { LCAvailableTools, LCFunctionTool } from './types';
 
 export interface MCPToolInput {
@@ -57,7 +58,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): {
           ['function']: {
             name,
             description: tool.description ?? '',
-            parameters: tool.inputSchema ?? ({ type: 'object', properties: {} } as JsonSchemaType),
+            parameters: sanitizeToolSchema(tool.inputSchema),
           },
         };
         serverTools[name] = entry;

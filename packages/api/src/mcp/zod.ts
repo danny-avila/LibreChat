@@ -322,6 +322,87 @@ export function normalizeJsonSchema<T extends Record<string, unknown>>(schema: T
   return result as T;
 }
 
+const COMBINATOR_KEYS = ['oneOf', 'anyOf', 'allOf'] as const;
+
+/**
+ * Sanitizes an MCP tool inputSchema for strict LLM API compatibility.
+ *
+ * Anthropic and OpenAI reject schemas with `oneOf`/`anyOf`/`allOf`/`not` at the
+ * top level. When any of these combinators are present at the root, this function:
+ *   1. Resolves all `$ref` references so combinator branches are fully expanded
+ *   2. Merges `properties` and `required` from all sub-schemas into a single
+ *      `type: "object"` schema
+ *
+ * Top-level `description` is preserved. The result passes through `normalizeJsonSchema`
+ * for full cleanup. Schemas without top-level combinators pass through unchanged.
+ *
+ * Google Gemini is more permissive and does not require this transformation.
+ */
+export function sanitizeToolSchema(schema: JsonSchemaType | undefined): JsonSchemaType {
+  const fallback: JsonSchemaType = { type: 'object', properties: {} };
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) {
+    return fallback;
+  }
+
+  const resolved = resolveJsonSchemaRefs(schema as Record<string, unknown>) as Record<
+    string,
+    unknown
+  >;
+  const hasCombinator = COMBINATOR_KEYS.some((k) => Array.isArray(resolved[k]));
+  const hasTopLevelNot = resolved['not'] != null;
+
+  if (!hasCombinator && !hasTopLevelNot) {
+    return normalizeJsonSchema(resolved) as JsonSchemaType;
+  }
+
+  const mergedProperties: Record<string, unknown> = {};
+  const mergedRequired = new Set<string>(
+    Array.isArray(resolved.required) ? (resolved.required as string[]) : [],
+  );
+
+  if (
+    resolved.properties &&
+    typeof resolved.properties === 'object' &&
+    !Array.isArray(resolved.properties)
+  ) {
+    Object.assign(mergedProperties, resolved.properties);
+  }
+
+  for (const key of COMBINATOR_KEYS) {
+    const subSchemas = resolved[key];
+    if (!Array.isArray(subSchemas)) {
+      continue;
+    }
+    for (const sub of subSchemas) {
+      if (!sub || typeof sub !== 'object' || Array.isArray(sub)) {
+        continue;
+      }
+      const subRecord = sub as Record<string, unknown>;
+      if (subRecord.properties && typeof subRecord.properties === 'object') {
+        Object.assign(mergedProperties, subRecord.properties);
+      }
+      if (Array.isArray(subRecord.required)) {
+        for (const field of subRecord.required as string[]) {
+          mergedRequired.add(field);
+        }
+      }
+    }
+  }
+
+  const result: Record<string, unknown> = { type: 'object' };
+  if (Object.keys(mergedProperties).length > 0) {
+    result.properties = mergedProperties;
+  }
+  if (mergedRequired.size > 0) {
+    result.required = [...mergedRequired];
+  }
+  if (resolved.description != null) {
+    result.description = resolved.description;
+  }
+
+  return normalizeJsonSchema(result) as JsonSchemaType;
+}
+
 /**
  * Converts a JSON Schema to a Zod schema.
  *
