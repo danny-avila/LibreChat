@@ -92,6 +92,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     () => conversation?.conversationId ?? Constants.NEW_CONVO,
     [conversation?.conversationId],
   );
+  const previousConversationIdRef = useRef(conversationId);
 
   const isRTL = useMemo(
     () => (chatDirection != null ? chatDirection?.toLowerCase() === 'rtl' : false),
@@ -184,6 +185,24 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   });
 
   useQueryParams({ textAreaRef });
+
+  useEffect(() => {
+    if (previousConversationIdRef.current === conversationId) {
+      return;
+    }
+
+    previousConversationIdRef.current = conversationId;
+    if (isSubmitting) {
+      return;
+    }
+
+    methods.reset({ text: '' });
+    if (textAreaRef.current) {
+      textAreaRef.current.value = '';
+    }
+    setVisualRowCount(1);
+    setIsCollapsed(false);
+  }, [conversationId, isSubmitting, methods]);
 
   const { ref, ...registerProps } = methods.register('text', {
     required: true,
