@@ -508,6 +508,9 @@ Please follow these instructions when using tools from the respective MCP server
       // Rethrowing allows the caller (createMCPTool) to handle the final user message
       throw error;
     } finally {
+      // Ephemeral connections are never stored in userConnections, so disconnecting
+      // is the only cleanup needed; removing the map entry here could orphan a
+      // still-connected cached connection from before a config change.
       if (disconnectAfterCall && connection) {
         try {
           await connection.disconnect();
@@ -515,9 +518,6 @@ Please follow these instructions when using tools from the respective MCP server
           logger.warn(`${logPrefix}[${toolName}] Failed to disconnect ephemeral connection`, {
             error: disconnectError,
           });
-        }
-        if (userId) {
-          this.removeUserConnection(userId, serverName);
         }
       }
     }

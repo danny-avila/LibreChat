@@ -81,6 +81,11 @@ export class MCPConnectionFactory {
     return factory.discoverToolsInternal();
   }
 
+  /**
+   * Together with the constructor's processMCPEnv pass, this mirrors
+   * UserConnectionManager.resolveRuntimeConfig — keep them in sync so the
+   * config validated there matches the one connected with here.
+   */
   private static async prepareBasicConnectionOptions(
     basic: t.BasicConnectionOptions,
     options?: t.OAuthConnectionOptions | t.UserConnectionContext,

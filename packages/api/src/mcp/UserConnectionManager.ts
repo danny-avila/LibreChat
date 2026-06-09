@@ -476,6 +476,11 @@ export abstract class UserConnectionManager {
     }
   }
 
+  /**
+   * Mirrors the resolution MCPConnectionFactory performs internally
+   * (preProcessGraphTokens + processMCPEnv). Both must stay in sync so the
+   * config validated here matches the one the factory actually connects with.
+   */
   protected async resolveRuntimeConfig({
     config,
     user,

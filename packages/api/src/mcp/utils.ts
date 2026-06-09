@@ -176,6 +176,9 @@ export function getMissingRuntimeBodyPlaceholderFields(
  * `GRAPH` and `BODY` placeholders can change per request. If they affect the
  * connection-defining parts of a config, the normal userId:serverName cache
  * would reuse a connection built with stale request context.
+ *
+ * Ephemeral connections are created and torn down per tool call — configs using
+ * these placeholders pay a full connect + initialize on every invocation.
  */
 export function requiresEphemeralUserConnection(config: UserScopedConnectionConfig): boolean {
   if (isUserSourced(config)) {

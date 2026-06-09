@@ -163,6 +163,11 @@ function getServerCustomUserVars(userMCPAuthMap, serverName) {
   return userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
 }
 
+/**
+ * Best-effort early gate; the authoritative check is
+ * `assertResolvedRuntimeConfigAllowed` in `@librechat/api`, whose resolution
+ * this must mirror (minus the async Graph pre-pass).
+ */
 function resolveDomainValidationConfig({
   serverConfig,
   user,
