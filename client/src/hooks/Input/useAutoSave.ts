@@ -75,6 +75,7 @@ export const useAutoSave = ({
     (id: string) => {
       const savedDraft = getDraft(id);
       if (!savedDraft) {
+        setValue('text', '');
         return;
       }
       setValue('text', savedDraft);
@@ -177,13 +178,10 @@ export const useAutoSave = ({
           `${LocalStorageKeys.TEXT_DRAFT}${Constants.PENDING_CONVO}`,
         );
 
-        // Clear the pending text draft, if it exists, and save the current draft to the new conversationId;
-        // otherwise, save the current text area value to the new conversationId
+        // Submitted text should not become a restored draft for the created conversation.
         localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${Constants.PENDING_CONVO}`);
         if (pendingDraft) {
-          localStorage.setItem(`${LocalStorageKeys.TEXT_DRAFT}${conversationId}`, pendingDraft);
-        } else if (textAreaRef?.current?.value) {
-          setDraft({ id: conversationId, value: textAreaRef.current.value });
+          localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${conversationId}`);
         }
         const pendingFileDraft = localStorage.getItem(
           `${LocalStorageKeys.FILES_DRAFT}${Constants.PENDING_CONVO}`,

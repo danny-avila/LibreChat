@@ -135,11 +135,11 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
     return margin;
   }, [lineCount, description, textHasMultipleLines, contentHeight]);
 
-  // BKL: 변호사님 어미. user.name 이 있으면 ", <이름> 변호사님" 형태로.
+  // BKL: user.name 이 있으면 ", <이름> 님" 형태로.
   const greetingText =
     typeof startupConfig?.interface?.customWelcome === 'string'
       ? getGreeting()
-      : getGreeting() + (user?.name ? ', ' + user.name + ' 변호사님' : '');
+      : getGreeting() + (user?.name ? ', ' + user.name + ' 님' : '');
 
   return (
     <div

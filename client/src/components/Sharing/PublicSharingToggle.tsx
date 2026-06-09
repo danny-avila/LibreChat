@@ -21,6 +21,7 @@ const accessDescriptions: Record<
   'com_ui_agent' | 'com_ui_prompt' | 'com_ui_mcp_server'
 > = {
   [ResourceType.AGENT]: 'com_ui_agent',
+  [ResourceType.REMOTE_AGENT]: 'com_ui_agent',
   [ResourceType.PROMPTGROUP]: 'com_ui_prompt',
   [ResourceType.MCPSERVER]: 'com_ui_mcp_server',
 };

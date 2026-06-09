@@ -13,6 +13,7 @@ import lang from './language';
 import settings from './settings';
 import misc from './misc';
 import filters from './filters';
+import * as bkl from './bkl';
 import isTemporary from './temporary';
 export * from './agents';
 export * from './mcp';
@@ -34,5 +35,6 @@ export default {
   ...settings,
   ...misc,
   ...filters,
+  ...bkl,
   ...isTemporary,
 };

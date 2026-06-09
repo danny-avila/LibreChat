@@ -154,17 +154,25 @@ async function fetchSourcesForMessage(
     }
   }
 
-  const latestResp = await fetchWithRetry(`${BKL_API}/v1/sources/latest`);
-  if (latestResp) {
-    try {
-      const data = await latestResp.json();
-      const sources: BklSource[] = data.sources ?? data;
-      if (Array.isArray(sources) && sources.length > 0) {
-        cacheSources(messageId, sources, data.request_id);
-        return sources;
+  if (messageId) {
+    const byMsgResp = await fetchWithRetry(
+      `${BKL_API}/v1/sources/by-message/${encodeURIComponent(messageId)}`,
+    );
+    if (byMsgResp) {
+      try {
+        const data = await byMsgResp.json();
+        const sources: BklSource[] = data.sources ?? data;
+        if (Array.isArray(sources) && sources.length > 0) {
+          cacheSources(messageId, sources, data.request_id);
+          if (data.request_id) {
+            win.__bklRids = win.__bklRids ?? {};
+            win.__bklRids[messageId] = data.request_id;
+          }
+          return sources;
+        }
+      } catch {
+        /* fall through */
       }
-    } catch {
-      /* fall through */
     }
   }
 

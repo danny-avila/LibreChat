@@ -23,6 +23,10 @@ import { mainTextareaId, BadgeItem } from '~/common';
 import AttachFileChat from './Files/AttachFileChat';
 import FileFormChat from './Files/FileFormChat';
 import { cn, removeFocusRings } from '~/utils';
+import { parseBklQueryChoices } from '~/utils/bklFilter';
+import QueryChoicesPanel from '../Messages/Content/QueryChoicesPanel';
+import BklMatterMention from './BklMatterMention';
+import BklMatterChips from './BklMatterChips';
 import TextareaHeader from './TextareaHeader';
 import PromptsCommand from './PromptsCommand';
 import AudioRecorder from './AudioRecorder';
@@ -71,7 +75,6 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     conversation,
     isSubmitting,
     filesLoading,
-    newConversation,
     handleStopGenerating,
   } = useChatContext();
   const {
@@ -129,6 +132,26 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
   });
 
   const { submitMessage, submitPrompt } = useSubmitMessage();
+  const latestMessage = useRecoilValue(store.latestMessageFamily(index));
+  const queryChoicesPayload = useMemo(() => {
+    if (!latestMessage || latestMessage.isCreatedByUser) return null;
+    const directText = (latestMessage.text ?? '') as string;
+    if (directText.startsWith('[BKL_QUERY_CHOICES:')) {
+      const payload = parseBklQueryChoices(directText);
+      if (payload) return payload;
+    }
+    const parts = (latestMessage as any).content;
+    if (Array.isArray(parts)) {
+      for (const part of parts) {
+        const value = typeof part?.text === 'string' ? part.text : part?.text?.value ?? '';
+        if (value.startsWith('[BKL_QUERY_CHOICES:')) {
+          const payload = parseBklQueryChoices(value);
+          if (payload) return payload;
+        }
+      }
+    }
+    return null;
+  }, [latestMessage]);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -212,6 +235,23 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     [isCollapsed, isMoreThanThreeRows],
   );
 
+  if (queryChoicesPayload) {
+    return (
+      <div
+        className={cn(
+          'mx-auto flex w-full flex-row gap-3 transition-[max-width] duration-300 sm:mb-10 sm:px-2',
+          maximizeChatSpace ? 'max-w-full' : 'md:max-w-3xl xl:max-w-4xl',
+        )}
+      >
+        <QueryChoicesPanel
+          payload={queryChoicesPayload}
+          isSubmitting={isSubmitting}
+          onSubmit={(query) => submitMessage({ text: query })}
+        />
+      </div>
+    );
+  }
+
   return (
     <form
       onSubmit={methods.handleSubmit(submitMessage)}
@@ -239,9 +279,8 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
             />
           )}
           {showMentionPopover && (
-            <Mention
+            <BklMatterMention
               setShowMentionPopover={setShowMentionPopover}
-              newConversation={newConversation}
               textAreaRef={textAreaRef}
             />
           )}
@@ -257,6 +296,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
             )}
           >
             <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
+            <BklMatterChips />
             {/* WIP */}
             <EditBadges
               isEditingChatBadges={isEditingBadges}

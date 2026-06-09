@@ -109,6 +109,7 @@
     "@eslint/compat": "^1.2.6",
     "@eslint/eslintrc": "^3.3.4",
     "@eslint/js": "^9.20.0",
+    "@jest/globals": "^30.4.1",
     "@playwright/test": "^1.56.1",
     "@types/react-virtualized": "^9.22.0",
     "caniuse-lite": "^1.0.30001741",
@@ -186,5 +187,8 @@
       "admin/",
       "packages/"
     ]
+  },
+  "dependencies": {
+    "react-zoom-pan-pinch": "^4.0.3"
   }
 }

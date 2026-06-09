@@ -22,6 +22,7 @@ import Artifacts from './Artifacts';
 import BklCollectionSelect from './BklCollectionSelect';
 import MCPSelect from './MCPSelect';
 import WebSearch from './WebSearch';
+import QueryEnhance from './QueryEnhance';
 import store from '~/store';
 
 interface BadgeRowProps {
@@ -372,6 +373,7 @@ function BadgeRow({
         {showEphemeralBadges === true && (
           <>
             <WebSearch />
+            <QueryEnhance />
             <BklCollectionSelect />
             <CodeInterpreter />
             <FileSearch />

@@ -4,13 +4,20 @@ import { useRecoilState } from 'recoil';
 import { ko, enUS } from 'date-fns/locale';
 import { format, parseISO } from 'date-fns';
 import { DayPicker } from 'react-day-picker';
-import { Check, Filter, X } from 'lucide-react';
+import { Briefcase, Check, FileText, Filter, X } from 'lucide-react';
 import { TooltipAnchor } from '@librechat/client';
 import type { ExtensionGroup, PeriodFilterPreset, PeriodFilterState } from '~/store/filters';
 import { DEFAULT_PERIOD_FILTER } from '~/store/filters';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
+import type { BklDocSelection, BklMatterSelection } from '~/store/bkl';
+import {
+  filterMatters as fuzzyFilterMatters,
+  useBklDocsQuery,
+  useBklMattersQuery,
+} from '~/data-provider/Matters/queries';
+import type { BklDoc, BklMatter } from '~/data-provider/Matters/queries';
 
 interface FilterDropdownProps {
   disabled?: boolean;
@@ -103,6 +110,12 @@ const FilterDropdown = ({ disabled }: FilterDropdownProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [activeField, setActiveField] = useState<DateField | null>(null);
   const [periodFilter, setPeriodFilter] = useRecoilState(store.periodFilter);
+  const [filterMatters, setFilterMatters] = useRecoilState(store.filterBklMatters);
+  const [filterDocs, setFilterDocs] = useRecoilState(store.filterBklDocs);
+  const [matterSearch, setMatterSearch] = useState('');
+  const [docSearch, setDocSearch] = useState('');
+  const { data: mattersData } = useBklMattersQuery(isOpen);
+  const { data: docsData, isFetching: isDocsFetching } = useBklDocsQuery(docSearch, isOpen);
 
   const menu = Ariakit.useMenuStore({ open: isOpen, setOpen: setIsOpen });
 
@@ -155,15 +168,22 @@ const FilterDropdown = ({ disabled }: FilterDropdownProps) => {
 
   const handleClear = useCallback(() => {
     setPeriodFilter(DEFAULT_PERIOD_FILTER);
+    setFilterMatters([]);
+    setFilterDocs([]);
+    setMatterSearch('');
+    setDocSearch('');
     setActiveField(null);
-  }, [setPeriodFilter]);
+  }, [setFilterDocs, setFilterMatters, setPeriodFilter]);
 
   const toggleField = useCallback(
     (field: DateField) => setActiveField((prev) => (prev === field ? null : field)),
     [],
   );
 
-  const isActive = useMemo(() => isActiveFilter(periodFilter), [periodFilter]);
+  const isActive = useMemo(
+    () => isActiveFilter(periodFilter) || filterMatters.length > 0 || filterDocs.length > 0,
+    [filterDocs.length, filterMatters.length, periodFilter],
+  );
 
   const dpLocale = useMemo(() => {
     if (typeof navigator !== 'undefined') {
@@ -192,6 +212,46 @@ const FilterDropdown = ({ disabled }: FilterDropdownProps) => {
   }, [activeField, startDate, endDate]);
 
   const selectedExts = periodFilter.extensionGroups ?? [];
+  const matterCandidates: BklMatter[] = useMemo(() => {
+    if (!mattersData || !matterSearch.trim()) return [];
+    const exclude = new Set(filterMatters.map((m) => m.matter_uid));
+    return fuzzyFilterMatters(mattersData.matters, matterSearch, 8).filter(
+      (m) => !exclude.has(m.matter_uid),
+    );
+  }, [filterMatters, matterSearch, mattersData]);
+  const docCandidates: BklDoc[] = useMemo(() => {
+    if (!docsData || !docSearch.trim()) return [];
+    const exclude = new Set(filterDocs.map((d) => d.doc_id));
+    return docsData.docs.filter((d) => !exclude.has(d.doc_id)).slice(0, 8);
+  }, [docSearch, docsData, filterDocs]);
+
+  const addMatter = useCallback(
+    (m: BklMatter) => {
+      const item: BklMatterSelection = {
+        matter_uid: m.matter_uid,
+        label: m.case_number || m.matter_uid,
+        sub: m.client || m.case_alias || undefined,
+      };
+      setFilterMatters((prev) =>
+        prev.some((p) => p.matter_uid === item.matter_uid) ? prev : [...prev, item],
+      );
+      setMatterSearch('');
+    },
+    [setFilterMatters],
+  );
+  const addDoc = useCallback(
+    (doc: BklDoc) => {
+      const item: BklDocSelection = {
+        doc_id: doc.doc_id,
+        label: doc.file_name || doc.imanage_doc_id || doc.doc_id,
+      };
+      setFilterDocs((prev) =>
+        prev.some((p) => p.doc_id === item.doc_id) || prev.length >= 5 ? prev : [...prev, item],
+      );
+      setDocSearch('');
+    },
+    [setFilterDocs],
+  );
 
   return (
     <Ariakit.MenuProvider store={menu}>
@@ -223,7 +283,6 @@ const FilterDropdown = ({ disabled }: FilterDropdownProps) => {
         unmountOnHide
         gutter={4}
         /* flip=true(기본)로 두어 입력창이 뷰포트 하단 가까이 있을 때 자동으로 위로 뒤집히도록 한다. */
-        placement="bottom-start"
         hideOnHoverOutside={false}
         className="popover-ui z-50 w-[320px] !overflow-visible !p-2"
       >
@@ -321,6 +380,100 @@ const FilterDropdown = ({ disabled }: FilterDropdownProps) => {
               </button>
             );
           })}
+        </div>
+
+        <Ariakit.MenuSeparator className="my-1 h-px border-border-medium" />
+        <div className="px-2.5 pb-1 pt-0.5 text-xs font-medium text-text-secondary">
+          사건 hard filter
+        </div>
+        <div className="px-1.5 pb-1">
+          <div className="mb-1 flex flex-wrap gap-1">
+            {filterMatters.map((m) => (
+              <button
+                key={m.matter_uid}
+                type="button"
+                onClick={() =>
+                  setFilterMatters((prev) => prev.filter((item) => item.matter_uid !== m.matter_uid))
+                }
+                className="inline-flex max-w-full items-center gap-1 rounded-full border border-border-medium px-2 py-1 text-xs text-text-secondary hover:text-text-primary"
+              >
+                <Briefcase className="h-3 w-3" />
+                <span className="truncate">{m.label}</span>
+                <X className="h-3 w-3" />
+              </button>
+            ))}
+          </div>
+          <input
+            value={matterSearch}
+            onChange={(e) => setMatterSearch(e.target.value)}
+            placeholder="사건명/사건번호 검색"
+            className="w-full rounded-md border border-border-light bg-surface-primary px-2 py-1.5 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none"
+            onKeyDown={(e) => e.stopPropagation()}
+          />
+          {matterCandidates.length > 0 && (
+            <div className="mt-1 max-h-36 overflow-y-auto rounded-md border border-border-light">
+              {matterCandidates.map((m) => (
+                <button
+                  key={m.matter_uid}
+                  type="button"
+                  onClick={() => addMatter(m)}
+                  className="block w-full px-2 py-1.5 text-left text-xs hover:bg-surface-hover"
+                >
+                  <div className="truncate font-medium">{m.case_alias || m.case_number || m.matter_uid}</div>
+                  <div className="truncate text-text-tertiary">{m.client || m.case_name}</div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <Ariakit.MenuSeparator className="my-1 h-px border-border-medium" />
+        <div className="px-2.5 pb-1 pt-0.5 text-xs font-medium text-text-secondary">
+          문서 hard inject
+        </div>
+        <div className="px-1.5 pb-1">
+          <div className="mb-1 flex flex-wrap gap-1">
+            {filterDocs.map((d) => (
+              <button
+                key={d.doc_id}
+                type="button"
+                onClick={() => setFilterDocs((prev) => prev.filter((item) => item.doc_id !== d.doc_id))}
+                className="inline-flex max-w-full items-center gap-1 rounded-full border border-border-medium px-2 py-1 text-xs text-text-secondary hover:text-text-primary"
+              >
+                <FileText className="h-3 w-3" />
+                <span className="max-w-40 truncate">{d.label}</span>
+                <X className="h-3 w-3" />
+              </button>
+            ))}
+          </div>
+          <input
+            value={docSearch}
+            onChange={(e) => setDocSearch(e.target.value)}
+            placeholder="문서명/doc_id 검색"
+            className="w-full rounded-md border border-border-light bg-surface-primary px-2 py-1.5 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none"
+            onKeyDown={(e) => e.stopPropagation()}
+          />
+          {docSearch.trim().length >= 2 && (
+            <div className="mt-1 max-h-36 overflow-y-auto rounded-md border border-border-light">
+              {isDocsFetching && (
+                <div className="px-2 py-2 text-xs text-text-tertiary">문서 검색 중...</div>
+              )}
+              {docCandidates.map((doc) => (
+                <button
+                  key={doc.doc_id}
+                  type="button"
+                  onClick={() => addDoc(doc)}
+                  className="block w-full px-2 py-1.5 text-left text-xs hover:bg-surface-hover"
+                >
+                  <div className="truncate font-medium">{doc.file_name || doc.doc_id}</div>
+                  <div className="truncate text-text-tertiary">{doc.imanage_doc_id || doc.doc_id}</div>
+                </button>
+              ))}
+              {!isDocsFetching && docCandidates.length === 0 && (
+                <div className="px-2 py-2 text-xs text-text-tertiary">일치하는 문서가 없습니다.</div>
+              )}
+            </div>
+          )}
         </div>
 
         {isActive && (

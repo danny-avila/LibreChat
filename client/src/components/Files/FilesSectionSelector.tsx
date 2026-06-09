@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Button } from '../ui';
+import { Button } from '@librechat/client';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 export default function FilesSectionSelector() {

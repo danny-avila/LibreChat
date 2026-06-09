@@ -3,7 +3,7 @@ import FileSidePanel from './FileList/FileSidePanel';
 import { Outlet, useNavigate, useParams } from 'react-router-dom';
 import FilesSectionSelector from './FilesSectionSelector';
 import { useLocalize } from '~/hooks';
-import { Button } from '../ui';
+import { Button } from '@librechat/client';
 
 export default function FilesListView() {
   const params = useParams();

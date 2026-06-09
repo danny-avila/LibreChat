@@ -235,8 +235,6 @@ const FilterBar: React.FC<FilterBarProps> = ({ value, onChange, disabled }) => {
           portal
           unmountOnHide
           gutter={6}
-          flip={false}
-          placement="bottom-start"
           className="popover-ui z-50 w-[320px] !overflow-visible !p-2"
         >
           <div className="px-2.5 pb-1 pt-0.5 text-xs font-medium text-text-secondary">

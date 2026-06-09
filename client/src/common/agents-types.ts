@@ -1,4 +1,4 @@
-import { AgentCapabilities, ArtifactModes } from 'librechat-data-provider';
+import { AgentCapabilities, ArtifactModes, Capabilities } from 'librechat-data-provider';
 import type {
   AgentModelParameters,
   AgentToolOptions,
@@ -23,6 +23,8 @@ export type TAgentCapabilities = {
   [AgentCapabilities.web_search]: boolean;
   [AgentCapabilities.file_search]: boolean;
   [AgentCapabilities.execute_code]: boolean;
+  [Capabilities.image_vision]?: boolean;
+  [Capabilities.retrieval]?: boolean;
   [AgentCapabilities.end_after_tools]?: boolean;
   [AgentCapabilities.hide_sequential_outputs]?: boolean;
 };

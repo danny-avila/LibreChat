@@ -42,11 +42,6 @@ import * as dataService from './data-service';
 export * from './utils';
 export * from './actions';
 export { default as createPayload } from './createPayload';
-// /* react query hooks */
-// export * from './react-query/react-query-service';
 /* feedback */
 export * from './feedback';
 export * from './parameterSettings';
-
-import * as dataProvider from './default';
-export default dataProvider;

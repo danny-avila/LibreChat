@@ -1,7 +1,7 @@
 import React from 'react';
 import VectorStoreSidePanel from './VectorStore/VectorStoreSidePanel';
 import { Outlet, useNavigate, useParams } from 'react-router-dom';
-import { Button } from '../ui';
+import { Button } from '@librechat/client';
 
 const FileDashboardView = () => {
   const params = useParams();

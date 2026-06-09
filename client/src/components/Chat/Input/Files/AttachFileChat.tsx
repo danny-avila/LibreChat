@@ -40,14 +40,6 @@ function AttachFileChat({
     enabled: needsAgentFetch,
   });
 
-  const useResponsesApi = useMemo(() => {
-    if (!isAgents || !conversation?.agent_id || conversation?.useResponsesApi) {
-      return conversation?.useResponsesApi;
-    }
-    const agent = agentData || agentsMap?.[conversation.agent_id];
-    return agent?.model_parameters?.useResponsesApi;
-  }, [isAgents, conversation?.agent_id, conversation?.useResponsesApi, agentData, agentsMap]);
-
   const { data: fileConfig = null } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
@@ -100,7 +92,6 @@ function AttachFileChat({
         conversationId={conversationId}
         agentId={conversation?.agent_id}
         endpointFileConfig={endpointFileConfig}
-        useResponsesApi={useResponsesApi}
       />
     );
   }

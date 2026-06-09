@@ -68,7 +68,9 @@ export const fileTableColumns: ColumnDef<TFile>[] = [
       return 'Vector Stores';
     },
     cell: ({ row }) => {
-      const { vectorsAttached: attachedVectorStores } = row.original;
+      const attachedVectorStores = (row.original as typeof row.original & {
+        vectorsAttached?: Array<{ name: string }>;
+      }).vectorsAttached ?? [];
       return (
         <>
           {attachedVectorStores.map((vectorStore, index) => {
@@ -103,7 +105,7 @@ export const fileTableColumns: ColumnDef<TFile>[] = [
       const localize = useLocalize();
       return 'Modified';
     },
-    cell: ({ row }) => formatDate(row.original.updatedAt),
+    cell: ({ row }) => (row.original.updatedAt ? formatDate(String(row.original.updatedAt)) : ''),
   },
   {
     accessorKey: 'actions',

@@ -21,7 +21,7 @@ export default function Retrieval({ retrievalModels }: { retrievalModels: Set<st
   const { control, setValue, getValues } = methods;
   const model = useWatch({ control, name: 'model' });
 
-  const isDisabled = useMemo(() => !retrievalModels.has(model), [model, retrievalModels]);
+  const isDisabled = useMemo(() => !retrievalModels.has(model ?? ''), [model, retrievalModels]);
 
   useEffect(() => {
     if (model && isDisabled) {
@@ -39,7 +39,8 @@ export default function Retrieval({ retrievalModels }: { retrievalModels: Set<st
             render={({ field }) => (
               <Checkbox
                 {...field}
-                checked={field.value}
+                aria-labelledby="retrieval-label"
+                checked={!!field.value}
                 disabled={isDisabled}
                 onCheckedChange={field.onChange}
                 className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer"
@@ -49,13 +50,14 @@ export default function Retrieval({ retrievalModels }: { retrievalModels: Set<st
           />
           <div className="flex items-center space-x-2">
             <label
+              id="retrieval-label"
               className={cn(
                 'form-check-label text-token-text-primary w-full select-none',
                 isDisabled ? 'cursor-no-drop opacity-50' : 'cursor-pointer',
               )}
               htmlFor={Capabilities.retrieval}
               onClick={() =>
-                retrievalModels.has(model) &&
+                retrievalModels.has(model ?? '') &&
                 setValue(Capabilities.retrieval, !getValues(Capabilities.retrieval), {
                   shouldDirty: true,
                 })
