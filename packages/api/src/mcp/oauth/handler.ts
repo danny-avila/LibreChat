@@ -1,7 +1,7 @@
 import { randomBytes } from 'crypto';
 import { logger } from '@librechat/data-schemas';
-import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport';
 import { OAuthMetadataSchema } from '@modelcontextprotocol/sdk/shared/auth.js';
+import { TokenExchangeMethodEnum, type MCPOptions } from 'librechat-data-provider';
 import {
   checkResourceAllowed,
   resourceUrlFromServerUrl,
@@ -13,9 +13,8 @@ import {
   discoverAuthorizationServerMetadata,
   discoverOAuthProtectedResourceMetadata,
 } from '@modelcontextprotocol/sdk/client/auth.js';
-import { TokenExchangeMethodEnum, type MCPOptions } from 'librechat-data-provider';
+import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport';
 import type { TokenMethods } from '@librechat/data-schemas';
-import type { FlowStateManager } from '~/flow/manager';
 import type {
   OAuthClientInformation,
   OAuthProtectedResourceMetadata,
@@ -23,6 +22,7 @@ import type {
   MCPOAuthTokens,
   OAuthMetadata,
 } from './types';
+import type { FlowStateManager } from '~/flow/manager';
 import {
   resolveTokenEndpointAuthMethod,
   getForcedTokenEndpointAuthMethod,
@@ -31,17 +31,16 @@ import {
 } from './methods';
 import { isSSRFTarget, resolveHostnameSSRF, isOAuthUrlAllowed } from '~/auth';
 import { probeResourceMetadataHint } from './resourceHint';
-import { MCPTokenStorage } from './tokens';
 import { createHardenedOAuthFetch } from './hardenedFetch';
-import { getOAuthUrlPort } from './url';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
+import { MCPTokenStorage } from './tokens';
+import { getOAuthUrlPort } from './url';
 
 /** Type for the OAuth metadata from the SDK */
 type SDKOAuthMetadata = Parameters<typeof registerClient>[1]['metadata'];
 
 export class MCPOAuthHandler {
   private static readonly FLOW_TYPE = 'mcp_oauth';
-  private static readonly FLOW_TTL = 10 * 60 * 1000; // 10 minutes
 
   /**
    * Creates a fetch function with custom headers injected
@@ -836,7 +835,7 @@ export class MCPOAuthHandler {
       if (metadata.resourceMetadata) {
         /**
          * Defense-in-depth: re-assert the RFC 9728 §3.3 binding against the flow's stored
-         * server URL. Flow state has a 10-minute TTL, so a flow initiated under older
+         * server URL. Flow state has a bounded TTL, so a flow initiated under older
          * (pre-fix) code could still be in-flight at upgrade time carrying unvalidated
          * resource metadata. Re-validating here closes that window without requiring ops
          * teams to flush flow state on deploy (GHSA-gvpj-vm2f-2m23).

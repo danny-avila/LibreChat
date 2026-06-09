@@ -3,8 +3,17 @@ import { logger } from '@librechat/data-schemas';
 import type { StoredDataNoRaw } from 'keyv';
 import type { FlowState, FlowMetadata, FlowManagerOptions } from './types';
 import { registerShutdownTask } from '../app/shutdown';
+import { math } from '~/utils/math';
 
-export const PENDING_STALE_MS: number = 2 * 60 * 1000;
+/**
+ * Lifetime of a PENDING OAuth flow: how long the auth button stays valid and an
+ * in-flight flow can be reused before it is replaced. Mirrors
+ * `mcpConfig.OAUTH_HANDLING_TIMEOUT` (`MCP_OAUTH_HANDLING_TIMEOUT`) so the reuse
+ * window matches the wait the server grants the user. Default: 10 minutes.
+ */
+export const PENDING_STALE_MS: number = math(
+  process.env.MCP_OAUTH_HANDLING_TIMEOUT ?? 10 * 60 * 1000,
+);
 
 const SECONDS_THRESHOLD = 1e10;
 

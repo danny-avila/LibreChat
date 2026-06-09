@@ -9,6 +9,7 @@ export * from './auth';
 /* API Keys */
 export * from './apiKeys';
 /* MCP */
+export * from './mcp/mcpConfig';
 export * from './mcp/registry/MCPServersRegistry';
 export * from './mcp/MCPManager';
 export * from './mcp/connection';

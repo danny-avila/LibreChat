@@ -18,6 +18,7 @@ import { PENDING_STALE_MS, normalizeExpiresAt } from '~/flow/manager';
 import { withTimeout } from '~/utils/promise';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
+import { mcpConfig } from './mcpConfig';
 
 export interface ToolDiscoveryResult {
   tools: Tool[] | null;
@@ -365,7 +366,7 @@ export class MCPConnectionFactory {
       throw new Error(`${this.logPrefix} OAuth required but server URL is missing from config`);
     }
 
-    const oauthTimeout = this.connectionTimeout ?? 60000 * 2;
+    const oauthTimeout = mcpConfig.OAUTH_HANDLING_TIMEOUT;
     logger.info(
       `${this.logPrefix} No stored tokens, proactively triggering OAuth flow before connecting (timeout: ${oauthTimeout}ms)`,
     );
@@ -633,7 +634,16 @@ export class MCPConnectionFactory {
 
   /** Attempts to establish connection with timeout handling */
   protected async attemptToConnect(connection: MCPConnection): Promise<void> {
-    const connectTimeout = this.connectionTimeout ?? this.serverConfig.initTimeout ?? 30000;
+    const baseTimeout = this.connectionTimeout ?? this.serverConfig.initTimeout ?? 30000;
+    // OAuth servers may pause mid-connect to wait for the user to authorize in the browser.
+    // The transport connect itself is still bounded by initTimeout inside connection.connect(),
+    // so this floor only extends the window for an active OAuth wait, not ordinary failures.
+    // The grace covers the reconnect after `oauthHandled` (retry backoff + transport connect),
+    // which happens *after* the handling wait, so a user who authorizes near the deadline still
+    // gets a connection instead of a timeout.
+    const connectTimeout = this.useOAuth
+      ? Math.max(baseTimeout, mcpConfig.OAUTH_HANDLING_TIMEOUT + 60000)
+      : baseTimeout;
     await withTimeout(
       this.connectTo(connection),
       connectTimeout,

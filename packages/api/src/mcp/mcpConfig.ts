@@ -1,5 +1,16 @@
 import { math, isEnabled } from '~/utils';
 
+const oauthHandlingTimeout = math(process.env.MCP_OAUTH_HANDLING_TIMEOUT ?? 10 * 60 * 1000);
+/** Grace so flow state outlives the handling wait rather than expiring at the same instant —
+ * covers callback processing, the monitor poll interval, and multi-replica clock skew. */
+const OAUTH_FLOW_TTL_GRACE_MS = 60 * 1000;
+/** Flow state must outlive the handling wait, otherwise a callback arriving near the
+ * deadline cannot find its flow. Clamp the configured TTL above the handling timeout. */
+const oauthFlowTtl = Math.max(
+  math(process.env.MCP_OAUTH_FLOW_TTL ?? 15 * 60 * 1000),
+  oauthHandlingTimeout + OAUTH_FLOW_TTL_GRACE_MS,
+);
+
 /**
  * Centralized configuration for MCP-related environment variables.
  * Provides typed access to MCP settings with default values.
@@ -7,6 +18,10 @@ import { math, isEnabled } from '~/utils';
 export const mcpConfig: {
   OAUTH_ON_AUTH_ERROR: boolean;
   OAUTH_DETECTION_TIMEOUT: number;
+  /** How long (ms) to wait for the user to complete an OAuth flow before timing out. Default: 10 minutes */
+  OAUTH_HANDLING_TIMEOUT: number;
+  /** TTL (ms) for OAuth flow state. Must outlive OAUTH_HANDLING_TIMEOUT so the state survives the wait. Default: 15 minutes */
+  OAUTH_FLOW_TTL: number;
   CONNECTION_CHECK_TTL: number;
   /** Idle timeout (ms) after which user connections are disconnected. Default: 15 minutes */
   USER_CONNECTION_IDLE_TIMEOUT: number;
@@ -27,6 +42,10 @@ export const mcpConfig: {
 } = {
   OAUTH_ON_AUTH_ERROR: isEnabled(process.env.MCP_OAUTH_ON_AUTH_ERROR ?? true),
   OAUTH_DETECTION_TIMEOUT: math(process.env.MCP_OAUTH_DETECTION_TIMEOUT ?? 5000),
+  /** How long (ms) to wait for the user to complete an OAuth flow before timing out. Default: 10 minutes */
+  OAUTH_HANDLING_TIMEOUT: oauthHandlingTimeout,
+  /** TTL (ms) for OAuth flow state. Clamped to never fall below OAUTH_HANDLING_TIMEOUT. Default: 15 minutes */
+  OAUTH_FLOW_TTL: oauthFlowTtl,
   CONNECTION_CHECK_TTL: math(process.env.MCP_CONNECTION_CHECK_TTL ?? 60000),
   /** Idle timeout (ms) after which user connections are disconnected. Default: 15 minutes */
   USER_CONNECTION_IDLE_TIMEOUT: math(
