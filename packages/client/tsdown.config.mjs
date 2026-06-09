@@ -26,7 +26,7 @@ export default defineConfig({
   // Externalize every third-party import (consumers provide the peers + react/jsx-runtime);
   // bundle only relative, `~`-aliased, and absolute sources.
   deps: {
-    neverBundle: (id) => !id.startsWith('.') && !id.startsWith('~') && !id.startsWith('/'),
+    neverBundle: (id) => !id.startsWith('.') && !id.startsWith('~') && !id.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(id),
     onlyBundle: false,
   },
 });

@@ -116,10 +116,19 @@ async function initializeGeminiClient(options = {}) {
     );
   }
 
+  const geminiModel = options.model || 'gemini-2.5-flash-image';
+  let location = process.env.GEMINI_IMAGE_LOCATION;
+  if (!location && options.req?.config?.endpoints?.google?.perModelLocation) {
+    location = options.req.config.endpoints.google.perModelLocation[geminiModel];
+  }
+  if (!location) {
+    location = process.env.GOOGLE_LOC || process.env.GOOGLE_CLOUD_LOCATION || 'global';
+  }
+
   return new GoogleGenAI({
     vertexai: true,
     project: serviceKey.project_id,
-    location: process.env.GOOGLE_CLOUD_LOCATION || process.env.GOOGLE_LOC || 'global',
+    location,
     googleAuthOptions: { credentials: serviceKey },
   });
 }
@@ -328,11 +337,14 @@ function createGeminiImageTool(fields = {}) {
 
       logger.debug('[GeminiImageGen] Generating image', { aspectRatio, imageSize });
 
+      const geminiModel = process.env.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image';
       let ai;
       try {
         ai = await initializeGeminiClient({
           GEMINI_API_KEY,
           GOOGLE_KEY,
+          req,
+          model: geminiModel,
         });
       } catch (error) {
         logger.error('[GeminiImageGen] Failed to initialize client:', error);
@@ -356,7 +368,6 @@ function createGeminiImageTool(fields = {}) {
       }
 
       let apiResponse;
-      const geminiModel = process.env.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image';
       const config = {
         responseModalities: ['TEXT', 'IMAGE'],
       };

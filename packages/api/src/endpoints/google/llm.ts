@@ -395,6 +395,8 @@ export function getGoogleConfig(
     provider = Providers.GOOGLE;
   }
 
+  const modelName = (modelOptions?.model ?? '') as string;
+
   // If we have a GCP project => Vertex AI
   if (provider === Providers.VERTEXAI) {
     (llmConfig as VertexAIClientOptions).authOptions = removeNullishValues(
@@ -404,7 +406,10 @@ export function getGoogleConfig(
       },
       true,
     );
-    const location = process.env.GOOGLE_LOC || 'us-central1';
+    let location = process.env.GOOGLE_LOC || 'us-central1';
+    if (options.perModelLocation && options.perModelLocation[modelName]) {
+      location = options.perModelLocation[modelName];
+    }
     (llmConfig as VertexAIClientOptions).location = location;
   } else if (apiKey && provider === Providers.GOOGLE) {
     llmConfig.apiKey = apiKey;
@@ -413,8 +418,6 @@ export function getGoogleConfig(
       `Invalid credentials provided. Please provide either a valid API key or service account credentials for Google Cloud.`,
     );
   }
-
-  const modelName = (modelOptions?.model ?? '') as string;
 
   /**
    * Gemini 3+ and Gemma 4+ use a qualitative `thinkingLevel` ('minimal'|'low'|'medium'|'high')

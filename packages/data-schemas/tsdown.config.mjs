@@ -16,7 +16,8 @@ export default defineConfig({
       !id.startsWith('dotenv/') &&
       !id.startsWith('.') &&
       !id.startsWith('~') &&
-      !id.startsWith('/'),
+      !id.startsWith('/') &&
+      !/^[A-Za-z]:[\\/]/.test(id),
     // dotenv is bundled on purpose, so silence the "detected dependencies in bundle" hint.
     onlyBundle: false,
   },

@@ -478,6 +478,48 @@ describe('getGoogleConfig', () => {
       });
     });
 
+    it('should use perModelLocation overrides for Vertex AI location', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_SERVICE_KEY]: {
+          project_id: 'test-project',
+        },
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-1.5-pro',
+        },
+        perModelLocation: {
+          'gemini-1.5-pro': 'europe-west1',
+          'gemini-2.5-flash': 'us-east5',
+        },
+      });
+
+      expect(result.llmConfig).toHaveProperty('location', 'europe-west1');
+    });
+
+    it('should update multi-region endpoint correctly when location is overridden by perModelLocation', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_SERVICE_KEY]: {
+          project_id: 'test-project',
+        },
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: {
+          model: 'gemini-3.1-flash-lite-preview',
+        },
+        perModelLocation: {
+          'gemini-3.1-flash-lite-preview': 'eu',
+        },
+      });
+
+      expect(result.llmConfig).toMatchObject({
+        location: 'eu',
+        endpoint: 'aiplatform.eu.rep.googleapis.com',
+      });
+    });
+
     it('should preserve explicit Google Vertex AI Private Service Connect endpoints', () => {
       process.env.GOOGLE_LOC = 'us';
 
