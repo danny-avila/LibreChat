@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import type { TMessage } from 'librechat-data-provider';
-import { MessagesViewContext } from '~/Providers/MessagesViewContext';
 import type { MessagesViewContextValue } from '~/Providers/MessagesViewContext';
+import { MessagesViewContext } from '~/Providers/MessagesViewContext';
 
 interface ShareMessagesProviderProps {
   messages: TMessage[];
