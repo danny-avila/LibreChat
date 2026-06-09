@@ -39,7 +39,7 @@ export default function useSubmitMessage() {
         },
       );
       if (submitted === false) {
-        return;
+        return false;
       }
       methods.reset();
     },
