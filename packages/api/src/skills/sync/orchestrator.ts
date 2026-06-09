@@ -7,18 +7,18 @@ const REQUEST_SYNC_STALE_RUNNING_MS = 35 * 60 * 1000;
 
 type MaybePromise<T> = T | Promise<T>;
 
-type SkillSyncAppConfigLike = {
+export type SkillSyncAppConfigLike = {
   skillSync?: unknown;
   config?: {
     skillSync?: unknown;
   };
 };
 
-type SkillSyncRequestUser = {
+export type SkillSyncRequestUser = {
   tenantId?: string | null;
 };
 
-type SkillSyncRequestLike = {
+export type SkillSyncRequestLike = {
   config?: SkillSyncAppConfigLike;
   user?: SkillSyncRequestUser;
   skillSyncAllowServerCredentials?: boolean;
@@ -49,6 +49,11 @@ export type SkillSyncTriggerOrchestratorDeps = {
   minIntervalMs?: number;
   staleRunningMs?: number;
   inFlight?: Set<string>;
+};
+
+export type SkillSyncTriggerOrchestrator = {
+  getRunnerForAdminRequest: (request: SkillSyncRequestLike) => GitHubSkillSyncRunner;
+  maybeRunForRequest: (request: SkillSyncRequestLike) => Promise<boolean>;
 };
 
 function parseSkillSyncConfig(
@@ -199,7 +204,9 @@ function getRequestSyncKey(
   return `${tenantId}:${sources}`;
 }
 
-export function createSkillSyncTriggerOrchestrator(deps: SkillSyncTriggerOrchestratorDeps) {
+export function createSkillSyncTriggerOrchestrator(
+  deps: SkillSyncTriggerOrchestratorDeps,
+): SkillSyncTriggerOrchestrator {
   const inFlight = deps.inFlight ?? new Set<string>();
   const minIntervalMs = deps.minIntervalMs ?? REQUEST_SYNC_MIN_INTERVAL_MS;
   const staleRunningMs = deps.staleRunningMs ?? REQUEST_SYNC_STALE_RUNNING_MS;

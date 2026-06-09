@@ -1,7 +1,7 @@
 import path from 'path';
 import JSZip from 'jszip';
 import crypto from 'crypto';
-import { logger, stripYamlTrailingComment } from '@librechat/data-schemas';
+import { logger } from '@librechat/data-schemas';
 import { ResourceType, AccessRoleIds, PrincipalType } from 'librechat-data-provider';
 import type {
   ISkill,

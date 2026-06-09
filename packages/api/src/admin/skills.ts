@@ -18,7 +18,7 @@ import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import type { Types } from 'mongoose';
 import type { GitHubSkillSyncRunner } from '~/skills/sync';
 
-type AdminSkillsRequest = Request & {
+export type AdminSkillsRequest = Request & {
   user?: {
     _id?: Types.ObjectId;
     id?: string;
@@ -65,6 +65,23 @@ export type AdminSkillSyncDeps = {
 export type AdminSkillSyncAccessDeps = {
   getAppConfig: (options: { baseOnly: true }) => Promise<{ skillSync?: unknown } | undefined>;
   hasCapability: (user: SkillSyncCapabilityUser, capability: SystemCapability) => Promise<boolean>;
+};
+
+type AdminSkillsSyncHandler = (req: AdminSkillsRequest, res: Response) => Promise<Response>;
+
+export type AdminSkillsSyncHandlers = {
+  getSyncStatus: AdminSkillsSyncHandler;
+  runSync: AdminSkillsSyncHandler;
+  setCredential: AdminSkillsSyncHandler;
+  deleteCredential: (req: Request, res: Response) => Promise<Response>;
+};
+
+export type AdminSkillsSyncAccess = {
+  attachBaseSkillSyncConfig: RequestHandler;
+  attachCredentialReadAccess: RequestHandler;
+  requireReadSkills: RequestHandler;
+  requirePlatformManageSkills: RequestHandler;
+  requireSyncRunCapability: RequestHandler;
 };
 
 const CREDENTIAL_KEY_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
@@ -181,7 +198,7 @@ function sendInternalServerError(res: Response): void {
   res.status(500).json({ message: 'Internal Server Error' });
 }
 
-export function createAdminSkillsSyncAccess(deps: AdminSkillSyncAccessDeps) {
+export function createAdminSkillsSyncAccess(deps: AdminSkillSyncAccessDeps): AdminSkillsSyncAccess {
   async function hasSkillCapability(
     req: AdminSkillSyncAccessRequest,
     capability: SystemCapability,
@@ -299,7 +316,7 @@ export function createAdminSkillsSyncAccess(deps: AdminSkillSyncAccessDeps) {
   };
 }
 
-export function createAdminSkillsSyncHandlers(deps: AdminSkillSyncDeps) {
+export function createAdminSkillsSyncHandlers(deps: AdminSkillSyncDeps): AdminSkillsSyncHandlers {
   function getRunner(req: Request): GitHubSkillSyncRunner {
     const runner = deps.getRunner?.(req) ?? deps.runner;
     if (!runner) {

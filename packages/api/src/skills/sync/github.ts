@@ -227,6 +227,20 @@ export type GitHubSkillSyncRunResult = {
   sources: Array<ISkillSyncStatus & { credentialPresent?: boolean }>;
 };
 
+export type GitHubSkillSyncStatus = {
+  enabled: boolean;
+  intervalMinutes: number;
+  runOnStartup: boolean;
+  sources: Array<ISkillSyncStatus & { credentialPresent: boolean }>;
+  credentials: SkillSyncCredentialSummary[];
+  fineGrainedTokenRecommendation: string;
+};
+
+export type GitHubSkillSyncRunner = {
+  getStatus: () => Promise<GitHubSkillSyncStatus>;
+  runOnce: () => Promise<GitHubSkillSyncRunResult>;
+};
+
 class SkillSyncError extends Error {
   code: string;
 
@@ -1713,11 +1727,11 @@ function getGithubConfig(config: SkillSyncConfig | undefined): {
   };
 }
 
-export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps) {
+export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps): GitHubSkillSyncRunner {
   const fetchFn = deps.fetchFn ?? fetch;
   const lockOwnerPrefix = deps.lockOwner ?? `${process.pid}`;
 
-  async function getStatus() {
+  async function getStatus(): Promise<GitHubSkillSyncStatus> {
     const github = getGithubConfig(await deps.getConfig());
     const allowServerCredentials = deps.allowServerCredentials !== false;
     const [storedStatuses, credentials] = await Promise.all([
@@ -1856,5 +1870,3 @@ export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps) {
 
   return { getStatus, runOnce };
 }
-
-export type GitHubSkillSyncRunner = ReturnType<typeof createGitHubSkillSyncRunner>;

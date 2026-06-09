@@ -5,7 +5,7 @@ import { registerShutdownTask } from '~/app/shutdown';
 
 const NODE_TIMER_MAX_MS = 2147483647;
 const SKILL_SYNC_MIN_INTERVAL_MINUTES = 5;
-export const SKILL_SYNC_MAX_TIMER_INTERVAL_MINUTES = Math.floor(NODE_TIMER_MAX_MS / 60_000);
+export const SKILL_SYNC_MAX_TIMER_INTERVAL_MINUTES: number = Math.floor(NODE_TIMER_MAX_MS / 60_000);
 
 type MaybePromise<T> = T | Promise<T>;
 
