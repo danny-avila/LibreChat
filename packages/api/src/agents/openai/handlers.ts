@@ -409,6 +409,131 @@ export class OpenAIReasoningDeltaHandler implements EventHandler {
 }
 
 /**
+ * Handler for message delta events - aggregates text content for non-streaming responses
+ */
+export class OpenAIAggregatorMessageDeltaHandler implements EventHandler {
+  constructor(private aggregator: OpenAIContentAggregator) {}
+
+  handle(_event: string, data: MessageDeltaData): void {
+    const content = data?.content;
+    if (!content || !Array.isArray(content)) {
+      return;
+    }
+
+    for (const part of content) {
+      if (part.type === 'text' && part.text) {
+        this.aggregator.addText(part.text);
+      }
+    }
+  }
+}
+
+/**
+ * Handler for reasoning delta events - aggregates reasoning content for non-streaming responses
+ */
+export class OpenAIAggregatorReasoningDeltaHandler implements EventHandler {
+  constructor(private aggregator: OpenAIContentAggregator) {}
+
+  handle(_event: string, data: MessageDeltaData): void {
+    const content = data?.content;
+    if (!content || !Array.isArray(content)) {
+      return;
+    }
+
+    for (const part of content) {
+      if (part.type === 'text' && part.text) {
+        this.aggregator.addReasoning(part.text);
+      }
+    }
+  }
+}
+
+/**
+ * Handler for run step delta events - aggregates tool calls for non-streaming responses
+ */
+export class OpenAIAggregatorRunStepDeltaHandler implements EventHandler {
+  constructor(private aggregator: OpenAIContentAggregator) {}
+
+  handle(_event: string, data: RunStepDeltaData): void {
+    const delta = data?.delta;
+    if (!delta || delta.type !== StepTypes.TOOL_CALLS || !Array.isArray(delta.tool_calls)) {
+      return;
+    }
+
+    for (const tc of delta.tool_calls) {
+      if (tc.index === undefined) {
+        continue;
+      }
+
+      let tracked = this.aggregator.toolCalls.get(tc.index);
+      if (!tracked && tc.id) {
+        tracked = {
+          id: tc.id,
+          type: 'function',
+          function: {
+            name: '',
+            arguments: '',
+          },
+        };
+        this.aggregator.toolCalls.set(tc.index, tracked);
+      }
+
+      if (!tracked) {
+        continue;
+      }
+      if (tc.function?.name) {
+        tracked.function.name += tc.function.name;
+      }
+      if (tc.function?.arguments) {
+        tracked.function.arguments += tc.function.arguments;
+      }
+    }
+  }
+}
+
+/**
+ * Handler for model end events - captures usage for non-streaming responses
+ */
+export class OpenAIAggregatorModelEndHandler implements EventHandler {
+  constructor(private aggregator: OpenAIContentAggregator) {}
+
+  handle(_event: string, data: ModelEndData): void {
+    const usage = data?.output?.usage_metadata;
+    if (!usage) {
+      return;
+    }
+
+    this.aggregator.usage.promptTokens += usage.input_tokens ?? 0;
+    this.aggregator.usage.completionTokens += usage.output_tokens ?? 0;
+    this.aggregator.usage.reasoningTokens +=
+      usage.output_token_details?.reasoning ?? usage.output_token_details?.reasoning_tokens ?? 0;
+  }
+}
+
+/**
+ * Create all handlers for OpenAI non-streaming aggregation
+ */
+export function createOpenAIAggregatorHandlers(
+  aggregator: OpenAIContentAggregator,
+  toolExecuteOptions?: ToolExecuteOptions,
+): Record<string, EventHandler> {
+  const handlers: Record<string, EventHandler> = {
+    [GraphEvents.ON_MESSAGE_DELTA]: new OpenAIAggregatorMessageDeltaHandler(aggregator),
+    [GraphEvents.ON_REASONING_DELTA]: new OpenAIAggregatorReasoningDeltaHandler(aggregator),
+    [GraphEvents.ON_RUN_STEP_DELTA]: new OpenAIAggregatorRunStepDeltaHandler(aggregator),
+    [GraphEvents.CHAT_MODEL_END]: new OpenAIAggregatorModelEndHandler(aggregator),
+    [GraphEvents.CHAT_MODEL_STREAM]: new OpenAIChatModelStreamHandler(),
+    [GraphEvents.TOOL_END]: new OpenAIToolEndHandler(),
+  };
+
+  if (toolExecuteOptions) {
+    handlers[GraphEvents.ON_TOOL_EXECUTE] = createToolExecuteHandler(toolExecuteOptions);
+  }
+
+  return handlers;
+}
+
+/**
  * Create all handlers for OpenAI streaming format
  */
 export function createOpenAIHandlers(

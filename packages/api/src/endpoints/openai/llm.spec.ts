@@ -346,6 +346,26 @@ describe('getOpenAILLMConfig', () => {
         expect(result.llmConfig).toHaveProperty('streaming', true);
       },
     );
+
+    it('should drop snake_case sampling params provided via addParams for pro models', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        modelOptions: { model: 'gpt-5.5-pro' },
+        addParams: {
+          top_p: 0.5,
+          logit_bias: { '50256': -100 },
+          frequency_penalty: 0.5,
+          presence_penalty: 0.3,
+        },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('top_p');
+      expect(result.llmConfig.modelKwargs ?? {}).not.toHaveProperty('top_p');
+      expect(result.llmConfig.modelKwargs ?? {}).not.toHaveProperty('logit_bias');
+      expect(result.llmConfig.modelKwargs ?? {}).not.toHaveProperty('frequency_penalty');
+      expect(result.llmConfig.modelKwargs ?? {}).not.toHaveProperty('presence_penalty');
+    });
   });
 
   describe('OpenAI Web Search Models', () => {
@@ -475,6 +495,20 @@ describe('getOpenAILLMConfig', () => {
       });
 
       expect(result.llmConfig.modelKwargs).toHaveProperty('max_output_tokens', 8192);
+      expect(result.llmConfig).not.toHaveProperty('maxTokens');
+    });
+
+    it('should convert maxTokens to max_completion_tokens for chat-latest', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        modelOptions: {
+          model: 'chat-latest',
+          max_tokens: 8192,
+        },
+      });
+
+      expect(result.llmConfig.modelKwargs).toHaveProperty('max_completion_tokens', 8192);
       expect(result.llmConfig).not.toHaveProperty('maxTokens');
     });
   });

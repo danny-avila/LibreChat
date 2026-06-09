@@ -104,4 +104,58 @@ describe('createAgentChatCompletion - MCP permission user propagation', () => {
     expect(streamConfig.configurable?.user).toEqual({ id: 'api-user' });
     expect(streamConfig.configurable?.user).not.toHaveProperty('role');
   });
+
+  it('aggregates content and usage for non-streaming responses', async () => {
+    createRun.mockImplementation(
+      (args: { customHandlers: Record<string, { handle: (e: string, d: unknown) => void }> }) => {
+        const handlers = args.customHandlers;
+        return Promise.resolve({
+          processStream: jest.fn().mockImplementation(() => {
+            handlers['on_message_delta'].handle('on_message_delta', {
+              content: [{ type: 'text', text: 'Hello ' }],
+            });
+            handlers['on_message_delta'].handle('on_message_delta', {
+              content: [{ type: 'text', text: 'world' }],
+            });
+            handlers['on_chat_model_end'].handle('on_chat_model_end', {
+              output: { usage_metadata: { input_tokens: 3, output_tokens: 5 } },
+            });
+            return Promise.resolve();
+          }),
+        });
+      },
+    );
+
+    const res = createMockRes();
+    await createAgentChatCompletion(createMockReq({ id: 'user-123', role: 'USER' }), res, deps);
+
+    const json = (res.json as jest.Mock).mock.calls[0][0] as {
+      choices: Array<{ message: { content: string | null } }>;
+      usage: { total_tokens: number };
+    };
+    expect(json.choices[0].message.content).toBe('Hello world');
+    expect(json.usage.total_tokens).toBe(8);
+  });
+
+  it('forces the non-streaming path for pro reasoning models even when streaming is requested', async () => {
+    (deps.initializeAgent as jest.Mock).mockResolvedValue({
+      id: 'agent_test',
+      provider: 'openai',
+      model: 'gpt-5.5-pro',
+      tools: [],
+      attachments: [],
+      toolContextMap: {},
+      maxContextTokens: 1000,
+      model_parameters: { model: 'gpt-5.5-pro' },
+    });
+
+    const req = createMockReq({ id: 'user-123', role: 'USER' });
+    (req as unknown as { body: { stream: boolean } }).body.stream = true;
+    const res = createMockRes();
+
+    await createAgentChatCompletion(req, res, deps);
+
+    expect(res.setHeader).not.toHaveBeenCalledWith('Content-Type', 'text/event-stream');
+    expect(res.json).toHaveBeenCalledTimes(1);
+  });
 });

@@ -674,9 +674,13 @@ export function getOpenAILLMConfig({
     const reasoningExcludeParams = [
       'frequencyPenalty',
       'presencePenalty',
+      'frequency_penalty',
+      'presence_penalty',
       'temperature',
       'topP',
+      'top_p',
       'logitBias',
+      'logit_bias',
       'n',
       'logprobs',
     ];
@@ -723,7 +727,7 @@ export function getOpenAILLMConfig({
 
   if (
     llmConfig.model &&
-    /\bgpt-[5-9](?:\.\d+)?\b/i.test(llmConfig.model) &&
+    /\b(?:gpt-[5-9](?:\.\d+)?|chat-latest)\b/i.test(llmConfig.model) &&
     llmConfig.maxTokens != null
   ) {
     const paramName =

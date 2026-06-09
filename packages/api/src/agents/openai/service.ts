@@ -33,6 +33,7 @@ import type {
 import type { OpenAIStreamHandlerConfig, EventHandler } from './handlers';
 import type { ToolExecuteOptions } from '../handlers';
 import {
+  createOpenAIAggregatorHandlers,
   createOpenAIContentAggregator,
   createOpenAIStreamTracker,
   createOpenAIHandlers,
@@ -495,10 +496,12 @@ export async function createAgentChatCompletion(
         : null;
 
     // Create event handlers
-    const eventHandlers =
-      isStreaming && handlerConfig
-        ? createOpenAIHandlers(handlerConfig, deps.toolExecuteOptions)
-        : {};
+    let eventHandlers: Record<string, EventHandler> = {};
+    if (isStreaming && handlerConfig) {
+      eventHandlers = createOpenAIHandlers(handlerConfig, deps.toolExecuteOptions);
+    } else if (aggregator) {
+      eventHandlers = createOpenAIAggregatorHandlers(aggregator, deps.toolExecuteOptions);
+    }
 
     // Convert messages to internal format
     const messages = convertMessages(request.messages);
