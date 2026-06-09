@@ -1154,6 +1154,7 @@ describe('MCPManager', () => {
     const mockConnection = {
       isConnected: jest.fn().mockResolvedValue(true),
       fetchTools: jest.fn().mockResolvedValue(mockTools),
+      disconnect: jest.fn().mockResolvedValue(undefined),
     } as unknown as MCPConnection;
 
     beforeEach(() => {
@@ -1175,6 +1176,9 @@ describe('MCPManager', () => {
     });
 
     it('should use MCPConnectionFactory.discoverTools when no app connection available', async () => {
+      const discoveryConnection = {
+        disconnect: jest.fn().mockResolvedValue(undefined),
+      } as unknown as MCPConnection;
       mockAppConnections({
         get: jest.fn().mockResolvedValue(null),
       });
@@ -1187,7 +1191,7 @@ describe('MCPManager', () => {
 
       (MCPConnectionFactory.discoverTools as jest.Mock).mockResolvedValue({
         tools: mockTools,
-        connection: null,
+        connection: discoveryConnection,
         oauthRequired: false,
         oauthUrl: null,
       });
@@ -1198,11 +1202,13 @@ describe('MCPManager', () => {
       expect(result.tools).toEqual(mockTools);
       expect(result.oauthRequired).toBe(false);
       expect(MCPConnectionFactory.discoverTools).toHaveBeenCalled();
+      expect(discoveryConnection.disconnect).toHaveBeenCalledTimes(1);
     });
 
-    it('should forward user, customUserVars, requestBody, and connectionTimeout to discoverTools in the non-OAuth path', async () => {
+    it('should forward runtime context to discoverTools in the non-OAuth path', async () => {
       const mockUser = { id: 'user123', email: 'test@example.com' } as unknown as IUser;
       const customUserVars = { MY_CUSTOM_KEY: 'c527bd0abc123' };
+      const graphTokenResolver = jest.fn();
 
       mockAppConnections({
         get: jest.fn().mockResolvedValue(null),
@@ -1226,6 +1232,7 @@ describe('MCPManager', () => {
         user: mockUser,
         customUserVars,
         requestBody: { conversationId: 'conv-123' } as t.ToolDiscoveryOptions['requestBody'],
+        graphTokenResolver,
         connectionTimeout: 10000,
       });
 
@@ -1235,8 +1242,30 @@ describe('MCPManager', () => {
           user: mockUser,
           customUserVars,
           requestBody: { conversationId: 'conv-123' },
+          graphTokenResolver,
           connectionTimeout: 10000,
         }),
+      );
+    });
+
+    it('should not discover BODY-scoped servers without request body context', async () => {
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(null),
+      });
+
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://api.example.com/messages/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+        source: 'yaml',
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const result = await manager.discoverServerTools({ serverName });
+
+      expect(result).toEqual({ tools: null, oauthRequired: false, oauthUrl: null });
+      expect(MCPConnectionFactory.discoverTools).not.toHaveBeenCalled();
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Request body context is required'),
       );
     });
 
@@ -1330,6 +1359,7 @@ describe('MCPManager', () => {
         serverName,
         user: mockUser,
         flowManager: mockFlowManager as unknown as t.ToolDiscoveryOptions['flowManager'],
+        graphTokenResolver: jest.fn(),
       });
 
       expect(result.tools).toEqual(mockTools);
@@ -1337,7 +1367,11 @@ describe('MCPManager', () => {
       expect(result.oauthUrl).toBe('https://auth.example.com/authorize');
       expect(MCPConnectionFactory.discoverTools).toHaveBeenCalledWith(
         expect.objectContaining({ serverName }),
-        expect.objectContaining({ user: mockUser, useOAuth: true }),
+        expect.objectContaining({
+          user: mockUser,
+          useOAuth: true,
+          graphTokenResolver: expect.any(Function),
+        }),
       );
     });
   });
@@ -1494,6 +1528,30 @@ describe('MCPManager', () => {
       expect(first).toBe(firstConnection);
       expect(second).toBe(secondConnection);
       expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('should reject BODY-scoped connections without request body context', async () => {
+      const bodyUrlConfig: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://api.example.com/messages/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+        source: 'yaml',
+        requiresOAuth: false,
+      };
+
+      mockAppConnections({
+        has: jest.fn().mockResolvedValue(false),
+      });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(bodyUrlConfig);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await expect(
+        manager.getUserConnection({
+          serverName,
+          user: mockUser,
+        }),
+      ).rejects.toThrow('Request body context is required');
+
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
     });
 
     it('should throw when OAuth server lacks flowManager', async () => {

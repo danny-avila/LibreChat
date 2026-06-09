@@ -10,6 +10,7 @@ import {
   getMissingCustomUserVars,
   hasCustomUserVars,
   hasRuntimeUrlPlaceholders,
+  hasRuntimeBodyPlaceholders,
   hasRuntimeContextPlaceholders,
   isUserSourced,
   requiresEphemeralUserConnection,
@@ -473,6 +474,36 @@ describe('hasRuntimeUrlPlaceholders', () => {
   });
 });
 
+describe('hasRuntimeBodyPlaceholders', () => {
+  it('detects trusted runtime BODY placeholders across connection fields', () => {
+    expect(
+      hasRuntimeBodyPlaceholders({
+        source: 'yaml',
+        url: 'https://example.com/conversations/{{LIBRECHAT_BODY_CONVERSATIONID}}/mcp',
+      }),
+    ).toBe(true);
+
+    expect(
+      hasRuntimeBodyPlaceholders({
+        source: 'config',
+        headers: {
+          'X-Message': '{{LIBRECHAT_BODY_MESSAGEID}}',
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('ignores BODY placeholders in user-sourced configs', () => {
+    expect(
+      hasRuntimeBodyPlaceholders({
+        source: 'user',
+        dbId: 'server-123',
+        url: 'https://example.com/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+      }),
+    ).toBe(false);
+  });
+});
+
 describe('requiresEphemeralUserConnection', () => {
   it('returns true when request-varying placeholders affect connection fields', () => {
     expect(
@@ -492,7 +523,7 @@ describe('requiresEphemeralUserConnection', () => {
     ).toBe(true);
   });
 
-  it('returns false when request-varying placeholders only affect per-call headers', () => {
+  it('returns true when request-varying placeholders affect remote transport headers', () => {
     expect(
       requiresEphemeralUserConnection({
         source: 'yaml',
@@ -501,7 +532,7 @@ describe('requiresEphemeralUserConnection', () => {
           'X-Graph': '{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
         },
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 });
 

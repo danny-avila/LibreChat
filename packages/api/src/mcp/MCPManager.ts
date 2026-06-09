@@ -11,6 +11,7 @@ import type { MCPOAuthTokens } from './oauth';
 import type { RequestBody } from '~/types';
 import type * as t from './types';
 import {
+  hasRuntimeBodyPlaceholders,
   isUserSourced,
   requiresEphemeralUserConnection,
   requiresOAuthMachinery,
@@ -143,6 +144,13 @@ export class MCPManager extends UserConnectionManager {
       return { tools: null, oauthRequired: false, oauthUrl: null };
     }
 
+    if (hasRuntimeBodyPlaceholders(serverConfig) && !args.requestBody) {
+      logger.warn(
+        `${logPrefix} [Discovery] Request body context is required to resolve runtime MCP placeholders`,
+      );
+      return { tools: null, oauthRequired: false, oauthUrl: null };
+    }
+
     const useOAuth = requiresOAuthMachinery(serverConfig);
 
     const registry = MCPServersRegistry.getInstance();
@@ -159,18 +167,32 @@ export class MCPManager extends UserConnectionManager {
       allowedAddresses,
     };
 
-    if (!useOAuth) {
-      const result = await MCPConnectionFactory.discoverTools(basic, {
-        user: args.user,
-        customUserVars: args.customUserVars,
-        requestBody: args.requestBody,
-        connectionTimeout: args.connectionTimeout,
-      });
+    const finalizeDiscoveryResult = async (
+      result: Awaited<ReturnType<typeof MCPConnectionFactory.discoverTools>>,
+    ): Promise<t.ToolDiscoveryResult> => {
+      if (result.connection) {
+        try {
+          await result.connection.disconnect();
+        } catch (error) {
+          logger.warn(`${logPrefix} [Discovery] Failed to disconnect discovery connection`, error);
+        }
+      }
       return {
         tools: result.tools,
         oauthRequired: result.oauthRequired,
         oauthUrl: result.oauthUrl,
       };
+    };
+
+    if (!useOAuth) {
+      const result = await MCPConnectionFactory.discoverTools(basic, {
+        user: args.user,
+        customUserVars: args.customUserVars,
+        requestBody: args.requestBody,
+        graphTokenResolver: args.graphTokenResolver,
+        connectionTimeout: args.connectionTimeout,
+      });
+      return finalizeDiscoveryResult(result);
     }
 
     if (!user || !args.flowManager) {
@@ -187,12 +209,13 @@ export class MCPManager extends UserConnectionManager {
       oauthStart: args.oauthStart,
       customUserVars: args.customUserVars,
       requestBody: args.requestBody,
+      graphTokenResolver: args.graphTokenResolver,
       connectionTimeout: args.connectionTimeout,
       oboTokenResolver: args.oboTokenResolver,
       oboTrustChecker: args.oboTrustChecker,
     });
 
-    return { tools: result.tools, oauthRequired: result.oauthRequired, oauthUrl: result.oauthUrl };
+    return finalizeDiscoveryResult(result);
   }
 
   /** Returns all available tool functions from app-level connections */

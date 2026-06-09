@@ -767,6 +767,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       serverName,
       configServers,
       userMCPAuthMap,
+      requestBody: req.body,
     });
 
     return result?.availableTools || null;
@@ -884,6 +885,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
           configServers,
           userMCPAuthMap,
           flowManager,
+          requestBody: req.body,
           returnOnOAuth: false,
           oauthStart,
           oauthEnd: createOAuthEndEmitter(serverName),

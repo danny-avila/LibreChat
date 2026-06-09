@@ -348,6 +348,7 @@ async function reconnectServer({
   serverName,
   configServers,
   userMCPAuthMap,
+  requestBody,
   streamId = null,
 }) {
   logger.debug(
@@ -418,6 +419,7 @@ async function reconnectServer({
       oauthStart,
       flowManager,
       userMCPAuthMap,
+      requestBody,
       forceNew: true,
       returnOnOAuth: false,
       connectionTimeout: Time.THIRTY_SECONDS,
@@ -447,6 +449,7 @@ async function reconnectServer({
  * @param {AbortSignal} [params.signal]
  * @param {string | null} [params.streamId] - The stream ID for resumable mode.
  * @param {import('@librechat/api').ParsedServerConfig} [params.config]
+ * @param {import('@librechat/api').RequestBody} [params.requestBody]
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  * @returns { Promise<Array<typeof tool | { _call: (toolInput: Object | string) => unknown}>> } An object with `_call` method to execute the tool input.
  */
@@ -461,6 +464,7 @@ async function createMCPTools({
   serverName,
   configServers,
   userMCPAuthMap,
+  requestBody,
   streamId = null,
 }) {
   const serverConfig =
@@ -492,6 +496,7 @@ async function createMCPTools({
     serverName,
     configServers,
     userMCPAuthMap,
+    requestBody,
     streamId,
   });
   if (result === null) {
@@ -515,6 +520,7 @@ async function createMCPTools({
       streamId,
       availableTools: result.availableTools,
       toolKey: `${tool.name}${Constants.mcp_delimiter}${serverName}`,
+      requestBody,
       config: serverConfig,
     });
     if (toolInstance) {
@@ -538,6 +544,7 @@ async function createMCPTools({
  * @param {string | null} [params.streamId] - The stream ID for resumable mode.
  * @param {Providers | EModelEndpoint} params.provider - The provider for the tool.
  * @param {LCAvailableTools} [params.availableTools]
+ * @param {import('@librechat/api').RequestBody} [params.requestBody]
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  * @param {import('@librechat/api').ParsedServerConfig} [params.config]
  * @returns { Promise<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
@@ -552,6 +559,7 @@ async function createMCPTool({
   provider,
   userMCPAuthMap,
   availableTools,
+  requestBody,
   config,
   configServers,
   streamId = null,
@@ -601,6 +609,7 @@ async function createMCPTool({
       serverName,
       configServers,
       userMCPAuthMap,
+      requestBody,
       streamId,
     });
     toolDefinition = result?.availableTools?.[toolKey]?.function;

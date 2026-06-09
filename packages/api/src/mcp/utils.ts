@@ -5,6 +5,7 @@ export const mcpToolPattern: RegExp = new RegExp(`^.+${Constants.mcp_delimiter}.
 
 const RUNTIME_CONTEXT_PLACEHOLDER_PATTERN = /\{\{LIBRECHAT_(?:USER|OPENID|GRAPH|BODY)_[^}]+\}\}/;
 const EPHEMERAL_CONNECTION_PLACEHOLDER_PATTERN = /\{\{LIBRECHAT_(?:GRAPH|BODY)_[^}]+\}\}/;
+const RUNTIME_BODY_PLACEHOLDER_PATTERN = /\{\{LIBRECHAT_BODY_[^}]+\}\}/;
 
 type PlaceholderValue =
   | string
@@ -104,6 +105,16 @@ export function hasRuntimeUrlPlaceholders(config: UserScopedConnectionConfig): b
   return hasRuntimeContextPlaceholder(config.url);
 }
 
+export function hasRuntimeBodyPlaceholders(config: UserScopedConnectionConfig): boolean {
+  if (isUserSourced(config)) {
+    return false;
+  }
+
+  return [config.args, config.env, config.headers, config.oauth, config.url].some((value) =>
+    hasPlaceholder(value, RUNTIME_BODY_PLACEHOLDER_PATTERN),
+  );
+}
+
 /**
  * `GRAPH` and `BODY` placeholders can change per request. If they affect the
  * connection-defining parts of a config, the normal userId:serverName cache
@@ -114,7 +125,7 @@ export function requiresEphemeralUserConnection(config: UserScopedConnectionConf
     return false;
   }
 
-  return [config.args, config.env, config.oauth, config.url].some(
+  return [config.args, config.env, config.headers, config.oauth, config.url].some(
     hasEphemeralConnectionPlaceholder,
   );
 }

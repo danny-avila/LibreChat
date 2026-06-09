@@ -5,6 +5,7 @@ import type { FlowState } from '~/flow/types';
 import type * as t from './types';
 import {
   hasRuntimeUrlPlaceholders,
+  hasRuntimeBodyPlaceholders,
   isUserSourced,
   requiresEphemeralUserConnection,
   requiresOAuthMachinery,
@@ -73,6 +74,12 @@ export abstract class UserConnectionManager {
     const config =
       opts.serverConfig ??
       (await MCPServersRegistry.getInstance().getServerConfig(serverName, userId));
+    if (config && hasRuntimeBodyPlaceholders(config) && !opts.requestBody) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `[MCP][User: ${userId}][${serverName}] Request body context is required to resolve runtime MCP placeholders.`,
+      );
+    }
     const ephemeralConnection = config ? requiresEphemeralUserConnection(config) : false;
     const forceNewConnection = forceNew || ephemeralConnection;
 

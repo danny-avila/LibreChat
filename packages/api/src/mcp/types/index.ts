@@ -246,6 +246,7 @@ export interface ToolDiscoveryOptions {
   oauthStart?: OAuthStartHandler;
   customUserVars?: Record<string, string>;
   requestBody?: RequestBody;
+  graphTokenResolver?: GraphTokenResolver;
   connectionTimeout?: number;
   /** Pre-resolved config-source servers for tenant-scoped lookup */
   configServers?: Record<string, ParsedServerConfig>;
