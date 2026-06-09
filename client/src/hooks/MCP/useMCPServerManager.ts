@@ -208,8 +208,14 @@ export function useMCPServerManager({
         return 7500; // Thereafter: every 7.5s
       };
 
-      const OAUTH_TIMEOUT_MS = 600000; // 10 minutes (MCP_OAUTH_HANDLING_TIMEOUT default)
-      const maxAttempts = 86; // ~10 minutes total with the backoff schedule above
+      /** Honor the server's configured MCP_OAUTH_HANDLING_TIMEOUT (surfaced on the
+       * connection-status response) so a tuned deadline isn't capped at the default. */
+      const connectionData = queryClient.getQueryData([QueryKeys.mcpConnectionStatus]) as
+        | { oauthTimeout?: number }
+        | undefined;
+      const OAUTH_TIMEOUT_MS = connectionData?.oauthTimeout ?? 600000; // default 10 minutes
+      // Backstop only; the elapsed-time guard governs. Sized above the worst-case poll count.
+      const maxAttempts = Math.ceil(OAUTH_TIMEOUT_MS / 5000) + 5;
 
       const pollOnce = async () => {
         try {

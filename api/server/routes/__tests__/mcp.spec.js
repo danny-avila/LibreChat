@@ -1665,6 +1665,7 @@ describe('MCP Routes', () => {
       expect(response.status).toBe(200);
       expect(response.body).toEqual({
         success: true,
+        oauthTimeout: expect.any(Number),
         connectionStatus: {
           server1: {
             connectionState: 'connected',

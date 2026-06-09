@@ -1,11 +1,14 @@
 import { math, isEnabled } from '~/utils';
 
 const oauthHandlingTimeout = math(process.env.MCP_OAUTH_HANDLING_TIMEOUT ?? 10 * 60 * 1000);
+/** Grace so flow state outlives the handling wait rather than expiring at the same instant —
+ * covers callback processing, the monitor poll interval, and multi-replica clock skew. */
+const OAUTH_FLOW_TTL_GRACE_MS = 60 * 1000;
 /** Flow state must outlive the handling wait, otherwise a callback arriving near the
- * deadline cannot find its flow. Clamp the configured TTL up to the handling timeout. */
+ * deadline cannot find its flow. Clamp the configured TTL above the handling timeout. */
 const oauthFlowTtl = Math.max(
   math(process.env.MCP_OAUTH_FLOW_TTL ?? 15 * 60 * 1000),
-  oauthHandlingTimeout,
+  oauthHandlingTimeout + OAUTH_FLOW_TTL_GRACE_MS,
 );
 
 /**
