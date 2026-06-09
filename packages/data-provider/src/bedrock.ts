@@ -185,8 +185,8 @@ export function supportsContext1m(model: string): boolean {
 function getBedrockAnthropicBetaHeaders(model: string): string[] {
   const betaHeaders: string[] = [];
 
-  /** Mythos-class (Fable/Mythos) is intentionally not matched: the legacy output-128k /
-   * fine-grained-tool-streaming betas are built in for its generation and Bedrock may reject them. */
+  /** Mythos-class (Fable/Mythos) is intentionally not matched: these betas are built-in/no-op for the
+   * 4.7+ generation (Fable has native 128K output), so omitting them on Bedrock is lossless. */
   const isClaude4PlusModel =
     /anthropic\.claude-(?:[4-9](?:\.\d+)?(?:-\d+)?-(?:sonnet|opus|haiku)|(?:sonnet|opus|haiku)-[4-9])/.test(
       model,
