@@ -265,6 +265,14 @@ export default function useChatFunctions({
       return;
     }
 
+    if (parentMessageId == null && hasPendingAssistantParent(latestMessage)) {
+      logger.warn(
+        '[useChatFunctions] Refusing to append to a preliminary assistant message',
+        latestMessage,
+      );
+      return false;
+    }
+
     const ephemeralAgent = getEphemeralAgent(conversationId ?? Constants.NEW_CONVO);
     /**
      * Manual skill selection resolution:
@@ -306,14 +314,6 @@ export default function useChatFunctions({
     // this is not a real messageId, it is used as placeholder before real messageId returned
     const intermediateId = overrideUserMessageId ?? v4();
     if (parentMessageId == null) {
-      if (hasPendingAssistantParent(latestMessage)) {
-        logger.warn(
-          '[useChatFunctions] Refusing to append to a preliminary assistant message',
-          latestMessage,
-        );
-        return false;
-      }
-
       parentMessageId = getAppendParentMessageId({ latestMessage, currentMessages });
     }
 

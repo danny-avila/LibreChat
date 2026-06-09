@@ -36,6 +36,24 @@ jest.mock('@librechat/api', () => ({
   decrementPendingRequest: (...args) => mockDecrementPendingRequest(...args),
   sanitizeMessageForTransmit: jest.fn((message) => message),
   checkAndIncrementPendingRequest: (...args) => mockCheckAndIncrementPendingRequest(...args),
+  isUnpersistedPreliminaryParent: async ({
+    userId,
+    conversationId,
+    parentMessageId,
+    getMessages,
+  }) => {
+    if (typeof parentMessageId !== 'string' || !parentMessageId.endsWith('_')) {
+      return false;
+    }
+
+    const filter = { user: userId, messageId: parentMessageId };
+    if (conversationId && conversationId !== 'new') {
+      filter.conversationId = conversationId;
+    }
+
+    const messages = await getMessages(filter, '_id');
+    return messages.length === 0;
+  },
 }));
 
 jest.mock('~/server/cleanup', () => ({

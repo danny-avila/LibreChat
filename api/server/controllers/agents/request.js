@@ -10,6 +10,7 @@ const {
   decrementPendingRequest,
   sanitizeMessageForTransmit,
   checkAndIncrementPendingRequest,
+  isUnpersistedPreliminaryParent,
 } = require('@librechat/api');
 const { disposeClient, clientRegistry, requestDataMap } = require('~/server/cleanup');
 const { handleAbortError } = require('~/server/middleware');
@@ -138,24 +139,6 @@ function getAgentResponseModel(req, endpointOption) {
   return getEndpointResponseModel(endpointOption);
 }
 
-function isPreliminaryMessageId(messageId) {
-  return typeof messageId === 'string' && messageId.endsWith('_');
-}
-
-async function isUnpersistedPreliminaryParent({ userId, conversationId, parentMessageId }) {
-  if (!isPreliminaryMessageId(parentMessageId)) {
-    return false;
-  }
-
-  const filter = { user: userId, messageId: parentMessageId };
-  if (conversationId && conversationId !== Constants.NEW_CONVO) {
-    filter.conversationId = conversationId;
-  }
-
-  const messages = await getMessages(filter, '_id');
-  return messages.length === 0;
-}
-
 function rejectPreliminaryParentMessageId(res) {
   return res.status(409).json({
     error:
@@ -187,6 +170,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       userId,
       conversationId: reqConversationId,
       parentMessageId,
+      getMessages,
     })
   ) {
     return rejectPreliminaryParentMessageId(res);
@@ -784,6 +768,7 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
       userId,
       conversationId: reqConversationId,
       parentMessageId,
+      getMessages,
     })
   ) {
     return rejectPreliminaryParentMessageId(res);
