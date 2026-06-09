@@ -408,6 +408,40 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
    * SystemCapabilities. Intended for SUPER_ADMIN_EMAIL bootstrap — idempotent,
    * concurrency-safe via bulkWrite ordered:false.
    */
+  /**
+   * Seed tenant-scoped ADMIN role grants for a newly provisioned tenant.
+   * Must be called inside `tenantStorage.run({ tenantId })` or with explicit tenantId.
+   */
+  async function seedTenantSystemGrants(tenantId: string): Promise<void> {
+    const normalizedTenantId = tenantId.trim();
+    if (!normalizedTenantId) {
+      throw new Error('tenantId is required for seedTenantSystemGrants');
+    }
+    const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
+    const now = new Date();
+    const ops = Object.values(SystemCapabilities).map((capability) => ({
+      updateOne: {
+        filter: {
+          principalType: PrincipalType.ROLE,
+          principalId: SystemRoles.ADMIN,
+          capability,
+          tenantId: normalizedTenantId,
+        },
+        update: {
+          $setOnInsert: {
+            principalType: PrincipalType.ROLE,
+            principalId: SystemRoles.ADMIN,
+            capability,
+            tenantId: normalizedTenantId,
+            grantedAt: now,
+          },
+        },
+        upsert: true,
+      },
+    }));
+    await tenantSafeBulkWrite(SystemGrant, ops, { ordered: false });
+  }
+
   async function seedSuperAdminGrants(userId: string | Types.ObjectId): Promise<void> {
     const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
     const User = mongoose.models.User as Model<IUser>;
@@ -463,9 +497,19 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
     await SystemGrant.deleteMany(filter, queryOptions);
   }
 
+  async function deleteGrantsForTenant(tenantId: string, session?: ClientSession): Promise<void> {
+    const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
+    const normalizedTenantId = tenantId.trim();
+    if (!normalizedTenantId) {
+      throw new Error('tenantId is required for deleteGrantsForTenant');
+    }
+    await SystemGrant.deleteMany({ tenantId: normalizedTenantId }).session(session ?? null);
+  }
+
   return {
     grantCapability,
     seedSystemGrants,
+    seedTenantSystemGrants,
     seedSuperAdminGrants,
     revokeCapability,
     hasCapabilityForPrincipals,
@@ -475,6 +519,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
     getCapabilitiesForPrincipal,
     getCapabilitiesForPrincipals,
     deleteGrantsForPrincipal,
+    deleteGrantsForTenant,
   };
 }
 

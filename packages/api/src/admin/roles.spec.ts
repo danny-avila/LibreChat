@@ -73,6 +73,8 @@ function createDeps(overrides: Partial<AdminRolesDeps> = {}): AdminRolesDeps {
     updateUsersRoleByIds: jest.fn().mockResolvedValue(undefined),
     listUsersByRole: jest.fn().mockResolvedValue([]),
     countUsersByRole: jest.fn().mockResolvedValue(0),
+    findUsers: jest.fn().mockResolvedValue([]),
+    countUsers: jest.fn().mockResolvedValue(0),
     deleteConfig: jest.fn().mockResolvedValue(null),
     deleteAclEntries: jest.fn().mockResolvedValue(undefined),
     deleteGrantsForPrincipal: jest.fn().mockResolvedValue(undefined),
@@ -1047,16 +1049,20 @@ describe('createAdminRolesHandlers', () => {
       const user = mockUser();
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValue(mockRole()),
-        listUsersByRole: jest.fn().mockResolvedValue([user]),
-        countUsersByRole: jest.fn().mockResolvedValue(1),
+        findUsers: jest.fn().mockResolvedValue([user]),
+        countUsers: jest.fn().mockResolvedValue(1),
       });
       const handlers = createAdminRolesHandlers(deps);
       const { req, res, status, json } = createReqRes({ params: { name: 'editor' } });
 
       await handlers.getRoleMembers(req, res);
 
-      expect(deps.listUsersByRole).toHaveBeenCalledWith('editor', { limit: 50, offset: 0 });
-      expect(deps.countUsersByRole).toHaveBeenCalledWith('editor');
+      expect(deps.findUsers).toHaveBeenCalledWith({ role: 'editor' }, '_id name email avatar', {
+        limit: 50,
+        offset: 0,
+        sort: { _id: 1 },
+      });
+      expect(deps.countUsers).toHaveBeenCalledWith({ role: 'editor' });
       expect(status).toHaveBeenCalledWith(200);
       const response = json.mock.calls[0][0];
       expect(response.members).toHaveLength(1);
@@ -1074,7 +1080,7 @@ describe('createAdminRolesHandlers', () => {
     it('passes pagination parameters from query', async () => {
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValue(mockRole()),
-        countUsersByRole: jest.fn().mockResolvedValue(0),
+        countUsers: jest.fn().mockResolvedValue(0),
       });
       const handlers = createAdminRolesHandlers(deps);
       const { req, res } = createReqRes({
@@ -1084,13 +1090,17 @@ describe('createAdminRolesHandlers', () => {
 
       await handlers.getRoleMembers(req, res);
 
-      expect(deps.listUsersByRole).toHaveBeenCalledWith('editor', { limit: 10, offset: 20 });
+      expect(deps.findUsers).toHaveBeenCalledWith({ role: 'editor' }, '_id name email avatar', {
+        limit: 10,
+        offset: 20,
+        sort: { _id: 1 },
+      });
     });
 
     it('clamps limit to 200', async () => {
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValue(mockRole()),
-        countUsersByRole: jest.fn().mockResolvedValue(0),
+        countUsers: jest.fn().mockResolvedValue(0),
       });
       const handlers = createAdminRolesHandlers(deps);
       const { req, res } = createReqRes({
@@ -1100,15 +1110,40 @@ describe('createAdminRolesHandlers', () => {
 
       await handlers.getRoleMembers(req, res);
 
-      expect(deps.listUsersByRole).toHaveBeenCalledWith('editor', { limit: 200, offset: 0 });
+      expect(deps.findUsers).toHaveBeenCalledWith({ role: 'editor' }, '_id name email avatar', {
+        limit: 200,
+        offset: 0,
+        sort: { _id: 1 },
+      });
+    });
+
+    it('scopes members to caller tenant when tenantId is set', async () => {
+      const deps = createDeps({
+        getRoleByName: jest.fn().mockResolvedValue(mockRole()),
+        countUsers: jest.fn().mockResolvedValue(0),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res } = createReqRes({
+        params: { name: 'editor' },
+        user: { _id: new Types.ObjectId(), role: 'ADMIN', tenantId: 'tenant-a' },
+      });
+
+      await handlers.getRoleMembers(req, res);
+
+      expect(deps.findUsers).toHaveBeenCalledWith(
+        { role: 'editor', tenantId: 'tenant-a' },
+        '_id name email avatar',
+        { limit: 50, offset: 0, sort: { _id: 1 } },
+      );
+      expect(deps.countUsers).toHaveBeenCalledWith({ role: 'editor', tenantId: 'tenant-a' });
     });
 
     it('does not include joinedAt in response', async () => {
       const user = mockUser();
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValue(mockRole()),
-        listUsersByRole: jest.fn().mockResolvedValue([user]),
-        countUsersByRole: jest.fn().mockResolvedValue(1),
+        findUsers: jest.fn().mockResolvedValue([user]),
+        countUsers: jest.fn().mockResolvedValue(1),
       });
       const handlers = createAdminRolesHandlers(deps);
       const { req, res, json } = createReqRes({ params: { name: 'editor' } });
@@ -1122,7 +1157,7 @@ describe('createAdminRolesHandlers', () => {
     it('returns empty array when no members', async () => {
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValue(mockRole()),
-        countUsersByRole: jest.fn().mockResolvedValue(0),
+        countUsers: jest.fn().mockResolvedValue(0),
       });
       const handlers = createAdminRolesHandlers(deps);
       const { req, res, status, json } = createReqRes({ params: { name: 'editor' } });
@@ -1147,7 +1182,7 @@ describe('createAdminRolesHandlers', () => {
     it('returns 500 on error', async () => {
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValue(mockRole()),
-        listUsersByRole: jest.fn().mockRejectedValue(new Error('db down')),
+        findUsers: jest.fn().mockRejectedValue(new Error('db down')),
       });
       const handlers = createAdminRolesHandlers(deps);
       const { req, res, status, json } = createReqRes({ params: { name: 'editor' } });
@@ -1259,7 +1294,7 @@ describe('createAdminRolesHandlers', () => {
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValue(mockRole({ name: 'editor' })),
         findUser: jest.fn().mockResolvedValue(mockUser({ role: SystemRoles.ADMIN })),
-        countUsersByRole: jest.fn().mockResolvedValue(1),
+        countUsers: jest.fn().mockResolvedValue(1),
       });
       const handlers = createAdminRolesHandlers(deps);
       const { req, res, status, json } = createReqRes({
@@ -1278,7 +1313,7 @@ describe('createAdminRolesHandlers', () => {
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValue(mockRole({ name: 'editor' })),
         findUser: jest.fn().mockResolvedValue(mockUser({ role: SystemRoles.ADMIN })),
-        countUsersByRole: jest.fn().mockResolvedValue(3),
+        countUsers: jest.fn().mockResolvedValue(3),
         updateUser: jest.fn().mockResolvedValue(mockUser({ role: 'editor' })),
       });
       const handlers = createAdminRolesHandlers(deps);
@@ -1297,7 +1332,7 @@ describe('createAdminRolesHandlers', () => {
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValue(mockRole({ name: 'editor' })),
         findUser: jest.fn().mockResolvedValue(mockUser({ role: SystemRoles.ADMIN })),
-        countUsersByRole: jest.fn().mockResolvedValueOnce(2).mockResolvedValueOnce(0),
+        countUsers: jest.fn().mockResolvedValueOnce(2).mockResolvedValueOnce(0),
         updateUser: jest.fn().mockResolvedValue(mockUser()),
       });
       const handlers = createAdminRolesHandlers(deps);
@@ -1466,7 +1501,7 @@ describe('createAdminRolesHandlers', () => {
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValue(mockRole({ name: SystemRoles.ADMIN })),
         findUser: jest.fn().mockResolvedValue(mockUser({ role: SystemRoles.ADMIN })),
-        countUsersByRole: jest.fn().mockResolvedValue(1),
+        countUsers: jest.fn().mockResolvedValue(1),
       });
       const handlers = createAdminRolesHandlers(deps);
       const { req, res, status, json } = createReqRes({
@@ -1484,7 +1519,7 @@ describe('createAdminRolesHandlers', () => {
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValue(mockRole({ name: SystemRoles.ADMIN })),
         findUser: jest.fn().mockResolvedValue(mockUser({ role: SystemRoles.ADMIN })),
-        countUsersByRole: jest.fn().mockResolvedValue(3),
+        countUsers: jest.fn().mockResolvedValue(3),
       });
       const handlers = createAdminRolesHandlers(deps);
       const { req, res, status, json } = createReqRes({
@@ -1502,7 +1537,7 @@ describe('createAdminRolesHandlers', () => {
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValue(mockRole({ name: SystemRoles.ADMIN })),
         findUser: jest.fn().mockResolvedValue(mockUser({ role: SystemRoles.ADMIN })),
-        countUsersByRole: jest.fn().mockResolvedValueOnce(2).mockResolvedValueOnce(0),
+        countUsers: jest.fn().mockResolvedValueOnce(2).mockResolvedValueOnce(0),
       });
       const handlers = createAdminRolesHandlers(deps);
       const { req, res, status, json } = createReqRes({
@@ -1526,7 +1561,7 @@ describe('createAdminRolesHandlers', () => {
       const deps = createDeps({
         getRoleByName: jest.fn().mockResolvedValue(mockRole({ name: SystemRoles.ADMIN })),
         findUser: jest.fn().mockResolvedValue(mockUser({ role: SystemRoles.ADMIN })),
-        countUsersByRole: jest.fn().mockResolvedValueOnce(2).mockResolvedValueOnce(0),
+        countUsers: jest.fn().mockResolvedValueOnce(2).mockResolvedValueOnce(0),
         updateUser: jest
           .fn()
           .mockResolvedValueOnce(mockUser({ role: SystemRoles.USER }))

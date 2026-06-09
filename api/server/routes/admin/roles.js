@@ -29,6 +29,8 @@ const handlers = createAdminRolesHandlers({
   updateUsersRoleByIds: db.updateUsersRoleByIds,
   listUsersByRole: db.listUsersByRole,
   countUsersByRole: db.countUsersByRole,
+  findUsers: db.findUsers,
+  countUsers: db.countUsers,
   deleteConfig: db.deleteConfig,
   deleteAclEntries: db.deleteAclEntries,
   deleteGrantsForPrincipal: db.deleteGrantsForPrincipal,

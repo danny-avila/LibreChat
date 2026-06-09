@@ -6,3 +6,4 @@ export { tenantSafeBulkWrite } from './tenantBulkWrite';
 export * from './transactions';
 export * from './objectId';
 export * from './yaml';
+export * from './tenantId';

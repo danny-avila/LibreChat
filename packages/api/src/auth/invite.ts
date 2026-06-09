@@ -8,20 +8,30 @@ export interface InviteDeps {
     token: string;
     createdAt: number;
     expiresIn: number;
+    tenantId?: string;
+    metadata?: Map<string, unknown>;
   }) => Promise<unknown>;
   findToken: (filter: { token: string; email: string }) => Promise<unknown>;
+}
+
+export interface InviteOptions {
+  role?: string;
+  tenantId?: string;
 }
 
 /** Creates a new user invite and returns the encoded token. */
 export async function createInvite(
   email: string,
   deps: InviteDeps,
+  options?: InviteOptions,
 ): Promise<string | { message: string }> {
   try {
     const token = await getRandomValues(32);
     const hash = await hashToken(token);
     const encodedToken = encodeURIComponent(token);
     const fakeUserId = new Types.ObjectId();
+    const metadata =
+      options?.role != null ? new Map<string, unknown>([['role', options.role]]) : undefined;
 
     await deps.createToken({
       userId: fakeUserId,
@@ -29,6 +39,8 @@ export async function createInvite(
       token: hash,
       createdAt: Date.now(),
       expiresIn: 604800,
+      ...(options?.tenantId && { tenantId: options.tenantId }),
+      ...(metadata && { metadata }),
     });
 
     return encodedToken;

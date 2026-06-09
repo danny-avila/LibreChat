@@ -1,7 +1,12 @@
 const mongoose = require('mongoose');
 const express = require('express');
 const { isEnabled, isActiveExpirationDate, getSharedLinkExpiration } = require('@librechat/api');
-const { logger, createTempChatExpirationDate } = require('@librechat/data-schemas');
+const {
+  logger,
+  createTempChatExpirationDate,
+  runAsSystem,
+  getTenantId,
+} = require('@librechat/data-schemas');
 const {
   getSharedMessages,
   createSharedLink,
@@ -12,6 +17,17 @@ const {
 } = require('~/models');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const router = express.Router();
+
+async function getPublicShareTenantId(shareId) {
+  return runAsSystem(async () => {
+    const SharedLink = mongoose.models.SharedLink;
+    if (!SharedLink) {
+      return undefined;
+    }
+    const doc = await SharedLink.findOne({ shareId, isPublic: true }, 'tenantId').lean();
+    return doc?.tenantId;
+  });
+}
 
 const resolveSharedLinkExpiration = (req, conversationId) =>
   getSharedLinkExpiration(
@@ -42,6 +58,14 @@ if (allowSharedLinks) {
     allowSharedLinksPublic ? (req, res, next) => next() : requireJwtAuth,
     async (req, res) => {
       try {
+        const callerTenantId = req.user?.tenantId ?? getTenantId();
+        if (callerTenantId) {
+          const shareTenantId = await getPublicShareTenantId(req.params.shareId);
+          if (shareTenantId && shareTenantId !== callerTenantId) {
+            return res.status(403).json({ message: 'Forbidden' });
+          }
+        }
+
         const share = await getSharedMessages(req.params.shareId);
 
         if (share) {

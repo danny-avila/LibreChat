@@ -3,8 +3,13 @@ import { PrincipalType, SystemRoles } from 'librechat-data-provider';
 import type { IUser, UserDeleteResult } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
+import { createInvite } from '~/auth/invite';
 import type { AdminUsersDeps } from './users';
 import { createAdminUsersHandlers } from './users';
+
+jest.mock('~/auth/invite', () => ({
+  createInvite: jest.fn(),
+}));
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
@@ -32,13 +37,14 @@ function createReqRes(
   overrides: {
     params?: Record<string, string>;
     query?: Record<string, string | string[]>;
+    body?: Record<string, unknown>;
     user?: { _id?: Types.ObjectId; id?: string; role?: string; tenantId?: string };
   } = {},
 ) {
   const req = {
     params: overrides.params ?? {},
     query: overrides.query ?? {},
-    body: {},
+    body: overrides.body ?? {},
     user: overrides.user ?? { _id: new Types.ObjectId(), role: 'admin' },
   } as unknown as ServerRequest;
 
@@ -51,6 +57,13 @@ function createReqRes(
 
 function createDeps(overrides: Partial<AdminUsersDeps> = {}): AdminUsersDeps {
   return {
+    findUser: jest.fn().mockResolvedValue(null),
+    createInviteToken: jest.fn(),
+    findInviteToken: jest.fn(),
+    sendInviteEmail: jest.fn().mockResolvedValue(undefined),
+    getClientDomain: () => 'http://localhost:3080',
+    getAppTitle: () => 'LibreChat',
+    isEmailConfigured: () => true,
     findUsers: jest.fn().mockResolvedValue([]),
     countUsers: jest.fn().mockResolvedValue(0),
     deleteUserById: jest
@@ -61,6 +74,8 @@ function createDeps(overrides: Partial<AdminUsersDeps> = {}): AdminUsersDeps {
     ...overrides,
   };
 }
+
+const mockedCreateInvite = createInvite as jest.MockedFunction<typeof createInvite>;
 
 describe('createAdminUsersHandlers', () => {
   describe('listUsers', () => {
@@ -104,7 +119,26 @@ describe('createAdminUsersHandlers', () => {
         offset: 20,
         sort: { createdAt: -1 },
       });
-      expect(countUsers).toHaveBeenCalledWith();
+      expect(countUsers).toHaveBeenCalledWith({});
+    });
+
+    it('scopes list to caller tenantId for tenant admins', async () => {
+      const findUsers = jest.fn().mockResolvedValue([]);
+      const countUsers = jest.fn().mockResolvedValue(0);
+      const deps = createDeps({ findUsers, countUsers });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res } = createReqRes({
+        user: { _id: new Types.ObjectId(), role: 'ADMIN', tenantId: 'tenant-a' },
+      });
+
+      await handlers.listUsers(req, res);
+
+      expect(findUsers).toHaveBeenCalledWith(
+        { tenantId: 'tenant-a' },
+        expect.any(String),
+        expect.any(Object),
+      );
+      expect(countUsers).toHaveBeenCalledWith({ tenantId: 'tenant-a' });
     });
 
     it('returns empty list when no users', async () => {
@@ -175,6 +209,22 @@ describe('createAdminUsersHandlers', () => {
       const response = json.mock.calls[0][0];
       expect(response.total).toBe(20);
       expect(response.capped).toBe(true);
+    });
+
+    it('scopes search to caller tenantId for tenant admins', async () => {
+      const findUsers = jest.fn().mockResolvedValue([]);
+      const deps = createDeps({ findUsers });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res } = createReqRes({
+        query: { q: 'test' },
+        user: { _id: new Types.ObjectId(), role: 'ADMIN', tenantId: 'tenant-a' },
+      });
+
+      await handlers.searchUsers(req, res);
+
+      expect(findUsers.mock.calls[0][0]).toEqual(
+        expect.objectContaining({ tenantId: 'tenant-a', $or: expect.any(Array) }),
+      );
     });
 
     it('searches name, email, and username with anchored prefix regex', async () => {
@@ -326,13 +376,124 @@ describe('createAdminUsersHandlers', () => {
     });
   });
 
+  describe('inviteUser', () => {
+    beforeEach(() => {
+      mockedCreateInvite.mockReset();
+    });
+
+    it('sends invite with caller tenantId and USER role default', async () => {
+      mockedCreateInvite.mockResolvedValue('invite-token');
+      const deps = createDeps();
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status } = createReqRes({
+        user: { _id: new Types.ObjectId(), role: 'ADMIN', tenantId: 'tenant-a' },
+        body: { email: 'user@example.com' },
+      });
+
+      await handlers.inviteUser(req, res);
+
+      expect(mockedCreateInvite).toHaveBeenCalledWith(
+        'user@example.com',
+        { createToken: deps.createInviteToken, findToken: deps.findInviteToken },
+        { tenantId: 'tenant-a' },
+      );
+      expect(deps.sendInviteEmail).toHaveBeenCalled();
+      expect(status).toHaveBeenCalledWith(200);
+    });
+
+    it('returns invite link when email is not configured', async () => {
+      mockedCreateInvite.mockResolvedValue('invite-token');
+      const deps = createDeps({ isEmailConfigured: () => false });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        user: { _id: new Types.ObjectId(), role: 'ADMIN', tenantId: 'tenant-a' },
+        body: { email: 'user@example.com' },
+      });
+
+      await handlers.inviteUser(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(json).toHaveBeenCalledWith({
+        success: true,
+        emailSent: false,
+        inviteLink: 'http://localhost:3080/register?token=invite-token',
+      });
+      expect(deps.sendInviteEmail).not.toHaveBeenCalled();
+    });
+
+    it('rejects callers without tenantId', async () => {
+      const deps = createDeps();
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status } = createReqRes({
+        user: { _id: new Types.ObjectId(), role: 'ADMIN' },
+        body: { email: 'user@example.com' },
+      });
+
+      await handlers.inviteUser(req, res);
+
+      expect(status).toHaveBeenCalledWith(403);
+      expect(mockedCreateInvite).not.toHaveBeenCalled();
+    });
+
+    it('rejects existing users in the caller tenant', async () => {
+      const findUser = jest.fn().mockResolvedValue(mockUser({ tenantId: 'tenant-a' }));
+      const deps = createDeps({ findUser });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status } = createReqRes({
+        user: { _id: new Types.ObjectId(), role: 'ADMIN', tenantId: 'tenant-a' },
+        body: { email: 'existing@example.com' },
+      });
+
+      await handlers.inviteUser(req, res);
+
+      expect(findUser).toHaveBeenCalledWith({ email: 'existing@example.com' });
+      expect(status).toHaveBeenCalledWith(409);
+      expect(mockedCreateInvite).not.toHaveBeenCalled();
+    });
+
+    it('rejects legacy users without tenantId', async () => {
+      const findUser = jest.fn().mockResolvedValue(mockUser({ tenantId: undefined }));
+      const deps = createDeps({ findUser });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status } = createReqRes({
+        user: { _id: new Types.ObjectId(), role: 'ADMIN', tenantId: 'tenant-a' },
+        body: { email: 'legacy@example.com' },
+      });
+
+      await handlers.inviteUser(req, res);
+
+      expect(status).toHaveBeenCalledWith(409);
+      expect(mockedCreateInvite).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 for invalid email', async () => {
+      const deps = createDeps();
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status } = createReqRes({
+        user: { _id: new Types.ObjectId(), role: 'ADMIN', tenantId: 'tenant-a' },
+        body: { email: 'not-an-email' },
+      });
+
+      await handlers.inviteUser(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(mockedCreateInvite).not.toHaveBeenCalled();
+    });
+  });
+
   describe('deleteUser', () => {
+    const withTargetUser = (overrides: Partial<AdminUsersDeps> = {}) =>
+      createDeps({
+        findUsers: jest.fn().mockResolvedValue([mockUser({ role: 'USER' })]),
+        ...overrides,
+      });
+
     it('deletes user and returns 200', async () => {
       const result: UserDeleteResult = {
         deletedCount: 1,
         message: 'User was deleted successfully.',
       };
-      const deps = createDeps({ deleteUserById: jest.fn().mockResolvedValue(result) });
+      const deps = withTargetUser({ deleteUserById: jest.fn().mockResolvedValue(result) });
       const handlers = createAdminUsersHandlers(deps);
       const { req, res, status, json } = createReqRes({ params: { id: validUserId } });
 
@@ -344,7 +505,7 @@ describe('createAdminUsersHandlers', () => {
 
     it('returns fallback message when result.message is empty', async () => {
       const result: UserDeleteResult = { deletedCount: 1, message: '' };
-      const deps = createDeps({ deleteUserById: jest.fn().mockResolvedValue(result) });
+      const deps = withTargetUser({ deleteUserById: jest.fn().mockResolvedValue(result) });
       const handlers = createAdminUsersHandlers(deps);
       const { req, res, status, json } = createReqRes({ params: { id: validUserId } });
 
@@ -421,7 +582,7 @@ describe('createAdminUsersHandlers', () => {
         deletedCount: 1,
         message: 'User was deleted successfully.',
       };
-      const deps = createDeps({ deleteUserById: jest.fn().mockResolvedValue(result) });
+      const deps = withTargetUser({ deleteUserById: jest.fn().mockResolvedValue(result) });
       const handlers = createAdminUsersHandlers(deps);
       const { req, res, status } = createReqRes({ params: { id: validUserId } });
 
@@ -440,7 +601,7 @@ describe('createAdminUsersHandlers', () => {
         deletedCount: 1,
         message: 'User was deleted successfully.',
       };
-      const deps = createDeps({
+      const deps = withTargetUser({
         deleteUserById: jest.fn().mockResolvedValue(result),
         deleteConfig: jest.fn().mockRejectedValue(new Error('cleanup failed')),
       });
@@ -453,11 +614,35 @@ describe('createAdminUsersHandlers', () => {
       expect(json).toHaveBeenCalledWith({ message: 'User was deleted successfully.' });
     });
 
-    it('does not cascade when user is not found', async () => {
-      const result: UserDeleteResult = { deletedCount: 0, message: '' };
-      const deps = createDeps({ deleteUserById: jest.fn().mockResolvedValue(result) });
+    it('returns 403 when a tenant admin tries to delete another admin', async () => {
+      const targetId = new Types.ObjectId().toString();
+      const deps = createDeps({
+        findUsers: jest
+          .fn()
+          .mockResolvedValue([mockUser({ role: SystemRoles.ADMIN, tenantId: 'tenant-a' })]),
+      });
       const handlers = createAdminUsersHandlers(deps);
-      const { req, res, status } = createReqRes({ params: { id: validUserId } });
+      const { req, res, status, json } = createReqRes({
+        params: { id: targetId },
+        user: { _id: new Types.ObjectId(), role: 'ADMIN', tenantId: 'tenant-a' },
+      });
+
+      await handlers.deleteUser(req, res);
+
+      expect(status).toHaveBeenCalledWith(403);
+      expect(json).toHaveBeenCalledWith({ error: 'Cannot delete tenant admin users' });
+      expect(deps.deleteUserById).not.toHaveBeenCalled();
+    });
+
+    it('does not cascade when target user is outside caller tenant', async () => {
+      const deps = createDeps({
+        findUsers: jest.fn().mockResolvedValue([]),
+      });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status } = createReqRes({
+        params: { id: validUserId },
+        user: { _id: new Types.ObjectId(), role: 'ADMIN', tenantId: 'tenant-a' },
+      });
 
       await handlers.deleteUser(req, res);
 
@@ -479,7 +664,7 @@ describe('createAdminUsersHandlers', () => {
 
     it('returns 404 when user not found', async () => {
       const result: UserDeleteResult = { deletedCount: 0, message: '' };
-      const deps = createDeps({ deleteUserById: jest.fn().mockResolvedValue(result) });
+      const deps = withTargetUser({ deleteUserById: jest.fn().mockResolvedValue(result) });
       const handlers = createAdminUsersHandlers(deps);
       const { req, res, status, json } = createReqRes({ params: { id: validUserId } });
 
@@ -490,7 +675,7 @@ describe('createAdminUsersHandlers', () => {
     });
 
     it('returns 500 on error', async () => {
-      const deps = createDeps({
+      const deps = withTargetUser({
         deleteUserById: jest.fn().mockRejectedValue(new Error('db crash')),
       });
       const handlers = createAdminUsersHandlers(deps);

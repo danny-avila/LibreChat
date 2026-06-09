@@ -47,12 +47,14 @@ describe('createAdminGroupsHandlers', () => {
       params?: Record<string, string>;
       query?: Record<string, string>;
       body?: Record<string, unknown>;
+      user?: { tenantId?: string; role?: string };
     } = {},
   ) {
     const req = {
       params: overrides.params ?? {},
       query: overrides.query ?? {},
       body: overrides.body ?? {},
+      user: overrides.user,
     } as unknown as ServerRequest;
 
     const json = jest.fn();
@@ -66,7 +68,7 @@ describe('createAdminGroupsHandlers', () => {
     return {
       listGroups: jest.fn().mockResolvedValue([]),
       countGroups: jest.fn().mockResolvedValue(0),
-      findGroupById: jest.fn().mockResolvedValue(null),
+      findGroupById: jest.fn().mockResolvedValue(mockGroup()),
       createGroup: jest.fn().mockResolvedValue(mockGroup()),
       updateGroupById: jest.fn().mockResolvedValue(mockGroup()),
       deleteGroup: jest.fn().mockResolvedValue(mockGroup()),
@@ -126,6 +128,25 @@ describe('createAdminGroupsHandlers', () => {
 
       expect(deps.listGroups).toHaveBeenCalledWith({ search: 'eng', limit: 50, offset: 0 });
       expect(deps.countGroups).toHaveBeenCalledWith({ search: 'eng' });
+    });
+
+    it('scopes list and count to caller tenant when tenantId is set', async () => {
+      const deps = createDeps();
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res } = createReqRes({
+        query: { search: 'eng' },
+        user: { role: 'ADMIN', tenantId: 'tenant-a' },
+      });
+
+      await handlers.listGroups(req, res);
+
+      expect(deps.listGroups).toHaveBeenCalledWith({
+        search: 'eng',
+        tenantId: 'tenant-a',
+        limit: 50,
+        offset: 0,
+      });
+      expect(deps.countGroups).toHaveBeenCalledWith({ search: 'eng', tenantId: 'tenant-a' });
     });
 
     it('ignores invalid source values', async () => {
@@ -201,6 +222,21 @@ describe('createAdminGroupsHandlers', () => {
       expect(json).toHaveBeenCalledWith({ group });
     });
 
+    it('returns 404 when group belongs to a different tenant', async () => {
+      const group = mockGroup({ tenantId: 'tenant-b' });
+      const deps = createDeps({ findGroupById: jest.fn().mockResolvedValue(group) });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: validId },
+        user: { role: 'ADMIN', tenantId: 'tenant-a' },
+      });
+
+      await handlers.getGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(404);
+      expect(json).toHaveBeenCalledWith({ error: 'Group not found' });
+    });
+
     it('returns 400 for invalid ID', async () => {
       const deps = createDeps();
       const handlers = createAdminGroupsHandlers(deps);
@@ -261,6 +297,22 @@ describe('createAdminGroupsHandlers', () => {
       );
     });
 
+    it('persists caller tenantId when creating a group', async () => {
+      const group = mockGroup({ tenantId: 'tenant-a' });
+      const deps = createDeps({ createGroup: jest.fn().mockResolvedValue(group) });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res } = createReqRes({
+        body: { name: 'Tenant Group' },
+        user: { role: 'ADMIN', tenantId: 'tenant-a' },
+      });
+
+      await handlers.createGroup(req, res);
+
+      expect(deps.createGroup).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'Tenant Group', tenantId: 'tenant-a' }),
+      );
+    });
+
     it('normalizes memberIds to idOnTheSource values', async () => {
       const userId = new Types.ObjectId().toString();
       const user = { _id: new Types.ObjectId(userId), idOnTheSource: 'ext-norm-1' } as IUser;
@@ -280,6 +332,28 @@ describe('createAdminGroupsHandlers', () => {
       expect(deps.findUsers).toHaveBeenCalledWith({ _id: { $in: [userId] } }, 'idOnTheSource');
       expect(deps.createGroup).toHaveBeenCalledWith(
         expect.objectContaining({ memberIds: ['ext-norm-1'] }),
+      );
+    });
+
+    it('scopes member lookup to caller tenant when tenantId is set', async () => {
+      const userId = new Types.ObjectId().toString();
+      const user = { _id: new Types.ObjectId(userId), idOnTheSource: 'ext-norm-1' } as IUser;
+      const group = mockGroup();
+      const deps = createDeps({
+        createGroup: jest.fn().mockResolvedValue(group),
+        findUsers: jest.fn().mockResolvedValue([user]),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res } = createReqRes({
+        body: { name: 'With Members', memberIds: [userId] },
+        user: { role: 'ADMIN', tenantId: 'tenant-a' },
+      });
+
+      await handlers.createGroup(req, res);
+
+      expect(deps.findUsers).toHaveBeenCalledWith(
+        { _id: { $in: [userId] }, tenantId: 'tenant-a' },
+        'idOnTheSource',
       );
     });
 
@@ -877,6 +951,30 @@ describe('createAdminGroupsHandlers', () => {
       expect(members).toHaveLength(1);
     });
 
+    it('scopes member lookup to caller tenant when tenantId is set', async () => {
+      const user = mockUser({ idOnTheSource: 'ext-123' });
+      const group = mockGroup({ memberIds: [validUserId], tenantId: 'tenant-a' });
+      const deps = createDeps({
+        findGroupById: jest.fn().mockResolvedValue(group),
+        findUsers: jest.fn().mockResolvedValue([user]),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res } = createReqRes({
+        params: { id: validId },
+        user: { role: 'ADMIN', tenantId: 'tenant-a' },
+      });
+
+      await handlers.getGroupMembers(req, res);
+
+      expect(deps.findUsers).toHaveBeenCalledWith(
+        {
+          tenantId: 'tenant-a',
+          $or: [{ idOnTheSource: { $in: [validUserId] } }, { _id: { $in: [validUserId] } }],
+        },
+        'name email avatar idOnTheSource',
+      );
+    });
+
     it('skips _id condition when no valid ObjectIds in memberIds', async () => {
       const group = mockGroup({ memberIds: ['ext-1', 'ext-2'] });
       const deps = createDeps({
@@ -1181,6 +1279,26 @@ describe('createAdminGroupsHandlers', () => {
       await handlers.addGroupMember(req, res);
 
       expect(status).toHaveBeenCalledWith(500);
+    });
+
+    it('returns 404 when user is outside caller tenant', async () => {
+      const deps = createDeps({
+        findGroupById: jest.fn().mockResolvedValue(mockGroup({ tenantId: 'tenant-a' })),
+        findUsers: jest.fn().mockResolvedValue([]),
+        addUserToGroup: jest.fn(),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: validId },
+        body: { userId: validUserId },
+        user: { role: 'ADMIN', tenantId: 'tenant-a' },
+      });
+
+      await handlers.addGroupMember(req, res);
+
+      expect(status).toHaveBeenCalledWith(404);
+      expect(json).toHaveBeenCalledWith({ error: 'User not found' });
+      expect(deps.addUserToGroup).not.toHaveBeenCalled();
     });
   });
 

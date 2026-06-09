@@ -124,6 +124,28 @@ export type AdminUserListItem = {
   updatedAt?: string;
 };
 
+/** Tenant-scoped admin user returned by the platform admin API. */
+export type AdminTenantAdmin = {
+  id: string;
+  name: string;
+  email: string;
+  tenantId: string;
+  tenantName: string;
+  createdAt?: string;
+};
+
+/** Tenant as returned by the admin API. */
+export type AdminTenant = {
+  id: string;
+  tenantId: string;
+  name: string;
+  description: string;
+  status: 'active' | 'suspended' | 'archived';
+  userCount?: number;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 /** Minimal user info returned by user search endpoints. */
 export type AdminUserSearchResult = {
   id: string;

@@ -13,9 +13,16 @@ import type { FilterQuery, ClientSession, DeleteResult } from 'mongoose';
 import type { Response } from 'express';
 import type { ValidationError } from '~/types/error';
 import type { ServerRequest } from '~/types/http';
+import {
+  getCallerTenantId,
+  getTenantScopedGroupFilter,
+  getTenantScopedUserFilter,
+  groupBelongsToCaller,
+  mergeUserFilter,
+} from './tenant';
 import { parsePagination } from './pagination';
 
-type GroupListFilter = Pick<GroupFilterOptions, 'source' | 'search'>;
+type GroupListFilter = Pick<GroupFilterOptions, 'source' | 'search'> & { tenantId?: string };
 
 const VALID_GROUP_SOURCES: ReadonlySet<string> = new Set(['local', 'entra']);
 const MAX_CREATE_MEMBER_IDS = 500;
@@ -116,9 +123,10 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
         filter.search = search;
       }
       const { limit, offset } = parsePagination(req.query);
+      const scopedFilter: GroupListFilter = { ...filter, ...getTenantScopedGroupFilter(req) };
       const [groups, total] = await Promise.all([
-        listGroups({ ...filter, limit, offset }),
-        countGroups(filter),
+        listGroups({ ...scopedFilter, limit, offset }),
+        countGroups(scopedFilter),
       ]);
       return res.status(200).json({ groups, total, limit, offset });
     } catch (error) {
@@ -134,7 +142,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
         return res.status(400).json({ error: 'Invalid group ID format' });
       }
       const group = await findGroupById(id);
-      if (!group) {
+      if (!groupBelongsToCaller(req, group)) {
         return res.status(404).json({ error: 'Group not found' });
       }
       return res.status(200).json({ group });
@@ -188,7 +196,10 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
       let memberIds = rawIds;
       const objectIds = rawIds.filter(isValidObjectIdString);
       if (objectIds.length > 0) {
-        const users = await findUsers({ _id: { $in: objectIds } }, 'idOnTheSource');
+        const users = await findUsers(
+          mergeUserFilter(req, { _id: { $in: objectIds } }),
+          'idOnTheSource',
+        );
         const idMap = new Map<string, string>();
         for (const user of users) {
           const uid = user._id?.toString() ?? '';
@@ -204,6 +215,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
         memberIds = rawIds.map((id) => idMap.get(id) || id);
       }
 
+      const callerTenantId = getCallerTenantId(req);
       const group = await createGroup({
         name: body.name.trim(),
         description: body.description,
@@ -212,6 +224,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
         source: body.source || 'local',
         memberIds,
         ...(body.idOnTheSource ? { idOnTheSource: body.idOnTheSource } : {}),
+        ...(callerTenantId ? { tenantId: callerTenantId } : {}),
       });
       return res.status(201).json({ group });
     } catch (error) {
@@ -276,6 +289,11 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
         return res.status(400).json({ error: 'No valid fields to update' });
       }
 
+      const existing = await findGroupById(id);
+      if (!groupBelongsToCaller(req, existing)) {
+        return res.status(404).json({ error: 'Group not found' });
+      }
+
       const group = await updateGroupById(id, updateData);
       if (!group) {
         return res.status(404).json({ error: 'Group not found' });
@@ -296,6 +314,11 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
       if (!isValidObjectIdString(id)) {
         return res.status(400).json({ error: 'Invalid group ID format' });
       }
+      const existing = await findGroupById(id);
+      if (!groupBelongsToCaller(req, existing)) {
+        return res.status(404).json({ error: 'Group not found' });
+      }
+
       const deleted = await deleteGroup(id);
       if (!deleted) {
         return res.status(404).json({ error: 'Group not found' });
@@ -331,7 +354,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
         return res.status(400).json({ error: 'Invalid group ID format' });
       }
       const group = await findGroupById(id, { memberIds: 1 });
-      if (!group) {
+      if (!groupBelongsToCaller(req, group)) {
         return res.status(404).json({ error: 'Group not found' });
       }
 
@@ -355,7 +378,10 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
       if (validObjectIds.length > 0) {
         conditions.push({ _id: { $in: validObjectIds } });
       }
-      const users = await findUsers({ $or: conditions }, 'name email avatar idOnTheSource');
+      const users = await findUsers(
+        mergeUserFilter(req, { $or: conditions }),
+        'name email avatar idOnTheSource',
+      );
 
       const userMap = new Map<string, IUser>();
       for (const user of users) {
@@ -407,6 +433,19 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
           .json({ error: 'Only native user ObjectIds can be added via this endpoint' });
       }
 
+      const existing = await findGroupById(id);
+      if (!groupBelongsToCaller(req, existing)) {
+        return res.status(404).json({ error: 'Group not found' });
+      }
+
+      const tenantFilter = getTenantScopedUserFilter(req);
+      if (Object.keys(tenantFilter).length > 0) {
+        const members = await findUsers(mergeUserFilter(req, { _id: userId }), '_id');
+        if (members.length === 0) {
+          return res.status(404).json({ error: 'User not found' });
+        }
+      }
+
       const { group } = await addUserToGroup(userId, id);
       if (!group) {
         return res.status(404).json({ error: 'Group not found' });
@@ -446,6 +485,11 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps) {
       const { id, userId } = req.params as GroupMemberParams;
       if (!isValidObjectIdString(id)) {
         return res.status(400).json({ error: 'Invalid group ID format' });
+      }
+
+      const existing = await findGroupById(id);
+      if (!groupBelongsToCaller(req, existing)) {
+        return res.status(404).json({ error: 'Group not found' });
       }
 
       const group = isValidObjectIdString(userId)

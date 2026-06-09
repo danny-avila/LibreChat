@@ -688,10 +688,14 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
   function buildGroupQuery(filter: {
     source?: 'local' | 'entra';
     search?: string;
+    tenantId?: string;
   }): FilterQuery<IGroup> {
     const query: FilterQuery<IGroup> = {};
     if (filter.source) {
       query.source = filter.source;
+    }
+    if (filter.tenantId) {
+      query.tenantId = filter.tenantId;
     }
     if (filter.search) {
       const regex = new RegExp(escapeRegExp(filter.search), 'i');
@@ -710,6 +714,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     filter: {
       source?: 'local' | 'entra';
       search?: string;
+      tenantId?: string;
       limit?: number;
       offset?: number;
     } = {},
@@ -733,7 +738,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
    * @param session - Optional MongoDB session for transactions
    */
   async function countGroups(
-    filter: { source?: 'local' | 'entra'; search?: string } = {},
+    filter: { source?: 'local' | 'entra'; search?: string; tenantId?: string } = {},
     session?: ClientSession,
   ): Promise<number> {
     const Group = mongoose.models.Group as Model<IGroup>;

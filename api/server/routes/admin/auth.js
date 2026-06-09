@@ -22,7 +22,11 @@ const {
   buildOpenIDRefreshParams,
 } = require('@librechat/api');
 const { loginController } = require('~/server/controllers/auth/LoginController');
-const { hasCapability, requireCapability } = require('~/server/middleware/roles/capabilities');
+const {
+  hasCapability,
+  requireCapability,
+  isPlatformAdmin,
+} = require('~/server/middleware/roles/capabilities');
 const { createOAuthHandler } = require('~/server/controllers/auth/oauth');
 const {
   findBalanceByUser,
@@ -80,10 +84,16 @@ router.post(
   loginController,
 );
 
-router.get('/verify', middleware.requireJwtAuth, requireAdminAccess, (req, res) => {
+router.get('/verify', middleware.requireJwtAuth, requireAdminAccess, async (req, res) => {
   const { password: _p, totpSecret: _t, __v, ...user } = req.user;
   user.id = user._id.toString();
-  res.status(200).json({ user });
+  const userId = user.id;
+  const platformAdmin = await isPlatformAdmin({
+    id: userId,
+    role: user.role ?? '',
+    tenantId: user.tenantId,
+  });
+  res.status(200).json({ user, isPlatformAdmin: platformAdmin });
 });
 
 router.get('/oauth/openid/check', (req, res) => {

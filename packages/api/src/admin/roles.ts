@@ -4,6 +4,7 @@ import type { IRole, IUser, IConfig, AdminMember } from '@librechat/data-schemas
 import type { FilterQuery, Types } from 'mongoose';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
+import { mergeUserFilter } from './tenant';
 import { parsePagination } from './pagination';
 
 const systemRoleValues = new Set<string>(Object.values(SystemRoles));
@@ -105,6 +106,12 @@ export interface AdminRolesDeps {
     options?: { limit?: number; offset?: number },
   ) => Promise<IUser[]>;
   countUsersByRole: (roleName: string) => Promise<number>;
+  findUsers: (
+    searchCriteria: FilterQuery<IUser>,
+    fieldsToSelect?: string | string[] | null,
+    options?: { limit?: number; offset?: number; sort?: Record<string, 1 | -1> },
+  ) => Promise<IUser[]>;
+  countUsers: (filter?: FilterQuery<IUser>) => Promise<number>;
   /** Removes the per-principal config override (keyed by type + name, not ObjectId). */
   deleteConfig: (
     principalType: PrincipalType,
@@ -137,8 +144,8 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
     updateUsersByRole,
     findUserIdsByRole,
     updateUsersRoleByIds,
-    listUsersByRole,
-    countUsersByRole,
+    findUsers,
+    countUsers,
     deleteConfig,
     deleteAclEntries,
     deleteGrantsForPrincipal,
@@ -419,10 +426,11 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       }
 
       const { limit, offset } = parsePagination(req.query);
+      const roleFilter = mergeUserFilter(req, { role: name });
 
       const [users, total] = await Promise.all([
-        listUsersByRole(name, { limit, offset }),
-        countUsersByRole(name),
+        findUsers(roleFilter, '_id name email avatar', { limit, offset, sort: { _id: 1 } }),
+        countUsers(roleFilter),
       ]);
       const members: AdminMember[] = users.map((u) => ({
         userId: u._id?.toString() ?? '',
@@ -462,7 +470,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
         return res.status(404).json({ error: 'Role not found' });
       }
 
-      const user = await findUser({ _id: userId });
+      const user = await findUser(mergeUserFilter(req, { _id: userId }));
       if (!user) {
         return res.status(404).json({ error: 'User not found' });
       }
@@ -472,7 +480,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       }
 
       if (user.role === SystemRoles.ADMIN && name !== SystemRoles.ADMIN) {
-        const adminCount = await countUsersByRole(SystemRoles.ADMIN);
+        const adminCount = await countUsers(mergeUserFilter(req, { role: SystemRoles.ADMIN }));
         if (adminCount <= 1) {
           return res.status(400).json({ error: 'Cannot remove the last admin user' });
         }
@@ -484,7 +492,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       }
 
       if (user.role === SystemRoles.ADMIN && name !== SystemRoles.ADMIN) {
-        const postCount = await countUsersByRole(SystemRoles.ADMIN);
+        const postCount = await countUsers(mergeUserFilter(req, { role: SystemRoles.ADMIN }));
         if (postCount === 0) {
           try {
             await updateUser(userId, { role: SystemRoles.ADMIN });
@@ -525,7 +533,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
         return res.status(404).json({ error: 'Role not found' });
       }
 
-      const user = await findUser({ _id: userId });
+      const user = await findUser(mergeUserFilter(req, { _id: userId }));
       if (!user) {
         return res.status(404).json({ error: 'User not found' });
       }
@@ -535,7 +543,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       }
 
       if (name === SystemRoles.ADMIN) {
-        const adminCount = await countUsersByRole(SystemRoles.ADMIN);
+        const adminCount = await countUsers(mergeUserFilter(req, { role: SystemRoles.ADMIN }));
         if (adminCount <= 1) {
           return res.status(400).json({ error: 'Cannot remove the last admin user' });
         }
@@ -547,7 +555,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps) {
       }
 
       if (name === SystemRoles.ADMIN) {
-        const postCount = await countUsersByRole(SystemRoles.ADMIN);
+        const postCount = await countUsers(mergeUserFilter(req, { role: SystemRoles.ADMIN }));
         if (postCount === 0) {
           try {
             await updateUser(userId, { role: SystemRoles.ADMIN });

@@ -1,6 +1,7 @@
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
 const openIdClient = require('openid-client');
+const { SystemRoles } = require('librechat-data-provider');
 const { logger } = require('@librechat/data-schemas');
 const {
   isEnabled,
@@ -31,9 +32,34 @@ const OPENID_REUSE_EXPIRY_BUFFER_SECONDS = 30;
 /** Mirrors the default SESSION_EXPIRY to bound IdP revocation lag for session-token reuse. */
 const OPENID_REUSE_MAX_SESSION_AGE_MS = 15 * 60 * 1000;
 
+function getInviteRegistrationData(invite) {
+  if (!invite) {
+    return {};
+  }
+
+  const additionalData = { emailVerified: true };
+  if (invite.tenantId) {
+    additionalData.tenantId = invite.tenantId;
+  }
+
+  const metadata = invite.metadata;
+  let role;
+  if (metadata instanceof Map) {
+    role = metadata.get('role');
+  } else if (metadata && typeof metadata === 'object') {
+    role = metadata.role;
+  }
+  if (role === SystemRoles.ADMIN) {
+    additionalData.role = SystemRoles.ADMIN;
+  }
+
+  return additionalData;
+}
+
 const registrationController = async (req, res) => {
   try {
-    const response = await registerUser(req.body);
+    const additionalData = getInviteRegistrationData(req.invite);
+    const response = await registerUser(req.body, additionalData);
     const { status, message } = response;
     res.status(status).send({ message });
   } catch (err) {

@@ -20,6 +20,7 @@ export interface TokenCreateData {
   token: string;
   expiresIn: number;
   metadata?: Map<string, unknown>;
+  tenantId?: string;
 }
 
 export interface TokenQuery {

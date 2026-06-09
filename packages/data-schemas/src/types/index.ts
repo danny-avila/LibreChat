@@ -30,6 +30,7 @@ export * from './accessRole';
 export * from './aclEntry';
 export * from './systemGrant';
 export * from './group';
+export * from './tenant';
 /* Config */
 export * from './config';
 /* Admin */
