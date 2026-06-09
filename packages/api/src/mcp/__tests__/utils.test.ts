@@ -9,8 +9,10 @@ import {
   isClientRejectionMessage,
   getMissingCustomUserVars,
   hasCustomUserVars,
+  hasRuntimeUrlPlaceholders,
   hasRuntimeContextPlaceholders,
   isUserSourced,
+  requiresEphemeralUserConnection,
 } from '~/mcp/utils';
 
 describe('normalizeServerName', () => {
@@ -444,6 +446,59 @@ describe('hasRuntimeContextPlaceholders', () => {
         dbId: 'server-123',
         headers: {
           Authorization: 'Bearer {{LIBRECHAT_OPENID_ID_TOKEN}}',
+        },
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('hasRuntimeUrlPlaceholders', () => {
+  it('detects trusted runtime placeholders in the server URL', () => {
+    expect(
+      hasRuntimeUrlPlaceholders({
+        source: 'yaml',
+        url: 'https://example.com/users/{{LIBRECHAT_USER_USERNAME}}/mcp',
+      }),
+    ).toBe(true);
+  });
+
+  it('ignores runtime URL placeholders in user-sourced configs', () => {
+    expect(
+      hasRuntimeUrlPlaceholders({
+        source: 'user',
+        dbId: 'server-123',
+        url: 'https://example.com/users/{{LIBRECHAT_USER_USERNAME}}/mcp',
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('requiresEphemeralUserConnection', () => {
+  it('returns true when request-varying placeholders affect connection fields', () => {
+    expect(
+      requiresEphemeralUserConnection({
+        source: 'yaml',
+        url: 'https://example.com/messages/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+      }),
+    ).toBe(true);
+
+    expect(
+      requiresEphemeralUserConnection({
+        source: 'config',
+        env: {
+          GRAPH_TOKEN: '{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('returns false when request-varying placeholders only affect per-call headers', () => {
+    expect(
+      requiresEphemeralUserConnection({
+        source: 'yaml',
+        headers: {
+          'X-Message': '{{LIBRECHAT_BODY_MESSAGEID}}',
+          'X-Graph': '{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
         },
       }),
     ).toBe(false);

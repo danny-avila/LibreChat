@@ -4,6 +4,7 @@ import type { ParsedServerConfig } from '~/mcp/types';
 export const mcpToolPattern: RegExp = new RegExp(`^.+${Constants.mcp_delimiter}.+$`);
 
 const RUNTIME_CONTEXT_PLACEHOLDER_PATTERN = /\{\{LIBRECHAT_(?:USER|OPENID|GRAPH|BODY)_[^}]+\}\}/;
+const EPHEMERAL_CONNECTION_PLACEHOLDER_PATTERN = /\{\{LIBRECHAT_(?:GRAPH|BODY)_[^}]+\}\}/;
 
 type PlaceholderValue =
   | string
@@ -58,19 +59,26 @@ export function hasCustomUserVars(config: Pick<ParsedServerConfig, 'customUserVa
 }
 
 function hasRuntimeContextPlaceholder(value: PlaceholderValue): boolean {
-  if (typeof value === 'string') {
-    return RUNTIME_CONTEXT_PLACEHOLDER_PATTERN.test(value);
-  }
+  return hasPlaceholder(value, RUNTIME_CONTEXT_PLACEHOLDER_PATTERN);
+}
 
+function hasEphemeralConnectionPlaceholder(value: PlaceholderValue): boolean {
+  return hasPlaceholder(value, EPHEMERAL_CONNECTION_PLACEHOLDER_PATTERN);
+}
+
+function hasPlaceholder(value: PlaceholderValue, pattern: RegExp): boolean {
+  if (typeof value === 'string') {
+    return pattern.test(value);
+  }
   if (Array.isArray(value)) {
-    return value.some(hasRuntimeContextPlaceholder);
+    return value.some((item) => hasPlaceholder(item, pattern));
   }
 
   if (value == null || typeof value !== 'object') {
     return false;
   }
 
-  return Object.values(value).some(hasRuntimeContextPlaceholder);
+  return Object.values(value).some((item) => hasPlaceholder(item, pattern));
 }
 
 /**
@@ -85,6 +93,29 @@ export function hasRuntimeContextPlaceholders(config: UserScopedConnectionConfig
 
   return [config.args, config.env, config.headers, config.oauth, config.url].some(
     hasRuntimeContextPlaceholder,
+  );
+}
+
+export function hasRuntimeUrlPlaceholders(config: UserScopedConnectionConfig): boolean {
+  if (isUserSourced(config)) {
+    return false;
+  }
+
+  return hasRuntimeContextPlaceholder(config.url);
+}
+
+/**
+ * `GRAPH` and `BODY` placeholders can change per request. If they affect the
+ * connection-defining parts of a config, the normal userId:serverName cache
+ * would reuse a connection built with stale request context.
+ */
+export function requiresEphemeralUserConnection(config: UserScopedConnectionConfig): boolean {
+  if (isUserSourced(config)) {
+    return false;
+  }
+
+  return [config.args, config.env, config.oauth, config.url].some(
+    hasEphemeralConnectionPlaceholder,
   );
 }
 

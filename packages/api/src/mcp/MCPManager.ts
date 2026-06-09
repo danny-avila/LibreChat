@@ -10,7 +10,12 @@ import type { FlowStateManager } from '~/flow/manager';
 import type { MCPOAuthTokens } from './oauth';
 import type { RequestBody } from '~/types';
 import type * as t from './types';
-import { isUserSourced, requiresOAuthMachinery, requiresUserScopedConnection } from './utils';
+import {
+  isUserSourced,
+  requiresEphemeralUserConnection,
+  requiresOAuthMachinery,
+  requiresUserScopedConnection,
+} from './utils';
 import { MCPServersInitializer } from './registry/MCPServersInitializer';
 import { OboTokenResolutionError, resolveOboToken } from '~/mcp/oauth';
 import { MCPServerInspector } from './registry/MCPServerInspector';
@@ -335,6 +340,7 @@ Please follow these instructions when using tools from the respective MCP server
   }): Promise<t.FormattedToolResponse> {
     /** User-specific connection */
     let connection: MCPConnection | undefined;
+    let disconnectAfterCall = false;
     const userId = user?.id;
     const logPrefix = userId ? `[MCP][User: ${userId}][${serverName}]` : `[MCP][${serverName}]`;
 
@@ -350,6 +356,7 @@ Please follow these instructions when using tools from the respective MCP server
         oauthEnd,
         oboTokenResolver,
         oboTrustChecker,
+        graphTokenResolver,
         signal: options?.signal,
         customUserVars,
         requestBody,
@@ -374,6 +381,7 @@ Please follow these instructions when using tools from the respective MCP server
         );
       }
       const isDbSourced = isUserSourced(rawConfig);
+      disconnectAfterCall = !!userId && requiresEphemeralUserConnection(rawConfig);
 
       /** Pre-process Graph token placeholders (async) before the synchronous processMCPEnv pass */
       const graphProcessedConfig = isDbSourced
@@ -462,6 +470,19 @@ Please follow these instructions when using tools from the respective MCP server
       logger.error(`${logPrefix}[${toolName}] Tool call failed`, error);
       // Rethrowing allows the caller (createMCPTool) to handle the final user message
       throw error;
+    } finally {
+      if (disconnectAfterCall && connection) {
+        try {
+          await connection.disconnect();
+        } catch (disconnectError) {
+          logger.warn(`${logPrefix}[${toolName}] Failed to disconnect ephemeral connection`, {
+            error: disconnectError,
+          });
+        }
+        if (userId) {
+          this.removeUserConnection(userId, serverName);
+        }
+      }
     }
   }
 }

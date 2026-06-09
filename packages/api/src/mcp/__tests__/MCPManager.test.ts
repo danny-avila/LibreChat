@@ -2,14 +2,15 @@ import { logger } from '@librechat/data-schemas';
 import type { IUser } from '@librechat/data-schemas';
 import type { GraphTokenResolver } from '~/utils/graph';
 import type * as t from '~/mcp/types';
+import { OboTokenResolutionError, detectOAuthRequirement, resolveOboToken } from '~/mcp/oauth';
 import { MCPServersInitializer } from '~/mcp/registry/MCPServersInitializer';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
-import { OboTokenResolutionError, resolveOboToken } from '~/mcp/oauth';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPConnection } from '~/mcp/connection';
 import { MCPManager } from '~/mcp/MCPManager';
 import * as graphUtils from '~/utils/graph';
+import { processMCPEnv } from '~/utils/env';
 
 // Mock external dependencies
 jest.mock('@librechat/data-schemas', () => ({
@@ -28,6 +29,7 @@ jest.mock('~/utils/graph', () => ({
 
 jest.mock('~/mcp/oauth', () => ({
   ...jest.requireActual('~/mcp/oauth'),
+  detectOAuthRequirement: jest.fn(),
   resolveOboToken: jest.fn(),
 }));
 
@@ -62,6 +64,10 @@ jest.mock('~/mcp/MCPConnectionFactory');
 
 const mockLogger = logger as jest.Mocked<typeof logger>;
 const mockResolveOboToken = resolveOboToken as jest.MockedFunction<typeof resolveOboToken>;
+const mockDetectOAuthRequirement = detectOAuthRequirement as jest.MockedFunction<
+  typeof detectOAuthRequirement
+>;
+const mockProcessMCPEnv = processMCPEnv as jest.MockedFunction<typeof processMCPEnv>;
 
 describe('MCPManager', () => {
   const userId = 'test-user-123';
@@ -75,6 +81,11 @@ describe('MCPManager', () => {
     // Set up default mock implementations
     (MCPServersInitializer.initialize as jest.Mock).mockResolvedValue(undefined);
     (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({});
+    mockProcessMCPEnv.mockImplementation((params) => params.options);
+    mockDetectOAuthRequirement.mockResolvedValue({
+      requiresOAuth: false,
+      method: 'no-metadata-found',
+    });
   });
 
   function mockAppConnections(
@@ -1400,6 +1411,87 @@ describe('MCPManager', () => {
         expect.objectContaining({ serverName }),
         expect.not.objectContaining({ useOAuth: true }),
       );
+    });
+
+    it('should detect OAuth after resolving trusted runtime URL placeholders', async () => {
+      const runtimeUrlConfig: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://api.example.com/users/{{LIBRECHAT_USER_ID}}/mcp',
+        source: 'yaml',
+      };
+      mockAppConnections({
+        has: jest.fn().mockResolvedValue(false),
+      });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(runtimeUrlConfig);
+      mockProcessMCPEnv.mockImplementation(({ options, user }) => ({
+        ...options,
+        url: options.url?.replace('{{LIBRECHAT_USER_ID}}', user?.id ?? ''),
+      }));
+      mockDetectOAuthRequirement.mockResolvedValue({
+        requiresOAuth: true,
+        method: 'protected-resource-metadata',
+      });
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(mockConnection);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await manager.getUserConnection({
+        serverName,
+        user: mockUser,
+        flowManager: mockFlowManager as unknown as t.UserMCPConnectionOptions['flowManager'],
+      });
+
+      expect(mockDetectOAuthRequirement).toHaveBeenCalledWith(
+        'https://api.example.com/users/test-user-123/mcp',
+        null,
+        null,
+      );
+      expect(MCPConnectionFactory.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverConfig: expect.objectContaining({
+            requiresOAuth: true,
+          }),
+        }),
+        expect.objectContaining({ useOAuth: true }),
+      );
+    });
+
+    it('should not cache connections when request body placeholders affect the URL', async () => {
+      const bodyUrlConfig: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://api.example.com/messages/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+        source: 'yaml',
+        requiresOAuth: false,
+      };
+      const firstConnection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+      } as unknown as MCPConnection;
+      const secondConnection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+      } as unknown as MCPConnection;
+
+      mockAppConnections({
+        has: jest.fn().mockResolvedValue(false),
+      });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(bodyUrlConfig);
+      (MCPConnectionFactory.create as jest.Mock)
+        .mockResolvedValueOnce(firstConnection)
+        .mockResolvedValueOnce(secondConnection);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const first = await manager.getUserConnection({
+        serverName,
+        user: mockUser,
+        requestBody: { messageId: 'message-1' },
+      });
+      const second = await manager.getUserConnection({
+        serverName,
+        user: mockUser,
+        requestBody: { messageId: 'message-2' },
+      });
+
+      expect(first).toBe(firstConnection);
+      expect(second).toBe(secondConnection);
+      expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(2);
     });
 
     it('should throw when OAuth server lacks flowManager', async () => {

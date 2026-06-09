@@ -2,7 +2,12 @@ import { Constants } from 'librechat-data-provider';
 import type { JsonSchemaType } from '@librechat/data-schemas';
 import type { MCPConnection } from '~/mcp/connection';
 import type * as t from '~/mcp/types';
-import { hasCustomUserVars, hasRuntimeContextPlaceholders, isUserSourced } from '~/mcp/utils';
+import {
+  hasCustomUserVars,
+  hasRuntimeContextPlaceholders,
+  hasRuntimeUrlPlaceholders,
+  isUserSourced,
+} from '~/mcp/utils';
 import { isMCPDomainAllowed, extractMCPServerDomain } from '~/auth/domain';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPDomainNotAllowedError } from '~/mcp/errors';
@@ -97,6 +102,7 @@ export class MCPServerInspector {
 
   private async detectOAuth(): Promise<void> {
     if (this.config.requiresOAuth != null) return;
+    if (hasRuntimeUrlPlaceholders(this.config)) return;
     if (this.config.url == null || this.config.startup === false) {
       this.config.requiresOAuth = false;
       return;
