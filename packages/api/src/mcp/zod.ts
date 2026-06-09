@@ -322,6 +322,130 @@ export function normalizeJsonSchema<T extends Record<string, unknown>>(schema: T
   return result as T;
 }
 
+function isNullSchema(member: unknown): boolean {
+  return (
+    member != null &&
+    typeof member === 'object' &&
+    (member as Record<string, unknown>).type === 'null'
+  );
+}
+
+/**
+ * Collapses a single `anyOf`/`oneOf` level into its parent by keeping the first
+ * non-null member, marking the field nullable when a `null` member was present.
+ * Loops to fully strip union keys that the chosen member re-introduces.
+ */
+function collapseSchemaUnion(schema: Record<string, unknown>): Record<string, unknown> {
+  let current = schema;
+  let guard = 0;
+
+  while (guard < 100) {
+    guard += 1;
+    let unionKey: 'anyOf' | 'oneOf' | null = null;
+    if (Array.isArray(current.anyOf)) {
+      unionKey = 'anyOf';
+    } else if (Array.isArray(current.oneOf)) {
+      unionKey = 'oneOf';
+    }
+    if (!unionKey) {
+      break;
+    }
+
+    const members = (current[unionKey] as unknown[]).filter(
+      (member): member is Record<string, unknown> => member != null && typeof member === 'object',
+    );
+    const nonNull = members.filter((member) => !isNullSchema(member));
+    const hadNull = nonNull.length !== members.length;
+    const chosen = nonNull[0] ?? {};
+
+    const rest = { ...current };
+    delete rest[unionKey];
+    current = { ...rest, ...chosen };
+    if (hadNull) {
+      current.nullable = true;
+    }
+  }
+
+  return current;
+}
+
+/**
+ * Collapses a multi-entry `type` array (e.g. `['string', 'null']`) into a single
+ * type, reporting whether a `null` entry made the field nullable.
+ */
+function collapseTypeArray(types: unknown[]): { type?: string; nullable: boolean } {
+  const nonNull = types.filter((type) => type !== 'null');
+  const first = nonNull[0];
+  return {
+    type: typeof first === 'string' ? first : undefined,
+    nullable: nonNull.length !== types.length,
+  };
+}
+
+/**
+ * Flattens union constructs (`anyOf`/`oneOf` and multi-entry `type` arrays) into a
+ * single concrete schema for Gemini/Vertex AI compatibility.
+ *
+ * `@langchain/google-common`'s `zod_to_gemini_parameters` throws "Gemini cannot
+ * handle union types" on any genuine union, so MCP tools shipping union-typed
+ * schemas (e.g. discriminated unions) crash on the Google endpoint while working
+ * fine on OpenAI/Claude. This transform is lossy by design — it keeps the first
+ * non-null union member and marks the field nullable when a `null` member was
+ * present. Gate it on the Google/Vertex provider; never apply it to providers that
+ * accept unions. Run it after `normalizeJsonSchema`.
+ *
+ * @param schema - The JSON schema to flatten
+ * @returns The schema with unions collapsed to single members
+ */
+export function flattenJsonSchemaUnions<T extends Record<string, unknown>>(schema: T): T {
+  if (!schema || typeof schema !== 'object') {
+    return schema;
+  }
+
+  if (Array.isArray(schema)) {
+    return schema.map((item) =>
+      item && typeof item === 'object' ? flattenJsonSchemaUnions(item) : item,
+    ) as unknown as T;
+  }
+
+  const collapsed = collapseSchemaUnion(schema);
+  const result: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(collapsed)) {
+    if (key === 'type' && Array.isArray(value)) {
+      const { type, nullable } = collapseTypeArray(value);
+      if (type !== undefined) {
+        result['type'] = type;
+      }
+      if (nullable) {
+        result['nullable'] = true;
+      }
+      continue;
+    }
+
+    if (key === 'properties' && value && typeof value === 'object' && !Array.isArray(value)) {
+      const newProps: Record<string, unknown> = {};
+      for (const [propKey, propValue] of Object.entries(value as Record<string, unknown>)) {
+        newProps[propKey] =
+          propValue && typeof propValue === 'object'
+            ? flattenJsonSchemaUnions(propValue as Record<string, unknown>)
+            : propValue;
+      }
+      result[key] = newProps;
+      continue;
+    }
+
+    if (value && typeof value === 'object') {
+      result[key] = flattenJsonSchemaUnions(value as Record<string, unknown>);
+      continue;
+    }
+
+    result[key] = value;
+  }
+
+  return result as T;
+}
+
 /**
  * Converts a JSON Schema to a Zod schema.
  *

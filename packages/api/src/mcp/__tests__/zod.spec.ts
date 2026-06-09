@@ -7,6 +7,7 @@ import {
   convertJsonSchemaToZod,
   resolveJsonSchemaRefs,
   normalizeJsonSchema,
+  flattenJsonSchemaUnions,
 } from '../zod';
 
 describe('convertJsonSchemaToZod', () => {
@@ -2359,5 +2360,178 @@ describe('normalizeJsonSchema', () => {
     // Standard fields preserved
     expect(result.properties.travelMode.enum).toEqual(['DRIVE', 'BICYCLE', 'TRANSIT', 'WALK']);
     expect(result.properties.origin).toEqual({ type: 'string', description: 'Starting address' });
+  });
+});
+
+describe('flattenJsonSchemaUnions', () => {
+  it('collapses a multi-member anyOf to its first member', () => {
+    const schema = {
+      anyOf: [
+        { type: 'string', description: 'a string' },
+        { type: 'number', description: 'a number' },
+      ],
+    } as any;
+
+    const result = flattenJsonSchemaUnions(schema);
+    expect(result).toEqual({ type: 'string', description: 'a string' });
+    expect(result).not.toHaveProperty('anyOf');
+  });
+
+  it('collapses oneOf the same way as anyOf', () => {
+    const schema = {
+      oneOf: [{ type: 'integer' }, { type: 'boolean' }],
+    } as any;
+
+    expect(flattenJsonSchemaUnions(schema)).toEqual({ type: 'integer' });
+  });
+
+  it('preserves sibling keys and lets the chosen member override them', () => {
+    const schema = {
+      title: 'field',
+      description: 'parent description',
+      anyOf: [
+        {
+          type: 'object',
+          description: 'member description',
+          properties: { id: { type: 'string' } },
+        },
+        { type: 'string' },
+      ],
+    } as any;
+
+    expect(flattenJsonSchemaUnions(schema)).toEqual({
+      title: 'field',
+      description: 'member description',
+      type: 'object',
+      properties: { id: { type: 'string' } },
+    });
+  });
+
+  it('marks the field nullable when a null member is dropped from a union', () => {
+    const schema = {
+      anyOf: [{ type: 'string' }, { type: 'null' }],
+    } as any;
+
+    expect(flattenJsonSchemaUnions(schema)).toEqual({ type: 'string', nullable: true });
+  });
+
+  it('handles a 3-member union that includes null (google-common would throw on this)', () => {
+    const schema = {
+      anyOf: [{ type: 'string' }, { type: 'number' }, { type: 'null' }],
+    } as any;
+
+    expect(flattenJsonSchemaUnions(schema)).toEqual({ type: 'string', nullable: true });
+  });
+
+  it('collapses a nested union introduced by the chosen member', () => {
+    const schema = {
+      anyOf: [{ anyOf: [{ type: 'string' }, { type: 'number' }] }, { type: 'boolean' }],
+    } as any;
+
+    expect(flattenJsonSchemaUnions(schema)).toEqual({ type: 'string' });
+  });
+
+  it('collapses multi-entry type arrays', () => {
+    expect(flattenJsonSchemaUnions({ type: ['string', 'number'] } as any)).toEqual({
+      type: 'string',
+    });
+  });
+
+  it('collapses a nullable type array to a single type plus nullable', () => {
+    expect(flattenJsonSchemaUnions({ type: ['string', 'null'] } as any)).toEqual({
+      type: 'string',
+      nullable: true,
+    });
+  });
+
+  it('flattens unions nested inside object properties and array items', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        owner: { anyOf: [{ type: 'string' }, { type: 'object', properties: {} }] },
+        labels: {
+          type: 'array',
+          items: { oneOf: [{ type: 'string' }, { type: 'object' }] },
+        },
+        plain: { type: 'string', description: 'untouched' },
+      },
+      required: ['owner'],
+    } as any;
+
+    const result = flattenJsonSchemaUnions(schema);
+    expect(result.properties.owner).toEqual({ type: 'string' });
+    expect(result.properties.labels.items).toEqual({ type: 'string' });
+    expect(result.properties.plain).toEqual({ type: 'string', description: 'untouched' });
+    expect(result.required).toEqual(['owner']);
+  });
+
+  it('flattens a discriminated-union MCP tool schema (GitHub issue_write pattern)', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        method: {
+          anyOf: [
+            {
+              type: 'object',
+              properties: { action: { const: 'create' }, title: { type: 'string' } },
+              required: ['action', 'title'],
+            },
+            {
+              type: 'object',
+              properties: { action: { const: 'update' }, issue_number: { type: 'number' } },
+              required: ['action', 'issue_number'],
+            },
+          ],
+        },
+      },
+    } as any;
+
+    const result = flattenJsonSchemaUnions(schema);
+    expect(result.properties.method).toEqual({
+      type: 'object',
+      properties: { action: { const: 'create' }, title: { type: 'string' } },
+      required: ['action', 'title'],
+    });
+    expect(result.properties.method).not.toHaveProperty('anyOf');
+  });
+
+  it('is a no-op for schemas without unions', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Name' },
+        age: { type: 'number' },
+        tags: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['name'],
+    } as any;
+
+    expect(flattenJsonSchemaUnions(schema)).toEqual(schema);
+  });
+
+  it('handles null, undefined, and primitive inputs safely', () => {
+    expect(flattenJsonSchemaUnions(null as any)).toBeNull();
+    expect(flattenJsonSchemaUnions(undefined as any)).toBeUndefined();
+    expect(flattenJsonSchemaUnions('string' as any)).toBe('string');
+    expect(flattenJsonSchemaUnions(42 as any)).toBe(42);
+  });
+
+  it('leaves no anyOf/oneOf/multi-type keys for google-common to reject', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        a: { anyOf: [{ type: 'string' }, { type: 'number' }] },
+        b: { type: ['boolean', 'null'] },
+        c: { oneOf: [{ type: 'object', properties: { x: { type: 'string' } } }, { type: 'null' }] },
+      },
+    } as any;
+
+    const json = JSON.stringify(flattenJsonSchemaUnions(schema));
+    expect(json).not.toContain('"anyOf"');
+    expect(json).not.toContain('"oneOf"');
+    expect(flattenJsonSchemaUnions(schema).properties.b).toEqual({
+      type: 'boolean',
+      nullable: true,
+    });
   });
 });
