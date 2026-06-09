@@ -3,7 +3,7 @@
 
 import { Link } from 'react-router-dom';
 import type { SetterOrUpdater } from 'recoil';
-import FileSplashIcon from '~/nj/components/SidePanel/Files/FileSplashIcon';
+import FileSplashIcon from '~/nj/svgs/FileSplashIcon';
 
 /**
  * Splash page that introduces the files library to users.
