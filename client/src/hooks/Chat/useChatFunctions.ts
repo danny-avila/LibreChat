@@ -74,6 +74,8 @@ const hasPendingAssistantParent = (message: TMessage | null) =>
   !!message?.messageId &&
   message.isCreatedByUser !== true &&
   message.messageId.endsWith('_') &&
+  message.createdAt == null &&
+  message.updatedAt == null &&
   !hasStreamStartFailed(message);
 
 type RegenerateTargetResponseArgs = {
