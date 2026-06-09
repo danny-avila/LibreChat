@@ -638,8 +638,11 @@ export class MCPConnectionFactory {
     // OAuth servers may pause mid-connect to wait for the user to authorize in the browser.
     // The transport connect itself is still bounded by initTimeout inside connection.connect(),
     // so this floor only extends the window for an active OAuth wait, not ordinary failures.
+    // The grace covers the reconnect after `oauthHandled` (retry backoff + transport connect),
+    // which happens *after* the handling wait, so a user who authorizes near the deadline still
+    // gets a connection instead of a timeout.
     const connectTimeout = this.useOAuth
-      ? Math.max(baseTimeout, mcpConfig.OAUTH_HANDLING_TIMEOUT)
+      ? Math.max(baseTimeout, mcpConfig.OAUTH_HANDLING_TIMEOUT + 60000)
       : baseTimeout;
     await withTimeout(
       this.connectTo(connection),
