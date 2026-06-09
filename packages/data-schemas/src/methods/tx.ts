@@ -133,6 +133,11 @@ export const tokenValues: Record<string, { prompt: number; completion: number }>
     'gpt-5.4-mini': { prompt: 0.75, completion: 4.5 },
     'gpt-5.5': { prompt: 5, completion: 30 },
     'gpt-5.5-pro': { prompt: 30, completion: 180 },
+    'chat-latest': { prompt: 5, completion: 30 },
+    'gpt-5-chat-latest': { prompt: 1.25, completion: 10 },
+    'gpt-5.1-chat-latest': { prompt: 1.25, completion: 10 },
+    'gpt-5.2-chat-latest': { prompt: 1.75, completion: 14 },
+    'gpt-5.3-chat-latest': { prompt: 1.75, completion: 14 },
     'gpt-5-nano': { prompt: 0.05, completion: 0.4 },
     'gpt-5-mini': { prompt: 0.25, completion: 2 },
     'gpt-5-pro': { prompt: 15, completion: 120 },
@@ -314,6 +319,11 @@ export const cacheTokenValues: Record<string, { write: number; read: number }> =
   'gpt-5.4': { write: 2.5, read: 0.25 },
   'gpt-5.4-mini': { write: 0.75, read: 0.075 },
   'gpt-5.5': { write: 5, read: 0.5 },
+  'chat-latest': { write: 5, read: 0.5 },
+  'gpt-5-chat-latest': { write: 1.25, read: 0.125 },
+  'gpt-5.1-chat-latest': { write: 1.25, read: 0.125 },
+  'gpt-5.2-chat-latest': { write: 1.75, read: 0.175 },
+  'gpt-5.3-chat-latest': { write: 1.75, read: 0.175 },
   'gpt-5-mini': { write: 0.25, read: 0.025 },
   'gpt-5-nano': { write: 0.05, read: 0.005 },
   o1: { write: 15, read: 7.5 },
@@ -352,6 +362,8 @@ export const premiumTokenValues: Record<
   { threshold: number; prompt: number; completion: number }
 > = {
   'gemini-3.1': { threshold: 200000, prompt: 4, completion: 18 },
+  'gpt-5.4': { threshold: 272000, prompt: 5, completion: 22.5 },
+  'gpt-5.5': { threshold: 272000, prompt: 10, completion: 45 },
 };
 
 export function createTxMethods(

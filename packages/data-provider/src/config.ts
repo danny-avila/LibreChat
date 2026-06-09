@@ -1580,7 +1580,7 @@ export const alternateName = {
 const sharedOpenAIModels = [
   'gpt-5.5',
   'gpt-5.5-pro',
-  'gpt-5.5-chat-latest',
+  'chat-latest',
   'gpt-5.4',
   'gpt-5.4-pro',
   'gpt-5.4-mini',
