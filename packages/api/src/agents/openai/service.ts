@@ -31,9 +31,7 @@ import type {
   ToolCall,
 } from './types';
 import type { OpenAIStreamHandlerConfig, EventHandler } from './handlers';
-import type { ToolExecuteOptions } from '../handlers';
 import {
-  createOpenAIAggregatorHandlers,
   createOpenAIContentAggregator,
   createOpenAIStreamTracker,
   createOpenAIHandlers,
@@ -41,8 +39,8 @@ import {
   createChunk,
   writeSSE,
 } from './handlers';
-import { isProReasoningModel } from '~/endpoints/openai/llm';
 import { createSafeUser } from '~/utils';
+import type { ToolExecuteOptions } from '../handlers';
 
 /**
  * Dependencies for the chat completion service
@@ -461,11 +459,8 @@ export async function createAgentChatCompletion(
     });
 
     // Determine if streaming is enabled (check both request and agent config)
-    const initializedParams = initializedAgent.model_parameters as
-      | { disableStreaming?: boolean; model?: string }
-      | undefined;
-    const streamingDisabled =
-      !!initializedParams?.disableStreaming || isProReasoningModel(initializedParams?.model);
+    const streamingDisabled = !!(initializedAgent.model_parameters as Record<string, unknown>)
+      ?.disableStreaming;
     const isStreaming = requestedStreaming && !streamingDisabled;
 
     // Create tracker for streaming or aggregator for non-streaming
@@ -496,12 +491,10 @@ export async function createAgentChatCompletion(
         : null;
 
     // Create event handlers
-    let eventHandlers: Record<string, EventHandler> = {};
-    if (isStreaming && handlerConfig) {
-      eventHandlers = createOpenAIHandlers(handlerConfig, deps.toolExecuteOptions);
-    } else if (aggregator) {
-      eventHandlers = createOpenAIAggregatorHandlers(aggregator, deps.toolExecuteOptions);
-    }
+    const eventHandlers =
+      isStreaming && handlerConfig
+        ? createOpenAIHandlers(handlerConfig, deps.toolExecuteOptions)
+        : {};
 
     // Convert messages to internal format
     const messages = convertMessages(request.messages);

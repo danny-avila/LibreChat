@@ -74,13 +74,6 @@ export const knownOpenAIParams: Set<string> = new Set([
   'disableStreaming',
 ]);
 
-const proReasoningPattern = /\b(?:o[13]|gpt-5(?:\.\d+)?)-pro\b/;
-
-/** Pro reasoning models (o1-pro, gpt-5.x-pro) reject streaming and sampling parameters */
-export function isProReasoningModel(model?: string | null): boolean {
-  return typeof model === 'string' && proReasoningPattern.test(model);
-}
-
 function hasReasoningParams({
   reasoning_effort,
   reasoning_summary,
@@ -658,29 +651,20 @@ export function getOpenAILLMConfig({
     llmConfig.includeReasoningContent = true;
   }
 
-  if (isProReasoningModel(modelOptions.model)) {
-    llmConfig.streaming = false;
-  }
-
   /**
    * Note: OpenAI reasoning models (o1/o3/gpt-5) do not support temperature and other sampling parameters
-   * Exception: gpt-5-chat and versioned models like gpt-5.1 DO support these parameters, except pro variants
+   * Exception: gpt-5-chat and versioned models like gpt-5.1 DO support these parameters
    */
   if (
     modelOptions.model &&
-    (/\b(o[13]|gpt-5)(?!\.|-chat)(?:-|$)/.test(modelOptions.model as string) ||
-      isProReasoningModel(modelOptions.model))
+    /\b(o[13]|gpt-5)(?!\.|-chat)(?:-|$)/.test(modelOptions.model as string)
   ) {
     const reasoningExcludeParams = [
       'frequencyPenalty',
       'presencePenalty',
-      'frequency_penalty',
-      'presence_penalty',
       'temperature',
       'topP',
-      'top_p',
       'logitBias',
-      'logit_bias',
       'n',
       'logprobs',
     ];
@@ -727,7 +711,7 @@ export function getOpenAILLMConfig({
 
   if (
     llmConfig.model &&
-    /\b(?:gpt-[5-9](?:\.\d+)?|chat-latest)\b/i.test(llmConfig.model) &&
+    /\bgpt-[5-9](?:\.\d+)?\b/i.test(llmConfig.model) &&
     llmConfig.maxTokens != null
   ) {
     const paramName =

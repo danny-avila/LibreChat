@@ -5,8 +5,8 @@ import {
   ReasoningSummary,
   ReasoningParameterFormat,
 } from 'librechat-data-provider';
-import type * as t from '~/types';
 import { getOpenAILLMConfig, extractDefaultParams, applyDefaultParams } from './llm';
+import type * as t from '~/types';
 
 describe('getOpenAILLMConfig', () => {
   describe('Basic Configuration', () => {
@@ -139,8 +139,6 @@ describe('getOpenAILLMConfig', () => {
       'gpt-5',
       'gpt-5-pro',
       'gpt-5-turbo',
-      'gpt-5.4-pro',
-      'gpt-5.5-pro',
     ];
 
     const excludedParams = [
@@ -176,7 +174,7 @@ describe('getOpenAILLMConfig', () => {
         });
 
         expect(result.llmConfig).toHaveProperty('model', model);
-        expect(result.llmConfig).toHaveProperty('streaming', !model.endsWith('-pro'));
+        expect(result.llmConfig).toHaveProperty('streaming', true);
       },
     );
 
@@ -320,54 +318,6 @@ describe('getOpenAILLMConfig', () => {
     });
   });
 
-  describe('Pro Reasoning Model Streaming', () => {
-    it.each(['o1-pro', 'o3-pro', 'gpt-5-pro', 'gpt-5.2-pro', 'gpt-5.4-pro', 'gpt-5.5-pro'])(
-      'should disable streaming for pro model: %s',
-      (model) => {
-        const result = getOpenAILLMConfig({
-          apiKey: 'test-api-key',
-          streaming: true,
-          modelOptions: { model },
-        });
-
-        expect(result.llmConfig).toHaveProperty('streaming', false);
-      },
-    );
-
-    it.each(['gpt-5.5', 'chat-latest', 'gpt-4o', 'gpt-5.3-codex', 'gemini-2.5-pro'])(
-      'should keep streaming enabled for non-pro OpenAI model: %s',
-      (model) => {
-        const result = getOpenAILLMConfig({
-          apiKey: 'test-api-key',
-          streaming: true,
-          modelOptions: { model },
-        });
-
-        expect(result.llmConfig).toHaveProperty('streaming', true);
-      },
-    );
-
-    it('should drop snake_case sampling params provided via addParams for pro models', () => {
-      const result = getOpenAILLMConfig({
-        apiKey: 'test-api-key',
-        streaming: true,
-        modelOptions: { model: 'gpt-5.5-pro' },
-        addParams: {
-          top_p: 0.5,
-          logit_bias: { '50256': -100 },
-          frequency_penalty: 0.5,
-          presence_penalty: 0.3,
-        },
-      });
-
-      expect(result.llmConfig).not.toHaveProperty('top_p');
-      expect(result.llmConfig.modelKwargs ?? {}).not.toHaveProperty('top_p');
-      expect(result.llmConfig.modelKwargs ?? {}).not.toHaveProperty('logit_bias');
-      expect(result.llmConfig.modelKwargs ?? {}).not.toHaveProperty('frequency_penalty');
-      expect(result.llmConfig.modelKwargs ?? {}).not.toHaveProperty('presence_penalty');
-    });
-  });
-
   describe('OpenAI Web Search Models', () => {
     it('should exclude parameters for gpt-4o search models', () => {
       const result = getOpenAILLMConfig({
@@ -495,20 +445,6 @@ describe('getOpenAILLMConfig', () => {
       });
 
       expect(result.llmConfig.modelKwargs).toHaveProperty('max_output_tokens', 8192);
-      expect(result.llmConfig).not.toHaveProperty('maxTokens');
-    });
-
-    it('should convert maxTokens to max_completion_tokens for chat-latest', () => {
-      const result = getOpenAILLMConfig({
-        apiKey: 'test-api-key',
-        streaming: true,
-        modelOptions: {
-          model: 'chat-latest',
-          max_tokens: 8192,
-        },
-      });
-
-      expect(result.llmConfig.modelKwargs).toHaveProperty('max_completion_tokens', 8192);
       expect(result.llmConfig).not.toHaveProperty('maxTokens');
     });
   });

@@ -23,7 +23,6 @@ const {
   extractManualSkills,
   createErrorResponse,
   recordCollectedUsage,
-  isProReasoningModel,
   getTransactionsConfig,
   resolveRecursionLimit,
   discoverConnectedAgents,
@@ -429,9 +428,7 @@ const OpenAIChatCompletionController = async (req, res) => {
     primaryConfig.edges = discoveredEdges;
 
     // Determine if streaming is enabled (check both request and agent config)
-    const streamingDisabled =
-      !!primaryConfig.model_parameters?.disableStreaming ||
-      isProReasoningModel(primaryConfig.model_parameters?.model);
+    const streamingDisabled = !!primaryConfig.model_parameters?.disableStreaming;
     const isStreaming = request.stream === true && !streamingDisabled;
 
     // Create tracker for streaming or aggregator for non-streaming
