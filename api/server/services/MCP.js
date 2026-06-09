@@ -662,9 +662,9 @@ function createToolInstance({
 
   /** @type {(toolArguments: Object | string, config?: GraphRunnableConfig) => Promise<unknown>} */
   const _call = async (toolArguments, config) => {
-    const permissionUser = config?.configurable?.user ?? capturedUser;
-    const userId =
-      config?.configurable?.user?.id || config?.configurable?.user_id || capturedUser?.id;
+    const effectiveUser = config?.configurable?.user ?? capturedUser;
+    const permissionUser = effectiveUser;
+    const userId = effectiveUser?.id || config?.configurable?.user_id || capturedUser?.id;
     /** @type {ReturnType<typeof createAbortHandler>} */
     let abortHandler = null;
     /** @type {AbortSignal} */
@@ -720,7 +720,7 @@ function createToolInstance({
         options: {
           signal: derivedSignal,
         },
-        user: config?.configurable?.user,
+        user: effectiveUser,
         requestBody: config?.configurable?.requestBody,
         customUserVars,
         flowManager,

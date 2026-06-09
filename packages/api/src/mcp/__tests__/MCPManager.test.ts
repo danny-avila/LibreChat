@@ -4,11 +4,11 @@ import type { GraphTokenResolver } from '~/utils/graph';
 import type * as t from '~/mcp/types';
 import { MCPServersInitializer } from '~/mcp/registry/MCPServersInitializer';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
-import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
+import { OboTokenResolutionError, resolveOboToken } from '~/mcp/oauth';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
+import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPConnection } from '~/mcp/connection';
 import { MCPManager } from '~/mcp/MCPManager';
-import { OboTokenResolutionError, resolveOboToken } from '~/mcp/oauth';
 import * as graphUtils from '~/utils/graph';
 
 // Mock external dependencies
@@ -478,6 +478,7 @@ describe('MCPManager', () => {
           return options;
         },
       );
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(mockConnection);
     });
 
     it('should call preProcessGraphTokens with graphTokenResolver when provided', async () => {
@@ -1087,6 +1088,49 @@ describe('MCPManager', () => {
       expect(connection).toBe(appConnection);
       expect(appConnections.get).toHaveBeenCalledWith(serverName);
       expect(getUserConnectionSpy).not.toHaveBeenCalled();
+    });
+
+    it('should use user-scoped connections for trusted runtime context placeholders', async () => {
+      const appConnection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+      } as unknown as MCPConnection;
+      const userConnection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+      } as unknown as MCPConnection;
+      const appConnections = {
+        get: jest.fn().mockResolvedValue(appConnection),
+      };
+      const runtimeHeaderConfig: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://api.example.com/mcp',
+        source: 'yaml',
+        headers: {
+          'X-LibreChat-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+        },
+      };
+
+      mockAppConnections(appConnections);
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(runtimeHeaderConfig);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const getUserConnectionSpy = jest
+        .spyOn(manager, 'getUserConnection')
+        .mockResolvedValue(userConnection);
+
+      const connection = await manager.getConnection({
+        serverName,
+        user: mockUser as IUser,
+      });
+
+      expect(connection).toBe(userConnection);
+      expect(appConnections.get).not.toHaveBeenCalled();
+      expect(getUserConnectionSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName,
+          serverConfig: runtimeHeaderConfig,
+          user: mockUser,
+        }),
+      );
     });
   });
 

@@ -1017,6 +1017,65 @@ describe('User parameter passing tests', () => {
       expect(getRoleByName).toHaveBeenCalledTimes(1);
       expect(mockCallTool).toHaveBeenCalledTimes(2);
     });
+
+    it('should pass the captured user to MCPManager.callTool when invocation config omits configurable.user', async () => {
+      const mockUser = { id: 'captured-user', email: 'captured@example.com', role: 'USER' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const { getRoleByName } = require('~/models');
+      getRoleByName.mockResolvedValue({
+        permissions: {
+          [PermissionTypes.MCP_SERVERS]: {
+            [Permissions.USE]: true,
+          },
+        },
+      });
+
+      const mockCallTool = jest.fn().mockResolvedValue(['ok', null]);
+      mockGetMCPManager.mockReturnValue({
+        callTool: mockCallTool,
+      });
+
+      const mcpTool = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: `test-tool${D}test-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: {
+          [`test-tool${D}test-server`]: {
+            function: {
+              description: 'Cached tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+      });
+
+      await expect(
+        mcpTool.invoke(
+          {},
+          {
+            configurable: {
+              user_id: mockUser.id,
+            },
+            metadata: {
+              provider: 'openai',
+              thread_id: 'thread-1',
+              run_id: 'run-1',
+            },
+            toolCall: {},
+          },
+        ),
+      ).resolves.toBe('ok');
+
+      expect(mockCallTool).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName: 'test-server',
+          toolName: 'test-tool',
+          user: mockUser,
+        }),
+      );
+    });
   });
 
   describe('reinitMCPServer (via reconnectServer)', () => {

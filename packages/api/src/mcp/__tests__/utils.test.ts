@@ -1,3 +1,4 @@
+import type { ParsedServerConfig } from '~/mcp/types';
 import {
   buildOAuthToolCallName,
   normalizeServerName,
@@ -8,9 +9,9 @@ import {
   isClientRejectionMessage,
   getMissingCustomUserVars,
   hasCustomUserVars,
+  hasRuntimeContextPlaceholders,
   isUserSourced,
 } from '~/mcp/utils';
-import type { ParsedServerConfig } from '~/mcp/types';
 
 describe('normalizeServerName', () => {
   it('should not modify server names that already match the pattern', () => {
@@ -378,11 +379,72 @@ describe('requiresUserScopedConnection', () => {
     ).toBe(true);
   });
 
+  it('returns true for trusted config with runtime user placeholders', () => {
+    expect(
+      requiresUserScopedConnection({
+        source: 'yaml',
+        headers: {
+          'X-LibreChat-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('returns false for user-sourced config with runtime user placeholders', () => {
+    expect(
+      requiresUserScopedConnection({
+        source: 'user',
+        dbId: 'server-123',
+        headers: {
+          'X-LibreChat-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+        },
+      }),
+    ).toBe(false);
+  });
+
   it('returns false for app-shareable servers', () => {
     expect(
       requiresUserScopedConnection({
         requiresOAuth: false,
         customUserVars: {},
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('hasRuntimeContextPlaceholders', () => {
+  it('detects trusted runtime placeholders across connection fields', () => {
+    expect(
+      hasRuntimeContextPlaceholders({
+        source: 'config',
+        url: 'https://example.com/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+        headers: {
+          Authorization: 'Bearer {{LIBRECHAT_OPENID_ID_TOKEN}}',
+          'X-Graph-Access-Token': '{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('ignores custom user variable placeholders', () => {
+    expect(
+      hasRuntimeContextPlaceholders({
+        source: 'yaml',
+        headers: {
+          Authorization: 'Bearer {{MCP_API_KEY}}',
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it('ignores runtime placeholders in user-sourced configs', () => {
+    expect(
+      hasRuntimeContextPlaceholders({
+        source: 'user',
+        dbId: 'server-123',
+        headers: {
+          Authorization: 'Bearer {{LIBRECHAT_OPENID_ID_TOKEN}}',
+        },
       }),
     ).toBe(false);
   });

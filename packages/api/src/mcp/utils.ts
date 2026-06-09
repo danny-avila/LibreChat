@@ -3,6 +3,28 @@ import type { ParsedServerConfig } from '~/mcp/types';
 
 export const mcpToolPattern: RegExp = new RegExp(`^.+${Constants.mcp_delimiter}.+$`);
 
+const RUNTIME_CONTEXT_PLACEHOLDER_PATTERN = /\{\{LIBRECHAT_(?:USER|OPENID|GRAPH|BODY)_[^}]+\}\}/;
+
+type PlaceholderValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | readonly PlaceholderValue[]
+  | { readonly [key: string]: PlaceholderValue };
+
+type UserScopedConnectionConfig = Pick<
+  ParsedServerConfig,
+  'requiresOAuth' | 'customUserVars' | 'obo' | 'source' | 'dbId'
+> & {
+  args?: string[];
+  env?: Record<string, string>;
+  headers?: Record<string, string>;
+  oauth?: PlaceholderValue;
+  url?: string;
+};
+
 /** Whether a server should use MCP OAuth handling. */
 export function isOAuthServer(
   config: Pick<ParsedServerConfig, 'requiresOAuth' | 'oauth'>,
@@ -35,14 +57,48 @@ export function hasCustomUserVars(config: Pick<ParsedServerConfig, 'customUserVa
   return !!config.customUserVars && Object.keys(config.customUserVars).length > 0;
 }
 
+function hasRuntimeContextPlaceholder(value: PlaceholderValue): boolean {
+  if (typeof value === 'string') {
+    return RUNTIME_CONTEXT_PLACEHOLDER_PATTERN.test(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value.some(hasRuntimeContextPlaceholder);
+  }
+
+  if (value == null || typeof value !== 'object') {
+    return false;
+  }
+
+  return Object.values(value).some(hasRuntimeContextPlaceholder);
+}
+
+/**
+ * Trusted YAML/config servers may use per-user/request placeholders that can
+ * only be resolved once a real request context exists. User-sourced DB servers
+ * deliberately stay sandboxed and only resolve customUserVars.
+ */
+export function hasRuntimeContextPlaceholders(config: UserScopedConnectionConfig): boolean {
+  if (isUserSourced(config)) {
+    return false;
+  }
+
+  return [config.args, config.env, config.headers, config.oauth, config.url].some(
+    hasRuntimeContextPlaceholder,
+  );
+}
+
 /**
  * Returns true when a server requires a per-user connection instead of an
  * app-shared connection.
  */
-export function requiresUserScopedConnection(
-  config: Pick<ParsedServerConfig, 'requiresOAuth' | 'customUserVars' | 'obo'>,
-): boolean {
-  return config.requiresOAuth === true || config.obo != null || hasCustomUserVars(config);
+export function requiresUserScopedConnection(config: UserScopedConnectionConfig): boolean {
+  return (
+    config.requiresOAuth === true ||
+    config.obo != null ||
+    hasCustomUserVars(config) ||
+    hasRuntimeContextPlaceholders(config)
+  );
 }
 
 /**
