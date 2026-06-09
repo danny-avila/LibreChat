@@ -1,5 +1,4 @@
 /** Note: No hard-coded values should be used in this file. */
-import { matchModelName, findMatchingPattern } from './test-helpers';
 import { EModelEndpoint } from 'librechat-data-provider';
 import {
   createTxMethods,
@@ -8,6 +7,7 @@ import {
   premiumTokenValues,
   defaultRate,
 } from './tx';
+import { matchModelName, findMatchingPattern } from './test-helpers';
 
 const { getValueKey, getMultiplier, getPremiumRate, getCacheMultiplier } = createTxMethods(
   {} as typeof import('mongoose'),
@@ -2377,6 +2377,94 @@ describe('Claude Model Tests', () => {
       cacheTokenValues['claude-opus-4-8'].read,
     );
   });
+
+  it('should return correct prompt and completion rates for Claude Fable 5', () => {
+    expect(getMultiplier({ model: 'claude-fable-5', tokenType: 'prompt' })).toBe(
+      tokenValues['claude-fable-5'].prompt,
+    );
+    expect(getMultiplier({ model: 'claude-fable-5', tokenType: 'completion' })).toBe(
+      tokenValues['claude-fable-5'].completion,
+    );
+  });
+
+  it('should pin Claude Fable 5 pricing to $10 / $50 per MTok', () => {
+    expect(tokenValues['claude-fable-5']).toEqual({ prompt: 10, completion: 50 });
+  });
+
+  it('should handle Claude Fable 5 model name variations', () => {
+    const modelVariations = [
+      'claude-fable-5',
+      'claude-fable-5-20260609',
+      'claude-fable-5-latest',
+      'anthropic/claude-fable-5',
+      'claude-fable-5/anthropic',
+      'anthropic.claude-fable-5',
+    ];
+
+    modelVariations.forEach((model) => {
+      const valueKey = getValueKey(model);
+      expect(valueKey).toBe('claude-fable-5');
+      expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(
+        tokenValues['claude-fable-5'].prompt,
+      );
+      expect(getMultiplier({ model, tokenType: 'completion' })).toBe(
+        tokenValues['claude-fable-5'].completion,
+      );
+    });
+  });
+
+  it('should return correct cache rates for Claude Fable 5', () => {
+    expect(getCacheMultiplier({ model: 'claude-fable-5', cacheType: 'write' })).toBe(
+      cacheTokenValues['claude-fable-5'].write,
+    );
+    expect(getCacheMultiplier({ model: 'claude-fable-5', cacheType: 'read' })).toBe(
+      cacheTokenValues['claude-fable-5'].read,
+    );
+  });
+
+  it('should return correct prompt and completion rates for Claude Mythos 5', () => {
+    expect(getMultiplier({ model: 'claude-mythos-5', tokenType: 'prompt' })).toBe(
+      tokenValues['claude-mythos-5'].prompt,
+    );
+    expect(getMultiplier({ model: 'claude-mythos-5', tokenType: 'completion' })).toBe(
+      tokenValues['claude-mythos-5'].completion,
+    );
+  });
+
+  it('should pin Claude Mythos 5 pricing to $10 / $50 per MTok', () => {
+    expect(tokenValues['claude-mythos-5']).toEqual({ prompt: 10, completion: 50 });
+  });
+
+  it('should handle Claude Mythos 5 model name variations', () => {
+    const modelVariations = [
+      'claude-mythos-5',
+      'claude-mythos-5-20260609',
+      'claude-mythos-5-latest',
+      'anthropic/claude-mythos-5',
+      'claude-mythos-5/anthropic',
+      'anthropic.claude-mythos-5',
+    ];
+
+    modelVariations.forEach((model) => {
+      const valueKey = getValueKey(model);
+      expect(valueKey).toBe('claude-mythos-5');
+      expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(
+        tokenValues['claude-mythos-5'].prompt,
+      );
+      expect(getMultiplier({ model, tokenType: 'completion' })).toBe(
+        tokenValues['claude-mythos-5'].completion,
+      );
+    });
+  });
+
+  it('should return correct cache rates for Claude Mythos 5', () => {
+    expect(getCacheMultiplier({ model: 'claude-mythos-5', cacheType: 'write' })).toBe(
+      cacheTokenValues['claude-mythos-5'].write,
+    );
+    expect(getCacheMultiplier({ model: 'claude-mythos-5', cacheType: 'read' })).toBe(
+      cacheTokenValues['claude-mythos-5'].read,
+    );
+  });
 });
 
 describe('Premium Token Pricing', () => {
@@ -2401,6 +2489,8 @@ describe('Premium Token Pricing', () => {
       'claude-opus-4-6',
       'claude-opus-4-7',
       'claude-opus-4-8',
+      'claude-fable-5',
+      'claude-mythos-5',
       'claude-sonnet-4-6',
     ];
     claudeModels.forEach((model) => {
