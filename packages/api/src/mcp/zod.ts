@@ -490,6 +490,14 @@ export function sanitizeGeminiSchema<T extends Record<string, unknown>>(schema: 
   const typeHasNull =
     Array.isArray(collapsed.type) && (collapsed.type as unknown[]).includes('null');
   const nullable = collapsed.nullable === true || typeHasNull;
+
+  let effectiveType: string | undefined;
+  if (Array.isArray(collapsed.type)) {
+    effectiveType = collapseTypeArray(collapsed.type as unknown[]).type;
+  } else if (typeof collapsed.type === 'string') {
+    effectiveType = collapsed.type;
+  }
+
   const result: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(collapsed)) {
@@ -498,9 +506,8 @@ export function sanitizeGeminiSchema<T extends Record<string, unknown>>(schema: 
     }
 
     if (key === 'type' && Array.isArray(value)) {
-      const single = collapseTypeArray(value).type;
-      if (single !== undefined) {
-        result['type'] = single;
+      if (effectiveType !== undefined) {
+        result['type'] = effectiveType;
       }
       continue;
     }
@@ -533,10 +540,12 @@ export function sanitizeGeminiSchema<T extends Record<string, unknown>>(schema: 
       continue;
     }
 
-    // Gemini `enum` is Type.STRING-only: keep string values, drop the keyword for
-    // non-string types (covers null-stripping for nullable string enums too).
+    // Gemini `enum` is Type.STRING-only: keep string values only when the effective
+    // (collapsed) type is string or unset; drop the keyword entirely for non-string
+    // types (e.g. boolean/number), which also covers null-stripping for string enums.
     if (key === 'enum' && Array.isArray(value)) {
-      const stringValues = value.filter((entry) => typeof entry === 'string');
+      const enumAllowed = effectiveType === undefined || effectiveType === 'string';
+      const stringValues = enumAllowed ? value.filter((entry) => typeof entry === 'string') : [];
       if (stringValues.length > 0) {
         result['enum'] = stringValues;
       }
@@ -561,6 +570,11 @@ export function sanitizeGeminiSchema<T extends Record<string, unknown>>(schema: 
     }
 
     result[key] = value;
+  }
+
+  // A surviving enum implies a string field; Gemini's enum requires Type.STRING.
+  if ('enum' in result && !('type' in result)) {
+    result['type'] = 'string';
   }
 
   if (nullable) {

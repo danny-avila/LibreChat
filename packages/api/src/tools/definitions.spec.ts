@@ -480,7 +480,7 @@ describe('definitions.ts', () => {
         expect(
           (googleDef?.parameters as { properties: Record<string, { properties: object }> })
             .properties.payload.properties,
-        ).toEqual({ action: { enum: ['create'] }, title: { type: 'string' } });
+        ).toEqual({ action: { type: 'string', enum: ['create'] }, title: { type: 'string' } });
 
         const defaultResult = await loadToolDefinitions(
           { userId: 'user-123', agentId: 'agent-123', tools: ['issue_write_mcp_github'] },

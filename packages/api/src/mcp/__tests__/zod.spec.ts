@@ -2489,7 +2489,7 @@ describe('sanitizeGeminiSchema', () => {
     const result = sanitizeGeminiSchema(schema);
     expect(result.properties.method).toEqual({
       type: 'object',
-      properties: { action: { enum: ['create'] }, title: { type: 'string' } },
+      properties: { action: { type: 'string', enum: ['create'] }, title: { type: 'string' } },
       required: ['action', 'title'],
     });
     expect(result.properties.method).not.toHaveProperty('anyOf');
@@ -2689,5 +2689,25 @@ describe('sanitizeGeminiSchema', () => {
     } as any;
 
     expect(sanitizeGeminiSchema(schema)).toEqual(schema);
+  });
+
+  it('drops the enum when a mixed type array collapses to a non-string type', () => {
+    const schema = { type: ['integer', 'string'], enum: [1, 'auto'] } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({ type: 'integer' });
+  });
+
+  it('keeps the enum when a mixed type array collapses to string', () => {
+    const schema = { type: ['string', 'integer'], enum: ['auto', 1] } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({ type: 'string', enum: ['auto'] });
+  });
+
+  it('makes a typeless surviving enum a string type (Gemini enum requires Type.STRING)', () => {
+    const schema = { enum: ['a', 'b'] } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({ type: 'string', enum: ['a', 'b'] });
+  });
+
+  it('drops a number enum on an integer field', () => {
+    const schema = { type: 'integer', enum: [1, 2, 3] } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({ type: 'integer' });
   });
 });
