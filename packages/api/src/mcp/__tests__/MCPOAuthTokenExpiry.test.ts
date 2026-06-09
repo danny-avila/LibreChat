@@ -613,7 +613,7 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
         authorizationUrl: 'https://example.com/auth',
       });
 
-      // Manually age the flow to 3 minutes
+      // Manually age the flow past the staleness window
       const state = await flowManager.getFlowState(flowId, 'mcp_oauth');
       if (state) {
         state.createdAt = Date.now() - PENDING_STALE_MS - 60 * 1000;

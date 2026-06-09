@@ -16,7 +16,12 @@ import {
   useReinitializeMCPServerMutation,
   useGetAllEffectivePermissionsQuery,
 } from 'librechat-data-provider/react-query';
-import type { TUpdateUserPlugins, TPlugin, MCPServersResponse } from 'librechat-data-provider';
+import type {
+  TUpdateUserPlugins,
+  TPlugin,
+  MCPServersResponse,
+  MCPConnectionStatusResponse,
+} from 'librechat-data-provider';
 import type { MCPServerInitState } from '~/store/mcp';
 import type { ConfigFieldDetail } from '~/common';
 import { useLocalize, useHasAccess, useMCPSelect, useMCPConnectionStatus } from '~/hooks';
@@ -212,9 +217,9 @@ export function useMCPServerManager({
        * connection-status response) so a tuned deadline isn't capped at the default.
        * The cache may be empty at start, so this is refreshed from the first status
        * refetch below rather than captured once. */
-      const connectionData = queryClient.getQueryData([QueryKeys.mcpConnectionStatus]) as
-        | { oauthTimeout?: number }
-        | undefined;
+      const connectionData = queryClient.getQueryData<MCPConnectionStatusResponse>([
+        QueryKeys.mcpConnectionStatus,
+      ]);
       let oauthTimeoutMs = connectionData?.oauthTimeout ?? 600000; // default 10 minutes
       // Backstop only; the elapsed-time guard governs. Sized above the worst-case poll count.
       let maxAttempts = Math.ceil(oauthTimeoutMs / 5000) + 5;
@@ -246,9 +251,9 @@ export function useMCPServerManager({
 
           await queryClient.refetchQueries([QueryKeys.mcpConnectionStatus]);
 
-          const freshConnectionData = queryClient.getQueryData([
+          const freshConnectionData = queryClient.getQueryData<MCPConnectionStatusResponse>([
             QueryKeys.mcpConnectionStatus,
-          ]) as any;
+          ]);
           // Pick up the configured timeout once the status response lands (cache may have
           // been empty when polling started), so a tuned deadline is honored mid-flight.
           if (typeof freshConnectionData?.oauthTimeout === 'number') {
