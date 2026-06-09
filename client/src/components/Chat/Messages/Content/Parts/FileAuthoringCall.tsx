@@ -6,7 +6,7 @@ import useToolCallState from './useToolCallState';
 import useLazyHighlight from './useLazyHighlight';
 import CodeWindowHeader from './CodeWindowHeader';
 import { AttachmentGroup } from './Attachment';
-import parseJsonField from './parseJsonField';
+import parseJsonField, { parseJsonFieldOccurrences } from './parseJsonField';
 import { langFromPath } from './ReadFileCall';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -85,12 +85,21 @@ function buildEditArgsPreview(args: ToolCallArgs): string {
     return formatEditPreview(edits);
   }
 
-  const oldText = parsed ? textValue(parsed.old_text) : parseJsonField(args, 'old_text');
-  const newText = parsed ? textValue(parsed.new_text) : parseJsonField(args, 'new_text');
-  if (!oldText && !newText) {
-    return '';
+  if (parsed) {
+    const oldText = textValue(parsed.old_text);
+    const newText = textValue(parsed.new_text);
+    return oldText || newText ? formatEditPreview([{ oldText, newText }]) : '';
   }
-  return formatEditPreview([{ oldText, newText }]);
+
+  /** Partial JSON during streaming: pair up field occurrences in document order, covering both single-replacement and batched `edits` args */
+  const oldTexts = parseJsonFieldOccurrences(args, 'old_text');
+  const newTexts = parseJsonFieldOccurrences(args, 'new_text');
+  const editCount = Math.max(oldTexts.length, newTexts.length);
+  const edits = Array.from({ length: editCount }, (_, index) => ({
+    oldText: oldTexts[index] ?? '',
+    newText: newTexts[index] ?? '',
+  })).filter((edit) => edit.oldText || edit.newText);
+  return formatEditPreview(edits);
 }
 
 export default function FileAuthoringCall({

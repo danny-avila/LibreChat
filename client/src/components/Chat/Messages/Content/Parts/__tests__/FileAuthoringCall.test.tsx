@@ -127,6 +127,64 @@ describe('FileAuthoringCall', () => {
     expect(preview).toHaveTextContent('+description: New behavior');
   });
 
+  it('streams create_file content from partial JSON string args during run_step_delta', () => {
+    render(
+      <FileAuthoringCall
+        toolName="create_file"
+        initialProgress={0.5}
+        isSubmitting={true}
+        args={'{"file_path":"skills/demo/SKILL.md","content":"# Demo\\n\\nStreaming body so far'}
+        output=""
+      />,
+    );
+
+    expect(screen.getByTestId('progress-text')).toHaveTextContent('Creating SKILL.md');
+    expect(screen.getByTestId('code-window-header')).toHaveAttribute('data-language', 'SKILL.md');
+    expect(screen.getByText(/Streaming body so far/)).toBeInTheDocument();
+  });
+
+  it('streams edit_file replacement preview from partial JSON string args', () => {
+    render(
+      <FileAuthoringCall
+        toolName="edit_file"
+        initialProgress={0.5}
+        isSubmitting={true}
+        args={
+          '{"file_path":"skills/demo/SKILL.md","old_text":"description: Old behavior","new_text":"description: New beh'
+        }
+        output=""
+      />,
+    );
+
+    const preview = screen.getByText((_, element) => element?.tagName.toLowerCase() === 'code');
+    expect(preview).toHaveTextContent('-description: Old behavior');
+    expect(preview).toHaveTextContent('+description: New beh');
+  });
+
+  it('streams batched edit_file previews from a partial edits array', () => {
+    const args =
+      '{"file_path":"skills/demo/SKILL.md","edits":[' +
+      '{"old_text":"first old","new_text":"first new"},' +
+      '{"old_text":"second old","new_text":"second n';
+    render(
+      <FileAuthoringCall
+        toolName="edit_file"
+        initialProgress={0.5}
+        isSubmitting={true}
+        args={args}
+        output=""
+      />,
+    );
+
+    const preview = screen.getByText((_, element) => element?.tagName.toLowerCase() === 'code');
+    expect(preview).toHaveTextContent('--- old_text 1');
+    expect(preview).toHaveTextContent('-first old');
+    expect(preview).toHaveTextContent('+first new');
+    expect(preview).toHaveTextContent('--- old_text 2');
+    expect(preview).toHaveTextContent('-second old');
+    expect(preview).toHaveTextContent('+second n');
+  });
+
   it('shows batched edit_file replacements from edits args while the call is in progress', () => {
     render(
       <FileAuthoringCall

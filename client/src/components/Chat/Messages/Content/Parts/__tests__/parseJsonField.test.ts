@@ -1,4 +1,7 @@
-import parseJsonField, { areToolCallArgsComplete } from '../parseJsonField';
+import parseJsonField, {
+  parseJsonFieldOccurrences,
+  areToolCallArgsComplete,
+} from '../parseJsonField';
 
 describe('parseJsonField', () => {
   describe('object args', () => {
@@ -99,6 +102,71 @@ describe('parseJsonField', () => {
       const partial = '{"command":"tab\\there","incomplete":';
       expect(parseJsonField(partial, 'command')).toBe('tab\\there');
     });
+  });
+
+  describe('in-progress streaming fields — unterminated values', () => {
+    it('extracts a field whose closing quote has not streamed in yet', () => {
+      const partial = '{"file_path":"skills/demo/SKILL.md","content":"# Demo\\nline two';
+      expect(parseJsonField(partial, 'content')).toBe('# Demo\nline two');
+    });
+
+    it('grows the extracted value as more deltas arrive', () => {
+      const full = '{"file_path":"a.md","content":"# Title\\n\\nBody text here"}';
+      const lengths = [40, 48, 56, full.length];
+      const values = lengths.map((len) => parseJsonField(full.slice(0, len), 'content'));
+      expect(values[values.length - 1]).toBe('# Title\n\nBody text here');
+      values.slice(1).forEach((value, index) => {
+        expect(value.startsWith(values[index])).toBe(true);
+      });
+    });
+
+    it('drops a dangling backslash from a partially streamed escape', () => {
+      const partial = '{"content":"line one\\';
+      expect(parseJsonField(partial, 'content')).toBe('line one');
+    });
+
+    it('unescapes a complete escaped backslash at the stream edge', () => {
+      const partial = '{"content":"path C:\\\\';
+      expect(parseJsonField(partial, 'content')).toBe('path C:\\');
+    });
+
+    it('handles escaped quotes inside an unterminated value', () => {
+      const partial = '{"command":"say \\"hi';
+      expect(parseJsonField(partial, 'command')).toBe('say "hi');
+    });
+
+    it('returns empty string when the value has not opened yet', () => {
+      expect(parseJsonField('{"content":', 'content')).toBe('');
+      expect(parseJsonField('{"content":"', 'content')).toBe('');
+    });
+
+    it('does not run past a completed field into later args', () => {
+      const partial = '{"old_text":"keep this","new_text":"and th';
+      expect(parseJsonField(partial, 'old_text')).toBe('keep this');
+      expect(parseJsonField(partial, 'new_text')).toBe('and th');
+    });
+  });
+});
+
+describe('parseJsonFieldOccurrences', () => {
+  it('returns empty array for non-string args', () => {
+    expect(parseJsonFieldOccurrences(undefined, 'old_text')).toEqual([]);
+    expect(parseJsonFieldOccurrences({ old_text: 'x' }, 'old_text')).toEqual([]);
+    expect(parseJsonFieldOccurrences('', 'old_text')).toEqual([]);
+  });
+
+  it('extracts repeated fields from a partial edits array in document order', () => {
+    const partial =
+      '{"file_path":"a.md","edits":[' +
+      '{"old_text":"first old","new_text":"first new"},' +
+      '{"old_text":"second old","new_text":"second n';
+    expect(parseJsonFieldOccurrences(partial, 'old_text')).toEqual(['first old', 'second old']);
+    expect(parseJsonFieldOccurrences(partial, 'new_text')).toEqual(['first new', 'second n']);
+  });
+
+  it('extracts a single top-level field', () => {
+    const partial = '{"file_path":"a.md","old_text":"only one';
+    expect(parseJsonFieldOccurrences(partial, 'old_text')).toEqual(['only one']);
   });
 });
 
