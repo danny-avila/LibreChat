@@ -131,6 +131,7 @@ export const tokenValues: Record<string, { prompt: number; completion: number }>
     'gpt-5.4': { prompt: 2.5, completion: 15 },
     'gpt-5.4-pro': { prompt: 30, completion: 180 },
     'gpt-5.4-mini': { prompt: 0.75, completion: 4.5 },
+    'gpt-5.4-nano': { prompt: 0.2, completion: 1.25 },
     'gpt-5.5': { prompt: 5, completion: 30 },
     'gpt-5.5-pro': { prompt: 30, completion: 180 },
     'chat-latest': { prompt: 5, completion: 30 },
@@ -318,6 +319,7 @@ export const cacheTokenValues: Record<string, { write: number; read: number }> =
   'gpt-5.3': { write: 1.75, read: 0.175 },
   'gpt-5.4': { write: 2.5, read: 0.25 },
   'gpt-5.4-mini': { write: 0.75, read: 0.075 },
+  'gpt-5.4-nano': { write: 0.2, read: 0.02 },
   'gpt-5.5': { write: 5, read: 0.5 },
   'chat-latest': { write: 5, read: 0.5 },
   'gpt-5-chat-latest': { write: 1.25, read: 0.125 },
@@ -365,6 +367,7 @@ export const premiumTokenValues: Record<
   'gpt-5.4': { threshold: 272000, prompt: 5, completion: 22.5 },
   'gpt-5.4-pro': { threshold: 272000, prompt: 60, completion: 270 },
   'gpt-5.5': { threshold: 272000, prompt: 10, completion: 45 },
+  'gpt-5.5-pro': { threshold: 272000, prompt: 60, completion: 270 },
 };
 
 export function createTxMethods(

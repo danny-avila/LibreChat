@@ -58,6 +58,7 @@ const openAIModels = {
   'gpt-5.4': 1050000, // >272K input prices at the long-context tier (2x input, 1.5x output)
   'gpt-5.4-pro': 1050000,
   'gpt-5.4-mini': 400000,
+  'gpt-5.4-nano': 400000,
   'gpt-5.5': 1050000,
   'gpt-5.5-pro': 1050000,
   'chat-latest': 400000,
@@ -386,6 +387,7 @@ export const modelMaxOutputs = {
   'gpt-5.4': 128000,
   'gpt-5.4-pro': 128000,
   'gpt-5.4-mini': 128000,
+  'gpt-5.4-nano': 128000,
   'gpt-5.5': 128000,
   'gpt-5.5-pro': 128000,
   'chat-latest': 128000,
