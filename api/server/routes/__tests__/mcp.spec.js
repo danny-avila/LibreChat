@@ -3,7 +3,7 @@ const express = require('express');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const cookieParser = require('cookie-parser');
-const { getBasePath } = require('@librechat/api');
+const { getBasePath, PENDING_STALE_MS } = require('@librechat/api');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
 function generateTestCsrfToken(flowId) {
@@ -690,7 +690,7 @@ describe('MCP Routes', () => {
         const mockFlowManager = {
           getFlowState: jest.fn().mockResolvedValue({
             status: 'PENDING',
-            createdAt: Date.now() - 3 * 60 * 1000,
+            createdAt: Date.now() - PENDING_STALE_MS - 60 * 1000,
           }),
         };
 
