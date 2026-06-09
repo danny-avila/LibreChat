@@ -1,9 +1,9 @@
 import { z } from 'zod';
-import { Tools } from './types/assistants';
 import type { TMessageContentParts, FunctionTool, FunctionToolCall } from './types/assistants';
-import { TFeedback, feedbackSchema } from './feedback';
 import type { SearchResultData } from './types/web';
 import type { TFile } from './types/files';
+import { TFeedback, feedbackSchema } from './feedback';
+import { Tools } from './types/assistants';
 
 export const isUUID = z.string().uuid();
 
