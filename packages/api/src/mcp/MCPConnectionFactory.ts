@@ -15,6 +15,7 @@ import {
 } from '~/mcp/oauth';
 import { sanitizeUrlForLogging, isClientRejectionMessage, isOAuthServer } from './utils';
 import { PENDING_STALE_MS, normalizeExpiresAt } from '~/flow/manager';
+import { preProcessGraphTokens } from '~/utils/graph';
 import { withTimeout } from '~/utils/promise';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
@@ -59,7 +60,7 @@ export class MCPConnectionFactory {
     basic: t.BasicConnectionOptions,
     oauth?: t.OAuthConnectionOptions | t.UserConnectionContext,
   ): Promise<MCPConnection> {
-    const factory = new this(basic, oauth);
+    const factory = new this(await this.prepareBasicConnectionOptions(basic, oauth), oauth);
     return factory.createConnection();
   }
 
@@ -72,12 +73,35 @@ export class MCPConnectionFactory {
     basic: t.BasicConnectionOptions,
     options?: Omit<t.OAuthConnectionOptions, 'returnOnOAuth'> | t.UserConnectionContext,
   ): Promise<ToolDiscoveryResult> {
+    const preparedBasic = await this.prepareBasicConnectionOptions(basic, options);
     if (options != null && 'useOAuth' in options) {
-      const factory = new this(basic, { ...options, returnOnOAuth: true });
+      const factory = new this(preparedBasic, { ...options, returnOnOAuth: true });
       return factory.discoverToolsInternal();
     }
-    const factory = new this(basic, options);
+    const factory = new this(preparedBasic, options);
     return factory.discoverToolsInternal();
+  }
+
+  /**
+   * Together with the constructor's processMCPEnv pass, this mirrors
+   * UserConnectionManager.resolveRuntimeConfig — keep them in sync so the
+   * config validated there matches the one connected with here.
+   */
+  private static async prepareBasicConnectionOptions(
+    basic: t.BasicConnectionOptions,
+    options?: t.OAuthConnectionOptions | t.UserConnectionContext,
+  ): Promise<t.BasicConnectionOptions> {
+    if (basic.dbSourced || !options?.graphTokenResolver) {
+      return basic;
+    }
+
+    const serverConfig = await preProcessGraphTokens(basic.serverConfig, {
+      user: options.user,
+      graphTokenResolver: options.graphTokenResolver,
+      scopes: process.env.GRAPH_API_SCOPES,
+    });
+
+    return serverConfig === basic.serverConfig ? basic : { ...basic, serverConfig };
   }
 
   protected async discoverToolsInternal(): Promise<ToolDiscoveryResult> {

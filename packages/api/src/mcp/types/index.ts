@@ -20,6 +20,7 @@ import type { SearchResultData, UIResource, TPlugin } from 'librechat-data-provi
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
 import type { LCTool } from '@librechat/agents';
 import type { OboTokenResolver, OboTrustChecker } from '~/mcp/oauth/obo';
+import type { GraphTokenResolver } from '~/utils/graph';
 import type { FlowStateManager } from '~/flow/manager';
 import type { RequestBody } from '~/types/http';
 import type * as o from '~/mcp/oauth/types';
@@ -198,6 +199,7 @@ export interface UserConnectionContext {
   user?: IUser;
   customUserVars?: Record<string, string>;
   requestBody?: RequestBody;
+  graphTokenResolver?: GraphTokenResolver;
   connectionTimeout?: number;
 }
 
@@ -223,6 +225,7 @@ export interface OAuthConnectionOptions extends UserConnectionContext {
 export interface UserMCPConnectionOptions extends UserConnectionContext {
   serverName: string;
   forceNew?: boolean;
+  ephemeralConnection?: boolean;
   serverConfig?: ParsedServerConfig;
   flowManager?: FlowStateManager<o.MCPOAuthTokens | null>;
   tokenMethods?: TokenMethods;
@@ -243,6 +246,7 @@ export interface ToolDiscoveryOptions {
   oauthStart?: OAuthStartHandler;
   customUserVars?: Record<string, string>;
   requestBody?: RequestBody;
+  graphTokenResolver?: GraphTokenResolver;
   connectionTimeout?: number;
   /** Pre-resolved config-source servers for tenant-scoped lookup */
   configServers?: Record<string, ParsedServerConfig>;
