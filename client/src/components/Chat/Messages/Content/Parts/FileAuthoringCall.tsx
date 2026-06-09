@@ -128,13 +128,16 @@ export default function FileAuthoringCall({
   const editArgsPreview = useMemo(() => buildEditArgsPreview(args), [args]);
   const fileName = filePath.split('/').pop() || filePath;
   const fileLang = useMemo(() => langFromPath(filePath), [filePath]);
+  const argsPreview = isCreate ? authoredContent : editArgsPreview;
   const outputIsDiff = hasDiff(output);
-  const preview = isCreate ? output || authoredContent : output || editArgsPreview;
-  const previewIsDiff = outputIsDiff || (!isCreate && !!editArgsPreview && !output);
+  /** A diff in the output supersedes the args preview — it carries the input with real file context */
+  const preview = outputIsDiff ? output : argsPreview || output;
+  const showOutputSection = !!output && preview !== output;
+  const previewIsDiff = outputIsDiff || (!isCreate && !!editArgsPreview && preview !== output);
   let previewLang = 'plaintext';
   if (previewIsDiff) {
     previewLang = 'diff';
-  } else if (isCreate && authoredContent && !output) {
+  } else if (isCreate && authoredContent && preview === authoredContent) {
     previewLang = fileLang;
   }
 
@@ -183,6 +186,16 @@ export default function FileAuthoringCall({
                   {highlighted ?? preview}
                 </code>
               </pre>
+              {showOutputSection && (
+                <pre
+                  className={cn(
+                    'max-h-[300px] overflow-auto whitespace-pre-wrap break-words border-t border-border-light px-3 py-2.5 font-mono text-xs',
+                    hasError ? 'text-red-600 dark:text-red-400' : 'text-text-primary',
+                  )}
+                >
+                  {output}
+                </pre>
+              )}
             </div>
           )}
         </div>

@@ -84,7 +84,7 @@ describe('FileAuthoringCall', () => {
     expect(screen.getByText(/Use this skill for testing/)).toBeInTheDocument();
   });
 
-  it('shows completed create_file output instead of full content args', () => {
+  it('keeps authored content visible alongside the output after create_file completes', () => {
     render(
       <FileAuthoringCall
         toolName="create_file"
@@ -92,15 +92,67 @@ describe('FileAuthoringCall', () => {
         isSubmitting={false}
         args={{
           file_path: 'skills/demo/SKILL.md',
-          content: '# Demo\n\nLarge generated body should not stay mounted after completion.',
+          content: '# Demo\n\nLarge generated body stays visible after completion.',
         }}
         output="Created skills/demo/SKILL.md (4096 chars)."
       />,
     );
 
     expect(screen.getByTestId('progress-text')).toHaveTextContent('Created SKILL.md');
+    expect(screen.getByTestId('code-window-header')).toHaveAttribute('data-language', 'SKILL.md');
+    expect(screen.getByText(/Large generated body stays visible/)).toBeInTheDocument();
     expect(screen.getByText('Created skills/demo/SKILL.md (4096 chars).')).toBeInTheDocument();
-    expect(screen.queryByText(/Large generated body/)).not.toBeInTheDocument();
+  });
+
+  it('prefers the output diff over the args preview after edit_file completes', () => {
+    const output = [
+      'Edited skills/demo/SKILL.md (exact match).',
+      '',
+      '--- skills/demo/SKILL.md',
+      '+++ skills/demo/SKILL.md',
+      '@@ -1,1 +1,1 @@',
+      '-old line',
+      '+new line',
+    ].join('\n');
+    render(
+      <FileAuthoringCall
+        toolName="edit_file"
+        initialProgress={1}
+        isSubmitting={false}
+        args={{
+          file_path: 'skills/demo/SKILL.md',
+          old_text: 'old line',
+          new_text: 'new line',
+        }}
+        output={output}
+      />,
+    );
+
+    const preview = screen.getByText((_, element) => element?.tagName.toLowerCase() === 'code');
+    expect(preview).toHaveTextContent('-old line');
+    expect(preview).toHaveTextContent('+new line');
+    expect(screen.queryByText(/--- old_text/)).not.toBeInTheDocument();
+  });
+
+  it('shows the attempted input alongside the error output when edit_file fails', () => {
+    render(
+      <FileAuthoringCall
+        toolName="edit_file"
+        initialProgress={1}
+        isSubmitting={false}
+        args={{
+          file_path: 'skills/demo/SKILL.md',
+          old_text: 'missing text',
+          new_text: 'replacement',
+        }}
+        output="Error: old_text matched 0 locations in skills/demo/SKILL.md."
+      />,
+    );
+
+    const preview = screen.getByText((_, element) => element?.tagName.toLowerCase() === 'code');
+    expect(preview).toHaveTextContent('-missing text');
+    expect(preview).toHaveTextContent('+replacement');
+    expect(screen.getByText(/matched 0 locations/)).toBeInTheDocument();
   });
 
   it('shows edit_file replacement args while the call is in progress', () => {
