@@ -3,7 +3,7 @@ const { logger, getTenantId } = require('@librechat/data-schemas');
 const { Providers, Constants: AgentConstants } = require('@librechat/agents');
 const {
   sendEvent,
-  mcpConfig,
+  PENDING_STALE_MS,
   MCPOAuthHandler,
   isMCPDomainAllowed,
   normalizeServerName,
@@ -853,7 +853,10 @@ async function checkOAuthFlowStatus(userId, serverName) {
     }
 
     const flowAge = Date.now() - flowState.createdAt;
-    const flowTTL = flowState.ttl || mcpConfig.OAUTH_FLOW_TTL;
+    // Report active only while the flow is still usable (the handling/reuse window),
+    // not for the full Keyv retention TTL — otherwise the UI shows "connecting" for a
+    // flow the initiate/callback paths already reject, hiding the connect button.
+    const flowTTL = flowState.ttl || PENDING_STALE_MS;
 
     if (flowState.status === 'FAILED' || flowAge > flowTTL) {
       const wasCancelled = flowState.error && flowState.error.includes('cancelled');
