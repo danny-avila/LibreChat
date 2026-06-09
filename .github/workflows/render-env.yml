@@ -70,7 +70,7 @@ jobs:
           export GUARDRAIL_VERSION="${{ secrets.GUARDRAIL_VERSION }}"
 
           export INTERFACE_AGENTS=$([[ "${{ inputs.environment }}" == "dev" ]] && echo true || echo false)
-          export INTERFACE_FILE_SEARCH=$([[ "${{ inputs.environment }}" == "dev" ]] && echo true || echo false)
+          export INTERFACE_FILE_SEARCH=true
 
           ENV_FILE_NAME=$([[ "${{ inputs.deploy_kitchensink }}" == "true" ]] && echo "librechat.env" || echo "${{ inputs.environment }}.env")
 
