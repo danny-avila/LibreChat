@@ -1,11 +1,19 @@
 import { Constants } from 'librechat-data-provider';
 import type { ParsedServerConfig } from '~/mcp/types';
+import type { RequestBody } from '~/types';
 
 export const mcpToolPattern: RegExp = new RegExp(`^.+${Constants.mcp_delimiter}.+$`);
 
 const RUNTIME_CONTEXT_PLACEHOLDER_PATTERN = /\{\{LIBRECHAT_(?:USER|OPENID|GRAPH|BODY)_[^}]+\}\}/;
 const EPHEMERAL_CONNECTION_PLACEHOLDER_PATTERN = /\{\{LIBRECHAT_(?:OPENID|GRAPH|BODY)_[^}]+\}\}/;
 const RUNTIME_BODY_PLACEHOLDER_PATTERN = /\{\{LIBRECHAT_BODY_[^}]+\}\}/;
+const RUNTIME_BODY_PLACEHOLDER_CAPTURE_PATTERN = /\{\{LIBRECHAT_BODY_([^}]+)\}\}/g;
+
+const BODY_PLACEHOLDER_FIELDS: Record<string, keyof RequestBody> = {
+  CONVERSATIONID: 'conversationId',
+  PARENTMESSAGEID: 'parentMessageId',
+  MESSAGEID: 'messageId',
+};
 
 type PlaceholderValue =
   | string
@@ -82,6 +90,33 @@ function hasPlaceholder(value: PlaceholderValue, pattern: RegExp): boolean {
   return Object.values(value).some((item) => hasPlaceholder(item, pattern));
 }
 
+function addRuntimeBodyPlaceholderFields(value: PlaceholderValue, fields: Set<string>): void {
+  if (typeof value === 'string') {
+    for (const match of value.matchAll(RUNTIME_BODY_PLACEHOLDER_CAPTURE_PATTERN)) {
+      const placeholderKey = match[1];
+      if (placeholderKey) {
+        fields.add(BODY_PLACEHOLDER_FIELDS[placeholderKey] ?? placeholderKey);
+      }
+    }
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      addRuntimeBodyPlaceholderFields(item, fields);
+    }
+    return;
+  }
+
+  if (value == null || typeof value !== 'object') {
+    return;
+  }
+
+  for (const item of Object.values(value)) {
+    addRuntimeBodyPlaceholderFields(item, fields);
+  }
+}
+
 /**
  * Trusted YAML/config servers may use per-user/request placeholders that can
  * only be resolved once a real request context exists. User-sourced DB servers
@@ -113,6 +148,28 @@ export function hasRuntimeBodyPlaceholders(config: UserScopedConnectionConfig): 
   return [config.args, config.env, config.headers, config.oauth, config.url].some((value) =>
     hasPlaceholder(value, RUNTIME_BODY_PLACEHOLDER_PATTERN),
   );
+}
+
+export function getRuntimeBodyPlaceholderFields(config: UserScopedConnectionConfig): string[] {
+  if (isUserSourced(config)) {
+    return [];
+  }
+
+  const fields = new Set<string>();
+  for (const value of [config.args, config.env, config.headers, config.oauth, config.url]) {
+    addRuntimeBodyPlaceholderFields(value, fields);
+  }
+  return Array.from(fields);
+}
+
+export function getMissingRuntimeBodyPlaceholderFields(
+  config: UserScopedConnectionConfig,
+  requestBody?: RequestBody,
+): string[] {
+  return getRuntimeBodyPlaceholderFields(config).filter((field) => {
+    const value = requestBody?.[field as keyof RequestBody];
+    return value == null || (typeof value === 'string' && value.trim() === '');
+  });
 }
 
 /**

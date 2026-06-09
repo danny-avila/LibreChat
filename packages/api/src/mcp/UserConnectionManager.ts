@@ -4,8 +4,8 @@ import type { MCPOAuthFlowMetadata } from '~/mcp/oauth';
 import type { FlowState } from '~/flow/types';
 import type * as t from './types';
 import {
+  getMissingRuntimeBodyPlaceholderFields,
   hasRuntimeUrlPlaceholders,
-  hasRuntimeBodyPlaceholders,
   isUserSourced,
   requiresEphemeralUserConnection,
   requiresOAuthMachinery,
@@ -75,14 +75,18 @@ export abstract class UserConnectionManager {
     const config =
       opts.serverConfig ??
       (await MCPServersRegistry.getInstance().getServerConfig(serverName, userId));
-    if (config && hasRuntimeBodyPlaceholders(config) && !opts.requestBody) {
+    const missingBodyFields = config
+      ? getMissingRuntimeBodyPlaceholderFields(config, opts.requestBody)
+      : [];
+    if (missingBodyFields.length > 0) {
       throw new McpError(
         ErrorCode.InvalidRequest,
-        `[MCP][User: ${userId}][${serverName}] Request body context is required to resolve runtime MCP placeholders.`,
+        `[MCP][User: ${userId}][${serverName}] Request body field(s) required to resolve runtime MCP placeholders: ${missingBodyFields.join(', ')}.`,
       );
     }
     const ephemeralConnection = config ? requiresEphemeralUserConnection(config) : false;
     const forceNewConnection = forceNew || ephemeralConnection;
+    const clearCooldown = forceNew === true;
 
     const lockKey = `${userId}:${serverName}`;
 
@@ -105,6 +109,7 @@ export abstract class UserConnectionManager {
         oauthStart: this.createPendingOAuthStart(serverName, userId, pendingOAuth),
       },
       userId,
+      clearCooldown,
     );
 
     if (!forceNewConnection) {
@@ -308,6 +313,7 @@ export abstract class UserConnectionManager {
       serverConfig: providedConfig,
     }: t.UserMCPConnectionOptions,
     userId: string,
+    clearCooldown: boolean,
   ): Promise<MCPConnection> {
     if (await this.appConnections!.has(serverName)) {
       throw new McpError(
@@ -322,7 +328,7 @@ export abstract class UserConnectionManager {
 
     const userServerMap = this.userConnections.get(userId);
     let connection = forceNew ? undefined : userServerMap?.get(serverName);
-    if (forceNew) {
+    if (clearCooldown) {
       MCPConnection.clearCooldown(serverName);
     }
     const now = Date.now();

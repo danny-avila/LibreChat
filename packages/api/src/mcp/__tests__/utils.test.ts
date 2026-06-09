@@ -12,6 +12,8 @@ import {
   hasRuntimeUrlPlaceholders,
   hasRuntimeBodyPlaceholders,
   hasRuntimeContextPlaceholders,
+  getRuntimeBodyPlaceholderFields,
+  getMissingRuntimeBodyPlaceholderFields,
   isUserSourced,
   requiresEphemeralUserConnection,
 } from '~/mcp/utils';
@@ -501,6 +503,44 @@ describe('hasRuntimeBodyPlaceholders', () => {
         url: 'https://example.com/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
       }),
     ).toBe(false);
+  });
+});
+
+describe('getMissingRuntimeBodyPlaceholderFields', () => {
+  const config = {
+    source: 'yaml',
+    url: 'https://example.com/conversations/{{LIBRECHAT_BODY_CONVERSATIONID}}/mcp',
+    headers: {
+      'X-Message': '{{LIBRECHAT_BODY_MESSAGEID}}',
+      'X-Parent': '{{LIBRECHAT_BODY_PARENTMESSAGEID}}',
+    },
+  } as const;
+
+  it('returns the request body fields required by trusted runtime placeholders', () => {
+    expect(getRuntimeBodyPlaceholderFields(config)).toEqual([
+      'messageId',
+      'parentMessageId',
+      'conversationId',
+    ]);
+  });
+
+  it('returns missing or blank request body fields', () => {
+    expect(
+      getMissingRuntimeBodyPlaceholderFields(config, {
+        conversationId: 'conv-123',
+        messageId: ' ',
+      }),
+    ).toEqual(['messageId', 'parentMessageId']);
+  });
+
+  it('ignores BODY placeholders in user-sourced configs', () => {
+    expect(
+      getMissingRuntimeBodyPlaceholderFields({
+        source: 'user',
+        dbId: 'server-123',
+        url: 'https://example.com/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+      }),
+    ).toEqual([]);
   });
 });
 

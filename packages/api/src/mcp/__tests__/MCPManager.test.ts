@@ -1318,8 +1318,9 @@ describe('MCPManager', () => {
       expect(result).toEqual({ tools: null, oauthRequired: false, oauthUrl: null });
       expect(MCPConnectionFactory.discoverTools).not.toHaveBeenCalled();
       expect(mockLogger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('Request body context is required'),
+        expect.stringContaining('Request body field(s) required'),
       );
+      expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('messageId'));
     });
 
     it('should return null tools when server config not found', async () => {
@@ -1754,6 +1755,70 @@ describe('MCPManager', () => {
       expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(2);
     });
 
+    it('should not clear server cooldowns for ephemeral runtime connections', async () => {
+      const bodyUrlConfig: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://api.example.com/messages/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+        source: 'yaml',
+        requiresOAuth: false,
+      };
+      const clearCooldownSpy = jest.spyOn(MCPConnection, 'clearCooldown');
+
+      mockAppConnections({
+        has: jest.fn().mockResolvedValue(false),
+      });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(bodyUrlConfig);
+      mockProcessMCPEnv.mockImplementation(({ options, body }) => ({
+        ...options,
+        ...('url' in options && {
+          url: options.url?.replace('{{LIBRECHAT_BODY_MESSAGEID}}', body?.messageId ?? ''),
+        }),
+      }));
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(mockConnection);
+
+      try {
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await manager.getUserConnection({
+          serverName,
+          user: mockUser,
+          requestBody: { messageId: 'message-1' },
+        });
+
+        expect(clearCooldownSpy).not.toHaveBeenCalled();
+      } finally {
+        clearCooldownSpy.mockRestore();
+      }
+    });
+
+    it('should still clear server cooldowns for explicit forceNew connections', async () => {
+      const staticConfig: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://api.example.com/mcp',
+        source: 'yaml',
+        requiresOAuth: false,
+      };
+      const clearCooldownSpy = jest.spyOn(MCPConnection, 'clearCooldown');
+
+      mockAppConnections({
+        has: jest.fn().mockResolvedValue(false),
+      });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(staticConfig);
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(mockConnection);
+
+      try {
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await manager.getUserConnection({
+          serverName,
+          user: mockUser,
+          forceNew: true,
+        });
+
+        expect(clearCooldownSpy).toHaveBeenCalledWith(serverName);
+      } finally {
+        clearCooldownSpy.mockRestore();
+      }
+    });
+
     it('should reject BODY-scoped connections without request body context', async () => {
       const bodyUrlConfig: t.ParsedServerConfig = {
         type: 'streamable-http',
@@ -1773,7 +1838,32 @@ describe('MCPManager', () => {
           serverName,
           user: mockUser,
         }),
-      ).rejects.toThrow('Request body context is required');
+      ).rejects.toThrow('Request body field(s) required');
+
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject BODY-scoped connections when a referenced body field is missing', async () => {
+      const bodyUrlConfig: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://api.example.com/messages/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+        source: 'yaml',
+        requiresOAuth: false,
+      };
+
+      mockAppConnections({
+        has: jest.fn().mockResolvedValue(false),
+      });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(bodyUrlConfig);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await expect(
+        manager.getUserConnection({
+          serverName,
+          user: mockUser,
+          requestBody: { conversationId: 'conv-123' },
+        }),
+      ).rejects.toThrow('messageId');
 
       expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
     });

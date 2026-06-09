@@ -11,7 +11,7 @@ import type { MCPOAuthTokens } from './oauth';
 import type { RequestBody } from '~/types';
 import type * as t from './types';
 import {
-  hasRuntimeBodyPlaceholders,
+  getMissingRuntimeBodyPlaceholderFields,
   isUserSourced,
   requiresEphemeralUserConnection,
   requiresOAuthMachinery,
@@ -144,9 +144,13 @@ export class MCPManager extends UserConnectionManager {
       return { tools: null, oauthRequired: false, oauthUrl: null };
     }
 
-    if (hasRuntimeBodyPlaceholders(serverConfig) && !args.requestBody) {
+    const missingBodyFields = getMissingRuntimeBodyPlaceholderFields(
+      serverConfig,
+      args.requestBody,
+    );
+    if (missingBodyFields.length > 0) {
       logger.warn(
-        `${logPrefix} [Discovery] Request body context is required to resolve runtime MCP placeholders`,
+        `${logPrefix} [Discovery] Request body field(s) required to resolve runtime MCP placeholders: ${missingBodyFields.join(', ')}`,
       );
       return { tools: null, oauthRequired: false, oauthUrl: null };
     }
