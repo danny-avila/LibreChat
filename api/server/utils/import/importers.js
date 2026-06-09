@@ -22,8 +22,11 @@ function getImporter(jsonData) {
       return importClaudeConvo;
     }
     // ChatGPT format has mapping object in each conversation
-    logger.info('Importing ChatGPT conversation');
-    return importChatGptConvo;
+    if (jsonData.length === 0 || jsonData[0]?.mapping) {
+      logger.info('Importing ChatGPT conversation');
+      return importChatGptConvo;
+    }
+    throw new Error('Unsupported import type');
   }
 
   // For ChatbotUI
@@ -81,6 +84,7 @@ async function importChatBotUiConvo(
     logger.info(`user: ${requestUserId} | ChatbotUI conversation imported`);
   } catch (error) {
     logger.error(`user: ${requestUserId} | Error creating conversation from ChatbotUI file`, error);
+    throw error;
   }
 }
 
@@ -197,6 +201,7 @@ async function importClaudeConvo(
     logger.info(`user: ${requestUserId} | Claude conversation imported`);
   } catch (error) {
     logger.error(`user: ${requestUserId} | Error creating conversation from Claude file`, error);
+    throw error;
   }
 }
 
@@ -305,6 +310,7 @@ async function importLibreChatConvo(
     logger.debug(`user: ${requestUserId} | Conversation "${jsonData.title}" imported`);
   } catch (error) {
     logger.error(`user: ${requestUserId} | Error creating conversation from LibreChat file`, error);
+    throw error;
   }
 }
 
@@ -336,6 +342,7 @@ async function importChatGptConvo(
     await importBatchBuilder.saveBatch();
   } catch (error) {
     logger.error(`user: ${requestUserId} | Error creating conversation from imported file`, error);
+    throw error;
   }
 }
 
@@ -355,7 +362,7 @@ function processConversation(conv, importBatchBuilder, requestUserId, defaultMod
   // Map all message IDs to new UUIDs
   const messageMap = new Map();
   for (const [id, mapping] of Object.entries(conv.mapping)) {
-    if (mapping.message && mapping.message.content.content_type) {
+    if (mapping.message?.content?.content_type) {
       const newMessageId = uuidv4();
       messageMap.set(id, newMessageId);
     }
@@ -467,6 +474,9 @@ function processConversation(conv, importBatchBuilder, requestUserId, defaultMod
     }
 
     const newMessageId = messageMap.get(id);
+    if (!newMessageId) {
+      continue;
+    }
     const parentMessageId = findValidParent(mapping.parent);
 
     const messageText = formatMessageText(mapping.message);
@@ -474,7 +484,7 @@ function processConversation(conv, importBatchBuilder, requestUserId, defaultMod
     const isCreatedByUser = role === 'user';
     let sender = isCreatedByUser ? 'user' : 'assistant';
     const model =
-      mapping.message.metadata.model_slug || defaultModel || openAISettings.model.default;
+      mapping.message.metadata?.model_slug || defaultModel || openAISettings.model.default;
 
     if (!isCreatedByUser) {
       /** Extracted model name from model slug */
@@ -598,7 +608,7 @@ function formatMessageText(messageData) {
     messageText = `\`\`\`json\n${JSON.stringify(messageData.content, null, 2)}\n\`\`\``;
   }
 
-  if (isText && messageData.author.role !== 'user') {
+  if (isText && messageData.author?.role !== 'user') {
     messageText = processAssistantMessage(messageData, messageText);
   }
 
