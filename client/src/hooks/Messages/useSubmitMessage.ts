@@ -30,7 +30,7 @@ export default function useSubmitMessage() {
         setMessages([...(rootMessages || []), latestMessage]);
       }
 
-      ask(
+      const submitted = ask(
         {
           text: data.text,
         },
@@ -38,6 +38,9 @@ export default function useSubmitMessage() {
           addedConvo: addedConvo ?? undefined,
         },
       );
+      if (submitted === false) {
+        return;
+      }
       methods.reset();
     },
     [ask, methods, addedConvo, setMessages, getMessages, latestMessage],

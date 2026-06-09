@@ -22,7 +22,7 @@ export function ShareMessagesProvider({ messages, children }: ShareMessagesProvi
       conversation: null,
       conversationId: undefined,
       // These are required by the context but not used in share view
-      ask: () => Promise.resolve(),
+      ask: () => {},
       regenerate: () => {},
       handleContinue: () => {},
       latestMessageId: messages[messages.length - 1]?.messageId,

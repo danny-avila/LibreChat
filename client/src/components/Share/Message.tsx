@@ -90,7 +90,7 @@ export default function Message(props: TMessageProps) {
                         edit={false}
                         error={error}
                         isLast={false}
-                        ask={() => ({})}
+                        ask={() => {}}
                         text={text || ''}
                         message={message}
                         isSubmitting={false}

@@ -70,6 +70,12 @@ const getAppendParentMessageId = ({
   return failedUserMessage.parentMessageId ?? Constants.NO_PARENT;
 };
 
+const hasPendingAssistantParent = (message: TMessage | null) =>
+  !!message?.messageId &&
+  message.isCreatedByUser !== true &&
+  message.messageId.endsWith('_') &&
+  !hasStreamStartFailed(message);
+
 type RegenerateTargetResponseArgs = {
   messages: TMessage[];
   parentMessageId?: string | null;
@@ -297,8 +303,17 @@ export default function useChatFunctions({
     // construct the query message
     // this is not a real messageId, it is used as placeholder before real messageId returned
     const intermediateId = overrideUserMessageId ?? v4();
-    parentMessageId =
-      parentMessageId ?? getAppendParentMessageId({ latestMessage, currentMessages });
+    if (parentMessageId == null) {
+      if (hasPendingAssistantParent(latestMessage)) {
+        logger.warn(
+          '[useChatFunctions] Refusing to append to a preliminary assistant message',
+          latestMessage,
+        );
+        return false;
+      }
+
+      parentMessageId = getAppendParentMessageId({ latestMessage, currentMessages });
+    }
 
     logChatRequest({
       index,
