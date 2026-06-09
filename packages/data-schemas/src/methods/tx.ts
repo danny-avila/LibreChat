@@ -363,6 +363,7 @@ export const premiumTokenValues: Record<
 > = {
   'gemini-3.1': { threshold: 200000, prompt: 4, completion: 18 },
   'gpt-5.4': { threshold: 272000, prompt: 5, completion: 22.5 },
+  'gpt-5.4-pro': { threshold: 272000, prompt: 60, completion: 270 },
   'gpt-5.5': { threshold: 272000, prompt: 10, completion: 45 },
 };
 
