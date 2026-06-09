@@ -156,13 +156,21 @@ export async function fetchModels({
   }
 
   try {
+    // Resolve template variables (e.g. {{LIBRECHAT_OPENID_ID_TOKEN}}) in the
+    // configured headers, mirroring fetchOllamaModels above. Without this,
+    // placeholder strings are forwarded literally on the model-fetch path.
+    const resolvedHeaders = resolveHeaders({
+      headers: headers ?? undefined,
+      user: userObject,
+    });
+
     const options: {
       headers: Record<string, string>;
       timeout: number;
       httpsAgent?: HttpsProxyAgent<string>;
     } = {
       headers: {
-        ...(headers ?? {}),
+        ...resolvedHeaders,
       },
       timeout: 5000,
     };
@@ -173,7 +181,16 @@ export async function fetchModels({
         'anthropic-version': process.env.ANTHROPIC_VERSION || '2023-06-01',
       };
     } else {
-      options.headers.Authorization = `Bearer ${apiKey}`;
+      // Only fall back to the apiKey-based Bearer when the configured
+      // headers did not already supply an Authorization. This lets
+      // auth-aware proxies (e.g. LiteLLM with JWT auth) receive the user's
+      // token on /v1/models so they can return a per-user filtered list.
+      const hasAuthHeader = Object.keys(options.headers).some(
+        (k) => k.toLowerCase() === 'authorization',
+      );
+      if (!hasAuthHeader) {
+        options.headers.Authorization = `Bearer ${apiKey}`;
+      }
     }
 
     if (process.env.PROXY) {
