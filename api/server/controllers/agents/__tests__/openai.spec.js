@@ -79,6 +79,7 @@ jest.mock('@librechat/agents', () => ({
 
 jest.mock('@librechat/api', () => ({
   writeSSE: jest.fn(),
+  isProReasoningModel: jest.fn().mockReturnValue(false),
   createRun: jest.fn().mockResolvedValue({
     processStream: mockProcessStream,
   }),

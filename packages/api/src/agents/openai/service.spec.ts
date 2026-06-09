@@ -1,5 +1,5 @@
-import { createAgentChatCompletion } from './service';
 import type { ChatCompletionDependencies } from './service';
+import { createAgentChatCompletion } from './service';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
