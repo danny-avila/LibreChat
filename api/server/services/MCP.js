@@ -786,7 +786,9 @@ function createToolInstance({
   });
   toolInstance.mcp = true;
   toolInstance.mcpRawServerName = serverName;
-  toolInstance.mcpJsonSchema = parameters;
+  // On Google/Vertex, propagate the union-flattened schema so definitions extracted
+  // from this instance don't reach the Gemini converter with unsupported unions.
+  toolInstance.mcpJsonSchema = isGoogle ? schema : parameters;
   return toolInstance;
 }
 

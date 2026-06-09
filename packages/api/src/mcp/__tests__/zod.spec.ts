@@ -2534,4 +2534,66 @@ describe('flattenJsonSchemaUnions', () => {
       nullable: true,
     });
   });
+
+  it('preserves parent properties and required outside the union when collapsing', () => {
+    const schema = {
+      type: 'object',
+      properties: { repo: { type: 'string' } },
+      required: ['repo'],
+      anyOf: [
+        { properties: { title: { type: 'string' } }, required: ['title'] },
+        { properties: { body: { type: 'string' } }, required: ['body'] },
+      ],
+    } as any;
+
+    const result = flattenJsonSchemaUnions(schema);
+    expect(result.type).toBe('object');
+    expect(result.properties).toEqual({
+      repo: { type: 'string' },
+      title: { type: 'string' },
+    });
+    expect([...result.required].sort()).toEqual(['repo', 'title']);
+    expect(result).not.toHaveProperty('anyOf');
+  });
+
+  it('merges nested object properties from parent and chosen branch', () => {
+    const schema = {
+      type: 'object',
+      properties: { owner: { type: 'string' } },
+      oneOf: [
+        { type: 'object', properties: { sha: { type: 'string' } } },
+        { type: 'object', properties: { ref: { type: 'string' } } },
+      ],
+    } as any;
+
+    expect(flattenJsonSchemaUnions(schema).properties).toEqual({
+      owner: { type: 'string' },
+      sha: { type: 'string' },
+    });
+  });
+
+  it('strips the dropped null from enum when a type array is nullable', () => {
+    const schema = { type: ['string', 'null'], enum: ['open', 'closed', null] } as any;
+    expect(flattenJsonSchemaUnions(schema)).toEqual({
+      type: 'string',
+      nullable: true,
+      enum: ['open', 'closed'],
+    });
+  });
+
+  it('strips null from enum when nullability comes from a union member', () => {
+    const schema = {
+      anyOf: [{ type: 'string', enum: ['a', 'b', null] }, { type: 'null' }],
+    } as any;
+
+    const result = flattenJsonSchemaUnions(schema);
+    expect(result.type).toBe('string');
+    expect(result.nullable).toBe(true);
+    expect(result.enum).toEqual(['a', 'b']);
+  });
+
+  it('keeps enum untouched when the field is not nullable', () => {
+    const schema = { type: ['string', 'number'], enum: ['a', 'b'] } as any;
+    expect(flattenJsonSchemaUnions(schema)).toEqual({ type: 'string', enum: ['a', 'b'] });
+  });
 });

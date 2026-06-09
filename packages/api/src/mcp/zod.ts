@@ -330,10 +330,32 @@ function isNullSchema(member: unknown): boolean {
   );
 }
 
+function mergeProperties(a: unknown, b: unknown): Record<string, unknown> | undefined {
+  const objA =
+    a && typeof a === 'object' && !Array.isArray(a) ? (a as Record<string, unknown>) : undefined;
+  const objB =
+    b && typeof b === 'object' && !Array.isArray(b) ? (b as Record<string, unknown>) : undefined;
+  if (!objA && !objB) {
+    return undefined;
+  }
+  return { ...(objA ?? {}), ...(objB ?? {}) };
+}
+
+function mergeRequired(a: unknown, b: unknown): string[] | undefined {
+  const arrA = Array.isArray(a) ? (a as string[]) : [];
+  const arrB = Array.isArray(b) ? (b as string[]) : [];
+  if (arrA.length === 0 && arrB.length === 0) {
+    return undefined;
+  }
+  return Array.from(new Set([...arrA, ...arrB]));
+}
+
 /**
  * Collapses a single `anyOf`/`oneOf` level into its parent by keeping the first
  * non-null member, marking the field nullable when a `null` member was present.
- * Loops to fully strip union keys that the chosen member re-introduces.
+ * Parent and branch `properties`/`required` are merged so fields declared outside
+ * the union (e.g. always-required args) survive the collapse. Loops to fully strip
+ * union keys that the chosen member re-introduces.
  */
 function collapseSchemaUnion(schema: Record<string, unknown>): Record<string, unknown> {
   let current = schema;
@@ -360,7 +382,17 @@ function collapseSchemaUnion(schema: Record<string, unknown>): Record<string, un
 
     const rest = { ...current };
     delete rest[unionKey];
+
+    const mergedProperties = mergeProperties(rest.properties, chosen.properties);
+    const mergedRequired = mergeRequired(rest.required, chosen.required);
+
     current = { ...rest, ...chosen };
+    if (mergedProperties) {
+      current.properties = mergedProperties;
+    }
+    if (mergedRequired) {
+      current.required = mergedRequired;
+    }
     if (hadNull) {
       current.nullable = true;
     }
@@ -409,17 +441,28 @@ export function flattenJsonSchemaUnions<T extends Record<string, unknown>>(schem
   }
 
   const collapsed = collapseSchemaUnion(schema);
+  const typeHasNull =
+    Array.isArray(collapsed.type) && (collapsed.type as unknown[]).includes('null');
+  const nullable = collapsed.nullable === true || typeHasNull;
   const result: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(collapsed)) {
     if (key === 'type' && Array.isArray(value)) {
-      const { type, nullable } = collapseTypeArray(value);
-      if (type !== undefined) {
-        result['type'] = type;
+      const single = collapseTypeArray(value).type;
+      if (single !== undefined) {
+        result['type'] = single;
       }
-      if (nullable) {
-        result['nullable'] = true;
-      }
+      continue;
+    }
+
+    // Re-emitted once below so type-array and union sources don't double up.
+    if (key === 'nullable') {
+      continue;
+    }
+
+    // Gemini enums must be homogeneous primitives; drop the `null` nullability absorbed.
+    if (key === 'enum' && Array.isArray(value) && nullable) {
+      result['enum'] = value.filter((entry) => entry !== null);
       continue;
     }
 
@@ -441,6 +484,10 @@ export function flattenJsonSchemaUnions<T extends Record<string, unknown>>(schem
     }
 
     result[key] = value;
+  }
+
+  if (nullable) {
+    result['nullable'] = true;
   }
 
   return result as T;
