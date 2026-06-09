@@ -506,6 +506,9 @@ const loadTools = async ({
                 ...mcpParams,
                 availableTools,
                 toolKey: config.toolKey,
+                onAvailableTools: (tools) => {
+                  availableTools = tools;
+                },
               });
 
         if (Array.isArray(mcpTool)) {

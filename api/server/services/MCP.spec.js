@@ -873,6 +873,37 @@ describe('User parameter passing tests', () => {
       expect(mockReinitMCPServer.mock.calls[0][0].user).toBe(mockUser);
     });
 
+    it('should report available tools discovered during single tool reinit', async () => {
+      const mockUser = { id: 'user-discovery-callback', role: 'USER' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const onAvailableTools = jest.fn();
+      const discoveredTools = {
+        [`my-tool${D}my-server`]: {
+          function: { description: 'My Tool', parameters: {} },
+        },
+        [`other-tool${D}my-server`]: {
+          function: { description: 'Other Tool', parameters: {} },
+        },
+      };
+
+      mockReinitMCPServer.mockResolvedValue({
+        availableTools: discoveredTools,
+      });
+
+      const result = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: `my-tool${D}my-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: undefined,
+        onAvailableTools,
+      });
+
+      expect(result).toBeDefined();
+      expect(onAvailableTools).toHaveBeenCalledWith(discoveredTools);
+    });
+
     it('should not call reinitMCPServer when tool is in cache', async () => {
       const mockUser = { id: 'test-user-789' };
       const mockRes = { write: jest.fn(), flush: jest.fn() };

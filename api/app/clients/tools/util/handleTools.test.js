@@ -338,5 +338,65 @@ describe('Tool Handlers', () => {
         }),
       );
     });
+
+    it('reuses discovered request-scoped MCP tool definitions within a server loop', async () => {
+      const serverName = 'body-scoped';
+      const firstToolKey = `search${Constants.mcp_delimiter}${serverName}`;
+      const secondToolKey = `lookup${Constants.mcp_delimiter}${serverName}`;
+      const requestBody = { conversationId: 'conv-123', messageId: 'msg-123' };
+      const serverConfig = {
+        type: 'streamable-http',
+        url: 'https://api.example.com/messages/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+        source: 'yaml',
+      };
+      const discoveredTools = {
+        [firstToolKey]: {
+          function: {
+            description: 'Search',
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+        [secondToolKey]: {
+          function: {
+            description: 'Lookup',
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+      };
+
+      mockGetServerConfig.mockResolvedValue(serverConfig);
+      mockCreateMCPTool
+        .mockImplementationOnce(async ({ onAvailableTools }) => {
+          onAvailableTools(discoveredTools);
+          return { name: 'search-tool' };
+        })
+        .mockImplementationOnce(async ({ availableTools }) => {
+          expect(availableTools).toBe(discoveredTools);
+          return { name: 'lookup-tool' };
+        });
+
+      const result = await loadTools({
+        user: fakeUser._id.toString(),
+        tools: [firstToolKey, secondToolKey],
+        options: {
+          req: {
+            user: { id: fakeUser._id.toString(), role: 'USER' },
+            body: requestBody,
+          },
+        },
+      });
+
+      expect(result.loadedTools).toEqual([{ name: 'search-tool' }, { name: 'lookup-tool' }]);
+      expect(mockGetMCPServerTools).not.toHaveBeenCalled();
+      expect(mockCreateMCPTool).toHaveBeenCalledTimes(2);
+      expect(mockCreateMCPTool).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          availableTools: discoveredTools,
+          requestBody,
+          toolKey: secondToolKey,
+        }),
+      );
+    });
   });
 });

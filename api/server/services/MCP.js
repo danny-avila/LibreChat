@@ -578,6 +578,7 @@ async function createMCPTools({
  * @param {import('@librechat/api').RequestBody} [params.requestBody]
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  * @param {import('@librechat/api').ParsedServerConfig} [params.config]
+ * @param {(availableTools: LCAvailableTools) => void} [params.onAvailableTools]
  * @returns { Promise<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
  */
 async function createMCPTool({
@@ -593,6 +594,7 @@ async function createMCPTool({
   requestBody,
   config,
   configServers,
+  onAvailableTools,
   streamId = null,
 }) {
   const [toolName, serverName] = toolKey.split(Constants.mcp_delimiter);
@@ -653,6 +655,9 @@ async function createMCPTool({
       requestBody,
       streamId,
     });
+    if (result?.availableTools) {
+      onAvailableTools?.(result.availableTools);
+    }
     toolDefinition = result?.availableTools?.[toolKey]?.function;
 
     if (!toolDefinition && useMissingToolCache) {
