@@ -634,7 +634,13 @@ export class MCPConnectionFactory {
 
   /** Attempts to establish connection with timeout handling */
   protected async attemptToConnect(connection: MCPConnection): Promise<void> {
-    const connectTimeout = this.connectionTimeout ?? this.serverConfig.initTimeout ?? 30000;
+    const baseTimeout = this.connectionTimeout ?? this.serverConfig.initTimeout ?? 30000;
+    // OAuth servers may pause mid-connect to wait for the user to authorize in the browser.
+    // The transport connect itself is still bounded by initTimeout inside connection.connect(),
+    // so this floor only extends the window for an active OAuth wait, not ordinary failures.
+    const connectTimeout = this.useOAuth
+      ? Math.max(baseTimeout, mcpConfig.OAUTH_HANDLING_TIMEOUT)
+      : baseTimeout;
     await withTimeout(
       this.connectTo(connection),
       connectTimeout,
