@@ -48,6 +48,11 @@ jest.mock('~/config', () => ({
   })),
 }));
 
+jest.mock('node-fetch', () => jest.fn());
+jest.mock('~/server/services/Files/process', () => ({
+  processFileURL: jest.fn(),
+}));
+
 describe('AgentClient - titleConvo', () => {
   let client;
   let mockRun;
@@ -3018,5 +3023,228 @@ describe('AgentClient - finalizeSubagentContent', () => {
     expect(client.contentParts[1].tool_call.subagent_content).toEqual([
       expect.objectContaining({ type: 'text', text: 'B' }),
     ]);
+  });
+
+  describe('Sora Video Integration', () => {
+    let originalEnv;
+    let nodeFetch;
+    let processFileURL;
+
+    beforeEach(() => {
+      originalEnv = { ...process.env };
+      process.env.AZURE_API_KEY = 'test-key';
+      process.env.AZURE_OPENAI_BASEURL = 'https://test-instance.openai.azure.com';
+      process.env.AZURE_OPENAI_API_VERSION = '2024-04-01-preview';
+
+      nodeFetch = require('node-fetch');
+      processFileURL = require('~/server/services/Files/process').processFileURL;
+
+      jest.clearAllMocks();
+    });
+
+    afterEach(() => {
+      process.env = originalEnv;
+    });
+
+    it('should intercept Sora models, submit job, poll status, download video, and render preview', async () => {
+      const mockReq = {
+        user: { id: 'user-123' },
+        config: {
+          fileStrategy: 'local',
+        },
+      };
+      const client = new AgentClient({
+        req: mockReq,
+        res: {},
+        agent: {
+          id: 'agent-123',
+          endpoint: EModelEndpoint.azureOpenAI,
+          provider: EModelEndpoint.azureOpenAI,
+          model_parameters: {
+            model: 'sora-1',
+          },
+        },
+      });
+      client.model = 'sora-1';
+      client.user = 'user-123';
+
+      // Mock submit response
+      nodeFetch.mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ id: 'job-123', status: 'notStarted' }),
+      });
+
+      // Mock first poll (running)
+      nodeFetch.mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ status: 'running' }),
+      });
+
+      // Mock second poll (succeeded)
+      nodeFetch.mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          status: 'succeeded',
+          result: { video: { url: 'https://azure.com/video.mp4' } },
+        }),
+      });
+
+      // Mock processFileURL
+      processFileURL.mockResolvedValue({
+        filepath: '/uploads/video-123.mp4',
+        filename: 'video-123.mp4',
+      });
+
+      const onProgress = jest.fn();
+
+      await client.chatCompletion({
+        payload: [{ type: 'text', text: 'generate a cool video' }],
+        onProgress,
+      });
+
+      // Verify submit url
+      expect(nodeFetch).toHaveBeenNthCalledWith(
+        1,
+        'https://test-instance.openai.azure.com/openai/deployments/sora-1/video/generations/jobs?api-version=2024-04-01-preview',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            'api-key': 'test-key',
+            'Content-Type': 'application/json',
+          }),
+          body: JSON.stringify({
+            prompt: 'generate a cool video',
+            model: 'sora-1',
+            size: '1024x1024',
+            n_seconds: 5,
+          }),
+        })
+      );
+
+      // Verify poll url
+      expect(nodeFetch).toHaveBeenNthCalledWith(
+        2,
+        'https://test-instance.openai.azure.com/openai/deployments/sora-1/video/generations/jobs/job-123?api-version=2024-04-01-preview',
+        expect.objectContaining({
+          method: 'GET',
+          headers: expect.objectContaining({
+            'api-key': 'test-key',
+          }),
+        })
+      );
+
+      // Verify download and processing
+      expect(processFileURL).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'user-123',
+          URL: 'https://azure.com/video.mp4',
+          fileName: expect.stringContaining('video-'),
+          basePath: 'uploads',
+        })
+      );
+
+      // Verify content parts rendered with video tag
+      expect(client.contentParts).toEqual([
+        {
+          type: 'text',
+          text: expect.stringContaining('<video controls src="/uploads/video-123.mp4" width="100%" height="auto"></video>'),
+        },
+      ]);
+
+      // Verify artifactPromises attached
+      expect(client.artifactPromises).toBeDefined();
+      const fileResult = await client.artifactPromises[0];
+      expect(fileResult.filepath).toBe('/uploads/video-123.mp4');
+
+      // Verify onProgress steps
+      expect(onProgress).toHaveBeenCalledWith({ text: 'Initializing Azure OpenAI Sora connection...' });
+      expect(onProgress).toHaveBeenCalledWith({ text: 'Submitting video generation job to Azure OpenAI Sora...' });
+      expect(onProgress).toHaveBeenCalledWith({ text: 'Generating video... Job status: notStarted (poll 1)' });
+      expect(onProgress).toHaveBeenCalledWith({ text: 'Generating video... Job status: running (poll 2)' });
+      expect(onProgress).toHaveBeenCalledWith({ text: 'Video generated successfully. Downloading and processing...' });
+      expect(onProgress).toHaveBeenCalledWith({ text: 'Video attachment processed. Rendering preview...' });
+    });
+
+    it('should throw an error if AZURE_API_KEY is missing', async () => {
+      delete process.env.AZURE_API_KEY;
+
+      const client = new AgentClient({
+        req: { config: {} },
+        res: {},
+        agent: {
+          id: 'agent-123',
+          model_parameters: { model: 'sora-1' },
+        },
+      });
+      client.model = 'sora-1';
+
+      await expect(
+        client.chatCompletion({
+          payload: 'generate video',
+        })
+      ).rejects.toThrow('Missing Azure OpenAI API Key or Base URL for Sora integration.');
+    });
+
+    it('should handle Sora 2 path structure', async () => {
+      const mockReq = {
+        user: { id: 'user-123' },
+        config: {
+          fileStrategy: 'local',
+        },
+      };
+      const client = new AgentClient({
+        req: mockReq,
+        res: {},
+        agent: {
+          id: 'agent-123',
+          endpoint: EModelEndpoint.azureOpenAI,
+          provider: EModelEndpoint.azureOpenAI,
+          model_parameters: {
+            model: 'sora-2',
+          },
+        },
+      });
+      client.model = 'sora-2';
+      client.user = 'user-123';
+
+      // Mock submit response
+      nodeFetch.mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ id: 'job-123', status: 'notStarted' }),
+      });
+
+      // Mock poll (succeeded) with sora 2 specific url pattern
+      nodeFetch.mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          status: 'succeeded',
+          video: { url: 'https://azure.com/video.mp4' },
+        }),
+      });
+
+      // Mock processFileURL
+      processFileURL.mockResolvedValue({
+        filepath: '/uploads/video-123.mp4',
+        filename: 'video-123.mp4',
+      });
+
+      await client.chatCompletion({
+        payload: 'generate a cool video with sora 2',
+      });
+
+      // Verify sora 2 submit url
+      expect(nodeFetch).toHaveBeenNthCalledWith(
+        1,
+        'https://test-instance.openai.azure.com/openai/v1/videos/create?api-version=2024-04-01-preview',
+        expect.any(Object)
+      );
+
+      // Verify sora 2 poll url
+      expect(nodeFetch).toHaveBeenNthCalledWith(
+        2,
+        'https://test-instance.openai.azure.com/openai/v1/videos/job-123?api-version=2024-04-01-preview',
+        expect.any(Object)
+      );
+    });
   });
 });

@@ -846,14 +846,191 @@ class AgentClient extends BaseClient {
    * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
    * @param {AbortController} [params.abortController]
    */
-  async chatCompletion({ payload, userMCPAuthMap, abortController = null }) {
+  async chatCompletion({ payload, onProgress, userMCPAuthMap, abortController = null }) {
+    const modelLower = (this.model || '').toLowerCase();
+    const appConfig = this.options.req.config;
+    if (modelLower.includes('sora')) {
+      let promptText = '';
+      if (Array.isArray(payload) && payload.length > 0) {
+        const lastMsg = payload[payload.length - 1];
+        if (typeof lastMsg.content === 'string') {
+          promptText = lastMsg.content;
+        } else if (Array.isArray(lastMsg.content)) {
+          const textPart = lastMsg.content.find((p) => p.type === 'text');
+          promptText = textPart ? textPart.text : '';
+        } else if (lastMsg.text) {
+          promptText = lastMsg.text;
+        }
+      } else if (typeof payload === 'string') {
+        promptText = payload;
+      }
+
+      if (typeof onProgress === 'function') {
+        onProgress({ text: 'Initializing Azure OpenAI Sora connection...' });
+      }
+
+      let apiKey = process.env.AZURE_API_KEY;
+      let baseURL = process.env.AZURE_OPENAI_BASEURL;
+      let apiVersion = process.env.AZURE_OPENAI_API_VERSION || '2024-04-01-preview';
+      let deploymentName = this.model;
+
+      const azureConfig = appConfig?.endpoints?.[EModelEndpoint.azureOpenAI];
+      if (azureConfig) {
+        try {
+          const { mapModelToAzureConfig } = require('librechat-data-provider');
+          const mapped = mapModelToAzureConfig({
+            modelName: this.model,
+            modelGroupMap: azureConfig.modelGroupMap,
+            groupMap: azureConfig.groupMap,
+          });
+          if (mapped) {
+            apiKey = mapped.azureOptions.azureOpenAIApiKey || apiKey;
+            apiVersion = mapped.azureOptions.azureOpenAIApiVersion || apiVersion;
+            deploymentName = mapped.azureOptions.azureOpenAIApiDeploymentName || deploymentName;
+            baseURL = mapped.baseURL || `https://${mapped.azureOptions.azureOpenAIApiInstanceName}.openai.azure.com`;
+          }
+        } catch (err) {
+          logger.error('[AgentClient] Error mapping Azure OpenAI configuration for Sora:', err);
+        }
+      }
+
+      if (!apiKey || !baseURL) {
+        throw new Error('Missing Azure OpenAI API Key or Base URL for Sora integration. Please set AZURE_API_KEY and AZURE_OPENAI_BASEURL.');
+      }
+
+      if (typeof onProgress === 'function') {
+        onProgress({ text: 'Submitting video generation job to Azure OpenAI Sora...' });
+      }
+
+      const nodeFetch = require('node-fetch');
+      let submitURL = `${baseURL}/openai/deployments/${deploymentName}/video/generations/jobs?api-version=${apiVersion}`;
+      let isSora2 = false;
+
+      if (modelLower.includes('sora-2')) {
+        submitURL = `${baseURL}/openai/v1/videos/create?api-version=${apiVersion}`;
+        isSora2 = true;
+      }
+
+      logger.debug(`[Sora] Submitting video generation job to: ${submitURL}`);
+
+      const submitResponse = await nodeFetch(submitURL, {
+        method: 'POST',
+        headers: {
+          'api-key': apiKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt: promptText,
+          model: deploymentName,
+          size: '1024x1024',
+          n_seconds: 5,
+        }),
+      });
+
+      if (!submitResponse.ok) {
+        const errorText = await submitResponse.text();
+        throw new Error(`Azure Sora job submission failed: ${submitResponse.statusText}. Details: ${errorText}`);
+      }
+
+      const jobData = await submitResponse.json();
+      const jobId = jobData.id;
+      if (!jobId) {
+        throw new Error(`Azure Sora did not return a job ID. Response: ${JSON.stringify(jobData)}`);
+      }
+
+      logger.debug(`[Sora] Job submitted successfully. ID: ${jobId}. Polling status...`);
+
+      let videoUrl = null;
+      let status = jobData.status || 'notStarted';
+      const maxPolls = 60;
+      let pollCount = 0;
+
+      while (status !== 'succeeded' && status !== 'failed' && pollCount < maxPolls) {
+        if (abortController?.signal?.aborted) {
+          throw new Error('Sora video generation aborted.');
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        pollCount++;
+
+        let pollURL = isSora2
+          ? `${baseURL}/openai/v1/videos/${jobId}?api-version=${apiVersion}`
+          : `${baseURL}/openai/deployments/${deploymentName}/video/generations/jobs/${jobId}?api-version=${apiVersion}`;
+
+        if (typeof onProgress === 'function') {
+          onProgress({ text: `Generating video... Job status: ${status} (poll ${pollCount})` });
+        }
+
+        const pollResponse = await nodeFetch(pollURL, {
+          method: 'GET',
+          headers: {
+            'api-key': apiKey,
+          },
+        });
+
+        if (!pollResponse.ok) {
+          logger.warn(`[Sora] Status poll failed: ${pollResponse.statusText}`);
+          continue;
+        }
+
+        const pollData = await pollResponse.json();
+        status = pollData.status;
+
+        if (status === 'succeeded') {
+          videoUrl = pollData.result?.video?.url || pollData.result?.url || pollData.video?.url || pollData.url;
+          if (!videoUrl && isSora2) {
+            videoUrl = `${baseURL}/openai/v1/videos/${jobId}/content?api-version=${apiVersion}`;
+          }
+          break;
+        } else if (status === 'failed') {
+          throw new Error(`Sora video generation job failed: ${JSON.stringify(pollData.error || pollData)}`);
+        }
+      }
+
+      if (!videoUrl) {
+        throw new Error('Sora video generation timed out or succeeded without a video URL.');
+      }
+
+      if (typeof onProgress === 'function') {
+        onProgress({ text: 'Video generated successfully. Downloading and processing...' });
+      }
+
+      const { processFileURL } = require('~/server/services/Files/process');
+      const { FileSources, FileContext } = require('librechat-data-provider');
+
+      const resultFile = await processFileURL({
+        fileStrategy: appConfig.fileStrategy || FileSources.local,
+        userId: this.user || this.options.req.user?.id,
+        URL: videoUrl,
+        fileName: `video-${require('crypto').randomUUID()}.mp4`,
+        basePath: 'uploads',
+        context: FileContext.message_attachment,
+        tenantId: this.options.req?.user?.tenantId,
+        req: this.options.req,
+      });
+
+      this.contentParts = [
+        {
+          type: ContentTypes.TEXT,
+          [ContentTypes.TEXT]: `Here is your generated video:\n\n<video controls src="${resultFile.filepath}" width="100%" height="auto"></video>\n\nPrompt: *${promptText}*`,
+        },
+      ];
+
+      this.artifactPromises = [Promise.resolve(resultFile)];
+
+      if (typeof onProgress === 'function') {
+        onProgress({ text: 'Video attachment processed. Rendering preview...' });
+      }
+
+      return;
+    }
+
     /** @type {Partial<GraphRunnableConfig>} */
     let config;
     /** @type {ReturnType<createRun>} */
     let run;
     /** @type {Promise<(TAttachment | null)[] | undefined>} */
     let memoryPromise;
-    const appConfig = this.options.req.config;
     const balanceConfig = getBalanceConfig(appConfig);
     const transactionsConfig = getTransactionsConfig(appConfig);
     try {

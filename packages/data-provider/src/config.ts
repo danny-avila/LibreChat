@@ -1575,6 +1575,9 @@ export const alternateName = {
 };
 
 const sharedOpenAIModels = [
+  'sora',
+  'sora-1',
+  'sora-2',
   'gpt-5.4',
   // TODO: gpt-5.4-thinking may have separate reasoning token pricing — verify before release
   'gpt-5.4-thinking',
