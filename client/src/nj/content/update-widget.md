@@ -1,19 +1,19 @@
 # Date (as month/day/year)
 
-4/21/26
+6/09/26
 
 # Title
 
-New Prompt Writing Guide
+Discover the new saved files feature
 
 # Description
 
-Learn how to use prompts and context to improve AI results with a new guide\!
+Your uploaded files now have a home on the left sidebar (look for the clip icon). This keeps your files organized and always within reach for reuse.
 
 # Release notes link text
 
-AI Prompting Guide
+Read the release notes
 
 # Release notes link
 
-https://innovation.nj.gov/skills/ai-how-tos/prompts-and-context
+https://ai-assistant.nj.gov/nj/release-notes
