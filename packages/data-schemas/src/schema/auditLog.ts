@@ -9,7 +9,7 @@ import { AUDIT_ACTIONS } from '~/types/admin';
  * `updatedAt` is intentionally not maintained — a mutable timestamp would
  * imply mutation is allowed.
  */
-const auditLogSchema = new Schema<IAuditLog>(
+const auditLogSchema: Schema<IAuditLog> = new Schema<IAuditLog>(
   {
     action: {
       type: String,

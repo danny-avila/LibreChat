@@ -1,3 +1,4 @@
+import type { Model } from 'mongoose';
 import type * as t from '~/types';
 import auditLogSchema from '~/schema/auditLog';
 
@@ -9,6 +10,6 @@ import auditLogSchema from '~/schema/auditLog';
  * from the JWT-resolved caller, and platform-level entries (admin operating
  * outside any tenant context) use `{ tenantId: { $exists: false } }`.
  */
-export function createAuditLogModel(mongoose: typeof import('mongoose')) {
+export function createAuditLogModel(mongoose: typeof import('mongoose')): Model<t.IAuditLog> {
   return mongoose.models.AuditLog || mongoose.model<t.IAuditLog>('AuditLog', auditLogSchema);
 }
