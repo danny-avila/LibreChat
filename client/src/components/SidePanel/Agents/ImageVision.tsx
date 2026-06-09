@@ -17,7 +17,8 @@ export default function ImageVision() {
         render={({ field }) => (
           <Checkbox
             {...field}
-            checked={field.value}
+            aria-labelledby="image-vision-label"
+            checked={!!field.value}
             onCheckedChange={field.onChange}
             className="relative float-left mr-2 inline-flex h-4 w-4 cursor-pointer"
             value={field.value?.toString()}
@@ -25,6 +26,7 @@ export default function ImageVision() {
         )}
       />
       <label
+        id="image-vision-label"
         className="form-check-label text-token-text-primary w-full cursor-pointer"
         htmlFor={Capabilities.image_vision}
         onClick={() =>

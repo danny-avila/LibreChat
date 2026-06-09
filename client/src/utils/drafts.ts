@@ -5,6 +5,11 @@ export const clearDraft = debounce((id?: string | null) => {
   localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${id ?? ''}`);
 }, 2500);
 
+export const clearDraftNow = (id?: string | null) => {
+  clearDraft.cancel();
+  localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${id ?? ''}`);
+};
+
 export const encodeBase64 = (plainText: string): string => {
   try {
     const textBytes = new TextEncoder().encode(plainText);

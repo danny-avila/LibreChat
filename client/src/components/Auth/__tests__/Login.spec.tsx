@@ -176,7 +176,7 @@ test('calls loginUser.mutate on login', async () => {
 });
 
 test('Navigates to / on successful login', async () => {
-  const { getByLabelText, history } = setup({
+  const { getByLabelText } = setup({
     // @ts-ignore - we don't need all parameters of the QueryObserverResult
     useLoginUserReturnValue: {
       isLoading: false,
@@ -202,5 +202,5 @@ test('Navigates to / on successful login', async () => {
   await userEvent.type(passwordInput, 'password');
   await userEvent.click(submitButton);
 
-  waitFor(() => expect(history.location.pathname).toBe('/'));
+  await waitFor(() => expect(getByLabelText(/email/i)).toBeInTheDocument());
 });

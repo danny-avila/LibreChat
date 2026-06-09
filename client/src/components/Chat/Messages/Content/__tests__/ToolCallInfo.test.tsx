@@ -2,7 +2,7 @@ import React from 'react';
 import { Tools } from 'librechat-data-provider';
 import { UIResourceRenderer } from '@mcp-ui/client';
 import { render, screen } from '@testing-library/react';
-import type { TAttachment } from 'librechat-data-provider';
+import type { TAttachment, UIResource } from 'librechat-data-provider';
 import UIResourceCarousel from '~/components/Chat/Messages/Content/UIResourceCarousel';
 import ToolCallInfo from '~/components/Chat/Messages/Content/ToolCallInfo';
 
@@ -39,6 +39,12 @@ if (typeof global.TextEncoder === 'undefined') {
 }
 
 describe('ToolCallInfo', () => {
+  const uiResource = (resourceId: string, resource: Omit<UIResource, 'resourceId' | 'uri'>) => ({
+    resourceId,
+    uri: `ui://${resourceId}`,
+    ...resource,
+  });
+
   const mockProps = {
     input: '{"test": "input"}',
     function_name: 'testFunction',
@@ -50,10 +56,10 @@ describe('ToolCallInfo', () => {
 
   describe('ui_resources from attachments', () => {
     it('should render single ui_resource from attachments', () => {
-      const uiResource = {
+      const resource = uiResource('text-1', {
         type: 'text',
         data: 'Test resource',
-      };
+      });
 
       const attachments: TAttachment[] = [
         {
@@ -61,7 +67,7 @@ describe('ToolCallInfo', () => {
           messageId: 'msg123',
           toolCallId: 'tool456',
           conversationId: 'conv789',
-          [Tools.ui_resources]: [uiResource],
+          [Tools.ui_resources]: [resource],
         },
       ];
 
@@ -71,7 +77,7 @@ describe('ToolCallInfo', () => {
       // Should render UIResourceRenderer for single resource
       expect(UIResourceRenderer).toHaveBeenCalledWith(
         expect.objectContaining({
-          resource: uiResource,
+          resource,
           onUIAction: expect.any(Function),
           htmlProps: {
             autoResizeIframe: { width: true, height: true },
@@ -93,9 +99,9 @@ describe('ToolCallInfo', () => {
           toolCallId: 'tool1',
           conversationId: 'conv1',
           [Tools.ui_resources]: [
-            { type: 'text', data: 'Resource 1' },
-            { type: 'text', data: 'Resource 2' },
-            { type: 'text', data: 'Resource 3' },
+            uiResource('text-2', { type: 'text', data: 'Resource 1' }),
+            uiResource('text-3', { type: 'text', data: 'Resource 2' }),
+            uiResource('text-4', { type: 'text', data: 'Resource 3' }),
           ],
         },
       ];
@@ -126,7 +132,7 @@ describe('ToolCallInfo', () => {
           messageId: 'msg123',
           toolCallId: 'tool456',
           conversationId: 'conv789',
-          [Tools.ui_resources]: [{ type: 'text', data: 'UI Resource' }],
+          [Tools.ui_resources]: [uiResource('text-5', { type: 'text', data: 'UI Resource' })],
         },
       ];
 
@@ -197,7 +203,7 @@ describe('ToolCallInfo', () => {
           messageId: 'msg123',
           toolCallId: 'tool456',
           conversationId: 'conv789',
-          [Tools.ui_resources]: [{ type: 'text', data: 'Test' }],
+          [Tools.ui_resources]: [uiResource('text-6', { type: 'text', data: 'Test' })],
         },
       ];
 
@@ -214,10 +220,10 @@ describe('ToolCallInfo', () => {
     });
 
     it('should pass correct props to UIResourceRenderer', () => {
-      const uiResource = {
+      const resource = uiResource('form-1', {
         type: 'form',
         data: { fields: [{ name: 'test', type: 'text' }] },
-      };
+      });
 
       const attachments: TAttachment[] = [
         {
@@ -225,7 +231,7 @@ describe('ToolCallInfo', () => {
           messageId: 'msg123',
           toolCallId: 'tool456',
           conversationId: 'conv789',
-          [Tools.ui_resources]: [uiResource],
+          [Tools.ui_resources]: [resource],
         },
       ];
 
@@ -234,7 +240,7 @@ describe('ToolCallInfo', () => {
 
       expect(UIResourceRenderer).toHaveBeenCalledWith(
         expect.objectContaining({
-          resource: uiResource,
+          resource,
           onUIAction: expect.any(Function),
           htmlProps: {
             autoResizeIframe: { width: true, height: true },
@@ -253,7 +259,7 @@ describe('ToolCallInfo', () => {
           messageId: 'msg123',
           toolCallId: 'tool456',
           conversationId: 'conv789',
-          [Tools.ui_resources]: [{ type: 'text', data: 'Test' }],
+          [Tools.ui_resources]: [uiResource('text-7', { type: 'text', data: 'Test' })],
         },
       ];
 
@@ -283,7 +289,7 @@ describe('ToolCallInfo', () => {
         {
           metadata: {
             type: 'ui_resources',
-            data: [{ type: 'text', data: 'UI Resource' }],
+            data: [uiResource('text-8', { type: 'text', data: 'UI Resource' })],
           },
         },
       ]);
@@ -302,7 +308,9 @@ describe('ToolCallInfo', () => {
           messageId: 'msg123',
           toolCallId: 'tool456',
           conversationId: 'conv789',
-          [Tools.ui_resources]: [{ type: 'attachment', data: 'From attachments' }],
+          [Tools.ui_resources]: [
+            uiResource('attachment-1', { type: 'attachment', data: 'From attachments' }),
+          ],
         },
       ];
 
@@ -310,7 +318,7 @@ describe('ToolCallInfo', () => {
         {
           metadata: {
             type: 'ui_resources',
-            data: [{ type: 'output', data: 'From output' }],
+            data: [uiResource('output-1', { type: 'output', data: 'From output' })],
           },
         },
       ]);
@@ -320,7 +328,7 @@ describe('ToolCallInfo', () => {
       // Should use attachments, not output
       expect(UIResourceRenderer).toHaveBeenCalledWith(
         expect.objectContaining({
-          resource: { type: 'attachment', data: 'From attachments' },
+          resource: uiResource('attachment-1', { type: 'attachment', data: 'From attachments' }),
         }),
         expect.any(Object),
       );

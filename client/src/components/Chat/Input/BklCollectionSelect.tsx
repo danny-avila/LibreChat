@@ -98,7 +98,6 @@ function BklCollectionSelect() {
 
   const trigger = (
     <Ariakit.MenuButton
-      type="button"
       disabled={isLoading || options.length === 0}
       aria-label="DB 선택"
       className={cn(

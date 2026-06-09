@@ -4,6 +4,13 @@ const absolutePath = path.resolve(process.cwd(), 'api/server/index.js');
 import dotenv from 'dotenv';
 dotenv.config();
 
+const processEnv = () =>
+  Object.fromEntries(
+    Object.entries(process.env)
+      .filter((entry): entry is [string, string] => entry[1] != null)
+      .map(([key, value]) => [key, String(value)]),
+  );
+
 export default defineConfig({
   globalSetup: require.resolve('./setup/global-setup'),
   globalTeardown: require.resolve('./setup/global-teardown'),
@@ -61,7 +68,7 @@ export default defineConfig({
     timeout: 30_000,
     reuseExistingServer: true,
     env: {
-      ...process.env,
+      ...processEnv(),
       NODE_ENV: 'CI',
       EMAIL_HOST: '',
       SEARCH: 'false',

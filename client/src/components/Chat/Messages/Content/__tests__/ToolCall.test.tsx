@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { RecoilRoot } from 'recoil';
 import { Tools } from 'librechat-data-provider';
+import type { TAttachment, UIResource } from 'librechat-data-provider';
 import ToolCall from '../ToolCall';
 
 // Mock dependencies
@@ -72,6 +73,12 @@ jest.mock('~/utils', () => ({
 }));
 
 describe('ToolCall', () => {
+  const uiResource = (resourceId: string, resource: Omit<UIResource, 'resourceId' | 'uri'>) => ({
+    resourceId,
+    uri: `ui://${resourceId}`,
+    ...resource,
+  });
+
   const mockProps = {
     args: '{"test": "input"}',
     name: 'testFunction',
@@ -90,15 +97,13 @@ describe('ToolCall', () => {
 
   describe('attachments prop passing', () => {
     it('should pass attachments to ToolCallInfo when provided', () => {
-      const attachments = [
+      const attachments: TAttachment[] = [
         {
           type: Tools.ui_resources,
           messageId: 'msg123',
           toolCallId: 'tool456',
           conversationId: 'conv789',
-          [Tools.ui_resources]: {
-            '0': { type: 'button', label: 'Click me' },
-          },
+          [Tools.ui_resources]: [uiResource('button-1', { type: 'button', label: 'Click me' })],
         },
       ];
 
@@ -124,15 +129,13 @@ describe('ToolCall', () => {
     });
 
     it('should pass multiple attachments of different types', () => {
-      const attachments = [
+      const attachments: TAttachment[] = [
         {
           type: Tools.ui_resources,
           messageId: 'msg1',
           toolCallId: 'tool1',
           conversationId: 'conv1',
-          [Tools.ui_resources]: {
-            '0': { type: 'form', fields: [] },
-          },
+          [Tools.ui_resources]: [uiResource('form-1', { type: 'form', fields: [] })],
         },
         {
           type: Tools.web_search,
@@ -140,7 +143,7 @@ describe('ToolCall', () => {
           toolCallId: 'tool2',
           conversationId: 'conv2',
           [Tools.web_search]: {
-            results: ['result1', 'result2'],
+            organic: [],
           },
         },
       ];
@@ -157,15 +160,13 @@ describe('ToolCall', () => {
 
   describe('attachment group rendering', () => {
     it('should render AttachmentGroup when attachments are provided', () => {
-      const attachments = [
+      const attachments: TAttachment[] = [
         {
           type: Tools.ui_resources,
           messageId: 'msg123',
           toolCallId: 'tool456',
           conversationId: 'conv789',
-          [Tools.ui_resources]: {
-            '0': { type: 'chart', data: [] },
-          },
+          [Tools.ui_resources]: [uiResource('chart-1', { type: 'chart', data: [] })],
         },
       ];
 
@@ -206,15 +207,13 @@ describe('ToolCall', () => {
     });
 
     it('should pass all required props to ToolCallInfo', () => {
-      const attachments = [
+      const attachments: TAttachment[] = [
         {
           type: Tools.ui_resources,
           messageId: 'msg123',
           toolCallId: 'tool456',
           conversationId: 'conv789',
-          [Tools.ui_resources]: {
-            '0': { type: 'button', label: 'Test' },
-          },
+          [Tools.ui_resources]: [uiResource('button-2', { type: 'button', label: 'Test' })],
         },
       ];
 
@@ -290,9 +289,7 @@ describe('ToolCall', () => {
         <ToolCall
           {...mockProps}
           auth="https://auth.example.com"
-          authDomain="example.com"
-          progress={0.5}
-          cancelled={true}
+          initialProgress={0.5}
         />,
       );
 
@@ -304,9 +301,7 @@ describe('ToolCall', () => {
         <ToolCall
           {...mockProps}
           auth="https://auth.example.com"
-          authDomain="example.com"
-          progress={1}
-          cancelled={false}
+          initialProgress={1}
         />,
       );
 
@@ -316,7 +311,7 @@ describe('ToolCall', () => {
 
   describe('edge cases', () => {
     it('should handle undefined args', () => {
-      renderWithRecoil(<ToolCall {...mockProps} args={undefined} />);
+      renderWithRecoil(<ToolCall {...mockProps} args="" />);
 
       fireEvent.click(screen.getByText('Completed testFunction'));
 
@@ -336,7 +331,7 @@ describe('ToolCall', () => {
     });
 
     it('should handle missing domain', () => {
-      renderWithRecoil(<ToolCall {...mockProps} domain={undefined} authDomain={undefined} />);
+      renderWithRecoil(<ToolCall {...mockProps} />);
 
       fireEvent.click(screen.getByText('Completed testFunction'));
 
@@ -346,14 +341,14 @@ describe('ToolCall', () => {
     });
 
     it('should handle complex nested attachments', () => {
-      const complexAttachments = [
+      const complexAttachments: TAttachment[] = [
         {
           type: Tools.ui_resources,
           messageId: 'msg123',
           toolCallId: 'tool456',
           conversationId: 'conv789',
-          [Tools.ui_resources]: {
-            '0': {
+          [Tools.ui_resources]: [
+            uiResource('nested-1', {
               type: 'nested',
               data: {
                 deep: {
@@ -362,8 +357,8 @@ describe('ToolCall', () => {
                   object: { key: 'value' },
                 },
               },
-            },
-          },
+            }),
+          ],
         },
       ];
 

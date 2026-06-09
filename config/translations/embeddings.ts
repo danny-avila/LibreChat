@@ -3,6 +3,8 @@ dotenv.config({
   path: './',
 });
 import { OpenAIEmbeddings } from '@langchain/openai';
+// Optional translation tooling dependency; not installed in the main app workspace.
+// @ts-expect-error optional local translation script dependency
 import { HNSWLib } from '@langchain/community/vectorstores/hnswlib';
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
 import * as fs from 'fs';

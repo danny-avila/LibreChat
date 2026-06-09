@@ -11,7 +11,7 @@ jest.mock('librechat-data-provider/react-query');
 
 const mockLogin = jest.fn();
 
-const mockStartupConfig: TStartupConfig = {
+const mockStartupConfig = {
   socialLogins: ['google', 'facebook', 'openid', 'github', 'discord', 'saml'],
   discordLoginEnabled: true,
   facebookLoginEnabled: true,
@@ -33,9 +33,13 @@ const mockStartupConfig: TStartupConfig = {
     enabled: false,
   },
   emailEnabled: false,
-  checkBalance: false,
   showBirthdayIcon: false,
   helpAndFaqURL: '',
+} as TStartupConfig;
+
+const loginFormProps = {
+  error: undefined,
+  setError: jest.fn(),
 };
 
 const setup = ({
@@ -106,7 +110,7 @@ beforeEach(() => {
 
 test('renders login form', () => {
   const { getByLabelText } = render(
-    <Login onSubmit={mockLogin} startupConfig={mockStartupConfig} />,
+    <Login onSubmit={mockLogin} startupConfig={mockStartupConfig} {...loginFormProps} />,
   );
   expect(getByLabelText(/email/i)).toBeInTheDocument();
   expect(getByLabelText(/password/i)).toBeInTheDocument();
@@ -114,7 +118,7 @@ test('renders login form', () => {
 
 test('submits login form', async () => {
   const { getByLabelText, getByRole } = render(
-    <Login onSubmit={mockLogin} startupConfig={mockStartupConfig} />,
+    <Login onSubmit={mockLogin} startupConfig={mockStartupConfig} {...loginFormProps} />,
   );
   const emailInput = getByLabelText(/email/i);
   const passwordInput = getByLabelText(/password/i);
@@ -129,7 +133,7 @@ test('submits login form', async () => {
 
 test('displays validation error messages', async () => {
   const { getByLabelText, getByRole, getByText } = render(
-    <Login onSubmit={mockLogin} startupConfig={mockStartupConfig} />,
+    <Login onSubmit={mockLogin} startupConfig={mockStartupConfig} {...loginFormProps} />,
   );
   const emailInput = getByLabelText(/email/i);
   const passwordInput = getByLabelText(/password/i);

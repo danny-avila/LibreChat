@@ -11,6 +11,10 @@ interface FileSource {
   metadata?: any;
 }
 
+type FileSearchResultData = SearchResultData & {
+  sources?: FileSource[];
+};
+
 interface DeduplicatedSource {
   fileId: string;
   fileName: string;
@@ -42,7 +46,7 @@ export function useSearchResultsByTurn(attachments?: TAttachment[]) {
 
       // Handle agent file search attachments (following web search pattern)
       if (attachment.type === Tools.file_search && attachment[Tools.file_search]) {
-        const sources = attachment[Tools.file_search].sources;
+        const sources = (attachment[Tools.file_search] as FileSearchResultData).sources ?? [];
 
         // Deduplicate sources by fileId and merge pages
         const deduplicatedSources = new Map<string, DeduplicatedSource>();

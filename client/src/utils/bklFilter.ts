@@ -54,22 +54,42 @@ export const resolvePeriodFilter = (
   return out;
 };
 
-/**
- * Build the `[BKL_FILTER:{...}] ` prefix to inject into the user query text.
- * Returns an empty string when no filter is active.
- */
-export const buildBklFilterTag = (state: PeriodFilterState | null | undefined): string => {
+export const buildBklFilterTag = (
+  state: PeriodFilterState | null | undefined,
+  matterUids?: string[] | null,
+  docIds?: string[] | null,
+  docLabels?: string[] | null,
+): string => {
   const resolved = resolvePeriodFilter(state);
+  const matterUidsStr = matterUids && matterUids.length > 0 ? matterUids.join(',') : '';
+  const docIdsStr = docIds && docIds.length > 0 ? docIds.join(',') : '';
+  const docLabelsStr = docLabels && docLabels.length > 0 ? docLabels.join(',') : '';
   const hasAny =
     resolved.date_from ||
     resolved.date_to ||
-    (resolved.extension_groups && resolved.extension_groups.length > 0);
+    (resolved.extension_groups && resolved.extension_groups.length > 0) ||
+    matterUidsStr.length > 0 ||
+    docIdsStr.length > 0;
   if (!hasAny) return '';
-  return `[BKL_FILTER:${JSON.stringify(resolved)}] `;
+  const payload: Record<string, unknown> = { ...resolved };
+  if (matterUidsStr) payload.matter_uids = matterUidsStr;
+  if (docIdsStr) payload.doc_ids = docIdsStr;
+  if (docLabelsStr) payload.doc_labels = docLabelsStr;
+  return `[BKL_FILTER:${JSON.stringify(payload)}] `;
 };
 
-// Strip leading BKL control tags (filter + guided retry) for display / history rendering.
-const BKL_TAG_RE = /^(?:\[BKL_FILTER:[^\]]+\]|\[BKL_GUIDED_RETRY:[A-Za-z0-9_-]+\])\s*/;
+export const buildBklQueryEnhanceTag = (enabled: boolean | null | undefined): string =>
+  enabled ? '[BKL_QUERY_ENHANCE:on]' : '';
+
+export const buildBklReferenceTag = (matterUids?: string[] | null): string => {
+  if (!matterUids || matterUids.length === 0) return '';
+  const s = matterUids.join(',');
+  if (!s) return '';
+  return `[BKL_REFERENCE:${JSON.stringify({ matter_uids: s })}] `;
+};
+
+const BKL_TAG_RE =
+  /^(?:\[BKL_FILTER:\{.*?\}\]|\[BKL_REFERENCE:\{.*?\}\]|\[BKL_GUIDED_RETRY:[A-Za-z0-9_-]+\]|\[BKL_QUERY_ENHANCE:on\]|\[BKL_QUERY_CHOICES:[A-Za-z0-9+/=]+\])\s*/;
 
 export const stripBklTags = (text: string | null | undefined): string => {
   if (!text) return text ?? '';
@@ -80,5 +100,39 @@ export const stripBklTags = (text: string | null | undefined): string => {
     prev = out;
     out = out.replace(BKL_TAG_RE, '');
   }
+  out = out.replace(/\[\/\/\]: # \(bkl_rid:[a-zA-Z0-9_-]+\)/g, '');
   return out;
+};
+
+export interface BklQueryCandidate {
+  id: string;
+  query: string;
+  rationale: string;
+}
+
+export interface BklQueryChoicesPayload {
+  candidates: BklQueryCandidate[];
+  chunks_used: number;
+  timings?: { retrieval_ms: number; llm_ms: number; total_ms: number };
+}
+
+const BKL_QUERY_CHOICES_RE = /^\[BKL_QUERY_CHOICES:([A-Za-z0-9+/=]+)\]/;
+
+export const parseBklQueryChoices = (
+  text: string | null | undefined,
+): BklQueryChoicesPayload | null => {
+  if (!text) return null;
+  const m = text.match(BKL_QUERY_CHOICES_RE);
+  if (!m) return null;
+  try {
+    const binary = atob(m[1]);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const json = new TextDecoder('utf-8').decode(bytes);
+    const obj = JSON.parse(json);
+    if (!obj || !Array.isArray(obj.candidates)) return null;
+    return obj as BklQueryChoicesPayload;
+  } catch {
+    return null;
+  }
 };

@@ -22,6 +22,10 @@
     "paths": {
       "~/*": ["./client/src/*"],
       "test/*": ["./client/test/*"],
+      "librechat-data-provider": ["./packages/data-provider/dist/types/index.d.ts"],
+      "librechat-data-provider/react-query": [
+        "./packages/data-provider/dist/types/react-query/index.d.ts"
+      ],
       "*": ["./client/*", "../node_modules/*"],
       "librechat-data-provider/*": ["./packages/data-provider/*"]
     }

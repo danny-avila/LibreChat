@@ -40,8 +40,10 @@ export default function AutoSendTextSelector() {
     }
   };
 
-  const handleInputChange = (value: number[] | null) => {
-    const newValue = value ? value[0] : 3;
+  const handleInputChange = (value: unknown) => {
+    const rawValue = Array.isArray(value) ? value[0] : value;
+    const parsedValue = typeof rawValue === 'number' ? rawValue : parseInt(String(rawValue ?? 3), 10);
+    const newValue = Number.isFinite(parsedValue) ? parsedValue : 3;
     setDelayValue(newValue);
     if (isEnabled) {
       setAutoSendText(newValue);

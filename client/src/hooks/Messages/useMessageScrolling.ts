@@ -14,6 +14,7 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
 
   const scrollableRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const initialScrolledConversationRef = useRef<string | null>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const { conversation, conversationId } = useMessagesConversation();
   const { setAbortScroll, isSubmitting, abortScroll } = useMessagesSubmission();
@@ -70,6 +71,30 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
       setAbortScroll(false);
     },
   });
+
+  useEffect(() => {
+    if (
+      !conversationId ||
+      conversationId === Constants.NEW_CONVO ||
+      !messagesTree ||
+      messagesTree.length === 0 ||
+      initialScrolledConversationRef.current === conversationId
+    ) {
+      return;
+    }
+
+    if (!messagesEndRef.current || !scrollableRef.current) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'instant', block: 'end' });
+      initialScrolledConversationRef.current = conversationId;
+      debouncedSetShowScrollButton(false);
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [conversationId, messagesTree, debouncedSetShowScrollButton]);
 
   useEffect(() => {
     if (!messagesTree || messagesTree.length === 0) {

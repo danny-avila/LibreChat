@@ -66,48 +66,6 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content, isDarkMode = t
     }
   }, [isRendered, centerAndFitDiagram]);
 
-  const handlePanning = useCallback(() => {
-    if (!transformRef.current) {
-      return;
-    }
-
-    const { state, instance } = transformRef.current;
-    if (!state || !instance) {
-      return;
-    }
-    const { scale, positionX, positionY } = state;
-    const { wrapperComponent, contentComponent } = instance;
-
-    if (!wrapperComponent || !contentComponent) {
-      return;
-    }
-
-    const wrapperRect = wrapperComponent.getBoundingClientRect();
-    const contentRect = contentComponent.getBoundingClientRect();
-    const maxX = wrapperRect.width - contentRect.width * scale;
-    const maxY = wrapperRect.height - contentRect.height * scale;
-
-    let newX = positionX;
-    let newY = positionY;
-
-    if (newX > 0) {
-      newX = 0;
-    }
-    if (newY > 0) {
-      newY = 0;
-    }
-    if (newX < maxX) {
-      newX = maxX;
-    }
-    if (newY < maxY) {
-      newY = maxY;
-    }
-
-    if (newX !== positionX || newY !== positionY) {
-      instance.setTransformState(scale, newX, newY);
-    }
-  }, []);
-
   return (
     <div
       className="relative h-screen w-screen cursor-move p-5"
@@ -123,8 +81,6 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content, isDarkMode = t
         initialPositionY={0}
         wheel={{ step: 0.1 }}
         panning={{ velocityDisabled: true }}
-        alignmentAnimation={{ disabled: true }}
-        onPanning={handlePanning}
       >
         {({ zoomIn, zoomOut }) => (
           <>

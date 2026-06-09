@@ -103,8 +103,14 @@ function cacheSources(
 
 async function fetchSources(
   requestId: string | null,
+  messageId?: string,
 ): Promise<{ sources: BklSource[]; requestId: string | null } | null> {
-  const url = requestId ? `/bkl/v1/sources/${requestId}` : '/bkl/v1/sources/latest';
+  const url = requestId
+    ? `/bkl/v1/sources/${requestId}`
+    : messageId
+      ? `/bkl/v1/sources/by-message/${encodeURIComponent(messageId)}`
+      : null;
+  if (!url) return null;
   const resp = await fetch(url);
   if (!resp.ok) return null;
   const data = await resp.json();
@@ -168,7 +174,7 @@ export default function ChunkModal({
         }
       }
 
-      const result = await fetchSources(requestId);
+      const result = await fetchSources(requestId, messageId);
       if (cancelled || !result) return;
       cacheSources(messageId, result.requestId, result.sources);
       const nextSource = result.sources[citationNumber - 1] ?? null;

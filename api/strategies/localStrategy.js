@@ -48,7 +48,10 @@ async function persistBklFields(userId, bklFields) {
 
 async function passportLogin(req, email_or_id, password, done) {
   try {
-    const id = email_or_id.trim();
+    const rawInput = email_or_id.trim();
+    const id = rawInput.endsWith('@bkl.co.kr')
+      ? rawInput.slice(0, -'@bkl.co.kr'.length)
+      : rawInput;
 
     // 1. BKL BIMS 인증
     const response = await fetch(BKL_AUTH_URL, {

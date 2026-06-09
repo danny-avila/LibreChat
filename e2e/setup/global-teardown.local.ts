@@ -1,4 +1,4 @@
-import localUser from '../config.local';
+import localUser from './loadLocalConfig';
 import cleanupUser from './cleanupUser';
 
 async function globalTeardown() {

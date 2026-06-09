@@ -1,20 +1,26 @@
 import { useCallback } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
-import { replaceSpecialVars } from 'librechat-data-provider';
+import { replaceSpecialVars, Constants } from 'librechat-data-provider';
 import { useChatContext, useChatFormContext, useAddedChatContext } from '~/Providers';
 import { useAuthContext } from '~/hooks/AuthContext';
-import { buildBklFilterTag } from '~/utils/bklFilter';
+import { buildBklFilterTag, buildBklQueryEnhanceTag, buildBklReferenceTag } from '~/utils/bklFilter';
+import { clearDraftNow } from '~/utils';
 import store from '~/store';
 
 export default function useSubmitMessage() {
   const { user } = useAuthContext();
   const methods = useChatFormContext();
   const { conversation: addedConvo } = useAddedChatContext();
-  const { ask, index, getMessages, setMessages } = useChatContext();
+  const { conversation, ask, index, getMessages, setMessages } = useChatContext();
   const latestMessage = useRecoilValue(store.latestMessageFamily(index));
 
   const autoSendPrompts = useRecoilValue(store.autoSendPrompts);
   const periodFilter = useRecoilValue(store.periodFilter);
+  const queryEnhance = useRecoilValue(store.queryEnhanceEnabled);
+  const setQueryEnhance = useSetRecoilState(store.queryEnhanceEnabled);
+  const filterMatters = useRecoilValue(store.filterBklMatters);
+  const filterDocs = useRecoilValue(store.filterBklDocs);
+  const referenceMatters = useRecoilValue(store.referenceBklMatters);
   const setActivePrompt = useSetRecoilState(store.activePromptByIndex(index));
 
   const submitMessage = useCallback(
@@ -30,22 +36,60 @@ export default function useSubmitMessage() {
         setMessages([...(rootMessages || []), latestMessage]);
       }
 
-      // Inject UI period filter as a [BKL_FILTER:{..}] prefix that the BKL backend
-      // strips + merges into its search filters. Same pattern as [BKL_GUIDED_RETRY:..].
-      const filterTag = buildBklFilterTag(periodFilter);
-      const textWithFilter = filterTag ? `${filterTag}${data.text}` : data.text;
+      const filterMatterUids = filterMatters.map((m) => m.matter_uid);
+      const filterDocIds = filterDocs.map((d) => d.doc_id);
+      const filterDocLabels = filterDocs.map((d) => d.label);
+      const referenceMatterUids = referenceMatters.map((m) => m.matter_uid);
+      const filterTag = buildBklFilterTag(
+        periodFilter,
+        filterMatterUids,
+        filterDocIds,
+        filterDocLabels,
+      );
+      const referenceTag = buildBklReferenceTag(referenceMatterUids);
+      const enhanceTag = buildBklQueryEnhanceTag(queryEnhance);
+      const text = `${enhanceTag}${filterTag}${referenceTag}${data.text}`;
 
       ask(
         {
-          text: textWithFilter,
+          text,
         },
         {
           addedConvo: addedConvo ?? undefined,
         },
       );
       methods.reset();
+      methods.setValue('text', '');
+      try {
+        const currentConvoId = conversation?.conversationId;
+        if (currentConvoId && currentConvoId !== Constants.NEW_CONVO) {
+          clearDraftNow(currentConvoId);
+        }
+        clearDraftNow(addedConvo?.conversationId);
+        clearDraftNow(Constants.PENDING_CONVO);
+        clearDraftNow(Constants.NEW_CONVO);
+      } catch {
+        // noop
+      }
+      if (queryEnhance) {
+        setQueryEnhance(false);
+      }
     },
-    [ask, methods, addedConvo, setMessages, getMessages, latestMessage, periodFilter],
+    [
+      ask,
+      methods,
+      addedConvo,
+      conversation,
+      setMessages,
+      getMessages,
+      latestMessage,
+      periodFilter,
+      queryEnhance,
+      setQueryEnhance,
+      filterMatters,
+      filterDocs,
+      referenceMatters,
+    ],
   );
 
   const submitPrompt = useCallback(
