@@ -1151,6 +1151,8 @@ describe('useResumableSSE - 404 error path', () => {
             replayEvents: [replayEvent],
             responseMessageId: 'follow-up-response',
             conversationId: CONV_ID,
+            iconURL: 'https://example.com/spec-icon.png',
+            model: 'gpt-4.1',
             userMessage: {
               messageId: 'follow-up-user',
               parentMessageId: 'original-response',
@@ -1242,6 +1244,8 @@ describe('useResumableSSE - 404 error path', () => {
             ],
             responseMessageId: 'follow-up-response',
             conversationId: CONV_ID,
+            iconURL: 'https://example.com/spec-icon.png',
+            model: 'gpt-4.1',
             userMessage: {
               messageId: 'follow-up-user',
               parentMessageId: 'original-response',
@@ -1272,6 +1276,8 @@ describe('useResumableSSE - 404 error path', () => {
         messageId: 'follow-up-response',
         parentMessageId: 'follow-up-user',
         content: expect.any(Array),
+        iconURL: 'https://example.com/spec-icon.png',
+        model: 'gpt-4.1',
       }),
     );
 

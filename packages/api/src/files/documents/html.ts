@@ -1479,7 +1479,14 @@ async function pptxToSlideListHtmlInternal(buffer: Buffer): Promise<string> {
  * padded fixtures. Not part of the public API — callers in production
  * code should always go through `wordDocToHtml` / `pptxToHtml`.
  */
-export const _internal = {
+export const _internal: {
+  wordDocToHtmlViaCdn: typeof wordDocToHtmlViaCdn;
+  wordDocToHtmlViaMammoth: typeof wordDocToHtmlViaMammoth;
+  MAX_DOCX_CDN_BINARY_BYTES: number;
+  OFFICE_HTML_OUTPUT_CAP: number;
+  pptxToHtmlViaCdn: typeof pptxToHtmlViaCdn;
+  MAX_PPTX_CDN_BINARY_BYTES: number;
+} = {
   wordDocToHtmlViaCdn,
   wordDocToHtmlViaMammoth,
   MAX_DOCX_CDN_BINARY_BYTES,

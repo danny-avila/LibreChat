@@ -542,7 +542,11 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
         />
       </div>
 
-      {isExpanded && <div className="max-h-[42vh] overflow-y-auto">{renderProjectsBody()}</div>}
+      {isExpanded && (
+        <div className="scrollbar-gutter-stable max-h-[42vh] overflow-y-auto">
+          {renderProjectsBody()}
+        </div>
+      )}
 
       <ProjectCreateDialog
         open={isCreateOpen}

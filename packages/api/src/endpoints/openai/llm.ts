@@ -18,7 +18,7 @@ type OpenAILLMConfig = Omit<Partial<t.OAIClientOptions>, 'verbosity'> &
     verbosity?: string | null;
   };
 
-export const knownOpenAIParams = new Set([
+export const knownOpenAIParams: Set<string> = new Set([
   // Constructor/Instance Parameters
   'model',
   'modelName',
@@ -407,7 +407,7 @@ export function extractDefaultParams(
 export function applyDefaultParams(
   target: Record<string, unknown>,
   defaults: Record<string, unknown>,
-) {
+): void {
   for (const [key, value] of Object.entries(defaults)) {
     if (target[key] === undefined) {
       target[key] = value;

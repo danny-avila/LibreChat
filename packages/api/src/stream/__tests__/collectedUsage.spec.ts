@@ -345,6 +345,9 @@ describe('AbortJob - Text and CollectedUsage', () => {
     await GenerationJobManager.createJob(streamId, 'user-1');
     await GenerationJobManager.updateMetadata(streamId, {
       responseMessageId: 'response-message-1',
+      endpoint: 'agents',
+      iconURL: 'https://example.com/spec-icon.png',
+      model: 'gpt-4.1',
       userMessage: {
         messageId: 'user-message-1',
         parentMessageId: 'parent-message-1',
@@ -393,6 +396,9 @@ describe('AbortJob - Text and CollectedUsage', () => {
         responseMessage: expect.objectContaining({
           messageId: 'response-message-1',
           content: [],
+          endpoint: 'agents',
+          iconURL: 'https://example.com/spec-icon.png',
+          model: 'gpt-4.1',
         }),
       }),
     );

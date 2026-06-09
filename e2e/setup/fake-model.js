@@ -21,6 +21,7 @@ const ASSERT_PROVIDER_FILE_MARKER = 'E2E_ASSERT_PROVIDER_FILE:';
 const REPLY_MARKER = 'E2E_REPLY:';
 const COUNTED_REPLY_MARKER = 'E2E_COUNTED_REPLY:';
 const SLOW_REPLY_MARKER = 'E2E_SLOW_REPLY:';
+const RESUME_ICON_REPLY_MARKER = 'E2E_RESUME_ICON_REPLY:';
 const FORCED_ERROR_MARKER = 'E2E_FORCED_ERROR:';
 const CREATE_FILE_AUTHORING_FINAL_TEXT = 'E2E file authoring complete';
 const EDIT_FILE_AUTHORING_FINAL_TEXT = 'E2E file edit complete';
@@ -28,6 +29,8 @@ const MODEL_SPEC_SKILL_ASSERTION_FINAL_TEXT = 'E2E model spec skill assertion pa
 const PROVIDER_FILE_ASSERTION_FINAL_TEXT = 'E2E provider file assertion passed';
 const SLOW_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_SLOW_CHUNK_DELAY_MS) || 35;
 const SLOW_REPLY_CHUNKS = 160;
+const RESUME_ICON_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_RESUME_ICON_CHUNK_DELAY_MS) || 60;
+const RESUME_ICON_REPLY_CHUNKS = 240;
 const CREATE_FILE_TOOL_NAME = 'create_file';
 const EDIT_FILE_TOOL_NAME = 'edit_file';
 const BASH_TOOL_NAME = 'bash_tool';
@@ -258,6 +261,18 @@ function replyResponses(text) {
     return {
       responses: [`E2E slow reply ${slowName} ${chunks}`],
       sleep: SLOW_CHUNK_DELAY_MS,
+    };
+  }
+
+  const resumeIconName = getMarkerValue(text, RESUME_ICON_REPLY_MARKER);
+  if (resumeIconName) {
+    const chunks = Array.from(
+      { length: RESUME_ICON_REPLY_CHUNKS },
+      (_, index) => `chunk-${String(index).padStart(3, '0')}`,
+    ).join(' ');
+    return {
+      responses: [`E2E resume icon reply ${resumeIconName} ${chunks}`],
+      sleep: RESUME_ICON_CHUNK_DELAY_MS,
     };
   }
 

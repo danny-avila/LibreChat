@@ -10,11 +10,12 @@ import {
 } from './schemas';
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { specsConfigSchema, TSpecsConfig } from './models';
+import { REFILL_INTERVAL_UNITS } from './balance';
 import { fileConfigSchema } from './file-config';
 import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
-import { REFILL_INTERVAL_UNITS } from './balance';
+export { MAX_SUBAGENTS } from './limits';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
@@ -2287,9 +2288,6 @@ export enum Constants {
   /** Subagent spawn tool name (must match `@librechat/agents` `Constants.SUBAGENT`). */
   SUBAGENT = 'subagent',
 }
-
-/** Maximum number of explicit subagents per parent agent. UI + Zod schema share this. */
-export const MAX_SUBAGENTS = 10;
 
 /** Maximum explicit subagent hops allowed from any root agent at runtime. */
 export const MAX_SUBAGENT_DEPTH = 5;

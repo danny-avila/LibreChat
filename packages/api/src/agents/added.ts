@@ -1,5 +1,4 @@
 import { logger } from '@librechat/data-schemas';
-import type { AppConfig } from '@librechat/data-schemas';
 import {
   Tools,
   Constants,
@@ -8,8 +7,15 @@ import {
   appendAgentIdSuffix,
   encodeEphemeralAgentId,
 } from 'librechat-data-provider';
-import type { Agent, TConversation, TModelSpec } from 'librechat-data-provider';
+import type {
+  Agent,
+  TConversation,
+  TModelSpec,
+  AgentSubagentsConfig,
+} from 'librechat-data-provider';
+import type { AppConfig } from '@librechat/data-schemas';
 import { getCustomEndpointConfig } from '~/app/config';
+import { sanitizeRequestSubagents } from './subagents';
 
 const { mcp_all, mcp_delimiter } = Constants;
 
@@ -31,6 +37,17 @@ function applyModelSpecSkills(
   } else if (Array.isArray(modelSpec.skills)) {
     result.skills_enabled = true;
     result.skills = [];
+  }
+}
+
+function applyModelSpecSubagents(
+  result: Record<string, unknown>,
+  modelSpec: Pick<TModelSpec, 'subagents'> | null | undefined,
+  ephemeralAgent?: { subagents?: AgentSubagentsConfig },
+): void {
+  const subagents = modelSpec?.subagents ?? sanitizeRequestSubagents(ephemeralAgent?.subagents);
+  if (subagents) {
+    result.subagents = subagents;
   }
 }
 
@@ -88,6 +105,7 @@ export async function loadAddedAgent(
       file_search?: boolean;
       web_search?: boolean;
       artifacts?: unknown;
+      subagents?: AgentSubagentsConfig;
     };
     [key: string]: unknown;
   };
@@ -98,6 +116,16 @@ export async function loadAddedAgent(
   }
 
   const appConfig = req.config as AppConfig | undefined;
+  const ephemeralAgent = rest.ephemeralAgent as
+    | {
+        mcp?: string[];
+        execute_code?: boolean;
+        file_search?: boolean;
+        web_search?: boolean;
+        artifacts?: unknown;
+        subagents?: AgentSubagentsConfig;
+      }
+    | undefined;
 
   const primaryIsEphemeral = primaryAgent && isEphemeralAgentId(primaryAgent.id);
   if (primaryIsEphemeral && Array.isArray(primaryAgent.tools)) {
@@ -132,18 +160,10 @@ export async function loadAddedAgent(
       tools: [...primaryAgent.tools],
     };
     applyModelSpecSkills(result, modelSpec);
+    applyModelSpecSubagents(result, modelSpec, ephemeralAgent);
     return result as unknown as Agent;
   }
 
-  const ephemeralAgent = rest.ephemeralAgent as
-    | {
-        mcp?: string[];
-        execute_code?: boolean;
-        file_search?: boolean;
-        web_search?: boolean;
-        artifacts?: unknown;
-      }
-    | undefined;
   const mcpServers = new Set<string>(ephemeralAgent?.mcp);
   const userId = req.user?.id ?? '';
 
@@ -234,6 +254,7 @@ export async function loadAddedAgent(
   if (ephemeralAgent?.artifacts != null && ephemeralAgent.artifacts) {
     result.artifacts = ephemeralAgent.artifacts;
   }
+  applyModelSpecSubagents(result, modelSpec, ephemeralAgent);
   applyModelSpecSkills(result, modelSpec);
 
   return result as unknown as Agent;

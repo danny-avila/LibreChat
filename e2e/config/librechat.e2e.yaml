@@ -42,6 +42,13 @@ modelSpecs:
         endpoint: 'Mock Provider B'
         model: 'mock-model-b'
 
+    - name: 'e2e-icon-spec'
+      label: 'E2E Icon Spec'
+      iconURL: '/assets/openai.svg'
+      preset:
+        endpoint: 'Mock Provider A'
+        model: 'mock-model-a'
+
     - name: 'e2e-skill-scope'
       label: 'E2E Skill Scope'
       preset:

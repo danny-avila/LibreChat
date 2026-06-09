@@ -52,7 +52,7 @@ type GoogleModelOptions = Partial<t.GoogleParameters> &
   Partial<Record<BlockedModelOptionParam, unknown>>;
 
 /** Known Google/Vertex AI parameters that map directly to the client config */
-export const knownGoogleParams = new Set([
+export const knownGoogleParams: Set<string> = new Set([
   'model',
   'modelName',
   'temperature',
@@ -320,7 +320,14 @@ export function getGoogleConfig(
   credentials: string | t.GoogleCredentials | undefined,
   options: t.GoogleConfigOptions = {},
   acceptRawApiKey = false,
-) {
+): {
+  /** @type {GoogleAIToolType[]} */
+  tools: GoogleAIToolType[];
+  /** @type {Providers.GOOGLE | Providers.VERTEXAI} */
+  provider: Providers.VERTEXAI | Providers.GOOGLE;
+  /** @type {GoogleClientOptions | VertexAIClientOptions} */
+  llmConfig: VertexAIClientOptions | GoogleClientOptions;
+} {
   let creds: t.GoogleCredentials = {};
   if (acceptRawApiKey && typeof credentials === 'string') {
     creds[AuthKeys.GOOGLE_API_KEY] = credentials;

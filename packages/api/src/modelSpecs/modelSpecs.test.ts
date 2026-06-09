@@ -18,6 +18,7 @@ describe('modelSpecs helpers', () => {
           name: 'guarded-spec',
           label: 'Guarded Spec',
           skills: ['private-skill'],
+          subagents: { enabled: true, allowSelf: true, agent_ids: ['agent_private'] },
           preset: {
             endpoint: EModelEndpoint.openAI,
             model: 'gpt-4o',
@@ -34,6 +35,10 @@ describe('modelSpecs helpers', () => {
     };
 
     const sanitizedModelSpecs = sanitizeModelSpecs(modelSpecs);
+    expect(sanitizedModelSpecs.list[0].subagents).toEqual({
+      enabled: true,
+      allowSelf: true,
+    });
     expect(sanitizedModelSpecs.list[0].preset).toEqual({
       endpoint: EModelEndpoint.openAI,
       model: 'gpt-4o',

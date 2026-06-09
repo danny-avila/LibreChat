@@ -148,6 +148,8 @@ export interface ResumeState {
   responseMessageId?: string;
   conversationId?: string;
   sender?: string;
+  iconURL?: string;
+  model?: string;
   titleEvent?: {
     event: 'title';
     data?: {
