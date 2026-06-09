@@ -343,7 +343,7 @@ describe('AgentFooter', () => {
       mockUseAuthContext.mockReturnValue(createAuthContext(mockUsers.admin));
       const { unmount } = render(<AgentFooter {...defaultProps} />);
       expect(screen.getByTestId('admin-settings')).toBeInTheDocument();
-      expect(screen.queryByTestId('grant-access-dialog-agent')).not.toBeInTheDocument(); // NJ: Removed
+      expect(screen.queryByTestId('grant-access-dialog-agent')).toBeInTheDocument();
 
       // Clean up the first render
       unmount();

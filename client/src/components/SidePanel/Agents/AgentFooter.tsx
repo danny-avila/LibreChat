@@ -116,9 +116,16 @@ export default function AgentFooter({
         </div>
       )}
 
-      {/* Admin settings */}
+      {/* Admin settings (permissions & sharing) - we only let admins share agents atm */}
       {user?.role === SystemRoles.ADMIN && showButtons && (
-        <div className="mt-4 px-4">
+        <div className="mt-4 flex gap-4 px-4">
+          <GenericGrantAccessDialog
+            resourceDbId={agent?._id}
+            resourceId={agent_id}
+            resourceName={agent?.name ?? ''}
+            resourceType={ResourceType.AGENT}
+          />
+
           <AdminSettings />
         </div>
       )}

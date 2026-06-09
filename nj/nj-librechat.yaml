@@ -29,8 +29,8 @@ interface:
   agents:
     use: true
     create: false # Can be overridden with env var INTERFACE_AGENTS
-    share: false
-    public: false
+    share: true
+    public: true
   bookmarks: false
   endpointsMenu: false
   fileCitations: false

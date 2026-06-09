@@ -38,11 +38,14 @@ export async function loadDefaultInterface({
   let agents = interfaceConfig?.agents;
   const agentsEnvVar = getEnvBoolean('INTERFACE_AGENTS');
   if (agentsEnvVar !== undefined) {
+    // Our librechat.yaml doesn't use the boolean, so simplify for now
+    if (typeof agents === 'boolean') {
+      throw Error(`Define the agent perms more specifically, please!`);
+    }
+
     agents = {
-      use: true,
+      ...(agents ?? {}),
       create: agentsEnvVar,
-      share: false,
-      public: false,
     };
   }
 
