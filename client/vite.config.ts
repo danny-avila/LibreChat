@@ -289,6 +289,9 @@ export default defineConfig(({ command }) => ({
                   if (normalizedId.includes('node_modules/hast-util-raw')) {
                     return 'markdown_large';
                   }
+                  if (normalizedId.includes('@tanstack/react-query-devtools')) {
+                    return 'query-devtools';
+                  }
                   if (normalizedId.includes('@tanstack')) {
                     return 'tanstack-vendor';
                   }

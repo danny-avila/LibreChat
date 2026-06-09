@@ -38,6 +38,10 @@ const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
 const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
+const {
+  QUERY_DEVTOOLS_HEADER,
+  maybeInjectQueryDevtoolsBootstrap,
+} = require('./utils/queryDevtoolsHtml');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
@@ -412,10 +416,12 @@ if (cluster.isMaster) {
         Pragma: process.env.INDEX_PRAGMA || 'no-cache',
         Expires: process.env.INDEX_EXPIRES || '0',
       });
+      res.vary(QUERY_DEVTOOLS_HEADER);
 
       const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
       const saneLang = lang.replace(/"/g, '&quot;');
       let updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
+      updatedIndexHtml = maybeInjectQueryDevtoolsBootstrap(updatedIndexHtml, req);
 
       res.type('html');
       res.send(updatedIndexHtml);
