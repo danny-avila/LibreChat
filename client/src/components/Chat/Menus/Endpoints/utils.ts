@@ -16,6 +16,7 @@ export function filterItems<
     label: string;
     name?: string;
     value?: string;
+    hasModels?: boolean;
     models?: Array<{ name: string; isGlobal?: boolean }>;
     searchAliases?: string[];
     showMarketplace?: boolean;
@@ -33,6 +34,10 @@ export function filterItems<
   }
 
   return items.filter((item) => {
+    if (!shouldRenderEndpointOption(item)) {
+      return false;
+    }
+
     const itemMatches =
       item.label.toLowerCase().includes(searchTermLower) ||
       (item.name && item.name.toLowerCase().includes(searchTermLower)) ||
@@ -74,6 +79,13 @@ export function filterItems<
 
     return false;
   });
+}
+
+export function shouldRenderEndpointOption(endpoint: {
+  value?: string;
+  hasModels?: boolean;
+}): boolean {
+  return !isAgentsEndpoint(endpoint.value) || endpoint.hasModels === true;
 }
 
 export function filterModels(
