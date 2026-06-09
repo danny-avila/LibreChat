@@ -126,7 +126,16 @@ export async function fetchModels({
     return models;
   }
 
-  const shouldCache = !skipCache && !(userIdQuery && user);
+  // The MODEL_QUERIES cache is keyed by baseURL+apiKey only. That's safe
+  // when the response is identical for every caller, but fails when callers
+  // forward header templates that resolve to a user-bound value (e.g.
+  // `Authorization: Bearer {{LIBRECHAT_OPENID_ID_TOKEN}}`): one user's
+  // filtered list could otherwise be served to the next request that
+  // shares the same baseURL+apiKey. Skip the cache whenever both `headers`
+  // and `userObject` are supplied, since that's the signal the caller is
+  // resolving headers against a specific user's identity.
+  const hasUserScopedHeaders = !!headers && Object.keys(headers).length > 0 && !!userObject;
+  const shouldCache = !skipCache && !(userIdQuery && user) && !hasUserScopedHeaders;
   const cacheKey = shouldCache ? modelsCacheKey(baseURL ?? '', apiKey) : '';
   const modelsCache = shouldCache ? standardCache(CacheKeys.MODEL_QUERIES) : null;
   if (modelsCache && cacheKey) {

@@ -864,4 +864,41 @@ describe('fetchModels caching behavior', () => {
       expect.any(Number),
     );
   });
+
+  it('skips MODEL_QUERIES cache when both headers and userObject are supplied (user-scoped response)', async () => {
+    await fetchModels({
+      apiKey: 'key',
+      baseURL: 'https://api.test.com',
+      name: 'TestAPI',
+      headers: { Authorization: 'Bearer some-user-token' },
+      userObject: { id: 'user-1' },
+    });
+
+    expect(mockCacheGet).not.toHaveBeenCalled();
+    expect(mockCacheSet).not.toHaveBeenCalled();
+  });
+
+  it('still uses cache when headers are supplied without a userObject (no per-user resolution)', async () => {
+    await fetchModels({
+      apiKey: 'key',
+      baseURL: 'https://api.test.com',
+      name: 'TestAPI',
+      headers: { 'X-Static-Header': 'static-value' },
+    });
+
+    expect(mockCacheGet).toHaveBeenCalled();
+    expect(mockCacheSet).toHaveBeenCalled();
+  });
+
+  it('still uses cache when userObject is supplied without headers', async () => {
+    await fetchModels({
+      apiKey: 'key',
+      baseURL: 'https://api.test.com',
+      name: 'TestAPI',
+      userObject: { id: 'user-1' },
+    });
+
+    expect(mockCacheGet).toHaveBeenCalled();
+    expect(mockCacheSet).toHaveBeenCalled();
+  });
 });
