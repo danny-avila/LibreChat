@@ -18,6 +18,7 @@ import { PENDING_STALE_MS, normalizeExpiresAt } from '~/flow/manager';
 import { withTimeout } from '~/utils/promise';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
+import { mcpConfig } from './mcpConfig';
 
 export interface ToolDiscoveryResult {
   tools: Tool[] | null;
@@ -365,7 +366,7 @@ export class MCPConnectionFactory {
       throw new Error(`${this.logPrefix} OAuth required but server URL is missing from config`);
     }
 
-    const oauthTimeout = this.connectionTimeout ?? 60000 * 2;
+    const oauthTimeout = mcpConfig.OAUTH_HANDLING_TIMEOUT;
     logger.info(
       `${this.logPrefix} No stored tokens, proactively triggering OAuth flow before connecting (timeout: ${oauthTimeout}ms)`,
     );
