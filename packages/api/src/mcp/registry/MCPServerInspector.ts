@@ -1,4 +1,3 @@
-import { Constants } from 'librechat-data-provider';
 import type { JsonSchemaType } from '@librechat/data-schemas';
 import type { MCPConnection } from '~/mcp/connection';
 import type * as t from '~/mcp/types';
@@ -7,6 +6,7 @@ import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { hasCustomUserVars, isUserSourced } from '~/mcp/utils';
 import { MCPDomainNotAllowedError } from '~/mcp/errors';
 import { detectOAuthRequirement } from '~/mcp/oauth';
+import { composeMCPToolName } from '~/mcp/tools';
 import { isEnabled } from '~/utils';
 
 /**
@@ -150,7 +150,7 @@ export class MCPServerInspector {
 
     const toolFunctions: t.LCAvailableTools = {};
     tools.forEach((tool) => {
-      const name = `${tool.name}${Constants.mcp_delimiter}${serverName}`;
+      const name = composeMCPToolName(tool.name, serverName, { context: 'MCP Inspector' });
       toolFunctions[name] = {
         type: 'function',
         ['function']: {
