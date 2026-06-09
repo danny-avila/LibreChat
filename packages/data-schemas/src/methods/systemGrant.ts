@@ -77,7 +77,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')): {
       tenantId?: string;
     },
     session?: ClientSession,
-  ) => Promise<void>;
+  ) => Promise<{ deletedCount: number }>;
   hasCapabilityForPrincipals: ({
     principals,
     capability,
