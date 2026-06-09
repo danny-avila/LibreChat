@@ -483,16 +483,19 @@ export abstract class UserConnectionManager {
     requestBody?: t.UserMCPConnectionOptions['requestBody'];
     graphTokenResolver?: t.UserMCPConnectionOptions['graphTokenResolver'];
   }): Promise<t.ParsedServerConfig> {
-    const graphProcessedConfig = await preProcessGraphTokens(config, {
-      user,
-      graphTokenResolver,
-      scopes: process.env.GRAPH_API_SCOPES,
-    });
+    const dbSourced = isUserSourced(config);
+    const graphProcessedConfig = dbSourced
+      ? config
+      : await preProcessGraphTokens(config, {
+          user,
+          graphTokenResolver,
+          scopes: process.env.GRAPH_API_SCOPES,
+        });
 
     return processMCPEnv({
       user,
       body: requestBody,
-      dbSourced: isUserSourced(config),
+      dbSourced,
       options: graphProcessedConfig,
       customUserVars,
     }) as t.ParsedServerConfig;
@@ -584,10 +587,20 @@ export abstract class UserConnectionManager {
     }
 
     const registry = MCPServersRegistry.getInstance();
+    const allowedDomains = registry.getAllowedDomains();
+    const allowedAddresses = registry.getAllowedAddresses();
+    const allowed = await isMCPDomainAllowed(resolvedConfig, allowedDomains, allowedAddresses);
+    if (!allowed) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `[MCP][User: ${user?.id}][${config.url}] Resolved MCP server URL is not allowed by the configured domain policy.`,
+      );
+    }
+
     const result = await detectOAuthRequirement(
       resolvedConfig.url,
-      registry.getAllowedDomains(),
-      registry.getAllowedAddresses(),
+      allowedDomains,
+      allowedAddresses,
     );
 
     return {

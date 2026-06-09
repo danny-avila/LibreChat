@@ -563,6 +563,44 @@ describe('MCPManager', () => {
       );
     });
 
+    it('should leave graph token placeholders sandboxed for user-sourced configs', async () => {
+      const serverConfig: t.ParsedServerConfig = {
+        type: 'sse',
+        url: 'https://api.example.com',
+        headers: {
+          Authorization: 'Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+        },
+        source: 'user',
+        dbId: 'user-server-id',
+      };
+
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(mockConnection),
+      });
+
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(serverConfig);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+
+      await manager.callTool({
+        user: mockUser as IUser,
+        serverName,
+        toolName: 'test_tool',
+        provider: 'openai',
+        flowManager: mockFlowManager as unknown as Parameters<
+          typeof manager.callTool
+        >[0]['flowManager'],
+        graphTokenResolver: mockGraphTokenResolver,
+      });
+
+      expect(graphUtils.preProcessGraphTokens).not.toHaveBeenCalled();
+      expect(mockConnection.setRequestHeaders).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Authorization: 'Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+        }),
+      );
+    });
+
     it('should pass options unchanged when no graphTokenResolver is provided', async () => {
       const serverConfig: t.SSEOptions = {
         type: 'sse',
@@ -1501,6 +1539,42 @@ describe('MCPManager', () => {
       );
     });
 
+    it('should reject disallowed runtime URLs before OAuth detection probes them', async () => {
+      const runtimeUrlConfig: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://{{LIBRECHAT_BODY_CONVERSATIONID}}.example.com/mcp',
+        source: 'yaml',
+      };
+      mockAppConnections({
+        has: jest.fn().mockResolvedValue(false),
+      });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(runtimeUrlConfig);
+      (mockRegistryInstance.getAllowedDomains as jest.Mock).mockReturnValue(['*.example.com']);
+      mockProcessMCPEnv.mockImplementation(({ options, body }) => ({
+        ...options,
+        ...('url' in options && {
+          url: options.url?.replace(
+            '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+            body?.conversationId ?? '',
+          ),
+        }),
+      }));
+      mockIsMCPDomainAllowed.mockResolvedValue(false);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await expect(
+        manager.getUserConnection({
+          serverName,
+          user: mockUser,
+          requestBody: { conversationId: 'evil.com/path' },
+          flowManager: mockFlowManager as unknown as t.UserMCPConnectionOptions['flowManager'],
+        }),
+      ).rejects.toThrow('not allowed by the configured domain policy');
+
+      expect(mockDetectOAuthRequirement).not.toHaveBeenCalled();
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+    });
+
     it('should reject resolved runtime URLs that fail MCP domain policy', async () => {
       const runtimeUrlConfig: t.ParsedServerConfig = {
         type: 'streamable-http',
@@ -1541,6 +1615,43 @@ describe('MCPManager', () => {
         null,
       );
       expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+    });
+
+    it('should keep graph placeholders unresolved for user-sourced connection configs', async () => {
+      const graphConfig: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://api.example.com/mcp',
+        source: 'user',
+        dbId: 'user-server-id',
+        requiresOAuth: false,
+        headers: {
+          Authorization: 'Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+        },
+      };
+      mockAppConnections({
+        has: jest.fn().mockResolvedValue(false),
+      });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(graphConfig);
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(mockConnection);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await manager.getUserConnection({
+        serverName,
+        user: mockUser,
+        graphTokenResolver: jest.fn(),
+      });
+
+      expect(graphUtils.preProcessGraphTokens).not.toHaveBeenCalled();
+      expect(MCPConnectionFactory.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverConfig: expect.objectContaining({
+            headers: {
+              Authorization: 'Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+            },
+          }),
+        }),
+        expect.any(Object),
+      );
     });
 
     it('should not cache connections when request body placeholders affect the URL', async () => {
