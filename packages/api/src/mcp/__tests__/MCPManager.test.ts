@@ -7,6 +7,7 @@ import { MCPServersInitializer } from '~/mcp/registry/MCPServersInitializer';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
+import { isMCPDomainAllowed } from '~/auth/domain';
 import { MCPConnection } from '~/mcp/connection';
 import { MCPManager } from '~/mcp/MCPManager';
 import * as graphUtils from '~/utils/graph';
@@ -35,6 +36,10 @@ jest.mock('~/mcp/oauth', () => ({
 
 jest.mock('~/utils/env', () => ({
   processMCPEnv: jest.fn((params) => params.options),
+}));
+
+jest.mock('~/auth/domain', () => ({
+  isMCPDomainAllowed: jest.fn().mockResolvedValue(true),
 }));
 
 const mockRegistryInstance = {
@@ -68,6 +73,7 @@ const mockDetectOAuthRequirement = detectOAuthRequirement as jest.MockedFunction
   typeof detectOAuthRequirement
 >;
 const mockProcessMCPEnv = processMCPEnv as jest.MockedFunction<typeof processMCPEnv>;
+const mockIsMCPDomainAllowed = isMCPDomainAllowed as jest.MockedFunction<typeof isMCPDomainAllowed>;
 
 describe('MCPManager', () => {
   const userId = 'test-user-123';
@@ -81,7 +87,11 @@ describe('MCPManager', () => {
     // Set up default mock implementations
     (MCPServersInitializer.initialize as jest.Mock).mockResolvedValue(undefined);
     (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({});
+    (mockRegistryInstance.shouldEnableSSRFProtection as jest.Mock).mockReturnValue(false);
+    (mockRegistryInstance.getAllowedDomains as jest.Mock).mockReturnValue(null);
+    (mockRegistryInstance.getAllowedAddresses as jest.Mock).mockReturnValue(null);
     mockProcessMCPEnv.mockImplementation((params) => params.options);
+    mockIsMCPDomainAllowed.mockResolvedValue(true);
     mockDetectOAuthRequirement.mockResolvedValue({
       requiresOAuth: false,
       method: 'no-metadata-found',
@@ -1491,6 +1501,48 @@ describe('MCPManager', () => {
       );
     });
 
+    it('should reject resolved runtime URLs that fail MCP domain policy', async () => {
+      const runtimeUrlConfig: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://{{LIBRECHAT_BODY_CONVERSATIONID}}.example.com/mcp',
+        source: 'yaml',
+        requiresOAuth: false,
+      };
+      mockAppConnections({
+        has: jest.fn().mockResolvedValue(false),
+      });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(runtimeUrlConfig);
+      (mockRegistryInstance.getAllowedDomains as jest.Mock).mockReturnValue(['*.example.com']);
+      mockProcessMCPEnv.mockImplementation(({ options, body }) => ({
+        ...options,
+        ...('url' in options && {
+          url: options.url?.replace(
+            '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+            body?.conversationId ?? '',
+          ),
+        }),
+      }));
+      mockIsMCPDomainAllowed.mockResolvedValue(false);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await expect(
+        manager.getUserConnection({
+          serverName,
+          user: mockUser,
+          requestBody: { conversationId: 'evil.com/path' },
+        }),
+      ).rejects.toThrow('not allowed by the configured domain policy');
+
+      expect(mockIsMCPDomainAllowed).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: 'https://evil.com/path.example.com/mcp',
+        }),
+        ['*.example.com'],
+        null,
+      );
+      expect(MCPConnectionFactory.create).not.toHaveBeenCalled();
+    });
+
     it('should not cache connections when request body placeholders affect the URL', async () => {
       const bodyUrlConfig: t.ParsedServerConfig = {
         type: 'streamable-http',
@@ -1509,6 +1561,12 @@ describe('MCPManager', () => {
         has: jest.fn().mockResolvedValue(false),
       });
       (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(bodyUrlConfig);
+      mockProcessMCPEnv.mockImplementation(({ options, body }) => ({
+        ...options,
+        ...('url' in options && {
+          url: options.url?.replace('{{LIBRECHAT_BODY_MESSAGEID}}', body?.messageId ?? ''),
+        }),
+      }));
       (MCPConnectionFactory.create as jest.Mock)
         .mockResolvedValueOnce(firstConnection)
         .mockResolvedValueOnce(secondConnection);

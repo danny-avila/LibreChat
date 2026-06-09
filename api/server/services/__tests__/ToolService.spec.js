@@ -756,6 +756,7 @@ describe('ToolService - Action Capability Gating', () => {
           requestBody: req.body,
         }),
       );
+      expect(mockGetMCPServerTools).not.toHaveBeenCalled();
     });
 
     it('should preserve pending-flow expiry for OAuth URLs captured during discovery', async () => {

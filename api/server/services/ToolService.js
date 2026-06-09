@@ -16,6 +16,7 @@ const {
   isActionDomainAllowed,
   buildWebSearchContext,
   buildImageToolContext,
+  requiresEphemeralUserConnection,
   buildToolClassification,
   getMissingCustomUserVars,
   buildWebSearchDynamicContext,
@@ -743,7 +744,9 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       return null;
     }
 
-    const cached = await getMCPServerTools(userId, serverName);
+    const cached = requiresEphemeralUserConnection(serverConfig)
+      ? null
+      : await getMCPServerTools(userId, serverName);
     if (cached) {
       await addPendingOAuthServer();
       return cached;

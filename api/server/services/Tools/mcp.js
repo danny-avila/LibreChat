@@ -50,11 +50,13 @@ async function reinitMCPServer({
   let tools = null;
   let oauthRequired = false;
   let oauthUrl = null;
+  let ephemeralServer = false;
 
   try {
     const registry = getMCPServersRegistry();
     serverConfig =
       serverConfig ?? (await registry.getServerConfig(serverName, user?.id, configServers));
+    ephemeralServer = serverConfig ? requiresEphemeralUserConnection(serverConfig) : false;
     if (serverConfig?.inspectionFailed) {
       if (serverConfig.source === 'config') {
         logger.info(
@@ -214,6 +216,7 @@ async function reinitMCPServer({
         userId: user.id,
         serverName,
         tools,
+        skipCache: ephemeralServer,
       });
     }
 
@@ -262,7 +265,7 @@ async function reinitMCPServer({
       error,
     );
   } finally {
-    if (connection && serverConfig && requiresEphemeralUserConnection(serverConfig)) {
+    if (connection && ephemeralServer) {
       try {
         await connection.disconnect();
       } catch (error) {

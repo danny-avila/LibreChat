@@ -3,6 +3,7 @@ const { Constants } = require('librechat-data-provider');
 const mockGetConnection = jest.fn();
 const mockDiscoverServerTools = jest.fn();
 const mockGetGraphApiToken = jest.fn();
+const mockUpdateMCPServerTools = jest.fn();
 
 jest.mock('~/config', () => ({
   getMCPManager: jest.fn(() => ({
@@ -19,7 +20,7 @@ jest.mock('~/models', () => ({
   deleteTokens: jest.fn(),
 }));
 jest.mock('~/server/services/Config', () => ({
-  updateMCPServerTools: jest.fn(),
+  updateMCPServerTools: mockUpdateMCPServerTools,
 }));
 jest.mock('~/server/services/GraphTokenService', () => ({
   getGraphApiToken: mockGetGraphApiToken,
@@ -43,6 +44,7 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUpdateMCPServerTools.mockResolvedValue({});
   });
 
   it('does not connect and exposes no tools when a required customUserVar is unset', async () => {
@@ -141,9 +143,10 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
 
   it('disconnects ephemeral BODY-scoped connections after loading tools', async () => {
     const disconnect = jest.fn().mockResolvedValue(undefined);
+    const tools = [{ name: 'search', inputSchema: { type: 'object', properties: {} } }];
     mockGetConnection.mockResolvedValue({
       disconnect,
-      fetchTools: jest.fn().mockResolvedValue([]),
+      fetchTools: jest.fn().mockResolvedValue(tools),
     });
 
     await reinitMCPServer({
@@ -159,6 +162,12 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
     });
 
     expect(disconnect).toHaveBeenCalledTimes(1);
+    expect(mockUpdateMCPServerTools).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tools,
+        skipCache: true,
+      }),
+    );
   });
 
   it('proceeds to connect when the server declares no customUserVars', async () => {

@@ -151,17 +151,27 @@ export class MCPManager extends UserConnectionManager {
       return { tools: null, oauthRequired: false, oauthUrl: null };
     }
 
-    const useOAuth = requiresOAuthMachinery(serverConfig);
-
     const registry = MCPServersRegistry.getInstance();
     const useSSRFProtection = registry.shouldEnableSSRFProtection();
     const allowedDomains = registry.getAllowedDomains();
     const allowedAddresses = registry.getAllowedAddresses();
-    const dbSourced = isUserSourced(serverConfig);
+    const resolvedServerConfig = await this.assertResolvedRuntimeConfigAllowed({
+      config: serverConfig,
+      user,
+      customUserVars: args.customUserVars,
+      requestBody: args.requestBody,
+      graphTokenResolver: args.graphTokenResolver,
+      allowedDomains,
+      allowedAddresses,
+      logPrefix: `${logPrefix} [Discovery]`,
+    });
+
+    const useOAuth = requiresOAuthMachinery(resolvedServerConfig);
+    const dbSourced = isUserSourced(resolvedServerConfig);
     const basic: t.BasicConnectionOptions = {
       dbSourced,
       serverName,
-      serverConfig,
+      serverConfig: resolvedServerConfig,
       useSSRFProtection,
       allowedDomains,
       allowedAddresses,

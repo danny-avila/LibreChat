@@ -6,6 +6,10 @@ const mockPluginService = {
   deleteUserPluginAuth: jest.fn(),
   getUserPluginAuthValue: jest.fn(),
 };
+const mockGetMCPServerTools = jest.fn();
+const mockCreateMCPTool = jest.fn();
+const mockCreateMCPTools = jest.fn();
+const mockGetServerConfig = jest.fn();
 
 jest.mock('~/server/services/PluginService', () => mockPluginService);
 
@@ -28,9 +32,26 @@ jest.mock('~/server/services/Config', () => ({
       },
     },
   }),
+  getMCPServerTools: (...args) => mockGetMCPServerTools(...args),
+}));
+
+jest.mock('~/server/services/MCP', () => ({
+  createMCPTool: (...args) => mockCreateMCPTool(...args),
+  createMCPTools: (...args) => mockCreateMCPTools(...args),
+  createMCPPermissionContext: jest.fn(() => ({
+    canUseServers: jest.fn().mockResolvedValue(true),
+  })),
+  resolveConfigServers: jest.fn().mockResolvedValue({}),
+}));
+
+jest.mock('~/config', () => ({
+  getMCPServersRegistry: jest.fn(() => ({
+    getServerConfig: (...args) => mockGetServerConfig(...args),
+  })),
 }));
 
 const { Calculator } = require('@librechat/agents');
+const { Constants } = require('librechat-data-provider');
 
 const { User } = require('~/db/models');
 const PluginService = require('~/server/services/PluginService');
@@ -281,6 +302,41 @@ describe('Tool Handlers', () => {
       const structuredTool = await toolFunctions['stable-diffusion']();
       expect(structuredTool).toBeInstanceOf(StructuredSD);
       delete process.env.SD_WEBUI_URL;
+    });
+
+    it('passes request body to chat MCP tool creation and skips stale cache for BODY-scoped servers', async () => {
+      const serverName = 'body-scoped';
+      const toolKey = `search${Constants.mcp_delimiter}${serverName}`;
+      const requestBody = { conversationId: 'conv-123', messageId: 'msg-123' };
+      const serverConfig = {
+        type: 'streamable-http',
+        url: 'https://api.example.com/messages/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+        source: 'yaml',
+      };
+
+      mockGetServerConfig.mockResolvedValue(serverConfig);
+      mockCreateMCPTool.mockResolvedValue({ name: 'loaded-mcp-tool' });
+
+      const result = await loadTools({
+        user: fakeUser._id.toString(),
+        tools: [toolKey],
+        options: {
+          req: {
+            user: { id: fakeUser._id.toString(), role: 'USER' },
+            body: requestBody,
+          },
+        },
+      });
+
+      expect(result.loadedTools).toEqual([{ name: 'loaded-mcp-tool' }]);
+      expect(mockGetMCPServerTools).not.toHaveBeenCalled();
+      expect(mockCreateMCPTool).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestBody,
+          toolKey,
+          config: serverConfig,
+        }),
+      );
     });
   });
 });

@@ -15,6 +15,7 @@ import { detectOAuthRequirement, MCPOAuthHandler } from '~/mcp/oauth';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { preProcessGraphTokens } from '~/utils/graph';
+import { isMCPDomainAllowed } from '~/auth/domain';
 import { PENDING_STALE_MS } from '~/flow/manager';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils/env';
@@ -380,16 +381,28 @@ export abstract class UserConnectionManager {
         graphTokenResolver,
       });
       const registry = MCPServersRegistry.getInstance();
+      const allowedDomains = registry.getAllowedDomains();
+      const allowedAddresses = registry.getAllowedAddresses();
+      const resolvedRuntimeConfig = await this.assertResolvedRuntimeConfigAllowed({
+        config: runtimeConfig,
+        user,
+        customUserVars,
+        requestBody,
+        graphTokenResolver,
+        allowedDomains,
+        allowedAddresses,
+        logPrefix: `[MCP][User: ${userId}][${serverName}]`,
+      });
       const basic: t.BasicConnectionOptions = {
-        serverConfig: runtimeConfig,
+        serverConfig: resolvedRuntimeConfig,
         serverName: serverName,
-        dbSourced: isUserSourced(runtimeConfig),
+        dbSourced: isUserSourced(resolvedRuntimeConfig),
         useSSRFProtection: registry.shouldEnableSSRFProtection(),
-        allowedDomains: registry.getAllowedDomains(),
-        allowedAddresses: registry.getAllowedAddresses(),
+        allowedDomains,
+        allowedAddresses,
       };
 
-      const useOAuth = requiresOAuthMachinery(runtimeConfig);
+      const useOAuth = requiresOAuthMachinery(resolvedRuntimeConfig);
       let connectionOptions: t.OAuthConnectionOptions | t.UserConnectionContext;
       if (useOAuth) {
         if (!flowManager) {
@@ -457,6 +470,83 @@ export abstract class UserConnectionManager {
     }
   }
 
+  protected async resolveRuntimeConfig({
+    config,
+    user,
+    customUserVars,
+    requestBody,
+    graphTokenResolver,
+  }: {
+    config: t.ParsedServerConfig;
+    user?: t.UserMCPConnectionOptions['user'];
+    customUserVars?: Record<string, string>;
+    requestBody?: t.UserMCPConnectionOptions['requestBody'];
+    graphTokenResolver?: t.UserMCPConnectionOptions['graphTokenResolver'];
+  }): Promise<t.ParsedServerConfig> {
+    const graphProcessedConfig = await preProcessGraphTokens(config, {
+      user,
+      graphTokenResolver,
+      scopes: process.env.GRAPH_API_SCOPES,
+    });
+
+    return processMCPEnv({
+      user,
+      body: requestBody,
+      dbSourced: isUserSourced(config),
+      options: graphProcessedConfig,
+      customUserVars,
+    }) as t.ParsedServerConfig;
+  }
+
+  protected async assertResolvedRuntimeConfigAllowed({
+    config,
+    user,
+    customUserVars,
+    requestBody,
+    graphTokenResolver,
+    allowedDomains,
+    allowedAddresses,
+    logPrefix,
+  }: {
+    config: t.ParsedServerConfig;
+    user?: t.UserMCPConnectionOptions['user'];
+    customUserVars?: Record<string, string>;
+    requestBody?: t.UserMCPConnectionOptions['requestBody'];
+    graphTokenResolver?: t.UserMCPConnectionOptions['graphTokenResolver'];
+    allowedDomains?: string[] | null;
+    allowedAddresses?: string[] | null;
+    logPrefix: string;
+  }): Promise<t.ParsedServerConfig> {
+    const resolvedConfig = await this.resolveRuntimeConfig({
+      config,
+      user,
+      customUserVars,
+      requestBody,
+      graphTokenResolver,
+    });
+
+    if (!resolvedConfig.url) {
+      return resolvedConfig;
+    }
+
+    if (hasRuntimeUrlPlaceholders(resolvedConfig)) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `${logPrefix} Runtime URL still contains unresolved MCP placeholders after resolution.`,
+      );
+    }
+
+    const allowed = await isMCPDomainAllowed(resolvedConfig, allowedDomains, allowedAddresses);
+    if (!allowed) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `${logPrefix} Resolved MCP server URL is not allowed by the configured domain policy.`,
+      );
+    }
+
+    return resolvedConfig;
+  }
+
   private async applyRuntimeOAuthDetection({
     config,
     user,
@@ -478,18 +568,13 @@ export abstract class UserConnectionManager {
       return config;
     }
 
-    const graphProcessedConfig = await preProcessGraphTokens(config, {
+    const resolvedConfig = await this.resolveRuntimeConfig({
+      config,
       user,
-      graphTokenResolver,
-      scopes: process.env.GRAPH_API_SCOPES,
-    });
-    const resolvedConfig = processMCPEnv({
-      user,
-      body: requestBody,
-      dbSourced: isUserSourced(config),
-      options: graphProcessedConfig,
       customUserVars,
-    }) as t.ParsedServerConfig;
+      requestBody,
+      graphTokenResolver,
+    });
 
     if (!resolvedConfig.url || hasRuntimeUrlPlaceholders(resolvedConfig)) {
       logger.warn(

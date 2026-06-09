@@ -523,6 +523,24 @@ describe('requiresEphemeralUserConnection', () => {
     ).toBe(true);
   });
 
+  it('returns true when OpenID token placeholders affect connection fields', () => {
+    expect(
+      requiresEphemeralUserConnection({
+        source: 'yaml',
+        args: ['--id-token={{LIBRECHAT_OPENID_ID_TOKEN}}'],
+      }),
+    ).toBe(true);
+
+    expect(
+      requiresEphemeralUserConnection({
+        source: 'yaml',
+        headers: {
+          Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+        },
+      }),
+    ).toBe(true);
+  });
+
   it('returns true when request-varying placeholders affect remote transport headers', () => {
     expect(
       requiresEphemeralUserConnection({
