@@ -1,5 +1,5 @@
-import crypto from 'crypto';
 import axios from 'axios';
+import crypto from 'crypto';
 import { logger } from '@librechat/data-schemas';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import {
@@ -274,7 +274,7 @@ export async function fetchOpenAIModels(
   }
 
   if (baseURL === openaiBaseURL) {
-    const regex = /(text-davinci-003|gpt-|o\d+)/;
+    const regex = /(text-davinci-003|gpt-|o\d+|chat-latest)/;
     const excludeRegex = /audio|realtime/;
     models = models.filter((model) => regex.test(model) && !excludeRegex.test(model));
     const instructModels = models.filter((model) => model.includes('instruct'));

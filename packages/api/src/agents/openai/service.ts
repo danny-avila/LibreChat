@@ -31,6 +31,7 @@ import type {
   ToolCall,
 } from './types';
 import type { OpenAIStreamHandlerConfig, EventHandler } from './handlers';
+import type { ToolExecuteOptions } from '../handlers';
 import {
   createOpenAIContentAggregator,
   createOpenAIStreamTracker,
@@ -39,8 +40,8 @@ import {
   createChunk,
   writeSSE,
 } from './handlers';
+import { isProReasoningModel } from '~/endpoints/openai/llm';
 import { createSafeUser } from '~/utils';
-import type { ToolExecuteOptions } from '../handlers';
 
 /**
  * Dependencies for the chat completion service
@@ -459,8 +460,11 @@ export async function createAgentChatCompletion(
     });
 
     // Determine if streaming is enabled (check both request and agent config)
-    const streamingDisabled = !!(initializedAgent.model_parameters as Record<string, unknown>)
-      ?.disableStreaming;
+    const initializedParams = initializedAgent.model_parameters as
+      | { disableStreaming?: boolean; model?: string }
+      | undefined;
+    const streamingDisabled =
+      !!initializedParams?.disableStreaming || isProReasoningModel(initializedParams?.model);
     const isStreaming = requestedStreaming && !streamingDisabled;
 
     // Create tracker for streaming or aggregator for non-streaming

@@ -139,6 +139,8 @@ describe('getOpenAILLMConfig', () => {
       'gpt-5',
       'gpt-5-pro',
       'gpt-5-turbo',
+      'gpt-5.4-pro',
+      'gpt-5.5-pro',
     ];
 
     const excludedParams = [
