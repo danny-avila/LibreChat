@@ -36,7 +36,6 @@ describe('OAuthReconnectionManager', () => {
     jest.clearAllMocks();
 
     // Reset singleton instance
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (OAuthReconnectionManager as any).instance = null;
 
     // Setup mock flow manager

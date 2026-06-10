@@ -487,7 +487,6 @@ describe('Agent Context Utilities', () => {
       const agent: AgentWithTools = {
         id: 'test-agent',
         instructions: 'Base',
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         tools: null as any, // Invalid tools - should not crash
       };
 

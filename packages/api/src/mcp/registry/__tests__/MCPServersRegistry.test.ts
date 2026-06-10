@@ -291,20 +291,17 @@ describe('MCPServersRegistry', () => {
     describe('Invalid storage location', () => {
       it('should throw error for unsupported storage location in addServer', async () => {
         await expect(
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           registry.addServer('test_server', testParsedConfig, 'INVALID' as any),
         ).rejects.toThrow('The provided storage location "INVALID" is not supported');
       });
 
       it('should throw error for unsupported storage location in updateServer', async () => {
         await expect(
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           registry.updateServer('test_server', testParsedConfig, 'REDIS' as any),
         ).rejects.toThrow('The provided storage location "REDIS" is not supported');
       });
 
       it('should throw error for unsupported storage location in removeServer', async () => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await expect(registry.removeServer('test_server', 'S3' as any)).rejects.toThrow(
           'The provided storage location "S3" is not supported',
         );

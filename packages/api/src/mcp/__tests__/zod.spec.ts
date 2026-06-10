@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // zod.spec.ts
 import { z } from 'zod';
 import type { JsonSchemaType } from '@librechat/data-schemas';

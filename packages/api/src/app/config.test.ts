@@ -166,7 +166,6 @@ describe('getTransactionsConfig', () => {
       it('should handle appConfig with null balance', () => {
         const appConfig = createTestAppConfig({
           transactions: { enabled: false },
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           balance: null as any,
         });
         const result = getTransactionsConfig(appConfig);
@@ -187,7 +186,6 @@ describe('getTransactionsConfig', () => {
       it('should handle appConfig with balance enabled undefined', () => {
         const appConfig = createTestAppConfig({
           transactions: { enabled: false },
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           balance: { enabled: undefined as any },
         });
         const result = getTransactionsConfig(appConfig);
@@ -272,7 +270,6 @@ describe('getBalanceConfig', () => {
     it('should handle appConfig with null balance', () => {
       process.env.CHECK_BALANCE = 'true';
       const appConfig = createTestAppConfig({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         balance: null as any,
       });
       const result = getBalanceConfig(appConfig);

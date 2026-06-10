@@ -306,6 +306,19 @@ export default [
     },
   },
   {
+    /**
+     * Tests under `packages/api` routinely cast to `any` to spy on private
+     * internals and `require()` CommonJS test helpers (e.g. `supertest`).
+     * Relax these two rules for spec/test files so they don't accumulate
+     * per-line disable directives.
+     */
+    files: ['./packages/api/**/*.spec.ts', './packages/api/**/*.test.ts'],
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+      '@typescript-eslint/no-explicit-any': 'off',
+    },
+  },
+  {
     files: ['./config/translations/**/*.ts'],
     languageOptions: {
       parser: tsParser,

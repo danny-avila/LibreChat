@@ -83,11 +83,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
       };
 
       const registrySpy = jest
-        .spyOn(
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          require('~/mcp/registry/MCPServersRegistry').MCPServersRegistry,
-          'getInstance',
-        )
+        .spyOn(require('~/mcp/registry/MCPServersRegistry').MCPServersRegistry, 'getInstance')
         .mockReturnValue({
           getServerConfig: jest.fn().mockResolvedValue(mockConfig),
           shouldEnableSSRFProtection: jest.fn().mockReturnValue(false),
@@ -155,11 +151,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
       };
 
       const registrySpy = jest
-        .spyOn(
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          require('~/mcp/registry/MCPServersRegistry').MCPServersRegistry,
-          'getInstance',
-        )
+        .spyOn(require('~/mcp/registry/MCPServersRegistry').MCPServersRegistry, 'getInstance')
         .mockReturnValue({
           getServerConfig: jest.fn().mockResolvedValue(mockConfig),
           shouldEnableSSRFProtection: jest.fn().mockReturnValue(false),
@@ -236,11 +228,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
       };
 
       const registrySpy = jest
-        .spyOn(
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          require('~/mcp/registry/MCPServersRegistry').MCPServersRegistry,
-          'getInstance',
-        )
+        .spyOn(require('~/mcp/registry/MCPServersRegistry').MCPServersRegistry, 'getInstance')
         .mockReturnValue({
           getServerConfig: jest.fn().mockResolvedValue(mockConfig),
           shouldEnableSSRFProtection: jest.fn().mockReturnValue(false),
@@ -336,11 +324,7 @@ describe('MCP OAuth Race Condition Fixes', () => {
       };
 
       const registrySpy = jest
-        .spyOn(
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          require('~/mcp/registry/MCPServersRegistry').MCPServersRegistry,
-          'getInstance',
-        )
+        .spyOn(require('~/mcp/registry/MCPServersRegistry').MCPServersRegistry, 'getInstance')
         .mockReturnValue({
           getServerConfig: jest.fn().mockResolvedValue(mockConfig),
           shouldEnableSSRFProtection: jest.fn().mockReturnValue(false),

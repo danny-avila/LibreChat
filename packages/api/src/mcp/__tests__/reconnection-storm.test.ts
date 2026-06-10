@@ -135,14 +135,12 @@ function createConnection(serverName: string, url: string, initTimeout = 5000): 
 }
 
 async function teardownConnection(conn: MCPConnection): Promise<void> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (conn as any).shouldStopReconnecting = true;
   conn.removeAllListeners();
   await conn.disconnect();
 }
 
 afterEach(() => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (MCPConnection as any).circuitBreakers.clear();
 });
 
@@ -162,7 +160,6 @@ describe('Fix #2: Circuit breaker stops rapid reconnect cycling', () => {
       try {
         await conn.connect();
         await teardownConnection(conn);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (conn as any).shouldStopReconnecting = false;
         completedCycles++;
       } catch (e) {
@@ -187,13 +184,11 @@ describe('Fix #3: SSE 400/405 handled in same branch as 404', () => {
     const conn = createConnection('sse-400', srv.url);
     await conn.connect();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (conn as any).shouldStopReconnecting = true;
 
     const changes: string[] = [];
     conn.on('connectionChange', (s: string) => changes.push(s));
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const transport = (conn as any).transport;
     transport.onerror({ message: 'Failed to open SSE stream', code: 400 });
 
@@ -208,13 +203,11 @@ describe('Fix #3: SSE 400/405 handled in same branch as 404', () => {
     const conn = createConnection('sse-405', srv.url);
     await conn.connect();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (conn as any).shouldStopReconnecting = true;
 
     const changes: string[] = [];
     conn.on('connectionChange', (s: string) => changes.push(s));
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const transport = (conn as any).transport;
     transport.onerror({ message: 'Method Not Allowed', code: 405 });
 
@@ -237,14 +230,12 @@ describe('Fix #4: Circuit breaker state persists across instance replacement', (
     await conn1.connect();
     await teardownConnection(conn1);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const cbAfterConn1 = (MCPConnection as any).circuitBreakers.get('replace');
     expect(cbAfterConn1).toBeDefined();
     const cyclesAfterConn1 = cbAfterConn1.cycleCount;
     expect(cyclesAfterConn1).toBeGreaterThan(0);
 
     const conn2 = createConnection('replace', srv.url);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const cbFromConn2 = (conn2 as any).getCircuitBreaker();
     expect(cbFromConn2.cycleCount).toBe(cyclesAfterConn1);
 
@@ -254,15 +245,12 @@ describe('Fix #4: Circuit breaker state persists across instance replacement', (
 
   it('clearCooldown resets static state so explicit retry proceeds', () => {
     const conn = createConnection('replace', 'http://127.0.0.1:1/mcp');
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const cb = (conn as any).getCircuitBreaker();
     cb.cooldownUntil = Date.now() + 999_999;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((conn as any).isCircuitOpen()).toBe(true);
 
     MCPConnection.clearCooldown('replace');
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((conn as any).isCircuitOpen()).toBe(false);
   });
 });
@@ -386,7 +374,6 @@ describe('Fix #5b: disconnect(false) preserves cycle tracking', () => {
     await conn.connect();
     expect(spy).toHaveBeenCalledWith(false);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const cb = (MCPConnection as any).circuitBreakers.get('wipe');
     expect(cb).toBeDefined();
     expect(cb.cycleCount).toBeGreaterThan(0);
@@ -466,7 +453,6 @@ describe('Cascade: Circuit breaker caps rapid cycling', () => {
       try {
         await conn.connect();
         await teardownConnection(conn);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (conn as any).shouldStopReconnecting = false;
         completedCycles++;
       } catch (e) {
@@ -489,7 +475,6 @@ describe('Cascade: Circuit breaker caps rapid cycling', () => {
 
     await conn.connect();
     await teardownConnection(conn);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (conn as any).shouldStopReconnecting = false;
     await srv.close();
 
@@ -563,7 +548,6 @@ describe('OAuth: cycle budget recovery after successful OAuth', () => {
     // connect() sees not connected → throws "Connection not established"
     await expect(conn.connect()).rejects.toThrow('Connection not established');
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const cb = (MCPConnection as any).circuitBreakers.get(serverName);
     const cyclesBeforeRetry = cb.cycleCount;
 
@@ -638,7 +622,6 @@ describe('OAuth: cycle budget recovery after successful OAuth', () => {
 
     await expect(conn.connect()).rejects.toThrow();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const cb = (MCPConnection as any).circuitBreakers.get(serverName);
     const cyclesAfterFailure = cb.cycleCount;
 
