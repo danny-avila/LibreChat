@@ -563,6 +563,66 @@ describe('MCPManager', () => {
       );
     });
 
+    it('should attach request OAuth handler without reprocessing resolved config', async () => {
+      const rawServerConfig = {
+        type: 'sse',
+        url: 'https://api.example.com/{{LIBRECHAT_USER_ID}}',
+        headers: {
+          Authorization: 'Bearer {{USER_TOKEN}}',
+        },
+        requiresOAuth: true,
+        oauth: {
+          authorization_url: 'https://auth.example.com/authorize',
+        },
+      } as t.ParsedServerConfig;
+      const processedServerConfig = {
+        ...rawServerConfig,
+        url: 'https://api.example.com/user-123',
+        headers: {
+          Authorization: 'Bearer ${SHOULD_NOT_EXPAND}',
+        },
+      };
+      const cleanupOAuthHandler = jest.fn();
+
+      mockProcessMCPEnv.mockReturnValue(processedServerConfig);
+      (MCPConnectionFactory.attachRequestOAuthHandler as jest.Mock).mockReturnValue(
+        cleanupOAuthHandler,
+      );
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(mockConnection),
+      });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(rawServerConfig);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const oauthStart = jest.fn();
+
+      await manager.callTool({
+        user: mockUser as IUser,
+        serverName,
+        toolName: 'test_tool',
+        provider: 'openai',
+        oauthStart,
+        flowManager: mockFlowManager as unknown as Parameters<
+          typeof manager.callTool
+        >[0]['flowManager'],
+      });
+
+      /** One pass from user-connection runtime resolution, one from callTool — none from the handler attach */
+      expect(mockProcessMCPEnv).toHaveBeenCalledTimes(2);
+      expect(MCPConnectionFactory.attachRequestOAuthHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverConfig: processedServerConfig,
+          skipEnvProcessing: true,
+        }),
+        expect.objectContaining({
+          oauthStart,
+          user: mockUser,
+        }),
+        mockConnection,
+      );
+      expect(cleanupOAuthHandler).toHaveBeenCalled();
+    });
+
     it('should leave graph token placeholders sandboxed for user-sourced configs', async () => {
       const serverConfig: t.ParsedServerConfig = {
         type: 'sse',

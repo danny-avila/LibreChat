@@ -95,6 +95,13 @@ function evictStale(map, ttl) {
 const unavailableMsg =
   "This tool's MCP server is temporarily unavailable. Please try again shortly.";
 
+function getOAuthFlowId(userId, serverName, tenantId = getTenantId()) {
+  if (!tenantId) {
+    return MCPOAuthHandler.generateFlowId(userId, serverName);
+  }
+  return MCPOAuthHandler.generateFlowId(userId, serverName, tenantId);
+}
+
 async function getAppConfigForRequest(req) {
   const user = req?.user;
   return await getAppConfigForUser(user?.id, user);
@@ -344,12 +351,13 @@ function createOAuthEnd({ res, stepId, toolCall, streamId = null }) {
  * @param {string} params.userId - The ID of the user.
  * @param {string} params.serverName - The name of the server.
  * @param {string} params.toolName - The name of the tool.
+ * @param {string} [params.tenantId] - The tenant ID for the current request.
  * @param {FlowStateManager<any>} params.flowManager - The flow manager instance.
  */
-function createAbortHandler({ userId, serverName, toolName, flowManager }) {
+function createAbortHandler({ userId, serverName, toolName, tenantId, flowManager }) {
   return function () {
     logger.info(`[MCP][User: ${userId}][${serverName}][${toolName}] Tool call aborted`);
-    const flowId = MCPOAuthHandler.generateFlowId(userId, serverName);
+    const flowId = getOAuthFlowId(userId, serverName, tenantId);
     // Clean up both mcp_oauth and mcp_get_tokens flows
     flowManager.failFlow(flowId, 'mcp_oauth', new Error('Tool call aborted'));
     flowManager.failFlow(flowId, 'mcp_get_tokens', new Error('Tool call aborted'));
@@ -423,7 +431,8 @@ async function reconnectServer({
   });
 
   // Set up abort handler to clean up OAuth flows if request is aborted
-  const oauthFlowId = MCPOAuthHandler.generateFlowId(user.id, serverName);
+  const tenantId = user?.tenantId ?? getTenantId();
+  const oauthFlowId = getOAuthFlowId(user.id, serverName, tenantId);
   const abortHandler = () => {
     logger.info(
       `[MCP][User: ${user.id}][${serverName}] Tool loading aborted, cleaning up OAuth flows`,
@@ -788,7 +797,8 @@ function createToolInstance({
       });
 
       if (derivedSignal) {
-        abortHandler = createAbortHandler({ userId, serverName, toolName, flowManager });
+        const tenantId = config?.configurable?.user?.tenantId ?? getTenantId();
+        abortHandler = createAbortHandler({ userId, serverName, toolName, tenantId, flowManager });
         derivedSignal.addEventListener('abort', abortHandler, { once: true });
       }
 
@@ -915,12 +925,13 @@ async function getMCPSetupData(userId, options = {}) {
  * Check OAuth flow status for a user and server
  * @param {string} userId - The user ID
  * @param {string} serverName - The server name
+ * @param {string} [tenantId] - The tenant ID for the current request.
  * @returns {Object} Object containing hasActiveFlow and hasFailedFlow flags
  */
-async function checkOAuthFlowStatus(userId, serverName) {
+async function checkOAuthFlowStatus(userId, serverName, tenantId = getTenantId()) {
   const flowsCache = getLogStores(CacheKeys.FLOWS);
   const flowManager = getFlowStateManager(flowsCache);
-  const flowId = MCPOAuthHandler.generateFlowId(userId, serverName);
+  const flowId = getOAuthFlowId(userId, serverName, tenantId);
 
   try {
     const flowState = await flowManager.getFlowState(flowId, 'mcp_oauth');

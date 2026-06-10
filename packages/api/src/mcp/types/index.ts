@@ -192,6 +192,8 @@ export interface BasicConnectionOptions {
   allowedAddresses?: string[] | null;
   /** When true, only resolve customUserVars in processMCPEnv (for DB-stored servers) */
   dbSourced?: boolean;
+  /** When true, serverConfig has already gone through processMCPEnv for this request */
+  skipEnvProcessing?: boolean;
 }
 
 /** User context for placeholder resolution in MCP connections (non-OAuth and OAuth alike) */

@@ -18,6 +18,7 @@ import type { TokenMethods } from '@librechat/data-schemas';
 import type {
   OAuthClientInformation,
   OAuthProtectedResourceMetadata,
+  OAuthStoredClientMetadata,
   MCPOAuthFlowMetadata,
   MCPOAuthTokens,
   OAuthMetadata,
@@ -50,6 +51,7 @@ export class MCPOAuthHandler {
     clientInfo?: OAuthClientInformation,
     allowedDomains?: string[] | null,
     allowedAddresses?: string[] | null,
+    signal?: AbortSignal,
   ): FetchLike {
     const hardenedFetch = createHardenedOAuthFetch({ allowedDomains, allowedAddresses });
 
@@ -120,11 +122,13 @@ export class MCPOAuthHandler {
           ...init,
           body: params.toString(),
           headers: newHeaders,
+          signal: init?.signal ?? signal,
         });
       }
       return hardenedFetch(url, {
         ...init,
         headers: newHeaders,
+        signal: init?.signal ?? signal,
       });
     };
   }
@@ -357,6 +361,27 @@ export class MCPOAuthHandler {
     );
   }
 
+  public static buildStoredClientMetadata(
+    metadata?: OAuthMetadata,
+    resourceMetadata?: OAuthProtectedResourceMetadata,
+  ): OAuthStoredClientMetadata | undefined {
+    if (!metadata) {
+      return undefined;
+    }
+    const storedMetadata: OAuthStoredClientMetadata = { ...metadata };
+    if (resourceMetadata?.resource) {
+      storedMetadata.resource = new URL(resourceMetadata.resource).href;
+    }
+    return storedMetadata;
+  }
+
+  private static appendResourceParameter(body: URLSearchParams, resource?: string): void {
+    if (!resource) {
+      return;
+    }
+    body.set('resource', resource);
+  }
+
   private static assertNoUnpinnedClientSecret(config?: MCPOptions['oauth']): void {
     if (config?.client_secret && !config.client_id) {
       throw new Error('[MCPOAuth] OAuth client_secret requires oauth.client_id.');
@@ -478,12 +503,13 @@ export class MCPOAuthHandler {
     allowedDomains?: string[] | null,
     findToken?: TokenMethods['findToken'],
     allowedAddresses?: string[] | null,
+    tenantId?: string,
   ): Promise<{ authorizationUrl: string; flowId: string; flowMetadata: MCPOAuthFlowMetadata }> {
     logger.debug(
       `[MCPOAuth] initiateOAuthFlow called for ${serverName} with URL: ${sanitizeUrlForLogging(serverUrl)}`,
     );
 
-    const flowId = this.generateFlowId(userId, serverName);
+    const flowId = this.generateFlowId(userId, serverName, tenantId);
     const state = this.generateState();
 
     logger.debug(`[MCPOAuth] Generated flowId: ${flowId}, state: ${state}`);
@@ -597,6 +623,7 @@ export class MCPOAuthHandler {
           ...(allowedDomains !== undefined && { allowedDomains }),
           ...(allowedAddresses !== undefined && { allowedAddresses }),
           ...(Object.keys(oauthHeaders).length > 0 && { oauthHeaders }),
+          ...(tenantId && { tenantId }),
         };
 
         logger.debug(
@@ -778,6 +805,7 @@ export class MCPOAuthHandler {
         ...(allowedAddresses !== undefined && { allowedAddresses }),
         ...(Object.keys(oauthHeaders).length > 0 && { oauthHeaders }),
         ...(reusedStoredClient && { reusedStoredClient }),
+        ...(tenantId && { tenantId }),
       };
 
       logger.debug(
@@ -906,8 +934,55 @@ export class MCPOAuthHandler {
    * Generates a flow ID for the OAuth flow
    * @returns Consistent ID so concurrent requests share the same flow
    */
-  public static generateFlowId(userId: string, serverName: string): string {
-    return `${userId}:${serverName}`;
+  public static generateFlowId(userId: string, serverName: string, tenantId?: string): string {
+    const flowId = `${userId}:${serverName}`;
+    if (!tenantId) {
+      return flowId;
+    }
+    return `tenant:${encodeURIComponent(tenantId)}:${flowId}`;
+  }
+
+  public static parseFlowId(
+    flowId: string,
+  ): { userId: string; serverName: string; tenantId?: string } | null {
+    const parts = flowId.split(':');
+    if (parts[0] === 'tenant') {
+      if (parts.length < 4 || !parts[1] || !parts[2]) {
+        return null;
+      }
+      let tenantId: string;
+      try {
+        tenantId = decodeURIComponent(parts[1]);
+      } catch {
+        return null;
+      }
+      const serverName = parts.slice(3).join(':');
+      if (!serverName) {
+        return null;
+      }
+      return {
+        tenantId,
+        userId: parts[2],
+        serverName,
+      };
+    }
+
+    if (parts.length < 2 || !parts[0]) {
+      return null;
+    }
+    const serverName = parts.slice(1).join(':');
+    if (!serverName) {
+      return null;
+    }
+    return {
+      userId: parts[0],
+      serverName,
+    };
+  }
+
+  /** Same shape as `generateFlowId`; kept distinct so token-fetch flows can diverge from OAuth flows */
+  public static generateTokenFlowId(userId: string, serverName: string, tenantId?: string): string {
+    return this.generateFlowId(userId, serverName, tenantId);
   }
 
   /**
@@ -1104,8 +1179,9 @@ export class MCPOAuthHandler {
     headers: HeadersInit,
     body: URLSearchParams,
     serverName: string,
+    signal?: AbortSignal,
   ): Promise<Response> {
-    const response = await oauthFetch(tokenUrl, { method: 'POST', headers, body });
+    const response = await oauthFetch(tokenUrl, { method: 'POST', headers, body, signal });
     if (response.ok || !body.has('scope')) {
       return response;
     }
@@ -1122,7 +1198,7 @@ export class MCPOAuthHandler {
       `[MCPOAuth] ${serverName} rejected the scope parameter on token refresh (HTTP ${response.status}); retrying without scope per RFC 6749 §6`,
     );
     body.delete('scope');
-    return oauthFetch(tokenUrl, { method: 'POST', headers, body });
+    return oauthFetch(tokenUrl, { method: 'POST', headers, body, signal });
   }
 
   /**
@@ -1158,11 +1234,13 @@ export class MCPOAuthHandler {
       clientInfo?: OAuthClientInformation;
       storedTokenEndpoint?: string;
       storedAuthMethods?: string[];
+      resource?: string;
     },
     oauthHeaders: Record<string, string>,
     config?: MCPOptions['oauth'],
     allowedDomains?: string[] | null,
     allowedAddresses?: string[] | null,
+    signal?: AbortSignal,
   ): Promise<MCPOAuthTokens> {
     logger.debug(`[MCPOAuth] Refreshing tokens for ${metadata.serverName}`);
 
@@ -1216,6 +1294,7 @@ export class MCPOAuthHandler {
             undefined,
             allowedDomains,
             allowedAddresses,
+            signal,
           );
           const oauthMetadata = await this.discoverWithOriginFallback(serverUrl, fetchFn);
 
@@ -1250,6 +1329,7 @@ export class MCPOAuthHandler {
         if (metadata.clientInfo.scope) {
           body.append('scope', metadata.clientInfo.scope);
         }
+        this.appendResourceParameter(body, metadata.resource);
 
         /**
          * Forward Auth0-style `audience` on refresh by default — Auth0 strips the
@@ -1321,6 +1401,7 @@ export class MCPOAuthHandler {
           headers,
           body,
           metadata.serverName,
+          signal,
         );
 
         if (!response.ok) {
@@ -1353,6 +1434,7 @@ export class MCPOAuthHandler {
         if (config.scope) {
           body.append('scope', config.scope);
         }
+        this.appendResourceParameter(body, metadata.resource);
 
         const headers: HeadersInit = {
           Accept: 'application/json',
@@ -1407,6 +1489,7 @@ export class MCPOAuthHandler {
           headers,
           body,
           metadata.serverName,
+          signal,
         );
 
         if (!response.ok) {
@@ -1432,6 +1515,7 @@ export class MCPOAuthHandler {
         undefined,
         allowedDomains,
         allowedAddresses,
+        signal,
       );
       const oauthMetadata = await this.discoverWithOriginFallback(serverUrl, fetchFn);
 
@@ -1455,6 +1539,7 @@ export class MCPOAuthHandler {
         grant_type: 'refresh_token',
         refresh_token: refreshToken,
       });
+      this.appendResourceParameter(body, metadata.resource);
 
       const headers: HeadersInit = {
         Accept: 'application/json',
@@ -1467,6 +1552,7 @@ export class MCPOAuthHandler {
         method: 'POST',
         headers,
         body,
+        signal,
       });
 
       if (!response.ok) {
