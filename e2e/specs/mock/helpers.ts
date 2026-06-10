@@ -36,7 +36,7 @@ export function isAgentGenerationStart(response: Response) {
 const modelSelectorTrigger = (page: Page) =>
   page.getByRole('button', { name: 'Select a model' }).first();
 
-const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+export const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** Open the model selector, choose an endpoint, then its model (committed on the model click). */
 export async function selectMockEndpoint(page: Page, endpoint: MockEndpoint) {
@@ -70,9 +70,16 @@ export async function enableSkills(page: Page) {
   await expect(page.getByRole('button', { name: 'Skills' })).toBeVisible();
 }
 
+/** The conversation messages container. */
+export const messagesView = (page: Page) => page.getByTestId('messages-view');
+
+/** Build the mock-model reply trigger and its expected rendered text for a label. */
+export const replyPrompt = (label: string) => `E2E_REPLY:${label}`;
+export const replyText = (label: string) => `E2E reply ${label}`;
+
 /** The mock reply as rendered in the conversation, scoped to the messages view. */
 export function mockReply(page: Page) {
-  return page.getByTestId('messages-view').getByText(new RegExp(MOCK_REPLY_TEXT, 'i'));
+  return messagesView(page).getByText(new RegExp(MOCK_REPLY_TEXT, 'i'));
 }
 
 /** Type a message, send it, and wait for the streamed `/api/agents` response. */

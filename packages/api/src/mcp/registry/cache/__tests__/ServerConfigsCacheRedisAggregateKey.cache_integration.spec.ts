@@ -1,5 +1,6 @@
 import { expect } from '@playwright/test';
 import type { ParsedServerConfig } from '~/mcp/types';
+import { closeRedisClients } from '~/cache/__tests__/redisClients.helper';
 
 describe('ServerConfigsCacheRedisAggregateKey Integration Tests', () => {
   let ServerConfigsCacheRedisAggregateKey: typeof import('../ServerConfigsCacheRedisAggregateKey').ServerConfigsCacheRedisAggregateKey;
@@ -56,7 +57,7 @@ describe('ServerConfigsCacheRedisAggregateKey Integration Tests', () => {
   });
 
   afterAll(async () => {
-    if (keyvRedisClient?.isOpen) await keyvRedisClient.disconnect();
+    await closeRedisClients();
   });
 
   describe('add and get operations', () => {

@@ -1423,6 +1423,38 @@ export type SummarizationConfig = z.infer<typeof summarizationConfigSchema>;
 
 const customEndpointsSchema = z.array(endpointSchema.partial()).optional();
 
+const messageFilterPiiCustomPatternSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  regex: z
+    .string()
+    .min(1)
+    .refine(
+      (value) => {
+        try {
+          new RegExp(value, 'g');
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      { message: 'Invalid regex' },
+    ),
+});
+
+export const messageFilterPiiSchema = z.object({
+  starterPatterns: z.array(z.string()).optional(),
+  customPatterns: z.array(messageFilterPiiCustomPatternSchema).optional(),
+});
+
+export type MessageFilterPiiConfig = z.infer<typeof messageFilterPiiSchema>;
+
+export const messageFilterSchema = z.object({
+  pii: messageFilterPiiSchema.optional(),
+});
+
+export type MessageFilterConfig = z.infer<typeof messageFilterSchema>;
+
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean().default(true),
@@ -1470,6 +1502,7 @@ export const configSchema = z.object({
   rateLimits: rateLimitSchema.optional(),
   fileConfig: fileConfigSchema.optional(),
   modelSpecs: specsConfigSchema.optional(),
+  messageFilter: messageFilterSchema.optional(),
   endpoints: z
     .object({
       allowedAddresses: allowedAddressesSchema,

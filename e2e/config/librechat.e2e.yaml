@@ -4,6 +4,16 @@
 version: 1.3.11
 cache: true
 
+mcpServers:
+  e2e-memory:
+    type: stdio
+    command: node
+    args:
+      - e2e/setup/fake-mcp-server.js
+    title: E2E Memory
+    description: Local MCP fixture used by mock end-to-end tests.
+    timeout: 30000
+
 endpoints:
   custom:
     - name: 'Mock Provider A'
@@ -15,6 +25,8 @@ endpoints:
         fetch: false
       titleConvo: false
       modelDisplayLabel: 'Mock Provider A'
+      customParams:
+        defaultParamsEndpoint: anthropic
 
     - name: 'Mock Provider B'
       apiKey: 'e2e-mock-key-b'
@@ -26,9 +38,28 @@ endpoints:
       titleConvo: false
       modelDisplayLabel: 'Mock Provider B'
 
+    # No model spec mirrors this endpoint's label, so it stays unambiguous in the
+    # selector and gives e2e tests a real ephemeral endpoint → model option.
+    - name: 'Mock Provider C'
+      apiKey: 'e2e-mock-key-c'
+      baseURL: 'http://127.0.0.1:8889/v1'
+      models:
+        default:
+          - 'mock-model-c'
+        fetch: false
+      titleConvo: false
+      modelDisplayLabel: 'Mock Provider C'
+
 modelSpecs:
   prioritize: true
-  enforce: true
+  # Enforcement would reject sends from the non-spec paths addedEndpoints
+  # exposes below (buildEndpointOption requires a spec when enforce is true).
+  enforce: false
+  # Surfaces the endpoints menu (modelSelect defaults on when addedEndpoints is
+  # set) limited to entries that don't collide with the spec labels above.
+  addedEndpoints:
+    - 'Mock Provider C'
+    - 'agents'
   list:
     - name: 'e2e-mock-provider-a'
       label: 'Mock Provider A'
@@ -58,3 +89,10 @@ modelSpecs:
         - 'e2e-model-spec-allowed'
         - 'e2e-model-spec-missing'
         - 'e2e-model-spec-inaccessible'
+
+    - name: 'e2e-soft-default'
+      label: 'E2E Soft Default'
+      softDefault: true
+      preset:
+        endpoint: 'Mock Provider A'
+        model: 'mock-model-a'
