@@ -11,27 +11,6 @@ export const allAgentViewAndEditQueryKeys: t.AgentListParams[] = [
   { requiredPermission: PermissionBits.EDIT },
 ];
 
-const hasContactValue = (contact?: { name?: string | null; email?: string | null }) =>
-  Boolean(contact?.name?.trim() || contact?.email?.trim());
-
-export const preserveOwnerContactFallback = (
-  updatedAgent: t.Agent,
-  previousAgent?: t.Agent,
-): t.Agent => {
-  if (
-    updatedAgent.owner_contact !== undefined ||
-    previousAgent?.owner_contact === undefined ||
-    hasContactValue(updatedAgent.support_contact ?? previousAgent.support_contact)
-  ) {
-    return updatedAgent;
-  }
-
-  return {
-    ...updatedAgent,
-    owner_contact: previousAgent.owner_contact,
-  };
-};
-
 /**
  * Create a new agent
  */
@@ -96,7 +75,7 @@ export const useUpdateAgentMutation = (
               ...listRes,
               data: listRes.data.map((agent) => {
                 if (agent.id === variables.agent_id) {
-                  return preserveOwnerContactFallback(updatedAgent, agent);
+                  return updatedAgent;
                 }
                 return agent;
               }),
@@ -104,12 +83,10 @@ export const useUpdateAgentMutation = (
           });
         })(allAgentViewAndEditQueryKeys);
 
-        queryClient.setQueryData<t.Agent>([QueryKeys.agent, variables.agent_id], (agent) =>
-          preserveOwnerContactFallback(updatedAgent, agent),
-        );
+        queryClient.setQueryData<t.Agent>([QueryKeys.agent, variables.agent_id], updatedAgent);
         queryClient.setQueryData<t.Agent>(
           [QueryKeys.agent, variables.agent_id, 'expanded'],
-          (agent) => preserveOwnerContactFallback(updatedAgent, agent),
+          updatedAgent,
         );
         invalidateAgentMarketplaceQueries(queryClient);
 
@@ -230,7 +207,7 @@ export const useUploadAgentAvatarMutation = (
             ...listRes,
             data: listRes.data.map((agent) => {
               if (agent.id === variables.agent_id) {
-                return preserveOwnerContactFallback(updatedAgent, agent);
+                return updatedAgent;
               }
               return agent;
             }),
@@ -238,12 +215,10 @@ export const useUploadAgentAvatarMutation = (
         });
       })(allAgentViewAndEditQueryKeys);
 
-      queryClient.setQueryData<t.Agent>([QueryKeys.agent, variables.agent_id], (agent) =>
-        preserveOwnerContactFallback(updatedAgent, agent),
-      );
+      queryClient.setQueryData<t.Agent>([QueryKeys.agent, variables.agent_id], updatedAgent);
       queryClient.setQueryData<t.Agent>(
         [QueryKeys.agent, variables.agent_id, 'expanded'],
-        (agent) => preserveOwnerContactFallback(updatedAgent, agent),
+        updatedAgent,
       );
       invalidateAgentMarketplaceQueries(queryClient);
 
@@ -283,7 +258,7 @@ export const useUpdateAgentAction = (
             ...listRes,
             data: listRes.data.map((agent) => {
               if (agent.id === variables.agent_id) {
-                return preserveOwnerContactFallback(updatedAgent, agent);
+                return updatedAgent;
               }
               return agent;
             }),
@@ -308,12 +283,10 @@ export const useUpdateAgentAction = (
         return [...prev, updateAgentActionResponse[1]];
       });
 
-      queryClient.setQueryData<t.Agent>([QueryKeys.agent, variables.agent_id], (agent) =>
-        preserveOwnerContactFallback(updatedAgent, agent),
-      );
+      queryClient.setQueryData<t.Agent>([QueryKeys.agent, variables.agent_id], updatedAgent);
       queryClient.setQueryData<t.Agent>(
         [QueryKeys.agent, variables.agent_id, 'expanded'],
-        (agent) => preserveOwnerContactFallback(updatedAgent, agent),
+        updatedAgent,
       );
       return options?.onSuccess?.(updateAgentActionResponse, variables, context);
     },
@@ -405,9 +378,7 @@ export const useRevertAgentVersionMutation = (
       onMutate: (variables) => options?.onMutate?.(variables),
       onError: (error, variables, context) => options?.onError?.(error, variables, context),
       onSuccess: (revertedAgent, variables, context) => {
-        queryClient.setQueryData<t.Agent>([QueryKeys.agent, variables.agent_id], (agent) =>
-          preserveOwnerContactFallback(revertedAgent, agent),
-        );
+        queryClient.setQueryData<t.Agent>([QueryKeys.agent, variables.agent_id], revertedAgent);
 
         ((keys: t.AgentListParams[]) => {
           keys.forEach((key) => {
@@ -418,7 +389,7 @@ export const useRevertAgentVersionMutation = (
                 ...listRes,
                 data: listRes.data.map((agent) => {
                   if (agent.id === variables.agent_id) {
-                    return preserveOwnerContactFallback(revertedAgent, agent);
+                    return revertedAgent;
                   }
                   return agent;
                 }),
