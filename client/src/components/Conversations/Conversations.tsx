@@ -386,7 +386,7 @@ const Conversations: FC<ConversationsProps> = ({
           <span className="ml-2 text-text-primary">{localize('com_ui_loading')}</span>
         </div>
       ) : (
-        <div ref={listContainerRef} className="flex-1">
+        <div ref={listContainerRef} className="min-h-0 flex-1 overflow-hidden">
           <List
             ref={containerRef}
             width={listWidth}

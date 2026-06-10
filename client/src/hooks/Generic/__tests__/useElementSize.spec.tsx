@@ -98,11 +98,18 @@ describe('useElementSize', () => {
 
     const { result } = renderHook(() => useElementSize<HTMLDivElement>());
     const node = document.createElement('div');
-    Object.defineProperty(node, 'offsetWidth', { value: 280 });
+    let offsetWidth = 280;
+    Object.defineProperty(node, 'offsetWidth', { get: () => offsetWidth, configurable: true });
     Object.defineProperty(node, 'offsetHeight', { value: 500 });
 
     act(() => result.current.ref(node));
     expect(result.current.width).toBe(280);
     expect(result.current.height).toBe(500);
+
+    offsetWidth = 320;
+    act(() => {
+      window.dispatchEvent(new Event('resize'));
+    });
+    expect(result.current.width).toBe(320);
   });
 });

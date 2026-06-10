@@ -25,17 +25,23 @@ export default function useElementSize<T extends HTMLElement>(): UseElementSizeR
     if (!node) {
       return;
     }
-    if (typeof ResizeObserver === 'undefined') {
-      setSize({ width: node.offsetWidth, height: node.offsetHeight });
-      return;
-    }
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[entries.length - 1];
-      const width = Math.floor(entry.contentRect.width);
-      const height = Math.floor(entry.contentRect.height);
+    const apply = (width: number, height: number) =>
       setSize((prev) =>
         prev.width === width && prev.height === height ? prev : { width, height },
       );
+    const measure = () => apply(node.offsetWidth, node.offsetHeight);
+
+    measure();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure);
+      return () => window.removeEventListener('resize', measure);
+    }
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[entries.length - 1];
+      if (!entry) {
+        return;
+      }
+      apply(Math.floor(entry.contentRect.width), Math.floor(entry.contentRect.height));
     });
     observer.observe(node);
     return () => observer.disconnect();
