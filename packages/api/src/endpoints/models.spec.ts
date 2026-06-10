@@ -209,7 +209,7 @@ describe('getOpenAIModels', () => {
 
   it('returns default models when no environment configurations are provided (and fetch fails)', async () => {
     const models = await getOpenAIModels({ user: 'user456' });
-    expect(models).toContain('gpt-4');
+    expect(models).toContain('gpt-5.5');
   });
 
   it('returns default models when OpenAI API key is user provided', async () => {
@@ -220,7 +220,7 @@ describe('getOpenAIModels', () => {
 
     expect(mockedAxios.get).not.toHaveBeenCalled();
     expect(models).not.toContain('should-not-appear');
-    expect(models).toContain('gpt-4');
+    expect(models).toContain('gpt-5.5');
   });
 
   it('fetches models when OpenAI API key is provided through options', async () => {
@@ -334,6 +334,26 @@ describe('getOpenAIModels sorting behavior', () => {
       'gpt-3.5-turbo-instruct',
     ];
     expect(models).toEqual(expectedOrder);
+  });
+
+  it('keeps chat-latest when filtering official OpenAI results', async () => {
+    mockedAxios.get.mockResolvedValue({
+      data: {
+        data: [
+          { id: 'chat-latest' },
+          { id: 'gpt-5.5' },
+          { id: 'dall-e-3' },
+          { id: 'gpt-realtime-2' },
+        ],
+      },
+    });
+
+    const models = await getOpenAIModels({ user: 'user456' });
+
+    expect(models).toContain('chat-latest');
+    expect(models).toContain('gpt-5.5');
+    expect(models).not.toContain('dall-e-3');
+    expect(models).not.toContain('gpt-realtime-2');
   });
 });
 
