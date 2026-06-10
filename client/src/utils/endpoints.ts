@@ -433,9 +433,15 @@ export function getDefaultModelSpec(
   }
   const defaultSpec = list?.find((spec) => spec.default);
   const softDefaultSpec = list?.find((spec) => spec.softDefault);
+  const lastConversationSetup = parseStoredModelSelection(
+    localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP + '_0'),
+  );
   const resolveSoftDefault = (): { softDefault: t.TModelSpec } | undefined => {
     if (!softDefaultSpec) {
       return;
+    }
+    if (lastConversationSetup?.spec === softDefaultSpec.name) {
+      return { softDefault: softDefaultSpec };
     }
     const ephemeralOptions = hasEphemeralModelOptions({
       endpointsConfig,
@@ -466,16 +472,13 @@ export function getDefaultModelSpec(
   } else if (defaultSpec) {
     return { default: defaultSpec };
   }
-  const lastConversationSetup = parseStoredModelSelection(
-    localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP + '_0'),
-  );
   const lastConversationSpecName = lastConversationSetup?.spec;
   if (!hasSelectionValue(lastConversationSpecName)) {
     return resolveSoftDefault();
   }
   const lastSpec = list?.find((spec) => spec.name === lastConversationSpecName);
   if (lastSpec && lastSpec.name === softDefaultSpec?.name) {
-    return { softDefault: softDefaultSpec };
+    return resolveSoftDefault();
   }
   return { last: lastSpec };
 }

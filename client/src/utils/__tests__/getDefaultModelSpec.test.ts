@@ -256,6 +256,35 @@ describe('getDefaultModelSpec', () => {
     });
   });
 
+  describe('explicit soft default selection', () => {
+    const softSpec = createModelSpec('soft-spec', { softDefault: true });
+    const otherSpec = createModelSpec('other-spec');
+
+    it('keeps the soft default selected over older model history (prioritized config)', () => {
+      persistEphemeralSelection(EModelEndpoint.openAI, 'gpt-4o');
+      persistAppliedSpec(softSpec);
+
+      const result = getDefaultModelSpec(
+        createStartupConfig([otherSpec, softSpec]),
+        fullEndpointsConfig,
+      );
+
+      expect(result).toEqual({ softDefault: softSpec });
+    });
+
+    it('keeps the soft default selected over older model history (modelSelect config)', () => {
+      persistEphemeralSelection(EModelEndpoint.openAI, 'gpt-4o');
+      persistAppliedSpec(softSpec);
+
+      const result = getDefaultModelSpec(
+        createStartupConfig([otherSpec, softSpec], { prioritize: false }),
+        fullEndpointsConfig,
+      );
+
+      expect(result).toEqual({ softDefault: softSpec });
+    });
+  });
+
   describe('no ephemeral endpoint → model options (edge case)', () => {
     const softSpec = createModelSpec('soft-spec', { softDefault: true });
     const otherSpec = createModelSpec('other-spec');
