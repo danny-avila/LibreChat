@@ -1,7 +1,44 @@
 import { Constants } from 'librechat-data-provider';
 import type { ParsedServerConfig } from '~/mcp/types';
+import type { RequestBody } from '~/types';
 
 export const mcpToolPattern: RegExp = new RegExp(`^.+${Constants.mcp_delimiter}.+$`);
+
+const RUNTIME_CONTEXT_PLACEHOLDER_PATTERN = /\{\{LIBRECHAT_(?:USER|OPENID|GRAPH|BODY)_[^}]+\}\}/;
+const EPHEMERAL_CONNECTION_PLACEHOLDER_PATTERN = /\{\{LIBRECHAT_(?:OPENID|GRAPH|BODY)_[^}]+\}\}/;
+const RUNTIME_BODY_PLACEHOLDER_PATTERN = /\{\{LIBRECHAT_BODY_[^}]+\}\}/;
+const RUNTIME_BODY_PLACEHOLDER_CAPTURE_PATTERN = /\{\{LIBRECHAT_BODY_([^}]+)\}\}/g;
+
+const BODY_PLACEHOLDER_FIELDS: Record<string, keyof RequestBody> = {
+  CONVERSATIONID: 'conversationId',
+  PARENTMESSAGEID: 'parentMessageId',
+  MESSAGEID: 'messageId',
+};
+
+type PlaceholderValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | readonly PlaceholderValue[]
+  | { readonly [key: string]: PlaceholderValue };
+
+type UserScopedConnectionConfig = Pick<
+  ParsedServerConfig,
+  'requiresOAuth' | 'customUserVars' | 'obo' | 'source' | 'dbId'
+> & {
+  args?: string[];
+  env?: Record<string, string>;
+  headers?: Record<string, string>;
+  oauth?: PlaceholderValue;
+  oauth_headers?: Record<string, string>;
+  url?: string;
+};
+
+function placeholderBearingFields(config: UserScopedConnectionConfig): PlaceholderValue[] {
+  return [config.args, config.env, config.headers, config.oauth, config.oauth_headers, config.url];
+}
 
 /** Whether a server should use MCP OAuth handling. */
 export function isOAuthServer(
@@ -35,14 +72,136 @@ export function hasCustomUserVars(config: Pick<ParsedServerConfig, 'customUserVa
   return !!config.customUserVars && Object.keys(config.customUserVars).length > 0;
 }
 
+function hasRuntimeContextPlaceholder(value: PlaceholderValue): boolean {
+  return hasPlaceholder(value, RUNTIME_CONTEXT_PLACEHOLDER_PATTERN);
+}
+
+function hasEphemeralConnectionPlaceholder(value: PlaceholderValue): boolean {
+  return hasPlaceholder(value, EPHEMERAL_CONNECTION_PLACEHOLDER_PATTERN);
+}
+
+function hasPlaceholder(value: PlaceholderValue, pattern: RegExp): boolean {
+  if (typeof value === 'string') {
+    return pattern.test(value);
+  }
+  if (Array.isArray(value)) {
+    return value.some((item) => hasPlaceholder(item, pattern));
+  }
+
+  if (value == null || typeof value !== 'object') {
+    return false;
+  }
+
+  return Object.values(value).some((item) => hasPlaceholder(item, pattern));
+}
+
+function addRuntimeBodyPlaceholderFields(value: PlaceholderValue, fields: Set<string>): void {
+  if (typeof value === 'string') {
+    for (const match of value.matchAll(RUNTIME_BODY_PLACEHOLDER_CAPTURE_PATTERN)) {
+      const placeholderKey = match[1];
+      if (placeholderKey) {
+        fields.add(BODY_PLACEHOLDER_FIELDS[placeholderKey] ?? placeholderKey);
+      }
+    }
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      addRuntimeBodyPlaceholderFields(item, fields);
+    }
+    return;
+  }
+
+  if (value == null || typeof value !== 'object') {
+    return;
+  }
+
+  for (const item of Object.values(value)) {
+    addRuntimeBodyPlaceholderFields(item, fields);
+  }
+}
+
+/**
+ * Trusted YAML/config servers may use per-user/request placeholders that can
+ * only be resolved once a real request context exists. User-sourced DB servers
+ * deliberately stay sandboxed and only resolve customUserVars.
+ */
+export function hasRuntimeContextPlaceholders(config: UserScopedConnectionConfig): boolean {
+  if (isUserSourced(config)) {
+    return false;
+  }
+
+  return placeholderBearingFields(config).some(hasRuntimeContextPlaceholder);
+}
+
+export function hasRuntimeUrlPlaceholders(config: UserScopedConnectionConfig): boolean {
+  if (isUserSourced(config)) {
+    return false;
+  }
+
+  return hasRuntimeContextPlaceholder(config.url);
+}
+
+export function hasRuntimeBodyPlaceholders(config: UserScopedConnectionConfig): boolean {
+  if (isUserSourced(config)) {
+    return false;
+  }
+
+  return placeholderBearingFields(config).some((value) =>
+    hasPlaceholder(value, RUNTIME_BODY_PLACEHOLDER_PATTERN),
+  );
+}
+
+export function getRuntimeBodyPlaceholderFields(config: UserScopedConnectionConfig): string[] {
+  if (isUserSourced(config)) {
+    return [];
+  }
+
+  const fields = new Set<string>();
+  for (const value of placeholderBearingFields(config)) {
+    addRuntimeBodyPlaceholderFields(value, fields);
+  }
+  return Array.from(fields);
+}
+
+export function getMissingRuntimeBodyPlaceholderFields(
+  config: UserScopedConnectionConfig,
+  requestBody?: RequestBody,
+): string[] {
+  return getRuntimeBodyPlaceholderFields(config).filter((field) => {
+    const value = requestBody?.[field as keyof RequestBody];
+    return value == null || (typeof value === 'string' && value.trim() === '');
+  });
+}
+
+/**
+ * `GRAPH` and `BODY` placeholders can change per request. If they affect the
+ * connection-defining parts of a config, the normal userId:serverName cache
+ * would reuse a connection built with stale request context.
+ *
+ * Ephemeral connections are created and torn down per tool call — configs using
+ * these placeholders pay a full connect + initialize on every invocation.
+ */
+export function requiresEphemeralUserConnection(config: UserScopedConnectionConfig): boolean {
+  if (isUserSourced(config)) {
+    return false;
+  }
+
+  return placeholderBearingFields(config).some(hasEphemeralConnectionPlaceholder);
+}
+
 /**
  * Returns true when a server requires a per-user connection instead of an
  * app-shared connection.
  */
-export function requiresUserScopedConnection(
-  config: Pick<ParsedServerConfig, 'requiresOAuth' | 'customUserVars' | 'obo'>,
-): boolean {
-  return config.requiresOAuth === true || config.obo != null || hasCustomUserVars(config);
+export function requiresUserScopedConnection(config: UserScopedConnectionConfig): boolean {
+  return (
+    config.requiresOAuth === true ||
+    config.obo != null ||
+    hasCustomUserVars(config) ||
+    hasRuntimeContextPlaceholders(config)
+  );
 }
 
 /**

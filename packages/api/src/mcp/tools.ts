@@ -25,6 +25,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): {
     userId: string;
     serverName: string;
     tools: MCPToolInput[] | null;
+    skipCache?: boolean;
   }) => Promise<LCAvailableTools>;
   mergeAppTools: (appTools: LCAvailableTools) => Promise<void>;
   cacheMCPServerTools: (params: {
@@ -39,8 +40,9 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): {
     userId: string;
     serverName: string;
     tools: MCPToolInput[] | null;
+    skipCache?: boolean;
   }): Promise<LCAvailableTools> {
-    const { userId, serverName, tools } = params;
+    const { userId, serverName, tools, skipCache = false } = params;
     try {
       const serverTools: LCAvailableTools = {};
       const mcpDelimiter = Constants.mcp_delimiter;
@@ -61,6 +63,13 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): {
           },
         };
         serverTools[name] = entry;
+      }
+
+      if (skipCache) {
+        logger.debug(
+          `[MCP Cache] Built ${tools.length} tools for request-scoped server ${serverName} (user: ${userId}) without caching`,
+        );
+        return serverTools;
       }
 
       await setCachedTools(serverTools, { userId, serverName });

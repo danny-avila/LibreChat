@@ -321,7 +321,7 @@ const useNewConvo = (index = 0) => {
       };
 
       let preset = _preset;
-      const result = getDefaultModelSpec(startupConfig);
+      const result = getDefaultModelSpec(startupConfig, endpointsConfig);
       const defaultModelSpec = result?.default ?? result?.last ?? result?.softDefault;
       const shouldApplyModelSpec =
         result?.softDefault != null
@@ -383,6 +383,7 @@ const useNewConvo = (index = 0) => {
       resetBadges,
       startupConfig,
       saveBadgesState,
+      endpointsConfig,
       pauseGlobalAudio,
       switchToConversation,
       applyModelSpecEffects,

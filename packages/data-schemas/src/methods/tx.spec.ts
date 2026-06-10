@@ -56,9 +56,17 @@ describe('getValueKey', () => {
 
   it('should return "gpt-5.3" for model name containing "gpt-5.3"', () => {
     expect(getValueKey('gpt-5.3')).toBe('gpt-5.3');
-    expect(getValueKey('gpt-5.3-chat-latest')).toBe('gpt-5.3');
     expect(getValueKey('gpt-5.3-codex')).toBe('gpt-5.3');
     expect(getValueKey('openai/gpt-5.3')).toBe('gpt-5.3');
+  });
+
+  it('should return explicit keys for chat-latest aliases', () => {
+    expect(getValueKey('chat-latest')).toBe('chat-latest');
+    expect(getValueKey('openai/chat-latest')).toBe('chat-latest');
+    expect(getValueKey('gpt-5-chat-latest')).toBe('gpt-5-chat-latest');
+    expect(getValueKey('gpt-5.1-chat-latest')).toBe('gpt-5.1-chat-latest');
+    expect(getValueKey('gpt-5.2-chat-latest')).toBe('gpt-5.2-chat-latest');
+    expect(getValueKey('gpt-5.3-chat-latest')).toBe('gpt-5.3-chat-latest');
   });
 
   it('should return "gpt-5.4" for model name containing "gpt-5.4"', () => {

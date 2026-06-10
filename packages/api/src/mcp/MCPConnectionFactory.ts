@@ -15,9 +15,11 @@ import {
 } from '~/mcp/oauth';
 import { sanitizeUrlForLogging, isClientRejectionMessage, isOAuthServer } from './utils';
 import { PENDING_STALE_MS, normalizeExpiresAt } from '~/flow/manager';
+import { preProcessGraphTokens } from '~/utils/graph';
 import { withTimeout } from '~/utils/promise';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
+import { mcpConfig } from './mcpConfig';
 
 export interface ToolDiscoveryResult {
   tools: Tool[] | null;
@@ -58,7 +60,7 @@ export class MCPConnectionFactory {
     basic: t.BasicConnectionOptions,
     oauth?: t.OAuthConnectionOptions | t.UserConnectionContext,
   ): Promise<MCPConnection> {
-    const factory = new this(basic, oauth);
+    const factory = new this(await this.prepareBasicConnectionOptions(basic, oauth), oauth);
     return factory.createConnection();
   }
 
@@ -71,12 +73,35 @@ export class MCPConnectionFactory {
     basic: t.BasicConnectionOptions,
     options?: Omit<t.OAuthConnectionOptions, 'returnOnOAuth'> | t.UserConnectionContext,
   ): Promise<ToolDiscoveryResult> {
+    const preparedBasic = await this.prepareBasicConnectionOptions(basic, options);
     if (options != null && 'useOAuth' in options) {
-      const factory = new this(basic, { ...options, returnOnOAuth: true });
+      const factory = new this(preparedBasic, { ...options, returnOnOAuth: true });
       return factory.discoverToolsInternal();
     }
-    const factory = new this(basic, options);
+    const factory = new this(preparedBasic, options);
     return factory.discoverToolsInternal();
+  }
+
+  /**
+   * Together with the constructor's processMCPEnv pass, this mirrors
+   * UserConnectionManager.resolveRuntimeConfig — keep them in sync so the
+   * config validated there matches the one connected with here.
+   */
+  private static async prepareBasicConnectionOptions(
+    basic: t.BasicConnectionOptions,
+    options?: t.OAuthConnectionOptions | t.UserConnectionContext,
+  ): Promise<t.BasicConnectionOptions> {
+    if (basic.dbSourced || !options?.graphTokenResolver) {
+      return basic;
+    }
+
+    const serverConfig = await preProcessGraphTokens(basic.serverConfig, {
+      user: options.user,
+      graphTokenResolver: options.graphTokenResolver,
+      scopes: process.env.GRAPH_API_SCOPES,
+    });
+
+    return serverConfig === basic.serverConfig ? basic : { ...basic, serverConfig };
   }
 
   protected async discoverToolsInternal(): Promise<ToolDiscoveryResult> {
@@ -365,7 +390,7 @@ export class MCPConnectionFactory {
       throw new Error(`${this.logPrefix} OAuth required but server URL is missing from config`);
     }
 
-    const oauthTimeout = this.connectionTimeout ?? 60000 * 2;
+    const oauthTimeout = mcpConfig.OAUTH_HANDLING_TIMEOUT;
     logger.info(
       `${this.logPrefix} No stored tokens, proactively triggering OAuth flow before connecting (timeout: ${oauthTimeout}ms)`,
     );
@@ -633,7 +658,16 @@ export class MCPConnectionFactory {
 
   /** Attempts to establish connection with timeout handling */
   protected async attemptToConnect(connection: MCPConnection): Promise<void> {
-    const connectTimeout = this.connectionTimeout ?? this.serverConfig.initTimeout ?? 30000;
+    const baseTimeout = this.connectionTimeout ?? this.serverConfig.initTimeout ?? 30000;
+    // OAuth servers may pause mid-connect to wait for the user to authorize in the browser.
+    // The transport connect itself is still bounded by initTimeout inside connection.connect(),
+    // so this floor only extends the window for an active OAuth wait, not ordinary failures.
+    // The grace covers the reconnect after `oauthHandled` (retry backoff + transport connect),
+    // which happens *after* the handling wait, so a user who authorizes near the deadline still
+    // gets a connection instead of a timeout.
+    const connectTimeout = this.useOAuth
+      ? Math.max(baseTimeout, mcpConfig.OAUTH_HANDLING_TIMEOUT + 60000)
+      : baseTimeout;
     await withTimeout(
       this.connectTo(connection),
       connectTimeout,

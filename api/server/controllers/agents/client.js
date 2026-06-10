@@ -33,6 +33,7 @@ const {
   prependFileContext,
   hydrateMissingIndexTokenCounts,
   injectSkillPrimes,
+  collectFreshSkillPrimeNames,
   isSkillPrimeMessage,
   collectFileIds,
   processTextWithTokenLimit,
@@ -953,7 +954,30 @@ class AgentClient extends BaseClient {
         hasDeepSeekAgent(this.options.agent) ||
         (this.agentConfigs != null &&
           Array.from(this.agentConfigs.values()).some(hasDeepSeekAgent));
-      const formatOptions = needsDeepSeekFormat ? { provider: Providers.DEEPSEEK } : undefined;
+      /**
+       * Skills primed fresh this turn — manual ($ popover) and always-apply
+       * (frontmatter). `injectSkillPrimes` (below) splices their SKILL.md
+       * bodies in, so `formatAgentMessages` must NOT also reconstruct the
+       * same names from a historical `skill` tool_call — otherwise the body
+       * lands twice and a prompt-cache marker can pin to the duplicated
+       * synthetic prefix. Names NOT primed this turn still reconstruct from
+       * history, preserving sticky manual re-priming across turns.
+       */
+      const manualSkillPrimes = this.options.agent?.manualSkillPrimes;
+      const alwaysApplySkillPrimes = this.options.agent?.alwaysApplySkillPrimes;
+      const freshSkillPrimeNames = collectFreshSkillPrimeNames({
+        manualSkillPrimes,
+        alwaysApplySkillPrimes,
+      });
+      const formatOptions =
+        needsDeepSeekFormat || freshSkillPrimeNames.size > 0
+          ? {
+              ...(needsDeepSeekFormat ? { provider: Providers.DEEPSEEK } : {}),
+              ...(freshSkillPrimeNames.size > 0
+                ? { skipSkillBodyNames: freshSkillPrimeNames }
+                : {}),
+            }
+          : undefined;
       let {
         messages: initialMessages,
         indexTokenCountMap,
@@ -984,9 +1008,11 @@ class AgentClient extends BaseClient {
        * agent and multi-agent runs; how primes interact with handoff /
        * added-convo agents' per-agent state is an agents-SDK concern,
        * not this layer's to gate.
+       *
+       * `manualSkillPrimes` / `alwaysApplySkillPrimes` are resolved above
+       * (used to build `freshSkillPrimeNames` for dedupe against historical
+       * skill reconstruction).
        */
-      const manualSkillPrimes = this.options.agent?.manualSkillPrimes;
-      const alwaysApplySkillPrimes = this.options.agent?.alwaysApplySkillPrimes;
       if (
         (manualSkillPrimes && manualSkillPrimes.length > 0) ||
         (alwaysApplySkillPrimes && alwaysApplySkillPrimes.length > 0)

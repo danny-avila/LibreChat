@@ -1,12 +1,12 @@
 import { useMemo } from 'react';
 import { FilePenLine, FilePlus2 } from 'lucide-react';
 import type { TAttachment } from 'librechat-data-provider';
+import parseJsonField, { parseJsonFieldOccurrences } from './parseJsonField';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
 import useToolCallState from './useToolCallState';
 import useLazyHighlight from './useLazyHighlight';
 import CodeWindowHeader from './CodeWindowHeader';
 import { AttachmentGroup } from './Attachment';
-import parseJsonField from './parseJsonField';
 import { langFromPath } from './ReadFileCall';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -85,12 +85,21 @@ function buildEditArgsPreview(args: ToolCallArgs): string {
     return formatEditPreview(edits);
   }
 
-  const oldText = parsed ? textValue(parsed.old_text) : parseJsonField(args, 'old_text');
-  const newText = parsed ? textValue(parsed.new_text) : parseJsonField(args, 'new_text');
-  if (!oldText && !newText) {
-    return '';
+  if (parsed) {
+    const oldText = textValue(parsed.old_text);
+    const newText = textValue(parsed.new_text);
+    return oldText || newText ? formatEditPreview([{ oldText, newText }]) : '';
   }
-  return formatEditPreview([{ oldText, newText }]);
+
+  /** Partial JSON during streaming: pair up field occurrences in document order, covering both single-replacement and batched `edits` args */
+  const oldTexts = parseJsonFieldOccurrences(args, 'old_text');
+  const newTexts = parseJsonFieldOccurrences(args, 'new_text');
+  const editCount = Math.max(oldTexts.length, newTexts.length);
+  const edits = Array.from({ length: editCount }, (_, index) => ({
+    oldText: oldTexts[index] ?? '',
+    newText: newTexts[index] ?? '',
+  })).filter((edit) => edit.oldText || edit.newText);
+  return formatEditPreview(edits);
 }
 
 export default function FileAuthoringCall({
@@ -119,13 +128,16 @@ export default function FileAuthoringCall({
   const editArgsPreview = useMemo(() => buildEditArgsPreview(args), [args]);
   const fileName = filePath.split('/').pop() || filePath;
   const fileLang = useMemo(() => langFromPath(filePath), [filePath]);
+  const argsPreview = isCreate ? authoredContent : editArgsPreview;
   const outputIsDiff = hasDiff(output);
-  const preview = isCreate ? output || authoredContent : output || editArgsPreview;
-  const previewIsDiff = outputIsDiff || (!isCreate && !!editArgsPreview && !output);
+  /** A diff in the output supersedes the args preview — it carries the input with real file context */
+  const preview = outputIsDiff ? output : argsPreview || output;
+  const showOutputSection = !!output && preview !== output;
+  const previewIsDiff = outputIsDiff || (!isCreate && !!editArgsPreview && preview !== output);
   let previewLang = 'plaintext';
   if (previewIsDiff) {
     previewLang = 'diff';
-  } else if (isCreate && authoredContent && !output) {
+  } else if (isCreate && authoredContent && preview === authoredContent) {
     previewLang = fileLang;
   }
 
@@ -174,6 +186,16 @@ export default function FileAuthoringCall({
                   {highlighted ?? preview}
                 </code>
               </pre>
+              {showOutputSection && (
+                <pre
+                  className={cn(
+                    'max-h-[300px] overflow-auto whitespace-pre-wrap break-words border-t border-border-light px-3 py-2.5 font-mono text-xs',
+                    hasError ? 'text-red-600 dark:text-red-400' : 'text-text-primary',
+                  )}
+                >
+                  {output}
+                </pre>
+              )}
             </div>
           )}
         </div>

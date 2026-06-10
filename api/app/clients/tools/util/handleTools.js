@@ -9,6 +9,7 @@ const {
   getCodeApiAuthHeaders,
   buildImageToolContext,
   buildWebSearchContext,
+  requiresEphemeralUserConnection,
   buildWebSearchDynamicContext,
 } = require('@librechat/api');
 const {
@@ -468,6 +469,7 @@ const loadTools = async ({
           user: safeUser,
           userMCPAuthMap,
           configServers,
+          requestBody: options.req?.body,
           res: options.res,
           streamId: options.req?._resumableStreamId || null,
           model: agent?.model ?? model,
@@ -488,7 +490,9 @@ const loadTools = async ({
         }
         if (!availableTools) {
           try {
-            availableTools = await getMCPServerTools(safeUser.id, serverName);
+            availableTools = requiresEphemeralUserConnection(config.config)
+              ? null
+              : await getMCPServerTools(safeUser.id, serverName);
           } catch (error) {
             logger.error(`Error fetching available tools for MCP server ${serverName}:`, error);
           }
@@ -502,6 +506,9 @@ const loadTools = async ({
                 ...mcpParams,
                 availableTools,
                 toolKey: config.toolKey,
+                onAvailableTools: (tools) => {
+                  availableTools = tools;
+                },
               });
 
         if (Array.isArray(mcpTool)) {
