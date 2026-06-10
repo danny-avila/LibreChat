@@ -6,6 +6,7 @@ on:
       - 'client/**'
       - 'packages/client/**'
       - 'packages/data-provider/**'
+      - '.github/workflows/frontend-review.yml'
 
 permissions:
   contents: read
@@ -170,10 +171,14 @@ jobs:
         working-directory: client
 
   test-windows:
-    name: 'Tests: Windows'
+    name: 'Tests: Windows (shard ${{ matrix.shard }}/4)'
     needs: build
     runs-on: windows-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
 
@@ -209,8 +214,8 @@ jobs:
           name: build-client-package
           path: packages/client/dist
 
-      - name: Run unit tests
-        run: npm run test:ci --verbose
+      - name: Run unit tests (shard ${{ matrix.shard }}/4)
+        run: npm run test:ci -- --shard=${{ matrix.shard }}/4
         working-directory: client
 
   build-verify:
