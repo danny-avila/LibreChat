@@ -1,6 +1,6 @@
 import { expect } from '@playwright/test';
-import type * as t from '~/mcp/types';
 import type { MCPServersRegistry as MCPServersRegistryType } from '../MCPServersRegistry';
+import type * as t from '~/mcp/types';
 import { closeRedisClients } from '~/cache/__tests__/redisClients.helper';
 
 // Mock ServerConfigsDB to avoid needing MongoDB for cache integration tests

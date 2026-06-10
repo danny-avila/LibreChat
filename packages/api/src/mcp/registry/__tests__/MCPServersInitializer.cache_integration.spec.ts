@@ -1,7 +1,7 @@
-import type * as t from '~/mcp/types';
-import type { MCPConnection } from '~/mcp/connection';
 import type { MCPServersRegistry as MCPServersRegistryType } from '../MCPServersRegistry';
 import type { RedisClientsModule } from '~/cache/__tests__/redisClients.helper';
+import type { MCPConnection } from '~/mcp/connection';
+import type * as t from '~/mcp/types';
 import { closeRedisClients } from '~/cache/__tests__/redisClients.helper';
 
 // Mock isLeader to always return true to avoid lock contention during parallel operations

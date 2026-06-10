@@ -1,7 +1,7 @@
 import { expect } from '@playwright/test';
-import { ParsedServerConfig } from '~/mcp/types';
 import type { RedisClientsModule } from '~/cache/__tests__/redisClients.helper';
 import { closeRedisClients } from '~/cache/__tests__/redisClients.helper';
+import { ParsedServerConfig } from '~/mcp/types';
 
 describe('ServerConfigsCacheRedis Integration Tests', () => {
   let ServerConfigsCacheRedis: typeof import('../ServerConfigsCacheRedis').ServerConfigsCacheRedis;

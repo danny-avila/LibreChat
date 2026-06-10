@@ -1,9 +1,9 @@
 import IoRedis from 'ioredis';
-import type { Redis, Cluster } from 'ioredis';
 import { logger } from '@librechat/data-schemas';
 import { createClient, createCluster } from '@keyv/redis';
-import type { RedisClientType, RedisClusterType } from '@redis/client';
 import type { ScanCommandOptions } from '@redis/client/dist/lib/commands/SCAN';
+import type { RedisClientType, RedisClusterType } from '@redis/client';
+import type { Redis, Cluster } from 'ioredis';
 import { cacheConfig } from './cacheConfig';
 
 const urls = cacheConfig.REDIS_URI?.split(',').map((uri) => new URL(uri)) || [];
