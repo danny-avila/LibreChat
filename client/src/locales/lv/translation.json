@@ -171,6 +171,7 @@
   "com_auth_email_verification_success": "E-pasts veiksmīgi pārbaudīts",
   "com_auth_email_verifying_ellipsis": "Pārbauda...",
   "com_auth_error_create": "Notika kļūda reģistrējot jūsu kontu. Lūdzu, mēģiniet vēlreiz.",
+  "com_auth_error_email_in_use": "E-pasts jau tiek izmantots",
   "com_auth_error_invalid_reset_token": "Šis paroles atiestatīšanas tokens vairs nav derīgs.",
   "com_auth_error_login": "Ar norādīto informāciju nav iespējams pieteikties. Lūdzu, pārbaudiet sava lietotāja informāciju un mēģiniet vēlreiz.",
   "com_auth_error_login_ban": "Jūsu konts ir uz laiku bloķēts noteikumu pārkāpumu dēļ.",

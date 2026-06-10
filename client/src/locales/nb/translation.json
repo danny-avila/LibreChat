@@ -165,6 +165,7 @@
   "com_auth_email_verification_success": "E-posten er bekreftet.",
   "com_auth_email_verifying_ellipsis": "Bekrefter ...",
   "com_auth_error_create": "Det oppstod en feil under registrering av kontoen din. Vennligst prøv igjen.",
+  "com_auth_error_email_in_use": "E-posten er allerede i bruk",
   "com_auth_error_invalid_reset_token": "Dette tokenet for tilbakestilling av passord er ikke lenger gyldig.",
   "com_auth_error_login": "Kan ikke logge inn med informasjonen som ble gitt. Vennligst sjekk legitimasjonen din og prøv igjen.",
   "com_auth_error_login_ban": "Kontoen din er midlertidig utestengt på grunn av brudd på våre tjenestevilkår.",

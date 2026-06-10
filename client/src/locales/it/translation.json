@@ -162,6 +162,7 @@
   "com_auth_email_verification_success": "Email verificata con successo",
   "com_auth_email_verifying_ellipsis": "Verifica in corso...",
   "com_auth_error_create": "Si è verificato un errore durante il tentativo di registrare il tuo account. Riprova.",
+  "com_auth_error_email_in_use": "E-mail già in uso",
   "com_auth_error_invalid_reset_token": "Questo token di reset della password non è più valido.",
   "com_auth_error_login": "Impossibile eseguire l'accesso con le informazioni fornite. Controlla le tue credenziali e riprova.",
   "com_auth_error_login_ban": "Il tuo account è stato temporaneamente bloccato a causa di violazioni del nostro servizio.",

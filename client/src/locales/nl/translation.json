@@ -155,6 +155,7 @@
   "com_auth_email_verification_success": "E-mail succesvol geverifieerd",
   "com_auth_email_verifying_ellipsis": "Bezig met verifiëren...",
   "com_auth_error_create": "Er is een fout opgetreden bij het registreren van uw account. Probeer het opnieuw.",
+  "com_auth_error_email_in_use": "E-mailadres is al in gebruik",
   "com_auth_error_invalid_reset_token": "Dit wachtwoord resettoken is niet langer geldig.",
   "com_auth_error_login": "Kan niet inloggen met de verstrekte informatie. Controleer uw referenties en probeer het opnieuw.",
   "com_auth_error_login_ban": "Uw account is tijdelijk verbannen vanwege schendingen van onze service.",

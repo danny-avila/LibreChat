@@ -290,5 +290,6 @@
   "com_farmer_option_other": "Այլ",
   "com_farmer_option_under_graduate": "Թերի բարձրագույն",
   "com_farmer_option_graduate": "Բարձրագույն",
-  "com_farmer_option_post_graduate": "Հետբարձրագույն"
+  "com_farmer_option_post_graduate": "Հետբարձրագույն",
+  "com_auth_error_email_in_use": "Էլ. փոստն արդեն օգտագործվում է"
 }

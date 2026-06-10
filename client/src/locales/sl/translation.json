@@ -134,5 +134,6 @@
   "com_farmer_option_other": "Drugo",
   "com_farmer_option_under_graduate": "Dodiplomski",
   "com_farmer_option_graduate": "Diplomant",
-  "com_farmer_option_post_graduate": "Podiplomski"
+  "com_farmer_option_post_graduate": "Podiplomski",
+  "com_auth_error_email_in_use": "E-poštni naslov je že v uporabi"
 }
