@@ -155,6 +155,7 @@
   "com_auth_email_verification_success": "E-post verifierad",
   "com_auth_email_verifying_ellipsis": "Verifierar...",
   "com_auth_error_create": "Det uppstod ett fel när du försökte registrera ditt konto. Vänligen försök igen.",
+  "com_auth_error_email_in_use": "E-postadressen används redan",
   "com_auth_error_invalid_reset_token": "Detta lösenordsåterställningsnyckel är inte längre giltigt.",
   "com_auth_error_login": "Kunde inte logga in med den angivna informationen. Kontrollera dina uppgifter och försök igen.",
   "com_auth_error_login_ban": "Ditt konto har tillfälligt stängts av på grund av överträdelser av vår tjänst.",

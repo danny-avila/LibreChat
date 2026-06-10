@@ -151,6 +151,7 @@
   "com_auth_email_verification_success": "電子郵件驗證成功",
   "com_auth_email_verifying_ellipsis": "正在驗證...",
   "com_auth_error_create": "嘗試註冊您的帳號時發生錯誤。請重試。",
+  "com_auth_error_email_in_use": "電子郵件已被使用",
   "com_auth_error_invalid_reset_token": "此密碼重設令牌已無效。",
   "com_auth_error_login": "無法使用提供的資訊登入。請檢查您的登入資訊後重試。",
   "com_auth_error_login_ban": "由於違反我們的服務條款，您的帳號已被暫時停用。",

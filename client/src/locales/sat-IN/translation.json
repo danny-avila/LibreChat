@@ -171,6 +171,7 @@
   "com_auth_email_verification_success": "ᱤᱢᱮᱞ ᱱᱟᱯᱟᱭ ᱛᱮ ᱯᱨᱚᱢᱟᱱ ᱮᱱᱟ",
   "com_auth_email_verifying_ellipsis": "ᱯᱨᱚᱢᱟᱱᱚᱜ ᱠᱟᱱᱟ...",
   "com_auth_error_create": "ᱟᱢᱟᱜ ᱮᱠᱟᱣᱩᱱᱴ ᱨᱮᱡᱤᱥᱴᱟᱨ ᱡᱚᱠᱷᱮᱡ ᱢᱤᱫᱴᱟᱝ ᱦᱩᱲᱟᱹᱜ ᱦᱩᱭ ᱮᱱᱟ᱾ ᱫᱟᱭᱟ ᱠᱟᱛᱮ ᱟᱨᱦᱚᱸ ᱪᱮᱥᱴᱟ ᱢᱮ᱾",
+  "com_auth_error_email_in_use": "ইমেইল লাহাতেগে ব্যবহারা কানা",
   "com_auth_error_invalid_reset_token": "ᱱᱚᱣᱟ ᱯᱟᱥᱣᱟᱨᱰ ᱨᱤᱥᱮᱴ ᱴᱚᱠᱮᱱ ᱫᱚ ᱱᱤᱛᱚᱜ ᱵᱟᱝ ᱵᱟᱛᱟᱣᱟ᱾",
   "com_auth_error_login": "ᱮᱢ ᱟᱠᱟᱱ ᱵᱟᱰᱟᱭᱡᱚᱝ ᱛᱮ ᱞᱚᱜᱤᱱ ᱵᱟᱝ ᱜᱟᱱᱚᱜ ᱠᱟᱱᱟ᱾ ᱫᱟᱭᱟ ᱠᱟᱛᱮ ᱟᱢᱟᱜ ᱠᱨᱮᱰᱮᱱᱥᱤᱭᱟᱞ ᱠᱚ ᱧᱮᱞ ᱢᱮ ᱟᱨ ᱟᱨᱦᱚᱸ ᱪᱮᱥᱴᱟ ᱢᱮ᱾",
   "com_auth_error_login_ban": "ᱟᱞᱮᱭᱟᱜ ᱥᱮᱵᱟ ᱨᱮᱭᱟᱜ ᱟᱹᱨᱤ ᱠᱚ ᱨᱟᱹᱯᱩᱫ ᱠᱷᱟᱹᱛᱤᱨ ᱟᱢᱟᱜ ᱮᱠᱟᱣᱩᱱᱴ ᱫᱚ ᱛᱤᱱᱟᱹᱜ ᱫᱤᱱ ᱞᱟᱹᱜᱤᱫ ᱵᱚᱸᱫᱽ ᱟᱠᱟᱱᱟ᱾",
@@ -1502,7 +1503,7 @@
   "com_farmer_label_crops_cultivated": "ᱪᱟᱥ ᱟᱠᱟᱱ ᱯᱷᱚᱥᱚᱞ ᱠᱚ",
   "com_farmer_label_primary_crop": "ᱢᱩᱬᱩᱛ ᱯᱷᱚᱥᱚᱞ",
   "com_farmer_label_secondary_crop": "ᱫᱚᱥᱟᱨ ᱯᱷᱚᱥᱚᱞ",
-    "crop_adapathiyan": "ᱟᱰᱟᱯᱟᱛᱷᱤᱭᱟᱱ",
+  "crop_adapathiyan": "ᱟᱰᱟᱯᱟᱛᱷᱤᱭᱟᱱ",
   "crop_agathi": "ᱟᱜᱟᱛᱷᱤ",
   "crop_ailanthus_or_matti": "ᱢᱟᱴᱴᱤ",
   "crop_ajwain_carom_seeds": "ᱡᱚᱣᱟᱭᱤᱱ",
@@ -2030,4 +2031,3 @@
   "com_user_message": "ᱟᱢ",
   "com_banner_message": "ᱱᱚᱣᱟ ᱮᱯᱞᱤᱠᱮᱥᱚᱱ ᱫᱚ ᱱᱤᱛᱚᱜ ᱰᱮᱵᱷᱮᱞᱚᱯᱢᱮᱱᱴ ᱨᱮ ᱢᱮᱱᱟᱜ-ᱟ ᱟᱨ ᱱᱚᱣᱟ ᱫᱚ ᱠᱷᱟᱹᱞᱤ ᱴᱮᱥᱴᱤᱝ ᱟᱨ ᱯᱨᱚᱢᱟᱱ ᱞᱟᱹᱜᱤᱫ ᱮᱢ ᱟᱠᱟᱱᱟ"
 }
-  

@@ -89,6 +89,7 @@
   "com_auth_email_verification_success": "E-mail sikeresen ellenőrizve",
   "com_auth_email_verifying_ellipsis": "Ellenőrzés...",
   "com_auth_error_create": "Hiba történt a fiók regisztrálása során. Kérjük, próbálja újra.",
+  "com_auth_error_email_in_use": "Az e-mail cím már használatban van",
   "com_auth_error_invalid_reset_token": "Ez a jelszó-visszaállítási token már nem érvényes.",
   "com_auth_error_login": "Nem sikerült bejelentkezni az megadott adatokkal. Kérjük, ellenőrizze az adatokat és próbálja újra.",
   "com_auth_error_login_ban": "Fiókja ideiglenesen tiltva lett a szolgáltatásunk megsértése miatt.",

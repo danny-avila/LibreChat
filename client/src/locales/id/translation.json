@@ -18,6 +18,7 @@
   "com_auth_email_pattern": "Anda harus memasukkan alamat email yang valid",
   "com_auth_email_required": "Email diperlukan",
   "com_auth_error_create": "Ada kesalahan saat mencoba mendaftarkan akun Anda. Silakan coba lagi.",
+  "com_auth_error_email_in_use": "Email sudah digunakan",
   "com_auth_error_invalid_reset_token": "Token pengaturan ulang kata sandi ini tidak lagi valid.",
   "com_auth_error_login": "Tidak dapat masuk dengan informasi yang diberikan. Silakan periksa kredensial Anda dan coba lagi.",
   "com_auth_error_login_ban": "Akun Anda telah dilarang sementara karena pelanggaran layanan kami.",
