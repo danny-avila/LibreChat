@@ -355,6 +355,7 @@ ${memory ?? 'No existing memories'}`;
     const finalLLMConfig = {
       ...defaultLLMConfig,
       ...normalizeMemoryLLMConfig(llmConfig),
+      maxRetries: 0,
       /**
        * Ensure streaming is always disabled for memory processing
        */

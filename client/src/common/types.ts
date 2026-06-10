@@ -369,7 +369,7 @@ export type TOptions = {
   addedConvo?: t.TConversation;
 };
 
-export type TAskFunction = (props: TAskProps, options?: TOptions) => void;
+export type TAskFunction = (props: TAskProps, options?: TOptions) => false | void;
 
 /**
  * Stable context object passed from non-memo'd wrapper components (Message, MessageContent)

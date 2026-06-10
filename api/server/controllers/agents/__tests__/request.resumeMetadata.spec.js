@@ -19,6 +19,7 @@ const mockFilterPersistableAbortContent = jest.fn((content) =>
   content.filter((part) => part?.type !== 'tool_call'),
 );
 const mockGetConvo = jest.fn();
+const mockGetMessages = jest.fn();
 const mockSaveMessage = jest.fn();
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -35,6 +36,24 @@ jest.mock('@librechat/api', () => ({
   decrementPendingRequest: (...args) => mockDecrementPendingRequest(...args),
   sanitizeMessageForTransmit: jest.fn((message) => message),
   checkAndIncrementPendingRequest: (...args) => mockCheckAndIncrementPendingRequest(...args),
+  isUnpersistedPreliminaryParent: async ({
+    userId,
+    conversationId,
+    parentMessageId,
+    getMessages,
+  }) => {
+    if (typeof parentMessageId !== 'string' || !parentMessageId.endsWith('_')) {
+      return false;
+    }
+
+    const filter = { user: userId, messageId: parentMessageId };
+    if (conversationId && conversationId !== 'new') {
+      filter.conversationId = conversationId;
+    }
+
+    const messages = await getMessages(filter, '_id');
+    return messages.length === 0;
+  },
 }));
 
 jest.mock('~/server/cleanup', () => ({
@@ -55,6 +74,7 @@ jest.mock('~/cache', () => ({
 
 jest.mock('~/models', () => ({
   saveMessage: (...args) => mockSaveMessage(...args),
+  getMessages: (...args) => mockGetMessages(...args),
   getConvo: (...args) => mockGetConvo(...args),
 }));
 
@@ -66,6 +86,7 @@ describe('ResumableAgentController resume metadata', () => {
     mockCheckAndIncrementPendingRequest.mockResolvedValue({ allowed: true });
     mockDecrementPendingRequest.mockResolvedValue(undefined);
     mockGetConvo.mockResolvedValue({ createdAt: '2026-06-07T00:00:00.000Z' });
+    mockGetMessages.mockResolvedValue([]);
     mockGenerationJobManager.createJob.mockResolvedValue({
       createdAt: 1000,
       readyPromise: Promise.resolve(),
@@ -76,6 +97,86 @@ describe('ResumableAgentController resume metadata', () => {
     mockGenerationJobManager.updateMetadata.mockResolvedValue(undefined);
     mockGenerationJobManager.emitError.mockResolvedValue(undefined);
     mockSaveMessage.mockResolvedValue({});
+  });
+
+  it('rejects an underscore-suffixed parent that is not persisted', async () => {
+    const conversationId = 'conversation-123';
+    const initializeClient = jest.fn();
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Follow up too early.',
+        messageId: 'follow-up-user',
+        parentMessageId: 'pending-response_',
+        conversationId,
+        endpointOption: {
+          endpoint: 'agents',
+          modelOptions: { model: 'gpt-3.5-turbo' },
+        },
+      },
+      config: {},
+    };
+    const res = {
+      json: jest.fn(),
+      status: jest.fn(() => res),
+    };
+
+    await AgentController(req, res, jest.fn(), initializeClient, null);
+
+    expect(mockGetMessages).toHaveBeenCalledWith(
+      { user: 'user-123', messageId: 'pending-response_', conversationId },
+      '_id',
+    );
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: expect.stringContaining('selected parent response is still being saved'),
+      }),
+    );
+    expect(mockCheckAndIncrementPendingRequest).not.toHaveBeenCalled();
+    expect(mockGenerationJobManager.createJob).not.toHaveBeenCalled();
+    expect(initializeClient).not.toHaveBeenCalled();
+  });
+
+  it('allows an underscore-suffixed parent when it is already persisted', async () => {
+    const conversationId = 'conversation-123';
+    mockGetMessages.mockResolvedValue([{ _id: 'persisted-parent' }]);
+    const initializeClient = jest.fn().mockRejectedValue(new Error('stop before tool loading'));
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Follow up to persisted underscore id.',
+        messageId: 'follow-up-user',
+        parentMessageId: 'persisted-response_',
+        conversationId,
+        endpointOption: {
+          endpoint: 'agents',
+          modelOptions: { model: 'gpt-3.5-turbo' },
+        },
+      },
+      config: {},
+    };
+    const res = {
+      headersSent: true,
+      json: jest.fn(() => {
+        res.headersSent = true;
+      }),
+      status: jest.fn(() => res),
+    };
+
+    await AgentController(req, res, jest.fn(), initializeClient, null);
+
+    expect(mockGetMessages).toHaveBeenCalledWith(
+      { user: 'user-123', messageId: 'persisted-response_', conversationId },
+      '_id',
+    );
+    expect(res.status).not.toHaveBeenCalledWith(409);
+    expect(mockCheckAndIncrementPendingRequest).toHaveBeenCalledWith('user-123');
+    expect(mockGenerationJobManager.createJob).toHaveBeenCalledWith(
+      conversationId,
+      'user-123',
+      conversationId,
+    );
   });
 
   it('stores the in-flight turn before MCP initialization can emit OAuth', async () => {

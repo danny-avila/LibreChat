@@ -36,6 +36,13 @@ type ForkResponse = {
   messages: E2EMessage[];
 };
 
+type JsonResponse = {
+  ok: boolean;
+  status: number;
+  text: string;
+  json: unknown;
+};
+
 const uniqueLabel = (name: string) => `${name}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 
 const replyPrompt = (label: string) => `E2E_REPLY:${label}`;
@@ -522,6 +529,31 @@ async function fetchMessages(
   );
 }
 
+async function postJsonWithStatus(page: Page, path: string, token: string, body: unknown) {
+  return page.evaluate(
+    async ({ accessToken, requestBody, urlPath }): Promise<JsonResponse> => {
+      const response = await fetch(urlPath, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+      const text = await response.text();
+      let json: unknown = null;
+      try {
+        json = text ? JSON.parse(text) : null;
+      } catch {
+        json = null;
+      }
+      return { ok: response.ok, status: response.status, text, json };
+    },
+    { accessToken: token, requestBody: body, urlPath: path },
+  );
+}
+
 async function waitForMessages(
   page: Page,
   conversationId: string,
@@ -991,6 +1023,60 @@ test.describe('message tree stream operations', () => {
       errorText,
       afterErrorReply,
     ]);
+  });
+
+  test('rejects normal follow-ups whose parent is a preliminary assistant placeholder', async ({
+    page,
+  }) => {
+    const label = uniqueLabel('placeholder-parent');
+    const basePrompt = replyPrompt(`${label}-base`);
+    const baseReply = replyText(`${label}-base`);
+    const followPrompt = replyPrompt(`${label}-follow`);
+
+    await openMockChat(page);
+    await sendAndExpectReply(page, basePrompt, baseReply);
+    const conversationId = await conversationIdFromPage(page);
+    const token = await getAccessToken(page);
+
+    const beforeMessages = await fetchMessages(page, conversationId, token);
+    const stableParent = findMessage(beforeMessages, baseReply, false);
+    const response = await postJsonWithStatus(
+      page,
+      `/api/agents/chat/${encodeURIComponent(MOCK_ENDPOINTS[0].label)}`,
+      token,
+      {
+        text: followPrompt,
+        sender: 'User',
+        clientTimestamp: new Date().toLocaleString('sv').replace(' ', 'T'),
+        isCreatedByUser: true,
+        parentMessageId: `${stableParent.messageId}_`,
+        conversationId,
+        messageId: `${label}-user-message`,
+        endpoint: MOCK_ENDPOINTS[0].label,
+        endpointType: 'custom',
+        model: MOCK_ENDPOINTS[0].model,
+        spec: 'e2e-mock-provider-a',
+        isTemporary: false,
+        isRegenerate: false,
+        error: false,
+      },
+    );
+
+    expect(response.status).toBe(409);
+    expect(response.json).toEqual(
+      expect.objectContaining({
+        error: expect.stringContaining('selected parent response is still being saved'),
+      }),
+    );
+
+    const afterMessages = await fetchMessages(page, conversationId, token);
+    expect(afterMessages.map((message) => message.messageId).sort()).toEqual(
+      beforeMessages.map((message) => message.messageId).sort(),
+    );
+    expect(afterMessages.some((message) => messageText(message).includes(followPrompt))).toBe(
+      false,
+    );
+    expectNoFoldedMessages(afterMessages);
   });
 
   test('generation-start failures recover without folding the next follow-up', async ({ page }) => {

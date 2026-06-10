@@ -5,12 +5,17 @@ import type { MCPOAuthTokens } from '~/mcp/oauth';
 import type * as t from '~/mcp/types';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPOAuthHandler, MCPTokenStorage } from '~/mcp/oauth';
+import { preProcessGraphTokens } from '~/utils/graph';
 import { PENDING_STALE_MS } from '~/flow/manager';
 import { MCPConnection } from '~/mcp/connection';
 import { processMCPEnv } from '~/utils';
 
 jest.mock('~/mcp/connection');
 jest.mock('~/mcp/oauth');
+jest.mock('~/utils/graph', () => ({
+  ...jest.requireActual('~/utils/graph'),
+  preProcessGraphTokens: jest.fn(async (options) => options),
+}));
 jest.mock('~/utils');
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -24,6 +29,9 @@ jest.mock('@librechat/data-schemas', () => ({
 
 const mockLogger = logger as jest.Mocked<typeof logger>;
 const mockProcessMCPEnv = processMCPEnv as jest.MockedFunction<typeof processMCPEnv>;
+const mockPreProcessGraphTokens = preProcessGraphTokens as jest.MockedFunction<
+  typeof preProcessGraphTokens
+>;
 const mockMCPConnection = MCPConnection as jest.MockedClass<typeof MCPConnection>;
 const mockMCPOAuthHandler = MCPOAuthHandler as jest.Mocked<typeof MCPOAuthHandler>;
 const mockMCPTokenStorage = MCPTokenStorage as jest.Mocked<typeof MCPTokenStorage>;
@@ -67,6 +75,7 @@ describe('MCPConnectionFactory', () => {
     } as unknown as jest.Mocked<MCPConnection>;
 
     mockMCPConnection.mockImplementation(() => mockConnectionInstance);
+    mockPreProcessGraphTokens.mockImplementation(async (options) => options);
     mockProcessMCPEnv.mockReturnValue(mockServerConfig);
   });
 
@@ -94,6 +103,49 @@ describe('MCPConnectionFactory', () => {
         useSSRFProtection: false,
       });
       expect(mockConnectionInstance.connect).toHaveBeenCalled();
+    });
+
+    it('should pre-process Graph placeholders before connection config resolution', async () => {
+      const graphTokenResolver = jest.fn();
+      const serverConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://api.example.com/mcp?token={{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+      };
+      const graphProcessedConfig: t.MCPOptions = {
+        ...serverConfig,
+        url: 'https://api.example.com/mcp?token=resolved-graph-token',
+      };
+      const basicOptions = {
+        serverName: 'test-server',
+        serverConfig,
+      };
+
+      mockPreProcessGraphTokens.mockResolvedValue(graphProcessedConfig);
+      mockProcessMCPEnv.mockReturnValue(graphProcessedConfig);
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+
+      await MCPConnectionFactory.create(basicOptions, {
+        user: mockUser,
+        graphTokenResolver,
+      });
+
+      expect(mockPreProcessGraphTokens).toHaveBeenCalledWith(
+        serverConfig,
+        expect.objectContaining({
+          user: mockUser,
+          graphTokenResolver,
+        }),
+      );
+      expect(mockProcessMCPEnv).toHaveBeenCalledWith(
+        expect.objectContaining({
+          options: graphProcessedConfig,
+        }),
+      );
+      expect(mockMCPConnection).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverConfig: graphProcessedConfig,
+        }),
+      );
     });
 
     it('should register fallback oauthRequired handler for non-OAuth connections', async () => {

@@ -14,6 +14,7 @@ const {
   MCPTokenStorage,
   setOAuthSession,
   PENDING_STALE_MS,
+  mcpConfig: mcpSettings,
   getUserMCPAuthMap,
   validateOAuthCsrf,
   OAUTH_CSRF_COOKIE,
@@ -715,6 +716,7 @@ router.get('/connection/status', requireJwtAuth, async (req, res) => {
     res.json({
       success: true,
       connectionStatus,
+      oauthTimeout: mcpSettings.OAUTH_HANDLING_TIMEOUT,
     });
   } catch (error) {
     logger.error('[MCP Connection Status] Failed to get connection status', error);

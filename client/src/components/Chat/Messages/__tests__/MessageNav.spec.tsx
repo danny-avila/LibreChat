@@ -9,6 +9,13 @@ type TestMessage = {
   conversationId?: string;
   text?: string;
   isCreatedByUser?: boolean;
+  content?: Array<
+    | {
+        type?: string;
+        text?: string | { value?: string };
+      }
+    | undefined
+  >;
 };
 
 const mockUseGetMessagesByConvoId = jest.fn();
@@ -293,6 +300,22 @@ describe('MessageNav', () => {
       const text = preview?.textContent ?? '';
       expect(text.endsWith('...')).toBe(true);
       expect(text.length).toBe(83);
+    });
+
+    it('skips sparse content entries when deriving preview text', () => {
+      const messages = [
+        buildMessage({
+          messageId: 'a',
+          text: '',
+          isCreatedByUser: true,
+          content: [undefined, { type: 'text', text: 'content-preview' }],
+        }),
+        buildMessage({ messageId: 'b', text: 'bravo' }),
+        buildMessage({ messageId: 'c', text: 'charlie', isCreatedByUser: true }),
+      ];
+      const { container } = renderNav(messages);
+      const preview = container.querySelectorAll('[data-testid="hover-card-content"] p')[0];
+      expect(preview).toHaveTextContent('content-preview');
     });
   });
 
