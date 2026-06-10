@@ -180,12 +180,29 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      # HuggingFace throttles anonymous model downloads from shared GHA
+      # runner IPs (429s or stalled transfers). Cache the embedding model
+      # across runs so warm runs never touch HF at all.
+      - name: Cache HuggingFace embedding model
+        if: steps.flags.outputs.enable_embeddings == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/hf-cache
+          key: hf-model-snowflake-arctic-embed-xs-v1
+
       - name: Run GitNexus Analyze
         working-directory: ${{ runner.temp }}
         env:
           ENABLE_EMBEDDINGS: ${{ steps.flags.outputs.enable_embeddings }}
           FORCE: ${{ inputs.force }}
           GITNEXUS_BIN: ${{ runner.temp }}/gitnexus-cli/node_modules/.bin/gitnexus
+          # Fail soft in ~2 min on stalled downloads instead of eating the
+          # 25-min job budget; HF_TOKEN lifts the anonymous rate limit on
+          # cold-cache runs (empty when the secret is unset — safe no-op).
+          HF_DOWNLOAD_TIMEOUT_MS: '60000'
+          HF_HOME: ${{ runner.temp }}/hf-cache
+          HF_MAX_ATTEMPTS: '2'
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
           NPM_CONFIG_AUDIT: false
           NPM_CONFIG_CACHE: ${{ runner.temp }}/gitnexus-npm-cache
           NPM_CONFIG_FUND: false
