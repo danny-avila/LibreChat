@@ -5,7 +5,13 @@ import type {
   OpenAIConfigOptions,
   UserKeyValues,
 } from '~/types';
-import { getAzureCredentials, resolveHeaders, isUserProvided, checkUserKeyExpiry } from '~/utils';
+import {
+  getAzureCredentials,
+  resolveHeaders,
+  resolveAddParams,
+  isUserProvided,
+  checkUserKeyExpiry,
+} from '~/utils';
 import { validateEndpointURL } from '~/auth';
 import { getOpenAIConfig } from './config';
 
@@ -88,11 +94,17 @@ export async function initializeOpenAI({
     clientOptions.headers = resolveHeaders({
       headers: { ...headers, ...(clientOptions.headers ?? {}) },
       user: req.user,
+      body: req.body,
     });
 
     const groupName = modelGroupMap[modelName || '']?.group;
     if (groupName && groupMap[groupName]) {
-      clientOptions.addParams = groupMap[groupName]?.addParams;
+      const rawAddParams = groupMap[groupName]?.addParams;
+      clientOptions.addParams = resolveAddParams({
+        addParams: rawAddParams,
+        user: req.user,
+        body: req.body,
+      });
       clientOptions.dropParams = groupMap[groupName]?.dropParams;
     }
 

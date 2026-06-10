@@ -8,7 +8,7 @@ import type { TEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { BaseInitializeParams, InitializeResultBase, EndpointTokenConfig } from '~/types';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
-import { isUserProvided, checkUserKeyExpiry } from '~/utils';
+import { isUserProvided, checkUserKeyExpiry, resolveAddParams } from '~/utils';
 import { getCustomEndpointConfig } from '~/app/config';
 import { fetchModels } from '~/endpoints/models';
 import { validateEndpointURL } from '~/auth';
@@ -17,16 +17,25 @@ import { tokenConfigCache } from '~/cache';
 const { PROXY } = process.env;
 
 /**
- * Builds custom options from endpoint configuration
+ * Builds custom options from endpoint configuration.
+ * Note: headers are NOT resolved here - they get resolved later in the agents flow
+ * (see agents/run.ts). addParams ARE resolved here because they're applied immediately
+ * in getOpenAIConfig/llm.ts before the request is made.
  */
 function buildCustomOptions(
   endpointConfig: Partial<TEndpoint>,
   appConfig?: AppConfig,
   endpointTokenConfig?: Record<string, unknown>,
+  user?: Partial<import('@librechat/data-schemas').IUser>,
+  body?: import('~/types').RequestBody,
 ) {
   const customOptions: Record<string, unknown> = {
-    headers: endpointConfig.headers,
-    addParams: endpointConfig.addParams,
+    headers: endpointConfig.headers, // Resolved later in agents flow
+    addParams: resolveAddParams({
+      addParams: endpointConfig.addParams,
+      user,
+      body,
+    }),
     dropParams: endpointConfig.dropParams,
     customParams: endpointConfig.customParams,
     titleConvo: endpointConfig.titleConvo,
@@ -158,7 +167,13 @@ export async function initializeCustom({
     endpointTokenConfig = (await cache.get(tokenKey)) as EndpointTokenConfig | undefined;
   }
 
-  const customOptions = buildCustomOptions(endpointConfig, appConfig, endpointTokenConfig);
+  const customOptions = buildCustomOptions(
+    endpointConfig,
+    appConfig,
+    endpointTokenConfig,
+    req.user,
+    req.body,
+  );
 
   const clientOptions: Record<string, unknown> = {
     reverseProxyUrl: baseURL ?? null,
