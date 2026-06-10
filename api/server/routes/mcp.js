@@ -111,7 +111,7 @@ router.get('/:serverName/oauth/initiate', requireJwtAuth, setOAuthSession, async
       return res.status(403).json({ error: 'User mismatch' });
     }
 
-    const expectedFlowId = MCPOAuthHandler.generateFlowId(user.id, serverName);
+    const expectedFlowId = getOAuthFlowId(user.id, serverName);
     if (typeof flowId !== 'string' || flowId !== expectedFlowId) {
       logger.error('[MCP OAuth] Invalid flow ID for initiate request', {
         serverName,

@@ -980,12 +980,9 @@ export class MCPOAuthHandler {
     };
   }
 
+  /** Same shape as `generateFlowId`; kept distinct so token-fetch flows can diverge from OAuth flows */
   public static generateTokenFlowId(userId: string, serverName: string, tenantId?: string): string {
-    const flowId = this.generateFlowId(userId, serverName);
-    if (!tenantId) {
-      return flowId;
-    }
-    return `tenant:${encodeURIComponent(tenantId)}:${flowId}`;
+    return this.generateFlowId(userId, serverName, tenantId);
   }
 
   /**

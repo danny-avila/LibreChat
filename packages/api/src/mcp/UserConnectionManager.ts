@@ -1,4 +1,4 @@
-import { logger } from '@librechat/data-schemas';
+import { logger, getTenantId } from '@librechat/data-schemas';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { MCPOAuthFlowMetadata } from '~/mcp/oauth';
 import type { FlowState } from '~/flow/types';
@@ -247,7 +247,7 @@ export abstract class UserConnectionManager {
       return undefined;
     }
 
-    const flowId = MCPOAuthHandler.generateFlowId(userId, serverName);
+    const flowId = MCPOAuthHandler.generateFlowId(userId, serverName, getTenantId());
     const existingFlow = await flowManager.getFlowState(flowId, 'mcp_oauth');
     return this.getPendingOAuthStart(existingFlow);
   }

@@ -1,7 +1,7 @@
 import { logger, getTenantId, tenantStorage } from '@librechat/data-schemas';
 import type { OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
-import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { TokenMethods, TenantContext } from '@librechat/data-schemas';
+import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type {
   MCPOAuthTokens,
   OAuthMetadata,
@@ -501,6 +501,8 @@ export class MCPConnectionFactory {
         error: new Error('OAuth tokens missing before connection'),
         serverUrl,
         userId: this.userId,
+        /** `getOAuthTokens` just exhausted the stored-token/refresh path; go straight to interactive OAuth */
+        skipSilentRefresh: true,
       });
 
       if (!emitted) {

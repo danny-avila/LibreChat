@@ -314,16 +314,23 @@ export class MCPTokenStorage {
     deleteTokens,
     refreshTokens,
     existingAccessToken,
+    existingRefreshToken,
     signal,
-  }: GetTokensParams & { existingAccessToken?: IToken | null }): Promise<MCPOAuthTokens | null> {
+  }: GetTokensParams & {
+    existingAccessToken?: IToken | null;
+    existingRefreshToken?: IToken | null;
+  }): Promise<MCPOAuthTokens | null> {
     const logPrefix = this.getLogPrefix(userId, serverName);
     const identifier = `mcp:${serverName}`;
 
-    const refreshTokenData = await findToken({
-      userId,
-      type: 'mcp_oauth_refresh',
-      identifier: `${identifier}:refresh`,
-    });
+    const refreshTokenData =
+      existingRefreshToken !== undefined
+        ? existingRefreshToken
+        : await findToken({
+            userId,
+            type: 'mcp_oauth_refresh',
+            identifier: `${identifier}:refresh`,
+          });
 
     if (!refreshTokenData) {
       logger.debug(`${logPrefix} No refresh token in storage`);
@@ -521,6 +528,7 @@ export class MCPTokenStorage {
           deleteTokens,
           refreshTokens,
           existingAccessToken: accessTokenData,
+          existingRefreshToken: refreshTokenData,
         });
       }
 

@@ -584,7 +584,7 @@ describe('MCPManager', () => {
       };
       const cleanupOAuthHandler = jest.fn();
 
-      mockProcessMCPEnv.mockReturnValueOnce(processedServerConfig);
+      mockProcessMCPEnv.mockReturnValue(processedServerConfig);
       (MCPConnectionFactory.attachRequestOAuthHandler as jest.Mock).mockReturnValue(
         cleanupOAuthHandler,
       );
@@ -607,7 +607,8 @@ describe('MCPManager', () => {
         >[0]['flowManager'],
       });
 
-      expect(mockProcessMCPEnv).toHaveBeenCalledTimes(1);
+      /** One pass from user-connection runtime resolution, one from callTool — none from the handler attach */
+      expect(mockProcessMCPEnv).toHaveBeenCalledTimes(2);
       expect(MCPConnectionFactory.attachRequestOAuthHandler).toHaveBeenCalledWith(
         expect.objectContaining({
           serverConfig: processedServerConfig,

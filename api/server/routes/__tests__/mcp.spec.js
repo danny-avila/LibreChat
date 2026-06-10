@@ -287,6 +287,53 @@ describe('MCP Routes', () => {
       expect(mockRegistryInstance.getServerConfig).not.toHaveBeenCalled();
     });
 
+    it('should accept tenant-scoped flow IDs when a tenant is active', async () => {
+      const { getTenantId } = require('@librechat/data-schemas');
+      getTenantId.mockReturnValue('tenant-a');
+      const tenantFlowId = 'tenant:tenant-a:test-user-id:test-server';
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({
+          status: 'PENDING',
+          createdAt: Date.now(),
+          metadata: {
+            serverName: 'test-server',
+            userId: 'test-user-id',
+            authorizationUrl: 'https://oauth.example.com/auth?state=stored-state',
+          },
+        }),
+      };
+
+      getLogStores.mockReturnValue({});
+      require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+
+      const response = await request(app).get('/api/mcp/test-server/oauth/initiate').query({
+        userId: 'test-user-id',
+        flowId: tenantFlowId,
+      });
+
+      expect(response.status).toBe(302);
+      expect(response.headers.location).toBe('https://oauth.example.com/auth?state=stored-state');
+      expect(mockFlowManager.getFlowState).toHaveBeenCalledWith(tenantFlowId, 'mcp_oauth');
+    });
+
+    it('should reject non-tenant flow IDs when a tenant is active', async () => {
+      const { getTenantId } = require('@librechat/data-schemas');
+      getTenantId.mockReturnValue('tenant-a');
+      const mockFlowManager = { getFlowState: jest.fn() };
+
+      getLogStores.mockReturnValue({});
+      require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+
+      const response = await request(app).get('/api/mcp/test-server/oauth/initiate').query({
+        userId: 'test-user-id',
+        flowId: 'test-user-id:test-server',
+      });
+
+      expect(response.status).toBe(403);
+      expect(response.body).toEqual({ error: 'Flow mismatch' });
+      expect(mockFlowManager.getFlowState).not.toHaveBeenCalled();
+    });
+
     it('should reject stored authorization URL when flow is no longer pending', async () => {
       const mockFlowManager = {
         getFlowState: jest.fn().mockResolvedValue({
