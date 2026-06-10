@@ -101,7 +101,10 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onSelect, className = '' }
               </p>
             )}
 
-            <AgentContact agent={agent} className="mt-1 text-xs text-text-tertiary" />
+            <AgentContact
+              agent={agent}
+              className="mt-1 text-xs text-text-secondary [&_a]:font-normal [&_a]:text-text-secondary"
+            />
           </div>
         </div>
       </OGDialogTrigger>
