@@ -6,6 +6,7 @@ on:
       - 'client/**'
       - 'packages/client/**'
       - 'packages/data-provider/**'
+      - '.github/workflows/frontend-review.yml'
 
 permissions:
   contents: read
