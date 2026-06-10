@@ -34,6 +34,13 @@ const backendURL = process.env.HOST
   ? `http://${process.env.HOST}:${backendPort}`
   : `http://localhost:${backendPort}`;
 const buildSourceMap = process.env.NODE_ENV === 'development';
+const QUERY_DEVTOOLS_CHUNK_MODULES = [
+  '@tanstack/react-query-devtools',
+  '@tanstack/match-sorter-utils',
+  'node_modules/superjson',
+  'node_modules/copy-anything',
+  'node_modules/is-what',
+];
 
 export default defineConfig(({ command }) => ({
   base: '',
@@ -89,6 +96,7 @@ export default defineConfig(({ command }) => ({
           'index.html',
           'assets/rum.*.js',
           'assets/locale-*.js',
+          'assets/query-devtools*.js',
         ],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         /** LibreChat mutates index.html per request for subpath and language support. */
@@ -310,6 +318,13 @@ export default defineConfig(({ command }) => ({
                   }
                   if (normalizedId.includes('node_modules/hast-util-raw')) {
                     return 'markdown_large';
+                  }
+                  if (
+                    QUERY_DEVTOOLS_CHUNK_MODULES.some((moduleName) =>
+                      normalizedId.includes(moduleName),
+                    )
+                  ) {
+                    return 'query-devtools';
                   }
                   if (normalizedId.includes('@tanstack')) {
                     return 'tanstack-vendor';
