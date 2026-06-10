@@ -109,7 +109,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
       )}
       {showRequestVerification && (
         <div className="mt-2 rounded-md border border-yellow-500 bg-yellow-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200">
-          Your account is pending verification. 
+          Your account verification is pending.
           <button
             type="button"
             className="ml-2 text-blue-600 hover:underline"
