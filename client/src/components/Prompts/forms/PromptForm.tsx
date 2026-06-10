@@ -438,7 +438,16 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string }) => {
     }
 
     if (fetchedPrompt || group) {
-      return <PromptDetails group={fetchedPrompt || group} showActions={false} />;
+      return (
+        <div className="flex h-full w-full flex-col">
+          {isSmallScreen && (
+            <div className="flex shrink-0 items-center px-4 pt-3">
+              <OpenSidebar />
+            </div>
+          )}
+          <PromptDetails group={fetchedPrompt || group} showActions={false} />
+        </div>
+      );
     }
   }
 
