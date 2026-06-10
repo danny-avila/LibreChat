@@ -13,6 +13,8 @@ const {
   collectToolResourceFileIds,
   convertOcrToContextInPlace,
   stripFileIdsFromToolResources,
+  hasSupportContact,
+  resolveAgentOwnerContact,
 } = require('@librechat/api');
 const {
   Time,
@@ -59,12 +61,89 @@ const systemTools = {
 };
 
 const MAX_SEARCH_LEN = 100;
+const OWNER_PERMISSION_BITS =
+  PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE;
 const escapeRegex = (str = '') => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const getSafeModelParameters = (modelParameters) => {
   const { useResponsesApi } = modelParameters ?? {};
   return typeof useResponsesApi === 'boolean' ? { useResponsesApi } : {};
 };
 const hasEditBit = (permission) => (permission & PermissionBits.EDIT) === PermissionBits.EDIT;
+
+const getFirstOwnerIdsByResource = async (agents) => {
+  const resourceIds = agents
+    .filter((agent) => !hasSupportContact(agent))
+    .map((agent) => agent?._id)
+    .filter(Boolean);
+
+  if (resourceIds.length === 0) {
+    return new Map();
+  }
+
+  try {
+    const entries = await db.aggregateAclEntries([
+      {
+        $match: {
+          resourceType: ResourceType.AGENT,
+          resourceId: { $in: resourceIds },
+          principalType: PrincipalType.USER,
+          permBits: OWNER_PERMISSION_BITS,
+        },
+      },
+      { $sort: { grantedAt: 1, createdAt: 1, _id: 1 } },
+      { $group: { _id: '$resourceId', principalId: { $first: '$principalId' } } },
+    ]);
+
+    return new Map(
+      entries
+        .map((entry) => [entry?._id?.toString(), entry?.principalId?.toString()])
+        .filter(([resourceId, ownerId]) => resourceId && ownerId),
+    );
+  } catch (error) {
+    logger.warn('[/Agents] Failed to resolve agent owner ACL entries', error);
+    return new Map();
+  }
+};
+
+const attachOwnerContacts = async (agents) => {
+  if (!Array.isArray(agents) || agents.length === 0) {
+    return agents;
+  }
+
+  const ownerIdsByResource = await getFirstOwnerIdsByResource(agents);
+  const ownerIds = [
+    ...new Set(
+      agents
+        .filter((agent) => !hasSupportContact(agent))
+        .map((agent) => ownerIdsByResource.get(agent?._id?.toString()) ?? agent?.author?.toString())
+        .filter(Boolean),
+    ),
+  ];
+  let ownersById = new Map();
+  if (ownerIds.length > 0) {
+    try {
+      const users = await db.findUsers({ _id: { $in: ownerIds } }, 'name username email');
+      ownersById = new Map(users.map((user) => [user?._id?.toString(), user]));
+    } catch (error) {
+      logger.warn('[/Agents] Failed to resolve agent owner users', error);
+    }
+  }
+
+  return agents.map((agent) => {
+    if (hasSupportContact(agent)) {
+      delete agent.owner_contact;
+      return agent;
+    }
+    const ownerId = ownerIdsByResource.get(agent?._id?.toString()) ?? agent?.author?.toString();
+    const ownerContact = resolveAgentOwnerContact(agent, ownersById.get(ownerId) ?? null);
+    if (ownerContact) {
+      agent.owner_contact = ownerContact;
+    } else {
+      delete agent.owner_contact;
+    }
+    return agent;
+  });
+};
 
 const sanitizeViewerSkillScope = (agent, accessibleSkillSet) => {
   const skillScopeEnabled = agent.skills_enabled === true;
@@ -512,13 +591,15 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
     });
     agent.isPublic = isPublic;
 
+    await attachOwnerContacts([agent]);
+
     if (agent.author !== author) {
       delete agent.author;
     }
 
     if (!expandProperties) {
       // VIEW permission: Basic agent info only
-      return res.status(200).json({
+      const responseAgent = {
         _id: agent._id,
         id: agent.id,
         name: agent.name,
@@ -533,7 +614,16 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
         // Safe metadata
         createdAt: agent.createdAt,
         updatedAt: agent.updatedAt,
-      });
+      };
+
+      if (agent.support_contact !== undefined) {
+        responseAgent.support_contact = agent.support_contact;
+      }
+      if (agent.owner_contact !== undefined) {
+        responseAgent.owner_contact = agent.owner_contact;
+      }
+
+      return res.status(200).json(responseAgent);
     }
 
     // EDIT permission: Full agent details including sensitive configuration
@@ -1040,9 +1130,10 @@ const getListAgentsHandler = async (req, res) => {
     }
 
     const publicSet = new Set(publiclyAccessibleIds.map((oid) => oid.toString()));
+    const agentsWithContacts = await attachOwnerContacts(agents);
 
     const urlCache = cachedRefresh?.urlCache;
-    data.data = agents.map((agent) => {
+    data.data = agentsWithContacts.map((agent) => {
       if (accessibleSkillSet) {
         sanitizeViewerSkillScope(agent, accessibleSkillSet);
       }
