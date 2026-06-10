@@ -4,6 +4,16 @@
 version: 1.3.11
 cache: true
 
+mcpServers:
+  e2e-memory:
+    type: stdio
+    command: node
+    args:
+      - e2e/setup/fake-mcp-server.js
+    title: E2E Memory
+    description: Local MCP fixture used by mock end-to-end tests.
+    timeout: 30000
+
 endpoints:
   custom:
     - name: 'Mock Provider A'
@@ -15,6 +25,8 @@ endpoints:
         fetch: false
       titleConvo: false
       modelDisplayLabel: 'Mock Provider A'
+      customParams:
+        defaultParamsEndpoint: anthropic
 
     - name: 'Mock Provider B'
       apiKey: 'e2e-mock-key-b'
