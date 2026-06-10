@@ -331,5 +331,19 @@ describe('getDefaultModelSpec', () => {
 
       expect(result).toBeUndefined();
     });
+
+    it('detects an agents-only allow-list before the endpoints config loads', () => {
+      persistAgentSelection('agent_abc');
+
+      const result = getDefaultModelSpec(
+        createStartupConfig([otherSpec, softSpec], {
+          prioritize: false,
+          addedEndpoints: [EModelEndpoint.agents],
+        }),
+        undefined,
+      );
+
+      expect(result).toEqual({ softDefault: softSpec });
+    });
   });
 });

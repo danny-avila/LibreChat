@@ -258,10 +258,18 @@ function hasEphemeralModelOptions({
   if (!modelSelect) {
     return false;
   }
+  const included = new Set(addedEndpoints ?? []);
+  const includesEphemeral =
+    included.size === 0 ||
+    [...included].some(
+      (endpoint) => !isAgentsEndpoint(endpoint) && !isAssistantsEndpoint(endpoint),
+    );
+  if (!includesEphemeral) {
+    return false;
+  }
   if (endpointsConfig == null || Object.keys(endpointsConfig).length === 0) {
     return true;
   }
-  const included = new Set(addedEndpoints ?? []);
   return Object.entries(endpointsConfig).some(
     ([endpoint, config]) =>
       config != null &&
