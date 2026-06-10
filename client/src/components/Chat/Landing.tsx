@@ -4,6 +4,7 @@ import { EModelEndpoint } from 'librechat-data-provider';
 import { BirthdayIcon, TooltipAnchor, SplitText } from '@librechat/client';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
+import AgentContact from '~/components/Agents/AgentContact';
 import ConvoIcon from '~/components/Endpoints/ConvoIcon';
 import { useLocalize, useAuthContext } from '~/hooks';
 import { getIconEndpoint, getEntity } from '~/utils';
@@ -63,6 +64,8 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
 
   const name = entity?.name ?? '';
   const description = (entity?.description || conversation?.greeting) ?? '';
+  const selectedAgent =
+    isAgent && conversation?.agent_id != null ? agentsMap?.[conversation.agent_id] : undefined;
 
   const getGreeting = useCallback(() => {
     if (typeof startupConfig?.interface?.customWelcome === 'string') {
@@ -110,7 +113,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
     if (contentRef.current) {
       setContentHeight(contentRef.current.offsetHeight);
     }
-  }, [lineCount, description]);
+  }, [lineCount, description, selectedAgent]);
 
   const getDynamicMargin = useMemo(() => {
     let margin = 'mb-0';
@@ -202,6 +205,12 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
           <div className="animate-fadeIn mt-4 max-w-md text-center text-sm font-normal text-text-primary">
             {description}
           </div>
+        )}
+        {selectedAgent && (
+          <AgentContact
+            agent={selectedAgent}
+            className="animate-fadeIn mt-2 max-w-md justify-center text-center text-sm"
+          />
         )}
       </div>
     </div>
