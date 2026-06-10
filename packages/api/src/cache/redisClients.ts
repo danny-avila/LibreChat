@@ -217,7 +217,6 @@ if (cacheConfig.USE_REDIS) {
 
   keyvRedisClientReady.catch((err): void => {
     logger.error('@keyv/redis initial connection failed:', err);
-    throw err;
   });
 }
 
