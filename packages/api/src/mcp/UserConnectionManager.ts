@@ -3,13 +3,22 @@ import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { MCPOAuthFlowMetadata } from '~/mcp/oauth';
 import type { FlowState } from '~/flow/types';
 import type * as t from './types';
+import {
+  getMissingRuntimeBodyPlaceholderFields,
+  hasRuntimeUrlPlaceholders,
+  isUserSourced,
+  requiresEphemeralUserConnection,
+  requiresOAuthMachinery,
+} from './utils';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
+import { detectOAuthRequirement, MCPOAuthHandler } from '~/mcp/oauth';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
-import { isUserSourced, requiresOAuthMachinery } from './utils';
+import { preProcessGraphTokens } from '~/utils/graph';
+import { isMCPDomainAllowed } from '~/auth/domain';
 import { PENDING_STALE_MS } from '~/flow/manager';
-import { MCPOAuthHandler } from '~/mcp/oauth';
 import { MCPConnection } from './connection';
+import { processMCPEnv } from '~/utils/env';
 import { mcpConfig } from './mcpConfig';
 
 type PendingOAuthStart = {
@@ -63,9 +72,25 @@ export abstract class UserConnectionManager {
       throw new McpError(ErrorCode.InvalidRequest, `[MCP] User object missing id property`);
     }
 
+    const config =
+      opts.serverConfig ??
+      (await MCPServersRegistry.getInstance().getServerConfig(serverName, userId));
+    const missingBodyFields = config
+      ? getMissingRuntimeBodyPlaceholderFields(config, opts.requestBody)
+      : [];
+    if (missingBodyFields.length > 0) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `[MCP][User: ${userId}][${serverName}] Request body field(s) required to resolve runtime MCP placeholders: ${missingBodyFields.join(', ')}.`,
+      );
+    }
+    const ephemeralConnection = config ? requiresEphemeralUserConnection(config) : false;
+    const forceNewConnection = forceNew || ephemeralConnection;
+    const clearCooldown = forceNew === true;
+
     const lockKey = `${userId}:${serverName}`;
 
-    if (!forceNew) {
+    if (!forceNewConnection) {
       const pending = this.pendingConnections.get(lockKey);
       if (pending) {
         logger.debug(`[MCP][User: ${userId}][${serverName}] Joining in-flight connection attempt`);
@@ -78,19 +103,26 @@ export abstract class UserConnectionManager {
     const connectionPromise = this.createUserConnectionInternal(
       {
         ...opts,
+        forceNew: forceNewConnection,
+        ephemeralConnection,
+        serverConfig: config,
         oauthStart: this.createPendingOAuthStart(serverName, userId, pendingOAuth),
       },
       userId,
+      clearCooldown,
     );
 
-    if (!forceNew) {
+    if (!forceNewConnection) {
       this.pendingConnections.set(lockKey, { promise: connectionPromise, oauth: pendingOAuth });
     }
 
     try {
       return await connectionPromise;
     } finally {
-      if (!forceNew && this.pendingConnections.get(lockKey)?.promise === connectionPromise) {
+      if (
+        !forceNewConnection &&
+        this.pendingConnections.get(lockKey)?.promise === connectionPromise
+      ) {
         this.pendingConnections.delete(lockKey);
       }
     }
@@ -276,9 +308,12 @@ export abstract class UserConnectionManager {
       signal,
       returnOnOAuth = false,
       connectionTimeout,
+      graphTokenResolver,
+      ephemeralConnection = false,
       serverConfig: providedConfig,
     }: t.UserMCPConnectionOptions,
     userId: string,
+    clearCooldown: boolean,
   ): Promise<MCPConnection> {
     if (await this.appConnections!.has(serverName)) {
       throw new McpError(
@@ -293,7 +328,7 @@ export abstract class UserConnectionManager {
 
     const userServerMap = this.userConnections.get(userId);
     let connection = forceNew ? undefined : userServerMap?.get(serverName);
-    if (forceNew) {
+    if (clearCooldown) {
       MCPConnection.clearCooldown(serverName);
     }
     const now = Date.now();
@@ -344,17 +379,36 @@ export abstract class UserConnectionManager {
     logger.info(`[MCP][User: ${userId}][${serverName}] Establishing new connection`);
 
     try {
+      const runtimeConfig = await this.applyRuntimeOAuthDetection({
+        config,
+        user,
+        customUserVars,
+        requestBody,
+        graphTokenResolver,
+      });
       const registry = MCPServersRegistry.getInstance();
+      const allowedDomains = registry.getAllowedDomains();
+      const allowedAddresses = registry.getAllowedAddresses();
+      await this.assertResolvedRuntimeConfigAllowed({
+        config: runtimeConfig,
+        user,
+        customUserVars,
+        requestBody,
+        graphTokenResolver,
+        allowedDomains,
+        allowedAddresses,
+        logPrefix: `[MCP][User: ${userId}][${serverName}]`,
+      });
       const basic: t.BasicConnectionOptions = {
-        serverConfig: config,
+        serverConfig: runtimeConfig,
         serverName: serverName,
-        dbSourced: isUserSourced(config),
+        dbSourced: isUserSourced(runtimeConfig),
         useSSRFProtection: registry.shouldEnableSSRFProtection(),
-        allowedDomains: registry.getAllowedDomains(),
-        allowedAddresses: registry.getAllowedAddresses(),
+        allowedDomains,
+        allowedAddresses,
       };
 
-      const useOAuth = requiresOAuthMachinery(config);
+      const useOAuth = requiresOAuthMachinery(runtimeConfig);
       let connectionOptions: t.OAuthConnectionOptions | t.UserConnectionContext;
       if (useOAuth) {
         if (!flowManager) {
@@ -375,6 +429,7 @@ export abstract class UserConnectionManager {
           oauthEnd: oauthEnd,
           oboTokenResolver: oboTokenResolver,
           oboTrustChecker: oboTrustChecker,
+          graphTokenResolver,
           returnOnOAuth: returnOnOAuth,
           requestBody: requestBody,
           connectionTimeout: connectionTimeout,
@@ -384,6 +439,7 @@ export abstract class UserConnectionManager {
           user,
           customUserVars,
           requestBody,
+          graphTokenResolver,
           connectionTimeout,
         };
       }
@@ -394,10 +450,12 @@ export abstract class UserConnectionManager {
         throw new Error('Failed to establish connection after initialization attempt.');
       }
 
-      if (!this.userConnections.has(userId)) {
-        this.userConnections.set(userId, new Map());
+      if (!ephemeralConnection) {
+        if (!this.userConnections.has(userId)) {
+          this.userConnections.set(userId, new Map());
+        }
+        this.userConnections.get(userId)?.set(serverName, connection);
       }
-      this.userConnections.get(userId)?.set(serverName, connection);
 
       logger.info(`[MCP][User: ${userId}][${serverName}] Connection successfully established`);
       // Update timestamp on creation
@@ -416,6 +474,151 @@ export abstract class UserConnectionManager {
       this.removeUserConnection(userId, serverName);
       throw error; // Re-throw the error to the caller
     }
+  }
+
+  /**
+   * Mirrors the resolution MCPConnectionFactory performs internally
+   * (preProcessGraphTokens + processMCPEnv). Both must stay in sync so the
+   * config validated here matches the one the factory actually connects with.
+   */
+  protected async resolveRuntimeConfig({
+    config,
+    user,
+    customUserVars,
+    requestBody,
+    graphTokenResolver,
+  }: {
+    config: t.ParsedServerConfig;
+    user?: t.UserMCPConnectionOptions['user'];
+    customUserVars?: Record<string, string>;
+    requestBody?: t.UserMCPConnectionOptions['requestBody'];
+    graphTokenResolver?: t.UserMCPConnectionOptions['graphTokenResolver'];
+  }): Promise<t.ParsedServerConfig> {
+    const dbSourced = isUserSourced(config);
+    const graphProcessedConfig = dbSourced
+      ? config
+      : await preProcessGraphTokens(config, {
+          user,
+          graphTokenResolver,
+          scopes: process.env.GRAPH_API_SCOPES,
+        });
+
+    return processMCPEnv({
+      user,
+      body: requestBody,
+      dbSourced,
+      options: graphProcessedConfig,
+      customUserVars,
+    }) as t.ParsedServerConfig;
+  }
+
+  protected async assertResolvedRuntimeConfigAllowed({
+    config,
+    user,
+    customUserVars,
+    requestBody,
+    graphTokenResolver,
+    allowedDomains,
+    allowedAddresses,
+    logPrefix,
+  }: {
+    config: t.ParsedServerConfig;
+    user?: t.UserMCPConnectionOptions['user'];
+    customUserVars?: Record<string, string>;
+    requestBody?: t.UserMCPConnectionOptions['requestBody'];
+    graphTokenResolver?: t.UserMCPConnectionOptions['graphTokenResolver'];
+    allowedDomains?: string[] | null;
+    allowedAddresses?: string[] | null;
+    logPrefix: string;
+  }): Promise<t.ParsedServerConfig> {
+    const resolvedConfig = await this.resolveRuntimeConfig({
+      config,
+      user,
+      customUserVars,
+      requestBody,
+      graphTokenResolver,
+    });
+
+    if (!resolvedConfig.url) {
+      return resolvedConfig;
+    }
+
+    if (hasRuntimeUrlPlaceholders(resolvedConfig)) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `${logPrefix} Runtime URL still contains unresolved MCP placeholders after resolution.`,
+      );
+    }
+
+    const allowed = await isMCPDomainAllowed(resolvedConfig, allowedDomains, allowedAddresses);
+    if (!allowed) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `${logPrefix} Resolved MCP server URL is not allowed by the configured domain policy.`,
+      );
+    }
+
+    return resolvedConfig;
+  }
+
+  private async applyRuntimeOAuthDetection({
+    config,
+    user,
+    customUserVars,
+    requestBody,
+    graphTokenResolver,
+  }: {
+    config: t.ParsedServerConfig;
+    user?: t.UserMCPConnectionOptions['user'];
+    customUserVars?: Record<string, string>;
+    requestBody?: t.UserMCPConnectionOptions['requestBody'];
+    graphTokenResolver?: t.UserMCPConnectionOptions['graphTokenResolver'];
+  }): Promise<t.ParsedServerConfig> {
+    if (
+      config.requiresOAuth != null ||
+      config.apiKey?.source === 'admin' ||
+      !hasRuntimeUrlPlaceholders(config)
+    ) {
+      return config;
+    }
+
+    const resolvedConfig = await this.resolveRuntimeConfig({
+      config,
+      user,
+      customUserVars,
+      requestBody,
+      graphTokenResolver,
+    });
+
+    if (!resolvedConfig.url || hasRuntimeUrlPlaceholders(resolvedConfig)) {
+      logger.warn(
+        `[MCP][User: ${user?.id}][${config.url}] Runtime URL still contains placeholders after resolution; skipping OAuth detection`,
+      );
+      return config;
+    }
+
+    const registry = MCPServersRegistry.getInstance();
+    const allowedDomains = registry.getAllowedDomains();
+    const allowedAddresses = registry.getAllowedAddresses();
+    const allowed = await isMCPDomainAllowed(resolvedConfig, allowedDomains, allowedAddresses);
+    if (!allowed) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `[MCP][User: ${user?.id}][${config.url}] Resolved MCP server URL is not allowed by the configured domain policy.`,
+      );
+    }
+
+    const result = await detectOAuthRequirement(
+      resolvedConfig.url,
+      allowedDomains,
+      allowedAddresses,
+    );
+
+    return {
+      ...config,
+      requiresOAuth: result.requiresOAuth,
+      oauthMetadata: result.metadata,
+    };
   }
 
   /** Returns all connections for a specific user */

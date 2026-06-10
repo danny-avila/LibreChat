@@ -3,6 +3,7 @@ const { logger, getTenantId } = require('@librechat/data-schemas');
 const { Providers, Constants: AgentConstants } = require('@librechat/agents');
 const {
   sendEvent,
+  PENDING_STALE_MS,
   MCPOAuthHandler,
   isMCPDomainAllowed,
   normalizeServerName,
@@ -12,10 +13,14 @@ const {
   sanitizeGeminiSchema,
   buildMCPAuthStepId,
   buildMCPAuthToolCall,
+  processMCPEnv,
   buildMCPAuthRunStepEvent,
   buildMCPAuthRunStepDeltaEvent,
   buildMCPAuthRunStepEndDeltaEvent,
+  isUserSourced,
   checkAccessWithRequestCache,
+  requiresEphemeralUserConnection,
+  containsGraphTokenPlaceholder,
 } = require('@librechat/api');
 const {
   Time,
@@ -155,6 +160,41 @@ async function resolveAllMcpConfigs(userId, user) {
   }
 
   return await registry.getAllServerConfigs(userId, configServers);
+}
+
+function getServerCustomUserVars(userMCPAuthMap, serverName) {
+  return userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
+}
+
+/**
+ * Best-effort early gate; the authoritative check is
+ * `assertResolvedRuntimeConfigAllowed` in `@librechat/api`, whose resolution
+ * this must mirror. Graph placeholders resolve later (async), so a URL still
+ * carrying one defers to the authoritative check instead of rejecting here.
+ */
+async function isEarlyDomainAllowed({
+  serverConfig,
+  user,
+  requestBody,
+  userMCPAuthMap,
+  serverName,
+  allowedDomains,
+  allowedAddresses,
+}) {
+  const validationConfig = processMCPEnv({
+    user,
+    body: requestBody,
+    dbSourced: isUserSourced(serverConfig),
+    options: serverConfig,
+    customUserVars: getServerCustomUserVars(userMCPAuthMap, serverName),
+  });
+  if (
+    typeof validationConfig?.url === 'string' &&
+    containsGraphTokenPlaceholder(validationConfig.url)
+  ) {
+    return true;
+  }
+  return await isMCPDomainAllowed(validationConfig, allowedDomains, allowedAddresses);
 }
 
 /**
@@ -339,6 +379,7 @@ function createOAuthCallback({ runStepEmitter, runStepDeltaEmitter }) {
  * @param {number} [params.index]
  * @param {string | null} [params.streamId] - The stream ID for resumable mode.
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
+ * @param {import('@librechat/api').ParsedServerConfig} [params.serverConfig] - Used to bypass reconnect throttling for request-scoped servers.
  * @returns { Promise<Array<typeof tool | { _call: (toolInput: Object | string) => unknown}>> } An object with `_call` method to execute the tool input.
  */
 async function reconnectServer({
@@ -347,23 +388,30 @@ async function reconnectServer({
   index,
   signal,
   serverName,
+  serverConfig,
   configServers,
   userMCPAuthMap,
+  requestBody,
   streamId = null,
 }) {
   logger.debug(
     `[MCP][reconnectServer] serverName: ${serverName}, user: ${user?.id}, hasUserMCPAuthMap: ${!!userMCPAuthMap}`,
   );
 
-  const throttleKey = `${user.id}:${serverName}`;
-  const now = Date.now();
-  const lastAttempt = lastReconnectAttempts.get(throttleKey) ?? 0;
-  if (now - lastAttempt < RECONNECT_THROTTLE_MS) {
-    logger.debug(`[MCP][reconnectServer] Throttled reconnect for ${serverName}`);
-    return null;
+  // Request-scoped servers reconnect on every message by design; throttling them
+  // would stub out healthy tools for messages sent within the throttle window.
+  const requestScoped = serverConfig ? requiresEphemeralUserConnection(serverConfig) : false;
+  if (!requestScoped) {
+    const throttleKey = `${user.id}:${serverName}`;
+    const now = Date.now();
+    const lastAttempt = lastReconnectAttempts.get(throttleKey) ?? 0;
+    if (now - lastAttempt < RECONNECT_THROTTLE_MS) {
+      logger.debug(`[MCP][reconnectServer] Throttled reconnect for ${serverName}`);
+      return null;
+    }
+    lastReconnectAttempts.set(throttleKey, now);
+    evictStale(lastReconnectAttempts, RECONNECT_THROTTLE_MS);
   }
-  lastReconnectAttempts.set(throttleKey, now);
-  evictStale(lastReconnectAttempts, RECONNECT_THROTTLE_MS);
 
   const runId = Constants.USE_PRELIM_RESPONSE_MESSAGE_ID;
   const flowId = `${user.id}:${serverName}:${Date.now()}`;
@@ -419,6 +467,7 @@ async function reconnectServer({
       oauthStart,
       flowManager,
       userMCPAuthMap,
+      requestBody,
       forceNew: true,
       returnOnOAuth: false,
       connectionTimeout: Time.THIRTY_SECONDS,
@@ -448,6 +497,7 @@ async function reconnectServer({
  * @param {AbortSignal} [params.signal]
  * @param {string | null} [params.streamId] - The stream ID for resumable mode.
  * @param {import('@librechat/api').ParsedServerConfig} [params.config]
+ * @param {import('@librechat/api').RequestBody} [params.requestBody]
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  * @returns { Promise<Array<typeof tool | { _call: (toolInput: Object | string) => unknown}>> } An object with `_call` method to execute the tool input.
  */
@@ -462,10 +512,12 @@ async function createMCPTools({
   serverName,
   configServers,
   userMCPAuthMap,
+  requestBody,
   streamId = null,
 }) {
   const serverConfig =
     config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id, configServers));
+
   if (serverConfig?.url) {
     const appConfig = await getAppConfig({
       role: user?.role,
@@ -474,11 +526,15 @@ async function createMCPTools({
     });
     const allowedDomains = appConfig?.mcpSettings?.allowedDomains;
     const allowedAddresses = appConfig?.mcpSettings?.allowedAddresses;
-    const isDomainAllowed = await isMCPDomainAllowed(
+    const isDomainAllowed = await isEarlyDomainAllowed({
       serverConfig,
+      user,
+      requestBody,
+      userMCPAuthMap,
+      serverName,
       allowedDomains,
       allowedAddresses,
-    );
+    });
     if (!isDomainAllowed) {
       logger.warn(`[MCP][${serverName}] Domain not allowed, skipping all tools`);
       return [];
@@ -491,8 +547,10 @@ async function createMCPTools({
     index,
     signal,
     serverName,
+    serverConfig,
     configServers,
     userMCPAuthMap,
+    requestBody,
     streamId,
   });
   if (result === null) {
@@ -516,6 +574,7 @@ async function createMCPTools({
       streamId,
       availableTools: result.availableTools,
       toolKey: `${tool.name}${Constants.mcp_delimiter}${serverName}`,
+      requestBody,
       config: serverConfig,
     });
     if (toolInstance) {
@@ -539,8 +598,10 @@ async function createMCPTools({
  * @param {string | null} [params.streamId] - The stream ID for resumable mode.
  * @param {Providers | EModelEndpoint} params.provider - The provider for the tool.
  * @param {LCAvailableTools} [params.availableTools]
+ * @param {import('@librechat/api').RequestBody} [params.requestBody]
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  * @param {import('@librechat/api').ParsedServerConfig} [params.config]
+ * @param {(availableTools: LCAvailableTools) => void} [params.onAvailableTools]
  * @returns { Promise<typeof tool | { _call: (toolInput: Object | string) => unknown}> } An object with `_call` method to execute the tool input.
  */
 async function createMCPTool({
@@ -553,14 +614,19 @@ async function createMCPTool({
   provider,
   userMCPAuthMap,
   availableTools,
+  requestBody,
   config,
   configServers,
+  onAvailableTools,
   streamId = null,
 }) {
   const [toolName, serverName] = toolKey.split(Constants.mcp_delimiter);
 
   const serverConfig =
     config ?? (await getMCPServersRegistry().getServerConfig(serverName, user?.id, configServers));
+  const requestScopedTools = serverConfig ? requiresEphemeralUserConnection(serverConfig) : false;
+  const useMissingToolCache = !requestScopedTools;
+
   if (serverConfig?.url) {
     const appConfig = await getAppConfig({
       role: user?.role,
@@ -569,11 +635,15 @@ async function createMCPTool({
     });
     const allowedDomains = appConfig?.mcpSettings?.allowedDomains;
     const allowedAddresses = appConfig?.mcpSettings?.allowedAddresses;
-    const isDomainAllowed = await isMCPDomainAllowed(
+    const isDomainAllowed = await isEarlyDomainAllowed({
       serverConfig,
+      user,
+      requestBody,
+      userMCPAuthMap,
+      serverName,
       allowedDomains,
       allowedAddresses,
-    );
+    });
     if (!isDomainAllowed) {
       logger.warn(`[MCP][${serverName}] Domain no longer allowed, skipping tool: ${toolName}`);
       return undefined;
@@ -583,7 +653,7 @@ async function createMCPTool({
   /** @type {LCTool | undefined} */
   let toolDefinition = availableTools?.[toolKey]?.function;
   if (!toolDefinition) {
-    const cachedAt = missingToolCache.get(toolKey);
+    const cachedAt = useMissingToolCache ? missingToolCache.get(toolKey) : undefined;
     if (cachedAt && Date.now() - cachedAt < MISSING_TOOL_TTL_MS) {
       logger.debug(
         `[MCP][${serverName}][${toolName}] Tool in negative cache, returning unavailable stub.`,
@@ -600,13 +670,18 @@ async function createMCPTool({
       index,
       signal,
       serverName,
+      serverConfig,
       configServers,
       userMCPAuthMap,
+      requestBody,
       streamId,
     });
+    if (result?.availableTools) {
+      onAvailableTools?.(result.availableTools);
+    }
     toolDefinition = result?.availableTools?.[toolKey]?.function;
 
-    if (!toolDefinition) {
+    if (!toolDefinition && useMissingToolCache) {
       missingToolCache.set(toolKey, Date.now());
       evictStale(missingToolCache, MISSING_TOOL_TTL_MS);
     }
@@ -623,6 +698,7 @@ async function createMCPTool({
     res,
     mcpPermissionContext,
     user,
+    requestBody,
     provider,
     toolName,
     serverName,
@@ -636,6 +712,7 @@ function createToolInstance({
   res,
   mcpPermissionContext,
   user: capturedUser = null,
+  requestBody: capturedRequestBody,
   toolName,
   serverName,
   serverConfig: capturedServerConfig,
@@ -669,9 +746,9 @@ function createToolInstance({
 
   /** @type {(toolArguments: Object | string, config?: GraphRunnableConfig) => Promise<unknown>} */
   const _call = async (toolArguments, config) => {
-    const permissionUser = config?.configurable?.user ?? capturedUser;
-    const userId =
-      config?.configurable?.user?.id || config?.configurable?.user_id || capturedUser?.id;
+    const effectiveUser = config?.configurable?.user ?? capturedUser;
+    const permissionUser = effectiveUser;
+    const userId = effectiveUser?.id || config?.configurable?.user_id || capturedUser?.id;
     /** @type {ReturnType<typeof createAbortHandler>} */
     let abortHandler = null;
     /** @type {AbortSignal} */
@@ -727,8 +804,8 @@ function createToolInstance({
         options: {
           signal: derivedSignal,
         },
-        user: config?.configurable?.user,
-        requestBody: config?.configurable?.requestBody,
+        user: effectiveUser,
+        requestBody: config?.configurable?.requestBody ?? capturedRequestBody,
         customUserVars,
         flowManager,
         tokenMethods: {
@@ -852,7 +929,10 @@ async function checkOAuthFlowStatus(userId, serverName) {
     }
 
     const flowAge = Date.now() - flowState.createdAt;
-    const flowTTL = flowState.ttl || 180000; // Default 3 minutes
+    // Report active only while the flow is still usable (the handling/reuse window),
+    // not for the full Keyv retention TTL — otherwise the UI shows "connecting" for a
+    // flow the initiate/callback paths already reject, hiding the connect button.
+    const flowTTL = flowState.ttl || PENDING_STALE_MS;
 
     if (flowState.status === 'FAILED' || flowAge > flowTTL) {
       const wasCancelled = flowState.error && flowState.error.includes('cancelled');

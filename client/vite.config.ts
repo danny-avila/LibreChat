@@ -91,10 +91,32 @@ export default defineConfig(({ command }) => ({
           'assets/maskable-icon.png',
           'manifest.webmanifest',
         ],
-        globIgnores: ['images/**/*', '**/*.map', 'index.html', 'assets/rum.*.js'],
+        globIgnores: [
+          'images/**/*',
+          '**/*.map',
+          'index.html',
+          'assets/rum.*.js',
+          'assets/locale-*.js',
+        ],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         /** LibreChat mutates index.html per request for subpath and language support. */
         navigateFallback: null,
+        runtimeCaching: [
+          {
+            urlPattern: ({ url }) => /\/assets\/locale-[^/]+\.js$/.test(url.pathname),
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'locale-chunks',
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+              expiration: {
+                maxEntries: 80,
+                maxAgeSeconds: 30 * 24 * 60 * 60,
+              },
+            },
+          },
+        ],
       },
       includeAssets: [],
       manifest: {
@@ -321,9 +343,12 @@ export default defineConfig(({ command }) => ({
                 if (normalizedId.includes('/src/polyfills/')) {
                   return 'polyfills';
                 }
-                // Create a separate chunk for all locale files under src/locales.
-                if (normalizedId.includes('/src/locales/')) {
-                  return 'locales';
+                // Keep lazy-loaded locale files in one chunk per locale.
+                const localeMatch = normalizedId.match(
+                  /\/src\/locales\/([^/]+)\/translation\.json$/,
+                );
+                if (localeMatch) {
+                  return localeMatch[1] === 'en' ? null : `locale-${localeMatch[1]}`;
                 }
                 // Let Rolldown decide automatically for any other files.
                 return null;

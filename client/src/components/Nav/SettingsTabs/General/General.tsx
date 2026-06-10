@@ -1,7 +1,7 @@
 import React, { useContext, useCallback } from 'react';
 import Cookies from 'js-cookie';
-import { useRecoilState } from 'recoil';
-import { Dropdown, ThemeContext } from '@librechat/client';
+import { useRecoilState, useRecoilValue } from 'recoil';
+import { Dropdown, Spinner, ThemeContext } from '@librechat/client';
 import ArchivedChats from './ArchivedChats';
 import ToggleSwitch from '../ToggleSwitch';
 import { useLocalize } from '~/hooks';
@@ -85,6 +85,7 @@ export const LangSelector = ({
   portal?: boolean;
 }) => {
   const localize = useLocalize();
+  const isLanguageLoading = useRecoilValue(store.languageLoading);
 
   const languageOptions = [
     { value: 'auto', label: localize('com_nav_lang_auto') },
@@ -137,15 +138,26 @@ export const LangSelector = ({
     <div className="flex items-center justify-between">
       <div id={labelId}>{localize('com_nav_language')}</div>
 
-      <Dropdown
-        value={langcode}
-        onChange={onChange}
-        sizeClasses="[--anchor-max-height:256px] max-h-[60vh]"
-        options={languageOptions}
-        className="z-50"
-        aria-labelledby={labelId}
-        portal={portal}
-      />
+      <div className="flex items-center gap-2">
+        {isLanguageLoading && (
+          <span
+            role="status"
+            aria-label={localize('com_ui_loading')}
+            className="flex size-5 items-center justify-center text-text-secondary"
+          >
+            <Spinner className="size-4" />
+          </span>
+        )}
+        <Dropdown
+          value={langcode}
+          onChange={onChange}
+          sizeClasses="[--anchor-max-height:256px] max-h-[60vh]"
+          options={languageOptions}
+          className="z-50"
+          aria-labelledby={labelId}
+          portal={portal}
+        />
+      </div>
     </div>
   );
 };
@@ -169,9 +181,6 @@ function General() {
         userLang = navigator.language || navigator.languages[0];
       }
 
-      requestAnimationFrame(() => {
-        document.documentElement.lang = userLang;
-      });
       setLangcode(userLang);
       Cookies.set('lang', userLang, { expires: 365 });
     },

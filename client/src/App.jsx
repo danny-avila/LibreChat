@@ -8,6 +8,7 @@ import { Toast, ThemeProvider, ToastProvider } from '@librechat/client';
 import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-query';
 import { ScreenshotProvider, useApiErrorBoundary } from './hooks';
 import WakeLockManager from '~/components/System/WakeLockManager';
+import LanguageSync from '~/components/System/LanguageSync';
 import QueryDevtoolsGate from '~/components/QueryDevtoolsGate';
 import { getThemeFromEnv } from './utils/getThemeFromEnv';
 import { initializeFontSize } from '~/store/fontSize';
@@ -47,6 +48,7 @@ const App = () => {
   return (
     <QueryClientProvider client={queryClient}>
       <RecoilRoot>
+        <LanguageSync />
         <LiveAnnouncer>
           <ThemeProvider
             // Only pass initialTheme and themeRGB if environment theme exists

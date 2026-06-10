@@ -719,6 +719,46 @@ describe('ToolService - Action Capability Gating', () => {
       );
     });
 
+    it('should pass request body context into MCP tool definition reinitialization', async () => {
+      const serverName = 'Body-Scoped';
+      const mcpTool = `search${Constants.mcp_delimiter}${serverName}`;
+      const capabilities = [AgentCapabilities.tools];
+      const req = createMockReq(capabilities);
+      req.body = { conversationId: 'conv-123', messageId: 'msg-123' };
+
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockGetServerConfig.mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://demo.librechat.ai/messages/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+        source: 'yaml',
+      });
+      mockGetMCPServerTools.mockResolvedValue(null);
+      mockFlowManager.getFlowState.mockResolvedValue(null);
+      mockLoadToolDefinitions.mockImplementation(async (params, deps) => {
+        await deps.getOrFetchMCPServerTools(params.userId, serverName);
+        return {
+          toolDefinitions: [],
+          toolRegistry: new Map(),
+          hasDeferredTools: false,
+        };
+      });
+      reinitMCPServer.mockResolvedValue({ availableTools: null });
+
+      await loadAgentTools({
+        req,
+        agent: { id: 'agent_123', tools: [mcpTool] },
+        definitionsOnly: true,
+      });
+
+      expect(reinitMCPServer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName,
+          requestBody: req.body,
+        }),
+      );
+      expect(mockGetMCPServerTools).not.toHaveBeenCalled();
+    });
+
     it('should preserve pending-flow expiry for OAuth URLs captured during discovery', async () => {
       const serverName = 'Google-Workspace';
       const authorizationUrl = 'https://auth.example.com/Google-Workspace';
