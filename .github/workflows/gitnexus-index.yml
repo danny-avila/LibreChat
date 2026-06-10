@@ -43,7 +43,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GITNEXUS_VERSION: '1.6.5'
+  GITNEXUS_VERSION: '1.6.7'
 
 jobs:
   index:
@@ -165,7 +165,7 @@ jobs:
             --no-save \
             --no-package-lock \
             "gitnexus@${{ env.GITNEXUS_VERSION }}" \
-            "@ladybugdb/core@0.16.1"
+            "@ladybugdb/core@0.17.1"
           test -x "$RUNNER_TEMP/gitnexus-cli/node_modules/.bin/gitnexus"
 
       - name: Checkout repository

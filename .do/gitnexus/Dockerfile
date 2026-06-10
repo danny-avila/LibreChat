@@ -7,10 +7,10 @@
 
 FROM node:24.16.0-slim
 
-ARG GITNEXUS_VERSION=1.6.5
-# Pin the native DB to match the index workflow; gitnexus's ^0.16.1 range
+ARG GITNEXUS_VERSION=1.6.7
+# Pin the native DB to match the index workflow; gitnexus's ^0.17.0 range
 # would otherwise let the served image drift from the CI-produced index.
-ARG LADYBUG_VERSION=0.16.1
+ARG LADYBUG_VERSION=0.17.1
 
 # 1. Build native addons with Bookworm toolchain, then remove build tools.
 #    curl stays for the docker healthcheck; Caddy lives in its own container.
@@ -33,7 +33,7 @@ RUN echo "deb http://deb.debian.org/debian trixie main" > /etc/apt/sources.list.
 # 3. Pre-install LadybugDB FTS + vector extensions so ~/.kuzu/extension/
 #    is baked into the image. gitnexus serve loads extensions with a
 #    load-only policy and never installs them at runtime, so the cache
-#    must already exist. (GitNexus 1.6.5 loads the vector extension itself
+#    must already exist. (GitNexus loads the vector extension itself
 #    via loadVectorExtension — no adapter patch needed.)
 COPY install-extensions.js /tmp/install-extensions.js
 RUN node /tmp/install-extensions.js && rm -rf /tmp/install-extensions.js /tmp/lbug-ext-install
