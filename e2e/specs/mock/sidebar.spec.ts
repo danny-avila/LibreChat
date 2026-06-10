@@ -16,16 +16,28 @@ const sizes = (page: Page) =>
     };
   });
 
-const expectGridTracksContainer = async (page: Page) => {
-  await expect
-    .poll(
-      async () => {
-        const { grid, wrap, gridH, wrapH } = await sizes(page);
-        return wrap > 0 && Math.abs(grid - wrap) <= 1 && wrapH > 0 && Math.abs(gridH - wrapH) <= 1;
-      },
-      { timeout: 5000 },
-    )
-    .toBe(true);
+/**
+ * Polls until the grid matches its container AND the size has stopped changing
+ * between samples — the sidebar expand/collapse animation runs for 300ms, and a
+ * tracking-only check can match mid-animation on slow CI machines.
+ */
+const settledSizes = async (page: Page) => {
+  let prev = await sizes(page);
+  for (let attempt = 0; attempt < 40; attempt++) {
+    await page.waitForTimeout(350);
+    const next = await sizes(page);
+    const tracked =
+      next.wrap > 0 &&
+      next.wrapH > 0 &&
+      Math.abs(next.grid - next.wrap) <= 1 &&
+      Math.abs(next.gridH - next.wrapH) <= 1;
+    const stable = Math.abs(next.grid - prev.grid) <= 1 && Math.abs(next.gridH - prev.gridH) <= 1;
+    if (tracked && stable) {
+      return next;
+    }
+    prev = next;
+  }
+  throw new Error(`Sidebar chat list never settled: ${JSON.stringify(prev)}`);
 };
 
 test.describe('sidebar chat list', () => {
@@ -37,9 +49,8 @@ test.describe('sidebar chat list', () => {
     await expect(page.locator('aside .ReactVirtualized__Grid').first()).toBeVisible({
       timeout: 20000,
     });
-    await expectGridTracksContainer(page);
 
-    const initial = await sizes(page);
+    const initial = await settledSizes(page);
 
     const separator = page.locator('[role="separator"][aria-label="Resize sidebar"]');
     const sepBox = await separator.boundingBox();
@@ -55,20 +66,17 @@ test.describe('sidebar chat list', () => {
     }
     await page.mouse.up();
 
-    await expectGridTracksContainer(page);
-    const widened = await sizes(page);
+    const widened = await settledSizes(page);
     expect(widened.grid).toBeGreaterThan(initial.grid);
 
     await page.locator('aside').getByTestId('close-sidebar-button').click();
     await page.locator('aside').getByTestId('open-sidebar-button').click();
 
-    await expectGridTracksContainer(page);
-    const reopened = await sizes(page);
+    const reopened = await settledSizes(page);
     expect(reopened.grid).toBeGreaterThan(initial.grid);
 
     await page.setViewportSize({ width: 1280, height: 540 });
-    await expectGridTracksContainer(page);
-    const shrunken = await sizes(page);
+    const shrunken = await settledSizes(page);
     expect(shrunken.gridH).toBeLessThan(reopened.gridH);
   });
 });
