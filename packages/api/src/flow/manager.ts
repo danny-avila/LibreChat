@@ -354,6 +354,17 @@ export class FlowStateManager<T = unknown> {
       return false;
     }
 
+    if (flowState.status === 'COMPLETED') {
+      logger.debug(
+        '[FlowStateManager] Flow already completed, skipping failure to prevent overwrite',
+        {
+          flowId,
+          type,
+        },
+      );
+      return true;
+    }
+
     const updatedState: FlowState = {
       ...flowState,
       status: 'FAILED',
@@ -413,6 +424,10 @@ export class FlowStateManager<T = unknown> {
     try {
       const result = await handler();
       await this.completeFlow(flowId, type, result);
+      const completedState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
+      if (completedState?.status === 'COMPLETED' && completedState.result !== undefined) {
+        return completedState.result;
+      }
       return result;
     } catch (error) {
       await this.failFlow(flowId, type, error instanceof Error ? error : new Error(String(error)));

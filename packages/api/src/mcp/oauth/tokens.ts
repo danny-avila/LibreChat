@@ -2,7 +2,7 @@ import jwt from 'jsonwebtoken';
 import { logger, encryptV2, decryptV2 } from '@librechat/data-schemas';
 import type { OAuthTokens, OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { TokenMethods, IToken } from '@librechat/data-schemas';
-import type { MCPOAuthTokens, ExtendedOAuthTokens, OAuthMetadata } from './types';
+import type { MCPOAuthTokens, ExtendedOAuthTokens, OAuthStoredClientMetadata } from './types';
 import { isInvalidClientMessage } from '~/mcp/utils';
 import { isSystemUserId } from '~/mcp/enum';
 
@@ -25,7 +25,7 @@ interface StoreTokensParams {
   updateToken?: TokenMethods['updateToken'];
   findToken?: TokenMethods['findToken'];
   clientInfo?: OAuthClientInformation;
-  metadata?: OAuthMetadata;
+  metadata?: Partial<OAuthStoredClientMetadata>;
   /** Optional: Pass existing token state to avoid duplicate DB calls */
   existingTokens?: {
     accessToken?: IToken | null;
@@ -47,12 +47,15 @@ interface GetTokensParams {
       clientInfo?: OAuthClientInformation;
       storedTokenEndpoint?: string;
       storedAuthMethods?: string[];
+      resource?: string;
     },
+    signal?: AbortSignal,
   ) => Promise<MCPOAuthTokens>;
   createToken?: TokenMethods['createToken'];
   updateToken?: TokenMethods['updateToken'];
   /** Enables cleanup of stale client registration and refresh token on invalid_client errors during refresh. */
   deleteTokens?: TokenMethods['deleteTokens'];
+  signal?: AbortSignal;
 }
 
 /**
@@ -293,6 +296,183 @@ export class MCPTokenStorage {
   }
 
   /**
+   * Forces a refresh of OAuth tokens using the stored refresh token, regardless
+   * of whether the access token appears locally expired. Use this when the
+   * server has signaled token invalidity (e.g. a 401 mid-session) — the 401 is
+   * the authoritative signal, not the local `expires_at`.
+   *
+   * Returns the new tokens, or `null` when refresh is not possible (no refresh
+   * token stored, no refresh callback, etc.). Throws `ReauthenticationRequiredError`
+   * when the refresh server response indicates the client registration is stale.
+   */
+  static async forceRefreshTokens({
+    userId,
+    serverName,
+    findToken,
+    createToken,
+    updateToken,
+    deleteTokens,
+    refreshTokens,
+    existingAccessToken,
+    existingRefreshToken,
+    signal,
+  }: GetTokensParams & {
+    existingAccessToken?: IToken | null;
+    existingRefreshToken?: IToken | null;
+  }): Promise<MCPOAuthTokens | null> {
+    const logPrefix = this.getLogPrefix(userId, serverName);
+    const identifier = `mcp:${serverName}`;
+
+    const refreshTokenData =
+      existingRefreshToken !== undefined
+        ? existingRefreshToken
+        : await findToken({
+            userId,
+            type: 'mcp_oauth_refresh',
+            identifier: `${identifier}:refresh`,
+          });
+
+    if (!refreshTokenData) {
+      logger.debug(`${logPrefix} No refresh token in storage`);
+      return null;
+    }
+
+    if (!refreshTokens) {
+      logger.warn(`${logPrefix} Refresh token available but no \`refreshTokens\` provided`);
+      return null;
+    }
+
+    if (!createToken) {
+      logger.warn(`${logPrefix} Refresh token available but no \`createToken\` function provided`);
+      return null;
+    }
+
+    try {
+      logger.info(`${logPrefix} Attempting to refresh token`);
+      const decryptedRefreshToken = await decryptV2(refreshTokenData.token);
+
+      let clientInfo;
+      let clientInfoData;
+      let storedClientMetadata: Partial<OAuthStoredClientMetadata> | undefined;
+      let storedTokenEndpoint: string | undefined;
+      let storedAuthMethods: string[] | undefined;
+      let resource: string | undefined;
+      try {
+        clientInfoData = await findToken({
+          userId,
+          type: 'mcp_oauth_client',
+          identifier: `${identifier}:client`,
+        });
+        if (clientInfoData) {
+          const decryptedClientInfo = await decryptV2(clientInfoData.token);
+          clientInfo = JSON.parse(decryptedClientInfo);
+          logger.debug(`${logPrefix} Retrieved client info:`, {
+            client_id: clientInfo.client_id,
+            has_client_secret: !!clientInfo.client_secret,
+          });
+
+          if (clientInfoData.metadata) {
+            const raw =
+              clientInfoData.metadata instanceof Map
+                ? Object.fromEntries(clientInfoData.metadata)
+                : (clientInfoData.metadata as Record<string, unknown>);
+            storedClientMetadata = raw as Partial<OAuthStoredClientMetadata>;
+            if (typeof raw.token_endpoint === 'string') {
+              storedTokenEndpoint = raw.token_endpoint;
+            }
+            if (Array.isArray(raw.token_endpoint_auth_methods_supported)) {
+              storedAuthMethods = raw.token_endpoint_auth_methods_supported as string[];
+            }
+            if (typeof raw.resource === 'string') {
+              resource = raw.resource;
+            }
+          }
+        }
+      } catch {
+        logger.debug(`${logPrefix} No client info found`);
+      }
+
+      const metadata = {
+        userId,
+        serverName,
+        identifier,
+        clientInfo,
+        storedTokenEndpoint,
+        storedAuthMethods,
+        resource,
+      };
+
+      const newTokens = await refreshTokens(decryptedRefreshToken, metadata, signal);
+
+      if (signal?.aborted) {
+        throw new Error('Token refresh aborted');
+      }
+
+      logger.debug(`${logPrefix} Refresh completed`, {
+        has_new_access_token: !!newTokens.access_token,
+        has_new_refresh_token: !!newTokens.refresh_token,
+        refresh_token_will_be_rotated: !!newTokens.refresh_token,
+        expires_at: newTokens.expires_at,
+      });
+
+      // Store the refreshed tokens (handles both create and update)
+      // Pass existing token state to avoid duplicate DB calls
+      await this.storeTokens({
+        userId,
+        serverName,
+        tokens: newTokens,
+        createToken,
+        updateToken,
+        findToken,
+        clientInfo,
+        existingTokens: {
+          accessToken: existingAccessToken,
+          refreshToken: refreshTokenData,
+          clientInfoToken: clientInfoData,
+        },
+        metadata: storedClientMetadata,
+      });
+
+      logger.info(`${logPrefix} Successfully refreshed and stored OAuth tokens`);
+      return newTokens;
+    } catch (refreshError) {
+      logger.error(`${logPrefix} Failed to refresh tokens`, refreshError);
+      // Check if it's an unauthorized_client error (refresh not supported)
+      const errorMessage =
+        refreshError instanceof Error ? refreshError.message : String(refreshError);
+      if (errorMessage.toLowerCase().includes('unauthorized_client')) {
+        logger.info(
+          `${logPrefix} Server does not support refresh tokens for this client. New authentication required.`,
+        );
+      } else if (isInvalidClientMessage(errorMessage)) {
+        if (deleteTokens) {
+          logger.info(
+            `${logPrefix} Client registration rejected during token refresh, attempting to clear stale registration and refresh token`,
+          );
+          const results = await Promise.allSettled([
+            MCPTokenStorage.deleteClientRegistration({ userId, serverName, deleteTokens }),
+            deleteTokens({
+              userId,
+              type: 'mcp_oauth_refresh',
+              identifier: `${identifier}:refresh`,
+            }),
+          ]);
+          for (const r of results) {
+            if (r.status === 'rejected') {
+              logger.warn(`${logPrefix} Failed to clear stale token data`, r.reason);
+            }
+          }
+          throw new ReauthenticationRequiredError(serverName, 'invalid_client');
+        }
+        logger.warn(
+          `${logPrefix} Client registration rejected during token refresh but deleteTokens not available — stale registration cannot be cleared`,
+        );
+      }
+      return null;
+    }
+  }
+
+  /**
    * Retrieves OAuth tokens for an MCP server
    */
   static async getTokens({
@@ -323,7 +503,8 @@ export class MCPTokenStorage {
       if (isMissing || isExpired) {
         logger.info(`${logPrefix} Access token ${isMissing ? 'missing' : 'expired'}`);
 
-        /** Refresh data if we have a refresh token and refresh function */
+        /** Probe for a refresh token first so we can throw `ReauthenticationRequiredError`
+         *  when none exists, matching the prior contract. */
         const refreshTokenData = await findToken({
           userId,
           type: 'mcp_oauth_refresh',
@@ -338,131 +519,17 @@ export class MCPTokenStorage {
           throw new ReauthenticationRequiredError(serverName, reason);
         }
 
-        if (!refreshTokens) {
-          logger.warn(
-            `${logPrefix} Access token ${isMissing ? 'missing' : 'expired'}, refresh token available but no \`refreshTokens\` provided`,
-          );
-          return null;
-        }
-
-        if (!createToken) {
-          logger.warn(
-            `${logPrefix} Access token ${isMissing ? 'missing' : 'expired'}, refresh token available but no \`createToken\` function provided`,
-          );
-          return null;
-        }
-
-        try {
-          logger.info(`${logPrefix} Attempting to refresh token`);
-          const decryptedRefreshToken = await decryptV2(refreshTokenData.token);
-
-          let clientInfo;
-          let clientInfoData;
-          let storedTokenEndpoint: string | undefined;
-          let storedAuthMethods: string[] | undefined;
-          try {
-            clientInfoData = await findToken({
-              userId,
-              type: 'mcp_oauth_client',
-              identifier: `${identifier}:client`,
-            });
-            if (clientInfoData) {
-              const decryptedClientInfo = await decryptV2(clientInfoData.token);
-              clientInfo = JSON.parse(decryptedClientInfo);
-              logger.debug(`${logPrefix} Retrieved client info:`, {
-                client_id: clientInfo.client_id,
-                has_client_secret: !!clientInfo.client_secret,
-              });
-
-              if (clientInfoData.metadata) {
-                const raw =
-                  clientInfoData.metadata instanceof Map
-                    ? Object.fromEntries(clientInfoData.metadata)
-                    : (clientInfoData.metadata as Record<string, unknown>);
-                if (typeof raw.token_endpoint === 'string') {
-                  storedTokenEndpoint = raw.token_endpoint;
-                }
-                if (Array.isArray(raw.token_endpoint_auth_methods_supported)) {
-                  storedAuthMethods = raw.token_endpoint_auth_methods_supported as string[];
-                }
-              }
-            }
-          } catch {
-            logger.debug(`${logPrefix} No client info found`);
-          }
-
-          const metadata = {
-            userId,
-            serverName,
-            identifier,
-            clientInfo,
-            storedTokenEndpoint,
-            storedAuthMethods,
-          };
-
-          const newTokens = await refreshTokens(decryptedRefreshToken, metadata);
-
-          logger.debug(`${logPrefix} Refresh completed`, {
-            has_new_access_token: !!newTokens.access_token,
-            has_new_refresh_token: !!newTokens.refresh_token,
-            refresh_token_will_be_rotated: !!newTokens.refresh_token,
-            expires_at: newTokens.expires_at,
-          });
-
-          // Store the refreshed tokens (handles both create and update)
-          // Pass existing token state to avoid duplicate DB calls
-          await this.storeTokens({
-            userId,
-            serverName,
-            tokens: newTokens,
-            createToken,
-            updateToken,
-            findToken,
-            clientInfo,
-            existingTokens: {
-              accessToken: accessTokenData, // We know this is expired/missing
-              refreshToken: refreshTokenData, // We already have this
-              clientInfoToken: clientInfoData, // We already looked this up
-            },
-          });
-
-          logger.info(`${logPrefix} Successfully refreshed and stored OAuth tokens`);
-          return newTokens;
-        } catch (refreshError) {
-          logger.error(`${logPrefix} Failed to refresh tokens`, refreshError);
-          // Check if it's an unauthorized_client error (refresh not supported)
-          const errorMessage =
-            refreshError instanceof Error ? refreshError.message : String(refreshError);
-          if (errorMessage.toLowerCase().includes('unauthorized_client')) {
-            logger.info(
-              `${logPrefix} Server does not support refresh tokens for this client. New authentication required.`,
-            );
-          } else if (isInvalidClientMessage(errorMessage)) {
-            if (deleteTokens) {
-              logger.info(
-                `${logPrefix} Client registration rejected during token refresh, attempting to clear stale registration and refresh token`,
-              );
-              const results = await Promise.allSettled([
-                MCPTokenStorage.deleteClientRegistration({ userId, serverName, deleteTokens }),
-                deleteTokens({
-                  userId,
-                  type: 'mcp_oauth_refresh',
-                  identifier: `${identifier}:refresh`,
-                }),
-              ]);
-              for (const r of results) {
-                if (r.status === 'rejected') {
-                  logger.warn(`${logPrefix} Failed to clear stale token data`, r.reason);
-                }
-              }
-              throw new ReauthenticationRequiredError(serverName, 'invalid_client');
-            }
-            logger.warn(
-              `${logPrefix} Client registration rejected during token refresh but deleteTokens not available — stale registration cannot be cleared`,
-            );
-          }
-          return null;
-        }
+        return await this.forceRefreshTokens({
+          userId,
+          serverName,
+          findToken,
+          createToken,
+          updateToken,
+          deleteTokens,
+          refreshTokens,
+          existingAccessToken: accessTokenData,
+          existingRefreshToken: refreshTokenData,
+        });
       }
 
       // If we reach here, access token should exist and be valid

@@ -19,9 +19,11 @@ const {
   performStartupChecks,
   handleJsonParseError,
   GenerationJobManager,
+  QUERY_DEVTOOLS_HEADER,
   createStreamServices,
   initializeFileStorage,
   initializeDeploymentSkills,
+  maybeInjectQueryDevtoolsBootstrap,
   preAuthTenantMiddleware,
   setupGracefulShutdown,
   updateInterfacePermissions,
@@ -140,6 +142,23 @@ const startServer = async () => {
     }
   }
 
+  const sendIndexHtml = (req, res) => {
+    res.set({
+      'Cache-Control': process.env.INDEX_CACHE_CONTROL || 'no-cache, no-store, must-revalidate',
+      Pragma: process.env.INDEX_PRAGMA || 'no-cache',
+      Expires: process.env.INDEX_EXPIRES || '0',
+    });
+    res.vary(QUERY_DEVTOOLS_HEADER);
+
+    const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
+    const saneLang = lang.replace(/"/g, '&quot;');
+    let updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
+    updatedIndexHtml = maybeInjectQueryDevtoolsBootstrap(updatedIndexHtml, req);
+
+    res.type('html');
+    res.send(updatedIndexHtml);
+  };
+
   app.get('/health', (_req, res) => res.status(200).send('OK'));
   app.get('/livez', (_req, res) => res.status(200).send('OK'));
   app.get('/readyz', (_req, res) => {
@@ -179,6 +198,7 @@ const startServer = async () => {
     console.warn('Response compression has been disabled via DISABLE_COMPRESSION.');
   }
 
+  app.get('/index.html', sendIndexHtml);
   app.use(staticCache(appConfig.paths.dist));
   app.use(staticCache(appConfig.paths.fonts));
   app.use(staticCache(appConfig.paths.assets));
@@ -256,20 +276,7 @@ const startServer = async () => {
   app.use('/api', apiNotFound);
 
   /** SPA fallback - serve index.html for all unmatched routes */
-  app.use((req, res) => {
-    res.set({
-      'Cache-Control': process.env.INDEX_CACHE_CONTROL || 'no-cache, no-store, must-revalidate',
-      Pragma: process.env.INDEX_PRAGMA || 'no-cache',
-      Expires: process.env.INDEX_EXPIRES || '0',
-    });
-
-    const lang = req.cookies.lang || req.headers['accept-language']?.split(',')[0] || 'en-US';
-    const saneLang = lang.replace(/"/g, '&quot;');
-    let updatedIndexHtml = indexHTML.replace(/lang="en-US"/g, `lang="${saneLang}"`);
-
-    res.type('html');
-    res.send(updatedIndexHtml);
-  });
+  app.use(sendIndexHtml);
 
   /** Record trace errors before the final error controller. */
   if (telemetry.enabled) {

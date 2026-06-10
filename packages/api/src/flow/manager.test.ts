@@ -71,6 +71,24 @@ describe('FlowStateManager', () => {
       expect(result2).toBe('result');
     });
 
+    it('should return the externally completed result when handler loses completion race', async () => {
+      const flowId = 'race-flow';
+      const type = 'test-type';
+
+      const result = await flowManager.createFlowWithHandler(flowId, type, async () => {
+        await flowManager.completeFlow(flowId, type, 'fresh-result');
+        return 'stale-result';
+      });
+
+      expect(result).toBe('fresh-result');
+      await expect(flowManager.getFlowState(flowId, type)).resolves.toEqual(
+        expect.objectContaining({
+          status: 'COMPLETED',
+          result: 'fresh-result',
+        }),
+      );
+    });
+
     it('should handle flow timeout correctly', async () => {
       const flowId = 'timeout-flow';
       const type = 'test-type';
@@ -157,6 +175,25 @@ describe('FlowStateManager', () => {
 
       await expect(flowPromise).rejects.toThrow('failure');
     }, 15000);
+
+    it('should not overwrite a completed flow with a late failure', async () => {
+      const flowId = 'completed-race-flow';
+      const type = 'test-type';
+      const flowKey = `${type}:${flowId}`;
+
+      await flowManager.initFlow(flowId, type);
+      await flowManager.completeFlow(flowId, type, 'success');
+
+      const result = await flowManager.failFlow(flowId, type, new Error('late failure'));
+      const state = await store.get(flowKey);
+
+      expect(result).toBe(true);
+      expect(state).toMatchObject({
+        status: 'COMPLETED',
+        result: 'success',
+      });
+      expect(state?.error).toBeUndefined();
+    });
   });
 
   describe('initFlow', () => {

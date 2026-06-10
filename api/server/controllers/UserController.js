@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { logger, webSearchKeys } = require('@librechat/data-schemas');
+const { logger, getTenantId, webSearchKeys } = require('@librechat/data-schemas');
 const {
   getNewS3URL,
   needsRefresh,
@@ -432,11 +432,24 @@ const clearStoredMCPOAuthState = async (userId, serverName) => {
   try {
     const flowsCache = getLogStores(CacheKeys.FLOWS);
     const flowManager = getFlowStateManager(flowsCache);
-    const flowId = MCPOAuthHandler.generateFlowId(userId, serverName);
-    const results = await Promise.allSettled([
-      flowManager.deleteFlow(flowId, 'mcp_get_tokens'),
-      flowManager.deleteFlow(flowId, 'mcp_oauth'),
-    ]);
+    const baseFlowId = MCPOAuthHandler.generateFlowId(userId, serverName);
+    const tenantId = getTenantId();
+    const tokenFlowId = MCPOAuthHandler.generateTokenFlowId(userId, serverName, tenantId);
+    const oauthFlowId = MCPOAuthHandler.generateFlowId(userId, serverName, tenantId);
+    const flowDeletes = [
+      [tokenFlowId, 'mcp_get_tokens'],
+      [oauthFlowId, 'mcp_oauth'],
+      [baseFlowId, 'mcp_get_tokens'],
+      [baseFlowId, 'mcp_oauth'],
+    ].filter(
+      ([flowId, type], index, deletes) =>
+        deletes.findIndex(([candidateId, candidateType]) => {
+          return candidateId === flowId && candidateType === type;
+        }) === index,
+    );
+    const results = await Promise.allSettled(
+      flowDeletes.map(([flowId, type]) => flowManager.deleteFlow(flowId, type)),
+    );
     for (const result of results) {
       if (result.status === 'rejected') {
         logger.warn(
