@@ -795,6 +795,8 @@ const updateAgentHandler = async (req, res) => {
       updatedAgent.author = updatedAgent.author.toString();
     }
 
+    await attachOwnerContacts([updatedAgent]);
+
     if (updatedAgent.author !== req.user.id) {
       delete updatedAgent.author;
     }
