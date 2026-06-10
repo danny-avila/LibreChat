@@ -40,7 +40,9 @@ endpoints:
 
 modelSpecs:
   prioritize: true
-  enforce: true
+  # Enforcement would reject sends from the non-spec paths addedEndpoints
+  # exposes below (buildEndpointOption requires a spec when enforce is true).
+  enforce: false
   # Surfaces the endpoints menu (modelSelect defaults on when addedEndpoints is
   # set) limited to entries that don't collide with the spec labels above.
   addedEndpoints:

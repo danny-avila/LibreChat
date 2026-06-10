@@ -160,15 +160,14 @@ function parseStoredModelSelection(
   }
 }
 
-function hasStoredPrefixValue(prefix: string, ignoreValue?: string | null): boolean {
+function hasStoredPrefixValue(prefix: string): boolean {
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
     if (!key?.startsWith(prefix)) {
       continue;
     }
 
-    const value = localStorage.getItem(key);
-    if (hasSelectionValue(value) && value !== ignoreValue) {
+    if (hasSelectionValue(localStorage.getItem(key))) {
       return true;
     }
   }
@@ -176,7 +175,7 @@ function hasStoredPrefixValue(prefix: string, ignoreValue?: string | null): bool
   return false;
 }
 
-function hasStoredModelValue(softPreset?: t.TModelSpecPreset): boolean {
+function hasStoredModelValue(): boolean {
   const storedModelValue = localStorage.getItem(LocalStorageKeys.LAST_MODEL);
   if (!storedModelValue) {
     return false;
@@ -184,11 +183,7 @@ function hasStoredModelValue(softPreset?: t.TModelSpecPreset): boolean {
 
   try {
     const storedModels = JSON.parse(storedModelValue) as Record<string, string | null | undefined>;
-    return Object.entries(storedModels).some(
-      ([endpoint, model]) =>
-        hasSelectionValue(model) &&
-        !(endpoint === softPreset?.endpoint && model === softPreset?.model),
-    );
+    return Object.values(storedModels).some(hasSelectionValue);
   } catch {
     return false;
   }
@@ -210,23 +205,22 @@ export function hasModelSelection(selection?: Partial<StoredModelSelection> | nu
 
 /**
  * Whether localStorage holds a model selection the user actually made.
- * State matching what auto-applying `softDefaultSpec` writes is residue of the
- * soft default itself, not evidence of a user choice, and is ignored.
+ * Only spec entries naming `softDefaultSpec` are residue of the soft default
+ * itself — selections that merely match its preset still count as user choices.
  */
 function hasStoredModelSelection(softDefaultSpec?: t.TModelSpec): boolean {
-  const softPreset = softDefaultSpec?.preset;
   const lastSpecName = localStorage.getItem(LocalStorageKeys.LAST_SPEC);
   if (hasSelectionValue(lastSpecName) && lastSpecName !== softDefaultSpec?.name) {
     return true;
   }
 
-  if (hasStoredModelValue(softPreset)) {
+  if (hasStoredModelValue()) {
     return true;
   }
 
   if (
-    hasStoredPrefixValue(LocalStorageKeys.AGENT_ID_PREFIX, softPreset?.agent_id) ||
-    hasStoredPrefixValue(LocalStorageKeys.ASST_ID_PREFIX, softPreset?.assistant_id)
+    hasStoredPrefixValue(LocalStorageKeys.AGENT_ID_PREFIX) ||
+    hasStoredPrefixValue(LocalStorageKeys.ASST_ID_PREFIX)
   ) {
     return true;
   }

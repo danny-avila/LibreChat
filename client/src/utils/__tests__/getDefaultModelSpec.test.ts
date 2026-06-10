@@ -225,7 +225,7 @@ describe('getDefaultModelSpec', () => {
       expect(result).toEqual({ last: otherSpec });
     });
 
-    it('treats a matching stored agent as residue when the soft default points to an agent', () => {
+    it('yields to a stored agent even when it matches the soft default agent spec', () => {
       const softAgentSpec = createModelSpec('soft-agent-spec', {
         softDefault: true,
         preset: { endpoint: EModelEndpoint.agents, agent_id: 'agent_soft' },
@@ -237,7 +237,21 @@ describe('getDefaultModelSpec', () => {
         fullEndpointsConfig,
       );
 
-      expect(result).toEqual({ softDefault: softAgentSpec });
+      expect(result).toBeUndefined();
+    });
+
+    it('yields to a stored model selection matching the soft default preset', () => {
+      localStorage.setItem(
+        LocalStorageKeys.LAST_MODEL,
+        JSON.stringify({ [softSpec.preset.endpoint as string]: softSpec.preset.model }),
+      );
+
+      const result = getDefaultModelSpec(
+        createStartupConfig([otherSpec, softSpec], { prioritize: false }),
+        fullEndpointsConfig,
+      );
+
+      expect(result).toBeUndefined();
     });
 
     it('yields when a different agent is stored than the soft default agent spec', () => {
