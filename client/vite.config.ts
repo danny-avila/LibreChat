@@ -10,6 +10,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 // https://vitejs.dev/config/
 const backendPort = process.env.BACKEND_PORT && Number(process.env.BACKEND_PORT) || 3080;
 const backendURL = process.env.HOST ? `http://${process.env.HOST}:${backendPort}` : `http://localhost:${backendPort}`;
+const verificationServiceURL = process.env.VITE_VERIFICATION_SERVICE_URL || 'http://localhost:4000';
 
 export default defineConfig(({ command }) => ({
   base: '',
@@ -19,9 +20,11 @@ export default defineConfig(({ command }) => ({
     port: process.env.PORT && Number(process.env.PORT) || 3090,
     strictPort: false,
     proxy: {
-      '/api/users/verification-request': {
-        target: 'http://localhost:4000',
+      '/ajrasakha/users/verification-request': {
+        target: verificationServiceURL,
         changeOrigin: true,
+        // Rewrite dev path to external service's /api path
+        rewrite: (path) => path.replace(/^\/ajrasakha/, '/api'),
       },
       '/api': {
         target: backendURL,

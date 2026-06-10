@@ -4,7 +4,7 @@ import { Turnstile } from '@marsidev/react-turnstile';
 import { ThemeContext, Spinner, Button, isDark } from '@librechat/client';
 import type { TLoginUser, TStartupConfig } from 'librechat-data-provider';
 import type { TAuthContext } from '~/common';
-import { useResendVerificationEmail, useGetStartupConfig } from '~/data-provider';
+import { useResendVerificationEmail, useGetStartupConfig, useRequestVerificationMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
 type TLoginFormProps = {
@@ -27,12 +27,25 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [showRequestVerification, setShowRequestVerification] = useState<boolean>(false);
   const [verificationRequestSent, setVerificationRequestSent] = useState<boolean>(false);
-  const [verificationRequestLoading, setVerificationRequestLoading] = useState<boolean>(false);
 
   const { data: config } = useGetStartupConfig();
   const useUsernameLogin = config?.ldap?.username;
   const validTheme = isDark(theme) ? 'dark' : 'light';
   const requireCaptcha = Boolean(startupConfig.turnstile?.siteKey);
+
+  const requestVerificationMutation = useRequestVerificationMutation({
+    onMutate: () => {
+      setError(undefined);
+      setShowRequestVerification(false);
+    },
+    onSuccess: () => {
+      setVerificationRequestSent(true);
+    },
+    onError: (error) => {
+      console.error('Failed to send verification request:', error);
+      setError('Failed to send verification request. Please try again.');
+    },
+  });
 
   useEffect(() => {
     if (error && error.includes('422') && !showResendLink) {
@@ -71,29 +84,12 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
     resendLinkMutation.mutate({ email });
   };
 
-  const handleRequestVerification = async () => {
+  const handleRequestVerification = () => {
     const email = getValues('email');
     if (!email) {
       return setShowRequestVerification(false);
     }
-
-    setVerificationRequestLoading(true);
-    try {
-      const response = await fetch('/api/users/verification-request', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifier: email }),
-      });
-      if (response.ok) {
-        setVerificationRequestSent(true);
-        setShowRequestVerification(false);
-        setError(undefined);
-      }
-    } catch (e) {
-      console.error('Failed to send verification request:', e);
-    } finally {
-      setVerificationRequestLoading(false);
-    }
+    requestVerificationMutation.mutate({ identifier: email });
   };
 
   return (
@@ -118,9 +114,9 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
             type="button"
             className="ml-2 text-blue-600 hover:underline"
             onClick={handleRequestVerification}
-            disabled={verificationRequestLoading}
+            disabled={requestVerificationMutation.isPending}
           >
-            {verificationRequestLoading ? 'Requesting...' : 'Request Verification'}
+            {requestVerificationMutation.isPending ? 'Requesting...' : 'Request Verification'}
           </button>
         </div>
       )}
