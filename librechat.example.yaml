@@ -781,3 +781,21 @@ endpoints:
 #     # instructions: "You are a memory management assistant. Store and manage user information accurately."
 #     # model_parameters:
 #     #   temperature: 0.1
+
+# Reject chat messages whose text matches credential-shaped patterns
+# before they reach moderation, the model, or persistence. Filter
+# types live under `messageFilter.<type>`; today only `pii` ships, but
+# the namespace is structured so future filter types can plug in.
+# Omit the whole section to disable.
+# messageFilter:
+#   pii:
+#     # (optional) Pick a subset of the starter catalog by id; omit to
+#     # enable all starters (sk_prefix, bearer_header, api_key_header).
+#     starterPatterns: [sk_prefix, bearer_header, api_key_header]
+#     # (optional) Operator-defined patterns. Each entry needs id,
+#     # label, and a JavaScript-flavor regex; the regex is validated
+#     # at config load time.
+#     customPatterns:
+#       - id: anthropic_api_key
+#         label: Anthropic API key
+#         regex: "sk-ant-[A-Za-z0-9_-]{20,}"

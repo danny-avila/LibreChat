@@ -25,6 +25,7 @@ const {
   recordCollectedUsage,
   getTransactionsConfig,
   resolveRecursionLimit,
+  findPiiMatchInMessages,
   discoverConnectedAgents,
   getRemoteAgentPermissions,
   createToolExecuteHandler,
@@ -174,6 +175,17 @@ const OpenAIChatCompletionController = async (req, res) => {
       `Agent not found: ${agentId}`,
       'invalid_request_error',
       'model_not_found',
+    );
+  }
+
+  const piiHit = findPiiMatchInMessages(request.messages, appConfig?.messageFilter?.pii);
+  if (piiHit != null) {
+    return sendErrorResponse(
+      res,
+      400,
+      `Message contains a ${piiHit.label}. Remove it and try again.`,
+      'invalid_request_error',
+      'message_filter_pii_block',
     );
   }
 
