@@ -100,7 +100,10 @@ const Registration: React.FC = () => {
     <>
       {errorMessage && (
         <ErrorMessage>
-          {localize('com_auth_error_create')} {errorMessage}
+          {localize('com_auth_error_create')}{' '}
+          {errorMessage === 'Email already in use'
+            ? localize('com_auth_error_email_in_use')
+            : errorMessage}
         </ErrorMessage>
       )}
       {registerUser.isSuccess && countdown > 0 && (

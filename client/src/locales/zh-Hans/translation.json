@@ -168,6 +168,7 @@
   "com_auth_email_verification_success": "邮箱验证成功",
   "com_auth_email_verifying_ellipsis": "验证中...",
   "com_auth_error_create": "注册账户过程中出现错误，请重试。",
+  "com_auth_error_email_in_use": "电子邮箱已被使用",
   "com_auth_error_invalid_reset_token": "重置密码的密钥已失效。",
   "com_auth_error_login": "无法登录，请确认提供的账户密码正确并重试。",
   "com_auth_error_login_ban": "根据我们的服务规则，您的帐号被暂时禁用。",

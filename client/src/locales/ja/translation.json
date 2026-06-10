@@ -168,6 +168,7 @@
   "com_auth_email_verification_success": "メールが正常に検証されました",
   "com_auth_email_verifying_ellipsis": "確認中...",
   "com_auth_error_create": "アカウント登録に失敗しました。もう一度お試しください。",
+  "com_auth_error_email_in_use": "このメールアドレスはすでに使用されています",
   "com_auth_error_invalid_reset_token": "無効なパスワードリセットトークンです。",
   "com_auth_error_login": "入力された情報ではログインできませんでした。認証情報を確認した上で再度お試しください。",
   "com_auth_error_login_ban": "本サービスの利用規約違反のため、一時的にアカウントを停止しました。",

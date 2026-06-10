@@ -37,6 +37,7 @@
   "com_auth_email_pattern": "Bạn phải nhập địa chỉ email hợp lệ",
   "com_auth_email_required": "Email là bắt buộc",
   "com_auth_error_create": "Có lỗi khi đăng ký tài khoản của bạn. Vui lòng thử lại.",
+  "com_auth_error_email_in_use": "Email đã được sử dụng",
   "com_auth_error_invalid_reset_token": "Mã đặt lại mật khẩu này không còn hợp lệ.",
   "com_auth_error_login": "Không thể đăng nhập với thông tin được cung cấp. Vui lòng kiểm tra thông tin đăng nhập và thử lại.",
   "com_auth_error_login_ban": "Tài khoản của bạn đã bị khóa tạm thời do vi phạm dịch vụ của chúng tôi.",

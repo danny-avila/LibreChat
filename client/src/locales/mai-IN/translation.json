@@ -1,5 +1,5 @@
 {
- "chat_direction_left_to_right": "बाँयाँ सँ दहिन्ना",
+  "chat_direction_left_to_right": "बाँयाँ सँ दहिन्ना",
   "chat_direction_right_to_left": "दहिन्ना सँ बाँयाँ",
   "com_a11y_ai_composing": "AI एखन लिखि रहल अछि।",
   "com_a11y_end": "AI अपन उत्तर पूरा कए लेलक अछि।",
@@ -171,6 +171,7 @@
   "com_auth_email_verification_success": "ईमेल सफलतापूर्वक सत्यापित भ गेल",
   "com_auth_email_verifying_ellipsis": "सत्यापित कएल जा रहल अछि...",
   "com_auth_error_create": "अहाँक अकाउंट रजिस्टर करय क प्रयास मे त्रुटि भेल। कृपया पुनः प्रयास करू।",
+  "com_auth_error_email_in_use": "ईमेल पहिने सँ उपयोग मे अछि",
   "com_auth_error_invalid_reset_token": "ई पासवर्ड रिसेट टोकन एखन मान्य नै अछि।",
   "com_auth_error_login": "देल गेल जानकारी सँ लॉगिन करय मे असमर्थ। कृपया अपन क्रेडेंशियल जाँचू आ पुनः प्रयास करू।",
   "com_auth_error_login_ban": "हमर सेवाक उल्लंघनक कारण अहाँक अकाउंट अस्थायी रूप सँ प्रतिबंधित कएल गेल अछि।",
@@ -1502,7 +1503,7 @@
   "com_farmer_label_crops_cultivated": "उपाजल फसल सभ",
   "com_farmer_label_primary_crop": "प्राथमिक फसल",
   "com_farmer_label_secondary_crop": "द्वितीयक फसल",
-    "crop_adapathiyan": "अडापथियन",
+  "crop_adapathiyan": "अडापथियन",
   "crop_agathi": "अगस्ती",
   "crop_ailanthus_or_matti": "महारुख / मत्ती",
   "crop_ajwain_carom_seeds": "जमाइन",

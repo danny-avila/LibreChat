@@ -204,9 +204,7 @@ const registerUser = async (user, additionalData = {}) => {
         { name: 'Existing user:', value: existingUser },
       );
 
-      // Sleep for 1 second
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      return { status: 200, message: genericVerificationMessage };
+      return { status: 400, message: 'Email already in use' };
     }
 
     //determine if this is the first registered user (not counting anonymous_user)

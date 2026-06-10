@@ -162,5 +162,6 @@
   "com_farmer_option_other": "სხვა",
   "com_farmer_option_under_graduate": "ბაკალავრიატის სტუდენტი",
   "com_farmer_option_graduate": "კურსდამთავრებული",
-  "com_farmer_option_post_graduate": "მაგისტრატურა"
+  "com_farmer_option_post_graduate": "მაგისტრატურა",
+  "com_auth_error_email_in_use": "ელ.ფოსტა უკვე გამოიყენება"
 }

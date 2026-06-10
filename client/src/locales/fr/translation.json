@@ -158,6 +158,7 @@
   "com_auth_email_verification_success": "Courriel vérifié avec succès",
   "com_auth_email_verifying_ellipsis": "Vérification en cours...",
   "com_auth_error_create": "Il y a eu une erreur lors de la tentative d'enregistrement de votre compte. Veuillez réessayer.",
+  "com_auth_error_email_in_use": "L'adresse e-mail est déjà utilisée",
   "com_auth_error_invalid_reset_token": "Ce jeton de réinitialisation de mot de passe n'est plus valide.",
   "com_auth_error_login": "Impossible de se connecter avec les informations fournies. Veuillez vérifier vos identifiants et réessayer.",
   "com_auth_error_login_ban": "Votre compte a été temporairement banni en raison de violations de notre service.",
