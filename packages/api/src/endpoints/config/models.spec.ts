@@ -107,3 +107,91 @@ describe('createLoadConfigModels – user-provided baseURL header guard', () => 
     );
   });
 });
+
+describe('createLoadConfigModels – in-request fetch coalescing', () => {
+  const fetchModels = jest.fn().mockResolvedValue([]);
+
+  beforeEach(() => {
+    fetchModels.mockReset().mockResolvedValue([]);
+  });
+
+  it('does NOT coalesce two endpoints with the same baseURL+apiKey but different headers', async () => {
+    const loadConfigModels = createLoadConfigModels({
+      getAppConfig: jest.fn().mockResolvedValue({
+        endpoints: {
+          [EModelEndpoint.custom]: [
+            {
+              name: 'TenantA',
+              baseURL: 'https://shared-proxy.example.com/v1',
+              apiKey: 'sk-shared',
+              models: { fetch: true },
+              headers: { 'X-Tenant': 'a' },
+            },
+            {
+              name: 'TenantB',
+              baseURL: 'https://shared-proxy.example.com/v1',
+              apiKey: 'sk-shared',
+              models: { fetch: true },
+              headers: { 'X-Tenant': 'b' },
+            },
+          ],
+        },
+      }),
+      getUserKeyValues: jest.fn(),
+      fetchModels,
+    });
+
+    const req = {
+      user: { id: 'user-1' },
+      config: undefined,
+    } as unknown as ServerRequest;
+
+    await loadConfigModels(req);
+
+    expect(fetchModels).toHaveBeenCalledTimes(2);
+    const headersByName = new Map<string, Record<string, string> | undefined>();
+    for (const call of fetchModels.mock.calls) {
+      headersByName.set(call[0].name, call[0].headers);
+    }
+    expect(headersByName.get('TenantA')).toEqual({ 'X-Tenant': 'a' });
+    expect(headersByName.get('TenantB')).toEqual({ 'X-Tenant': 'b' });
+  });
+
+  it('still coalesces two endpoints that share baseURL+apiKey AND identical headers', async () => {
+    const sharedHeaders = { Authorization: 'Bearer {{LIBRECHAT_OPENID_ID_TOKEN}}' };
+    const loadConfigModels = createLoadConfigModels({
+      getAppConfig: jest.fn().mockResolvedValue({
+        endpoints: {
+          [EModelEndpoint.custom]: [
+            {
+              name: 'AliasOne',
+              baseURL: 'https://shared-proxy.example.com/v1',
+              apiKey: 'sk-shared',
+              models: { fetch: true },
+              headers: sharedHeaders,
+            },
+            {
+              name: 'AliasTwo',
+              baseURL: 'https://shared-proxy.example.com/v1',
+              apiKey: 'sk-shared',
+              models: { fetch: true },
+              headers: sharedHeaders,
+            },
+          ],
+        },
+      }),
+      getUserKeyValues: jest.fn(),
+      fetchModels,
+    });
+
+    const req = {
+      user: { id: 'user-1' },
+      config: undefined,
+    } as unknown as ServerRequest;
+
+    await loadConfigModels(req);
+
+    // Same baseURL + apiKey + headers → one fetch shared across both endpoints.
+    expect(fetchModels).toHaveBeenCalledTimes(1);
+  });
+});
