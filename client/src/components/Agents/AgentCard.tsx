@@ -2,9 +2,9 @@ import React, { useMemo, useState } from 'react';
 import { Label, OGDialog, OGDialogTrigger } from '@librechat/client';
 import type t from 'librechat-data-provider';
 import { useLocalize, TranslationKeys, useAgentCategories } from '~/hooks';
+import AgentDetailContent from './AgentDetailContent';
 import { cn, renderAgentAvatar } from '~/utils';
 import AgentContact from './AgentContact';
-import AgentDetailContent from './AgentDetailContent';
 
 interface AgentCardProps {
   agent: t.Agent;
