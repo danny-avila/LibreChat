@@ -988,6 +988,107 @@ describe('recordCollectedUsage', () => {
     });
   });
 
+  describe('Bedrock prompt caching — completion token inflation regression', () => {
+    it('does not fold cache_creation into completion on the first cached step', async () => {
+      // Bedrock: total = input + output + cache_creation (additive, not subset).
+      // Before fix: resolveCompletionTokens returned output + cache_creation (5500)
+      // instead of output (500).
+      const collectedUsage: UsageMetadata[] = [
+        {
+          input_tokens: 100,
+          output_tokens: 500,
+          total_tokens: 5600,
+          cache_creation_input_tokens: 5000,
+          cache_read_input_tokens: 0,
+          model: 'claude-sonnet-4-6',
+        },
+      ];
+
+      const result = await recordCollectedUsage(deps, { ...baseParams, collectedUsage });
+
+      expect(mockSpendStructuredTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'claude-sonnet-4-6' }),
+        {
+          promptTokens: { input: 100, write: 5000, read: 0 },
+          completionTokens: 500,
+        },
+      );
+      expect(result?.output_tokens).toBe(500);
+    });
+
+    it('does not fold cache_read into completion on subsequent cached steps', async () => {
+      // Bedrock: total = input + output + cache_read on every read step.
+      // Before fix: each step returned output + cache_read instead of output.
+      const collectedUsage: UsageMetadata[] = [
+        {
+          input_tokens: 200,
+          output_tokens: 300,
+          total_tokens: 4500,
+          cache_read_input_tokens: 4000,
+          cache_creation_input_tokens: 0,
+          model: 'claude-sonnet-4-6',
+        },
+      ];
+
+      const result = await recordCollectedUsage(deps, { ...baseParams, collectedUsage });
+
+      expect(mockSpendStructuredTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'claude-sonnet-4-6' }),
+        {
+          promptTokens: { input: 200, write: 0, read: 4000 },
+          completionTokens: 300,
+        },
+      );
+      expect(result?.output_tokens).toBe(300);
+    });
+
+    it('handles cache tokens in input_token_details format (alternate field path)', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          input_tokens: 200,
+          output_tokens: 300,
+          total_tokens: 4500,
+          input_token_details: { cache_read: 4000, cache_creation: 0 },
+          model: 'claude-sonnet-4-6',
+        },
+      ];
+
+      const result = await recordCollectedUsage(deps, { ...baseParams, collectedUsage });
+
+      expect(result?.output_tokens).toBe(300);
+    });
+
+    it('accumulates only true output across a multi-step cached agent run', async () => {
+      // 1 write step + 4 read steps. Without the fix, each step folds its
+      // cache tokens into completion, inflating the total by the full cache size.
+      const writeStep: UsageMetadata = {
+        input_tokens: 100,
+        output_tokens: 500,
+        total_tokens: 5600,
+        cache_creation_input_tokens: 5000,
+        cache_read_input_tokens: 0,
+        model: 'claude-sonnet-4-6',
+      };
+      const readSteps: UsageMetadata[] = Array.from({ length: 4 }, (_, i) => ({
+        input_tokens: 200,
+        output_tokens: 300 + i * 50,
+        total_tokens: 200 + (300 + i * 50) + 5000,
+        cache_read_input_tokens: 5000,
+        cache_creation_input_tokens: 0,
+        model: 'claude-sonnet-4-6',
+      }));
+
+      const result = await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage: [writeStep, ...readSteps],
+      });
+
+      // True output: 500 + 300 + 350 + 400 + 450 = 2000
+      const trueOutput = 500 + readSteps.reduce((sum, s) => sum + (s.output_tokens ?? 0), 0);
+      expect(result?.output_tokens).toBe(trueOutput);
+    });
+  });
+
   describe('bulk write with summarization usage', () => {
     let mockInsertMany: jest.Mock;
     let mockUpdateBalance: jest.Mock;

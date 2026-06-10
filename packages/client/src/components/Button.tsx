@@ -1,9 +1,26 @@
 import * as React from 'react';
 import { Slot } from '@radix-ui/react-slot';
+import { ClassProp } from 'class-variance-authority/types';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '~/utils';
 
-const buttonVariants = cva(
+const buttonVariants: (
+  props?:
+    | ({
+        variant?:
+          | 'default'
+          | 'link'
+          | 'submit'
+          | 'outline'
+          | 'destructive'
+          | 'secondary'
+          | 'ghost'
+          | null
+          | undefined;
+        size?: 'default' | 'icon' | 'sm' | 'lg' | null | undefined;
+      } & ClassProp)
+    | undefined,
+) => string = cva(
   'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
   {
     variants: {
@@ -39,7 +56,9 @@ export interface ButtonProps
   asChild?: boolean;
 }
 
-const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
+const Button: React.ForwardRefExoticComponent<
+  ButtonProps & React.RefAttributes<HTMLButtonElement>
+> = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, type = 'button', ...props }, ref) => {
     const Comp = asChild ? Slot : 'button';
     return (

@@ -14,7 +14,7 @@ export type MCPErrorCode = (typeof MCPErrorCodes)[keyof typeof MCPErrorCodes];
  * Thrown when a user attempts to connect to an MCP server whose domain is not in the allowlist.
  */
 export class MCPDomainNotAllowedError extends Error {
-  public readonly code = MCPErrorCodes.DOMAIN_NOT_ALLOWED;
+  public readonly code: 'MCP_DOMAIN_NOT_ALLOWED' = MCPErrorCodes.DOMAIN_NOT_ALLOWED;
   public readonly statusCode = 403;
   public readonly domain: string;
 
@@ -31,7 +31,7 @@ export class MCPDomainNotAllowedError extends Error {
  * Thrown when attempting to connect/inspect an MCP server fails.
  */
 export class MCPInspectionFailedError extends Error {
-  public readonly code = MCPErrorCodes.INSPECTION_FAILED;
+  public readonly code: 'MCP_INSPECTION_FAILED' = MCPErrorCodes.INSPECTION_FAILED;
   public readonly statusCode = 400;
   public readonly serverName: string;
 

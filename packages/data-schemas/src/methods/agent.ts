@@ -1,5 +1,11 @@
 import crypto from 'node:crypto';
-import { Constants, EToolResources, ResourceType, actionDelimiter } from 'librechat-data-provider';
+import {
+  Constants,
+  EToolResources,
+  ResourceType,
+  actionDelimiter,
+  isActionTool,
+} from 'librechat-data-provider';
 import type { AgentToolResources } from 'librechat-data-provider';
 import type { FilterQuery, Model, Types } from 'mongoose';
 import type { IAgent, IAclEntry } from '~/types';
@@ -46,7 +52,7 @@ function extractMCPServerNames(tools: string[] | undefined | null): string[] {
   }
   const serverNames = new Set<string>();
   for (const tool of tools) {
-    if (!tool || !tool.includes(mcp_delimiter)) {
+    if (!tool || !tool.includes(mcp_delimiter) || isActionTool(tool)) {
       continue;
     }
     const parts = tool.split(mcp_delimiter);
@@ -240,7 +246,83 @@ async function generateActionMetadataHash(
   return hashHex;
 }
 
-export function createAgentMethods(mongoose: typeof import('mongoose'), deps: AgentDeps) {
+export function createAgentMethods(
+  mongoose: typeof import('mongoose'),
+  deps: AgentDeps,
+): {
+  getAgent: (searchParameter: FilterQuery<IAgent>) => Promise<IAgent | null>;
+  getAgents: (searchParameter: FilterQuery<IAgent>) => Promise<IAgent[]>;
+  createAgent: (agentData: Record<string, unknown>) => Promise<IAgent>;
+  hasAgentWithMCPServerName: ({
+    agentIds,
+    serverName,
+  }: {
+    agentIds: Types.ObjectId[];
+    serverName: string;
+  }) => Promise<boolean>;
+  getMCPServerNamesByAgentIds: (agentIds: Types.ObjectId[]) => Promise<string[]>;
+  updateAgent: (
+    searchParameter: FilterQuery<IAgent>,
+    updateData: Record<string, unknown>,
+    options?: {
+      updatingUserId?: string | null;
+      forceVersion?: boolean;
+      skipVersioning?: boolean;
+    },
+  ) => Promise<IAgent | null>;
+  deleteAgent: (searchParameter: FilterQuery<IAgent>) => Promise<IAgent | null>;
+  deleteUserAgents: (userId: string) => Promise<void>;
+  revertAgentVersion: (
+    searchParameter: FilterQuery<IAgent>,
+    versionIndex: number,
+  ) => Promise<IAgent>;
+  countPromotedAgents: () => Promise<number>;
+  addAgentResourceFile: ({
+    agent_id,
+    tool_resource,
+    file_id,
+    updatingUserId,
+  }: {
+    agent_id: string;
+    tool_resource: string;
+    file_id: string;
+    updatingUserId?: string;
+  }) => Promise<IAgent>;
+  getListAgentsByAccess: ({
+    accessibleIds,
+    otherParams,
+    limit,
+    after,
+    includeSkillConfig,
+  }: {
+    accessibleIds?: Types.ObjectId[];
+    otherParams?: Record<string, unknown>;
+    limit?: number | null;
+    after?: string | null;
+    includeSkillConfig?: boolean;
+  }) => Promise<{
+    object: string;
+    data: Array<Record<string, unknown>>;
+    first_id: string | null;
+    last_id: string | null;
+    has_more: boolean;
+    after: string | null;
+  }>;
+  removeAgentResourceFiles: ({
+    agent_id,
+    files,
+  }: {
+    agent_id: string;
+    files: Array<{ tool_resource: string; file_id: string }>;
+  }) => Promise<IAgent>;
+  generateActionMetadataHash: typeof generateActionMetadataHash;
+  removeAgentFromUserFavorites: (resourceId: string, userIds: string[]) => Promise<void>;
+  removeAgentResourceFilesFromAllAgents: ({
+    file_ids,
+  }: {
+    file_ids: string[];
+  }) => Promise<{ matchedCount: number; modifiedCount: number }>;
+} {
   const { removeAllPermissions, getActions, getSoleOwnedResourceIds } = deps;
 
   /**
@@ -685,12 +767,13 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
   }
 
   /**
-   * Get agents by accessible IDs with optional cursor-based pagination.
+   * Get agents by accessible IDs with cursor pagination. Defaults to a 100-page
+   * limit (max 1000); pass `limit: null` to opt out entirely.
    */
   async function getListAgentsByAccess({
     accessibleIds = [],
     otherParams = {},
-    limit = null,
+    limit = 100,
     after = null,
     includeSkillConfig = false,
   }: {
@@ -710,7 +793,7 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
     const Agent = mongoose.models.Agent as Model<IAgent>;
     const isPaginated = limit !== null && limit !== undefined;
     const normalizedLimit = isPaginated
-      ? Math.min(Math.max(1, parseInt(String(limit)) || 20), 100)
+      ? Math.min(Math.max(1, parseInt(String(limit)) || 20), 1000)
       : null;
 
     const baseQuery: Record<string, unknown> = {

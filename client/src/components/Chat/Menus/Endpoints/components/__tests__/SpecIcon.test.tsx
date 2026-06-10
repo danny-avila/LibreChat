@@ -55,6 +55,28 @@ describe('SpecIcon', () => {
     expect(screen.getByTestId('endpoint-icon')).toHaveAttribute('data-endpoint', '');
   });
 
+  it('renders same-origin absolute spec icon URLs as images', () => {
+    const currentSpec = {
+      name: 'clickhouse-test',
+      label: 'ClickHouse Test',
+      iconURL: '/assets/clickhouse-logo.svg',
+      preset: {
+        endpoint: EModelEndpoint.anthropic,
+      },
+    } as TModelSpec;
+
+    render(<SpecIcon currentSpec={currentSpec} endpointsConfig={endpointsConfig} />);
+
+    expect(screen.getByTestId('url-icon')).toHaveAttribute(
+      'data-icon-url',
+      '/assets/clickhouse-logo.svg',
+    );
+    expect(screen.getByTestId('url-icon')).toHaveAttribute(
+      'data-endpoint',
+      EModelEndpoint.anthropic,
+    );
+  });
+
   it('falls back to the unknown icon when runtime spec data has no icon or preset', () => {
     const currentSpec = {
       name: 'gemini-test',

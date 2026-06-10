@@ -179,7 +179,7 @@ const MessageRender = memo(function MessageRender({
   };
 
   const conditionalClasses = {
-    focus: 'focus:outline-none focus:ring-2 focus:ring-border-xheavy',
+    focus: 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy',
   };
 
   return (

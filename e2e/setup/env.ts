@@ -93,9 +93,9 @@ export function getBaseE2EEnv(): Record<string, string> {
     JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET ?? GENERATED_JWT_REFRESH_SECRET,
     EMAIL_HOST: '',
     SEARCH: 'false',
-    SESSION_EXPIRY: '60000',
+    SESSION_EXPIRY: process.env.SESSION_EXPIRY ?? '3600000',
     ALLOW_REGISTRATION: 'true',
-    REFRESH_TOKEN_EXPIRY: '300000',
+    REFRESH_TOKEN_EXPIRY: process.env.REFRESH_TOKEN_EXPIRY ?? '3600000',
   };
 }
 

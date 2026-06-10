@@ -5,8 +5,8 @@ import {
   INTERFACE_PERMISSION_FIELDS,
   PERMISSION_SUB_KEYS,
 } from 'librechat-data-provider';
-import type { TCustomConfig } from 'librechat-data-provider';
 import type { AppConfig, ConfigSection, IConfig } from '@librechat/data-schemas';
+import type { TCustomConfig } from 'librechat-data-provider';
 import type { Types, ClientSession } from 'mongoose';
 import type { Response } from 'express';
 import type { CapabilityUser } from '~/middleware/capabilities';
@@ -79,6 +79,14 @@ export interface AdminConfigDeps {
     principalId: string | Types.ObjectId,
     principalModel: PrincipalModel,
     fields: Record<string, unknown>,
+    priority: number,
+    session?: ClientSession,
+  ) => Promise<IConfig | null>;
+  tombstoneConfigField: (
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+    principalModel: PrincipalModel,
+    fieldPath: string,
     priority: number,
     session?: ClientSession,
   ) => Promise<IConfig | null>;
@@ -157,12 +165,23 @@ function getCapabilityUser(req: ServerRequest): CapabilityUser | null {
 
 // ── Handler factory ──────────────────────────────────────────────────
 
-export function createAdminConfigHandlers(deps: AdminConfigDeps) {
+export function createAdminConfigHandlers(deps: AdminConfigDeps): {
+  listConfigs: (req: ServerRequest, res: Response) => Promise<Response>;
+  getBaseConfig: (req: ServerRequest, res: Response) => Promise<Response>;
+  getConfig: (req: ServerRequest, res: Response) => Promise<Response>;
+  upsertConfigOverrides: (req: ServerRequest, res: Response) => Promise<Response>;
+  patchConfigField: (req: ServerRequest, res: Response) => Promise<Response>;
+  tombstoneConfigField: (req: ServerRequest, res: Response) => Promise<Response>;
+  deleteConfigField: (req: ServerRequest, res: Response) => Promise<Response>;
+  deleteConfigOverrides: (req: ServerRequest, res: Response) => Promise<Response>;
+  toggleConfig: (req: ServerRequest, res: Response) => Promise<Response>;
+} {
   const {
     listAllConfigs,
     findConfigByPrincipal,
     upsertConfig,
     patchConfigFields,
+    tombstoneConfigField: writeConfigTombstone,
     unsetConfigField,
     deleteConfig,
     toggleConfigActive,
@@ -174,7 +193,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
   /**
    * GET / — List all active config overrides.
    */
-  async function listConfigs(req: ServerRequest, res: Response) {
+  async function listConfigs(req: ServerRequest, res: Response): Promise<Response> {
     try {
       const user = getCapabilityUser(req);
       if (!user) {
@@ -197,7 +216,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
    * GET /base — Return the raw AppConfig (YAML + DB base merged).
    * This is the full config structure admins can edit, NOT the startup payload.
    */
-  async function getBaseConfig(req: ServerRequest, res: Response) {
+  async function getBaseConfig(req: ServerRequest, res: Response): Promise<Response> {
     try {
       const user = getCapabilityUser(req);
       if (!user) {
@@ -227,7 +246,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
   /**
    * GET /:principalType/:principalId — Get config for a specific principal.
    */
-  async function getConfig(req: ServerRequest, res: Response) {
+  async function getConfig(req: ServerRequest, res: Response): Promise<Response> {
     try {
       const { principalType, principalId } = req.params as {
         principalType: string;
@@ -264,7 +283,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
   /**
    * PUT /:principalType/:principalId — Replace entire overrides for a principal.
    */
-  async function upsertConfigOverrides(req: ServerRequest, res: Response) {
+  async function upsertConfigOverrides(req: ServerRequest, res: Response): Promise<Response> {
     try {
       const { principalType, principalId } = req.params as {
         principalType: string;
@@ -373,7 +392,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
   /**
    * PATCH /:principalType/:principalId/fields — Set individual fields via dot-paths.
    */
-  async function patchConfigField(req: ServerRequest, res: Response) {
+  async function patchConfigField(req: ServerRequest, res: Response): Promise<Response> {
     try {
       const { principalType, principalId } = req.params as {
         principalType: string;
@@ -480,9 +499,83 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
   }
 
   /**
+   * POST /:principalType/:principalId/fields/tombstone — Suppress an inherited config path.
+   */
+  async function tombstoneConfigField(req: ServerRequest, res: Response): Promise<Response> {
+    try {
+      const { principalType, principalId } = req.params as {
+        principalType: string;
+        principalId: string;
+      };
+
+      if (!validatePrincipalType(principalType)) {
+        return res.status(400).json({ error: `Invalid principalType: ${principalType}` });
+      }
+
+      const { fieldPath, priority } = req.body as {
+        fieldPath?: string;
+        priority?: number;
+      };
+
+      if (!fieldPath || typeof fieldPath !== 'string') {
+        return res.status(400).json({ error: 'fieldPath is required' });
+      }
+
+      if (priority != null && (typeof priority !== 'number' || priority < 0)) {
+        return res.status(400).json({ error: 'priority must be a non-negative number' });
+      }
+
+      if (!isValidFieldPath(fieldPath)) {
+        return res.status(400).json({ error: `Invalid or unsafe field path: ${fieldPath}` });
+      }
+
+      const user = getCapabilityUser(req);
+      if (!user) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      const section = getTopLevelSection(fieldPath);
+
+      if (!(await hasConfigCapability(user, section as ConfigSection, 'manage'))) {
+        return res.status(403).json({
+          error: `Insufficient permissions for config section: ${section}`,
+        });
+      }
+
+      if (isInterfacePermissionPath(fieldPath)) {
+        logger.warn(
+          `[adminConfig] Ignoring tombstone for interface permission field "${fieldPath}" — use role permissions instead`,
+        );
+        return res.status(200).json({ message: 'No actionable field path provided' });
+      }
+
+      const existing =
+        priority == null
+          ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
+          : null;
+
+      const config = await writeConfigTombstone(
+        principalType,
+        principalId,
+        principalModel(principalType),
+        fieldPath,
+        priority ?? existing?.priority ?? DEFAULT_PRIORITY,
+      );
+
+      invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
+        logger.error('[adminConfig] Cache invalidation failed after field tombstone:', err),
+      );
+      return res.status(200).json({ config });
+    } catch (error) {
+      logger.error('[adminConfig] tombstoneConfigField error:', error);
+      return res.status(500).json({ error: 'Failed to tombstone config field' });
+    }
+  }
+
+  /**
    * DELETE /:principalType/:principalId/fields?fieldPath=dotted.path
    */
-  async function deleteConfigField(req: ServerRequest, res: Response) {
+  async function deleteConfigField(req: ServerRequest, res: Response): Promise<Response> {
     try {
       const { principalType, principalId } = req.params as {
         principalType: string;
@@ -540,7 +633,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
   /**
    * DELETE /:principalType/:principalId — Delete an entire config override.
    */
-  async function deleteConfigOverrides(req: ServerRequest, res: Response) {
+  async function deleteConfigOverrides(req: ServerRequest, res: Response): Promise<Response> {
     try {
       const { principalType, principalId } = req.params as {
         principalType: string;
@@ -578,7 +671,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
   /**
    * PATCH /:principalType/:principalId/active — Toggle isActive.
    */
-  async function toggleConfig(req: ServerRequest, res: Response) {
+  async function toggleConfig(req: ServerRequest, res: Response): Promise<Response> {
     try {
       const { principalType, principalId } = req.params as {
         principalType: string;
@@ -624,6 +717,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
     getConfig,
     upsertConfigOverrides,
     patchConfigField,
+    tombstoneConfigField,
     deleteConfigField,
     deleteConfigOverrides,
     toggleConfig,

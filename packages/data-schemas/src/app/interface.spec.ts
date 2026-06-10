@@ -1,4 +1,4 @@
-import { getConfigDefaults } from 'librechat-data-provider';
+import { getConfigDefaults, RetentionMode } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
 import { loadDefaultInterface } from './interface';
 
@@ -25,6 +25,45 @@ describe('loadDefaultInterface', () => {
     });
 
     expect(interfaceConfig?.autoSubmitFromUrl).toBe(false);
+  });
+
+  it('preserves a disabled build info flag', async () => {
+    const config: Partial<TCustomConfig> = {
+      interface: {
+        buildInfo: false,
+      },
+    };
+
+    const interfaceConfig = await loadDefaultInterface({
+      config,
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.buildInfo).toBe(false);
+  });
+
+  it('uses the schema default for build info when not configured', async () => {
+    const interfaceConfig = await loadDefaultInterface({
+      config: {},
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.buildInfo).toBe(true);
+  });
+
+  it('preserves enabled build info config', async () => {
+    const config: Partial<TCustomConfig> = {
+      interface: {
+        buildInfo: true,
+      },
+    };
+
+    const interfaceConfig = await loadDefaultInterface({
+      config,
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.buildInfo).toBe(true);
   });
 
   it('preserves enabled URL auto-submit config', async () => {
@@ -64,5 +103,22 @@ describe('loadDefaultInterface', () => {
     });
 
     expect(interfaceConfig).not.toHaveProperty('temporaryChatRetention');
+  });
+
+  it('preserves the configured agent file retention exemption', async () => {
+    const config: Partial<TCustomConfig> = {
+      interface: {
+        retentionMode: RetentionMode.ALL,
+        retainAgentFiles: true,
+      },
+    };
+
+    const interfaceConfig = await loadDefaultInterface({
+      config,
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.retentionMode).toBe(RetentionMode.ALL);
+    expect(interfaceConfig?.retainAgentFiles).toBe(true);
   });
 });

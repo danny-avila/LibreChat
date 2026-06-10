@@ -1,11 +1,12 @@
-import * as http from 'http';
-import * as net from 'net';
-import { randomUUID, createHash } from 'crypto';
 import { z } from 'zod';
+import * as net from 'net';
+import * as http from 'http';
+import { randomUUID, createHash } from 'crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import type { FlowState } from '~/flow/types';
+import type { TokenMethods } from '@librechat/data-schemas';
 import type { Socket } from 'net';
+import type { FlowState } from '~/flow/types';
 
 export class MockKeyv<T = unknown> {
   private store: Map<string, FlowState<T>>;
@@ -539,7 +540,7 @@ export class InMemoryTokenStore {
     return `${filter.userId}:${filter.type}:${filter.identifier}`;
   }
 
-  findToken = async (filter: {
+  findToken = (async (filter: {
     userId?: string;
     type?: string;
     identifier?: string;
@@ -553,9 +554,9 @@ export class InMemoryTokenStore {
       }
     }
     return null;
-  };
+  }) as unknown as TokenMethods['findToken'];
 
-  createToken = async (data: {
+  createToken = (async (data: {
     userId: string;
     type: string;
     identifier: string;
@@ -575,9 +576,9 @@ export class InMemoryTokenStore {
     };
     this.tokens.set(this.key(data), token);
     return token;
-  };
+  }) as unknown as TokenMethods['createToken'];
 
-  updateToken = async (
+  updateToken = (async (
     filter: { userId?: string; type?: string; identifier?: string },
     data: {
       userId?: string;
@@ -588,7 +589,7 @@ export class InMemoryTokenStore {
       metadata?: Record<string, unknown>;
     },
   ): Promise<InMemoryToken> => {
-    const existing = await this.findToken(filter);
+    const existing = (await this.findToken(filter)) as InMemoryToken | null;
     if (!existing) {
       throw new Error(`Token not found for filter: ${JSON.stringify(filter)}`);
     }
@@ -603,7 +604,7 @@ export class InMemoryTokenStore {
     };
     this.tokens.set(existingKey, updated);
     return updated;
-  };
+  }) as unknown as TokenMethods['updateToken'];
 
   deleteToken = async (filter: {
     userId: string;
@@ -613,7 +614,7 @@ export class InMemoryTokenStore {
     this.tokens.delete(this.key(filter));
   };
 
-  deleteTokens = async (query: {
+  deleteTokens = (async (query: {
     userId?: string;
     type?: string;
     identifier?: string;
@@ -630,7 +631,7 @@ export class InMemoryTokenStore {
       }
     }
     return { acknowledged: true, deletedCount };
-  };
+  }) as unknown as TokenMethods['deleteTokens'];
 
   getAll(): InMemoryToken[] {
     return [...this.tokens.values()];

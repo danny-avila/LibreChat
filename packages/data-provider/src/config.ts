@@ -1,14 +1,21 @@
 import { z } from 'zod';
 import type { ZodError } from 'zod';
 import type { TEndpointsConfig, TModelsConfig, TConfig } from './types';
-import { EModelEndpoint, eModelEndpointSchema, isAgentsEndpoint } from './schemas';
+import {
+  EModelEndpoint,
+  eModelEndpointSchema,
+  isAgentsEndpoint,
+  eReasoningParameterFormatSchema,
+  eReasoningResponseKeySchema,
+} from './schemas';
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { specsConfigSchema, TSpecsConfig } from './models';
+import { REFILL_INTERVAL_UNITS } from './balance';
 import { fileConfigSchema } from './file-config';
 import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
-import { REFILL_INTERVAL_UNITS } from './balance';
+export { MAX_SUBAGENTS } from './limits';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
@@ -57,6 +64,7 @@ export const excludedKeys = new Set([
   'files',
   'spec',
   'disableParams',
+  'chatProjectId',
 ]);
 
 export enum SettingsViews {
@@ -397,16 +405,31 @@ export const baseEndpointSchema = z.object({
     .optional(),
   titleEndpoint: z.string().optional(),
   titlePromptTemplate: z.string().optional(),
+  /**
+   * When conversation titles are generated. `immediate` (default) generates the
+   * title as soon as the request is made, in parallel with the response, from the
+   * user's first message. `final` defers generation until the full response
+   * completes (legacy behavior).
+   */
+  titleTiming: z.union([z.literal('immediate'), z.literal('final')]).optional(),
   /** Maximum characters allowed in a single tool result before truncation. */
   maxToolResultChars: z.number().positive().optional(),
 });
 
 export type TBaseEndpoint = z.infer<typeof baseEndpointSchema>;
 
+export const bedrockGuardrailConfigSchema = z.object({
+  guardrailIdentifier: z.string(),
+  guardrailVersion: z.string(),
+  trace: z.enum(['enabled', 'disabled', 'enabled_full']).optional(),
+  streamProcessingMode: z.enum(['sync', 'async']).optional(),
+});
+
 export const bedrockEndpointSchema = baseEndpointSchema.merge(
   z.object({
     availableRegions: z.array(z.string()).optional(),
     models: z.array(z.string()).optional(),
+    guardrailConfig: bedrockGuardrailConfigSchema.optional(),
     inferenceProfiles: z.record(z.string(), z.string()).optional(),
   }),
 );
@@ -550,6 +573,11 @@ export const agentsEndpointSchema = baseEndpointSchema
         .array(z.nativeEnum(AgentCapabilities))
         .optional()
         .default(defaultAgentCapabilities),
+      skills: z
+        .object({
+          maxCatalogSkills: z.number().int().min(1).max(100).optional(),
+        })
+        .optional(),
       remoteApi: remoteApiSchema.optional(),
     }),
   )
@@ -622,6 +650,8 @@ export const endpointSchema = baseEndpointSchema.merge(
     customParams: z
       .object({
         defaultParamsEndpoint: z.string().default('custom'),
+        reasoningFormat: eReasoningParameterFormatSchema.optional(),
+        reasoningKey: eReasoningResponseKeySchema.optional(),
         paramDefinitions: z.array(paramDefinitionSchema).optional(),
       })
       .strict()
@@ -646,6 +676,7 @@ export const azureEndpointSchema = z
         titleMethod: true,
         titleModel: true,
         titlePrompt: true,
+        titleTiming: true,
         titlePromptTemplate: true,
       })
       .partial(),
@@ -885,6 +916,7 @@ const mcpServersSchema = z
     create: z.boolean().optional(),
     share: z.boolean().optional(),
     public: z.boolean().optional(),
+    configureObo: z.boolean().optional(),
     trustCheckbox: z
       .object({
         label: localizedStringSchema.optional(),
@@ -944,6 +976,7 @@ export const interfaceSchema = z
     temporaryChatRetention: z.number().min(1).max(8760).optional(),
     autoSubmitFromUrl: z.boolean().optional(),
     retentionMode: z.nativeEnum(RetentionMode).default(RetentionMode.TEMPORARY),
+    retainAgentFiles: z.boolean().optional(),
     runCode: z.boolean().optional(),
     webSearch: z.boolean().optional(),
     peoplePicker: z
@@ -978,6 +1011,16 @@ export const interfaceSchema = z
           share: z.boolean().optional(),
           public: z.boolean().optional(),
           defaultActiveOnShare: z.boolean().optional(),
+        }),
+      ])
+      .optional(),
+    sharedLinks: z
+      .union([
+        z.boolean(),
+        z.object({
+          create: z.boolean().optional(),
+          share: z.boolean().optional(),
+          public: z.boolean().optional(),
         }),
       ])
       .optional(),
@@ -1035,6 +1078,11 @@ export const interfaceSchema = z
       public: false,
       defaultActiveOnShare: false,
     },
+    sharedLinks: {
+      create: true,
+      share: true,
+      public: true,
+    },
   });
 
 export type TInterfaceConfig = z.infer<typeof interfaceSchema>;
@@ -1057,6 +1105,23 @@ export const turnstileSchema = z.object({
 });
 
 export type TTurnstileConfig = z.infer<typeof turnstileSchema>;
+
+export type TRumConfig = {
+  provider: 'hyperdx';
+  enabled: boolean;
+  url: string;
+  serviceName: string;
+  authMode: 'publicToken' | 'proxy';
+  publicToken?: string;
+  tracePropagationTargets?: string[];
+  consoleCapture?: boolean;
+  disableReplay?: boolean;
+  advancedNetworkCapture?: boolean;
+  sampleRate?: number;
+  environment?: string;
+};
+
+export type StartupConfigContext = 'share';
 
 export type TStartupConfig = {
   appTitle: string;
@@ -1097,7 +1162,12 @@ export type TStartupConfig = {
   modelDescriptions?: Record<string, Record<string, string>>;
   sharedLinksEnabled: boolean;
   publicSharedLinksEnabled: boolean;
+  /** Effective default timing for when conversation titles become fetchable.
+   * `immediate` = fetch in parallel with the active stream (default);
+   * `final` = fetch only after the stream completes (legacy). */
+  titleGenerationTiming?: 'immediate' | 'final';
   analyticsGtmId?: string;
+  rum?: TRumConfig;
   bundlerURL?: string;
   staticBundlerURL?: string;
   sharePointFilePickerEnabled?: boolean;
@@ -1284,11 +1354,14 @@ export const transactionsSchema = z.object({
   enabled: z.boolean().optional().default(true),
 });
 
+export const DEFAULT_MEMORY_MAX_INPUT_TOKENS = 12000;
+
 export const memorySchema = z.object({
   disabled: z.boolean().optional(),
   validKeys: z.array(z.string()).optional(),
   tokenLimit: z.number().optional(),
   charLimit: z.number().optional().default(10000),
+  maxInputTokens: z.number().int().positive().optional().default(DEFAULT_MEMORY_MAX_INPUT_TOKENS),
   personalize: z.boolean().default(true),
   messageWindowSize: z.number().optional().default(5),
   agent: z
@@ -1350,6 +1423,38 @@ export type SummarizationConfig = z.infer<typeof summarizationConfigSchema>;
 
 const customEndpointsSchema = z.array(endpointSchema.partial()).optional();
 
+const messageFilterPiiCustomPatternSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  regex: z
+    .string()
+    .min(1)
+    .refine(
+      (value) => {
+        try {
+          new RegExp(value, 'g');
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      { message: 'Invalid regex' },
+    ),
+});
+
+export const messageFilterPiiSchema = z.object({
+  starterPatterns: z.array(z.string()).optional(),
+  customPatterns: z.array(messageFilterPiiCustomPatternSchema).optional(),
+});
+
+export type MessageFilterPiiConfig = z.infer<typeof messageFilterPiiSchema>;
+
+export const messageFilterSchema = z.object({
+  pii: messageFilterPiiSchema.optional(),
+});
+
+export type MessageFilterConfig = z.infer<typeof messageFilterSchema>;
+
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean().default(true),
@@ -1397,6 +1502,7 @@ export const configSchema = z.object({
   rateLimits: rateLimitSchema.optional(),
   fileConfig: fileConfigSchema.optional(),
   modelSpecs: specsConfigSchema.optional(),
+  messageFilter: messageFilterSchema.optional(),
   endpoints: z
     .object({
       allowedAddresses: allowedAddressesSchema,
@@ -1505,43 +1611,32 @@ export const alternateName = {
 };
 
 const sharedOpenAIModels = [
+  'gpt-5.5',
+  'gpt-5.5-pro',
+  'chat-latest',
   'gpt-5.4',
-  // TODO: gpt-5.4-thinking may have separate reasoning token pricing — verify before release
-  'gpt-5.4-thinking',
   'gpt-5.4-pro',
+  'gpt-5.4-mini',
+  'gpt-5.4-nano',
+  'gpt-5.3-codex',
+  'gpt-5.2',
   'gpt-5.1',
-  'gpt-5.1-chat-latest',
   'gpt-5.1-codex',
+  'gpt-5.1-codex-max',
   'gpt-5.1-codex-mini',
   'gpt-5',
   'gpt-5-mini',
   'gpt-5-nano',
-  'gpt-5-chat-latest',
   'gpt-4.1',
   'gpt-4.1-mini',
   'gpt-4.1-nano',
   'gpt-4o-mini',
   'gpt-4o',
-  'gpt-4.5-preview',
-  'gpt-4.5-preview-2025-02-27',
-  'gpt-3.5-turbo',
-  'gpt-3.5-turbo-0125',
-  'gpt-4-turbo',
-  'gpt-4-turbo-2024-04-09',
-  'gpt-4-0125-preview',
-  'gpt-4-turbo-preview',
-  'gpt-4-1106-preview',
-  'gpt-3.5-turbo-1106',
-  'gpt-3.5-turbo-16k-0613',
-  'gpt-3.5-turbo-16k',
-  'gpt-4',
-  'gpt-4-0314',
-  'gpt-4-32k-0314',
-  'gpt-4-0613',
-  'gpt-3.5-turbo-0613',
 ];
 
 const sharedAnthropicModels = [
+  'claude-fable-5',
+  'claude-opus-4-8',
   'claude-opus-4-7',
   'claude-sonnet-4-6',
   'claude-opus-4-6',
@@ -1565,6 +1660,8 @@ const sharedAnthropicModels = [
 ];
 
 export const bedrockModels = [
+  'anthropic.claude-fable-5',
+  'anthropic.claude-opus-4-8',
   'anthropic.claude-opus-4-7',
   'anthropic.claude-sonnet-4-6',
   'anthropic.claude-opus-4-6-v1',
@@ -2163,7 +2260,7 @@ export enum Constants {
    */
   VERSION = '__LIBRECHAT_VERSION__',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.3.11',
+  CONFIG_VERSION = '1.3.12',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value to use whatever the submission prelim. `responseMessageId` is */
@@ -2216,9 +2313,6 @@ export enum Constants {
   /** Subagent spawn tool name (must match `@librechat/agents` `Constants.SUBAGENT`). */
   SUBAGENT = 'subagent',
 }
-
-/** Maximum number of explicit subagents per parent agent. UI + Zod schema share this. */
-export const MAX_SUBAGENTS = 10;
 
 /** Maximum explicit subagent hops allowed from any root agent at runtime. */
 export const MAX_SUBAGENT_DEPTH = 5;

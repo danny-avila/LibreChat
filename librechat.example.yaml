@@ -2,7 +2,7 @@
 # https://www.librechat.ai/docs/configuration/librechat_yaml
 
 # Configuration version (required)
-version: 1.3.11
+version: 1.3.12
 
 # Cache settings: Set to true to enable caching
 cache: true
@@ -146,6 +146,12 @@ interface:
   #   share: false
   #   public: false
   # MCP Servers configuration example
+  # Shared Links configuration
+  # Controls user permissions for shared links (e.g. sharing conversations via link)
+  # sharedLinks:
+  #   create: false
+  #   share: true
+  #   public: true # Allows users to toggle "share with everyone" for their links. Whether anonymous access is permitted is controlled by ALLOW_SHARED_LINKS_PUBLIC.
   # mcpServers:
     # Controls user permissions for MCP (Model Context Protocol) server management
     # - use: Allow users to use configured MCP servers
@@ -176,6 +182,9 @@ interface:
   # such as "_meiliIndex_1_expiredAt_1" can be dropped from conversations/messages once the new
   # "_meiliIndex_1_isTemporary_1_expiredAt_1" indexes exist.
   # retentionMode: "temporary"
+  # Set retainAgentFiles to true to keep persistent agent resource files from expiring under
+  # retentionMode: "all"; non-agent files still expire.
+  # retainAgentFiles: false
 
 # Example Cloudflare turnstile (optional)
 #turnstile:
@@ -359,6 +368,12 @@ endpoints:
   #   maxRecursionLimit: 100
   #   # (optional) Disable the builder interface for agents
   #   disableBuilder: false
+  #   # (optional) When conversation titles are generated:
+  #   #   immediate (default): generate as soon as the request is made, in parallel
+  #   #     with the response, from the user's first message (title appears within ~1-2s).
+  #   #   final: defer generation until the full response completes (legacy behavior).
+  #   # Set under `endpoints.all` instead to apply as the global default for all endpoints.
+  #   titleTiming: immediate
   #   # (optional) Maximum total citations to include in agent responses, defaults to 30
   #   maxCitations: 30
   #   # (optional) Maximum citations per file to include in agent responses, defaults to 7
@@ -366,6 +381,10 @@ endpoints:
   #   # (optional) Minimum relevance score for sources to be included in responses, defaults to 0.45 (45% relevance threshold)
   #   # Set to 0.0 to show all sources (no filtering), or higher like 0.7 for stricter filtering
   #   minRelevanceScore: 0.45
+  #   # (optional) Cap the number of active accessible skills shown in the model-visible catalog.
+  #   # Useful for large organizations where many department-specific skills may be available.
+  #   skills:
+  #     maxCatalogSkills: 20
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["deferred_tools", "execute_code", "file_search", "actions", "tools"]
 
@@ -401,6 +420,8 @@ endpoints:
   #     # Option 1: Simple array (legacy format - model name = deployment name)
   #     # Use this if you want the technical model IDs to show in the UI
   #     # models:
+  #     #   - "claude-fable-5"
+  #     #   - "claude-opus-4-8"
   #     #   - "claude-sonnet-4-6"
   #     #   - "claude-3-7-sonnet-20250219"
   #     #   - "claude-3-5-sonnet-v2@20241022"
@@ -411,6 +432,10 @@ endpoints:
   #     # The deploymentName is the actual Vertex AI model ID used for API calls
   #     # You can use friendly names (avoid spaces for cleaner YAML) or technical IDs as keys
   #     models:
+  #       claude-fable-5:
+  #         deploymentName: claude-fable-5
+  #       claude-opus-4.8:
+  #         deploymentName: claude-opus-4-8
   #       claude-opus-4.5:
   #         deploymentName: claude-opus-4-5@20251101
   #       claude-sonnet-4:
@@ -584,10 +609,22 @@ endpoints:
 #     - name: "gpt-4o"
 #       label: "GPT-4 Optimized"
 #       description: "Most capable GPT-4 model with multimodal support"
+#       # default: true      # Hard admin default; takes precedence over prior user choices
+#       # softDefault: true  # First-time default only; skipped after a user selects a model/spec/agent
 #       group: "openAI"  # String value matching the endpoint name
 #       preset:
 #         endpoint: "openAI"
 #         model: "gpt-4o"
+#       # Skills can be enabled per model spec. Use true for the user's active
+#       # accessible skill catalog, false to force skills off, or a name list as
+#       # a strict allowlist for catalog, manual, and always-apply resolution.
+#       # skills: ["brand-guidelines", "code-review"]
+#       # Subagents can be enabled per model spec. `allowSelf: true` lets the
+#       # ephemeral agent spawn a fresh isolated copy of itself for focused work.
+#       # subagents:
+#       #   enabled: true
+#       #   allowSelf: true
+#       #   agent_ids: []
 #
 #     # Example 2: Nested under a custom endpoint (grouped with groq endpoint)
 #     - name: "llama3-70b-8192"
@@ -724,8 +761,10 @@ endpoints:
 #   disabled: false
 #   # (optional) Restrict memory keys to specific values to limit memory storage and improve consistency
 #   validKeys: ["preferences", "work_info", "personal_info", "skills", "interests", "context"]
-#   # (optional) Maximum token limit for memory storage (not yet implemented for token counting)
+#   # (optional) Maximum token limit for stored memory values
 #   tokenLimit: 10000
+#   # (optional) Maximum tokens from recent chat sent to the memory agent before truncation
+#   maxInputTokens: 12000
 #   # (optional) Enable personalization features (defaults to true if memory is configured)
 #   # When false, users will not see the Personalization tab in settings
 #   personalize: true
@@ -742,3 +781,21 @@ endpoints:
 #     # instructions: "You are a memory management assistant. Store and manage user information accurately."
 #     # model_parameters:
 #     #   temperature: 0.1
+
+# Reject chat messages whose text matches credential-shaped patterns
+# before they reach moderation, the model, or persistence. Filter
+# types live under `messageFilter.<type>`; today only `pii` ships, but
+# the namespace is structured so future filter types can plug in.
+# Omit the whole section to disable.
+# messageFilter:
+#   pii:
+#     # (optional) Pick a subset of the starter catalog by id; omit to
+#     # enable all starters (sk_prefix, bearer_header, api_key_header).
+#     starterPatterns: [sk_prefix, bearer_header, api_key_header]
+#     # (optional) Operator-defined patterns. Each entry needs id,
+#     # label, and a JavaScript-flavor regex; the regex is validated
+#     # at config load time.
+#     customPatterns:
+#       - id: anthropic_api_key
+#         label: Anthropic API key
+#         regex: "sk-ant-[A-Za-z0-9_-]{20,}"

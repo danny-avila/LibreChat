@@ -888,7 +888,7 @@ describe('getLLMConfig', () => {
         expect(opus64kResult.llmConfig.maxTokens).toBe(64000);
 
         // opus-4-6+ get 128K
-        const opus128kModels = ['claude-opus-4-7', 'claude-opus-4-10'];
+        const opus128kModels = ['claude-opus-4-7', 'claude-opus-4-8', 'claude-opus-4-10'];
         opus128kModels.forEach((model) => {
           const result = getLLMConfig('test-key', {
             modelOptions: { model },
@@ -1064,6 +1064,58 @@ describe('getLLMConfig', () => {
         };
         expect(thinking.type).toBe('adaptive');
         expect(thinking.display).toBe('summarized');
+      });
+
+      it('should omit sampling parameters for Opus 4.8', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-opus-4-8',
+            thinking: false,
+            temperature: 0.7,
+            topP: 0.9,
+            topK: 40,
+          },
+        });
+
+        expect(result.llmConfig).not.toHaveProperty('temperature');
+        expect(result.llmConfig).not.toHaveProperty('topP');
+        expect(result.llmConfig).not.toHaveProperty('topK');
+      });
+
+      it('should set adaptive thinking with summarized display for Fable 5', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: { model: 'claude-fable-5', thinking: true },
+        });
+
+        const thinking = result.llmConfig.thinking as unknown as {
+          type: string;
+          display?: string;
+        };
+        expect(thinking.type).toBe('adaptive');
+        expect(thinking.display).toBe('summarized');
+      });
+
+      it('should default Fable 5 max output tokens to 128K', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: { model: 'claude-fable-5', thinking: true },
+        });
+        expect(result.llmConfig.maxTokens).toBe(128000);
+      });
+
+      it('should omit sampling parameters for Fable 5', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-fable-5',
+            thinking: true,
+            temperature: 0.7,
+            topP: 0.9,
+            topK: 40,
+          },
+        });
+
+        expect(result.llmConfig).not.toHaveProperty('temperature');
+        expect(result.llmConfig).not.toHaveProperty('topP');
+        expect(result.llmConfig).not.toHaveProperty('topK');
       });
 
       it('should NOT set thinking.display for pre-Opus-4.7 adaptive models', () => {

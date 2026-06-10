@@ -1,10 +1,15 @@
 import type { FilterQuery, Model, SortOrder } from 'mongoose';
 import { RetentionMode } from 'librechat-data-provider';
+import { isValidObjectIdString } from '~/utils/objectId';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { buildRetentionVisibilityFilter, createFallbackRetentionDate } from '~/utils/retention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '~/config/winston';
-import type { AppConfig, IConversation } from '~/types';
+import type { AppConfig, IChatProjectDocument, IConversation } from '~/types';
+import {
+  refreshChatProjectStatsForUser,
+  updateChatProjectLastConversationForUser,
+} from './chatProject';
 import type { MessageMethods } from './message';
 import type { DeleteResult } from 'mongoose';
 
@@ -36,6 +41,7 @@ export interface ConversationMethods {
       search?: string;
       sortBy?: string;
       sortDirection?: string;
+      projectId?: string;
     },
   ): Promise<{ conversations: IConversation[]; nextCursor: string | null }>;
   getConvosQueried(
@@ -208,6 +214,38 @@ export function createConversationMethods(
 
       const messages = await getMessages({ conversationId, user: userId }, '_id');
       const update: Record<string, unknown> = { ...convo, messages, user: userId };
+      const unsetFields: Record<string, number> = { ...(metadata?.unsetFields ?? {}) };
+
+      if (Object.prototype.hasOwnProperty.call(update, 'chatProjectId') && update.chatProjectId) {
+        const chatProjectId = typeof update.chatProjectId === 'string' ? update.chatProjectId : '';
+        let isValidChatProject = isValidObjectIdString(chatProjectId);
+
+        if (isValidChatProject) {
+          const ChatProject = mongoose.models.ChatProject as Model<IChatProjectDocument>;
+          const project = await ChatProject.exists({
+            _id: new mongoose.Types.ObjectId(chatProjectId),
+            user: userId,
+          });
+          isValidChatProject = project != null;
+        }
+
+        if (!isValidChatProject) {
+          delete update.chatProjectId;
+          unsetFields.chatProjectId = 1;
+        }
+      }
+
+      const mayChangeProjectMembership =
+        Object.prototype.hasOwnProperty.call(update, 'chatProjectId') ||
+        Object.prototype.hasOwnProperty.call(unsetFields, 'chatProjectId');
+      let previousChatProjectId: string | null = null;
+      if (mayChangeProjectMembership) {
+        const existing = await Conversation.findOne(
+          { conversationId, user: userId },
+          'chatProjectId',
+        ).lean<{ chatProjectId?: string | null } | null>();
+        previousChatProjectId = existing?.chatProjectId ?? null;
+      }
 
       if (newConversationId) {
         update.conversationId = newConversationId;
@@ -248,22 +286,35 @@ export function createConversationMethods(
       }
 
       const updateOperation: Record<string, unknown> = { $set: update };
-      if (metadata?.unsetFields && Object.keys(metadata.unsetFields).length > 0) {
-        updateOperation.$unset = metadata.unsetFields;
+      if (Object.keys(unsetFields).length > 0) {
+        updateOperation.$unset = unsetFields;
       }
       if (createdAtOnInsert) {
         updateOperation.$setOnInsert = { createdAt: createdAtOnInsert };
       }
 
-      const conversation = await Conversation.findOneAndUpdate(
+      const conversationResult = (await Conversation.findOneAndUpdate(
         { conversationId, user: userId },
         updateOperation,
         {
           new: true,
           upsert: metadata?.noUpsert !== true,
+          includeResultMetadata: true,
           ...(createdAtOnInsert ? { timestamps: false } : {}),
         },
-      );
+      )) as unknown as {
+        value:
+          | (IConversation & {
+              _id: unknown;
+              $isDefault: (path: string) => boolean;
+              toObject: () => IConversation;
+            })
+          | null;
+        lastErrorObject?: {
+          updatedExisting?: boolean;
+        };
+      };
+      const conversation = conversationResult.value;
 
       if (!conversation) {
         logger.debug('[saveConvo] Conversation not found, skipping update');
@@ -283,6 +334,60 @@ export function createConversationMethods(
         conversation.isTemporary = false;
       }
 
+      const newChatProjectId = conversation.chatProjectId ?? null;
+      const projectMembershipChanged = previousChatProjectId !== newChatProjectId;
+
+      /**
+       * A chat that moved between projects (e.g. a stale tab re-submitting an
+       * older project id) must fully recompute the stats of the project it left;
+       * the incremental path only ever touches the project it now belongs to.
+       */
+      if (projectMembershipChanged && previousChatProjectId) {
+        await refreshChatProjectStatsForUser(mongoose, userId, previousChatProjectId);
+      }
+
+      if (conversation.chatProjectId) {
+        const isRetentionVisibilityUpdate =
+          typeof update.isTemporary === 'boolean' ||
+          Object.prototype.hasOwnProperty.call(convo, 'expiredAt') ||
+          Object.prototype.hasOwnProperty.call(unsetFields, 'isTemporary') ||
+          Object.prototype.hasOwnProperty.call(unsetFields, 'expiredAt');
+        /**
+         * Saving a conversation that is itself archived or retention-hidden (e.g.
+         * renaming or title generation on an archived project chat) must recompute
+         * stats rather than take the incremental fast path, otherwise the project's
+         * lastConversationAt/Id would point at a chat the project workspace hides.
+         */
+        const isConversationHidden =
+          conversation.isArchived === true ||
+          conversation.isTemporary === true ||
+          (conversation.expiredAt != null &&
+            new Date(conversation.expiredAt).getTime() <= Date.now());
+        /**
+         * A move into this project (projectMembershipChanged) also needs a full
+         * refresh: the incremental path only bumps the count for brand-new inserts,
+         * so a pre-existing chat joining the project would otherwise be uncounted.
+         */
+        const shouldRefreshProjectStats =
+          projectMembershipChanged ||
+          typeof update.isArchived === 'boolean' ||
+          Object.prototype.hasOwnProperty.call(unsetFields, 'isArchived') ||
+          isRetentionVisibilityUpdate ||
+          isConversationHidden;
+
+        if (shouldRefreshProjectStats) {
+          await refreshChatProjectStatsForUser(mongoose, userId, conversation.chatProjectId);
+        } else {
+          await updateChatProjectLastConversationForUser(
+            mongoose,
+            userId,
+            conversation.chatProjectId,
+            conversation,
+            conversationResult.lastErrorObject?.updatedExisting === false,
+          );
+        }
+      }
+
       return conversation.toObject();
     } catch (error) {
       logger.error('[saveConvo] Error saving conversation', error);
@@ -299,19 +404,113 @@ export function createConversationMethods(
   async function bulkSaveConvos(conversations: Array<Record<string, unknown>>) {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
-      const bulkOps = conversations.map((convo) => ({
-        updateOne: {
-          filter: {
-            conversationId: convo.conversationId,
+      const ChatProject = mongoose.models.ChatProject as Model<IChatProjectDocument>;
+
+      /**
+       * Validate project ownership before persisting (mirrors saveConvo). Bulk
+       * paths like import/duplicate/fork can carry a chatProjectId that does not
+       * belong to the user; persisting it would create an orphan assignment that
+       * is hidden from both the project and the unassigned filter.
+       */
+      const candidatePairs = new Map<string, { user: string; projectId: string }>();
+      for (const convo of conversations) {
+        if (
+          typeof convo.user === 'string' &&
+          typeof convo.chatProjectId === 'string' &&
+          isValidObjectIdString(convo.chatProjectId)
+        ) {
+          candidatePairs.set(`${convo.user}:${convo.chatProjectId}`, {
             user: convo.user,
+            projectId: convo.chatProjectId,
+          });
+        }
+      }
+
+      const ownedProjects = new Set<string>();
+      if (candidatePairs.size > 0) {
+        const owned = await ChatProject.find({
+          $or: [...candidatePairs.values()].map(({ user, projectId }) => ({
+            _id: new mongoose.Types.ObjectId(projectId),
+            user,
+          })),
+        })
+          .select('_id user')
+          .lean<Array<{ _id: { toString: () => string }; user: string }>>();
+        for (const project of owned) {
+          ownedProjects.add(`${project.user}:${project._id.toString()}`);
+        }
+      }
+
+      /**
+       * Capture each conversation's existing project so a bulk move (import that
+       * overwrites an existing (user, conversationId), duplicate/fork) also refreshes
+       * the project it leaves, not just the one it joins. One batched read keeps this
+       * O(1) in round-trips regardless of batch size.
+       */
+      const previousProjectByConversation = new Map<string, string>();
+      const conversationPairs = conversations
+        .filter((c) => typeof c.user === 'string' && typeof c.conversationId === 'string')
+        .map((c) => ({ user: c.user as string, conversationId: c.conversationId as string }));
+      if (conversationPairs.length > 0) {
+        const existing = await Conversation.find(
+          { $or: conversationPairs },
+          'user conversationId chatProjectId',
+        ).lean<Array<{ user: string; conversationId: string; chatProjectId?: string | null }>>();
+        for (const doc of existing) {
+          if (doc.chatProjectId) {
+            previousProjectByConversation.set(
+              `${doc.user}:${doc.conversationId}`,
+              doc.chatProjectId,
+            );
+          }
+        }
+      }
+
+      const affectedProjectStats = new Map<string, { user: string; projectId: string }>();
+      const bulkOps = conversations.map((convo) => {
+        const sanitized = { ...convo };
+        if (typeof sanitized.user === 'string' && typeof sanitized.chatProjectId === 'string') {
+          if (ownedProjects.has(`${sanitized.user}:${sanitized.chatProjectId}`)) {
+            affectedProjectStats.set(`${sanitized.user}:${sanitized.chatProjectId}`, {
+              user: sanitized.user,
+              projectId: sanitized.chatProjectId,
+            });
+          } else {
+            sanitized.chatProjectId = null;
+          }
+        }
+        if (typeof sanitized.user === 'string' && typeof sanitized.conversationId === 'string') {
+          const previousProjectId = previousProjectByConversation.get(
+            `${sanitized.user}:${sanitized.conversationId}`,
+          );
+          const newProjectId =
+            typeof sanitized.chatProjectId === 'string' ? sanitized.chatProjectId : null;
+          if (previousProjectId && previousProjectId !== newProjectId) {
+            affectedProjectStats.set(`${sanitized.user}:${previousProjectId}`, {
+              user: sanitized.user,
+              projectId: previousProjectId,
+            });
+          }
+        }
+        return {
+          updateOne: {
+            filter: {
+              conversationId: sanitized.conversationId,
+              user: sanitized.user,
+            },
+            update: sanitized,
+            upsert: true,
+            timestamps: false,
           },
-          update: convo,
-          upsert: true,
-          timestamps: false,
-        },
-      }));
+        };
+      });
 
       const result = await tenantSafeBulkWrite(Conversation, bulkOps);
+      await Promise.all(
+        [...affectedProjectStats.values()].map(({ user, projectId }) =>
+          refreshChatProjectStatsForUser(mongoose, user, projectId),
+        ),
+      );
       return result;
     } catch (error) {
       logger.error('[bulkSaveConvos] Error saving conversations in bulk', error);
@@ -332,6 +531,7 @@ export function createConversationMethods(
       search,
       sortBy = 'updatedAt',
       sortDirection = 'desc',
+      projectId,
     }: {
       cursor?: string | null;
       limit?: number;
@@ -340,6 +540,7 @@ export function createConversationMethods(
       search?: string;
       sortBy?: string;
       sortDirection?: string;
+      projectId?: string;
     } = {},
   ) {
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
@@ -354,6 +555,14 @@ export function createConversationMethods(
 
     if (Array.isArray(tags) && tags.length > 0) {
       filters.push({ tags: { $in: tags } } as FilterQuery<IConversation>);
+    }
+
+    if (projectId === 'unassigned') {
+      filters.push({
+        $or: [{ chatProjectId: null }, { chatProjectId: { $exists: false } }],
+      } as FilterQuery<IConversation>);
+    } else if (projectId) {
+      filters.push({ chatProjectId: projectId } as FilterQuery<IConversation>);
     }
 
     filters.push(getVisibleConversationRetentionFilter());
@@ -431,7 +640,7 @@ export function createConversationMethods(
 
       const convos = await Conversation.find(query)
         .select(
-          'conversationId endpoint title createdAt updatedAt user model agent_id assistant_id spec iconURL',
+          'conversationId endpoint title createdAt updatedAt user model agent_id assistant_id spec iconURL chatProjectId',
         )
         .sort(sortObj)
         .limit(limit + 1)
@@ -538,8 +747,15 @@ export function createConversationMethods(
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
       const { deleteMessages } = getMessageMethods();
       const userFilter = { ...filter, user };
-      const conversations = await Conversation.find(userFilter).select('conversationId');
+      const conversations = await Conversation.find(userFilter).select(
+        'conversationId chatProjectId',
+      );
       const conversationIds = conversations.map((c) => c.conversationId);
+      const projectIds = new Set(
+        conversations
+          .map((conversation) => conversation.chatProjectId)
+          .filter((projectId): projectId is string => Boolean(projectId)),
+      );
 
       if (!conversationIds.length) {
         throw new Error('Conversation not found or already deleted.');
@@ -551,6 +767,12 @@ export function createConversationMethods(
         conversationId: { $in: conversationIds },
         user,
       });
+
+      await Promise.all(
+        [...projectIds].map((projectId) =>
+          refreshChatProjectStatsForUser(mongoose, user, projectId),
+        ),
+      );
 
       return { ...deleteConvoResult, messages: deleteMessagesResult };
     } catch (error) {

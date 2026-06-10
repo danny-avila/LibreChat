@@ -25,7 +25,7 @@ interface StoreTokensParams {
   updateToken?: TokenMethods['updateToken'];
   findToken?: TokenMethods['findToken'];
   clientInfo?: OAuthClientInformation;
-  metadata?: OAuthStoredClientMetadata;
+  metadata?: Partial<OAuthStoredClientMetadata>;
   /** Optional: Pass existing token state to avoid duplicate DB calls */
   existingTokens?: {
     accessToken?: IToken | null;
@@ -256,7 +256,7 @@ export class MCPTokenStorage {
           identifier: `${identifier}:client`,
           token: encryptedClientInfo,
           expiresIn: 365 * 24 * 60 * 60,
-          metadata,
+          metadata: metadata ? { ...metadata } : undefined,
         };
 
         // Check if client info already exists and update if it does
@@ -346,7 +346,7 @@ export class MCPTokenStorage {
 
       let clientInfo;
       let clientInfoData;
-      let storedClientMetadata: OAuthStoredClientMetadata | undefined;
+      let storedClientMetadata: Partial<OAuthStoredClientMetadata> | undefined;
       let storedTokenEndpoint: string | undefined;
       let storedAuthMethods: string[] | undefined;
       let resource: string | undefined;
@@ -369,7 +369,7 @@ export class MCPTokenStorage {
               clientInfoData.metadata instanceof Map
                 ? Object.fromEntries(clientInfoData.metadata)
                 : (clientInfoData.metadata as Record<string, unknown>);
-            storedClientMetadata = raw as OAuthStoredClientMetadata;
+            storedClientMetadata = raw as Partial<OAuthStoredClientMetadata>;
             if (typeof raw.token_endpoint === 'string') {
               storedTokenEndpoint = raw.token_endpoint;
             }

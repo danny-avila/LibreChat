@@ -3,6 +3,7 @@ import { logger } from '@librechat/data-schemas';
 import { AnthropicClientOptions } from '@librechat/agents';
 import {
   anthropicSettings,
+  omitsSamplingParameters,
   removeNullishValues,
   ThinkingDisplay,
   AuthKeys,
@@ -51,7 +52,7 @@ function parseCredentials(
 }
 
 /** Known Anthropic parameters that map directly to the client config */
-export const knownAnthropicParams = new Set([
+export const knownAnthropicParams: Set<string> = new Set([
   'model',
   'temperature',
   'topP',
@@ -177,9 +178,12 @@ function getLLMConfig(
     );
   }
 
+  const resolvedModel = requestOptions.model ?? mergedOptions.model;
+  const shouldOmitSamplingParameters = omitsSamplingParameters(resolvedModel);
+
   requestOptions = configureReasoning(requestOptions, systemOptions);
 
-  if (supportsAdaptiveThinking(mergedOptions.model)) {
+  if (supportsAdaptiveThinking(resolvedModel)) {
     if (
       systemOptions.effort &&
       (systemOptions.effort as string) !== '' &&
@@ -204,8 +208,8 @@ function getLLMConfig(
 
   const hasActiveThinking = requestOptions.thinking != null;
   const isThinkingModel =
-    /claude-3[-.]7/.test(mergedOptions.model) || supportsAdaptiveThinking(mergedOptions.model);
-  if (!isThinkingModel || !hasActiveThinking) {
+    /claude-3[-.]7/.test(resolvedModel) || supportsAdaptiveThinking(resolvedModel);
+  if (!shouldOmitSamplingParameters && (!isThinkingModel || !hasActiveThinking)) {
     requestOptions.topP = mergedOptions.topP;
     requestOptions.topK = mergedOptions.topK;
   }
@@ -291,6 +295,12 @@ function getLLMConfig(
         delete (requestOptions.invocationKwargs as Record<string, unknown>)[param];
       }
     });
+  }
+
+  if (shouldOmitSamplingParameters) {
+    delete requestOptions.temperature;
+    delete requestOptions.topP;
+    delete requestOptions.topK;
   }
 
   const tools = [];

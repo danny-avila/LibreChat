@@ -8,14 +8,23 @@ import type {
   MCPOAuthFlowMetadata,
   OAuthProtectedResourceMetadata,
 } from '~/mcp/oauth';
+import type { OboTokenResolver, OboTrustChecker } from '~/mcp/oauth/obo';
 import type { FlowStateManager } from '~/flow/manager';
 import type * as t from './types';
-import { MCPTokenStorage, MCPOAuthHandler, ReauthenticationRequiredError } from '~/mcp/oauth';
-import { PENDING_STALE_MS, normalizeExpiresAt } from '~/flow/manager';
+import {
+  MCPTokenStorage,
+  MCPOAuthHandler,
+  OboTokenResolutionError,
+  ReauthenticationRequiredError,
+  resolveOboToken,
+} from '~/mcp/oauth';
 import { sanitizeUrlForLogging, isClientRejectionMessage, isOAuthServer } from './utils';
+import { PENDING_STALE_MS, normalizeExpiresAt } from '~/flow/manager';
+import { preProcessGraphTokens } from '~/utils/graph';
 import { withTimeout } from '~/utils/promise';
 import { MCPConnection } from './connection';
 import { processMCPEnv } from '~/utils';
+import { mcpConfig } from './mcpConfig';
 
 export interface ToolDiscoveryResult {
   tools: Tool[] | null;
@@ -48,13 +57,16 @@ export class MCPConnectionFactory {
 
   // OAuth-related properties (only set when useOAuth is true)
   protected readonly userId?: string;
+  protected readonly user?: t.OAuthConnectionOptions['user'];
   protected readonly flowManager?: FlowStateManager<MCPOAuthTokens | null>;
   protected readonly tokenMethods?: TokenMethods;
   protected signal?: AbortSignal;
-  protected oauthStart?: (authURL: string) => Promise<void>;
+  protected oauthStart?: t.OAuthStartHandler;
   protected oauthEnd?: () => Promise<void>;
   protected returnOnOAuth?: boolean;
   protected readonly connectionTimeout?: number;
+  protected readonly oboTokenResolver?: OboTokenResolver;
+  protected readonly oboTrustChecker?: OboTrustChecker;
   private connectionReady = false;
   /**
    * Snapshot of the tenant context at factory construction time. Captured eagerly
@@ -93,7 +105,7 @@ export class MCPConnectionFactory {
     basic: t.BasicConnectionOptions,
     oauth?: t.OAuthConnectionOptions | t.UserConnectionContext,
   ): Promise<MCPConnection> {
-    const factory = new this(basic, oauth);
+    const factory = new this(await this.prepareBasicConnectionOptions(basic, oauth), oauth);
     return factory.createConnection();
   }
 
@@ -115,19 +127,47 @@ export class MCPConnectionFactory {
     basic: t.BasicConnectionOptions,
     options?: Omit<t.OAuthConnectionOptions, 'returnOnOAuth'> | t.UserConnectionContext,
   ): Promise<ToolDiscoveryResult> {
+    const preparedBasic = await this.prepareBasicConnectionOptions(basic, options);
     if (options != null && 'useOAuth' in options) {
-      const factory = new this(basic, { ...options, returnOnOAuth: true });
+      const factory = new this(preparedBasic, { ...options, returnOnOAuth: true });
       return factory.discoverToolsInternal();
     }
-    const factory = new this(basic, options);
+    const factory = new this(preparedBasic, options);
     return factory.discoverToolsInternal();
+  }
+
+  /**
+   * Together with the constructor's processMCPEnv pass, this mirrors
+   * UserConnectionManager.resolveRuntimeConfig — keep them in sync so the
+   * config validated there matches the one connected with here.
+   */
+  private static async prepareBasicConnectionOptions(
+    basic: t.BasicConnectionOptions,
+    options?: t.OAuthConnectionOptions | t.UserConnectionContext,
+  ): Promise<t.BasicConnectionOptions> {
+    if (basic.dbSourced || !options?.graphTokenResolver) {
+      return basic;
+    }
+
+    const serverConfig = await preProcessGraphTokens(basic.serverConfig, {
+      user: options.user,
+      graphTokenResolver: options.graphTokenResolver,
+      scopes: process.env.GRAPH_API_SCOPES,
+    });
+
+    return serverConfig === basic.serverConfig ? basic : { ...basic, serverConfig };
   }
 
   protected async discoverToolsInternal(): Promise<ToolDiscoveryResult> {
     const oauthUrl: string | null = null;
     let oauthRequired = false;
 
-    const oauthTokens = this.useOAuth ? await this.getOAuthTokens() : null;
+    let oauthTokens: MCPOAuthTokens | null = null;
+    if (this.usesObo) {
+      oauthTokens = await this.getOboTokens();
+    } else if (this.useOAuth) {
+      oauthTokens = await this.getOAuthTokens();
+    }
     const connection = new MCPConnection({
       serverName: this.serverName,
       serverConfig: this.serverConfig,
@@ -266,6 +306,8 @@ export class MCPConnectionFactory {
       ? `[MCP][${basic.serverName}][${options.user.id}]`
       : `[MCP][${basic.serverName}]`;
 
+    this.user = options?.user;
+
     if (options != null && 'useOAuth' in options) {
       this.useOAuth = true;
       this.userId = options.user?.id;
@@ -275,14 +317,78 @@ export class MCPConnectionFactory {
       this.oauthStart = options.oauthStart;
       this.oauthEnd = options.oauthEnd;
       this.returnOnOAuth = options.returnOnOAuth;
+      this.oboTokenResolver = options.oboTokenResolver;
+      this.oboTrustChecker = options.oboTrustChecker;
     } else {
       this.useOAuth = false;
     }
   }
 
+  /** Resolves OBO tokens when the server config specifies obo, returns null otherwise */
+  protected async getOboTokens(): Promise<MCPOAuthTokens | null> {
+    const oboConfig = this.serverConfig.obo;
+    if (!oboConfig || !this.oboTokenResolver || !this.user) {
+      return null;
+    }
+
+    if (this.oboTrustChecker) {
+      const config = this.serverConfig as t.ParsedServerConfig;
+      const trusted = await this.oboTrustChecker({
+        source: config.source,
+        author: config.author,
+        dbId: config.dbId,
+      });
+      if (!trusted) {
+        logger.warn(
+          `${this.logPrefix} OBO config not trusted (author lacks CONFIGURE_OBO permission); skipping OBO token exchange`,
+        );
+        return null;
+      }
+    }
+
+    logger.info(`${this.logPrefix} Resolving OBO token for scopes: ${oboConfig.scopes}`);
+    return resolveOboToken(this.user, oboConfig, this.oboTokenResolver);
+  }
+
+  /** Returns true if this server uses OBO instead of standard OAuth */
+  protected get usesObo(): boolean {
+    return !!this.serverConfig.obo && !!this.oboTokenResolver && !!this.user;
+  }
+
+  protected createOboConnectionError(error: OboTokenResolutionError): Error {
+    let recoveryHint = 'Re-authenticate the user and retry.';
+
+    if (error.retryable) {
+      recoveryHint = 'Please retry.';
+    } else if (error.reason === 'exchange_failed') {
+      recoveryHint = 'Re-authenticate the user or verify the configured OBO scopes and retry.';
+    }
+
+    return new Error(
+      `${error.userMessage} Unable to connect to OBO server "${this.serverName}". ${recoveryHint}`,
+    );
+  }
+
   /** Creates the base MCP connection with OAuth tokens */
   protected async createConnection(): Promise<MCPConnection> {
-    const oauthTokens = this.useOAuth ? await this.getOAuthTokens() : null;
+    let oauthTokens: MCPOAuthTokens | null = null;
+
+    if (this.usesObo) {
+      try {
+        oauthTokens = await this.getOboTokens();
+      } catch (error) {
+        if (error instanceof OboTokenResolutionError) {
+          throw this.createOboConnectionError(error);
+        }
+        throw error;
+      }
+      if (!oauthTokens) {
+        throw new Error(`OBO token exchange failed for "${this.serverName}".`);
+      }
+    } else if (this.useOAuth) {
+      oauthTokens = await this.getOAuthTokens();
+    }
+
     const connection = new MCPConnection({
       serverName: this.serverName,
       serverConfig: this.serverConfig,
@@ -293,7 +399,7 @@ export class MCPConnectionFactory {
     });
 
     let cleanupOAuthHandlers: (() => void) | null = null;
-    if (this.useOAuth) {
+    if (this.useOAuth && !this.usesObo) {
       cleanupOAuthHandlers = this.handleOAuthEvents(connection);
     } else {
       const nonOAuthHandler = () => {
@@ -350,7 +456,7 @@ export class MCPConnectionFactory {
       throw new Error(`${this.logPrefix} OAuth required but server URL is missing from config`);
     }
 
-    const oauthTimeout = this.connectionTimeout ?? 60000 * 2;
+    const oauthTimeout = mcpConfig.OAUTH_HANDLING_TIMEOUT;
     logger.info(
       `${this.logPrefix} No stored tokens, proactively triggering OAuth flow before connecting (timeout: ${oauthTimeout}ms)`,
     );
@@ -758,6 +864,15 @@ export class MCPConnectionFactory {
     return true;
   }
 
+  private getOAuthReplayExpiresAt(createdAt?: number): number | undefined {
+    if (!createdAt) {
+      return undefined;
+    }
+
+    const expiresAt = createdAt + PENDING_STALE_MS;
+    return expiresAt > Date.now() ? expiresAt : undefined;
+  }
+
   /** Sets up OAuth event handlers for the connection */
   protected handleOAuthEvents(
     connection: MCPConnection,
@@ -812,7 +927,24 @@ export class MCPConnectionFactory {
               logger.debug(
                 `${this.logPrefix} Recent PENDING OAuth flow exists (${Math.round(pendingAge / 1000)}s old), skipping new initiation`,
               );
-              connection.emit('oauthFailed', new Error('OAuth flow initiated - return early'));
+              const flowMeta = existingFlow.metadata as MCPOAuthFlowMetadata | undefined;
+              const storedAuthUrl = flowMeta?.authorizationUrl;
+              if (storedAuthUrl && typeof this.oauthStart === 'function') {
+                const expiresAt = this.getOAuthReplayExpiresAt(existingFlow.createdAt);
+                if (!expiresAt) {
+                  logger.debug(`${this.logPrefix} PENDING OAuth flow expired before replay`);
+                  connection.emit(
+                    'oauthFailed',
+                    new Error('Pending OAuth flow expired before replay'),
+                  );
+                  return;
+                }
+                logger.info(
+                  `${this.logPrefix} Re-issuing stored authorization URL while reusing PENDING flow`,
+                );
+                await this.oauthStart(storedAuthUrl, { expiresAt });
+              }
+              connection.emit('oauthFailed', new Error('Pending OAuth flow reused - return early'));
               return;
             }
 
@@ -929,7 +1061,16 @@ export class MCPConnectionFactory {
 
   /** Attempts to establish connection with timeout handling */
   protected async attemptToConnect(connection: MCPConnection): Promise<void> {
-    const connectTimeout = this.connectionTimeout ?? this.serverConfig.initTimeout ?? 30000;
+    const baseTimeout = this.connectionTimeout ?? this.serverConfig.initTimeout ?? 30000;
+    // OAuth servers may pause mid-connect to wait for the user to authorize in the browser.
+    // The transport connect itself is still bounded by initTimeout inside connection.connect(),
+    // so this floor only extends the window for an active OAuth wait, not ordinary failures.
+    // The grace covers the reconnect after `oauthHandled` (retry backoff + transport connect),
+    // which happens *after* the handling wait, so a user who authorizes near the deadline still
+    // gets a connection instead of a timeout.
+    const connectTimeout = this.useOAuth
+      ? Math.max(baseTimeout, mcpConfig.OAUTH_HANDLING_TIMEOUT + 60000)
+      : baseTimeout;
     await withTimeout(
       this.connectTo(connection),
       connectTimeout,
@@ -1096,10 +1237,14 @@ export class MCPConnectionFactory {
 
             const storedAuthUrl = flowMeta?.authorizationUrl;
             if (storedAuthUrl && typeof this.oauthStart === 'function') {
+              const expiresAt = this.getOAuthReplayExpiresAt(existingFlow.createdAt);
+              if (!expiresAt) {
+                throw new Error('Pending OAuth flow expired before replay');
+              }
               logger.info(
                 `${this.logPrefix} Re-issuing stored authorization URL to caller while joining PENDING flow`,
               );
-              await this.oauthStart(storedAuthUrl);
+              await this.oauthStart(storedAuthUrl, { expiresAt });
             }
 
             reusedStoredClient = flowMeta?.reusedStoredClient === true;

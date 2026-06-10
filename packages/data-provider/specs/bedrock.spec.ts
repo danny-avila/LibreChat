@@ -1,7 +1,8 @@
-import { ThinkingDisplay } from '../src/schemas';
+import { ThinkingDisplay, isMythosClassModel, MYTHOS_CLASS_FAMILIES } from '../src/schemas';
 import {
   BEDROCK_OUTPUT_128K_BETA,
   supportsAdaptiveThinking,
+  omitsSamplingParameters,
   omitsThinkingByDefault,
   resolveThinkingDisplay,
   bedrockOutputParser,
@@ -12,6 +13,23 @@ import {
 } from '../src/bedrock';
 
 const BEDROCK_CLAUDE_4_BETAS = [BEDROCK_OUTPUT_128K_BETA, BEDROCK_FINE_GRAINED_TOOL_STREAMING_BETA];
+
+describe('isMythosClassModel (single source of truth for Fable/Mythos)', () => {
+  test('matches every declared family across naming variants', () => {
+    MYTHOS_CLASS_FAMILIES.forEach((family) => {
+      expect(isMythosClassModel(`claude-${family}-5`)).toBe(true);
+      expect(isMythosClassModel(`anthropic.claude-${family}-5`)).toBe(true);
+      expect(isMythosClassModel(`us.anthropic.claude-${family}-5`)).toBe(true);
+      expect(isMythosClassModel(`claude-${family}-5-20260609`)).toBe(true);
+    });
+  });
+
+  test('does not match opus/sonnet/haiku or unrelated models', () => {
+    ['claude-opus-4-8', 'claude-sonnet-4-6', 'claude-haiku-4-5', 'gpt-4o', ''].forEach((model) => {
+      expect(isMythosClassModel(model)).toBe(false);
+    });
+  });
+});
 
 describe('supportsAdaptiveThinking', () => {
   test('should return true for claude-opus-4-6', () => {
@@ -40,6 +58,13 @@ describe('supportsAdaptiveThinking', () => {
 
   test('should return true for claude-sonnet-6 (future)', () => {
     expect(supportsAdaptiveThinking('claude-sonnet-6')).toBe(true);
+  });
+
+  test('should return true for Mythos-class models (Fable / Mythos)', () => {
+    expect(supportsAdaptiveThinking('claude-fable-5')).toBe(true);
+    expect(supportsAdaptiveThinking('claude-mythos-5')).toBe(true);
+    expect(supportsAdaptiveThinking('anthropic.claude-fable-5')).toBe(true);
+    expect(supportsAdaptiveThinking('us.anthropic.claude-fable-5')).toBe(true);
   });
 
   test('should return false for claude-opus-4-5', () => {
@@ -160,6 +185,12 @@ describe('supportsContext1m', () => {
     expect(supportsContext1m('claude-opus-5')).toBe(true);
   });
 
+  test('should return true for Mythos-class models (Fable / Mythos)', () => {
+    expect(supportsContext1m('claude-fable-5')).toBe(true);
+    expect(supportsContext1m('claude-mythos-5')).toBe(true);
+    expect(supportsContext1m('anthropic.claude-fable-5')).toBe(true);
+  });
+
   test('should return false for claude-opus-4-5', () => {
     expect(supportsContext1m('claude-opus-4-5')).toBe(false);
   });
@@ -222,7 +253,7 @@ describe('omitsThinkingByDefault', () => {
     expect(omitsThinkingByDefault('us.anthropic.claude-opus-4-7')).toBe(true);
   });
 
-  test('returns true for claude-opus-4-8 (future Opus 4.x)', () => {
+  test('returns true for claude-opus-4-8', () => {
     expect(omitsThinkingByDefault('claude-opus-4-8')).toBe(true);
   });
 
@@ -234,8 +265,19 @@ describe('omitsThinkingByDefault', () => {
     expect(omitsThinkingByDefault('claude-opus-9')).toBe(true);
   });
 
+  test('returns true for Mythos-class models (Fable / Mythos)', () => {
+    expect(omitsThinkingByDefault('claude-fable-5')).toBe(true);
+    expect(omitsThinkingByDefault('claude-mythos-5')).toBe(true);
+    expect(omitsThinkingByDefault('anthropic.claude-fable-5')).toBe(true);
+  });
+
   test('returns false for claude-opus-4-6 (adaptive but pre-4.7)', () => {
     expect(omitsThinkingByDefault('claude-opus-4-6')).toBe(false);
+  });
+
+  test('returns false for base Opus 4 snapshot IDs', () => {
+    expect(omitsThinkingByDefault('claude-opus-4-20250514')).toBe(false);
+    expect(omitsThinkingByDefault('anthropic.claude-opus-4-20250514-v1:0')).toBe(false);
   });
 
   test('returns false for claude-opus-4-5', () => {
@@ -261,6 +303,49 @@ describe('omitsThinkingByDefault', () => {
   test('returns false for unrelated models', () => {
     expect(omitsThinkingByDefault('gpt-4o')).toBe(false);
     expect(omitsThinkingByDefault('')).toBe(false);
+  });
+});
+
+describe('omitsSamplingParameters', () => {
+  test('returns true for Opus 4.7+ models', () => {
+    const models = [
+      'claude-opus-4-7',
+      'claude-opus-4-8',
+      'anthropic.claude-opus-4-8',
+      'us.anthropic.claude-opus-4-8',
+      'claude-opus-5',
+    ];
+
+    models.forEach((model) => {
+      expect(omitsSamplingParameters(model)).toBe(true);
+    });
+  });
+
+  test('returns true for Mythos-class models (Fable / Mythos)', () => {
+    const models = [
+      'claude-fable-5',
+      'claude-mythos-5',
+      'anthropic.claude-fable-5',
+      'us.anthropic.claude-fable-5',
+    ];
+
+    models.forEach((model) => {
+      expect(omitsSamplingParameters(model)).toBe(true);
+    });
+  });
+
+  test('returns false for older Opus and non-Opus models', () => {
+    const models = [
+      'claude-opus-4-20250514',
+      'anthropic.claude-opus-4-20250514-v1:0',
+      'claude-opus-4-1-20250805',
+      'claude-opus-4-6',
+      'claude-sonnet-4-7',
+    ];
+
+    models.forEach((model) => {
+      expect(omitsSamplingParameters(model)).toBe(false);
+    });
   });
 });
 
@@ -539,6 +624,75 @@ describe('bedrockInputParser', () => {
       expect(additionalFields.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
       expect(additionalFields.output_config).toEqual({ effort: 'xhigh' });
       expect(additionalFields.effort).toBeUndefined();
+    });
+
+    test('should strip sampling parameters for Opus 4.8 Bedrock models', () => {
+      const input = {
+        model: 'anthropic.claude-opus-4-8',
+        temperature: 0.7,
+        topP: 0.9,
+        topK: 40,
+        top_p: 0.8,
+        additionalModelRequestFields: {
+          custom_flag: true,
+          temperature: 0.5,
+          topP: 0.95,
+          top_k: 20,
+        },
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(result.temperature).toBeUndefined();
+      expect(result.topP).toBeUndefined();
+      expect(additionalFields.temperature).toBeUndefined();
+      expect(additionalFields.topP).toBeUndefined();
+      expect(additionalFields.top_p).toBeUndefined();
+      expect(additionalFields.top_k).toBeUndefined();
+      expect(additionalFields.custom_flag).toBe(true);
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
+      expect(additionalFields.anthropic_beta).toEqual(BEDROCK_CLAUDE_4_BETAS);
+    });
+
+    test('should preserve sampling parameters for Opus 4.6 Bedrock models', () => {
+      const input = {
+        model: 'anthropic.claude-opus-4-6-v1',
+        temperature: 0.7,
+        topP: 0.9,
+        topK: 40,
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(result.temperature).toBe(0.7);
+      expect(result.topP).toBe(0.9);
+      expect(additionalFields.top_k).toBe(40);
+    });
+
+    test('should set adaptive thinking and strip sampling params for Fable 5 Bedrock models', () => {
+      const input = {
+        model: 'anthropic.claude-fable-5',
+        effort: 'high',
+        temperature: 0.7,
+        topP: 0.9,
+        topK: 40,
+        top_p: 0.8,
+        additionalModelRequestFields: {
+          custom_flag: true,
+          temperature: 0.5,
+          top_k: 20,
+        },
+      };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+      expect(result.temperature).toBeUndefined();
+      expect(result.topP).toBeUndefined();
+      expect(additionalFields.temperature).toBeUndefined();
+      expect(additionalFields.top_p).toBeUndefined();
+      expect(additionalFields.top_k).toBeUndefined();
+      expect(additionalFields.custom_flag).toBe(true);
+      expect(additionalFields.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
+      expect(additionalFields.output_config).toEqual({ effort: 'high' });
+      /** Mythos-class models do not receive the legacy output-128k / fine-grained-tool-streaming betas. */
+      expect(additionalFields.anthropic_beta).toBeUndefined();
     });
 
     test('should set thinking.display to "summarized" so Opus 4.7 returns reasoning blocks', () => {
