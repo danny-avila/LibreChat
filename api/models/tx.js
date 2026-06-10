@@ -157,6 +157,8 @@ const tokenValues = Object.assign(
     'deepseek-reasoner': { prompt: 0.28, completion: 0.42 },
     'deepseek-r1': { prompt: 0.4, completion: 2.0 },
     'deepseek-v3': { prompt: 0.2, completion: 0.8 },
+    'deepseek-v4-flash': { prompt: 0.14, completion: 0.28 },
+    'deepseek-v4-pro': { prompt: 1.74, completion: 3.48 },
     'gemma-2': { prompt: 0.01, completion: 0.03 }, // Base pattern (using gemma-2-9b pricing)
     'gemma-3': { prompt: 0.02, completion: 0.04 }, // Base pattern (using gemma-3n-e4b pricing)
     'gemma-3-27b': { prompt: 0.09, completion: 0.16 },
