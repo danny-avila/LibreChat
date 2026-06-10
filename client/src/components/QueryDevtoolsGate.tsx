@@ -1,5 +1,14 @@
 import { lazy, Suspense } from 'react';
 
+interface QueryDevtoolsConfig {
+  enableQueryDevtools?: boolean;
+}
+
+interface QueryDevtoolsGateProps {
+  config?: QueryDevtoolsConfig;
+  isDevelopment?: boolean;
+}
+
 const LazyReactQueryDevtools = lazy(() =>
   import('@tanstack/react-query-devtools/production').then(({ ReactQueryDevtools }) => ({
     default: ReactQueryDevtools,
@@ -9,9 +18,9 @@ const LazyReactQueryDevtools = lazy(() =>
 export const shouldEnableQueryDevtools = ({
   isDevelopment = import.meta.env.DEV,
   config = typeof window === 'undefined' ? undefined : window.__LIBRECHAT_CONFIG__,
-} = {}) => isDevelopment || config?.enableQueryDevtools === true;
+}: QueryDevtoolsGateProps = {}) => isDevelopment || config?.enableQueryDevtools === true;
 
-export default function QueryDevtoolsGate({ isDevelopment, config } = {}) {
+export default function QueryDevtoolsGate({ isDevelopment, config }: QueryDevtoolsGateProps = {}) {
   if (!shouldEnableQueryDevtools({ isDevelopment, config })) {
     return null;
   }

@@ -40,7 +40,6 @@ const QUERY_DEVTOOLS_CHUNK_MODULES = [
   'node_modules/superjson',
   'node_modules/copy-anything',
   'node_modules/is-what',
-  'node_modules/remove-accents',
 ];
 
 export default defineConfig(({ command }) => ({

@@ -217,6 +217,9 @@ describe('Server Configuration', () => {
     const debugResponse = await request(app)
       .get('/this/does/not/exist')
       .set('x-librechat-enable-query-devtools', '1');
+    const directIndexResponse = await request(app)
+      .get('/index.html')
+      .set('x-librechat-enable-query-devtools', '1');
 
     expect(defaultResponse.status).toBe(200);
     expect(defaultResponse.headers.vary).toContain('x-librechat-enable-query-devtools');
@@ -227,6 +230,12 @@ describe('Server Configuration', () => {
     expect(debugResponse.text).toContain('window.__LIBRECHAT_CONFIG__');
     expect(debugResponse.text).toContain('data-librechat-query-devtools="true"');
     expect(debugResponse.text).toContain('"enableQueryDevtools":true');
+
+    expect(directIndexResponse.status).toBe(200);
+    expect(directIndexResponse.headers.vary).toContain('x-librechat-enable-query-devtools');
+    expect(directIndexResponse.text).toContain('window.__LIBRECHAT_CONFIG__');
+    expect(directIndexResponse.text).toContain('data-librechat-query-devtools="true"');
+    expect(directIndexResponse.text).toContain('"enableQueryDevtools":true');
   });
 
   it('should return 500 for unknown errors via ErrorController', async () => {

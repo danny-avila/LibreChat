@@ -1,11 +1,12 @@
-const {
+import type { QueryDevtoolsRequest } from './devtools';
+import {
   QUERY_DEVTOOLS_HEADER,
   maybeInjectQueryDevtoolsBootstrap,
   shouldEnableQueryDevtools,
-} = require('../queryDevtoolsHtml');
+} from './devtools';
 
-const createReq = (value) => ({
-  get: jest.fn((header) => (header === QUERY_DEVTOOLS_HEADER ? value : undefined)),
+const createReq = (value?: string): QueryDevtoolsRequest => ({
+  get: (header) => (header === QUERY_DEVTOOLS_HEADER ? value : undefined),
 });
 
 describe('query devtools HTML bootstrap', () => {
@@ -15,11 +16,11 @@ describe('query devtools HTML bootstrap', () => {
   it('uses the documented debug header value as the opt-in signal', () => {
     expect(shouldEnableQueryDevtools(createReq('1'))).toBe(true);
     expect(shouldEnableQueryDevtools(createReq('true'))).toBe(false);
-    expect(shouldEnableQueryDevtools(createReq(undefined))).toBe(false);
+    expect(shouldEnableQueryDevtools(createReq())).toBe(false);
   });
 
   it('does not inject the production devtools flag by default', () => {
-    expect(maybeInjectQueryDevtoolsBootstrap(html, createReq(undefined))).toBe(html);
+    expect(maybeInjectQueryDevtoolsBootstrap(html, createReq())).toBe(html);
   });
 
   it('injects a server-to-client flag when the debug header is present', () => {
