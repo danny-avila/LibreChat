@@ -1,3 +1,4 @@
+/* eslint jest/expect-expect: ["warn", { "assertFunctionNames": ["expect", "testRedisOperations"] }] */
 import type { Redis, Cluster } from 'ioredis';
 import type { RedisClientType, RedisClusterType } from '@redis/client';
 import { closeRedisClients } from './redisClients.helper';
