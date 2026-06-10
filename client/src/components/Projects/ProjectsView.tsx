@@ -2,7 +2,7 @@ import { useDeferredValue, useEffect, useId, useMemo, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowUpDown, Check, Folder, Plus, Search } from 'lucide-react';
-import { Input, Button, Spinner, DropdownPopup } from '@librechat/client';
+import { Input, Button, Spinner, DropdownPopup, useMediaQuery } from '@librechat/client';
 import type { TChatProject } from 'librechat-data-provider';
 import type { MenuItemProps, RenderProp } from '~/common';
 import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
@@ -50,6 +50,7 @@ export default function ProjectsView() {
   const sortMenuId = useId();
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
   const deferredSearch = useDeferredValue(search);
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
   const { data, fetchNextPage, isFetchingNextPage, isLoading } = useProjectsInfiniteQuery({
     search: deferredSearch || undefined,
@@ -105,7 +106,7 @@ export default function ProjectsView() {
       <div className="container mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-8 md:px-6 lg:pt-12">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2.5">
-            <OpenSidebar className="md:hidden" />
+            {isSmallScreen ? <OpenSidebar /> : null}
             <h1 className="text-2xl font-bold tracking-tight text-text-primary md:text-3xl">
               {localize('com_ui_projects')}
             </h1>
