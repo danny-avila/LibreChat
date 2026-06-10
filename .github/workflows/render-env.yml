@@ -72,6 +72,10 @@ jobs:
           export INTERFACE_AGENTS=$([[ "${{ inputs.environment }}" == "dev" ]] && echo true || echo false)
           export INTERFACE_FILE_SEARCH=true
 
+          export SEARCH=$([[ "${{ inputs.environment }}" == "prod" ]] && echo false || echo true)
+          export MEILI_HOST=$([[ "${{ inputs.deploy_kitchensink }}" == "true" ]] && echo "http://meilisearch-kitchensink:7700" || echo "http://meilisearch-dev:7700")
+          export MEILI_MASTER_KEY="${{ secrets.MEILI_MASTER_KEY }}" 
+
           ENV_FILE_NAME=$([[ "${{ inputs.deploy_kitchensink }}" == "true" ]] && echo "librechat.env" || echo "${{ inputs.environment }}.env")
 
           envsubst < nj/nj.env.template > "$ENV_FILE_NAME"

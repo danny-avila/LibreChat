@@ -75,37 +75,4 @@ describe('constRecoilState Tests', () => {
     fireEvent.click(button);
     expect(button).toHaveAttribute('title', 'Recoil Value=67');
   });
-
-  describe('Locked states', () => {
-    test('search is locked to disabled', () => {
-      const defaultState = {
-        enabled: false,
-        query: '',
-        debouncedQuery: '',
-        isSearching: false,
-        isTyping: false,
-      };
-
-      const clickState = {
-        enabled: true,
-        query: 'hello',
-        debouncedQuery: 'hello',
-        isSearching: true,
-        isTyping: true,
-      };
-
-      render(
-        <RecoilRoot>
-          <TestRecoilState recoilState={store.search} clickState={clickState} />
-        </RecoilRoot>,
-      );
-
-      const button = screen.getByTestId('changeRecoilState');
-      expect(button).toHaveAttribute('title', `Recoil Value=${JSON.stringify(defaultState)}`);
-
-      // Click button (which attempts to change the recoil state), but it should remain unchanged
-      fireEvent.click(button);
-      expect(button).toHaveAttribute('title', `Recoil Value=${JSON.stringify(defaultState)}`);
-    });
-  });
 });
