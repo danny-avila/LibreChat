@@ -40,7 +40,7 @@ endpoints:
 
 modelSpecs:
   prioritize: true
-  enforce: true
+  enforce: false
   list:
     - name: 'e2e-mock-provider-a'
       label: 'Mock Provider A'
