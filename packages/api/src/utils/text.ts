@@ -39,10 +39,12 @@ export async function processTextWithTokenLimit({
   text,
   tokenLimit,
   tokenCountFn,
+  preserve = 'start',
 }: {
   text: string;
   tokenLimit: number;
   tokenCountFn: TokenCountFn;
+  preserve?: 'start' | 'end';
 }): Promise<{ text: string; tokenCount: number; wasTruncated: boolean }> {
   const originalTokenCount = await tokenCountFn(text);
 
@@ -61,7 +63,14 @@ export async function processTextWithTokenLimit({
   const ratio = tokenLimit / originalTokenCount;
   let charPosition = Math.floor(text.length * ratio * TRUNCATION_SAFETY_BUFFER);
 
-  let truncatedText = text.substring(0, charPosition);
+  const sliceText = (position: number) => {
+    if (position <= 0) {
+      return '';
+    }
+    return preserve === 'end' ? text.slice(-position) : text.substring(0, position);
+  };
+
+  let truncatedText = sliceText(charPosition);
   let tokenCount = await tokenCountFn(truncatedText);
 
   const maxIterations = 5;
@@ -70,7 +79,7 @@ export async function processTextWithTokenLimit({
   while (tokenCount > tokenLimit && iterations < maxIterations && charPosition > 0) {
     const overageRatio = tokenLimit / tokenCount;
     charPosition = Math.floor(charPosition * overageRatio * TRUNCATION_SAFETY_BUFFER);
-    truncatedText = text.substring(0, charPosition);
+    truncatedText = sliceText(charPosition);
     tokenCount = await tokenCountFn(truncatedText);
     iterations++;
   }

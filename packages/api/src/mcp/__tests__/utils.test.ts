@@ -1,3 +1,4 @@
+import type { ParsedServerConfig } from '~/mcp/types';
 import {
   buildOAuthToolCallName,
   normalizeServerName,
@@ -8,9 +9,14 @@ import {
   isClientRejectionMessage,
   getMissingCustomUserVars,
   hasCustomUserVars,
+  hasRuntimeUrlPlaceholders,
+  hasRuntimeBodyPlaceholders,
+  hasRuntimeContextPlaceholders,
+  getRuntimeBodyPlaceholderFields,
+  getMissingRuntimeBodyPlaceholderFields,
   isUserSourced,
+  requiresEphemeralUserConnection,
 } from '~/mcp/utils';
-import type { ParsedServerConfig } from '~/mcp/types';
 
 describe('normalizeServerName', () => {
   it('should not modify server names that already match the pattern', () => {
@@ -378,6 +384,29 @@ describe('requiresUserScopedConnection', () => {
     ).toBe(true);
   });
 
+  it('returns true for trusted config with runtime user placeholders', () => {
+    expect(
+      requiresUserScopedConnection({
+        source: 'yaml',
+        headers: {
+          'X-LibreChat-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('returns false for user-sourced config with runtime user placeholders', () => {
+    expect(
+      requiresUserScopedConnection({
+        source: 'user',
+        dbId: 'server-123',
+        headers: {
+          'X-LibreChat-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+        },
+      }),
+    ).toBe(false);
+  });
+
   it('returns false for app-shareable servers', () => {
     expect(
       requiresUserScopedConnection({
@@ -385,6 +414,207 @@ describe('requiresUserScopedConnection', () => {
         customUserVars: {},
       }),
     ).toBe(false);
+  });
+});
+
+describe('hasRuntimeContextPlaceholders', () => {
+  it('detects trusted runtime placeholders across connection fields', () => {
+    expect(
+      hasRuntimeContextPlaceholders({
+        source: 'config',
+        url: 'https://example.com/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+        headers: {
+          Authorization: 'Bearer {{LIBRECHAT_OPENID_ID_TOKEN}}',
+          'X-Graph-Access-Token': '{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('detects trusted runtime placeholders in oauth_headers', () => {
+    expect(
+      hasRuntimeContextPlaceholders({
+        source: 'yaml',
+        url: 'https://example.com/mcp',
+        oauth_headers: {
+          'X-User': '{{LIBRECHAT_USER_ID}}',
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('ignores custom user variable placeholders', () => {
+    expect(
+      hasRuntimeContextPlaceholders({
+        source: 'yaml',
+        headers: {
+          Authorization: 'Bearer {{MCP_API_KEY}}',
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it('ignores runtime placeholders in user-sourced configs', () => {
+    expect(
+      hasRuntimeContextPlaceholders({
+        source: 'user',
+        dbId: 'server-123',
+        headers: {
+          Authorization: 'Bearer {{LIBRECHAT_OPENID_ID_TOKEN}}',
+        },
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('hasRuntimeUrlPlaceholders', () => {
+  it('detects trusted runtime placeholders in the server URL', () => {
+    expect(
+      hasRuntimeUrlPlaceholders({
+        source: 'yaml',
+        url: 'https://example.com/users/{{LIBRECHAT_USER_USERNAME}}/mcp',
+      }),
+    ).toBe(true);
+  });
+
+  it('ignores runtime URL placeholders in user-sourced configs', () => {
+    expect(
+      hasRuntimeUrlPlaceholders({
+        source: 'user',
+        dbId: 'server-123',
+        url: 'https://example.com/users/{{LIBRECHAT_USER_USERNAME}}/mcp',
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('hasRuntimeBodyPlaceholders', () => {
+  it('detects trusted runtime BODY placeholders across connection fields', () => {
+    expect(
+      hasRuntimeBodyPlaceholders({
+        source: 'yaml',
+        url: 'https://example.com/conversations/{{LIBRECHAT_BODY_CONVERSATIONID}}/mcp',
+      }),
+    ).toBe(true);
+
+    expect(
+      hasRuntimeBodyPlaceholders({
+        source: 'config',
+        headers: {
+          'X-Message': '{{LIBRECHAT_BODY_MESSAGEID}}',
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('ignores BODY placeholders in user-sourced configs', () => {
+    expect(
+      hasRuntimeBodyPlaceholders({
+        source: 'user',
+        dbId: 'server-123',
+        url: 'https://example.com/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('getMissingRuntimeBodyPlaceholderFields', () => {
+  const config = {
+    source: 'yaml',
+    url: 'https://example.com/conversations/{{LIBRECHAT_BODY_CONVERSATIONID}}/mcp',
+    headers: {
+      'X-Message': '{{LIBRECHAT_BODY_MESSAGEID}}',
+      'X-Parent': '{{LIBRECHAT_BODY_PARENTMESSAGEID}}',
+    },
+  } as const;
+
+  it('returns the request body fields required by trusted runtime placeholders', () => {
+    expect(getRuntimeBodyPlaceholderFields(config)).toEqual([
+      'messageId',
+      'parentMessageId',
+      'conversationId',
+    ]);
+  });
+
+  it('returns missing or blank request body fields', () => {
+    expect(
+      getMissingRuntimeBodyPlaceholderFields(config, {
+        conversationId: 'conv-123',
+        messageId: ' ',
+      }),
+    ).toEqual(['messageId', 'parentMessageId']);
+  });
+
+  it('ignores BODY placeholders in user-sourced configs', () => {
+    expect(
+      getMissingRuntimeBodyPlaceholderFields({
+        source: 'user',
+        dbId: 'server-123',
+        url: 'https://example.com/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+      }),
+    ).toEqual([]);
+  });
+});
+
+describe('requiresEphemeralUserConnection', () => {
+  it('returns true when request-varying placeholders affect oauth_headers', () => {
+    expect(
+      requiresEphemeralUserConnection({
+        source: 'yaml',
+        url: 'https://example.com/mcp',
+        oauth_headers: {
+          Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('returns true when request-varying placeholders affect connection fields', () => {
+    expect(
+      requiresEphemeralUserConnection({
+        source: 'yaml',
+        url: 'https://example.com/messages/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+      }),
+    ).toBe(true);
+
+    expect(
+      requiresEphemeralUserConnection({
+        source: 'config',
+        env: {
+          GRAPH_TOKEN: '{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('returns true when OpenID token placeholders affect connection fields', () => {
+    expect(
+      requiresEphemeralUserConnection({
+        source: 'yaml',
+        args: ['--id-token={{LIBRECHAT_OPENID_ID_TOKEN}}'],
+      }),
+    ).toBe(true);
+
+    expect(
+      requiresEphemeralUserConnection({
+        source: 'yaml',
+        headers: {
+          Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('returns true when request-varying placeholders affect remote transport headers', () => {
+    expect(
+      requiresEphemeralUserConnection({
+        source: 'yaml',
+        headers: {
+          'X-Message': '{{LIBRECHAT_BODY_MESSAGEID}}',
+          'X-Graph': '{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+        },
+      }),
+    ).toBe(true);
   });
 });
 

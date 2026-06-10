@@ -29,7 +29,7 @@ const {
   deleteActions,
   deleteAssistant,
 } = require('~/models');
-const { getFlowStateManager } = require('~/config');
+const { getActionFlowStateManager } = require('~/config');
 const { getLogStores } = require('~/cache');
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -243,7 +243,7 @@ async function createActionTool({
                   },
                 };
                 const flowsCache = getLogStores(CacheKeys.FLOWS);
-                const flowManager = getFlowStateManager(flowsCache);
+                const flowManager = getActionFlowStateManager(flowsCache);
                 await flowManager.createFlowWithHandler(
                   `${identifier}:oauth_login:${config.metadata.thread_id}:${config.metadata.run_id}`,
                   'oauth_login',
@@ -341,7 +341,7 @@ async function createActionTool({
                     },
                   );
                 const flowsCache = getLogStores(CacheKeys.FLOWS);
-                const flowManager = getFlowStateManager(flowsCache);
+                const flowManager = getActionFlowStateManager(flowsCache);
                 const refreshData = await flowManager.createFlowWithHandler(
                   `${identifier}:refresh`,
                   'oauth_refresh',

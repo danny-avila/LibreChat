@@ -1,5 +1,4 @@
 import { logger } from '@librechat/data-schemas';
-import type { AppConfig } from '@librechat/data-schemas';
 import {
   Tools,
   Constants,
@@ -13,7 +12,9 @@ import type {
   TModelSpec,
   Agent,
 } from 'librechat-data-provider';
+import type { AppConfig } from '@librechat/data-schemas';
 import { getCustomEndpointConfig } from '~/app/config';
+import { sanitizeRequestSubagents } from './subagents';
 
 const { mcp_all, mcp_delimiter } = Constants;
 type ModelParametersWithPromptPrefix = AgentModelParameters & { promptPrefix?: string | null };
@@ -134,6 +135,25 @@ export async function loadEphemeralAgent(
 
   if (ephemeralAgent?.artifacts) {
     result.artifacts = ephemeralAgent.artifacts;
+  }
+  if (modelSpec?.subagents) {
+    result.subagents = modelSpec.subagents;
+  } else {
+    const requestSubagents = sanitizeRequestSubagents(ephemeralAgent?.subagents);
+    if (requestSubagents) {
+      result.subagents = requestSubagents;
+    }
+  }
+  if (modelSpec && Object.prototype.hasOwnProperty.call(modelSpec, 'skills')) {
+    if (modelSpec.skills === true) {
+      result.skills_enabled = true;
+    } else if (modelSpec.skills === false) {
+      result.skills_enabled = false;
+      result.skills = [];
+    } else if (Array.isArray(modelSpec.skills)) {
+      result.skills_enabled = true;
+      result.skills = [];
+    }
   }
   return result as Agent;
 }

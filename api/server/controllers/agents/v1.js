@@ -77,10 +77,9 @@ const sanitizeViewerSkillScope = (agent, accessibleSkillSet) => {
 
   const configuredSkills = Array.isArray(agent.skills) ? agent.skills : [];
   if (configuredSkills.length === 0) {
+    // Empty allowlist means the viewer's full accessible catalog.
     delete agent.skills;
-    if (accessibleSkillSet.size > 0) {
-      agent.skills_enabled = true;
-    }
+    agent.skills_enabled = true;
     return agent;
   }
 

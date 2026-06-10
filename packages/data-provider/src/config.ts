@@ -10,11 +10,12 @@ import {
 } from './schemas';
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { specsConfigSchema, TSpecsConfig } from './models';
+import { REFILL_INTERVAL_UNITS } from './balance';
 import { fileConfigSchema } from './file-config';
 import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
-import { REFILL_INTERVAL_UNITS } from './balance';
+export { MAX_SUBAGENTS } from './limits';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
@@ -63,6 +64,7 @@ export const excludedKeys = new Set([
   'files',
   'spec',
   'disableParams',
+  'chatProjectId',
 ]);
 
 export enum SettingsViews {
@@ -571,6 +573,11 @@ export const agentsEndpointSchema = baseEndpointSchema
         .array(z.nativeEnum(AgentCapabilities))
         .optional()
         .default(defaultAgentCapabilities),
+      skills: z
+        .object({
+          maxCatalogSkills: z.number().int().min(1).max(100).optional(),
+        })
+        .optional(),
       remoteApi: remoteApiSchema.optional(),
     }),
   )
@@ -1007,6 +1014,16 @@ export const interfaceSchema = z
         }),
       ])
       .optional(),
+    sharedLinks: z
+      .union([
+        z.boolean(),
+        z.object({
+          create: z.boolean().optional(),
+          share: z.boolean().optional(),
+          public: z.boolean().optional(),
+        }),
+      ])
+      .optional(),
   })
   .default({
     modelSelect: true,
@@ -1060,6 +1077,11 @@ export const interfaceSchema = z
       share: false,
       public: false,
       defaultActiveOnShare: false,
+    },
+    sharedLinks: {
+      create: true,
+      share: true,
+      public: true,
     },
   });
 
@@ -1332,11 +1354,14 @@ export const transactionsSchema = z.object({
   enabled: z.boolean().optional().default(true),
 });
 
+export const DEFAULT_MEMORY_MAX_INPUT_TOKENS = 12000;
+
 export const memorySchema = z.object({
   disabled: z.boolean().optional(),
   validKeys: z.array(z.string()).optional(),
   tokenLimit: z.number().optional(),
   charLimit: z.number().optional().default(10000),
+  maxInputTokens: z.number().int().positive().optional().default(DEFAULT_MEMORY_MAX_INPUT_TOKENS),
   personalize: z.boolean().default(true),
   messageWindowSize: z.number().optional().default(5),
   agent: z
@@ -1553,43 +1578,31 @@ export const alternateName = {
 };
 
 const sharedOpenAIModels = [
+  'gpt-5.5',
+  'gpt-5.5-pro',
+  'chat-latest',
   'gpt-5.4',
-  // TODO: gpt-5.4-thinking may have separate reasoning token pricing — verify before release
-  'gpt-5.4-thinking',
   'gpt-5.4-pro',
+  'gpt-5.4-mini',
+  'gpt-5.4-nano',
+  'gpt-5.3-codex',
+  'gpt-5.2',
   'gpt-5.1',
-  'gpt-5.1-chat-latest',
   'gpt-5.1-codex',
+  'gpt-5.1-codex-max',
   'gpt-5.1-codex-mini',
   'gpt-5',
   'gpt-5-mini',
   'gpt-5-nano',
-  'gpt-5-chat-latest',
   'gpt-4.1',
   'gpt-4.1-mini',
   'gpt-4.1-nano',
   'gpt-4o-mini',
   'gpt-4o',
-  'gpt-4.5-preview',
-  'gpt-4.5-preview-2025-02-27',
-  'gpt-3.5-turbo',
-  'gpt-3.5-turbo-0125',
-  'gpt-4-turbo',
-  'gpt-4-turbo-2024-04-09',
-  'gpt-4-0125-preview',
-  'gpt-4-turbo-preview',
-  'gpt-4-1106-preview',
-  'gpt-3.5-turbo-1106',
-  'gpt-3.5-turbo-16k-0613',
-  'gpt-3.5-turbo-16k',
-  'gpt-4',
-  'gpt-4-0314',
-  'gpt-4-32k-0314',
-  'gpt-4-0613',
-  'gpt-3.5-turbo-0613',
 ];
 
 const sharedAnthropicModels = [
+  'claude-fable-5',
   'claude-opus-4-8',
   'claude-opus-4-7',
   'claude-sonnet-4-6',
@@ -1614,6 +1627,7 @@ const sharedAnthropicModels = [
 ];
 
 export const bedrockModels = [
+  'anthropic.claude-fable-5',
   'anthropic.claude-opus-4-8',
   'anthropic.claude-opus-4-7',
   'anthropic.claude-sonnet-4-6',
@@ -2266,9 +2280,6 @@ export enum Constants {
   /** Subagent spawn tool name (must match `@librechat/agents` `Constants.SUBAGENT`). */
   SUBAGENT = 'subagent',
 }
-
-/** Maximum number of explicit subagents per parent agent. UI + Zod schema share this. */
-export const MAX_SUBAGENTS = 10;
 
 /** Maximum explicit subagent hops allowed from any root agent at runtime. */
 export const MAX_SUBAGENT_DEPTH = 5;

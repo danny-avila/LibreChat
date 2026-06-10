@@ -23,7 +23,7 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
   return (
     <div
       className={cn(
-        'flex grow items-center gap-2 overflow-hidden rounded-lg px-2',
+        'flex min-w-0 grow items-center gap-2 overflow-hidden rounded-lg px-2',
         isActiveConvo || isPopoverActive ? 'bg-surface-active-alt' : '',
       )}
       title={title ?? undefined}

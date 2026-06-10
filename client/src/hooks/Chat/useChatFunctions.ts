@@ -26,9 +26,14 @@ import type {
 } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import type { TAskFunction, ExtendedFile } from '~/common';
+import {
+  logger,
+  hasStreamStartFailed,
+  createDualMessageContent,
+  getRouteChatProjectId,
+} from '~/utils';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
-import { logger, createDualMessageContent } from '~/utils';
 import store, { useGetEphemeralAgent } from '~/store';
 import { startupConfigKey } from '~/data-provider';
 import useUserKey from '~/hooks/Input/useUserKey';
@@ -39,6 +44,121 @@ const logChatRequest = (request: Record<string, unknown>) => {
   logger.dir(request);
   logger.log('=====================================');
 };
+
+const getAppendParentMessageId = ({
+  latestMessage,
+  currentMessages,
+}: {
+  latestMessage: TMessage | null;
+  currentMessages: TMessage[];
+}) => {
+  if (!latestMessage) {
+    return Constants.NO_PARENT;
+  }
+
+  if (!hasStreamStartFailed(latestMessage)) {
+    return latestMessage.messageId;
+  }
+
+  const failedUserMessage = currentMessages.find(
+    (message) => message.messageId === latestMessage.parentMessageId,
+  );
+  if (failedUserMessage?.isCreatedByUser !== true) {
+    return latestMessage.messageId;
+  }
+
+  return failedUserMessage.parentMessageId ?? Constants.NO_PARENT;
+};
+
+const hasPendingAssistantParent = (message: TMessage | null) =>
+  !!message?.messageId &&
+  message.isCreatedByUser !== true &&
+  message.messageId.endsWith('_') &&
+  message.createdAt == null &&
+  message.updatedAt == null &&
+  !hasStreamStartFailed(message);
+
+type RegenerateTargetResponseArgs = {
+  messages: TMessage[];
+  parentMessageId?: string | null;
+  targetResponseMessageId?: string | null;
+  latestMessage?: TMessage | null;
+};
+
+const isAssistantResponseForParent = (
+  message: TMessage | null | undefined,
+  parentMessageId?: string | null,
+): message is TMessage =>
+  !!message &&
+  !message.isCreatedByUser &&
+  !!parentMessageId &&
+  message.parentMessageId === parentMessageId;
+
+export function getPreliminaryRegenerateResponseMessageId(
+  responseMessageId?: string | null,
+): string | null {
+  if (typeof responseMessageId !== 'string' || responseMessageId.length === 0) {
+    return null;
+  }
+
+  return `${responseMessageId.replace(/_+$/, '')}_`;
+}
+
+export function getRegenerateTargetResponseMessage({
+  messages,
+  parentMessageId,
+  targetResponseMessageId,
+  latestMessage,
+}: RegenerateTargetResponseArgs): TMessage | null {
+  if (!parentMessageId) {
+    return null;
+  }
+
+  if (targetResponseMessageId) {
+    const targetResponse = messages.find(
+      (message) =>
+        message.messageId === targetResponseMessageId &&
+        isAssistantResponseForParent(message, parentMessageId),
+    );
+    if (targetResponse) {
+      return targetResponse;
+    }
+  }
+
+  if (isAssistantResponseForParent(latestMessage, parentMessageId)) {
+    return latestMessage;
+  }
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (isAssistantResponseForParent(message, parentMessageId)) {
+      return message;
+    }
+  }
+
+  return null;
+}
+
+export function getRegenerateSubmissionMessages({
+  messages,
+  targetResponseMessage,
+  initialResponseId,
+}: {
+  messages: TMessage[];
+  targetResponseMessage?: TMessage | null;
+  initialResponseId?: string | null;
+}): TMessage[] {
+  if (targetResponseMessage?.messageId) {
+    const targetIndex = messages.findIndex(
+      (message) => message.messageId === targetResponseMessage.messageId,
+    );
+    if (targetIndex >= 0) {
+      return messages.slice(0, targetIndex);
+    }
+  }
+
+  return messages.filter((msg) => msg.messageId !== initialResponseId);
+}
 
 export default function useChatFunctions({
   index = 0,
@@ -114,6 +234,7 @@ export default function useChatFunctions({
       isEdited = false,
       overrideMessages,
       overrideFiles,
+      targetResponseMessageId,
       overrideManualSkills,
       addedConvo,
     } = {},
@@ -144,6 +265,14 @@ export default function useChatFunctions({
       return;
     }
 
+    if (parentMessageId == null && hasPendingAssistantParent(latestMessage)) {
+      logger.warn(
+        '[useChatFunctions] Refusing to append to a preliminary assistant message',
+        latestMessage,
+      );
+      return false;
+    }
+
     const ephemeralAgent = getEphemeralAgent(conversationId ?? Constants.NEW_CONVO);
     /**
      * Manual skill selection resolution:
@@ -165,7 +294,7 @@ export default function useChatFunctions({
     }
     const isEditOrContinue = isEdited || isContinued;
 
-    let currentMessages: TMessage[] | null = overrideMessages ?? getMessages() ?? [];
+    let currentMessages: TMessage[] = overrideMessages ?? getMessages() ?? [];
 
     if (conversation?.promptPrefix) {
       conversation.promptPrefix = replaceSpecialVars({
@@ -174,10 +303,19 @@ export default function useChatFunctions({
       });
     }
 
+    const chatProjectId =
+      conversationId === Constants.NEW_CONVO
+        ? getRouteChatProjectId()
+        : (conversation?.chatProjectId ?? null);
+    const conversationForPayload =
+      chatProjectId != null ? { ...(conversation ?? {}), chatProjectId } : (conversation ?? {});
+
     // construct the query message
     // this is not a real messageId, it is used as placeholder before real messageId returned
     const intermediateId = overrideUserMessageId ?? v4();
-    parentMessageId = parentMessageId ?? latestMessage?.messageId ?? Constants.NO_PARENT;
+    if (parentMessageId == null) {
+      parentMessageId = getAppendParentMessageId({ latestMessage, currentMessages });
+    }
 
     logChatRequest({
       index,
@@ -193,7 +331,8 @@ export default function useChatFunctions({
       parentMessageId = Constants.NO_PARENT;
       currentMessages = [];
       conversationId = null;
-      navigate('/c/new', { state: { focusChat: true } });
+      const projectSearch = chatProjectId ? `?projectId=${encodeURIComponent(chatProjectId)}` : '';
+      navigate(`/c/new${projectSearch}`, { state: { focusChat: true } });
     }
 
     const targetParentMessageId = isRegenerate ? messageId : latestMessage?.parentMessageId;
@@ -205,6 +344,14 @@ export default function useChatFunctions({
     const targetParentMessage = currentMessages.find(
       (msg) => msg.messageId === targetParentMessageId,
     );
+    const targetResponseMessage = isRegenerate
+      ? getRegenerateTargetResponseMessage({
+          messages: currentMessages,
+          parentMessageId: messageId,
+          targetResponseMessageId,
+          latestMessage,
+        })
+      : null;
 
     let thread_id = targetParentMessage?.thread_id ?? latestMessage?.thread_id;
     if (thread_id == null) {
@@ -221,7 +368,7 @@ export default function useChatFunctions({
     const convo = parseCompactConvo({
       endpoint: endpoint as EndpointSchemaKey,
       endpointType: endpointType as EndpointSchemaKey,
-      conversation: conversation ?? {},
+      conversation: conversationForPayload,
       defaultParamsEndpoint,
     });
 
@@ -234,6 +381,7 @@ export default function useChatFunctions({
         overrideUserMessageId,
       },
       convo,
+      chatProjectId ? { chatProjectId } : {},
     ) as TEndpointOption;
     if (endpoint !== EModelEndpoint.agents) {
       endpointOption.key = getExpiry();
@@ -287,8 +435,10 @@ export default function useChatFunctions({
 
     const responseMessageId =
       editedMessageId ??
-      (latestMessage?.messageId && isRegenerate
-        ? latestMessage.messageId.replace(/_+$/, '') + '_'
+      (isRegenerate
+        ? getPreliminaryRegenerateResponseMessageId(
+            targetResponseMessage?.messageId ?? targetResponseMessageId,
+          )
         : null) ??
       null;
     const initialResponseId =
@@ -367,10 +517,20 @@ export default function useChatFunctions({
       currentMessages = currentMessages.filter((msg) => msg.messageId !== responseMessageId);
     }
 
+    const submissionMessages = isRegenerate
+      ? getRegenerateSubmissionMessages({
+          messages: currentMessages,
+          targetResponseMessage,
+          initialResponseId: initialResponse.messageId,
+        })
+      : currentMessages;
+    const regenerateMessages = isRegenerate ? [...currentMessages] : undefined;
+
     logger.log('message_state', initialResponse);
     const submission: TSubmission = {
       conversation: {
         ...conversation,
+        ...(chatProjectId ? { chatProjectId } : {}),
         conversationId,
       },
       endpointOption,
@@ -379,7 +539,8 @@ export default function useChatFunctions({
         responseMessageId,
         overrideParentMessageId: isRegenerate ? messageId : null,
       },
-      messages: currentMessages,
+      messages: submissionMessages,
+      regenerateMessages,
       isEdited: isEditOrContinue,
       isContinued,
       isRegenerate,
@@ -392,17 +553,24 @@ export default function useChatFunctions({
     };
 
     if (isRegenerate) {
-      setMessages([...submission.messages, initialResponse]);
+      setMessages([...submissionMessages, initialResponse]);
     } else {
-      setMessages([...submission.messages, currentMsg, initialResponse]);
+      setMessages([...submissionMessages, currentMsg, initialResponse]);
     }
 
     setSubmission(submission);
     logger.dir('message_stream', submission, { depth: null });
   };
 
-  const regenerate = ({ parentMessageId }, options?: { addedConvo?: TConversation | null }) => {
+  const regenerate = (
+    message: Partial<Pick<TMessage, 'messageId' | 'parentMessageId' | 'isCreatedByUser'>>,
+    options?: { addedConvo?: TConversation | null },
+  ) => {
     const messages = getMessages();
+    const parentMessageId =
+      message.isCreatedByUser === true ? message.messageId : message.parentMessageId;
+    const targetResponseMessageId =
+      message.isCreatedByUser === true ? undefined : message.messageId;
     const parentMessage = messages?.find((element) => element.messageId == parentMessageId);
 
     if (parentMessage && parentMessage.isCreatedByUser) {
@@ -411,6 +579,7 @@ export default function useChatFunctions({
         {
           isRegenerate: true,
           addedConvo: options?.addedConvo ?? undefined,
+          targetResponseMessageId,
           /** Carry the original user message's manual skill picks forward
            *  so the regenerated response is primed with the same skills.
            *  The compose-time atom was drained on the first submit; without

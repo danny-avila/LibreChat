@@ -7,6 +7,7 @@ const {
   MCPTokenStorage,
   normalizeHttpError,
   extractWebSearchEnvVars,
+  deleteAllSharedLinksWithCleanup,
 } = require('@librechat/api');
 const {
   Tools,
@@ -359,7 +360,7 @@ const deleteUserController = async (req, res) => {
     }
     await deleteUserPluginAuth(user.id, null, true);
     await db.deleteUserById(user.id);
-    await db.deleteAllSharedLinks(user.id);
+    await deleteAllSharedLinksWithCleanup(user.id);
     await deleteUserFiles(req);
     await db.deleteFiles(null, user.id);
     await db.deleteToolCalls(user.id);
@@ -387,7 +388,7 @@ const verifyEmailController = async (req, res) => {
   try {
     const verifyEmailService = await verifyEmail(req);
     if (verifyEmailService instanceof Error) {
-      return res.status(400).json(verifyEmailService);
+      return res.status(400).json({ message: verifyEmailService.message });
     } else {
       return res.status(200).json(verifyEmailService);
     }
@@ -401,9 +402,9 @@ const resendVerificationController = async (req, res) => {
   try {
     const result = await resendVerificationEmail(req);
     if (result instanceof Error) {
-      return res.status(400).json(result);
+      return res.status(400).json({ message: result.message });
     } else {
-      return res.status(200).json(result);
+      return res.status(result.status ?? 200).json({ message: result.message });
     }
   } catch (e) {
     logger.error('[verifyEmailController]', e);

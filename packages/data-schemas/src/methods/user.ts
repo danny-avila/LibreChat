@@ -5,10 +5,108 @@ import { escapeRegExp } from '~/utils/string';
 import { signPayload } from '~/crypto';
 
 /** Default JWT session expiry: 15 minutes in milliseconds */
-export const DEFAULT_SESSION_EXPIRY = 1000 * 60 * 15;
+export const DEFAULT_SESSION_EXPIRY: number = 1000 * 60 * 15;
 
 /** Factory function that takes mongoose instance and returns the methods */
-export function createUserMethods(mongoose: typeof import('mongoose')) {
+export function createUserMethods(mongoose: typeof import('mongoose')): {
+  findUser: (
+    searchCriteria: FilterQuery<IUser>,
+    fieldsToSelect?: string | string[] | null,
+  ) => Promise<IUser | null>;
+  findUsers: (
+    searchCriteria: FilterQuery<IUser>,
+    fieldsToSelect?: string | string[] | null,
+    options?: { limit?: number; offset?: number; sort?: Record<string, 1 | -1> },
+  ) => Promise<IUser[]>;
+  countUsers: (filter?: FilterQuery<IUser>) => Promise<number>;
+  createUser: (
+    data: CreateUserRequest,
+    balanceConfig?: BalanceConfig,
+    disableTTL?: boolean,
+    returnUser?: boolean,
+  ) => Promise<mongoose.Types.ObjectId | Partial<IUser>>;
+  updateUser: (userId: string, updateData: Partial<IUser>) => Promise<IUser | null>;
+  searchUsers: ({
+    searchPattern,
+    limit,
+    fieldsToSelect,
+  }: {
+    searchPattern: string;
+    limit?: number;
+    fieldsToSelect?: string | string[] | null;
+  }) => Promise<
+    {
+      _id: mongoose.Types.ObjectId;
+      id: string;
+      name?: string;
+      username?: string;
+      email: string;
+      emailVerified: boolean;
+      password?: string;
+      avatar?: string;
+      provider: string;
+      role?: string;
+      googleId?: string;
+      facebookId?: string;
+      openidId?: string;
+      samlId?: string;
+      ldapId?: string;
+      githubId?: string;
+      discordId?: string;
+      appleId?: string;
+      plugins?: string[];
+      openidIssuer?: string;
+      twoFactorEnabled?: boolean;
+      totpSecret?: string;
+      backupCodes?: Array<{
+        codeHash: string;
+        used: boolean;
+        usedAt?: Date | null;
+      }>;
+      pendingTotpSecret?: string;
+      pendingBackupCodes?: Array<{
+        codeHash: string;
+        used: boolean;
+        usedAt?: Date | null;
+      }>;
+      refreshToken?: Array<{
+        refreshToken: string;
+      }>;
+      expiresAt?: Date;
+      termsAccepted?: boolean;
+      personalization?: {
+        memories?: boolean;
+      };
+      favorites?: import('librechat-data-provider').TUserFavorite[];
+      skillStates?: Record<string, boolean>;
+      createdAt?: Date;
+      updatedAt?: Date;
+      idOnTheSource?: string;
+      tenantId?: string;
+      federatedTokens?: import('~/types').OIDCTokens;
+      openidTokens?: import('~/types').OIDCTokens;
+      $locals: Record<string, unknown>;
+      $op: 'save' | 'validate' | 'remove' | null;
+      $where: Record<string, unknown>;
+      baseModelName?: string;
+      collection: mongoose.Collection;
+      db: mongoose.Connection;
+      errors?: mongoose.Error.ValidationError;
+      isNew: boolean;
+      schema: mongoose.Schema;
+    }[]
+  >;
+  getUserById: (userId: string, fieldsToSelect?: string | string[] | null) => Promise<IUser | null>;
+  generateToken: (user: IUser, expiresIn?: number) => Promise<string>;
+  deleteUserById: (userId: string) => Promise<UserDeleteResult>;
+  updateUserPlugins: (
+    userId: string,
+    plugins: string[] | undefined,
+    pluginKey: string,
+    action: 'install' | 'uninstall',
+  ) => Promise<IUser | null>;
+  toggleUserMemories: (userId: string, memoriesEnabled: boolean) => Promise<IUser | null>;
+} {
   /**
    * Normalizes email fields in search criteria to lowercase and trimmed.
    * Handles both direct email fields and $or arrays containing email conditions.
@@ -255,7 +353,68 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     searchPattern: string;
     limit?: number;
     fieldsToSelect?: string | string[] | null;
-  }) {
+  }): Promise<
+    {
+      _id: mongoose.Types.ObjectId;
+      id: string;
+      name?: string;
+      username?: string;
+      email: string;
+      emailVerified: boolean;
+      password?: string;
+      avatar?: string;
+      provider: string;
+      role?: string;
+      googleId?: string;
+      facebookId?: string;
+      openidId?: string;
+      samlId?: string;
+      ldapId?: string;
+      githubId?: string;
+      discordId?: string;
+      appleId?: string;
+      plugins?: string[];
+      openidIssuer?: string;
+      twoFactorEnabled?: boolean;
+      totpSecret?: string;
+      backupCodes?: Array<{
+        codeHash: string;
+        used: boolean;
+        usedAt?: Date | null;
+      }>;
+      pendingTotpSecret?: string;
+      pendingBackupCodes?: Array<{
+        codeHash: string;
+        used: boolean;
+        usedAt?: Date | null;
+      }>;
+      refreshToken?: Array<{
+        refreshToken: string;
+      }>;
+      expiresAt?: Date;
+      termsAccepted?: boolean;
+      personalization?: {
+        memories?: boolean;
+      };
+      favorites?: import('librechat-data-provider').TUserFavorite[];
+      skillStates?: Record<string, boolean>;
+      createdAt?: Date;
+      updatedAt?: Date;
+      idOnTheSource?: string;
+      tenantId?: string;
+      federatedTokens?: import('~/types').OIDCTokens;
+      openidTokens?: import('~/types').OIDCTokens;
+      $locals: Record<string, unknown>;
+      $op: 'save' | 'validate' | 'remove' | null;
+      $where: Record<string, unknown>;
+      baseModelName?: string;
+      collection: mongoose.Collection;
+      db: mongoose.Connection;
+      errors?: mongoose.Error.ValidationError;
+      isNew: boolean;
+      schema: mongoose.Schema;
+    }[]
+  > {
     if (!searchPattern || searchPattern.trim().length === 0) {
       return [];
     }

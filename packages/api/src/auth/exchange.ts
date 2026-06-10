@@ -178,9 +178,9 @@ export async function exchangeAdminCode(
 }
 
 /** PKCE challenge cache TTL: 5 minutes (enough for user to authenticate with IdP) */
-export const PKCE_CHALLENGE_TTL = 5 * 60 * 1000;
+export const PKCE_CHALLENGE_TTL: number = 5 * 60 * 1000;
 /** Regex pattern for valid PKCE challenges: 64 hex characters (SHA-256 hex digest) */
-export const PKCE_CHALLENGE_PATTERN = /^[a-f0-9]{64}$/;
+export const PKCE_CHALLENGE_PATTERN: RegExp = /^[a-f0-9]{64}$/;
 
 const ADMIN_OAUTH_STRIPPED_QUERY_PARAMS = new Set(['code_challenge', 'redirect_uri', 'redirectTo']);
 

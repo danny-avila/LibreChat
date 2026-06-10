@@ -1,5 +1,5 @@
 import { Keyv } from 'keyv';
-import { FlowStateManager } from './manager';
+import { FlowStateManager, PENDING_STALE_MS } from './manager';
 import { FlowState } from './types';
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -965,21 +965,21 @@ describe('FlowStateManager', () => {
       expect(result2.isStale).toBe(false);
     });
 
-    it('uses default threshold of 2 minutes when not specified', async () => {
-      const timestamp = Date.now() - 3 * 60 * 1000; // 3 minutes ago
+    it('uses the default PENDING_STALE_MS threshold when not specified', async () => {
+      const timestamp = Date.now() - (PENDING_STALE_MS + 60 * 1000); // just past the default
       await store.set(flowKey, {
         type,
         status: 'COMPLETED',
         metadata: {},
-        createdAt: Date.now() - 5 * 60 * 1000,
+        createdAt: Date.now() - (PENDING_STALE_MS + 3 * 60 * 1000),
         completedAt: timestamp,
       });
 
-      // Should use default 2 minute threshold
+      // Should use the default PENDING_STALE_MS threshold
       const result = await flowManager.isFlowStale(flowId, type);
 
       expect(result.isStale).toBe(true);
-      expect(result.age).toBeGreaterThan(2 * 60 * 1000);
+      expect(result.age).toBeGreaterThan(PENDING_STALE_MS);
     });
 
     it('falls back to createdAt when completedAt/failedAt are not present', async () => {

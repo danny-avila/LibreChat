@@ -12,7 +12,7 @@ import { useNewConvo } from '~/hooks';
 /**
  * Component that displays the New Jersey logo next to AI assistant text.
  */
-export default function NewJerseyLogo({ index = 0 }: { index: number }) {
+export default function NewJerseyLogo({ index = 0 }: { index?: number }) {
   const { newConversation: newConvo } = useNewConvo(index);
   const queryClient = useQueryClient();
   const { conversation } = store.useCreateConversationAtom(index);

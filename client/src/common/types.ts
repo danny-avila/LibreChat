@@ -352,6 +352,12 @@ export type TOptions = {
   /** Currently only utilized when `isResubmission === true`, uses that message's currently attached files */
   overrideFiles?: t.TMessage['files'];
   /**
+   * Assistant message being regenerated. Used to derive the optimistic response
+   * id for non-tail regenerations without accidentally keying the stream to the
+   * conversation tail.
+   */
+  targetResponseMessageId?: string | null;
+  /**
    * Carry forward a user message's manually-invoked skills when the caller
    * is resubmitting / regenerating that same message — the compose-time
    * atom has already been drained on the original submit, so without this
@@ -363,7 +369,7 @@ export type TOptions = {
   addedConvo?: t.TConversation;
 };
 
-export type TAskFunction = (props: TAskProps, options?: TOptions) => void;
+export type TAskFunction = (props: TAskProps, options?: TOptions) => false | void;
 
 /**
  * Stable context object passed from non-memo'd wrapper components (Message, MessageContent)
