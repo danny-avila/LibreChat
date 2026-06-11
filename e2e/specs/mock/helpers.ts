@@ -10,7 +10,7 @@ export const MOCK_ENDPOINTS = [
   { label: 'Mock Provider B', model: 'mock-model-b' },
 ] as const;
 
-export type MockEndpoint = (typeof MOCK_ENDPOINTS)[number];
+export type MockEndpoint = { label: string; model: string };
 
 export const NEW_CHAT_PATH = '/c/new';
 
