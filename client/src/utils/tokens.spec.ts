@@ -10,8 +10,10 @@ import {
   estimateTokens,
   calcUsageCost,
   formatCost,
+  groupToolTokens,
   countTrailingOutputChars,
   EMPTY_BRANCH,
+  EMPTY_TOOL_GROUPS,
 } from './tokens';
 
 const CONVO = 'convo-1';
@@ -151,6 +153,36 @@ describe('formatCost', () => {
     expect(formatCost(0.004)).toBe('<$0.01');
     expect(formatCost(0.0523)).toBe('$0.0523');
     expect(formatCost(1.234)).toBe('$1.23');
+  });
+});
+
+describe('groupToolTokens', () => {
+  it('classifies tools into system, mcp, skills, and subagent groups', () => {
+    const groups = groupToolTokens(
+      {
+        execute_code: 500,
+        web_search: 300,
+        skill: 200,
+        subagent: 150,
+        'search_mcp_Google-Workspace': 400,
+        fetch_mcp_Github: 250,
+      },
+      ['fetch_mcp_Github', 'web_search'],
+    );
+
+    expect(groups).toEqual({
+      system: 500,
+      mcp: 400,
+      skills: 200,
+      subagents: 150,
+      systemDeferred: 300,
+      mcpDeferred: 250,
+    });
+  });
+
+  it('returns empty groups without counts and skips zero entries', () => {
+    expect(groupToolTokens(undefined)).toBe(EMPTY_TOOL_GROUPS);
+    expect(groupToolTokens({ execute_code: 0 })).toEqual(EMPTY_TOOL_GROUPS);
   });
 });
 

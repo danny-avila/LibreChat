@@ -1,4 +1,4 @@
-import { Constants } from 'librechat-data-provider';
+import { Tools, Constants } from 'librechat-data-provider';
 import type { TMessage, TTokenUsageEvent, TModelTokenomics } from 'librechat-data-provider';
 
 export interface TokenEntry {
@@ -128,6 +128,61 @@ export function sumBranch(
   }
 
   return { ...totals, tailId };
+}
+
+export interface ToolTokenGroups {
+  system: number;
+  mcp: number;
+  skills: number;
+  subagents: number;
+  systemDeferred: number;
+  mcpDeferred: number;
+}
+
+export const EMPTY_TOOL_GROUPS: ToolTokenGroups = {
+  system: 0,
+  mcp: 0,
+  skills: 0,
+  subagents: 0,
+  systemDeferred: 0,
+  mcpDeferred: 0,
+};
+
+/**
+ * Classifies per-tool schema tokens into display groups: built-in system
+ * tools, MCP tools, skills, and subagents — with deferred (on-demand) tools
+ * split out for the system/MCP groups.
+ */
+export function groupToolTokens(
+  toolTokenCounts?: Record<string, number>,
+  deferredToolNames?: string[],
+): ToolTokenGroups {
+  if (toolTokenCounts == null) {
+    return EMPTY_TOOL_GROUPS;
+  }
+  const deferred = new Set(deferredToolNames ?? []);
+  const groups = { ...EMPTY_TOOL_GROUPS };
+  for (const [name, tokens] of Object.entries(toolTokenCounts)) {
+    if (tokens <= 0) {
+      continue;
+    }
+    if (name === Tools.skill) {
+      groups.skills += tokens;
+    } else if (name === Constants.SUBAGENT) {
+      groups.subagents += tokens;
+    } else if (name.includes(Constants.mcp_delimiter)) {
+      if (deferred.has(name)) {
+        groups.mcpDeferred += tokens;
+      } else {
+        groups.mcp += tokens;
+      }
+    } else if (deferred.has(name)) {
+      groups.systemDeferred += tokens;
+    } else {
+      groups.system += tokens;
+    }
+  }
+  return groups;
 }
 
 function getOutputChars(part: unknown): number | null {

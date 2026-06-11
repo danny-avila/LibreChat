@@ -1,5 +1,5 @@
 import type { TokenUsageView } from '~/hooks/Chat/useTokenUsage';
-import { formatTokens, formatCost } from '~/utils';
+import { groupToolTokens, formatTokens, formatCost } from '~/utils';
 import { useLocalize } from '~/hooks';
 
 interface RowProps {
@@ -42,6 +42,22 @@ export default function Breakdown({ view, showCost }: BreakdownProps) {
   const messageTokens = Math.max(0, usedTokens - instructionTokens);
   const freeTokens = maxTokens != null ? Math.max(0, maxTokens - usedTokens) : null;
 
+  const groups =
+    breakdown?.toolTokenCounts != null
+      ? groupToolTokens(breakdown.toolTokenCounts, breakdown.deferredToolNames)
+      : null;
+  const toolRows =
+    groups == null
+      ? null
+      : ([
+          [localize('com_ui_context_tools_system'), groups.system],
+          [localize('com_ui_context_tools_mcp'), groups.mcp],
+          [localize('com_ui_skills'), groups.skills],
+          [localize('com_ui_context_subagents'), groups.subagents],
+          [localize('com_ui_context_tools_system_deferred'), groups.systemDeferred],
+          [localize('com_ui_context_tools_mcp_deferred'), groups.mcpDeferred],
+        ] as const);
+
   return (
     <div className="w-64 space-y-3" role="region" aria-label={localize('com_ui_context_usage')}>
       <div className="flex items-center justify-between">
@@ -78,11 +94,18 @@ export default function Breakdown({ view, showCost }: BreakdownProps) {
               max={maxTokens}
             />
             <Row label={localize('com_ui_context_system')} value={systemTokens} max={maxTokens} />
-            <Row
-              label={localize('com_ui_context_tools')}
-              value={breakdown.toolSchemaTokens}
-              max={maxTokens}
-            />
+            {toolRows != null ? (
+              toolRows.map(
+                ([label, value]) =>
+                  value > 0 && <Row key={label} label={label} value={value} max={maxTokens} />,
+              )
+            ) : (
+              <Row
+                label={localize('com_ui_context_tools')}
+                value={breakdown.toolSchemaTokens}
+                max={maxTokens}
+              />
+            )}
             {breakdown.summaryTokens > 0 && (
               <Row
                 label={localize('com_ui_context_summary')}

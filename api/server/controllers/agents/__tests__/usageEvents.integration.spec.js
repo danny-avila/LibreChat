@@ -215,6 +215,7 @@ describe('usage events through the real agents pipeline', () => {
       expect(effectiveInstructionTokens).toBeGreaterThan(0);
       expect(remainingContextTokens).toBeGreaterThan(0);
       expect(remainingContextTokens).toBeLessThan(contextBudget);
+      expect(breakdown.toolTokenCounts.add).toBeGreaterThan(0);
     }
 
     /** Tool loop grows the context between calls */

@@ -58,6 +58,10 @@ export type TTokenBudgetBreakdown = {
   messageCount: number;
   messageTokens: number;
   availableForMessages: number;
+  /** Per-tool schema token counts (post-multiplier), keyed by tool name */
+  toolTokenCounts?: Record<string, number>;
+  /** Names of counted tools that are deferred (`defer_loading`) and discovered */
+  deferredToolNames?: string[];
 };
 
 /** Per-model-call context snapshot, dispatched after pruning and before the LLM call. */
