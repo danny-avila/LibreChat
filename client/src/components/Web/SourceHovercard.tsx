@@ -27,6 +27,7 @@ interface SourceHovercardProps {
   isLocalFile?: boolean;
   imanageUrl?: string | null;
   imanageFolderUrl?: string | null;
+  bimsUrl?: string | null;
   children?: ReactNode;
 }
 
@@ -61,6 +62,7 @@ export function SourceHovercard({
   isLocalFile = false,
   imanageUrl,
   imanageFolderUrl,
+  bimsUrl,
   children,
 }: SourceHovercardProps) {
   const localize = useLocalize();
@@ -179,6 +181,17 @@ export function SourceHovercard({
                       <ExternalLink className="h-3 w-3" aria-hidden="true" />
                       iM 폴더
                     </button>
+                  )}
+                  {bimsUrl && (
+                    <a
+                      href={bimsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 rounded-md border border-border-light px-2 py-1 text-xs font-medium text-[#0066cc] hover:bg-surface-tertiary hover:underline dark:text-blue-400"
+                    >
+                      <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                      BIMS
+                    </a>
                   )}
                 </span>
 
