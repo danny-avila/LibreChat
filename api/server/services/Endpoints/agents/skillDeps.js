@@ -266,6 +266,7 @@ function buildSkillPrimedIdsByName(manualSkillPrimes, alwaysApplySkillPrimes) {
  * @param {object} params.agent
  * @param {object} params.config
  * @param {Record<string, import('@librechat/api').LCAvailableTools>} [params.config.mcpAvailableTools]
+ * @param {import('@librechat/api').RequestScopedMCPConnectionStore} [params.config.requestScopedConnections]
  * @returns {object}
  */
 function buildAgentToolContext({ agent, config }) {
@@ -273,6 +274,7 @@ function buildAgentToolContext({ agent, config }) {
     agent,
     toolRegistry: config.toolRegistry,
     mcpAvailableTools: config.mcpAvailableTools,
+    requestScopedConnections: config.requestScopedConnections,
     userMCPAuthMap: config.userMCPAuthMap,
     tool_resources: config.tool_resources,
     actionsEnabled: config.actionsEnabled,
