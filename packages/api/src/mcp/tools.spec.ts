@@ -5,8 +5,7 @@ import { createMCPToolCacheService } from './tools';
 
 const requestScopedConfig: ParsedServerConfig = {
   type: 'streamable-http',
-  url: 'https://mcp.example.com/mcp',
-  headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
+  url: 'https://mcp.example.com/{{LIBRECHAT_BODY_CONVERSATIONID}}/mcp',
   source: 'yaml',
 };
 

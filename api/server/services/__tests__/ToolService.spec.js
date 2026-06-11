@@ -819,7 +819,7 @@ describe('ToolService - Action Capability Gating', () => {
         req.user.id,
         serverName,
         expect.objectContaining({
-          url: expect.stringContaining('LIBRECHAT_OPENID_ACCESS_TOKEN'),
+          url: expect.stringContaining('LIBRECHAT_BODY_MESSAGEID'),
         }),
       );
     });

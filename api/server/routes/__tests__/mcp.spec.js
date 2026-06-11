@@ -781,7 +781,7 @@ describe('MCP Routes', () => {
         };
         const mergedServerConfig = {
           type: 'streamable-http',
-          url: 'https://override.example.com/{{LIBRECHAT_OPENID_ACCESS_TOKEN}}/mcp',
+          url: 'https://override.example.com/{{LIBRECHAT_BODY_CONVERSATIONID}}/mcp',
           source: 'config',
         };
         const fetchedTools = [{ name: 'search', inputSchema: { type: 'object' } }];
