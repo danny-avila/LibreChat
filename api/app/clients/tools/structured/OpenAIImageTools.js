@@ -7,7 +7,7 @@ const { logger } = require('@librechat/data-schemas');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { tool } = require('@librechat/agents/langchain/tools');
 const { ContentTypes, EImageOutputType } = require('librechat-data-provider');
-const { logAxiosError, oaiToolkit, extractBaseURL } = require('@librechat/api');
+const { logAxiosError, oaiToolkit, extractBaseURL, isEnabled } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getFiles } = require('~/models');
 
@@ -122,6 +122,9 @@ function createOpenAIImageTools(fields = {}) {
       if (!prompt) {
         throw new Error('Missing required field: prompt');
       }
+
+      quality = process.env.IMAGE_GEN_OAI_QUALITY || quality;
+
       const clientConfig = { ...closureConfig };
       if (process.env.PROXY) {
         const proxyAgent = new ProxyAgent(process.env.PROXY);
@@ -157,24 +160,34 @@ function createOpenAIImageTools(fields = {}) {
           derivedSignal.addEventListener('abort', abortHandler, { once: true });
         }
 
-        resp = await openai.images.generate(
-          {
-            model: imageModel,
-            prompt: replaceUnwantedChars(prompt),
-            n: Math.min(Math.max(1, n), 10),
+        let isGptImage =
+          process.env.IMAGE_GEN_OAI_ISGPT === undefined
+            ? true // Default behavior, expect a GPT-Image-1 model
+            : isEnabled(process.env.IMAGE_GEN_OAI_ISGPT);
+
+        let request = {
+          model: imageModel,
+          prompt: replaceUnwantedChars(prompt),
+          n: Math.min(Math.max(1, n), 10),
+          quality,
+          size,
+        };
+
+        if (isGptImage) {
+          request = {
+            ...request,
             background,
             output_format,
             output_compression:
               output_format === EImageOutputType.WEBP || output_format === EImageOutputType.JPEG
                 ? output_compression
                 : undefined,
-            quality,
-            size,
-          },
-          {
-            signal: derivedSignal,
-          },
-        );
+          };
+        }
+
+        resp = await openai.images.generate(request, {
+          signal: derivedSignal,
+        });
       } catch (error) {
         const message = '[image_gen_oai] Problem generating the image:';
         logAxiosError({ error, message });
