@@ -33,8 +33,21 @@ export enum SystemRoles {
 export enum UserRoles {
   FARMER = 'FARMER',
   INTERNAL = 'INTERNAL',
-  COORDINATOR = 'COORDINATOR',
+  DISTRICT_COORDINATOR = 'DISTRICT_COORDINATOR',
+  BLOCK_COORDINATOR = 'BLOCK_COORDINATOR',
+  VILLAGE_VOLUNTEER = 'VILLAGE_VOLUNTEER',
 }
+
+export const FieldCoordinatorRoles = [
+  UserRoles.DISTRICT_COORDINATOR,
+  UserRoles.BLOCK_COORDINATOR,
+  UserRoles.VILLAGE_VOLUNTEER,
+] as const;
+
+export type FieldCoordinatorRole = (typeof FieldCoordinatorRoles)[number];
+
+export const isFieldCoordinatorRole = (role?: string | null): role is FieldCoordinatorRole =>
+  FieldCoordinatorRoles.includes(role as FieldCoordinatorRole);
 
 export const roleSchema = z.object({
   name: z.string(),
