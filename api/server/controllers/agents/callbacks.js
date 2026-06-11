@@ -464,12 +464,19 @@ function getDefaultHandlers({
   if (GraphEvents.ON_CONTEXT_USAGE) {
     handlers[GraphEvents.ON_CONTEXT_USAGE] = {
       /**
-       * Forward per-model-call context usage snapshots to the client.
+       * Forward per-model-call context usage snapshots to the client,
+       * honoring the same sequential-agent visibility gate as deltas.
        * @param {string} event - The event name.
        * @param {StreamEventData} data - The event data.
+       * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
        */
-      handle: async (event, data) => {
-        await emitEvent(res, streamId, { event, data });
+      handle: async (event, data, metadata) => {
+        if (
+          checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node) ||
+          !metadata?.hide_sequential_outputs
+        ) {
+          await emitEvent(res, streamId, { event, data });
+        }
       },
     };
   }

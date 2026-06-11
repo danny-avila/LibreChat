@@ -30,8 +30,11 @@ async function tokenConfigController(req, res) {
         endpointTokenConfigs[name] = endpointConfig.tokenConfig;
         continue;
       }
+      /** The models-config fetch path stores under the plain endpoint name;
+       *  chat initialization stores under the user-scoped key — accept either */
       const tokenKey = getTokenConfigKey(endpointConfig, name, req.user.id);
-      const cached = await cache.get(tokenKey);
+      const cached =
+        (await cache.get(tokenKey)) ?? (tokenKey !== name ? await cache.get(name) : undefined);
       if (cached) {
         endpointTokenConfigs[name] = cached;
       }
