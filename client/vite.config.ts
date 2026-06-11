@@ -341,6 +341,13 @@ export default defineConfig(({ command }) => ({
   resolve: {
     alias: {
       '~': path.join(__dirname, 'src/'),
+      // @clickhouse/click-ui does not export its CSS in the package exports map.
+      // Resolve via the CJS entry (always exported), go up two dirs to the package root,
+      // then alias the full sub-path so Rolldown skips the exports field check.
+      '@clickhouse/click-ui/dist/esm/click-ui.css': path.join(
+        path.resolve(path.dirname(require.resolve('@clickhouse/click-ui')), '../..'),
+        'dist/esm/click-ui.css',
+      ),
       $fonts: path.resolve(__dirname, 'public/fonts'),
       'micromark-extension-math': 'micromark-extension-llm-math',
     },
