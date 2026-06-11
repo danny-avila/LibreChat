@@ -9,6 +9,10 @@ import { ApiErrorBoundaryProvider } from './hooks/ApiErrorBoundaryContext';
 import 'katex/dist/katex.min.css';
 import 'katex/dist/contrib/copy-tex.js';
 
+window.addEventListener('vite:preloadError', () => {
+  window.__lcRecoverStaleAssets?.();
+});
+
 const container = document.getElementById('root');
 const root = createRoot(container);
 

@@ -62,6 +62,10 @@ let serverReady = false;
 
 const SERVER_NOT_READY_CODE = 'SERVER_NOT_READY';
 const CHAT_START_RETRY_AFTER_SECONDS = '1';
+/** Static asset extensions that must 404 when missing — serving the SPA's
+ * index.html for them breaks strict MIME checks and poisons SW/browser caches. */
+const STATIC_ASSET_EXT =
+  /\.(?:js|mjs|css|map|json|wasm|webmanifest|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf|otf|eot)$/i;
 
 const rejectChatStartsUntilReady = (req, res, next) => {
   if (serverReady || req.method !== 'POST' || req.path === '/abort') {
@@ -279,7 +283,12 @@ const startServer = async () => {
   app.use('/api', apiNotFound);
 
   /** SPA fallback - serve index.html for all unmatched routes */
-  app.use(sendIndexHtml);
+  app.use((req, res) => {
+    if (STATIC_ASSET_EXT.test(req.path)) {
+      return res.status(404).end();
+    }
+    return sendIndexHtml(req, res);
+  });
 
   /** Record trace errors before the final error controller. */
   if (telemetry.enabled) {
