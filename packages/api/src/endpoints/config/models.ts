@@ -11,6 +11,7 @@ import type { AppConfig } from '@librechat/data-schemas';
 import type { ServerRequest, GetUserKeyValuesFunction, UserKeyValues } from '~/types';
 import type { FetchModelsParams } from '~/endpoints/models';
 import { fetchModels as defaultFetchModels } from '~/endpoints/models';
+import { getTokenConfigKey } from '~/endpoints/custom/initialize';
 import { isUserProvided } from '~/utils';
 
 /**
@@ -185,6 +186,9 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
             headers: endpointHeaders,
             direct: endpoint.directEndpoint,
             userIdQuery: models.userIdQuery,
+            /** User-scoped when configured headers resolve per user — the
+             *  derived token config must not be cached under the shared name */
+            tokenKey: getTokenConfigKey(endpoint, name, req.user?.id ?? ''),
           });
         uniqueKeyToEndpointsMap[uniqueKey] = uniqueKeyToEndpointsMap[uniqueKey] || [];
         uniqueKeyToEndpointsMap[uniqueKey].push(name);
@@ -216,6 +220,8 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
               direct: endpoint.directEndpoint,
               userIdQuery: models.userIdQuery,
               skipCache: true,
+              /** Fetched with the user's key/URL — always user-scoped */
+              tokenKey: getTokenConfigKey(endpoint, name, req.user?.id ?? ''),
             });
           uniqueKeyToEndpointsMap[userFetchKey] = uniqueKeyToEndpointsMap[userFetchKey] || [];
           uniqueKeyToEndpointsMap[userFetchKey].push(name);

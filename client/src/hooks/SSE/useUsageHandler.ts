@@ -1,11 +1,9 @@
 import { useRef, useMemo } from 'react';
 import { getDefaultStore } from 'jotai';
-import { useQueryClient } from '@tanstack/react-query';
-import { Constants, QueryKeys } from 'librechat-data-provider';
+import { Constants } from 'librechat-data-provider';
 import type {
   TMessage,
   TConversation,
-  TTokenConfigMap,
   TTokenUsageEvent,
   TContextUsageEvent,
 } from 'librechat-data-provider';
@@ -18,7 +16,13 @@ import {
   removeUsageAtoms,
   contextSnapshotFamily,
 } from '~/store/usage';
-import { sumBranch, upsertEntries, migrateIndex, calcUsageCost, estimateTokens } from '~/utils';
+import {
+  sumBranch,
+  upsertEntries,
+  migrateIndex,
+  estimateTokens,
+  normalizeUsageUnits,
+} from '~/utils';
 
 const FLUSH_INTERVAL_MS = 250;
 
@@ -72,7 +76,6 @@ function countDeltaChars(content: unknown): number {
  * stable and never cause re-renders themselves.
  */
 export default function useUsageHandler(): UsageHandlers {
-  const queryClient = useQueryClient();
   /** Streamed chars since the last snapshot or model end (current call only) */
   const streamCharsRef = useRef(0);
   /** Provider-confirmed output tokens since the last snapshot (current run) */
@@ -102,23 +105,34 @@ export default function useUsageHandler(): UsageHandlers {
 
     const foldUsage = (data: TTokenUsageEvent, submission: UsageSubmissionLike) => {
       const convoKey = getConvoKey(submission);
-      const tokenConfig = queryClient.getQueryData<TTokenConfigMap>([QueryKeys.tokenConfig]);
       const endpoint = submission.conversation?.endpoint ?? '';
       const model = data.model ?? submission.conversation?.model ?? '';
-      /** Agent runs report the underlying provider, where rates are keyed */
-      const rates =
-        (data.provider != null ? tokenConfig?.[data.provider]?.[model] : undefined) ??
-        tokenConfig?.[endpoint]?.[model];
+      const units = normalizeUsageUnits(data);
+      /** Cost is priced at render from these buckets — never baked in here,
+       *  so events arriving before the token config load still get priced */
+      const bucketKey = `${data.provider ?? ''}|${endpoint}|${model}`;
 
       const totalsAtom = usageTotalsFamily(convoKey);
       const prev = jotai.get(totalsAtom);
+      const bucket = prev.byRate[bucketKey];
       jotai.set(totalsAtom, {
         input: prev.input + (data.input_tokens ?? 0),
         output: prev.output + (data.output_tokens ?? 0),
         cacheWrite: prev.cacheWrite + (data.input_token_details?.cache_creation ?? 0),
         cacheRead: prev.cacheRead + (data.input_token_details?.cache_read ?? 0),
-        costUSD: prev.costUSD + calcUsageCost(data, rates),
         eventCount: prev.eventCount + 1,
+        byRate: {
+          ...prev.byRate,
+          [bucketKey]: bucket
+            ? {
+                ...bucket,
+                input: bucket.input + units.input,
+                output: bucket.output + units.output,
+                cacheWrite: bucket.cacheWrite + units.cacheWrite,
+                cacheRead: bucket.cacheRead + units.cacheRead,
+              }
+            : { provider: data.provider, endpoint, model, ...units },
+        },
       });
     };
 
@@ -177,6 +191,10 @@ export default function useUsageHandler(): UsageHandlers {
     const finalizeUsage: UsageHandlers['finalizeUsage'] = (data, submission) => {
       const fromKey = getConvoKey(submission);
       const realId = data.conversation?.conversationId ?? fromKey;
+      /** From the refs, not the atom — the throttle may not have flushed */
+      const liveAtFinalize =
+        confirmedRef.current +
+        estimateTokens(streamCharsRef.current, jotai.get(calibrationFamily(fromKey)));
 
       upsertEntries(fromKey, [data.requestMessage, data.responseMessage]);
 
@@ -194,9 +212,17 @@ export default function useUsageHandler(): UsageHandlers {
       }
 
       const tailId = data.responseMessage?.messageId ?? data.requestMessage?.messageId ?? null;
+      const anchorId = submission.userMessage?.messageId ?? null;
       if (tailId) {
-        const anchorId = submission.userMessage?.messageId ?? null;
         jotai.set(branchTotalsFamily(realId), sumBranch(realId, tailId, anchorId));
+      }
+
+      /** The snapshot was taken pre-invoke — carry the output streamed since
+       *  then so the gauge keeps the final response after live resets */
+      const snapshotAtom = contextSnapshotFamily(realId);
+      const snapshot = jotai.get(snapshotAtom);
+      if (snapshot != null && liveAtFinalize > 0 && snapshot.anchorMessageId === anchorId) {
+        jotai.set(snapshotAtom, { ...snapshot, completedOutputTokens: liveAtFinalize });
       }
 
       streamCharsRef.current = 0;
@@ -213,5 +239,5 @@ export default function useUsageHandler(): UsageHandlers {
       backfillUsage,
       seedLive,
     };
-  }, [queryClient]);
+  }, []);
 }

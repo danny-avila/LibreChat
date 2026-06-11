@@ -9,6 +9,8 @@ import {
   sumBranch,
   estimateTokens,
   calcUsageCost,
+  costFromUnits,
+  normalizeUsageUnits,
   formatCost,
   groupToolTokens,
   countTrailingOutputChars,
@@ -144,6 +146,33 @@ describe('calcUsageCost', () => {
   it('returns 0 without rates', () => {
     expect(calcUsageCost({ input_tokens: 100, output_tokens: 100 })).toBe(0);
     expect(calcUsageCost({ input_tokens: 100 }, { context: 1000 })).toBe(0);
+  });
+
+  it('prices summed normalized units identically to per-event costs', () => {
+    const anthropicEvent = {
+      input_tokens: 1000,
+      output_tokens: 500,
+      input_token_details: { cache_creation: 2000, cache_read: 10000 },
+    };
+    const openAIEvent = {
+      input_tokens: 10000,
+      output_tokens: 500,
+      input_token_details: { cache_read: 4000 },
+    };
+    const perEvent = calcUsageCost(anthropicEvent, rates) + calcUsageCost(openAIEvent, rates);
+
+    const a = normalizeUsageUnits(anthropicEvent);
+    const b = normalizeUsageUnits(openAIEvent);
+    const summed = costFromUnits(
+      {
+        input: a.input + b.input,
+        output: a.output + b.output,
+        cacheWrite: a.cacheWrite + b.cacheWrite,
+        cacheRead: a.cacheRead + b.cacheRead,
+      },
+      rates,
+    );
+    expect(summed).toBeCloseTo(perEvent);
   });
 });
 

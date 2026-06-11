@@ -233,32 +233,54 @@ export function estimateTokens(charCount: number, calibrationRatio = 1): number 
   return Math.round((charCount / 4) * ratio);
 }
 
+/** Billable token quantities of one or more model calls, normalized for pricing */
+export interface CostUnits {
+  input: number;
+  output: number;
+  cacheWrite: number;
+  cacheRead: number;
+}
+
 /**
- * USD cost of one model call. Mirrors the cache-detection heuristic used in
- * token accounting: cache counts are additive when they exceed base input
- * (Anthropic), otherwise cache reads are included in input tokens (OpenAI).
+ * Normalizes one call's usage into billable units. Mirrors the
+ * cache-detection heuristic used in token accounting: cache counts are
+ * additive when they exceed base input (Anthropic), otherwise cache reads
+ * are included in input tokens (OpenAI) — applied per event so units stay
+ * correct when summed across calls.
  */
-export function calcUsageCost(usage: TTokenUsageEvent, rates?: TModelTokenomics): number {
-  if (!rates || rates.prompt == null || rates.completion == null) {
-    return 0;
-  }
+export function normalizeUsageUnits(usage: TTokenUsageEvent): CostUnits {
   const input = usage.input_tokens ?? 0;
   const output = usage.output_tokens ?? 0;
   const cacheWrite = usage.input_token_details?.cache_creation ?? 0;
   const cacheRead = usage.input_token_details?.cache_read ?? 0;
+  const cacheIsAdditive = cacheWrite + cacheRead > input;
+  return {
+    input: cacheIsAdditive ? input : Math.max(0, input - cacheRead - cacheWrite),
+    output,
+    cacheWrite,
+    cacheRead,
+  };
+}
+
+/** USD cost of normalized usage units at the given per-million-token rates */
+export function costFromUnits(units: CostUnits, rates?: TModelTokenomics): number {
+  if (!rates || rates.prompt == null || rates.completion == null) {
+    return 0;
+  }
   const writeRate = rates.cacheWrite ?? rates.prompt;
   const readRate = rates.cacheRead ?? rates.prompt;
-
-  const cacheIsAdditive = cacheWrite + cacheRead > input;
-  const baseInput = cacheIsAdditive ? input : Math.max(0, input - cacheRead - cacheWrite);
-
   return (
-    (baseInput * rates.prompt +
-      cacheWrite * writeRate +
-      cacheRead * readRate +
-      output * rates.completion) /
+    (units.input * rates.prompt +
+      units.cacheWrite * writeRate +
+      units.cacheRead * readRate +
+      units.output * rates.completion) /
     1e6
   );
+}
+
+/** USD cost of one model call */
+export function calcUsageCost(usage: TTokenUsageEvent, rates?: TModelTokenomics): number {
+  return costFromUnits(normalizeUsageUnits(usage), rates);
 }
 
 export function formatTokens(count: number): string {

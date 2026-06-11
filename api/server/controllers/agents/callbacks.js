@@ -132,6 +132,9 @@ class ModelEndHandler {
           provider: taggedUsage.provider,
           usage_type: taggedUsage.usage_type,
           runId: metadata?.run_id,
+          /** Per-run sequence so identical payloads from distinct calls
+           *  stay distinguishable during resume dedupe */
+          seq: this.collectedUsage.length,
         });
       }
 

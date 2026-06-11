@@ -93,6 +93,8 @@ export type TTokenUsageEvent = {
   provider?: string;
   usage_type?: 'summarization' | 'subagent';
   runId?: string;
+  /** Per-run emission sequence; keeps identical payloads from distinct model calls unique */
+  seq?: number;
 };
 
 /** Lifecycle phase carried on subagent-progress envelopes (mirrors SDK SubagentUpdatePhase). */

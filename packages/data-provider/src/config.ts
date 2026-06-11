@@ -846,6 +846,16 @@ export const endpointSchema = baseEndpointSchema.merge(
       .optional(),
     directEndpoint: z.boolean().optional(),
     titleMessageRole: z.enum(['system', 'user', 'assistant']).optional(),
+    /** Static per-model token config: context window and per-million-token rates */
+    tokenConfig: z
+      .record(
+        z.object({
+          prompt: z.number(),
+          completion: z.number(),
+          context: z.number(),
+        }),
+      )
+      .optional(),
   }),
 );
 

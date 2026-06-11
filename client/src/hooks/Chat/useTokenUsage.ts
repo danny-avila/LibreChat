@@ -12,7 +12,8 @@ import {
   contextSnapshotFamily,
 } from '~/store/usage';
 import { useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
-import { buildIndex, sumBranch } from '~/utils';
+import { buildIndex, sumBranch, costFromUnits } from '~/utils';
+import { useTokenConfigQuery } from '~/data-provider';
 import useTokenLimits from './useTokenLimits';
 
 export interface TokenUsageParams {
@@ -57,6 +58,22 @@ export default function useTokenUsage({
   const liveTokens = useAtomValue(liveTokensFamily(conversationKey));
   const setBranchTotals = useSetAtom(branchTotalsFamily(conversationKey));
   const limits = useTokenLimits(conversation);
+  const { data: tokenConfig } = useTokenConfigQuery();
+
+  /** Priced at render so events folded before the token-config load still count */
+  const costUSD = useMemo(() => {
+    if (usageTotals.eventCount === 0) {
+      return undefined;
+    }
+    let total = 0;
+    for (const bucket of Object.values(usageTotals.byRate)) {
+      const rates =
+        (bucket.provider != null ? tokenConfig?.[bucket.provider]?.[bucket.model] : undefined) ??
+        tokenConfig?.[bucket.endpoint]?.[bucket.model];
+      total += costFromUnits(bucket, rates);
+    }
+    return total;
+  }, [usageTotals, tokenConfig]);
 
   const isSubmittingRef = useRef(isSubmitting);
   isSubmittingRef.current = isSubmitting;
@@ -115,7 +132,9 @@ export default function useTokenUsage({
         snapshot.remainingContextTokens != null
           ? maxTokens - snapshot.remainingContextTokens
           : instructionTokens + breakdown.messageTokens;
-      const usedTokens = Math.max(0, baseUsed) + liveTokens;
+      /** The snapshot is pre-invoke: in-flight output rides on `liveTokens`,
+       *  and the last call's finalized output on `completedOutputTokens` */
+      const usedTokens = Math.max(0, baseUsed) + liveTokens + (snapshot.completedOutputTokens ?? 0);
       return {
         usedTokens,
         maxTokens,
@@ -127,7 +146,7 @@ export default function useTokenUsage({
         usageTotals,
         liveTokens,
         rates: limits.rates,
-        costUSD: usageTotals.eventCount > 0 ? usageTotals.costUSD : undefined,
+        costUSD,
       };
     }
 
@@ -145,7 +164,7 @@ export default function useTokenUsage({
       usageTotals,
       liveTokens,
       rates: limits.rates,
-      costUSD: usageTotals.eventCount > 0 ? usageTotals.costUSD : undefined,
+      costUSD,
     };
-  }, [snapshot, isSubmitting, branchTotals, usageTotals, liveTokens, limits]);
+  }, [snapshot, isSubmitting, branchTotals, usageTotals, liveTokens, limits, costUSD]);
 }

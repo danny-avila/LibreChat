@@ -27,7 +27,7 @@ export function getTokenConfigKey(
   endpoint: string,
   userId: string,
 ): string {
-  const hasTokenConfig = (endpointConfig as Record<string, unknown>).tokenConfig != null;
+  const hasTokenConfig = endpointConfig.tokenConfig != null;
   const userProvidesKey = isUserProvided(extractEnvVariable(endpointConfig.apiKey ?? ''));
   const userProvidesURL = isUserProvided(extractEnvVariable(endpointConfig.baseURL ?? ''));
   const willForwardUserScopedHeaders = !!endpointConfig?.headers && !userProvidesURL;
@@ -156,8 +156,7 @@ export async function initializeCustom({
   const userId = req.user?.id ?? '';
 
   const cache = tokenConfigCache();
-  /** tokenConfig is an optional extended property on custom endpoints */
-  const hasTokenConfig = (endpointConfig as Record<string, unknown>).tokenConfig != null;
+  const hasTokenConfig = endpointConfig.tokenConfig != null;
   const tokenKey = getTokenConfigKey(endpointConfig, endpoint, userId);
 
   const cachedConfig =

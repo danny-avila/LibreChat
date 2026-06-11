@@ -1,12 +1,21 @@
 import { atom } from 'jotai';
 import { atomFamily } from 'jotai/utils';
 import type { TContextUsageEvent } from 'librechat-data-provider';
-import type { BranchTotals } from '~/utils/tokens';
+import type { BranchTotals, CostUnits } from '~/utils/tokens';
 import { EMPTY_BRANCH } from '~/utils/tokens';
 
 /** Latest backend context snapshot, anchored to the run's user message for staleness checks */
 export interface ContextSnapshot extends TContextUsageEvent {
   anchorMessageId: string | null;
+  /** Output tokens finalized after this pre-call snapshot (the last call's response) */
+  completedOutputTokens?: number;
+}
+
+/** Billable units accumulated per pricing lookup (provider/endpoint + model) */
+export interface RateBucket extends CostUnits {
+  provider?: string;
+  endpoint: string;
+  model: string;
 }
 
 /** Cumulative provider-reported usage for the conversation's current session */
@@ -15,8 +24,9 @@ export interface UsageTotals {
   output: number;
   cacheWrite: number;
   cacheRead: number;
-  costUSD: number;
   eventCount: number;
+  /** Cost is derived from these at render so a late token-config load still prices every event */
+  byRate: Record<string, RateBucket>;
 }
 
 export const EMPTY_USAGE_TOTALS: UsageTotals = {
@@ -24,8 +34,8 @@ export const EMPTY_USAGE_TOTALS: UsageTotals = {
   output: 0,
   cacheWrite: 0,
   cacheRead: 0,
-  costUSD: 0,
   eventCount: 0,
+  byRate: {},
 };
 
 /**
