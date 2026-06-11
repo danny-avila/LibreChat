@@ -1,5 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
-const { EModelEndpoint } = require('librechat-data-provider');
+const { EModelEndpoint, normalizeEndpointName } = require('librechat-data-provider');
 const { buildTokenConfigMap, getTokenConfigKey, tokenConfigCache } = require('@librechat/api');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { getValueKey, getMultiplier, getCacheMultiplier } = require('~/models');
@@ -21,7 +21,8 @@ async function tokenConfigController(req, res) {
     const customEndpoints = appConfig?.endpoints?.[EModelEndpoint.custom] ?? [];
     const cache = tokenConfigCache();
     for (const endpointConfig of customEndpoints) {
-      const name = endpointConfig?.name;
+      /** Models config and the token-config cache key by the normalized name */
+      const name = normalizeEndpointName(endpointConfig?.name);
       if (!name) {
         continue;
       }

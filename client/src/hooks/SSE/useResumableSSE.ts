@@ -22,6 +22,7 @@ import type {
   TSubmission,
   TConversation,
   EventSubmission,
+  TTokenUsageEvent,
 } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
 import type { ActiveJobsResponse } from '~/data-provider';
@@ -649,14 +650,27 @@ export default function useResumableSSE(
             submissionRef.current = resumeSubmission;
             userMessage = resumeSubmission.userMessage;
             /**
-             * The run's collected usage is the source of truth at sync time:
-             * pre-snapshot events are never replayed (only represented via
-             * aggregated content), so totals are rebuilt from the backfill
-             * and token-usage replay events are skipped when it's present.
+             * Totals rebuild from the persisted backfill at sync. Replayed or
+             * gap usage events already represented in the snapshot are skipped
+             * via multiset matching; events that raced past the snapshot read
+             * still fold so multi-call runs don't undercount.
              */
             const backfilledUsage = data.resumeState?.collectedUsage;
-            const hasUsageBackfill = (backfilledUsage?.length ?? 0) > 0;
             backfillUsage(backfilledUsage ?? [], resumeSubmission);
+            const backfillCounts = new Map<string, number>();
+            for (const entry of backfilledUsage ?? []) {
+              const key = JSON.stringify(entry);
+              backfillCounts.set(key, (backfillCounts.get(key) ?? 0) + 1);
+            }
+            const foldIfNotBackfilled = (usageData: TTokenUsageEvent) => {
+              const key = JSON.stringify(usageData);
+              const count = backfillCounts.get(key) ?? 0;
+              if (count > 0) {
+                backfillCounts.set(key, count - 1);
+                return;
+              }
+              usageHandler(usageData, resumeSubmission);
+            };
             if (data.resumeState?.contextUsage) {
               contextHandler(data.resumeState.contextUsage, resumeSubmission);
             }
@@ -750,9 +764,7 @@ export default function useResumableSSE(
                 if (replayEvent.event === UsageEvents.ON_CONTEXT_USAGE) {
                   contextHandler(replayEvent.data, resumeSubmission);
                 } else if (replayEvent.event === UsageEvents.ON_TOKEN_USAGE) {
-                  if (!hasUsageBackfill) {
-                    usageHandler(replayEvent.data, resumeSubmission);
-                  }
+                  foldIfNotBackfilled(replayEvent.data);
                 } else if (replayEvent.event != null) {
                   stepHandler(replayEvent, resumeSubmission);
                 }
@@ -767,9 +779,7 @@ export default function useResumableSSE(
                 } else if (pendingEvent.event === UsageEvents.ON_CONTEXT_USAGE) {
                   contextHandler(pendingEvent.data, resumeSubmission);
                 } else if (pendingEvent.event === UsageEvents.ON_TOKEN_USAGE) {
-                  if (!hasUsageBackfill) {
-                    usageHandler(pendingEvent.data, resumeSubmission);
-                  }
+                  foldIfNotBackfilled(pendingEvent.data);
                 } else if (pendingEvent.event != null) {
                   stepHandler(pendingEvent, resumeSubmission);
                 } else if (pendingEvent.type != null) {

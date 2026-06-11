@@ -114,11 +114,20 @@ class ModelEndHandler {
       this.collectedUsage.push(taggedUsage);
 
       if (this.emitUsage) {
+        /** Normalize Anthropic/Bedrock-style top-level cache fields into details */
+        const cache_creation =
+          taggedUsage.input_token_details?.cache_creation ??
+          taggedUsage.cache_creation_input_tokens;
+        const cache_read =
+          taggedUsage.input_token_details?.cache_read ?? taggedUsage.cache_read_input_tokens;
         await this.emitUsage({
           input_tokens: taggedUsage.input_tokens,
           output_tokens: taggedUsage.output_tokens,
           total_tokens: taggedUsage.total_tokens,
-          input_token_details: taggedUsage.input_token_details,
+          input_token_details:
+            cache_creation != null || cache_read != null
+              ? { cache_creation, cache_read }
+              : undefined,
           model: taggedUsage.model,
           provider: taggedUsage.provider,
           usage_type: taggedUsage.usage_type,

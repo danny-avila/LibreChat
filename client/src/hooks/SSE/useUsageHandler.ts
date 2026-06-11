@@ -105,7 +105,10 @@ export default function useUsageHandler(): UsageHandlers {
       const tokenConfig = queryClient.getQueryData<TTokenConfigMap>([QueryKeys.tokenConfig]);
       const endpoint = submission.conversation?.endpoint ?? '';
       const model = data.model ?? submission.conversation?.model ?? '';
-      const rates = tokenConfig?.[endpoint]?.[model];
+      /** Agent runs report the underlying provider, where rates are keyed */
+      const rates =
+        (data.provider != null ? tokenConfig?.[data.provider]?.[model] : undefined) ??
+        tokenConfig?.[endpoint]?.[model];
 
       const totalsAtom = usageTotalsFamily(convoKey);
       const prev = jotai.get(totalsAtom);
