@@ -58,8 +58,12 @@ jest.mock('~/hooks', () => ({
 }));
 
 jest.mock('~/utils', () => ({
+  CONFIG_HTML_MEDIA_ATTR: {},
+  CONFIG_HTML_MEDIA_TAGS: [],
   cn: (...classes: string[]) => classes.filter(Boolean).join(' '),
+  createConfigHtmlSanitizer: () => (html: string) => html,
   getIconEndpoint: ({ endpoint }: { endpoint: string }) => endpoint,
+  getModelSpec: () => undefined,
   getEntity: ({
     endpoint,
     agentsMap,
