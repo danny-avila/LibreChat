@@ -1,5 +1,6 @@
 import React, { useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
+import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { TooltipAnchor, MobileSidebar, Sidebar, Button } from '@librechat/client';
 import { QueryKeys } from 'librechat-data-provider';
@@ -25,6 +26,7 @@ export default function NewChat({
   // BKL: "새 채팅" 클릭 핸들러는 FavoritesList 의 row 로 이동. 여기에서는
   // close-sidebar 버튼과 BKL DB AI 홈 버튼을 sidebar 상단에 유지한다.
   const localize = useLocalize();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { newConversation } = useNewConvo();
   const conversation = useRecoilValue(store.conversationByIndex(0));
@@ -46,8 +48,9 @@ export default function NewChat({
       clearMessagesCache(queryClient, conversation?.conversationId);
       queryClient.invalidateQueries([QueryKeys.messages]);
       newConversation();
+      navigate('/c/new', { state: { focusChat: true } });
     },
-    [conversation?.conversationId, newConversation, queryClient],
+    [conversation?.conversationId, navigate, newConversation, queryClient],
   );
 
   return (
