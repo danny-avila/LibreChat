@@ -443,10 +443,25 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
         if (flowState.userId !== 'system') {
           const user = { id: flowState.userId };
 
+          /** Merged config (incl. Config-tier overlays) so the reconnection and
+           *  the cache gate both see request-scoped servers the base registry
+           *  lookup misses */
+          let serverConfig;
+          try {
+            const allConfigs = await resolveAllMcpConfigs(flowState.userId);
+            serverConfig = allConfigs?.[serverName];
+          } catch (error) {
+            logger.warn(
+              `[MCP OAuth] Could not resolve server config for ${serverName} before reconnecting:`,
+              error,
+            );
+          }
+
           const userConnection = await mcpManager.getUserConnection({
             user,
             serverName,
             flowManager,
+            serverConfig,
             tokenMethods: {
               findToken: db.findToken,
               updateToken: db.updateToken,
@@ -461,19 +476,6 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
 
           const oauthReconnectionManager = getOAuthReconnectionManager();
           oauthReconnectionManager.clearReconnection(flowState.userId, serverName);
-
-          /** Merged config (incl. Config-tier overlays) so the cache gate
-           *  can detect request-scoped servers the base registry lookup misses */
-          let serverConfig;
-          try {
-            const allConfigs = await resolveAllMcpConfigs(flowState.userId);
-            serverConfig = allConfigs?.[serverName];
-          } catch (error) {
-            logger.warn(
-              `[MCP OAuth] Could not resolve server config for ${serverName} before caching tools:`,
-              error,
-            );
-          }
 
           const tools = await userConnection.fetchTools();
           await updateMCPServerTools({

@@ -51,6 +51,9 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
    * connection, so their definitions must never enter the persistent tool
    * cache. Fails open: an unresolvable config is treated as cacheable,
    * preserving pre-gating behavior for servers the registry cannot see.
+   * The resolver sees only base registry configs — callers holding merged
+   * Config-overlay configs must pass them. All writers do, so an entry that
+   * predates gating or an overlay change survives at most one cache TTL.
    */
   async function isRequestScoped(
     userId: string,

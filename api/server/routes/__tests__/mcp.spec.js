@@ -814,6 +814,9 @@ describe('MCP Routes', () => {
 
         expect(response.status).toBe(302);
         expect(mockResolveAllMcpConfigs).toHaveBeenCalledWith('test-user-id');
+        expect(mockMcpManager.getUserConnection).toHaveBeenCalledWith(
+          expect.objectContaining({ serverConfig: mergedServerConfig }),
+        );
         expect(updateMCPServerTools).toHaveBeenCalledWith({
           userId: 'test-user-id',
           serverName: 'test-server',

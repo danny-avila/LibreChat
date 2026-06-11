@@ -78,9 +78,10 @@ function handleMCPError(error, res) {
  * @param {ServerRequest} req
  * @param {string} serverName
  * @param {import('@librechat/api').ParsedServerConfig} serverConfig
+ * @param {Record<string, import('@librechat/api').ParsedServerConfig>} configServers
  * @returns {Promise<import('@librechat/api').LCAvailableTools | null>}
  */
-async function fetchRequestScopedTools(req, serverName, serverConfig) {
+async function fetchRequestScopedTools(req, serverName, serverConfig, configServers) {
   let userMCPAuthMap;
   if (serverConfig.customUserVars && typeof serverConfig.customUserVars === 'object') {
     userMCPAuthMap = await getUserMCPAuthMap({
@@ -93,6 +94,7 @@ async function fetchRequestScopedTools(req, serverName, serverConfig) {
     user: req.user,
     serverName,
     serverConfig,
+    configServers,
     userMCPAuthMap,
   });
   return result?.availableTools ?? null;
@@ -119,6 +121,16 @@ const getMCPTools = async (req, res) => {
     const mcpManager = getMCPManager();
     const mcpServers = {};
 
+    /** Config-tier candidates for request-scoped discovery, resolved once on demand */
+    let configServersPromise;
+    const getConfigServers = () => {
+      configServersPromise ??= resolveConfigServers(req).catch((error) => {
+        logger.warn('[getMCPTools] Config server resolution failed, continuing without:', error);
+        return {};
+      });
+      return configServersPromise;
+    };
+
     const serverToolsMap = new Map();
     const cacheResults = await Promise.all(
       configuredServers.map(async (serverName) => {
@@ -144,7 +156,7 @@ const getMCPTools = async (req, res) => {
         const serverConfig = mcpConfig[serverName];
         serverTools =
           serverConfig && requiresEphemeralUserConnection(serverConfig)
-            ? await fetchRequestScopedTools(req, serverName, serverConfig)
+            ? await fetchRequestScopedTools(req, serverName, serverConfig, await getConfigServers())
             : await mcpManager.getServerToolFunctions(userId, serverName);
       } catch (error) {
         logger.error(`[getMCPTools] Error fetching tools for server ${serverName}:`, error);
