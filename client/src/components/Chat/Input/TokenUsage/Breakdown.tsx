@@ -135,7 +135,7 @@ export default function Breakdown({ view, showCost }: BreakdownProps) {
       {usageTotals.eventCount > 0 && (
         <>
           <div className="border-t border-border-light" role="separator" />
-          <div className="space-y-1.5">
+          <div className="space-y-1.5" data-testid="token-usage-totals">
             <Row label={localize('com_ui_input')} value={usageTotals.input} />
             <Row label={localize('com_ui_output')} value={usageTotals.output} />
             {usageTotals.cacheRead > 0 && (

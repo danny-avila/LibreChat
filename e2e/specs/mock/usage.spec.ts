@@ -32,13 +32,23 @@ test.describe('context usage gauge', () => {
     /** Live path: the agents pipeline's context snapshot + usage events fill the gauge */
     await expectGaugeAboveZero(page);
 
-    /** Breakdown popover: context section always, usage section from on_token_usage events */
+    /** Breakdown popover: context section always; the usage section is
+     *  scoped by testid since the pre-snapshot fallback renders its own
+     *  Input/Output rows when the lib predates on_context_usage */
     await gauge(page).hover();
     const popover = page.getByRole('region', { name: 'Context usage' });
     await expect(popover).toBeVisible({ timeout: 10000 });
     await expect(popover.getByText('Context window')).toBeVisible();
-    await expect(popover.getByText('Input', { exact: true })).toBeVisible();
-    await expect(popover.getByText('Output', { exact: true })).toBeVisible();
+    const usageSection = popover.getByTestId('token-usage-totals');
+    await expect(usageSection).toBeVisible({ timeout: 10000 });
+    await expect(usageSection.getByText('Input', { exact: true })).toBeVisible();
+    await expect(usageSection.getByText('Output', { exact: true })).toBeVisible();
+
+    /** Cost row: interface.contextCost is enabled in the harness yaml, the
+     *  token-config endpoint prices mock models at the default rate, and
+     *  the fake model emits usage — so a $ value must render */
+    await expect(popover.getByText('Session cost')).toBeVisible();
+    await expect(popover.getByText(/\$\d|<\$0\.01/)).toBeVisible();
     await page.keyboard.press('Escape');
 
     /** Fallback path: after reload there is no snapshot — the gauge rebuilds
