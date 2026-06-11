@@ -198,6 +198,30 @@ ingress:
   #    hosts:
   #      - chat.example.com
 
+# Gateway API HTTPRoute settings (alternative to ingress)
+# This chart does not install the Gateway API CRDs or a Gateway controller;
+# both must already be present in the cluster.
+httpRoute:
+  # Enable the HTTPRoute (set ingress.enabled to false when exposing via Gateway API)
+  enabled: false
+  # Additional labels for the HTTPRoute
+  labels: {}
+  # Annotations for the HTTPRoute
+  annotations: {}
+  # Parent Gateways the route attaches to (required when enabled)
+  parentRefs: []
+    # - name: example-gateway
+    #   namespace: gateway-system
+    #   sectionName: https
+  # Hostnames the route matches
+  hostnames: []
+    # - chat.example.com
+  # Route match rules. When empty, a single PathPrefix "/" match is generated.
+  matches: []
+    # - path:
+    #     type: PathPrefix
+    #     value: /
+
 resources: {}
   # We usually recommend not to specify default resources and to leave this as a conscious
   # choice for the user. This also increases chances charts run on environments with little
