@@ -85,7 +85,9 @@ export abstract class UserConnectionManager {
       );
     }
     const ephemeralConnection = config ? requiresEphemeralUserConnection(config) : false;
-    const requestScopedConnections = ephemeralConnection ? opts.requestScopedConnections : undefined;
+    const requestScopedConnections = ephemeralConnection
+      ? opts.requestScopedConnections
+      : undefined;
     if (requestScopedConnections) {
       const requestConnectionKey = `${userId}:${serverName}`;
       const existing = requestScopedConnections.connections.get(requestConnectionKey) as
@@ -101,9 +103,7 @@ export abstract class UserConnectionManager {
           });
           requestScopedConnections.connections.delete(requestConnectionKey);
         } else if (await existing.isConnected()) {
-          logger.debug(
-            `[MCP][User: ${userId}][${serverName}] Reusing request-scoped connection`,
-          );
+          logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing request-scoped connection`);
           this.updateUserLastActivity(userId);
           return existing;
         } else {
