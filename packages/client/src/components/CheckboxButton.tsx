@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { useEffect } from 'react';
+import { X } from 'lucide-react';
 import { Checkbox, useStoreState, useCheckboxStore } from '@ariakit/react';
 import { cn } from '~/utils';
 
@@ -11,6 +12,8 @@ const CheckboxButton: React.ForwardRefExoticComponent<
     checked?: boolean;
     defaultChecked?: boolean;
     isCheckedClassName?: string;
+    isPinned?: boolean;
+    onDismiss?: () => void;
     setValue?: (values: {
       e?: React.ChangeEvent<HTMLInputElement>;
       value: boolean | string;
@@ -25,12 +28,14 @@ const CheckboxButton: React.ForwardRefExoticComponent<
     checked?: boolean;
     defaultChecked?: boolean;
     isCheckedClassName?: string;
+    isPinned?: boolean;
+    onDismiss?: () => void;
     setValue?: (values: {
       e?: React.ChangeEvent<HTMLInputElement>;
       value: boolean | string;
     }) => void;
   }
->(({ icon, label, setValue, className, checked, defaultChecked, isCheckedClassName }, ref) => {
+>(({ icon, label, setValue, className, checked, defaultChecked, isCheckedClassName, isPinned, onDismiss }, ref) => {
   const checkbox = useCheckboxStore();
   const isChecked = useStoreState(checkbox, (state) => state?.value);
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -54,6 +59,60 @@ const CheckboxButton: React.ForwardRefExoticComponent<
       checkbox.setValue(defaultChecked);
     }
   }, [defaultChecked, checked, checkbox]);
+
+  if (checked && onDismiss) {
+    return (
+      <div
+        className={cn(
+          'inline-flex items-center gap-1 rounded-full border border-border-medium',
+          'py-0.5 pl-2.5 pr-1.5 text-xs font-medium text-text-primary',
+          'transition-colors',
+          isCheckedClassName,
+          className,
+        )}
+      >
+        {icon && (
+          <span className="flex shrink-0 items-center">{icon as React.JSX.Element}</span>
+        )}
+        <span className="truncate">{label}</span>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDismiss();
+          }}
+          className="ml-0.5 flex shrink-0 items-center rounded-full p-0.5 opacity-60 transition-opacity hover:opacity-100"
+          aria-label={`Dismiss ${label}`}
+        >
+          <X className="h-3 w-3" />
+        </button>
+      </div>
+    );
+  }
+
+  if (isPinned && !checked) {
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setValue?.({ value: true });
+        }}
+        className={cn(
+          'inline-flex cursor-pointer items-center gap-1 rounded-full border border-border-light',
+          'py-0.5 px-2.5 text-xs font-medium text-text-secondary',
+          'bg-transparent opacity-60 transition-all hover:opacity-90 hover:bg-surface-hover',
+          className,
+        )}
+        aria-label={label}
+      >
+        {icon && (
+          <span className="flex shrink-0 items-center">{icon as React.JSX.Element}</span>
+        )}
+        <span className="truncate">{label}</span>
+      </button>
+    );
+  }
 
   return (
     <Checkbox
