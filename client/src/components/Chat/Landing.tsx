@@ -4,7 +4,7 @@ import { EModelEndpoint } from 'librechat-data-provider';
 import { BirthdayIcon, TooltipAnchor, SplitText } from '@librechat/client';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
-// BKL: ConvoIcon 대신 BKL 로고 이미지 직접 사용. 운영팀이 /assets/bkl-logo-rounded.svg 배치.
+// BKL: ConvoIcon 대신 BKL 로고 이미지 직접 사용.
 import { useLocalize, useAuthContext } from '~/hooks';
 import { getIconEndpoint, getEntity } from '~/utils';
 
@@ -149,13 +149,12 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
         <div
           className={`flex ${textHasMultipleLines ? 'flex-col' : 'flex-col md:flex-row'} items-center justify-center gap-2`}
         >
-          {/* BKL: greeting 옆 로봇 대신 BKL 로고. /assets/bkl-logo-rounded.svg
-              (public 디렉토리, vite post-build 시 dist/assets 로 복사됨). */}
+          {/* BKL: greeting 옆 로봇 대신 BKL 로고. */}
           <div className={`relative size-10 justify-center ${textHasMultipleLines ? 'mb-2' : ''}`}>
             <img
-              src="/assets/bkl-logo-rounded.svg"
+              src="/assets/bkl-logo.png"
               alt="BKL"
-              className="size-10 rounded-full bg-white object-contain p-1 shadow-stroke dark:bg-presentation"
+              className="h-10 w-auto object-contain"
             />
             {startupConfig?.showBirthdayIcon && (
               <TooltipAnchor

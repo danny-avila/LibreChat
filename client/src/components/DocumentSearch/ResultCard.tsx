@@ -29,10 +29,6 @@ async function fetchImanageLinks(docId: string): Promise<{ fileUrl: string | nul
   return links;
 }
 
-function openPopup(url: string, name: string) {
-  window.open(url, name, 'width=1000,height=800,menubar=no,toolbar=no,location=yes,status=no,scrollbars=yes,resizable=yes');
-}
-
 /** case-insensitive token highlighter */
 function queryTokens(query: string): string[] {
   return query
@@ -258,20 +254,6 @@ const ResultCard: React.FC<ResultCardProps> = ({ hit, query, isSelected, onClick
             파일명
           </span>
         )}
-        {hit.source_url && (
-          <a
-            href={hit.source_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-[11px] text-text-secondary hover:bg-surface-hover hover:text-text-primary"
-            aria-label="원문 보기"
-            title="원문 보기"
-          >
-            <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-            원문
-          </a>
-        )}
         {imanageFileUrl && (
           <a
             href={imanageFileUrl}
@@ -286,7 +268,7 @@ const ResultCard: React.FC<ResultCardProps> = ({ hit, query, isSelected, onClick
             iM 파일
           </a>
         )}
-        {imanageFolderUrl && (
+        {imanageFolderUrl ? (
           <a
             href={imanageFolderUrl}
             target="_blank"
@@ -299,22 +281,19 @@ const ResultCard: React.FC<ResultCardProps> = ({ hit, query, isSelected, onClick
             <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
             iM 폴더
           </a>
-        )}
-        {hit.bims_url && (
+        ) : imanageFileUrl ? (
           <button
             type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              openPopup(hit.bims_url as string, 'bims_popup');
-            }}
-            className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-[11px] text-text-secondary hover:bg-surface-hover hover:text-text-primary"
-            aria-label="BIMS 보기"
-            title="BIMS 보기"
+            disabled
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex h-7 shrink-0 cursor-not-allowed items-center gap-1 rounded-md px-2 text-[11px] text-text-tertiary opacity-70"
+            aria-label="iManage 폴더 없음"
+            title="iManage 폴더 없음"
           >
             <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-            BIMS
+            iM 폴더
           </button>
-        )}
+        ) : null}
       </div>
 
       {metadataLine && (
