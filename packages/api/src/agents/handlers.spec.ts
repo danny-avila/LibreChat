@@ -2990,9 +2990,7 @@ describe('per-call onResult reporting', () => {
     const results = await batchPromise;
 
     expect(reported.map((r) => r.toolCallId)).toEqual(['call_fast', 'call_slow']);
-    expect(timeline.indexOf('reported:call_fast')).toBeLessThan(
-      timeline.indexOf('slow:done'),
-    );
+    expect(timeline.indexOf('reported:call_fast')).toBeLessThan(timeline.indexOf('slow:done'));
     expect(results.map((r) => r.toolCallId).sort()).toEqual(['call_fast', 'call_slow']);
     expect(results.find((r) => r.toolCallId === 'call_fast')?.content).toBe('fast result');
   });
