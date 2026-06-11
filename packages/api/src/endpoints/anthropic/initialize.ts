@@ -1,6 +1,7 @@
-import { EModelEndpoint, AuthKeys } from 'librechat-data-provider';
+import { EModelEndpoint, AuthKeys, ErrorTypes } from 'librechat-data-provider';
+import { logger } from '@librechat/data-schemas';
 import type { BaseInitializeParams, InitializeResultBase, AnthropicConfigOptions } from '~/types';
-import { checkUserKeyExpiry, isEnabled } from '~/utils';
+import { checkUserKeyExpiry, isEnabled, loadServiceKey } from '~/utils';
 import { loadAnthropicVertexCredentials, getVertexCredentialOptions } from './vertex';
 import { getLLMConfig } from './llm';
 
@@ -20,7 +21,7 @@ export async function initializeAnthropic({
 }: BaseInitializeParams): Promise<InitializeResultBase> {
   void endpoint;
   const appConfig = req.config;
-  const { ANTHROPIC_API_KEY, ANTHROPIC_REVERSE_PROXY, PROXY } = process.env;
+  const { ANTHROPIC_API_KEY, ANTHROPIC_REVERSE_PROXY, PROXY, GOOGLE_KEY } = process.env;
   const { key: expiresAt } = req.body;
 
   let credentials: Record<string, unknown> = {};
@@ -35,9 +36,73 @@ export async function initializeAnthropic({
     (vertexConfig && vertexConfig.enabled !== false) || isEnabled(process.env.ANTHROPIC_USE_VERTEX);
 
   if (useVertexAI) {
-    // Load credentials with optional YAML config overrides
-    const credentialOptions = vertexConfig ? getVertexCredentialOptions(vertexConfig) : undefined;
-    credentials = await loadAnthropicVertexCredentials(credentialOptions);
+    /**
+     * When Gemini is configured for per-user service-account keys (GOOGLE_KEY=user_provided),
+     * reuse the user's stored Google SA JSON for Claude-via-Vertex too. This matches the
+     * pattern Gemini already follows in `initializeGoogle` and lets a single per-user SA
+     * back both Gemini and Claude on Vertex.
+     *
+     * Falls back to the file/env-based loader on miss, parse error, or any other failure
+     * so the global config path keeps working when a user has not registered a key.
+     */
+    const userId = req.user?.id;
+    const allowPerUserVertex = GOOGLE_KEY === 'user_provided' && !!userId;
+    let userServiceKeyLoaded = false;
+
+    if (allowPerUserVertex) {
+      try {
+        const stored = await db.getUserKey({
+          userId: userId as string,
+          name: EModelEndpoint.google,
+        });
+
+        let parsed: Record<string, unknown> | null = null;
+        try {
+          parsed = JSON.parse(stored) as Record<string, unknown>;
+        } catch (parseErr) {
+          logger.warn(
+            '[initializeAnthropic] Failed to parse stored Google key for per-user Vertex; falling back to global service key',
+            parseErr,
+          );
+        }
+
+        const sa = parsed?.[AuthKeys.GOOGLE_SERVICE_KEY];
+        if (typeof sa === 'string' && sa.trim() !== '') {
+          const loaded = await loadServiceKey(sa);
+          if (loaded?.private_key && loaded?.project_id) {
+            credentials[AuthKeys.GOOGLE_SERVICE_KEY] = loaded;
+            userServiceKeyLoaded = true;
+          } else {
+            logger.warn(
+              '[initializeAnthropic] Stored Google SA key for user missing private_key or project_id; falling back to global service key',
+            );
+          }
+        }
+      } catch (err) {
+        // NO_USER_KEY: user has not registered a per-user SA; fall back silently.
+        // Other errors: log but continue with the global service key so we degrade gracefully.
+        const message = err instanceof Error ? err.message : String(err);
+        let isNoUserKey = false;
+        try {
+          const parsed = JSON.parse(message) as { type?: string };
+          isNoUserKey = parsed?.type === ErrorTypes.NO_USER_KEY;
+        } catch {
+          // not a structured error, ignore
+        }
+        if (!isNoUserKey) {
+          logger.warn(
+            '[initializeAnthropic] Per-user Vertex SA lookup failed; falling back to global service key',
+            err,
+          );
+        }
+      }
+    }
+
+    if (!userServiceKeyLoaded) {
+      // Load credentials with optional YAML config overrides
+      const credentialOptions = vertexConfig ? getVertexCredentialOptions(vertexConfig) : undefined;
+      credentials = await loadAnthropicVertexCredentials(credentialOptions);
+    }
 
     // Store vertex options for client creation
     if (vertexConfig) {
