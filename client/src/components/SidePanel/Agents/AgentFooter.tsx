@@ -103,7 +103,10 @@ export default function AgentFooter({
       {/* Advanced settings */}
       {showButtons && (
         <div data-testid="advanced-button">
-          <NewJerseyPanelButton label="Advanced settings" setActivePanel={setActivePanel} />
+          <NewJerseyPanelButton
+            label="Advanced settings"
+            onClick={() => setActivePanel(Panel.advanced)}
+          />
           <hr />
         </div>
       )}
@@ -111,7 +114,10 @@ export default function AgentFooter({
       {/* Version history */}
       {showButtons && agent_id && (
         <div data-testid="version-button">
-          <NewJerseyPanelButton label="Version history" setActivePanel={setActivePanel} />
+          <NewJerseyPanelButton
+            label="Version history"
+            onClick={() => setActivePanel(Panel.version)}
+          />
           <hr />
         </div>
       )}
