@@ -29,6 +29,10 @@ async function fetchImanageLinks(docId: string): Promise<{ fileUrl: string | nul
   return links;
 }
 
+function openPopup(url: string, name: string) {
+  window.open(url, name, 'width=1000,height=800,menubar=no,toolbar=no,location=yes,status=no,scrollbars=yes,resizable=yes');
+}
+
 /** case-insensitive token highlighter */
 function queryTokens(query: string): string[] {
   return query
@@ -294,6 +298,21 @@ const ResultCard: React.FC<ResultCardProps> = ({ hit, query, isSelected, onClick
             iM 폴더
           </button>
         ) : null}
+        {hit.bims_url && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              openPopup(hit.bims_url as string, 'bims_popup');
+            }}
+            className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-[11px] text-text-secondary hover:bg-surface-hover hover:text-text-primary"
+            aria-label="BIMS 보기"
+            title="BIMS 보기"
+          >
+            <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+            BIMS
+          </button>
+        )}
       </div>
 
       {metadataLine && (

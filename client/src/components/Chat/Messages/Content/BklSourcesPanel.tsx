@@ -372,12 +372,12 @@ export default function BklSourcesPanel() {
 function ExternalSystemButtons({ source }: { source: BklSource | null }) {
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [folderUrl, setFolderUrl] = useState<string | null>(null);
-  const [isLoadingFolder, setIsLoadingFolder] = useState(false);
+  const [bimsUrl, setBimsUrl] = useState<string | null>(null);
 
   useEffect(() => {
     setFileUrl(null);
     setFolderUrl(null);
-    setIsLoadingFolder(false);
+    setBimsUrl(null);
     if (!source) return;
     const meta = source.metadata?.[0] as Record<string, unknown> | undefined;
     const directFile =
@@ -388,13 +388,15 @@ function ExternalSystemButtons({ source }: { source: BklSource | null }) {
     const directFolder =
       source.source?.imanage_folder_url ??
       (typeof meta?.imanage_folder_url === 'string' ? (meta.imanage_folder_url as string) : null);
+    const directBims =
+      source.source?.bims_url ?? (typeof meta?.bims_url === 'string' ? (meta.bims_url as string) : null);
     setFileUrl(directFile);
     setFolderUrl(directFolder);
+    setBimsUrl(directBims);
 
     const docId = typeof meta?.doc_id === 'string' && meta.doc_id ? (meta.doc_id as string) : null;
-    if (!docId || directFolder) return;
+    if (!docId || (directFolder && directBims)) return;
     let cancelled = false;
-    setIsLoadingFolder(true);
     fetch(`/bkl/v1/imanage-links/${encodeURIComponent(docId)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
@@ -402,17 +404,15 @@ function ExternalSystemButtons({ source }: { source: BklSource | null }) {
         const nextFile = data.imanage_url ?? data.imanage_preview_url ?? null;
         if (nextFile) setFileUrl(nextFile);
         if (data.imanage_folder_url) setFolderUrl(data.imanage_folder_url);
+        if (data.bims_url) setBimsUrl(data.bims_url);
       })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setIsLoadingFolder(false);
-      });
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
   }, [source]);
 
-  if (!fileUrl && !folderUrl && !isLoadingFolder) return null;
+  if (!fileUrl && !folderUrl && !bimsUrl) return null;
   return (
     <>
       {fileUrl ? (
@@ -423,8 +423,9 @@ function ExternalSystemButtons({ source }: { source: BklSource | null }) {
       {folderUrl ? (
         <PanelExternalLink href={folderUrl} label="iM 폴더" />
       ) : (
-        <PanelDisabledLink label={isLoadingFolder ? 'iM 폴더 확인 중' : 'iM 폴더'} />
+        <PanelDisabledLink label="iM 폴더" />
       )}
+      {bimsUrl && <PanelPopupLink href={bimsUrl} label="BIMS" popupName="bims_popup" />}
     </>
   );
 }
@@ -460,6 +461,32 @@ function PanelDisabledLink({ label }: { label: string }) {
       className={cn(
         'inline-flex h-8 cursor-not-allowed items-center gap-1 rounded-md px-2',
         'text-xs text-text-tertiary opacity-70',
+      )}
+    >
+      <ExternalLink size={14} aria-hidden="true" />
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function PanelPopupLink({ href, label, popupName }: { href: string; label: string; popupName: string }) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      onClick={() => {
+        window.open(
+          href,
+          popupName,
+          'width=1000,height=800,menubar=no,toolbar=no,location=yes,status=no,scrollbars=yes,resizable=yes',
+        );
+      }}
+      className={cn(
+        'inline-flex h-8 items-center gap-1 rounded-md px-2',
+        'text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary',
+        'focus-visible:outline-none focus-visible:ring-2',
+        'focus-visible:ring-border-medium',
       )}
     >
       <ExternalLink size={14} aria-hidden="true" />

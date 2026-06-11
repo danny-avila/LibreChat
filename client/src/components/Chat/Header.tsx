@@ -71,11 +71,9 @@ function Header() {
                   className="flex h-9 items-center gap-2 rounded-xl border border-border-light bg-presentation px-3 text-sm font-semibold text-text-primary transition-colors hover:bg-surface-active-alt"
                   onClick={handleHomeClick}
                 >
-                  <img
-                    src="/assets/bkl-logo.png"
-                    alt=""
-                    className="h-5 w-auto object-contain"
-                  />
+                  <span className="flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-black">
+                    <img src="/assets/bkl-logo.png" alt="" className="w-5 object-contain" />
+                  </span>
                   <span className="hidden sm:inline">BKL DB AI</span>
                 </button>
               </motion.div>

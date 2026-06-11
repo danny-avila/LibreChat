@@ -62,11 +62,9 @@ export default function NewChat({
           className="flex min-w-0 flex-1 items-center gap-2 rounded-xl px-2 py-1.5 text-left text-sm font-semibold text-text-primary transition-colors hover:bg-surface-active-alt focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
           onClick={handleHomeClick}
         >
-          <img
-            src="/assets/bkl-logo.png"
-            alt=""
-            className="h-7 w-auto shrink-0 object-contain"
-          />
+          <span className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-black">
+            <img src="/assets/bkl-logo.png" alt="" className="w-6 object-contain" />
+          </span>
           <span className="truncate">BKL DB AI</span>
         </button>
         <div className="flex shrink-0 items-center gap-0.5">
