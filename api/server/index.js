@@ -30,11 +30,14 @@ const { checkMigrations } = require('./services/start/migration');
 const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
 const { getAppConfig } = require('./services/Config');
+const { installBklTokenLimits } = require('./middleware/bklTokenLimits');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
+installBklTokenLimits();
 const { seedDatabase } = require('~/models');
 const routes = require('./routes');
 const bklProxy = require('./routes/bklProxy');
+const bklAdmin = require('./routes/bklAdmin');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
 
@@ -139,6 +142,9 @@ const startServer = async () => {
 
   /* BKL FastAPI proxy (forwards /bkl/* -> BKL_API_BASE_URL/*) */
   app.use('/bkl', bklProxy);
+  if (process.env.BKL_ADMIN_API_DISABLE !== '1' && !isEnabled(process.env.BKL_ADMIN_API_DISABLE)) {
+    app.use('/admin-api', bklAdmin);
+  }
 
   /* API Endpoints */
   app.use('/api/auth', routes.auth);

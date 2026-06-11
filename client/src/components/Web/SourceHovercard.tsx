@@ -12,6 +12,8 @@ export interface SourceData {
   snippet?: string;
   imanage_url?: string;
   imanage_preview_url?: string;
+  imanage_folder_url?: string;
+  bims_url?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -24,6 +26,8 @@ interface SourceHovercardProps {
   isFile?: boolean;
   isLocalFile?: boolean;
   imanageUrl?: string | null;
+  imanageFolderUrl?: string | null;
+  bimsUrl?: string | null;
   children?: ReactNode;
 }
 
@@ -57,6 +61,8 @@ export function SourceHovercard({
   isFile = false,
   isLocalFile = false,
   imanageUrl,
+  imanageFolderUrl,
+  bimsUrl,
   children,
 }: SourceHovercardProps) {
   const localize = useLocalize();
@@ -135,26 +141,50 @@ export function SourceHovercard({
                   )}
                 </span>
 
-                {imanageUrl ? (
-                  <a
-                    href={imanageUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mb-2 inline-flex items-center gap-1 rounded-md border border-border-light px-2 py-1 text-xs font-medium text-[#0066cc] hover:bg-surface-tertiary hover:underline dark:text-blue-400"
-                  >
-                    <ExternalLink className="h-3 w-3" aria-hidden="true" />
-                    iManage에서 보기
-                  </a>
-                ) : (
-                  <button
-                    type="button"
-                    disabled
-                    className="mb-2 inline-flex cursor-not-allowed items-center gap-1 rounded-md border border-border-light px-2 py-1 text-xs font-medium text-text-tertiary opacity-70"
-                  >
-                    <ExternalLink className="h-3 w-3" aria-hidden="true" />
-                    iManage에서 보기
-                  </button>
-                )}
+                <span className="mb-2 flex flex-wrap gap-1.5">
+                  {imanageUrl ? (
+                    <a
+                      href={imanageUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 rounded-md border border-border-light px-2 py-1 text-xs font-medium text-[#0066cc] hover:bg-surface-tertiary hover:underline dark:text-blue-400"
+                    >
+                      <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                      iM 파일
+                    </a>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled
+                      className="inline-flex cursor-not-allowed items-center gap-1 rounded-md border border-border-light px-2 py-1 text-xs font-medium text-text-tertiary opacity-70"
+                    >
+                      <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                      iM 파일
+                    </button>
+                  )}
+                  {imanageFolderUrl && (
+                    <a
+                      href={imanageFolderUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 rounded-md border border-border-light px-2 py-1 text-xs font-medium text-[#0066cc] hover:bg-surface-tertiary hover:underline dark:text-blue-400"
+                    >
+                      <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                      iM 폴더
+                    </a>
+                  )}
+                  {bimsUrl && (
+                    <a
+                      href={bimsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 rounded-md border border-border-light px-2 py-1 text-xs font-medium text-[#0066cc] hover:bg-surface-tertiary hover:underline dark:text-blue-400"
+                    >
+                      <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                      BIMS
+                    </a>
+                  )}
+                </span>
 
                 {isFile ? (
                   <>

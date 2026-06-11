@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
 import type { ChunkPreview, DocumentHit } from '~/data-provider/DocumentSearch';
 import { useLocalize } from '~/hooks';
@@ -12,6 +12,26 @@ interface ResultCardProps {
 }
 
 const CHUNKS_PER_PAGE = 8;
+const imanageLinksCache = new Map<string, { fileUrl: string | null; folderUrl: string | null }>();
+
+async function fetchImanageLinks(docId: string): Promise<{ fileUrl: string | null; folderUrl: string | null } | null> {
+  if (imanageLinksCache.has(docId)) {
+    return imanageLinksCache.get(docId) ?? null;
+  }
+  const resp = await fetch(`/bkl/v1/imanage-links/${encodeURIComponent(docId)}`);
+  if (!resp.ok) return null;
+  const data = await resp.json();
+  const links = {
+    fileUrl: data.imanage_url ?? data.imanage_preview_url ?? null,
+    folderUrl: data.imanage_folder_url ?? null,
+  };
+  imanageLinksCache.set(docId, links);
+  return links;
+}
+
+function openPopup(url: string, name: string) {
+  window.open(url, name, 'width=1000,height=800,menubar=no,toolbar=no,location=yes,status=no,scrollbars=yes,resizable=yes');
+}
 
 /** case-insensitive token highlighter */
 function queryTokens(query: string): string[] {
@@ -177,6 +197,32 @@ const ResultCard: React.FC<ResultCardProps> = ({ hit, query, isSelected, onClick
       ? `표시 ${displayedChunkCount}개 / 매칭 ${matchedChunkCount}개`
       : `${localize('com_document_search_matched_chunks')}: ${matchedChunkCount}`;
   const metadataLine = documentMetadataLine(hit);
+  const [imanageFileUrl, setImanageFileUrl] = useState<string | null>(
+    hit.imanage_preview_url ?? null,
+  );
+  const [imanageFolderUrl, setImanageFolderUrl] = useState<string | null>(
+    hit.imanage_folder_url ?? null,
+  );
+
+  useEffect(() => {
+    setImanageFileUrl(hit.imanage_preview_url ?? null);
+    setImanageFolderUrl(hit.imanage_folder_url ?? null);
+    if (!hit.doc_id || hit.imanage_folder_url) return;
+
+    let cancelled = false;
+    fetchImanageLinks(hit.doc_id)
+      .then((links) => {
+        if (cancelled || !links) return;
+        if (links.fileUrl) setImanageFileUrl(links.fileUrl);
+        if (links.folderUrl) setImanageFolderUrl(links.folderUrl);
+      })
+      .catch(() => {
+        /* Optional enrichment only. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hit.doc_id, hit.imanage_folder_url, hit.imanage_preview_url]);
 
   const metaBadges = [hit.work_type, hit.document_type, hit.practice_area_primary].filter(
     Boolean,
@@ -226,19 +272,48 @@ const ResultCard: React.FC<ResultCardProps> = ({ hit, query, isSelected, onClick
             원문
           </a>
         )}
-        {hit.imanage_preview_url && (
+        {imanageFileUrl && (
           <a
-            href={hit.imanage_preview_url}
+            href={imanageFileUrl}
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
             className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-[11px] text-text-secondary hover:bg-surface-hover hover:text-text-primary"
-            aria-label="iManage에서 보기"
-            title="iManage에서 보기"
+            aria-label="iManage 파일 보기"
+            title="iManage 파일 보기"
           >
             <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-            iManage
+            iM 파일
           </a>
+        )}
+        {imanageFolderUrl && (
+          <a
+            href={imanageFolderUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-[11px] text-text-secondary hover:bg-surface-hover hover:text-text-primary"
+            aria-label="iManage 폴더 보기"
+            title="iManage 폴더 보기"
+          >
+            <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+            iM 폴더
+          </a>
+        )}
+        {hit.bims_url && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              openPopup(hit.bims_url as string, 'bims_popup');
+            }}
+            className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-[11px] text-text-secondary hover:bg-surface-hover hover:text-text-primary"
+            aria-label="BIMS 보기"
+            title="BIMS 보기"
+          >
+            <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+            BIMS
+          </button>
         )}
       </div>
 

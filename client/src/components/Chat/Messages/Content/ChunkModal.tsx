@@ -8,6 +8,8 @@ export type BklSource = {
     embed_url?: string;
     imanage_url?: string;
     imanage_preview_url?: string;
+    imanage_folder_url?: string;
+    bims_url?: string;
   };
   document: string[];
   metadata: Array<{
@@ -39,6 +41,14 @@ function hasImanageUrl(source: BklSource | null): boolean {
   );
 }
 
+function hasImanageFolderUrl(source: BklSource | null): boolean {
+  const meta = source?.metadata?.[0];
+  return Boolean(
+    source?.source?.imanage_folder_url ||
+      (typeof meta?.imanage_folder_url === 'string' && meta.imanage_folder_url),
+  );
+}
+
 function getDocId(source: BklSource | null): string | null {
   const meta = source?.metadata?.[0];
   if (typeof meta?.doc_id === 'string' && meta.doc_id) return meta.doc_id;
@@ -50,16 +60,31 @@ function getDocId(source: BklSource | null): string | null {
   );
 }
 
-function withImanageUrl(source: BklSource, imanageUrl: string): BklSource {
+function withImanageLinks(
+  source: BklSource,
+  links: { imanageUrl?: string | null; imanageFolderUrl?: string | null; bimsUrl?: string | null },
+): BklSource {
   const metadata = source.metadata?.length
-    ? [{ ...source.metadata[0], imanage_url: imanageUrl, imanage_preview_url: imanageUrl }]
+    ? [
+        {
+          ...source.metadata[0],
+          ...(links.imanageUrl
+            ? { imanage_url: links.imanageUrl, imanage_preview_url: links.imanageUrl }
+            : {}),
+          ...(links.imanageFolderUrl ? { imanage_folder_url: links.imanageFolderUrl } : {}),
+          ...(links.bimsUrl ? { bims_url: links.bimsUrl } : {}),
+        },
+      ]
     : source.metadata;
   return {
     ...source,
     source: {
       ...source.source,
-      imanage_url: imanageUrl,
-      imanage_preview_url: imanageUrl,
+      ...(links.imanageUrl
+        ? { imanage_url: links.imanageUrl, imanage_preview_url: links.imanageUrl }
+        : {}),
+      ...(links.imanageFolderUrl ? { imanage_folder_url: links.imanageFolderUrl } : {}),
+      ...(links.bimsUrl ? { bims_url: links.bimsUrl } : {}),
     },
     metadata,
   };
@@ -119,11 +144,17 @@ async function fetchSources(
   return { sources, requestId: requestId ?? data.request_id ?? null };
 }
 
-async function fetchImanageUrlByDocId(docId: string): Promise<string | null> {
+async function fetchImanageLinksByDocId(
+  docId: string,
+): Promise<{ imanageUrl: string | null; imanageFolderUrl: string | null; bimsUrl: string | null } | null> {
   const resp = await fetch(`/bkl/v1/imanage-links/${encodeURIComponent(docId)}`);
   if (!resp.ok) return null;
   const data = await resp.json();
-  return data.imanage_url ?? data.imanage_preview_url ?? null;
+  return {
+    imanageUrl: data.imanage_url ?? data.imanage_preview_url ?? null,
+    imanageFolderUrl: data.imanage_folder_url ?? null,
+    bimsUrl: data.bims_url ?? null,
+  };
 }
 
 export default function ChunkModal({
@@ -151,7 +182,7 @@ export default function ChunkModal({
   }, [source]);
 
   useEffect(() => {
-    if (!isOpen || !citationNumber || hasImanageUrl(resolvedSource)) {
+    if (!isOpen || !citationNumber || (hasImanageUrl(resolvedSource) && hasImanageFolderUrl(resolvedSource))) {
       return;
     }
 
@@ -166,10 +197,10 @@ export default function ChunkModal({
 
     (async () => {
       if (docId && resolvedSource) {
-        const imanageUrl = await fetchImanageUrlByDocId(docId);
+        const links = await fetchImanageLinksByDocId(docId);
         if (cancelled) return;
-        if (imanageUrl) {
-          setResolvedSource(withImanageUrl(resolvedSource, imanageUrl));
+        if (links?.imanageUrl || links?.imanageFolderUrl || links?.bimsUrl) {
+          setResolvedSource(withImanageLinks(resolvedSource, links));
           return;
         }
       }
@@ -200,6 +231,12 @@ export default function ChunkModal({
     activeSource?.source?.imanage_preview_url ??
     (typeof meta?.imanage_url === 'string' ? meta.imanage_url : undefined) ??
     (typeof meta?.imanage_preview_url === 'string' ? meta.imanage_preview_url : undefined);
+  const imanageFolderUrl =
+    activeSource?.source?.imanage_folder_url ??
+    (typeof meta?.imanage_folder_url === 'string' ? meta.imanage_folder_url : undefined);
+  const bimsUrl =
+    activeSource?.source?.bims_url ??
+    (typeof meta?.bims_url === 'string' ? meta.bims_url : undefined);
 
   // relevance: 0–1이면 *100, 이미 0–100이면 그대로 (100 초과 시 100으로 캡)
   const relevanceDisplay =
@@ -258,11 +295,11 @@ export default function ChunkModal({
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs text-text-secondary hover:bg-surface-secondary hover:text-text-primary"
-                  aria-label="iManage에서 보기"
-                  title="iManage에서 보기"
+                  aria-label="iManage 파일 보기"
+                  title="iManage 파일 보기"
                 >
                   <ExternalLink className="size-3.5" />
-                  iManage에서 보기
+                  iM 파일
                 </a>
               ) : (
                 <button
@@ -273,7 +310,38 @@ export default function ChunkModal({
                   title="iManage 링크 확인 중"
                 >
                   <ExternalLink className="size-3.5" />
-                  iManage에서 보기
+                  iM 파일
+                </button>
+              )}
+              {imanageFolderUrl && (
+                <a
+                  href={imanageFolderUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs text-text-secondary hover:bg-surface-secondary hover:text-text-primary"
+                  aria-label="iManage 폴더 보기"
+                  title="iManage 폴더 보기"
+                >
+                  <ExternalLink className="size-3.5" />
+                  iM 폴더
+                </a>
+              )}
+              {bimsUrl && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.open(
+                      bimsUrl,
+                      'bims_popup',
+                      'width=1000,height=800,menubar=no,toolbar=no,location=yes,status=no,scrollbars=yes,resizable=yes',
+                    );
+                  }}
+                  className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs text-text-secondary hover:bg-surface-secondary hover:text-text-primary"
+                  aria-label="BIMS 보기"
+                  title="BIMS 보기"
+                >
+                  <ExternalLink className="size-3.5" />
+                  BIMS
                 </button>
               )}
               <button
