@@ -104,3 +104,164 @@
   --muted:             var(--click-global-color-background-muted);   /* LibreChat --muted       ← --click-global-color-background-muted   */
   --destructive:       var(--click-global-color-text-danger);        /* LibreChat --destructive ← --click-global-color-text-danger        */
 }
+
+/*
+ * Tailwind hsl()-wrapped variable fix.
+ *
+ * Variables like --background, --primary, --foreground, --border etc. are assigned
+ * raw hex values in the [data-cui-theme] block above (e.g. --background: #fbfcff).
+ * Tailwind generates rules like `background-color: hsl(var(--background))` — wrapping
+ * a hex value in hsl() produces invalid CSS that the browser silently drops, making
+ * affected elements transparent.
+ *
+ * Fix: class-level overrides that bypass the hsl() wrapper entirely. These apply only
+ * when the CUI theme is active and !important is required to beat the Tailwind utilities.
+ */
+[data-cui-theme] .bg-background {
+  background-color: var(--click-global-color-background-default) !important;
+}
+
+[data-cui-theme] .text-foreground {
+  color: var(--click-global-color-text-default) !important;
+}
+
+[data-cui-theme] .bg-primary {
+  background-color: var(--click-button-basic-color-primary-background-default) !important;
+}
+
+/* Opacity modifier variants: hsl(hex / opacity) is also invalid */
+[data-cui-theme] .bg-primary\/20 {
+  background-color: color-mix(in srgb, var(--click-button-basic-color-primary-background-default) 20%, transparent) !important;
+}
+
+[data-cui-theme] .hover\:bg-primary\/90:hover {
+  background-color: var(--click-button-basic-color-primary-background-hover) !important;
+}
+
+[data-cui-theme] .text-primary {
+  color: var(--click-global-color-accent-default) !important;
+}
+
+[data-cui-theme] .border-primary {
+  border-color: var(--click-global-color-accent-default) !important;
+}
+
+[data-cui-theme] .bg-muted {
+  background-color: var(--click-global-color-background-muted) !important;
+}
+
+[data-cui-theme] .text-muted-foreground {
+  color: var(--click-global-color-text-muted) !important;
+}
+
+[data-cui-theme] .border-border {
+  border-color: var(--click-global-color-stroke-default) !important;
+}
+
+[data-cui-theme] .border-input {
+  border-color: var(--click-global-color-stroke-default) !important;
+}
+
+[data-cui-theme] .bg-accent {
+  background-color: var(--click-global-color-background-muted) !important;
+}
+
+/*
+ * Shadows — Click-UI uses flat design with border-only cards.
+ * Suppress Tailwind's shadow-md / shadow-lg (used on the chat input container).
+ * shadow-xl / shadow-2xl are kept for dialogs and popovers that need depth.
+ * !important is required: Tailwind utility CSS may be bundled after this file.
+ */
+[data-cui-theme] .shadow-md {
+  box-shadow: none !important;
+}
+
+[data-cui-theme] .shadow-lg {
+  box-shadow: none !important;
+}
+
+/* ── Ghost / secondary button hover states ───────────────────────────────── */
+/*
+ * hover:bg-accent and hover:bg-muted are hsl-wrapped and used everywhere —
+ * conversation list item hover, nav icon hover, ghost toolbar buttons.
+ * Without this fix the hover background is transparent (invalid hsl(#hex)).
+ */
+[data-cui-theme] .hover\:bg-accent:hover {
+  background-color: var(--click-global-color-background-muted) !important;
+}
+
+[data-cui-theme] .hover\:bg-muted:hover {
+  background-color: var(--click-global-color-background-muted) !important;
+}
+
+/* ── Secondary button ─────────────────────────────────────────────────────── */
+/*
+ * bg-secondary is hsl-wrapped — renders transparent without this override.
+ * Maps to CUI secondary button tokens for full visual treatment.
+ */
+[data-cui-theme] .bg-secondary {
+  background-color: var(--click-button-basic-color-secondary-background-default) !important;
+}
+
+[data-cui-theme] .hover\:bg-secondary\/80:hover {
+  background-color: var(--click-button-basic-color-secondary-background-hover) !important;
+}
+
+[data-cui-theme] .text-secondary-foreground {
+  color: var(--click-button-basic-color-secondary-text-default) !important;
+}
+
+/* ── Focus-visible ring suppression ──────────────────────────────────────── */
+/*
+ * focus-visible:ring-ring is hsl-wrapped → ring glow artifact appears.
+ * CUI uses no ring on buttons — just border-color change.
+ * Inputs/textareas already handled above (stroke-active border).
+ */
+[data-cui-theme] button:focus-visible,
+[data-cui-theme] [role="button"]:focus-visible,
+[data-cui-theme] a:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/*
+ * btn-primary class — hardcoded green (#10a37f) compiled from an old Tailwind config.
+ * Override background + text to use CUI primary button tokens when the theme is active.
+ * !important is required to beat the compiled class and any Tailwind text-white utility.
+ */
+[data-cui-theme] .btn-primary {
+  background-color: var(--click-button-basic-color-primary-background-default) !important;
+  color: var(--click-button-basic-color-primary-text-default) !important;
+}
+
+[data-cui-theme] .btn-primary:hover {
+  background-color: var(--click-button-basic-color-primary-background-hover) !important;
+}
+
+[data-cui-theme] .btn-primary:disabled,
+[data-cui-theme] .btn-primary:disabled:hover {
+  background-color: var(--click-button-basic-color-primary-background-disabled) !important;
+  opacity: 0.5;
+}
+
+/* ── bg-card override ─────────────────────────────────────────────────────── */
+/*
+ * bg-card is hsl-wrapped and used for card surfaces (agent cards, endpoint cards).
+ * Maps to default background matching the main page surface.
+ */
+[data-cui-theme] .bg-card {
+  background-color: var(--click-global-color-background-default) !important;
+}
+
+/* ── Primary opacity variants ─────────────────────────────────────────────── */
+/*
+ * bg-primary/10 and hover:bg-primary/10 are used for selected/active item
+ * highlights in sidebars and lists. hsl(hex / opacity) is invalid CSS.
+ */
+[data-cui-theme] .bg-primary\/10 {
+  background-color: color-mix(in srgb, var(--click-global-color-accent-default) 10%, transparent) !important;
+}
+
+[data-cui-theme] .hover\:bg-primary\/10:hover {
+  background-color: color-mix(in srgb, var(--click-global-color-accent-default) 10%, transparent) !important;
+}
