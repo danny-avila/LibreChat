@@ -89,6 +89,15 @@ async function buildEndpointOption(req, res, next) {
     }
   }
 
+  const bklCollection = req.user?.bkl_collection;
+  if (bklCollection) {
+    parsedBody.modelKwargs = parsedBody.modelKwargs || {};
+    parsedBody.modelKwargs.bkl_collection =
+      parsedBody.modelKwargs.bkl_collection || bklCollection;
+    req.body.modelKwargs = req.body.modelKwargs || {};
+    req.body.modelKwargs.bkl_collection = req.body.modelKwargs.bkl_collection || bklCollection;
+  }
+
   try {
     const isAgents =
       isAgentsEndpoint(endpoint) || req.baseUrl.startsWith(EndpointURLs[EModelEndpoint.agents]);

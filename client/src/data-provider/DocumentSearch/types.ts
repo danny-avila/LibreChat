@@ -51,6 +51,9 @@ export interface DocumentHit {
   title_match?: boolean;
   source_url?: string | null;
   imanage_preview_url?: string | null;
+  imanage_folder_url?: string | null;
+  bims_url?: string | null;
+  case_class?: string | null;
   edit_date?: string | null;
   last_user?: string | null;
   custom4?: string | null;

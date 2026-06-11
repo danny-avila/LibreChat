@@ -8,6 +8,24 @@ import { useFileDownload } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
+type BklImanageLinks = {
+  imanageUrl: string | null;
+  imanageFolderUrl: string | null;
+  bimsUrl: string | null;
+};
+
+function metadataRecords(source?: Record<string, unknown> | null): Array<Record<string, unknown>> {
+  if (!source) return [];
+  const metadata = source.metadata;
+  if (Array.isArray(metadata)) {
+    return metadata.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object');
+  }
+  if (metadata && typeof metadata === 'object') {
+    return [metadata as Record<string, unknown>];
+  }
+  return [];
+}
+
 function getImanageUrl(source?: Record<string, unknown> | null): string | null {
   if (!source) return null;
   const direct =
@@ -18,16 +36,36 @@ function getImanageUrl(source?: Record<string, unknown> | null): string | null {
         : null;
   if (direct) return direct;
 
-  const metadata = source.metadata as Record<string, unknown> | undefined;
-  if (typeof metadata?.imanage_url === 'string') return metadata.imanage_url;
-  if (typeof metadata?.imanage_preview_url === 'string') return metadata.imanage_preview_url;
+  for (const metadata of metadataRecords(source)) {
+    if (typeof metadata.imanage_url === 'string') return metadata.imanage_url;
+    if (typeof metadata.imanage_preview_url === 'string') return metadata.imanage_preview_url;
+  }
+  return null;
+}
+
+function getImanageFolderUrl(source?: Record<string, unknown> | null): string | null {
+  if (!source) return null;
+  if (typeof source.imanage_folder_url === 'string') return source.imanage_folder_url;
+  for (const metadata of metadataRecords(source)) {
+    if (typeof metadata.imanage_folder_url === 'string') return metadata.imanage_folder_url;
+  }
+  return null;
+}
+
+function getBimsUrl(source?: Record<string, unknown> | null): string | null {
+  if (!source) return null;
+  if (typeof source.bims_url === 'string') return source.bims_url;
+  for (const metadata of metadataRecords(source)) {
+    if (typeof metadata.bims_url === 'string') return metadata.bims_url;
+  }
   return null;
 }
 
 function getDocId(source?: Record<string, unknown> | null): string | null {
   if (!source) return null;
-  const metadata = source.metadata as Record<string, unknown> | undefined;
-  if (typeof metadata?.doc_id === 'string' && metadata.doc_id) return metadata.doc_id;
+  for (const metadata of metadataRecords(source)) {
+    if (typeof metadata.doc_id === 'string' && metadata.doc_id) return metadata.doc_id;
+  }
   if (typeof source.doc_id === 'string' && source.doc_id) return source.doc_id;
 
   const link = typeof source.link === 'string' ? source.link : '';
@@ -35,11 +73,15 @@ function getDocId(source?: Record<string, unknown> | null): string | null {
   return decodeURIComponent(link.split('/v1/source-files/')[1]?.split(/[?#]/)[0] ?? '') || null;
 }
 
-async function fetchBklCitationImanageUrl(docId: string): Promise<string | null> {
+async function fetchBklCitationImanageLinks(docId: string): Promise<BklImanageLinks | null> {
   const resp = await fetch(`/bkl/v1/imanage-links/${encodeURIComponent(docId)}`);
   if (!resp.ok) return null;
   const data = await resp.json();
-  return data.imanage_url ?? data.imanage_preview_url ?? null;
+  return {
+    imanageUrl: data.imanage_url ?? data.imanage_preview_url ?? null,
+    imanageFolderUrl: data.imanage_folder_url ?? null,
+    bimsUrl: data.bims_url ?? null,
+  };
 }
 
 interface CompositeCitationProps {
@@ -162,6 +204,8 @@ export function Citation(props: CitationComponentProps) {
     index: citation?.index || 0,
   });
   const [imanageUrl, setImanageUrl] = useState<string | null>(null);
+  const [imanageFolderUrl, setImanageFolderUrl] = useState<string | null>(null);
+  const [bimsUrl, setBimsUrl] = useState<string | null>(null);
 
   // Setup file download hook
   const isFileType = refData?.refType === 'file' && (refData as any)?.fileId;
@@ -217,19 +261,24 @@ export function Citation(props: CitationComponentProps) {
 
   useEffect(() => {
     if (!refData) return;
-    const directUrl = getImanageUrl(refData as unknown as Record<string, unknown>);
-    if (directUrl) {
-      setImanageUrl(directUrl);
-      return;
-    }
+    const source = refData as unknown as Record<string, unknown>;
+    const directUrl = getImanageUrl(source);
+    const directFolderUrl = getImanageFolderUrl(source);
+    const directBimsUrl = getBimsUrl(source);
+    setImanageUrl(directUrl);
+    setImanageFolderUrl(directFolderUrl);
+    setBimsUrl(directBimsUrl);
 
-    const docId = getDocId(refData as unknown as Record<string, unknown>);
-    if (!docId) return;
+    const docId = getDocId(source);
+    if (!docId || directFolderUrl) return;
 
     let cancelled = false;
-    fetchBklCitationImanageUrl(docId)
-      .then((url) => {
-        if (!cancelled && url) setImanageUrl(url);
+    fetchBklCitationImanageLinks(docId)
+      .then((links) => {
+        if (cancelled || !links) return;
+        if (links.imanageUrl) setImanageUrl(links.imanageUrl);
+        if (links.imanageFolderUrl) setImanageFolderUrl(links.imanageFolderUrl);
+        if (links.bimsUrl) setBimsUrl(links.bimsUrl);
       })
       .catch(() => {
         /* iManage link is optional; keep the source hovercard usable. */
@@ -261,6 +310,8 @@ export function Citation(props: CitationComponentProps) {
       isFile={isFileType}
       isLocalFile={isLocalFile}
       imanageUrl={imanageUrl}
+      imanageFolderUrl={imanageFolderUrl}
+      bimsUrl={bimsUrl}
     />
   );
 }

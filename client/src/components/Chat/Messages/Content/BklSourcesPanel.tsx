@@ -71,6 +71,22 @@ function sourceHasDisplayMetadata(source: BklSource | null): boolean {
   );
 }
 
+function sourceHasFolderLink(source: BklSource | null): boolean {
+  const meta = source?.metadata?.[0] as Record<string, unknown> | undefined;
+  return Boolean(
+    source?.source?.imanage_folder_url ||
+      (typeof meta?.imanage_folder_url === 'string' && meta.imanage_folder_url),
+  );
+}
+
+function sourceHasBimsLink(source: BklSource | null): boolean {
+  const meta = source?.metadata?.[0] as Record<string, unknown> | undefined;
+  return Boolean(
+    source?.source?.bims_url ||
+      (typeof meta?.bims_url === 'string' && meta.bims_url),
+  );
+}
+
 function withImanageDetails(source: BklSource, details: Record<string, unknown>): BklSource {
   const metadata = source.metadata?.length ? [...source.metadata] : [{}];
   metadata[0] = {
@@ -83,6 +99,8 @@ function withImanageDetails(source: BklSource, details: Record<string, unknown>)
     imanage_url: details.imanage_url ?? details.imanage_preview_url ?? metadata[0]?.imanage_url,
     imanage_preview_url:
       details.imanage_preview_url ?? details.imanage_url ?? metadata[0]?.imanage_preview_url,
+    imanage_folder_url: details.imanage_folder_url ?? metadata[0]?.imanage_folder_url,
+    bims_url: details.bims_url ?? metadata[0]?.bims_url,
   };
   return {
     ...source,
@@ -91,6 +109,8 @@ function withImanageDetails(source: BklSource, details: Record<string, unknown>)
       imanage_url: (details.imanage_url as string) ?? source.source?.imanage_url,
       imanage_preview_url:
         (details.imanage_preview_url as string) ?? source.source?.imanage_preview_url,
+      imanage_folder_url: (details.imanage_folder_url as string) ?? source.source?.imanage_folder_url,
+      bims_url: (details.bims_url as string) ?? source.source?.bims_url,
     },
     metadata,
   };
@@ -261,7 +281,11 @@ export default function BklSourcesPanel() {
   }, [active, sources]);
 
   useEffect(() => {
-    if (!active || !current || sourceHasDisplayMetadata(current)) return;
+    if (
+      !active ||
+      !current ||
+      (sourceHasDisplayMetadata(current) && sourceHasFolderLink(current) && sourceHasBimsLink(current))
+    ) return;
     const docId = sourceDocId(current);
     if (!docId) return;
     let cancelled = false;
@@ -321,7 +345,7 @@ export default function BklSourcesPanel() {
           </div>
         </div>
         <div className="flex items-center gap-1">
-          <ImanageButton source={current} />
+          <ExternalSystemButtons source={current} />
           <OriginalSourceButton source={current} />
           <Button size="icon" variant="ghost" onClick={onClose} aria-label="닫기">
             <X size={16} aria-hidden="true" />
@@ -482,31 +506,42 @@ function OriginalSourceButton({ source }: { source: BklSource | null }) {
   );
 }
 
-function ImanageButton({ source }: { source: BklSource | null }) {
-  const [url, setUrl] = useState<string | null>(null);
+function ExternalSystemButtons({ source }: { source: BklSource | null }) {
+  const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [folderUrl, setFolderUrl] = useState<string | null>(null);
+  const [bimsUrl, setBimsUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    setUrl(null);
+    setFileUrl(null);
+    setFolderUrl(null);
+    setBimsUrl(null);
     if (!source) return;
     const meta = source.metadata?.[0] as Record<string, unknown> | undefined;
-    const direct =
+    const directFile =
       source.source?.imanage_url ??
       source.source?.imanage_preview_url ??
       (typeof meta?.imanage_url === 'string' ? (meta.imanage_url as string) : null) ??
       (typeof meta?.imanage_preview_url === 'string' ? (meta.imanage_preview_url as string) : null);
-    if (direct) {
-      setUrl(direct);
-      return;
-    }
+    const directFolder =
+      source.source?.imanage_folder_url ??
+      (typeof meta?.imanage_folder_url === 'string' ? (meta.imanage_folder_url as string) : null);
+    const directBims =
+      source.source?.bims_url ?? (typeof meta?.bims_url === 'string' ? (meta.bims_url as string) : null);
+    setFileUrl(directFile);
+    setFolderUrl(directFolder);
+    setBimsUrl(directBims);
+
     const docId = typeof meta?.doc_id === 'string' && meta.doc_id ? (meta.doc_id as string) : null;
-    if (!docId) return;
+    if (!docId || directFolder) return;
     let cancelled = false;
     fetch(`/bkl/v1/imanage-links/${encodeURIComponent(docId)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (cancelled || !data) return;
-        const u = data.imanage_url ?? data.imanage_preview_url ?? null;
-        if (u) setUrl(u);
+        const nextFile = data.imanage_url ?? data.imanage_preview_url ?? null;
+        if (nextFile) setFileUrl(nextFile);
+        if (data.imanage_folder_url) setFolderUrl(data.imanage_folder_url);
+        if (data.bims_url) setBimsUrl(data.bims_url);
       })
       .catch(() => {});
     return () => {
@@ -514,14 +549,24 @@ function ImanageButton({ source }: { source: BklSource | null }) {
     };
   }, [source]);
 
-  if (!url) return null;
+  if (!fileUrl && !folderUrl && !bimsUrl) return null;
+  return (
+    <>
+      {fileUrl && <PanelExternalLink href={fileUrl} label="iM 파일" />}
+      {folderUrl && <PanelExternalLink href={folderUrl} label="iM 폴더" />}
+      {bimsUrl && <PanelPopupLink href={bimsUrl} label="BIMS" popupName="bims_popup" />}
+    </>
+  );
+}
+
+function PanelExternalLink({ href, label }: { href: string; label: string }) {
   return (
     <a
-      href={url}
+      href={href}
       target="_blank"
       rel="noopener noreferrer"
-      title="iManage에서 보기"
-      aria-label="iManage에서 보기"
+      title={label}
+      aria-label={label}
       className={cn(
         'inline-flex h-8 items-center gap-1 rounded-md px-2',
         'text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary',
@@ -530,8 +575,34 @@ function ImanageButton({ source }: { source: BklSource | null }) {
       )}
     >
       <ExternalLink size={14} aria-hidden="true" />
-      <span>iManage</span>
+      <span>{label}</span>
     </a>
+  );
+}
+
+function PanelPopupLink({ href, label, popupName }: { href: string; label: string; popupName: string }) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      onClick={() => {
+        window.open(
+          href,
+          popupName,
+          'width=1000,height=800,menubar=no,toolbar=no,location=yes,status=no,scrollbars=yes,resizable=yes',
+        );
+      }}
+      className={cn(
+        'inline-flex h-8 items-center gap-1 rounded-md px-2',
+        'text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary',
+        'focus-visible:outline-none focus-visible:ring-2',
+        'focus-visible:ring-border-medium',
+      )}
+    >
+      <ExternalLink size={14} aria-hidden="true" />
+      <span>{label}</span>
+    </button>
   );
 }
 

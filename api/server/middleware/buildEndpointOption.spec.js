@@ -234,4 +234,32 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
     expect(parsedResult.maxOutputTokens).toBeUndefined();
     expect(parsedResult.max_tokens).toBe(4096);
   });
+
+  it('should inject the user BKL collection into modelKwargs', async () => {
+    mockGetEndpointsConfig.mockResolvedValue({});
+
+    const req = createReq(
+      {
+        endpoint: EModelEndpoint.assistants,
+        endpointType: EModelEndpoint.assistants,
+        model: 'bkl-search',
+        temperature: 0.7,
+      },
+      { modelSpecs: null },
+    );
+    req.user = { bkl_collection: 'bkl_private_docs' };
+
+    await buildEndpointOption(req, createRes(), jest.fn());
+
+    expect(mockBuildOptions).toHaveBeenCalledWith(
+      EModelEndpoint.assistants,
+      expect.objectContaining({
+        modelKwargs: expect.objectContaining({
+          bkl_collection: 'bkl_private_docs',
+        }),
+      }),
+      EModelEndpoint.assistants,
+    );
+    expect(req.body.modelKwargs).toMatchObject({ bkl_collection: 'bkl_private_docs' });
+  });
 });
