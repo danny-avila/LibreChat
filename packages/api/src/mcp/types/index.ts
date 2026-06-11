@@ -194,6 +194,8 @@ export interface BasicConnectionOptions {
   dbSourced?: boolean;
   /** When true, serverConfig has already gone through processMCPEnv for this request */
   skipEnvProcessing?: boolean;
+  /** When true, the connection is intentionally short-lived for a single request/tool call */
+  ephemeralConnection?: boolean;
 }
 
 /** User context for placeholder resolution in MCP connections (non-OAuth and OAuth alike) */
@@ -201,8 +203,14 @@ export interface UserConnectionContext {
   user?: IUser;
   customUserVars?: Record<string, string>;
   requestBody?: RequestBody;
+  requestScopedConnections?: RequestScopedMCPConnectionStore;
   graphTokenResolver?: GraphTokenResolver;
   connectionTimeout?: number;
+}
+
+export interface RequestScopedMCPConnectionStore {
+  connections: Map<string, unknown>;
+  pending: Map<string, Promise<unknown>>;
 }
 
 export interface OAuthStartOptions {

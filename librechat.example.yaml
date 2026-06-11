@@ -61,6 +61,37 @@ cache: true
 #   # Recommended for download paths: attach a CloudFront response headers policy
 #   # with X-Content-Type-Options: nosniff and CSP default-src 'none'.
 
+# Skill sync configuration (optional)
+# GitHub tokens are referenced from environment variables. Put the token in
+# `.env`, then reference it here with `token: '${GITHUB_SKILLS_TOKEN}'`. Use a
+# GitHub fine-grained personal access token scoped to the selected repository
+# with read-only Contents and Metadata permissions.
+# skillSync:
+#   github:
+#     enabled: false
+#     intervalMinutes: 60
+#     runOnStartup: true
+#     sources:
+#       - id: librechat-skills
+#         owner: your-org
+#         repo: your-skills-repo
+#         ref: main
+#         paths:
+#           - skills
+#         # Number of directory levels below each configured path to scan for
+#         # `SKILL.md`. Use 2 for repos shaped like `skills/<category>/<skill>`.
+#         skillDiscoveryDepth: 2
+#         token: '${GITHUB_SKILLS_TOKEN}'
+#         # Optional. Owns the mirrored skills under the given tenant so they are
+#         # created and shared within that tenant. Required for visibility when
+#         # tenant isolation is enabled. Omit for single-tenant deployments.
+#         # Treat as immutable per source id: changing (or adding/removing) the
+#         # tenantId later leaves previously mirrored skills in the old tenant,
+#         # where this source's sync can no longer see or clean them up. To move a
+#         # source between tenants, delete its mirrored skills in the old tenant
+#         # first, or use a new source id for the new tenant.
+#         # tenantId: your-tenant-id
+
 # Custom interface configuration
 interface:
   customWelcome: 'Welcome to LibreChat! Enjoy your experience.'
@@ -153,23 +184,23 @@ interface:
   #   share: true
   #   public: true # Allows users to toggle "share with everyone" for their links. Whether anonymous access is permitted is controlled by ALLOW_SHARED_LINKS_PUBLIC.
   # mcpServers:
-    # Controls user permissions for MCP (Model Context Protocol) server management
-    # - use: Allow users to use configured MCP servers
-    # - create: Allow users to create and manage new MCP servers
-    # - share: Allow users to share MCP servers with other users
-    # - public: Allow users to share MCP servers publicly (with everyone)
+  # Controls user permissions for MCP (Model Context Protocol) server management
+  # - use: Allow users to use configured MCP servers
+  # - create: Allow users to create and manage new MCP servers
+  # - share: Allow users to share MCP servers with other users
+  # - public: Allow users to share MCP servers publicly (with everyone)
 
-    # Creation / edit MCP server config Dialog config example
-    # trustCheckbox:
-    #   label:
-    #     en: 'I understand and I want to continue'
-    #     de: 'Ich verstehe und möchte fortfahren'
-    #     de-DE: 'Ich verstehe und möchte fortfahren' # You can narrow translation to regions like (de-DE or de-CH)
-    #   subLabel:
-    #     en: |
-    #       Librechat hasn't reviewed this MCP server. Attackers may attempt to steal your data or trick the model into taking unintended actions, including destroying data. <a href="https://google.de" target="_blank"><strong>Learn more.</strong></a>
-    #     de: |
-    #       LibreChat hat diesen MCP-Server nicht überprüft. Angreifer könnten versuchen, Ihre Daten zu stehlen oder das Modell zu unbeabsichtigten Aktionen zu verleiten, einschließlich der Zerstörung von Daten. <a href="https://google.de" target="_blank"><strong>Mehr erfahren.</strong></a>
+  # Creation / edit MCP server config Dialog config example
+  # trustCheckbox:
+  #   label:
+  #     en: 'I understand and I want to continue'
+  #     de: 'Ich verstehe und möchte fortfahren'
+  #     de-DE: 'Ich verstehe und möchte fortfahren' # You can narrow translation to regions like (de-DE or de-CH)
+  #   subLabel:
+  #     en: |
+  #       Librechat hasn't reviewed this MCP server. Attackers may attempt to steal your data or trick the model into taking unintended actions, including destroying data. <a href="https://google.de" target="_blank"><strong>Learn more.</strong></a>
+  #     de: |
+  #       LibreChat hat diesen MCP-Server nicht überprüft. Angreifer könnten versuchen, Ihre Daten zu stehlen oder das Modell zu unbeabsichtigten Aktionen zu verleiten, einschließlich der Zerstörung von Daten. <a href="https://google.de" target="_blank"><strong>Mehr erfahren.</strong></a>
 
   # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
   # temporaryChatRetention: 1

@@ -1,6 +1,6 @@
 import { INTERFACE_PERMISSION_FIELDS, PermissionTypes } from 'librechat-data-provider';
-import { mergeConfigOverrides } from './resolution';
 import type { AppConfig, IConfig } from '~/types';
+import { mergeConfigOverrides } from './resolution';
 
 function fakeConfig(
   overrides: Record<string, unknown>,
@@ -345,6 +345,66 @@ describe('mergeConfigOverrides', () => {
     expect(iface.marketplace).toBeUndefined();
     // Untouched base field preserved
     expect(iface.parameters).toBe(true);
+  });
+
+  it('merges skillSync config sections from DB overrides', () => {
+    const base = {
+      skillSync: {
+        github: {
+          enabled: true,
+          intervalMinutes: 60,
+          runOnStartup: false,
+          sources: [
+            {
+              id: 'base-source',
+              owner: 'LibreChat',
+              repo: 'skills',
+              ref: 'main',
+              paths: ['skills'],
+              token: '${GITHUB_SKILLS_TOKEN}',
+            },
+          ],
+        },
+      },
+      interfaceConfig: { modelSelect: true },
+    } as unknown as AppConfig;
+
+    const configs = [
+      fakeConfig(
+        {
+          skillSync: {
+            github: {
+              enabled: false,
+              sources: [
+                {
+                  id: 'override-source',
+                  owner: 'other',
+                  repo: 'skills',
+                  paths: ['skills'],
+                  token: '${OTHER_TOKEN}',
+                },
+              ],
+            },
+          },
+          interface: { modelSelect: false },
+        },
+        10,
+      ),
+    ];
+
+    const result = mergeConfigOverrides(base, configs);
+
+    expect(result.skillSync?.github?.enabled).toBe(false);
+    expect(result.skillSync?.github?.sources).toEqual([
+      {
+        id: 'override-source',
+        owner: 'other',
+        repo: 'skills',
+        paths: ['skills'],
+        token: '${OTHER_TOKEN}',
+      },
+    ]);
+    expect(result.interfaceConfig?.modelSelect).toBe(false);
   });
 
   it('preserves UI sub-keys in composite permission fields like mcpServers', () => {

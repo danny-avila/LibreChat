@@ -5,7 +5,6 @@ import type { RequestBody } from '~/types';
 export const mcpToolPattern: RegExp = new RegExp(`^.+${Constants.mcp_delimiter}.+$`);
 
 const RUNTIME_CONTEXT_PLACEHOLDER_PATTERN = /\{\{LIBRECHAT_(?:USER|OPENID|GRAPH|BODY)_[^}]+\}\}/;
-const EPHEMERAL_CONNECTION_PLACEHOLDER_PATTERN = /\{\{LIBRECHAT_(?:OPENID|GRAPH|BODY)_[^}]+\}\}/;
 const RUNTIME_BODY_PLACEHOLDER_PATTERN = /\{\{LIBRECHAT_BODY_[^}]+\}\}/;
 const RUNTIME_BODY_PLACEHOLDER_CAPTURE_PATTERN = /\{\{LIBRECHAT_BODY_([^}]+)\}\}/g;
 
@@ -74,10 +73,6 @@ export function hasCustomUserVars(config: Pick<ParsedServerConfig, 'customUserVa
 
 function hasRuntimeContextPlaceholder(value: PlaceholderValue): boolean {
   return hasPlaceholder(value, RUNTIME_CONTEXT_PLACEHOLDER_PATTERN);
-}
-
-function hasEphemeralConnectionPlaceholder(value: PlaceholderValue): boolean {
-  return hasPlaceholder(value, EPHEMERAL_CONNECTION_PLACEHOLDER_PATTERN);
 }
 
 function hasPlaceholder(value: PlaceholderValue, pattern: RegExp): boolean {
@@ -176,19 +171,25 @@ export function getMissingRuntimeBodyPlaceholderFields(
 }
 
 /**
- * `GRAPH` and `BODY` placeholders can change per request. If they affect the
- * connection-defining parts of a config, the normal userId:serverName cache
- * would reuse a connection built with stale request context.
+ * `BODY` placeholders vary by chat request, so the normal userId:serverName
+ * cache would reuse a connection built with stale request context.
  *
  * Ephemeral connections are created and torn down per tool call — configs using
  * these placeholders pay a full connect + initialize on every invocation.
+ *
+ * User/OpenID/Graph placeholders still require user-scoped connections, but they
+ * are not request-scoped by themselves. HTTP transports refresh resolved headers
+ * before each tool call, so token/user headers can remain on the cached user
+ * connection without forcing a reconnect for every invocation.
  */
 export function requiresEphemeralUserConnection(config: UserScopedConnectionConfig): boolean {
   if (isUserSourced(config)) {
     return false;
   }
 
-  return placeholderBearingFields(config).some(hasEphemeralConnectionPlaceholder);
+  return placeholderBearingFields(config).some((value) =>
+    hasPlaceholder(value, RUNTIME_BODY_PLACEHOLDER_PATTERN),
+  );
 }
 
 /**

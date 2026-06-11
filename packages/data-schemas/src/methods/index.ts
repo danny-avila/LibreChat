@@ -1,10 +1,10 @@
+import type { RoleMethods, RoleDeps } from './role';
 import { createSessionMethods, DEFAULT_REFRESH_TOKEN_EXPIRY, type SessionMethods } from './session';
+import { createUserMethods, DEFAULT_SESSION_EXPIRY, type UserMethods } from './user';
 import { createTokenMethods, type TokenMethods } from './token';
 import { createRoleMethods, RoleConflictError } from './role';
-import type { RoleMethods, RoleDeps } from './role';
-import { createUserMethods, DEFAULT_SESSION_EXPIRY, type UserMethods } from './user';
-import { createKeyMethods, type KeyMethods } from './key';
 import { createFileMethods, type FileMethods } from './file';
+import { createKeyMethods, type KeyMethods } from './key';
 /* Memories */
 import { createMemoryMethods, type MemoryMethods } from './memory';
 /* Agent Categories */
@@ -77,6 +77,12 @@ import {
   type UpdateSkillResult,
   type ValidationIssue,
 } from './skill';
+import { createSkillSyncMethods, type SkillSyncMethods } from './skillSync';
+import type {
+  SkillSyncStatusInput,
+  SkillSyncCredentialSummary,
+  UpsertSkillSyncCredentialInput,
+} from './skillSync';
 /* Tier 5 — Agent */
 import { createAgentMethods, type AgentMethods, type AgentDeps } from './agent';
 /* Config */
@@ -127,6 +133,7 @@ export type AllMethods = UserMethods &
   SpendTokensMethods &
   PromptMethods &
   SkillMethods &
+  SkillSyncMethods &
   AgentMethods &
   ConfigMethods;
 
@@ -255,6 +262,7 @@ export function createMethods(
     ...spendTokensMethods,
     ...promptMethods,
     ...skillMethods,
+    ...createSkillSyncMethods(mongoose),
     /* Tier 5 */
     ...agentMethods,
     /* Config */
@@ -303,6 +311,10 @@ export type {
   ListSkillsByAccessResult,
   UpdateSkillResult,
   ValidationIssue,
+  SkillSyncStatusInput,
+  SkillSyncCredentialSummary,
+  UpsertSkillSyncCredentialInput,
+  SkillSyncMethods,
   AgentMethods,
   ConfigMethods,
 };

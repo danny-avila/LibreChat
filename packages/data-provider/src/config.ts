@@ -19,6 +19,8 @@ export { MAX_SUBAGENTS } from './limits';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
+export const BASE_ONLY_CONFIG_SECTIONS = [] as const;
+
 export const defaultRetrievalModels = [
   'gpt-4o',
   'o1-preview-2024-09-12',
@@ -243,6 +245,192 @@ export const cloudfrontConfigSchema = z
   .optional();
 
 export type CloudFrontConfig = z.infer<typeof cloudfrontConfigSchema>;
+
+const skillSyncIdentifierSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/, {
+    message:
+      'must start with a letter or digit and contain only letters, digits, underscores, or hyphens',
+  });
+
+export const SKILL_SYNC_MIN_INTERVAL_MINUTES = 5;
+export const SKILL_SYNC_MAX_INTERVAL_MINUTES = Math.floor(2147483647 / 60_000);
+export const SKILL_SYNC_DEFAULT_DISCOVERY_DEPTH = 2;
+export const SKILL_SYNC_MAX_DISCOVERY_DEPTH = 10;
+
+const skillSyncGitHubOwnerSchema = z
+  .string()
+  .min(1)
+  .max(39)
+  .regex(/^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/, {
+    message: 'must be a valid GitHub owner name',
+  });
+
+const skillSyncGitHubRepoSchema = z
+  .string()
+  .min(1)
+  .max(100)
+  .regex(/^[a-zA-Z0-9._-]+$/, {
+    message: 'must be a valid GitHub repository name',
+  });
+
+const invalidGitRefChars = new Set(['~', '^', ':', '?', '*', '[']);
+
+function hasInvalidGitRefCharacter(value: string): boolean {
+  for (const char of value) {
+    const code = char.charCodeAt(0);
+    if (code <= 32 || code === 127 || invalidGitRefChars.has(char)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+const skillSyncGitHubRefSchema = z
+  .string()
+  .min(1)
+  .max(255)
+  .refine((value) => !value.startsWith('/') && !value.endsWith('/'), {
+    message: 'must not start or end with a slash',
+  })
+  .refine((value) => !value.includes('..') && !value.includes('//') && !value.includes('\\'), {
+    message: 'must not contain traversal segments, empty path segments, or backslashes',
+  })
+  .refine((value) => !value.includes('@{') && value !== '@', {
+    message: 'must not contain invalid Git ref syntax',
+  })
+  .refine((value) => !value.endsWith('.'), {
+    message: 'must not end with a dot',
+  })
+  .refine((value) => !hasInvalidGitRefCharacter(value), {
+    message: 'must not contain invalid Git ref characters',
+  })
+  .refine(
+    (value) =>
+      value
+        .split('/')
+        .every((segment) => segment && !segment.startsWith('.') && !segment.endsWith('.lock')),
+    {
+      message: 'must contain valid Git ref path segments',
+    },
+  );
+
+const skillSyncPathSchema = z
+  .string()
+  .max(500)
+  .refine((value) => value.trim().length > 0, { message: 'must not be empty' })
+  .transform((value) => {
+    const trimmed = value.trim().replace(/^\/+|\/+$/g, '');
+    return trimmed === '.' ? '' : trimmed;
+  })
+  .refine((value) => !value.includes('\\') && !value.includes('..'), {
+    message: 'must not contain traversal segments or backslashes',
+  })
+  .refine((value) => value === '' || /^[a-zA-Z0-9._\-/]+$/.test(value), {
+    message: 'must contain only letters, digits, dots, underscores, hyphens, and slashes',
+  })
+  .refine(
+    (value) =>
+      value === '' || value.split('/').every((segment) => segment.length > 0 && segment !== '.'),
+    {
+      message: 'must not contain empty or dot path segments',
+    },
+  );
+
+const skillSyncTokenReferenceSchema = z
+  .string()
+  .trim()
+  .regex(/^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/, {
+    message: 'must be an environment variable reference like ${GITHUB_SKILLS_TOKEN}',
+  });
+
+/**
+ * Tenant that owns the skills mirrored from a source. When set, the sync runner
+ * executes that source's database writes inside the tenant's async context so
+ * synced skills are created, listed, and shared within the tenant under strict
+ * tenant isolation. Mirrors the request tenant-id contract: no reserved system id.
+ */
+const skillSyncTenantIdSchema = z
+  .string()
+  .max(128)
+  .refine((value) => /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(value), {
+    message: 'must be a valid tenant id',
+  })
+  .refine((value) => value !== '__SYSTEM__', {
+    message: 'must not be the reserved system tenant id',
+  });
+
+export const skillSyncGitHubSourceSchema = z
+  .object({
+    id: skillSyncIdentifierSchema,
+    owner: skillSyncGitHubOwnerSchema,
+    repo: skillSyncGitHubRepoSchema,
+    ref: skillSyncGitHubRefSchema.default('main'),
+    paths: z.array(skillSyncPathSchema).min(1),
+    skillDiscoveryDepth: z.number().int().min(0).max(SKILL_SYNC_MAX_DISCOVERY_DEPTH).optional(),
+    credentialKey: skillSyncIdentifierSchema.optional(),
+    token: skillSyncTokenReferenceSchema.optional(),
+    tenantId: skillSyncTenantIdSchema.optional(),
+  })
+  .superRefine((source, ctx) => {
+    if (!source.credentialKey && !source.token) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['credentialKey'],
+        message: 'Either credentialKey or token is required',
+      });
+    }
+    if (source.credentialKey && source.token) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['token'],
+        message: 'Use either credentialKey or token, not both',
+      });
+    }
+  });
+
+export const skillSyncConfigSchema = z
+  .object({
+    github: z
+      .object({
+        enabled: z.boolean().default(false),
+        intervalMinutes: z
+          .number()
+          .int()
+          .min(SKILL_SYNC_MIN_INTERVAL_MINUTES)
+          .max(SKILL_SYNC_MAX_INTERVAL_MINUTES)
+          .default(60),
+        runOnStartup: z.boolean().default(false),
+        sources: z.array(skillSyncGitHubSourceSchema).default([]),
+      })
+      .superRefine((github, ctx) => {
+        if (github.enabled && github.sources.length === 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['sources'],
+            message: 'At least one GitHub source is required when skill sync is enabled',
+          });
+        }
+        const seen = new Set<string>();
+        for (const source of github.sources) {
+          if (seen.has(source.id)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['sources'],
+              message: `Duplicate GitHub skill sync source id "${source.id}"`,
+            });
+          }
+          seen.add(source.id);
+        }
+      })
+      .optional(),
+  })
+  .optional();
+
+export type SkillSyncConfig = z.infer<typeof skillSyncConfigSchema>;
+export type SkillSyncGitHubSourceConfig = z.infer<typeof skillSyncGitHubSourceSchema>;
 
 // Helper type to extract the shape of the Zod object schema
 type SchemaShape<T> = T extends z.ZodObject<infer U> ? U : never;
@@ -1462,6 +1650,7 @@ export const configSchema = z.object({
   webSearch: webSearchSchema.optional(),
   memory: memorySchema.optional(),
   summarization: summarizationConfigSchema.optional(),
+  skillSync: skillSyncConfigSchema,
   secureImageLinks: z.boolean().optional(),
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
   includedTools: z.array(z.string()).optional(),
