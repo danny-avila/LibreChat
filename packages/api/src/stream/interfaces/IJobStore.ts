@@ -48,6 +48,12 @@ export interface SerializableJobData {
   /** Serialized replay-only stream events for active-stream resume */
   replayEvents?: string;
 
+  /** Serialized latest context usage snapshot for active-stream resume */
+  contextUsage?: string;
+
+  /** Serialized token usage events for active-stream resume (cross-replica safe) */
+  tokenUsage?: string;
+
   /** Endpoint metadata for abort handling - avoids storing functions */
   endpoint?: string;
   iconURL?: string;

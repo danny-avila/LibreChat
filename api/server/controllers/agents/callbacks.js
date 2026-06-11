@@ -1,6 +1,12 @@
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
-const { Tools, StepTypes, FileContext, ErrorTypes } = require('librechat-data-provider');
+const {
+  Tools,
+  StepTypes,
+  FileContext,
+  ErrorTypes,
+  UsageEvents,
+} = require('librechat-data-provider');
 const {
   GraphEvents,
   GraphNodeKeys,
@@ -41,13 +47,16 @@ class ModelEndHandler {
    *   Optional; when `null`, the handler is a no-op for signatures. Non-Vertex
    *   providers don't emit `additional_kwargs.signatures`, so capture is also
    *   a no-op for them even when the map is provided.
+   * @param {(data: Record<string, unknown>) => Promise<void> | void} [emitUsage] Optional
+   *   callback to stream per-call token usage to the client.
    */
-  constructor(collectedUsage, collectedThoughtSignatures = null) {
+  constructor(collectedUsage, collectedThoughtSignatures = null, emitUsage = null) {
     if (!Array.isArray(collectedUsage)) {
       throw new Error('collectedUsage must be an array');
     }
     this.collectedUsage = collectedUsage;
     this.collectedThoughtSignatures = collectedThoughtSignatures;
+    this.emitUsage = emitUsage;
   }
 
   finalize(errorMessage) {
@@ -103,6 +112,19 @@ class ModelEndHandler {
       const taggedUsage = markSummarizationUsage(usage, metadata);
 
       this.collectedUsage.push(taggedUsage);
+
+      if (this.emitUsage) {
+        await this.emitUsage({
+          input_tokens: taggedUsage.input_tokens,
+          output_tokens: taggedUsage.output_tokens,
+          total_tokens: taggedUsage.total_tokens,
+          input_token_details: taggedUsage.input_token_details,
+          model: taggedUsage.model,
+          provider: taggedUsage.provider,
+          usage_type: taggedUsage.usage_type,
+          runId: metadata?.run_id,
+        });
+      }
 
       /**
        * `additional_kwargs.signatures` is a flat array indexed by response
@@ -240,7 +262,11 @@ function getDefaultHandlers({
     );
   }
   const handlers = {
-    [GraphEvents.CHAT_MODEL_END]: new ModelEndHandler(collectedUsage, collectedThoughtSignatures),
+    [GraphEvents.CHAT_MODEL_END]: new ModelEndHandler(
+      collectedUsage,
+      collectedThoughtSignatures,
+      (data) => emitEvent(res, streamId, { event: UsageEvents.ON_TOKEN_USAGE, data }),
+    ),
     [GraphEvents.TOOL_END]: new ToolEndHandler(toolEndCallback, logger),
     [GraphEvents.ON_RUN_STEP]: {
       /**
@@ -424,6 +450,20 @@ function getDefaultHandlers({
   }
 
   handlers[GraphEvents.ON_AGENT_LOG] = { handle: agentLogHandler };
+
+  /** Guarded: no-op when the installed @librechat/agents predates the event */
+  if (GraphEvents.ON_CONTEXT_USAGE) {
+    handlers[GraphEvents.ON_CONTEXT_USAGE] = {
+      /**
+       * Forward per-model-call context usage snapshots to the client.
+       * @param {string} event - The event name.
+       * @param {StreamEventData} data - The event data.
+       */
+      handle: async (event, data) => {
+        await emitEvent(res, streamId, { event, data });
+      },
+    };
+  }
 
   return handlers;
 }

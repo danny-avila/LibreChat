@@ -10,6 +10,7 @@ import {
   ErrorTypes,
   StepEvents,
   apiBaseUrl,
+  UsageEvents,
   createPayload,
   ViolationTypes,
   removeNullishValues,
@@ -29,6 +30,7 @@ import {
   clearAllDrafts,
   removeConvoFromAllQueries,
   upsertConvoInAllQueries,
+  countTrailingOutputChars,
   markStreamStartFailedMetadata,
 } from '~/utils';
 import {
@@ -39,6 +41,7 @@ import {
 } from '~/data-provider';
 import useEventHandlers, { buildCreatedInitialResponse } from './useEventHandlers';
 import { useAuthContext } from '~/hooks/AuthContext';
+import useUsageHandler from './useUsageHandler';
 import store from '~/store';
 
 type ChatHelpers = Pick<
@@ -473,6 +476,15 @@ export default function useResumableSSE(
   const balanceQuery = useGetUserBalance({
     enabled: !!isAuthenticated && startupConfig?.balance?.enabled,
   });
+  const {
+    contextHandler,
+    usageHandler,
+    tapStream,
+    finalizeUsage,
+    backfillUsage,
+    resetLive,
+    seedLive,
+  } = useUsageHandler();
 
   /**
    * Subscribe to stream via SSE library (supports custom headers)
@@ -530,6 +542,7 @@ export default function useResumableSSE(
             }
             try {
               finalHandler(data, currentSubmission as EventSubmission);
+              finalizeUsage(data, { ...currentSubmission, userMessage });
             } catch (error) {
               console.error('[ResumableSSE] Error in finalHandler:', error);
               setIsSubmitting(false);
@@ -589,7 +602,23 @@ export default function useResumableSSE(
             return;
           }
 
+          if (data.event === UsageEvents.ON_CONTEXT_USAGE) {
+            contextHandler(data.data, { ...currentSubmission, userMessage });
+            return;
+          }
+
+          if (data.event === UsageEvents.ON_TOKEN_USAGE) {
+            usageHandler(data.data, { ...currentSubmission, userMessage });
+            return;
+          }
+
           if (data.event != null) {
+            if (
+              data.event === StepEvents.ON_MESSAGE_DELTA ||
+              data.event === StepEvents.ON_REASONING_DELTA
+            ) {
+              tapStream(data.data, { ...currentSubmission, userMessage });
+            }
             if (!isResume && !createdStreamIdsRef.current.has(currentStreamId)) {
               if (isOAuthStepEvent(data)) {
                 preCreatedStepEvents.push(data);
@@ -619,6 +648,24 @@ export default function useResumableSSE(
             currentSubmission = resumeSubmission;
             submissionRef.current = resumeSubmission;
             userMessage = resumeSubmission.userMessage;
+            /**
+             * The run's collected usage is the source of truth at sync time:
+             * pre-snapshot events are never replayed (only represented via
+             * aggregated content), so totals are rebuilt from the backfill
+             * and token-usage replay events are skipped when it's present.
+             */
+            const backfilledUsage = data.resumeState?.collectedUsage;
+            const hasUsageBackfill = (backfilledUsage?.length ?? 0) > 0;
+            backfillUsage(backfilledUsage ?? [], resumeSubmission);
+            if (data.resumeState?.contextUsage) {
+              contextHandler(data.resumeState.contextUsage, resumeSubmission);
+            }
+            /** Output streamed before this resume is not re-delivered as
+             *  deltas — estimate it from the trailing aggregated content */
+            seedLive(
+              countTrailingOutputChars(data.resumeState?.aggregatedContent),
+              resumeSubmission,
+            );
 
             if (data.resumeState?.runSteps) {
               for (const runStep of data.resumeState.runSteps) {
@@ -700,7 +747,13 @@ export default function useResumableSSE(
                 `[ResumableSSE] Replaying ${data.resumeState.replayEvents.length} resume events`,
               );
               for (const replayEvent of data.resumeState.replayEvents) {
-                if (replayEvent.event != null) {
+                if (replayEvent.event === UsageEvents.ON_CONTEXT_USAGE) {
+                  contextHandler(replayEvent.data, resumeSubmission);
+                } else if (replayEvent.event === UsageEvents.ON_TOKEN_USAGE) {
+                  if (!hasUsageBackfill) {
+                    usageHandler(replayEvent.data, resumeSubmission);
+                  }
+                } else if (replayEvent.event != null) {
                   stepHandler(replayEvent, resumeSubmission);
                 }
               }
@@ -711,6 +764,12 @@ export default function useResumableSSE(
               for (const pendingEvent of data.pendingEvents) {
                 if (pendingEvent.event === 'title') {
                   titleHandler(pendingEvent);
+                } else if (pendingEvent.event === UsageEvents.ON_CONTEXT_USAGE) {
+                  contextHandler(pendingEvent.data, resumeSubmission);
+                } else if (pendingEvent.event === UsageEvents.ON_TOKEN_USAGE) {
+                  if (!hasUsageBackfill) {
+                    usageHandler(pendingEvent.data, resumeSubmission);
+                  }
                 } else if (pendingEvent.event != null) {
                   stepHandler(pendingEvent, resumeSubmission);
                 } else if (pendingEvent.type != null) {
@@ -821,6 +880,7 @@ export default function useResumableSSE(
           console.log('[ResumableSSE] Server-sent error event received:', e.data);
           sse.close();
           removeActiveJob(currentStreamId);
+          resetLive({ ...currentSubmission, userMessage });
           if (
             !createdStreamIdsRef.current.has(currentStreamId) &&
             optimisticStreamIdsRef.current.has(currentStreamId)
@@ -994,6 +1054,13 @@ export default function useResumableSSE(
       balanceQuery,
       removeActiveJob,
       queryClient,
+      contextHandler,
+      usageHandler,
+      tapStream,
+      finalizeUsage,
+      backfillUsage,
+      resetLive,
+      seedLive,
     ],
   );
 

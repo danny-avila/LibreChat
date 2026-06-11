@@ -26,12 +26,29 @@ export type BranchSiblingIndex = {
   siblingIdx: number;
 };
 
+/** Keyed by array identity — cache selectors re-derive the tree from the same
+ *  immutable snapshot once per subscriber, so repeat builds are pure waste. */
+const treeMemo = new WeakMap<TMessage[], ReturnType<typeof buildTree>>();
+
+const buildTreeMemoized = (messages: TMessage[] | null | undefined) => {
+  if (messages == null) {
+    return null;
+  }
+  const cached = treeMemo.get(messages);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const tree = buildTree({ messages });
+  treeMemo.set(messages, tree);
+  return tree;
+};
+
 export const selectActiveBranchTail = (
   messages: TMessage[] | null | undefined,
   rootSiblingKey: string | null | undefined,
   getSiblingIndex: SiblingIndexLookup = () => 0,
 ): TMessage | null => {
-  const messagesTree = buildTree({ messages: messages ?? null });
+  const messagesTree = buildTreeMemoized(messages);
   if (!messagesTree?.length) {
     return null;
   }
@@ -61,7 +78,7 @@ export const getMessageBranchSiblingParentIds = (
   messages: TMessage[] | null | undefined,
   rootSiblingKey: string | null | undefined,
 ): (string | null)[] => {
-  const messagesTree = buildTree({ messages: messages ?? null });
+  const messagesTree = buildTreeMemoized(messages);
   if (!messagesTree?.length) {
     return [];
   }

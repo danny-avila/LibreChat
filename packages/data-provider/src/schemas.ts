@@ -748,6 +748,8 @@ export const tMessageSchema = z.object({
   feedback: feedbackSchema.optional(),
   /** metadata */
   metadata: z.record(z.unknown()).optional(),
+  /** Output tokens for assistant messages, calibrated prompt-side estimate for user messages */
+  tokenCount: z.number().optional(),
   contextMeta: z
     .object({
       calibrationRatio: z

@@ -40,6 +40,57 @@ export enum StepEvents {
   ON_SUBAGENT_UPDATE = 'on_subagent_update',
 }
 
+/** Token-tracking event names streamed to the client (separate from StepEvents dispatch). */
+export enum UsageEvents {
+  ON_CONTEXT_USAGE = 'on_context_usage',
+  ON_TOKEN_USAGE = 'on_token_usage',
+}
+
+/** Mirrors TokenBudgetBreakdown from @librechat/agents (data-provider cannot import it). */
+export type TTokenBudgetBreakdown = {
+  maxContextTokens: number;
+  instructionTokens: number;
+  systemMessageTokens: number;
+  dynamicInstructionTokens: number;
+  toolSchemaTokens: number;
+  summaryTokens: number;
+  toolCount: number;
+  messageCount: number;
+  messageTokens: number;
+  availableForMessages: number;
+};
+
+/** Per-model-call context snapshot, dispatched after pruning and before the LLM call. */
+export type TContextUsageEvent = {
+  runId?: string;
+  agentId?: string;
+  breakdown: TTokenBudgetBreakdown;
+  /** Usable budget this call: maxContextTokens minus output reserve */
+  contextBudget?: number;
+  /** Calibrated instruction overhead actually applied this call */
+  effectiveInstructionTokens?: number;
+  /** Calibrated message tokens before pruning (excluding instructions) */
+  prePruneContextTokens?: number;
+  /** Tokens still free after instructions + pruned messages */
+  remainingContextTokens?: number;
+  calibrationRatio?: number;
+};
+
+/** Provider-reported usage for a single completed model call. */
+export type TTokenUsageEvent = {
+  input_tokens?: number;
+  output_tokens?: number;
+  total_tokens?: number;
+  input_token_details?: {
+    cache_creation?: number;
+    cache_read?: number;
+  };
+  model?: string;
+  provider?: string;
+  usage_type?: 'summarization';
+  runId?: string;
+};
+
 /** Lifecycle phase carried on subagent-progress envelopes (mirrors SDK SubagentUpdatePhase). */
 export type SubagentUpdatePhase =
   | 'start'

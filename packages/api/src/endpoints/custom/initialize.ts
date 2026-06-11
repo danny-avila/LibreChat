@@ -17,6 +17,26 @@ import { tokenConfigCache } from '~/cache';
 const { PROXY } = process.env;
 
 /**
+ * Cache key for an endpoint's fetched token config. User-scoped when the
+ * model fetch can resolve per-user: user-provided key/URL, or header
+ * templates forwarded against an admin-trusted base URL — making the
+ * response, and therefore the derived token config, user-specific.
+ */
+export function getTokenConfigKey(
+  endpointConfig: Partial<TEndpoint>,
+  endpoint: string,
+  userId: string,
+): string {
+  const hasTokenConfig = (endpointConfig as Record<string, unknown>).tokenConfig != null;
+  const userProvidesKey = isUserProvided(extractEnvVariable(endpointConfig.apiKey ?? ''));
+  const userProvidesURL = isUserProvided(extractEnvVariable(endpointConfig.baseURL ?? ''));
+  const willForwardUserScopedHeaders = !!endpointConfig?.headers && !userProvidesURL;
+  return !hasTokenConfig && (userProvidesKey || userProvidesURL || willForwardUserScopedHeaders)
+    ? `${endpoint}:${userId}`
+    : endpoint;
+}
+
+/**
  * Builds custom options from endpoint configuration
  */
 function buildCustomOptions(
@@ -138,17 +158,7 @@ export async function initializeCustom({
   const cache = tokenConfigCache();
   /** tokenConfig is an optional extended property on custom endpoints */
   const hasTokenConfig = (endpointConfig as Record<string, unknown>).tokenConfig != null;
-  // When `endpointConfig.headers` will be forwarded to the model fetch (i.e.
-  // base URL is admin-trusted, so the security guard below leaves them in
-  // place), header templates may resolve against the current user — making
-  // the response, and therefore the derived token config, user-specific.
-  // User-scope the token-config cache key in that case so a cached entry
-  // for one user can't be served to another.
-  const willForwardUserScopedHeaders = !!endpointConfig?.headers && !userProvidesURL;
-  const tokenKey =
-    !hasTokenConfig && (userProvidesKey || userProvidesURL || willForwardUserScopedHeaders)
-      ? `${endpoint}:${userId}`
-      : endpoint;
+  const tokenKey = getTokenConfigKey(endpointConfig, endpoint, userId);
 
   const cachedConfig =
     !hasTokenConfig &&

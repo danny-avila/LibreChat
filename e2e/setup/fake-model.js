@@ -10,6 +10,8 @@
  * from the conversation and the agents' advertised tools.
  */
 const { FakeChatModel } = require('@librechat/agents');
+const { ChatGenerationChunk } = require('@langchain/core/outputs');
+const { AIMessageChunk } = require('@langchain/core/messages');
 
 const MOCK_REPLY = process.env.MOCK_LLM_REPLY || 'E2E mock reply: pong';
 const CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_CHUNK_DELAY_MS) || 10;
@@ -298,9 +300,41 @@ function replyResponses(text) {
   return null;
 }
 
+/**
+ * Attaches synthetic usage_metadata on a final empty chunk (the OpenAI
+ * streaming pattern) so token-usage SSE events flow end to end in mock runs.
+ */
+class UsageEmittingFakeChatModel extends FakeChatModel {
+  async *_streamResponseChunks(messages, options, runManager) {
+    let outputChars = 0;
+    for await (const chunk of super._streamResponseChunks(messages, options, runManager)) {
+      outputChars += typeof chunk.text === 'string' ? chunk.text.length : 0;
+      yield chunk;
+    }
+    const inputChars = (messages ?? []).reduce(
+      (sum, message) => sum + getContentText(message?.content).length,
+      0,
+    );
+    const input_tokens = Math.max(1, Math.ceil(inputChars / 4));
+    const output_tokens = Math.max(1, Math.ceil(outputChars / 4));
+    yield new ChatGenerationChunk({
+      text: '',
+      message: new AIMessageChunk({
+        content: '',
+        usage_metadata: { input_tokens, output_tokens, total_tokens: input_tokens + output_tokens },
+      }),
+    });
+  }
+}
+
 function overrideModel({ graph, responses, sleep, toolCalls, thrownError }) {
   if (!thrownError) {
-    graph.overrideTestModel(responses, sleep ?? CHUNK_DELAY_MS, toolCalls);
+    graph.overrideModel = new UsageEmittingFakeChatModel({
+      responses,
+      sleep: sleep ?? CHUNK_DELAY_MS,
+      emitCustomEvent: true,
+      toolCalls,
+    });
     return;
   }
 

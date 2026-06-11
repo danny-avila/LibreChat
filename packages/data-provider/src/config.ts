@@ -1167,6 +1167,8 @@ export const interfaceSchema = z
     retainAgentFiles: z.boolean().optional(),
     runCode: z.boolean().optional(),
     webSearch: z.boolean().optional(),
+    contextUsage: z.boolean().optional(),
+    contextCost: z.boolean().optional(),
     peoplePicker: z
       .object({
         users: z.boolean().optional(),
@@ -1236,6 +1238,8 @@ export const interfaceSchema = z
     autoSubmitFromUrl: true,
     runCode: true,
     webSearch: true,
+    contextUsage: true,
+    contextCost: false,
     peoplePicker: {
       users: true,
       groups: true,
