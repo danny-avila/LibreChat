@@ -1815,6 +1815,55 @@ describe('MCPManager', () => {
       expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(2);
     });
 
+    it('should reuse BODY-scoped connections within a request-scoped connection store', async () => {
+      const bodyUrlConfig: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://api.example.com/messages/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+        source: 'yaml',
+        requiresOAuth: false,
+      };
+      const requestScopedConnection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+      } as unknown as MCPConnection;
+      const requestScopedConnections: t.RequestScopedMCPConnectionStore = {
+        connections: new Map(),
+        pending: new Map(),
+      };
+
+      mockAppConnections({
+        has: jest.fn().mockResolvedValue(false),
+      });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(bodyUrlConfig);
+      mockProcessMCPEnv.mockImplementation(({ options, body }) => ({
+        ...options,
+        ...('url' in options && {
+          url: options.url?.replace('{{LIBRECHAT_BODY_MESSAGEID}}', body?.messageId ?? ''),
+        }),
+      }));
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(requestScopedConnection);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const first = await manager.getUserConnection({
+        serverName,
+        user: mockUser,
+        requestBody: { messageId: 'message-1' },
+        requestScopedConnections,
+      });
+      const second = await manager.getUserConnection({
+        serverName,
+        user: mockUser,
+        requestBody: { messageId: 'message-1' },
+        requestScopedConnections,
+      });
+
+      expect(first).toBe(requestScopedConnection);
+      expect(second).toBe(requestScopedConnection);
+      expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(1);
+      expect(requestScopedConnections.connections.get(`${mockUser.id}:${serverName}`)).toBe(
+        requestScopedConnection,
+      );
+    });
+
     it('should not clear server cooldowns for ephemeral runtime connections', async () => {
       const bodyUrlConfig: t.ParsedServerConfig = {
         type: 'streamable-http',

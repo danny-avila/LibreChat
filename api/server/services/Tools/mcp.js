@@ -24,6 +24,7 @@ const { getLogStores } = require('~/cache');
  * @param {(authURL: string, options?: { expiresAt?: number }) => Promise<void>} [params.oauthStart]
  * @param {() => Promise<void>} [params.oauthEnd]
  * @param {import('@librechat/api').RequestBody} [params.requestBody]
+ * @param {import('@librechat/api').RequestScopedMCPConnectionStore} [params.requestScopedConnections]
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  */
 async function reinitMCPServer({
@@ -39,6 +40,7 @@ async function reinitMCPServer({
   flowManager: _flowManager,
   serverConfig: providedConfig,
   requestBody,
+  requestScopedConnections,
   oauthEnd,
 }) {
   /** @type {MCPConnection | null} */
@@ -144,6 +146,7 @@ async function reinitMCPServer({
         oauthEnd,
         customUserVars,
         requestBody,
+        requestScopedConnections,
         connectionTimeout,
         serverConfig,
         graphTokenResolver: getGraphApiToken,
@@ -265,7 +268,7 @@ async function reinitMCPServer({
       error,
     );
   } finally {
-    if (connection && ephemeralServer) {
+    if (connection && ephemeralServer && !requestScopedConnections) {
       try {
         await connection.disconnect();
       } catch (error) {

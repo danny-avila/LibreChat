@@ -1,5 +1,6 @@
 import { logger } from '@librechat/data-schemas';
 import {
+  BASE_ONLY_CONFIG_SECTIONS,
   PrincipalType,
   PrincipalModel,
   INTERFACE_PERMISSION_FIELDS,
@@ -15,6 +16,7 @@ import type { ServerRequest } from '~/types/http';
 const UNSAFE_SEGMENTS = /(?:^|\.)(__[\w]*|constructor|prototype)(?:\.|$)/;
 const MAX_PATCH_ENTRIES = 100;
 const DEFAULT_PRIORITY = 10;
+const BASE_ONLY_OVERRIDE_SECTIONS = new Set<string>(BASE_ONLY_CONFIG_SECTIONS);
 
 export function isValidFieldPath(path: string): boolean {
   return (
@@ -29,6 +31,10 @@ export function isValidFieldPath(path: string): boolean {
 
 export function getTopLevelSection(fieldPath: string): string {
   return fieldPath.split('.')[0];
+}
+
+function isBaseOnlyFieldPath(fieldPath: string): boolean {
+  return BASE_ONLY_OVERRIDE_SECTIONS.has(getTopLevelSection(fieldPath));
 }
 
 /**
@@ -316,7 +322,17 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
-      let filteredOverrides = overrides;
+      const filteredOverrides = {
+        ...(overrides as Record<string, unknown>),
+      } as Partial<TCustomConfig>;
+      for (const section of BASE_ONLY_OVERRIDE_SECTIONS) {
+        if (section in filteredOverrides) {
+          delete (filteredOverrides as Record<string, unknown>)[section];
+          logger.warn(
+            `[adminConfig] Stripping base-only config section "${section}" - configure it in librechat.yaml instead`,
+          );
+        }
+      }
       const iface = (overrides as Record<string, unknown>).interface;
       if (iface != null && typeof iface === 'object' && !Array.isArray(iface)) {
         const filteredIface: Record<string, unknown> = {};
@@ -345,7 +361,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             );
           }
         }
-        filteredOverrides = { ...(overrides as Record<string, unknown>) } as Partial<TCustomConfig>;
         if (Object.keys(filteredIface).length > 0) {
           (filteredOverrides as Record<string, unknown>).interface = filteredIface;
         } else {
@@ -436,6 +451,12 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
 
       const validEntries = entries.filter((entry) => {
+        if (isBaseOnlyFieldPath(entry.fieldPath)) {
+          logger.warn(
+            `[adminConfig] Stripping base-only config field "${entry.fieldPath}" - configure it in librechat.yaml instead`,
+          );
+          return false;
+        }
         if (isInterfacePermissionPath(entry.fieldPath)) {
           logger.warn(
             `[adminConfig] Stripping interface permission field "${entry.fieldPath}" — use role permissions instead`,
@@ -606,6 +627,13 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(403).json({
           error: `Insufficient permissions for config section: ${section}`,
         });
+      }
+
+      if (isBaseOnlyFieldPath(fieldPath)) {
+        logger.warn(
+          `[adminConfig] Ignoring delete for base-only config field "${fieldPath}" - configure it in librechat.yaml instead`,
+        );
+        return res.status(200).json({ message: 'No actionable field path provided' });
       }
 
       if (isInterfacePermissionPath(fieldPath)) {

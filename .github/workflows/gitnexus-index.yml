@@ -43,7 +43,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GITNEXUS_VERSION: '1.6.5'
+  GITNEXUS_VERSION: '1.6.7'
 
 jobs:
   index:
@@ -63,7 +63,9 @@ jobs:
       github.event_name != 'pull_request' ||
       github.event.pull_request.user.login == 'danny-avila'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # Embedding generation dominates the budget: ~45 min worst case on
+    # standard runners since the 1.6.x graph (~23k nodes) doubled vs 1.5.x.
+    timeout-minutes: 60
     # Best-effort index: a tool-internal crash must not block PRs. Fail soft on
     # PR events; push/dispatch runs still fail loudly so regressions stay visible.
     continue-on-error: ${{ github.event_name == 'pull_request' }}
@@ -165,7 +167,7 @@ jobs:
             --no-save \
             --no-package-lock \
             "gitnexus@${{ env.GITNEXUS_VERSION }}" \
-            "@ladybugdb/core@0.16.1"
+            "@ladybugdb/core@0.17.1"
           test -x "$RUNNER_TEMP/gitnexus-cli/node_modules/.bin/gitnexus"
 
       - name: Checkout repository

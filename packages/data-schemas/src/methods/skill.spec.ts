@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { logger, createModels } from '..';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import {
   SystemRoles,
@@ -7,7 +8,6 @@ import {
   PrincipalType,
   PermissionBits,
 } from 'librechat-data-provider';
-import { createAclEntryMethods } from './aclEntry';
 import {
   validateSkillName,
   validateSkillDescription,
@@ -17,7 +17,7 @@ import {
   inferSkillFileCategory,
   deriveStructuredFrontmatterFields,
 } from './skill';
-import { logger, createModels } from '..';
+import { createAclEntryMethods } from './aclEntry';
 import { createMethods } from './index';
 
 logger.silent = true;
@@ -138,6 +138,23 @@ function makeSkillInput(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+describe('Skill schema indexes', () => {
+  it('supports GitHub sync source metadata lookups', () => {
+    const indexSpecs = Skill.schema.indexes().map(([fields]) => fields);
+
+    expect(indexSpecs).toContainEqual({
+      source: 1,
+      'sourceMetadata.upstreamId': 1,
+      tenantId: 1,
+    });
+    expect(indexSpecs).toContainEqual({
+      source: 1,
+      'sourceMetadata.sourceId': 1,
+      tenantId: 1,
+    });
+  });
+});
 
 describe('skill validation helpers', () => {
   it('rejects names starting with reserved brand prefixes', () => {
@@ -514,6 +531,48 @@ describe('Skill CRUD methods', () => {
     expect(res.deleted).toBe(true);
     expect(await AclEntry.countDocuments({ resourceId: skill._id })).toBe(0);
     expect(await SkillFile.countDocuments({ skillId: skill._id })).toBe(0);
+  });
+
+  it('findSkillBySourceIdentity searches only the requested tenant bucket', async () => {
+    const upstreamId = 'librechat-skills:skills/research';
+    const sourceMetadata = {
+      provider: 'github',
+      sourceId: 'librechat-skills',
+      upstreamId,
+    };
+    const author = new mongoose.Types.ObjectId();
+    const tenantSkill = await Skill.create({
+      name: 'research',
+      description: 'A tenant-scoped GitHub skill mirror.',
+      body: 'tenant body',
+      author,
+      authorName: 'GitHub Sync',
+      tenantId: 'tenant-a',
+      source: 'github',
+      sourceMetadata,
+    });
+    const ambientSkill = await Skill.create({
+      name: 'research',
+      description: 'An ambient GitHub skill mirror.',
+      body: 'ambient body',
+      author,
+      authorName: 'GitHub Sync',
+      source: 'github',
+      sourceMetadata,
+    });
+
+    const ambientResult = await methods.findSkillBySourceIdentity({
+      source: 'github',
+      upstreamId,
+    });
+    const tenantResult = await methods.findSkillBySourceIdentity({
+      source: 'github',
+      upstreamId,
+      tenantId: 'tenant-a',
+    });
+
+    expect(ambientResult?._id.toString()).toBe(ambientSkill._id.toString());
+    expect(tenantResult?._id.toString()).toBe(tenantSkill._id.toString());
   });
 
   it('listSkillsByAccess returns only accessible skills and paginates by cursor', async () => {

@@ -1,3 +1,5 @@
+import { createSkillSyncCredentialModel } from './skillSyncCredential';
+import { createSkillSyncStatusModel } from './skillSyncStatus';
 import { createConversationTagModel } from './conversationTag';
 import { createAgentCategoryModel } from './agentCategory';
 import { createChatProjectModel } from './chatProject';
@@ -60,6 +62,8 @@ export function createModels(mongoose: typeof import('mongoose')): {
   PromptGroup: ReturnType<typeof createPromptGroupModel>;
   Skill: ReturnType<typeof createSkillModel>;
   SkillFile: ReturnType<typeof createSkillFileModel>;
+  SkillSyncCredential: ReturnType<typeof createSkillSyncCredentialModel>;
+  SkillSyncStatus: ReturnType<typeof createSkillSyncStatusModel>;
   ConversationTag: ReturnType<typeof createConversationTagModel>;
   SharedLink: ReturnType<typeof createSharedLinkModel>;
   ToolCall: ReturnType<typeof createToolCallModel>;
@@ -95,6 +99,8 @@ export function createModels(mongoose: typeof import('mongoose')): {
     PromptGroup: createPromptGroupModel(mongoose),
     Skill: createSkillModel(mongoose),
     SkillFile: createSkillFileModel(mongoose),
+    SkillSyncCredential: createSkillSyncCredentialModel(mongoose),
+    SkillSyncStatus: createSkillSyncStatusModel(mongoose),
     ConversationTag: createConversationTagModel(mongoose),
     SharedLink: createSharedLinkModel(mongoose),
     ToolCall: createToolCallModel(mongoose),

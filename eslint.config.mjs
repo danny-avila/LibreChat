@@ -219,7 +219,10 @@ export default [
     })),
   {
     files: ['**/*.ts', '**/*.tsx'],
-    ignores: ['packages/**/*', 'client/vite.config.ts'],
+    // e2e specs are not part of `client/tsconfig.json`'s program, so typed
+    // linting them errors with "file not found in project"; they still get
+    // the non-type-checked recommended rules from the block above.
+    ignores: ['packages/**/*', 'client/vite.config.ts', 'e2e/**/*'],
     plugins: {
       '@typescript-eslint': typescriptEslintEslintPlugin,
       jest: fixupPluginRules(jest),

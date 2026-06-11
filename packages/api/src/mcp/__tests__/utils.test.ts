@@ -557,26 +557,28 @@ describe('getMissingRuntimeBodyPlaceholderFields', () => {
 });
 
 describe('requiresEphemeralUserConnection', () => {
-  it('returns true when request-varying placeholders affect oauth_headers', () => {
+  it('returns true when BODY placeholders affect oauth_headers', () => {
     expect(
       requiresEphemeralUserConnection({
         source: 'yaml',
         url: 'https://example.com/mcp',
         oauth_headers: {
-          Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+          'X-Message': '{{LIBRECHAT_BODY_MESSAGEID}}',
         },
       }),
     ).toBe(true);
   });
 
-  it('returns true when request-varying placeholders affect connection fields', () => {
+  it('returns true when BODY placeholders affect connection fields', () => {
     expect(
       requiresEphemeralUserConnection({
         source: 'yaml',
         url: 'https://example.com/messages/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
       }),
     ).toBe(true);
+  });
 
+  it('does not treat Graph placeholders as request-scoped by themselves', () => {
     expect(
       requiresEphemeralUserConnection({
         source: 'config',
@@ -584,16 +586,16 @@ describe('requiresEphemeralUserConnection', () => {
           GRAPH_TOKEN: '{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
         },
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
-  it('returns true when OpenID token placeholders affect connection fields', () => {
+  it('does not treat OpenID token placeholders as request-scoped by themselves', () => {
     expect(
       requiresEphemeralUserConnection({
         source: 'yaml',
         args: ['--id-token={{LIBRECHAT_OPENID_ID_TOKEN}}'],
       }),
-    ).toBe(true);
+    ).toBe(false);
 
     expect(
       requiresEphemeralUserConnection({
@@ -602,16 +604,15 @@ describe('requiresEphemeralUserConnection', () => {
           Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
         },
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
-  it('returns true when request-varying placeholders affect remote transport headers', () => {
+  it('returns true when BODY placeholders affect remote transport headers', () => {
     expect(
       requiresEphemeralUserConnection({
         source: 'yaml',
         headers: {
           'X-Message': '{{LIBRECHAT_BODY_MESSAGEID}}',
-          'X-Graph': '{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
         },
       }),
     ).toBe(true);

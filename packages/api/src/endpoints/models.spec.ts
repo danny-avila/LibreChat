@@ -149,6 +149,92 @@ describe('fetchModels', () => {
     );
   });
 
+  it('should resolve template variables in custom headers on the OpenAI-compatible path', async () => {
+    const customHeaders = {
+      Authorization: 'Bearer {{LIBRECHAT_OPENID_ID_TOKEN}}',
+      'X-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+    };
+    const userObject = { id: 'user123', email: 'user@example.com' };
+
+    (resolveHeaders as jest.Mock).mockReturnValueOnce({
+      Authorization: 'Bearer resolved-jwt',
+      'X-User-Email': 'user@example.com',
+    });
+
+    await fetchModels({
+      user: 'user123',
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.test.com',
+      name: 'TestAPI',
+      headers: customHeaders,
+      userObject,
+    });
+
+    expect(resolveHeaders).toHaveBeenCalledWith({
+      headers: customHeaders,
+      user: userObject,
+    });
+    expect(mockedAxios.get).toHaveBeenCalledWith(
+      expect.stringContaining('https://api.test.com/models'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer resolved-jwt',
+          'X-User-Email': 'user@example.com',
+        }),
+      }),
+    );
+  });
+
+  it('should preserve a config-supplied Authorization header instead of overwriting with the apiKey default', async () => {
+    const customHeaders = {
+      Authorization: 'Bearer user-jwt-token',
+    };
+
+    await fetchModels({
+      user: 'user123',
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.test.com',
+      name: 'TestAPI',
+      headers: customHeaders,
+    });
+
+    expect(mockedAxios.get).toHaveBeenCalledWith(
+      expect.stringContaining('https://api.test.com/models'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer user-jwt-token',
+        }),
+      }),
+    );
+    expect(mockedAxios.get).not.toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer testApiKey',
+        }),
+      }),
+    );
+  });
+
+  it('should treat Authorization header case-insensitively when skipping the apiKey default', async () => {
+    const customHeaders = {
+      authorization: 'Bearer lower-case-user-jwt',
+    };
+
+    await fetchModels({
+      user: 'user123',
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.test.com',
+      name: 'TestAPI',
+      headers: customHeaders,
+    });
+
+    const lastCall = mockedAxios.get.mock.calls[mockedAxios.get.mock.calls.length - 1];
+    const sentHeaders = lastCall[1]?.headers ?? {};
+    expect(sentHeaders.authorization).toBe('Bearer lower-case-user-jwt');
+    expect(sentHeaders.Authorization).toBeUndefined();
+  });
+
   afterEach(() => {
     jest.clearAllMocks();
   });
@@ -797,5 +883,42 @@ describe('fetchModels caching behavior', () => {
       expect.any(Array),
       expect.any(Number),
     );
+  });
+
+  it('skips MODEL_QUERIES cache when both headers and userObject are supplied (user-scoped response)', async () => {
+    await fetchModels({
+      apiKey: 'key',
+      baseURL: 'https://api.test.com',
+      name: 'TestAPI',
+      headers: { Authorization: 'Bearer some-user-token' },
+      userObject: { id: 'user-1' },
+    });
+
+    expect(mockCacheGet).not.toHaveBeenCalled();
+    expect(mockCacheSet).not.toHaveBeenCalled();
+  });
+
+  it('still uses cache when headers are supplied without a userObject (no per-user resolution)', async () => {
+    await fetchModels({
+      apiKey: 'key',
+      baseURL: 'https://api.test.com',
+      name: 'TestAPI',
+      headers: { 'X-Static-Header': 'static-value' },
+    });
+
+    expect(mockCacheGet).toHaveBeenCalled();
+    expect(mockCacheSet).toHaveBeenCalled();
+  });
+
+  it('still uses cache when userObject is supplied without headers', async () => {
+    await fetchModels({
+      apiKey: 'key',
+      baseURL: 'https://api.test.com',
+      name: 'TestAPI',
+      userObject: { id: 'user-1' },
+    });
+
+    expect(mockCacheGet).toHaveBeenCalled();
+    expect(mockCacheSet).toHaveBeenCalled();
   });
 });

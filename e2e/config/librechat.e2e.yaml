@@ -96,3 +96,11 @@ modelSpecs:
       preset:
         endpoint: 'Mock Provider A'
         model: 'mock-model-a'
+
+    - name: 'e2e-branded'
+      label: 'E2E Branded'
+      description: '<strong>Branded</strong> answers <img src="/assets/openai.svg" alt="brand icon">'
+      showOnLanding: true
+      preset:
+        endpoint: 'Mock Provider A'
+        model: 'mock-model-a'

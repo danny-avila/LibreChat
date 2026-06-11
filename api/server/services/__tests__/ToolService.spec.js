@@ -759,6 +759,51 @@ describe('ToolService - Action Capability Gating', () => {
       expect(mockGetMCPServerTools).not.toHaveBeenCalled();
     });
 
+    it('returns run-scoped MCP tool definitions for request-scoped servers', async () => {
+      const serverName = 'ClickHouse';
+      const mcpTool = `list_tables${Constants.mcp_delimiter}${serverName}`;
+      const capabilities = [AgentCapabilities.tools];
+      const req = createMockReq(capabilities);
+      req.body = { conversationId: 'conv-123', messageId: 'msg-123' };
+      const availableTools = {
+        [mcpTool]: {
+          function: {
+            name: mcpTool,
+            description: 'List tables',
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+      };
+
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockGetServerConfig.mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+        source: 'yaml',
+      });
+      mockGetMCPServerTools.mockResolvedValue(null);
+      mockFlowManager.getFlowState.mockResolvedValue(null);
+      mockLoadToolDefinitions.mockImplementation(async (params, deps) => {
+        const serverTools = await deps.getOrFetchMCPServerTools(params.userId, serverName);
+        return {
+          toolDefinitions: serverTools ? Object.keys(serverTools) : [],
+          toolRegistry: new Map([[mcpTool, { name: mcpTool }]]),
+          hasDeferredTools: false,
+        };
+      });
+      reinitMCPServer.mockResolvedValue({ availableTools });
+
+      const result = await loadAgentTools({
+        req,
+        agent: { id: 'agent_123', tools: [mcpTool] },
+        definitionsOnly: true,
+      });
+
+      expect(result.toolDefinitions).toEqual([mcpTool]);
+      expect(result.mcpAvailableTools).toEqual({ [serverName]: availableTools });
+      expect(mockGetMCPServerTools).not.toHaveBeenCalled();
+    });
+
     it('should preserve pending-flow expiry for OAuth URLs captured during discovery', async () => {
       const serverName = 'Google-Workspace';
       const authorizationUrl = 'https://auth.example.com/Google-Workspace';
@@ -919,6 +964,49 @@ describe('ToolService - Action Capability Gating', () => {
       ]);
       expect(result.configurable.toolRegistry).toBe(toolRegistry);
       expect(result.configurable.ptcToolMap.size).toBe(0);
+    });
+
+    it('passes run-scoped MCP tool definitions into PTC execution loading', async () => {
+      const capabilities = [
+        AgentCapabilities.tools,
+        AgentCapabilities.programmatic_tools,
+        AgentCapabilities.execute_code,
+      ];
+      const req = createMockReq(capabilities);
+      const serverName = 'ClickHouse';
+      const mcpTool = `list_tables${Constants.mcp_delimiter}${serverName}`;
+      const mcpAvailableTools = {
+        [serverName]: {
+          [mcpTool]: {
+            function: {
+              name: mcpTool,
+              description: 'List tables',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+      };
+      const toolRegistry = new Map([[mcpTool, { name: mcpTool }]]);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+
+      await loadToolsForExecution({
+        req,
+        res: {},
+        agent: { id: 'agent_ptc', tools: [Tools.execute_code] },
+        toolNames: [Constants.BASH_PROGRAMMATIC_TOOL_CALLING],
+        toolRegistry,
+        mcpAvailableTools,
+        actionsEnabled: false,
+      });
+
+      expect(mockLoadToolsUtil).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tools: [mcpTool],
+          options: expect.objectContaining({
+            mcpAvailableTools,
+          }),
+        }),
+      );
     });
 
     it('does not load PTC when programmatic tools capability is disabled', async () => {

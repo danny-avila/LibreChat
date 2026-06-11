@@ -339,6 +339,54 @@ describe('Tool Handlers', () => {
       );
     });
 
+    it('uses run-scoped MCP tool definitions before cache lookup', async () => {
+      const serverName = 'body-scoped';
+      const toolKey = `search${Constants.mcp_delimiter}${serverName}`;
+      const requestBody = { conversationId: 'conv-123', messageId: 'msg-123' };
+      const serverConfig = {
+        type: 'streamable-http',
+        url: 'https://api.example.com/messages/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+        source: 'yaml',
+      };
+      const runScopedTools = {
+        [toolKey]: {
+          function: {
+            name: toolKey,
+            description: 'Run-scoped search',
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+      };
+
+      mockGetServerConfig.mockResolvedValue(serverConfig);
+      mockCreateMCPTool.mockResolvedValue({ name: 'loaded-mcp-tool' });
+
+      const result = await loadTools({
+        user: fakeUser._id.toString(),
+        tools: [toolKey],
+        options: {
+          mcpAvailableTools: {
+            [serverName]: runScopedTools,
+          },
+          req: {
+            user: { id: fakeUser._id.toString(), role: 'USER' },
+            body: requestBody,
+          },
+        },
+      });
+
+      expect(result.loadedTools).toEqual([{ name: 'loaded-mcp-tool' }]);
+      expect(mockGetMCPServerTools).not.toHaveBeenCalled();
+      expect(mockCreateMCPTool).toHaveBeenCalledWith(
+        expect.objectContaining({
+          availableTools: runScopedTools,
+          requestBody,
+          toolKey,
+          config: serverConfig,
+        }),
+      );
+    });
+
     it('reuses discovered request-scoped MCP tool definitions within a server loop', async () => {
       const serverName = 'body-scoped';
       const firstToolKey = `search${Constants.mcp_delimiter}${serverName}`;

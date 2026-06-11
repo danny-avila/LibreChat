@@ -25,8 +25,10 @@ const {
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
+const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { startExpiredFileSweep } = require('./services/Files/process');
+const { initializeGitHubSkillSync } = require('./services/Skills/sync');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { updateInterfacePermissions: updateInterfacePerms } = require('@librechat/api');
 const {
@@ -38,6 +40,7 @@ const {
 const { checkMigrations } = require('./services/start/migration');
 const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
+const createSpaFallback = require('./utils/fallback');
 const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
@@ -296,6 +299,7 @@ if (cluster.isMaster) {
     /** Initialize app configuration */
     const appConfig = await getAppConfig();
     initializeFileStorage(appConfig);
+    initializeGitHubSkillSync(appConfig);
     expiredFileSweepOptions = { appConfig, loadAppConfig: getAppConfig };
     startExpiredFileSweepOnce();
     await performStartupChecks(appConfig);
@@ -390,10 +394,13 @@ if (cluster.isMaster) {
       await configureSocialLogins(app);
     }
 
+    app.use(capabilityContextMiddleware);
+
     /** Routes */
     app.use('/oauth', routes.oauth);
     app.use('/api/auth', routes.auth);
     app.use('/api/admin', routes.adminAuth);
+    app.use('/api/admin/skills', routes.adminSkills);
     app.use('/api/actions', routes.actions);
     app.use('/api/keys', routes.keys);
     app.use('/api/api-keys', routes.apiKeys);
@@ -426,7 +433,7 @@ if (cluster.isMaster) {
     app.use('/api', apiNotFound);
 
     /** SPA fallback - serve index.html for all unmatched routes */
-    app.use(sendIndexHtml);
+    app.use(createSpaFallback(sendIndexHtml));
 
     /** Error handler (must be last - Express identifies error middleware by its 4-arg signature) */
     app.use(ErrorController);

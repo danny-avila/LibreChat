@@ -1,5 +1,5 @@
 {
-  "$schema": "https://v2-9-16.turborepo.dev/schema.json",
+  "$schema": "https://v2-9-17.turborepo.dev/schema.json",
   "globalDependencies": ["package-lock.json"],
   "tasks": {
     "build": {

@@ -498,6 +498,8 @@ export type UpdateSkillInput = {
   frontmatter?: Record<string, unknown>;
   category?: string;
   alwaysApply?: boolean;
+  source?: 'inline' | 'github' | 'notion';
+  sourceMetadata?: Record<string, unknown>;
 };
 
 export type GetAuthorSkillByNameParams = {
@@ -622,6 +624,7 @@ export type UpsertSkillFileInput = {
   storageKey?: string;
   storageRegion?: string;
   source: string;
+  sourceMetadata?: Record<string, unknown>;
   mimeType: string;
   bytes: number;
   isExecutable?: boolean;
@@ -902,6 +905,15 @@ export function createSkillMethods(
   }) => Promise<UpdateSkillResult>;
   deleteSkill: (id: string) => Promise<{ deleted: boolean }>;
   deleteUserSkills: (userId: Types.ObjectId | string) => Promise<number>;
+  findSkillBySourceIdentity: (params: {
+    source: 'github' | 'notion';
+    upstreamId: string;
+    tenantId?: string;
+  }) => Promise<(ISkill & { _id: Types.ObjectId }) | null>;
+  listSkillsBySource: (params: {
+    source: 'github' | 'notion';
+    sourceId: string;
+  }) => Promise<Array<ISkill & { _id: Types.ObjectId }>>;
   listSkillFiles: (
     skillId: Types.ObjectId | string,
   ) => Promise<Array<ISkillFile & { _id: Types.ObjectId }>>;
@@ -1349,6 +1361,8 @@ export function createSkillMethods(
     if (update.displayTitle !== undefined) setPayload.displayTitle = update.displayTitle;
     if (update.description !== undefined) setPayload.description = update.description;
     if (update.body !== undefined) setPayload.body = update.body;
+    if (update.source !== undefined) setPayload.source = update.source;
+    if (update.sourceMetadata !== undefined) setPayload.sourceMetadata = update.sourceMetadata;
     if (update.frontmatter !== undefined) {
       setPayload.frontmatter = update.frontmatter;
       /**
@@ -1500,6 +1514,35 @@ export function createSkillMethods(
     return res.deletedCount ?? 0;
   }
 
+  async function findSkillBySourceIdentity(params: {
+    source: 'github' | 'notion';
+    upstreamId: string;
+    tenantId?: string;
+  }): Promise<(ISkill & { _id: Types.ObjectId }) | null> {
+    const Skill = mongoose.models.Skill as Model<ISkillDocument>;
+    const tenantFilter: FilterQuery<ISkillDocument> = params.tenantId
+      ? { tenantId: params.tenantId }
+      : { $or: [{ tenantId: { $exists: false } }, { tenantId: null }] };
+    const doc = await Skill.findOne({
+      source: params.source,
+      'sourceMetadata.upstreamId': params.upstreamId,
+      ...tenantFilter,
+    }).lean();
+    return (doc as unknown as (ISkill & { _id: Types.ObjectId }) | null) ?? null;
+  }
+
+  async function listSkillsBySource(params: {
+    source: 'github' | 'notion';
+    sourceId: string;
+  }): Promise<Array<ISkill & { _id: Types.ObjectId }>> {
+    const Skill = mongoose.models.Skill as Model<ISkillDocument>;
+    const rows = await Skill.find({
+      source: params.source,
+      'sourceMetadata.sourceId': params.sourceId,
+    }).lean();
+    return rows as unknown as Array<ISkill & { _id: Types.ObjectId }>;
+  }
+
   /**
    * Atomically bumps `Skill.version` and adjusts `fileCount` by `delta`.
    * `delta` is `+1` when a new file is inserted, `-1` when one is deleted, and
@@ -1568,6 +1611,7 @@ export function createSkillMethods(
           storageKey: row.storageKey,
           storageRegion: row.storageRegion,
           source: row.source,
+          sourceMetadata: row.sourceMetadata,
           mimeType: row.mimeType,
           bytes: row.bytes,
           category,
@@ -1664,6 +1708,8 @@ export function createSkillMethods(
     updateSkill,
     deleteSkill,
     deleteUserSkills,
+    findSkillBySourceIdentity,
+    listSkillsBySource,
     listSkillFiles,
     upsertSkillFile,
     deleteSkillFile,
