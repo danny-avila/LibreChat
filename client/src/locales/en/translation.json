@@ -706,7 +706,7 @@
   "com_ui_agent_handoff_add": "Add handoff agent",
   "com_ui_agent_handoff_description": "Handoff description",
   "com_ui_agent_handoff_description_placeholder": "e.g., Transfer to data analyst for statistical analysis",
-  "com_ui_agent_handoff_info": "Configure agents that this agent can transfer conversations to when specific expertise is needed.",
+  "com_ui_agent_handoff_info": "Agent handoff lets one agent act as a coordinator — routing requests to the right specialist based on what’s being asked.",
   "com_ui_agent_handoff_info_2": "Each handoff creates a transfer tool that enables seamless routing to specialist agents with context.",
   "com_ui_agent_handoff_max": "Maximum {{0}} handoff agents reached.",
   "com_ui_agent_handoff_prompt": "Passthrough content",
