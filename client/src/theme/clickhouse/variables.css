@@ -377,3 +377,233 @@
 [data-cui-theme] .size-9.rounded-full {
   border-radius: 0.25rem !important;
 }
+
+/*
+ * Switch (toggle) — override checked/unchecked track and thumb colors with CUI switch tokens.
+ *
+ * The Switch component uses `data-[state=checked]:bg-primary` which expands to
+ * `background-color: hsl(var(--primary))`. Our --primary override assigns a raw hex value
+ * which makes `hsl(#hex)` invalid CSS — the browser treats it as `initial` (transparent).
+ * Targeting the Radix role="switch" element directly bypasses that hsl() wrapping issue.
+ *
+ * CUI light:  unchecked track = #cccfd3, checked track = #151515, indicator = #ffffff
+ * CUI dark:   unchecked track = #606060, checked track = #faff69, indicator = #161517 / #151515
+ */
+[data-cui-theme] [role="switch"][data-state="unchecked"] {
+  background-color: var(--click-switch-color-background-default) !important;
+}
+
+[data-cui-theme] [role="switch"][data-state="checked"] {
+  background-color: var(--click-switch-color-background-active) !important;
+}
+
+/* Thumb indicator */
+[data-cui-theme] [role="switch"] > span {
+  background-color: var(--click-switch-color-indicator-default) !important;
+}
+
+[data-cui-theme] [role="switch"][data-state="checked"] > span {
+  background-color: var(--click-switch-color-indicator-active) !important;
+}
+
+/* ── Checkboxes ───────────────────────────────────────────────────────────── */
+/*
+ * Used throughout settings panels and agent builder.
+ * CUI token path: --click-checkbox-color-variations-default-{property}-{state}
+ * States: default = unchecked, active = checked.
+ *
+ * The Checkbox component uses data-[state=checked]:bg-primary which produces
+ * hsl(hex) -> transparent. Override all states explicitly.
+ * Setting color on the checked root propagates to the indicator SVG via currentColor.
+ */
+[data-cui-theme] [role="checkbox"] {
+  background-color: var(--click-checkbox-color-variations-default-background-default) !important;
+  border-color: var(--click-checkbox-color-variations-default-stroke-default) !important;
+}
+
+[data-cui-theme] [role="checkbox"]:hover {
+  background-color: var(--click-checkbox-color-variations-default-background-hover) !important;
+  border-color: var(--click-checkbox-color-variations-default-stroke-hover) !important;
+}
+
+[data-cui-theme] [role="checkbox"][data-state="checked"] {
+  background-color: var(--click-checkbox-color-variations-default-background-active) !important;
+  border-color: var(--click-checkbox-color-variations-default-stroke-active) !important;
+  color: var(--click-checkbox-color-variations-default-check-active) !important;
+}
+
+/* ── Tabs ─────────────────────────────────────────────────────────────────── */
+/*
+ * Radix Tabs use data-[state=active]:bg-* and data-[state=active]:text-*.
+ * Tab strips appear in settings, agent builder, and several panels.
+ */
+[data-cui-theme] [role="tablist"] {
+  background-color: var(--click-global-color-background-muted) !important;
+}
+
+[data-cui-theme] [role="tab"] {
+  color: var(--click-global-color-text-muted) !important;
+}
+
+[data-cui-theme] [role="tab"][data-state="active"] {
+  background-color: var(--click-global-color-background-default) !important;
+  color: var(--click-global-color-text-default) !important;
+}
+
+/* ── Select trigger focus state ───────────────────────────────────────────── */
+/*
+ * Model selector and other Select components can show focus-ring artifacts.
+ * Reuse field stroke tokens (consistent with input/textarea treatment above).
+ */
+[data-cui-theme] [role="combobox"]:focus,
+[data-cui-theme] [role="combobox"]:focus-visible {
+  outline: none !important;
+  border-color: var(--click-field-color-stroke-active) !important;
+  box-shadow: none !important;
+}
+
+/*
+ * Dialog panels — align with Click-UI's dialog tokens.
+ *
+ * Two selectors cover the two dialog implementations used in LibreChat:
+ *
+ *  [role="dialog"]     — Radix UI DialogContent carries this role directly and IS the visual
+ *                        panel (OGDialogContent, AdminSettingsDialog, etc.). The HeadlessUI
+ *                        Dialog outer wrapper also gets role="dialog" but it has no layout or
+ *                        background of its own, so styling it is harmless.
+ *
+ *  .backdrop-blur-2xl  — Unique to the Settings.tsx HeadlessUI DialogPanel. It also fixes
+ *                        shadow-2xl (not covered by the shadow-md/lg suppressions above) and
+ *                        removes the frosted-glass blur that conflicts with CUI solid surfaces.
+ *
+ * The global .rounded-xl / .rounded-2xl rules above flatten everything to 0.25rem; dialogs
+ * need the CUI dialog radius of 0.5rem, so we override here (source-order wins over equal
+ * specificity with !important).
+ */
+[data-cui-theme] [role="dialog"],
+[data-cui-theme] .backdrop-blur-2xl {
+  border-radius: var(--click-dialog-radii-all) !important;
+  background-color: var(--click-dialog-color-background-default) !important;
+  box-shadow: var(--click-dialog-shadow-default) !important;
+}
+
+[data-cui-theme] .backdrop-blur-2xl {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/*
+ * Dropdown/popover menu panel — align with Click-UI's genericMenu panel tokens.
+ * Targets both .popover-ui (DropdownPopup) and bare [role="menu"] elements
+ * (e.g. ArtifactsSubMenu, Artifacts), which use custom className strings.
+ * .popover-ui has a hardcoded border-radius: 1rem; [role="menu"] panels use
+ * rounded-xl (0.75rem). Both are overridden to Click-UI's 4px radius.
+ * data-cui-theme is set on <html> by ClickUIProvider, so these selectors reach
+ * portaled menus appended to <body> as well as inline-rendered ones.
+ */
+[data-cui-theme] .popover-ui,
+[data-cui-theme] [role="menu"] {
+  border-radius: var(--click-genericMenu-panel-radii-all) !important;
+  background-color: var(--click-genericMenu-panel-color-background-default) !important;
+  border-color: var(--click-genericMenu-panel-color-stroke-default) !important;
+  box-shadow: var(--click-genericMenu-panel-shadow-default) !important;
+}
+
+/*
+ * Menu item hover/focus — in dark mode --surface-hover resolves to the same colour
+ * as the panel background (#282828), making hovered items invisible. Use the
+ * Click-UI genericMenu item hover token instead, which is a distinct value in
+ * both modes (light: #f6f7fa, dark: ~#3b3b3b).
+ * Scoped to [role="menu"] to avoid bleeding into non-menu contexts.
+ */
+[data-cui-theme] [role="menu"] [role="menuitem"]:hover,
+[data-cui-theme] [role="menu"] [role="menuitem"]:focus,
+[data-cui-theme] [role="menu"] [role="menuitem"][data-active-item] {
+  background-color: var(--click-genericMenu-item-color-default-background-hover) !important;
+}
+
+/*
+ * Tooltip — override LibreChat's surface-primary/black style with Click-UI's dark tooltip.
+ * Click-UI always uses a dark semi-transparent background + white text in both modes.
+ * The dark mode override in Tooltip.css (.tooltip:where(.dark, .dark *)) has specificity
+ * 0-1-0; this selector is 0-2-0 so it wins without needing !important on most properties.
+ * Ref: --click-tooltip-* tokens in tokens-light.css / tokens-dark.css
+ */
+[data-cui-theme] .tooltip {
+  border-radius: var(--click-tooltip-radii-all) !important;
+  padding: var(--click-tooltip-space-y) var(--click-tooltip-space-x) !important;
+  font: var(--click-tooltip-typography-label-default) !important;
+  color: var(--click-tooltip-color-label-default) !important;
+  background-color: var(--click-tooltip-color-background-default) !important;
+  box-shadow: none !important;
+}
+
+/*
+ * HoverCard help-tooltip alignment
+ *
+ * HoverCard is used as a "help tooltip" pattern throughout the agent builder
+ * and parameter panels (triggered by CircleHelpIcon question-mark buttons).
+ * Radix HoverCardContent is uniquely identified by the Tailwind class
+ * origin-[--radix-hover-card-content-transform-origin] — no other component
+ * uses this transform-origin CSS custom property.
+ *
+ * Override to match the CUI tooltip visual treatment:
+ *   dark semi-transparent background, white text, 4px radius, compact padding.
+ *
+ * max-width:20rem preserves readability for longer descriptions (e.g. Run Code
+ * info) while keeping the visual in line with CUI's tooltip aesthetic.
+ * The inner p/span elements hardcode text-text-secondary; override them too.
+ */
+[data-cui-theme] .origin-\[--radix-hover-card-content-transform-origin\] {
+  width: auto !important;
+  max-width: 20rem !important;
+  background-color: var(--click-tooltip-color-background-default) !important;
+  color: var(--click-tooltip-color-label-default) !important;
+  border: none !important;
+  border-radius: var(--click-tooltip-radii-all) !important;
+  padding: var(--click-tooltip-space-y) var(--click-tooltip-space-x) !important;
+  font: var(--click-tooltip-typography-label-default) !important;
+  box-shadow: none !important;
+}
+
+[data-cui-theme] .origin-\[--radix-hover-card-content-transform-origin\] p,
+[data-cui-theme] .origin-\[--radix-hover-card-content-transform-origin\] span,
+[data-cui-theme] .origin-\[--radix-hover-card-content-transform-origin\] div {
+  color: var(--click-tooltip-color-label-default) !important;
+}
+
+/* ── Scrollbars ───────────────────────────────────────────────────────────── */
+/*
+ * CUI uses thin 4px scrollbars with muted color.
+ * Highly visible in long conversations and the sidebar.
+ */
+[data-cui-theme] ::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+[data-cui-theme] ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+[data-cui-theme] ::-webkit-scrollbar-thumb {
+  background: var(--click-global-color-stroke-default);
+  border-radius: 2px;
+}
+
+[data-cui-theme] ::-webkit-scrollbar-thumb:hover {
+  background: var(--click-global-color-stroke-intense);
+}
+
+/* ── Code blocks ──────────────────────────────────────────────────────────── */
+/*
+ * pre / code elements in markdown rendering are prominent in technical chats.
+ * Maps to CUI muted surface with codeblock radius and default stroke border.
+ * Inline code (code:not(pre code)) gets the same surface treatment.
+ */
+[data-cui-theme] pre,
+[data-cui-theme] code:not(pre code) {
+  background-color: var(--click-global-color-background-muted) !important;
+  border-radius: var(--click-codeblock-radii-all) !important;
+  border: 1px solid var(--click-global-color-stroke-default) !important;
+}
