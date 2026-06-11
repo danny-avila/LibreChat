@@ -9,6 +9,7 @@ import type {
   TEphemeralAgent,
   TConversation,
 } from 'librechat-data-provider';
+import type { AppConfig } from '@librechat/data-schemas';
 import type { LoadAgentParams, LoadAgentDeps } from '../load';
 import { loadAddedAgent } from '../added';
 import { loadAgent } from '../load';
@@ -126,6 +127,44 @@ describe('loadAgent', () => {
     } else {
       expect(result).toBeNull();
     }
+  });
+
+  test('should skip cached tools for servers made request-scoped by a config overlay', async () => {
+    const { EPHEMERAL_AGENT_ID } = Constants;
+
+    mockGetMCPServerTools.mockResolvedValue({ tool1_mcp_server1: {} });
+
+    const mockReq = {
+      user: { id: 'user123' },
+      config: {
+        mcpConfig: {
+          'body-scoped': {
+            type: 'streamable-http' as const,
+            url: 'https://mcp.example.com/{{LIBRECHAT_BODY_CONVERSATIONID}}/mcp',
+          },
+        },
+      } as unknown as AppConfig,
+      body: {
+        ephemeralAgent: {
+          mcp: ['body-scoped', 'server1'],
+        },
+      },
+    };
+
+    const result = await loadAgent(
+      {
+        req: mockReq,
+        agent_id: EPHEMERAL_AGENT_ID as string,
+        endpoint: 'openai',
+        model_parameters: { model: 'gpt-4' } as unknown as AgentModelParameters,
+      },
+      deps,
+    );
+
+    expect(mockGetMCPServerTools).toHaveBeenCalledTimes(1);
+    expect(mockGetMCPServerTools).toHaveBeenCalledWith('user123', 'server1');
+    expect(result?.tools).toContain(`${Constants.mcp_all}${Constants.mcp_delimiter}body-scoped`);
+    expect(result?.tools).toContain('tool1_mcp_server1');
   });
 
   test('should return null for non-existent agent', async () => {
