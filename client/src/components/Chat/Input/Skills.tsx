@@ -29,6 +29,8 @@ function Skills() {
         className="max-w-fit"
         checked={skillsActive}
         setValue={debouncedChange}
+        onDismiss={skillsActive ? () => debouncedChange?.({ value: false }) : undefined}
+        isPinned={isPinned}
         label={localize('com_ui_skills')}
         isCheckedClassName="border-cyan-600/40 bg-cyan-500/10 hover:bg-cyan-700/10"
         icon={<ScrollText className="icon-md" aria-hidden="true" />}

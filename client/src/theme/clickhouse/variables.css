@@ -1,0 +1,612 @@
+/*
+ * LibreChat → Click-UI token bridge
+ * Overrides LibreChat's CSS variables using the closest Click-UI global semantic tokens.
+ * Scoped to [data-cui-theme] so these rules are inert unless CHCThemeProvider is mounted.
+ *
+ * Click-UI global token reference (defined in tokens-light.css / tokens-dark.css):
+ *   --click-global-color-background-default   main page background
+ *   --click-global-color-background-muted     secondary / muted background
+ *   --click-global-color-text-default         primary body text
+ *   --click-global-color-text-muted           secondary / muted text
+ *   --click-global-color-text-danger          destructive / error text
+ *   --click-global-color-stroke-default       lightest border / divider
+ *   --click-global-color-stroke-muted         muted border
+ *   --click-global-color-stroke-intense       heavier border
+ *   --click-global-color-accent-default       brand accent (yellow in dark, near-black in light)
+ *   --click-global-color-outline-default      focus ring / outline
+ */
+
+/*
+ * Tailwind's rounded-xl/2xl/3xl are hardcoded pixel values — they don't reference --radius.
+ * Override them globally when the CUI theme is active so ALL elements match Click-UI's 4px radius.
+ * rounded-full is intentionally left untouched (avatars, badges, spinners are legitimately circular).
+ */
+
+/*
+ * Tailwind hsl()-wrapped variable fix.
+ *
+ * Variables like --background, --primary, --foreground, --border etc. are assigned
+ * raw hex values in the [data-cui-theme] block below (e.g. --background: #fbfcff).
+ * Tailwind generates rules like `background-color: hsl(var(--background))` — wrapping
+ * a hex value in hsl() produces invalid CSS that the browser silently drops, making
+ * affected elements transparent.
+ *
+ * Fix: class-level overrides that bypass the hsl() wrapper entirely. These apply only
+ * when the CUI theme is active and !important is required to beat the Tailwind utilities.
+ */
+[data-cui-theme] .bg-background {
+  background-color: var(--click-global-color-background-default) !important;
+}
+
+[data-cui-theme] .text-foreground {
+  color: var(--click-global-color-text-default) !important;
+}
+
+[data-cui-theme] .bg-primary {
+  background-color: var(--click-button-basic-color-primary-background-default) !important;
+}
+
+/* Opacity modifier variants: hsl(hex / opacity) is also invalid */
+[data-cui-theme] .bg-primary\/20 {
+  background-color: color-mix(in srgb, var(--click-button-basic-color-primary-background-default) 20%, transparent) !important;
+}
+
+[data-cui-theme] .hover\:bg-primary\/90:hover {
+  background-color: var(--click-button-basic-color-primary-background-hover) !important;
+}
+
+[data-cui-theme] .text-primary {
+  color: var(--click-global-color-accent-default) !important;
+}
+
+[data-cui-theme] .border-primary {
+  border-color: var(--click-global-color-accent-default) !important;
+}
+
+[data-cui-theme] .bg-muted {
+  background-color: var(--click-global-color-background-muted) !important;
+}
+
+[data-cui-theme] .text-muted-foreground {
+  color: var(--click-global-color-text-muted) !important;
+}
+
+[data-cui-theme] .border-border {
+  border-color: var(--click-global-color-stroke-default) !important;
+}
+
+[data-cui-theme] .border-input {
+  border-color: var(--click-global-color-stroke-default) !important;
+}
+
+[data-cui-theme] .bg-accent {
+  background-color: var(--click-global-color-background-muted) !important;
+}
+
+/*
+ * Shadows — Click-UI uses flat design with border-only cards.
+ * Suppress Tailwind's shadow-md / shadow-lg (used on the chat input container).
+ * shadow-xl / shadow-2xl are kept for dialogs and popovers that need depth.
+ * !important is required: Tailwind utility CSS may be bundled after this file.
+ */
+[data-cui-theme] .shadow-md {
+  box-shadow: none !important;
+}
+
+[data-cui-theme] .shadow-lg {
+  box-shadow: none !important;
+}
+
+/*
+ * Dialog panels — align with Click-UI's dialog tokens.
+ *
+ * Two selectors cover the two dialog implementations used in LibreChat:
+ *
+ *  [role="dialog"]     — Radix UI DialogContent carries this role directly and IS the visual
+ *                        panel (OGDialogContent, AdminSettingsDialog, etc.). The HeadlessUI
+ *                        Dialog outer wrapper also gets role="dialog" but it has no layout or
+ *                        background of its own, so styling it is harmless.
+ *
+ *  .backdrop-blur-2xl  — Unique to the Settings.tsx HeadlessUI DialogPanel. It also fixes
+ *                        shadow-2xl (not covered by the shadow-md/lg suppressions above) and
+ *                        removes the frosted-glass blur that conflicts with CUI solid surfaces.
+ *
+ * The global .rounded-xl / .rounded-2xl rules above flatten everything to 0.25rem; dialogs
+ * need the CUI dialog radius of 0.5rem, so we override here (source-order wins over equal
+ * specificity with !important).
+ */
+[data-cui-theme] [role="dialog"],
+[data-cui-theme] .backdrop-blur-2xl {
+  border-radius: var(--click-dialog-radii-all) !important;
+  background-color: var(--click-dialog-color-background-default) !important;
+  box-shadow: var(--click-dialog-shadow-default) !important;
+}
+
+[data-cui-theme] .backdrop-blur-2xl {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/*
+ * Dropdown/popover menu panel — align with Click-UI's genericMenu panel tokens.
+ * Targets both .popover-ui (DropdownPopup) and bare [role="menu"] elements
+ * (e.g. ArtifactsSubMenu, Artifacts), which use custom className strings.
+ * .popover-ui has a hardcoded border-radius: 1rem; [role="menu"] panels use
+ * rounded-xl (0.75rem). Both are overridden to Click-UI's 4px radius.
+ * data-cui-theme is set on <html> by ClickUIProvider, so these selectors reach
+ * portaled menus appended to <body> as well as inline-rendered ones.
+ */
+[data-cui-theme] .popover-ui,
+[data-cui-theme] [role="menu"] {
+  border-radius: var(--click-genericMenu-panel-radii-all) !important;
+  background-color: var(--click-genericMenu-panel-color-background-default) !important;
+  border-color: var(--click-genericMenu-panel-color-stroke-default) !important;
+  box-shadow: var(--click-genericMenu-panel-shadow-default) !important;
+}
+
+/*
+ * Menu item hover/focus — in dark mode --surface-hover resolves to the same colour
+ * as the panel background (#282828), making hovered items invisible. Use the
+ * Click-UI genericMenu item hover token instead, which is a distinct value in
+ * both modes (light: #f6f7fa, dark: ~#3b3b3b).
+ * Scoped to [role="menu"] to avoid bleeding into non-menu contexts.
+ */
+[data-cui-theme] [role="menu"] [role="menuitem"]:hover,
+[data-cui-theme] [role="menu"] [role="menuitem"]:focus,
+[data-cui-theme] [role="menu"] [role="menuitem"][data-active-item] {
+  background-color: var(--click-genericMenu-item-color-default-background-hover) !important;
+}
+
+/*
+ * Tooltip — override LibreChat's surface-primary/black style with Click-UI's dark tooltip.
+ * Click-UI always uses a dark semi-transparent background + white text in both modes.
+ * The dark mode override in Tooltip.css (.tooltip:where(.dark, .dark *)) has specificity
+ * 0-1-0; this selector is 0-2-0 so it wins without needing !important on most properties.
+ * Ref: --click-tooltip-* tokens in tokens-light.css / tokens-dark.css
+ */
+[data-cui-theme] .tooltip {
+  border-radius: var(--click-tooltip-radii-all) !important;
+  padding: var(--click-tooltip-space-y) var(--click-tooltip-space-x) !important;
+  font: var(--click-tooltip-typography-label-default) !important;
+  color: var(--click-tooltip-color-label-default) !important;
+  background-color: var(--click-tooltip-color-background-default) !important;
+  box-shadow: none !important;
+}
+
+/*
+ * Switch (toggle) — override checked/unchecked track and thumb colors with CUI switch tokens.
+ *
+ * The Switch component uses `data-[state=checked]:bg-primary` which expands to
+ * `background-color: hsl(var(--primary))`. Our --primary override assigns a raw hex value
+ * which makes `hsl(#hex)` invalid CSS — the browser treats it as `initial` (transparent).
+ * Targeting the Radix role="switch" element directly bypasses that hsl() wrapping issue.
+ *
+ * CUI light:  unchecked track = #cccfd3, checked track = #151515, indicator = #ffffff
+ * CUI dark:   unchecked track = #606060, checked track = #faff69, indicator = #161517 / #151515
+ */
+[data-cui-theme] [role="switch"][data-state="unchecked"] {
+  background-color: var(--click-switch-color-background-default) !important;
+}
+
+[data-cui-theme] [role="switch"][data-state="checked"] {
+  background-color: var(--click-switch-color-background-active) !important;
+}
+
+/* Thumb indicator */
+[data-cui-theme] [role="switch"] > span {
+  background-color: var(--click-switch-color-indicator-default) !important;
+}
+
+[data-cui-theme] [role="switch"][data-state="checked"] > span {
+  background-color: var(--click-switch-color-indicator-active) !important;
+}
+
+/*
+ * btn-primary class — hardcoded green (#10a37f) compiled from an old Tailwind config.
+ * Override background + text to use CUI primary button tokens when the theme is active.
+ * !important is required to beat the compiled class and any Tailwind text-white utility.
+ */
+[data-cui-theme] .btn-primary {
+  background-color: var(--click-button-basic-color-primary-background-default) !important;
+  color: var(--click-button-basic-color-primary-text-default) !important;
+}
+
+[data-cui-theme] .btn-primary:hover {
+  background-color: var(--click-button-basic-color-primary-background-hover) !important;
+}
+
+[data-cui-theme] .btn-primary:disabled,
+[data-cui-theme] .btn-primary:disabled:hover {
+  background-color: var(--click-button-basic-color-primary-background-disabled) !important;
+  opacity: 0.5;
+}
+
+/*
+ * Toolbar icon buttons (AttachFile, ToolsDropdown, AudioRecorder) use size-9 + rounded-full
+ * which produces circular hover backgrounds. Override to match the side menu's squared style.
+ * Targeting size-9.rounded-full is safe — no avatar/badge elements share this combination.
+ */
+[data-cui-theme] .size-9.rounded-full {
+  border-radius: 0.25rem !important;
+}
+
+/*
+ * Text field / textarea focus — CUI uses a border-color change (stroke-active) on focus,
+ * no ring or glow effect. This overrides:
+ *   • Tailwind's focus:ring-* classes (which generate invalid hsl(hex) values for --ring)
+ *   • Hardcoded focus:ring-gray-400 on the Textarea component
+ *   • focus:ring-ring / focus:ring-border-light on agent-builder raw inputs
+ *
+ * Hover state: subtle border-color step up (stroke-hover).
+ * Both states suppress box-shadow to eliminate Tailwind ring artifacts.
+ *
+ * Excludes checkbox, radio, range — those have custom focus handling.
+ */
+[data-cui-theme] input:not([type='checkbox']):not([type='radio']):not([type='range']):hover:not(:focus):not(:focus-visible),
+[data-cui-theme] textarea:hover:not(:focus):not(:focus-visible) {
+  border-color: var(--click-field-color-stroke-hover) !important;
+}
+
+[data-cui-theme] input:not([type='checkbox']):not([type='radio']):not([type='range']):focus,
+[data-cui-theme] input:not([type='checkbox']):not([type='radio']):not([type='range']):focus-visible,
+[data-cui-theme] textarea:focus,
+[data-cui-theme] textarea:focus-visible {
+  outline: none !important;
+  border-color: var(--click-field-color-stroke-active) !important;
+  background-color: var(--click-field-color-background-active) !important;
+  box-shadow: none !important;
+}
+
+/*
+ * Chat input — full Click-UI TextAreaField visual treatment.
+ * The selector .border-border-light.bg-surface-chat is unique to ChatForm's outer container.
+ *
+ * State tokens used:
+ *   background  default  #fbfcff (light) / ~#2d2d2d (dark)
+ *   background  hover    #f6f7fa (light) / ~#333    (dark)
+ *   background  active   #ffffff (light) / same     (dark)
+ *   stroke      default  #e6e7e9 (light) / ~#323232 (dark)
+ *   stroke      hover    #cccfd3 (light) / ~#414141 (dark)
+ *   stroke      active   #161517 (light) / #faff69  (dark)
+ */
+
+/* Default state */
+[data-cui-theme] .border-border-light.bg-surface-chat {
+  background-color: var(--click-field-color-background-default) !important;
+  border-color: var(--click-field-color-stroke-default) !important;
+}
+
+/* Hover state */
+[data-cui-theme] .border-border-light.bg-surface-chat:hover {
+  background-color: var(--click-field-color-background-hover) !important;
+  border-color: var(--click-field-color-stroke-hover) !important;
+}
+
+/* Focus state */
+[data-cui-theme] .border-border-light.bg-surface-chat:focus-within {
+  background-color: var(--click-field-color-background-active) !important;
+  border-color: var(--click-field-color-stroke-active) !important;
+}
+
+/* Textarea text — font and color matching CUI fieldText tokens */
+[data-cui-theme] .border-border-light.bg-surface-chat textarea {
+  font: var(--click-field-typography-fieldText-default) !important;
+  color: var(--click-field-color-text-default) !important;
+}
+
+[data-cui-theme] .border-border-light.bg-surface-chat:focus-within textarea {
+  color: var(--click-field-color-text-active) !important;
+}
+
+/* Placeholder — override LibreChat's hardcoded placeholder-black/60 */
+[data-cui-theme] .border-border-light.bg-surface-chat textarea::placeholder {
+  color: var(--click-global-color-text-muted) !important;
+  opacity: 1 !important;
+}
+
+/*
+ * Tailwind's rounded-xl/2xl/3xl are hardcoded pixel values — they don't reference --radius.
+ * !important is required: Tailwind's @media-scoped responsive variants (sm:rounded-3xl etc.)
+ * would otherwise win against same-specificity rules outside media queries.
+ */
+[data-cui-theme] .rounded-xl,
+[data-cui-theme] .md\:rounded-xl,
+[data-cui-theme] .sm\:rounded-xl {
+  border-radius: 0.25rem !important;
+}
+
+[data-cui-theme] .rounded-2xl,
+[data-cui-theme] .sm\:rounded-2xl {
+  border-radius: 0.25rem !important;
+}
+
+[data-cui-theme] .rounded-3xl,
+[data-cui-theme] .sm\:rounded-3xl {
+  border-radius: 0.25rem !important;
+}
+
+/* rounded-t-3xl only sets top corners — preserve bottom corners at 0 */
+[data-cui-theme] .rounded-t-3xl {
+  border-top-left-radius: 0.25rem !important;
+  border-top-right-radius: 0.25rem !important;
+}
+
+/* ── Light ───────────────────────────────────────────────────────────────── */
+[data-cui-theme="light"] {
+  /* Border radius — Click-UI uses 0.25rem (4px) for buttons/inputs/cards, 0.5rem for dialogs.
+   * Setting --radius to 0.25rem aligns Tailwind's rounded-lg/md/sm with the CUI aesthetic. */
+  --radius: 0.25rem; /* LibreChat --radius ← --click-button-radii-all / --click-field-radii-all */
+
+  /* Text */
+  --text-primary:      var(--click-global-color-text-default);       /* LibreChat --text-primary     ← --click-global-color-text-default    */
+  --text-secondary:    var(--click-global-color-text-muted);         /* LibreChat --text-secondary   ← --click-global-color-text-muted      */
+  --text-tertiary:     var(--click-global-color-text-muted);         /* LibreChat --text-tertiary    ← --click-global-color-text-muted      */
+  --text-destructive:  var(--click-global-color-text-danger);        /* LibreChat --text-destructive ← --click-global-color-text-danger     */
+
+  /* Surfaces */
+  --surface-primary:      var(--click-global-color-background-default);              /* LibreChat --surface-primary      ← --click-global-color-background-default */
+  --surface-secondary:    var(--click-global-color-background-muted);                /* LibreChat --surface-secondary    ← --click-global-color-background-muted   */
+  --surface-chat:         var(--click-global-color-background-default);              /* LibreChat --surface-chat         ← --click-global-color-background-default */
+  --surface-active:       var(--click-global-color-background-muted);                /* LibreChat --surface-active       ← --click-global-color-background-muted   */
+  --surface-hover:        var(--click-global-color-background-muted);                /* LibreChat --surface-hover        ← --click-global-color-background-muted   */
+  --surface-dialog:       var(--click-global-color-background-default);              /* LibreChat --surface-dialog       ← --click-global-color-background-default */
+  --surface-submit:       var(--click-button-basic-color-primary-background-default); /* LibreChat --surface-submit       ← CUI primary button bg (light: #302e32)   */
+  --surface-submit-hover: var(--click-button-basic-color-primary-background-hover);  /* LibreChat --surface-submit-hover ← CUI primary button bg hover               */
+
+  /* Borders */
+  --border-light:      var(--click-global-color-stroke-default);     /* LibreChat --border-light  ← --click-global-color-stroke-default  */
+  --border-medium:     var(--click-global-color-stroke-muted);       /* LibreChat --border-medium ← --click-global-color-stroke-muted    */
+  --border-heavy:      var(--click-global-color-stroke-intense);     /* LibreChat --border-heavy  ← --click-global-color-stroke-intense  */
+
+  /* Header */
+  --header-primary:    var(--click-global-color-background-default); /* LibreChat --header-primary ← --click-global-color-background-default */
+
+  /* Surfaces (continued) */
+  --surface-tertiary:  var(--click-global-color-background-muted);   /* LibreChat --surface-tertiary ← active tab bg (radix-state-active) */
+
+  /* Shadcn utility vars */
+  --background:        var(--click-global-color-background-default); /* LibreChat --background  ← --click-global-color-background-default */
+  --foreground:        var(--click-global-color-text-default);       /* LibreChat --foreground  ← --click-global-color-text-default       */
+  --primary:           var(--click-global-color-accent-default);     /* LibreChat --primary     ← --click-global-color-accent-default     */
+  --border:            var(--click-global-color-stroke-default);     /* LibreChat --border      ← --click-global-color-stroke-default     */
+  --input:             var(--click-global-color-stroke-default);     /* LibreChat --input       ← --click-global-color-stroke-default     */
+  --ring:              var(--click-global-color-outline-default);    /* LibreChat --ring        ← --click-global-color-outline-default    */
+  --accent:            var(--click-global-color-background-muted);   /* LibreChat --accent      ← --click-global-color-background-muted   */
+  --muted:             var(--click-global-color-background-muted);   /* LibreChat --muted       ← --click-global-color-background-muted   */
+  --destructive:       var(--click-global-color-text-danger);        /* LibreChat --destructive ← --click-global-color-text-danger        */
+}
+
+/* ── Dark ────────────────────────────────────────────────────────────────── */
+[data-cui-theme="dark"] {
+  /* Border radius */
+  --radius: 0.25rem; /* LibreChat --radius ← --click-button-radii-all / --click-field-radii-all */
+
+  /* Text */
+  --text-primary:      var(--click-global-color-text-default);       /* LibreChat --text-primary     ← --click-global-color-text-default    */
+  --text-secondary:    var(--click-global-color-text-muted);         /* LibreChat --text-secondary   ← --click-global-color-text-muted      */
+  --text-tertiary:     var(--click-global-color-text-muted);         /* LibreChat --text-tertiary    ← --click-global-color-text-muted      */
+  --text-destructive:  var(--click-global-color-text-danger);        /* LibreChat --text-destructive ← --click-global-color-text-danger     */
+
+  /* Surfaces */
+  --surface-primary:      var(--click-global-color-background-default);              /* LibreChat --surface-primary      ← --click-global-color-background-default */
+  --surface-secondary:    var(--click-global-color-background-muted);                /* LibreChat --surface-secondary    ← --click-global-color-background-muted   */
+  --surface-chat:         var(--click-global-color-background-default);              /* LibreChat --surface-chat         ← --click-global-color-background-default */
+  --surface-active:       var(--click-global-color-background-muted);                /* LibreChat --surface-active       ← --click-global-color-background-muted   */
+  --surface-hover:        var(--click-global-color-background-muted);                /* LibreChat --surface-hover        ← --click-global-color-background-muted   */
+  --surface-dialog:       var(--click-global-color-background-muted);                /* LibreChat --surface-dialog       ← --click-global-color-background-muted   */
+  --surface-submit:       var(--click-button-basic-color-primary-background-default); /* LibreChat --surface-submit       ← CUI primary button bg (dark: #faff69)    */
+  --surface-submit-hover: var(--click-button-basic-color-primary-background-hover);  /* LibreChat --surface-submit-hover ← CUI primary button bg hover               */
+
+  /* Borders */
+  --border-light:      var(--click-global-color-stroke-default);     /* LibreChat --border-light  ← --click-global-color-stroke-default  */
+  --border-medium:     var(--click-global-color-stroke-muted);       /* LibreChat --border-medium ← --click-global-color-stroke-muted    */
+  --border-heavy:      var(--click-global-color-stroke-intense);     /* LibreChat --border-heavy  ← --click-global-color-stroke-intense  */
+
+  /* Header */
+  --header-primary:    var(--click-global-color-background-default); /* LibreChat --header-primary ← --click-global-color-background-default */
+
+  /* Surfaces (continued) */
+  --surface-tertiary:  var(--click-global-color-background-muted);   /* LibreChat --surface-tertiary ← active tab bg (radix-state-active) */
+
+  /* Shadcn utility vars */
+  --background:        var(--click-global-color-background-default); /* LibreChat --background  ← --click-global-color-background-default */
+  --foreground:        var(--click-global-color-text-default);       /* LibreChat --foreground  ← --click-global-color-text-default       */
+  --primary:           var(--click-global-color-accent-default);     /* LibreChat --primary     ← --click-global-color-accent-default     */
+  --border:            var(--click-global-color-stroke-default);     /* LibreChat --border      ← --click-global-color-stroke-default     */
+  --input:             var(--click-global-color-stroke-default);     /* LibreChat --input       ← --click-global-color-stroke-default     */
+  --ring:              var(--click-global-color-outline-default);    /* LibreChat --ring        ← --click-global-color-outline-default    */
+  --accent:            var(--click-global-color-background-muted);   /* LibreChat --accent      ← --click-global-color-background-muted   */
+  --muted:             var(--click-global-color-background-muted);   /* LibreChat --muted       ← --click-global-color-background-muted   */
+  --destructive:       var(--click-global-color-text-danger);        /* LibreChat --destructive ← --click-global-color-text-danger        */
+}
+
+/* ── Ghost / secondary button hover states ───────────────────────────────── */
+/*
+ * hover:bg-accent and hover:bg-muted are hsl-wrapped and used everywhere —
+ * conversation list item hover, nav icon hover, ghost toolbar buttons.
+ * Without this fix the hover background is transparent (invalid hsl(#hex)).
+ */
+[data-cui-theme] .hover\:bg-accent:hover {
+  background-color: var(--click-global-color-background-muted) !important;
+}
+
+[data-cui-theme] .hover\:bg-muted:hover {
+  background-color: var(--click-global-color-background-muted) !important;
+}
+
+/* ── Secondary button ─────────────────────────────────────────────────────── */
+/*
+ * bg-secondary is hsl-wrapped — renders transparent without this override.
+ * Maps to CUI secondary button tokens for full visual treatment.
+ */
+[data-cui-theme] .bg-secondary {
+  background-color: var(--click-button-basic-color-secondary-background-default) !important;
+}
+
+[data-cui-theme] .hover\:bg-secondary\/80:hover {
+  background-color: var(--click-button-basic-color-secondary-background-hover) !important;
+}
+
+[data-cui-theme] .text-secondary-foreground {
+  color: var(--click-button-basic-color-secondary-text-default) !important;
+}
+
+/* ── Focus-visible ring suppression ──────────────────────────────────────── */
+/*
+ * focus-visible:ring-ring is hsl-wrapped → ring glow artifact appears.
+ * CUI uses no ring on buttons — just border-color change.
+ * Inputs/textareas already handled above (stroke-active border).
+ */
+[data-cui-theme] button:focus-visible,
+[data-cui-theme] [role="button"]:focus-visible,
+[data-cui-theme] a:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* ── Scrollbars ───────────────────────────────────────────────────────────── */
+/*
+ * CUI uses thin 4px scrollbars with muted color.
+ * Highly visible in long conversations and the sidebar.
+ */
+[data-cui-theme] ::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+[data-cui-theme] ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+[data-cui-theme] ::-webkit-scrollbar-thumb {
+  background: var(--click-global-color-stroke-default);
+  border-radius: 2px;
+}
+
+[data-cui-theme] ::-webkit-scrollbar-thumb:hover {
+  background: var(--click-global-color-stroke-intense);
+}
+
+/* ── Checkboxes ───────────────────────────────────────────────────────────── */
+/*
+ * Used throughout settings panels and agent builder.
+ * CUI token path: --click-checkbox-color-variations-default-{property}-{state}
+ * States: default = unchecked, active = checked.
+ *
+ * The Checkbox component uses data-[state=checked]:bg-primary which produces
+ * hsl(hex) -> transparent. Override all states explicitly.
+ * Setting color on the checked root propagates to the indicator SVG via currentColor.
+ */
+[data-cui-theme] [role="checkbox"] {
+  background-color: var(--click-checkbox-color-variations-default-background-default) !important;
+  border-color: var(--click-checkbox-color-variations-default-stroke-default) !important;
+}
+
+[data-cui-theme] [role="checkbox"]:hover {
+  background-color: var(--click-checkbox-color-variations-default-background-hover) !important;
+  border-color: var(--click-checkbox-color-variations-default-stroke-hover) !important;
+}
+
+[data-cui-theme] [role="checkbox"][data-state="checked"] {
+  background-color: var(--click-checkbox-color-variations-default-background-active) !important;
+  border-color: var(--click-checkbox-color-variations-default-stroke-active) !important;
+  color: var(--click-checkbox-color-variations-default-check-active) !important;
+}
+
+/* ── Tabs ─────────────────────────────────────────────────────────────────── */
+/*
+ * Radix Tabs use data-[state=active]:bg-* and data-[state=active]:text-*.
+ * Tab strips appear in settings, agent builder, and several panels.
+ */
+[data-cui-theme] [role="tablist"] {
+  background-color: var(--click-global-color-background-muted) !important;
+}
+
+[data-cui-theme] [role="tab"] {
+  color: var(--click-global-color-text-muted) !important;
+}
+
+[data-cui-theme] [role="tab"][data-state="active"] {
+  background-color: var(--click-global-color-background-default) !important;
+  color: var(--click-global-color-text-default) !important;
+}
+
+/* ── Code blocks ──────────────────────────────────────────────────────────── */
+/*
+ * pre / code elements in markdown rendering are prominent in technical chats.
+ * Maps to CUI muted surface with codeblock radius and default stroke border.
+ * Inline code (code:not(pre code)) gets the same surface treatment.
+ */
+[data-cui-theme] pre,
+[data-cui-theme] code:not(pre code) {
+  background-color: var(--click-global-color-background-muted) !important;
+  border-radius: var(--click-codeblock-radii-all) !important;
+  border: 1px solid var(--click-global-color-stroke-default) !important;
+}
+
+/* ── bg-card override ─────────────────────────────────────────────────────── */
+/*
+ * bg-card is hsl-wrapped and used for card surfaces (agent cards, endpoint cards).
+ * Maps to default background matching the main page surface.
+ */
+[data-cui-theme] .bg-card {
+  background-color: var(--click-global-color-background-default) !important;
+}
+
+/* ── Primary opacity variants ─────────────────────────────────────────────── */
+/*
+ * bg-primary/10 and hover:bg-primary/10 are used for selected/active item
+ * highlights in sidebars and lists. hsl(hex / opacity) is invalid CSS.
+ */
+[data-cui-theme] .bg-primary\/10 {
+  background-color: color-mix(in srgb, var(--click-global-color-accent-default) 10%, transparent) !important;
+}
+
+[data-cui-theme] .hover\:bg-primary\/10:hover {
+  background-color: color-mix(in srgb, var(--click-global-color-accent-default) 10%, transparent) !important;
+}
+
+/* ── Select trigger focus state ───────────────────────────────────────────── */
+/*
+ * Model selector and other Select components can show focus-ring artifacts.
+ * Reuse field stroke tokens (consistent with input/textarea treatment above).
+ */
+[data-cui-theme] [role="combobox"]:focus,
+[data-cui-theme] [role="combobox"]:focus-visible {
+  outline: none !important;
+  border-color: var(--click-field-color-stroke-active) !important;
+  box-shadow: none !important;
+}
+
+/* ── HoverCard help-tooltip alignment ────────────────────────────────────── */
+/*
+ * HoverCard is used as a "help tooltip" pattern throughout the agent builder
+ * and parameter panels (triggered by CircleHelpIcon question-mark buttons).
+ * Radix HoverCardContent is uniquely identified by the Tailwind class
+ * origin-[--radix-hover-card-content-transform-origin] — no other component
+ * uses this transform-origin CSS custom property.
+ *
+ * Override to match the CUI tooltip visual treatment:
+ *   dark semi-transparent background, white text, 4px radius, compact padding.
+ *
+ * max-width:20rem preserves readability for longer descriptions (e.g. Run Code
+ * info) while keeping the visual in line with CUI's tooltip aesthetic.
+ * The inner p/span elements hardcode text-text-secondary; override them too.
+ */
+[data-cui-theme] .origin-\[--radix-hover-card-content-transform-origin\] {
+  width: auto !important;
+  max-width: 20rem !important;
+  background-color: var(--click-tooltip-color-background-default) !important;
+  color: var(--click-tooltip-color-label-default) !important;
+  border: none !important;
+  border-radius: var(--click-tooltip-radii-all) !important;
+  padding: var(--click-tooltip-space-y) var(--click-tooltip-space-x) !important;
+  font: var(--click-tooltip-typography-label-default) !important;
+  box-shadow: none !important;
+}
+
+[data-cui-theme] .origin-\[--radix-hover-card-content-transform-origin\] p,
+[data-cui-theme] .origin-\[--radix-hover-card-content-transform-origin\] span,
+[data-cui-theme] .origin-\[--radix-hover-card-content-transform-origin\] div {
+  color: var(--click-tooltip-color-label-default) !important;
+}

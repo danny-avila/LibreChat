@@ -11,7 +11,7 @@ const Textarea: React.ForwardRefExoticComponent<
   return (
     <textarea
       className={cn(
-        'flex h-20 w-full resize-none rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-50 dark:focus:ring-gray-400 dark:focus:ring-offset-gray-900',
+        'flex h-20 w-full resize-none rounded-md border border-border-light bg-transparent px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary transition-colors hover:border-border-medium focus:outline-none focus:border-border-heavy disabled:cursor-not-allowed disabled:opacity-50',
         className,
       )}
       ref={ref}
