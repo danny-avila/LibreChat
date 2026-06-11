@@ -79,10 +79,12 @@ export default function Breakdown({ view, showCost }: BreakdownProps) {
         aria-label={localize('com_ui_context_usage')}
         className="h-2 w-full overflow-hidden rounded-full bg-surface-secondary"
       >
-        <div
-          className="h-full rounded-full bg-text-secondary transition-all duration-300"
-          style={{ width: `${Math.min(percent, 100)}%` }}
-        />
+        {percent > 0 && (
+          <div
+            className="h-full rounded-full bg-text-secondary transition-all duration-300"
+            style={{ width: `${Math.min(percent, 100)}%` }}
+          />
+        )}
       </div>
 
       <div className="space-y-1.5">
@@ -93,7 +95,9 @@ export default function Breakdown({ view, showCost }: BreakdownProps) {
               value={messageTokens}
               max={maxTokens}
             />
-            <Row label={localize('com_ui_context_system')} value={systemTokens} max={maxTokens} />
+            {systemTokens > 0 && (
+              <Row label={localize('com_ui_context_system')} value={systemTokens} max={maxTokens} />
+            )}
             {toolRows != null ? (
               toolRows.map(
                 ([label, value]) =>
