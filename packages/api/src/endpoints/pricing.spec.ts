@@ -5,9 +5,11 @@ import type { EndpointTokenConfig } from '~/types';
 import { matchModelName, findMatchingPattern } from '~/utils';
 import { buildTokenConfigMap } from './pricing';
 
+/** Adapters: TxDeps types are looser than the utils signatures (string endpoint, undefined miss) */
 const { getValueKey, getMultiplier, getCacheMultiplier } = createTxMethods(mongoose, {
-  matchModelName,
-  findMatchingPattern,
+  matchModelName: (model, endpoint) => matchModelName(model, endpoint as EModelEndpoint),
+  findMatchingPattern: (model, values) =>
+    findMatchingPattern(model, values as Record<string, number>) ?? undefined,
 });
 
 const deps = { getValueKey, getMultiplier, getCacheMultiplier };
