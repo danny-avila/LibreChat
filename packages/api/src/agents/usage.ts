@@ -1,5 +1,6 @@
 import { logger } from '@librechat/data-schemas';
 import { Providers } from 'librechat-data-provider';
+import type { SubagentUsageEvent } from '@librechat/agents';
 import type { TCustomConfig, TTransactionsConfig } from 'librechat-data-provider';
 import type {
   StructuredTokenUsage,
@@ -189,11 +190,18 @@ export async function recordCollectedUsage(
 
   const messageUsages: UsageMetadata[] = [];
   const summarizationUsages: UsageMetadata[] = [];
+  const subagentUsages: UsageMetadata[] = [];
   for (const usage of collectedUsage) {
     if (usage == null) {
       continue;
     }
-    (usage.usage_type === 'summarization' ? summarizationUsages : messageUsages).push(usage);
+    if (usage.usage_type === 'summarization') {
+      summarizationUsages.push(usage);
+    } else if (usage.usage_type === 'subagent') {
+      subagentUsages.push(usage);
+    } else {
+      messageUsages.push(usage);
+    }
   }
 
   const firstUsage = messageUsages[0];
@@ -208,6 +216,7 @@ export async function recordCollectedUsage(
     usages: UsageMetadata[],
     usageContext: string,
     docs: PreparedEntry[],
+    options?: { excludeFromOutputTotal?: boolean },
   ): void => {
     for (const usage of usages) {
       if (!usage) {
@@ -216,7 +225,9 @@ export async function recordCollectedUsage(
 
       const { inputOnly, cacheCreation, cacheRead, completion } = splitUsage(usage);
 
-      total_output_tokens += completion;
+      if (options?.excludeFromOutputTotal !== true) {
+        total_output_tokens += completion;
+      }
 
       const txMetadata: TxMetadata = {
         user,
@@ -292,6 +303,14 @@ export async function recordCollectedUsage(
   const allDocs: PreparedEntry[] = [];
   processUsageGroup(messageUsages, context, allDocs);
   processUsageGroup(summarizationUsages, 'summarization', allDocs);
+  /**
+   * Subagent child-run usage is billed in full (transactions + balance) but
+   * excluded from the reported output total: the result's `output_tokens`
+   * becomes the parent response message's `tokenCount` (see BaseClient's
+   * `getStreamUsage` consumer), and child output the parent never saw would
+   * distort next-turn context accounting by orders of magnitude.
+   */
+  processUsageGroup(subagentUsages, 'subagent', allDocs, { excludeFromOutputTotal: true });
   if (useBulk && allDocs.length > 0) {
     try {
       await bulkWriteTransactions({ user, docs: allDocs }, bulkWriteOps);
@@ -303,5 +322,33 @@ export async function recordCollectedUsage(
   return {
     input_tokens,
     output_tokens: total_output_tokens,
+  };
+}
+
+/**
+ * Builds the host-side `subagentUsageSink` for `Run.create`. Subagent child
+ * graphs execute outside the run's `streamEvents` loop, so their model calls
+ * never reach the `CHAT_MODEL_END` handler (`ModelEndHandler`) — the SDK
+ * reports them through this sink instead. Each event is tagged
+ * `usage_type: 'subagent'` with the child's model/provider and pushed onto
+ * the same `collectedUsage` array the handler fills, so
+ * {@link recordCollectedUsage} bills child calls (transactions + balance)
+ * alongside the parent's.
+ */
+export function createSubagentUsageSink(
+  collectedUsage: UsageMetadata[],
+): (event: SubagentUsageEvent) => void {
+  return (event) => {
+    if (event?.usage == null) {
+      return;
+    }
+    const usage: UsageMetadata = { ...event.usage, usage_type: 'subagent' };
+    if (event.model != null && event.model !== '') {
+      usage.model = event.model;
+    }
+    if (event.provider != null && event.provider !== '') {
+      usage.provider = event.provider;
+    }
+    collectedUsage.push(usage);
   };
 }

@@ -788,6 +788,7 @@ export async function createRun({
   initialSummary,
   calibrationRatio,
   appConfig,
+  subagentUsageSink,
   streaming = true,
   streamUsage = true,
 }: {
@@ -812,7 +813,7 @@ export async function createRun({
   appConfig?: AppConfig;
 } & Pick<
   RunConfig,
-  'tokenCounter' | 'customHandlers' | 'indexTokenCountMap' | 'initialSessions'
+  'tokenCounter' | 'customHandlers' | 'indexTokenCountMap' | 'initialSessions' | 'subagentUsageSink'
 >): Promise<Run<IState>> {
   /**
    * Only extract discovered tools if:
@@ -1039,6 +1040,7 @@ export async function createRun({
     initialSessions,
     calibrationRatio,
     indexTokenCountMap,
+    subagentUsageSink,
     eagerEventToolExecution: { enabled: true },
     // Derive the Langfuse trace id deterministically from runId so message
     // feedback can be scored against the trace without a lookup (see the

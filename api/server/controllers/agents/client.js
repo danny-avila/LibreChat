@@ -21,6 +21,7 @@ const {
   applyContextToAgent,
   isMemoryAgentEnabled,
   recordCollectedUsage,
+  createSubagentUsageSink,
   isDeepSeekReasoningProvider,
   GenerationJobManager,
   getTransactionsConfig,
@@ -1137,6 +1138,11 @@ class AgentClient extends BaseClient {
           summarizationConfig: appConfig?.summarization,
           appConfig,
           tokenCounter,
+          /** Bills subagent child-run model calls — child graphs execute
+           *  outside the streamEvents loop, so ModelEndHandler never sees
+           *  them. Entries land in collectedUsage tagged
+           *  `usage_type: 'subagent'` and are spent by recordCollectedUsage. */
+          subagentUsageSink: createSubagentUsageSink(this.collectedUsage),
         });
 
         if (!run) {
