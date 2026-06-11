@@ -4,7 +4,7 @@ import {
   ConversationListResponse,
 } from 'librechat-data-provider';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
+import { dataService, MutationKeys, QueryKeys, defaultOrderQuery, request } from 'librechat-data-provider';
 import type { InfiniteData, UseMutationResult } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 import {
@@ -1031,6 +1031,19 @@ export const useResendVerificationEmail = (
   return useMutation({
     mutationFn: (variables: t.TResendVerificationEmail) =>
       dataService.resendVerificationEmail(variables),
+    ...(options || {}),
+  });
+};
+
+/**
+ * Hook for requesting admin verification for pending accounts
+ */
+export const useRequestVerificationMutation = (
+  options?: t.MutationOptions<{ message: string }, { identifier: string }, unknown, unknown>,
+): UseMutationResult<{ message: string }, unknown, { identifier: string }, unknown> => {
+  return useMutation({
+    mutationFn: (variables: { identifier: string }) =>
+      request.post('/ajrasakha/users/verification-request', variables),
     ...(options || {}),
   });
 };

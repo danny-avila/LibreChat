@@ -4,7 +4,7 @@ import { Turnstile } from '@marsidev/react-turnstile';
 import { ThemeContext, Spinner, Button, isDark } from '@librechat/client';
 import type { TLoginUser, TStartupConfig } from 'librechat-data-provider';
 import type { TAuthContext } from '~/common';
-import { useResendVerificationEmail, useGetStartupConfig } from '~/data-provider';
+import { useResendVerificationEmail, useGetStartupConfig, useRequestVerificationMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
 type TLoginFormProps = {
@@ -25,17 +25,36 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
   } = useForm<TLoginUser>();
   const [showResendLink, setShowResendLink] = useState<boolean>(false);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [showRequestVerification, setShowRequestVerification] = useState<boolean>(false);
+  const [verificationRequestSent, setVerificationRequestSent] = useState<boolean>(false);
 
   const { data: config } = useGetStartupConfig();
   const useUsernameLogin = config?.ldap?.username;
   const validTheme = isDark(theme) ? 'dark' : 'light';
   const requireCaptcha = Boolean(startupConfig.turnstile?.siteKey);
 
+  const requestVerificationMutation = useRequestVerificationMutation({
+    onMutate: () => {
+      setError(undefined);
+      setShowRequestVerification(false);
+    },
+    onSuccess: () => {
+      setVerificationRequestSent(true);
+    },
+    onError: (error) => {
+      console.error('Failed to send verification request:', error);
+      setError('Failed to send verification request. Please try again.');
+    },
+  });
+
   useEffect(() => {
     if (error && error.includes('422') && !showResendLink) {
       setShowResendLink(true);
     }
-  }, [error, showResendLink]);
+    if (error && error === 'ERR_ADMIN_VERIFICATION_PENDING' && !showRequestVerification && !verificationRequestSent) {
+      setShowRequestVerification(true);
+    }
+  }, [error, showResendLink, showRequestVerification, verificationRequestSent]);
 
   const resendLinkMutation = useResendVerificationEmail({
     onMutate: () => {
@@ -65,6 +84,14 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
     resendLinkMutation.mutate({ email });
   };
 
+  const handleRequestVerification = () => {
+    const email = getValues('email');
+    if (!email) {
+      return setShowRequestVerification(false);
+    }
+    requestVerificationMutation.mutate({ identifier: email });
+  };
+
   return (
     <>
       {showResendLink && (
@@ -78,6 +105,24 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
           >
             {localize('com_auth_email_resend_link')}
           </button>
+        </div>
+      )}
+      {showRequestVerification && (
+        <div className="mt-2 rounded-md border border-yellow-500 bg-yellow-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200">
+          Your account verification is pending.
+          <button
+            type="button"
+            className="ml-2 text-blue-600 hover:underline"
+            onClick={handleRequestVerification}
+            disabled={requestVerificationMutation.isPending}
+          >
+            {requestVerificationMutation.isPending ? 'Requesting...' : 'Request Verification'}
+          </button>
+        </div>
+      )}
+      {verificationRequestSent && (
+        <div className="mt-2 rounded-md border border-green-500 bg-green-500/10 px-3 py-2 text-sm text-green-600 dark:text-green-400">
+          Verification request sent to administrators.
         </div>
       )}
       <form
