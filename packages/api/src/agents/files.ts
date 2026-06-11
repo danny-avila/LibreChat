@@ -112,7 +112,7 @@ function createInlineFile(
     throw new RemoteAgentFileError(`File "${filename}" requires file_data.`);
   }
 
-  const match = fileData.match(/^data:([^;,]*);base64,(.*)$/s);
+  const match = fileData.match(/^data:([^;,]*);base64,([\s\S]*)$/);
   if (!match) {
     throw new RemoteAgentFileError(`File "${filename}" must use a base64 data URL.`);
   }
