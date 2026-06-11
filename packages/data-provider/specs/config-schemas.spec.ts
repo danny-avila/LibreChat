@@ -532,6 +532,76 @@ describe('agentsEndpointSchema', () => {
 
     expect(result.success).toBe(false);
   });
+
+  it('allows remote M2M auth with client mappings', () => {
+    const result = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          m2m: {
+            enabled: true,
+            issuer: 'https://cognito-idp.us-west-2.amazonaws.com/us-west-2_test',
+            jwksUri:
+              'https://cognito-idp.us-west-2.amazonaws.com/us-west-2_test/.well-known/jwks.json',
+            audience: 'librechat-agents-api',
+            scopes: {
+              read: 'librechat.agents:read',
+              create: 'librechat.agents:create',
+              update: 'librechat.agents:update',
+              delete: 'librechat.agents:delete',
+            },
+            clients: [{ clientId: 'dwh-dwaine-updater', userId: 'user-123' }],
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('requires remote M2M issuer and client mappings when enabled', () => {
+    const missingIssuer = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          m2m: {
+            enabled: true,
+            clients: [{ clientId: 'dwh-dwaine-updater', userId: 'user-123' }],
+          },
+        },
+      },
+    });
+    const missingClients = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          m2m: {
+            enabled: true,
+            issuer: 'https://cognito-idp.us-west-2.amazonaws.com/us-west-2_test',
+          },
+        },
+      },
+    });
+
+    expect(missingIssuer.success).toBe(false);
+    expect(missingClients.success).toBe(false);
+  });
+
+  it('requires space-separated remote M2M scopes', () => {
+    const result = agentsEndpointSchema.safeParse({
+      remoteApi: {
+        auth: {
+          m2m: {
+            enabled: true,
+            issuer: 'https://cognito-idp.us-west-2.amazonaws.com/us-west-2_test',
+            scopes: {
+              update: 'librechat.agents:update,librechat.agents:delete',
+            },
+            clients: [{ clientId: 'dwh-dwaine-updater', userId: 'user-123' }],
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
 });
 
 describe('azureEndpointSchema', () => {

@@ -13,6 +13,7 @@ const {
 const { saveMessage } = require('~/models');
 const responses = require('./responses');
 const openai = require('./openai');
+const remoteCrud = require('./remoteCrud');
 const { v1 } = require('./v1');
 const chat = require('./chat');
 
@@ -32,6 +33,12 @@ const router = express.Router();
  * @see https://openresponses.org/specification
  */
 router.use('/v1/responses', responses);
+
+/**
+ * Remote Agent CRUD API routes (M2M authentication handled in route file)
+ * Mounted at /agents/v1/agents (full path: /api/agents/v1/agents)
+ */
+router.use('/v1/agents', remoteCrud);
 
 /**
  * OpenAI-compatible API routes (API key authentication handled in route file)
