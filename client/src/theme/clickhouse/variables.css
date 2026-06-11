@@ -1,0 +1,17 @@
+/*
+ * LibreChat → Click-UI token bridge
+ * Overrides LibreChat's CSS variables using the closest Click-UI global semantic tokens.
+ * Scoped to [data-cui-theme] so these rules are inert unless CHCThemeProvider is mounted.
+ *
+ * Click-UI global token reference (defined in tokens-light.css / tokens-dark.css):
+ *   --click-global-color-background-default   main page background
+ *   --click-global-color-background-muted     secondary / muted background
+ *   --click-global-color-text-default         primary body text
+ *   --click-global-color-text-muted           secondary / muted text
+ *   --click-global-color-text-danger          destructive / error text
+ *   --click-global-color-stroke-default       lightest border / divider
+ *   --click-global-color-stroke-muted         muted border
+ *   --click-global-color-stroke-intense       heavier border
+ *   --click-global-color-accent-default       brand accent (yellow in dark, near-black in light)
+ *   --click-global-color-outline-default      focus ring / outline
+ */
