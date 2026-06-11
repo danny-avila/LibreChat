@@ -456,7 +456,7 @@ const loadTools = async ({
   for (const [serverName, toolConfigs] of Object.entries(requestedMCPTools)) {
     index++;
     /** @type {LCAvailableTools} */
-    let availableTools;
+    let availableTools = options.mcpAvailableTools?.[serverName];
     for (const config of toolConfigs) {
       try {
         if (failedMCPServers.has(serverName)) {

@@ -492,6 +492,7 @@ const OpenAIChatCompletionController = async (req, res) => {
           agent: ctx.agent ?? agent,
           signal: abortController.signal,
           toolRegistry: ctx.toolRegistry,
+          mcpAvailableTools: ctx.mcpAvailableTools,
           userMCPAuthMap: ctx.userMCPAuthMap,
           tool_resources: ctx.tool_resources,
           actionsEnabled: ctx.actionsEnabled,
