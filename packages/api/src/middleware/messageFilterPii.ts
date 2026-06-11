@@ -87,7 +87,7 @@ export function findPiiMatchInMessages(
     return null;
   }
   for (const msg of messages) {
-    if (msg == null || msg.role !== 'user') {
+    if (msg == null) {
       continue;
     }
     if (typeof msg.content === 'string') {
