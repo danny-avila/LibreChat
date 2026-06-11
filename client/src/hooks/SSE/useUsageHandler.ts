@@ -125,7 +125,9 @@ export default function useUsageHandler(): UsageHandlers {
     const usageHandler: UsageHandlers['usageHandler'] = (data, submission) => {
       foldUsage(data, submission);
 
-      if (data.usage_type === 'summarization') {
+      /** Only primary-call usage drives the live context estimate; tagged
+       *  buckets (summarization, subagent) fold into totals/cost only */
+      if (data.usage_type != null) {
         return;
       }
       confirmedRef.current += data.output_tokens ?? 0;

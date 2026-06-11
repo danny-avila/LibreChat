@@ -91,7 +91,7 @@ export type TTokenUsageEvent = {
   };
   model?: string;
   provider?: string;
-  usage_type?: 'summarization';
+  usage_type?: 'summarization' | 'subagent';
   runId?: string;
 };
 
