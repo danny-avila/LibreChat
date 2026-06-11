@@ -467,6 +467,7 @@ const createResponse = async (req, res) => {
      * @type {Map<string, {
      *   agent: object,
      *   toolRegistry?: import('@librechat/agents').LCToolRegistry,
+     *   requestScopedConnections?: import('@librechat/api').RequestScopedMCPConnectionStore,
      *   userMCPAuthMap?: Record<string, Record<string, string>>,
      *   tool_resources?: object,
      *   actionsEnabled?: boolean,
@@ -685,6 +686,7 @@ const createResponse = async (req, res) => {
             signal: abortController.signal,
             toolRegistry: ctx.toolRegistry,
             mcpAvailableTools: ctx.mcpAvailableTools,
+            requestScopedConnections: ctx.requestScopedConnections,
             userMCPAuthMap: ctx.userMCPAuthMap,
             tool_resources: ctx.tool_resources,
             actionsEnabled: ctx.actionsEnabled,
@@ -860,6 +862,7 @@ const createResponse = async (req, res) => {
             signal: abortController.signal,
             toolRegistry: ctx.toolRegistry,
             mcpAvailableTools: ctx.mcpAvailableTools,
+            requestScopedConnections: ctx.requestScopedConnections,
             userMCPAuthMap: ctx.userMCPAuthMap,
             tool_resources: ctx.tool_resources,
             actionsEnabled: ctx.actionsEnabled,

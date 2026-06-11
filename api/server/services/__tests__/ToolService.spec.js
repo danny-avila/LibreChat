@@ -778,7 +778,7 @@ describe('ToolService - Action Capability Gating', () => {
       mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
       mockGetServerConfig.mockResolvedValue({
         type: 'streamable-http',
-        url: 'https://mcp.example.com/{{LIBRECHAT_OPENID_ACCESS_TOKEN}}/mcp',
+        url: 'https://mcp.example.com/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
         source: 'yaml',
       });
       mockGetMCPServerTools.mockResolvedValue(null);

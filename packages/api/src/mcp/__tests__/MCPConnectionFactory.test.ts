@@ -167,6 +167,8 @@ describe('MCPConnectionFactory', () => {
         userId: undefined,
         oauthTokens: null,
         useSSRFProtection: false,
+        allowedAddresses: undefined,
+        ephemeralConnection: false,
       });
       expect(mockConnectionInstance.connect).toHaveBeenCalled();
     });
@@ -286,6 +288,8 @@ describe('MCPConnectionFactory', () => {
         userId: 'user123',
         oauthTokens: mockTokens,
         useSSRFProtection: false,
+        allowedAddresses: undefined,
+        ephemeralConnection: false,
       });
     });
 
@@ -380,6 +384,8 @@ describe('MCPConnectionFactory', () => {
         userId: 'user123',
         oauthTokens: null,
         useSSRFProtection: false,
+        allowedAddresses: undefined,
+        ephemeralConnection: false,
       });
       expect(mockLogger.debug).toHaveBeenCalledWith(
         expect.stringContaining('No existing tokens found or error loading tokens'),

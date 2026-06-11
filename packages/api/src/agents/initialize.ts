@@ -24,9 +24,9 @@ import type { GenericTool, LCToolRegistry, ToolMap, LCTool } from '@librechat/ag
 import type { Response as ServerResponse } from 'express';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { InitializeResultBase, ServerRequest, EndpointDbMethods } from '~/types';
+import type { LCAvailableTools, RequestScopedMCPConnectionStore } from '../mcp/types';
 import type { ResolvedManualSkill, ResolvedAlwaysApplySkill } from './skills';
 import type { TFilterFilesByAgentAccess } from './resources';
-import type { LCAvailableTools } from '../mcp/types';
 import {
   injectSkillCatalog,
   resolveManualSkills,
@@ -244,6 +244,8 @@ export type InitializedAgent = Agent & {
   toolRegistry?: LCToolRegistry;
   /** Run-scoped MCP tool definitions for request-scoped servers. */
   mcpAvailableTools?: Record<string, LCAvailableTools>;
+  /** Run-scoped MCP connections for request-scoped servers. */
+  requestScopedConnections?: RequestScopedMCPConnectionStore;
   /** Serializable tool definitions for event-driven execution */
   toolDefinitions?: LCTool[];
   /** Precomputed flag indicating if any tools have defer_loading enabled (for efficient runtime checks) */
@@ -348,6 +350,7 @@ export interface InitializeAgentParams {
     userMCPAuthMap?: Record<string, Record<string, string>>;
     toolRegistry?: LCToolRegistry;
     mcpAvailableTools?: Record<string, LCAvailableTools>;
+    requestScopedConnections?: RequestScopedMCPConnectionStore;
     /** Serializable tool definitions for event-driven mode */
     toolDefinitions?: LCTool[];
     hasDeferredTools?: boolean;
@@ -880,6 +883,7 @@ export async function initializeAgent(
     userMCPAuthMap,
     toolDefinitions: loadedToolDefinitions,
     mcpAvailableTools,
+    requestScopedConnections,
     hasDeferredTools,
     actionsEnabled,
     tools: structuredTools,
@@ -891,6 +895,7 @@ export async function initializeAgent(
     userMCPAuthMap: undefined,
     toolRegistry: undefined,
     mcpAvailableTools: undefined,
+    requestScopedConnections: undefined,
     toolDefinitions: [],
     hasDeferredTools: false,
     actionsEnabled: undefined,
@@ -1196,6 +1201,7 @@ export async function initializeAgent(
     resendFiles,
     toolRegistry,
     mcpAvailableTools,
+    requestScopedConnections,
     tool_resources,
     userMCPAuthMap,
     toolDefinitions,

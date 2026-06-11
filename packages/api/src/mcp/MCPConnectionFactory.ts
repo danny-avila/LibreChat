@@ -54,6 +54,7 @@ export class MCPConnectionFactory {
   protected readonly useSSRFProtection: boolean;
   protected readonly allowedDomains?: string[] | null;
   protected readonly allowedAddresses?: string[] | null;
+  protected readonly ephemeralConnection: boolean;
 
   // OAuth-related properties (only set when useOAuth is true)
   protected readonly userId?: string;
@@ -175,6 +176,7 @@ export class MCPConnectionFactory {
       oauthTokens,
       useSSRFProtection: this.useSSRFProtection,
       allowedAddresses: this.allowedAddresses,
+      ephemeralConnection: this.ephemeralConnection,
     });
 
     const oauthHandler = () => {
@@ -248,6 +250,7 @@ export class MCPConnectionFactory {
       oauthTokens: null,
       useSSRFProtection: this.useSSRFProtection,
       allowedAddresses: this.allowedAddresses,
+      ephemeralConnection: this.ephemeralConnection,
     });
 
     unauthConnection.on('oauthRequired', () => {
@@ -299,6 +302,7 @@ export class MCPConnectionFactory {
     this.useSSRFProtection = basic.useSSRFProtection === true;
     this.allowedDomains = basic.allowedDomains;
     this.allowedAddresses = basic.allowedAddresses;
+    this.ephemeralConnection = basic.ephemeralConnection === true;
     this.connectionTimeout = options?.connectionTimeout;
     this.tenantContext = tenantStorage?.getStore?.();
     this.tenantId = this.tenantContext?.tenantId ?? getTenantId();
@@ -396,6 +400,7 @@ export class MCPConnectionFactory {
       oauthTokens,
       useSSRFProtection: this.useSSRFProtection,
       allowedAddresses: this.allowedAddresses,
+      ephemeralConnection: this.ephemeralConnection,
     });
 
     let cleanupOAuthHandlers: (() => void) | null = null;
