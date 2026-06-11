@@ -15,3 +15,92 @@
  *   --click-global-color-accent-default       brand accent (yellow in dark, near-black in light)
  *   --click-global-color-outline-default      focus ring / outline
  */
+
+/* ── Light ───────────────────────────────────────────────────────────────── */
+[data-cui-theme="light"] {
+  /* Border radius — Click-UI uses 0.25rem (4px) for buttons/inputs/cards, 0.5rem for dialogs.
+   * Setting --radius to 0.25rem aligns Tailwind's rounded-lg/md/sm with the CUI aesthetic. */
+  --radius: 0.25rem; /* LibreChat --radius ← --click-button-radii-all / --click-field-radii-all */
+
+  /* Text */
+  --text-primary:      var(--click-global-color-text-default);       /* LibreChat --text-primary     ← --click-global-color-text-default    */
+  --text-secondary:    var(--click-global-color-text-muted);         /* LibreChat --text-secondary   ← --click-global-color-text-muted      */
+  --text-tertiary:     var(--click-global-color-text-muted);         /* LibreChat --text-tertiary    ← --click-global-color-text-muted      */
+  --text-destructive:  var(--click-global-color-text-danger);        /* LibreChat --text-destructive ← --click-global-color-text-danger     */
+
+  /* Surfaces */
+  --surface-primary:      var(--click-global-color-background-default);              /* LibreChat --surface-primary      ← --click-global-color-background-default */
+  --surface-secondary:    var(--click-global-color-background-muted);                /* LibreChat --surface-secondary    ← --click-global-color-background-muted   */
+  --surface-chat:         var(--click-global-color-background-default);              /* LibreChat --surface-chat         ← --click-global-color-background-default */
+  --surface-active:       var(--click-global-color-background-muted);                /* LibreChat --surface-active       ← --click-global-color-background-muted   */
+  --surface-hover:        var(--click-global-color-background-muted);                /* LibreChat --surface-hover        ← --click-global-color-background-muted   */
+  --surface-dialog:       var(--click-global-color-background-default);              /* LibreChat --surface-dialog       ← --click-global-color-background-default */
+  --surface-submit:       var(--click-button-basic-color-primary-background-default); /* LibreChat --surface-submit       ← CUI primary button bg (light: #302e32)   */
+  --surface-submit-hover: var(--click-button-basic-color-primary-background-hover);  /* LibreChat --surface-submit-hover ← CUI primary button bg hover               */
+
+  /* Borders */
+  --border-light:      var(--click-global-color-stroke-default);     /* LibreChat --border-light  ← --click-global-color-stroke-default  */
+  --border-medium:     var(--click-global-color-stroke-muted);       /* LibreChat --border-medium ← --click-global-color-stroke-muted    */
+  --border-heavy:      var(--click-global-color-stroke-intense);     /* LibreChat --border-heavy  ← --click-global-color-stroke-intense  */
+
+  /* Header */
+  --header-primary:    var(--click-global-color-background-default); /* LibreChat --header-primary ← --click-global-color-background-default */
+
+  /* Surfaces (continued) */
+  --surface-tertiary:  var(--click-global-color-background-muted);   /* LibreChat --surface-tertiary ← active tab bg (radix-state-active) */
+
+  /* Shadcn utility vars */
+  --background:        var(--click-global-color-background-default); /* LibreChat --background  ← --click-global-color-background-default */
+  --foreground:        var(--click-global-color-text-default);       /* LibreChat --foreground  ← --click-global-color-text-default       */
+  --primary:           var(--click-global-color-accent-default);     /* LibreChat --primary     ← --click-global-color-accent-default     */
+  --border:            var(--click-global-color-stroke-default);     /* LibreChat --border      ← --click-global-color-stroke-default     */
+  --input:             var(--click-global-color-stroke-default);     /* LibreChat --input       ← --click-global-color-stroke-default     */
+  --ring:              var(--click-global-color-outline-default);    /* LibreChat --ring        ← --click-global-color-outline-default    */
+  --accent:            var(--click-global-color-background-muted);   /* LibreChat --accent      ← --click-global-color-background-muted   */
+  --muted:             var(--click-global-color-background-muted);   /* LibreChat --muted       ← --click-global-color-background-muted   */
+  --destructive:       var(--click-global-color-text-danger);        /* LibreChat --destructive ← --click-global-color-text-danger        */
+}
+
+/* ── Dark ────────────────────────────────────────────────────────────────── */
+[data-cui-theme="dark"] {
+  /* Border radius */
+  --radius: 0.25rem; /* LibreChat --radius ← --click-button-radii-all / --click-field-radii-all */
+
+  /* Text */
+  --text-primary:      var(--click-global-color-text-default);       /* LibreChat --text-primary     ← --click-global-color-text-default    */
+  --text-secondary:    var(--click-global-color-text-muted);         /* LibreChat --text-secondary   ← --click-global-color-text-muted      */
+  --text-tertiary:     var(--click-global-color-text-muted);         /* LibreChat --text-tertiary    ← --click-global-color-text-muted      */
+  --text-destructive:  var(--click-global-color-text-danger);        /* LibreChat --text-destructive ← --click-global-color-text-danger     */
+
+  /* Surfaces */
+  --surface-primary:      var(--click-global-color-background-default);              /* LibreChat --surface-primary      ← --click-global-color-background-default */
+  --surface-secondary:    var(--click-global-color-background-muted);                /* LibreChat --surface-secondary    ← --click-global-color-background-muted   */
+  --surface-chat:         var(--click-global-color-background-default);              /* LibreChat --surface-chat         ← --click-global-color-background-default */
+  --surface-active:       var(--click-global-color-background-muted);                /* LibreChat --surface-active       ← --click-global-color-background-muted   */
+  --surface-hover:        var(--click-global-color-background-muted);                /* LibreChat --surface-hover        ← --click-global-color-background-muted   */
+  --surface-dialog:       var(--click-global-color-background-muted);                /* LibreChat --surface-dialog       ← --click-global-color-background-muted   */
+  --surface-submit:       var(--click-button-basic-color-primary-background-default); /* LibreChat --surface-submit       ← CUI primary button bg (dark: #faff69)    */
+  --surface-submit-hover: var(--click-button-basic-color-primary-background-hover);  /* LibreChat --surface-submit-hover ← CUI primary button bg hover               */
+
+  /* Borders */
+  --border-light:      var(--click-global-color-stroke-default);     /* LibreChat --border-light  ← --click-global-color-stroke-default  */
+  --border-medium:     var(--click-global-color-stroke-muted);       /* LibreChat --border-medium ← --click-global-color-stroke-muted    */
+  --border-heavy:      var(--click-global-color-stroke-intense);     /* LibreChat --border-heavy  ← --click-global-color-stroke-intense  */
+
+  /* Header */
+  --header-primary:    var(--click-global-color-background-default); /* LibreChat --header-primary ← --click-global-color-background-default */
+
+  /* Surfaces (continued) */
+  --surface-tertiary:  var(--click-global-color-background-muted);   /* LibreChat --surface-tertiary ← active tab bg (radix-state-active) */
+
+  /* Shadcn utility vars */
+  --background:        var(--click-global-color-background-default); /* LibreChat --background  ← --click-global-color-background-default */
+  --foreground:        var(--click-global-color-text-default);       /* LibreChat --foreground  ← --click-global-color-text-default       */
+  --primary:           var(--click-global-color-accent-default);     /* LibreChat --primary     ← --click-global-color-accent-default     */
+  --border:            var(--click-global-color-stroke-default);     /* LibreChat --border      ← --click-global-color-stroke-default     */
+  --input:             var(--click-global-color-stroke-default);     /* LibreChat --input       ← --click-global-color-stroke-default     */
+  --ring:              var(--click-global-color-outline-default);    /* LibreChat --ring        ← --click-global-color-outline-default    */
+  --accent:            var(--click-global-color-background-muted);   /* LibreChat --accent      ← --click-global-color-background-muted   */
+  --muted:             var(--click-global-color-background-muted);   /* LibreChat --muted       ← --click-global-color-background-muted   */
+  --destructive:       var(--click-global-color-text-danger);        /* LibreChat --destructive ← --click-global-color-text-danger        */
+}
