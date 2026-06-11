@@ -31,6 +31,7 @@ import type {
 } from 'librechat-data-provider';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { AppConfig, IUser } from '@librechat/data-schemas';
+import type { SubagentUsageEvent } from '~/agents/usage';
 import type * as t from '~/types';
 import { getProviderConfig } from '~/endpoints/config/providers';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
@@ -811,9 +812,18 @@ export async function createRun({
    * (e.g. "Ollama") in the summarization config to SDK-recognized providers.
    */
   appConfig?: AppConfig;
+  /**
+   * Receives per-model-call usage from subagent child runs so hosts can bill
+   * them (child graphs execute outside the run's `streamEvents` loop, so
+   * their usage never reaches `customHandlers`). Typed structurally — not as
+   * `Pick<RunConfig, 'subagentUsageSink'>` — because the field ships in
+   * `@librechat/agents` > 3.2.33; older SDK versions ignore it at runtime.
+   * Switch to the `RunConfig` pick once the dependency is bumped.
+   */
+  subagentUsageSink?: (event: SubagentUsageEvent) => void;
 } & Pick<
   RunConfig,
-  'tokenCounter' | 'customHandlers' | 'indexTokenCountMap' | 'initialSessions' | 'subagentUsageSink'
+  'tokenCounter' | 'customHandlers' | 'indexTokenCountMap' | 'initialSessions'
 >): Promise<Run<IState>> {
   /**
    * Only extract discovered tools if:
@@ -1032,7 +1042,14 @@ export async function createRun({
    */
   const enableToolOutputReferences = anyAgentHasCodeEnv(agents);
 
-  const run = await Run.create({
+  /**
+   * Built as a variable (not an inline literal) so the extra
+   * `subagentUsageSink` field passes assignability against SDK versions
+   * whose `RunConfig` predates it (<= 3.2.33, where it is ignored at
+   * runtime) — excess-property checks only apply to fresh literals. Inline
+   * the field at the call site once the dependency is bumped.
+   */
+  const runConfig = {
     runId,
     graphConfig,
     tokenCounter,
@@ -1050,7 +1067,8 @@ export async function createRun({
     ...(enableToolOutputReferences && {
       toolOutputReferences: { enabled: true },
     }),
-  });
+  };
+  const run = await Run.create(runConfig);
 
   applyTestRunHook(run, { messages, agents });
   return run;

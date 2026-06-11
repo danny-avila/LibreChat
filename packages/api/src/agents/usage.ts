@@ -1,6 +1,5 @@
 import { logger } from '@librechat/data-schemas';
 import { Providers } from 'librechat-data-provider';
-import type { SubagentUsageEvent } from '@librechat/agents';
 import type { TCustomConfig, TTransactionsConfig } from 'librechat-data-provider';
 import type {
   StructuredTokenUsage,
@@ -323,6 +322,30 @@ export async function recordCollectedUsage(
     input_tokens,
     output_tokens: total_output_tokens,
   };
+}
+
+/**
+ * Structural mirror of the agents SDK's `SubagentUsageEvent` (added after
+ * `@librechat/agents` 3.2.33). Defined locally so type-checking does not
+ * depend on the unreleased SDK — replace with
+ * `import type { SubagentUsageEvent } from '@librechat/agents'` once the
+ * dependency is bumped.
+ */
+export interface SubagentUsageEvent {
+  /** Usage metadata reported by the child's model call. */
+  usage: UsageMetadata;
+  /** Model that produced this usage (per-call, falls back to the child config's model). */
+  model?: string;
+  /** Provider enum value of the subagent's configured agent. */
+  provider?: string;
+  /** Subagent `type` identifier from the SubagentConfig. */
+  subagentType: string;
+  /** Child run ID (unique per subagent execution). */
+  subagentRunId: string;
+  /** Child agent ID assigned to this subagent execution. */
+  subagentAgentId: string;
+  /** Parent run ID under which the subagent was spawned. */
+  runId: string;
 }
 
 /**
