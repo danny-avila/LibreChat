@@ -9,10 +9,12 @@ const { logger } = require('@librechat/data-schemas');
 const {
   checkAccess,
   MCPErrorCodes,
+  getUserMCPAuthMap,
   redactServerSecrets,
   redactAllServerSecrets,
   isMCPDomainNotAllowedError,
   isMCPInspectionFailedError,
+  requiresEphemeralUserConnection,
 } = require('@librechat/api');
 const {
   Constants,
@@ -27,6 +29,7 @@ const {
   resolveAllMcpConfigs,
 } = require('~/server/services/MCP');
 const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
+const { reinitMCPServer } = require('~/server/services/Tools/mcp');
 const { getMCPManager, getMCPServersRegistry } = require('~/config');
 const db = require('~/models');
 
@@ -67,6 +70,32 @@ function handleMCPError(error, res) {
   }
 
   return null;
+}
+
+/**
+ * Request-scoped servers have no stored connections and no cache entries, so the
+ * panel discovers their tools through an ephemeral reinitialization instead.
+ * @param {ServerRequest} req
+ * @param {string} serverName
+ * @param {import('@librechat/api').ParsedServerConfig} serverConfig
+ * @returns {Promise<import('@librechat/api').LCAvailableTools | null>}
+ */
+async function fetchRequestScopedTools(req, serverName, serverConfig) {
+  let userMCPAuthMap;
+  if (serverConfig.customUserVars && typeof serverConfig.customUserVars === 'object') {
+    userMCPAuthMap = await getUserMCPAuthMap({
+      userId: req.user.id,
+      servers: [serverName],
+      findPluginAuthsByKeys: db.findPluginAuthsByKeys,
+    });
+  }
+  const result = await reinitMCPServer({
+    user: req.user,
+    serverName,
+    serverConfig,
+    userMCPAuthMap,
+  });
+  return result?.availableTools ?? null;
 }
 
 /**
@@ -112,7 +141,11 @@ const getMCPTools = async (req, res) => {
 
       let serverTools;
       try {
-        serverTools = await mcpManager.getServerToolFunctions(userId, serverName);
+        const serverConfig = mcpConfig[serverName];
+        serverTools =
+          serverConfig && requiresEphemeralUserConnection(serverConfig)
+            ? await fetchRequestScopedTools(req, serverName, serverConfig)
+            : await mcpManager.getServerToolFunctions(userId, serverName);
       } catch (error) {
         logger.error(`[getMCPTools] Error fetching tools for server ${serverName}:`, error);
         continue;
