@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: "Target environment"
+        description: 'Target environment'
         required: true
         type: choice
         options:
@@ -73,7 +73,7 @@ jobs:
           export INTERFACE_FILE_SEARCH=true
 
           export SEARCH=$([[ "${{ inputs.environment }}" == "prod" ]] && echo false || echo true)
-          export MEILI_HOST=$([[ "${{ inputs.deploy_kitchensink }}" == "true" ]] && echo "http://meilisearch-kitchensink:7700" || echo "http://meilisearch-dev:7700")
+          export MEILI_HOST=$([[ "${{ inputs.deploy_kitchensink }}" == "true" ]] && echo "http://meilisearch.kitchensink:7700" || echo "http://meilisearch.dev:7700")
           export MEILI_MASTER_KEY="${{ secrets.MEILI_MASTER_KEY }}" 
 
           ENV_FILE_NAME=$([[ "${{ inputs.deploy_kitchensink }}" == "true" ]] && echo "librechat.env" || echo "${{ inputs.environment }}.env")
@@ -88,7 +88,7 @@ jobs:
           aws s3 cp \
             "$ENV_FILE_NAME" \
             "s3://nj-librechat-env-files/$ENV_FILE_NAME"
-      
+
       - name: Redeploy service with new env file
         uses: apideck-libraries/ecs-restart-service@v1
         with:
