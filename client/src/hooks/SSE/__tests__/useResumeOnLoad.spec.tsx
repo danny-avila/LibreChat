@@ -67,6 +67,8 @@ function renderUseResumeOnLoad({
   conversationId = CONVERSATION_ID,
   messagesLoaded = true,
   onSubmission,
+  siblingIndexParentId,
+  onSiblingIndex,
 }: {
   messages?: TMessage[];
   getMessages?: () => TMessage[] | undefined;
@@ -74,6 +76,8 @@ function renderUseResumeOnLoad({
   conversationId?: string;
   messagesLoaded?: boolean;
   onSubmission?: (submission: TSubmission | null) => void;
+  siblingIndexParentId?: string;
+  onSiblingIndex?: (siblingIndex: number) => void;
 }) {
   const getMessages = jest.fn(getMessagesOverride ?? (() => messages));
   const initializeState = (snapshot: MutableSnapshot) => {
@@ -86,10 +90,18 @@ function renderUseResumeOnLoad({
     onSubmission?.(currentSubmission);
     return null;
   };
+  const SiblingIndexProbe = () => {
+    const siblingIndex = useRecoilValue(store.messagesSiblingIdxFamily(siblingIndexParentId));
+    if (siblingIndexParentId) {
+      onSiblingIndex?.(siblingIndex);
+    }
+    return null;
+  };
 
   const wrapper = ({ children }: { children: ReactNode }) => (
     <RecoilRoot initializeState={initializeState}>
       <SubmissionProbe />
+      <SiblingIndexProbe />
       {children}
     </RecoilRoot>
   );
@@ -190,5 +202,179 @@ describe('useResumeOnLoad', () => {
 
     expect(mockUseStreamStatus).toHaveBeenCalledWith(CONVERSATION_ID, true);
     expect(observedSubmissions[observedSubmissions.length - 1]).toBe(submission);
+  });
+
+  it('restores model spec icon metadata on the resumed assistant placeholder', async () => {
+    const observedSubmissions: Array<TSubmission | null> = [];
+    mockUseStreamStatus.mockReturnValue({
+      isSuccess: true,
+      isFetching: false,
+      data: {
+        active: true,
+        status: 'running',
+        streamId: CONVERSATION_ID,
+        resumeState: {
+          runSteps: [],
+          aggregatedContent: [{ type: 'text', text: 'Streaming...' }],
+          responseMessageId: RESPONSE_MESSAGE_ID,
+          conversationId: CONVERSATION_ID,
+          sender: 'Spec Agent',
+          iconURL: 'https://example.com/spec-icon.png',
+          model: 'gpt-4.1',
+          userMessage: {
+            messageId: USER_MESSAGE_ID,
+            parentMessageId: Constants.NO_PARENT,
+            conversationId: CONVERSATION_ID,
+            text: 'Hello',
+          },
+        },
+      },
+    });
+
+    renderUseResumeOnLoad({
+      messages: [
+        buildUserMessage(CONVERSATION_ID),
+        {
+          messageId: RESPONSE_MESSAGE_ID,
+          parentMessageId: USER_MESSAGE_ID,
+          conversationId: CONVERSATION_ID,
+          text: '',
+          isCreatedByUser: false,
+          iconURL: '',
+          model: '',
+        } as TMessage,
+      ],
+      onSubmission: (currentSubmission) => observedSubmissions.push(currentSubmission),
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(observedSubmissions[observedSubmissions.length - 1]?.initialResponse).toEqual(
+      expect.objectContaining({
+        messageId: RESPONSE_MESSAGE_ID,
+        sender: 'Spec Agent',
+        iconURL: 'https://example.com/spec-icon.png',
+        model: 'gpt-4.1',
+      }),
+    );
+  });
+
+  it('restores the branch that owns a pending OAuth resume user message', async () => {
+    const rootUser = buildUserMessage(CONVERSATION_ID, 'root-user');
+    const branchOneResponse = {
+      messageId: 'branch-one-response',
+      parentMessageId: rootUser.messageId,
+      conversationId: CONVERSATION_ID,
+      text: 'Branch one response',
+      isCreatedByUser: false,
+    } as TMessage;
+    const branchOneFollowUp = buildUserMessage(CONVERSATION_ID, 'branch-one-follow-up');
+    branchOneFollowUp.parentMessageId = branchOneResponse.messageId;
+    const branchOneTail = {
+      messageId: 'branch-one-tail',
+      parentMessageId: branchOneFollowUp.messageId,
+      conversationId: CONVERSATION_ID,
+      text: 'Branch one tail',
+      isCreatedByUser: false,
+    } as TMessage;
+    const branchTwoResponse = {
+      messageId: 'branch-two-response',
+      parentMessageId: rootUser.messageId,
+      conversationId: CONVERSATION_ID,
+      text: 'Branch two response',
+      isCreatedByUser: false,
+    } as TMessage;
+    const observedSiblingIndexes: number[] = [];
+
+    mockUseStreamStatus.mockReturnValue({
+      isSuccess: true,
+      isFetching: false,
+      data: {
+        active: true,
+        status: 'running',
+        streamId: CONVERSATION_ID,
+        resumeState: {
+          runSteps: [],
+          aggregatedContent: [],
+          replayEvents: [],
+          responseMessageId: 'pending-user_',
+          conversationId: CONVERSATION_ID,
+          userMessage: {
+            messageId: 'pending-user',
+            parentMessageId: branchOneTail.messageId,
+            conversationId: CONVERSATION_ID,
+            text: 'Use OAuth tool on branch one',
+          },
+        },
+      },
+    });
+
+    renderUseResumeOnLoad({
+      messages: [rootUser, branchOneResponse, branchOneFollowUp, branchOneTail, branchTwoResponse],
+      siblingIndexParentId: rootUser.messageId,
+      onSiblingIndex: (siblingIndex) => observedSiblingIndexes.push(siblingIndex),
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(observedSiblingIndexes[observedSiblingIndexes.length - 1]).toBe(1);
+  });
+
+  it('restores the assistant sibling selected by a pending regenerate response', async () => {
+    const rootUser = buildUserMessage(CONVERSATION_ID, 'root-user');
+    const olderResponse = {
+      messageId: 'older-response',
+      parentMessageId: rootUser.messageId,
+      conversationId: CONVERSATION_ID,
+      text: 'Older response',
+      isCreatedByUser: false,
+    } as TMessage;
+    const newerResponse = {
+      messageId: 'newer-response',
+      parentMessageId: rootUser.messageId,
+      conversationId: CONVERSATION_ID,
+      text: 'Newer response',
+      isCreatedByUser: false,
+    } as TMessage;
+    const observedSiblingIndexes: number[] = [];
+
+    mockUseStreamStatus.mockReturnValue({
+      isSuccess: true,
+      isFetching: false,
+      data: {
+        active: true,
+        status: 'running',
+        streamId: CONVERSATION_ID,
+        resumeState: {
+          runSteps: [],
+          aggregatedContent: [],
+          replayEvents: [],
+          responseMessageId: `${olderResponse.messageId}_`,
+          conversationId: CONVERSATION_ID,
+          userMessage: {
+            messageId: rootUser.messageId,
+            parentMessageId: rootUser.parentMessageId,
+            conversationId: CONVERSATION_ID,
+            text: rootUser.text,
+          },
+        },
+      },
+    });
+
+    renderUseResumeOnLoad({
+      messages: [rootUser, olderResponse, newerResponse],
+      siblingIndexParentId: rootUser.messageId,
+      onSiblingIndex: (siblingIndex) => observedSiblingIndexes.push(siblingIndex),
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(observedSiblingIndexes[observedSiblingIndexes.length - 1]).toBe(1);
   });
 });

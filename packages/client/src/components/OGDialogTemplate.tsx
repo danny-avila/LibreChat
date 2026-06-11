@@ -1,4 +1,11 @@
-import { forwardRef, isValidElement, ReactNode, Ref } from 'react';
+import {
+  forwardRef,
+  ForwardRefExoticComponent,
+  isValidElement,
+  ReactNode,
+  Ref,
+  RefAttributes,
+} from 'react';
 import {
   OGDialogTitle,
   OGDialogClose,
@@ -62,7 +69,9 @@ type DialogTemplateProps = {
   onClose?: () => void;
 };
 
-const OGDialogTemplate = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivElement>) => {
+const OGDialogTemplate: ForwardRefExoticComponent<
+  DialogTemplateProps & RefAttributes<HTMLDivElement>
+> = forwardRef((props: DialogTemplateProps, ref: Ref<HTMLDivElement>) => {
   const localize = useLocalize();
   const {
     title,

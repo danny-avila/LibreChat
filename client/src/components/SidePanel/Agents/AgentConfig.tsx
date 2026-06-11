@@ -60,6 +60,7 @@ export default function AgentConfig() {
   const methods = useFormContext<AgentForm>();
   const [showToolDialog, setShowToolDialog] = useState(false);
   const [showMCPToolDialog, setShowMCPToolDialog] = useState(false);
+  const [showSkillDialog, setShowSkillDialog] = useState(false);
   const {
     actions,
     setAction,
@@ -442,12 +443,14 @@ export default function AgentConfig() {
             <div className="flex w-full items-center gap-2">
               {Icon && (
                 <div className="shadow-stroke relative flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-white text-black dark:bg-white">
+                  {/* NJ: This block leads to TypeScript errors
                   <Icon
                     className="h-2/3 w-2/3"
                     endpoint={providerValue as string}
                     endpointType={endpointType}
                     iconURL={endpointIconURL}
                   />
+                  */}
                 </div>
               )}
               <span>{model != null && model ? model : localize('com_ui_select_model')}</span>

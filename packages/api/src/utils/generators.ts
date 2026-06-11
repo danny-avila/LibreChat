@@ -46,19 +46,23 @@ export function createFetch({
  * @param res - The response object to send events to
  * @returns Object containing handler functions
  */
-export function createStreamEventHandlers(res: ServerResponse) {
+export function createStreamEventHandlers(res: ServerResponse): {
+  on_run_step: (event: ServerSentEvent) => void;
+  on_message_delta: (event: ServerSentEvent) => void;
+  on_reasoning_delta: (event: ServerSentEvent) => void;
+} {
   return {
-    [GraphEvents.ON_RUN_STEP]: function (event: ServerSentEvent) {
+    [GraphEvents.ON_RUN_STEP]: function (event: ServerSentEvent): void {
       if (res) {
         sendEvent(res, event);
       }
     },
-    [GraphEvents.ON_MESSAGE_DELTA]: function (event: ServerSentEvent) {
+    [GraphEvents.ON_MESSAGE_DELTA]: function (event: ServerSentEvent): void {
       if (res) {
         sendEvent(res, event);
       }
     },
-    [GraphEvents.ON_REASONING_DELTA]: function (event: ServerSentEvent) {
+    [GraphEvents.ON_REASONING_DELTA]: function (event: ServerSentEvent): void {
       if (res) {
         sendEvent(res, event);
       }
@@ -67,7 +71,7 @@ export function createStreamEventHandlers(res: ServerResponse) {
 }
 
 export function createHandleLLMNewToken(streamRate: number) {
-  return async function () {
+  return async function (): Promise<void> {
     if (streamRate) {
       await sleep(streamRate);
     }

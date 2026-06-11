@@ -44,6 +44,7 @@ export function logIfPromptLengthError(error: object) {
 }
 
 function getFileSize(file: ExtendedFile | File | TFile): number {
+  if (file instanceof File) return file.size;
   return 'bytes' in file ? file.bytes : file.size;
 }
 

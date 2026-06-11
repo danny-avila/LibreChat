@@ -24,15 +24,19 @@
     }
   },
   "types": ["node", "jest", "@testing-library/jest-dom"],
-  "exclude": ["node_modules", "vite.config.ts"],
+  "exclude": [
+    "node_modules",
+    "vite.config.ts",
+    "../nj/e2e/**/*",
+    "../nj/infra/**/*",
+    "../nj/lambda/**/*"
+  ],
   "include": [
     "src/**/*",
     "test/**/*",
-    "../e2e/**/*",
     "../nj/**/*",
     "test/setupTests.js",
     "env.d.ts",
-    "../config/translations/**/*.ts",
     "../packages/client/src/hooks/useDelayedRender.tsx",
     "../packages/client/src/components/InfoHoverCard.tsx"
   ]

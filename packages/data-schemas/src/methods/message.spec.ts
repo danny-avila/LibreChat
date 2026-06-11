@@ -3,9 +3,12 @@ import { v4 as uuidv4 } from 'uuid';
 import { RetentionMode } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { IMessage } from '..';
-import { createMessageMethods } from './message';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
+import { createMessageMethods } from './message';
 import { createModels } from '../models';
+import logger from '~/config/winston';
+
+const waitForTimestampTick = () => new Promise((resolve) => setTimeout(resolve, 2));
 
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),
@@ -65,6 +68,8 @@ describe('Message Operations', () => {
   };
 
   beforeEach(async () => {
+    jest.clearAllMocks();
+
     // Clear database
     await Message.deleteMany({});
 
@@ -106,6 +111,18 @@ describe('Message Operations', () => {
       mockMessageData.conversationId = 'invalid-id';
       const result = await saveMessage(mockCtx, mockMessageData);
       expect(result).toBeUndefined();
+    });
+
+    it('should not log message params for invalid conversation IDs', async () => {
+      mockMessageData.conversationId = 'invalid-id';
+      mockMessageData.text = 'Sensitive prompt text';
+
+      await saveMessage(mockCtx, mockMessageData, { context: 'message-save-test' });
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        'Invalid conversation ID: invalid-id (context: message-save-test)',
+      );
+      expect(logger.info).not.toHaveBeenCalled();
     });
   });
 
@@ -166,6 +183,8 @@ describe('Message Operations', () => {
         text: 'Second message',
         user: 'user123',
       });
+
+      await waitForTimestampTick();
 
       await saveMessage(mockCtx, {
         messageId: 'msg3',

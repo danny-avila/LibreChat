@@ -25,9 +25,11 @@ export const SKILL_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 /**
  * Source of a skill — where its canonical definition came from.
  * `inline` means the skill was authored directly in LibreChat.
+ * `deployment` means the skill was loaded from the server's configured
+ * deployment skill directory and is not persisted as a Skill document.
  * `github` / `notion` are reserved for future sync integrations.
  */
-export type SkillSource = 'inline' | 'github' | 'notion';
+export type SkillSource = 'inline' | 'deployment' | 'github' | 'notion';
 
 /**
  * Category inferred from a skill file's top-level directory prefix.
@@ -92,8 +94,8 @@ export type TSkillWarning = {
  * - `frontmatter` is the structured YAML bag minus `name`/`description`
  *   (those live as top-level columns). Validated strictly against a known
  *   key set server-side.
- * - `source`/`sourceMetadata` are reserved for phase 2+ external sync and
- *   always `'inline'` / absent in phase 1.
+ * - `source`/`sourceMetadata` identify whether the row is user-authored,
+ *   deployment-provided, or reserved for a future sync provider.
  */
 export type TSkill = {
   _id: string;
@@ -197,7 +199,7 @@ export type TCreateSkill = {
   body: string;
   frontmatter?: Partial<SkillFrontmatter>;
   category?: string;
-  /** When `true`, the skill auto-primes into every turn (mirrors `always-apply` frontmatter). */
+  /** When `true`, the skill auto-primes into every turn (mirrors always-apply frontmatter). */
   alwaysApply?: boolean;
 };
 

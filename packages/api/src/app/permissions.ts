@@ -47,6 +47,8 @@ function hasExplicitConfig(
       return interfaceConfig?.remoteAgents !== undefined;
     case PermissionTypes.SKILLS:
       return interfaceConfig?.skills !== undefined;
+    case PermissionTypes.SHARED_LINKS:
+      return interfaceConfig?.sharedLinks !== undefined;
     default:
       return false;
   }
@@ -197,6 +199,12 @@ export async function updateInterfacePermissions({
       typeof defaults.agents === 'object' ? defaults.agents?.public : undefined;
     const skillsDefaultPublic =
       typeof defaults.skills === 'object' ? defaults.skills?.public : undefined;
+    const sharedLinksDefaultCreate =
+      typeof defaults.sharedLinks === 'boolean' ? undefined : defaults.sharedLinks?.create;
+    const sharedLinksDefaultShare =
+      typeof defaults.sharedLinks === 'object' ? defaults.sharedLinks?.share : undefined;
+    const sharedLinksDefaultPublic =
+      typeof defaults.sharedLinks === 'object' ? defaults.sharedLinks?.public : undefined;
 
     const allPermissions: Partial<Record<PermissionTypes, Record<string, boolean | undefined>>> = {
       [PermissionTypes.PROMPTS]: {
@@ -483,6 +491,43 @@ export async function updateInterfacePermissions({
             }
           : {}),
       },
+      [PermissionTypes.SHARED_LINKS]: {
+        ...(typeof interfaceConfig?.sharedLinks === 'boolean' ||
+        (typeof interfaceConfig?.sharedLinks === 'object' &&
+          'create' in interfaceConfig.sharedLinks) ||
+        !existingPermissions?.[PermissionTypes.SHARED_LINKS]
+          ? {
+              [Permissions.CREATE]: getPermissionValue(
+                typeof loadedInterface.sharedLinks === 'boolean'
+                  ? loadedInterface.sharedLinks
+                  : getConfigCreate(loadedInterface.sharedLinks),
+                defaultPerms[PermissionTypes.SHARED_LINKS]?.[Permissions.CREATE],
+                sharedLinksDefaultCreate ?? true,
+              ),
+            }
+          : {}),
+        ...(typeof interfaceConfig?.sharedLinks === 'boolean' ||
+        (typeof interfaceConfig?.sharedLinks === 'object' &&
+          ('share' in interfaceConfig.sharedLinks || 'public' in interfaceConfig.sharedLinks)) ||
+        !existingPermissions?.[PermissionTypes.SHARED_LINKS]
+          ? {
+              [Permissions.SHARE]: getPermissionValue(
+                typeof loadedInterface.sharedLinks === 'boolean'
+                  ? loadedInterface.sharedLinks
+                  : getConfigShare(loadedInterface.sharedLinks),
+                defaultPerms[PermissionTypes.SHARED_LINKS]?.[Permissions.SHARE],
+                sharedLinksDefaultShare,
+              ),
+              [Permissions.SHARE_PUBLIC]: getPermissionValue(
+                typeof loadedInterface.sharedLinks === 'boolean'
+                  ? loadedInterface.sharedLinks
+                  : getConfigPublic(loadedInterface.sharedLinks),
+                defaultPerms[PermissionTypes.SHARED_LINKS]?.[Permissions.SHARE_PUBLIC],
+                sharedLinksDefaultPublic,
+              ),
+            }
+          : {}),
+      },
     };
 
     // Check and add each permission type if needed
@@ -574,6 +619,21 @@ export async function updateInterfacePermissions({
             getConfigPublic(loadedInterface.skills),
             defaultPerms[PermissionTypes.SKILLS]?.[Permissions.SHARE_PUBLIC],
             skillsDefaultPublic,
+          ),
+        },
+      ],
+      [
+        PermissionTypes.SHARED_LINKS,
+        {
+          [Permissions.SHARE]: getPermissionValue(
+            getConfigShare(loadedInterface.sharedLinks),
+            defaultPerms[PermissionTypes.SHARED_LINKS]?.[Permissions.SHARE],
+            sharedLinksDefaultShare,
+          ),
+          [Permissions.SHARE_PUBLIC]: getPermissionValue(
+            getConfigPublic(loadedInterface.sharedLinks),
+            defaultPerms[PermissionTypes.SHARED_LINKS]?.[Permissions.SHARE_PUBLIC],
+            sharedLinksDefaultPublic,
           ),
         },
       ],

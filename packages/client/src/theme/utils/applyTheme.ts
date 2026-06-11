@@ -93,7 +93,7 @@ function mapTheme(rgb: IThemeRGB): Partial<IThemeVariables> {
  * Applies theme to the document root
  * Sets CSS variables as rgb() values for compatibility with existing CSS
  */
-export default function applyTheme(themeRGB?: IThemeRGB) {
+export default function applyTheme(themeRGB?: IThemeRGB): void {
   if (!themeRGB) return;
 
   const themeObject = mapTheme(themeRGB);

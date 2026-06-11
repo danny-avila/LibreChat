@@ -421,11 +421,12 @@ describe('extractCodeArtifactText', () => {
       ['deck', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'],
     ])('routes extensionless office files by MIME alone (%s, %s)', async (name, mime) => {
       mockOfficeHtml.mockResolvedValueOnce('<!DOCTYPE html><body>x</body></html>');
-      const category = mime.includes('presentation')
-        ? 'pptx'
-        : mime.startsWith('text/')
-          ? 'utf8-text'
-          : 'document';
+      let category: 'pptx' | 'utf8-text' | 'document' = 'document';
+      if (mime.includes('presentation')) {
+        category = 'pptx';
+      } else if (mime.startsWith('text/')) {
+        category = 'utf8-text';
+      }
       const text = await extractCodeArtifactText(Buffer.from('PK'), name, mime, category);
       expect(mockOfficeHtml).toHaveBeenCalledWith(expect.any(Buffer), name, mime);
       expect(text).toContain('<body>');

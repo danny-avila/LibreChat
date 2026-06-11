@@ -10,11 +10,11 @@ import type {
   ReasoningResponseKey,
   ReasoningParameterFormat,
 } from './schemas';
+import type { Agent, AgentSubagentsConfig } from './types/assistants';
 import type { RefillIntervalUnit } from './balance';
 import type { SettingDefinition } from './generate';
 import type { TMinimalFeedback } from './feedback';
 import type { ContentTypes } from './types/runs';
-import type { Agent } from './types/assistants';
 
 export * from './schemas';
 
@@ -71,6 +71,7 @@ export type TEndpointOption = Pick<
   | 'file_ids'
   // System field
   | 'system'
+  | 'chatProjectId'
   // Google examples
   | 'examples'
   // Context
@@ -106,6 +107,7 @@ export type TEphemeralAgent = {
   execute_code?: boolean;
   artifacts?: string;
   skills?: boolean;
+  subagents?: AgentSubagentsConfig;
 };
 
 export type TPayload = Partial<TMessage> &
@@ -146,6 +148,8 @@ export type TSubmission = {
   isContinued?: boolean;
   isTemporary: boolean;
   messages: TMessage[];
+  /** Client-only full message context used to restore branch siblings after scoped regenerate. */
+  regenerateMessages?: TMessage[];
   isRegenerate?: boolean;
   initialResponse?: TMessage;
   conversation: Partial<TConversation>;
@@ -287,6 +291,43 @@ export type TUpdateConversationRequest = {
 
 export type TUpdateConversationResponse = TConversation;
 
+export type TChatProject = {
+  _id: string;
+  name: string;
+  description?: string;
+  user?: string;
+  conversationCount: number;
+  lastConversationAt?: string | null;
+  lastConversationId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TCreateChatProjectRequest = {
+  name: string;
+  description?: string;
+};
+
+export type TUpdateChatProjectRequest = Partial<TCreateChatProjectRequest> & {
+  projectId: string;
+};
+
+export type TDeleteChatProjectResponse = {
+  deletedCount: number;
+  modifiedCount: number;
+};
+
+export type TAssignConversationToProjectRequest = {
+  conversationId: string;
+  projectId: string | null;
+};
+
+export type TAssignConversationToProjectResponse = {
+  conversation: TConversation;
+  previousProjectId: string | null;
+  projectId: string | null;
+};
+
 export type TDeleteConversationRequest = {
   conversationId?: string;
   thread_id?: string;
@@ -320,7 +361,9 @@ export type TUpdateShareLinkRequest = Pick<TSharedLink, 'shareId' | 'targetMessa
 
 export type TSharedLinkResponse = Pick<TSharedLink, 'shareId'> &
   Pick<TSharedLink, 'targetMessageId'> &
-  Pick<TConversation, 'conversationId'>;
+  Pick<TConversation, 'conversationId'> & {
+    _id?: string;
+  };
 
 export type TSharedLinkGetResponse = Omit<TSharedLinkResponse, 'shareId'> & {
   shareId: string | null;

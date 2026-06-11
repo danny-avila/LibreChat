@@ -3,7 +3,7 @@ import { Tools } from 'librechat-data-provider';
 import type { UIResource } from 'librechat-data-provider';
 import type * as t from './types';
 
-export const DEFAULT_MCP_IMAGE_DATA_MAX_BYTES = 10 * 1024 * 1024;
+export const DEFAULT_MCP_IMAGE_DATA_MAX_BYTES: number = 10 * 1024 * 1024;
 
 function generateResourceId(text: string): string {
   return crypto.createHash('sha256').update(text).digest('hex').substring(0, 10);

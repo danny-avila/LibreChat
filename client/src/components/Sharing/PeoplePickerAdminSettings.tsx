@@ -140,7 +140,7 @@ const PeoplePickerAdminSettings = () => {
       <OGDialogTrigger asChild>
         <Button
           variant={'outline'}
-          className="btn btn-neutral border-token-border-light relative gap-1 rounded-lg font-medium"
+          className="btn btn-neutral border-token-border-light gap-1 rounded-lg font-medium"
           aria-label={localize('com_ui_admin_settings')}
         >
           <ShieldEllipsis className="cursor-pointer" aria-hidden="true" />

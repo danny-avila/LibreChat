@@ -64,6 +64,10 @@ export enum PermissionTypes {
    * Type for Skill Permissions
    */
   SKILLS = 'SKILLS',
+  /**
+   * Type for Shared Link Permissions
+   */
+  SHARED_LINKS = 'SHARED_LINKS',
 }
 
 /**
@@ -87,6 +91,7 @@ export const PERMISSION_TYPE_INTERFACE_FIELDS: Record<PermissionTypes, string> =
   [PermissionTypes.MCP_SERVERS]: 'mcpServers',
   [PermissionTypes.REMOTE_AGENTS]: 'remoteAgents',
   [PermissionTypes.SKILLS]: 'skills',
+  [PermissionTypes.SHARED_LINKS]: 'sharedLinks',
 };
 
 /** Set of interface config field names that correspond to role permissions. */
@@ -240,6 +245,13 @@ export const skillPermissionsSchema = z.object({
 });
 export type TSkillPermissions = z.infer<typeof skillPermissionsSchema>;
 
+export const sharedLinksPermissionsSchema = z.object({
+  [Permissions.CREATE]: z.boolean().default(true),
+  [Permissions.SHARE]: z.boolean().default(true),
+  [Permissions.SHARE_PUBLIC]: z.boolean().default(false),
+});
+export type TSharedLinksPermissions = z.infer<typeof sharedLinksPermissionsSchema>;
+
 // Define a single permissions schema that holds all permission types.
 export const permissionsSchema = z.object({
   [PermissionTypes.PROMPTS]: promptPermissionsSchema,
@@ -257,4 +269,5 @@ export const permissionsSchema = z.object({
   [PermissionTypes.MCP_SERVERS]: mcpServersPermissionsSchema,
   [PermissionTypes.REMOTE_AGENTS]: remoteAgentsPermissionsSchema,
   [PermissionTypes.SKILLS]: skillPermissionsSchema,
+  [PermissionTypes.SHARED_LINKS]: sharedLinksPermissionsSchema,
 });

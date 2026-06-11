@@ -3,7 +3,7 @@
  */
 
 const mongoose = require('mongoose');
-const { logger } = require('@librechat/data-schemas');
+const { logger, getTenantId, SYSTEM_TENANT_ID } = require('@librechat/data-schemas');
 const { ResourceType, PrincipalType, PermissionBits } = require('librechat-data-provider');
 const { enrichRemoteAgentPrincipals, backfillRemoteAgentPermissions } = require('@librechat/api');
 const {
@@ -20,6 +20,13 @@ const {
   searchEntraIdPrincipals,
 } = require('~/server/services/GraphApiService');
 const db = require('~/models');
+
+const matchesCurrentTenant = (principal, tenantId) => {
+  if (!tenantId || tenantId === SYSTEM_TENANT_ID) {
+    return true;
+  }
+  return principal?.tenantId === tenantId;
+};
 
 /**
  * Generic controller for resource permission endpoints
@@ -134,8 +141,8 @@ const updateResourcePermissions = async (req, res) => {
       revokedPrincipals.push(...removed);
     }
 
-    // If public is disabled, add public to revoked list
-    if (!isPublic) {
+    // If public is explicitly disabled, add public to revoked list
+    if (isPublic === false) {
       revokedPrincipals.push({
         type: PrincipalType.PUBLIC,
         id: null,
@@ -167,7 +174,7 @@ const updateResourcePermissions = async (req, res) => {
       message: 'Permissions updated successfully',
       results: {
         principals: results.granted,
-        public: isPublic || false,
+        ...(isPublic !== undefined ? { public: isPublic } : {}),
         publicAccessRoleId: isPublic ? publicAccessRoleId : undefined,
       },
     };
@@ -191,6 +198,7 @@ const getResourcePermissions = async (req, res) => {
   try {
     const { resourceType, resourceId } = req.params;
     validateResourceType(resourceType);
+    const tenantId = getTenantId();
 
     const results = await db.aggregateAclEntries([
       // Match ACL entries for this resource
@@ -244,14 +252,17 @@ const getResourcePermissions = async (req, res) => {
     let principals = [];
     let publicPermission = null;
 
-    // Process aggregation results
     for (const result of results) {
       if (result.principalType === PrincipalType.PUBLIC) {
         publicPermission = {
           public: true,
           publicAccessRoleId: result.accessRoleId,
         };
-      } else if (result.principalType === PrincipalType.USER && result.userInfo) {
+      } else if (
+        result.principalType === PrincipalType.USER &&
+        result.userInfo &&
+        matchesCurrentTenant(result.userInfo, tenantId)
+      ) {
         principals.push({
           type: PrincipalType.USER,
           id: result.userInfo._id.toString(),
@@ -262,7 +273,11 @@ const getResourcePermissions = async (req, res) => {
           idOnTheSource: result.userInfo.idOnTheSource || result.userInfo._id.toString(),
           accessRoleId: result.accessRoleId,
         });
-      } else if (result.principalType === PrincipalType.GROUP && result.groupInfo) {
+      } else if (
+        result.principalType === PrincipalType.GROUP &&
+        result.groupInfo &&
+        matchesCurrentTenant(result.groupInfo, tenantId)
+      ) {
         principals.push({
           type: PrincipalType.GROUP,
           id: result.groupInfo._id.toString(),
