@@ -132,6 +132,10 @@ const refreshController = async (req, res) => {
       return res.status(401).redirect('/login');
     }
 
+    if (!user.isVerified) {
+      return res.status(401).redirect('/login');
+    }
+
     const userId = payload.id;
 
     if (process.env.NODE_ENV === 'CI') {
@@ -147,6 +151,10 @@ const refreshController = async (req, res) => {
       },
       { lean: false },
     );
+
+    if (!session) {
+      return res.status(401).redirect('/login');
+    }
 
     if (session && session.expiration > new Date()) {
       const token = await setAuthTokens(userId, res, session);
