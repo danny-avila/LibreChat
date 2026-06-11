@@ -58,6 +58,7 @@ if (allowSharedLinks) {
     try {
       const share = await getSharedMessages(req.params.shareId, req.shareResourceId);
       if (share) {
+        res.set('Cache-Control', 'private, no-store');
         res.status(200).json(share);
       } else {
         res.status(404).end();

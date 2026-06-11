@@ -20,7 +20,9 @@ export type CheckboxProps =
       'aria-label'?: never;
     });
 
-const Checkbox = React.forwardRef<React.ElementRef<typeof CheckboxPrimitive.Root>, CheckboxProps>(
+const Checkbox: React.ForwardRefExoticComponent<
+  CheckboxProps & React.RefAttributes<HTMLButtonElement>
+> = React.forwardRef<React.ElementRef<typeof CheckboxPrimitive.Root>, CheckboxProps>(
   ({ className = '', ...props }, ref) => (
     <CheckboxPrimitive.Root
       ref={ref}

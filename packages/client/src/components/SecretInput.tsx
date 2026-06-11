@@ -19,7 +19,9 @@ export interface SecretInputProps
   controlsOnHover?: boolean;
 }
 
-const SecretInput = React.forwardRef<HTMLInputElement, SecretInputProps>(
+const SecretInput: React.ForwardRefExoticComponent<
+  SecretInputProps & React.RefAttributes<HTMLInputElement>
+> = React.forwardRef<HTMLInputElement, SecretInputProps>(
   (
     {
       id,

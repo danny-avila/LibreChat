@@ -10,13 +10,16 @@ import {
 } from './schemas';
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { specsConfigSchema, TSpecsConfig } from './models';
+import { REFILL_INTERVAL_UNITS } from './balance';
 import { fileConfigSchema } from './file-config';
 import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
-import { REFILL_INTERVAL_UNITS } from './balance';
+export { MAX_SUBAGENTS } from './limits';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
+
+export const BASE_ONLY_CONFIG_SECTIONS = [] as const;
 
 export const defaultRetrievalModels = [
   'gpt-4o',
@@ -242,6 +245,192 @@ export const cloudfrontConfigSchema = z
   .optional();
 
 export type CloudFrontConfig = z.infer<typeof cloudfrontConfigSchema>;
+
+const skillSyncIdentifierSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/, {
+    message:
+      'must start with a letter or digit and contain only letters, digits, underscores, or hyphens',
+  });
+
+export const SKILL_SYNC_MIN_INTERVAL_MINUTES = 5;
+export const SKILL_SYNC_MAX_INTERVAL_MINUTES = Math.floor(2147483647 / 60_000);
+export const SKILL_SYNC_DEFAULT_DISCOVERY_DEPTH = 2;
+export const SKILL_SYNC_MAX_DISCOVERY_DEPTH = 10;
+
+const skillSyncGitHubOwnerSchema = z
+  .string()
+  .min(1)
+  .max(39)
+  .regex(/^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/, {
+    message: 'must be a valid GitHub owner name',
+  });
+
+const skillSyncGitHubRepoSchema = z
+  .string()
+  .min(1)
+  .max(100)
+  .regex(/^[a-zA-Z0-9._-]+$/, {
+    message: 'must be a valid GitHub repository name',
+  });
+
+const invalidGitRefChars = new Set(['~', '^', ':', '?', '*', '[']);
+
+function hasInvalidGitRefCharacter(value: string): boolean {
+  for (const char of value) {
+    const code = char.charCodeAt(0);
+    if (code <= 32 || code === 127 || invalidGitRefChars.has(char)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+const skillSyncGitHubRefSchema = z
+  .string()
+  .min(1)
+  .max(255)
+  .refine((value) => !value.startsWith('/') && !value.endsWith('/'), {
+    message: 'must not start or end with a slash',
+  })
+  .refine((value) => !value.includes('..') && !value.includes('//') && !value.includes('\\'), {
+    message: 'must not contain traversal segments, empty path segments, or backslashes',
+  })
+  .refine((value) => !value.includes('@{') && value !== '@', {
+    message: 'must not contain invalid Git ref syntax',
+  })
+  .refine((value) => !value.endsWith('.'), {
+    message: 'must not end with a dot',
+  })
+  .refine((value) => !hasInvalidGitRefCharacter(value), {
+    message: 'must not contain invalid Git ref characters',
+  })
+  .refine(
+    (value) =>
+      value
+        .split('/')
+        .every((segment) => segment && !segment.startsWith('.') && !segment.endsWith('.lock')),
+    {
+      message: 'must contain valid Git ref path segments',
+    },
+  );
+
+const skillSyncPathSchema = z
+  .string()
+  .max(500)
+  .refine((value) => value.trim().length > 0, { message: 'must not be empty' })
+  .transform((value) => {
+    const trimmed = value.trim().replace(/^\/+|\/+$/g, '');
+    return trimmed === '.' ? '' : trimmed;
+  })
+  .refine((value) => !value.includes('\\') && !value.includes('..'), {
+    message: 'must not contain traversal segments or backslashes',
+  })
+  .refine((value) => value === '' || /^[a-zA-Z0-9._\-/]+$/.test(value), {
+    message: 'must contain only letters, digits, dots, underscores, hyphens, and slashes',
+  })
+  .refine(
+    (value) =>
+      value === '' || value.split('/').every((segment) => segment.length > 0 && segment !== '.'),
+    {
+      message: 'must not contain empty or dot path segments',
+    },
+  );
+
+const skillSyncTokenReferenceSchema = z
+  .string()
+  .trim()
+  .regex(/^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/, {
+    message: 'must be an environment variable reference like ${GITHUB_SKILLS_TOKEN}',
+  });
+
+/**
+ * Tenant that owns the skills mirrored from a source. When set, the sync runner
+ * executes that source's database writes inside the tenant's async context so
+ * synced skills are created, listed, and shared within the tenant under strict
+ * tenant isolation. Mirrors the request tenant-id contract: no reserved system id.
+ */
+const skillSyncTenantIdSchema = z
+  .string()
+  .max(128)
+  .refine((value) => /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(value), {
+    message: 'must be a valid tenant id',
+  })
+  .refine((value) => value !== '__SYSTEM__', {
+    message: 'must not be the reserved system tenant id',
+  });
+
+export const skillSyncGitHubSourceSchema = z
+  .object({
+    id: skillSyncIdentifierSchema,
+    owner: skillSyncGitHubOwnerSchema,
+    repo: skillSyncGitHubRepoSchema,
+    ref: skillSyncGitHubRefSchema.default('main'),
+    paths: z.array(skillSyncPathSchema).min(1),
+    skillDiscoveryDepth: z.number().int().min(0).max(SKILL_SYNC_MAX_DISCOVERY_DEPTH).optional(),
+    credentialKey: skillSyncIdentifierSchema.optional(),
+    token: skillSyncTokenReferenceSchema.optional(),
+    tenantId: skillSyncTenantIdSchema.optional(),
+  })
+  .superRefine((source, ctx) => {
+    if (!source.credentialKey && !source.token) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['credentialKey'],
+        message: 'Either credentialKey or token is required',
+      });
+    }
+    if (source.credentialKey && source.token) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['token'],
+        message: 'Use either credentialKey or token, not both',
+      });
+    }
+  });
+
+export const skillSyncConfigSchema = z
+  .object({
+    github: z
+      .object({
+        enabled: z.boolean().default(false),
+        intervalMinutes: z
+          .number()
+          .int()
+          .min(SKILL_SYNC_MIN_INTERVAL_MINUTES)
+          .max(SKILL_SYNC_MAX_INTERVAL_MINUTES)
+          .default(60),
+        runOnStartup: z.boolean().default(false),
+        sources: z.array(skillSyncGitHubSourceSchema).default([]),
+      })
+      .superRefine((github, ctx) => {
+        if (github.enabled && github.sources.length === 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['sources'],
+            message: 'At least one GitHub source is required when skill sync is enabled',
+          });
+        }
+        const seen = new Set<string>();
+        for (const source of github.sources) {
+          if (seen.has(source.id)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['sources'],
+              message: `Duplicate GitHub skill sync source id "${source.id}"`,
+            });
+          }
+          seen.add(source.id);
+        }
+      })
+      .optional(),
+  })
+  .optional();
+
+export type SkillSyncConfig = z.infer<typeof skillSyncConfigSchema>;
+export type SkillSyncGitHubSourceConfig = z.infer<typeof skillSyncGitHubSourceSchema>;
 
 // Helper type to extract the shape of the Zod object schema
 type SchemaShape<T> = T extends z.ZodObject<infer U> ? U : never;
@@ -572,6 +761,11 @@ export const agentsEndpointSchema = baseEndpointSchema
         .array(z.nativeEnum(AgentCapabilities))
         .optional()
         .default(defaultAgentCapabilities),
+      skills: z
+        .object({
+          maxCatalogSkills: z.number().int().min(1).max(100).optional(),
+        })
+        .optional(),
       remoteApi: remoteApiSchema.optional(),
     }),
   )
@@ -1348,11 +1542,14 @@ export const transactionsSchema = z.object({
   enabled: z.boolean().optional().default(true),
 });
 
+export const DEFAULT_MEMORY_MAX_INPUT_TOKENS = 12000;
+
 export const memorySchema = z.object({
   disabled: z.boolean().optional(),
   validKeys: z.array(z.string()).optional(),
   tokenLimit: z.number().optional(),
   charLimit: z.number().optional().default(10000),
+  maxInputTokens: z.number().int().positive().optional().default(DEFAULT_MEMORY_MAX_INPUT_TOKENS),
   personalize: z.boolean().default(true),
   messageWindowSize: z.number().optional().default(5),
   agent: z
@@ -1414,6 +1611,38 @@ export type SummarizationConfig = z.infer<typeof summarizationConfigSchema>;
 
 const customEndpointsSchema = z.array(endpointSchema.partial()).optional();
 
+const messageFilterPiiCustomPatternSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  regex: z
+    .string()
+    .min(1)
+    .refine(
+      (value) => {
+        try {
+          new RegExp(value, 'g');
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      { message: 'Invalid regex' },
+    ),
+});
+
+export const messageFilterPiiSchema = z.object({
+  starterPatterns: z.array(z.string()).optional(),
+  customPatterns: z.array(messageFilterPiiCustomPatternSchema).optional(),
+});
+
+export type MessageFilterPiiConfig = z.infer<typeof messageFilterPiiSchema>;
+
+export const messageFilterSchema = z.object({
+  pii: messageFilterPiiSchema.optional(),
+});
+
+export type MessageFilterConfig = z.infer<typeof messageFilterSchema>;
+
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean().default(true),
@@ -1421,6 +1650,7 @@ export const configSchema = z.object({
   webSearch: webSearchSchema.optional(),
   memory: memorySchema.optional(),
   summarization: summarizationConfigSchema.optional(),
+  skillSync: skillSyncConfigSchema,
   secureImageLinks: z.boolean().optional(),
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
   includedTools: z.array(z.string()).optional(),
@@ -1461,6 +1691,7 @@ export const configSchema = z.object({
   rateLimits: rateLimitSchema.optional(),
   fileConfig: fileConfigSchema.optional(),
   modelSpecs: specsConfigSchema.optional(),
+  messageFilter: messageFilterSchema.optional(),
   endpoints: z
     .object({
       allowedAddresses: allowedAddressesSchema,
@@ -1569,43 +1800,31 @@ export const alternateName = {
 };
 
 const sharedOpenAIModels = [
+  'gpt-5.5',
+  'gpt-5.5-pro',
+  'chat-latest',
   'gpt-5.4',
-  // TODO: gpt-5.4-thinking may have separate reasoning token pricing — verify before release
-  'gpt-5.4-thinking',
   'gpt-5.4-pro',
+  'gpt-5.4-mini',
+  'gpt-5.4-nano',
+  'gpt-5.3-codex',
+  'gpt-5.2',
   'gpt-5.1',
-  'gpt-5.1-chat-latest',
   'gpt-5.1-codex',
+  'gpt-5.1-codex-max',
   'gpt-5.1-codex-mini',
   'gpt-5',
   'gpt-5-mini',
   'gpt-5-nano',
-  'gpt-5-chat-latest',
   'gpt-4.1',
   'gpt-4.1-mini',
   'gpt-4.1-nano',
   'gpt-4o-mini',
   'gpt-4o',
-  'gpt-4.5-preview',
-  'gpt-4.5-preview-2025-02-27',
-  'gpt-3.5-turbo',
-  'gpt-3.5-turbo-0125',
-  'gpt-4-turbo',
-  'gpt-4-turbo-2024-04-09',
-  'gpt-4-0125-preview',
-  'gpt-4-turbo-preview',
-  'gpt-4-1106-preview',
-  'gpt-3.5-turbo-1106',
-  'gpt-3.5-turbo-16k-0613',
-  'gpt-3.5-turbo-16k',
-  'gpt-4',
-  'gpt-4-0314',
-  'gpt-4-32k-0314',
-  'gpt-4-0613',
-  'gpt-3.5-turbo-0613',
 ];
 
 const sharedAnthropicModels = [
+  'claude-fable-5',
   'claude-opus-4-8',
   'claude-opus-4-7',
   'claude-sonnet-4-6',
@@ -1630,6 +1849,7 @@ const sharedAnthropicModels = [
 ];
 
 export const bedrockModels = [
+  'anthropic.claude-fable-5',
   'anthropic.claude-opus-4-8',
   'anthropic.claude-opus-4-7',
   'anthropic.claude-sonnet-4-6',
@@ -2282,9 +2502,6 @@ export enum Constants {
   /** Subagent spawn tool name (must match `@librechat/agents` `Constants.SUBAGENT`). */
   SUBAGENT = 'subagent',
 }
-
-/** Maximum number of explicit subagents per parent agent. UI + Zod schema share this. */
-export const MAX_SUBAGENTS = 10;
 
 /** Maximum explicit subagent hops allowed from any root agent at runtime. */
 export const MAX_SUBAGENT_DEPTH = 5;

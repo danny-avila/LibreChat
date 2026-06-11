@@ -122,6 +122,7 @@ jest.mock('@librechat/api', () => ({
   buildResponse: jest.fn().mockReturnValue({ id: 'resp_123', output: [] }),
   generateResponseId: jest.fn().mockReturnValue('resp_mock-123'),
   isValidationFailure: jest.fn().mockReturnValue(false),
+  findPiiMatchInMessages: jest.fn().mockReturnValue(null),
   emitResponseCreated: jest.fn(),
   createResponseContext: jest.fn().mockReturnValue({ responseId: 'resp_123' }),
   createResponseTracker: jest.fn().mockReturnValue({
@@ -200,7 +201,9 @@ jest.mock('~/server/services/Files/permissions', () => ({
 
 jest.mock('~/server/services/Endpoints/agents/skillDeps', () => ({
   getSkillToolDeps: mockGetSkillToolDeps,
+  getSkillDbMethods: jest.fn(() => ({})),
   canAuthorSkillFiles: mockCanAuthorSkillFiles,
+  withDeploymentSkillIds: jest.fn((ids = []) => ids),
   enrichWithSkillConfigurable: mockEnrichWithSkillConfigurable,
   buildSkillPrimedIdsByName: mockBuildSkillPrimedIdsByName,
   buildAgentToolContext: mockBuildAgentToolContext,

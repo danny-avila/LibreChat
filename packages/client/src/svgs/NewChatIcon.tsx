@@ -1,5 +1,6 @@
+import { JSX } from 'react/jsx-runtime';
 import { cn } from '~/utils';
-export default function NewChatIcon({ className = '' }: { className?: string }) {
+export default function NewChatIcon({ className = '' }: { className?: string }): JSX.Element {
   return (
     <svg
       width="16"

@@ -3,7 +3,7 @@ import { PrincipalType, PrincipalModel, ResourceType } from 'librechat-data-prov
 import type { IAclEntry } from '~/types';
 import { MAX_PERM_BITS } from '~/common/permissions';
 
-const aclEntrySchema = new Schema<IAclEntry>(
+const aclEntrySchema: Schema<IAclEntry> = new Schema<IAclEntry>(
   {
     principalType: {
       type: String,

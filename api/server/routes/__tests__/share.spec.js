@@ -66,7 +66,12 @@ jest.mock('~/server/middleware/requireJwtAuth', () => (req, res, next) => next()
 const { RetentionMode } = require('librechat-data-provider');
 const { createTempChatExpirationDate, logger } = require('@librechat/data-schemas');
 const { deleteSharedLinkWithCleanup } = require('@librechat/api');
-const { createSharedLink, updateSharedLink, getRoleByName } = require('~/models');
+const {
+  getSharedMessages,
+  createSharedLink,
+  updateSharedLink,
+  getRoleByName,
+} = require('~/models');
 const shareRouter = require('../share');
 
 const activeExpiration = new Date('2030-01-01T00:00:00.000Z');
@@ -99,6 +104,15 @@ describe('share routes retention', () => {
       },
     });
     mockGrantCreationPermissions.mockResolvedValue(undefined);
+  });
+
+  it('prevents successful shared message responses from being cached', async () => {
+    getSharedMessages.mockResolvedValue({ shareId: 'share-123', messages: [] });
+
+    const response = await request(buildApp()).get('/api/share/share-123');
+
+    expect(response.status).toBe(200);
+    expect(response.headers['cache-control']).toBe('private, no-store');
   });
 
   it('expires new shares for retained non-temporary conversations', async () => {

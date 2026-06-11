@@ -76,7 +76,7 @@ export const getConversationExpirationDate = (
   return Number.isNaN(expiredAt.getTime()) ? null : expiredAt;
 };
 
-export const isActiveExpirationDate = (expiredAt: Date, now = new Date()): boolean =>
+export const isActiveExpirationDate = (expiredAt: Date, now: Date = new Date()): boolean =>
   expiredAt > now;
 
 const createRetentionExpiry = (

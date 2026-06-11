@@ -5,7 +5,6 @@
  * Mirrors the same pattern used in `__tests__/skills.test.ts`.
  */
 jest.mock('@librechat/agents', () => ({
-  ...jest.requireActual('@librechat/agents'),
   CODE_EXECUTION_TOOLS: new Set(['execute_code', 'bash_tool']),
   ReadFileToolDefinition: {
     name: 'read_file',
@@ -51,11 +50,21 @@ import {
   isCodeSessionToolName,
 } from './tools';
 
+/** Portable ceiling for OpenAI-compatible tool description validators. */
+const TOOL_DESCRIPTION_ADVISORY_MAX_LENGTH = 1024;
+
 function filePathDescription(tool?: LCTool): string {
   const parameters = tool?.parameters as
     | { properties?: { file_path?: { description?: string } } }
     | undefined;
   return parameters?.properties?.file_path?.description ?? '';
+}
+
+function maxToolDescriptionLength(definitions: LCTool[]): number {
+  return definitions.reduce((max, definition) => {
+    const length = definition.description?.length ?? Number.POSITIVE_INFINITY;
+    return Math.max(max, length);
+  }, 0);
 }
 
 describe('buildToolSet', () => {
@@ -274,6 +283,30 @@ describe('registerCodeExecutionTools', () => {
       const names = result.toolDefinitions.map((d) => d.name);
       expect(names).toEqual(['calculator', 'read_file', 'bash_tool']);
     });
+
+    it('keeps code-execution tool descriptions within provider advisory limits', () => {
+      const skillAwareWithRefs = registerCodeExecutionTools({
+        toolRegistry: makeRegistry(),
+        toolDefinitions: [],
+        includeBash: true,
+        includeSkillFileInstructions: true,
+        enableToolOutputReferences: true,
+      });
+      const codeOnlyWithoutRefs = registerCodeExecutionTools({
+        toolRegistry: makeRegistry(),
+        toolDefinitions: [],
+        includeBash: true,
+        includeSkillFileInstructions: false,
+        enableToolOutputReferences: false,
+      });
+
+      expect(
+        maxToolDescriptionLength([
+          ...skillAwareWithRefs.toolDefinitions,
+          ...codeOnlyWithoutRefs.toolDefinitions,
+        ]),
+      ).toBeLessThanOrEqual(TOOL_DESCRIPTION_ADVISORY_MAX_LENGTH);
+    });
   });
 
   describe('idempotence (second call in same run)', () => {
@@ -469,7 +502,12 @@ describe('registerFileAuthoringTools', () => {
     expect(result.toolDefinitions[0].responseFormat).toBe('content_and_artifact');
     expect(result.toolDefinitions.map((d) => d.description).join('\n')).toContain('skills/');
     expect(toolRegistry.get('create_file')?.description).toContain('frontmatter name must match');
+    expect(toolRegistry.get('create_file')?.description).toContain('trigger-friendly');
+    expect(toolRegistry.get('create_file')?.description).toContain('references/template.html');
+    expect(toolRegistry.get('create_file')?.description).toContain('templates/{file}');
     expect(toolRegistry.get('edit_file')?.description).toContain('edit_file cannot rename skills');
+    expect(toolRegistry.get('edit_file')?.description).toContain('Keep SKILL.md concise');
+    expect(toolRegistry.get('edit_file')?.description).toContain('templates/');
     expect(filePathDescription(toolRegistry.get('create_file'))).toContain(
       'frontmatter name must match',
     );
@@ -535,6 +573,33 @@ describe('registerFileAuthoringTools', () => {
       'skills/',
     );
     expect(toolRegistry.get('edit_file')?.description).toContain('skills/');
+  });
+
+  it('keeps file-authoring tool descriptions within provider advisory limits', () => {
+    const skillAware = registerFileAuthoringTools({
+      toolRegistry: makeRegistry(),
+      toolDefinitions: [],
+      includeSkillFileInstructions: true,
+    });
+    const codeOnlyRegistry = makeRegistry();
+    const codeOnly = registerFileAuthoringTools({
+      toolRegistry: codeOnlyRegistry,
+      toolDefinitions: [],
+      includeSkillFileInstructions: false,
+    });
+    const upgraded = registerFileAuthoringTools({
+      toolRegistry: codeOnlyRegistry,
+      toolDefinitions: codeOnly.toolDefinitions,
+      includeSkillFileInstructions: true,
+    });
+
+    expect(
+      maxToolDescriptionLength([
+        ...skillAware.toolDefinitions,
+        ...codeOnly.toolDefinitions,
+        ...upgraded.toolDefinitions,
+      ]),
+    ).toBeLessThanOrEqual(TOOL_DESCRIPTION_ADVISORY_MAX_LENGTH);
   });
 
   it('distinguishes host file authoring definitions from user tools with matching names', () => {

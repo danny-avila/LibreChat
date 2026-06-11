@@ -25,6 +25,7 @@ const {
   recordCollectedUsage,
   getTransactionsConfig,
   resolveRecursionLimit,
+  findPiiMatchInMessages,
   discoverConnectedAgents,
   getRemoteAgentPermissions,
   createToolExecuteHandler,
@@ -47,7 +48,9 @@ const {
 } = require('~/server/services/PermissionService');
 const {
   getSkillToolDeps,
+  getSkillDbMethods,
   canAuthorSkillFiles,
+  withDeploymentSkillIds,
   buildAgentToolContext,
   enrichLoadedToolsWithAgentContext,
 } = require('~/server/services/Endpoints/agents/skillDeps');
@@ -175,6 +178,17 @@ const OpenAIChatCompletionController = async (req, res) => {
     );
   }
 
+  const piiHit = findPiiMatchInMessages(request.messages, appConfig?.messageFilter?.pii);
+  if (piiHit != null) {
+    return sendErrorResponse(
+      res,
+      400,
+      `Message contains a ${piiHit.label}. Remove it and try again.`,
+      'invalid_request_error',
+      'message_filter_pii_block',
+    );
+  }
+
   const responseId = `chatcmpl-${nanoid()}`;
   const created = Math.floor(Date.now() / 1000);
 
@@ -229,6 +243,7 @@ const OpenAIChatCompletionController = async (req, res) => {
       endpoint: agent.provider,
       model_parameters: agent.model_parameters ?? {},
     };
+    const skillDbMethods = getSkillDbMethods();
 
     // `filterFilesByAgentAccess` is intentionally omitted: it calls
     // `checkPermission` with `resourceType: AGENT`, but this route
@@ -246,21 +261,23 @@ const OpenAIChatCompletionController = async (req, res) => {
       getUserCodeFiles: db.getUserCodeFiles,
       getToolFilesByIds: db.getToolFilesByIds,
       getCodeGeneratedFiles: db.getCodeGeneratedFiles,
-      listSkillsByAccess: db.listSkillsByAccess,
-      listAlwaysApplySkills: db.listAlwaysApplySkills,
-      getSkillByName: db.getSkillByName,
+      listSkillsByAccess: skillDbMethods.listSkillsByAccess,
+      listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
+      getSkillByName: skillDbMethods.getSkillByName,
     };
 
     const enabledCapabilities = new Set(agentsEConfig?.capabilities);
     const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
     const ephemeralSkillsToggle = req.body?.ephemeralAgent?.skills === true;
     const accessibleSkillIds = skillsCapabilityEnabled
-      ? await findAccessibleResources({
-          userId: req.user.id,
-          role: req.user.role,
-          resourceType: ResourceType.SKILL,
-          requiredPermissions: PermissionBits.VIEW,
-        })
+      ? withDeploymentSkillIds(
+          await findAccessibleResources({
+            userId: req.user.id,
+            role: req.user.role,
+            resourceType: ResourceType.SKILL,
+            requiredPermissions: PermissionBits.VIEW,
+          }),
+        )
       : [];
     const editableSkillIds = skillsCapabilityEnabled
       ? await findAccessibleResources({
@@ -331,6 +348,7 @@ const OpenAIChatCompletionController = async (req, res) => {
      * @type {Map<string, {
      *   agent: object,
      *   toolRegistry?: import('@librechat/agents').LCToolRegistry,
+     *   requestScopedConnections?: import('@librechat/api').RequestScopedMCPConnectionStore,
      *   userMCPAuthMap?: Record<string, Record<string, string>>,
      *   tool_resources?: object,
      *   actionsEnabled?: boolean,
@@ -475,6 +493,8 @@ const OpenAIChatCompletionController = async (req, res) => {
           agent: ctx.agent ?? agent,
           signal: abortController.signal,
           toolRegistry: ctx.toolRegistry,
+          mcpAvailableTools: ctx.mcpAvailableTools,
+          requestScopedConnections: ctx.requestScopedConnections,
           userMCPAuthMap: ctx.userMCPAuthMap,
           tool_resources: ctx.tool_resources,
           actionsEnabled: ctx.actionsEnabled,
