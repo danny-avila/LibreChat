@@ -876,10 +876,13 @@ export async function createRun({
       .trim();
 
     /**
-     * Resolve request-based headers for Custom Endpoints. Note: if this is added to
-     *  non-custom endpoints, needs consideration of varying provider header configs.
-     *  This is done at this step because the request body may contain dynamic values
-     *  that need to be resolved after agent initialization.
+     * Resolve request-based headers for Custom Endpoints and the built-in OpenAI
+     * endpoint (which also threads its YAML `headers` through
+     * `configuration.defaultHeaders`). Done at this step because the request
+     * body and user fields may carry dynamic values resolved per-request.
+     * Anthropic and Google have separate header pipelines (see
+     * `anthropic/llm.ts` and `google/llm.ts`); extending their `headers`
+     * support is tracked as follow-up to keep this surface focused.
      */
     if (llmConfig?.configuration?.defaultHeaders != null) {
       llmConfig.configuration.defaultHeaders = resolveHeaders({

@@ -1164,3 +1164,54 @@ describe('specsConfigSchema', () => {
     expect(result.success).toBe(false);
   });
 });
+
+describe('built-in openAI endpoint headers', () => {
+  it('accepts a static headers map on the built-in openAI endpoint', () => {
+    const result = configSchema.safeParse({
+      version: '1.0.0',
+      endpoints: {
+        [EModelEndpoint.openAI]: {
+          headers: {
+            'cf-aig-metadata': '{"app":"librechat"}',
+            'x-portkey-metadata': '{"user":"{{user_id}}"}',
+          },
+        },
+      },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const openAIBlock = result.data.endpoints?.[EModelEndpoint.openAI];
+      expect(openAIBlock?.headers).toEqual({
+        'cf-aig-metadata': '{"app":"librechat"}',
+        'x-portkey-metadata': '{"user":"{{user_id}}"}',
+      });
+    }
+  });
+
+  it('keeps the openAI endpoint optional and omits headers when not provided', () => {
+    const result = configSchema.safeParse({
+      version: '1.0.0',
+      endpoints: {
+        [EModelEndpoint.openAI]: { streamRate: 25 },
+      },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const openAIBlock = result.data.endpoints?.[EModelEndpoint.openAI];
+      expect(openAIBlock?.streamRate).toBe(25);
+      expect(openAIBlock?.headers).toBeUndefined();
+    }
+  });
+
+  it('rejects non-string header values', () => {
+    const result = configSchema.safeParse({
+      version: '1.0.0',
+      endpoints: {
+        [EModelEndpoint.openAI]: {
+          headers: { 'x-bad': 123 as unknown as string },
+        },
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+});

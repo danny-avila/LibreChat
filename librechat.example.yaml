@@ -486,6 +486,21 @@ endpoints:
   #     #   claude-3.5-haiku:
   #     #     deploymentName: claude-3-5-haiku@20241022  # Override for this model
 
+  # OpenAI built-in endpoint configuration
+  # openAI:
+  #   # (optional) Stream rate limiting in milliseconds
+  #   streamRate: 20
+  #   # (optional) Title model for conversation titles
+  #   titleModel: gpt-4o-mini
+  #   # (optional) Static headers merged into every OpenAI request.
+  #   # Values support env-var (`${VAR}`), user (`{{user_email}}`, `{{user_id}}`),
+  #   # and request-body (`{{LIBRECHAT_BODY_*}}`) placeholders, matching the
+  #   # behavior on Custom Endpoints. Useful for routing OpenAI traffic through
+  #   # an AI Gateway that consumes metadata headers per request.
+  #   headers:
+  #     cf-aig-metadata: '{"user_email":"{{user_email}}","app":"librechat"}'
+  #     x-portkey-metadata: '{"user":"{{user_id}}"}'
+
   custom:
     # Groq Example
     - name: 'groq'

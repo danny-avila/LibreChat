@@ -1461,8 +1461,10 @@ class AgentClient extends BaseClient {
       clientOptions.json = true;
     }
 
-    /** Resolve request-based headers for Custom Endpoints. Note: if this is added to
-     *  non-custom endpoints, needs consideration of varying provider header configs.
+    /** Resolve request-based headers for Custom Endpoints and the built-in OpenAI
+     *  endpoint (which now forwards YAML `headers` via `configuration.defaultHeaders`).
+     *  Anthropic/Google built-ins still need their own header pipelines wired up
+     *  before they participate here.
      */
     if (clientOptions?.configuration?.defaultHeaders != null) {
       clientOptions.configuration.defaultHeaders = resolveHeaders({

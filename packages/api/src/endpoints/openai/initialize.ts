@@ -133,6 +133,22 @@ export async function initializeOpenAI({
     user: req.user?.id,
   };
 
+  /**
+   * Forward any static headers declared on the built-in OpenAI endpoint
+   * (e.g. AI Gateway routing/metadata headers). Placeholder resolution
+   * (`{{user_email}}`, `{{LIBRECHAT_BODY_*}}`, env vars) happens at
+   * request time in `agents/run.ts` via `resolveHeaders` on
+   * `llmConfig.configuration.defaultHeaders`, matching the Custom
+   * Endpoint flow. Skipped for Azure, which already populates
+   * `clientOptions.headers` from `mapModelToAzureConfig` above.
+   */
+  if (!isAzureOpenAI) {
+    const endpointHeaders = appConfig?.endpoints?.[EModelEndpoint.openAI]?.headers;
+    if (endpointHeaders && Object.keys(endpointHeaders).length > 0) {
+      clientOptions.headers = { ...endpointHeaders, ...(clientOptions.headers ?? {}) };
+    }
+  }
+
   const finalClientOptions: OpenAIConfigOptions = {
     ...clientOptions,
     modelOptions,
