@@ -265,3 +265,115 @@
 [data-cui-theme] .hover\:bg-primary\/10:hover {
   background-color: color-mix(in srgb, var(--click-global-color-accent-default) 10%, transparent) !important;
 }
+
+/*
+ * Text field / textarea focus — CUI uses a border-color change (stroke-active) on focus,
+ * no ring or glow effect. This overrides:
+ *   • Tailwind's focus:ring-* classes (which generate invalid hsl(hex) values for --ring)
+ *   • Hardcoded focus:ring-gray-400 on the Textarea component
+ *   • focus:ring-ring / focus:ring-border-light on agent-builder raw inputs
+ *
+ * Hover state: subtle border-color step up (stroke-hover).
+ * Both states suppress box-shadow to eliminate Tailwind ring artifacts.
+ *
+ * Excludes checkbox, radio, range — those have custom focus handling.
+ */
+[data-cui-theme] input:not([type='checkbox']):not([type='radio']):not([type='range']):hover:not(:focus):not(:focus-visible),
+[data-cui-theme] textarea:hover:not(:focus):not(:focus-visible) {
+  border-color: var(--click-field-color-stroke-hover) !important;
+}
+
+[data-cui-theme] input:not([type='checkbox']):not([type='radio']):not([type='range']):focus,
+[data-cui-theme] input:not([type='checkbox']):not([type='radio']):not([type='range']):focus-visible,
+[data-cui-theme] textarea:focus,
+[data-cui-theme] textarea:focus-visible {
+  outline: none !important;
+  border-color: var(--click-field-color-stroke-active) !important;
+  background-color: var(--click-field-color-background-active) !important;
+  box-shadow: none !important;
+}
+
+/*
+ * Chat input — full Click-UI TextAreaField visual treatment.
+ * The selector .border-border-light.bg-surface-chat is unique to ChatForm's outer container.
+ *
+ * State tokens used:
+ *   background  default  #fbfcff (light) / ~#2d2d2d (dark)
+ *   background  hover    #f6f7fa (light) / ~#333    (dark)
+ *   background  active   #ffffff (light) / same     (dark)
+ *   stroke      default  #e6e7e9 (light) / ~#323232 (dark)
+ *   stroke      hover    #cccfd3 (light) / ~#414141 (dark)
+ *   stroke      active   #161517 (light) / #faff69  (dark)
+ */
+
+/* Default state */
+[data-cui-theme] .border-border-light.bg-surface-chat {
+  background-color: var(--click-field-color-background-default) !important;
+  border-color: var(--click-field-color-stroke-default) !important;
+}
+
+/* Hover state */
+[data-cui-theme] .border-border-light.bg-surface-chat:hover {
+  background-color: var(--click-field-color-background-hover) !important;
+  border-color: var(--click-field-color-stroke-hover) !important;
+}
+
+/* Focus state */
+[data-cui-theme] .border-border-light.bg-surface-chat:focus-within {
+  background-color: var(--click-field-color-background-active) !important;
+  border-color: var(--click-field-color-stroke-active) !important;
+}
+
+/* Textarea text — font and color matching CUI fieldText tokens */
+[data-cui-theme] .border-border-light.bg-surface-chat textarea {
+  font: var(--click-field-typography-fieldText-default) !important;
+  color: var(--click-field-color-text-default) !important;
+}
+
+[data-cui-theme] .border-border-light.bg-surface-chat:focus-within textarea {
+  color: var(--click-field-color-text-active) !important;
+}
+
+/* Placeholder — override LibreChat's hardcoded placeholder-black/60 */
+[data-cui-theme] .border-border-light.bg-surface-chat textarea::placeholder {
+  color: var(--click-global-color-text-muted) !important;
+  opacity: 1 !important;
+}
+
+/*
+ * Tailwind's rounded-xl/2xl/3xl are hardcoded pixel values — they don't reference --radius.
+ * Override them globally when the CUI theme is active so ALL elements match Click-UI's 4px radius.
+ * rounded-full is intentionally left untouched (avatars, badges, spinners are legitimately circular).
+ * !important is required: Tailwind's @media-scoped responsive variants (sm:rounded-3xl etc.)
+ * would otherwise win against same-specificity rules outside media queries.
+ */
+[data-cui-theme] .rounded-xl,
+[data-cui-theme] .md\:rounded-xl,
+[data-cui-theme] .sm\:rounded-xl {
+  border-radius: 0.25rem !important;
+}
+
+[data-cui-theme] .rounded-2xl,
+[data-cui-theme] .sm\:rounded-2xl {
+  border-radius: 0.25rem !important;
+}
+
+[data-cui-theme] .rounded-3xl,
+[data-cui-theme] .sm\:rounded-3xl {
+  border-radius: 0.25rem !important;
+}
+
+/* rounded-t-3xl only sets top corners — preserve bottom corners at 0 */
+[data-cui-theme] .rounded-t-3xl {
+  border-top-left-radius: 0.25rem !important;
+  border-top-right-radius: 0.25rem !important;
+}
+
+/*
+ * Toolbar icon buttons (AttachFile, ToolsDropdown, AudioRecorder) use size-9 + rounded-full
+ * which produces circular hover backgrounds. Override to match the side menu's squared style.
+ * Targeting size-9.rounded-full is safe — no avatar/badge elements share this combination.
+ */
+[data-cui-theme] .size-9.rounded-full {
+  border-radius: 0.25rem !important;
+}
