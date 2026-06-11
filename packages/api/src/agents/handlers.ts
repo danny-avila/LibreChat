@@ -82,6 +82,8 @@ export interface ToolExecuteOptions {
      *  prior cache entry. */
     version: number;
     fileCount: number;
+    /** True for deployment-directory skills that are loaded in memory. */
+    deployment?: boolean;
     /**
      * Set when the skill author opted out of model invocation. The handler
      * rejects the call and returns an instructive error so the model knows

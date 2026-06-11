@@ -1,11 +1,62 @@
-import logger from '../config/winston';
 import { EToolResources, FileContext } from 'librechat-data-provider';
 import type { FilterQuery, SortOrder, Model } from 'mongoose';
 import type { IMongoFile } from '~/types/file';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import logger from '../config/winston';
 
 /** Factory function that takes mongoose instance and returns the file methods */
-export function createFileMethods(mongoose: typeof import('mongoose')) {
+export function createFileMethods(mongoose: typeof import('mongoose')): {
+  findFileById: (file_id: string, options?: Record<string, unknown>) => Promise<IMongoFile | null>;
+  getFiles: (
+    filter: FilterQuery<IMongoFile>,
+    _sortOptions?: Record<string, SortOrder> | null,
+    selectFields?: Record<string, 0 | 1> | string | null,
+  ) => Promise<IMongoFile[] | null>;
+  getExpiredFiles: (limit?: number, now?: Date) => Promise<IMongoFile[]>;
+  getToolFilesByIds: (
+    fileIds: string[],
+    toolResourceSet?: Set<EToolResources>,
+  ) => Promise<IMongoFile[]>;
+  getCodeGeneratedFiles: (
+    conversationId: string,
+    threadFileIds?: string[],
+  ) => Promise<IMongoFile[]>;
+  getUserCodeFiles: (fileIds?: string[]) => Promise<IMongoFile[]>;
+  claimCodeFile: (data: {
+    filename: string;
+    conversationId: string;
+    file_id: string;
+    user: string;
+    tenantId?: string | null;
+  }) => Promise<IMongoFile>;
+  createFile: (data: Partial<IMongoFile>, disableTTL?: boolean) => Promise<IMongoFile | null>;
+  updateFile: (
+    data: Partial<IMongoFile> & { file_id: string },
+    extraFilter?: FilterQuery<IMongoFile>,
+  ) => Promise<IMongoFile | null>;
+  updateFileUsage: (data: {
+    file_id: string;
+    inc?: number;
+    user?: string;
+  }) => Promise<IMongoFile | null>;
+  deleteFile: (file_id: string) => Promise<IMongoFile | null>;
+  deleteFiles: (file_ids: string[], user?: string) => Promise<{ deletedCount?: number }>;
+  deleteFileByFilter: (filter: FilterQuery<IMongoFile>) => Promise<IMongoFile | null>;
+  batchUpdateFiles: (
+    updates: Array<{
+      file_id: string;
+      filepath: string;
+      storageKey?: string;
+      storageRegion?: string;
+    }>,
+  ) => Promise<void>;
+  updateFilesUsage: (
+    files: Array<{ file_id: string }>,
+    fileIds?: string[],
+    options?: { user?: string },
+  ) => Promise<IMongoFile[]>;
+  sweepOrphanedPreviews: (maxAgeMs?: number) => Promise<number>;
+} {
   /**
    * Finds a file by its file_id with additional query options.
    * @param file_id - The unique identifier of the file
@@ -34,7 +85,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
   async function getFiles(
     filter: FilterQuery<IMongoFile>,
     _sortOptions?: Record<string, SortOrder> | null,
-    selectFields?: SelectProjection | string | null,
+    selectFields?: string | Record<string, 0 | 1> | null | undefined,
   ): Promise<IMongoFile[] | null> {
     const File = mongoose.models.File as Model<IMongoFile>;
     const sortOptions = { updatedAt: -1 as SortOrder, ..._sortOptions };
@@ -47,7 +98,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
     return await query.sort(sortOptions).lean<IMongoFile[]>();
   }
 
-  async function getExpiredFiles(limit = 100, now = new Date()): Promise<IMongoFile[]> {
+  async function getExpiredFiles(limit = 100, now: Date = new Date()): Promise<IMongoFile[]> {
     const File = mongoose.models.File as Model<IMongoFile>;
     return await File.find({ expiredAt: { $ne: null, $lte: now } })
       .sort({ expiredAt: 1 })
@@ -305,14 +356,17 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
   async function updateFileUsage(data: {
     file_id: string;
     inc?: number;
+    user?: string;
   }): Promise<IMongoFile | null> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    const { file_id, inc = 1 } = data;
+    const { file_id, inc = 1, user } = data;
     const updateOperation = {
       $inc: { usage: inc },
       $unset: { expiresAt: '', temp_file_id: '' },
     };
-    return File.findOneAndUpdate({ file_id }, updateOperation, {
+    // Owner scoping is fail-closed: mismatches leave usage and TTL metadata unchanged.
+    const query: FilterQuery<IMongoFile> = user ? { file_id, user } : { file_id };
+    return File.findOneAndUpdate(query, updateOperation, {
       new: true,
     }).lean<IMongoFile>();
   }
@@ -400,9 +454,12 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
   async function updateFilesUsage(
     files: Array<{ file_id: string }>,
     fileIds?: string[],
+    options?: { user?: string },
   ): Promise<IMongoFile[]> {
     const promises: Promise<IMongoFile | null>[] = [];
     const seen = new Set<string>();
+    // Preserve the same owner scope for every deduped ID in this batch.
+    const user = options?.user;
 
     for (const file of files) {
       const { file_id } = file;
@@ -410,7 +467,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
         continue;
       }
       seen.add(file_id);
-      promises.push(updateFileUsage({ file_id }));
+      promises.push(updateFileUsage({ file_id, user }));
     }
 
     if (!fileIds) {
@@ -423,7 +480,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')) {
         continue;
       }
       seen.add(file_id);
-      promises.push(updateFileUsage({ file_id }));
+      promises.push(updateFileUsage({ file_id, user }));
     }
 
     const results = await Promise.all(promises);

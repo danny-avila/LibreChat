@@ -1,4 +1,8 @@
-import { INTERFACE_PERMISSION_FIELDS, PERMISSION_SUB_KEYS } from 'librechat-data-provider';
+import {
+  BASE_ONLY_CONFIG_SECTIONS,
+  INTERFACE_PERMISSION_FIELDS,
+  PERMISSION_SUB_KEYS,
+} from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { AppConfig, IConfig } from '~/types';
 
@@ -6,6 +10,7 @@ type AnyObject = { [key: string]: unknown };
 
 const MAX_MERGE_DEPTH = 10;
 const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+const BASE_ONLY_OVERRIDE_SECTIONS = new Set<string>(BASE_ONLY_CONFIG_SECTIONS);
 
 /**
  * Paths within the config tree where arrays of objects should be merged by
@@ -35,6 +40,50 @@ const OVERRIDE_KEY_MAP: Partial<Record<keyof TCustomConfig, keyof AppConfig>> = 
   interface: 'interfaceConfig',
   turnstile: 'turnstileConfig',
 };
+
+function isSafePath(path: string): boolean {
+  const segments = path.split('.');
+  if (
+    path.length === 0 ||
+    path.startsWith('.') ||
+    path.endsWith('.') ||
+    path.includes('..') ||
+    segments.some((segment) => segment.length === 0 || UNSAFE_KEYS.has(segment))
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function remapOverridePath(path: string): string {
+  const [first, ...rest] = path.split('.');
+  const mappedFirst = OVERRIDE_KEY_MAP[first as keyof typeof OVERRIDE_KEY_MAP] ?? first;
+  return [mappedFirst, ...rest].join('.');
+}
+
+function deletePath<T extends AnyObject>(target: T, path: string): T {
+  if (!isSafePath(path)) {
+    return target;
+  }
+
+  const segments = path.split('.');
+  const result = { ...target } as AnyObject;
+  let cursor: AnyObject = result;
+
+  for (let index = 0; index < segments.length - 1; index++) {
+    const segment = segments[index];
+    const value = cursor[segment];
+    if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+      return result as T;
+    }
+    const cloned = { ...(value as AnyObject) };
+    cursor[segment] = cloned;
+    cursor = cloned;
+  }
+
+  delete cursor[segments[segments.length - 1]];
+  return result as T;
+}
 
 function mergeArrayByKey(
   target: AnyObject[],
@@ -144,9 +193,20 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
 
   let merged = { ...baseConfig };
   for (const config of sorted) {
+    if (Array.isArray(config.tombstones)) {
+      for (const path of config.tombstones) {
+        if (typeof path === 'string') {
+          merged = deletePath(merged, remapOverridePath(path));
+        }
+      }
+    }
+
     if (config.overrides && typeof config.overrides === 'object') {
       const remapped: AnyObject = {};
       for (const [key, value] of Object.entries(config.overrides)) {
+        if (BASE_ONLY_OVERRIDE_SECTIONS.has(key)) {
+          continue;
+        }
         const mappedKey = OVERRIDE_KEY_MAP[key as keyof typeof OVERRIDE_KEY_MAP] ?? key;
         if (
           key === 'interface' &&

@@ -1,4 +1,5 @@
 const validatePasswordReset = require('./validatePasswordReset');
+const setTwoFactorTempUser = require('./setTwoFactorTempUser');
 const validateRegistration = require('./validateRegistration');
 const buildEndpointOption = require('./buildEndpointOption');
 const remoteAgentBodyParser = require('./remoteAgentBodyParser');
@@ -38,6 +39,7 @@ module.exports = {
   moderateText,
   validateModel,
   requireJwtAuth,
+  setTwoFactorTempUser,
   checkInviteUser,
   requireLdapAuth,
   requireLocalAuth,

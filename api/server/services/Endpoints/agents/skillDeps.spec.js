@@ -4,6 +4,7 @@ const mockGetStrategyFunctions = jest.fn();
 const mockGetFileStrategy = jest.fn();
 const mockGetStorageMetadata = jest.fn();
 const mockResolveRequestTenantId = jest.fn();
+const mockCreateDeploymentSkillMethods = jest.fn((methods) => methods);
 
 jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: (...args) => mockGetStrategyFunctions(...args),
@@ -22,8 +23,12 @@ jest.mock('~/server/services/Files/Code/process', () => ({
 
 jest.mock('@librechat/api', () => ({
   checkAccess: jest.fn(),
+  createDeploymentSkillMethods: (...args) => mockCreateDeploymentSkillMethods(...args),
   enrichWithSkillConfigurable: jest.fn(),
+  getDeploymentSkillDownloadStream: jest.fn(),
   getStorageMetadata: (...args) => mockGetStorageMetadata(...args),
+  isDeploymentSkillFileSource: jest.fn(() => false),
+  mergeDeploymentSkillIds: jest.fn((ids = []) => ids),
   resolveRequestTenantId: (...args) => mockResolveRequestTenantId(...args),
 }));
 

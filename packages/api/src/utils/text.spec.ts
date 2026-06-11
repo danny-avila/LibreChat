@@ -222,6 +222,24 @@ describe('processTextWithTokenLimit', () => {
       expect(syncResult.wasTruncated).toBe(asyncResult.wasTruncated);
       expect(syncResult.text.length).toBe(asyncResult.text.length);
     });
+
+    it('should preserve the end of text when requested', async () => {
+      const { tokenCountFn } = createMockTokenCounter();
+      const text = `${'a'.repeat(200)}LATEST_MEMORY_REQUEST`;
+      const tokenLimit = 10;
+
+      const result = await processTextWithTokenLimit({
+        text,
+        tokenLimit,
+        tokenCountFn,
+        preserve: 'end',
+      });
+
+      expect(result.wasTruncated).toBe(true);
+      expect(result.tokenCount).toBeLessThanOrEqual(tokenLimit);
+      expect(result.text).toContain('LATEST_MEMORY_REQUEST');
+      expect(result.text).not.toContain('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    });
   });
 
   describe('when text is under the token limit', () => {

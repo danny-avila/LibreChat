@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
-import { useRecoilCallback, useRecoilValue } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
+import { useRecoilCallback, useRecoilValue } from 'recoil';
 import { Spinner, useToastContext } from '@librechat/client';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
@@ -17,18 +17,18 @@ import {
   clearMessagesCache,
 } from '~/utils';
 import {
+  useGetConvoIdQuery,
+  useGetStartupConfig,
+  useGetEndpointsQuery,
+  useProjectQuery,
+} from '~/data-provider';
+import {
   useAssistantListMap,
   useIdChangeEffect,
   useAppStartup,
   useNewConvo,
   useLocalize,
 } from '~/hooks';
-import {
-  useGetConvoIdQuery,
-  useGetStartupConfig,
-  useGetEndpointsQuery,
-  useProjectQuery,
-} from '~/data-provider';
 import { ToolCallsMapProvider } from '~/Providers';
 import ChatView from '~/components/Chat/ChatView';
 import { NotificationSeverity } from '~/common';
@@ -55,7 +55,7 @@ export default function ChatRoute() {
   useAppStartup({ startupConfig, user });
 
   const index = 0;
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { conversationId = '' } = useParams();
   const projectIdParam = searchParams.get('projectId');
   const chatProjectId = isValidChatProjectId(projectIdParam) ? projectIdParam : null;
@@ -70,11 +70,49 @@ export default function ChatRoute() {
     staleTime: 30000,
     cacheTime: 300000,
   });
-  const verifiedChatProjectId = projectQuery.data?._id === chatProjectId ? chatProjectId : null;
+  /**
+   * The scoped project is *confirmed gone* — a not-found/not-owned (404) response,
+   * or a success that resolved to a different/empty project. Transient failures
+   * (500, network, auth refresh race) are deliberately excluded: this query runs with
+   * `retry: false`, so treating any error as "gone" would unscope a valid project on
+   * a single blip.
+   */
+  const projectNotFound = projectQuery.isError && isNotFoundError(projectQuery.error);
+  /**
+   * Trust the scope when the project resolves to itself, and keep showing it through
+   * transient errors via React Query's retained data — but never for a project that
+   * is confirmed gone (otherwise the deleted project's chip lingers).
+   */
+  const verifiedChatProjectId =
+    !projectNotFound && projectQuery.data?._id === chatProjectId ? chatProjectId : null;
   const projectTemplate = useMemo(
     () => (verifiedChatProjectId ? { chatProjectId: verifiedChatProjectId } : {}),
     [verifiedChatProjectId],
   );
+
+  /**
+   * The scoped project is gone even though the URL still carries `?projectId`. Drop
+   * the param so the new-chat landing reverts to an unscoped chat — otherwise the
+   * stale chip lingers and sends target a dead project.
+   */
+  const projectScopeMissing =
+    Boolean(chatProjectId) &&
+    conversationId === Constants.NEW_CONVO &&
+    (projectNotFound || (projectQuery.isSuccess && projectQuery.data?._id !== chatProjectId));
+
+  useEffect(() => {
+    if (!projectScopeMissing) {
+      return;
+    }
+    setSearchParams(
+      (params) => {
+        const next = new URLSearchParams(params);
+        next.delete('projectId');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [projectScopeMissing, setSearchParams]);
 
   const modelsQuery = useGetModelsQuery({
     enabled: isAuthenticated,
@@ -128,8 +166,8 @@ export default function ChatRoute() {
     }
 
     const getNewConvoPreset = () => {
-      const result = getDefaultModelSpec(startupConfig);
-      const spec = result?.default ?? result?.last;
+      const result = getDefaultModelSpec(startupConfig, endpointsQuery.data);
+      const spec = result?.default ?? result?.last ?? result?.softDefault;
       const specPreset = spec ? getModelSpecPreset(spec) : undefined;
 
       const queryParams: Record<string, string> = {};
@@ -174,8 +212,8 @@ export default function ChatRoute() {
       initialConvoQuery.isError &&
       isNotFoundError(initialConvoQuery.error)
     ) {
-      const result = getDefaultModelSpec(startupConfig);
-      const spec = result?.default ?? result?.last;
+      const result = getDefaultModelSpec(startupConfig, endpointsQuery.data);
+      const spec = result?.default ?? result?.last ?? result?.softDefault;
       showToast({
         message: localize('com_ui_conversation_not_found'),
         severity: NotificationSeverity.WARNING,

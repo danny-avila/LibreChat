@@ -1497,6 +1497,19 @@ describe('AgentClient - titleConvo', () => {
       text,
     });
 
+    const makeUploadedFile = (file_id, filename, type) => ({
+      user: 'user-123',
+      file_id,
+      filename,
+      filepath: `/uploads/${filename}`,
+      object: 'file',
+      type,
+      bytes: 128,
+      embedded: false,
+      usage: 0,
+      source: 'local',
+    });
+
     beforeEach(() => {
       jest.clearAllMocks();
       mockFormatInstructions.mockResolvedValue('');
@@ -1544,6 +1557,48 @@ describe('AgentClient - titleConvo', () => {
       client.maxContextTokens = 4096;
       client.useMemory = jest.fn().mockResolvedValue(undefined);
     });
+
+    it.each([
+      ['CSV', 'csv-file', 'sample.csv', 'text/csv'],
+      [
+        'XLSX',
+        'xlsx-file',
+        'sample.xlsx',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      ],
+    ])(
+      'routes default-supported provider uploads like %s as request documents without custom file config',
+      async (_label, file_id, filename, type) => {
+        const currentFile = makeUploadedFile(file_id, filename, type);
+        const message = {
+          messageId: 'msg-1',
+          parentMessageId: null,
+          sender: 'User',
+          text: `Read this ${filename}.`,
+          isCreatedByUser: true,
+        };
+
+        client.addDocuments = jest.fn(async (targetMessage, attachments) => {
+          targetMessage.documents = attachments.map((file) => ({
+            type: 'input_file',
+            filename: file.filename,
+            file_data: `data:${file.type};base64,Y29sMQox`,
+          }));
+          return attachments;
+        });
+
+        const files = await client.processAttachments(message, [currentFile]);
+
+        expect(client.addDocuments).toHaveBeenCalledWith(message, [currentFile]);
+        expect(message.documents).toEqual([
+          expect.objectContaining({
+            type: 'input_file',
+            filename,
+          }),
+        ]);
+        expect(files).toEqual([currentFile]);
+      },
+    );
 
     it('places request context inline and applies each agent context doc only once', async () => {
       const requestFile = makeTextFile('request-file', 'request.txt', 'Shared request context');
@@ -1953,6 +2008,25 @@ describe('AgentClient - titleConvo', () => {
       expect(processedMessage.content).toContain('Response 3');
       expect(processedMessage.content).not.toContain('Message 1');
       expect(processedMessage.content).not.toContain('Response 1');
+    });
+
+    it('should cap memory input tokens and preserve recent content', async () => {
+      const { HumanMessage, AIMessage } = require('@librechat/agents/langchain/messages');
+      mockReq.config.memory.maxInputTokens = 12;
+      const messages = [
+        new HumanMessage(`OLDER_CONTENT ${'a'.repeat(600)}`),
+        new AIMessage('Intermediate response'),
+        new HumanMessage('Please remember LATEST_MEMORY_MARKER'),
+      ];
+
+      await client.runMemory(messages);
+
+      expect(mockProcessMemory).toHaveBeenCalledTimes(1);
+      const processedMessage = mockProcessMemory.mock.calls[0][0][0];
+
+      expect(processedMessage.content).toContain('LATEST_MEMORY_MARKER');
+      expect(processedMessage.content).not.toContain('OLDER_CONTENT');
+      expect(Math.ceil(processedMessage.content.length / 4)).toBeLessThanOrEqual(12);
     });
 
     it('should return early if processMemory is not set', async () => {

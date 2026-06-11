@@ -320,7 +320,7 @@ describe('SkillsCommand', () => {
       isFetchingNextPage: false,
     });
     mockUseAgentsMapContext.mockReturnValue({
-      agent_1: { id: 'agent_1', skills_enabled: true },
+      agent_1: { id: 'agent_1', skills: [], skills_enabled: true },
     });
 
     const textAreaRef = makeTextarea('$');

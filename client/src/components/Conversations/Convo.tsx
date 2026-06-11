@@ -1,13 +1,13 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { memo, useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { Constants } from 'librechat-data-provider';
 import { useToastContext, useMediaQuery } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
-import { useUpdateConversationMutation } from '~/data-provider';
-import EndpointIcon from '~/components/Endpoints/EndpointIcon';
 import { useNavigateToConvo, useLocalize, useShiftKey } from '~/hooks';
-import { useGetEndpointsQuery } from '~/data-provider';
+import ConversationEndpointIcon from './ConversationEndpointIcon';
+import { useUpdateConversationMutation } from '~/data-provider';
+import { areConversationRenderPropsEqual } from './utils';
 import { NotificationSeverity } from '~/common';
 import { ConvoOptions } from './ConvoOptions';
 import RenameForm from './RenameForm';
@@ -22,7 +22,7 @@ interface ConversationProps {
   isGenerating?: boolean;
 }
 
-export default function Conversation({
+function Conversation({
   conversation,
   retainView,
   toggleNav,
@@ -32,7 +32,6 @@ export default function Conversation({
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { navigateToConvo } = useNavigateToConvo();
-  const { data: endpointsConfig } = useGetEndpointsQuery();
   const currentConvoId = useMemo(() => params.conversationId, [params.conversationId]);
   const updateConvoMutation = useUpdateConversationMutation(currentConvoId ?? '');
   const activeConvos = useRecoilValue(store.allConversationsSelector);
@@ -177,6 +176,42 @@ export default function Conversation({
     isShiftHeld: isActiveConvo ? isShiftHeld : false,
   };
 
+  const generatingSpinner = (
+    <svg
+      className="h-5 w-5 flex-shrink-0 animate-spin text-text-primary"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-label={localize('com_ui_generating')}
+    >
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+      />
+    </svg>
+  );
+
+  let actionVisibilityClassName =
+    'pointer-events-none max-w-0 scale-x-0 opacity-0 group-focus-within:pointer-events-auto group-focus-within:max-w-[60px] group-focus-within:scale-x-100 group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:max-w-[60px] group-hover:scale-x-100 group-hover:opacity-100';
+  if (isGenerating) {
+    actionVisibilityClassName = 'pointer-events-none w-5 scale-x-100 opacity-100';
+  } else if (isPopoverActive || isActiveConvo) {
+    actionVisibilityClassName = 'pointer-events-auto scale-x-100 opacity-100';
+  }
+
+  let actionWidthClassName = '';
+  if (!isGenerating && !isPopoverActive && isActiveConvo && isShiftHeld) {
+    actionWidthClassName = 'max-w-[60px]';
+  } else if (!isGenerating) {
+    actionWidthClassName = 'max-w-[28px]';
+  }
+
+  const showConvoOptions = !renaming && (hasInteracted || isActiveConvo);
+  const actionContent = isGenerating
+    ? generatingSpinner
+    : showConvoOptions && <ConvoOptions {...convoOptionsProps} />;
+
   return (
     <div
       ref={containerRef}
@@ -235,54 +270,24 @@ export default function Conversation({
           isSmallScreen={isSmallScreen}
           localize={localize}
         >
-          {isGenerating ? (
-            <svg
-              className="h-5 w-5 flex-shrink-0 animate-spin text-text-primary"
-              viewBox="0 0 24 24"
-              fill="none"
-              aria-label={localize('com_ui_generating')}
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="3"
-              />
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              />
-            </svg>
-          ) : (
-            <EndpointIcon
-              conversation={conversation}
-              endpointsConfig={endpointsConfig}
-              size={20}
-              context="menu-item"
-            />
-          )}
+          <ConversationEndpointIcon conversation={conversation} size={20} context="menu-item" />
         </ConvoLink>
       )}
       <div
         className={cn(
-          'mr-2 flex origin-left',
-          isPopoverActive || isActiveConvo
-            ? 'pointer-events-auto scale-x-100 opacity-100'
-            : 'pointer-events-none max-w-0 scale-x-0 opacity-0 group-focus-within:pointer-events-auto group-focus-within:max-w-[60px] group-focus-within:scale-x-100 group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:max-w-[60px] group-hover:scale-x-100 group-hover:opacity-100',
-          !isPopoverActive && isActiveConvo && isShiftHeld ? 'max-w-[60px]' : 'max-w-[28px]',
+          'mr-2 flex origin-left items-center justify-center',
+          actionVisibilityClassName,
+          actionWidthClassName,
         )}
         // Removing aria-hidden to fix accessibility issue: ARIA hidden element must not be focusable or contain focusable elements
         // but not sure what its original purpose was, so leaving the property commented out until it can be cleared safe to delete.
         // aria-hidden={!(isPopoverActive || isActiveConvo)}
       >
         {/* Only render ConvoOptions when user interacts (hover/focus) or for active conversation */}
-        {!renaming && !isGenerating && (hasInteracted || isActiveConvo) && (
-          <ConvoOptions {...convoOptionsProps} />
-        )}
+        {actionContent}
       </div>
     </div>
   );
 }
+
+export default memo(Conversation, areConversationRenderPropsEqual);

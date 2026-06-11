@@ -33,8 +33,10 @@ const {
   prependFileContext,
   hydrateMissingIndexTokenCounts,
   injectSkillPrimes,
+  collectFreshSkillPrimeNames,
   isSkillPrimeMessage,
   collectFileIds,
+  processTextWithTokenLimit,
   buildAgentScopedContext,
   buildSkillPrimeContentParts,
   buildInitialToolSessions,
@@ -58,6 +60,7 @@ const {
   isAgentsEndpoint,
   isEphemeralAgentId,
   removeNullishValues,
+  DEFAULT_MEMORY_MAX_INPUT_TOKENS,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
@@ -69,6 +72,8 @@ const { getMCPManager } = require('~/config');
 const db = require('~/models');
 
 const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
+
+const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
 
 class AgentClient extends BaseClient {
   constructor(options = {}) {
@@ -760,7 +765,44 @@ class AgentClient extends BaseClient {
 
       const filteredMessages = messagesToProcess.map((msg) => this.filterImageUrls(msg));
       const bufferString = getBufferString(filteredMessages);
-      const bufferMessage = new HumanMessage(`# Current Chat:\n\n${bufferString}`);
+      const configuredMaxInputTokens = Number.isFinite(memoryConfig?.maxInputTokens)
+        ? Math.floor(memoryConfig.maxInputTokens)
+        : undefined;
+      const maxInputTokens =
+        configuredMaxInputTokens != null && configuredMaxInputTokens > 0
+          ? configuredMaxInputTokens
+          : DEFAULT_MEMORY_MAX_INPUT_TOKENS;
+      const maxInputChars = maxInputTokens * MEMORY_INPUT_CHARS_PER_TOKEN;
+      const isCharTruncated = bufferString.length > maxInputChars;
+      const memoryInput = `# Current Chat:\n\n${
+        isCharTruncated
+          ? `[Earlier chat content omitted due to memory input limit]\n\n${bufferString.slice(
+              -maxInputChars,
+            )}`
+          : bufferString
+      }`;
+      const {
+        text: limitedMemoryInput,
+        tokenCount,
+        wasTruncated,
+      } = await processTextWithTokenLimit({
+        text: memoryInput,
+        tokenLimit: maxInputTokens,
+        tokenCountFn: (text) => countTokens(text),
+        preserve: 'end',
+      });
+      if (isCharTruncated || wasTruncated) {
+        logger.warn('[MemoryAgent] Memory input truncated before processing', {
+          tokenCount,
+          messageId: this.responseMessageId,
+          conversationId: this.conversationId,
+          maxInputTokens,
+          wasTruncated,
+          maxInputChars,
+          originalLength: bufferString.length,
+        });
+      }
+      const bufferMessage = new HumanMessage(limitedMemoryInput);
       return await this.processMemory([bufferMessage]);
     } catch (error) {
       logger.error('Memory Agent failed to process memory', error);
@@ -912,7 +954,30 @@ class AgentClient extends BaseClient {
         hasDeepSeekAgent(this.options.agent) ||
         (this.agentConfigs != null &&
           Array.from(this.agentConfigs.values()).some(hasDeepSeekAgent));
-      const formatOptions = needsDeepSeekFormat ? { provider: Providers.DEEPSEEK } : undefined;
+      /**
+       * Skills primed fresh this turn — manual ($ popover) and always-apply
+       * (frontmatter). `injectSkillPrimes` (below) splices their SKILL.md
+       * bodies in, so `formatAgentMessages` must NOT also reconstruct the
+       * same names from a historical `skill` tool_call — otherwise the body
+       * lands twice and a prompt-cache marker can pin to the duplicated
+       * synthetic prefix. Names NOT primed this turn still reconstruct from
+       * history, preserving sticky manual re-priming across turns.
+       */
+      const manualSkillPrimes = this.options.agent?.manualSkillPrimes;
+      const alwaysApplySkillPrimes = this.options.agent?.alwaysApplySkillPrimes;
+      const freshSkillPrimeNames = collectFreshSkillPrimeNames({
+        manualSkillPrimes,
+        alwaysApplySkillPrimes,
+      });
+      const formatOptions =
+        needsDeepSeekFormat || freshSkillPrimeNames.size > 0
+          ? {
+              ...(needsDeepSeekFormat ? { provider: Providers.DEEPSEEK } : {}),
+              ...(freshSkillPrimeNames.size > 0
+                ? { skipSkillBodyNames: freshSkillPrimeNames }
+                : {}),
+            }
+          : undefined;
       let {
         messages: initialMessages,
         indexTokenCountMap,
@@ -943,9 +1008,11 @@ class AgentClient extends BaseClient {
        * agent and multi-agent runs; how primes interact with handoff /
        * added-convo agents' per-agent state is an agents-SDK concern,
        * not this layer's to gate.
+       *
+       * `manualSkillPrimes` / `alwaysApplySkillPrimes` are resolved above
+       * (used to build `freshSkillPrimeNames` for dedupe against historical
+       * skill reconstruction).
        */
-      const manualSkillPrimes = this.options.agent?.manualSkillPrimes;
-      const alwaysApplySkillPrimes = this.options.agent?.alwaysApplySkillPrimes;
       if (
         (manualSkillPrimes && manualSkillPrimes.length > 0) ||
         (alwaysApplySkillPrimes && alwaysApplySkillPrimes.length > 0)
