@@ -395,6 +395,17 @@ export const callTool = <T extends m.ToolId>({
   );
 };
 
+export const callArtifactTool = (
+  params: m.ArtifactToolCallParams,
+): Promise<m.ArtifactToolCallResponse> => {
+  return request.post(
+    endpoints.agents({
+      path: 'tools/mcp/call',
+    }),
+    params,
+  );
+};
+
 export const getToolCalls = (params: q.GetToolCallParams): Promise<q.ToolCallResults> => {
   return request.get(
     endpoints.agents({

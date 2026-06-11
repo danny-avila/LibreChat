@@ -1,18 +1,3 @@
-import * as types from '../types';
-import * as r from '../roles';
-import * as p from '../permissions';
-import {
-  Tools,
-  Assistant,
-  AssistantCreateParams,
-  AssistantUpdateParams,
-  FunctionTool,
-  AssistantDocument,
-  Agent,
-  AgentCreateParams,
-  AgentUpdateParams,
-} from './assistants';
-import { Action, ActionMetadata } from './agents';
 import type { InfiniteData, QueryKey } from '@tanstack/react-query';
 import type {
   TSkill,
@@ -26,6 +11,21 @@ import type {
   TDeleteSkillFileResponse,
   TSkillListResponse,
 } from './skills';
+import {
+  Tools,
+  Assistant,
+  AssistantCreateParams,
+  AssistantUpdateParams,
+  FunctionTool,
+  AssistantDocument,
+  Agent,
+  AgentCreateParams,
+  AgentUpdateParams,
+} from './assistants';
+import { Action, ActionMetadata } from './agents';
+import * as p from '../permissions';
+import * as types from '../types';
+import * as r from '../roles';
 
 export type MutationOptions<
   Response,
@@ -452,6 +452,24 @@ export type ToolCallResponse = { result: unknown; attachments?: types.TAttachmen
 export type ToolCallMutationOptions<T extends ToolId> = MutationOptions<
   ToolCallResponse,
   ToolParams<T>
+>;
+
+/** A single MCP tool call dispatched from a live artifact's bridge. */
+export type ArtifactToolCallParams = {
+  /** LibreChat MCP tool key, e.g. `list_prs_mcp_github`. */
+  tool: string;
+  /** Artifact source file; its `metadata.mcpTools` allowlist authorizes the call. */
+  file_id: string;
+  messageId?: string;
+  conversationId?: string;
+  partIndex?: number;
+  blockIndex?: number;
+  args?: Record<string, unknown>;
+};
+export type ArtifactToolCallResponse = { result: unknown; artifact?: unknown };
+export type ArtifactToolCallMutationOptions = MutationOptions<
+  ArtifactToolCallResponse,
+  ArtifactToolCallParams
 >;
 
 export type TDeleteSharedLinkResponse = {

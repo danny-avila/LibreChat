@@ -835,6 +835,8 @@ export function fileToArtifact(
         | 'type'
         | 'text'
         | 'textFormat'
+        | 'metadata'
+        | 'conversationId'
         | 'updatedAt'
         | 'createdAt'
       >
@@ -887,6 +889,11 @@ export function fileToArtifact(
     // placeholder, matching "no extraction has run yet."
     content: attachment.text ?? options?.placeholder ?? '',
     language,
+    fileId: attachment.file_id,
+    conversationId: attachment.conversationId ?? undefined,
+    // Live-artifact allowlist: present only for HTML files whose author
+    // declared callable MCP tools. Drives `isLiveArtifact` detection.
+    tools: attachment.metadata?.mcpTools,
     messageId: attachment.messageId ?? undefined,
     lastUpdateTime: toLastUpdate(attachment),
   };

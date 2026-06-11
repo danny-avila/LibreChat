@@ -15,17 +15,18 @@ import type { StructuredToolInterface } from '@librechat/agents/langchain/tools'
 import type { CodeEnvRef } from 'librechat-data-provider';
 import type { SkillFileRecord } from './skillFiles';
 import type { ServerRequest } from '~/types';
-import { logAxiosError, runOutsideTracing } from '~/utils';
-import { buildSkillPrimeMessage } from './skills';
-import { cleanCodeToolOutput } from './cleanup';
-import { primeSkillFiles } from './skillFiles';
 import {
   CREATE_FILE_TOOL_NAME,
   EDIT_FILE_TOOL_NAME,
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
   isCodeSessionToolName,
 } from './tools';
+import { logAxiosError, runOutsideTracing } from '~/utils';
+import { sanitizeMcpToolList } from '../artifacts/tools';
 import { parseFrontmatter } from '../skills/import';
+import { buildSkillPrimeMessage } from './skills';
+import { cleanCodeToolOutput } from './cleanup';
+import { primeSkillFiles } from './skillFiles';
 
 export interface ToolEndCallbackData {
   output: {
@@ -1456,6 +1457,37 @@ async function loadSandboxTextForAuthoring({
   }
 }
 
+/** True for paths the live-artifact renderer treats as HTML. */
+function isHtmlAuthoringPath(filePath: string): boolean {
+  return /\.html?$/i.test(filePath);
+}
+
+/**
+ * Keep only the tools the agent's own resolved registry exposes, so a
+ * model-authored page can't self-allow a tool outside the agent's configured
+ * subset. Fail closed: no registry → no allowlist (the agent has no MCP tools
+ * to grant in the first place).
+ */
+function filterToAgentMcpTools(
+  tools: string[],
+  mergedConfigurable: Record<string, unknown>,
+): string[] {
+  if (tools.length === 0) {
+    return tools;
+  }
+  const registry = mergedConfigurable?.toolRegistry as LCToolRegistry | undefined;
+  if (!registry || typeof registry.values !== 'function') {
+    return [];
+  }
+  const available = new Set<string>();
+  for (const tool of registry.values()) {
+    if (tool?.name) {
+      available.add(tool.name);
+    }
+  }
+  return tools.filter((tool) => available.has(tool));
+}
+
 async function writeSandboxTextForAuthoring({
   tc,
   options,
@@ -1464,6 +1496,7 @@ async function writeSandboxTextForAuthoring({
   content,
   oldContent,
   created,
+  mcpTools,
   sandboxContext,
 }: {
   tc: ToolCallRequest;
@@ -1473,6 +1506,7 @@ async function writeSandboxTextForAuthoring({
   content: string;
   oldContent?: string;
   created: boolean;
+  mcpTools?: string[];
   sandboxContext?: SandboxSessionContext;
 }): AuthoringResult {
   if (!options.writeSandboxFile) {
@@ -1513,6 +1547,7 @@ async function writeSandboxTextForAuthoring({
     bytes_written: Buffer.byteLength(content, 'utf8'),
     created,
     ...(diff ? { diff } : {}),
+    ...(Array.isArray(mcpTools) ? { mcp_tools: mcpTools } : {}),
     ...(writeResult.session_id ? { session_id: writeResult.session_id } : {}),
     ...(writeResult.files ? { files: writeResult.files } : {}),
   });
@@ -2156,6 +2191,7 @@ async function handleSandboxCreateFileCall({
   filePath,
   content,
   overwrite,
+  mcpTools,
   sandboxContext,
 }: {
   tc: ToolCallRequest;
@@ -2164,6 +2200,7 @@ async function handleSandboxCreateFileCall({
   filePath: string;
   content: string;
   overwrite: boolean;
+  mcpTools?: string[];
   sandboxContext?: SandboxSessionContext;
 }): AuthoringResult {
   const pathError = invalidSandboxAuthoringPath(filePath);
@@ -2193,6 +2230,7 @@ async function handleSandboxCreateFileCall({
     content,
     oldContent: current.status === 'loaded' ? current.content : undefined,
     created: current.status === 'missing',
+    mcpTools,
     sandboxContext,
   });
 }
@@ -2270,7 +2308,12 @@ async function handleCreateFileCall(
   sourceConfigurable?: Record<string, unknown>,
   sandboxContext?: SandboxSessionContext,
 ): AuthoringResult {
-  const args = tc.args as { file_path?: unknown; content?: unknown; overwrite?: unknown };
+  const args = tc.args as {
+    file_path?: unknown;
+    content?: unknown;
+    overwrite?: unknown;
+    mcp_tools?: unknown;
+  };
   if (typeof args.file_path !== 'string' || args.file_path.length === 0) {
     return errorResult(tc, 'file_path is required');
   }
@@ -2282,6 +2325,13 @@ async function handleCreateFileCall(
   }
 
   const overwrite = args.overwrite === true;
+  /** Live-artifact allowlist: HTML files only; well-formed keys the agent
+   * actually exposes (so a page can't self-allow a tool outside its subset).
+   * An array (incl. empty) is authoritative for HTML create_file — empty
+   * revokes; `undefined` (non-HTML / edit_file) means "preserve existing". */
+  const mcpTools = isHtmlAuthoringPath(args.file_path)
+    ? filterToAgentMcpTools(sanitizeMcpToolList(args.mcp_tools), mergedConfigurable)
+    : undefined;
   if (!args.file_path.startsWith(SKILL_FILE_PREFIX)) {
     if (mergedConfigurable?.codeEnvAvailable !== true) {
       return errorResult(
@@ -2296,6 +2346,7 @@ async function handleCreateFileCall(
       filePath: args.file_path,
       content: args.content,
       overwrite,
+      mcpTools,
       sandboxContext,
     });
   }

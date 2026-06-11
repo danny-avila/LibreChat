@@ -1,14 +1,26 @@
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
-const { checkAccess, loadWebSearchAuth } = require('@librechat/api');
+const {
+  checkAccess,
+  loadWebSearchAuth,
+  normalizeServerName,
+  authorizeArtifactToolCall,
+} = require('@librechat/api');
 const {
   Tools,
   AuthType,
+  Constants,
   Permissions,
   ToolCallTypes,
   PermissionTypes,
 } = require('librechat-data-provider');
-const { getRoleByName, createToolCall, getToolCallsByConvo, getMessage } = require('~/models');
+const {
+  getFiles,
+  getMessage,
+  getRoleByName,
+  createToolCall,
+  getToolCallsByConvo,
+} = require('~/models');
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
 const { getRetentionExpiry } = require('~/server/services/Files/retention');
 const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
@@ -241,6 +253,205 @@ const callTool = async (req, res) => {
   }
 };
 
+/**
+ * No-op response used as the captured `res` for live-artifact MCP tool
+ * instances. The bridge is a non-streaming JSON endpoint, so the OAuth/SSE
+ * emitters inside the tool must never write to the real response. We pre-check
+ * the connection and reject when a server isn't connected, so this stub is only
+ * a defense-in-depth guard against the interactive OAuth path.
+ */
+const createNoopEventSink = () => ({
+  headersSent: true,
+  write: () => true,
+  end: () => {},
+  flush: () => {},
+  on: () => {},
+});
+
+/**
+ * Dispatch a single MCP tool call originating from a live artifact's bridge.
+ *
+ * The artifact's permitted tools are stored on its file record at authoring time
+ * (`file.metadata.mcpTools`). That server-stored allowlist is re-validated here,
+ * so a tampered client cannot call tools the artifact never declared. Tools run
+ * with the user's live MCP credentials.
+ *
+ * @param {ServerRequest} req
+ * @param {ServerResponse} res
+ * @returns {Promise<void>}
+ */
+const callArtifactTool = async (req, res) => {
+  try {
+    /* Lazy-require: `~/server/services/MCP` pulls a heavy auth chain
+     * (Graph/OBO/openid) at load time. Requiring it here keeps the rest of
+     * this controller (and its tests) loadable without that chain. */
+    const {
+      createMCPTool,
+      getMCPSetupData,
+      userCanUseMCPServers,
+      getServerConnectionStatus,
+      createMCPPermissionContext,
+    } = require('~/server/services/MCP');
+    const { getUserPluginAuthValue } = require('~/server/services/PluginService');
+    const { getMCPManager } = require('~/config');
+    const { Providers } = require('@librechat/agents');
+
+    const { tool, file_id: fileId, messageId, conversationId, partIndex, blockIndex } = req.body;
+    const rawArgs = req.body.args;
+    const args = rawArgs && typeof rawArgs === 'object' && !Array.isArray(rawArgs) ? rawArgs : {};
+
+    if (typeof tool !== 'string' || !tool || typeof fileId !== 'string' || !fileId) {
+      res.status(400).json({ message: 'tool and file_id are required' });
+      return;
+    }
+
+    const [file] = await getFiles({ file_id: fileId, user: req.user.id });
+    if (!file) {
+      res.status(404).json({ message: 'Artifact file not found' });
+      return;
+    }
+
+    const authorization = authorizeArtifactToolCall(file.metadata?.mcpTools, tool);
+    if (!authorization.allowed) {
+      if (authorization.reason === 'not_mcp') {
+        res.status(400).json({ message: 'Only MCP tools are callable from artifacts' });
+        return;
+      }
+      logger.warn(
+        `[artifact/tool] User ${req.user.id} attempted tool "${tool}" not in file "${fileId}" allowlist`,
+      );
+      res.status(403).json({ message: 'Tool not permitted for this artifact' });
+      return;
+    }
+    const { serverName: normalizedServerName, toolName } = authorization;
+
+    const hasAccess = await userCanUseMCPServers(req.user, req);
+    if (!hasAccess) {
+      logger.warn(`[artifact/tool] Forbidden: User ${req.user.id} lacks MCP server permissions`);
+      res.status(403).json({ message: 'Forbidden: Insufficient MCP server permissions' });
+      return;
+    }
+
+    const { mcpConfig, appConnections, userConnections, oauthServers } = await getMCPSetupData(
+      req.user.id,
+      { role: req.user.role, tenantId: req.user.tenantId },
+    );
+    /* Tool keys expose a NORMALIZED server name; `mcpConfig` is keyed by the raw
+     * configured name. Resolve back to the raw name so lookup/connection/tool
+     * resolution all use the same key the normal agent path uses. */
+    const rawServerName = mcpConfig[normalizedServerName]
+      ? normalizedServerName
+      : Object.keys(mcpConfig).find((name) => normalizeServerName(name) === normalizedServerName);
+    const serverConfig = rawServerName ? mcpConfig[rawServerName] : undefined;
+    if (!serverConfig) {
+      res.status(404).json({ message: `MCP server "${normalizedServerName}" not found` });
+      return;
+    }
+
+    const { connectionState, requiresOAuth } = await getServerConnectionStatus(
+      req.user.id,
+      rawServerName,
+      serverConfig,
+      appConnections,
+      userConnections,
+      oauthServers,
+    );
+    if (connectionState !== 'connected') {
+      res.status(409).json({
+        message: `MCP server "${rawServerName}" is not connected`,
+        serverName: rawServerName,
+        connectionState,
+        requiresOAuth,
+      });
+      return;
+    }
+
+    /* Resolve the user's per-server custom variables (API keys, etc.) the same
+     * way the normal agent path does, so servers that template `{{USER_VAR}}`
+     * aren't invoked without the user's configured values. */
+    const pluginKey = `${Constants.mcp_prefix}${rawServerName}`;
+    const customUserVars = {};
+    if (serverConfig.customUserVars && typeof serverConfig.customUserVars === 'object') {
+      for (const varName of Object.keys(serverConfig.customUserVars)) {
+        const value = await getUserPluginAuthValue(req.user.id, varName, false, pluginKey).catch(
+          () => null,
+        );
+        if (value) {
+          customUserVars[varName] = value;
+        }
+      }
+    }
+    const userMCPAuthMap =
+      Object.keys(customUserVars).length > 0 ? { [pluginKey]: customUserVars } : undefined;
+
+    /* Reuse the connected server's cached tool definitions so createMCPTool
+     * doesn't reconnect on every bridge call (the reconnect path is throttled
+     * per user/server and would otherwise return an unavailable stub). */
+    const availableTools = await getMCPManager(req.user.id).getServerToolFunctions(
+      req.user.id,
+      rawServerName,
+    );
+
+    const toolInstance = await createMCPTool({
+      res: createNoopEventSink(),
+      user: req.user,
+      // Rebuild the tool key with the RAW server name so createMCPTool resolves
+      // the connection/definition the same way the agent path does.
+      toolKey: `${toolName}${Constants.mcp_delimiter}${rawServerName}`,
+      config: serverConfig,
+      userMCPAuthMap,
+      availableTools,
+      // A recognized provider so content_and_artifact results format with their
+      // artifact (images/UI resources) instead of plain-string-only.
+      provider: Providers.OPENAI,
+      mcpPermissionContext: createMCPPermissionContext(req),
+    });
+    if (!toolInstance) {
+      res.status(404).json({ message: 'Tool unavailable' });
+      return;
+    }
+
+    const toolCallId = `${req.user.id}_${nanoid()}`;
+    const result = await toolInstance.invoke(
+      { name: tool, args, id: toolCallId, type: ToolCallTypes.TOOL_CALL },
+      {
+        signal: req.abortController?.signal,
+        /* Stable flow identifiers so any OAuth path derives a unique flowId
+         * instead of `${serverName}:oauth_login:undefined:undefined`. */
+        metadata: { thread_id: conversationId ?? `artifact:${fileId}`, run_id: toolCallId },
+        configurable: {
+          user: req.user,
+          requestBody: { conversationId, messageId },
+          userMCPAuthMap,
+        },
+      },
+    );
+
+    const { content, artifact } = result ?? {};
+    /* Record only with both ids — the ToolCall schema requires conversationId,
+     * so persisting with messageId alone would hit the validation error path. */
+    if (messageId && conversationId) {
+      createToolCall({
+        toolId: tool,
+        messageId,
+        partIndex,
+        blockIndex,
+        conversationId,
+        result: content,
+        user: req.user.id,
+        ...(await getRetentionExpiry(req)),
+      }).catch((error) => {
+        logger.error(`[artifact/tool] Error recording tool call: ${error.message}`);
+      });
+    }
+
+    res.status(200).json({ result: content, artifact });
+  } catch (error) {
+    logger.error('[artifact/tool] Error calling artifact tool', error);
+    res.status(500).json({ message: 'Error calling tool' });
+  }
+};
+
 const getToolCalls = async (req, res) => {
   try {
     const { conversationId } = req.query;
@@ -256,4 +467,5 @@ module.exports = {
   callTool,
   getToolCalls,
   verifyToolAuth,
+  callArtifactTool,
 };

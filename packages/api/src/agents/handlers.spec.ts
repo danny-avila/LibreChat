@@ -1972,6 +1972,11 @@ describe('createToolExecuteHandler', () => {
           accessibleSkillIds: [],
           skillAuthoringAvailable: false,
           fileAuthoringToolNames: new Set(['create_file', 'edit_file']),
+          // Agent's resolved tools — the authoring-time allowlist is filtered to these.
+          toolRegistry: new Map([
+            ['list_prs_mcp_github', { name: 'list_prs_mcp_github' }],
+            ['send_msg_mcp_slack', { name: 'send_msg_mcp_slack' }],
+          ]),
         },
       }));
       return createToolExecuteHandler({
@@ -2024,6 +2029,91 @@ describe('createToolExecuteHandler', () => {
         files: [{ id: 'f1', name: 'input.csv', session_id: 'sess-prev' }],
         req,
       });
+    });
+
+    it('attaches sanitized mcp_tools to the artifact for an HTML file', async () => {
+      const readSandboxFile = jest.fn(async () => {
+        throw new Error('cat: /mnt/data/dash.html: No such file or directory');
+      });
+      const writeSandboxFile = jest.fn(async () => ({
+        stdout: 'WROTE 11 bytes to /mnt/data/dash.html\n',
+        session_id: 'sess-h',
+        files: [{ id: 'file-h', name: 'dash.html', storage_session_id: 'sess-h' }],
+      }));
+      const handler = makeSandboxAuthoringHandler({ readSandboxFile, writeSandboxFile });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_create_html',
+          name: 'create_file',
+          args: {
+            file_path: '/mnt/data/dash.html',
+            content: '<h1>hi</h1>',
+            mcp_tools: ['list_prs_mcp_github', 'not-an-mcp-tool', 'send_msg_mcp_slack'],
+          },
+        } as unknown as ToolCallRequest,
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(result.artifact).toMatchObject({
+        path: '/mnt/data/dash.html',
+        mcp_tools: ['list_prs_mcp_github', 'send_msg_mcp_slack'],
+      });
+    });
+
+    it('drops declared mcp_tools the agent does not expose', async () => {
+      const readSandboxFile = jest.fn(async () => {
+        throw new Error('cat: /mnt/data/dash.html: No such file or directory');
+      });
+      const writeSandboxFile = jest.fn(async () => ({
+        stdout: 'WROTE 11 bytes to /mnt/data/dash.html\n',
+        session_id: 'sess-h',
+        files: [{ id: 'file-h', name: 'dash.html', storage_session_id: 'sess-h' }],
+      }));
+      const handler = makeSandboxAuthoringHandler({ readSandboxFile, writeSandboxFile });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_create_escalate',
+          name: 'create_file',
+          args: {
+            file_path: '/mnt/data/dash.html',
+            content: '<h1>hi</h1>',
+            // delete_repo_mcp_github is not in the agent's toolRegistry → dropped.
+            mcp_tools: ['list_prs_mcp_github', 'delete_repo_mcp_github'],
+          },
+        } as unknown as ToolCallRequest,
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(result.artifact).toMatchObject({ mcp_tools: ['list_prs_mcp_github'] });
+    });
+
+    it('ignores mcp_tools for a non-HTML file', async () => {
+      const readSandboxFile = jest.fn(async () => {
+        throw new Error('cat: /mnt/data/data.txt: No such file or directory');
+      });
+      const writeSandboxFile = jest.fn(async () => ({
+        stdout: 'WROTE 5 bytes to /mnt/data/data.txt\n',
+        session_id: 'sess-t',
+        files: [{ id: 'file-t', name: 'data.txt', storage_session_id: 'sess-t' }],
+      }));
+      const handler = makeSandboxAuthoringHandler({ readSandboxFile, writeSandboxFile });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_create_txt',
+          name: 'create_file',
+          args: {
+            file_path: '/mnt/data/data.txt',
+            content: 'plain',
+            mcp_tools: ['list_prs_mcp_github'],
+          },
+        } as unknown as ToolCallRequest,
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(result.artifact).not.toHaveProperty('mcp_tools');
     });
 
     it('refuses to overwrite an existing sandbox file without overwrite: true', async () => {

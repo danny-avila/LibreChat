@@ -14,6 +14,12 @@ export interface Artifact {
   content?: string;
   title?: string;
   type?: string;
+  /** Source file id for file-based artifacts; the live-artifact bridge key. */
+  fileId?: string;
+  /** Conversation the source file belongs to; recorded with live tool calls. */
+  conversationId?: string;
+  /** MCP tool keys a live HTML artifact may call (from `file.metadata.mcpTools`). */
+  tools?: string[];
 }
 
 export type ArtifactFiles =

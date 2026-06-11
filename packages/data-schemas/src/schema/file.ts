@@ -135,6 +135,13 @@ const file: Schema<IMongoFile> = new Schema(
         ),
         default: undefined,
       },
+      /* MCP tool keys (`<tool>_mcp_<server>`) a live HTML artifact is permitted
+       * to call from its sandboxed iframe. Server-stored allowlist — the bridge
+       * re-validates each call against this, so a tampered client cannot widen it. */
+      mcpTools: {
+        type: [String],
+        default: undefined,
+      },
     },
     expiresAt: {
       /* Short-lived upload TTL managed by MongoDB. This is separate from
