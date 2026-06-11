@@ -59,4 +59,5 @@ export interface IConversation extends Document {
   createdAt?: Date;
   updatedAt?: Date;
   tenantId?: string;
+  customVariables?: Record<string, string>;
 }
