@@ -3151,6 +3151,24 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
   return {
     handle: async (_event: string, data: ToolExecuteBatchRequest) => {
       const { toolCalls, agentId, configurable, metadata, resolve, reject } = data;
+      /** Optional per-call channel (agents SDK > 3.2.33); cast keeps older
+       * installed SDK typings compiling until the release lands. */
+      const onResult = (
+        data as ToolExecuteBatchRequest & {
+          onResult?: (result: ToolExecuteResult) => void;
+        }
+      ).onResult;
+      /** Reports a settled result so the agent graph can emit that call's
+       * completion immediately instead of waiting for the whole batch;
+       * `resolve` below remains the authoritative batch outcome. */
+      const reportResult = (result: ToolExecuteResult): ToolExecuteResult => {
+        try {
+          onResult?.(result);
+        } catch (callbackError) {
+          logger.warn('[ON_TOOL_EXECUTE] onResult callback error:', callbackError);
+        }
+        return result;
+      };
 
       try {
         await runOutsideTracing(async () => {
@@ -3455,7 +3473,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
 
                 const queueKey = getFileAuthoringQueueKey(tc, mergedConfigurable);
                 if (!queueKey) {
-                  return await execute();
+                  return reportResult(await execute());
                 }
                 let sandboxContext: SandboxSessionContext | undefined;
                 if (queueKey.startsWith('sandbox:')) {
@@ -3476,7 +3494,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     () => undefined,
                   ),
                 );
-                return await resultPromise;
+                return reportResult(await resultPromise);
               }),
             );
 
