@@ -203,6 +203,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
         toolNames,
         agent: ctx.agent,
         toolRegistry: ctx.toolRegistry,
+        mcpAvailableTools: ctx.mcpAvailableTools,
         userMCPAuthMap: ctx.userMCPAuthMap,
         tool_resources: ctx.tool_resources,
         actionsEnabled: ctx.actionsEnabled,
