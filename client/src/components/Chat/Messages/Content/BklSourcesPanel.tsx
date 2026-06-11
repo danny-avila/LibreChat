@@ -346,7 +346,6 @@ export default function BklSourcesPanel() {
         </div>
         <div className="flex items-center gap-1">
           <ExternalSystemButtons source={current} />
-          <OriginalSourceButton source={current} />
           <Button size="icon" variant="ghost" onClick={onClose} aria-label="닫기">
             <X size={16} aria-hidden="true" />
           </Button>
@@ -370,151 +369,15 @@ export default function BklSourcesPanel() {
   );
 }
 
-/**
- * Resolve the URL to open when the user clicks "원본 보기" in the panel
- * header. The retrieval payload may carry one of two shapes:
- *
- *   1. An MSG-attachment chunk: `viewer_url` is pre-populated by the
- *      indexer with `/v1/attachments/{sha256}.pdf` — that PDF is the
- *      attachment converted from the original .docx/.xlsx/etc., served
- *      directly from `attachments-static`. We open it as-is.
- *   2. Anything else (.msg itself, standalone .pdf/.docx/.hwp uploads,
- *      or pre-PR-B legacy chunks where the indexer didn't stamp a
- *      viewer_url): we fall back to `/v1/source-files/{doc_id}`, which
- *      proxies through the corpus-static origin to the original file.
- *      For .msg this returns a server-rendered HTML viewer
- *      (subject/body/attachments) instead of raw OLE garbage.
- *
- *      Note: this is `/v1/source-files/` (not `/v1/sources/`). The
- *      latter is owned by `generate.py` for the chat sources cache —
- *      see src/api/routes/source_viewer.py for the rename rationale.
- *
- * The base nginx in front of bkl-api routes both `/v1/attachments/*`
- * and `/v1/source-files/*` straight to the FastAPI service, so neither
- * URL needs the LibreChat `/bkl/` prefix.
- *
- * Returns null when neither source is available so the button stays
- * hidden rather than rendering a dead link.
- */
-/**
- * Build the chunk-excerpt that we forward to the .msg viewer as
- * `?highlight=...`. The backend uses it to scroll-into-view + flash
- * the matching passage so the user lands directly on the cited
- * sentence instead of having to re-read the whole email.
- *
- * Trade-offs:
- *  - We strip the leading `[본문] / [첨부 N/M · file]` marker (same
- *    rule the panel body uses) so the needle starts on real prose.
- *  - We collapse runs of whitespace to single spaces — the rendered
- *    .msg body keeps Outlook's literal `\n` paragraph breaks, but
- *    the chunker normalises whitespace, so an exact substring would
- *    almost never hit. The viewer's regex uses `\s+` to bridge the
- *    gap; we keep the prefix short here so the URL stays reasonable.
- *  - 200 chars is the sweet spot empirically: short enough to fit
- *    well under any browser/proxy URL limit (the result, after
- *    percent-encoding Korean chars, is ~600 bytes), long enough to
- *    pin the right paragraph even on chunk boundaries that share
- *    a common opening phrase ("안녕하세요" etc.).
- */
-const _HIGHLIGHT_MAX = 200;
-function buildHighlightExcerpt(source: BklSource | null): string | null {
-  if (!source) return null;
-  const raw = source.document?.[0] ?? '';
-  if (!raw) return null;
-  const stripped = stripLeadingSegmentMarker(raw).replace(/\s+/g, ' ').trim();
-  if (stripped.length < 4) return null;
-  return stripped.substring(0, _HIGHLIGHT_MAX);
-}
-
-function resolveOriginalSourceUrl(source: BklSource | null): string | null {
-  if (!source) return null;
-  const meta = source.metadata?.[0];
-  if (!meta) return null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const m = meta as any;
-  if (typeof m.viewer_url === 'string' && m.viewer_url.length > 0) {
-    // Body chunks carry `viewer_url=/v1/attachments/{sha}.msg` (raw bytes
-    // for download). The citation panel must open the HTML viewer instead
-    // (`/v1/source-files/{doc_id}?highlight=…`) — otherwise the browser
-    // downloads the .msg (attachments route uses Content-Disposition:
-    // attachment for .msg). Embedded-.msg *attachment* chunks still use
-    // the download URL when `section_kind === 'attachment'`.
-    const vu = m.viewer_url as string;
-    const isAttachment = m.section_kind === 'attachment';
-    const looksLikeMsgBytes =
-      vu.endsWith('.msg') || (vu.includes('/v1/attachments/') && vu.includes('.msg'));
-    if (looksLikeMsgBytes && !isAttachment) {
-      /* fall through to doc_id + highlight below */
-    } else {
-      // Attachment PDFs go straight to attachments-static — Chrome's
-      // built-in PDF viewer doesn't support deep-linking to a phrase
-      // via fragment, so we don't append `highlight=` here.
-      return vu;
-    }
-  }
-  // 2026-04-27: when the chunk is an MSG attachment but the indexer
-  // could not produce a preview PDF (Synapse failed on the source
-  // .docx, the attachment was a `.bin` blob, etc.) we used to fall
-  // through to `/v1/source-files/{doc_id}` — but `doc_id` for an
-  // attachment chunk is the parent MSG's id, so the user clicked
-  // "원본 보기" on a Word attachment chunk and got the parent email
-  // viewer instead of the attachment. Hide the button rather than
-  // ship that misdirection.
-  if (m.section_kind === 'attachment') {
-    return null;
-  }
-  // Safety net: legacy / mis-indexed rows where `section_kind` was never
-  // stamped but `attachment_filename` was — opening `doc_id` would still
-  // be the parent `.msg` HTML viewer (wrong for attachment prose).
-  if (
-    typeof m.attachment_filename === 'string' &&
-    m.attachment_filename.length > 0 &&
-    !(typeof m.viewer_url === 'string' && m.viewer_url.length > 0)
-  ) {
-    return null;
-  }
-  if (typeof m.doc_id === 'string' && m.doc_id.length > 0) {
-    let url = `/v1/source-files/${encodeURIComponent(m.doc_id)}`;
-    const excerpt = buildHighlightExcerpt(source);
-    if (excerpt) {
-      url += `?highlight=${encodeURIComponent(excerpt)}`;
-    }
-    return url;
-  }
-  return null;
-}
-
-function OriginalSourceButton({ source }: { source: BklSource | null }) {
-  const url = resolveOriginalSourceUrl(source);
-  if (!url) return null;
-  return (
-    <a
-      href={url}
-      target="_blank"
-      rel="noopener noreferrer"
-      title="원본 보기"
-      aria-label="원본 보기"
-      className={cn(
-        'inline-flex h-8 w-8 items-center justify-center rounded-md',
-        'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
-        'focus-visible:outline-none focus-visible:ring-2',
-        'focus-visible:ring-border-medium',
-      )}
-    >
-      <ExternalLink size={16} aria-hidden="true" />
-    </a>
-  );
-}
-
 function ExternalSystemButtons({ source }: { source: BklSource | null }) {
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [folderUrl, setFolderUrl] = useState<string | null>(null);
-  const [bimsUrl, setBimsUrl] = useState<string | null>(null);
+  const [isLoadingFolder, setIsLoadingFolder] = useState(false);
 
   useEffect(() => {
     setFileUrl(null);
     setFolderUrl(null);
-    setBimsUrl(null);
+    setIsLoadingFolder(false);
     if (!source) return;
     const meta = source.metadata?.[0] as Record<string, unknown> | undefined;
     const directFile =
@@ -525,15 +388,13 @@ function ExternalSystemButtons({ source }: { source: BklSource | null }) {
     const directFolder =
       source.source?.imanage_folder_url ??
       (typeof meta?.imanage_folder_url === 'string' ? (meta.imanage_folder_url as string) : null);
-    const directBims =
-      source.source?.bims_url ?? (typeof meta?.bims_url === 'string' ? (meta.bims_url as string) : null);
     setFileUrl(directFile);
     setFolderUrl(directFolder);
-    setBimsUrl(directBims);
 
     const docId = typeof meta?.doc_id === 'string' && meta.doc_id ? (meta.doc_id as string) : null;
     if (!docId || directFolder) return;
     let cancelled = false;
+    setIsLoadingFolder(true);
     fetch(`/bkl/v1/imanage-links/${encodeURIComponent(docId)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
@@ -541,20 +402,29 @@ function ExternalSystemButtons({ source }: { source: BklSource | null }) {
         const nextFile = data.imanage_url ?? data.imanage_preview_url ?? null;
         if (nextFile) setFileUrl(nextFile);
         if (data.imanage_folder_url) setFolderUrl(data.imanage_folder_url);
-        if (data.bims_url) setBimsUrl(data.bims_url);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setIsLoadingFolder(false);
+      });
     return () => {
       cancelled = true;
     };
   }, [source]);
 
-  if (!fileUrl && !folderUrl && !bimsUrl) return null;
+  if (!fileUrl && !folderUrl && !isLoadingFolder) return null;
   return (
     <>
-      {fileUrl && <PanelExternalLink href={fileUrl} label="iM 파일" />}
-      {folderUrl && <PanelExternalLink href={folderUrl} label="iM 폴더" />}
-      {bimsUrl && <PanelPopupLink href={bimsUrl} label="BIMS" popupName="bims_popup" />}
+      {fileUrl ? (
+        <PanelExternalLink href={fileUrl} label="iM 파일" />
+      ) : (
+        <PanelDisabledLink label="iM 파일" />
+      )}
+      {folderUrl ? (
+        <PanelExternalLink href={folderUrl} label="iM 폴더" />
+      ) : (
+        <PanelDisabledLink label={isLoadingFolder ? 'iM 폴더 확인 중' : 'iM 폴더'} />
+      )}
     </>
   );
 }
@@ -580,24 +450,16 @@ function PanelExternalLink({ href, label }: { href: string; label: string }) {
   );
 }
 
-function PanelPopupLink({ href, label, popupName }: { href: string; label: string; popupName: string }) {
+function PanelDisabledLink({ label }: { label: string }) {
   return (
     <button
       type="button"
-      title={label}
       aria-label={label}
-      onClick={() => {
-        window.open(
-          href,
-          popupName,
-          'width=1000,height=800,menubar=no,toolbar=no,location=yes,status=no,scrollbars=yes,resizable=yes',
-        );
-      }}
+      title={label}
+      disabled
       className={cn(
-        'inline-flex h-8 items-center gap-1 rounded-md px-2',
-        'text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary',
-        'focus-visible:outline-none focus-visible:ring-2',
-        'focus-visible:ring-border-medium',
+        'inline-flex h-8 cursor-not-allowed items-center gap-1 rounded-md px-2',
+        'text-xs text-text-tertiary opacity-70',
       )}
     >
       <ExternalLink size={14} aria-hidden="true" />

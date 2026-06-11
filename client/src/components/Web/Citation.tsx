@@ -11,7 +11,6 @@ import store from '~/store';
 type BklImanageLinks = {
   imanageUrl: string | null;
   imanageFolderUrl: string | null;
-  bimsUrl: string | null;
 };
 
 function metadataRecords(source?: Record<string, unknown> | null): Array<Record<string, unknown>> {
@@ -52,15 +51,6 @@ function getImanageFolderUrl(source?: Record<string, unknown> | null): string | 
   return null;
 }
 
-function getBimsUrl(source?: Record<string, unknown> | null): string | null {
-  if (!source) return null;
-  if (typeof source.bims_url === 'string') return source.bims_url;
-  for (const metadata of metadataRecords(source)) {
-    if (typeof metadata.bims_url === 'string') return metadata.bims_url;
-  }
-  return null;
-}
-
 function getDocId(source?: Record<string, unknown> | null): string | null {
   if (!source) return null;
   for (const metadata of metadataRecords(source)) {
@@ -80,7 +70,6 @@ async function fetchBklCitationImanageLinks(docId: string): Promise<BklImanageLi
   return {
     imanageUrl: data.imanage_url ?? data.imanage_preview_url ?? null,
     imanageFolderUrl: data.imanage_folder_url ?? null,
-    bimsUrl: data.bims_url ?? null,
   };
 }
 
@@ -205,7 +194,6 @@ export function Citation(props: CitationComponentProps) {
   });
   const [imanageUrl, setImanageUrl] = useState<string | null>(null);
   const [imanageFolderUrl, setImanageFolderUrl] = useState<string | null>(null);
-  const [bimsUrl, setBimsUrl] = useState<string | null>(null);
 
   // Setup file download hook
   const isFileType = refData?.refType === 'file' && (refData as any)?.fileId;
@@ -264,10 +252,8 @@ export function Citation(props: CitationComponentProps) {
     const source = refData as unknown as Record<string, unknown>;
     const directUrl = getImanageUrl(source);
     const directFolderUrl = getImanageFolderUrl(source);
-    const directBimsUrl = getBimsUrl(source);
     setImanageUrl(directUrl);
     setImanageFolderUrl(directFolderUrl);
-    setBimsUrl(directBimsUrl);
 
     const docId = getDocId(source);
     if (!docId || directFolderUrl) return;
@@ -278,7 +264,6 @@ export function Citation(props: CitationComponentProps) {
         if (cancelled || !links) return;
         if (links.imanageUrl) setImanageUrl(links.imanageUrl);
         if (links.imanageFolderUrl) setImanageFolderUrl(links.imanageFolderUrl);
-        if (links.bimsUrl) setBimsUrl(links.bimsUrl);
       })
       .catch(() => {
         /* iManage link is optional; keep the source hovercard usable. */
@@ -311,7 +296,6 @@ export function Citation(props: CitationComponentProps) {
       isLocalFile={isLocalFile}
       imanageUrl={imanageUrl}
       imanageFolderUrl={imanageFolderUrl}
-      bimsUrl={bimsUrl}
     />
   );
 }

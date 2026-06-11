@@ -63,9 +63,9 @@ export default function NewChat({
           onClick={handleHomeClick}
         >
           <img
-            src="/assets/bkl-logo-rounded.svg"
+            src="/assets/bkl-logo.png"
             alt=""
-            className="size-7 shrink-0 rounded-full bg-white object-contain p-0.5"
+            className="h-7 w-auto shrink-0 object-contain"
           />
           <span className="truncate">BKL DB AI</span>
         </button>

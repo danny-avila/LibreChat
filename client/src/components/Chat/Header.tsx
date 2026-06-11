@@ -72,9 +72,9 @@ function Header() {
                   onClick={handleHomeClick}
                 >
                   <img
-                    src="/assets/bkl-logo-rounded.svg"
+                    src="/assets/bkl-logo.png"
                     alt=""
-                    className="size-5 rounded-full bg-white object-contain p-0.5"
+                    className="h-5 w-auto object-contain"
                   />
                   <span className="hidden sm:inline">BKL DB AI</span>
                 </button>

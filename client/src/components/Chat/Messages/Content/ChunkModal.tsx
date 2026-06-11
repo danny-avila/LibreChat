@@ -62,7 +62,7 @@ function getDocId(source: BklSource | null): string | null {
 
 function withImanageLinks(
   source: BklSource,
-  links: { imanageUrl?: string | null; imanageFolderUrl?: string | null; bimsUrl?: string | null },
+  links: { imanageUrl?: string | null; imanageFolderUrl?: string | null },
 ): BklSource {
   const metadata = source.metadata?.length
     ? [
@@ -72,7 +72,6 @@ function withImanageLinks(
             ? { imanage_url: links.imanageUrl, imanage_preview_url: links.imanageUrl }
             : {}),
           ...(links.imanageFolderUrl ? { imanage_folder_url: links.imanageFolderUrl } : {}),
-          ...(links.bimsUrl ? { bims_url: links.bimsUrl } : {}),
         },
       ]
     : source.metadata;
@@ -84,7 +83,6 @@ function withImanageLinks(
         ? { imanage_url: links.imanageUrl, imanage_preview_url: links.imanageUrl }
         : {}),
       ...(links.imanageFolderUrl ? { imanage_folder_url: links.imanageFolderUrl } : {}),
-      ...(links.bimsUrl ? { bims_url: links.bimsUrl } : {}),
     },
     metadata,
   };
@@ -146,14 +144,13 @@ async function fetchSources(
 
 async function fetchImanageLinksByDocId(
   docId: string,
-): Promise<{ imanageUrl: string | null; imanageFolderUrl: string | null; bimsUrl: string | null } | null> {
+): Promise<{ imanageUrl: string | null; imanageFolderUrl: string | null } | null> {
   const resp = await fetch(`/bkl/v1/imanage-links/${encodeURIComponent(docId)}`);
   if (!resp.ok) return null;
   const data = await resp.json();
   return {
     imanageUrl: data.imanage_url ?? data.imanage_preview_url ?? null,
     imanageFolderUrl: data.imanage_folder_url ?? null,
-    bimsUrl: data.bims_url ?? null,
   };
 }
 
@@ -199,7 +196,7 @@ export default function ChunkModal({
       if (docId && resolvedSource) {
         const links = await fetchImanageLinksByDocId(docId);
         if (cancelled) return;
-        if (links?.imanageUrl || links?.imanageFolderUrl || links?.bimsUrl) {
+        if (links?.imanageUrl || links?.imanageFolderUrl) {
           setResolvedSource(withImanageLinks(resolvedSource, links));
           return;
         }
@@ -225,7 +222,6 @@ export default function ChunkModal({
   const pageInfo = meta?.page_info;
   const relevanceRaw = meta?.relevance;
   const chunkText = activeSource?.document?.[0] ?? '';
-  const sourceUrl = activeSource?.source?.url ?? activeSource?.source?.embed_url;
   const imanageUrl =
     activeSource?.source?.imanage_url ??
     activeSource?.source?.imanage_preview_url ??
@@ -234,9 +230,6 @@ export default function ChunkModal({
   const imanageFolderUrl =
     activeSource?.source?.imanage_folder_url ??
     (typeof meta?.imanage_folder_url === 'string' ? meta.imanage_folder_url : undefined);
-  const bimsUrl =
-    activeSource?.source?.bims_url ??
-    (typeof meta?.bims_url === 'string' ? meta.bims_url : undefined);
 
   // relevance: 0–1이면 *100, 이미 0–100이면 그대로 (100 초과 시 100으로 캡)
   const relevanceDisplay =
@@ -277,18 +270,6 @@ export default function ChunkModal({
               </div>
             </div>
             <div className="ml-3 flex flex-shrink-0 items-center gap-1">
-              {sourceUrl && (
-                <a
-                  href={sourceUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="rounded-md p-1 text-text-secondary hover:bg-surface-secondary hover:text-text-primary"
-                  aria-label="원문 보기"
-                  title="원문 보기"
-                >
-                  <ExternalLink className="size-4" />
-                </a>
-              )}
               {imanageUrl ? (
                 <a
                   href={imanageUrl}
@@ -313,7 +294,7 @@ export default function ChunkModal({
                   iM 파일
                 </button>
               )}
-              {imanageFolderUrl && (
+              {imanageFolderUrl ? (
                 <a
                   href={imanageFolderUrl}
                   target="_blank"
@@ -325,23 +306,16 @@ export default function ChunkModal({
                   <ExternalLink className="size-3.5" />
                   iM 폴더
                 </a>
-              )}
-              {bimsUrl && (
+              ) : (
                 <button
                   type="button"
-                  onClick={() => {
-                    window.open(
-                      bimsUrl,
-                      'bims_popup',
-                      'width=1000,height=800,menubar=no,toolbar=no,location=yes,status=no,scrollbars=yes,resizable=yes',
-                    );
-                  }}
-                  className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs text-text-secondary hover:bg-surface-secondary hover:text-text-primary"
-                  aria-label="BIMS 보기"
-                  title="BIMS 보기"
+                  disabled
+                  className="inline-flex h-7 cursor-not-allowed items-center gap-1 rounded-md px-2 text-xs text-text-tertiary opacity-70"
+                  aria-label="iManage 폴더 없음"
+                  title="iManage 폴더 없음"
                 >
                   <ExternalLink className="size-3.5" />
-                  BIMS
+                  iM 폴더
                 </button>
               )}
               <button
