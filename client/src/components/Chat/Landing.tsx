@@ -1,13 +1,10 @@
-import { useMemo, useCallback, useState, useEffect, useRef } from 'react';
-import { easings } from '@react-spring/web';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
-import { BirthdayIcon, TooltipAnchor, SplitText } from '@librechat/client';
-import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
+import { useAgentsMapContext, useAssistantsMapContext, useChatContext } from '~/Providers';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
-import ConvoIcon from '~/components/Endpoints/ConvoIcon';
-import { useLocalize, useAuthContext } from '~/hooks';
-import { getIconEndpoint, getEntity } from '~/utils';
 import { NewJerseyLanding } from '~/nj/components/NewJerseyLanding';
+import { useAuthContext, useLocalize } from '~/hooks';
+import { getEntity, getIconEndpoint } from '~/utils';
 
 const containerClassName =
   'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white dark:bg-presentation dark:text-white text-black dark:after:shadow-none ';
@@ -137,6 +134,21 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
     typeof startupConfig?.interface?.customWelcome === 'string'
       ? getGreeting()
       : getGreeting() + (user?.name ? ', ' + user.name : '');
+
+  // NJ: We normally fully customize the landing page, but if you're talking to an agent,
+  // we want to make it more obvious what's going on, so we partially revert to normal layout
+  if (isAgent && name) {
+    return (
+      <div
+        className={`flex h-full transform-gpu flex-col items-center justify-center pt-10 transition-all duration-200 ${centerFormOnLanding ? 'max-h-full sm:max-h-0' : 'max-h-full'}`}
+      >
+        <div className="flex flex-col items-center gap-0 p-2 px-2.5 md:max-w-3xl xl:max-w-4xl">
+          <h2 className="mb-3 text-center text-3xl font-bold">{name}</h2>
+          {description && <p className="text-center text-sm text-text-secondary">{description}</p>}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

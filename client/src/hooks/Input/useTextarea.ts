@@ -107,7 +107,10 @@ export default function useTextarea({
           ? getEntityName({ name: entityName, isAgent, localize })
           : getSender(conversation as TEndpointOption);
 
-      return 'What would you like to accomplish today?'; // NJ: Custom prompt placeholder
+      // NJ: Custom prompt placeholder, if not an agent
+      if (!isAgent) {
+        return 'What would you like to accomplish today?';
+      }
 
       return `${localize('com_endpoint_message_new', {
         0: sender ? sender : localize('com_endpoint_ai'),
