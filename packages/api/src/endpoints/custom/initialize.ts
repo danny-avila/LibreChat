@@ -1,4 +1,6 @@
+import { Providers } from '@librechat/agents';
 import {
+  AuthKeys,
   ErrorTypes,
   envVarRegex,
   FetchTokenConfig,
@@ -8,7 +10,9 @@ import type { TEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { BaseInitializeParams, InitializeResultBase, EndpointTokenConfig } from '~/types';
 import { isUserProvided, checkUserKeyExpiry } from '~/utils';
+import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
+import { extractDefaultParams } from '~/endpoints/openai/llm';
 import { getCustomEndpointConfig } from '~/app/config';
 import { fetchModels } from '~/endpoints/models';
 import { validateEndpointURL } from '~/auth';
@@ -45,6 +49,23 @@ function buildCustomOptions(
   }
 
   return customOptions;
+}
+
+function isAnthropicCompatibleBaseURL(baseURL: string): boolean {
+  try {
+    const parsed = new URL(baseURL.replace(/\/+$/, ''));
+    const path = parsed.pathname.replace(/\/+$/, '').toLowerCase();
+    return /(^|\/)anthropic(\/v\d+)?$/.test(path);
+  } catch {
+    return false;
+  }
+}
+
+function applyStreamRate(options: InitializeResultBase, streamRate?: number): InitializeResultBase {
+  if (streamRate) {
+    (options.llmConfig as Record<string, unknown>)._lc_stream_delay = streamRate;
+  }
+  return options;
 }
 
 /**
@@ -198,16 +219,28 @@ export async function initializeCustom({
     ...clientOptions,
   };
 
+  if (isAnthropicCompatibleBaseURL(baseURL)) {
+    const options = getAnthropicLLMConfig(
+      { [AuthKeys.ANTHROPIC_API_KEY]: apiKey },
+      {
+        modelOptions,
+        proxy: PROXY ?? undefined,
+        reverseProxyUrl: baseURL,
+        addParams: endpointConfig.addParams,
+        dropParams: endpointConfig.dropParams,
+        defaultParams: extractDefaultParams(endpointConfig.customParams?.paramDefinitions),
+      },
+    ) as InitializeResultBase;
+    options.provider = Providers.ANTHROPIC;
+    options.endpointTokenConfig = endpointTokenConfig;
+    return applyStreamRate(options, clientOptions.streamRate as number | undefined);
+  }
+
   const options = getOpenAIConfig(apiKey, finalClientOptions, endpoint);
   if (options != null) {
     (options as InitializeResultBase).useLegacyContent = true;
     (options as InitializeResultBase).endpointTokenConfig = endpointTokenConfig;
   }
 
-  const streamRate = clientOptions.streamRate as number | undefined;
-  if (streamRate) {
-    (options.llmConfig as Record<string, unknown>)._lc_stream_delay = streamRate;
-  }
-
-  return options;
+  return applyStreamRate(options, clientOptions.streamRate as number | undefined);
 }

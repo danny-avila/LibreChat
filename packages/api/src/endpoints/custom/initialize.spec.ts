@@ -1,4 +1,5 @@
-import { AuthType, ErrorTypes } from 'librechat-data-provider';
+import { Providers } from '@librechat/agents';
+import { AuthKeys, AuthType, ErrorTypes } from 'librechat-data-provider';
 import type { BaseInitializeParams } from '~/types';
 
 const mockValidateEndpointURL = jest.fn();
@@ -12,6 +13,13 @@ const mockGetOpenAIConfig = jest.fn().mockReturnValue({
 });
 jest.mock('~/endpoints/openai/config', () => ({
   getOpenAIConfig: (...args: unknown[]) => mockGetOpenAIConfig(...args),
+}));
+
+const mockGetAnthropicLLMConfig = jest.fn().mockReturnValue({
+  llmConfig: { model: 'deepseek-v4-flash' },
+});
+jest.mock('~/endpoints/anthropic/llm', () => ({
+  getLLMConfig: (...args: unknown[]) => mockGetAnthropicLLMConfig(...args),
 }));
 
 jest.mock('~/endpoints/models', () => ({
@@ -208,6 +216,38 @@ describe('initializeCustom – SSRF guard wiring', () => {
 
     await expect(initializeCustom(params)).rejects.toThrow('targets a restricted address');
     expect(mockGetOpenAIConfig).not.toHaveBeenCalled();
+  });
+});
+
+describe('initializeCustom – Anthropic-compatible base URL', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('uses the Anthropic provider for a user-provided DeepSeek /anthropic URL', async () => {
+    const params = createParams({
+      apiKey: AuthType.USER_PROVIDED,
+      baseURL: AuthType.USER_PROVIDED,
+      userApiKey: 'sk-user-key',
+      userBaseURL: 'https://api.deepseek.com/anthropic',
+    });
+    params.model_parameters = { model: 'deepseek-v4-flash', temperature: 0.2 };
+
+    const result = await initializeCustom(params);
+
+    expect(mockGetOpenAIConfig).not.toHaveBeenCalled();
+    expect(mockGetAnthropicLLMConfig).toHaveBeenCalledWith(
+      { [AuthKeys.ANTHROPIC_API_KEY]: 'sk-user-key' },
+      expect.objectContaining({
+        reverseProxyUrl: 'https://api.deepseek.com/anthropic',
+        modelOptions: expect.objectContaining({
+          model: 'deepseek-v4-flash',
+          temperature: 0.2,
+          user: 'user-1',
+        }),
+      }),
+    );
+    expect(result.provider).toBe(Providers.ANTHROPIC);
   });
 });
 

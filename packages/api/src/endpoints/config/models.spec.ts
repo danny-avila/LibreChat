@@ -1,4 +1,4 @@
-import { AuthType, EModelEndpoint } from 'librechat-data-provider';
+import { AuthType, EModelEndpoint, openAICompatibleEndpointName } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
 import { createLoadConfigModels } from './models';
 
@@ -105,6 +105,51 @@ describe('createLoadConfigModels – user-provided baseURL header guard', () => 
         headers,
       }),
     );
+  });
+});
+
+describe('createLoadConfigModels – OpenAI-compatible self-service endpoint', () => {
+  const fetchModels = jest.fn().mockResolvedValue(['custom-model']);
+  const validateEndpointURL = jest.fn().mockResolvedValue(undefined);
+
+  beforeEach(() => {
+    fetchModels.mockReset().mockResolvedValue(['custom-model']);
+    validateEndpointURL.mockReset().mockResolvedValue(undefined);
+  });
+
+  it('fetches models from the stored user-provided URL and key when enabled', async () => {
+    const loadConfigModels = createLoadConfigModels({
+      getAppConfig: jest.fn().mockResolvedValue({ endpoints: {} }),
+      getUserKeyValues: jest.fn().mockResolvedValue({
+        apiKey: 'sk-user-key',
+        baseURL: 'https://gateway.example.com/v1',
+      }),
+      fetchModels,
+      validateEndpointURL,
+      includeOpenAICompatibleEndpoint: true,
+    });
+
+    const req = {
+      user: { id: 'user-1' },
+      config: undefined,
+    } as unknown as ServerRequest;
+
+    const result = await loadConfigModels(req);
+
+    expect(validateEndpointURL).toHaveBeenCalledWith(
+      'https://gateway.example.com/v1',
+      openAICompatibleEndpointName,
+      undefined,
+    );
+    expect(fetchModels).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: openAICompatibleEndpointName,
+        apiKey: 'sk-user-key',
+        baseURL: 'https://gateway.example.com/v1',
+        skipCache: true,
+      }),
+    );
+    expect(result[openAICompatibleEndpointName]).toEqual(['custom-model']);
   });
 });
 

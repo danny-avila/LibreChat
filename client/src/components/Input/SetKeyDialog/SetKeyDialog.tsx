@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
 import { EModelEndpoint, alternateName, isAssistantsEndpoint } from 'librechat-data-provider';
 import {
@@ -22,10 +22,10 @@ import type { TDialogProps } from '~/common';
 import { useUserKey, useLocalize } from '~/hooks';
 import { NotificationSeverity } from '~/common';
 import CustomConfig from './CustomEndpoint';
+import BedrockConfig from './BedrockConfig';
 import GoogleConfig from './GoogleConfig';
 import OpenAIConfig from './OpenAIConfig';
 import OtherConfig from './OtherConfig';
-import BedrockConfig from './BedrockConfig';
 import HelpText from './HelpText';
 import { logger } from '~/utils';
 
@@ -187,18 +187,29 @@ const SetKeyDialog = ({
 
   const [userKey, setUserKey] = useState('');
   const [expiresAtLabel, setExpiresAtLabel] = useState(EXPIRY.TWELVE_HOURS.label);
-  const { getExpiry, saveUserKey } = useUserKey(endpoint);
+  const { values: savedValues, getExpiry, saveUserKey } = useUserKey(endpoint, true);
   const { showToast } = useToastContext();
   const localize = useLocalize();
 
   const expirationOptions = Object.values(EXPIRY);
   const configuredEndpoint = endpointType ?? endpoint;
 
+  useEffect(() => {
+    if (!open || !savedValues) {
+      return;
+    }
+
+    methods.reset({
+      ...methods.getValues(),
+      ...savedValues,
+    });
+  }, [methods, open, savedValues]);
+
   const handleExpirationChange = (label: string) => {
     setExpiresAtLabel(label);
   };
 
-  const submit = () => {
+  const submit = async () => {
     const selectedOption = expirationOptions.find((option) => option.label === expiresAtLabel);
     let expiresAt: number | null;
 
@@ -208,9 +219,9 @@ const SetKeyDialog = ({
       expiresAt = Date.now() + (selectedOption ? selectedOption.value : 0);
     }
 
-    const saveKey = (key: string) => {
+    const saveKey = async (key: string) => {
       try {
-        saveUserKey(key, expiresAt);
+        await saveUserKey(key, expiresAt);
         showToast({
           message: localize('com_ui_save_key_success'),
           status: NotificationSeverity.SUCCESS,
@@ -227,7 +238,7 @@ const SetKeyDialog = ({
 
     if (formSet.has(endpoint) || formSet.has(endpointType ?? '')) {
       // TODO: handle other user provided options besides baseURL and apiKey
-      methods.handleSubmit((data) => {
+      await methods.handleSubmit(async (data) => {
         const isAzure = configuredEndpoint === EModelEndpoint.azureOpenAI;
         const isBedrock = configuredEndpoint === EModelEndpoint.bedrock;
         const isOpenAIBase =
@@ -343,8 +354,7 @@ const SetKeyDialog = ({
           }
         }
 
-        saveKey(JSON.stringify(userProvidedData));
-        methods.reset();
+        await saveKey(JSON.stringify(userProvidedData));
       })();
       return;
     }
@@ -357,7 +367,7 @@ const SetKeyDialog = ({
       return;
     }
 
-    saveKey(userKey);
+    await saveKey(userKey);
     setUserKey('');
   };
 

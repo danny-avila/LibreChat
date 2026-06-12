@@ -85,6 +85,34 @@ describe('fetchModels', () => {
     );
   });
 
+  it('falls back to the API origin models endpoint for Anthropic-compatible base URLs', async () => {
+    mockedAxios.get
+      .mockRejectedValueOnce(new Error('not found'))
+      .mockResolvedValueOnce({
+        data: {
+          data: [{ id: 'deepseek-chat' }, { id: 'deepseek-reasoner' }],
+        },
+      });
+
+    const models = await fetchModels({
+      apiKey: 'testApiKey',
+      baseURL: 'https://api.deepseek.com/anthropic',
+      name: 'OpenAI-compatible',
+    });
+
+    expect(models).toEqual(['deepseek-chat', 'deepseek-reasoner']);
+    expect(mockedAxios.get).toHaveBeenNthCalledWith(
+      1,
+      'https://api.deepseek.com/anthropic/models',
+      expect.any(Object),
+    );
+    expect(mockedAxios.get).toHaveBeenNthCalledWith(
+      2,
+      'https://api.deepseek.com/models',
+      expect.any(Object),
+    );
+  });
+
   it('should pass custom headers to the API request', async () => {
     const customHeaders = {
       'X-Custom-Header': 'custom-value',

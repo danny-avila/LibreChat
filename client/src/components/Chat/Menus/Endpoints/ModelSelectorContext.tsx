@@ -154,6 +154,7 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
   const [endpointSearchValues, setEndpointSearchValues] = useState<Record<string, string>>({});
 
   const keyProps = useKeyDialog();
+  const { openKeyDialog } = keyProps;
 
   /** Memoized search results */
   const searchResults = useMemo(() => {
@@ -199,6 +200,9 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
   const handleSelectEndpoint = useCallback(
     (endpoint: Endpoint) => {
       if (!endpoint.hasModels) {
+        if (endpoint.value && endpointRequiresUserKey(endpoint.value)) {
+          openKeyDialog(endpoint.value);
+        }
         if (endpoint.value) {
           onSelectEndpoint?.(endpoint.value);
         }
@@ -209,7 +213,7 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
         });
       }
     },
-    [onSelectEndpoint],
+    [endpointRequiresUserKey, onSelectEndpoint, openKeyDialog],
   );
 
   const handleSelectModel = useCallback(

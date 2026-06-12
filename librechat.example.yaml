@@ -416,6 +416,12 @@ endpoints:
   #   # Useful for large organizations where many department-specific skills may be available.
   #   skills:
   #     maxCatalogSkills: 20
+  #   # (optional) Restrict providers shown in the Agent Builder.
+  #   # Add "custom" to allow every OpenAI-compatible custom endpoint. This includes the built-in
+  #   # self-service "OpenAI-compatible" option and configured endpoints under `endpoints.custom`
+  #   # (for example DeepSeek, Kimi, GLM, MiniMax). To allow only one custom endpoint, list its
+  #   # exact provider name instead.
+  #   allowedProviders: ["openAI", "anthropic", "custom"]
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["deferred_tools", "execute_code", "file_search", "actions", "tools"]
 
@@ -487,6 +493,21 @@ endpoints:
   #     #     deploymentName: claude-3-5-haiku@20241022  # Override for this model
 
   custom:
+    # A self-service "OpenAI-compatible" provider is also available in the UI.
+    # Users can enter their own /v1 base URL and API key from the provider selector.
+    #
+    # OpenAI-compatible providers such as DeepSeek, Kimi, GLM, and MiniMax can be added here.
+    # If `endpoints.agents.allowedProviders` includes "custom", these endpoint names are available
+    # in the Agent Builder provider selector.
+    #
+    # - name: 'DeepSeek'
+    #   apiKey: '${DEEPSEEK_API_KEY}'
+    #   baseURL: '<provider OpenAI-compatible /v1 base URL>'
+    #   models:
+    #     default: ['deepseek-chat']
+    #     fetch: true
+    #   modelDisplayLabel: 'DeepSeek'
+
     # Groq Example
     - name: 'groq'
       apiKey: '${GROQ_API_KEY}'

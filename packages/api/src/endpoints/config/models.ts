@@ -3,6 +3,7 @@ import { logger } from '@librechat/data-schemas';
 import {
   ErrorTypes,
   EModelEndpoint,
+  getCustomEndpoints,
   extractEnvVariable,
   normalizeEndpointName,
 } from 'librechat-data-provider';
@@ -47,10 +48,22 @@ export interface LoadConfigModelsDeps {
   }) => Promise<AppConfig>;
   getUserKeyValues: GetUserKeyValuesFunction;
   fetchModels?: (params: FetchModelsParams) => Promise<string[]>;
+  includeOpenAICompatibleEndpoint?: boolean;
+  validateEndpointURL?: (
+    url: string,
+    endpoint: string,
+    allowedAddresses?: string[],
+  ) => Promise<void>;
 }
 
 export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
-  const { getAppConfig, getUserKeyValues, fetchModels = defaultFetchModels } = deps;
+  const {
+    getAppConfig,
+    getUserKeyValues,
+    fetchModels = defaultFetchModels,
+    includeOpenAICompatibleEndpoint = false,
+    validateEndpointURL,
+  } = deps;
 
   return async function loadConfigModels(req: ServerRequest): Promise<TModelsConfig> {
     const appConfig =
@@ -81,11 +94,16 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
       modelsConfig[EModelEndpoint.bedrock] = bedrockConfig.models;
     }
 
-    if (!Array.isArray(appConfig.endpoints?.[EModelEndpoint.custom])) {
+    const configuredCustomEndpoints = appConfig.endpoints?.[EModelEndpoint.custom];
+    if (!includeOpenAICompatibleEndpoint && !Array.isArray(configuredCustomEndpoints)) {
       return modelsConfig;
     }
 
-    const customEndpoints = (appConfig.endpoints[EModelEndpoint.custom] as TEndpoint[]).filter(
+    const allCustomEndpoints = includeOpenAICompatibleEndpoint
+      ? getCustomEndpoints(configuredCustomEndpoints)
+      : configuredCustomEndpoints;
+
+    const customEndpoints = (allCustomEndpoints as TEndpoint[]).filter(
       (endpoint) =>
         endpoint.baseURL &&
         endpoint.apiKey &&
@@ -197,6 +215,19 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
         const resolvedBaseURL = baseURLIsUserProvided ? userKeyValues?.baseURL : BASE_URL;
 
         if (resolvedApiKey && resolvedBaseURL) {
+          if (baseURLIsUserProvided && validateEndpointURL) {
+            try {
+              await validateEndpointURL(
+                resolvedBaseURL,
+                name,
+                appConfig.endpoints?.allowedAddresses,
+              );
+            } catch (error) {
+              const msg = error instanceof Error ? error.message : String(error);
+              logger.warn(`[loadConfigModels] Invalid user-provided baseURL for "${name}": ${msg}`);
+              continue;
+            }
+          }
           const userFetchKey = `user:${req.user?.id}:${name}`;
           fetchPromisesMap[userFetchKey] =
             fetchPromisesMap[userFetchKey] ||

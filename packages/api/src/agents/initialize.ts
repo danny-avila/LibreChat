@@ -8,6 +8,7 @@ import {
   EToolResources,
   paramEndpoints,
   isAgentsEndpoint,
+  isAgentProviderAllowed,
   replaceSpecialVars,
   providerEndpointMap,
 } from 'librechat-data-provider';
@@ -558,8 +559,11 @@ export async function initializeAgent(
 
   if (
     isAgentsEndpoint(endpointOption?.endpoint) &&
-    allowedProviders.size > 0 &&
-    !allowedProviders.has(agent.provider)
+    !isAgentProviderAllowed({
+      provider: agent.provider,
+      allowedProviders,
+      customEndpoints: req.config?.endpoints?.[EModelEndpoint.custom],
+    })
   ) {
     throw new Error(
       `{ "type": "${ErrorTypes.INVALID_AGENT_PROVIDER}", "info": "${agent.provider}" }`,

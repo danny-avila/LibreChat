@@ -5,6 +5,7 @@ jest.mock('~/models', () => ({
   updateUserKey: jest.fn(),
   deleteUserKey: jest.fn(),
   getUserKeyExpiry: jest.fn(),
+  getUserKeyValues: jest.fn(),
 }));
 
 jest.mock('~/server/middleware/requireJwtAuth', () => (req, res, next) => next());
@@ -15,7 +16,7 @@ jest.mock('~/server/middleware', () => ({
 
 describe('Keys Routes', () => {
   let app;
-  const { updateUserKey, deleteUserKey, getUserKeyExpiry } = require('~/models');
+  const { updateUserKey, deleteUserKey, getUserKeyExpiry, getUserKeyValues } = require('~/models');
 
   beforeAll(() => {
     const keysRouter = require('../keys');
@@ -168,6 +169,27 @@ describe('Keys Routes', () => {
       expect(getUserKeyExpiry).toHaveBeenCalledWith({
         userId: 'test-user-123',
         name: 'openAI',
+      });
+    });
+
+    it('should return saved key values when explicitly requested', async () => {
+      const mockExpiry = { expiresAt: 'never' };
+      const values = {
+        apiKey: 'sk-test-key',
+        baseURL: 'https://api.deepseek.com/anthropic',
+      };
+      getUserKeyExpiry.mockResolvedValue(mockExpiry);
+      getUserKeyValues.mockResolvedValue(values);
+
+      const response = await request(app).get(
+        '/api/keys?name=OpenAI-compatible&includeValues=true',
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ ...mockExpiry, values });
+      expect(getUserKeyValues).toHaveBeenCalledWith({
+        userId: 'test-user-123',
+        name: 'OpenAI-compatible',
       });
     });
   });

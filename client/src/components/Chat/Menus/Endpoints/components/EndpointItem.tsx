@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { VisuallyHidden } from '@ariakit/react';
 import { Spinner, TooltipAnchor } from '@librechat/client';
 import { CheckCircle2, MousePointerClick, SettingsIcon } from 'lucide-react';
-import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TModelSpec } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import { CustomMenu as Menu, CustomMenuItem as MenuItem, CustomMenuSeparator } from '../CustomMenu';
@@ -26,7 +26,7 @@ const SettingsButton = ({
 }: {
   endpoint: Endpoint;
   className?: string;
-  handleOpenKeyDialog: (endpoint: EModelEndpoint, e: React.MouseEvent) => void;
+  handleOpenKeyDialog: (endpoint: string, e: React.MouseEvent | React.KeyboardEvent) => void;
 }) => {
   const localize = useLocalize();
   const text = localize('com_endpoint_config_key');
@@ -36,7 +36,7 @@ const SettingsButton = ({
       return;
     }
     e.stopPropagation();
-    handleOpenKeyDialog(endpoint.value as EModelEndpoint, e);
+    handleOpenKeyDialog(endpoint.value, e);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
@@ -44,7 +44,7 @@ const SettingsButton = ({
       e.preventDefault();
       e.stopPropagation();
       if (endpoint.value) {
-        handleOpenKeyDialog(endpoint.value as EModelEndpoint, e as unknown as React.MouseEvent);
+        handleOpenKeyDialog(endpoint.value, e);
       }
     }
   };

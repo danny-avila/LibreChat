@@ -95,6 +95,57 @@ export function splitAndTrim(input: string | null | undefined): string[] {
     .filter(Boolean);
 }
 
+function getModelListURLs(baseURL: string, azure: boolean): URL[] {
+  const trimmed = baseURL.replace(/\/+$/, '');
+  const primary = new URL(`${trimmed}${azure ? '' : '/models'}`);
+  if (azure) {
+    return [primary];
+  }
+
+  const parsedBase = new URL(trimmed);
+  const normalizedPath = parsedBase.pathname.replace(/\/+$/, '').toLowerCase();
+  const isAnthropicBase = /(^|\/)anthropic(\/v\d+)?$/.test(normalizedPath);
+  if (!isAnthropicBase) {
+    return [primary];
+  }
+
+  const fallback = new URL('/models', parsedBase.origin);
+  return fallback.toString() === primary.toString() ? [primary] : [primary, fallback];
+}
+
+async function fetchModelList({
+  baseURL,
+  azure,
+  options,
+  user,
+  userIdQuery,
+}: {
+  baseURL: string;
+  azure: boolean;
+  options: {
+    headers: Record<string, string>;
+    timeout: number;
+    httpsAgent?: HttpsProxyAgent<string>;
+  };
+  user?: string;
+  userIdQuery: boolean;
+}) {
+  let lastError: unknown;
+  const urls = getModelListURLs(baseURL, azure);
+  for (const url of urls) {
+    if (user && userIdQuery) {
+      url.searchParams.set('user', user);
+    }
+    try {
+      return await axios.get(url.toString(), options);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError;
+}
+
 /**
  * Fetches models from the specified base API path or Azure, based on the provided configuration.
  *
@@ -210,11 +261,13 @@ export async function fetchModels({
       options.headers['OpenAI-Organization'] = process.env.OPENAI_ORGANIZATION;
     }
 
-    const url = new URL(`${(baseURL ?? '').replace(/\/+$/, '')}${azure ? '' : '/models'}`);
-    if (user && userIdQuery) {
-      url.searchParams.append('user', user);
-    }
-    const res = await axios.get(url.toString(), options);
+    const res = await fetchModelList({
+      baseURL: baseURL ?? '',
+      azure,
+      options,
+      user,
+      userIdQuery,
+    });
 
     const input = res.data;
 

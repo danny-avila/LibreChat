@@ -4,17 +4,17 @@ import type {
   UseMutationResult,
   QueryObserverResult,
 } from '@tanstack/react-query';
+import { MCPServerConnectionStatusResponse } from '../types/queries';
 import { Constants, initialModelsConfig } from '../config';
 import { defaultOrderQuery } from '../types/assistants';
-import { MCPServerConnectionStatusResponse } from '../types/queries';
+import * as permissions from '../accessPermissions';
+import { ResourceType } from '../accessPermissions';
 import * as dataService from '../data-service';
 import * as m from '../types/mutations';
 import * as q from '../types/queries';
 import { QueryKeys } from '../keys';
 import * as s from '../schemas';
 import * as t from '../types';
-import * as permissions from '../accessPermissions';
-import { ResourceType } from '../accessPermissions';
 
 export { hasPermissions } from '../accessPermissions';
 
@@ -255,22 +255,25 @@ export const useRegisterUserMutation = (
 
 export const useUserKeyQuery = (
   name: string,
+  includeValuesOrConfig?: boolean | UseQueryOptions<t.TCheckUserKeyResponse>,
   config?: UseQueryOptions<t.TCheckUserKeyResponse>,
 ): QueryObserverResult<t.TCheckUserKeyResponse> => {
+  const includeValues = typeof includeValuesOrConfig === 'boolean' ? includeValuesOrConfig : false;
+  const queryConfig = typeof includeValuesOrConfig === 'boolean' ? config : includeValuesOrConfig;
   return useQuery<t.TCheckUserKeyResponse>(
-    [QueryKeys.name, name],
+    [QueryKeys.name, name, includeValues],
     () => {
       if (!name) {
         return Promise.resolve({ expiresAt: '' });
       }
-      return dataService.userKeyQuery(name);
+      return dataService.userKeyQuery(name, includeValues);
     },
     {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
       retry: false,
-      ...config,
+      ...queryConfig,
     },
   );
 };

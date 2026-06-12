@@ -3,7 +3,9 @@ import {
   EModelEndpoint,
   isAgentsEndpoint,
   orderEndpointsConfig,
+  openAICompatibleEndpointName,
   defaultAgentCapabilities,
+  getOpenAICompatibleEndpointConfig,
 } from 'librechat-data-provider';
 import type { AgentCapabilities, TEndpointsConfig, TConfig } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
@@ -22,6 +24,7 @@ export interface EndpointsConfigDeps {
   }) => Promise<AppConfig>;
   loadDefaultEndpointsConfig: (appConfig: AppConfig) => Promise<DefaultEndpointsResult>;
   loadCustomEndpointsConfig?: (custom: unknown) => TCustomEndpointsConfig | undefined;
+  includeOpenAICompatibleEndpoint?: boolean;
 }
 
 export function createEndpointsConfigService(deps: EndpointsConfigDeps): {
@@ -32,6 +35,7 @@ export function createEndpointsConfigService(deps: EndpointsConfigDeps): {
     getAppConfig,
     loadDefaultEndpointsConfig,
     loadCustomEndpointsConfig = defaultLoadCustomEndpoints,
+    includeOpenAICompatibleEndpoint = false,
   } = deps;
 
   async function getEndpointsConfig(req: ServerRequest): Promise<TEndpointsConfig> {
@@ -49,6 +53,10 @@ export function createEndpointsConfigService(deps: EndpointsConfigDeps): {
       ...defaultEndpointsConfig,
       ...customEndpointsConfig,
     };
+
+    if (includeOpenAICompatibleEndpoint && !mergedConfig[openAICompatibleEndpointName]) {
+      mergedConfig[openAICompatibleEndpointName] = getOpenAICompatibleEndpointConfig();
+    }
 
     if (appConfig.endpoints?.[EModelEndpoint.azureOpenAI]) {
       mergedConfig[EModelEndpoint.azureOpenAI] = { userProvide: false };

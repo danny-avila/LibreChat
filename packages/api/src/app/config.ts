@@ -1,6 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import {
   EModelEndpoint,
+  getCustomEndpoints,
   removeNullishValues,
   normalizeEndpointName,
 } from 'librechat-data-provider';
@@ -62,7 +63,7 @@ export const getCustomEndpointConfig = ({
     throw new Error(`Config not found for the ${endpoint} custom endpoint.`);
   }
 
-  const customEndpoints = appConfig.endpoints?.[EModelEndpoint.custom] ?? [];
+  const customEndpoints = getCustomEndpoints(appConfig.endpoints?.[EModelEndpoint.custom]);
   return customEndpoints.find(
     (endpointConfig) =>
       normalizeEndpointName(endpointConfig.name) === normalizeEndpointName(endpoint),

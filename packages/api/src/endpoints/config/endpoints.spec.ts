@@ -4,6 +4,7 @@ import {
   AgentCapabilities,
   EModelEndpoint,
   PrincipalType,
+  openAICompatibleEndpointName,
   defaultAgentCapabilities,
 } from 'librechat-data-provider';
 
@@ -77,6 +78,22 @@ describe('createEndpointsConfigService', () => {
 
       expect(result?.[EModelEndpoint.openAI]).toBeDefined();
       expect(result?.myCustom).toBeDefined();
+    });
+
+    it('can expose the self-service OpenAI-compatible endpoint', async () => {
+      const deps = createMockDeps({
+        includeOpenAICompatibleEndpoint: true,
+      });
+      const { getEndpointsConfig } = createEndpointsConfigService(deps);
+      const result = await getEndpointsConfig(fakeReq());
+
+      expect(result?.[openAICompatibleEndpointName]).toEqual(
+        expect.objectContaining({
+          type: EModelEndpoint.custom,
+          userProvide: true,
+          userProvideURL: true,
+        }),
+      );
     });
 
     it('adds azureOpenAI when configured', async () => {

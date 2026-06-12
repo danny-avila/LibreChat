@@ -89,7 +89,8 @@ const keysEndpoint = `${BASE_URL}/api/keys`;
 
 export const keys = () => keysEndpoint;
 
-export const userKeyQuery = (name: string) => `${keysEndpoint}?name=${name}`;
+export const userKeyQuery = (name: string, includeValues = false) =>
+  `${keysEndpoint}${buildQuery({ name, includeValues: includeValues ? true : undefined })}`;
 
 export const revokeUserKey = (name: string) => `${keysEndpoint}/${name}`;
 

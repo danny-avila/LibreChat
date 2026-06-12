@@ -5,6 +5,10 @@ import {
   allowedAddressesSchema,
   configSchema,
   excludedKeys,
+  getCustomEndpoints,
+  openAICompatibleEndpointName,
+  isAgentProviderAllowed,
+  isCustomEndpointName,
   resolveEndpointType,
   webSearchSchema,
 } from './config';
@@ -154,6 +158,76 @@ describe('resolveEndpointType', () => {
     it('handles undefined endpointsConfig', () => {
       expect(resolveEndpointType(undefined, 'Moonshot')).toBe('Moonshot');
     });
+  });
+});
+
+describe('isAgentProviderAllowed', () => {
+  it('allows every provider when the allowlist is empty', () => {
+    expect(
+      isAgentProviderAllowed({
+        provider: 'MiniMax',
+        allowedProviders: [],
+        endpointsConfig,
+      }),
+    ).toBe(true);
+  });
+
+  it('allows exact custom endpoint names', () => {
+    expect(
+      isAgentProviderAllowed({
+        provider: 'Moonshot',
+        allowedProviders: ['Moonshot'],
+        endpointsConfig,
+      }),
+    ).toBe(true);
+  });
+
+  it('treats "custom" as a wildcard for configured OpenAI-compatible endpoints', () => {
+    expect(
+      isAgentProviderAllowed({
+        provider: 'Some Endpoint',
+        allowedProviders: [EModelEndpoint.custom],
+        endpointsConfig,
+      }),
+    ).toBe(true);
+  });
+
+  it('does not allow arbitrary providers when only custom is allowed', () => {
+    expect(
+      isAgentProviderAllowed({
+        provider: 'UnknownProvider',
+        allowedProviders: [EModelEndpoint.custom],
+        endpointsConfig,
+      }),
+    ).toBe(false);
+  });
+
+  it('can resolve custom endpoint names from raw custom endpoint config', () => {
+    const customEndpoints = [
+      { name: 'Kimi', baseURL: 'https://api.moonshot.cn/v1', apiKey: '${KIMI_API_KEY}' },
+    ];
+
+    expect(isCustomEndpointName('Kimi', customEndpoints)).toBe(true);
+    expect(
+      isAgentProviderAllowed({
+        provider: 'Kimi',
+        allowedProviders: [EModelEndpoint.custom],
+        customEndpoints,
+      }),
+    ).toBe(true);
+  });
+
+  it('includes the built-in OpenAI-compatible endpoint as a custom endpoint', () => {
+    expect(isCustomEndpointName(openAICompatibleEndpointName, [])).toBe(true);
+    expect(isCustomEndpointName(openAICompatibleEndpointName, undefined)).toBe(true);
+    expect(getCustomEndpoints([])).toHaveLength(1);
+    expect(
+      isAgentProviderAllowed({
+        provider: openAICompatibleEndpointName,
+        allowedProviders: [EModelEndpoint.custom],
+        customEndpoints: undefined,
+      }),
+    ).toBe(true);
   });
 });
 

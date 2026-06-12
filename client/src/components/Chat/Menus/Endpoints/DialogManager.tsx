@@ -1,12 +1,13 @@
 import React from 'react';
-import { EModelEndpoint, getEndpointField } from 'librechat-data-provider';
+import { getEndpointField } from 'librechat-data-provider';
+import type { TEndpointsConfig } from 'librechat-data-provider';
 import { SetKeyDialog } from '~/components/Input/SetKeyDialog';
 
 interface DialogManagerProps {
   keyDialogOpen: boolean;
-  keyDialogEndpoint?: EModelEndpoint;
+  keyDialogEndpoint?: string | null;
   onOpenChange: (open: boolean) => void;
-  endpointsConfig: Record<string, any>;
+  endpointsConfig: TEndpointsConfig;
 }
 
 const DialogManager = ({

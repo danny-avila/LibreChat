@@ -1,4 +1,4 @@
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, openAICompatibleEndpointName } from 'librechat-data-provider';
 import { useFormContext, Controller } from 'react-hook-form';
 import InputWithLabel from './InputWithLabel';
 
@@ -10,6 +10,8 @@ const CustomEndpoint = ({
   userProvideURL?: boolean | null;
 }) => {
   const { control } = useFormContext();
+  const endpointLabel =
+    endpoint === openAICompatibleEndpointName ? openAICompatibleEndpointName : endpoint;
   return (
     <form className="flex-wrap">
       <Controller
@@ -19,7 +21,7 @@ const CustomEndpoint = ({
           <InputWithLabel
             id="apiKey"
             {...field}
-            label={`${endpoint} API Key`}
+            label={`${endpointLabel} API Key`}
             labelClassName="mb-1"
             inputClassName="mb-2"
             secret
@@ -34,7 +36,7 @@ const CustomEndpoint = ({
             <InputWithLabel
               id="baseURL"
               {...field}
-              label={`${endpoint} API URL`}
+              label={`${endpointLabel} API Base URL (/v1)`}
               labelClassName="mb-1"
             />
           )}

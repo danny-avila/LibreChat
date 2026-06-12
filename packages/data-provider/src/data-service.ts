@@ -160,8 +160,10 @@ export const register = (payload: t.TRegisterUser) => {
   return request.post(endpoints.register(), payload);
 };
 
-export const userKeyQuery = (name: string): Promise<t.TCheckUserKeyResponse> =>
-  request.get(endpoints.userKeyQuery(name));
+export const userKeyQuery = (
+  name: string,
+  includeValues = false,
+): Promise<t.TCheckUserKeyResponse> => request.get(endpoints.userKeyQuery(name, includeValues));
 
 export const getLoginGoogle = () => {
   return request.get(endpoints.loginGoogle());

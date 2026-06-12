@@ -316,6 +316,45 @@ describe('initializeAgent — custom provider token lookup', () => {
     // assertion above catches the actual provider-resolution regression.
     expect(result.maxContextTokens).toBe(Math.round((65536 - 4096) * 0.95));
   });
+
+  it('allows a configured custom provider when allowedProviders contains custom', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: CUSTOM_PROVIDER,
+      overrideProvider: Providers.OPENAI,
+      model: 'kimi-k2',
+    });
+    req.config = {
+      endpoints: {
+        custom: [
+          {
+            name: CUSTOM_PROVIDER,
+            apiKey: '${CUSTOM_API_KEY}',
+            baseURL: 'https://api.example.test/v1',
+            models: { default: ['kimi-k2'] },
+          },
+        ],
+      },
+    } as ServerRequest['config'];
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([EModelEndpoint.custom]),
+          isInitialAgent: true,
+        },
+        db,
+      ),
+    ).resolves.toMatchObject({
+      endpoint: CUSTOM_PROVIDER,
+      provider: Providers.OPENAI,
+      model: 'kimi-k2',
+    });
+  });
 });
 
 describe('initializeAgent — provider web_search precedence', () => {

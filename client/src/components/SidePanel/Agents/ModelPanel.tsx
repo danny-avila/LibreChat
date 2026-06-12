@@ -1,9 +1,8 @@
-import React, { useMemo, useEffect } from 'react';
+import React, { useMemo, useEffect, useState } from 'react';
 import keyBy from 'lodash/keyBy';
 import { ControlCombobox } from '@librechat/client';
 import { ChevronLeft, RotateCcw } from 'lucide-react';
 import { useFormContext, useWatch, Controller } from 'react-hook-form';
-import { componentMapping } from '~/components/SidePanel/Parameters/components';
 import {
   alternateName,
   getSettingsKeys,
@@ -15,6 +14,8 @@ import {
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { AgentForm, AgentModelPanelProps, StringOption } from '~/common';
+import { componentMapping } from '~/components/SidePanel/Parameters/components';
+import { SetKeyDialog } from '~/components/Input/SetKeyDialog';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { useLiveAnnouncer } from '~/Providers';
 import { useLocalize } from '~/hooks';
@@ -65,6 +66,7 @@ export default function ModelPanel({
   }, [provider, models, modelsData, setValue, model]);
 
   const { data: endpointsConfig = {} } = useGetEndpointsQuery();
+  const [keyDialogOpen, setKeyDialogOpen] = useState(false);
 
   const bedrockRegions = useMemo(() => {
     return endpointsConfig?.[provider]?.availableRegions ?? [];
@@ -73,6 +75,10 @@ export default function ModelPanel({
   const endpointType = useMemo(
     () => getEndpointField(endpointsConfig, provider, 'type'),
     [provider, endpointsConfig],
+  );
+  const providerRequiresUserKey = useMemo(
+    () => !!getEndpointField(endpointsConfig, provider, 'userProvide'),
+    [endpointsConfig, provider],
   );
 
   const parameters = useMemo((): SettingDefinition[] => {
@@ -173,6 +179,17 @@ export default function ModelPanel({
             }}
           />
         </div>
+        {provider && providerRequiresUserKey && (
+          <div className="mb-4">
+            <button
+              type="button"
+              onClick={() => setKeyDialogOpen(true)}
+              className="btn btn-neutral flex w-full items-center justify-center px-4 py-2 text-sm"
+            >
+              {localize('com_endpoint_config_key')}
+            </button>
+          </div>
+        )}
         {/* Model */}
         <div className="model-panel-section mb-4">
           <label
@@ -262,6 +279,35 @@ export default function ModelPanel({
         <RotateCcw className="h-4 w-4" aria-hidden="true" />
         {localize('com_ui_reset_var', { 0: localize('com_ui_model_parameters') })}
       </button>
+      {provider && providerRequiresUserKey && (
+        <SetKeyDialog
+          open={keyDialogOpen}
+          endpoint={provider}
+          endpointType={endpointType}
+          onOpenChange={setKeyDialogOpen}
+          userProvideURL={getEndpointField(endpointsConfig, provider, 'userProvideURL')}
+          userProvideAccessKeyId={getEndpointField(
+            endpointsConfig,
+            provider,
+            'userProvideAccessKeyId',
+          )}
+          userProvideSecretAccessKey={getEndpointField(
+            endpointsConfig,
+            provider,
+            'userProvideSecretAccessKey',
+          )}
+          userProvideSessionToken={getEndpointField(
+            endpointsConfig,
+            provider,
+            'userProvideSessionToken',
+          )}
+          userProvideBearerToken={getEndpointField(
+            endpointsConfig,
+            provider,
+            'userProvideBearerToken',
+          )}
+        />
+      )}
     </div>
   );
 }

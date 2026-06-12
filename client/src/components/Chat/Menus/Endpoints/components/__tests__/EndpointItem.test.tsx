@@ -6,6 +6,7 @@ import { EndpointItem } from '../EndpointItem';
 const mockHandleSelectEndpoint = jest.fn();
 const mockHandleOpenKeyDialog = jest.fn();
 const mockSetEndpointSearchValue = jest.fn();
+const mockEndpointRequiresUserKey = jest.fn(() => false);
 
 let mockSelectedValues: SelectedValues = { endpoint: '', model: '', modelSpec: '' };
 
@@ -23,7 +24,7 @@ jest.mock('~/components/Chat/Menus/Endpoints/ModelSelectorContext', () => ({
     handleOpenKeyDialog: mockHandleOpenKeyDialog,
     handleSelectEndpoint: mockHandleSelectEndpoint,
     setEndpointSearchValue: mockSetEndpointSearchValue,
-    endpointRequiresUserKey: () => false,
+    endpointRequiresUserKey: mockEndpointRequiresUserKey,
   }),
 }));
 
@@ -35,9 +36,9 @@ jest.mock('~/components/Chat/Menus/Endpoints/CustomMenu', () => {
       React.createElement('div', null, label, children),
     CustomMenuItem: React.forwardRef(function MockMenuItem(
       { children, ...rest }: { children?: React.ReactNode },
-      ref: React.Ref<HTMLButtonElement>,
+      ref: React.Ref<HTMLDivElement>,
     ) {
-      return React.createElement('button', { ref, type: 'button', ...rest }, children);
+      return React.createElement('div', { ref, role: 'button', tabIndex: 0, ...rest }, children);
     }),
     CustomMenuSeparator: () => React.createElement('hr'),
   };
@@ -60,6 +61,7 @@ const customEndpoint: Endpoint = {
 describe('EndpointItem', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockEndpointRequiresUserKey.mockReturnValue(false);
     mockSelectedValues = { endpoint: '', model: '', modelSpec: '' };
   });
 
@@ -76,5 +78,19 @@ describe('EndpointItem', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Custom' }));
 
     expect(mockHandleSelectEndpoint).toHaveBeenCalledWith(customEndpoint);
+  });
+
+  it('renders key settings for user-provided endpoints without models', () => {
+    mockEndpointRequiresUserKey.mockReturnValue(true);
+
+    render(<EndpointItem endpoint={customEndpoint} endpointIndex={0} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'com_endpoint_config_key Custom' }));
+
+    expect(mockHandleOpenKeyDialog).toHaveBeenCalledWith(
+      customEndpoint.value,
+      expect.objectContaining({ type: 'click' }),
+    );
+    expect(mockHandleSelectEndpoint).not.toHaveBeenCalled();
   });
 });

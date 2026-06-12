@@ -565,6 +565,7 @@ export type TRefreshTokenResponse = {
 
 export type TCheckUserKeyResponse = {
   expiresAt: string;
+  values?: Record<string, string>;
 };
 
 export type TRequestPasswordResetResponse = {

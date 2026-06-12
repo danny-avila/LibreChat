@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { ZodError } from 'zod';
 import type { TEndpointsConfig, TModelsConfig, TConfig } from './types';
 import {
+  AuthType,
   EModelEndpoint,
   eModelEndpointSchema,
   isAgentsEndpoint,
@@ -12,6 +13,7 @@ import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { specsConfigSchema, TSpecsConfig } from './models';
 import { REFILL_INTERVAL_UNITS } from './balance';
 import { fileConfigSchema } from './file-config';
+import { normalizeEndpointName } from './utils';
 import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
@@ -850,6 +852,30 @@ export const endpointSchema = baseEndpointSchema.merge(
 );
 
 export type TEndpoint = z.infer<typeof endpointSchema>;
+
+export const openAICompatibleEndpointName = 'OpenAI-compatible';
+
+export function getOpenAICompatibleEndpoint(): Partial<TEndpoint> {
+  return {
+    name: openAICompatibleEndpointName,
+    apiKey: AuthType.USER_PROVIDED,
+    baseURL: AuthType.USER_PROVIDED,
+    models: {
+      default: [],
+      fetch: true,
+    },
+    modelDisplayLabel: openAICompatibleEndpointName,
+  };
+}
+
+export function getOpenAICompatibleEndpointConfig(): Partial<TConfig> {
+  return {
+    type: EModelEndpoint.custom,
+    userProvide: true,
+    userProvideURL: true,
+    modelDisplayLabel: openAICompatibleEndpointName,
+  };
+}
 
 export const azureEndpointSchema = z
   .object({
@@ -1736,6 +1762,21 @@ export const getConfigDefaults = () => getSchemaDefaults(configSchema);
 export type TCustomConfig = DeepPartial<z.infer<typeof configSchema>>;
 export type TCustomEndpoints = z.infer<typeof customEndpointsSchema>;
 
+export function getCustomEndpoints(
+  customEndpoints: TCustomEndpoints | null | undefined,
+): NonNullable<TCustomEndpoints> {
+  const endpoints = Array.isArray(customEndpoints) ? customEndpoints : [];
+  const hasOpenAICompatible = endpoints.some(
+    (endpoint) => normalizeEndpointName(endpoint.name ?? '') === openAICompatibleEndpointName,
+  );
+
+  if (hasOpenAICompatible) {
+    return endpoints;
+  }
+
+  return [...endpoints, getOpenAICompatibleEndpoint()];
+}
+
 export type TProviderSchema =
   | z.infer<typeof ttsOpenaiSchema>
   | z.infer<typeof ttsElevenLabsSchema>
@@ -1797,6 +1838,7 @@ export const alternateName = {
   [KnownEndpoints.xai]: 'xAI',
   [KnownEndpoints.vercel]: 'Vercel',
   [KnownEndpoints.helicone]: 'Helicone',
+  [openAICompatibleEndpointName]: openAICompatibleEndpointName,
 };
 
 const sharedOpenAIModels = [
@@ -2648,6 +2690,56 @@ export function getEndpointField<
     return undefined;
   }
   return config[property];
+}
+
+export function isCustomEndpointName(
+  provider: string | null | undefined,
+  customEndpoints: TCustomEndpoints | null | undefined,
+): boolean {
+  if (!provider) {
+    return false;
+  }
+
+  const normalizedProvider = normalizeEndpointName(provider);
+  return getCustomEndpoints(customEndpoints).some(
+    (endpoint) => normalizeEndpointName(endpoint.name ?? '') === normalizedProvider,
+  );
+}
+
+export function isAgentProviderAllowed({
+  provider,
+  allowedProviders,
+  endpointsConfig,
+  customEndpoints,
+}: {
+  provider: string | null | undefined;
+  allowedProviders?: ReadonlySet<string | EModelEndpoint> | readonly (string | EModelEndpoint)[];
+  endpointsConfig?: TEndpointsConfig | null;
+  customEndpoints?: TCustomEndpoints | null;
+}): boolean {
+  const allowedSet =
+    allowedProviders instanceof Set ? allowedProviders : new Set(allowedProviders ?? []);
+
+  if (allowedSet.size === 0) {
+    return true;
+  }
+
+  if (!provider) {
+    return false;
+  }
+
+  if (allowedSet.has(provider)) {
+    return true;
+  }
+
+  if (!allowedSet.has(EModelEndpoint.custom)) {
+    return false;
+  }
+
+  return (
+    getEndpointField(endpointsConfig, provider, 'type') === EModelEndpoint.custom ||
+    isCustomEndpointName(provider, customEndpoints)
+  );
 }
 
 /**
