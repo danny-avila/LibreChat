@@ -1,4 +1,4 @@
-import { isHttpDownloadTarget, triggerDownload } from '../downloadFile';
+import { getCodeBlockFilename, isHttpDownloadTarget, triggerDownload } from '../downloadFile';
 
 describe('downloadFile utilities', () => {
   let clickSpy: jest.SpyInstance;
@@ -67,5 +67,42 @@ describe('downloadFile utilities', () => {
     expect(revokeSpy).not.toHaveBeenCalled();
     jest.advanceTimersByTime(1000);
     expect(revokeSpy).toHaveBeenCalledWith('blob:https://app.example.com/download-id');
+  });
+});
+
+describe('getCodeBlockFilename', () => {
+  it('maps common language names to their extension', () => {
+    expect(getCodeBlockFilename('python')).toBe('code.py');
+    expect(getCodeBlockFilename('javascript')).toBe('code.js');
+    expect(getCodeBlockFilename('typescript')).toBe('code.ts');
+    expect(getCodeBlockFilename('csharp')).toBe('code.cs');
+    expect(getCodeBlockFilename('c++')).toBe('code.cpp');
+    expect(getCodeBlockFilename('bash')).toBe('code.sh');
+    expect(getCodeBlockFilename('shell')).toBe('code.sh');
+    expect(getCodeBlockFilename('powershell')).toBe('code.ps1');
+    expect(getCodeBlockFilename('markdown')).toBe('code.md');
+  });
+
+  it('is case-insensitive and trims whitespace', () => {
+    expect(getCodeBlockFilename('Python')).toBe('code.py');
+    expect(getCodeBlockFilename(' RUST ')).toBe('code.rs');
+  });
+
+  it('passes extension-like hints through unchanged', () => {
+    expect(getCodeBlockFilename('py')).toBe('code.py');
+    expect(getCodeBlockFilename('tsx')).toBe('code.tsx');
+    expect(getCodeBlockFilename('json')).toBe('code.json');
+    expect(getCodeBlockFilename('svg')).toBe('code.svg');
+    expect(getCodeBlockFilename('html')).toBe('code.html');
+    expect(getCodeBlockFilename('toml')).toBe('code.toml');
+  });
+
+  it('falls back to .txt for missing or unusable hints', () => {
+    expect(getCodeBlockFilename(undefined)).toBe('code.txt');
+    expect(getCodeBlockFilename(null)).toBe('code.txt');
+    expect(getCodeBlockFilename('')).toBe('code.txt');
+    expect(getCodeBlockFilename('plaintext')).toBe('code.txt');
+    expect(getCodeBlockFilename('not a language')).toBe('code.txt');
+    expect(getCodeBlockFilename('../../etc/passwd')).toBe('code.txt');
   });
 });
