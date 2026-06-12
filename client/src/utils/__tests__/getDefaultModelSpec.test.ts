@@ -1,4 +1,4 @@
-import { EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
+import { Constants, EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
 import type { TModelSpec, TStartupConfig, TEndpointsConfig } from 'librechat-data-provider';
 import { getDefaultModelSpec } from '../endpoints';
 
@@ -51,12 +51,13 @@ const writeLastModel = (endpoint: string, model: string) => {
 };
 
 /** Mirrors what the conversation effect persists after a spec preset is applied */
-const persistAppliedSpec = (spec: TModelSpec) => {
+const persistAppliedSpec = (spec: TModelSpec, conversationId: string = Constants.NEW_CONVO) => {
   localStorage.setItem(LocalStorageKeys.LAST_SPEC, spec.name);
   writeLastModel(spec.preset.endpoint as string, spec.preset.model as string);
   localStorage.setItem(
     `${LocalStorageKeys.LAST_CONVO_SETUP}_0`,
     JSON.stringify({
+      conversationId,
       endpoint: spec.preset.endpoint,
       model: spec.preset.model,
       spec: spec.name,
@@ -225,7 +226,7 @@ describe('getDefaultModelSpec', () => {
       expect(result).toEqual({ last: otherSpec });
     });
 
-    it('yields to a stored agent even when it matches the soft default agent spec', () => {
+    it('treats a matching stored agent as residue when the soft default points to an agent', () => {
       const softAgentSpec = createModelSpec('soft-agent-spec', {
         softDefault: true,
         preset: { endpoint: EModelEndpoint.agents, agent_id: 'agent_soft' },
@@ -237,14 +238,49 @@ describe('getDefaultModelSpec', () => {
         fullEndpointsConfig,
       );
 
-      expect(result).toBeUndefined();
+      expect(result).toEqual({ softDefault: softAgentSpec });
     });
 
-    it('yields to a stored model selection matching the soft default preset', () => {
+    it('treats a stored model matching the soft default preset as residue', () => {
       localStorage.setItem(
         LocalStorageKeys.LAST_MODEL,
         JSON.stringify({ [softSpec.preset.endpoint as string]: softSpec.preset.model }),
       );
+
+      const result = getDefaultModelSpec(
+        createStartupConfig([otherSpec, softSpec], { prioritize: false }),
+        fullEndpointsConfig,
+      );
+
+      expect(result).toEqual({ softDefault: softSpec });
+    });
+
+    it('stays soft after the first conversation is sent', () => {
+      persistAppliedSpec(softSpec, 'a8b1c2d3-e4f5-4a6b-8c7d-9e0f1a2b3c4d');
+
+      const result = getDefaultModelSpec(
+        createStartupConfig([otherSpec, softSpec], { prioritize: false }),
+        fullEndpointsConfig,
+      );
+
+      expect(result).toEqual({ softDefault: softSpec });
+    });
+
+    it('does not re-arm from viewing an old soft conversation after an ephemeral pick', () => {
+      persistEphemeralSelection(EModelEndpoint.anthropic, 'claude-sonnet-4-6');
+      persistAppliedSpec(softSpec, 'a8b1c2d3-e4f5-4a6b-8c7d-9e0f1a2b3c4d');
+
+      const result = getDefaultModelSpec(
+        createStartupConfig([otherSpec, softSpec], { prioritize: false }),
+        fullEndpointsConfig,
+      );
+
+      expect(result).toBeUndefined();
+    });
+
+    it('does not re-arm from viewing an old soft conversation after an agent pick', () => {
+      localStorage.setItem(`${LocalStorageKeys.AGENT_ID_PREFIX}0`, 'agent_abc');
+      persistAppliedSpec(softSpec, 'a8b1c2d3-e4f5-4a6b-8c7d-9e0f1a2b3c4d');
 
       const result = getDefaultModelSpec(
         createStartupConfig([otherSpec, softSpec], { prioritize: false }),

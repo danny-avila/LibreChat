@@ -107,6 +107,12 @@ This violates RFC 7235 and may cause issues with strict OAuth clients. Removing 
 /** @typedef {Configuration | null}  */
 let openidConfig = null;
 
+const getOpenIdAuthorizationAudience = () =>
+  (process.env.OPENID_AUDIENCE ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .find(Boolean);
+
 /**
  * Custom OpenID Strategy
  *
@@ -127,10 +133,11 @@ class CustomOpenIDStrategy extends OpenIDStrategy {
       params.set('state', options.state);
     }
 
-    if (process.env.OPENID_AUDIENCE) {
-      params.set('audience', process.env.OPENID_AUDIENCE);
+    const authorizationAudience = getOpenIdAuthorizationAudience();
+    if (authorizationAudience) {
+      params.set('audience', authorizationAudience);
       logger.debug(
-        `[openidStrategy] Adding audience to authorization request: ${process.env.OPENID_AUDIENCE}`,
+        `[openidStrategy] Adding audience to authorization request: ${authorizationAudience}`,
       );
     }
 

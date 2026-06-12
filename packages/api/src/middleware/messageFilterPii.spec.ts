@@ -173,15 +173,28 @@ describe('findPiiMatchInMessages', () => {
     ).toBeNull();
   });
 
-  it('skips non-user messages', () => {
+  it('matches a system-role message (remote APIs accept caller-supplied system roles)', () => {
     const hit = findPiiMatchInMessages(
-      [
-        { role: 'system', content: 'sk-proj-FAKE1234567890ABCDEF' },
-        { role: 'assistant', content: 'sk-proj-FAKE1234567890ABCDEF' },
-      ],
+      [{ role: 'system', content: 'system primer with sk-proj-FAKE1234567890ABCDEF embedded' }],
       {},
     );
-    expect(hit).toBeNull();
+    expect(hit).toEqual({ id: 'sk_prefix', label: 'sk- prefix token' });
+  });
+
+  it('matches an assistant-role message (callers can include attacker-controlled history)', () => {
+    const hit = findPiiMatchInMessages(
+      [{ role: 'assistant', content: 'sk-proj-FAKE1234567890ABCDEF' }],
+      {},
+    );
+    expect(hit).toEqual({ id: 'sk_prefix', label: 'sk- prefix token' });
+  });
+
+  it('matches a tool-role message', () => {
+    const hit = findPiiMatchInMessages(
+      [{ role: 'tool', content: 'tool reply leaking sk-proj-FAKE1234567890ABCDEF' }],
+      {},
+    );
+    expect(hit).toEqual({ id: 'sk_prefix', label: 'sk- prefix token' });
   });
 
   it('matches a string-content user message', () => {
