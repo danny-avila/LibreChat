@@ -29,6 +29,7 @@ import type { TAskFunction, ExtendedFile } from '~/common';
 import {
   logger,
   hasStreamStartFailed,
+  isSubmittableMessage,
   createDualMessageContent,
   getRouteChatProjectId,
 } from '~/utils';
@@ -242,7 +243,9 @@ export default function useChatFunctions({
     setShowStopButton(false);
 
     text = text.trim();
-    if (!!isSubmitting || text === '') {
+    /** Attached files make an otherwise empty draft submittable —
+     * e.g. replying to an agent that asked for a document upload. */
+    if (!!isSubmitting || !isSubmittableMessage(text, files?.size)) {
       return;
     }
 
