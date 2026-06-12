@@ -1,7 +1,10 @@
+import { createElement } from 'react';
 import { RecoilRoot, useRecoilCallback } from 'recoil';
 import { renderHook, act } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   Constants,
+  QueryKeys,
   StepTypes,
   StepEvents,
   ContentTypes,
@@ -17,12 +20,23 @@ import type {
   SubagentUpdateEvent,
   Agents,
 } from 'librechat-data-provider';
+import type { ReactNode } from 'react';
 import { subagentProgressByToolCallId } from '~/store/subagents';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
 
 /** `Constants` is a heterogeneous enum (`string | number`); annotate as
  *  `string` so the member is usable where a `string` field is expected. */
 const USE_PRELIM_RESPONSE_MESSAGE_ID: string = Constants.USE_PRELIM_RESPONSE_MESSAGE_ID;
+
+const queryClient = new QueryClient();
+/** The hook reads the React Query client (skill-authoring invalidation) and
+ *  Recoil callbacks (subagent updates), so every render needs both providers. */
+const Wrapper = ({ children }: { children?: ReactNode }) =>
+  createElement(
+    QueryClientProvider,
+    { client: queryClient },
+    createElement(RecoilRoot, null, children),
+  );
 
 const getToolCallName = (part?: TMessageContentParts): string | undefined => {
   if (part?.type !== ContentTypes.TOOL_CALL) {
@@ -158,7 +172,7 @@ describe('useStepHandler', () => {
 
   describe('initialization', () => {
     it('should return stepHandler, clearStepMaps, and syncStepMessage functions', () => {
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       expect(typeof result.current.stepHandler).toBe('function');
       expect(typeof result.current.clearStepMaps).toBe('function');
@@ -171,7 +185,7 @@ describe('useStepHandler', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStep = createRunStep();
       const submission = createSubmission();
@@ -190,7 +204,7 @@ describe('useStepHandler', () => {
     it('should warn and return early when no responseMessageId', () => {
       const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStep = createRunStep({ runId: '' });
       const submission = createSubmission();
@@ -208,7 +222,7 @@ describe('useStepHandler', () => {
       const initialResponse = createResponseMessage({ messageId: 'initial-response-id' });
       mockGetMessages.mockReturnValue([initialResponse]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStep = createRunStep({ runId: 'USE_PRELIM_RESPONSE_MESSAGE_ID' });
       const submission = createSubmission({
@@ -226,7 +240,7 @@ describe('useStepHandler', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStep = createToolCallRunStep();
       const submission = createSubmission();
@@ -254,7 +268,7 @@ describe('useStepHandler', () => {
         currentMessages = messages;
       });
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
       const submission = createSubmission({ initialResponse: responseMessage });
 
       const firstRunStep = createToolCallRunStep({
@@ -317,7 +331,7 @@ describe('useStepHandler', () => {
         currentMessages = messages;
       });
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
       const submission = createSubmission({ initialResponse: responseMessage });
 
       act(() => {
@@ -391,7 +405,7 @@ describe('useStepHandler', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValueOnce([userMessage, responseMessage]).mockReturnValueOnce([]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStep = createToolCallRunStep({
         runId: responseMessage.messageId,
@@ -426,7 +440,7 @@ describe('useStepHandler', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const submission = createSubmission();
       const stepId = 'step-buffered';
@@ -458,7 +472,7 @@ describe('useStepHandler', () => {
       const userMsg = createUserMessage();
       mockGetMessages.mockReturnValue([]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStep = createRunStep();
       const submission = createSubmission({ userMessage: userMsg });
@@ -513,7 +527,7 @@ describe('useStepHandler', () => {
         currentMessages = messages;
       });
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStep = createToolCallRunStep({
         id: 'step-oauth-login',
@@ -586,7 +600,7 @@ describe('useStepHandler', () => {
         currentMessages = messages;
       });
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
       const submission = createSubmission({
         userMessage: pendingUser,
         messages: [rootUser, existingResponse],
@@ -687,7 +701,7 @@ describe('useStepHandler', () => {
         currentMessages = messages;
       });
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
       const submission = createSubmission({
         userMessage: pendingUser,
         messages: [rootUser, existingResponse],
@@ -758,7 +772,7 @@ describe('useStepHandler', () => {
         currentMessages = messages;
       });
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStep = createToolCallRunStep({
         id: 'step-oauth-login',
@@ -821,7 +835,7 @@ describe('useStepHandler', () => {
 
       mockGetMessages.mockReturnValue([]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStep = createToolCallRunStep({
         id: 'step-oauth-login',
@@ -910,7 +924,7 @@ describe('useStepHandler', () => {
         currentMessages = messages;
       });
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStep = createRunStep({
         id: 'step-message-create',
@@ -982,7 +996,7 @@ describe('useStepHandler', () => {
         currentMessages = messages;
       });
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStep = createRunStep({
         id: 'step-message-create',
@@ -1013,7 +1027,7 @@ describe('useStepHandler', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStep = createToolCallRunStep({
         agentId: 'agent-1',
@@ -1042,7 +1056,7 @@ describe('useStepHandler', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStep = createRunStep();
       const submission = createSubmission();
@@ -1075,7 +1089,7 @@ describe('useStepHandler', () => {
     it('should warn when no responseMessageId for agent update', () => {
       const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const agentUpdate: Agents.AgentUpdate = {
         type: ContentTypes.AGENT_UPDATE,
@@ -1104,7 +1118,7 @@ describe('useStepHandler', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStep = createRunStep();
       const submission = createSubmission();
@@ -1133,7 +1147,7 @@ describe('useStepHandler', () => {
     });
 
     it('should buffer delta when step does not exist', () => {
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const messageDelta = createMessageDelta('nonexistent-step', 'Buffered');
       const submission = createSubmission();
@@ -1152,7 +1166,7 @@ describe('useStepHandler', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStep = createRunStep();
       const submission = createSubmission();
@@ -1186,7 +1200,7 @@ describe('useStepHandler', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStep = createRunStep();
       const submission = createSubmission();
@@ -1218,7 +1232,7 @@ describe('useStepHandler', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStep = createRunStep();
       const submission = createSubmission();
@@ -1247,7 +1261,7 @@ describe('useStepHandler', () => {
     });
 
     it('should buffer reasoning delta when step does not exist', () => {
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const reasoningDelta = createReasoningDelta('nonexistent-step', 'Buffered');
       const submission = createSubmission();
@@ -1266,7 +1280,7 @@ describe('useStepHandler', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStep = createRunStep();
       const submission = createSubmission();
@@ -1302,7 +1316,7 @@ describe('useStepHandler', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStep = createToolCallRunStep();
       const submission = createSubmission();
@@ -1332,7 +1346,7 @@ describe('useStepHandler', () => {
     });
 
     it('should buffer run step delta when step does not exist', () => {
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStepDelta: Agents.RunStepDeltaEvent = {
         id: 'nonexistent-step',
@@ -1357,7 +1371,7 @@ describe('useStepHandler', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStep = createToolCallRunStep();
       const submission = createSubmission();
@@ -1400,7 +1414,7 @@ describe('useStepHandler', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStep = createToolCallRunStep();
       const submission = createSubmission();
@@ -1445,10 +1459,101 @@ describe('useStepHandler', () => {
       expect(toolCallContent?.tool_call?.progress).toBe(1);
     });
 
+    it('invalidates skill queries when a completed create_file call targets a skill path', () => {
+      const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
+
+      const runStep = createToolCallRunStep();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      const completedEvent = {
+        result: {
+          id: 'step-tool-1',
+          index: 0,
+          tool_call: {
+            id: 'tool-call-1',
+            name: 'create_file',
+            args: JSON.stringify({ file_path: 'skills/demo/SKILL.md', content: '# Demo' }),
+            output: 'Updated skills/demo/SKILL.md (6 chars).',
+            type: ToolCallTypes.TOOL_CALL,
+          },
+        },
+      };
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP_COMPLETED,
+            data: completedEvent as { result: Agents.ToolEndEvent },
+          },
+          submission,
+        );
+      });
+
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: [QueryKeys.skills],
+        refetchType: 'all',
+      });
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: [QueryKeys.skill],
+        refetchType: 'all',
+      });
+      invalidateSpy.mockRestore();
+    });
+
+    it('does not invalidate skill queries for non-skill file authoring calls', () => {
+      const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
+
+      const runStep = createToolCallRunStep();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      const completedEvent = {
+        result: {
+          id: 'step-tool-1',
+          index: 0,
+          tool_call: {
+            id: 'tool-call-1',
+            name: 'create_file',
+            args: JSON.stringify({ file_path: '/mnt/data/report.md', content: '# Report' }),
+            output: 'Created /mnt/data/report.md (8 chars).',
+            type: ToolCallTypes.TOOL_CALL,
+          },
+        },
+      };
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP_COMPLETED,
+            data: completedEvent as { result: Agents.ToolEndEvent },
+          },
+          submission,
+        );
+      });
+
+      expect(invalidateSpy).not.toHaveBeenCalled();
+      invalidateSpy.mockRestore();
+    });
+
     it('should warn when step not found for completed event', () => {
       const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const completedEvent = {
         result: {
@@ -1484,7 +1589,7 @@ describe('useStepHandler', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStep = createToolCallRunStep({
         id: 'step-oauth-eli',
@@ -1539,7 +1644,7 @@ describe('useStepHandler', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStep = createRunStep();
       const submission = createSubmission();
@@ -1572,7 +1677,7 @@ describe('useStepHandler', () => {
       });
       mockGetMessages.mockReturnValue([responseMessage]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       act(() => {
         result.current.syncStepMessage(responseMessage);
@@ -1600,7 +1705,7 @@ describe('useStepHandler', () => {
     });
 
     it('should handle null message gracefully', () => {
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       expect(() => {
         act(() => {
@@ -1610,7 +1715,7 @@ describe('useStepHandler', () => {
     });
 
     it('should handle message without messageId gracefully', () => {
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       expect(() => {
         act(() => {
@@ -1628,7 +1733,7 @@ describe('useStepHandler', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStep = createRunStep();
       const submission = createSubmission();
@@ -1646,7 +1751,7 @@ describe('useStepHandler', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStep = createRunStep();
       const submission = createSubmission();
@@ -1670,7 +1775,7 @@ describe('useStepHandler', () => {
       });
       mockGetMessages.mockReturnValue([initialResponse]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStep = createRunStep({
         runId: 'initial-response-id',
@@ -1694,7 +1799,7 @@ describe('useStepHandler', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const submission = createSubmission();
       const stepId = 'step-multi-buffer';
@@ -1734,7 +1839,7 @@ describe('useStepHandler', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const submission = createSubmission();
       const stepId = 'step-mixed-buffer';
@@ -1774,7 +1879,7 @@ describe('useStepHandler', () => {
       });
       mockGetMessages.mockReturnValue([responseMessage]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       act(() => {
         result.current.syncStepMessage(responseMessage);
@@ -1816,7 +1921,7 @@ describe('useStepHandler', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
       const submission = createSubmission();
 
       act(() => {
@@ -1846,7 +1951,7 @@ describe('useStepHandler', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
       const submission = createSubmission();
 
       const runStep = createRunStep({
@@ -1905,7 +2010,7 @@ describe('useStepHandler', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
       const submission = createSubmission();
 
       act(() => {
@@ -1937,7 +2042,7 @@ describe('useStepHandler', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
       const submission = createSubmission();
 
       const runStep = createRunStep({
@@ -2019,7 +2124,7 @@ describe('useStepHandler', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
       const submission = createSubmission();
 
       const runStep = createRunStep({
@@ -2097,7 +2202,7 @@ describe('useStepHandler', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
       const submission = createSubmission();
 
       act(() => {
@@ -2128,7 +2233,7 @@ describe('useStepHandler', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
       const submission = createSubmission();
 
       const runStep = createRunStep({
@@ -2203,7 +2308,7 @@ describe('useStepHandler', () => {
     it('should handle empty messages array', () => {
       mockGetMessages.mockReturnValue([]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStep = createRunStep();
       const submission = createSubmission();
@@ -2218,7 +2323,7 @@ describe('useStepHandler', () => {
     it('should handle undefined messages from getMessages', () => {
       mockGetMessages.mockReturnValue(undefined);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStep = createRunStep();
       const submission = createSubmission();
@@ -2234,7 +2339,7 @@ describe('useStepHandler', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStep = createRunStep();
       const submission = createSubmission();
@@ -2267,7 +2372,7 @@ describe('useStepHandler', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
 
-      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const { result } = renderHook(() => useStepHandler(createHookParams()), { wrapper: Wrapper });
 
       const runStep = createRunStep();
       const submission = createSubmission();
@@ -2320,7 +2425,7 @@ describe('useStepHandler', () => {
           );
           return { ...stepHandler, read };
         },
-        { wrapper: RecoilRoot },
+        { wrapper: Wrapper },
       );
 
       const getProgress = (toolCallId: string): unknown =>

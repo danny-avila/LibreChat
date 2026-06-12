@@ -1704,6 +1704,7 @@
   "com_ui_untitled": "Untitled",
   "com_ui_update": "Update",
   "com_ui_update_mcp_server": "Update MCP server",
+  "com_ui_updated_file": "Updated {{0}}",
   "com_ui_updating": "Updating...",
   "com_ui_upload": "Upload",
   "com_ui_upload_agent_avatar": "Successfully updated agent avatar",

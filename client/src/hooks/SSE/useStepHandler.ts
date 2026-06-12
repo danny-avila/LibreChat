@@ -1,7 +1,9 @@
 import { useCallback, useRef } from 'react';
 import { useRecoilCallback } from 'recoil';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Constants,
+  QueryKeys,
   StepTypes,
   StepEvents,
   ContentTypes,
@@ -63,6 +65,34 @@ type AllContentTypes =
   | ContentTypes.SUMMARY
   | ContentTypes.ERROR;
 
+/** Mirrors `SKILL_FILE_PREFIX` in `@librechat/api` file-authoring handlers. */
+const SKILL_FILE_PREFIX = 'skills/';
+const FILE_AUTHORING_TOOLS = new Set(['create_file', 'edit_file']);
+
+/**
+ * True when a completed tool call authored a skill file (`create_file` /
+ * `edit_file` targeting a `skills/...` path). Skills created or edited
+ * mid-chat must invalidate the cached skill queries, or the Skills panel
+ * and builder keep showing the pre-authoring catalog.
+ */
+function isSkillAuthoringToolCall(toolCall?: Agents.ToolCall): boolean {
+  if (!toolCall?.name || !FILE_AUTHORING_TOOLS.has(toolCall.name)) {
+    return false;
+  }
+  const { args } = toolCall;
+  let filePath: unknown;
+  if (typeof args === 'object' && args !== null) {
+    filePath = (args as { file_path?: unknown }).file_path;
+  } else if (typeof args === 'string') {
+    try {
+      filePath = (JSON.parse(args) as { file_path?: unknown }).file_path;
+    } catch {
+      return false;
+    }
+  }
+  return typeof filePath === 'string' && filePath.startsWith(SKILL_FILE_PREFIX);
+}
+
 const isOAuthToolCallName = (name?: string) =>
   typeof name === 'string' && name.startsWith(`oauth${Constants.mcp_delimiter}`);
 
@@ -81,6 +111,7 @@ export default function useStepHandler({
   announcePolite,
   lastAnnouncementTimeRef,
 }: TUseStepHandler) {
+  const queryClient = useQueryClient();
   const toolCallIdMap = useRef(new Map<string, string | undefined>());
   const messageMap = useRef(new Map<string, TMessage>());
   const stepMap = useRef(new Map<string, Agents.RunStep>());
@@ -898,6 +929,22 @@ export default function useStepHandler({
           return;
         }
 
+        if (isSkillAuthoringToolCall(result.tool_call)) {
+          /** `refetchType: 'all'` so cached-but-unmounted skill queries refresh
+           *  too — they opt out of `refetchOnMount`, so a plain invalidation
+           *  would leave the Skills panel stale until a manual refresh. */
+          for (const key of [
+            QueryKeys.skills,
+            QueryKeys.skill,
+            QueryKeys.skillFiles,
+            QueryKeys.skillFileContent,
+            QueryKeys.skillTree,
+            QueryKeys.skillNodeContent,
+          ]) {
+            queryClient.invalidateQueries({ queryKey: [key], refetchType: 'all' });
+          }
+        }
+
         const response = messageMap.current.get(responseMessageId);
         if (response) {
           let updatedResponse = { ...response };
@@ -1029,6 +1076,7 @@ export default function useStepHandler({
       calculateContentIndex,
       getCurrentMessages,
       applySubagentUpdate,
+      queryClient,
     ],
   );
 
