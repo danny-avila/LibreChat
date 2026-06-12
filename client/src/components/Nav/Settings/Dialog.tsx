@@ -1,14 +1,15 @@
 import { useState } from 'react';
+import { X } from 'lucide-react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { SettingsTabValues } from 'librechat-data-provider';
 import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react';
-import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
 import type { TDialogProps } from '~/common';
-import { useSettingsContext } from './context';
 import type { SettingsTab } from './types';
+import { useSettingsContext } from './context';
+import { useLocalize } from '~/hooks';
 import Sidebar from './Sidebar';
 import Content from './Content';
+import { cn } from '~/utils';
 
 export default function SettingsDialog({ open, onOpenChange }: TDialogProps) {
   const localize = useLocalize();
@@ -54,11 +55,9 @@ export default function SettingsDialog({ open, onOpenChange }: TDialogProps) {
                 <button
                   type="button"
                   onClick={() => onOpenChange(false)}
-                  className="rounded-sm opacity-70 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-border-xheavy"
+                  className="rounded-lg p-1 text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-border-xheavy"
                 >
-                  <span aria-hidden="true" className="text-xl leading-none">
-                    ×
-                  </span>
+                  <X className="h-5 w-5" aria-hidden="true" />
                   <span className="sr-only">{localize('com_ui_close_settings')}</span>
                 </button>
               </DialogTitle>
