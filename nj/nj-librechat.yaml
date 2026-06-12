@@ -34,7 +34,7 @@ interface:
   bookmarks: false
   endpointsMenu: false
   fileCitations: false
-  fileSearch: false # Can be overridden with env var INTERFACE_FILE_SEARCH
+  fileSearch: true
   marketplace:
     use: true
   memories: false

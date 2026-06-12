@@ -70,7 +70,6 @@ jobs:
           export GUARDRAIL_VERSION="${{ secrets.GUARDRAIL_VERSION }}"
 
           export INTERFACE_AGENTS=$([[ "${{ inputs.environment }}" == "dev" ]] && echo true || echo false)
-          export INTERFACE_FILE_SEARCH=true
 
           export SEARCH=$([[ "${{ inputs.environment }}" == "prod" ]] && echo false || echo true)
           export MEILI_HOST=$([[ "${{ inputs.deploy_kitchensink }}" == "true" ]] && echo "http://meilisearch.kitchensink:7700" || echo "http://meilisearch.dev:7700")

@@ -75,7 +75,7 @@ export async function loadDefaultInterface({
     retainAgentFiles: interfaceConfig?.retainAgentFiles,
     runCode: interfaceConfig?.runCode,
     webSearch: interfaceConfig?.webSearch,
-    fileSearch: getEnvBoolean('INTERFACE_FILE_SEARCH') ?? interfaceConfig?.fileSearch,
+    fileSearch: interfaceConfig?.fileSearch,
     fileCitations: interfaceConfig?.fileCitations,
     peoplePicker: interfaceConfig?.peoplePicker,
     marketplace: interfaceConfig?.marketplace,
