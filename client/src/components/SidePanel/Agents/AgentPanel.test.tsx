@@ -170,32 +170,37 @@ let mockFormSubmitHandler: (() => void) | null = null;
 
 jest.mock('react-hook-form', () => {
   const actual = jest.requireActual('react-hook-form') as any;
+  /** AgentPanel consumes the form via useFormContext (provided by
+   * AgentPanelSwitch); the tests render AgentPanel directly, so both
+   * hooks resolve to the same mocked form. */
+  const useMockedForm = () => {
+    const methods = actual.useForm({
+      defaultValues: {
+        id: 'agent-123',
+        name: 'Test Agent',
+        description: 'Test description',
+        model: 'gpt-4',
+        provider: 'openai',
+        tools: [],
+        execute_code: false,
+        file_search: false,
+        web_search: false,
+      },
+    });
+
+    return {
+      ...methods,
+      handleSubmit: (onSubmit: any) => (e?: any) => {
+        e?.preventDefault?.();
+        mockFormSubmitHandler = () => onSubmit(methods.getValues());
+        return mockFormSubmitHandler;
+      },
+    };
+  };
   return {
     ...actual,
-    useForm: () => {
-      const methods = actual.useForm({
-        defaultValues: {
-          id: 'agent-123',
-          name: 'Test Agent',
-          description: 'Test description',
-          model: 'gpt-4',
-          provider: 'openai',
-          tools: [],
-          execute_code: false,
-          file_search: false,
-          web_search: false,
-        },
-      });
-
-      return {
-        ...methods,
-        handleSubmit: (onSubmit: any) => (e?: any) => {
-          e?.preventDefault?.();
-          mockFormSubmitHandler = () => onSubmit(methods.getValues());
-          return mockFormSubmitHandler;
-        },
-      };
-    },
+    useForm: useMockedForm,
+    useFormContext: useMockedForm,
     FormProvider: ({ children }: any) => children,
     useWatch: () => 'agent-123',
   };
