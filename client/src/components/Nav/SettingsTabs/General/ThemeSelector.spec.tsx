@@ -4,7 +4,7 @@ import 'test/matchMedia.mock';
 import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/extend-expect';
-import { ThemeSelector } from './General';
+import { ThemeSelector } from './Selectors';
 import { RecoilRoot } from 'recoil';
 
 describe('ThemeSelector', () => {
