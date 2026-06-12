@@ -2,13 +2,13 @@
 /* ^ We're not worried about i18n for this app ^ */
 
 import { useState } from 'react';
-import type { TFile } from 'librechat-data-provider';
+import { useRecoilState } from 'recoil';
 import icons from '@uswds/uswds/img/sprite.svg';
+import type { TFile } from 'librechat-data-provider';
+import FilesPanelSplash from '~/nj/components/SidePanel/Files/FilesPanelSplash';
 import { groupFiles } from '~/nj/components/SidePanel/Files/filesLogic';
 import FilesSection from '~/nj/components/SidePanel/Files/FilesSection';
-import { useRecoilState } from 'recoil';
 import { atomWithLocalStorage } from '~/store/utils';
-import FilesPanelSplash from '~/nj/components/SidePanel/Files/FilesPanelSplash';
 
 /**
  * Our replacement for the built-in LibreChat files panel.
@@ -62,7 +62,7 @@ export default function FilesPanel({
           value={filenameFilter}
           onChange={(event) => setFilenameFilter(event.target.value)}
           aria-label="Filter files by filename"
-          className="w-full rounded-lg border border-border-light bg-white py-2 pl-9 pr-3 text-sm placeholder:text-text-primary focus-visible:outline-none"
+          className="w-full rounded-lg border border-border-light bg-white py-2 pl-9 pr-3 text-sm placeholder:text-text-primary"
         />
       </div>
 
