@@ -1,3 +1,6 @@
+/* eslint-disable i18next/no-literal-string */
+/* ^ We're not worried about i18n for this app ^ */
+
 import React, { useMemo, useCallback, useRef, useState } from 'react';
 import { Button, useToastContext } from '@librechat/client';
 import { useWatch, useForm, FormProvider } from 'react-hook-form';
@@ -21,10 +24,12 @@ import {
   useGetExpandedAgentByIdQuery,
   useUploadAgentAvatarMutation,
 } from '~/data-provider';
+import AgentBuilderHeader from '~/nj/components/Agents/AgentBuilderHeader';
 import { createProviderOption, getDefaultAgentFormValues } from '~/utils';
 import { useResourcePermissions } from '~/hooks/useResourcePermissions';
 import { useSelectAgent, useLocalize, useAuthContext } from '~/hooks';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
+import { useDuplicateAgentMutation } from '~/data-provider';
 import AgentPanelSkeleton from './AgentPanelSkeleton';
 import AdvancedPanel from './Advanced/AdvancedPanel';
 import { Panel, isEphemeralAgent } from '~/common';
@@ -32,7 +37,6 @@ import AgentConfig from './AgentConfig';
 import AgentSelect from './AgentSelect';
 import AgentFooter from './AgentFooter';
 import ModelPanel from './ModelPanel';
-import AgentBuilderHeader from '~/nj/components/Agents/AgentBuilderHeader';
 
 /* Helpers */
 function getUpdateToastMessage(
@@ -248,6 +252,28 @@ export default function AgentPanel() {
     defaultValues: getDefaultAgentFormValues(),
     mode: 'onChange',
   });
+
+  const duplicateAgent = useDuplicateAgentMutation({
+    onSuccess: ({ agent }) => {
+      showToast({
+        message: localize('com_ui_agent_duplicated'),
+        status: 'success',
+      });
+
+      setCurrentAgentId(agent.id);
+    },
+    onError: (error) => {
+      console.error(error);
+      showToast({
+        message: localize('com_ui_agent_duplicate_error'),
+        status: 'error',
+      });
+    },
+  });
+
+  const handleDuplicate = () => {
+    duplicateAgent.mutate({ agent_id });
+  };
 
   const {
     control,
@@ -552,6 +578,10 @@ export default function AgentPanel() {
                   {localize('com_agents_not_available')}
                 </h2>
                 <p className="text-token-text-secondary">{localize('com_agents_no_access')}</p>
+                {/* NJ: Give users a way to edit their own copy of an agent */}
+                <Button variant="submit" className="mt-4" onClick={handleDuplicate}>
+                  Duplicate & edit<span className="sr-only"> agent {agentQuery?.data?.name}</span>
+                </Button>
               </div>
             </div>
           )}
