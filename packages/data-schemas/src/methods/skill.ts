@@ -1505,16 +1505,32 @@ export function createSkillMethods(
    * runtime scopes the catalog to an empty intersection and the agent silently
    * loses all skills. Direct `updateMany` on purpose: hygiene, not an authored
    * edit — no version entry, timestamps untouched.
+   *
+   * Ids are lowercased first: allowlists store canonical `_id.toString()`
+   * values, and an uppercase-but-valid id would delete the Skill doc yet
+   * leave the dangling entry behind.
+   *
+   * Agents whose ENTIRE allowlist is being deleted fail closed instead:
+   * an emptied allowlist with `skills_enabled: true` means the full
+   * accessible catalog at runtime, so a plain `$pull` would silently widen
+   * a deliberately restricted agent. Disabling skills preserves the
+   * restriction until an author makes a new explicit choice.
    */
   async function removeSkillsFromAgentAllowlists(skillIds: string[]): Promise<void> {
     if (skillIds.length === 0) {
       return;
     }
+    const ids = skillIds.map((id) => id.toLowerCase());
     const Agent = mongoose.models.Agent as Model<IAgent>;
     try {
       await Agent.updateMany(
-        { skills: { $in: skillIds } },
-        { $pull: { skills: { $in: skillIds } } },
+        { skills: { $in: ids, $not: { $elemMatch: { $nin: ids } } } },
+        { $set: { skills: [], skills_enabled: false } },
+        { timestamps: false },
+      );
+      await Agent.updateMany(
+        { skills: { $in: ids } },
+        { $pull: { skills: { $in: ids } } },
         { timestamps: false },
       );
     } catch (error) {

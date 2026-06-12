@@ -608,7 +608,7 @@ describe('Agent Methods', () => {
       expect(updatedAgent!.skills_enabled).toBe(true);
     });
 
-    test('should heal a fully dangling allowlist to an empty array on update', async () => {
+    test('should fail closed when pruning empties the allowlist on update', async () => {
       const { agentId, authorId } = createTestIds();
       const danglingId = new mongoose.Types.ObjectId().toString();
 
@@ -624,6 +624,23 @@ describe('Agent Methods', () => {
         { id: agentId },
         { skills: [danglingId], skills_enabled: true },
       );
+
+      expect(updatedAgent!.skills).toEqual([]);
+      expect(updatedAgent!.skills_enabled).toBe(false);
+    });
+
+    test('should keep full-catalog semantics for an explicit empty allowlist on update', async () => {
+      const { agentId, authorId } = createTestIds();
+
+      await createAgent({
+        id: agentId,
+        name: 'Explicit Empty Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+
+      const updatedAgent = await updateAgent({ id: agentId }, { skills: [], skills_enabled: true });
 
       expect(updatedAgent!.skills).toEqual([]);
       expect(updatedAgent!.skills_enabled).toBe(true);
@@ -1841,7 +1858,7 @@ describe('Agent Methods', () => {
 
       expect(revertedAgent.name).toBe('Revert Skill Agent');
       expect(revertedAgent.skills).toEqual([]);
-      expect(revertedAgent.skills_enabled).toBe(true);
+      expect(revertedAgent.skills_enabled).toBe(false);
     });
 
     test('should detect action metadata changes and force version update', async () => {

@@ -574,8 +574,26 @@ describe('Skill CRUD methods', () => {
 
     const agentAfter = (await Agent.findById(agent._id).lean()) as {
       skills?: string[];
+      skills_enabled?: boolean;
     } | null;
     expect(agentAfter?.skills).toEqual([]);
+    expect(agentAfter?.skills_enabled).toBe(false);
+  });
+
+  it('deleteSkill disables skills when the deleted id was the entire allowlist', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'only-skill' }));
+    const Agent = mongoose.models.Agent;
+    const agent = await Agent.create(makeAgentDoc([skill._id.toString()]));
+
+    const res = await methods.deleteSkill(skill._id.toString().toUpperCase());
+    expect(res.deleted).toBe(true);
+
+    const agentAfter = (await Agent.findById(agent._id).lean()) as {
+      skills?: string[];
+      skills_enabled?: boolean;
+    } | null;
+    expect(agentAfter?.skills).toEqual([]);
+    expect(agentAfter?.skills_enabled).toBe(false);
   });
 
   it('deleteSkill prunes the deleted id from agent skill allowlists', async () => {
@@ -1877,6 +1895,6 @@ describe('deleteUserSkills', () => {
       skills_enabled?: boolean;
     } | null;
     expect(agentAfter?.skills).toEqual([]);
-    expect(agentAfter?.skills_enabled).toBe(true);
+    expect(agentAfter?.skills_enabled).toBe(false);
   });
 });

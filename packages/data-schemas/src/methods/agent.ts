@@ -332,7 +332,13 @@ export function createAgentMethods(
   async function createAgent(agentData: Record<string, unknown>): Promise<IAgent> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
     if (Array.isArray(agentData.skills) && agentData.skills.length > 0) {
-      agentData.skills = await filterExistingSkillIds(mongoose, agentData.skills as string[]);
+      const prunedSkills = await filterExistingSkillIds(mongoose, agentData.skills as string[]);
+      agentData.skills = prunedSkills;
+      /** Fail closed when pruning empties a non-empty allowlist — empty +
+       *  enabled means the full catalog, and hygiene must never widen scope. */
+      if (prunedSkills.length === 0) {
+        agentData.skills_enabled = false;
+      }
     }
     const { author: _author, ...versionData } = agentData;
     const timestamp = new Date();
@@ -445,7 +451,11 @@ export function createAgentMethods(
       /** Self-heal: drop allowlist ids whose skill doc no longer exists.
        *  A dangling id keeps the allowlist non-empty while scoping the
        *  runtime catalog to an empty intersection — silently disabling
-       *  skills for the agent. */
+       *  skills for the agent. When pruning empties a non-empty allowlist,
+       *  fail closed and disable skills: empty + enabled means the full
+       *  catalog, and hygiene must never widen scope. (An explicit user
+       *  `skills: []` submission skips this branch and keeps the
+       *  full-catalog semantics.) */
       if (Array.isArray(directUpdates.skills) && directUpdates.skills.length > 0) {
         const prunedSkills = await filterExistingSkillIds(
           mongoose,
@@ -453,6 +463,10 @@ export function createAgentMethods(
         );
         directUpdates.skills = prunedSkills;
         updateData.skills = prunedSkills;
+        if (prunedSkills.length === 0) {
+          directUpdates.skills_enabled = false;
+          updateData.skills_enabled = false;
+        }
       }
 
       // Sync mcpServerNames when tools are updated
@@ -929,12 +943,17 @@ export function createAgentMethods(
 
     /** Version snapshots can predate skill deletions; restoring one verbatim
      *  would resurrect dangling allowlist ids that scope the catalog to
-     *  nothing. Same self-heal as `createAgent`/`updateAgent`. */
+     *  nothing. Same self-heal (and fail-closed-on-empty rule) as
+     *  `createAgent`/`updateAgent`. */
     if (Array.isArray(revertToVersion.skills) && revertToVersion.skills.length > 0) {
-      revertToVersion.skills = await filterExistingSkillIds(
+      const prunedSkills = await filterExistingSkillIds(
         mongoose,
         revertToVersion.skills as string[],
       );
+      revertToVersion.skills = prunedSkills;
+      if (prunedSkills.length === 0) {
+        revertToVersion.skills_enabled = false;
+      }
     }
 
     const revertedAgent = await Agent.findOneAndUpdate(searchParameter, revertToVersion, {

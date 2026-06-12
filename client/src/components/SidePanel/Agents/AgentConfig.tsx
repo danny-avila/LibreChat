@@ -40,6 +40,14 @@ import AgentTool from './AgentTool';
 import CodeForm from './Code/Form';
 import MCPTools from './MCPTools';
 
+/** A skill lookup only counts as a confirmed miss on 404/403 — deleted or no
+ *  longer shared. Transient/network/server errors must not present a valid
+ *  configured skill as removable. */
+const isConfirmedSkillMiss = (error: unknown): boolean => {
+  const status = (error as { response?: { status?: number } } | null)?.response?.status;
+  return status === 404 || status === 403;
+};
+
 const labelClass = 'mb-2 text-token-text-primary block text-sm font-medium';
 const inputClass = cn(
   defaultTextProps,
@@ -135,7 +143,7 @@ export default function AgentConfig() {
     const map = new Map<string, { name?: string; missing: boolean }>();
     unresolvedSkillIds.forEach((skillId, index) => {
       const query = unresolvedSkillQueries[index];
-      if (query?.isError === true) {
+      if (query?.isError === true && isConfirmedSkillMiss(query.error)) {
         map.set(skillId, { missing: true });
       } else if (query?.data?.name) {
         map.set(skillId, { name: query.data.name, missing: false });
