@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import type { Model, Types } from 'mongoose';
 import logger from '~/config/winston';
 import type { IBanner, IUser } from '~/types';
+import logger from '~/config/winston';
 
 export interface BannerListOptions {
   limit?: number;
@@ -21,7 +22,9 @@ export type BannerUpdateInput = Partial<
   displayTo?: Date | null;
 };
 
-export function createBannerMethods(mongoose: typeof import('mongoose')) {
+export function createBannerMethods(mongoose: typeof import('mongoose')): {
+  getBanner: (user?: IUser | null) => Promise<IBanner | null>;
+} {
   /**
    * Retrieves the current active banner.
    */

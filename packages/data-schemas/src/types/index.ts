@@ -5,6 +5,7 @@ export * from './app';
 export * from './user';
 export * from './token';
 export * from './convo';
+export * from './chatProject';
 export * from './session';
 export * from './balance';
 export * from './banner';
@@ -25,6 +26,7 @@ export * from './memory';
 export * from './prompts';
 /* Skills */
 export * from './skill';
+export * from './skillSync';
 /* Access Control */
 export * from './accessRole';
 export * from './aclEntry';

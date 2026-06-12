@@ -1,8 +1,9 @@
 import { Component, ErrorInfo, ReactNode, createRef } from 'react';
+import { JSX } from 'react/jsx-runtime';
 import { RefreshCw } from 'lucide-react';
+import { useLocalize } from '~/hooks';
 import { Button } from '../Button';
 import { logger } from '~/utils';
-import { useLocalize } from '~/hooks';
 
 /**
  * Error boundary specifically for DataTable component.
@@ -114,7 +115,7 @@ class DataTableErrorBoundaryInner extends Component<
   }
 }
 
-export function DataTableErrorBoundary(props: DataTableErrorBoundaryProps) {
+export function DataTableErrorBoundary(props: DataTableErrorBoundaryProps): JSX.Element {
   const localize = useLocalize();
   return <DataTableErrorBoundaryInner {...props} localize={localize} />;
 }

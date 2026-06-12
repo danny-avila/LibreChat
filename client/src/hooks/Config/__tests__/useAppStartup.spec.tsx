@@ -4,14 +4,20 @@ import { renderHook } from '@testing-library/react';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { TUser } from 'librechat-data-provider';
 
+type CloudFrontRetryOptions = { getAuthorizationHeader: () => string | undefined };
+
 const mockUseHasAccess = jest.fn();
 const mockUseMCPServersQuery = jest.fn();
 const mockUseMCPToolsQuery = jest.fn();
-const mockInstallCloudFrontImageRetry = jest.fn(() => jest.fn());
+const mockInstallCloudFrontImageRetry = jest.fn(
+  (_startupConfig: unknown, _options: CloudFrontRetryOptions): (() => void) =>
+    () =>
+      undefined,
+);
 const mockGetTokenHeader = jest.fn();
 
 jest.mock('@librechat/client', () => ({
-  installCloudFrontImageRetry: (startupConfig: unknown, options: unknown) =>
+  installCloudFrontImageRetry: (startupConfig: unknown, options: CloudFrontRetryOptions) =>
     mockInstallCloudFrontImageRetry(startupConfig, options),
 }));
 

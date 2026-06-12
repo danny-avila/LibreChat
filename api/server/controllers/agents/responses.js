@@ -12,18 +12,19 @@ const {
 const {
   createRun,
   buildToolSet,
-  loadSkillStates,
-  resolveAgentScopedSkillIds,
   createSafeUser,
   initializeAgent,
+  loadSkillStates,
   getBalanceConfig,
+  injectSkillPrimes,
+  extractManualSkills,
   recordCollectedUsage,
   getTransactionsConfig,
-  extractManualSkills,
-  injectSkillPrimes,
-  createToolExecuteHandler,
+  findPiiMatchInMessages,
   discoverConnectedAgents,
+  createToolExecuteHandler,
   getRemoteAgentPermissions,
+  resolveAgentScopedSkillIds,
   // Responses API
   writeDone,
   buildResponse,
@@ -56,8 +57,11 @@ const {
 } = require('~/server/services/PermissionService');
 const {
   getSkillToolDeps,
-  enrichWithSkillConfigurable,
-  buildSkillPrimedIdsByName,
+  getSkillDbMethods,
+  canAuthorSkillFiles,
+  withDeploymentSkillIds,
+  buildAgentToolContext,
+  enrichLoadedToolsWithAgentContext,
 } = require('~/server/services/Endpoints/agents/skillDeps');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { logViolation } = require('~/cache');
@@ -350,6 +354,7 @@ const createResponse = async (req, res) => {
 
     // Create tool loader
     const loadTools = createToolLoader(abortController.signal);
+    const skillDbMethods = getSkillDbMethods();
 
     // Initialize the agent first to check for disableStreaming
     const endpointOption = {
@@ -373,9 +378,9 @@ const createResponse = async (req, res) => {
       getUserCodeFiles: db.getUserCodeFiles,
       getToolFilesByIds: db.getToolFilesByIds,
       getCodeGeneratedFiles: db.getCodeGeneratedFiles,
-      listSkillsByAccess: db.listSkillsByAccess,
-      listAlwaysApplySkills: db.listAlwaysApplySkills,
-      getSkillByName: db.getSkillByName,
+      listSkillsByAccess: skillDbMethods.listSkillsByAccess,
+      listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
+      getSkillByName: skillDbMethods.getSkillByName,
     };
 
     const enabledCapabilities = new Set(
@@ -384,13 +389,26 @@ const createResponse = async (req, res) => {
     const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
     const ephemeralSkillsToggle = req.body?.ephemeralAgent?.skills === true;
     const accessibleSkillIds = skillsCapabilityEnabled
+      ? withDeploymentSkillIds(
+          await findAccessibleResources({
+            userId: req.user.id,
+            role: req.user.role,
+            resourceType: ResourceType.SKILL,
+            requiredPermissions: PermissionBits.VIEW,
+          }),
+        )
+      : [];
+    const editableSkillIds = skillsCapabilityEnabled
       ? await findAccessibleResources({
           userId: req.user.id,
           role: req.user.role,
           resourceType: ResourceType.SKILL,
-          requiredPermissions: PermissionBits.VIEW,
+          requiredPermissions: PermissionBits.EDIT,
         })
       : [];
+    const skillCreateAllowed = skillsCapabilityEnabled
+      ? await getSkillToolDeps().canCreateSkill({ req })
+      : false;
 
     const { skillStates, defaultActiveOnShare } = await loadSkillStates({
       userId: req.user.id,
@@ -400,6 +418,19 @@ const createResponse = async (req, res) => {
     });
 
     const manualSkills = extractManualSkills(req.body);
+
+    const primaryScopedSkillIds = resolveAgentScopedSkillIds({
+      agent,
+      accessibleSkillIds,
+      skillsCapabilityEnabled,
+      ephemeralSkillsToggle,
+    });
+    const primaryScopedEditableSkillIds = resolveAgentScopedSkillIds({
+      agent,
+      accessibleSkillIds: editableSkillIds,
+      skillsCapabilityEnabled,
+      ephemeralSkillsToggle,
+    });
 
     const primaryConfig = await initializeAgent(
       {
@@ -413,9 +444,11 @@ const createResponse = async (req, res) => {
         endpointOption,
         allowedProviders,
         isInitialAgent: true,
-        accessibleSkillIds: resolveAgentScopedSkillIds({
+        accessibleSkillIds: primaryScopedSkillIds,
+        skillAuthoringAvailable: canAuthorSkillFiles({
           agent,
-          accessibleSkillIds,
+          scopedEditableSkillIds: primaryScopedEditableSkillIds,
+          skillCreateAllowed,
           skillsCapabilityEnabled,
           ephemeralSkillsToggle,
         }),
@@ -434,20 +467,17 @@ const createResponse = async (req, res) => {
      * @type {Map<string, {
      *   agent: object,
      *   toolRegistry?: import('@librechat/agents').LCToolRegistry,
+     *   requestScopedConnections?: import('@librechat/api').RequestScopedMCPConnectionStore,
      *   userMCPAuthMap?: Record<string, Record<string, string>>,
      *   tool_resources?: object,
      *   actionsEnabled?: boolean,
      * }>}
      */
     const agentToolContexts = new Map();
-    agentToolContexts.set(primaryConfig.id, {
-      agent,
-      toolRegistry: primaryConfig.toolRegistry,
-      userMCPAuthMap: primaryConfig.userMCPAuthMap,
-      tool_resources: primaryConfig.tool_resources,
-      actionsEnabled: primaryConfig.actionsEnabled,
-      codeEnvAvailable: primaryConfig.codeEnvAvailable,
-    });
+    agentToolContexts.set(
+      primaryConfig.id,
+      buildAgentToolContext({ agent, config: primaryConfig }),
+    );
 
     // Only run BFS discovery (and pay `getModelsConfig` upfront) when the
     // primary has edges to follow — the common API case is single-agent.
@@ -476,6 +506,28 @@ const createResponse = async (req, res) => {
           // sub-agent must clear the same sharing boundary, not the looser
           // in-app AGENT one.
           resourceType: ResourceType.REMOTE_AGENT,
+          computeAccessibleSkillIds: (handoffAgent) =>
+            resolveAgentScopedSkillIds({
+              agent: handoffAgent,
+              accessibleSkillIds,
+              skillsCapabilityEnabled,
+              ephemeralSkillsToggle,
+            }),
+          computeSkillAuthoringAvailable: (handoffAgent) =>
+            canAuthorSkillFiles({
+              agent: handoffAgent,
+              scopedEditableSkillIds: resolveAgentScopedSkillIds({
+                agent: handoffAgent,
+                accessibleSkillIds: editableSkillIds,
+                skillsCapabilityEnabled,
+                ephemeralSkillsToggle,
+              }),
+              skillCreateAllowed,
+              skillsCapabilityEnabled,
+              ephemeralSkillsToggle,
+            }),
+          skillStates,
+          defaultActiveOnShare,
           /** @see DiscoverConnectedAgentsParams.codeEnvAvailable */
           codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
         },
@@ -498,14 +550,7 @@ const createResponse = async (req, res) => {
           logViolation,
           db: dbMethods,
           onAgentInitialized: (agentId, handoffAgent, config) => {
-            agentToolContexts.set(agentId, {
-              agent: handoffAgent,
-              toolRegistry: config.toolRegistry,
-              userMCPAuthMap: config.userMCPAuthMap,
-              tool_resources: config.tool_resources,
-              actionsEnabled: config.actionsEnabled,
-              codeEnvAvailable: config.codeEnvAvailable,
-            });
+            agentToolContexts.set(agentId, buildAgentToolContext({ agent: handoffAgent, config }));
           },
           initializeAgent,
         },
@@ -531,6 +576,17 @@ const createResponse = async (req, res) => {
     const inputMessages = convertToInternalMessages(
       typeof request.input === 'string' ? request.input : request.input,
     );
+
+    const piiHit = findPiiMatchInMessages(inputMessages, appConfig?.messageFilter?.pii);
+    if (piiHit != null) {
+      return sendResponsesErrorResponse(
+        res,
+        400,
+        `Message contains a ${piiHit.label}. Remove it and try again.`,
+        'invalid_request',
+        'message_filter_pii_block',
+      );
+    }
 
     // Merge previous messages with new input
     const allMessages = [...previousMessages, ...inputMessages];
@@ -573,19 +629,13 @@ const createResponse = async (req, res) => {
       }
     }
 
-    /* Stable for the turn: the prime lists are fixed once
-       `initializeAgent` resolves. Hoisted here so both the streaming
-       and non-streaming `loadTools` closures below reuse it without
-       recomputing per tool execution. `codeEnvAvailable` is read
+    /* Stable for the turn: the primary prime list is fixed once
+       `initializeAgent` resolves and is used as the fallback when a
+       specific agent context is unavailable. `codeEnvAvailable` is read
        per-agent from the stored tool context (admin cap AND that
        agent's `tools` list includes `execute_code`) — a skills-only
        agent never gains sandbox access even if the admin enabled the
        capability globally. */
-    const skillPrimedIdsByName = buildSkillPrimedIdsByName(
-      manualSkillPrimes,
-      alwaysApplySkillPrimes,
-    );
-
     // Create tracker for streaming or aggregator for non-streaming
     const tracker = actuallyStreaming ? createResponseTracker() : null;
     const aggregator = actuallyStreaming ? null : createResponseAggregator();
@@ -635,17 +685,17 @@ const createResponse = async (req, res) => {
             agent: ctx.agent ?? agent,
             signal: abortController.signal,
             toolRegistry: ctx.toolRegistry,
+            mcpAvailableTools: ctx.mcpAvailableTools,
+            requestScopedConnections: ctx.requestScopedConnections,
             userMCPAuthMap: ctx.userMCPAuthMap,
             tool_resources: ctx.tool_resources,
             actionsEnabled: ctx.actionsEnabled,
           });
-          return enrichWithSkillConfigurable(
+          return enrichLoadedToolsWithAgentContext({
             result,
             req,
-            primaryConfig.accessibleSkillIds,
-            ctx.codeEnvAvailable === true,
-            skillPrimedIdsByName,
-          );
+            ctx,
+          });
         },
         toolEndCallback,
         ...getSkillToolDeps(),
@@ -811,17 +861,17 @@ const createResponse = async (req, res) => {
             agent: ctx.agent ?? agent,
             signal: abortController.signal,
             toolRegistry: ctx.toolRegistry,
+            mcpAvailableTools: ctx.mcpAvailableTools,
+            requestScopedConnections: ctx.requestScopedConnections,
             userMCPAuthMap: ctx.userMCPAuthMap,
             tool_resources: ctx.tool_resources,
             actionsEnabled: ctx.actionsEnabled,
           });
-          return enrichWithSkillConfigurable(
+          return enrichLoadedToolsWithAgentContext({
             result,
             req,
-            primaryConfig.accessibleSkillIds,
-            ctx.codeEnvAvailable === true,
-            skillPrimedIdsByName,
-          );
+            ctx,
+          });
         },
         toolEndCallback,
         ...getSkillToolDeps(),
