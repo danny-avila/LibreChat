@@ -2,12 +2,12 @@
 /* ^ We're not worried about i18n for this app ^ */
 
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { LayoutGrid, Plus } from 'lucide-react';
-import AgentSelect from '~/components/SidePanel/Agents/AgentSelect';
-import ManageAgentDropdown from '~/nj/components/Agents/ManageAgentDropdown';
 import type { QueryObserverResult, UseMutationResult } from '@tanstack/react-query';
 import type { Agent, AgentCreateParams } from 'librechat-data-provider';
-import { useNavigate } from 'react-router-dom';
+import ManageAgentDropdown from '~/nj/components/Agents/ManageAgentDropdown';
+import AgentSelect from '~/components/SidePanel/Agents/AgentSelect';
 import { useLocalize, useShowMarketplace } from '~/hooks';
 
 export default function AgentBuilderHeader({
@@ -28,9 +28,9 @@ export default function AgentBuilderHeader({
   const showAgentMarketplace = useShowMarketplace();
 
   return (
-    <div className="flex w-full flex-wrap gap-2 bg-surface-tertiary-alt">
-      <div className="mb-1 w-full">
-        <div className="flex w-full flex-row items-center justify-between bg-surface-primary-alt px-3 pb-4 pt-4">
+    <div className="flex w-full flex-wrap">
+      <div className="mb-2 w-full">
+        <div className="flex w-full flex-row items-center justify-between px-3 pb-4 pt-4">
           <h2 className="py-1 text-xl font-bold">Agent Builder</h2>
 
           {/* "Create new" button, shown only when editing an existing agent */}
@@ -46,12 +46,12 @@ export default function AgentBuilderHeader({
           )}
         </div>
 
-        <hr className="mb-4 border-border-medium" />
+        <hr className="mb-4 border-border-light" />
         <span className="mx-3 text-sm font-semibold">Select an agent to edit</span>
       </div>
 
       {/* Select agent to edit */}
-      <div className="mx-3 w-full">
+      <div className="mx-3 mb-1 w-full">
         <AgentSelect
           createMutation={createMutation}
           agentQuery={agentQuery}
@@ -62,7 +62,7 @@ export default function AgentBuilderHeader({
 
       {/* Show agent library & manage agent dropdown */}
       {showAgentMarketplace && (
-        <div className="mx-3 mt-1 flex w-full flex-row items-center justify-between">
+        <div className="mx-3 flex w-full flex-row items-center justify-between">
           <button
             type="button"
             className="rounded px-2 py-2 hover:bg-surface-active-alt"
@@ -86,7 +86,7 @@ export default function AgentBuilderHeader({
         </div>
       )}
 
-      <hr className="mt-1 w-full border-border-heavy" />
+      <hr className="mt-2 w-full border-border-light" />
     </div>
   );
 }

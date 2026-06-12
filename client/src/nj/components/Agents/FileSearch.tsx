@@ -5,11 +5,11 @@ import React, { useMemo, useRef, useState } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { AgentCapabilities, EModelEndpoint, EToolResources } from 'librechat-data-provider';
 import type { AgentForm, ExtendedFile } from '~/common';
+import FileSearchCheckbox from '~/components/SidePanel/Agents/FileSearchCheckbox';
 import { useFileHandlingNoChatContext } from '~/hooks/Files/useFileHandling';
 import { useAgentFileConfig, useLazyEffect, useLocalize } from '~/hooks';
-import FileRow from '~/components/Chat/Input/Files/FileRow';
-import FileSearchCheckbox from '~/components/SidePanel/Agents/FileSearchCheckbox';
 import AddFilesButton from '~/nj/components/Agents/AddFilesButton';
+import FileRow from '~/components/Chat/Input/Files/FileRow';
 
 /**
  * New Jersey's customized FileSearch UI (based on LibreChat's `FileSearch.tsx`).
@@ -68,11 +68,11 @@ export default function FileSearch({
 
   return (
     <div className="w-full">
-      <hr className="mb-2 border-border-heavy" />
+      <hr className="mb-2 border-border-light" />
 
       {/* Header & explanation */}
       <div className="mx-3 mb-3">
-        <h3 className="text-sm font-semibold">{localize('com_assistants_file_search')}</h3>
+        <h3 className="font-semibold">{localize('com_assistants_file_search')}</h3>
         <p className="mt-1 text-sm text-text-secondary">
           Upload any documents you want the agent to search through — like policy documents,
           research papers, and other work files.
@@ -80,10 +80,8 @@ export default function FileSearch({
         <FileSearchCheckbox />
       </div>
 
-      <hr className="border-border-heavy" />
-
       {fileSearchChecked && (
-        <div className="flex flex-col gap-3 bg-surface-tertiary-alt px-3 pb-4 pt-4">
+        <div className="flex flex-col gap-3 px-3 pb-4">
           {/* File Search (RAG API) Files */}
           <FileRow
             files={files}
@@ -115,7 +113,7 @@ export default function FileSearch({
 
           {/* Disabled Message */}
           {!agent_id && (
-            <div className="text-center text-sm text-text-secondary">
+            <div className="rounded border border-border-medium bg-surface-active-alt px-2 py-4 text-center text-sm text-text-secondary">
               {localize('com_agents_file_search_disabled')}
             </div>
           )}

@@ -1,7 +1,7 @@
-import uswdsIcons from '@uswds/uswds/img/sprite.svg';
-import { X } from 'lucide-react';
 import React from 'react';
+import { X } from 'lucide-react';
 import { useRecoilState } from 'recoil';
+import uswdsIcons from '@uswds/uswds/img/sprite.svg';
 import { atomWithLocalStorage } from '~/store/utils';
 
 /**
@@ -27,7 +27,7 @@ export default function TipComponent({
   if (!showComplexBanner) return null;
 
   return (
-    <div className="mx-3 mb-4 rounded-lg border border-border-light bg-surface-secondary p-3">
+    <div className="mx-3 mb-4 rounded-lg border border-border-light bg-white p-3">
       <div className="flex items-start gap-2">
         <svg
           className="usa-icon tip-component-icon mt-0.5 flex-shrink-0"

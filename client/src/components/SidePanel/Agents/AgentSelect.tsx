@@ -1,6 +1,6 @@
+import { memo, useCallback, useEffect, useRef } from 'react';
 import { EarthIcon } from 'lucide-react';
 import { ControlCombobox } from '@librechat/client';
-import { memo, useCallback, useEffect, useRef } from 'react';
 import { useFormContext, Controller } from 'react-hook-form';
 import { AgentCapabilities, defaultAgentFormValues } from 'librechat-data-provider';
 import type { UseMutationResult, QueryObserverResult } from '@tanstack/react-query';
@@ -234,7 +234,7 @@ function AgentSelect({
             ]
           }
           className={cn(
-            'z-50 flex h-9 w-full flex-none items-center justify-center truncate rounded-md bg-transparent font-bold',
+            'z-50 flex h-9 w-full flex-none items-center justify-center truncate rounded-md bg-white font-bold',
           )}
           ariaLabel={localize('com_ui_agent')}
           isCollapsed={false}

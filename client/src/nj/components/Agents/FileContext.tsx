@@ -6,8 +6,8 @@ import { EModelEndpoint, EToolResources } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import { useFileHandlingNoChatContext } from '~/hooks/Files/useFileHandling';
 import { useAgentFileConfig, useLazyEffect, useLocalize } from '~/hooks';
-import FileRow from '~/components/Chat/Input/Files/FileRow';
 import AddFilesButton from '~/nj/components/Agents/AddFilesButton';
+import FileRow from '~/components/Chat/Input/Files/FileRow';
 
 /**
  * New Jersey's customized FileContext UI (based on LibreChat's `FileContext.tsx`).
@@ -64,20 +64,18 @@ export default function FileContext({
 
   return (
     <div className="w-full">
-      <hr className="mb-2 border-border-heavy" />
+      <hr className="mb-2 border-border-light" />
 
       {/* Header & explanation */}
-      <div className="mx-3 mb-3">
-        <h3 className="text-sm font-semibold">{localize('com_agents_file_context_label')}</h3>
+      <div className="mx-3">
+        <h3 className="font-semibold">{localize('com_agents_file_context_label')}</h3>
         <p className="mt-1 text-sm text-text-secondary">
           Upload reference materials, examples, templates, or any other relevant instruction
           documents.
         </p>
       </div>
 
-      <hr className="border-border-heavy" />
-
-      <div className="flex flex-col gap-3 bg-surface-tertiary-alt px-3 pb-4 pt-4">
+      <div className="flex flex-col gap-3 px-3 pb-4 pt-3">
         {/* File Search (RAG API) Files */}
         <FileRow
           files={files}
@@ -109,7 +107,7 @@ export default function FileContext({
 
         {/* Disabled Message */}
         {!agent_id && (
-          <div className="text-center text-sm text-text-secondary">
+          <div className="rounded border border-border-medium bg-surface-active-alt px-2 py-4 text-center text-sm text-text-secondary">
             {localize('com_agents_file_context_disabled')}
           </div>
         )}

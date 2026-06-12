@@ -2,6 +2,8 @@
 /* ^ We're not worried about i18n for this app ^ */
 
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import { X } from 'lucide-react';
+import { useRecoilValue } from 'recoil';
 import { Switch, useToastContext } from '@librechat/client';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
 import {
@@ -21,14 +23,17 @@ import {
   createProviderOption,
 } from '~/utils';
 import { ToolSelectDialog, MCPToolSelectDialog } from '~/components/Tools';
-import { SkillSelectDialog } from '~/components/Skills/dialogs';
 import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
+import { useListSkillsQuery, useGetAgentFiles } from '~/data-provider';
 import { useFileMapContext, useAgentPanelContext } from '~/Providers';
+import { useLocalize, useVisibleTools, useHasAccess } from '~/hooks';
+import { SkillSelectDialog } from '~/components/Skills/dialogs';
+import FileContext from '~/nj/components/Agents/FileContext';
 import AgentCategorySelector from './AgentCategorySelector';
 import Action from '~/components/SidePanel/Builder/Action';
-import { useLocalize, useVisibleTools, useHasAccess } from '~/hooks';
+import FileSearch from '~/nj/components/Agents/FileSearch';
+import TipComponent from '~/nj/components/TipComponent';
 import { Panel, isEphemeralAgent } from '~/common';
-import { useListSkillsQuery, useGetAgentFiles } from '~/data-provider';
 import { icons } from '~/hooks/Endpoint/Icons';
 import Instructions from './Instructions';
 import AgentAvatar from './AgentAvatar';
@@ -37,15 +42,9 @@ import Artifacts from './Artifacts';
 import AgentTool from './AgentTool';
 import CodeForm from './Code/Form';
 import MCPTools from './MCPTools';
-import { useRecoilValue } from 'recoil';
 import store from '~/store';
-import { X } from 'lucide-react';
-import TipComponent from '~/nj/components/TipComponent';
-import FileContext from '~/nj/components/Agents/FileContext';
-import FileSearch from '~/nj/components/Agents/FileSearch';
-import { njInputClass } from '~/nj/components/Agents/agentInputStyle';
 
-const sectionLabelClass = 'text-sm font-semibold';
+const sectionLabelClass = 'font-semibold';
 const labelClass = 'mb-2 text-token-text-primary block text-sm font-semibold';
 const inputClass = cn(
   defaultTextProps,
@@ -243,16 +242,14 @@ export default function AgentConfig() {
   return (
     <div className="h-auto pt-3">
       {/* Identity */}
-      <div className="mx-3 pb-3">
+      <div className="mx-3">
         <h3 className={sectionLabelClass}>Identity</h3>
         <p className="mt-1 text-sm text-text-secondary">
           Give your agent a clear, descriptive name
         </p>
       </div>
 
-      <hr className="border-border-heavy" />
-
-      <div className="bg-surface-tertiary-alt px-3 pb-3 pt-4">
+      <div className="px-3 pb-3 pt-4">
         <label className={labelClass} htmlFor="name">
           Agent Name
           <span className="ml-1 text-red-500">*</span>
@@ -286,7 +283,7 @@ export default function AgentConfig() {
         />
       </div>
 
-      <div className="bg-surface-tertiary-alt px-3 pb-4">
+      <div className="px-3 pb-4">
         <label className={labelClass} htmlFor="description">
           Description
         </label>
@@ -308,7 +305,7 @@ export default function AgentConfig() {
         />
       </div>
 
-      <hr className="mb-4 border-border-heavy" />
+      <hr className="mb-4 border-border-light" />
 
       {/* Instructions */}
       <div className="mx-3 pb-3">
@@ -316,23 +313,21 @@ export default function AgentConfig() {
         <p className="mt-1 text-sm text-text-secondary">
           Define what your agent does, how it behaves, and what it should focus on.
         </p>
-        <p className="mt-1 text-sm text-text-secondary">
-          Read example instructions in the{' '}
-          <a
-            href="https://innovation.nj.gov/skills/ai-how-tos/prompts-and-context"
-            className="text-blue-500 underline hover:text-blue-600"
-            target="_blank"
-            rel="noreferrer"
-          >
-            prompting guide
-          </a>
-        </p>
       </div>
 
-      <hr className="border-border-heavy" />
-
-      <div className="bg-surface-tertiary-alt px-3 py-4">
+      <div className="px-3">
         <Instructions />
+      </div>
+
+      <div className="mb-3 mt-1 flex w-full justify-end pr-4">
+        <a
+          href="https://innovation.nj.gov/skills/ai-how-tos/prompts-and-context"
+          className="text-sm font-semibold text-blue-500 underline hover:text-blue-600"
+          target="_blank"
+          rel="noreferrer"
+        >
+          View the prompting guide
+        </a>
       </div>
 
       <TipComponent
