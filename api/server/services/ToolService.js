@@ -780,6 +780,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
     const result = await reinitMCPServer({
       user: req.user,
+      req,
       oauthStart,
       flowManager,
       serverName,
@@ -902,6 +903,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
         const result = await reinitMCPServer({
           user: req.user,
+          req,
           serverName,
           configServers,
           userMCPAuthMap,

@@ -1,7 +1,8 @@
 import { logger } from '@librechat/data-schemas';
 import { Permissions, PermissionTypes } from 'librechat-data-provider';
-import type { IUser } from '@librechat/data-schemas';
-import { extractOpenIDTokenInfo, isOpenIDTokenValid } from '~/utils/oidc';
+import type { IUser, OIDCTokens } from '@librechat/data-schemas';
+import { isOpenIDTokenValid } from '~/utils/oidc';
+import type { OpenIDTokenInfo } from '~/utils/oidc';
 import type { MCPOAuthTokens } from './types';
 
 export interface OboConfig {
@@ -19,11 +20,28 @@ export type OboTokenResolver = (
   fromCache?: boolean,
 ) => Promise<{ access_token: string; expires_in?: number }>;
 
+/**
+ * Provides the LIVE upstream OpenID tokens at OBO call time, refreshing the
+ * server-side session via the IdP refresh-token grant when the access token
+ * has expired. Closes over the active Express request so it can read/write
+ * `req.session.openidTokens` in place.
+ *
+ * Contract:
+ *   - non-null result: `access_token` MUST be populated; the closure enforces
+ *     this internally so callers do not defend against missing access_token.
+ *   - null: not applicable (non-OpenID user, OPENID_REUSE_TOKENS off, no
+ *     session). Caller treats as `missing_upstream_token`.
+ *   - throws: refresh was attempted and the IdP rejected it. Caller wraps as
+ *     `session_refresh_failed`.
+ */
+export type UpstreamTokenProvider = () => Promise<OIDCTokens | null>;
+
 export type OboTokenResolutionReason =
   | 'missing_upstream_token'
   | 'missing_upstream_access_token'
   | 'empty_exchange_response'
-  | 'exchange_failed';
+  | 'exchange_failed'
+  | 'session_refresh_failed';
 
 const RETRYABLE_OBO_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
 const RETRYABLE_OBO_ERROR_CODES = new Set(['ETIMEDOUT', 'ECONNRESET', 'EAI_AGAIN', 'ENOTFOUND']);
@@ -116,17 +134,55 @@ function isRetryableOboExchangeError(error: unknown): boolean {
 /**
  * Performs an OBO token exchange for the given user and MCP server OBO config.
  * Returns MCPOAuthTokens suitable for injection into the MCP connection.
+ *
+ * The `upstreamTokenProvider` closure is the authoritative source of the user's
+ * upstream OpenID access token at call time — it reads from the live session and
+ * may inline-refresh via the IdP refresh-token grant when the token has expired.
+ * This avoids relying on a stale snapshot frozen onto `user.federatedTokens` at
+ * request validation, which is what previously caused the walk-away failure mode
+ * ("No valid OpenID access token is available for OBO exchange") on long-running
+ * tool calls. Required (not optional) so wiring bugs surface at compile time.
  */
 export async function resolveOboToken(
   user: IUser,
   oboConfig: OboConfig,
   oboTokenResolver: OboTokenResolver,
+  upstreamTokenProvider: UpstreamTokenProvider,
 ): Promise<MCPOAuthTokens> {
-  const tokenInfo = extractOpenIDTokenInfo(user);
-  if (!tokenInfo || !isOpenIDTokenValid(tokenInfo)) {
+  let liveTokens: OIDCTokens | null;
+  try {
+    liveTokens = await upstreamTokenProvider();
+  } catch (error) {
+    logger.error('[OBO] Upstream session refresh failed:', error);
+    throw new OboTokenResolutionError(
+      'session_refresh_failed',
+      'Your sign-in session expired and could not be refreshed. Please sign in again.',
+      false,
+      error,
+    );
+  }
+
+  if (!liveTokens) {
     logger.warn(
       `[OBO] No valid OpenID token available for OBO exchange (provider: ${user.provider}, hasOpenidId: ${!!user.openidId}, hasFederatedTokens: ${!!user.federatedTokens})`,
     );
+    throw new OboTokenResolutionError(
+      'missing_upstream_token',
+      'No valid OpenID access token is available for OBO exchange.',
+    );
+  }
+
+  const tokenInfo: OpenIDTokenInfo = {
+    accessToken: liveTokens.access_token,
+    idToken: liveTokens.id_token,
+    expiresAt: liveTokens.expires_at,
+    userId: user.openidId || user.id,
+    userEmail: user.email,
+    userName: user.name || user.username,
+  };
+
+  if (!isOpenIDTokenValid(tokenInfo)) {
+    logger.warn('[OBO] Live OpenID token is not valid for OBO exchange');
     throw new OboTokenResolutionError(
       'missing_upstream_token',
       'No valid OpenID access token is available for OBO exchange.',

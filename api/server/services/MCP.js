@@ -41,6 +41,7 @@ const { findToken, createToken, updateToken, deleteTokens } = db;
 const { getGraphApiToken } = require('./GraphTokenService');
 const { exchangeOboToken } = require('./OboTokenService');
 const { createOboTrustChecker } = require('./OboPolicyService');
+const { createOpenIDSessionTokenProvider } = require('./OpenIDSessionRefresh');
 const { reinitMCPServer } = require('./Tools/mcp');
 const { getAppConfig } = require('./Config');
 const { getLogStores } = require('~/cache');
@@ -380,6 +381,7 @@ function createOAuthCallback({ runStepEmitter, runStepDeltaEmitter }) {
 /**
  * @param {Object} params
  * @param {ServerResponse} params.res - The Express response object for sending events.
+ * @param {ServerRequest} [params.req] - The Express request, threaded through so the OBO upstream-token closure can read/refresh `req.session.openidTokens` at tool-call time.
  * @param {IUser} params.user - The user from the request object.
  * @param {string} params.serverName
  * @param {AbortSignal} params.signal
@@ -393,6 +395,7 @@ function createOAuthCallback({ runStepEmitter, runStepDeltaEmitter }) {
  */
 async function reconnectServer({
   res,
+  req,
   user,
   index,
   signal,
@@ -472,6 +475,7 @@ async function reconnectServer({
     });
     return await reinitMCPServer({
       user,
+      req,
       signal,
       serverName,
       configServers,
@@ -516,6 +520,7 @@ async function reconnectServer({
  */
 async function createMCPTools({
   res,
+  req,
   mcpPermissionContext,
   user,
   index,
@@ -557,6 +562,7 @@ async function createMCPTools({
 
   const result = await reconnectServer({
     res,
+    req,
     user,
     index,
     signal,
@@ -581,6 +587,7 @@ async function createMCPTools({
   for (const tool of result.tools) {
     const toolInstance = await createMCPTool({
       res,
+      req,
       mcpPermissionContext,
       user,
       provider,
@@ -623,6 +630,7 @@ async function createMCPTools({
  */
 async function createMCPTool({
   res,
+  req,
   mcpPermissionContext,
   user,
   index,
@@ -684,6 +692,7 @@ async function createMCPTool({
     );
     const result = await reconnectServer({
       res,
+      req,
       user,
       index,
       signal,
@@ -715,6 +724,7 @@ async function createMCPTool({
 
   return createToolInstance({
     res,
+    req,
     mcpPermissionContext,
     user,
     requestBody,
@@ -730,6 +740,7 @@ async function createMCPTool({
 
 function createToolInstance({
   res,
+  req: capturedReq = null,
   mcpPermissionContext,
   user: capturedUser = null,
   requestBody: capturedRequestBody,
@@ -817,6 +828,19 @@ function createToolInstance({
       const customUserVars =
         config?.configurable?.userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
 
+      /**
+       * Build the upstream-token closure from the captured Express request and
+       * the effective user so OBO reads the LIVE session at call time. Built
+       * here (not in the factory) because `req.session` is the source of truth
+       * for `req.session.openidTokens` and only the request layer can refresh
+       * and persist it via `req.session.save()`. No-op when reuse is off, the
+       * user is non-OpenID, or the session lacks openidTokens.
+       */
+      const upstreamTokenProvider = createOpenIDSessionTokenProvider({
+        req: capturedReq,
+        user: effectiveUser,
+      });
+
       const result = await mcpManager.callTool({
         serverName,
         serverConfig: capturedServerConfig,
@@ -843,6 +867,7 @@ function createToolInstance({
         graphTokenResolver: getGraphApiToken,
         oboTokenResolver: exchangeOboToken,
         oboTrustChecker: createOboTrustChecker(),
+        upstreamTokenProvider,
       });
 
       if (isAssistantsEndpoint(provider) && Array.isArray(result)) {

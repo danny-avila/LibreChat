@@ -3527,4 +3527,86 @@ describe('MCPConnectionFactory', () => {
       expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
     });
   });
+
+  describe('OBO upstreamTokenProvider plumbing', () => {
+    const oboServerConfig = {
+      type: 'sse' as const,
+      url: 'https://obo.example.com',
+      requiresOAuth: false,
+      obo: { scopes: 'api://obo-server/Mcp.Tools.ReadWrite' },
+    } as unknown as t.MCPOptions;
+
+    beforeEach(() => {
+      mockProcessMCPEnv.mockReturnValue(oboServerConfig);
+      mockConnectionInstance.connect.mockResolvedValue(undefined);
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+    });
+
+    it('forwards upstreamTokenProvider into resolveOboToken at connection establishment', async () => {
+      const { resolveOboToken } = jest.requireMock('~/mcp/oauth') as {
+        resolveOboToken: jest.Mock;
+      };
+      resolveOboToken.mockResolvedValue({
+        access_token: 'connection-time-obo-token',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+        expires_at: Date.now() + 3600_000,
+      });
+
+      const upstreamTokenProvider = jest.fn();
+      const oboTokenResolver = jest.fn();
+
+      await MCPConnectionFactory.create(
+        { serverName: 'obo-srv', serverConfig: oboServerConfig },
+        {
+          useOAuth: true,
+          user: mockUser,
+          flowManager: mockFlowManager,
+          tokenMethods: {
+            findToken: jest.fn(),
+            createToken: jest.fn(),
+            updateToken: jest.fn(),
+            deleteTokens: jest.fn(),
+          },
+          oboTokenResolver,
+          upstreamTokenProvider,
+        },
+      );
+
+      expect(resolveOboToken).toHaveBeenCalledWith(
+        mockUser,
+        oboServerConfig.obo,
+        oboTokenResolver,
+        upstreamTokenProvider,
+      );
+    });
+
+    it('throws an internal error when upstreamTokenProvider is omitted on an OBO connection', async () => {
+      const { resolveOboToken } = jest.requireMock('~/mcp/oauth') as {
+        resolveOboToken: jest.Mock;
+      };
+      resolveOboToken.mockClear();
+      const oboTokenResolver = jest.fn();
+
+      await expect(
+        MCPConnectionFactory.create(
+          { serverName: 'obo-srv', serverConfig: oboServerConfig },
+          {
+            useOAuth: true,
+            user: mockUser,
+            flowManager: mockFlowManager,
+            tokenMethods: {
+              findToken: jest.fn(),
+              createToken: jest.fn(),
+              updateToken: jest.fn(),
+              deleteTokens: jest.fn(),
+            },
+            oboTokenResolver,
+            /** upstreamTokenProvider intentionally omitted */
+          },
+        ),
+      ).rejects.toThrow(/upstreamTokenProvider not plumbed/);
+      expect(resolveOboToken).not.toHaveBeenCalled();
+    });
+  });
 });

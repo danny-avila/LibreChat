@@ -475,6 +475,7 @@ const loadTools = async ({
           requestBody: options.req?.body,
           requestScopedConnections,
           res: options.res,
+          req: options.req,
           streamId: options.req?._resumableStreamId || null,
           model: agent?.model ?? model,
           serverName: config.serverName,

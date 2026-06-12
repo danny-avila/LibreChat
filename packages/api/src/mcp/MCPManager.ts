@@ -4,7 +4,7 @@ import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
-import type { OboTokenResolver, OboTrustChecker } from '~/mcp/oauth/obo';
+import type { OboTokenResolver, OboTrustChecker, UpstreamTokenProvider } from '~/mcp/oauth/obo';
 import type { GraphTokenResolver } from '~/utils/graph';
 import type { FlowStateManager } from '~/flow/manager';
 import type { MCPOAuthTokens } from './oauth';
@@ -41,6 +41,8 @@ function createOboToolCallErrorMessage(
     failureSuffix = 'Please retry.';
   } else if (error.reason === 'exchange_failed') {
     failureSuffix = 'Re-authenticate the user or verify the configured OBO scopes and retry.';
+  } else if (error.reason === 'session_refresh_failed') {
+    failureSuffix = 'Please sign in again.';
   }
 
   return `${logPrefix} ${error.userMessage} Cannot execute tool ${toolName}. ${failureSuffix}`;
@@ -228,6 +230,7 @@ export class MCPManager extends UserConnectionManager {
       connectionTimeout: args.connectionTimeout,
       oboTokenResolver: args.oboTokenResolver,
       oboTrustChecker: args.oboTrustChecker,
+      upstreamTokenProvider: args.upstreamTokenProvider,
     });
 
     return finalizeDiscoveryResult(result);
@@ -358,6 +361,7 @@ Please follow these instructions when using tools from the respective MCP server
     graphTokenResolver,
     oboTokenResolver,
     oboTrustChecker,
+    upstreamTokenProvider,
   }: {
     user?: IUser;
     serverName: string;
@@ -377,6 +381,7 @@ Please follow these instructions when using tools from the respective MCP server
     graphTokenResolver?: GraphTokenResolver;
     oboTokenResolver?: OboTokenResolver;
     oboTrustChecker?: OboTrustChecker;
+    upstreamTokenProvider?: UpstreamTokenProvider;
   }): Promise<t.FormattedToolResponse> {
     /** User-specific connection */
     let connection: MCPConnection | undefined;
@@ -397,6 +402,7 @@ Please follow these instructions when using tools from the respective MCP server
         oauthEnd,
         oboTokenResolver,
         oboTrustChecker,
+        upstreamTokenProvider,
         graphTokenResolver,
         signal: options?.signal,
         customUserVars,
@@ -447,6 +453,14 @@ Please follow these instructions when using tools from the respective MCP server
       /** Refresh OBO token on each tool call to ensure it's current */
       const oboConfig = rawConfig.obo;
       if (oboConfig && oboTokenResolver && user) {
+        if (!upstreamTokenProvider) {
+          throw new McpError(
+            ErrorCode.InternalError,
+            `${logPrefix} Internal: upstreamTokenProvider not plumbed for OBO tool call. ` +
+              'OBO requires a live upstream-token closure; the caller must construct one via ' +
+              'createOpenIDSessionTokenProvider() and forward it through callTool().',
+          );
+        }
         const oboTrusted = oboTrustChecker
           ? await oboTrustChecker({
               source: rawConfig.source,
@@ -465,7 +479,12 @@ Please follow these instructions when using tools from the respective MCP server
         }
         let oboTokens: MCPOAuthTokens;
         try {
-          oboTokens = await resolveOboToken(user, oboConfig, oboTokenResolver);
+          oboTokens = await resolveOboToken(
+            user,
+            oboConfig,
+            oboTokenResolver,
+            upstreamTokenProvider,
+          );
         } catch (error) {
           if (error instanceof OboTokenResolutionError) {
             throw new McpError(

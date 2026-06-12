@@ -4,7 +4,7 @@ import type * as t from '~/mcp/types';
 import { registryStatusCache as statusCache } from './cache/RegistryStatusCache';
 import { MCPServersRegistry } from './MCPServersRegistry';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
-import { withTimeout } from '~/utils';
+import { isEnabled, withTimeout } from '~/utils';
 import { isLeader } from '~/cluster';
 
 const DEFAULT_MCP_INIT_TIMEOUT_MS = 30_000;
@@ -166,6 +166,22 @@ export class MCPServersInitializer {
     );
     logger.info(`${prefix} Initialized in: ${config.initDuration ?? 'N/A'}ms`);
     logger.info(`${prefix} -------------------------------------------------┘`);
+
+    if (config.obo != null && !isEnabled(process.env.OPENID_REUSE_TOKENS)) {
+      /**
+       * OBO requires `req.session.openidTokens` and `user.federatedTokens`,
+       * both of which are only populated when `OPENID_REUSE_TOKENS=true` (see
+       * `socialLogins.js` and `openIdJwtStrategy.js`). Without reuse, every
+       * OBO tool call will fail at runtime with "No valid OpenID access token
+       * is available for OBO exchange." Surface this misconfiguration at
+       * startup so operators don't have to diagnose it from per-call errors.
+       */
+      logger.warn(
+        `${prefix} OBO is configured on this server but OPENID_REUSE_TOKENS is not enabled. ` +
+          'OBO token exchange will fail at runtime because user.federatedTokens is never populated. ' +
+          "Set OPENID_REUSE_TOKENS=true or remove the `obo` block from this server's config.",
+      );
+    }
   }
 
   private static formatInstructionsForLogging(instructions?: string | boolean): string {

@@ -19,7 +19,7 @@ import type {
 import type { SearchResultData, UIResource, TPlugin } from 'librechat-data-provider';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
 import type { LCTool } from '@librechat/agents';
-import type { OboTokenResolver, OboTrustChecker } from '~/mcp/oauth/obo';
+import type { OboTokenResolver, OboTrustChecker, UpstreamTokenProvider } from '~/mcp/oauth/obo';
 import type { GraphTokenResolver } from '~/utils/graph';
 import type { FlowStateManager } from '~/flow/manager';
 import type { RequestBody } from '~/types/http';
@@ -229,6 +229,7 @@ export interface OAuthConnectionOptions extends UserConnectionContext {
   returnOnOAuth?: boolean;
   oboTokenResolver?: OboTokenResolver;
   oboTrustChecker?: OboTrustChecker;
+  upstreamTokenProvider?: UpstreamTokenProvider;
 }
 
 /** Options accepted by UserConnectionManager.getUserConnection. OAuth fields are optional. */
@@ -245,6 +246,7 @@ export interface UserMCPConnectionOptions extends UserConnectionContext {
   returnOnOAuth?: boolean;
   oboTokenResolver?: OboTokenResolver;
   oboTrustChecker?: OboTrustChecker;
+  upstreamTokenProvider?: UpstreamTokenProvider;
 }
 
 export interface ToolDiscoveryOptions {
@@ -262,6 +264,7 @@ export interface ToolDiscoveryOptions {
   configServers?: Record<string, ParsedServerConfig>;
   oboTokenResolver?: OboTokenResolver;
   oboTrustChecker?: OboTrustChecker;
+  upstreamTokenProvider?: UpstreamTokenProvider;
 }
 
 export interface ToolDiscoveryResult {

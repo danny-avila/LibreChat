@@ -1,6 +1,6 @@
 import type { IUser } from '@librechat/data-schemas';
 import { Permissions, PermissionTypes } from 'librechat-data-provider';
-import type { OboTokenResolver } from './obo';
+import type { OboTokenResolver, UpstreamTokenProvider } from './obo';
 import { isOboConfigStillTrusted, resolveOboToken } from './obo';
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -12,14 +12,24 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('~/utils/oidc', () => ({
-  extractOpenIDTokenInfo: jest.fn(),
   isOpenIDTokenValid: jest.fn(),
 }));
 
-import { extractOpenIDTokenInfo, isOpenIDTokenValid } from '~/utils/oidc';
+import { isOpenIDTokenValid } from '~/utils/oidc';
 
-const mockExtractOpenIDTokenInfo = extractOpenIDTokenInfo as jest.Mock;
 const mockIsOpenIDTokenValid = isOpenIDTokenValid as jest.Mock;
+
+const farFutureExp = Math.floor(Date.now() / 1000) + 3600;
+
+const liveTokens = {
+  access_token: 'live-access-token',
+  id_token: 'live-id-token',
+  refresh_token: 'live-refresh-token',
+  expires_at: farFutureExp,
+};
+
+const liveProvider: UpstreamTokenProvider = jest.fn().mockResolvedValue(liveTokens);
+const nullProvider: UpstreamTokenProvider = jest.fn().mockResolvedValue(null);
 
 describe('resolveOboToken', () => {
   const mockUser: Partial<IUser> = {
@@ -28,11 +38,6 @@ describe('resolveOboToken', () => {
     openidId: 'oidc-sub-456',
     email: 'test@example.com',
     name: 'Test User',
-    federatedTokens: {
-      access_token: 'federated-access-token',
-      id_token: 'federated-id-token',
-      expires_at: Math.floor(Date.now() / 1000) + 3600,
-    },
   };
 
   const oboConfig = { scopes: 'api://mcp-server-id/Mcp.Tools.ReadWrite' };
@@ -44,106 +49,122 @@ describe('resolveOboToken', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockIsOpenIDTokenValid.mockReturnValue(true);
+    (liveProvider as jest.Mock).mockResolvedValue(liveTokens);
+    (mockResolver as jest.Mock).mockResolvedValue({
+      access_token: 'exchanged-mcp-token',
+      expires_in: 3600,
+    });
   });
 
-  it('should throw when user has no valid OpenID token info', async () => {
-    mockExtractOpenIDTokenInfo.mockReturnValue(null);
-
-    await expect(resolveOboToken(mockUser as IUser, oboConfig, mockResolver)).rejects.toMatchObject(
-      {
-        reason: 'missing_upstream_token',
-        retryable: false,
-      },
-    );
+  it('throws missing_upstream_token when provider returns null', async () => {
+    await expect(
+      resolveOboToken(mockUser as IUser, oboConfig, mockResolver, nullProvider),
+    ).rejects.toMatchObject({
+      reason: 'missing_upstream_token',
+      retryable: false,
+    });
     expect(mockResolver).not.toHaveBeenCalled();
   });
 
-  it('should throw when OpenID token is not valid (expired)', async () => {
-    mockExtractOpenIDTokenInfo.mockReturnValue({ accessToken: 'some-token' });
+  it('throws session_refresh_failed when provider rejects', async () => {
+    const failingProvider: UpstreamTokenProvider = jest
+      .fn()
+      .mockRejectedValue(new Error('invalid_grant'));
+
+    await expect(
+      resolveOboToken(mockUser as IUser, oboConfig, mockResolver, failingProvider),
+    ).rejects.toMatchObject({
+      reason: 'session_refresh_failed',
+      retryable: false,
+      userMessage: expect.stringContaining('Please sign in again'),
+    });
+    expect(mockResolver).not.toHaveBeenCalled();
+  });
+
+  it('throws missing_upstream_token when isOpenIDTokenValid returns false (live token expired)', async () => {
     mockIsOpenIDTokenValid.mockReturnValue(false);
 
-    await expect(resolveOboToken(mockUser as IUser, oboConfig, mockResolver)).rejects.toMatchObject(
-      {
-        reason: 'missing_upstream_token',
-        retryable: false,
-      },
-    );
+    await expect(
+      resolveOboToken(mockUser as IUser, oboConfig, mockResolver, liveProvider),
+    ).rejects.toMatchObject({
+      reason: 'missing_upstream_token',
+      retryable: false,
+    });
     expect(mockResolver).not.toHaveBeenCalled();
   });
 
-  it('should throw when access token is missing from token info', async () => {
-    mockExtractOpenIDTokenInfo.mockReturnValue({ userId: 'user-123' });
+  it('throws missing_upstream_access_token when live tokens lack an access_token', async () => {
+    (liveProvider as jest.Mock).mockResolvedValueOnce({
+      access_token: undefined,
+      id_token: 'live-id-token',
+      expires_at: farFutureExp,
+    });
+    /** isOpenIDTokenValid is mocked to true here to isolate the access_token guard */
     mockIsOpenIDTokenValid.mockReturnValue(true);
 
-    await expect(resolveOboToken(mockUser as IUser, oboConfig, mockResolver)).rejects.toMatchObject(
-      {
-        reason: 'missing_upstream_access_token',
-        retryable: false,
-      },
-    );
-    expect(mockResolver).not.toHaveBeenCalled();
+    await expect(
+      resolveOboToken(mockUser as IUser, oboConfig, mockResolver, liveProvider),
+    ).rejects.toMatchObject({
+      reason: 'missing_upstream_access_token',
+      retryable: false,
+    });
   });
 
-  it('should call the resolver with correct arguments and return MCPOAuthTokens', async () => {
-    mockExtractOpenIDTokenInfo.mockReturnValue({ accessToken: 'federated-access-token' });
+  it('uses live token from provider for the OBO exchange and returns MCPOAuthTokens', async () => {
     mockIsOpenIDTokenValid.mockReturnValue(true);
 
     const beforeCall = Date.now();
-    const result = await resolveOboToken(mockUser as IUser, oboConfig, mockResolver);
+    const result = await resolveOboToken(mockUser as IUser, oboConfig, mockResolver, liveProvider);
     const afterCall = Date.now();
 
+    expect(liveProvider).toHaveBeenCalledTimes(1);
     expect(mockResolver).toHaveBeenCalledWith(
       mockUser,
-      'federated-access-token',
+      'live-access-token',
       'api://mcp-server-id/Mcp.Tools.ReadWrite',
       true,
     );
 
-    expect(result).not.toBeNull();
-    expect(result!.access_token).toBe('exchanged-mcp-token');
-    expect(result!.token_type).toBe('Bearer');
-    expect(result!.obtained_at).toBeGreaterThanOrEqual(beforeCall);
-    expect(result!.obtained_at).toBeLessThanOrEqual(afterCall);
-    expect(result!.expires_at).toBe(result!.obtained_at + 3600 * 1000);
+    expect(result.access_token).toBe('exchanged-mcp-token');
+    expect(result.token_type).toBe('Bearer');
+    expect(result.obtained_at).toBeGreaterThanOrEqual(beforeCall);
+    expect(result.obtained_at).toBeLessThanOrEqual(afterCall);
+    expect(result.expires_at).toBe(result.obtained_at + 3600 * 1000);
   });
 
-  it('should default expires_in to 3600 when not provided by resolver', async () => {
-    mockExtractOpenIDTokenInfo.mockReturnValue({ accessToken: 'federated-access-token' });
-    mockIsOpenIDTokenValid.mockReturnValue(true);
-
+  it('defaults expires_in to 3600 when not provided by resolver', async () => {
     const resolverNoExpiry: OboTokenResolver = jest.fn().mockResolvedValue({
       access_token: 'exchanged-token',
     });
 
-    const result = await resolveOboToken(mockUser as IUser, oboConfig, resolverNoExpiry);
+    const result = await resolveOboToken(
+      mockUser as IUser,
+      oboConfig,
+      resolverNoExpiry,
+      liveProvider,
+    );
 
-    expect(result).not.toBeNull();
-    expect(result!.expires_at).toBe(result!.obtained_at + 3600 * 1000);
+    expect(result.expires_at).toBe(result.obtained_at + 3600 * 1000);
   });
 
-  it('should throw when resolver returns no access_token', async () => {
-    mockExtractOpenIDTokenInfo.mockReturnValue({ accessToken: 'federated-access-token' });
-    mockIsOpenIDTokenValid.mockReturnValue(true);
-
+  it('throws when resolver returns no access_token', async () => {
     const emptyResolver: OboTokenResolver = jest.fn().mockResolvedValue({});
     await expect(
-      resolveOboToken(mockUser as IUser, oboConfig, emptyResolver),
+      resolveOboToken(mockUser as IUser, oboConfig, emptyResolver, liveProvider),
     ).rejects.toMatchObject({
       reason: 'empty_exchange_response',
       retryable: false,
     });
   });
 
-  it('should throw a retryable error when resolver reports a transient failure', async () => {
-    mockExtractOpenIDTokenInfo.mockReturnValue({ accessToken: 'federated-access-token' });
-    mockIsOpenIDTokenValid.mockReturnValue(true);
-
+  it('throws a retryable error when resolver reports a transient failure', async () => {
     const failingResolver: OboTokenResolver = jest
       .fn()
       .mockRejectedValue(Object.assign(new Error('temporary timeout'), { retryable: true }));
 
     await expect(
-      resolveOboToken(mockUser as IUser, oboConfig, failingResolver),
+      resolveOboToken(mockUser as IUser, oboConfig, failingResolver, liveProvider),
     ).rejects.toMatchObject({
       reason: 'exchange_failed',
       retryable: true,
@@ -151,16 +172,13 @@ describe('resolveOboToken', () => {
     });
   });
 
-  it('should throw a non-retryable error when resolver reports a permanent failure', async () => {
-    mockExtractOpenIDTokenInfo.mockReturnValue({ accessToken: 'federated-access-token' });
-    mockIsOpenIDTokenValid.mockReturnValue(true);
-
+  it('throws a non-retryable error when resolver reports a permanent failure', async () => {
     const failingResolver: OboTokenResolver = jest
       .fn()
       .mockRejectedValue(new Error('invalid_grant: assertion invalid'));
 
     await expect(
-      resolveOboToken(mockUser as IUser, oboConfig, failingResolver),
+      resolveOboToken(mockUser as IUser, oboConfig, failingResolver, liveProvider),
     ).rejects.toMatchObject({
       reason: 'exchange_failed',
       retryable: false,
@@ -168,34 +186,32 @@ describe('resolveOboToken', () => {
     });
   });
 
-  it('should use the correct scopes from oboConfig', async () => {
-    mockExtractOpenIDTokenInfo.mockReturnValue({ accessToken: 'federated-access-token' });
-    mockIsOpenIDTokenValid.mockReturnValue(true);
-
+  it('uses the correct scopes from oboConfig', async () => {
     const customConfig = { scopes: 'api://other-app/Custom.Scope' };
-    await resolveOboToken(mockUser as IUser, customConfig, mockResolver);
+    await resolveOboToken(mockUser as IUser, customConfig, mockResolver, liveProvider);
 
     expect(mockResolver).toHaveBeenCalledWith(
       mockUser,
-      'federated-access-token',
+      'live-access-token',
       'api://other-app/Custom.Scope',
       true,
     );
   });
 
-  it('should respect custom expires_in from resolver', async () => {
-    mockExtractOpenIDTokenInfo.mockReturnValue({ accessToken: 'federated-access-token' });
-    mockIsOpenIDTokenValid.mockReturnValue(true);
-
+  it('respects custom expires_in from resolver', async () => {
     const shortLivedResolver: OboTokenResolver = jest.fn().mockResolvedValue({
       access_token: 'short-lived-token',
       expires_in: 300,
     });
 
-    const result = await resolveOboToken(mockUser as IUser, oboConfig, shortLivedResolver);
+    const result = await resolveOboToken(
+      mockUser as IUser,
+      oboConfig,
+      shortLivedResolver,
+      liveProvider,
+    );
 
-    expect(result).not.toBeNull();
-    expect(result!.expires_at).toBe(result!.obtained_at + 300 * 1000);
+    expect(result.expires_at).toBe(result.obtained_at + 300 * 1000);
   });
 });
 

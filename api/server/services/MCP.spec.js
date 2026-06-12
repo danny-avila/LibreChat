@@ -87,6 +87,19 @@ jest.mock('./GraphTokenService', () => ({
   getGraphApiToken: jest.fn(),
 }));
 
+jest.mock('./OboTokenService', () => ({
+  exchangeOboToken: jest.fn(),
+}));
+
+jest.mock('./OboPolicyService', () => ({
+  createOboTrustChecker: jest.fn(() => jest.fn()),
+}));
+
+const mockCreateOpenIDSessionTokenProvider = jest.fn(() => async () => null);
+jest.mock('./OpenIDSessionRefresh', () => ({
+  createOpenIDSessionTokenProvider: (args) => mockCreateOpenIDSessionTokenProvider(args),
+}));
+
 describe('tests for the new helper functions used by the MCP connection status endpoints', () => {
   let mockGetMCPManager;
   let mockGetFlowStateManager;
@@ -1242,6 +1255,69 @@ describe('User parameter passing tests', () => {
           serverName: 'test-server',
           toolName: 'test-tool',
           requestBody,
+        }),
+      );
+    });
+
+    it('builds the upstream-token closure with the captured req and forwards it to callTool', async () => {
+      const mockUser = {
+        id: 'obo-user',
+        email: 'obo@example.com',
+        role: 'USER',
+        provider: 'openid',
+      };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const mockReq = { session: { openidTokens: {} } };
+      const { getRoleByName } = require('~/models');
+      getRoleByName.mockResolvedValue({
+        permissions: {
+          [PermissionTypes.MCP_SERVERS]: {
+            [Permissions.USE]: true,
+          },
+        },
+      });
+
+      const sentinelClosure = async () => null;
+      mockCreateOpenIDSessionTokenProvider.mockReturnValueOnce(sentinelClosure);
+
+      const mockCallTool = jest.fn().mockResolvedValue(['ok', null]);
+      mockGetMCPManager.mockReturnValue({ callTool: mockCallTool });
+
+      const mcpTool = await createMCPTool({
+        res: mockRes,
+        req: mockReq,
+        user: mockUser,
+        toolKey: `test-tool${D}test-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: {
+          [`test-tool${D}test-server`]: {
+            function: {
+              description: 'Cached tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+      });
+
+      await expect(
+        mcpTool.invoke(
+          {},
+          {
+            configurable: { user: mockUser },
+            metadata: { provider: 'openai', thread_id: 't1', run_id: 'r1' },
+            toolCall: {},
+          },
+        ),
+      ).resolves.toBe('ok');
+
+      expect(mockCreateOpenIDSessionTokenProvider).toHaveBeenCalledWith({
+        req: mockReq,
+        user: mockUser,
+      });
+      expect(mockCallTool).toHaveBeenCalledWith(
+        expect.objectContaining({
+          upstreamTokenProvider: sentinelClosure,
         }),
       );
     });

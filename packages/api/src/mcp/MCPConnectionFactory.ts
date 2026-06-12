@@ -8,7 +8,7 @@ import type {
   MCPOAuthFlowMetadata,
   OAuthProtectedResourceMetadata,
 } from '~/mcp/oauth';
-import type { OboTokenResolver, OboTrustChecker } from '~/mcp/oauth/obo';
+import type { OboTokenResolver, OboTrustChecker, UpstreamTokenProvider } from '~/mcp/oauth/obo';
 import type { FlowStateManager } from '~/flow/manager';
 import type * as t from './types';
 import {
@@ -68,6 +68,7 @@ export class MCPConnectionFactory {
   protected readonly connectionTimeout?: number;
   protected readonly oboTokenResolver?: OboTokenResolver;
   protected readonly oboTrustChecker?: OboTrustChecker;
+  protected readonly upstreamTokenProvider?: UpstreamTokenProvider;
   private connectionReady = false;
   /**
    * Snapshot of the tenant context at factory construction time. Captured eagerly
@@ -323,6 +324,7 @@ export class MCPConnectionFactory {
       this.returnOnOAuth = options.returnOnOAuth;
       this.oboTokenResolver = options.oboTokenResolver;
       this.oboTrustChecker = options.oboTrustChecker;
+      this.upstreamTokenProvider = options.upstreamTokenProvider;
     } else {
       this.useOAuth = false;
     }
@@ -333,6 +335,14 @@ export class MCPConnectionFactory {
     const oboConfig = this.serverConfig.obo;
     if (!oboConfig || !this.oboTokenResolver || !this.user) {
       return null;
+    }
+
+    if (!this.upstreamTokenProvider) {
+      throw new Error(
+        `${this.logPrefix} Internal: upstreamTokenProvider not plumbed for OBO connection. ` +
+          'OBO requires a live upstream-token closure; the caller must construct one via ' +
+          'createOpenIDSessionTokenProvider() and forward it through the MCP connection options.',
+      );
     }
 
     if (this.oboTrustChecker) {
@@ -351,7 +361,7 @@ export class MCPConnectionFactory {
     }
 
     logger.info(`${this.logPrefix} Resolving OBO token for scopes: ${oboConfig.scopes}`);
-    return resolveOboToken(this.user, oboConfig, this.oboTokenResolver);
+    return resolveOboToken(this.user, oboConfig, this.oboTokenResolver, this.upstreamTokenProvider);
   }
 
   /** Returns true if this server uses OBO instead of standard OAuth */
