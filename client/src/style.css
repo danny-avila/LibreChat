@@ -1496,6 +1496,27 @@ button {
   background-color: transparent;
 }
 
+.markdown-table-wrapper {
+  -webkit-overflow-scrolling: touch;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding-bottom: 0.25rem;
+  scrollbar-color: var(--border-medium) transparent;
+  scrollbar-width: thin;
+}
+
+.markdown-table-wrapper::-webkit-scrollbar {
+  height: 0.5rem;
+}
+
+.markdown-table-wrapper::-webkit-scrollbar-thumb {
+  background-color: var(--border-medium);
+}
+
+.markdown-table-wrapper::-webkit-scrollbar-thumb:hover {
+  background-color: var(--border-heavy);
+}
+
 /* Show scrollbar only on hover */
 .scrollbar-hover {
   scrollbar-width: thin;

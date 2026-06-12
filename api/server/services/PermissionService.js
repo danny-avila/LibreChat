@@ -27,6 +27,22 @@ const validateResourceType = (resourceType) => {
   }
 };
 
+const ensureLocalUserPrincipalExists = async (principalId) => {
+  const user = await db.findUser({ _id: principalId }, '_id');
+  if (!user) {
+    throw new Error('User principal not found');
+  }
+  return user._id.toString();
+};
+
+const ensureLocalGroupPrincipalExists = async (principalId) => {
+  const group = await db.findGroupById(principalId, { _id: 1 });
+  if (!group) {
+    throw new Error('Group principal not found');
+  }
+  return group._id.toString();
+};
+
 /**
  * @import { TPrincipal } from 'librechat-data-provider'
  */
@@ -300,8 +316,8 @@ const ensurePrincipalExists = async function (principal) {
     return null;
   }
 
-  if (principal.id) {
-    return principal.id;
+  if (principal.type === PrincipalType.USER && principal.id) {
+    return await ensureLocalUserPrincipalExists(principal.id);
   }
 
   if (principal.type === PrincipalType.USER && principal.source === 'entra') {
@@ -364,6 +380,10 @@ const ensurePrincipalExists = async function (principal) {
 const ensureGroupPrincipalExists = async function (principal, authContext = null) {
   if (principal.type !== PrincipalType.GROUP) {
     throw new Error(`Invalid principal type: ${principal.type}. Expected '${PrincipalType.GROUP}'`);
+  }
+
+  if (principal.id && principal.source !== 'entra') {
+    return await ensureLocalGroupPrincipalExists(principal.id);
   }
 
   if (principal.source === 'entra') {

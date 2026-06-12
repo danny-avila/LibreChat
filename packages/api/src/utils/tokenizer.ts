@@ -45,7 +45,7 @@ class Tokenizer {
   }
 }
 
-const TokenizerSingleton = new Tokenizer();
+const TokenizerSingleton: Tokenizer = new Tokenizer();
 
 /**
  * Counts the number of tokens in a given text using ai-tokenizer with o200k_base encoding.

@@ -1,8 +1,9 @@
 import { logger, TokenMethods } from '@librechat/data-schemas';
-import { FlowStateManager, MCPConnection, MCPOAuthTokens, MCPOptions } from '../..';
-import { MCPManager } from '../MCPManager';
+import type { IToken } from '@librechat/data-schemas';
 import { OAuthReconnectionManager } from './OAuthReconnectionManager';
 import { OAuthReconnectionTracker } from './OAuthReconnectionTracker';
+import { FlowStateManager, MCPConnection, MCPOptions } from '../..';
+import { MCPManager } from '../MCPManager';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -183,7 +184,7 @@ describe('OAuthReconnectionManager', () => {
             userId,
             identifier,
             expiresAt: new Date(Date.now() + 3600000), // 1 hour from now
-          } as unknown as MCPOAuthTokens;
+          } as unknown as IToken;
         }
         return null;
       });
@@ -234,7 +235,7 @@ describe('OAuthReconnectionManager', () => {
         userId,
         identifier: 'mcp:server1',
         expiresAt: new Date(Date.now() + 3600000),
-      } as unknown as MCPOAuthTokens);
+      } as unknown as IToken);
 
       // Mock failed connection
       mockMCPManager.getUserConnection.mockRejectedValue(new Error('Connection failed'));
@@ -264,7 +265,7 @@ describe('OAuthReconnectionManager', () => {
             userId,
             identifier,
             expiresAt: new Date(Date.now() - 3600000),
-          } as unknown as MCPOAuthTokens;
+          } as unknown as IToken;
         }
         return null;
       });
@@ -287,13 +288,13 @@ describe('OAuthReconnectionManager', () => {
             userId,
             identifier,
             expiresAt: new Date(Date.now() - 3600000),
-          } as unknown as MCPOAuthTokens;
+          } as unknown as IToken;
         }
         if (identifier === 'mcp:server1:refresh') {
           return {
             userId,
             identifier,
-          } as unknown as MCPOAuthTokens;
+          } as unknown as IToken;
         }
         return null;
       });
@@ -330,7 +331,7 @@ describe('OAuthReconnectionManager', () => {
           return {
             userId,
             identifier,
-          } as unknown as MCPOAuthTokens;
+          } as unknown as IToken;
         }
         return null;
       });
@@ -366,7 +367,7 @@ describe('OAuthReconnectionManager', () => {
         userId,
         identifier: 'mcp:server1',
         expiresAt: new Date(Date.now() + 3600000),
-      } as unknown as MCPOAuthTokens);
+      } as unknown as IToken);
 
       // Mock connection that returns but is not connected
       const mockConnection = {
@@ -512,7 +513,7 @@ describe('OAuthReconnectionManager', () => {
           userId,
           identifier,
           expiresAt: new Date(Date.now() + 3600000),
-        } as unknown as MCPOAuthTokens;
+        } as unknown as IToken;
       });
 
       const mockNewConnection = {
@@ -576,7 +577,7 @@ describe('OAuthReconnectionManager', () => {
         userId,
         identifier: 'mcp:server1',
         expiresAt: new Date(Date.now() + 3600000),
-      } as unknown as MCPOAuthTokens);
+      } as unknown as IToken);
 
       const boom = new Error('boom');
       (mockRegistryInstance.getServerConfig as jest.Mock).mockRejectedValue(boom);
@@ -650,7 +651,7 @@ describe('OAuthReconnectionManager', () => {
             userId,
             identifier,
             expiresAt: new Date(Date.now() + 3600000),
-          } as unknown as MCPOAuthTokens;
+          } as unknown as IToken;
         }
         return null;
       });
@@ -699,7 +700,7 @@ describe('OAuthReconnectionManager', () => {
         userId,
         identifier: `mcp:${serverName}`,
         expiresAt: new Date(Date.now() + 3600000),
-      } as unknown as MCPOAuthTokens);
+      } as unknown as IToken);
 
       // First reconnect attempt - will fail
       mockMCPManager.getUserConnection.mockRejectedValueOnce(new Error('Connection failed'));

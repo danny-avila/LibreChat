@@ -17,6 +17,8 @@ describe('modelSpecs helpers', () => {
         {
           name: 'guarded-spec',
           label: 'Guarded Spec',
+          skills: ['private-skill'],
+          subagents: { enabled: true, allowSelf: true, agent_ids: ['agent_private'] },
           preset: {
             endpoint: EModelEndpoint.openAI,
             model: 'gpt-4o',
@@ -32,11 +34,17 @@ describe('modelSpecs helpers', () => {
       ],
     };
 
-    expect(sanitizeModelSpecs(modelSpecs).list[0].preset).toEqual({
+    const sanitizedModelSpecs = sanitizeModelSpecs(modelSpecs);
+    expect(sanitizedModelSpecs.list[0].subagents).toEqual({
+      enabled: true,
+      allowSelf: true,
+    });
+    expect(sanitizedModelSpecs.list[0].preset).toEqual({
       endpoint: EModelEndpoint.openAI,
       model: 'gpt-4o',
       greeting: 'Hello',
     });
+    expect(sanitizedModelSpecs.list[0]).not.toHaveProperty('skills');
   });
 
   it('should restore only private fields for non-enforced model specs', () => {
@@ -89,14 +97,24 @@ describe('modelSpecs helpers', () => {
 
     const { parsedBody } = applyModelSpecPreset({
       modelSpec,
-      parsedBody: modelSpec.preset,
+      parsedBody: {
+        endpoint: EModelEndpoint.openAI,
+        spec: 'enforced-openai',
+        model: 'client-model',
+        temperature: 0.8,
+        topP: 0.9,
+        chatProjectId: 'project-1',
+      },
       endpoint: EModelEndpoint.openAI,
       includePresetDefaults: true,
     });
 
     expect(parsedBody.spec).toBe('enforced-openai');
+    expect(parsedBody.model).toBe('gpt-4o');
     expect(parsedBody.promptPrefix).toBe('private prompt prefix');
     expect(parsedBody.temperature).toBe(0.2);
+    expect(parsedBody.topP).toBeUndefined();
+    expect(parsedBody.chatProjectId).toBe('project-1');
   });
 
   it('should restore private examples when parser supplies an empty default', () => {

@@ -16,7 +16,7 @@ export async function getUserMCPAuthMap({
   servers?: (string | undefined)[];
   toolInstances?: (GenericTool | null)[];
   findPluginAuthsByKeys: PluginAuthMethods['findPluginAuthsByKeys'];
-}) {
+}): Promise<Record<string, Record<string, string>>> {
   let allMcpCustomUserVars: Record<string, Record<string, string>> = {};
   let mcpPluginKeysToFetch: string[] = [];
   try {

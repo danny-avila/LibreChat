@@ -1,27 +1,39 @@
 import { useState, useId, useRef, memo, useCallback, useMemo } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
+import { useParams, useNavigate } from 'react-router-dom';
 import { DropdownPopup, Spinner, useToastContext } from '@librechat/client';
-import { Ellipsis, Share2, CopyPlus, Archive, Pen, Trash } from 'lucide-react';
+import {
+  Ellipsis,
+  Share2,
+  CopyPlus,
+  Archive,
+  FolderInput,
+  FolderX,
+  Pen,
+  Trash,
+} from 'lucide-react';
+import { QueryKeys, PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { MouseEvent } from 'react';
 import type { TMessage } from 'librechat-data-provider';
 import {
   useDuplicateConversationMutation,
+  useAssignConversationToProjectMutation,
   useDeleteConversationMutation,
   useGetStartupConfig,
   useArchiveConvoMutation,
 } from '~/data-provider';
-import { useLocalize, useNavigateToConvo, useNewConvo } from '~/hooks';
+import { useHasAccess, useLocalize, useNavigateToConvo, useNewConvo } from '~/hooks';
 import { NotificationSeverity } from '~/common';
 import { useChatContext } from '~/Providers';
 import DeleteButton from './DeleteButton';
+import ProjectButton from './ProjectButton';
 import ShareButton from './ShareButton';
 import { cn } from '~/utils';
 
 function ConvoOptions({
   conversationId,
+  chatProjectId,
   title,
   retainView,
   renameHandler,
@@ -31,6 +43,7 @@ function ConvoOptions({
   isShiftHeld = false,
 }: {
   conversationId: string | null;
+  chatProjectId?: string | null;
   title: string | null;
   retainView: () => void;
   renameHandler: (e: MouseEvent) => void;
@@ -53,11 +66,19 @@ function ConvoOptions({
   const menuId = useId();
   const shareButtonRef = useRef<HTMLButtonElement>(null);
   const deleteButtonRef = useRef<HTMLButtonElement>(null);
+  const projectButtonRef = useRef<HTMLButtonElement>(null);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showProjectDialog, setShowProjectDialog] = useState(false);
   const [announcement, setAnnouncement] = useState('');
 
+  const canCreateSharedLinks = useHasAccess({
+    permissionType: PermissionTypes.SHARED_LINKS,
+    permission: Permissions.CREATE,
+  });
+
   const archiveConvoMutation = useArchiveConvoMutation();
+  const assignConversationToProject = useAssignConversationToProjectMutation();
 
   const deleteMutation = useDeleteConversationMutation({
     onSuccess: () => {
@@ -115,6 +136,37 @@ function ConvoOptions({
   const deleteHandler = useCallback(() => {
     setShowDeleteDialog(true);
   }, []);
+
+  const projectHandler = useCallback(() => {
+    setShowProjectDialog(true);
+  }, []);
+
+  const removeProjectHandler = useCallback(() => {
+    const convoId = conversationId ?? '';
+    if (!convoId) {
+      return;
+    }
+    assignConversationToProject.mutate(
+      { conversationId: convoId, projectId: null },
+      {
+        onSuccess: () => {
+          setIsPopoverActive(false);
+          showToast({
+            message: localize('com_ui_project_updated'),
+            severity: NotificationSeverity.SUCCESS,
+            showIcon: true,
+          });
+        },
+        onError: () => {
+          showToast({
+            message: localize('com_ui_project_update_error'),
+            severity: NotificationSeverity.ERROR,
+            showIcon: true,
+          });
+        },
+      },
+    );
+  }, [assignConversationToProject, conversationId, localize, setIsPopoverActive, showToast]);
 
   const handleInstantDelete = useCallback(
     (e: MouseEvent) => {
@@ -189,7 +241,7 @@ function ConvoOptions({
         label: localize('com_ui_share'),
         onClick: shareHandler,
         icon: <Share2 className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
-        show: startupConfig && startupConfig.sharedLinksEnabled,
+        show: startupConfig && startupConfig.sharedLinksEnabled && canCreateSharedLinks,
         ariaHasPopup: 'dialog' as const,
         ariaControls: 'share-conversation-dialog',
         /** NOTE: THE FOLLOWING PROPS ARE REQUIRED FOR MENU ITEMS THAT OPEN DIALOGS */
@@ -210,6 +262,27 @@ function ConvoOptions({
           <Spinner className="size-4" />
         ) : (
           <CopyPlus className="icon-sm mr-2 text-text-primary" aria-hidden="true" />
+        ),
+      },
+      {
+        label: localize('com_ui_change_project'),
+        onClick: projectHandler,
+        icon: <FolderInput className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
+        ariaHasPopup: 'dialog' as const,
+        ariaControls: 'project-conversation-dialog',
+        hideOnClick: false,
+        ref: projectButtonRef,
+        render: (props) => <button {...props} />,
+      },
+      {
+        label: localize('com_ui_remove_from_project'),
+        onClick: removeProjectHandler,
+        show: Boolean(chatProjectId),
+        hideOnClick: false,
+        icon: assignConversationToProject.isLoading ? (
+          <Spinner className="size-4" />
+        ) : (
+          <FolderX className="icon-sm mr-2 text-text-primary" aria-hidden="true" />
         ),
       },
       {
@@ -243,7 +316,12 @@ function ConvoOptions({
       isArchiveLoading,
       isDuplicateLoading,
       handleArchiveClick,
+      canCreateSharedLinks,
       handleDuplicateClick,
+      projectHandler,
+      removeProjectHandler,
+      chatProjectId,
+      assignConversationToProject.isLoading,
     ],
   );
 
@@ -342,6 +420,16 @@ function ConvoOptions({
           setShowDeleteDialog={setShowDeleteDialog}
         />
       )}
+      {showProjectDialog && (
+        <ProjectButton
+          conversationId={conversationId ?? ''}
+          chatProjectId={chatProjectId}
+          setMenuOpen={setIsPopoverActive}
+          triggerRef={projectButtonRef}
+          showProjectDialog={showProjectDialog}
+          setShowProjectDialog={setShowProjectDialog}
+        />
+      )}
     </>
   );
 }
@@ -350,6 +438,7 @@ export default memo(ConvoOptions, (prevProps, nextProps) => {
   return (
     prevProps.conversationId === nextProps.conversationId &&
     prevProps.title === nextProps.title &&
+    prevProps.chatProjectId === nextProps.chatProjectId &&
     prevProps.isPopoverActive === nextProps.isPopoverActive &&
     prevProps.isActiveConvo === nextProps.isActiveConvo &&
     prevProps.isShiftHeld === nextProps.isShiftHeld

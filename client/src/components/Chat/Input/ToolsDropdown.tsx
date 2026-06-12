@@ -226,7 +226,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
       onClick: handleSkillsToggle,
       hideOnClick: false,
       render: (props) => (
-        <div {...props}>
+        <div {...props} data-testid="tools-menu-skills">
           <div className="flex items-center gap-2">
             <ScrollText className="icon-md" aria-hidden="true" />
             <span>{localize('com_ui_skills')}</span>

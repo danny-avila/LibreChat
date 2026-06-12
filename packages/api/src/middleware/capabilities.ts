@@ -62,7 +62,8 @@ export type HasConfigCapabilityFn = (
  * Outside a request context (background jobs, tests), the store is undefined
  * and every check falls through to the database — correct behavior.
  */
-export const capabilityStore = new AsyncLocalStorage<CapabilityStore>();
+export const capabilityStore: AsyncLocalStorage<CapabilityStore> =
+  new AsyncLocalStorage<CapabilityStore>();
 
 export function capabilityContextMiddleware(
   _req: ServerRequest,

@@ -3,6 +3,7 @@ const mockDeleteMessages = jest.fn();
 const mockDeleteAllUserSessions = jest.fn();
 const mockDeleteUserById = jest.fn();
 const mockDeleteAllSharedLinks = jest.fn();
+const mockDeleteAllSharedLinksWithCleanup = jest.fn();
 const mockDeletePresets = jest.fn();
 const mockDeleteUserKey = jest.fn();
 const mockDeleteConvos = jest.fn();
@@ -38,6 +39,7 @@ jest.mock('@librechat/api', () => ({
   extractWebSearchEnvVars: jest.fn(),
   needsRefresh: jest.fn(),
   getNewS3URL: jest.fn(),
+  deleteAllSharedLinksWithCleanup: (...args) => mockDeleteAllSharedLinksWithCleanup(...args),
 }));
 
 jest.mock('~/models', () => ({
@@ -126,6 +128,7 @@ function stubDeletionMocks() {
   mockDeleteUserPluginAuth.mockResolvedValue();
   mockDeleteUserById.mockResolvedValue();
   mockDeleteAllSharedLinks.mockResolvedValue();
+  mockDeleteAllSharedLinksWithCleanup.mockResolvedValue({ deletedCount: 0 });
   mockGetFiles.mockResolvedValue([]);
   mockProcessDeleteRequest.mockResolvedValue({ deletedFileIds: [], failedFileIds: [] });
   mockDeleteFiles.mockResolvedValue();

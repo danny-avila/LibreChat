@@ -13,11 +13,11 @@
 
 import { Keyv } from 'keyv';
 import { logger } from '@librechat/data-schemas';
-import { FlowStateManager, PENDING_STALE_MS } from '~/flow/manager';
-import { MCPTokenStorage, ReauthenticationRequiredError } from '~/mcp/oauth';
-import { MockKeyv, InMemoryTokenStore, createOAuthMCPServer } from './helpers/oauthTestServer';
 import type { OAuthTestServer } from './helpers/oauthTestServer';
 import type { MCPOAuthTokens } from '~/mcp/oauth';
+import { MockKeyv, InMemoryTokenStore, createOAuthMCPServer } from './helpers/oauthTestServer';
+import { MCPTokenStorage, ReauthenticationRequiredError } from '~/mcp/oauth';
+import { FlowStateManager, PENDING_STALE_MS } from '~/flow/manager';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -613,10 +613,10 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
         authorizationUrl: 'https://example.com/auth',
       });
 
-      // Manually age the flow to 3 minutes
+      // Manually age the flow past the staleness window
       const state = await flowManager.getFlowState(flowId, 'mcp_oauth');
       if (state) {
-        state.createdAt = Date.now() - 3 * 60 * 1000;
+        state.createdAt = Date.now() - PENDING_STALE_MS - 60 * 1000;
         await (flowStore as unknown as { set: (k: string, v: unknown) => Promise<void> }).set(
           `mcp_oauth:${flowId}`,
           state,
@@ -627,7 +627,7 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
       expect(agedState?.status).toBe('PENDING');
 
       const age = agedState?.createdAt ? Date.now() - agedState.createdAt : 0;
-      expect(age).toBeGreaterThan(2 * 60 * 1000);
+      expect(age).toBeGreaterThan(PENDING_STALE_MS);
 
       // A new flow should be created (the stale one would be deleted + recreated)
       // This verifies our staleness check threshold

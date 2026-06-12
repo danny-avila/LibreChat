@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
+import { JSX } from 'react/jsx-runtime';
 import { cn } from '~/utils';
 
 class Pixel {
@@ -169,7 +170,7 @@ export default function PixelCard({
   randomness = 0.3,
   width,
   height,
-}: PixelCardProps) {
+}: PixelCardProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pixelsRef = useRef<Pixel[]>([]);

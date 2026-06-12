@@ -93,6 +93,9 @@ const conversationByIndex = atomFamily<TConversation | null, string | number>({
 
         if (shouldUpdateParams) {
           const newParams = createChatSearchParams(newValue);
+          if (newValue.chatProjectId) {
+            newParams.set('projectId', newValue.chatProjectId);
+          }
           const searchParams = createSearchParams(newParams);
           const url = `${window.location.pathname}?${searchParams.toString()}`;
           window.history.pushState({}, '', url);

@@ -93,7 +93,12 @@ export default function ShareButton({
 
               {shareId && (
                 <div className="flex items-center gap-2 rounded-md bg-surface-secondary p-2">
-                  <div className="flex-1 break-all text-sm text-text-secondary">{sharedLink}</div>
+                  <div
+                    className="flex-1 break-all text-sm text-text-secondary"
+                    data-testid="shared-link-url"
+                  >
+                    {sharedLink}
+                  </div>
                   <span className="sr-only" aria-live="polite" aria-atomic="true">
                     {announcement}
                   </span>

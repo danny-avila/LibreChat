@@ -7,7 +7,12 @@ export type InputWithDropdownProps = React.InputHTMLAttributes<HTMLInputElement>
   onSelect?: (value: string) => void;
 };
 
-const InputWithDropdown = React.forwardRef<HTMLInputElement, InputWithDropdownProps>(
+const InputWithDropdown: React.ForwardRefExoticComponent<
+  React.InputHTMLAttributes<HTMLInputElement> & {
+    options: string[];
+    onSelect?: (value: string) => void;
+  } & React.RefAttributes<HTMLInputElement>
+> = React.forwardRef<HTMLInputElement, InputWithDropdownProps>(
   ({ className, options, onSelect, ...props }, ref) => {
     const [isOpen, setIsOpen] = React.useState(false);
     const [inputValue, setInputValue] = React.useState((props.value as string) || '');

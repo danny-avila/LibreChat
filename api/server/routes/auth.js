@@ -87,7 +87,13 @@ router.post(
 
 router.post('/2fa/enable', middleware.requireJwtAuth, enable2FA);
 router.post('/2fa/verify', middleware.requireJwtAuth, verify2FA);
-router.post('/2fa/verify-temp', middleware.checkBan, verify2FAWithTempToken);
+router.post(
+  '/2fa/verify-temp',
+  middleware.setTwoFactorTempUser,
+  middleware.twoFactorTempLimiter,
+  middleware.checkBan,
+  verify2FAWithTempToken,
+);
 router.post('/2fa/confirm', middleware.requireJwtAuth, confirm2FA);
 router.post('/2fa/disable', middleware.requireJwtAuth, disable2FA);
 router.post('/2fa/backup/regenerate', middleware.requireJwtAuth, regenerateBackupCodes);

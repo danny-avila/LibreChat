@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef } from 'react';
 import { useSetRecoilState } from 'recoil';
 import { Tools, Constants, LocalStorageKeys, AgentCapabilities } from 'librechat-data-provider';
-import type { TAgentsEndpoint } from 'librechat-data-provider';
+import type { TAgentsEndpoint, TEphemeralAgent } from 'librechat-data-provider';
 import {
   useMCPServerManager,
   useSearchApiKeyForm,
@@ -170,7 +170,7 @@ export default function BadgeRowProvider({
         if (prev == null) {
           /** ephemeralAgent is null — use localStorage defaults */
           if (hasOverrides || mcpOverrides) {
-            const result = { ...initialValues };
+            const result: TEphemeralAgent = { ...initialValues };
             if (mcpOverrides) {
               result.mcp = mcpOverrides;
             }

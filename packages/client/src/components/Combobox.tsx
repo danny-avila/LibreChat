@@ -1,4 +1,5 @@
 import { startTransition } from 'react';
+import { JSX } from 'react/jsx-runtime';
 import { Search as SearchIcon } from 'lucide-react';
 import * as RadixSelect from '@radix-ui/react-select';
 import { CheckIcon, ChevronDownIcon } from '@radix-ui/react-icons';
@@ -34,7 +35,7 @@ export default function ComboboxComponent({
   setValue: (value: string) => void;
   isCollapsed: boolean;
   SelectIcon?: React.ReactNode;
-}) {
+}): JSX.Element {
   const options: OptionWithIcon[] = (items ?? []).map((option: string | OptionWithIcon) => {
     if (typeof option === 'string') {
       return { label: option, value: option };

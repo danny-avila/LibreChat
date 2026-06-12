@@ -1,6 +1,7 @@
 import React from 'react';
 import { Search } from 'lucide-react';
-import { TranslationKeys, useLocalize } from '~/hooks';
+import { JSX } from 'react/jsx-runtime';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 const AnimatedSearchInput = ({
@@ -13,7 +14,7 @@ const AnimatedSearchInput = ({
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   isSearching?: boolean;
   placeholder: string;
-}) => {
+}): JSX.Element => {
   const isSearching = searching === true;
   const hasValue = value != null && value.length > 0;
   const localize = useLocalize();

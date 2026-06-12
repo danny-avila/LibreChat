@@ -1,7 +1,7 @@
 import { Constants } from 'librechat-data-provider';
-import { createMCPToolCacheService } from './tools';
-import type { LCAvailableTools } from './types';
 import type { MCPToolInput, MCPToolCacheDeps } from './tools';
+import type { LCAvailableTools } from './types';
+import { createMCPToolCacheService } from './tools';
 
 function createMockDeps(overrides: Partial<MCPToolCacheDeps> = {}): MCPToolCacheDeps {
   return {
@@ -55,6 +55,29 @@ describe('createMCPToolCacheService', () => {
         userId: 'u1',
         serverName: 'brave',
       });
+    });
+
+    it('constructs tool names without caching when skipCache is true', async () => {
+      const deps = createMockDeps();
+      const { updateMCPServerTools } = createMCPToolCacheService(deps);
+      const tools: MCPToolInput[] = [
+        {
+          name: 'search',
+          description: 'Search request-scoped docs',
+          inputSchema: { type: 'object', properties: {} },
+        },
+      ];
+
+      const result = await updateMCPServerTools({
+        userId: 'u1',
+        serverName: 'body-scoped',
+        tools,
+        skipCache: true,
+      });
+
+      const expectedKey = `search${Constants.mcp_delimiter}body-scoped`;
+      expect(result[expectedKey]).toBeDefined();
+      expect(deps.setCachedTools).not.toHaveBeenCalled();
     });
 
     it('propagates setCachedTools errors', async () => {

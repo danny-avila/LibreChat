@@ -21,7 +21,13 @@ const { saveConvo } = require('~/models');
  *   persisted; awaited before saving the title in `immediate` mode.
  * @param {AbortSignal} [params.signal] - When aborted (e.g. the user stops an
  *   immediate-mode generation), cancels the in-flight title model call so a
- *   cancelled turn neither consumes the title model nor surfaces a title.
+ *   turn stopped before the title finished does not consume the title model. A
+ *   title that already finished generating is still persisted and surfaced.
+ * @param {AbortSignal} [params.discardSignal] - When aborted, discards an
+ *   already-generated title instead of persisting it. Used only when this stream
+ *   is superseded by a newer run (or the turn failed), so a stale title does not
+ *   clobber the conversation now owned by the newer run. A plain user Stop does
+ *   NOT abort this — its generated title is kept.
  * @param {(params: { conversationId: string, title: string }) => Promise<void>|void} [params.onTitleGenerated]
  *   Called after the title is cached and before persistence waits for the
  *   conversation row. Used by live streams to push the title immediately.
@@ -36,6 +42,7 @@ const addTitle = async (
     immediate = false,
     convoReady,
     signal,
+    discardSignal,
     onTitleGenerated,
   },
 ) => {
@@ -130,12 +137,14 @@ const addTitle = async (
       await convoReady;
     }
 
-    if (signal?.aborted) {
-      // The turn was stopped, or this stream was replaced, after the title had
-      // already been generated — discard it instead of persisting a title for a
-      // cancelled/discarded response. Only clear the cache if it still holds THIS
-      // task's title: a replacement stream shares the `userId-conversationId` key
-      // and may have already cached its own (valid) title that we must not remove.
+    if (discardSignal?.aborted) {
+      // This stream was superseded by a newer run (or the turn failed) after the
+      // title had already been generated — discard it so a stale title does not
+      // clobber the conversation now owned by the newer run. A plain user Stop is
+      // not a discard: its generated title falls through and is persisted below.
+      // Only clear the cache if it still holds THIS task's title: a replacement
+      // stream shares the `userId-conversationId` key and may have already cached
+      // its own (valid) title that we must not remove.
       const cached = await titleCache.get(key);
       if (cached === title) {
         await titleCache.delete(key);

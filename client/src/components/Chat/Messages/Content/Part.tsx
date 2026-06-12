@@ -18,6 +18,7 @@ import {
   Text,
   SkillCall,
   ReadFileCall,
+  FileAuthoringCall,
   BashCall,
   SubagentCall,
 } from './Parts';
@@ -221,6 +222,19 @@ const Part = memo(function Part({
     } else if (isToolCall && toolCall.name === 'read_file') {
       return (
         <ReadFileCall
+          args={toolCall.args}
+          output={toolCall.output ?? ''}
+          initialProgress={toolCall.progress ?? 0.1}
+          isSubmitting={isSubmitting}
+          attachments={attachments}
+          hideAttachments={hideAttachments}
+          onExpand={onToolExpand}
+        />
+      );
+    } else if (isToolCall && (toolCall.name === 'create_file' || toolCall.name === 'edit_file')) {
+      return (
+        <FileAuthoringCall
+          toolName={toolCall.name}
           args={toolCall.args}
           output={toolCall.output ?? ''}
           initialProgress={toolCall.progress ?? 0.1}

@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const openIdClient = require('openid-client');
 const { logger } = require('@librechat/data-schemas');
 const {
+  math,
   isEnabled,
   findOpenIDUser,
   getOpenIdIssuer,
@@ -28,8 +29,18 @@ const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
 
 const AUTH_REFRESH_USER_PROJECTION = '-password -__v -totpSecret -backupCodes -federatedTokens';
 const OPENID_REUSE_EXPIRY_BUFFER_SECONDS = 30;
-/** Mirrors the default SESSION_EXPIRY to bound IdP revocation lag for session-token reuse. */
-const OPENID_REUSE_MAX_SESSION_AGE_MS = 15 * 60 * 1000;
+/**
+ * Max age (ms) LibreChat reuses a cached OpenID session token before forcing an IdP refresh.
+ * Env-overridable (accepts an arithmetic expression, e.g. `60 * 60 * 24 * 1000`, like
+ * `SESSION_EXPIRY`): deployments whose IdP revokes the previous access token on refresh can
+ * widen this to the access-token lifetime so a still-valid token is not rotated/revoked out
+ * from under downstream consumers (e.g. MCP servers that introspect the bearer). Defaults to
+ * 15 minutes.
+ */
+const OPENID_REUSE_MAX_SESSION_AGE_MS = math(
+  process.env.OPENID_REUSE_MAX_SESSION_AGE_MS,
+  15 * 60 * 1000,
+);
 
 const registrationController = async (req, res) => {
   try {

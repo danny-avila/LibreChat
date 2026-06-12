@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { RoleBits, createModels } = require('@librechat/data-schemas');
+const { RoleBits, createModels, tenantStorage } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const {
   ResourceType,
@@ -15,6 +15,8 @@ const {
   getAvailableRoles,
   grantPermission,
   checkPermission,
+  ensurePrincipalExists,
+  ensureGroupPrincipalExists,
 } = require('./PermissionService');
 const { findRoleByIdentifier, getUserPrincipals, seedDefaultRoles } = require('~/models');
 
@@ -44,6 +46,8 @@ jest.mock('~/config', () => ({
 
 let mongoServer;
 let AclEntry;
+let User;
+let Group;
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
@@ -58,6 +62,8 @@ beforeAll(async () => {
   Object.assign(mongoose.models, dbModels);
 
   AclEntry = dbModels.AclEntry;
+  User = dbModels.User;
+  Group = dbModels.Group;
 
   // Seed default roles
   await seedDefaultRoles();
@@ -240,6 +246,69 @@ describe('PermissionService', () => {
         resourceId,
       });
       expect(entries).toHaveLength(1);
+    });
+  });
+
+  describe('principal validation for ACL writes', () => {
+    beforeEach(async () => {
+      await User.deleteMany({ email: /acl-principal/i });
+      await Group.deleteMany({ name: /ACL Principal/i });
+    });
+
+    test('rejects a local user id outside the current request context', async () => {
+      const outsideUser = await User.create({
+        name: 'ACL Principal Outside User',
+        email: 'acl-principal-outside-user@example.com',
+        tenantId: 'tenant-b',
+      });
+
+      await expect(
+        tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+          ensurePrincipalExists({
+            type: PrincipalType.USER,
+            id: outsideUser._id.toString(),
+            name: 'Outside User',
+            source: 'local',
+          }),
+        ),
+      ).rejects.toThrow('User principal not found');
+    });
+
+    test('accepts a local user id in the current request context', async () => {
+      const currentUser = await User.create({
+        name: 'ACL Principal Current User',
+        email: 'acl-principal-current-user@example.com',
+        tenantId: 'tenant-a',
+      });
+
+      const principalId = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+        ensurePrincipalExists({
+          type: PrincipalType.USER,
+          id: currentUser._id.toString(),
+          name: 'Current User',
+          source: 'local',
+        }),
+      );
+
+      expect(principalId).toBe(currentUser._id.toString());
+    });
+
+    test('rejects a local group id outside the current request context', async () => {
+      const outsideGroup = await Group.create({
+        name: 'ACL Principal Outside Group',
+        tenantId: 'tenant-b',
+      });
+
+      await expect(
+        tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
+          ensureGroupPrincipalExists({
+            type: PrincipalType.GROUP,
+            id: outsideGroup._id.toString(),
+            name: 'Outside Group',
+            source: 'local',
+          }),
+        ),
+      ).rejects.toThrow('Group principal not found');
     });
   });
 

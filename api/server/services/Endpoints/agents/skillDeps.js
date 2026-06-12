@@ -1,18 +1,216 @@
+const crypto = require('crypto');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { batchUploadCodeEnvFiles } = require('~/server/services/Files/Code/crud');
 const {
   getSessionInfo,
   checkIfActive,
   readSandboxFile,
+  writeSandboxFile,
 } = require('~/server/services/Files/Code/process');
-const { enrichWithSkillConfigurable } = require('@librechat/api');
+const {
+  checkAccess,
+  getStorageMetadata,
+  resolveRequestTenantId,
+  enrichWithSkillConfigurable,
+  mergeDeploymentSkillIds,
+  createDeploymentSkillMethods,
+  isDeploymentSkillFileSource,
+  getDeploymentSkillDownloadStream,
+} = require('@librechat/api');
+const {
+  Permissions,
+  FileContext,
+  ResourceType,
+  PermissionBits,
+  AccessRoleIds,
+  PrincipalType,
+  PermissionTypes,
+  isEphemeralAgentId,
+} = require('librechat-data-provider');
+const { checkPermission, grantPermission } = require('~/server/services/PermissionService');
+const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 const db = require('~/models');
 
+const deploymentSkillMethods = createDeploymentSkillMethods({
+  getSkillById: db.getSkillById,
+  getSkillByName: db.getSkillByName,
+  listSkillsByAccess: db.listSkillsByAccess,
+  listAlwaysApplySkills: db.listAlwaysApplySkills,
+  listSkillFiles: db.listSkillFiles,
+  getSkillFileByPath: db.getSkillFileByPath,
+  updateSkillFileContent: db.updateSkillFileContent,
+  updateSkillFileCodeEnvIds: db.updateSkillFileCodeEnvIds,
+});
+
+function getSkillDbMethods() {
+  return deploymentSkillMethods;
+}
+
+function withDeploymentSkillIds(ids = []) {
+  return mergeDeploymentSkillIds(ids);
+}
+
+function getSkillStrategyFunctions(source) {
+  if (isDeploymentSkillFileSource(source)) {
+    return {
+      getDownloadStream: (_req, filepath) => getDeploymentSkillDownloadStream(filepath),
+    };
+  }
+  return getStrategyFunctions(source);
+}
+
+function resolveSkillStorage(req, { isImage = false } = {}) {
+  const source = getFileStrategy(req.config, { context: FileContext.skill_file, isImage });
+  const strategy = getStrategyFunctions(source);
+  if (!strategy.saveBuffer) {
+    throw new Error(`Storage backend "${source}" does not support file writes`);
+  }
+  return { saveBuffer: strategy.saveBuffer, source };
+}
+
+function basename(relativePath) {
+  const slash = relativePath.lastIndexOf('/');
+  return slash === -1 ? relativePath : relativePath.slice(slash + 1);
+}
+
+async function saveSkillFileContent({ req, skillId, relativePath, content, mimeType }) {
+  const existingFile = await db.getSkillFileByPath(skillId, relativePath);
+  const tenantId = resolveRequestTenantId(req);
+  const fileId = crypto.randomUUID();
+  const filename = basename(relativePath);
+  const storageFileName = `${fileId}__${filename}`;
+  const buffer = Buffer.from(content, 'utf8');
+  const storage = resolveSkillStorage(req, { isImage: mimeType.startsWith('image/') });
+  const filepath = await storage.saveBuffer({
+    userId: req.user.id,
+    buffer,
+    fileName: storageFileName,
+    basePath: 'uploads',
+    tenantId,
+  });
+  const storageMetadata = getStorageMetadata({ filepath, source: storage.source });
+
+  let result;
+  try {
+    result = await db.upsertSkillFile({
+      skillId,
+      relativePath,
+      file_id: fileId,
+      filename,
+      filepath,
+      ...storageMetadata,
+      source: storage.source,
+      mimeType,
+      bytes: buffer.length,
+      isExecutable: false,
+      author: req.user._id ?? req.user.id,
+      tenantId,
+    });
+    if (!result) {
+      const error = new Error('Skill file save failed to persist metadata');
+      error.code = 'SKILL_FILE_UPSERT_NOT_FOUND';
+      throw error;
+    }
+  } catch (error) {
+    const { deleteFile } = getStrategyFunctions(storage.source);
+    if (deleteFile) {
+      await deleteFile(req, { filepath, user: req.user.id, tenantId }).catch(() => undefined);
+    }
+    throw error;
+  }
+
+  if (existingFile && existingFile.filepath !== filepath) {
+    const { deleteFile } = getStrategyFunctions(existingFile.source);
+    if (deleteFile) {
+      deleteFile(req, {
+        filepath: existingFile.filepath,
+        storageKey: existingFile.storageKey,
+        storageRegion: existingFile.storageRegion,
+        user: existingFile.author ?? req.user.id,
+        tenantId: existingFile.tenantId ?? tenantId,
+      }).catch(() => undefined);
+    }
+  }
+
+  return { bytes: result.bytes, relativePath: result.relativePath };
+}
+
+function canCreateSkill({ req }) {
+  return checkAccess({
+    req,
+    user: req.user,
+    permissionType: PermissionTypes.SKILLS,
+    permissions: [Permissions.USE, Permissions.CREATE],
+    getRoleByName: db.getRoleByName,
+  });
+}
+
+function canEditSkill({ req, skillId }) {
+  return checkPermission({
+    userId: req.user.id,
+    role: req.user.role,
+    resourceType: ResourceType.SKILL,
+    resourceId: skillId,
+    requiredPermission: PermissionBits.EDIT,
+  });
+}
+
+function isAgentSkillsEnabledForRun({ agent, skillsCapabilityEnabled, ephemeralSkillsToggle }) {
+  if (!skillsCapabilityEnabled) {
+    return false;
+  }
+  if (isEphemeralAgentId(agent.id)) {
+    if (agent.skills_enabled === false) {
+      return false;
+    }
+    if (agent.skills_enabled === true) {
+      return true;
+    }
+    return ephemeralSkillsToggle === true;
+  }
+  return agent.skills_enabled === true;
+}
+
+function canAuthorSkillFiles({
+  agent,
+  scopedEditableSkillIds = [],
+  skillCreateAllowed,
+  skillsCapabilityEnabled,
+  ephemeralSkillsToggle,
+}) {
+  return (
+    isAgentSkillsEnabledForRun({ agent, skillsCapabilityEnabled, ephemeralSkillsToggle }) &&
+    (scopedEditableSkillIds.length > 0 || skillCreateAllowed === true)
+  );
+}
+
+function grantSkillOwner({ req, skillId }) {
+  return grantPermission({
+    principalType: PrincipalType.USER,
+    principalId: req.user.id,
+    resourceType: ResourceType.SKILL,
+    resourceId: skillId,
+    accessRoleId: AccessRoleIds.SKILL_OWNER,
+    grantedBy: req.user.id,
+  });
+}
+
+function getAuthorSkillByName({ req, name }) {
+  const author = req.user?._id ?? req.user?.id;
+  if (!author) {
+    return null;
+  }
+  return db.getAuthorSkillByName({
+    name,
+    author,
+    tenantId: resolveRequestTenantId(req),
+  });
+}
+
 /**
- * Builds the `skillPrimedIdsByName` map passed through to
- * `enrichWithSkillConfigurable`. Centralized here so the four CJS call
- * sites (`initialize.js`, `responses.js` x2, `openai.js`) share one
- * source of truth — if `ResolvedManualSkill` ever renames `_id` or
+ * Builds the `skillPrimedIdsByName` map threaded through
+ * `buildAgentToolContext`. Centralized here so every runtime route shares
+ * one source of truth — if `ResolvedManualSkill` ever renames `_id` or
  * gains new identifying fields, only this helper changes.
  *
  * Combines both manual (`$`-popover) primes AND always-apply primes so
@@ -59,17 +257,92 @@ function buildSkillPrimedIdsByName(manualSkillPrimes, alwaysApplySkillPrimes) {
   return out;
 }
 
+/**
+ * Builds the per-agent context consumed by ON_TOOL_EXECUTE. Keeping this
+ * shape in one Adapter gives every runtime path the same configurable
+ * fields and the same primed-skill pinning behavior.
+ *
+ * @param {object} params
+ * @param {object} params.agent
+ * @param {object} params.config
+ * @param {Record<string, import('@librechat/api').LCAvailableTools>} [params.config.mcpAvailableTools]
+ * @param {import('@librechat/api').RequestScopedMCPConnectionStore} [params.config.requestScopedConnections]
+ * @returns {object}
+ */
+function buildAgentToolContext({ agent, config }) {
+  return {
+    agent,
+    toolRegistry: config.toolRegistry,
+    mcpAvailableTools: config.mcpAvailableTools,
+    requestScopedConnections: config.requestScopedConnections,
+    userMCPAuthMap: config.userMCPAuthMap,
+    tool_resources: config.tool_resources,
+    actionsEnabled: config.actionsEnabled,
+    accessibleSkillIds: config.accessibleSkillIds,
+    activeSkillNames: config.activeSkillNames,
+    codeEnvAvailable: config.codeEnvAvailable,
+    skillAuthoringAvailable: config.skillAuthoringAvailable,
+    fileAuthoringToolNames: config.fileAuthoringToolNames,
+    skillPrimedIdsByName:
+      buildSkillPrimedIdsByName(config.manualSkillPrimes, config.alwaysApplySkillPrimes) ?? {},
+  };
+}
+
+function hasOwn(value, key) {
+  return Object.prototype.hasOwnProperty.call(value ?? {}, key);
+}
+
+/**
+ * Applies per-agent runtime context to a loadToolsForExecution result.
+ *
+ * @param {object} params
+ * @param {{ loadedTools: unknown[], configurable?: Record<string, unknown> }} params.result
+ * @param {object} params.req
+ * @param {object | undefined} params.ctx
+ * @param {object | undefined} [params.fallback]
+ * @returns {{ loadedTools: unknown[], configurable: Record<string, unknown> }}
+ */
+function enrichLoadedToolsWithAgentContext({ result, req, ctx = {}, fallback = {} }) {
+  const codeEnvAvailable = hasOwn(ctx, 'codeEnvAvailable')
+    ? ctx.codeEnvAvailable === true
+    : fallback.codeEnvAvailable === true;
+  const skillAuthoringAvailable = hasOwn(ctx, 'skillAuthoringAvailable')
+    ? ctx.skillAuthoringAvailable === true
+    : fallback.skillAuthoringAvailable === true;
+
+  return enrichWithSkillConfigurable({
+    result,
+    context: {
+      req,
+      codeEnvAvailable,
+      accessibleSkillIds: ctx.accessibleSkillIds ?? fallback.accessibleSkillIds,
+      skillPrimedIdsByName: ctx.skillPrimedIdsByName ?? fallback.skillPrimedIdsByName,
+      activeSkillNames: ctx.activeSkillNames ?? fallback.activeSkillNames,
+      skillAuthoringAvailable,
+      fileAuthoringToolNames: ctx.fileAuthoringToolNames ?? fallback.fileAuthoringToolNames,
+    },
+  });
+}
+
 /** Skill-related properties for ToolExecuteOptions (stable references, allocated once). */
 const skillToolDeps = {
-  getSkillByName: db.getSkillByName,
-  listSkillFiles: db.listSkillFiles,
-  getStrategyFunctions,
+  getSkillByName: deploymentSkillMethods.getSkillByName,
+  getAuthorSkillByName,
+  createSkill: db.createSkill,
+  updateSkill: db.updateSkill,
+  deleteSkill: db.deleteSkill,
+  canCreateSkill,
+  canEditSkill,
+  grantSkillOwner,
+  saveSkillFileContent,
+  listSkillFiles: deploymentSkillMethods.listSkillFiles,
+  getStrategyFunctions: getSkillStrategyFunctions,
   batchUploadCodeEnvFiles,
   getSessionInfo,
   checkIfActive,
-  updateSkillFileCodeEnvIds: db.updateSkillFileCodeEnvIds,
-  getSkillFileByPath: db.getSkillFileByPath,
-  updateSkillFileContent: db.updateSkillFileContent,
+  updateSkillFileCodeEnvIds: deploymentSkillMethods.updateSkillFileCodeEnvIds,
+  getSkillFileByPath: deploymentSkillMethods.getSkillFileByPath,
+  updateSkillFileContent: deploymentSkillMethods.updateSkillFileContent,
   /**
    * `read_file` falls back to a sandbox `cat` for `/mnt/data/...` paths
    * and for `{firstSegment}/...` paths whose first segment isn't a known
@@ -79,6 +352,7 @@ const skillToolDeps = {
    * the agents-side `ToolNode` via `tc.codeSessionContext`.
    */
   readSandboxFile,
+  writeSandboxFile,
 };
 
 function getSkillToolDeps() {
@@ -87,6 +361,13 @@ function getSkillToolDeps() {
 
 module.exports = {
   getSkillToolDeps,
+  canAuthorSkillFiles,
+  isAgentSkillsEnabledForRun,
+  getSkillDbMethods,
+  withDeploymentSkillIds,
+  getSkillStrategyFunctions,
   enrichWithSkillConfigurable,
   buildSkillPrimedIdsByName,
+  buildAgentToolContext,
+  enrichLoadedToolsWithAgentContext,
 };

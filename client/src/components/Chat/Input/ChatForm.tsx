@@ -42,6 +42,7 @@ import store from '~/store';
 
 interface ChatFormProps {
   index: number;
+  placeholder?: string;
   /** From ChatContext — individual values so memo can compare them */
   files: Map<string, ExtendedFile>;
   setFiles: FileSetter;
@@ -55,6 +56,7 @@ interface ChatFormProps {
 
 const ChatForm = memo(function ChatForm({
   index,
+  placeholder,
   files,
   setFiles,
   conversation,
@@ -177,6 +179,7 @@ const ChatForm = memo(function ChatForm({
     submitButtonRef,
     setIsScrollable,
     disabled: disableInputs,
+    placeholder,
   });
 
   useQueryParams({ textAreaRef });
@@ -413,7 +416,7 @@ ChatForm.displayName = 'ChatForm';
  * to the memo'd ChatForm. This prevents ChatForm from re-rendering on every
  * streaming chunk — it only re-renders when the specific values it uses change.
  */
-function ChatFormWrapper({ index = 0 }: { index?: number }) {
+function ChatFormWrapper({ index = 0, placeholder }: { index?: number; placeholder?: string }) {
   const {
     files,
     setFiles,
@@ -465,6 +468,7 @@ function ChatFormWrapper({ index = 0 }: { index?: number }) {
   return (
     <ChatForm
       index={index}
+      placeholder={placeholder}
       files={files}
       setFiles={setFiles}
       conversation={stableConversation}

@@ -1126,6 +1126,42 @@ describe('processMCPEnv', () => {
     });
   });
 
+  it('should process user placeholders in oauth_headers', () => {
+    const user = createTestUser({ id: 'user-123', email: 'test@example.com' });
+    const options: MCPOptions = {
+      type: 'streamable-http',
+      url: 'https://mcp.example.com/api',
+      oauth_headers: {
+        'X-User-Id': '{{LIBRECHAT_USER_ID}}',
+        'X-Static': 'static-value',
+      },
+    };
+
+    const result = processMCPEnv({ options, user });
+
+    expect('oauth_headers' in result! && result.oauth_headers).toEqual({
+      'X-User-Id': 'user-123',
+      'X-Static': 'static-value',
+    });
+  });
+
+  it('should NOT resolve user placeholders in oauth_headers when dbSourced', () => {
+    const user = createTestUser({ id: 'user-123' });
+    const options: MCPOptions = {
+      type: 'streamable-http',
+      url: 'https://mcp.example.com/api',
+      oauth_headers: {
+        'X-User-Id': '{{LIBRECHAT_USER_ID}}',
+      },
+    };
+
+    const result = processMCPEnv({ options, user, dbSourced: true });
+
+    expect('oauth_headers' in result! && result.oauth_headers).toEqual({
+      'X-User-Id': '{{LIBRECHAT_USER_ID}}',
+    });
+  });
+
   it('should process user field placeholders in all fields', () => {
     const user = createTestUser({
       id: 'user-123',

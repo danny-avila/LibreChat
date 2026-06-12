@@ -1,11 +1,12 @@
-import * as http from 'http';
-import * as net from 'net';
-import { randomUUID, createHash } from 'crypto';
 import { z } from 'zod';
+import * as net from 'net';
+import * as http from 'http';
+import { randomUUID, createHash } from 'crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import type { FlowState } from '~/flow/types';
+import type { TokenMethods } from '@librechat/data-schemas';
 import type { Socket } from 'net';
+import type { FlowState } from '~/flow/types';
 
 export class MockKeyv<T = unknown> {
   private store: Map<string, FlowState<T>>;
@@ -61,10 +62,26 @@ export interface OAuthTestServerOptions {
   rotateRefreshTokens?: boolean;
   /** When true, /token validates client_id against the registered client that initiated /authorize */
   enforceClientId?: boolean;
+  /** Scopes attached to newly issued tokens unless the authorization request asks for a scope. */
+  tokenScopes?: string[];
+  /** Scopes required by the protected MCP resource. Missing scopes produce a 403 insufficient_scope challenge. */
+  requiredScopes?: string[];
+  /** Scopes advertised by OAuth Protected Resource Metadata and authorization server metadata. */
+  scopesSupported?: string[];
+  /** When true, /authorize and /token reject requests that omit the MCP resource parameter. */
+  requireResourceParameter?: boolean;
+}
+
+export interface OAuthTokenRequestRecord {
+  grantType: string | null;
+  resource: string | null;
+  scope: string | null;
+  clientId: string | null;
 }
 
 export interface OAuthTestServer {
   url: string;
+  resourceUrl: string;
   port: number;
   close: () => Promise<void>;
   issuedTokens: Set<string>;
@@ -72,6 +89,7 @@ export interface OAuthTestServer {
   tokenIssueTimes: Map<string, number>;
   issuedRefreshTokens: Map<string, string>;
   registeredClients: Map<string, { client_id: string; client_secret: string }>;
+  tokenRequests: OAuthTokenRequestRecord[];
   getAuthCode: () => Promise<string>;
 }
 
@@ -114,20 +132,97 @@ export async function createOAuthMCPServer(
     refreshTokenTTLMs = 365 * 24 * 60 * 60 * 1000,
     rotateRefreshTokens = false,
     enforceClientId = false,
+    tokenScopes = [],
+    requiredScopes = [],
+    scopesSupported = [...new Set([...tokenScopes, ...requiredScopes])],
+    requireResourceParameter = false,
   } = options;
 
   const sessions = new Map<string, StreamableHTTPServerTransport>();
   const issuedTokens = new Set<string>();
   const tokenIssueTimes = new Map<string, number>();
+  const accessTokenScopes = new Map<string, string[]>();
   const issuedRefreshTokens = new Map<string, string>();
   const refreshTokenIssueTimes = new Map<string, number>();
+  const refreshTokenScopes = new Map<string, string[]>();
+  const tokenRequests: OAuthTokenRequestRecord[] = [];
   const authCodes = new Map<
     string,
-    { codeChallenge?: string; codeChallengeMethod?: string; clientId?: string }
+    {
+      codeChallenge?: string;
+      codeChallengeMethod?: string;
+      clientId?: string;
+      resource?: string;
+      scope?: string;
+    }
   >();
   const registeredClients = new Map<string, { client_id: string; client_secret: string }>();
 
   let port = 0;
+  const getBaseUrl = () => `http://127.0.0.1:${port}`;
+  const getResourceUrl = () => `${getBaseUrl()}/`;
+  const getResourceMetadataUrl = () => `${getBaseUrl()}/.well-known/oauth-protected-resource`;
+
+  const parseScopes = (scope: string | null | undefined): string[] => {
+    if (!scope) {
+      return tokenScopes;
+    }
+    return scope.split(/\s+/).filter(Boolean);
+  };
+
+  const writeJson = (res: http.ServerResponse, status: number, payload: unknown): void => {
+    res.writeHead(status, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(payload));
+  };
+
+  const writeBearerChallenge = (
+    res: http.ServerResponse,
+    status: number,
+    error: 'invalid_token' | 'insufficient_scope',
+    description: string,
+  ): void => {
+    let authenticate = `Bearer error="${error}", error_description="${description}", resource_metadata="${getResourceMetadataUrl()}"`;
+    if (requiredScopes.length > 0) {
+      authenticate += `, scope="${requiredScopes.join(' ')}"`;
+    }
+    res.writeHead(status, {
+      'Content-Type': 'application/json',
+      'WWW-Authenticate': authenticate,
+    });
+    res.end(JSON.stringify({ error, error_description: description }));
+  };
+
+  const requireValidResourceParameter = (
+    res: http.ServerResponse,
+    params: URLSearchParams,
+  ): boolean => {
+    if (!requireResourceParameter) {
+      return true;
+    }
+    if (params.get('resource') === getResourceUrl()) {
+      return true;
+    }
+    writeJson(res, 400, {
+      error: 'invalid_target',
+      error_description: 'resource parameter is required for this MCP resource',
+    });
+    return false;
+  };
+
+  const makeTokenResponse = (
+    accessToken: string,
+    scopes: string[],
+  ): Record<string, string | number> => {
+    const tokenResponse: Record<string, string | number> = {
+      access_token: accessToken,
+      token_type: 'Bearer',
+      expires_in: Math.ceil(tokenTTLMs / 1000),
+    };
+    if (scopes.length > 0) {
+      tokenResponse.scope = scopes.join(' ');
+    }
+    return tokenResponse;
+  };
 
   const httpServer = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', `http://${req.headers.host}`);
@@ -136,16 +231,30 @@ export async function createOAuthMCPServer(
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(
         JSON.stringify({
-          issuer: `http://127.0.0.1:${port}`,
-          authorization_endpoint: `http://127.0.0.1:${port}/authorize`,
-          token_endpoint: `http://127.0.0.1:${port}/token`,
-          registration_endpoint: `http://127.0.0.1:${port}/register`,
+          issuer: getBaseUrl(),
+          authorization_endpoint: `${getBaseUrl()}/authorize`,
+          token_endpoint: `${getBaseUrl()}/token`,
+          registration_endpoint: `${getBaseUrl()}/register`,
+          scopes_supported: scopesSupported,
           response_types_supported: ['code'],
           grant_types_supported: issueRefreshTokens
             ? ['authorization_code', 'refresh_token']
             : ['authorization_code'],
           token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
           code_challenge_methods_supported: ['S256'],
+        }),
+      );
+      return;
+    }
+
+    if (url.pathname === '/.well-known/oauth-protected-resource' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          resource: getResourceUrl(),
+          authorization_servers: [getBaseUrl()],
+          scopes_supported: scopesSupported,
+          bearer_methods_supported: ['header'],
         }),
       );
       return;
@@ -169,11 +278,20 @@ export async function createOAuthMCPServer(
     }
 
     if (url.pathname === '/authorize') {
+      if (requireResourceParameter && url.searchParams.get('resource') !== getResourceUrl()) {
+        writeJson(res, 400, {
+          error: 'invalid_target',
+          error_description: 'resource parameter is required for this MCP resource',
+        });
+        return;
+      }
       const code = randomUUID();
       const codeChallenge = url.searchParams.get('code_challenge') ?? undefined;
       const codeChallengeMethod = url.searchParams.get('code_challenge_method') ?? undefined;
       const clientId = url.searchParams.get('client_id') ?? undefined;
-      authCodes.set(code, { codeChallenge, codeChallengeMethod, clientId });
+      const resource = url.searchParams.get('resource') ?? undefined;
+      const scope = url.searchParams.get('scope') ?? undefined;
+      authCodes.set(code, { codeChallenge, codeChallengeMethod, clientId, resource, scope });
       const redirectUri = url.searchParams.get('redirect_uri') ?? '';
       const state = url.searchParams.get('state') ?? '';
       res.writeHead(302, {
@@ -193,6 +311,17 @@ export async function createOAuthMCPServer(
       }
 
       const grantType = params.get('grant_type');
+      tokenRequests.push({
+        grantType,
+        resource: params.get('resource'),
+        scope: params.get('scope'),
+        clientId:
+          params.get('client_id') ?? parseBasicAuth(req.headers.authorization)?.clientId ?? null,
+      });
+
+      if (!requireValidResourceParameter(res, params)) {
+        return;
+      }
 
       if (grantType === 'authorization_code') {
         const code = params.get('code');
@@ -240,19 +369,18 @@ export async function createOAuthMCPServer(
         authCodes.delete(code);
 
         const accessToken = randomUUID();
+        const scopes = parseScopes(codeData.scope);
         issuedTokens.add(accessToken);
         tokenIssueTimes.set(accessToken, Date.now());
+        accessTokenScopes.set(accessToken, scopes);
 
-        const tokenResponse: Record<string, string | number> = {
-          access_token: accessToken,
-          token_type: 'Bearer',
-          expires_in: Math.ceil(tokenTTLMs / 1000),
-        };
+        const tokenResponse = makeTokenResponse(accessToken, scopes);
 
         if (issueRefreshTokens) {
           const refreshToken = randomUUID();
           issuedRefreshTokens.set(refreshToken, accessToken);
           refreshTokenIssueTimes.set(refreshToken, Date.now());
+          refreshTokenScopes.set(refreshToken, scopes);
           tokenResponse.refresh_token = refreshToken;
         }
 
@@ -279,21 +407,23 @@ export async function createOAuthMCPServer(
         }
 
         const newAccessToken = randomUUID();
+        const scopes = params.has('scope')
+          ? parseScopes(params.get('scope'))
+          : (refreshTokenScopes.get(refreshToken) ?? tokenScopes);
         issuedTokens.add(newAccessToken);
         tokenIssueTimes.set(newAccessToken, Date.now());
+        accessTokenScopes.set(newAccessToken, scopes);
 
-        const tokenResponse: Record<string, string | number> = {
-          access_token: newAccessToken,
-          token_type: 'Bearer',
-          expires_in: Math.ceil(tokenTTLMs / 1000),
-        };
+        const tokenResponse = makeTokenResponse(newAccessToken, scopes);
 
         if (rotateRefreshTokens) {
           issuedRefreshTokens.delete(refreshToken);
           refreshTokenIssueTimes.delete(refreshToken);
+          refreshTokenScopes.delete(refreshToken);
           const newRefreshToken = randomUUID();
           issuedRefreshTokens.set(newRefreshToken, newAccessToken);
           refreshTokenIssueTimes.set(newRefreshToken, Date.now());
+          refreshTokenScopes.set(newRefreshToken, scopes);
           tokenResponse.refresh_token = newRefreshToken;
         }
 
@@ -310,15 +440,13 @@ export async function createOAuthMCPServer(
     // All other paths require Bearer token auth
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      res.writeHead(401, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'invalid_token' }));
+      writeBearerChallenge(res, 401, 'invalid_token', 'Missing Authorization header');
       return;
     }
 
     const token = authHeader.slice(7);
     if (!issuedTokens.has(token)) {
-      res.writeHead(401, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'invalid_token' }));
+      writeBearerChallenge(res, 401, 'invalid_token', 'Token is invalid');
       return;
     }
 
@@ -326,8 +454,15 @@ export async function createOAuthMCPServer(
     if (Date.now() - issueTime > tokenTTLMs) {
       issuedTokens.delete(token);
       tokenIssueTimes.delete(token);
-      res.writeHead(401, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'invalid_token' }));
+      accessTokenScopes.delete(token);
+      writeBearerChallenge(res, 401, 'invalid_token', 'Token has expired');
+      return;
+    }
+
+    const scopes = accessTokenScopes.get(token) ?? [];
+    const hasRequiredScopes = requiredScopes.every((scope) => scopes.includes(scope));
+    if (!hasRequiredScopes) {
+      writeBearerChallenge(res, 403, 'insufficient_scope', 'Insufficient scope');
       return;
     }
 
@@ -360,17 +495,22 @@ export async function createOAuthMCPServer(
 
   return {
     url: `http://127.0.0.1:${port}/`,
+    resourceUrl: `http://127.0.0.1:${port}/`,
     port,
     issuedTokens,
     tokenTTL: tokenTTLMs,
     tokenIssueTimes,
     issuedRefreshTokens,
     registeredClients,
+    tokenRequests,
     getAuthCode: async () => {
-      const authRes = await fetch(
-        `http://127.0.0.1:${port}/authorize?redirect_uri=http://localhost&state=test`,
-        { redirect: 'manual' },
-      );
+      const authUrl = new URL(`${getBaseUrl()}/authorize`);
+      authUrl.searchParams.set('redirect_uri', 'http://localhost');
+      authUrl.searchParams.set('state', 'test');
+      if (requireResourceParameter) {
+        authUrl.searchParams.set('resource', getResourceUrl());
+      }
+      const authRes = await fetch(authUrl, { redirect: 'manual' });
       const location = authRes.headers.get('location') ?? '';
       return new URL(location).searchParams.get('code') ?? '';
     },
@@ -400,7 +540,7 @@ export class InMemoryTokenStore {
     return `${filter.userId}:${filter.type}:${filter.identifier}`;
   }
 
-  findToken = async (filter: {
+  findToken = (async (filter: {
     userId?: string;
     type?: string;
     identifier?: string;
@@ -414,9 +554,9 @@ export class InMemoryTokenStore {
       }
     }
     return null;
-  };
+  }) as unknown as TokenMethods['findToken'];
 
-  createToken = async (data: {
+  createToken = (async (data: {
     userId: string;
     type: string;
     identifier: string;
@@ -436,9 +576,9 @@ export class InMemoryTokenStore {
     };
     this.tokens.set(this.key(data), token);
     return token;
-  };
+  }) as unknown as TokenMethods['createToken'];
 
-  updateToken = async (
+  updateToken = (async (
     filter: { userId?: string; type?: string; identifier?: string },
     data: {
       userId?: string;
@@ -449,7 +589,7 @@ export class InMemoryTokenStore {
       metadata?: Record<string, unknown>;
     },
   ): Promise<InMemoryToken> => {
-    const existing = await this.findToken(filter);
+    const existing = (await this.findToken(filter)) as InMemoryToken | null;
     if (!existing) {
       throw new Error(`Token not found for filter: ${JSON.stringify(filter)}`);
     }
@@ -464,7 +604,7 @@ export class InMemoryTokenStore {
     };
     this.tokens.set(existingKey, updated);
     return updated;
-  };
+  }) as unknown as TokenMethods['updateToken'];
 
   deleteToken = async (filter: {
     userId: string;
@@ -474,7 +614,7 @@ export class InMemoryTokenStore {
     this.tokens.delete(this.key(filter));
   };
 
-  deleteTokens = async (query: {
+  deleteTokens = (async (query: {
     userId?: string;
     type?: string;
     identifier?: string;
@@ -491,7 +631,7 @@ export class InMemoryTokenStore {
       }
     }
     return { acknowledged: true, deletedCount };
-  };
+  }) as unknown as TokenMethods['deleteTokens'];
 
   getAll(): InMemoryToken[] {
     return [...this.tokens.values()];

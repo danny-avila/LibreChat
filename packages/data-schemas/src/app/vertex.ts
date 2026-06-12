@@ -1,4 +1,3 @@
-import logger from '~/config/winston';
 import {
   EModelEndpoint,
   extractEnvVariable,
@@ -12,12 +11,13 @@ import type {
   TAnthropicEndpoint,
   TVertexModelConfig,
 } from 'librechat-data-provider';
+import logger from '~/config/winston';
 
 /**
  * Default Vertex AI models available through Google Cloud
  * These are the standard Anthropic model names as served by Vertex AI
  */
-export const defaultVertexModels = [
+export const defaultVertexModels: string[] = [
   'claude-sonnet-4-6',
   'claude-3-7-sonnet-20250219',
   'claude-3-5-sonnet-v2@20241022',

@@ -35,6 +35,7 @@ import type * as t from '~/types';
 import { getProviderConfig } from '~/endpoints/config/providers';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
+import { applyTestRunHook } from '~/agents/testHook';
 import { isUserProvided } from '~/utils/common';
 
 /** Expected shape of JSON tool search results */
@@ -1030,7 +1031,7 @@ export async function createRun({
    */
   const enableToolOutputReferences = anyAgentHasCodeEnv(agents);
 
-  return Run.create({
+  const run = await Run.create({
     runId,
     graphConfig,
     tokenCounter,
@@ -1039,8 +1040,16 @@ export async function createRun({
     calibrationRatio,
     indexTokenCountMap,
     eagerEventToolExecution: { enabled: true },
+    // Derive the Langfuse trace id deterministically from runId so message
+    // feedback can be scored against the trace without a lookup (see the
+    // feedback route in api/server/routes/messages.js). No-op unless Langfuse
+    // tracing is enabled. Requires @librechat/agents >= 3.2.21.
+    langfuse: { deterministicTraceId: true },
     ...(enableToolOutputReferences && {
       toolOutputReferences: { enabled: true },
     }),
   });
+
+  applyTestRunHook(run, { messages, agents });
+  return run;
 }

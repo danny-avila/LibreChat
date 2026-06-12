@@ -27,6 +27,45 @@ describe('loadDefaultInterface', () => {
     expect(interfaceConfig?.autoSubmitFromUrl).toBe(false);
   });
 
+  it('preserves a disabled build info flag', async () => {
+    const config: Partial<TCustomConfig> = {
+      interface: {
+        buildInfo: false,
+      },
+    };
+
+    const interfaceConfig = await loadDefaultInterface({
+      config,
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.buildInfo).toBe(false);
+  });
+
+  it('uses the schema default for build info when not configured', async () => {
+    const interfaceConfig = await loadDefaultInterface({
+      config: {},
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.buildInfo).toBe(true);
+  });
+
+  it('preserves enabled build info config', async () => {
+    const config: Partial<TCustomConfig> = {
+      interface: {
+        buildInfo: true,
+      },
+    };
+
+    const interfaceConfig = await loadDefaultInterface({
+      config,
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.buildInfo).toBe(true);
+  });
+
   it('preserves enabled URL auto-submit config', async () => {
     const config: Partial<TCustomConfig> = {
       interface: {

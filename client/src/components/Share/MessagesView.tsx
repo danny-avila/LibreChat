@@ -13,7 +13,7 @@ export default function MessagesView({
   const localize = useLocalize();
   const [currentEditId, setCurrentEditId] = useState<number | string | null>(-1);
   return (
-    <div className="min-h-0 flex-1 overflow-hidden">
+    <div className="min-h-0 flex-1 overflow-hidden" data-testid="messages-view">
       <div className="dark:gpt-dark-gray relative h-full">
         <div
           style={{

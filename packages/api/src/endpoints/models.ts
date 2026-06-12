@@ -1,5 +1,5 @@
-import crypto from 'crypto';
 import axios from 'axios';
+import crypto from 'crypto';
 import { logger } from '@librechat/data-schemas';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import {
@@ -126,7 +126,16 @@ export async function fetchModels({
     return models;
   }
 
-  const shouldCache = !skipCache && !(userIdQuery && user);
+  // The MODEL_QUERIES cache is keyed by baseURL+apiKey only. That's safe
+  // when the response is identical for every caller, but fails when callers
+  // forward header templates that resolve to a user-bound value (e.g.
+  // `Authorization: Bearer {{LIBRECHAT_OPENID_ID_TOKEN}}`): one user's
+  // filtered list could otherwise be served to the next request that
+  // shares the same baseURL+apiKey. Skip the cache whenever both `headers`
+  // and `userObject` are supplied, since that's the signal the caller is
+  // resolving headers against a specific user's identity.
+  const hasUserScopedHeaders = !!headers && Object.keys(headers).length > 0 && !!userObject;
+  const shouldCache = !skipCache && !(userIdQuery && user) && !hasUserScopedHeaders;
   const cacheKey = shouldCache ? modelsCacheKey(baseURL ?? '', apiKey) : '';
   const modelsCache = shouldCache ? standardCache(CacheKeys.MODEL_QUERIES) : null;
   if (modelsCache && cacheKey) {
@@ -156,13 +165,21 @@ export async function fetchModels({
   }
 
   try {
+    // Resolve template variables (e.g. {{LIBRECHAT_OPENID_ID_TOKEN}}) in the
+    // configured headers, mirroring fetchOllamaModels above. Without this,
+    // placeholder strings are forwarded literally on the model-fetch path.
+    const resolvedHeaders = resolveHeaders({
+      headers: headers ?? undefined,
+      user: userObject,
+    });
+
     const options: {
       headers: Record<string, string>;
       timeout: number;
       httpsAgent?: HttpsProxyAgent<string>;
     } = {
       headers: {
-        ...(headers ?? {}),
+        ...resolvedHeaders,
       },
       timeout: 5000,
     };
@@ -173,7 +190,16 @@ export async function fetchModels({
         'anthropic-version': process.env.ANTHROPIC_VERSION || '2023-06-01',
       };
     } else {
-      options.headers.Authorization = `Bearer ${apiKey}`;
+      // Only fall back to the apiKey-based Bearer when the configured
+      // headers did not already supply an Authorization. This lets
+      // auth-aware proxies (e.g. LiteLLM with JWT auth) receive the user's
+      // token on /v1/models so they can return a per-user filtered list.
+      const hasAuthHeader = Object.keys(options.headers).some(
+        (k) => k.toLowerCase() === 'authorization',
+      );
+      if (!hasAuthHeader) {
+        options.headers.Authorization = `Bearer ${apiKey}`;
+      }
     }
 
     if (process.env.PROXY) {
@@ -274,7 +300,7 @@ export async function fetchOpenAIModels(
   }
 
   if (baseURL === openaiBaseURL) {
-    const regex = /(text-davinci-003|gpt-|o\d+)/;
+    const regex = /(text-davinci-003|gpt-|o\d+|chat-latest)/;
     const excludeRegex = /audio|realtime/;
     models = models.filter((model) => regex.test(model) && !excludeRegex.test(model));
     const instructModels = models.filter((model) => model.includes('instruct'));

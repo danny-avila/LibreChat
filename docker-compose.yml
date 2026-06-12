@@ -27,6 +27,7 @@ services:
       - ./images:/app/client/public/images
       - ./uploads:/app/uploads
       - ./logs:/app/logs
+      - ./skill:/app/skill
   mongodb:
     container_name: chat-mongodb
     image: mongo:8.0.20

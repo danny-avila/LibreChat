@@ -1082,6 +1082,42 @@ describe('getLLMConfig', () => {
         expect(result.llmConfig).not.toHaveProperty('topK');
       });
 
+      it('should set adaptive thinking with summarized display for Fable 5', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: { model: 'claude-fable-5', thinking: true },
+        });
+
+        const thinking = result.llmConfig.thinking as unknown as {
+          type: string;
+          display?: string;
+        };
+        expect(thinking.type).toBe('adaptive');
+        expect(thinking.display).toBe('summarized');
+      });
+
+      it('should default Fable 5 max output tokens to 128K', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: { model: 'claude-fable-5', thinking: true },
+        });
+        expect(result.llmConfig.maxTokens).toBe(128000);
+      });
+
+      it('should omit sampling parameters for Fable 5', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-fable-5',
+            thinking: true,
+            temperature: 0.7,
+            topP: 0.9,
+            topK: 40,
+          },
+        });
+
+        expect(result.llmConfig).not.toHaveProperty('temperature');
+        expect(result.llmConfig).not.toHaveProperty('topP');
+        expect(result.llmConfig).not.toHaveProperty('topK');
+      });
+
       it('should NOT set thinking.display for pre-Opus-4.7 adaptive models', () => {
         const pre47Models = ['claude-opus-4-6', 'claude-sonnet-4-6'];
 

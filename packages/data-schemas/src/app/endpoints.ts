@@ -3,8 +3,8 @@ import type { TCustomConfig, TAgentsEndpoint, TAnthropicEndpoint } from 'librech
 import type { AppConfig } from '~/types';
 import { azureAssistantsDefaults, assistantsConfigSetup } from './assistants';
 import { agentsConfigSetup } from './agents';
-import { azureConfigSetup } from './azure';
 import { vertexConfigSetup } from './vertex';
+import { azureConfigSetup } from './azure';
 
 /**
  * Loads custom config endpoints
@@ -14,7 +14,21 @@ import { vertexConfigSetup } from './vertex';
 export const loadEndpoints = (
   config: Partial<TCustomConfig>,
   agentsDefaults?: Partial<TAgentsEndpoint>,
-) => {
+): {
+  allowedAddresses?: string[];
+  openAI?: Partial<import('librechat-data-provider').TEndpoint>;
+  google?: Partial<import('librechat-data-provider').TEndpoint>;
+  bedrock?: Partial<import('librechat-data-provider').TEndpoint>;
+  anthropic?: Partial<TAnthropicEndpoint> & {
+    vertexConfig?: import('librechat-data-provider').TVertexAIConfig;
+  };
+  azureOpenAI?: import('librechat-data-provider').TAzureConfig;
+  assistants?: Partial<import('librechat-data-provider').TAssistantEndpoint>;
+  azureAssistants?: Partial<import('librechat-data-provider').TAssistantEndpoint>;
+  all?: Partial<import('librechat-data-provider').TEndpoint>;
+  agents?: Partial<TAgentsEndpoint>;
+  custom?: import('librechat-data-provider').TCustomEndpoints;
+} => {
   const loadedEndpoints: AppConfig['endpoints'] = {};
   const endpoints = config?.endpoints;
 

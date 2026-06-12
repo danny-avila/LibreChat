@@ -64,6 +64,23 @@ describe('getGoogleConfig', () => {
       expect(result.llmConfig).toHaveProperty('apiKey', 'raw-api-key-string');
     });
 
+    it('should not let project id force Vertex AI without the force flag', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        projectId: 'fiery-catwalk-385918',
+        modelOptions: {
+          model: 'gemini-2.5-flash',
+        },
+      });
+
+      expect(result.provider).toBe(Providers.GOOGLE);
+      expect(result.llmConfig).toHaveProperty('apiKey', 'test-api-key');
+      expect(result.llmConfig).not.toHaveProperty('authOptions');
+    });
+
     it('should handle model options including temperature and topP/topK', () => {
       const credentials = {
         [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
@@ -316,6 +333,53 @@ describe('getGoogleConfig', () => {
         }),
       });
       expect(result.llmConfig).toHaveProperty('location', 'us-central1');
+    });
+
+    it('should force Vertex AI ADC config with a project id even when an API key is present', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+      };
+
+      const result = getGoogleConfig(credentials, {
+        forceVertex: true,
+        projectId: 'fiery-catwalk-385918',
+        modelOptions: {
+          model: 'gemini-2.5-flash',
+        },
+      });
+
+      expect(result.provider).toBe(Providers.VERTEXAI);
+      expect(result.llmConfig).not.toHaveProperty('apiKey');
+      expect((result.llmConfig as Record<string, unknown>).authOptions).toEqual({
+        projectId: 'fiery-catwalk-385918',
+      });
+    });
+
+    it('should force Vertex AI service-account config when an API key is also present', () => {
+      const credentials = {
+        [AuthKeys.GOOGLE_API_KEY]: 'test-api-key',
+        [AuthKeys.GOOGLE_SERVICE_KEY]: {
+          project_id: 'test-project',
+          client_email: 'test@test-project.iam.gserviceaccount.com',
+          private_key: 'test-private-key',
+        },
+      };
+
+      const result = getGoogleConfig(credentials, {
+        forceVertex: true,
+        modelOptions: {
+          model: 'gemini-2.5-flash',
+        },
+      });
+
+      expect(result.provider).toBe(Providers.VERTEXAI);
+      expect(result.llmConfig).not.toHaveProperty('apiKey');
+      expect((result.llmConfig as Record<string, unknown>).authOptions).toMatchObject({
+        projectId: 'test-project',
+        credentials: expect.objectContaining({
+          project_id: 'test-project',
+        }),
+      });
     });
 
     it('should use GOOGLE_LOC env variable for Vertex AI location', () => {

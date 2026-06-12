@@ -13,10 +13,29 @@ export class SessionError extends Error {
 }
 
 /** Default refresh token expiry: 7 days in milliseconds */
-export const DEFAULT_REFRESH_TOKEN_EXPIRY = 1000 * 60 * 60 * 24 * 7;
+export const DEFAULT_REFRESH_TOKEN_EXPIRY: number = 1000 * 60 * 60 * 24 * 7;
 
 // Factory function that takes mongoose instance and returns the methods
-export function createSessionMethods(mongoose: typeof import('mongoose')) {
+export function createSessionMethods(mongoose: typeof import('mongoose')): {
+  findSession: (
+    params: t.SessionSearchParams,
+    options?: t.SessionQueryOptions,
+  ) => Promise<t.ISession | null>;
+  SessionError: typeof SessionError;
+  deleteSession: (params: t.DeleteSessionParams) => Promise<{ deletedCount?: number }>;
+  createSession: (userId: string, options?: t.CreateSessionOptions) => Promise<t.SessionResult>;
+  updateExpiration: (
+    session: t.ISession | string,
+    newExpiration?: Date,
+    options?: t.UpdateExpirationOptions,
+  ) => Promise<t.ISession>;
+  countActiveSessions: (userId: string) => Promise<number>;
+  generateRefreshToken: (session: t.ISession) => Promise<string>;
+  deleteAllUserSessions: (
+    userId: string | { userId: string },
+    options?: t.DeleteAllSessionsOptions,
+  ) => Promise<{ deletedCount?: number }>;
+} {
   /**
    * Creates a new session for a user
    */

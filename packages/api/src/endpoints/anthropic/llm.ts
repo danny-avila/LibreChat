@@ -52,7 +52,7 @@ function parseCredentials(
 }
 
 /** Known Anthropic parameters that map directly to the client config */
-export const knownAnthropicParams = new Set([
+export const knownAnthropicParams: Set<string> = new Set([
   'model',
   'temperature',
   'topP',

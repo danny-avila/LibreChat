@@ -5,12 +5,12 @@
  * oauthFailed rejection, timeout behavior, and token expiry mid-session.
  */
 
-import { MCPConnection } from '~/mcp/connection';
-import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
-import { createOAuthMCPServer } from './helpers/oauthTestServer';
 import type { OAuthTestServer } from './helpers/oauthTestServer';
 import type { StreamableHTTPOptions } from '~/mcp/types';
 import type { MCPOAuthTokens } from '~/mcp/oauth';
+import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
+import { createOAuthMCPServer } from './helpers/oauthTestServer';
+import { MCPConnection } from '~/mcp/connection';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -21,6 +21,7 @@ jest.mock('@librechat/data-schemas', () => ({
   },
   encryptV2: jest.fn(async (val: string) => `enc:${val}`),
   decryptV2: jest.fn(async (val: string) => val.replace(/^enc:/, '')),
+  getTenantId: jest.fn(),
 }));
 
 jest.mock('~/auth', () => ({

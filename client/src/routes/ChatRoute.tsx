@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilCallback, useRecoilValue } from 'recoil';
 import { Spinner, useToastContext } from '@librechat/client';
 import { useParams, useSearchParams } from 'react-router-dom';
@@ -13,7 +14,14 @@ import {
   isNotFoundError,
   isTemporaryConversation,
   logger,
+  clearMessagesCache,
 } from '~/utils';
+import {
+  useGetConvoIdQuery,
+  useGetStartupConfig,
+  useGetEndpointsQuery,
+  useProjectQuery,
+} from '~/data-provider';
 import {
   useAssistantListMap,
   useIdChangeEffect,
@@ -21,7 +29,6 @@ import {
   useNewConvo,
   useLocalize,
 } from '~/hooks';
-import { useGetConvoIdQuery, useGetStartupConfig, useGetEndpointsQuery } from '~/data-provider';
 import { ToolCallsMapProvider } from '~/Providers';
 import ChatView from '~/components/Chat/ChatView';
 import { NotificationSeverity } from '~/common';
@@ -29,9 +36,13 @@ import useAuthRedirect from './useAuthRedirect';
 import temporaryStore from '~/store/temporary';
 import store from '~/store';
 
+const isValidChatProjectId = (projectId: string | null): projectId is string =>
+  projectId != null && /^[a-f\d]{24}$/i.test(projectId);
+
 export default function ChatRoute() {
   const { data: startupConfig } = useGetStartupConfig();
   const { isAuthenticated, user, roles } = useAuthRedirect();
+  const queryClient = useQueryClient();
 
   const defaultTemporaryChat = useRecoilValue(temporaryStore.defaultTemporaryChat);
   const setIsTemporary = useRecoilCallback(
@@ -44,13 +55,64 @@ export default function ChatRoute() {
   useAppStartup({ startupConfig, user });
 
   const index = 0;
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { conversationId = '' } = useParams();
+  const projectIdParam = searchParams.get('projectId');
+  const chatProjectId = isValidChatProjectId(projectIdParam) ? projectIdParam : null;
   useIdChangeEffect(conversationId);
   const { hasSetConversation, conversation } = store.useCreateConversationAtom(index);
   const { newConversation } = useNewConvo();
   const { showToast } = useToastContext();
   const localize = useLocalize();
+  const projectQuery = useProjectQuery(chatProjectId, {
+    enabled: isAuthenticated && Boolean(chatProjectId),
+    retry: false,
+    staleTime: 30000,
+    cacheTime: 300000,
+  });
+  /**
+   * The scoped project is *confirmed gone* — a not-found/not-owned (404) response,
+   * or a success that resolved to a different/empty project. Transient failures
+   * (500, network, auth refresh race) are deliberately excluded: this query runs with
+   * `retry: false`, so treating any error as "gone" would unscope a valid project on
+   * a single blip.
+   */
+  const projectNotFound = projectQuery.isError && isNotFoundError(projectQuery.error);
+  /**
+   * Trust the scope when the project resolves to itself, and keep showing it through
+   * transient errors via React Query's retained data — but never for a project that
+   * is confirmed gone (otherwise the deleted project's chip lingers).
+   */
+  const verifiedChatProjectId =
+    !projectNotFound && projectQuery.data?._id === chatProjectId ? chatProjectId : null;
+  const projectTemplate = useMemo(
+    () => (verifiedChatProjectId ? { chatProjectId: verifiedChatProjectId } : {}),
+    [verifiedChatProjectId],
+  );
+
+  /**
+   * The scoped project is gone even though the URL still carries `?projectId`. Drop
+   * the param so the new-chat landing reverts to an unscoped chat — otherwise the
+   * stale chip lingers and sends target a dead project.
+   */
+  const projectScopeMissing =
+    Boolean(chatProjectId) &&
+    conversationId === Constants.NEW_CONVO &&
+    (projectNotFound || (projectQuery.isSuccess && projectQuery.data?._id !== chatProjectId));
+
+  useEffect(() => {
+    if (!projectScopeMissing) {
+      return;
+    }
+    setSearchParams(
+      (params) => {
+        const next = new URLSearchParams(params);
+        next.delete('projectId');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [projectScopeMissing, setSearchParams]);
 
   const modelsQuery = useGetModelsQuery({
     enabled: isAuthenticated,
@@ -81,24 +143,36 @@ export default function ChatRoute() {
   useEffect(() => {
     // Wait for roles to load so hasAgentAccess has a definitive value in useNewConvo
     const rolesLoaded = roles?.USER != null;
+    const isNewConvo = conversationId === Constants.NEW_CONVO;
+    const isDraftNewConvo = conversation?.conversationId === Constants.NEW_CONVO;
+    const draftProjectMismatch = verifiedChatProjectId
+      ? conversation?.chatProjectId !== verifiedChatProjectId
+      : conversation?.chatProjectId != null;
+    const newConvoNeedsInit =
+      isNewConvo && (!conversation || (isDraftNewConvo && draftProjectMismatch));
     const shouldSetConvo =
-      (startupConfig && rolesLoaded && !hasSetConversation.current && !modelsQuery.data?.initial) ??
+      (startupConfig &&
+        rolesLoaded &&
+        (!hasSetConversation.current || newConvoNeedsInit) &&
+        !modelsQuery.data?.initial) ??
       false;
     /* Early exit if startupConfig is not loaded and conversation is already set and only initial models have loaded */
     if (!shouldSetConvo) {
       return;
     }
 
-    const isNewConvo = conversationId === Constants.NEW_CONVO;
+    if (isNewConvo && chatProjectId && projectQuery.isLoading) {
+      return;
+    }
 
     const getNewConvoPreset = () => {
-      const result = getDefaultModelSpec(startupConfig);
-      const spec = result?.default ?? result?.last;
+      const result = getDefaultModelSpec(startupConfig, endpointsQuery.data);
+      const spec = result?.default ?? result?.last ?? result?.softDefault;
       const specPreset = spec ? getModelSpecPreset(spec) : undefined;
 
       const queryParams: Record<string, string> = {};
       searchParams.forEach((value, key) => {
-        if (key !== 'prompt' && key !== 'q' && key !== 'submit') {
+        if (key !== 'prompt' && key !== 'q' && key !== 'submit' && key !== 'projectId') {
           queryParams[key] = value;
         }
       });
@@ -114,9 +188,10 @@ export default function ChatRoute() {
       const preset = getNewConvoPreset();
 
       logger.log('conversation', 'ChatRoute, new convo effect', conversation);
+      clearMessagesCache(queryClient, conversation?.conversationId);
       newConversation({
         modelsData: modelsQuery.data,
-        template: conversation ? conversation : undefined,
+        template: projectTemplate,
         ...(preset ? { preset } : {}),
       });
 
@@ -137,8 +212,8 @@ export default function ChatRoute() {
       initialConvoQuery.isError &&
       isNotFoundError(initialConvoQuery.error)
     ) {
-      const result = getDefaultModelSpec(startupConfig);
-      const spec = result?.default ?? result?.last;
+      const result = getDefaultModelSpec(startupConfig, endpointsQuery.data);
+      const spec = result?.default ?? result?.last ?? result?.softDefault;
       showToast({
         message: localize('com_ui_conversation_not_found'),
         severity: NotificationSeverity.WARNING,
@@ -161,9 +236,10 @@ export default function ChatRoute() {
       const preset = getNewConvoPreset();
 
       logger.log('conversation', 'ChatRoute new convo, assistants effect', conversation);
+      clearMessagesCache(queryClient, conversation?.conversationId);
       newConversation({
         modelsData: modelsQuery.data,
-        template: conversation ? conversation : undefined,
+        template: projectTemplate,
         ...(preset ? { preset } : {}),
       });
       hasSetConversation.current = true;
@@ -189,6 +265,13 @@ export default function ChatRoute() {
     endpointsQuery.data,
     modelsQuery.data,
     assistantListMap,
+    chatProjectId,
+    projectQuery.data?._id,
+    projectQuery.isLoading,
+    projectTemplate,
+    queryClient,
+    conversation?.chatProjectId,
+    conversation?.conversationId,
   ]);
 
   if (endpointsQuery.isLoading || modelsQuery.isLoading) {
@@ -218,7 +301,7 @@ export default function ChatRoute() {
 
   return (
     <ToolCallsMapProvider conversationId={conversation.conversationId ?? ''}>
-      <ChatView index={index} />
+      <ChatView index={index} project={verifiedChatProjectId ? projectQuery.data : undefined} />
     </ToolCallsMapProvider>
   );
 }

@@ -187,7 +187,9 @@ export function shouldShowActionButton(statusIconProps?: MCPServerStatusIconProp
 
   // Show for disconnected/error (can reconnect/configure)
   if (connectionState === 'disconnected' || connectionState === 'error') return true;
-  // Don't show connecting spinner (no action)
+  // Show a cancel action for pending OAuth connections.
+  if (connectionState === 'connecting' && requiresOAuth && canCancel) return true;
+  // Don't show connecting spinner when no action is available.
   if (connectionState === 'connecting') return false;
   // Connected: only show if there's config to manage
   if (connectionState === 'connected') return hasCustomUserVars || requiresOAuth;

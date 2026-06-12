@@ -1,7 +1,7 @@
-import { spawn } from 'child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { spawn } from 'child_process';
+import { mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 
 /**
  * LibreOffice-backed office preview pipeline.
@@ -196,7 +196,7 @@ export function _resetLibreOfficeProbeCache(): void {
 export const LIBREOFFICE_TIMEOUT_MS = 30_000;
 
 /** Maximum PDF output size; refuse anything larger so a runaway doc can't fill the disk. */
-export const MAX_LIBREOFFICE_PDF_BYTES = 50 * 1024 * 1024;
+export const MAX_LIBREOFFICE_PDF_BYTES: number = 50 * 1024 * 1024;
 
 /** Tag-distinct error so callers can distinguish "binary missing" from "conversion failed". */
 export class LibreOfficeUnavailableError extends Error {

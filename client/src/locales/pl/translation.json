@@ -74,7 +74,7 @@
   "com_agents_loading": "Ładowanie...",
   "com_agents_marketplace": "Agent Marketplace",
   "com_agents_marketplace_subtitle": "Odkrywaj i używaj potężnych agentów AI, aby ulepszyć swoje przepływy pracy i wydajność",
-  "com_agents_mcp_description_placeholder": "MCP pozwala na wyposażenie twojego agenta w niestandardowe narzędzia i funkcje poprzez integrację z serwerami MCP. Skonfiguruj niestandardowe zmienne dla każdego serwera, aby umożliwić agentowi korzystanie z tych narzędzi.",
+  "com_agents_mcp_description_placeholder": "Wyjaśnij, co to robi, w kilku słowach",
   "com_agents_mcp_icon_size": "Minimalny rozmiar: 128 x 128 px",
   "com_agents_mcp_name_placeholder": "Niestandardowe Narzędzie",
   "com_agents_mcp_trust_subtext": "Niestandardowe konektory MCP nie są weryfikowane przez LibreChat",

@@ -1,4 +1,5 @@
 import { batchDeleteKeys, scanKeys } from '../redisUtils';
+import { closeRedisClients } from './redisClients.helper';
 
 describe('redisUtils Integration Tests', () => {
   let keyvRedisClient: Awaited<typeof import('../redisClients')>['keyvRedisClient'];
@@ -44,8 +45,8 @@ describe('redisUtils Integration Tests', () => {
   });
 
   afterAll(async () => {
-    // Close Redis connection
-    if (keyvRedisClient?.isOpen) await keyvRedisClient.disconnect();
+    // Close both Redis clients created by the module import
+    await closeRedisClients();
   });
 
   describe('batchDeleteKeys', () => {

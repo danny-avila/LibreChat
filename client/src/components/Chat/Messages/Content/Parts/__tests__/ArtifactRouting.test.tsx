@@ -1,8 +1,8 @@
 import React from 'react';
-import { render, screen, fireEvent, act } from '@testing-library/react';
 import { RecoilRoot, useRecoilValue } from 'recoil';
-import type { MutableSnapshot } from 'recoil';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import type { TAttachment } from 'librechat-data-provider';
+import type { MutableSnapshot } from 'recoil';
 import Attachment, { AttachmentGroup } from '../Attachment';
 import store from '~/store';
 
@@ -198,9 +198,8 @@ describe('Attachment routing for tool artifacts', () => {
      * yet); use it as the canonical "unrouted text" example. */
     const json = baseAttachment({
       filename: 'data.json',
-      type: 'application/json',
       text: '{"a":1,"b":2}',
-    } as Partial<TAttachment>);
+    });
     const { container } = renderWith(<Attachment attachment={json} />);
     expect(container.querySelector('pre')).not.toBeNull();
     expect(screen.queryByTestId('mermaid-render')).not.toBeInTheDocument();
@@ -544,10 +543,9 @@ describe('ToolArtifactCard click behaviour', () => {
     const xlsx = baseAttachment({
       file_id: 'just-resolved-xlsx',
       filename: 'data.xlsx',
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       text: '<table>resolved</table>',
       textFormat: 'html',
-    } as Partial<TAttachment>);
+    });
     const initializeState = (snap: MutableSnapshot) => {
       snap.set(store.isSubmittingFamily(0), false);
       snap.set(store.artifactsVisibility, false);
@@ -580,10 +578,9 @@ describe('ToolArtifactCard click behaviour', () => {
     const xlsx = baseAttachment({
       file_id: 'one-shot-xlsx',
       filename: 'data.xlsx',
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       text: '<table>resolved</table>',
       textFormat: 'html',
-    } as Partial<TAttachment>);
+    });
     const initializeState = (snap: MutableSnapshot) => {
       snap.set(store.isSubmittingFamily(0), false);
       snap.set(store.artifactsVisibility, false);
@@ -710,15 +707,13 @@ describe('AttachmentGroup routing', () => {
     const empty = baseAttachment({
       file_id: 'empty-zip',
       filename: 'placeholder.zip',
-      type: 'application/zip',
       bytes: 0,
-    } as Partial<TAttachment>);
+    });
     const real = baseAttachment({
       file_id: 'real-zip',
       filename: 'archive.zip',
-      type: 'application/zip',
       bytes: 1024,
-    } as Partial<TAttachment>);
+    });
     const { container } = renderWith(<AttachmentGroup attachments={[empty, real]} />);
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_show_n_files' }));
     const chips = Array.from(container.querySelectorAll('[data-testid="file-container"]'));
@@ -733,26 +728,22 @@ describe('AttachmentGroup routing', () => {
     const first = baseAttachment({
       file_id: 'file-a',
       filename: 'a.zip',
-      type: 'application/zip',
-    } as Partial<TAttachment>);
+    });
     const second = baseAttachment({
       file_id: 'file-b',
       filename: 'b.zip',
-      type: 'application/zip',
-    } as Partial<TAttachment>);
+    });
     const json = baseAttachment({
       file_id: 'file-c',
       filename: 'c.json',
-      type: 'application/json',
       text: '{"c":true}',
-    } as Partial<TAttachment>);
+    });
     const image = baseAttachment({
       file_id: 'image-a',
       filename: 'preview.png',
-      type: 'image/png',
       width: 16,
       height: 16,
-    } as Partial<TAttachment>);
+    });
 
     const { container } = renderWith(
       <AttachmentGroup attachments={[first, second, json, image]} />,
@@ -784,9 +775,8 @@ describe('AttachmentGroup routing', () => {
     const sandboxFile = baseAttachment({
       file_id: 'sandbox-zip',
       filename: 'archive-deadbe.zip',
-      type: 'application/zip',
       bytes: 1024,
-    } as Partial<TAttachment>);
+    });
     const { container } = renderWith(<AttachmentGroup attachments={[sandboxFile]} />);
     const chip = container.querySelector('[data-testid="file-container"]');
     expect(chip?.textContent).toBe('archive-deadbe.zip');
@@ -802,9 +792,8 @@ describe('AttachmentGroup routing', () => {
     const sandboxDotfile = baseAttachment({
       file_id: 'sandbox-config',
       filename: '_.config-abcdef.zip',
-      type: 'application/zip',
       bytes: 12,
-    } as Partial<TAttachment>);
+    });
     const { container } = renderWith(<AttachmentGroup attachments={[sandboxDotfile]} />);
     const chip = container.querySelector('[data-testid="file-container"]');
     expect(chip?.textContent).toBe('.config.zip');
@@ -823,7 +812,6 @@ describe('AttachmentGroup routing', () => {
       baseAttachment({
         file_id: 'pending-1',
         filename: 'data.xlsx',
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         status: 'pending',
       } as Partial<TAttachment>),
       baseAttachment({
@@ -859,7 +847,6 @@ describe('AttachmentGroup routing', () => {
       baseAttachment({
         file_id: 'c',
         filename: 'data.json',
-        type: 'application/json',
         text: '{"a":1}',
       } as Partial<TAttachment>),
       baseAttachment({

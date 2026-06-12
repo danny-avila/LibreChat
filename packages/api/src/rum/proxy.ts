@@ -1,5 +1,5 @@
-import type { Request, Response } from 'express';
 import { logger } from '@librechat/data-schemas';
+import type { Request, Response } from 'express';
 import { isEnabled } from '~/utils';
 
 const DEFAULT_PROXY_PATH = '/api/rum';
@@ -127,7 +127,9 @@ export async function proxyRumRequest(req: Request, res: Response): Promise<void
     const response = await fetch(target, {
       method: 'POST',
       headers: getProxyHeaders(req, body),
-      body,
+      // TS 5.9 made `Buffer` generic (`Buffer<ArrayBufferLike>`), which no longer
+      // structurally matches `BodyInit`; Node's fetch accepts a Buffer body at runtime.
+      body: body as BodyInit,
       signal: controller.signal,
     });
 

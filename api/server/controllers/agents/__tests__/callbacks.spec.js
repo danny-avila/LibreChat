@@ -7,6 +7,10 @@ jest.mock('nanoid', () => ({
 
 jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
+  HOST_FILE_AUTHORING_ARTIFACT_KEY: '__librechat_file_authoring',
+  isCodeSessionToolName: jest.fn((name) =>
+    ['execute_code', 'bash_tool', 'read_file'].includes(name),
+  ),
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -364,12 +368,21 @@ describe('createToolEndCallback', () => {
 
     const { processCodeOutput } = require('~/server/services/Files/Code/process');
 
-    function makeCodeExecutionEvent({ runId, threadId, toolCallId, fileId, name }) {
+    function makeCodeExecutionEvent({
+      runId,
+      threadId,
+      toolCallId,
+      fileId,
+      name,
+      toolName = 'execute_code',
+      hostFileAuthoring = false,
+    }) {
       return {
         output: {
-          name: 'execute_code',
+          name: toolName,
           tool_call_id: toolCallId,
           artifact: {
+            ...(hostFileAuthoring ? { __librechat_file_authoring: true } : {}),
             session_id: 'sess-1',
             files: [{ id: fileId, name, session_id: 'sess-1' }],
           },
@@ -572,6 +585,65 @@ describe('createToolEndCallback', () => {
       await new Promise((resolve) => setImmediate(resolve));
 
       expect(res.write).toHaveBeenCalledTimes(1);
+    });
+
+    it('processes create_file sandbox artifacts like code execution outputs', async () => {
+      res.headersSent = true;
+      processCodeOutput.mockResolvedValue({
+        file: {
+          file_id: 'fid-created',
+          filename: 'created.txt',
+          filepath: '/uploads/created.txt',
+          type: 'text/plain',
+          conversationId: 'thread789',
+          messageId: 'run-create',
+          toolCallId: 'tool-create',
+          status: 'ready',
+        },
+      });
+
+      const toolEndCallback = createToolEndCallback({ req, res, artifactPromises });
+      const event = makeCodeExecutionEvent({
+        runId: 'run-create',
+        threadId: 'thread789',
+        toolCallId: 'tool-create',
+        fileId: 'fid-created',
+        name: 'created.txt',
+        toolName: 'create_file',
+        hostFileAuthoring: true,
+      });
+      await toolEndCallback({ output: event.output }, event.metadata);
+      await Promise.all(artifactPromises);
+
+      expect(processCodeOutput).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'fid-created',
+          name: 'created.txt',
+          messageId: 'run-create',
+          toolCallId: 'tool-create',
+          conversationId: 'thread789',
+        }),
+      );
+      expect(res.write).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not process arbitrary user tool artifacts named create_file as code outputs', async () => {
+      res.headersSent = true;
+      const toolEndCallback = createToolEndCallback({ req, res, artifactPromises });
+      const event = makeCodeExecutionEvent({
+        runId: 'run-user-create',
+        threadId: 'thread789',
+        toolCallId: 'tool-user-create',
+        fileId: 'fid-user-created',
+        name: 'created.txt',
+        toolName: 'create_file',
+      });
+
+      await toolEndCallback({ output: event.output }, event.metadata);
+      await Promise.all(artifactPromises);
+
+      expect(processCodeOutput).not.toHaveBeenCalled();
+      expect(res.write).not.toHaveBeenCalled();
     });
   });
 });

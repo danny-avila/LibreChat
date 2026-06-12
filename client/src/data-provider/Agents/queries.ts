@@ -34,9 +34,9 @@ async function fetchAllAgentPages(params: t.AgentListParams): Promise<t.AgentLis
     object: 'list',
     data: pages.flatMap((p) => p.data),
     has_more: false,
-    after: null,
-    first_id: pages[0]?.first_id ?? null,
-    last_id: lastPage?.last_id ?? null,
+    after: undefined,
+    first_id: pages[0]?.first_id ?? '',
+    last_id: lastPage?.last_id ?? '',
   };
 }
 

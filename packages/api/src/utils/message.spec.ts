@@ -4,6 +4,8 @@ import {
   sanitizeFileForTransmit,
   buildMessageFiles,
   getThreadData,
+  isPreliminaryMessageId,
+  isUnpersistedPreliminaryParent,
 } from './message';
 
 /** Cast to string for type compatibility with ThreadMessage */
@@ -127,6 +129,55 @@ describe('sanitizeMessageForTransmit', () => {
 
     expect(message.fileContext).toBe('original context');
     expect(message.files[0].text).toBe('original text');
+  });
+});
+
+describe('isUnpersistedPreliminaryParent', () => {
+  it('returns false without querying for non-preliminary parent ids', async () => {
+    const getMessages = jest.fn();
+
+    await expect(
+      isUnpersistedPreliminaryParent({
+        userId: 'user-123',
+        conversationId: 'conversation-123',
+        parentMessageId: 'persisted-response',
+        getMessages,
+      }),
+    ).resolves.toBe(false);
+
+    expect(isPreliminaryMessageId('persisted-response')).toBe(false);
+    expect(getMessages).not.toHaveBeenCalled();
+  });
+
+  it('returns true when the underscore-suffixed parent is not persisted', async () => {
+    const getMessages = jest.fn().mockResolvedValue([]);
+
+    await expect(
+      isUnpersistedPreliminaryParent({
+        userId: 'user-123',
+        conversationId: 'conversation-123',
+        parentMessageId: 'pending-response_',
+        getMessages,
+      }),
+    ).resolves.toBe(true);
+
+    expect(getMessages).toHaveBeenCalledWith(
+      { user: 'user-123', messageId: 'pending-response_', conversationId: 'conversation-123' },
+      '_id',
+    );
+  });
+
+  it('returns false when the underscore-suffixed parent is already persisted', async () => {
+    const getMessages = jest.fn().mockResolvedValue([{ _id: 'persisted-parent' }]);
+
+    await expect(
+      isUnpersistedPreliminaryParent({
+        userId: 'user-123',
+        conversationId: 'conversation-123',
+        parentMessageId: 'persisted-response_',
+        getMessages,
+      }),
+    ).resolves.toBe(false);
   });
 });
 

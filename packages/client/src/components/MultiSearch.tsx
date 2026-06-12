@@ -1,5 +1,6 @@
-import { Search, X } from 'lucide-react';
 import React, { useState, useMemo, useCallback, useRef } from 'react';
+import { JSX } from 'react/jsx-runtime';
+import { Search, X } from 'lucide-react';
 import { cn } from '~/utils';
 
 /** This is a generic that can be added to Menu and Select components */
@@ -13,7 +14,7 @@ export default function MultiSearch({
   onChange: (filter: string) => void;
   placeholder?: string;
   className?: string;
-}) {
+}): JSX.Element {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const onChangeHandler: React.ChangeEventHandler<HTMLInputElement> = useCallback(

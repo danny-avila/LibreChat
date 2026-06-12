@@ -1,5 +1,5 @@
-import { useRecoilValue } from 'recoil';
 import { useState, useEffect, useCallback } from 'react';
+import { useRecoilValue } from 'recoil';
 import type { VoiceOption } from '~/common';
 import store from '~/store';
 
@@ -89,6 +89,11 @@ function useTextToSpeechBrowser({
         setIsSpeaking(false);
       };
       utterance.onerror = (event) => {
+        if (event.error === 'interrupted' || event.error === 'canceled') {
+          setIsSpeaking(false);
+          return;
+        }
+
         console.error('Speech synthesis error:', event);
         setIsSpeaking(false);
       };

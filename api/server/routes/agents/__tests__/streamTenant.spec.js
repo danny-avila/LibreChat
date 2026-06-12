@@ -45,9 +45,11 @@ jest.mock('~/server/middleware', () => ({
 }));
 
 jest.mock('~/server/routes/agents/chat', () => require('express').Router());
-jest.mock('~/server/routes/agents/v1', () => ({
-  v1: require('express').Router(),
-}));
+jest.mock('~/server/routes/agents/v1', () => {
+  const router = require('express').Router();
+  router.use((req, res) => res.status(418).json({ error: 'v1 caught stream route' }));
+  return { v1: router };
+});
 jest.mock('~/server/routes/agents/openai', () => require('express').Router());
 jest.mock('~/server/routes/agents/responses', () => require('express').Router());
 

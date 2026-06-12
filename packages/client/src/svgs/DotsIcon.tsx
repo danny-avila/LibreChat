@@ -1,10 +1,11 @@
 import React from 'react';
+import { JSX } from 'react/jsx-runtime';
 
 export default function DotsIcon({
   className = 'h-4 w-4 flex-shrink-0 text-gray-500',
 }: {
   className?: string;
-}) {
+}): JSX.Element {
   return (
     <svg
       stroke="currentColor"

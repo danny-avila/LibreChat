@@ -3,7 +3,8 @@ import { render, screen } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import SkillsView from '../SkillsView';
 
-const mockUseHasAccess = jest.fn(() => true);
+const mockUseHasAccess = jest.fn((..._args: unknown[]) => true);
+const mockUseMediaQuery = jest.fn((_query: string) => false);
 
 jest.mock(
   'librechat-data-provider',
@@ -18,9 +19,15 @@ jest.mock(
   '@librechat/client',
   () => ({
     Spinner: () => <div data-testid="spinner" />,
+    useMediaQuery: (query: string) => mockUseMediaQuery(query),
   }),
   { virtual: true },
 );
+
+jest.mock('~/components/Chat/Menus/OpenSidebar', () => ({
+  __esModule: true,
+  default: () => <div data-testid="open-sidebar" />,
+}));
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
@@ -58,6 +65,8 @@ describe('SkillsView', () => {
   beforeEach(() => {
     mockUseHasAccess.mockReset();
     mockUseHasAccess.mockReturnValue(true);
+    mockUseMediaQuery.mockReset();
+    mockUseMediaQuery.mockReturnValue(false);
   });
 
   it('renders the create skill form for /skills/new', () => {
@@ -68,5 +77,26 @@ describe('SkillsView', () => {
     render(<RouterProvider router={router} />);
 
     expect(screen.getByTestId('create-skill-form')).toBeInTheDocument();
+  });
+
+  it('renders the sidebar toggle on small screens', () => {
+    mockUseMediaQuery.mockReturnValue(true);
+    const router = createMemoryRouter([{ path: '/skills', element: <SkillsView /> }], {
+      initialEntries: ['/skills'],
+    });
+
+    render(<RouterProvider router={router} />);
+
+    expect(screen.getByTestId('open-sidebar')).toBeInTheDocument();
+  });
+
+  it('does not render the sidebar toggle on large screens', () => {
+    const router = createMemoryRouter([{ path: '/skills', element: <SkillsView /> }], {
+      initialEntries: ['/skills'],
+    });
+
+    render(<RouterProvider router={router} />);
+
+    expect(screen.queryByTestId('open-sidebar')).not.toBeInTheDocument();
   });
 });

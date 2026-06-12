@@ -1,11 +1,12 @@
-import { loadToolDefinitions } from './definitions';
-import { toolkitExpansion, toolkitParent } from './toolkits/mapping';
-import { getToolDefinition } from './registry/definitions';
+import { Providers } from '@librechat/agents';
 import type {
   LoadToolDefinitionsParams,
   LoadToolDefinitionsDeps,
   ActionToolDefinition,
 } from './definitions';
+import { toolkitExpansion, toolkitParent } from './toolkits/mapping';
+import { getToolDefinition } from './registry/definitions';
+import { loadToolDefinitions } from './definitions';
 
 describe('definitions.ts', () => {
   const mockGetOrFetchMCPServerTools = jest.fn().mockResolvedValue(null);
@@ -426,6 +427,69 @@ describe('definitions.ts', () => {
         const getItemDef = result.toolDefinitions.find((d) => d.name === 'get_item_mcp_server_one');
         expect(getItemDef).toBeDefined();
         expect(getItemDef?.description).toBe('Get a specific item');
+      });
+
+      it('union-flattens MCP tool schemas for Google, but preserves unions otherwise', async () => {
+        const mockServerTools = {
+          issue_write_mcp_github: {
+            function: {
+              name: 'issue_write_mcp_github',
+              description: 'Write an issue',
+              parameters: {
+                type: 'object',
+                properties: {
+                  repo: { type: 'string' },
+                  payload: {
+                    anyOf: [
+                      {
+                        type: 'object',
+                        properties: { action: { const: 'create' }, title: { type: 'string' } },
+                      },
+                      {
+                        type: 'object',
+                        properties: { action: { const: 'update' }, number: { type: 'number' } },
+                      },
+                    ],
+                  },
+                },
+                required: ['repo'],
+              },
+            },
+          },
+        };
+        mockGetOrFetchMCPServerTools.mockResolvedValue(mockServerTools);
+
+        const deps: LoadToolDefinitionsDeps = {
+          getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+          isBuiltInTool: mockIsBuiltInTool,
+        };
+
+        const googleResult = await loadToolDefinitions(
+          {
+            userId: 'user-123',
+            agentId: 'agent-123',
+            tools: ['issue_write_mcp_github'],
+            provider: Providers.GOOGLE,
+          },
+          deps,
+        );
+        const googleDef = googleResult.toolDefinitions.find(
+          (d) => d.name === 'issue_write_mcp_github',
+        );
+        expect(JSON.stringify(googleDef?.parameters)).not.toContain('anyOf');
+        expect(
+          (googleDef?.parameters as { properties: Record<string, { properties: object }> })
+            .properties.payload.properties,
+        ).toEqual({ action: { type: 'string', enum: ['create'] }, title: { type: 'string' } });
+
+        const defaultResult = await loadToolDefinitions(
+          { userId: 'user-123', agentId: 'agent-123', tools: ['issue_write_mcp_github'] },
+          deps,
+        );
+        const defaultDef = defaultResult.toolDefinitions.find(
+          (d) => d.name === 'issue_write_mcp_github',
+        );
+        expect(JSON.stringify(defaultDef?.parameters)).toContain('anyOf');
       });
 
       it('should load MCP tools with hyphenated server names (server-one)', async () => {

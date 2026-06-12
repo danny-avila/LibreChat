@@ -1,8 +1,8 @@
-import type { Model, RootFilterQuery, Types } from 'mongoose';
-import type { MCPServerDocument } from '../types';
-import type { MCPOptions } from 'librechat-data-provider';
-import logger from '~/config/winston';
 import { nanoid } from 'nanoid';
+import type { Model, RootFilterQuery, Types } from 'mongoose';
+import type { MCPOptions } from 'librechat-data-provider';
+import type { MCPServerDocument } from '../types';
+import logger from '~/config/winston';
 
 const NORMALIZED_LIMIT_DEFAULT = 20;
 const MAX_CREATE_RETRIES = 5;
@@ -44,7 +44,39 @@ function generateServerNameFromTitle(title: string): string {
   return slug || 'mcp-server'; // Fallback if empty
 }
 
-export function createMCPServerMethods(mongoose: typeof import('mongoose')) {
+export function createMCPServerMethods(mongoose: typeof import('mongoose')): {
+  createMCPServer: (data: {
+    config: MCPOptions;
+    author: string | Types.ObjectId;
+    reservedServerNames?: Iterable<string>;
+  }) => Promise<MCPServerDocument>;
+  findMCPServerByServerName: (serverName: string) => Promise<MCPServerDocument | null>;
+  findMCPServerByObjectId: (_id: string | Types.ObjectId) => Promise<MCPServerDocument | null>;
+  findMCPServersByAuthor: (authorId: string | Types.ObjectId) => Promise<MCPServerDocument[]>;
+  getListMCPServersByIds: ({
+    ids,
+    otherParams,
+    limit,
+    after,
+  }: {
+    ids?: Types.ObjectId[];
+    otherParams?: RootFilterQuery<MCPServerDocument>;
+    limit?: number | null;
+    after?: string | null;
+  }) => Promise<{
+    data: MCPServerDocument[];
+    has_more: boolean;
+    after: string | null;
+  }>;
+  getListMCPServersByNames: ({ names }: { names: string[] }) => Promise<{
+    data: MCPServerDocument[];
+  }>;
+  updateMCPServer: (
+    serverName: string,
+    updateData: { config?: MCPOptions },
+  ) => Promise<MCPServerDocument | null>;
+  deleteMCPServer: (serverName: string) => Promise<MCPServerDocument | null>;
+} {
   /**
    * Finds the next available server name by checking DB and reserved-name collisions.
    * If baseName is taken or reserved, returns baseName-2, baseName-3, etc.

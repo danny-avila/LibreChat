@@ -17,8 +17,14 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { LocalizeFunction } from '~/common';
 
 export const TEXT_KEY_DIVIDER = '|||';
+export const STREAM_START_FAILED_METADATA_KEY = 'streamStartFailed';
 
 type SiblingIndexLookup = (parentMessageId: string | null | undefined) => number;
+
+export type BranchSiblingIndex = {
+  parentMessageId: string | null | undefined;
+  siblingIdx: number;
+};
 
 export const selectActiveBranchTail = (
   messages: TMessage[] | null | undefined,
@@ -82,6 +88,55 @@ export const getMessageBranchSiblingParentIds = (
   return Array.from(parentIds);
 };
 
+export const getBranchSiblingIndexesForTarget = (
+  messages: TMessage[] | null | undefined,
+  targetMessageId: string | null | undefined,
+  rootSiblingKey: string | null | undefined,
+): BranchSiblingIndex[] => {
+  if (!targetMessageId) {
+    return [];
+  }
+
+  const messagesTree = buildTree({ messages: messages ?? null });
+  if (!messagesTree?.length) {
+    return [];
+  }
+
+  const branchIndexes: BranchSiblingIndex[] = [];
+  const findTargetPath = (
+    siblings: TMessage[] | undefined,
+    parentMessageId: string | null | undefined,
+  ): boolean => {
+    if (!siblings?.length) {
+      return false;
+    }
+
+    for (let index = 0; index < siblings.length; index++) {
+      const message = siblings[index];
+      if (!message) {
+        continue;
+      }
+
+      const isTarget = message.messageId === targetMessageId;
+      const childHasTarget = findTargetPath(message.children, message.messageId);
+      if (isTarget || childHasTarget) {
+        if (siblings.length > 1) {
+          branchIndexes.unshift({
+            parentMessageId,
+            siblingIdx: siblings.length - index - 1,
+          });
+        }
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  findTargetPath(messagesTree, rootSiblingKey);
+  return branchIndexes;
+};
+
 export const getLatestText = (message?: TMessage | null, includeIndex?: boolean): string => {
   if (!message) {
     return '';
@@ -135,6 +190,16 @@ export const getAllContentText = (message?: TMessage | null): string => {
 
   return '';
 };
+
+export const hasStreamStartFailed = (message?: Pick<TMessage, 'metadata'> | null): boolean =>
+  message?.metadata?.[STREAM_START_FAILED_METADATA_KEY] === true;
+
+export const markStreamStartFailedMetadata = (
+  metadata?: TMessage['metadata'],
+): TMessage['metadata'] => ({
+  ...(metadata ?? {}),
+  [STREAM_START_FAILED_METADATA_KEY]: true,
+});
 
 const getLatestContentForKey = (message: TMessage): string => {
   const formatText = (str: string, index: number): string => {

@@ -1,7 +1,6 @@
 /**
  * @jest-environment jsdom
  */
-import { describe, it, expect, jest } from '@jest/globals';
 import { Constants, type Agent } from 'librechat-data-provider';
 import type { FieldNamesMarkedBoolean } from 'react-hook-form';
 import type { AgentForm } from '~/common';
@@ -18,7 +17,15 @@ const createForm = (): AgentForm => ({
   description: null,
   instructions: null,
   model: 'gpt-4',
-  model_parameters: {},
+  model_parameters: {
+    temperature: 1,
+    maxContextTokens: null,
+    max_context_tokens: null,
+    max_output_tokens: null,
+    top_p: 1,
+    frequency_penalty: 0,
+    presence_penalty: 0,
+  },
   tools: [],
   provider: 'openai',
   agent_ids: [],
@@ -70,7 +77,7 @@ describe('persistAvatarChanges', () => {
   it('returns false for ephemeral agents', async () => {
     const uploadAvatar = jest.fn();
     const result = await persistAvatarChanges({
-      agentId: Constants.EPHEMERAL_AGENT_ID,
+      agentId: String(Constants.EPHEMERAL_AGENT_ID),
       avatarActionState: 'upload',
       avatarFile: new File(['avatar'], 'avatar.png', { type: 'image/png' }),
       uploadAvatar,

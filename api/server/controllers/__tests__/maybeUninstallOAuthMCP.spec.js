@@ -13,9 +13,11 @@ const mockDeleteTokens = jest.fn();
 const mockLoggerInfo = jest.fn();
 const mockLoggerWarn = jest.fn();
 const mockLoggerError = jest.fn();
+const mockGetTenantId = jest.fn();
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: { info: mockLoggerInfo, warn: mockLoggerWarn, error: mockLoggerError },
+  getTenantId: (...args) => mockGetTenantId(...args),
   webSearchKeys: [],
 }));
 
@@ -23,7 +25,14 @@ jest.mock('@librechat/api', () => {
   return {
     MCPOAuthHandler: {
       revokeOAuthToken: (...args) => mockRevokeOAuthToken(...args),
-      generateFlowId: (userId, serverName) => `${userId}:${serverName}`,
+      generateFlowId: (userId, serverName, tenantId) => {
+        const flowId = `${userId}:${serverName}`;
+        return tenantId ? `tenant:${encodeURIComponent(tenantId)}:${flowId}` : flowId;
+      },
+      generateTokenFlowId: (userId, serverName, tenantId) => {
+        const flowId = `${userId}:${serverName}`;
+        return tenantId ? `tenant:${encodeURIComponent(tenantId)}:${flowId}` : flowId;
+      },
     },
     MCPTokenStorage: {
       getTokens: (...args) => mockGetTokens(...args),
@@ -151,6 +160,7 @@ function setupOAuthServerFound() {
 describe('maybeUninstallOAuthMCP', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetTenantId.mockReturnValue(undefined);
   });
 
   test('is a no-op when pluginKey is not an MCP key', async () => {
@@ -203,6 +213,20 @@ describe('maybeUninstallOAuthMCP', () => {
       `[maybeUninstallOAuthMCP] Unable to load OAuth client metadata for ${serverName}; clearing local MCP OAuth state only.`,
       expect.any(Error),
     );
+  });
+
+  test('clears tenant-scoped and legacy flow state when tenant context exists', async () => {
+    setupOAuthServerFound();
+    mockGetTenantId.mockReturnValue('tenant-a');
+    mockGetClientInfoAndMetadata.mockResolvedValue(null);
+
+    await maybeUninstallOAuthMCP(userId, pluginKey, appConfig);
+
+    expect(mockDeleteFlow).toHaveBeenCalledTimes(4);
+    expect(mockDeleteFlow).toHaveBeenCalledWith('tenant:tenant-a:user-123:acme', 'mcp_get_tokens');
+    expect(mockDeleteFlow).toHaveBeenCalledWith('tenant:tenant-a:user-123:acme', 'mcp_oauth');
+    expect(mockDeleteFlow).toHaveBeenCalledWith('user-123:acme', 'mcp_get_tokens');
+    expect(mockDeleteFlow).toHaveBeenCalledWith('user-123:acme', 'mcp_oauth');
   });
 
   test('revokes both tokens and runs cleanup on happy path', async () => {

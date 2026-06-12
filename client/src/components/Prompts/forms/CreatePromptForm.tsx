@@ -1,18 +1,18 @@
 import { useEffect } from 'react';
 import { FileText } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { Button, TextareaAutosize, Input } from '@librechat/client';
 import { useForm, Controller, FormProvider } from 'react-hook-form';
+import { Button, TextareaAutosize, Input, useMediaQuery } from '@librechat/client';
 import { LocalStorageKeys, PermissionTypes, Permissions } from 'librechat-data-provider';
 import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
-import CategorySelector from '../fields/CategorySelector';
 import VariablesDropdown from '../editor/VariablesDropdown';
+import CategorySelector from '../fields/CategorySelector';
 import PromptVariables from '../display/PromptVariables';
-import Description from '../fields/Description';
 import { usePromptGroupsContext } from '~/Providers';
 import { useLocalize, useHasAccess } from '~/hooks';
-import Command from '../fields/Command';
 import { useCreatePrompt } from '~/data-provider';
+import Description from '../fields/Description';
+import Command from '../fields/Command';
 import { cn } from '~/utils';
 
 type CreateFormValues = {
@@ -42,6 +42,7 @@ const CreatePromptForm = ({
 }) => {
   const localize = useLocalize();
   const navigate = useNavigate();
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const { hasAccess: hasUseAccess } = usePromptGroupsContext() ?? {};
   const hasCreateAccess = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
@@ -114,10 +115,12 @@ const CreatePromptForm = ({
     <FormProvider {...methods}>
       <form onSubmit={handleSubmit(onSubmit)} className="w-full px-4 py-2">
         <h1 className="sr-only">{localize('com_ui_create_prompt_page')}</h1>
-        <div className="mb-2 flex items-center justify-between gap-2 sm:hidden">
-          <OpenSidebar />
-          <CategorySelector />
-        </div>
+        {isSmallScreen ? (
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <OpenSidebar />
+            <CategorySelector />
+          </div>
+        ) : null}
         <div className="mb-1 flex flex-col items-center justify-between font-bold sm:text-xl md:mb-0 md:text-2xl">
           <div className="flex w-full flex-col items-center justify-between sm:flex-row">
             <Controller
@@ -153,9 +156,11 @@ const CreatePromptForm = ({
                 </div>
               )}
             />
-            <div className="hidden sm:block">
-              <CategorySelector />
-            </div>
+            {!isSmallScreen && (
+              <div>
+                <CategorySelector />
+              </div>
+            )}
           </div>
         </div>
         <div className="flex w-full flex-col gap-4 md:mt-[1.075rem]">

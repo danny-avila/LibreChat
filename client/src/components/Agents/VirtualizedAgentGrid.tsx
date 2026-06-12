@@ -1,8 +1,8 @@
 import React, { useMemo, useEffect, useCallback, useRef } from 'react';
-import { AutoSizer, List as VirtualList, WindowScroller } from 'react-virtualized';
 import { throttle } from 'lodash';
 import { Spinner } from '@librechat/client';
 import { PermissionBits } from 'librechat-data-provider';
+import { AutoSizer, List as VirtualList, WindowScroller } from 'react-virtualized';
 import type t from 'librechat-data-provider';
 import { useMarketplaceAgentsInfiniteQuery } from '~/data-provider/Agents';
 import { useAgentCategories, useLocalize } from '~/hooks';
@@ -175,7 +175,7 @@ const VirtualizedAgentGrid: React.FC<VirtualizedAgentGridProps> = ({
               const globalIndex = index * cardsPerRow + cardIndex;
               return (
                 <div key={`${agent.id}-${globalIndex}`} role="gridcell">
-                  <AgentCard agent={agent} onClick={() => onSelectAgent(agent)} />
+                  <AgentCard agent={agent} onSelect={onSelectAgent} />
                 </div>
               );
             })}
@@ -282,7 +282,7 @@ const VirtualizedAgentGrid: React.FC<VirtualizedAgentGridProps> = ({
                   const rowCount = getRowCount(currentAgents.length, cardsPerRow);
 
                   return (
-                    <div ref={registerChild}>
+                    <div ref={registerChild as React.LegacyRef<HTMLDivElement>}>
                       <VirtualList
                         ref={listRef}
                         autoHeight

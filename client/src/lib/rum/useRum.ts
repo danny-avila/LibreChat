@@ -76,7 +76,7 @@ function ensureRumProxyAuth(proxyUrl: string): void {
   }
 
   const originalFetch = window.fetch.bind(window);
-  window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+  const patchedFetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     if (rumProxyToken && isRumProxyRequest(input, proxyUrl)) {
       const [authorizedInput, authorizedInit] = withAuthorization(input, init, rumProxyToken);
       return originalFetch(authorizedInput, authorizedInit);
@@ -84,6 +84,7 @@ function ensureRumProxyAuth(proxyUrl: string): void {
 
     return originalFetch(input, init);
   };
+  window.fetch = Object.assign(patchedFetch, { preconnect: window.fetch.preconnect });
   rumProxyFetchPatched = true;
 }
 

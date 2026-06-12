@@ -1,6 +1,6 @@
 # LibreChat e2e
 
-The mock e2e profile is the safest default for generated tests. It starts LibreChat with `e2e/config/librechat.e2e.yaml`, points custom endpoints at the local mock LLM server, creates an authenticated e2e user, and avoids real provider credentials.
+The mock e2e profile is the safest default for generated tests. It starts LibreChat with `e2e/config/librechat.e2e.yaml`, injects an in-process fake LLM (via `LIBRECHAT_TEST_RUN_HOOK`), creates an authenticated e2e user, and avoids real provider credentials.
 
 ## Recording Tests
 
@@ -10,9 +10,9 @@ Use Playwright codegen when you want to turn an exploratory browser session into
 npm run e2e:record
 ```
 
-That command builds the app, starts the mock LLM and LibreChat test server when needed, writes `e2e/storageState.json`, and opens Playwright codegen at `/c/new`. The npm script uses `http://localhost:3333` so it does not collide with a normal dev server on `3080`. Raw recordings are written to `e2e/recordings/` and ignored by git.
+That command builds the app, starts the LibreChat test server (with an in-process fake LLM) when needed, writes `e2e/storageState.json`, and opens Playwright codegen at `/c/new`. The npm script uses `http://localhost:3333` so it does not collide with a normal dev server on `3080`. Raw recordings are written to `e2e/recordings/` and ignored by git.
 
-For a real local LibreChat config instead of the mock LLM profile:
+For a real local LibreChat config instead of the mock profile:
 
 ```sh
 npm run e2e:record:local

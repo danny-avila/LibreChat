@@ -210,3 +210,145 @@ describe('initializeCustom – SSRF guard wiring', () => {
     expect(mockGetOpenAIConfig).not.toHaveBeenCalled();
   });
 });
+
+describe('initializeCustom – token-config fetch header forwarding', () => {
+  const { fetchModels } = jest.requireMock('~/endpoints/models');
+
+  function createTokenConfigParams(overrides: {
+    apiKey?: string;
+    baseURL?: string;
+    userBaseURL?: string;
+    headers?: Record<string, string>;
+  }): BaseInitializeParams {
+    const { apiKey = 'sk-test-key', baseURL = 'https://openrouter.ai/api/v1' } = overrides;
+
+    mockGetCustomEndpointConfig.mockReturnValue({
+      apiKey,
+      baseURL,
+      models: { fetch: true },
+      headers: overrides.headers,
+    });
+
+    const db = {
+      getUserKeyValues: jest.fn().mockResolvedValue({
+        apiKey: 'sk-user-key',
+        baseURL: overrides.userBaseURL ?? 'https://user-api.example.com/v1',
+      }),
+    } as unknown as BaseInitializeParams['db'];
+
+    return {
+      req: {
+        user: { id: 'user-1', email: 'user@example.com' },
+        body: { key: '2099-01-01' },
+        config: {},
+      } as unknown as BaseInitializeParams['req'],
+      // openrouter is in FetchTokenConfig, so the fetchModels call is reached
+      endpoint: 'openrouter',
+      model_parameters: { model: 'gpt-4' },
+      db,
+    };
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    fetchModels.mockReset().mockResolvedValue([]);
+  });
+
+  it('forwards configured headers and user object to fetchModels for admin-trusted base URL', async () => {
+    const headers = {
+      Authorization: 'Bearer {{LIBRECHAT_OPENID_ID_TOKEN}}',
+      'X-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+    };
+    const params = createTokenConfigParams({
+      apiKey: 'sk-test-key',
+      baseURL: 'https://openrouter.ai/api/v1',
+      headers,
+    });
+
+    await initializeCustom(params);
+
+    expect(fetchModels).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'openrouter',
+        headers,
+        userObject: params.req.user,
+      }),
+    );
+  });
+
+  it('drops headers when base URL is user-provided (token leak guard)', async () => {
+    const headers = {
+      Authorization: 'Bearer {{LIBRECHAT_OPENID_ID_TOKEN}}',
+    };
+    const params = createTokenConfigParams({
+      apiKey: 'sk-test-key',
+      baseURL: AuthType.USER_PROVIDED,
+      userBaseURL: 'https://user-controlled.example.com/v1',
+      headers,
+    });
+
+    await initializeCustom(params);
+
+    expect(fetchModels).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'openrouter',
+        headers: undefined,
+        userObject: params.req.user,
+      }),
+    );
+  });
+
+  it('uses the unscoped endpoint tokenKey when no user-bound headers are configured', async () => {
+    const params = createTokenConfigParams({
+      apiKey: 'sk-test-key',
+      baseURL: 'https://openrouter.ai/api/v1',
+    });
+
+    await initializeCustom(params);
+
+    expect(fetchModels).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'openrouter',
+        tokenKey: 'openrouter',
+        headers: undefined,
+      }),
+    );
+  });
+
+  it('user-scopes the tokenKey when headers will be forwarded (admin-trusted base URL)', async () => {
+    const params = createTokenConfigParams({
+      apiKey: 'sk-test-key',
+      baseURL: 'https://openrouter.ai/api/v1',
+      headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ID_TOKEN}}' },
+    });
+
+    await initializeCustom(params);
+
+    expect(fetchModels).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tokenKey: 'openrouter:user-1',
+      }),
+    );
+  });
+
+  it('does NOT user-scope the tokenKey when headers are dropped (user-provided base URL)', async () => {
+    const params = createTokenConfigParams({
+      apiKey: 'sk-test-key',
+      baseURL: AuthType.USER_PROVIDED,
+      userBaseURL: 'https://user-controlled.example.com/v1',
+      headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ID_TOKEN}}' },
+    });
+
+    await initializeCustom(params);
+
+    // baseURL is user-provided so tokenKey is already user-scoped via the
+    // existing rule, not via the new headers signal. Either way the value
+    // should be the user-scoped key.
+    expect(fetchModels).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tokenKey: 'openrouter:user-1',
+        headers: undefined,
+      }),
+    );
+  });
+});

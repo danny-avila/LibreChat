@@ -72,7 +72,7 @@ transports.push(
   }),
 );
 
-const logger = winston.createLogger({
+const logger: winston.Logger = winston.createLogger({
   level: level(),
   levels,
   transports,

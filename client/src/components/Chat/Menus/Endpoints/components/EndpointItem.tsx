@@ -5,11 +5,12 @@ import { CheckCircle2, MousePointerClick, SettingsIcon } from 'lucide-react';
 import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TModelSpec } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
-import { CustomMenu as Menu, CustomMenuItem as MenuItem } from '../CustomMenu';
+import { CustomMenu as Menu, CustomMenuItem as MenuItem, CustomMenuSeparator } from '../CustomMenu';
+import MarketplaceItem, { marketplaceSearchMatches } from './Marketplace';
+import { filterModels, shouldRenderEndpointOption } from '../utils';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { renderEndpointModels } from './EndpointModelItem';
 import { ModelSpecItem } from './ModelSpecItem';
-import { filterModels } from '../utils';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -127,9 +128,15 @@ function EndpointMenuContent({
         assistantsMap,
       )
     : null;
+  const renderedModels = filteredModels ?? endpoint.models?.map((model) => model.name) ?? [];
+  const showMarketplace =
+    endpoint.showMarketplace === true && marketplaceSearchMatches(searchValue, localize);
+  const hasSelectableRows = endpointSpecs.length > 0 || renderedModels.length > 0;
 
   return (
     <>
+      {showMarketplace && <MarketplaceItem label={localize('com_agents_marketplace')} />}
+      {showMarketplace && hasSelectableRows && <CustomMenuSeparator />}
       {endpointSpecs.map((spec: TModelSpec) => (
         <ModelSpecItem key={spec.name} spec={spec} isSelected={selectedSpec === spec.name} />
       ))}
@@ -174,6 +181,10 @@ export function EndpointItem({ endpoint, endpointIndex }: EndpointItemProps) {
   );
 
   const isEndpointSelected = !selectedSpec && selectedEndpoint === endpoint.value;
+
+  if (!shouldRenderEndpointOption(endpoint)) {
+    return null;
+  }
 
   if (endpoint.hasModels) {
     const placeholder =

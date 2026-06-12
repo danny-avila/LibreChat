@@ -5,6 +5,8 @@ const {
   isEnabled,
   resolveImportMaxFileSize,
   restoreTenantContextFromReq,
+  deleteAllSharedLinksWithCleanup,
+  deleteConvoSharedLinksWithCleanup,
 } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
@@ -29,6 +31,9 @@ const assistantClients = {
 const router = express.Router();
 router.use(requireJwtAuth);
 
+const isValidProjectFilter = (projectId) =>
+  !projectId || projectId === 'unassigned' || /^[a-f\d]{24}$/i.test(projectId);
+
 router.get('/', async (req, res) => {
   const limit = parseInt(req.query.limit, 10) || 25;
   const cursor = req.query.cursor;
@@ -36,6 +41,13 @@ router.get('/', async (req, res) => {
   const search = req.query.search ? decodeURIComponent(req.query.search) : undefined;
   const sortBy = req.query.sortBy || 'updatedAt';
   const sortDirection = req.query.sortDirection || 'desc';
+  const projectId = Array.isArray(req.query.projectId)
+    ? req.query.projectId[0]
+    : req.query.projectId;
+
+  if (!isValidProjectFilter(projectId)) {
+    return res.status(400).json({ error: 'projectId must be a valid project id or unassigned' });
+  }
 
   let tags;
   if (req.query.tags) {
@@ -51,6 +63,7 @@ router.get('/', async (req, res) => {
       search,
       sortBy,
       sortDirection,
+      projectId,
     });
     res.status(200).json(result);
   } catch (error) {
@@ -133,7 +146,7 @@ router.delete('/', async (req, res) => {
     const dbResponse = await db.deleteConvos(req.user.id, filter);
     if (filter.conversationId) {
       await db.deleteToolCalls(req.user.id, filter.conversationId);
-      await db.deleteConvoSharedLink(req.user.id, filter.conversationId);
+      await deleteConvoSharedLinksWithCleanup(req.user.id, filter.conversationId);
     }
     res.status(201).json(dbResponse);
   } catch (error) {
@@ -146,7 +159,7 @@ router.delete('/all', async (req, res) => {
   try {
     const dbResponse = await db.deleteConvos(req.user.id, {});
     await db.deleteToolCalls(req.user.id);
-    await db.deleteAllSharedLinks(req.user.id);
+    await deleteAllSharedLinksWithCleanup(req.user.id);
     res.status(201).json(dbResponse);
   } catch (error) {
     logger.error('Error clearing conversations', error);

@@ -1,5 +1,5 @@
-import { Buffer } from 'buffer';
 import axios from 'axios';
+import { Buffer } from 'buffer';
 import { logger } from '@librechat/data-schemas';
 import type { AxiosInstance, AxiosProxyConfig, AxiosError } from 'axios';
 
@@ -45,7 +45,7 @@ export const logAxiosError = ({
 }: {
   message: string;
   error: AxiosError | Error | unknown;
-}) => {
+}): string => {
   let logMessage = message;
   try {
     const stack =

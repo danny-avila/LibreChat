@@ -4,13 +4,13 @@ import * as fs from 'fs/promises';
 import { randomUUID } from 'crypto';
 import { logger } from '@librechat/data-schemas';
 import type { CodeArtifactCategory } from './classify';
-import { parseDocument } from '~/files/documents/crud';
 import { bufferToOfficeHtml, officeHtmlBucket } from '~/files/documents/html';
-import { isBinaryBuffer } from '~/skills/binary';
 import { createConcurrencyLimiter, withTimeout } from '~/utils/promise';
+import { parseDocument } from '~/files/documents/crud';
+import { isBinaryBuffer } from '~/skills/binary';
 
-export const MAX_TEXT_CACHE_BYTES = 512 * 1024;
-export const MAX_TEXT_EXTRACT_BYTES = 1024 * 1024;
+export const MAX_TEXT_CACHE_BYTES: number = 512 * 1024;
+export const MAX_TEXT_EXTRACT_BYTES: number = 1024 * 1024;
 const DOCUMENT_PARSE_TIMEOUT_MS = 8_000;
 const OFFICE_HTML_TIMEOUT_MS = 12_000;
 const TRUNCATION_MARKER = '\n\n…[truncated]';

@@ -1,10 +1,10 @@
 import { logger } from '@librechat/data-schemas';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
 import type { MCPOAuthTokens } from './types';
+import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { OAuthReconnectionTracker } from './OAuthReconnectionTracker';
 import { FlowStateManager } from '~/flow/manager';
 import { MCPManager } from '~/mcp/MCPManager';
-import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 
 const DEFAULT_CONNECTION_TIMEOUT_MS = 10_000; // ms
 const RECONNECT_STAGGER_MS = 500; // ms between each server reconnection
@@ -62,7 +62,7 @@ export class OAuthReconnectionManager {
     return this.reconnectionsTracker.isStillReconnecting(userId, serverName);
   }
 
-  public async reconnectServers(userId: string) {
+  public async reconnectServers(userId: string): Promise<void> {
     // Check if MCPManager is available
     if (this.mcpManager == null) {
       logger.warn(
@@ -138,7 +138,7 @@ export class OAuthReconnectionManager {
     }
   }
 
-  public clearReconnection(userId: string, serverName: string) {
+  public clearReconnection(userId: string, serverName: string): void {
     this.reconnectionsTracker.removeFailed(userId, serverName);
     this.reconnectionsTracker.removeActive(userId, serverName);
   }
@@ -183,7 +183,11 @@ export class OAuthReconnectionManager {
     }
   }
 
-  public getTrackerStats() {
+  public getTrackerStats(): {
+    usersWithFailedServers: number;
+    usersWithActiveReconnections: number;
+    activeTimestamps: number;
+  } {
     return this.reconnectionsTracker.getStats();
   }
 

@@ -15,6 +15,14 @@ export {
   premiumTokenValues,
   defaultRate,
   permissionBitSupersets,
+  partitionIssues,
+  validateSkillName,
+  validateSkillBody,
+  validateRelativePath,
+  inferSkillFileCategory,
+  validateSkillFrontmatter,
+  validateSkillDescription,
+  deriveStructuredFrontmatterFields,
 } from './methods';
 export type * from './types';
 export type * from './methods';

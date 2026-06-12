@@ -185,6 +185,19 @@ export const p: React.ElementType = memo(function MarkdownParagraph({ children }
 });
 p.displayName = 'MarkdownParagraph';
 
+type TTableProps = {
+  children: React.ReactNode;
+};
+
+export const table: React.ElementType = memo(function MarkdownTable({ children }: TTableProps) {
+  return (
+    <div className="markdown-table-wrapper w-full max-w-full">
+      <table>{children}</table>
+    </div>
+  );
+});
+table.displayName = 'MarkdownTable';
+
 type TImageProps = {
   src?: string;
   alt?: string;

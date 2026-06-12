@@ -327,6 +327,7 @@ describe('GET /api/config', () => {
             {
               name: 'guarded-spec',
               label: 'Guarded Spec',
+              skills: ['private-skill'],
               preset: {
                 endpoint: 'openAI',
                 model: 'gpt-4o',
@@ -352,6 +353,7 @@ describe('GET /api/config', () => {
         model: 'gpt-4o',
         greeting: 'Hello',
       });
+      expect(response.body.modelSpecs.list[0]).not.toHaveProperty('skills');
     });
 
     it('should include full interface config', async () => {

@@ -120,7 +120,7 @@ export default [
       'jsx-a11y/img-redundant-alt': 'off',
       'jsx-a11y/no-noninteractive-tabindex': 'off',
       // common rules
-      'no-nested-ternary': 'warn',
+      'no-nested-ternary': 'error',
       'no-constant-binary-expression': 'warn',
       'no-unused-vars': [
         'warn',
@@ -219,7 +219,10 @@ export default [
     })),
   {
     files: ['**/*.ts', '**/*.tsx'],
-    ignores: ['packages/**/*', 'client/vite.config.ts'],
+    // e2e specs are not part of `client/tsconfig.json`'s program, so typed
+    // linting them errors with "file not found in project"; they still get
+    // the non-type-checked recommended rules from the block above.
+    ignores: ['packages/**/*', 'client/vite.config.ts', 'e2e/**/*'],
     plugins: {
       '@typescript-eslint': typescriptEslintEslintPlugin,
       jest: fixupPluginRules(jest),

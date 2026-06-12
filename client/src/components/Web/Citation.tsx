@@ -1,6 +1,7 @@
 import { memo, useState, useContext, useCallback } from 'react';
 import { Button } from '@librechat/client';
 import { ChevronLeft, ChevronRight, FileText } from 'lucide-react';
+import type { SourceData } from '~/components/Web/SourceHovercard';
 import type { CitationProps } from './types';
 import { SourceHovercard, FaviconImage, getCleanDomain } from '~/components/Web/SourceHovercard';
 import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDialog';
@@ -37,6 +38,15 @@ function getFileCitationData(source?: FileCitationSource) {
     filePages: isFileType ? source.pages : undefined,
     fileRelevance: isFileType ? source.relevance : undefined,
     filePageRelevance: isFileType ? source.pageRelevance : undefined,
+  };
+}
+
+function toSourceData(source: FileCitationSource): SourceData {
+  return {
+    link: source.link ?? '',
+    title: source.title,
+    attribution: source.attribution,
+    snippet: source.snippet,
   };
 }
 
@@ -107,7 +117,7 @@ export function CompositeCitation(props: CompositeCitationProps) {
   return (
     <>
       <SourceHovercard
-        source={currentSource}
+        source={toSourceData(currentSource)}
         label={getCitationLabel()}
         onMouseEnter={() => setHoveredCitationId(citationId || null)}
         onMouseLeave={() => setHoveredCitationId(null)}
@@ -329,7 +339,7 @@ export function Citation(props: CitationComponentProps) {
   return (
     <>
       <SourceHovercard
-        source={refData}
+        source={toSourceData(refData)}
         label={getCitationLabel()}
         onMouseEnter={() => setHoveredCitationId(citationId || null)}
         onMouseLeave={() => setHoveredCitationId(null)}

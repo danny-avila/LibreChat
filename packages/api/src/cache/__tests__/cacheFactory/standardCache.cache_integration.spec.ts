@@ -1,4 +1,5 @@
 import type { Keyv } from 'keyv';
+import { closeRedisClients } from '../redisClients.helper';
 
 // Mock GLOBAL_PREFIX_SEPARATOR from cacheConfig
 jest.mock('../../cacheConfig', () => {
@@ -79,6 +80,7 @@ describe('standardCache', () => {
       testCache = null;
     }
 
+    await closeRedisClients();
     process.env = originalEnv;
     jest.resetModules();
   });

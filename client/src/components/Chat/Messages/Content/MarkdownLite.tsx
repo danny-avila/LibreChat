@@ -6,7 +6,7 @@ import supersub from 'remark-supersub';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import type { PluggableList } from 'unified';
-import { code, codeNoExecution, a, p, img } from './MarkdownComponents';
+import { code, codeNoExecution, a, p, img, table } from './MarkdownComponents';
 import { CodeBlockProvider, ArtifactProvider } from '~/Providers';
 import MarkdownErrorBoundary from './MarkdownErrorBoundary';
 import { langSubset } from '~/utils';
@@ -44,6 +44,7 @@ const MarkdownLite = memo(
                   a,
                   p,
                   img,
+                  table,
                 } as {
                   [nodeType: string]: React.ElementType;
                 }

@@ -5,8 +5,8 @@ import {
   orderEndpointsConfig,
   defaultAgentCapabilities,
 } from 'librechat-data-provider';
-import type { AppConfig } from '@librechat/data-schemas';
 import type { AgentCapabilities, TEndpointsConfig, TConfig } from 'librechat-data-provider';
+import type { AppConfig } from '@librechat/data-schemas';
 import type { ServerRequest, TCustomEndpointsConfig } from '~/types';
 import { loadCustomEndpointsConfig as defaultLoadCustomEndpoints } from '~/endpoints/custom';
 
@@ -24,7 +24,10 @@ export interface EndpointsConfigDeps {
   loadCustomEndpointsConfig?: (custom: unknown) => TCustomEndpointsConfig | undefined;
 }
 
-export function createEndpointsConfigService(deps: EndpointsConfigDeps) {
+export function createEndpointsConfigService(deps: EndpointsConfigDeps): {
+  getEndpointsConfig: (req: ServerRequest) => Promise<TEndpointsConfig>;
+  checkCapability: (req: ServerRequest, capability: AgentCapabilities) => Promise<boolean>;
+} {
   const {
     getAppConfig,
     loadDefaultEndpointsConfig,

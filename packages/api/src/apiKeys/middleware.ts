@@ -36,7 +36,11 @@ export interface RemoteAgentAccessRequest extends ApiKeyAuthRequest {
 }
 
 export function createRequireApiKeyAuth(deps: ApiKeyAuthDependencies) {
-  return async (req: ApiKeyAuthRequest, res: Response, next: NextFunction) => {
+  return async (
+    req: ApiKeyAuthRequest,
+    res: Response,
+    next: NextFunction,
+  ): Promise<Response | undefined> => {
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -105,7 +109,11 @@ export function createRequireApiKeyAuth(deps: ApiKeyAuthDependencies) {
 }
 
 export function createCheckRemoteAgentAccess(deps: RemoteAgentAccessDependencies) {
-  return async (req: RemoteAgentAccessRequest, res: Response, next: NextFunction) => {
+  return async (
+    req: RemoteAgentAccessRequest,
+    res: Response,
+    next: NextFunction,
+  ): Promise<Response | undefined> => {
     const agentId = req.body?.model || req.params?.model;
 
     if (!agentId) {

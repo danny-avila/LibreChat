@@ -46,7 +46,88 @@ function getParentCapabilities(capability: string): string[] {
   return parents;
 }
 
-export function createSystemGrantMethods(mongoose: typeof import('mongoose')) {
+export function createSystemGrantMethods(mongoose: typeof import('mongoose')): {
+  grantCapability: (
+    {
+      principalType,
+      principalId,
+      capability,
+      tenantId,
+      grantedBy,
+    }: {
+      principalType: PrincipalType;
+      principalId: string | Types.ObjectId;
+      capability: SystemCapability;
+      tenantId?: string;
+      grantedBy?: string | Types.ObjectId;
+    },
+    session?: ClientSession,
+  ) => Promise<ISystemGrant | null>;
+  seedSystemGrants: () => Promise<void>;
+  revokeCapability: (
+    {
+      principalType,
+      principalId,
+      capability,
+      tenantId,
+    }: {
+      principalType: PrincipalType;
+      principalId: string | Types.ObjectId;
+      capability: SystemCapability;
+      tenantId?: string;
+    },
+    session?: ClientSession,
+  ) => Promise<void>;
+  hasCapabilityForPrincipals: ({
+    principals,
+    capability,
+    tenantId,
+  }: {
+    principals: Array<{ principalType: PrincipalType; principalId?: string | Types.ObjectId }>;
+    capability: SystemCapability;
+    tenantId?: string;
+  }) => Promise<boolean>;
+  getHeldCapabilities: ({
+    principals,
+    capabilities,
+    tenantId,
+  }: {
+    principals: Array<{ principalType: PrincipalType; principalId?: string | Types.ObjectId }>;
+    capabilities: SystemCapability[];
+    tenantId?: string;
+  }) => Promise<Set<SystemCapability>>;
+  listGrants: (options?: {
+    tenantId?: string;
+    principalTypes?: PrincipalType[];
+    limit?: number;
+    offset?: number;
+  }) => Promise<ISystemGrant[]>;
+  countGrants: (options?: {
+    tenantId?: string;
+    principalTypes?: PrincipalType[];
+  }) => Promise<number>;
+  getCapabilitiesForPrincipal: ({
+    principalType,
+    principalId,
+    tenantId,
+  }: {
+    principalType: PrincipalType;
+    principalId: string | Types.ObjectId;
+    tenantId?: string;
+  }) => Promise<ISystemGrant[]>;
+  getCapabilitiesForPrincipals: ({
+    principals,
+    tenantId,
+  }: {
+    principals: Array<{ principalType: PrincipalType; principalId: string | Types.ObjectId }>;
+    tenantId?: string;
+  }) => Promise<ISystemGrant[]>;
+  deleteGrantsForPrincipal: (
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+    options?: { tenantId?: string; session?: ClientSession },
+  ) => Promise<void>;
+} {
   function tenantCondition(tenantId?: string): FilterQuery<ISystemGrant> {
     return tenantId != null
       ? { $and: [{ $or: [{ tenantId }, { tenantId: { $exists: false } }] }] }

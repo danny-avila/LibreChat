@@ -1,7 +1,7 @@
 import { Schema } from 'mongoose';
 import type { IAssistant } from '~/types';
 
-const assistantSchema = new Schema<IAssistant>(
+const assistantSchema: Schema<IAssistant> = new Schema<IAssistant>(
   {
     user: {
       type: Schema.Types.ObjectId,

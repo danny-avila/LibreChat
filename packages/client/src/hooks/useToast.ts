@@ -1,10 +1,14 @@
-import { useAtom } from 'jotai';
 import { useRef, useEffect } from 'react';
+import { useAtom } from 'jotai';
 import type { TShowToast } from '~/common';
-import { NotificationSeverity } from '~/common';
 import { toastState, type ToastState } from '~/store';
+import { NotificationSeverity } from '~/common';
 
-export default function useToast(showDelay = 100) {
+export default function useToast(showDelay = 100): {
+  toast: ToastState;
+  onOpenChange: (open: boolean) => void;
+  showToast: ({ message, severity, showIcon, duration, status }: TShowToast) => void;
+} {
   const [toast, setToast] = useAtom(toastState);
   const showTimerRef = useRef<number | null>(null);
   const hideTimerRef = useRef<number | null>(null);
@@ -26,7 +30,7 @@ export default function useToast(showDelay = 100) {
     showIcon = true,
     duration = 3000, // default duration for the toast to be visible
     status,
-  }: TShowToast) => {
+  }: TShowToast): void => {
     // Clear existing timeouts
     if (showTimerRef.current !== null) {
       clearTimeout(showTimerRef.current);
@@ -52,7 +56,7 @@ export default function useToast(showDelay = 100) {
 
   return {
     toast,
-    onOpenChange: (open: boolean) => setToast({ ...toast, open }),
+    onOpenChange: (open: boolean): void => setToast({ ...toast, open }),
     showToast,
   };
 }

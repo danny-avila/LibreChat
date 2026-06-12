@@ -164,7 +164,7 @@ if (useDebugConsole) {
 }
 
 // Create logger
-const logger = winston.createLogger({
+const logger: winston.Logger = winston.createLogger({
   level: level(),
   levels,
   transports,

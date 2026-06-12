@@ -2,27 +2,27 @@ import { isIP } from 'node:net';
 import { EventEmitter } from 'events';
 import { logger } from '@librechat/data-schemas';
 import { fetch as undiciFetch, Agent, ProxyAgent } from 'undici';
-import {
-  StdioClientTransport,
-  getDefaultEnvironment,
-} from '@modelcontextprotocol/sdk/client/stdio.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { WebSocketClientTransport } from '@modelcontextprotocol/sdk/client/websocket.js';
 import { ResourceListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import {
+  StdioClientTransport,
+  getDefaultEnvironment,
+} from '@modelcontextprotocol/sdk/client/stdio.js';
 import type {
   RequestInit as UndiciRequestInit,
   RequestInfo as UndiciRequestInfo,
   Response as UndiciResponse,
   Dispatcher,
 } from 'undici';
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { MCPOAuthTokens } from './oauth/types';
 import type * as t from './types';
 import { createSSRFSafeUndiciConnect, isSSRFTarget, resolveHostnameSSRF } from '~/auth';
-import { isAddressAllowed } from '~/auth/domain';
 import { runOutsideTracing } from '~/utils/tracing';
+import { isAddressAllowed } from '~/auth/domain';
 import { sanitizeUrlForLogging } from './utils';
 import { withTimeout } from '~/utils/promise';
 import { mcpConfig } from './mcpConfig';
@@ -1092,6 +1092,7 @@ interface MCPConnectionParams {
   oauthTokens?: MCPOAuthTokens | null;
   useSSRFProtection?: boolean;
   allowedAddresses?: string[] | null;
+  ephemeralConnection?: boolean;
 }
 
 export class MCPConnection extends EventEmitter {
@@ -1116,6 +1117,7 @@ export class MCPConnection extends EventEmitter {
   private oauthRecovery = false;
   private readonly useSSRFProtection: boolean;
   private readonly allowedAddresses?: string[] | null;
+  private readonly ephemeralConnection: boolean;
   private readonly proxyConfig?: MCPProxyConfig;
   iconPath?: string;
   timeout?: number;
@@ -1232,6 +1234,7 @@ export class MCPConnection extends EventEmitter {
     this.userId = params.userId;
     this.useSSRFProtection = params.useSSRFProtection === true;
     this.allowedAddresses = params.allowedAddresses ?? null;
+    this.ephemeralConnection = params.ephemeralConnection === true;
     this.proxyConfig = getMCPProxyConfig(params.serverConfig);
     this.iconPath = params.serverConfig.iconPath;
     this.timeout = params.serverConfig.timeout;
@@ -1905,7 +1908,7 @@ export class MCPConnection extends EventEmitter {
             `${this.getLogPrefix()} Server URL for OAuth: ${serverUrl ? sanitizeUrlForLogging(serverUrl) : 'undefined'}`,
           );
 
-          const oauthTimeout = this.options.initTimeout ?? 60000 * 2;
+          const oauthTimeout = mcpConfig.OAUTH_HANDLING_TIMEOUT;
           /** Promise that will resolve when OAuth is handled */
           const oauthHandledPromise = new Promise<void>((resolve, reject) => {
             let timeoutId: NodeJS.Timeout | null = null;
@@ -2026,8 +2029,13 @@ export class MCPConnection extends EventEmitter {
 
   async connect(): Promise<void> {
     try {
-      // preserve cycle tracking across reconnects so the circuit breaker can detect rapid cycling
-      await this.disconnect(false);
+      /**
+       * Persistent connections preserve cycle tracking across reconnects so the
+       * circuit breaker can detect storms. Request-scoped connections are
+       * intentionally short-lived per tool call, so their clean lifecycle should
+       * not consume the reconnect-storm cycle budget.
+       */
+      await this.disconnect(this.ephemeralConnection);
       await this.connectClient();
       if (!(await this.isConnected())) {
         throw new Error('Connection not established');
@@ -2183,7 +2191,50 @@ export class MCPConnection extends EventEmitter {
     }
   }
 
-  async fetchTools() {
+  async fetchTools(): Promise<
+    {
+      inputSchema: {
+        [x: string]: unknown;
+        type: 'object';
+        properties?: Record<string, object> | undefined;
+        required?: string[] | undefined;
+      };
+      name: string;
+      description?: string | undefined;
+      outputSchema?:
+        | {
+            [x: string]: unknown;
+            type: 'object';
+            properties?: Record<string, object> | undefined;
+            required?: string[] | undefined;
+          }
+        | undefined;
+      annotations?:
+        | {
+            title?: string | undefined;
+            readOnlyHint?: boolean | undefined;
+            destructiveHint?: boolean | undefined;
+            idempotentHint?: boolean | undefined;
+            openWorldHint?: boolean | undefined;
+          }
+        | undefined;
+      execution?:
+        | {
+            taskSupport?: 'optional' | 'required' | 'forbidden' | undefined;
+          }
+        | undefined;
+      _meta?: Record<string, unknown> | undefined;
+      icons?:
+        | {
+            src: string;
+            mimeType?: string | undefined;
+            sizes?: string[] | undefined;
+            theme?: 'light' | 'dark' | undefined;
+          }[]
+        | undefined;
+      title?: string | undefined;
+    }[]
+  > {
     try {
       const { tools } = await this.client.listTools();
       return tools;

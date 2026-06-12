@@ -17,7 +17,9 @@ type SwitchProps =
       'aria-label'?: never;
     });
 
-const Switch = React.forwardRef<React.ElementRef<typeof SwitchPrimitives.Root>, SwitchProps>(
+const Switch: React.ForwardRefExoticComponent<
+  SwitchProps & React.RefAttributes<HTMLButtonElement>
+> = React.forwardRef<React.ElementRef<typeof SwitchPrimitives.Root>, SwitchProps>(
   ({ className, ...props }, ref) => (
     <SwitchPrimitives.Root
       className={cn(

@@ -1,7 +1,7 @@
-import { keyvRedisClient } from '~/cache/redisClients';
-import { cacheConfig as cache } from '~/cache/cacheConfig';
-import { clusterConfig as cluster } from './config';
 import { logger } from '@librechat/data-schemas';
+import { cacheConfig as cache } from '~/cache/cacheConfig';
+import { keyvRedisClient } from '~/cache/redisClients';
+import { clusterConfig as cluster } from './config';
 
 /**
  * Distributed leader election implementation using Redis for coordination across multiple server instances.
@@ -21,7 +21,7 @@ import { logger } from '@librechat/data-schemas';
  */
 export class LeaderElection {
   // We can't use Keyv namespace here because we need direct Redis access for atomic operations
-  static readonly LEADER_KEY = `${cache.REDIS_KEY_PREFIX}${cache.GLOBAL_PREFIX_SEPARATOR}LeadingServerUUID`;
+  static readonly LEADER_KEY: string = `${cache.REDIS_KEY_PREFIX}${cache.GLOBAL_PREFIX_SEPARATOR}LeadingServerUUID`;
   private static _instance = new LeaderElection();
 
   readonly UUID: string = crypto.randomUUID();

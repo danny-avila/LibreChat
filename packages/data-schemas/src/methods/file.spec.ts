@@ -2,10 +2,10 @@ import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { EToolResources, FileContext } from 'librechat-data-provider';
+import { _resetStrictCache } from '~/models/plugins/tenantIsolation';
+import { runAsSystem } from '~/config/tenantContext';
 import { createFileMethods } from './file';
 import { createModels } from '~/models';
-import { runAsSystem } from '~/config/tenantContext';
-import { _resetStrictCache } from '~/models/plugins/tenantIsolation';
 
 let File: mongoose.Model<unknown>;
 let fileMethods: ReturnType<typeof createFileMethods>;
@@ -660,6 +660,43 @@ describe('File Methods', () => {
       const updated2 = await fileMethods.updateFileUsage({ file_id: fileId, inc: 5 });
       expect(updated2?.usage).toBe(6);
     });
+
+    it('should skip usage and TTL mutation when the owner filter does not match', async () => {
+      const fileId = uuidv4();
+      const ownerId = new mongoose.Types.ObjectId();
+      const otherUserId = new mongoose.Types.ObjectId();
+
+      await fileMethods.createFile({
+        file_id: fileId,
+        temp_file_id: 'tmp-file',
+        user: ownerId,
+        filename: 'owned.txt',
+        filepath: '/uploads/owned.txt',
+        type: 'text/plain',
+        bytes: 100,
+        usage: 0,
+      });
+
+      const denied = await fileMethods.updateFileUsage({
+        file_id: fileId,
+        user: otherUserId.toString(),
+      });
+      const unchanged = await fileMethods.findFileById(fileId);
+
+      expect(denied).toBeNull();
+      expect(unchanged?.usage).toBe(0);
+      expect(unchanged?.temp_file_id).toBe('tmp-file');
+      expect(unchanged?.expiresAt).toBeDefined();
+
+      const allowed = await fileMethods.updateFileUsage({
+        file_id: fileId,
+        user: ownerId.toString(),
+      });
+
+      expect(allowed?.usage).toBe(1);
+      expect(allowed?.temp_file_id).toBeUndefined();
+      expect(allowed?.expiresAt).toBeUndefined();
+    });
   });
 
   describe('updateFilesUsage', () => {
@@ -788,6 +825,48 @@ describe('File Methods', () => {
 
       expect(updated).toHaveLength(1);
       expect((updated[0] as { usage: number }).usage).toBe(1);
+    });
+
+    it('should only return and mutate files owned by the scoped user', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const otherUserId = new mongoose.Types.ObjectId();
+      const ownerFileId = uuidv4();
+      const otherFileId = uuidv4();
+
+      await fileMethods.createFile({
+        file_id: ownerFileId,
+        user: ownerId,
+        filename: 'owner.txt',
+        filepath: '/uploads/owner.txt',
+        type: 'text/plain',
+        bytes: 100,
+        usage: 0,
+      });
+      await fileMethods.createFile({
+        file_id: otherFileId,
+        temp_file_id: 'tmp-other',
+        user: otherUserId,
+        filename: 'other.txt',
+        filepath: '/uploads/other.txt',
+        type: 'text/plain',
+        bytes: 100,
+        usage: 0,
+        text: 'private extracted text',
+      });
+
+      const updated = await fileMethods.updateFilesUsage(
+        [{ file_id: ownerFileId }, { file_id: otherFileId }],
+        undefined,
+        { user: ownerId.toString() },
+      );
+      const otherFile = await fileMethods.findFileById(otherFileId);
+
+      expect(updated).toHaveLength(1);
+      expect(updated[0].file_id).toBe(ownerFileId);
+      expect(updated[0].usage).toBe(1);
+      expect(otherFile?.usage).toBe(0);
+      expect(otherFile?.temp_file_id).toBe('tmp-other');
+      expect(otherFile?.expiresAt).toBeDefined();
     });
   });
 

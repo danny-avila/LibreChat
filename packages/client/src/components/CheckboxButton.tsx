@@ -3,7 +3,20 @@ import { useEffect } from 'react';
 import { Checkbox, useStoreState, useCheckboxStore } from '@ariakit/react';
 import { cn } from '~/utils';
 
-const CheckboxButton = React.forwardRef<
+const CheckboxButton: React.ForwardRefExoticComponent<
+  {
+    icon?: React.ReactNode;
+    label: string;
+    className?: string;
+    checked?: boolean;
+    defaultChecked?: boolean;
+    isCheckedClassName?: string;
+    setValue?: (values: {
+      e?: React.ChangeEvent<HTMLInputElement>;
+      value: boolean | string;
+    }) => void;
+  } & React.RefAttributes<HTMLInputElement>
+> = React.forwardRef<
   HTMLInputElement,
   {
     icon?: React.ReactNode;

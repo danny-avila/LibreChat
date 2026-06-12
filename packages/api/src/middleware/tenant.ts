@@ -68,7 +68,7 @@ function hasTenantContext(context: TenantContext): boolean {
 
 export function buildTenantContext(
   req: ContextRequest,
-  tenantId = req.tenantId ?? req.user?.tenantId,
+  tenantId: string | undefined = req.tenantId ?? req.user?.tenantId,
 ): TenantContext {
   return {
     tenantId: normalizeContextValue(tenantId),

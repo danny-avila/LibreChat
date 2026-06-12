@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState, memo, useMemo } from 'react';
+import { JSX } from 'react/jsx-runtime';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Row,
@@ -222,7 +223,7 @@ export default function DataTable<TData, TValue>({
   filterValue,
   isLoading,
   enableSearch = true,
-}: DataTableProps<TData, TValue>) {
+}: DataTableProps<TData, TValue>): JSX.Element {
   const localize = useLocalize();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const tableContainerRef = useRef<HTMLDivElement>(null);

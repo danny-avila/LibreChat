@@ -1,4 +1,5 @@
 const validatePasswordReset = require('./validatePasswordReset');
+const setTwoFactorTempUser = require('./setTwoFactorTempUser');
 const validateRegistration = require('./validateRegistration');
 const buildEndpointOption = require('./buildEndpointOption');
 const validateMessageReq = require('./validateMessageReq');
@@ -36,6 +37,7 @@ module.exports = {
   moderateText,
   validateModel,
   requireJwtAuth,
+  setTwoFactorTempUser,
   checkInviteUser,
   requireLdapAuth,
   requireLocalAuth,

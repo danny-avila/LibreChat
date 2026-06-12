@@ -1,5 +1,5 @@
-import type * as t from '~/mcp/types';
 import { logger } from '@librechat/data-schemas';
+import type * as t from '~/mcp/types';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
 
@@ -164,6 +164,36 @@ describe('MCPServersRegistry', () => {
   });
 
   describe('addServer', () => {
+    it('should pass user source to inspector before storing DB servers', async () => {
+      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+
+      await registry.addServer(
+        'user_runtime_server',
+        {
+          type: 'streamable-http',
+          url: 'https://api.example.com/mcp',
+          headers: {
+            'X-LibreChat-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+          },
+        },
+        'DB',
+        'user-1',
+      );
+
+      expect(inspectSpy).toHaveBeenCalledWith(
+        'user_runtime_server',
+        expect.objectContaining({
+          source: 'user',
+          headers: {
+            'X-LibreChat-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+          },
+        }),
+        undefined,
+        undefined,
+        undefined,
+      );
+    });
+
     it('should reserve YAML and current config server names when creating DB servers', async () => {
       await registry.addServer('slack', { ...testParsedConfig, title: 'Slack' }, 'CACHE');
       await registry['configCacheRepo'].upsert('other_tenant:hash', {
@@ -488,7 +518,10 @@ describe('MCPServersRegistry', () => {
       expect(inspectSpy).toHaveBeenCalledTimes(1);
       expect(inspectSpy).toHaveBeenCalledWith(
         'config-only-server',
-        configOnlyRawConfig,
+        {
+          ...configOnlyRawConfig,
+          source: 'config',
+        },
         undefined,
         undefined,
         undefined,

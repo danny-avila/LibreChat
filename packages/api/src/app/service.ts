@@ -5,8 +5,8 @@ import {
   mergeConfigOverrides,
   BASE_CONFIG_PRINCIPAL_ID,
 } from '@librechat/data-schemas';
-import type { Types } from 'mongoose';
 import type { AppConfig, IConfig } from '@librechat/data-schemas';
+import type { Types } from 'mongoose';
 
 const BASE_CONFIG_KEY = '_BASE_';
 
@@ -91,7 +91,11 @@ function overrideCacheKey(role?: string, userId?: string, tenantId?: string): st
 
 // ── Service factory ──────────────────────────────────────────────────
 
-export function createAppConfigService(deps: AppConfigServiceDeps) {
+export function createAppConfigService(deps: AppConfigServiceDeps): {
+  getAppConfig: (options?: GetAppConfigOptions) => Promise<AppConfig>;
+  clearAppConfigCache: () => Promise<void>;
+  clearOverrideCache: (tenantId?: string) => Promise<void>;
+} {
   const {
     loadBaseConfig,
     setCachedTools,

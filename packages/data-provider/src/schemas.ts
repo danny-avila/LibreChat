@@ -1,9 +1,9 @@
 import { z } from 'zod';
-import { Tools } from './types/assistants';
 import type { TMessageContentParts, FunctionTool, FunctionToolCall } from './types/assistants';
-import { TFeedback, feedbackSchema } from './feedback';
 import type { SearchResultData } from './types/web';
 import type { TFile } from './types/files';
+import { TFeedback, feedbackSchema } from './feedback';
+import { Tools } from './types/assistants';
 
 export const isUUID = z.string().uuid();
 
@@ -459,6 +459,27 @@ const CLAUDE_4_64K_MAX_OUTPUT = 64000 as const;
 const CLAUDE_32K_MAX_OUTPUT = 32000 as const;
 const DEFAULT_MAX_OUTPUT = 8192 as const;
 const LEGACY_ANTHROPIC_MAX_OUTPUT = 4096 as const;
+
+/**
+ * Claude "Mythos-class" model families — new top-level classes (peers of
+ * `opus`/`sonnet`/`haiku`) that ship with the post-Opus-4.7 modern profile:
+ * adaptive thinking always on, raw thinking omitted by default (summarized
+ * opt-in), sampling parameters rejected, and a 1M context window. The tier
+ * word is the class name itself, so the `opus`/`sonnet` version parsers don't
+ * cover them.
+ *
+ * Single source of truth: add a future sibling class name here and every
+ * Mythos-class gate (adaptive thinking, sampling omission, prompt caching, 1M
+ * context, 128K output) picks it up.
+ */
+export const MYTHOS_CLASS_FAMILIES = ['fable', 'mythos'] as const;
+const MYTHOS_CLASS_PATTERN = new RegExp(`claude-(?:${MYTHOS_CLASS_FAMILIES.join('|')})[-.]?\\d`);
+
+/** Whether the model is a Claude Mythos-class model (e.g. `claude-fable-5`). */
+export function isMythosClassModel(model: string): boolean {
+  return MYTHOS_CLASS_PATTERN.test(model);
+}
+
 export const anthropicSettings = {
   model: {
     default: 'claude-3-5-sonnet-latest' as const,
@@ -487,6 +508,10 @@ export const anthropicSettings = {
     step: 1 as const,
     default: DEFAULT_MAX_OUTPUT,
     reset: (modelName: string) => {
+      if (isMythosClassModel(modelName)) {
+        return ANTHROPIC_MAX_OUTPUT;
+      }
+
       if (/claude-opus[-.]?(?:4[-.]?(?:[6-9]|\d{2,})|[5-9]|\d{2,})/.test(modelName)) {
         return ANTHROPIC_MAX_OUTPUT;
       }
@@ -506,6 +531,13 @@ export const anthropicSettings = {
       return DEFAULT_MAX_OUTPUT;
     },
     set: (value: number, modelName: string) => {
+      if (isMythosClassModel(modelName)) {
+        if (value > ANTHROPIC_MAX_OUTPUT) {
+          return ANTHROPIC_MAX_OUTPUT;
+        }
+        return value;
+      }
+
       if (/claude-opus[-.]?(?:4[-.]?(?:[6-9]|\d{2,})|[5-9]|\d{2,})/.test(modelName)) {
         if (value > ANTHROPIC_MAX_OUTPUT) {
           return ANTHROPIC_MAX_OUTPUT;
@@ -859,6 +891,7 @@ export const tConversationSchema = z.object({
   examples: z.array(tExampleSchema).optional(),
   /* DB */
   tags: z.array(z.string()).optional(),
+  chatProjectId: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   /* Files */
@@ -914,6 +947,7 @@ export const tConversationSchema = z.object({
 export const tPresetSchema = tConversationSchema
   .omit({
     conversationId: true,
+    chatProjectId: true,
     createdAt: true,
     updatedAt: true,
     title: true,
@@ -1074,7 +1108,6 @@ export const tSharedLinkSchema = z.object({
   shareId: z.string(),
   targetMessageId: z.string().optional(),
   messages: z.array(z.string()),
-  isPublic: z.boolean(),
   title: z.string(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -1095,6 +1128,7 @@ export const tConversationTagSchema = z.object({
 export type TConversationTag = z.infer<typeof tConversationTagSchema>;
 
 export const googleBaseSchema = tConversationSchema.pick({
+  chatProjectId: true,
   model: true,
   modelLabel: true,
   promptPrefix: true,
@@ -1166,6 +1200,7 @@ export function removeNullishValues<T extends Record<string, unknown>>(
 }
 
 const assistantBaseSchema = tConversationSchema.pick({
+  chatProjectId: true,
   model: true,
   assistant_id: true,
   instructions: true,
@@ -1201,6 +1236,7 @@ export const assistantSchema = assistantBaseSchema
   }));
 
 const compactAssistantBaseSchema = tConversationSchema.pick({
+  chatProjectId: true,
   model: true,
   assistant_id: true,
   instructions: true,
@@ -1216,6 +1252,7 @@ export const compactAssistantSchema = compactAssistantBaseSchema
   .catch(() => ({}));
 
 export const agentsBaseSchema = tConversationSchema.pick({
+  chatProjectId: true,
   model: true,
   modelLabel: true,
   temperature: true,
@@ -1269,6 +1306,7 @@ export const agentsSchema = agentsBaseSchema
   }));
 
 export const openAIBaseSchema = tConversationSchema.pick({
+  chatProjectId: true,
   model: true,
   modelLabel: true,
   chatGptLabel: true,
@@ -1325,6 +1363,7 @@ export const compactGoogleSchema = googleBaseSchema
   .catch(() => ({}));
 
 export const anthropicBaseSchema = tConversationSchema.pick({
+  chatProjectId: true,
   model: true,
   modelLabel: true,
   promptPrefix: true,
@@ -1366,6 +1405,7 @@ export const tBannerSchema = z.object({
 export type TBanner = z.infer<typeof tBannerSchema>;
 
 export const compactAgentsBaseSchema = tConversationSchema.pick({
+  chatProjectId: true,
   spec: true,
   // model: true,
   iconURL: true,

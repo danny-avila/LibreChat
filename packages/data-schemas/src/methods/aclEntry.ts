@@ -8,8 +8,8 @@ import type {
   Model,
 } from 'mongoose';
 import type { AclEntry, IAclEntry } from '~/types';
-import { MAX_PERM_BITS } from '~/common/permissions';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import { MAX_PERM_BITS } from '~/common/permissions';
 
 /**
  * Empty frozen array shared by every rejection path. Returning a single
@@ -76,7 +76,87 @@ export function permissionBitSupersets(requiredBits: number): readonly number[] 
   return frozen;
 }
 
-export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
+export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
+  findEntriesByPrincipal: (
+    principalType: string,
+    principalId: string | Types.ObjectId,
+    resourceType?: string,
+  ) => Promise<IAclEntry[]>;
+  findEntriesByResource: (
+    resourceType: string,
+    resourceId: string | Types.ObjectId,
+  ) => Promise<IAclEntry[]>;
+  findEntriesByPrincipalsAndResource: (
+    principalsList: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
+    resourceType: string,
+    resourceId: string | Types.ObjectId,
+  ) => Promise<IAclEntry[]>;
+  hasPermission: (
+    principalsList: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
+    resourceType: string,
+    resourceId: string | Types.ObjectId,
+    permissionBit: number,
+  ) => Promise<boolean>;
+  getEffectivePermissions: (
+    principalsList: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
+    resourceType: string,
+    resourceId: string | Types.ObjectId,
+  ) => Promise<number>;
+  getEffectivePermissionsForResources: (
+    principalsList: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
+    resourceType: string,
+    resourceIds: Array<string | Types.ObjectId>,
+  ) => Promise<Map<string, number>>;
+  grantPermission: (
+    principalType: string,
+    principalId: string | Types.ObjectId | null,
+    resourceType: string,
+    resourceId: string | Types.ObjectId,
+    permBits: number,
+    grantedBy?: string | Types.ObjectId,
+    session?: ClientSession,
+    roleId?: string | Types.ObjectId,
+    expiredAt?: Date,
+  ) => Promise<IAclEntry | null>;
+  revokePermission: (
+    principalType: string,
+    principalId: string | Types.ObjectId | null,
+    resourceType: string,
+    resourceId: string | Types.ObjectId,
+    session?: ClientSession,
+  ) => Promise<DeleteResult>;
+  modifyPermissionBits: (
+    principalType: string,
+    principalId: string | Types.ObjectId | null,
+    resourceType: string,
+    resourceId: string | Types.ObjectId,
+    addBits?: number | null,
+    removeBits?: number | null,
+    session?: ClientSession,
+  ) => Promise<IAclEntry | null>;
+  findAccessibleResources: (
+    principalsList: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
+    resourceType: string,
+    requiredPermBit: number,
+  ) => Promise<Types.ObjectId[]>;
+  deleteAclEntries: (
+    filter: Record<string, unknown>,
+    options?: { session?: ClientSession },
+  ) => Promise<DeleteResult>;
+  bulkWriteAclEntries: (
+    ops: AnyBulkWriteOperation<AclEntry>[],
+    options?: { session?: ClientSession },
+  ) => Promise<import('mongodb').BulkWriteResult>;
+  findPublicResourceIds: (
+    resourceType: string,
+    requiredPermissions: number,
+  ) => Promise<Types.ObjectId[]>;
+  aggregateAclEntries: (pipeline: PipelineStage[]) => Promise<unknown[]>;
+  getSoleOwnedResourceIds: (
+    userObjectId: Types.ObjectId,
+    resourceTypes: string | string[],
+  ) => Promise<Types.ObjectId[]>;
+} {
   /**
    * Find ACL entries for a specific principal (user or group)
    * @param principalType - The type of principal ('user', 'group')
@@ -264,9 +344,10 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
     resourceType: string,
     resourceId: string | Types.ObjectId,
     permBits: number,
-    grantedBy: string | Types.ObjectId,
+    grantedBy?: string | Types.ObjectId,
     session?: ClientSession,
     roleId?: string | Types.ObjectId,
+    expiredAt?: Date,
   ): Promise<IAclEntry | null> {
     const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
     const query: Record<string, unknown> = {
@@ -292,9 +373,10 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
     const update = {
       $set: {
         permBits,
-        grantedBy,
         grantedAt: new Date(),
+        ...(grantedBy && { grantedBy }),
         ...(roleId && { roleId }),
+        ...(expiredAt && { expiredAt }),
       },
     };
 
@@ -445,7 +527,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
   async function bulkWriteAclEntries(
     ops: AnyBulkWriteOperation<AclEntry>[],
     options?: { session?: ClientSession },
-  ) {
+  ): Promise<import('mongodb').BulkWriteResult> {
     const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
     return tenantSafeBulkWrite(AclEntry, ops as AnyBulkWriteOperation[], options || {});
   }
@@ -472,7 +554,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')) {
    * Runs an aggregation pipeline on the AclEntry collection.
    * @param pipeline - MongoDB aggregation pipeline stages
    */
-  async function aggregateAclEntries(pipeline: PipelineStage[]) {
+  async function aggregateAclEntries(pipeline: PipelineStage[]): Promise<unknown[]> {
     const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
     return AclEntry.aggregate(pipeline);
   }

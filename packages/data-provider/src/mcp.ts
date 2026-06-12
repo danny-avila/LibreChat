@@ -30,9 +30,17 @@ const validateOAuthClientCredentials = (
 
 const OAuthOptionsBaseSchema = z.object({
   /** OAuth authorization endpoint (optional - can be auto-discovered) */
-  authorization_url: z.string().url().optional(),
+  authorization_url: z
+    .string()
+    .transform((val) => extractEnvVariable(val))
+    .pipe(z.string().url())
+    .optional(),
   /** OAuth token endpoint (optional - can be auto-discovered) */
-  token_url: z.string().url().optional(),
+  token_url: z
+    .string()
+    .transform((val) => extractEnvVariable(val))
+    .pipe(z.string().url())
+    .optional(),
   /** OAuth client ID (optional - can use dynamic registration) */
   client_id: z.string().optional(),
   /** OAuth client secret (requires explicit authorization and token endpoints) */
@@ -40,7 +48,11 @@ const OAuthOptionsBaseSchema = z.object({
   /** OAuth scopes to request */
   scope: z.string().optional(),
   /** OAuth redirect URI (defaults to /api/mcp/{serverName}/oauth/callback) */
-  redirect_uri: z.string().url().optional(),
+  redirect_uri: z
+    .string()
+    .transform((val) => extractEnvVariable(val))
+    .pipe(z.string().url())
+    .optional(),
   /** Token exchange method */
   token_exchange_method: z.nativeEnum(TokenExchangeMethodEnum).optional(),
   /** Supported grant types (defaults to ['authorization_code', 'refresh_token']) */
@@ -91,7 +103,11 @@ const OAuthOptionsBaseSchema = z.object({
    */
   forward_audience_on_refresh: z.boolean().optional(),
   /** OAuth revocation endpoint (optional - can be auto-discovered) */
-  revocation_endpoint: z.string().url().optional(),
+  revocation_endpoint: z
+    .string()
+    .transform((val) => extractEnvVariable(val))
+    .pipe(z.string().url())
+    .optional(),
   /** OAuth revocation endpoint authentication methods supported (optional - can be auto-discovered) */
   revocation_endpoint_auth_methods_supported: z.array(z.string()).optional(),
 });
@@ -99,10 +115,14 @@ const OAuthOptionsBaseSchema = z.object({
 const OAuthOptionsSchema = OAuthOptionsBaseSchema.superRefine(validateOAuthClientCredentials);
 
 const BLOCKED_USER_OAUTH_ENDPOINT_PARAMS = ['audience', 'resource'] as const;
+const envVarPattern = /\$\{[^}]+\}/;
 
 const userOAuthEndpointUrlSchema = z
   .string()
-  .url()
+  .refine((val) => !envVarPattern.test(val), {
+    message: 'Environment variable references are not allowed in URLs',
+  })
+  .pipe(z.string().url())
   .refine(
     (value) => {
       try {
@@ -122,6 +142,8 @@ const UserOAuthOptionsSchema = OAuthOptionsBaseSchema.omit({
   .extend({
     authorization_url: userOAuthEndpointUrlSchema.optional(),
     token_url: userOAuthEndpointUrlSchema.optional(),
+    redirect_uri: userOAuthEndpointUrlSchema.optional(),
+    revocation_endpoint: userOAuthEndpointUrlSchema.optional(),
     audience: z.never().optional(),
     forward_audience_on_refresh: z.never().optional(),
   })
@@ -374,7 +396,6 @@ const userManagedServerFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T
     oauth: UserOAuthOptionsSchema.optional(),
   });
 
-const envVarPattern = /\$\{[^}]+\}/;
 const isWsProtocol = (val: string): boolean => /^wss?:/i.test(val);
 const isHttpProtocol = (val: string): boolean => /^https?:/i.test(val);
 

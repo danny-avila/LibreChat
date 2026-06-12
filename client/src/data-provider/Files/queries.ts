@@ -38,10 +38,10 @@ export const useGetAgentFiles = <TData = t.TFile[]>(
   );
 };
 
-export const useGetFileConfig = <TData = t.FileConfig>(
-  config?: UseQueryOptions<t.FileConfig, unknown, TData>,
+export const useGetFileConfig = <TData = t.TFileConfig>(
+  config?: UseQueryOptions<t.TFileConfig, unknown, TData>,
 ): QueryObserverResult<TData, unknown> => {
-  return useQuery<t.FileConfig, unknown, TData>(
+  return useQuery<t.TFileConfig, unknown, TData>(
     [QueryKeys.fileConfig],
     () => dataService.getFileConfig(),
     {

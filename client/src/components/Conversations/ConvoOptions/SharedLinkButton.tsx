@@ -2,6 +2,12 @@ import { useState, useRef } from 'react';
 import { Trans } from 'react-i18next';
 import { QrCode, RotateCw, Trash2 } from 'lucide-react';
 import {
+  PermissionTypes,
+  Permissions,
+  PermissionBits,
+  ResourceType,
+} from 'librechat-data-provider';
+import {
   Label,
   Button,
   Spinner,
@@ -19,9 +25,10 @@ import {
   useUpdateSharedLinkMutation,
   useDeleteSharedLinkMutation,
 } from '~/data-provider';
+import GenericGrantAccessDialog from '~/components/Sharing/GenericGrantAccessDialog';
+import { useHasAccess, useResourcePermissions, useLocalize } from '~/hooks';
 import { NotificationSeverity } from '~/common';
 import { buildShareLinkUrl } from '~/utils';
-import { useLocalize } from '~/hooks';
 
 export default function SharedLinkButton({
   share,
@@ -127,6 +134,22 @@ export default function SharedLinkButton({
     }
   };
 
+  const hasAccessToShareLinks = useHasAccess({
+    permissionType: PermissionTypes.SHARED_LINKS,
+    permission: Permissions.SHARE,
+  });
+
+  const { hasPermission, isLoading: permissionsLoading } = useResourcePermissions(
+    ResourceType.SHARED_LINK,
+    share?._id || '',
+  );
+
+  const canManageAccess =
+    hasAccessToShareLinks &&
+    !permissionsLoading &&
+    hasPermission(PermissionBits.SHARE) &&
+    !!share?._id;
+
   const qrCodeLabel = showQR ? localize('com_ui_hide_qr') : localize('com_ui_show_qr');
 
   return (
@@ -192,6 +215,27 @@ export default function SharedLinkButton({
                 </Button>
               )}
             />
+
+            {canManageAccess && (
+              <GenericGrantAccessDialog
+                resourceType={ResourceType.SHARED_LINK}
+                resourceDbId={share?._id}
+                resourceName={share?.shareId ?? undefined}
+              >
+                <TooltipAnchor
+                  description={localize('com_ui_shared_link_manage_access')}
+                  render={(props) => (
+                    <Button
+                      {...props}
+                      variant="outline"
+                      aria-label={localize('com_ui_shared_link_manage_access')}
+                    >
+                      {localize('com_ui_shared_link_manage_access')}
+                    </Button>
+                  )}
+                />
+              </GenericGrantAccessDialog>
+            )}
           </div>
         )}
         <OGDialog

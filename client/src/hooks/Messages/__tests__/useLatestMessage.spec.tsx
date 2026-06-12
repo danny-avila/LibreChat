@@ -1,11 +1,11 @@
 import React from 'react';
+import { act, renderHook } from '@testing-library/react';
 import { RecoilRoot, type MutableSnapshot } from 'recoil';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { act, renderHook } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { QueryKeys, type TConversation, type TMessage } from 'librechat-data-provider';
+import { getBranchSiblingIndexesForTarget, getMessageBranchSiblingParentIds } from '~/utils';
 import { useLatestMessage, useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
-import { getMessageBranchSiblingParentIds } from '~/utils';
 import store from '~/store';
 
 function createQueryClient() {
@@ -252,5 +252,28 @@ describe('getMessageBranchSiblingParentIds', () => {
         conversation.conversationId,
       ),
     ).toEqual([userMessage.messageId]);
+  });
+});
+
+describe('getBranchSiblingIndexesForTarget', () => {
+  it('returns sibling indexes that select the branch containing the target message', () => {
+    expect(
+      getBranchSiblingIndexesForTarget(
+        [
+          userMessage,
+          olderAssistantMessage,
+          olderFollowUpUserMessage,
+          olderFollowUpAssistantMessage,
+          assistantMessage,
+        ],
+        olderFollowUpAssistantMessage.messageId,
+        conversation.conversationId,
+      ),
+    ).toEqual([
+      {
+        parentMessageId: userMessage.messageId,
+        siblingIdx: 1,
+      },
+    ]);
   });
 });

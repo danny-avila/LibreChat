@@ -16,11 +16,19 @@
  */
 
 import { useEffect } from 'react';
+import { Tools } from 'librechat-data-provider';
 import { renderHook } from '@testing-library/react';
 import { RecoilRoot, useRecoilValue, useSetRecoilState } from 'recoil';
+import type {
+  TAttachment,
+  TFile,
+  TAttachmentMetadata,
+  TFilePreview,
+} from 'librechat-data-provider';
 import type { ReactNode } from 'react';
-import type { TAttachment, TFilePreview } from 'librechat-data-provider';
 import store from '~/store';
+
+type AttachmentFixture = TFile & TAttachmentMetadata;
 
 const mockUseFilePreview = jest.fn();
 jest.mock('~/data-provider', () => ({
@@ -34,19 +42,24 @@ const wrapper = ({ children }: { children: ReactNode }) => <RecoilRoot>{children
 const messageId = 'msg-1';
 const fileId = 'fid-1';
 
-function makeAttachment(overrides: Partial<TAttachment> = {}): TAttachment {
+function makeAttachment(overrides: Partial<AttachmentFixture> = {}): AttachmentFixture {
   return {
+    user: 'user-1',
+    object: 'file',
+    bytes: 1024,
+    embedded: false,
+    usage: 0,
     file_id: fileId,
     filename: 'data.xlsx',
     filepath: '/uploads/data.xlsx',
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    type: Tools.execute_code,
     messageId,
     toolCallId: 'tc-1',
-    text: null,
-    textFormat: null,
+    text: undefined,
+    textFormat: undefined,
     status: 'pending',
     ...overrides,
-  } as unknown as TAttachment;
+  };
 }
 
 /** Read messageAttachmentsMap and bridge it out via a mutable ref. */
@@ -261,7 +274,7 @@ describe('useAttachmentPreviewSync', () => {
         textFormat: 'html',
       },
     });
-    const updated = ctx.map[messageId]?.[0] as TAttachment & { text?: string };
+    const updated = ctx.map[messageId]?.[0] as AttachmentFixture;
     expect(updated.status).toBe('ready');
     expect(updated.text).toBe('<table>final</table>');
     expect(ctx.result.current.status).toBe('ready');
@@ -277,7 +290,7 @@ describe('useAttachmentPreviewSync', () => {
         previewError: 'parser-error',
       },
     });
-    const updated = ctx.map[messageId]?.[0] as TAttachment & { previewError?: string };
+    const updated = ctx.map[messageId]?.[0] as AttachmentFixture;
     expect(updated.status).toBe('failed');
     expect(updated.previewError).toBe('parser-error');
     expect(ctx.result.current.status).toBe('failed');
@@ -293,7 +306,7 @@ describe('useAttachmentPreviewSync', () => {
     /* Map should be unchanged from the initial seed — no patch. */
     const list = ctx.map[messageId] ?? [];
     expect(list).toHaveLength(1);
-    expect((list[0] as TAttachment & { status?: string }).status).toBe('pending');
+    expect((list[0] as AttachmentFixture).status).toBe('pending');
   });
 
   it('reports isPolling true when the query is fetching and the gate is open', () => {
@@ -336,7 +349,7 @@ describe('useAttachmentPreviewSync', () => {
     });
     const list = ctx.map[messageId] ?? [];
     expect(list).toHaveLength(1);
-    const inserted = list[0] as TAttachment & { text?: string; textFormat?: string };
+    const inserted = list[0] as AttachmentFixture;
     expect(inserted.file_id).toBe(fileId);
     expect(inserted.status).toBe('ready');
     expect(inserted.text).toBe('<table>resolved-on-reload</table>');
@@ -361,7 +374,7 @@ describe('useAttachmentPreviewSync', () => {
     });
     const list = ctx.map[messageId] ?? [];
     expect(list).toHaveLength(1);
-    const inserted = list[0] as TAttachment & { previewError?: string };
+    const inserted = list[0] as AttachmentFixture;
     expect(inserted.status).toBe('failed');
     expect(inserted.previewError).toBe('render-timeout');
   });

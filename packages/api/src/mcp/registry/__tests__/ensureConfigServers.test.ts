@@ -102,7 +102,7 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
     expect(inspectSpy).toHaveBeenCalledTimes(1);
     expect(inspectSpy).toHaveBeenCalledWith(
       'config_server',
-      sseConfig,
+      { ...sseConfig, source: 'config' },
       undefined,
       undefined,
       undefined,
@@ -195,7 +195,7 @@ describe('MCPServersRegistry — ensureConfigServers', () => {
     expect(inspectSpy).toHaveBeenCalledTimes(1);
     expect(inspectSpy).toHaveBeenCalledWith(
       'my_server',
-      sseConfig,
+      { ...sseConfig, source: 'config' },
       undefined,
       undefined,
       undefined,

@@ -1,6 +1,11 @@
+import { JSX } from 'react/jsx-runtime';
 import { cn } from '~/utils';
 
-export default function StopGeneratingIcon({ className = '' }: { className?: string }) {
+export default function StopGeneratingIcon({
+  className = '',
+}: {
+  className?: string;
+}): JSX.Element {
   return (
     <svg
       stroke="currentColor"
