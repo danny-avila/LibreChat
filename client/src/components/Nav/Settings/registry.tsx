@@ -21,7 +21,6 @@ import BackupCodesItem from '../SettingsTabs/Account/BackupCodesItem';
 import DeleteAccount from '../SettingsTabs/Account/DeleteAccount';
 import {
   SpeechToTextSwitch,
-  EngineSTTDropdown,
   LanguageSTTDropdown,
   AutoTranscribeAudioSwitch,
   AutoSendTextSelector,
@@ -29,7 +28,6 @@ import {
 } from '../SettingsTabs/Speech/STT';
 import {
   TextToSpeechSwitch,
-  EngineTTSDropdown,
   VoiceDropdown,
   CacheTTSSwitch,
   AutomaticPlaybackSwitch,
@@ -37,6 +35,7 @@ import {
   PlaybackRate,
 } from '../SettingsTabs/Speech/TTS';
 import ConversationModeSwitch from '../SettingsTabs/Speech/ConversationModeSwitch';
+import { EngineSTTSetting, EngineTTSSetting } from './SpeechControls';
 import MemoryToggle from './MemoryToggle';
 import { TokenCredits, AutoRefill } from './BillingControls';
 
@@ -340,7 +339,7 @@ export const registry: SettingEntry[] = [
     tab: SPEECH,
     section: 'stt',
     labelKey: 'com_ui_settings_label_engine_stt',
-    Component: () => <EngineSTTDropdown external={false} />,
+    Component: EngineSTTSetting,
   },
   {
     id: 'languageSTT',
@@ -361,7 +360,7 @@ export const registry: SettingEntry[] = [
     tab: SPEECH,
     section: 'tts',
     labelKey: 'com_ui_settings_label_engine_tts',
-    Component: () => <EngineTTSDropdown external={false} />,
+    Component: EngineTTSSetting,
   },
   {
     id: 'voice',

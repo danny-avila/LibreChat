@@ -17,13 +17,13 @@ const ctx: SettingsContextValue = {
   allowAccountDeletion: true,
 };
 
-function setup(extra: Partial<SettingsContextValue> = {}) {
+function setup(extra: Partial<SettingsContextValue> = {}, query = '') {
   const onQueryChange = jest.fn();
   render(
     <Tabs.Root value={SettingsTabValues.GENERAL}>
       <Sidebar
         ctx={{ ...ctx, ...extra }}
-        query=""
+        query={query}
         onQueryChange={onQueryChange}
         onSelectTab={jest.fn()}
       />
@@ -47,5 +47,21 @@ describe('Sidebar', () => {
     const { onQueryChange } = setup();
     await userEvent.type(screen.getByRole('searchbox'), 'theme');
     expect(onQueryChange).toHaveBeenCalled();
+  });
+
+  it('Escape clears search when query is non-empty', async () => {
+    const { onQueryChange } = setup({}, 'theme');
+    const input = screen.getByRole('searchbox');
+    input.focus();
+    await userEvent.keyboard('{Escape}');
+    expect(onQueryChange).toHaveBeenCalledWith('');
+  });
+
+  it('Escape does not call onQueryChange when query is empty', async () => {
+    const { onQueryChange } = setup({}, '');
+    const input = screen.getByRole('searchbox');
+    input.focus();
+    await userEvent.keyboard('{Escape}');
+    expect(onQueryChange).not.toHaveBeenCalled();
   });
 });
