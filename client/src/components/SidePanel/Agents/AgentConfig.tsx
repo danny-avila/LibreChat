@@ -18,14 +18,14 @@ import {
   cn,
 } from '~/utils';
 import { ToolSelectDialog, MCPToolSelectDialog } from '~/components/Tools';
-import { SkillSelectDialog } from '~/components/Skills/dialogs';
 import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
+import { useListSkillsQuery, useGetAgentFiles } from '~/data-provider';
 import { useFileMapContext, useAgentPanelContext } from '~/Providers';
+import { useLocalize, useVisibleTools, useHasAccess } from '~/hooks';
+import { SkillSelectDialog } from '~/components/Skills/dialogs';
 import AgentCategorySelector from './AgentCategorySelector';
 import Action from '~/components/SidePanel/Builder/Action';
-import { useLocalize, useVisibleTools, useHasAccess } from '~/hooks';
 import { Panel, isEphemeralAgent } from '~/common';
-import { useListSkillsQuery, useGetAgentFiles } from '~/data-provider';
 import { icons } from '~/hooks/Endpoint/Icons';
 import Instructions from './Instructions';
 import AgentAvatar from './AgentAvatar';
@@ -381,15 +381,29 @@ export default function AgentConfig() {
               <div className="mb-1">
                 {(skills ?? []).map((skillId) => {
                   const skillName = skillsMap.get(skillId);
-                  if (!skillName) {
+                  /** Hide chips only while the catalog query is in flight —
+                   *  once it resolves, an unresolvable id must stay visible
+                   *  (and removable), or the allowlist silently scopes the
+                   *  agent to zero skills with no way to fix it in the UI. */
+                  if (!skillName && skillsData === undefined) {
                     return null;
                   }
+                  const isUnavailable = !skillName;
                   return (
                     <div
                       key={skillId}
                       className="mb-1 flex items-center justify-between rounded-md border border-border-light px-3 py-2 text-sm"
                     >
-                      <span className="truncate text-text-primary">{skillName}</span>
+                      <span
+                        className={
+                          isUnavailable
+                            ? 'truncate italic text-text-secondary'
+                            : 'truncate text-text-primary'
+                        }
+                        title={isUnavailable ? skillId : undefined}
+                      >
+                        {skillName ?? localize('com_ui_skill_unavailable')}
+                      </span>
                       <button
                         type="button"
                         onClick={() => {
@@ -401,7 +415,9 @@ export default function AgentConfig() {
                           );
                         }}
                         className="ml-2 flex-shrink-0 text-text-secondary transition-colors hover:text-text-primary"
-                        aria-label={localize('com_ui_remove_skill_var', { 0: skillName })}
+                        aria-label={localize('com_ui_remove_skill_var', {
+                          0: skillName ?? skillId,
+                        })}
                         disabled={skillsActive !== true}
                       >
                         <X className="h-4 w-4" aria-hidden="true" />

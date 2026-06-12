@@ -558,6 +558,77 @@ describe('Agent Methods', () => {
       expect(updatedAgent!.mcpServerNames).toEqual(['authorizedServer']);
     });
 
+    test('should prune nonexistent skill ids from the allowlist on create', async () => {
+      const { agentId, authorId } = createTestIds();
+      const realSkill = await mongoose.models.Skill.create({
+        name: 'create-prune-skill',
+        description: 'Skill backing the create-time allowlist pruning test.',
+        author: authorId,
+        authorName: 'Test Author',
+      });
+      const danglingId = new mongoose.Types.ObjectId().toString();
+
+      const newAgent = await createAgent({
+        id: agentId,
+        name: 'Skill Prune Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        skills: [realSkill._id.toString(), danglingId],
+        skills_enabled: true,
+      });
+
+      expect(newAgent.skills).toEqual([realSkill._id.toString()]);
+    });
+
+    test('should prune nonexistent skill ids from the allowlist on update', async () => {
+      const { agentId, authorId } = createTestIds();
+      const realSkill = await mongoose.models.Skill.create({
+        name: 'update-prune-skill',
+        description: 'Skill backing the update-time allowlist pruning test.',
+        author: authorId,
+        authorName: 'Test Author',
+      });
+      const danglingId = new mongoose.Types.ObjectId().toString();
+
+      await createAgent({
+        id: agentId,
+        name: 'Skill Prune Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+
+      const updatedAgent = await updateAgent(
+        { id: agentId },
+        { skills: [danglingId, realSkill._id.toString()], skills_enabled: true },
+      );
+
+      expect(updatedAgent!.skills).toEqual([realSkill._id.toString()]);
+      expect(updatedAgent!.skills_enabled).toBe(true);
+    });
+
+    test('should heal a fully dangling allowlist to an empty array on update', async () => {
+      const { agentId, authorId } = createTestIds();
+      const danglingId = new mongoose.Types.ObjectId().toString();
+
+      await createAgent({
+        id: agentId,
+        name: 'Skill Heal Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+
+      const updatedAgent = await updateAgent(
+        { id: agentId },
+        { skills: [danglingId], skills_enabled: true },
+      );
+
+      expect(updatedAgent!.skills).toEqual([]);
+      expect(updatedAgent!.skills_enabled).toBe(true);
+    });
+
     test('should delete an agent', async () => {
       const agentId = `agent_${uuidv4()}`;
       const authorId = new mongoose.Types.ObjectId();
@@ -3373,10 +3444,21 @@ describe('Support Contact Field', () => {
     });
 
     test('should omit skill configuration from the default list projection', async () => {
-      const targetSkillIds = [
-        new mongoose.Types.ObjectId().toString(),
-        new mongoose.Types.ObjectId().toString(),
-      ];
+      const skillDocs = await mongoose.models.Skill.create([
+        {
+          name: 'projection-skill-a',
+          description: 'Skill backing projection test.',
+          author: userA,
+          authorName: 'Test Author',
+        },
+        {
+          name: 'projection-skill-b',
+          description: 'Skill backing projection test.',
+          author: userA,
+          authorName: 'Test Author',
+        },
+      ]);
+      const targetSkillIds = skillDocs.map((doc) => doc._id.toString());
       const scopedAgent = await createAgent({
         id: `agent_${uuidv4().slice(0, 12)}`,
         name: 'Scoped Agent',
@@ -3399,10 +3481,21 @@ describe('Support Contact Field', () => {
     });
 
     test('should include skill configuration only when explicitly requested', async () => {
-      const targetSkillIds = [
-        new mongoose.Types.ObjectId().toString(),
-        new mongoose.Types.ObjectId().toString(),
-      ];
+      const skillDocs = await mongoose.models.Skill.create([
+        {
+          name: 'scoped-skill-a',
+          description: 'Skill backing inclusion test.',
+          author: userA,
+          authorName: 'Test Author',
+        },
+        {
+          name: 'scoped-skill-b',
+          description: 'Skill backing inclusion test.',
+          author: userA,
+          authorName: 'Test Author',
+        },
+      ]);
+      const targetSkillIds = skillDocs.map((doc) => doc._id.toString());
       const scopedAgent = await createAgent({
         id: `agent_${uuidv4().slice(0, 12)}`,
         name: 'Scoped Agent',

@@ -16,6 +16,7 @@ import type {
   ISkillFileDocument,
   ISkillSummary,
 } from '~/types/skill';
+import type { IAgent } from '~/types/agent';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { stripYamlTrailingComment } from '~/utils/yaml';
@@ -835,6 +836,29 @@ function resolveAlwaysApplyFromInput(
 }
 
 /**
+ * Narrows candidate skill ids to those backed by an existing Skill doc.
+ * Existence-only check (no ACL) so pruning an agent allowlist never drops
+ * skills the saving user merely can't view. Preserves input order, dedupes,
+ * and drops malformed ids — they can't reference anything.
+ */
+export async function filterExistingSkillIds(
+  mongoose: typeof import('mongoose'),
+  skillIds: string[],
+): Promise<string[]> {
+  const candidates = [...new Set(skillIds.filter(isValidObjectIdString))];
+  if (candidates.length === 0) {
+    return [];
+  }
+  const Skill = mongoose.models.Skill as Model<ISkillDocument>;
+  const docs = await Skill.find(
+    { _id: { $in: candidates.map((id) => new mongoose.Types.ObjectId(id)) } },
+    { _id: 1 },
+  ).lean<Array<{ _id: Types.ObjectId }>>();
+  const existing = new Set(docs.map((doc) => doc._id.toString()));
+  return candidates.filter((id) => existing.has(id));
+}
+
+/**
  * Validate the `always-apply` value that would be derived from the
  * SKILL.md body's inline frontmatter. Only reports an issue when the
  * key is present with an unparseable value — absent / valid / empty
@@ -1469,6 +1493,32 @@ export function createSkillMethods(
     };
   }
 
+  /**
+   * Removes deleted skill ids from every agent's `skills` allowlist. A dangling
+   * id is invisible in the builder yet keeps the allowlist non-empty, so the
+   * runtime scopes the catalog to an empty intersection and the agent silently
+   * loses all skills. Direct `updateMany` on purpose: hygiene, not an authored
+   * edit — no version entry, timestamps untouched.
+   */
+  async function removeSkillsFromAgentAllowlists(skillIds: string[]): Promise<void> {
+    if (skillIds.length === 0) {
+      return;
+    }
+    const Agent = mongoose.models.Agent as Model<IAgent>;
+    try {
+      await Agent.updateMany(
+        { skills: { $in: skillIds } },
+        { $pull: { skills: { $in: skillIds } } },
+        { timestamps: false },
+      );
+    } catch (error) {
+      logger.error(
+        '[removeSkillsFromAgentAllowlists] Error pruning agent skill allowlists:',
+        error,
+      );
+    }
+  }
+
   async function deleteSkill(id: string): Promise<{ deleted: boolean }> {
     if (!isValidObjectIdString(id)) {
       return { deleted: false };
@@ -1481,6 +1531,7 @@ export function createSkillMethods(
       return { deleted: false };
     }
     await SkillFile.deleteMany({ skillId: objectId });
+    await removeSkillsFromAgentAllowlists([id]);
     try {
       await deps.removeAllPermissions({ resourceType: ResourceType.SKILL, resourceId: id });
     } catch (error) {
@@ -1499,6 +1550,7 @@ export function createSkillMethods(
     const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
     await SkillFile.deleteMany({ skillId: { $in: soleOwned } });
     const res = await Skill.deleteMany({ _id: { $in: soleOwned } });
+    await removeSkillsFromAgentAllowlists(soleOwned.map((rid) => rid.toString()));
     await Promise.allSettled(
       soleOwned.map((rid) =>
         deps
