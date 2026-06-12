@@ -191,6 +191,14 @@ export const getAllContentText = (message?: TMessage | null): string => {
   return '';
 };
 
+/**
+ * Whether a draft message has enough content to submit: non-whitespace
+ * text, or at least one attached file. Lets users send a file without
+ * having to type a placeholder message alongside it.
+ */
+export const isSubmittableMessage = (text?: string | null, fileCount = 0): boolean =>
+  (text ?? '').trim() !== '' || fileCount > 0;
+
 export const hasStreamStartFailed = (message?: Pick<TMessage, 'metadata'> | null): boolean =>
   message?.metadata?.[STREAM_START_FAILED_METADATA_KEY] === true;
 
