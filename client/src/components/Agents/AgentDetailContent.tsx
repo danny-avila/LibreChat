@@ -1,18 +1,22 @@
+/* eslint-disable i18next/no-literal-string */
+/* ^ We're not worried about i18n for this app ^ */
+
 import React from 'react';
 import { Link, Pin, PinOff } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { OGDialogContent, Button, useToastContext } from '@librechat/client';
+import { Button, OGDialogContent, useToastContext } from '@librechat/client';
 import {
-  QueryKeys,
+  AgentListResponse,
   Constants,
   EModelEndpoint,
-  PermissionBits,
   LocalStorageKeys,
-  AgentListResponse,
+  PermissionBits,
+  QueryKeys,
 } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
-import { useLocalize, useDefaultConvo, useFavorites } from '~/hooks';
-import { renderAgentAvatar, clearMessagesCache } from '~/utils';
+import { useDefaultConvo, useFavorites, useLocalize } from '~/hooks';
+import { clearMessagesCache, renderAgentAvatar } from '~/utils';
+import { useDuplicateAgentMutation } from '~/data-provider';
 import { useChatContext } from '~/Providers';
 
 interface SupportContact {
@@ -40,6 +44,26 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({ agent }) => {
   const { conversation, newConversation } = useChatContext();
   const { isFavoriteAgent, toggleFavoriteAgent } = useFavorites();
   const isFavorite = isFavoriteAgent(agent?.id);
+
+  const duplicateAgent = useDuplicateAgentMutation({
+    onSuccess: () => {
+      showToast({
+        message: localize('com_ui_agent_duplicated'),
+        status: 'success',
+      });
+    },
+    onError: (error) => {
+      console.error(error);
+      showToast({
+        message: localize('com_ui_agent_duplicate_error'),
+        status: 'error',
+      });
+    },
+  });
+
+  const handleDuplicate = () => {
+    duplicateAgent.mutate({ agent_id: agent.id });
+  };
 
   const handleFavoriteClick = () => {
     if (agent) {
@@ -181,9 +205,13 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({ agent }) => {
         >
           <Link className="h-4 w-4" aria-hidden="true" />
         </Button>
+        {/* NJ: Give users a way to edit their own copy of an agent */}
+        <Button variant="outline" onClick={handleDuplicate} disabled={!agent}>
+          Duplicate<span className="sr-only"> agent {agent?.name}</span>
+        </Button>
         <Button
           variant="submit"
-          className="w-full max-w-xs"
+          className="w-auto max-w-xs"
           onClick={handleStartChat}
           disabled={!agent}
         >
