@@ -46,13 +46,13 @@ describe('Sidebar', () => {
 
   it('forwards typing to onQueryChange', async () => {
     const { onQueryChange } = setup();
-    await userEvent.type(screen.getByRole('searchbox'), 'theme');
+    await userEvent.type(screen.getByRole('textbox'), 'theme');
     expect(onQueryChange).toHaveBeenCalled();
   });
 
   it('Escape clears search when query is non-empty', async () => {
     const { onQueryChange } = setup({}, 'theme');
-    const input = screen.getByRole('searchbox');
+    const input = screen.getByRole('textbox');
     input.focus();
     await userEvent.keyboard('{Escape}');
     expect(onQueryChange).toHaveBeenCalledWith('');
@@ -60,9 +60,20 @@ describe('Sidebar', () => {
 
   it('Escape does not call onQueryChange when query is empty', async () => {
     const { onQueryChange } = setup({}, '');
-    const input = screen.getByRole('searchbox');
+    const input = screen.getByRole('textbox');
     input.focus();
     await userEvent.keyboard('{Escape}');
     expect(onQueryChange).not.toHaveBeenCalled();
+  });
+
+  it('shows a clear button that clears the query when there is text', async () => {
+    const { onQueryChange } = setup({}, 'theme');
+    await userEvent.click(screen.getByRole('button', { name: /clear search/i }));
+    expect(onQueryChange).toHaveBeenCalledWith('');
+  });
+
+  it('hides the clear button when the query is empty', () => {
+    setup({}, '');
+    expect(screen.queryByRole('button', { name: /clear search/i })).not.toBeInTheDocument();
   });
 });

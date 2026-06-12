@@ -1,9 +1,9 @@
+import { Search, X } from 'lucide-react';
 import * as Tabs from '@radix-ui/react-tabs';
-import { Search } from 'lucide-react';
-import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
-import { TABS } from './types';
 import type { SettingsContextValue, SettingsTab } from './types';
+import { useLocalize } from '~/hooks';
+import { TABS } from './types';
+import { cn } from '~/utils';
 
 interface SidebarProps {
   ctx: SettingsContextValue;
@@ -24,7 +24,7 @@ export default function Sidebar({ ctx, query, onQueryChange, onSelectTab }: Side
           aria-hidden="true"
         />
         <input
-          type="search"
+          type="text"
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
           onKeyDown={(e) => {
@@ -36,8 +36,18 @@ export default function Sidebar({ ctx, query, onQueryChange, onSelectTab }: Side
           }}
           placeholder={localize('com_ui_settings_search_placeholder')}
           aria-label={localize('com_ui_settings_search_placeholder')}
-          className="w-full rounded-lg bg-surface-secondary py-2 pl-8 pr-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-border-xheavy"
+          className="w-full rounded-lg bg-surface-secondary py-2 pl-8 pr-8 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-border-xheavy"
         />
+        {query.length > 0 && (
+          <button
+            type="button"
+            onClick={() => onQueryChange('')}
+            aria-label={localize('com_ui_clear_search')}
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md p-1 text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-border-xheavy"
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        )}
       </div>
       <Tabs.List
         aria-label={localize('com_nav_settings')}
