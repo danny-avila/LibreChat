@@ -1,0 +1,87 @@
+import { useState } from 'react';
+import * as Tabs from '@radix-ui/react-tabs';
+import { SettingsTabValues } from 'librechat-data-provider';
+import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react';
+import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
+import type { TDialogProps } from '~/common';
+import { useSettingsContext } from './context';
+import type { SettingsTab } from './types';
+import Sidebar from './Sidebar';
+import Content from './Content';
+
+export default function SettingsDialog({ open, onOpenChange }: TDialogProps) {
+  const localize = useLocalize();
+  const ctx = useSettingsContext();
+  const [activeTab, setActiveTab] = useState<SettingsTab>(SettingsTabValues.GENERAL);
+  const [query, setQuery] = useState('');
+
+  return (
+    <Transition appear show={open}>
+      <Dialog as="div" className="relative z-50" onClose={() => onOpenChange(false)}>
+        <TransitionChild
+          enter="ease-out duration-200"
+          enterFrom="opacity-0"
+          enterTo="opacity-100"
+          leave="ease-in duration-200"
+          leaveFrom="opacity-100"
+          leaveTo="opacity-0"
+        >
+          <div className="fixed inset-0 bg-black opacity-50 dark:opacity-80" aria-hidden="true" />
+        </TransitionChild>
+        <TransitionChild
+          enter="ease-out duration-200"
+          enterFrom="opacity-0 scale-95"
+          enterTo="opacity-100 scale-100"
+          leave="ease-in duration-100"
+          leaveFrom="opacity-100 scale-100"
+          leaveTo="opacity-0 scale-95"
+        >
+          <div className="fixed inset-0 flex w-screen items-center justify-center p-4">
+            <DialogPanel
+              className={cn(
+                'flex max-h-[85vh] w-full flex-col overflow-hidden rounded-2xl bg-background shadow-2xl',
+                'md:h-[85vh] md:w-[900px]',
+              )}
+            >
+              <DialogTitle
+                as="div"
+                className="flex items-center justify-between border-b border-border-light p-5"
+              >
+                <h2 className="text-lg font-medium text-text-primary">
+                  {localize('com_nav_settings')}
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => onOpenChange(false)}
+                  className="rounded-sm opacity-70 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-border-xheavy"
+                >
+                  <span aria-hidden="true" className="text-xl leading-none">
+                    ×
+                  </span>
+                  <span className="sr-only">{localize('com_ui_close_settings')}</span>
+                </button>
+              </DialogTitle>
+              <Tabs.Root
+                value={activeTab}
+                onValueChange={(v) => setActiveTab(v as SettingsTab)}
+                orientation="vertical"
+                className="flex flex-1 flex-col gap-6 overflow-hidden p-5 md:flex-row"
+              >
+                <Sidebar
+                  ctx={ctx}
+                  query={query}
+                  onQueryChange={setQuery}
+                  onSelectTab={setActiveTab}
+                />
+                <div className="flex-1 overflow-y-auto md:pr-1">
+                  <Content activeTab={activeTab} query={query} ctx={ctx} />
+                </div>
+              </Tabs.Root>
+            </DialogPanel>
+          </div>
+        </TransitionChild>
+      </Dialog>
+    </Transition>
+  );
+}
