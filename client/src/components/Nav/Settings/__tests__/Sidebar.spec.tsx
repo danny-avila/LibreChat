@@ -1,9 +1,9 @@
-import userEvent from '@testing-library/user-event';
 import * as Tabs from '@radix-ui/react-tabs';
+import userEvent from '@testing-library/user-event';
 import { SettingsTabValues } from 'librechat-data-provider';
+import type { SettingsContextValue } from '../types';
 import { render, screen } from 'test/layout-test-utils';
 import Sidebar from '../Sidebar';
-import type { SettingsContextValue } from '../types';
 
 const ctx: SettingsContextValue = {
   balanceEnabled: false,
@@ -15,6 +15,7 @@ const ctx: SettingsContextValue = {
   isLocalProvider: true,
   twoFactorEnabled: false,
   allowAccountDeletion: true,
+  aboutEnabled: false,
 };
 
 function setup(extra: Partial<SettingsContextValue> = {}, query = '') {
@@ -33,14 +34,14 @@ function setup(extra: Partial<SettingsContextValue> = {}, query = '') {
 }
 
 describe('Sidebar', () => {
-  it('hides the Personalization tab when the feature is off', () => {
+  it('hides the About tab when build info is disabled', () => {
     setup();
-    expect(screen.queryByText('Personalization')).not.toBeInTheDocument();
+    expect(screen.queryByText('About')).not.toBeInTheDocument();
   });
 
-  it('shows the Personalization tab when enabled', () => {
-    setup({ hasAnyPersonalizationFeature: true });
-    expect(screen.getByText('Personalization')).toBeInTheDocument();
+  it('shows the About tab when build info is enabled', () => {
+    setup({ aboutEnabled: true });
+    expect(screen.getByText('About')).toBeInTheDocument();
   });
 
   it('forwards typing to onQueryChange', async () => {

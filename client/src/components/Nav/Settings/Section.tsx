@@ -1,12 +1,31 @@
 import type { ReactNode } from 'react';
+import { cn } from '~/utils';
 
-export default function Section({ heading, children }: { heading: string; children: ReactNode }) {
+interface SectionProps {
+  heading: string;
+  danger?: boolean;
+  children: ReactNode;
+}
+
+export default function Section({ heading, danger, children }: SectionProps) {
   return (
-    <section className="mb-6">
-      <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-text-secondary">
+    <section className="mb-7">
+      <h3
+        className={cn(
+          'mb-2 px-1 text-xs font-semibold uppercase tracking-wide',
+          danger ? 'text-red-500' : 'text-text-secondary',
+        )}
+      >
         {heading}
       </h3>
-      <div className="flex flex-col gap-3">{children}</div>
+      <div
+        className={cn(
+          'divide-y divide-border-light overflow-hidden rounded-xl border',
+          danger ? 'border-red-500/30' : 'border-border-light',
+        )}
+      >
+        {children}
+      </div>
     </section>
   );
 }

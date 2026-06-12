@@ -1,31 +1,5 @@
 import { SettingsTabValues } from 'librechat-data-provider';
-import { showThinkingAtom } from '~/store/showThinking';
-import store from '~/store';
 import type { SettingEntry } from './types';
-import { toggleControl, ThemeSetting, LangSetting } from './controls';
-import FontSizeSelector from '../SettingsTabs/Chat/FontSizeSelector';
-import ChatDirection from '../SettingsTabs/Chat/ChatDirection';
-import AdvancedPrompts from '../SettingsTabs/Chat/AdvancedPrompts';
-import { ForkSettings } from '../SettingsTabs/Chat/ForkSettings';
-import ArchivedChats from '../SettingsTabs/General/ArchivedChats';
-import ImportConversations from '../SettingsTabs/Data/ImportConversations';
-import SharedLinks from '../SettingsTabs/Data/SharedLinks';
-import { AgentApiKeys } from '../SettingsTabs/Data/AgentApiKeys';
-import { RevokeKeys } from '../SettingsTabs/Data/RevokeKeys';
-import { DeleteCache } from '../SettingsTabs/Data/DeleteCache';
-import { ClearChats } from '../SettingsTabs/Data/ClearChats';
-import DisplayUsernameMessages from '../SettingsTabs/Account/DisplayUsernameMessages';
-import Avatar from '../SettingsTabs/Account/Avatar';
-import EnableTwoFactorItem from '../SettingsTabs/Account/TwoFactorAuthentication';
-import BackupCodesItem from '../SettingsTabs/Account/BackupCodesItem';
-import DeleteAccount from '../SettingsTabs/Account/DeleteAccount';
-import {
-  SpeechToTextSwitch,
-  LanguageSTTDropdown,
-  AutoTranscribeAudioSwitch,
-  AutoSendTextSelector,
-  DecibelSelector,
-} from '../SettingsTabs/Speech/STT';
 import {
   TextToSpeechSwitch,
   VoiceDropdown,
@@ -34,14 +8,41 @@ import {
   CloudBrowserVoicesSwitch,
   PlaybackRate,
 } from '../SettingsTabs/Speech/TTS';
+import {
+  SpeechToTextSwitch,
+  LanguageSTTDropdown,
+  AutoTranscribeAudioSwitch,
+  AutoSendTextSelector,
+  DecibelSelector,
+} from '../SettingsTabs/Speech/STT';
+import DisplayUsernameMessages from '../SettingsTabs/Account/DisplayUsernameMessages';
 import ConversationModeSwitch from '../SettingsTabs/Speech/ConversationModeSwitch';
+import EnableTwoFactorItem from '../SettingsTabs/Account/TwoFactorAuthentication';
+import ImportConversations from '../SettingsTabs/Data/ImportConversations';
+import { toggleControl, ThemeSetting, LangSetting } from './controls';
+import BackupCodesItem from '../SettingsTabs/Account/BackupCodesItem';
 import { EngineSTTSetting, EngineTTSSetting } from './SpeechControls';
-import MemoryToggle from './MemoryToggle';
+import FontSizeSelector from '../SettingsTabs/Chat/FontSizeSelector';
+import AdvancedPrompts from '../SettingsTabs/Chat/AdvancedPrompts';
+import DeleteAccount from '../SettingsTabs/Account/DeleteAccount';
+import { ForkSettings } from '../SettingsTabs/Chat/ForkSettings';
+import { AgentApiKeys } from '../SettingsTabs/Data/AgentApiKeys';
+import ChatDirection from '../SettingsTabs/Chat/ChatDirection';
+import { DeleteCache } from '../SettingsTabs/Data/DeleteCache';
+import { RevokeKeys } from '../SettingsTabs/Data/RevokeKeys';
+import { ClearChats } from '../SettingsTabs/Data/ClearChats';
 import { TokenCredits, AutoRefill } from './BillingControls';
+import SharedLinks from '../SettingsTabs/Data/SharedLinks';
+import { showThinkingAtom } from '~/store/showThinking';
+import Avatar from '../SettingsTabs/Account/Avatar';
+import About from '../SettingsTabs/About/About';
+import MemoryToggle from './MemoryToggle';
+import store from '~/store';
 
-const { GENERAL, CHAT, SPEECH, PERSONALIZATION, DATA, ACCOUNT } = SettingsTabValues;
+const { GENERAL, CHAT, SPEECH, DATA, ACCOUNT, ABOUT } = SettingsTabValues;
 
 export const registry: SettingEntry[] = [
+  // General · Appearance
   {
     id: 'theme',
     tab: GENERAL,
@@ -74,6 +75,7 @@ export const registry: SettingEntry[] = [
     keywords: ['rtl', 'ltr'],
     Component: ChatDirection,
   },
+  // General · Layout
   {
     id: 'maximizeChatSpace',
     tab: GENERAL,
@@ -107,12 +109,12 @@ export const registry: SettingEntry[] = [
       switchId: 'showScrollButton',
     }),
   },
+  // General · Accessibility
   {
     id: 'keepScreenAwake',
     tab: GENERAL,
-    section: 'layout',
+    section: 'accessibility',
     labelKey: 'com_nav_keep_screen_awake',
-    advanced: true,
     Component: toggleControl({
       stateAtom: store.keepScreenAwake,
       localizationKey: 'com_nav_keep_screen_awake',
@@ -120,10 +122,11 @@ export const registry: SettingEntry[] = [
     }),
   },
 
+  // Chat · Sending
   {
     id: 'enterToSend',
     tab: CHAT,
-    section: 'input',
+    section: 'sending',
     labelKey: 'com_nav_enter_to_send',
     keywords: ['return', 'newline'],
     Component: toggleControl({
@@ -136,7 +139,7 @@ export const registry: SettingEntry[] = [
   {
     id: 'saveDrafts',
     tab: CHAT,
-    section: 'input',
+    section: 'sending',
     labelKey: 'com_nav_save_drafts',
     Component: toggleControl({
       stateAtom: store.saveDrafts,
@@ -148,7 +151,7 @@ export const registry: SettingEntry[] = [
   {
     id: 'saveBadgesState',
     tab: CHAT,
-    section: 'input',
+    section: 'sending',
     labelKey: 'com_nav_save_badges_state',
     Component: toggleControl({
       stateAtom: store.saveBadgesState,
@@ -157,6 +160,7 @@ export const registry: SettingEntry[] = [
       hoverCardText: 'com_nav_info_save_badges_state',
     }),
   },
+  // Chat · Commands
   {
     id: 'atCommand',
     tab: CHAT,
@@ -192,6 +196,61 @@ export const registry: SettingEntry[] = [
       switchId: 'slashCommand',
     }),
   },
+  // Chat · Messages
+  {
+    id: 'enableUserMsgMarkdown',
+    tab: CHAT,
+    section: 'messages',
+    labelKey: 'com_nav_user_msg_markdown',
+    Component: toggleControl({
+      stateAtom: store.enableUserMsgMarkdown,
+      localizationKey: 'com_nav_user_msg_markdown',
+      switchId: 'enableUserMsgMarkdown',
+    }),
+  },
+  {
+    id: 'usernameDisplay',
+    tab: CHAT,
+    section: 'messages',
+    labelKey: 'com_nav_user_name_display',
+    keywords: ['username', 'name'],
+    Component: DisplayUsernameMessages,
+  },
+  {
+    id: 'latexParsing',
+    tab: CHAT,
+    section: 'messages',
+    labelKey: 'com_nav_latex_parsing',
+    Component: toggleControl({
+      stateAtom: store.LaTeXParsing,
+      localizationKey: 'com_nav_latex_parsing',
+      switchId: 'latexParsing',
+      hoverCardText: 'com_nav_info_latex_parsing',
+    }),
+  },
+  {
+    id: 'showThinking',
+    tab: CHAT,
+    section: 'messages',
+    labelKey: 'com_nav_show_thinking',
+    Component: toggleControl({
+      stateAtom: showThinkingAtom,
+      localizationKey: 'com_nav_show_thinking',
+      switchId: 'showThinking',
+    }),
+  },
+  {
+    id: 'autoExpandTools',
+    tab: CHAT,
+    section: 'messages',
+    labelKey: 'com_nav_auto_expand_tools',
+    Component: toggleControl({
+      stateAtom: store.autoExpandTools,
+      localizationKey: 'com_nav_auto_expand_tools',
+      switchId: 'autoExpandTools',
+    }),
+  },
+  // Chat · Conversations
   {
     id: 'newChatSwitchToHistory',
     tab: CHAT,
@@ -238,66 +297,27 @@ export const registry: SettingEntry[] = [
     }),
   },
   {
-    id: 'enableUserMsgMarkdown',
+    id: 'forkSettings',
     tab: CHAT,
-    section: 'rendering',
-    labelKey: 'com_nav_user_msg_markdown',
-    Component: toggleControl({
-      stateAtom: store.enableUserMsgMarkdown,
-      localizationKey: 'com_nav_user_msg_markdown',
-      switchId: 'enableUserMsgMarkdown',
-    }),
+    section: 'conversations',
+    labelKey: 'com_ui_fork_default',
+    keywords: ['fork', 'branch', 'split'],
+    Component: ForkSettings,
   },
-  {
-    id: 'latexParsing',
-    tab: CHAT,
-    section: 'rendering',
-    labelKey: 'com_nav_latex_parsing',
-    Component: toggleControl({
-      stateAtom: store.LaTeXParsing,
-      localizationKey: 'com_nav_latex_parsing',
-      switchId: 'latexParsing',
-      hoverCardText: 'com_nav_info_latex_parsing',
-    }),
-  },
-  {
-    id: 'showThinking',
-    tab: CHAT,
-    section: 'rendering',
-    labelKey: 'com_nav_show_thinking',
-    Component: toggleControl({
-      stateAtom: showThinkingAtom,
-      localizationKey: 'com_nav_show_thinking',
-      switchId: 'showThinking',
-    }),
-  },
-  {
-    id: 'autoExpandTools',
-    tab: CHAT,
-    section: 'rendering',
-    labelKey: 'com_nav_auto_expand_tools',
-    advanced: true,
-    Component: toggleControl({
-      stateAtom: store.autoExpandTools,
-      localizationKey: 'com_nav_auto_expand_tools',
-      switchId: 'autoExpandTools',
-    }),
-  },
+  // Chat · Prompts
   {
     id: 'advancedPrompts',
     tab: CHAT,
-    section: 'rendering',
+    section: 'prompts',
     labelKey: 'com_nav_advanced_prompts',
-    advanced: true,
     keywords: ['prompt'],
     Component: AdvancedPrompts,
   },
   {
     id: 'alwaysMakeProd',
     tab: CHAT,
-    section: 'rendering',
+    section: 'prompts',
     labelKey: 'com_nav_always_make_prod',
-    advanced: true,
     Component: toggleControl({
       stateAtom: store.alwaysMakeProd,
       localizationKey: 'com_nav_always_make_prod',
@@ -307,9 +327,8 @@ export const registry: SettingEntry[] = [
   {
     id: 'autoSendPrompts',
     tab: CHAT,
-    section: 'rendering',
+    section: 'prompts',
     labelKey: 'com_nav_auto_send_prompts',
-    advanced: true,
     Component: toggleControl({
       stateAtom: store.autoSendPrompts,
       localizationKey: 'com_nav_auto_send_prompts',
@@ -317,16 +336,8 @@ export const registry: SettingEntry[] = [
       hoverCardText: 'com_nav_auto_send_prompts_desc',
     }),
   },
-  {
-    id: 'forkSettings',
-    tab: CHAT,
-    section: 'rendering',
-    labelKey: 'com_ui_fork_default',
-    advanced: true,
-    keywords: ['fork', 'branch', 'split'],
-    Component: ForkSettings,
-  },
 
+  // Speech · Speech-to-text
   {
     id: 'speechToText',
     tab: SPEECH,
@@ -348,6 +359,28 @@ export const registry: SettingEntry[] = [
     labelKey: 'com_ui_settings_label_language_stt',
     Component: LanguageSTTDropdown,
   },
+  {
+    id: 'autoTranscribeAudio',
+    tab: SPEECH,
+    section: 'stt',
+    labelKey: 'com_nav_auto_transcribe_audio',
+    Component: AutoTranscribeAudioSwitch,
+  },
+  {
+    id: 'decibelValue',
+    tab: SPEECH,
+    section: 'stt',
+    labelKey: 'com_ui_settings_label_decibel',
+    Component: DecibelSelector,
+  },
+  {
+    id: 'autoSendText',
+    tab: SPEECH,
+    section: 'stt',
+    labelKey: 'com_nav_auto_send_text',
+    Component: AutoSendTextSelector,
+  },
+  // Speech · Text-to-speech
   {
     id: 'textToSpeech',
     tab: SPEECH,
@@ -374,39 +407,13 @@ export const registry: SettingEntry[] = [
     tab: SPEECH,
     section: 'tts',
     labelKey: 'com_ui_settings_label_conversation_mode',
-    advanced: true,
     Component: ConversationModeSwitch,
-  },
-  {
-    id: 'autoTranscribeAudio',
-    tab: SPEECH,
-    section: 'tts',
-    labelKey: 'com_nav_auto_transcribe_audio',
-    advanced: true,
-    Component: AutoTranscribeAudioSwitch,
-  },
-  {
-    id: 'decibelValue',
-    tab: SPEECH,
-    section: 'tts',
-    labelKey: 'com_ui_settings_label_decibel',
-    advanced: true,
-    Component: DecibelSelector,
-  },
-  {
-    id: 'autoSendText',
-    tab: SPEECH,
-    section: 'tts',
-    labelKey: 'com_nav_auto_send_text',
-    advanced: true,
-    Component: AutoSendTextSelector,
   },
   {
     id: 'automaticPlayback',
     tab: SPEECH,
     section: 'tts',
     labelKey: 'com_nav_automatic_playback',
-    advanced: true,
     Component: AutomaticPlaybackSwitch,
   },
   {
@@ -414,7 +421,6 @@ export const registry: SettingEntry[] = [
     tab: SPEECH,
     section: 'tts',
     labelKey: 'com_nav_enable_cloud_browser_voice',
-    advanced: true,
     Component: CloudBrowserVoicesSwitch,
   },
   {
@@ -422,7 +428,6 @@ export const registry: SettingEntry[] = [
     tab: SPEECH,
     section: 'tts',
     labelKey: 'com_ui_settings_label_playback_rate',
-    advanced: true,
     Component: PlaybackRate,
   },
   {
@@ -430,83 +435,67 @@ export const registry: SettingEntry[] = [
     tab: SPEECH,
     section: 'tts',
     labelKey: 'com_nav_enable_cache_tts',
-    advanced: true,
     Component: CacheTTSSwitch,
   },
 
+  // Data controls · Memory
   {
     id: 'referenceSavedMemories',
-    tab: PERSONALIZATION,
+    tab: DATA,
     section: 'memory',
     labelKey: 'com_ui_reference_saved_memories',
-    keywords: ['memory'],
+    keywords: ['memory', 'personalization'],
     show: (ctx) => ctx.hasMemoryOptOut,
     Component: MemoryToggle,
   },
-
+  // Data controls · Your data
   {
     id: 'importConversations',
     tab: DATA,
-    section: 'history',
+    section: 'data',
     labelKey: 'com_ui_settings_label_import',
     Component: ImportConversations,
   },
   {
-    id: 'archivedChats',
-    tab: DATA,
-    section: 'history',
-    labelKey: 'com_ui_settings_label_archived',
-    keywords: ['archive'],
-    Component: ArchivedChats,
-  },
-  {
     id: 'sharedLinks',
     tab: DATA,
-    section: 'shared',
+    section: 'data',
     labelKey: 'com_ui_settings_label_shared_links',
     Component: SharedLinks,
   },
+  // Data controls · API keys
   {
     id: 'agentApiKeys',
     tab: DATA,
-    section: 'shared',
+    section: 'apiKeys',
     labelKey: 'com_ui_settings_label_agent_api_keys',
-    advanced: true,
     show: (ctx) => ctx.hasRemoteAgents,
     Component: AgentApiKeys,
   },
   {
     id: 'revokeKeys',
     tab: DATA,
-    section: 'shared',
+    section: 'apiKeys',
     labelKey: 'com_ui_settings_label_revoke_keys',
-    advanced: true,
     Component: RevokeKeys,
   },
+  // Data controls · Danger zone
   {
     id: 'deleteCache',
     tab: DATA,
-    section: 'shared',
+    section: 'danger',
     labelKey: 'com_ui_settings_label_delete_cache',
-    advanced: true,
     Component: DeleteCache,
   },
   {
     id: 'clearChats',
     tab: DATA,
-    section: 'shared',
+    section: 'danger',
     labelKey: 'com_ui_settings_label_clear_chats',
-    advanced: true,
     Component: ClearChats,
   },
 
-  {
-    id: 'usernameDisplay',
-    tab: ACCOUNT,
-    section: 'profile',
-    labelKey: 'com_nav_user_name_display',
-    Component: DisplayUsernameMessages,
-  },
+  // Account · Profile
   {
     id: 'avatar',
     tab: ACCOUNT,
@@ -514,6 +503,7 @@ export const registry: SettingEntry[] = [
     labelKey: 'com_ui_settings_label_avatar',
     Component: Avatar,
   },
+  // Account · Security
   {
     id: 'twoFactor',
     tab: ACCOUNT,
@@ -530,6 +520,7 @@ export const registry: SettingEntry[] = [
     show: (ctx) => ctx.isLocalProvider && ctx.twoFactorEnabled,
     Component: BackupCodesItem,
   },
+  // Account · Billing
   {
     id: 'tokenCredits',
     tab: ACCOUNT,
@@ -546,13 +537,24 @@ export const registry: SettingEntry[] = [
     show: (ctx) => ctx.balanceEnabled,
     Component: AutoRefill,
   },
+  // Account · Danger zone
   {
     id: 'deleteAccount',
     tab: ACCOUNT,
-    section: 'profile',
+    section: 'danger',
     labelKey: 'com_ui_settings_label_delete_account',
-    advanced: true,
     show: (ctx) => ctx.allowAccountDeletion,
     Component: DeleteAccount,
+  },
+
+  // About
+  {
+    id: 'about',
+    tab: ABOUT,
+    section: 'about',
+    labelKey: 'com_nav_setting_about',
+    keywords: ['version', 'build', 'diagnostics'],
+    show: (ctx) => ctx.aboutEnabled,
+    Component: About,
   },
 ];

@@ -1,11 +1,10 @@
 import { useMemo } from 'react';
+import type { SettingsContextValue, SettingsTab, SettingEntry } from './types';
+import { filterSettings } from './search';
 import { useLocalize } from '~/hooks';
 import { registry } from './registry';
-import { filterSettings } from './search';
-import { TABS, ADVANCED_LABEL_KEY, DANGER_LABEL_KEY } from './types';
-import type { SettingsContextValue, SettingsTab, SettingEntry } from './types';
 import Section from './Section';
-import Advanced from './Advanced';
+import { TABS } from './types';
 
 interface ContentProps {
   activeTab: SettingsTab;
@@ -34,56 +33,49 @@ export default function Content({ activeTab, query, ctx }: ContentProps) {
             {localize('com_ui_settings_no_results')}
           </p>
         ) : (
-          results.map(({ entry, label }) => {
-            const Cmp = entry.Component;
-            const tabMeta = TABS.find((t) => t.id === entry.tab)!;
-            const sectionMeta = tabMeta.sections.find((s) => s.id === entry.section);
-            return (
-              <div key={entry.id} className="mb-4">
-                <div className="mb-1 text-xs text-text-tertiary">
-                  {localize(tabMeta.labelKey)} ›{' '}
-                  {sectionMeta ? localize(sectionMeta.labelKey) : label}
+          <div className="divide-y divide-border-light overflow-hidden rounded-xl border border-border-light">
+            {results.map(({ entry, label }) => {
+              const Cmp = entry.Component;
+              const tabMeta = TABS.find((t) => t.id === entry.tab)!;
+              const sectionMeta = tabMeta.sections.find((s) => s.id === entry.section);
+              return (
+                <div key={entry.id} className="px-4 py-3">
+                  <div className="mb-1.5 text-xs text-text-tertiary">
+                    {localize(tabMeta.labelKey)} ›{' '}
+                    {sectionMeta ? localize(sectionMeta.labelKey) : label}
+                  </div>
+                  <Cmp />
                 </div>
-                <Cmp />
-              </div>
-            );
-          })
+              );
+            })}
+          </div>
         )}
       </div>
     );
   }
 
-  const tabEntries = registry.filter((e) => e.tab === activeTab && visible(e, ctx));
-  const advanced = tabEntries.filter((e) => e.advanced);
-  const danger = tab.sections.some((s) => s.danger);
-
   return (
     <div>
       {tab.sections.map((section) => {
-        const entries = tabEntries.filter((e) => e.section === section.id && !e.advanced);
+        const entries = registry.filter(
+          (e) => e.tab === activeTab && e.section === section.id && visible(e, ctx),
+        );
         if (entries.length === 0) {
           return null;
         }
         return (
-          <Section key={section.id} heading={localize(section.labelKey)}>
+          <Section key={section.id} heading={localize(section.labelKey)} danger={section.danger}>
             {entries.map((e) => {
               const Cmp = e.Component;
-              return <Cmp key={e.id} />;
+              return (
+                <div key={e.id} className="px-4 py-3">
+                  <Cmp />
+                </div>
+              );
             })}
           </Section>
         );
       })}
-      {advanced.length > 0 && (
-        <Advanced
-          label={localize(danger ? DANGER_LABEL_KEY : ADVANCED_LABEL_KEY)}
-          count={advanced.length}
-        >
-          {advanced.map((e) => {
-            const Cmp = e.Component;
-            return <Cmp key={e.id} />;
-          })}
-        </Advanced>
-      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import type { TBalanceResponse } from 'librechat-data-provider';
-import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import AutoRefillSettings from '../SettingsTabs/Balance/AutoRefillSettings';
+import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import TokenCreditsItem from '../SettingsTabs/Balance/TokenCreditsItem';
 import { useAuthContext, useLocalize } from '~/hooks';
 
@@ -38,7 +38,7 @@ export function AutoRefill() {
 
   if (!autoRefillEnabled) {
     return (
-      <div className="text-sm text-gray-600">
+      <div className="text-sm text-text-secondary">
         {localize('com_nav_balance_auto_refill_disabled')}
       </div>
     );
@@ -46,7 +46,7 @@ export function AutoRefill() {
 
   if (!hasValidRefillSettings) {
     return (
-      <div className="text-sm text-red-600">{localize('com_nav_balance_auto_refill_error')}</div>
+      <div className="text-sm text-red-500">{localize('com_nav_balance_auto_refill_error')}</div>
     );
   }
 
