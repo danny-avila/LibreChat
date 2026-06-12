@@ -20,7 +20,7 @@ export default function Section({ heading, danger, children }: SectionProps) {
       </h3>
       <div
         className={cn(
-          'divide-y divide-border-light overflow-hidden rounded-xl border',
+          'divide-y divide-border-light overflow-hidden rounded-xl border text-sm text-text-primary',
           danger ? 'border-red-500/30' : 'border-border-light',
         )}
       >
