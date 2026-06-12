@@ -1,9 +1,7 @@
 import { useCallback, useRef } from 'react';
 import { useRecoilCallback } from 'recoil';
-import { useQueryClient } from '@tanstack/react-query';
 import {
   Constants,
-  QueryKeys,
   StepTypes,
   StepEvents,
   ContentTypes,
@@ -38,6 +36,12 @@ type TUseStepHandler = {
   /** @deprecated - isSubmitting should be derived from submission state */
   setIsSubmitting?: SetterOrUpdater<boolean>;
   lastAnnouncementTimeRef: React.MutableRefObject<number>;
+  /**
+   * Fired when a completed `create_file`/`edit_file` call targeted a
+   * `skills/...` path. The caller owns the side effect (skill query cache
+   * invalidation) so this hook stays free of query-client coupling.
+   */
+  onSkillAuthoringComplete?: () => void;
 };
 
 type TStepEvent =
@@ -110,8 +114,8 @@ export default function useStepHandler({
   getMessages,
   announcePolite,
   lastAnnouncementTimeRef,
+  onSkillAuthoringComplete,
 }: TUseStepHandler) {
-  const queryClient = useQueryClient();
   const toolCallIdMap = useRef(new Map<string, string | undefined>());
   const messageMap = useRef(new Map<string, TMessage>());
   const stepMap = useRef(new Map<string, Agents.RunStep>());
@@ -930,19 +934,7 @@ export default function useStepHandler({
         }
 
         if (isSkillAuthoringToolCall(result.tool_call)) {
-          /** `refetchType: 'all'` so cached-but-unmounted skill queries refresh
-           *  too — they opt out of `refetchOnMount`, so a plain invalidation
-           *  would leave the Skills panel stale until a manual refresh. */
-          for (const key of [
-            QueryKeys.skills,
-            QueryKeys.skill,
-            QueryKeys.skillFiles,
-            QueryKeys.skillFileContent,
-            QueryKeys.skillTree,
-            QueryKeys.skillNodeContent,
-          ]) {
-            queryClient.invalidateQueries({ queryKey: [key], refetchType: 'all' });
-          }
+          onSkillAuthoringComplete?.();
         }
 
         const response = messageMap.current.get(responseMessageId);
@@ -1076,7 +1068,7 @@ export default function useStepHandler({
       calculateContentIndex,
       getCurrentMessages,
       applySubagentUpdate,
-      queryClient,
+      onSkillAuthoringComplete,
     ],
   );
 
