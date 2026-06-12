@@ -927,6 +927,16 @@ export function createAgentMethods(
     delete revertToVersion.author;
     delete revertToVersion.updatedBy;
 
+    /** Version snapshots can predate skill deletions; restoring one verbatim
+     *  would resurrect dangling allowlist ids that scope the catalog to
+     *  nothing. Same self-heal as `createAgent`/`updateAgent`. */
+    if (Array.isArray(revertToVersion.skills) && revertToVersion.skills.length > 0) {
+      revertToVersion.skills = await filterExistingSkillIds(
+        mongoose,
+        revertToVersion.skills as string[],
+      );
+    }
+
     const revertedAgent = await Agent.findOneAndUpdate(searchParameter, revertToVersion, {
       new: true,
     }).lean<IAgent>();

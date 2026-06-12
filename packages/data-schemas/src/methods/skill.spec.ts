@@ -15,6 +15,7 @@ import {
   validateAlwaysApply,
   validateRelativePath,
   inferSkillFileCategory,
+  filterExistingSkillIds,
   deriveStructuredFrontmatterFields,
 } from './skill';
 import { createAclEntryMethods } from './aclEntry';
@@ -545,6 +546,36 @@ describe('Skill CRUD methods', () => {
     expect(res.deleted).toBe(true);
     expect(await AclEntry.countDocuments({ resourceId: skill._id })).toBe(0);
     expect(await SkillFile.countDocuments({ skillId: skill._id })).toBe(0);
+  });
+
+  it('filterExistingSkillIds matches uppercase-hex candidates and returns canonical ids', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'case-skill' }));
+    const canonical = skill._id.toString();
+
+    const filtered = await filterExistingSkillIds(mongoose, [canonical.toUpperCase()]);
+    expect(filtered).toEqual([canonical]);
+  });
+
+  it('deleteSkill prunes agent allowlists even when skill file cleanup fails', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'flaky-files' }));
+    const Agent = mongoose.models.Agent;
+    const agent = await Agent.create(makeAgentDoc([skill._id.toString()]));
+
+    const deleteManySpy = jest
+      .spyOn(SkillFile, 'deleteMany')
+      .mockRejectedValueOnce(new Error('transient storage failure'));
+    try {
+      await expect(methods.deleteSkill(skill._id.toString())).rejects.toThrow(
+        'transient storage failure',
+      );
+    } finally {
+      deleteManySpy.mockRestore();
+    }
+
+    const agentAfter = (await Agent.findById(agent._id).lean()) as {
+      skills?: string[];
+    } | null;
+    expect(agentAfter?.skills).toEqual([]);
   });
 
   it('deleteSkill prunes the deleted id from agent skill allowlists', async () => {

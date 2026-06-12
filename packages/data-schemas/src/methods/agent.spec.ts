@@ -1812,6 +1812,38 @@ describe('Agent Methods', () => {
       expect(revertedAgent.description).toBe('Original description');
     });
 
+    test('should prune deleted skill ids when reverting to an older version', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+      const Skill = mongoose.models.Skill;
+      const skill = await Skill.create({
+        name: 'revert-prune-skill',
+        description: 'Skill backing the revert pruning test.',
+        author: authorId,
+        authorName: 'Test Author',
+      });
+      const skillId = skill._id.toString();
+
+      await createAgent({
+        id: agentId,
+        name: 'Revert Skill Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        skills: [skillId],
+        skills_enabled: true,
+      });
+
+      await updateAgent({ id: agentId }, { skills: [], name: 'No Skills Anymore' });
+      await Skill.deleteOne({ _id: skill._id });
+
+      const revertedAgent = await revertAgentVersion({ id: agentId }, 0);
+
+      expect(revertedAgent.name).toBe('Revert Skill Agent');
+      expect(revertedAgent.skills).toEqual([]);
+      expect(revertedAgent.skills_enabled).toBe(true);
+    });
+
     test('should detect action metadata changes and force version update', async () => {
       const agentId = `agent_${uuidv4()}`;
       const authorId = new mongoose.Types.ObjectId();

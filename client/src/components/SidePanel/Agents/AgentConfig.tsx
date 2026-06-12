@@ -1,11 +1,14 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { X } from 'lucide-react';
+import { useQueries } from '@tanstack/react-query';
 import { Switch, useToastContext } from '@librechat/client';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
 import {
   EModelEndpoint,
   PermissionTypes,
   Permissions,
+  QueryKeys,
+  dataService,
   getEndpointField,
 } from 'librechat-data-provider';
 import type { AgentForm, IconComponentTypes } from '~/common';
@@ -110,6 +113,36 @@ export default function AgentConfig() {
     }
     return map;
   }, [skillsData?.skills]);
+
+  /** Allowlist ids missing from the first catalog page (`limit: 100`) are
+   *  resolved individually — a cache miss alone must never present a valid
+   *  configured skill as unavailable and invite its removal. */
+  const unresolvedSkillIds = useMemo(
+    () => (skillsData === undefined ? [] : (skills ?? []).filter((id) => !skillsMap.has(id))),
+    [skills, skillsMap, skillsData],
+  );
+  const unresolvedSkillQueries = useQueries({
+    queries: unresolvedSkillIds.map((skillId) => ({
+      queryKey: [QueryKeys.skill, skillId],
+      queryFn: () => dataService.getSkill(skillId),
+      retry: false,
+      refetchOnMount: false,
+      refetchOnReconnect: false,
+      refetchOnWindowFocus: false,
+    })),
+  });
+  const unresolvedSkills = useMemo(() => {
+    const map = new Map<string, { name?: string; missing: boolean }>();
+    unresolvedSkillIds.forEach((skillId, index) => {
+      const query = unresolvedSkillQueries[index];
+      if (query?.isError === true) {
+        map.set(skillId, { missing: true });
+      } else if (query?.data?.name) {
+        map.set(skillId, { name: query.data.name, missing: false });
+      }
+    });
+    return map;
+  }, [unresolvedSkillIds, unresolvedSkillQueries]);
 
   const { data: agentFiles = [] } = useGetAgentFiles(agent_id);
 
@@ -380,12 +413,13 @@ export default function AgentConfig() {
             >
               <div className="mb-1">
                 {(skills ?? []).map((skillId) => {
-                  const skillName = skillsMap.get(skillId);
-                  /** Hide chips only while the catalog query is in flight —
-                   *  once it resolves, an unresolvable id must stay visible
-                   *  (and removable), or the allowlist silently scopes the
-                   *  agent to zero skills with no way to fix it in the UI. */
-                  if (!skillName && skillsData === undefined) {
+                  const skillName = skillsMap.get(skillId) ?? unresolvedSkills.get(skillId)?.name;
+                  /** Hide chips while the catalog page or per-id lookup is in
+                   *  flight. Once the backend confirms a miss (deleted or no
+                   *  longer shared), the id must stay visible and removable —
+                   *  otherwise the allowlist silently scopes the agent to
+                   *  zero skills with no way to fix it in the UI. */
+                  if (!skillName && unresolvedSkills.get(skillId)?.missing !== true) {
                     return null;
                   }
                   const isUnavailable = !skillName;

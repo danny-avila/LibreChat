@@ -839,13 +839,19 @@ function resolveAlwaysApplyFromInput(
  * Narrows candidate skill ids to those backed by an existing Skill doc.
  * Existence-only check (no ACL) so pruning an agent allowlist never drops
  * skills the saving user merely can't view. Preserves input order, dedupes,
- * and drops malformed ids — they can't reference anything.
+ * and drops malformed ids — they can't reference anything. Candidates are
+ * lowercased before comparison: `isValidObjectIdString` accepts uppercase
+ * hex, but `_id.toString()` is always lowercase, and a casing mismatch
+ * would silently drop a valid id (and an emptied allowlist means the full
+ * catalog — the opposite of the configured scope).
  */
 export async function filterExistingSkillIds(
   mongoose: typeof import('mongoose'),
   skillIds: string[],
 ): Promise<string[]> {
-  const candidates = [...new Set(skillIds.filter(isValidObjectIdString))];
+  const candidates = [
+    ...new Set(skillIds.filter(isValidObjectIdString).map((id) => id.toLowerCase())),
+  ];
   if (candidates.length === 0) {
     return [];
   }
@@ -1530,8 +1536,11 @@ export function createSkillMethods(
     if (!res.deletedCount) {
       return { deleted: false };
     }
-    await SkillFile.deleteMany({ skillId: objectId });
+    /** Prune allowlists immediately after the Skill row is gone: if the
+     *  SkillFile cleanup below throws, a retry exits early on
+     *  `deletedCount === 0` and would never reach a later prune. */
     await removeSkillsFromAgentAllowlists([id]);
+    await SkillFile.deleteMany({ skillId: objectId });
     try {
       await deps.removeAllPermissions({ resourceType: ResourceType.SKILL, resourceId: id });
     } catch (error) {
