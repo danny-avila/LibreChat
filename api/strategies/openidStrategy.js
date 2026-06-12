@@ -34,6 +34,40 @@ const getLogStores = require('~/cache/getLogStores');
  * @typedef {import('openid-client').Configuration} Configuration
  **/
 
+/** @type {undici.EnvHttpProxyAgent | undefined} */
+let proxyDispatcher;
+/** @type {string | undefined} */
+let proxyDispatcherKey;
+
+/**
+ * Returns a shared dispatcher routing requests through the `PROXY` env var
+ * while honoring the standard `NO_PROXY`/`no_proxy` exclusion list.
+ *
+ * Unlike `undici.ProxyAgent`, `undici.EnvHttpProxyAgent` applies `NO_PROXY`
+ * per request host, so OIDC providers on an internal network the proxy
+ * cannot reach (issuer discovery, JWKS, token endpoint) are requested
+ * directly when excluded. The agent is memoized so repeated requests reuse
+ * its connection pool instead of constructing a new agent per request.
+ *
+ * @returns {undici.EnvHttpProxyAgent | undefined} The dispatcher, or
+ * `undefined` when no `PROXY` is configured.
+ */
+function getProxyDispatcher() {
+  const proxy = process.env.PROXY;
+  if (!proxy) {
+    return undefined;
+  }
+  /** EnvHttpProxyAgent falls back to `no_proxy` / `NO_PROXY` env vars on
+   * its own; the cache key tracks them so env changes rebuild the agent. */
+  const noProxy = process.env.no_proxy ?? process.env.NO_PROXY ?? '';
+  const key = `${proxy}|${noProxy}`;
+  if (!proxyDispatcher || proxyDispatcherKey !== key) {
+    proxyDispatcher = new undici.EnvHttpProxyAgent({ httpProxy: proxy, httpsProxy: proxy });
+    proxyDispatcherKey = key;
+  }
+  return proxyDispatcher;
+}
+
 /**
  * @param {string} url
  * @param {client.CustomFetchOptions} options
@@ -61,11 +95,12 @@ async function customFetch(url, options) {
   try {
     /** @type {undici.RequestInit} */
     let fetchOptions = options;
-    if (process.env.PROXY) {
+    const dispatcher = getProxyDispatcher();
+    if (dispatcher) {
       logger.info(`[openidStrategy] proxy agent configured: ${process.env.PROXY}`);
       fetchOptions = {
         ...options,
-        dispatcher: new undici.ProxyAgent(process.env.PROXY),
+        dispatcher,
       };
     }
 
@@ -419,9 +454,9 @@ async function resolveGroupsFromOverage(accessToken, sub) {
       body: JSON.stringify({ securityEnabledOnly: false }),
     };
 
-    if (process.env.PROXY) {
-      const { ProxyAgent } = undici;
-      fetchOptions.dispatcher = new ProxyAgent(process.env.PROXY);
+    const dispatcher = getProxyDispatcher();
+    if (dispatcher) {
+      fetchOptions.dispatcher = dispatcher;
     }
 
     const response = await undici.fetch(url, fetchOptions);
@@ -982,4 +1017,5 @@ module.exports = {
   getOpenIdConfig,
   getOpenIdEmail,
   getRoleSource,
+  getProxyDispatcher,
 };

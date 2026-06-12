@@ -6,7 +6,7 @@ const { findUser, createUser, updateUser, findRolesByNames } = require('~/models
 const { getOpenIdIssuer, resolveAppConfigForUser, isEnabled } = require('@librechat/api');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { getAppConfig } = require('~/server/services/Config');
-const { setupOpenId } = require('./openidStrategy');
+const { setupOpenId, getProxyDispatcher } = require('./openidStrategy');
 
 const mockCloudfrontFileSource = FileSources.cloudfront ?? 'cloudfront';
 
@@ -15,7 +15,7 @@ jest.mock('node-fetch');
 jest.mock('jsonwebtoken/decode');
 jest.mock('undici', () => ({
   fetch: jest.fn(),
-  ProxyAgent: jest.fn(),
+  EnvHttpProxyAgent: jest.fn(),
 }));
 jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: jest.fn(() => ({
@@ -2557,5 +2557,69 @@ describe('getRoleSource', () => {
     expect(() => getRoleSource('access', 'required role', {}, userinfo)).toThrow(
       'Invalid token specified',
     );
+  });
+});
+
+describe('getProxyDispatcher', () => {
+  beforeEach(() => {
+    undici.EnvHttpProxyAgent.mockClear();
+    delete process.env.PROXY;
+    delete process.env.NO_PROXY;
+    delete process.env.no_proxy;
+  });
+
+  afterAll(() => {
+    delete process.env.PROXY;
+    delete process.env.NO_PROXY;
+    delete process.env.no_proxy;
+  });
+
+  it('returns undefined when PROXY is not set', () => {
+    expect(getProxyDispatcher()).toBeUndefined();
+    expect(undici.EnvHttpProxyAgent).not.toHaveBeenCalled();
+  });
+
+  it('creates a NO_PROXY-aware agent for both protocols when PROXY is set', () => {
+    process.env.PROXY = 'http://corporate-proxy:8080';
+
+    const dispatcher = getProxyDispatcher();
+
+    expect(dispatcher).toBeInstanceOf(undici.EnvHttpProxyAgent);
+    expect(undici.EnvHttpProxyAgent).toHaveBeenCalledWith({
+      httpProxy: 'http://corporate-proxy:8080',
+      httpsProxy: 'http://corporate-proxy:8080',
+    });
+  });
+
+  it('reuses the same agent across calls', () => {
+    process.env.PROXY = 'http://corporate-proxy:8080';
+    process.env.NO_PROXY = 'localhost,.internal-domain.com';
+
+    const first = getProxyDispatcher();
+    const second = getProxyDispatcher();
+
+    expect(second).toBe(first);
+    expect(undici.EnvHttpProxyAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it('rebuilds the agent when NO_PROXY changes', () => {
+    process.env.PROXY = 'http://corporate-proxy:8080';
+    process.env.NO_PROXY = 'localhost';
+    getProxyDispatcher();
+
+    process.env.NO_PROXY = 'localhost,.internal-domain.com';
+    getProxyDispatcher();
+
+    expect(undici.EnvHttpProxyAgent).toHaveBeenCalledTimes(2);
+  });
+
+  it('rebuilds the agent when PROXY changes', () => {
+    process.env.PROXY = 'http://corporate-proxy:8080';
+    getProxyDispatcher();
+
+    process.env.PROXY = 'http://other-proxy:3128';
+    getProxyDispatcher();
+
+    expect(undici.EnvHttpProxyAgent).toHaveBeenCalledTimes(2);
   });
 });
