@@ -184,6 +184,34 @@ describe('formatMessage', () => {
       content: 'Hello',
     });
   });
+
+  it('includes the text part for vision messages that have text', () => {
+    const image = { type: 'image_url', image_url: { url: 'data:image/png;base64,abc' } };
+    const result = formatMessage({
+      message: { role: 'user', text: 'Describe this', image_urls: [image] },
+      endpoint: 'anthropic',
+    });
+    expect(result.content).toEqual([image, { type: 'text', text: 'Describe this' }]);
+  });
+
+  it('omits the empty text part for image-only Anthropic messages', () => {
+    const image = { type: 'image_url', image_url: { url: 'data:image/png;base64,abc' } };
+    const result = formatMessage({
+      message: { role: 'user', text: '', image_urls: [image] },
+      endpoint: 'anthropic',
+    });
+    // No empty { type: 'text', text: '' } block — Anthropic rejects those with HTTP 400.
+    expect(result.content).toEqual([image]);
+  });
+
+  it('omits the empty text part for image-only messages on other endpoints', () => {
+    const image = { type: 'image_url', image_url: { url: 'data:image/png;base64,abc' } };
+    const result = formatMessage({
+      message: { role: 'user', text: '   ', image_urls: [image] },
+      endpoint: 'openAI',
+    });
+    expect(result.content).toEqual([image]);
+  });
 });
 
 describe('formatLangChainMessages', () => {
