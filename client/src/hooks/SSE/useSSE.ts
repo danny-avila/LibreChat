@@ -161,6 +161,9 @@ export default function useSSE(
         };
 
         if (data.message != null) {
+          /** Legacy non-agent streams (handleText) send cumulative text here,
+           *  not via the content path — feed it to the live estimate too */
+          tapContent(text, { ...submission, userMessage });
           messageHandler(text, { ...submission, userMessage, initialResponse });
         }
       }

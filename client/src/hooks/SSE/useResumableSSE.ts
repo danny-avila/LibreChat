@@ -813,6 +813,9 @@ export default function useResumableSSE(
               parentMessageId: data.parentMessageId,
               messageId: data.messageId,
             };
+            /** Legacy non-agent streams send cumulative text here — feed the
+             *  live estimate like the content path above */
+            tapContent(text, { ...currentSubmission, userMessage });
             messageHandler(text, { ...currentSubmission, userMessage, initialResponse });
           }
         } catch (error) {
