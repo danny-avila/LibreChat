@@ -159,12 +159,16 @@ export async function initializeCustom({
   const hasTokenConfig = endpointConfig.tokenConfig != null;
   const tokenKey = getTokenConfigKey(endpointConfig, endpoint, userId);
 
-  const cachedConfig =
-    !hasTokenConfig &&
-    FetchTokenConfig[endpoint.toLowerCase() as keyof typeof FetchTokenConfig] &&
-    (await cache.get(tokenKey));
-
-  endpointTokenConfig = (cachedConfig as EndpointTokenConfig) || undefined;
+  if (hasTokenConfig) {
+    /** A static override is authoritative — use it for the agent's billing
+     *  and balance checks, not just the advertised UI token config */
+    endpointTokenConfig = endpointConfig.tokenConfig as EndpointTokenConfig;
+  } else {
+    const cachedConfig =
+      FetchTokenConfig[endpoint.toLowerCase() as keyof typeof FetchTokenConfig] &&
+      (await cache.get(tokenKey));
+    endpointTokenConfig = (cachedConfig as EndpointTokenConfig) || undefined;
+  }
 
   if (
     FetchTokenConfig[endpoint.toLowerCase() as keyof typeof FetchTokenConfig] &&

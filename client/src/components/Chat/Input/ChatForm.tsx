@@ -447,6 +447,7 @@ function ChatFormWrapper({ index = 0, placeholder }: { index?: number; placehold
       conversation?.spec,
       conversation?.useResponsesApi,
       conversation?.model,
+      conversation?.maxContextTokens,
       hasMessages,
     ],
   );

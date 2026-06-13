@@ -41,6 +41,9 @@ export interface UsageHandlers {
   contextHandler: (data: TContextUsageEvent, submission: UsageSubmissionLike) => void;
   usageHandler: (data: TTokenUsageEvent, submission: UsageSubmissionLike) => void;
   tapStream: (data: { delta?: { content?: unknown } }, submission: UsageSubmissionLike) => void;
+  /** Live estimate for the legacy content path, which streams cumulative
+   *  (not incremental) text per part — sets rather than accumulates */
+  tapContent: (text: unknown, submission: UsageSubmissionLike) => void;
   finalizeUsage: (data: FinalDataLike, submission: UsageSubmissionLike) => void;
   resetLive: (submission: UsageSubmissionLike) => void;
   /** Replaces accumulated totals with the run's collected usage on resume */
@@ -51,6 +54,15 @@ export interface UsageHandlers {
 
 function getConvoKey(submission: UsageSubmissionLike): string {
   return submission.conversation?.conversationId ?? Constants.NEW_CONVO;
+}
+
+/** Cumulative text of a content-path part: a raw string or a `{ value }` part */
+function extractContentText(text: unknown): string {
+  if (typeof text === 'string') {
+    return text;
+  }
+  const value = (text as { value?: unknown })?.value;
+  return typeof value === 'string' ? value : '';
 }
 
 function countDeltaChars(content: unknown): number {
@@ -167,6 +179,23 @@ export default function useUsageHandler(): UsageHandlers {
       setLive(convoKey, confirmedRef.current + estimateTokens(streamCharsRef.current, ratio));
     };
 
+    const tapContent: UsageHandlers['tapContent'] = (text, submission) => {
+      const value = extractContentText(text);
+      if (value.length === 0) {
+        return;
+      }
+      /** Cumulative per part — replace the running char count, don't add */
+      streamCharsRef.current = value.length;
+      const now = Date.now();
+      if (now - lastFlushRef.current < FLUSH_INTERVAL_MS) {
+        return;
+      }
+      lastFlushRef.current = now;
+      const convoKey = getConvoKey(submission);
+      const ratio = jotai.get(calibrationFamily(convoKey));
+      setLive(convoKey, confirmedRef.current + estimateTokens(streamCharsRef.current, ratio));
+    };
+
     const resetLive: UsageHandlers['resetLive'] = (submission) => {
       streamCharsRef.current = 0;
       confirmedRef.current = 0;
@@ -236,6 +265,7 @@ export default function useUsageHandler(): UsageHandlers {
       contextHandler,
       usageHandler,
       tapStream,
+      tapContent,
       finalizeUsage,
       resetLive,
       backfillUsage,

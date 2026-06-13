@@ -67,7 +67,8 @@ export default function useSSE(
   const balanceQuery = useGetUserBalance({
     enabled: !!isAuthenticated && startupConfig?.balance?.enabled,
   });
-  const { contextHandler, usageHandler, tapStream, finalizeUsage, resetLive } = useUsageHandler();
+  const { contextHandler, usageHandler, tapStream, tapContent, finalizeUsage, resetLive } =
+    useUsageHandler();
 
   useEffect(() => {
     if (submission == null || Object.keys(submission).length === 0) {
@@ -148,6 +149,7 @@ export default function useSSE(
           textIndex = index;
         }
 
+        tapContent(text, { ...submission, userMessage });
         contentHandler({ data, submission: submission as EventSubmission });
       } else {
         const text = data.text ?? data.response;

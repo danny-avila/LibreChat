@@ -481,6 +481,7 @@ export default function useResumableSSE(
     contextHandler,
     usageHandler,
     tapStream,
+    tapContent,
     finalizeUsage,
     backfillUsage,
     resetLive,
@@ -798,6 +799,7 @@ export default function useResumableSSE(
             if (text != null && index !== textIndex) {
               textIndex = index;
             }
+            tapContent(text, { ...currentSubmission, userMessage });
             contentHandler({ data, submission: currentSubmission as EventSubmission });
             return;
           }
@@ -1067,6 +1069,7 @@ export default function useResumableSSE(
       contextHandler,
       usageHandler,
       tapStream,
+      tapContent,
       finalizeUsage,
       backfillUsage,
       resetLive,

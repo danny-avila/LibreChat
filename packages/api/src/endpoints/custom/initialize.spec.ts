@@ -351,4 +351,34 @@ describe('initializeCustom – token-config fetch header forwarding', () => {
       }),
     );
   });
+
+  it('uses a static tokenConfig for billing and skips the model fetch', async () => {
+    const tokenConfig = {
+      'gpt-4': { prompt: 1.5, completion: 4.5, context: 32000, cacheRead: 0.3, cacheWrite: 1.8 },
+    };
+    mockGetCustomEndpointConfig.mockReturnValue({
+      apiKey: 'sk-test-key',
+      baseURL: 'https://openrouter.ai/api/v1',
+      models: { fetch: true },
+      tokenConfig,
+    });
+
+    const params: BaseInitializeParams = {
+      req: {
+        user: { id: 'user-1', email: 'user@example.com' },
+        body: { key: '2099-01-01' },
+        config: {},
+      } as unknown as BaseInitializeParams['req'],
+      endpoint: 'openrouter',
+      model_parameters: { model: 'gpt-4' },
+      db: {
+        getUserKeyValues: jest.fn(),
+      } as unknown as BaseInitializeParams['db'],
+    };
+
+    const result = (await initializeCustom(params)) as { endpointTokenConfig?: unknown };
+
+    expect(fetchModels).not.toHaveBeenCalled();
+    expect(result.endpointTokenConfig).toEqual(tokenConfig);
+  });
 });
