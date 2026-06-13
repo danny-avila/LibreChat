@@ -1,4 +1,4 @@
-<!-- Last synced with README.md: 2026-03-28 (cae3888) -->
+<!-- Last synced with README.md: 2026-06-13 -->
 
 <p align="center">
   <a href="https://librechat.ai">
@@ -217,6 +217,15 @@ LibreChat 是一个自托管的 AI 对话平台，在一个注重隐私的统一
 ---
 
 ## 🎉 特别鸣谢
+
+感谢 [Locize](https://locize.com) 提供的翻译管理工具，支持 LibreChat 的多语言功能。
+
+<p align="center">
+  <a href="https://locize.com" target="_blank" rel="noopener noreferrer">
+    <img src="https://github.com/user-attachments/assets/d6b70894-6064-475e-bb65-92a9e23e0077" alt="Locize Logo" height="50">
+  </a>
+</p>
+🎉 特别鸣谢
 
 感谢 [Locize](https://locize.com) 提供的翻译管理工具，支持 LibreChat 的多语言功能。
 
