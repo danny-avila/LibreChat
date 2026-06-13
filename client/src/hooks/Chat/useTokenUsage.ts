@@ -11,9 +11,10 @@ import {
   usageTotalsFamily,
   branchTotalsFamily,
   contextSnapshotFamily,
+  snapshotsByAnchorFamily,
 } from '~/store/usage';
+import { buildIndex, sumBranch, clearIndex, findBranchSnapshotAnchor } from '~/utils';
 import { useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
-import { buildIndex, sumBranch, clearIndex } from '~/utils';
 import useTokenLimits from './useTokenLimits';
 
 export interface TokenUsageParams {
@@ -53,6 +54,7 @@ export default function useTokenUsage({
 
   const tailId = useLatestMessageId(index);
   const snapshot = useAtomValue(contextSnapshotFamily(conversationKey));
+  const snapshotsByAnchor = useAtomValue(snapshotsByAnchorFamily(conversationKey));
   const usageTotals = useAtomValue(usageTotalsFamily(conversationKey));
   const branchTotals = useAtomValue(branchTotalsFamily(conversationKey));
   const liveTokens = useAtomValue(liveTokensFamily(conversationKey));
@@ -120,32 +122,49 @@ export default function useTokenUsage({
   }, [conversationKey, tailId, anchorId, setBranchTotals]);
 
   return useMemo(() => {
-    /** The granular snapshot is for one specific generation. Show it only
-     *  while actively streaming, or when its (response-message) anchor is on
-     *  the viewed branch. A null-anchor snapshot must NOT match every branch —
-     *  that leaked one branch's breakdown onto its siblings. */
-    const snapshotActive =
+    /** The granular snapshot is for one specific generation. Show the live one
+     *  while streaming, or when its (response-message) anchor is on the viewed
+     *  branch. A null-anchor snapshot must NOT match every branch — that leaked
+     *  one branch's breakdown onto its siblings. */
+    const currentActive =
       snapshot != null &&
       (isSubmitting || (snapshot.anchorMessageId != null && branchTotals.containsAnchor));
 
-    if (snapshotActive && snapshot) {
-      const breakdown = snapshot.breakdown;
-      const maxTokens = snapshot.contextBudget ?? breakdown.maxContextTokens;
-      const instructionTokens = snapshot.effectiveInstructionTokens ?? breakdown.instructionTokens;
+    /** When the live snapshot belongs to another branch, recover this branch's
+     *  own finalized snapshot (if it was generated this session) by walking the
+     *  branch for its deepest stored anchor — keeps the granular rows on switch
+     *  instead of dropping to coarse totals. */
+    let activeSnapshot: ContextSnapshot | null = currentActive ? snapshot : null;
+    if (activeSnapshot == null && !isSubmitting && snapshotsByAnchor.size > 0) {
+      const anchor = findBranchSnapshotAnchor(
+        conversationKey,
+        branchTotals.tailId,
+        snapshotsByAnchor,
+      );
+      activeSnapshot = anchor != null ? (snapshotsByAnchor.get(anchor) ?? null) : null;
+    }
+
+    if (activeSnapshot != null) {
+      const breakdown = activeSnapshot.breakdown;
+      const maxTokens = activeSnapshot.contextBudget ?? breakdown.maxContextTokens;
+      const instructionTokens =
+        activeSnapshot.effectiveInstructionTokens ?? breakdown.instructionTokens;
       const baseUsed =
-        snapshot.remainingContextTokens != null
-          ? maxTokens - snapshot.remainingContextTokens
+        activeSnapshot.remainingContextTokens != null
+          ? maxTokens - activeSnapshot.remainingContextTokens
           : instructionTokens + breakdown.messageTokens;
-      /** The snapshot is pre-invoke: in-flight output rides on `liveTokens`,
-       *  and the last call's finalized output on `completedOutputTokens` */
-      const usedTokens = Math.max(0, baseUsed) + liveTokens + (snapshot.completedOutputTokens ?? 0);
+      /** The snapshot is pre-invoke: in-flight output rides on `liveTokens`
+       *  (0 unless streaming this branch), the last call's finalized output on
+       *  `completedOutputTokens`. */
+      const usedTokens =
+        Math.max(0, baseUsed) + liveTokens + (activeSnapshot.completedOutputTokens ?? 0);
       return {
         usedTokens,
         maxTokens,
         percent: maxTokens > 0 ? Math.min((usedTokens / maxTokens) * 100, 100) : 0,
         isEstimate: false,
-        snapshot,
-        snapshotActive,
+        snapshot: activeSnapshot,
+        snapshotActive: true,
         branchTotals,
         usageTotals,
         liveTokens,
@@ -162,7 +181,7 @@ export default function useTokenUsage({
       percent:
         maxTokens != null && maxTokens > 0 ? Math.min((usedTokens / maxTokens) * 100, 100) : 0,
       isEstimate: true,
-      snapshot,
+      snapshot: null,
       snapshotActive: false,
       branchTotals,
       usageTotals,
@@ -170,5 +189,15 @@ export default function useTokenUsage({
       rates: limits.rates,
       costUSD,
     };
-  }, [snapshot, isSubmitting, branchTotals, usageTotals, liveTokens, limits, costUSD]);
+  }, [
+    snapshot,
+    isSubmitting,
+    branchTotals,
+    usageTotals,
+    liveTokens,
+    limits,
+    costUSD,
+    snapshotsByAnchor,
+    conversationKey,
+  ]);
 }

@@ -7,6 +7,7 @@ import {
   clearIndex,
   hasIndex,
   sumBranch,
+  findBranchSnapshotAnchor,
   estimateTokens,
   normalizeUsageUnits,
   formatCost,
@@ -102,6 +103,35 @@ describe('token index', () => {
 
     expect(hasIndex(Constants.NEW_CONVO)).toBe(false);
     expect(sumBranch('convo-2', 'u1').input).toBe(10);
+  });
+});
+
+describe('findBranchSnapshotAnchor', () => {
+  afterEach(() => clearIndex(CONVO));
+
+  it('returns the deepest stored anchor on the viewed branch', () => {
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 10),
+      msg('a1', 'u1', false, 20),
+      msg('u2', 'a1', true, 30),
+      msg('a2', 'u2', false, 40),
+      msg('a2-alt', 'u2', false, 50),
+    ]);
+    /** Both a1 and a2 stored; walking from a2 must return the nearer one (a2). */
+    const anchors = new Map([
+      ['a1', 1],
+      ['a2', 1],
+    ]);
+    expect(findBranchSnapshotAnchor(CONVO, 'a2', anchors)).toBe('a2');
+    /** From the sibling branch tail, the only on-branch anchor is a1. */
+    expect(findBranchSnapshotAnchor(CONVO, 'a2-alt', anchors)).toBe('a1');
+  });
+
+  it('returns null when no stored anchor sits on the branch', () => {
+    buildIndex(CONVO, [msg('u1', Constants.NO_PARENT, true, 10), msg('a1', 'u1', false, 20)]);
+    expect(findBranchSnapshotAnchor(CONVO, 'a1', new Map([['other', 1]]))).toBeNull();
+    expect(findBranchSnapshotAnchor(CONVO, 'a1', new Map())).toBeNull();
+    expect(findBranchSnapshotAnchor('unknown', 'a1', new Map([['a1', 1]]))).toBeNull();
   });
 });
 

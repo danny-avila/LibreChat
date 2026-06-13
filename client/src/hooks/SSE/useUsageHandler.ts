@@ -7,6 +7,7 @@ import type {
   TTokenUsageEvent,
   TContextUsageEvent,
 } from 'librechat-data-provider';
+import type { ContextSnapshot } from '~/store/usage';
 import {
   markUsageFolded,
   liveTokensFamily,
@@ -16,6 +17,7 @@ import {
   branchTotalsFamily,
   migrateUsageFolded,
   contextSnapshotFamily,
+  snapshotsByAnchorFamily,
 } from '~/store/usage';
 import {
   sumBranch,
@@ -243,6 +245,7 @@ export default function useUsageHandler(): UsageHandlers {
         migrateIndex(fromKey, realId);
         migrateUsageFolded(fromKey, realId);
         jotai.set(contextSnapshotFamily(realId), jotai.get(contextSnapshotFamily(fromKey)));
+        jotai.set(snapshotsByAnchorFamily(realId), jotai.get(snapshotsByAnchorFamily(fromKey)));
         jotai.set(usageTotalsFamily(realId), jotai.get(usageTotalsFamily(fromKey)));
         jotai.set(calibrationFamily(realId), jotai.get(calibrationFamily(fromKey)));
         removeUsageAtoms(fromKey);
@@ -268,11 +271,21 @@ export default function useUsageHandler(): UsageHandlers {
        *  totals instead of showing this generation's snapshot. Also carry the
        *  output streamed since the pre-invoke snapshot, kept after live resets. */
       if (snapshot != null && snapshot.anchorMessageId === userMsgId) {
-        jotai.set(snapshotAtom, {
+        const finalized: ContextSnapshot = {
           ...snapshot,
           anchorMessageId: responseId ?? snapshot.anchorMessageId,
           ...(liveAtFinalize > 0 && { completedOutputTokens: liveAtFinalize }),
-        });
+        };
+        jotai.set(snapshotAtom, finalized);
+        /** Retain this generation's breakdown keyed by the branch-unique
+         *  response id so a later run on a sibling branch (which overwrites the
+         *  live snapshot) doesn't strip this branch's granular rows. */
+        if (responseId != null) {
+          const historyAtom = snapshotsByAnchorFamily(realId);
+          const next = new Map(jotai.get(historyAtom));
+          next.set(responseId, finalized);
+          jotai.set(historyAtom, next);
+        }
       }
 
       streamCharsRef.current = 0;

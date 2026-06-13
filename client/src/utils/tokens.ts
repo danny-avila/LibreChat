@@ -130,6 +130,39 @@ export function sumBranch(
   return { ...totals, tailId };
 }
 
+/**
+ * Walks the branch tail up the parent chain and returns the first message id
+ * present in `anchors` — i.e. the deepest (most recent) stored snapshot anchor
+ * on the viewed branch. Used to recover a branch's granular breakdown after a
+ * later generation on a sibling branch overwrote the live snapshot.
+ */
+export function findBranchSnapshotAnchor(
+  conversationId: string,
+  tailId: string | null | undefined,
+  anchors: ReadonlyMap<string, unknown>,
+): string | null {
+  const index = registry.get(conversationId);
+  if (!index || !tailId || anchors.size === 0) {
+    return null;
+  }
+
+  let currentId: string | null = tailId;
+  let guard = index.size;
+
+  while (currentId && currentId !== Constants.NO_PARENT && guard-- > 0) {
+    if (anchors.has(currentId)) {
+      return currentId;
+    }
+    const entry: TokenEntry | undefined = index.get(currentId);
+    if (!entry) {
+      break;
+    }
+    currentId = entry.parentMessageId;
+  }
+
+  return null;
+}
+
 export interface ToolTokenGroups {
   system: number;
   mcp: number;

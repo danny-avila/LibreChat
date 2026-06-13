@@ -44,6 +44,17 @@ export const contextSnapshotFamily = atomFamily((_conversationId: string) =>
   atom<ContextSnapshot | null>(null),
 );
 
+/**
+ * Finalized snapshots keyed by their (branch-unique) response message id.
+ * `contextSnapshotFamily` only holds the latest run; this retains each
+ * generation's breakdown so switching to a branch generated earlier this
+ * session keeps its granular rows instead of dropping to coarse totals.
+ * Bounded by the conversation's generation count; cleared on convo switch.
+ */
+export const snapshotsByAnchorFamily = atomFamily((_conversationId: string) =>
+  atom<Map<string, ContextSnapshot>>(new Map()),
+);
+
 export const usageTotalsFamily = atomFamily((_conversationId: string) =>
   atom<UsageTotals>(EMPTY_USAGE_TOTALS),
 );
@@ -94,6 +105,7 @@ export function migrateUsageFolded(fromId: string, toId: string): void {
 export function removeUsageAtoms(conversationId: string): void {
   branchTotalsFamily.remove(conversationId);
   contextSnapshotFamily.remove(conversationId);
+  snapshotsByAnchorFamily.remove(conversationId);
   usageTotalsFamily.remove(conversationId);
   liveTokensFamily.remove(conversationId);
   calibrationFamily.remove(conversationId);
