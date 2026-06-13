@@ -1,9 +1,11 @@
 const { SystemRoles } = require('librechat-data-provider');
 
-// --- Capture the verify callback from JwtStrategy ---
+// --- Capture JwtStrategy inputs ---
+let capturedStrategyOptions;
 let capturedVerifyCallback;
 jest.mock('passport-jwt', () => ({
-  Strategy: jest.fn((_opts, verifyCallback) => {
+  Strategy: jest.fn((opts, verifyCallback) => {
+    capturedStrategyOptions = opts;
     capturedVerifyCallback = verifyCallback;
     return { name: 'jwt' };
   }),
@@ -23,20 +25,59 @@ jest.mock('@librechat/data-schemas', () => ({
 jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn(() => false),
   findOpenIDUser: jest.fn(),
+  getOpenIdEmail: jest.requireActual('@librechat/api').getOpenIdEmail,
+  getOpenIdIssuer: jest.fn(() => 'https://issuer.example.com'),
+  normalizeOpenIdIssuer: jest.requireActual('@librechat/api').normalizeOpenIdIssuer,
   math: jest.fn((val, fallback) => fallback),
 }));
 jest.mock('~/models', () => ({
   findUser: jest.fn(),
   updateUser: jest.fn(),
 }));
+jest.mock('~/server/services/Files/strategies', () => ({
+  getStrategyFunctions: jest.fn(() => ({
+    saveBuffer: jest.fn().mockResolvedValue('/fake/path/to/avatar.png'),
+  })),
+}));
+jest.mock('~/server/services/Config', () => ({
+  getAppConfig: jest.fn().mockResolvedValue({}),
+}));
+jest.mock('~/cache/getLogStores', () =>
+  jest.fn().mockReturnValue({ get: jest.fn(), set: jest.fn() }),
+);
 
 const { findOpenIDUser } = require('@librechat/api');
-const { updateUser } = require('~/models');
 const openIdJwtLogin = require('./openIdJwtStrategy');
+const { findUser, updateUser } = require('~/models');
+
+function withEnv(env, callback) {
+  const previous = Object.fromEntries(Object.keys(env).map((key) => [key, process.env[key]]));
+  Object.entries(env).forEach(([key, value]) => {
+    if (value === undefined) {
+      delete process.env[key];
+      return;
+    }
+    process.env[key] = value;
+  });
+  try {
+    callback();
+  } finally {
+    Object.entries(previous).forEach(([key, value]) => {
+      if (value === undefined) {
+        delete process.env[key];
+        return;
+      }
+      process.env[key] = value;
+    });
+  }
+}
 
 // Helper: build a mock openIdConfig
 const mockOpenIdConfig = {
-  serverMetadata: () => ({ jwks_uri: 'https://example.com/.well-known/jwks.json' }),
+  serverMetadata: () => ({
+    issuer: 'https://issuer.example.com',
+    jwks_uri: 'https://example.com/.well-known/jwks.json',
+  }),
 };
 
 // Helper: invoke the captured verify callback
@@ -51,6 +92,125 @@ async function invokeVerify(req, payload) {
   });
 }
 
+describe('openIdJwtStrategy – token validation', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('requires OpenID JWTs to match the configured client audience and issuer', () => {
+    withEnv({ OPENID_CLIENT_ID: 'librechat-client-id', OPENID_AUDIENCE: undefined }, () => {
+      openIdJwtLogin(mockOpenIdConfig);
+    });
+
+    expect(capturedStrategyOptions).toMatchObject({
+      audience: 'librechat-client-id',
+      passReqToCallback: true,
+    });
+    expect(capturedStrategyOptions).not.toHaveProperty('issuer');
+  });
+
+  it('also accepts OPENID_AUDIENCE for providers that mint resource-bound JWTs', () => {
+    withEnv({ OPENID_CLIENT_ID: 'librechat-client-id', OPENID_AUDIENCE: 'api://librechat' }, () => {
+      openIdJwtLogin(mockOpenIdConfig);
+    });
+
+    expect(capturedStrategyOptions).toMatchObject({
+      audience: ['librechat-client-id', 'api://librechat'],
+    });
+  });
+
+  it('uses a single OPENID_AUDIENCE value when no client ID is configured', () => {
+    withEnv({ OPENID_CLIENT_ID: undefined, OPENID_AUDIENCE: 'librechat' }, () => {
+      openIdJwtLogin(mockOpenIdConfig);
+    });
+
+    expect(capturedStrategyOptions.audience).toBe('librechat');
+  });
+
+  it('splits comma-separated OPENID_AUDIENCE values into multiple accepted audiences', () => {
+    withEnv({ OPENID_CLIENT_ID: undefined, OPENID_AUDIENCE: 'librechat,control-plane-web' }, () => {
+      openIdJwtLogin(mockOpenIdConfig);
+    });
+
+    expect(capturedStrategyOptions.audience).toEqual(['librechat', 'control-plane-web']);
+  });
+
+  it('trims whitespace around comma-separated OPENID_AUDIENCE values', () => {
+    withEnv(
+      { OPENID_CLIENT_ID: undefined, OPENID_AUDIENCE: ' librechat , control-plane-web ' },
+      () => {
+        openIdJwtLogin(mockOpenIdConfig);
+      },
+    );
+
+    expect(capturedStrategyOptions.audience).toEqual(['librechat', 'control-plane-web']);
+  });
+
+  it('falls back to OPENID_CLIENT_ID when OPENID_AUDIENCE is empty', () => {
+    withEnv({ OPENID_CLIENT_ID: 'client-id-only', OPENID_AUDIENCE: '' }, () => {
+      openIdJwtLogin(mockOpenIdConfig);
+    });
+
+    expect(capturedStrategyOptions.audience).toBe('client-id-only');
+  });
+
+  it('combines OPENID_CLIENT_ID with comma-separated OPENID_AUDIENCE values and deduplicates', () => {
+    withEnv(
+      { OPENID_CLIENT_ID: 'librechat', OPENID_AUDIENCE: 'librechat,control-plane-web' },
+      () => {
+        openIdJwtLogin(mockOpenIdConfig);
+      },
+    );
+
+    expect(capturedStrategyOptions.audience).toEqual(['librechat', 'control-plane-web']);
+  });
+
+  it('rejects OpenID JWTs whose issuer does not match the configured issuer', async () => {
+    findOpenIDUser.mockResolvedValue({ user: null, error: null, migration: false });
+    openIdJwtLogin(mockOpenIdConfig);
+
+    const req = { headers: { authorization: 'Bearer tok' }, session: {} };
+    const { user, info } = await invokeVerify(req, {
+      sub: 'oidc-123',
+      email: 'test@example.com',
+      iss: 'https://other-issuer.example.com',
+      exp: 9999999999,
+    });
+
+    expect(user).toBe(false);
+    expect(info).toEqual({ message: 'Invalid issuer' });
+    expect(findOpenIDUser).not.toHaveBeenCalled();
+  });
+
+  it('allows Microsoft Entra tenant issuer values for tenant-independent metadata', async () => {
+    const entraConfig = {
+      serverMetadata: () => ({
+        issuer: 'https://login.microsoftonline.com/{tenantid}/v2.0',
+        jwks_uri: 'https://login.microsoftonline.com/common/discovery/v2.0/keys',
+      }),
+    };
+    const user = {
+      _id: { toString: () => 'user-abc' },
+      role: SystemRoles.USER,
+      provider: 'openid',
+    };
+    findOpenIDUser.mockResolvedValue({ user, error: null, migration: false });
+    updateUser.mockResolvedValue({});
+    openIdJwtLogin(entraConfig);
+
+    const req = { headers: { authorization: 'Bearer tok' }, session: {} };
+    const { user: result } = await invokeVerify(req, {
+      sub: 'oidc-123',
+      email: 'test@example.com',
+      iss: 'https://login.microsoftonline.com/11111111-2222-3333-4444-555555555555/v2.0',
+      exp: 9999999999,
+    });
+
+    expect(result).toBeTruthy();
+    expect(findOpenIDUser).toHaveBeenCalled();
+  });
+});
+
 describe('openIdJwtStrategy – token source handling', () => {
   const baseUser = {
     _id: { toString: () => 'user-abc' },
@@ -58,7 +218,12 @@ describe('openIdJwtStrategy – token source handling', () => {
     provider: 'openid',
   };
 
-  const payload = { sub: 'oidc-123', email: 'test@example.com', exp: 9999999999 };
+  const payload = {
+    sub: 'oidc-123',
+    email: 'test@example.com',
+    iss: 'https://issuer.example.com',
+    exp: 9999999999,
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -179,5 +344,193 @@ describe('openIdJwtStrategy – token source handling', () => {
     expect(user.federatedTokens.access_token).toBe('the-access-token');
     expect(user.federatedTokens.id_token).toBe('the-id-token');
     expect(user.federatedTokens.access_token).not.toBe(user.federatedTokens.id_token);
+  });
+});
+
+describe('openIdJwtStrategy – OPENID_EMAIL_CLAIM', () => {
+  const payload = {
+    sub: 'oidc-123',
+    email: 'test@example.com',
+    preferred_username: 'testuser',
+    upn: 'test@corp.example.com',
+    iss: 'https://issuer.example.com',
+    exp: 9999999999,
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    delete process.env.OPENID_EMAIL_CLAIM;
+
+    // Use real findOpenIDUser so it delegates to the findUser mock
+    const realFindOpenIDUser = jest.requireActual('@librechat/api').findOpenIDUser;
+    findOpenIDUser.mockImplementation(realFindOpenIDUser);
+
+    findUser.mockResolvedValue(null);
+    updateUser.mockResolvedValue({});
+
+    openIdJwtLogin(mockOpenIdConfig);
+  });
+
+  afterEach(() => {
+    delete process.env.OPENID_EMAIL_CLAIM;
+  });
+
+  it('should use the default email when OPENID_EMAIL_CLAIM is not set', async () => {
+    const existingUser = {
+      _id: 'user-id-1',
+      provider: 'openid',
+      openidId: payload.sub,
+      openidIssuer: 'https://issuer.example.com',
+      email: payload.email,
+      role: SystemRoles.USER,
+    };
+    findUser.mockImplementation(async (query) => {
+      if (query.openidId === payload.sub && query.openidIssuer === 'https://issuer.example.com') {
+        return existingUser;
+      }
+      return null;
+    });
+
+    const req = { headers: { authorization: 'Bearer tok' }, session: {} };
+    await invokeVerify(req, payload);
+
+    expect(findUser).toHaveBeenCalledWith({
+      openidId: payload.sub,
+      openidIssuer: 'https://issuer.example.com',
+    });
+  });
+
+  it('should use OPENID_EMAIL_CLAIM when set for email lookup', async () => {
+    process.env.OPENID_EMAIL_CLAIM = 'upn';
+    findUser.mockResolvedValue(null);
+
+    const req = { headers: { authorization: 'Bearer tok' }, session: {} };
+    const { user } = await invokeVerify(req, payload);
+
+    expect(findUser).toHaveBeenCalledTimes(2);
+    expect(findUser.mock.calls[0][0]).toEqual({
+      openidId: payload.sub,
+      openidIssuer: 'https://issuer.example.com',
+    });
+    expect(findUser.mock.calls[1][0]).toEqual({
+      email: 'test@corp.example.com',
+    });
+    expect(user).toBe(false);
+  });
+
+  it('should fall back to default chain when OPENID_EMAIL_CLAIM points to missing claim', async () => {
+    process.env.OPENID_EMAIL_CLAIM = 'nonexistent_claim';
+    findUser.mockResolvedValue(null);
+
+    const req = { headers: { authorization: 'Bearer tok' }, session: {} };
+    const { user } = await invokeVerify(req, payload);
+
+    expect(findUser).toHaveBeenCalledWith({ email: payload.email });
+    expect(user).toBe(false);
+  });
+
+  it('should reject login when email fallback finds user with mismatched openidId', async () => {
+    const emailMatchWithDifferentSub = {
+      _id: 'user-id-2',
+      provider: 'openid',
+      openidId: 'different-sub',
+      email: payload.email,
+      role: SystemRoles.USER,
+    };
+
+    findUser.mockImplementation(async (query) => {
+      if (query.$or) {
+        return null;
+      }
+      if (query.email === payload.email) {
+        return emailMatchWithDifferentSub;
+      }
+      return null;
+    });
+
+    const req = { headers: { authorization: 'Bearer tok' }, session: {} };
+    const { user, info } = await invokeVerify(req, payload);
+
+    expect(user).toBe(false);
+    expect(info).toEqual({ message: 'auth_failed' });
+  });
+
+  it('should trim whitespace from OPENID_EMAIL_CLAIM', async () => {
+    process.env.OPENID_EMAIL_CLAIM = '  upn  ';
+    findUser.mockResolvedValue(null);
+
+    const req = { headers: { authorization: 'Bearer tok' }, session: {} };
+    await invokeVerify(req, payload);
+
+    expect(findUser).toHaveBeenCalledWith({ email: 'test@corp.example.com' });
+  });
+
+  it('should ignore empty string OPENID_EMAIL_CLAIM and use default fallback', async () => {
+    process.env.OPENID_EMAIL_CLAIM = '';
+    findUser.mockResolvedValue(null);
+
+    const req = { headers: { authorization: 'Bearer tok' }, session: {} };
+    await invokeVerify(req, payload);
+
+    expect(findUser).toHaveBeenCalledWith({ email: payload.email });
+  });
+
+  it('should ignore whitespace-only OPENID_EMAIL_CLAIM and use default fallback', async () => {
+    process.env.OPENID_EMAIL_CLAIM = '   ';
+    findUser.mockResolvedValue(null);
+
+    const req = { headers: { authorization: 'Bearer tok' }, session: {} };
+    await invokeVerify(req, payload);
+
+    expect(findUser).toHaveBeenCalledWith({ email: payload.email });
+  });
+
+  it('should resolve undefined email when payload is null', async () => {
+    const req = { headers: { authorization: 'Bearer tok' }, session: {} };
+    const { user } = await invokeVerify(req, null);
+
+    expect(user).toBe(false);
+  });
+
+  it('should attempt email lookup via preferred_username fallback when email claim is absent', async () => {
+    const payloadNoEmail = {
+      sub: 'oidc-new-sub',
+      preferred_username: 'legacy@corp.com',
+      upn: 'legacy@corp.com',
+      iss: 'https://issuer.example.com',
+      exp: 9999999999,
+    };
+
+    const legacyUser = {
+      _id: 'legacy-db-id',
+      email: 'legacy@corp.com',
+      openidId: null,
+      role: SystemRoles.USER,
+    };
+
+    findUser.mockImplementation(async (query) => {
+      if (query.$or) {
+        return null;
+      }
+      if (query.email === 'legacy@corp.com') {
+        return legacyUser;
+      }
+      return null;
+    });
+
+    const req = { headers: { authorization: 'Bearer tok' }, session: {} };
+    const { user } = await invokeVerify(req, payloadNoEmail);
+
+    expect(findUser).toHaveBeenCalledTimes(2);
+    expect(findUser.mock.calls[1][0]).toEqual({ email: 'legacy@corp.com' });
+    expect(user).toBeTruthy();
+    expect(updateUser).toHaveBeenCalledWith(
+      'legacy-db-id',
+      expect.objectContaining({
+        provider: 'openid',
+        openidId: payloadNoEmail.sub,
+        openidIssuer: 'https://issuer.example.com',
+      }),
+    );
   });
 });

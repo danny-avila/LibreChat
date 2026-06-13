@@ -3,8 +3,55 @@ import { Tools } from 'librechat-data-provider';
 import type { UIResource } from 'librechat-data-provider';
 import type * as t from './types';
 
+export const DEFAULT_MCP_IMAGE_DATA_MAX_BYTES: number = 10 * 1024 * 1024;
+
 function generateResourceId(text: string): string {
   return crypto.createHash('sha256').update(text).digest('hex').substring(0, 10);
+}
+
+function getMCPImageDataMaxBytes(): number {
+  const raw = process.env.MCP_IMAGE_DATA_MAX_BYTES;
+  if (!raw) {
+    return DEFAULT_MCP_IMAGE_DATA_MAX_BYTES;
+  }
+
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : DEFAULT_MCP_IMAGE_DATA_MAX_BYTES;
+}
+
+function getBase64Padding(data: string): number {
+  if (data.endsWith('==')) {
+    return 2;
+  }
+  if (data.endsWith('=')) {
+    return 1;
+  }
+  return 0;
+}
+
+function estimateBase64ImageBytes(data: string): number {
+  const padding = getBase64Padding(data);
+  return Math.max(0, Math.floor((data.length * 3) / 4) - padding);
+}
+
+function isRemoteImageUrl(data: string): boolean {
+  return data.startsWith('http://') || data.startsWith('https://');
+}
+
+function assertImageDataWithinLimit(item: t.ImageContent): void {
+  if (isRemoteImageUrl(item.data)) {
+    return;
+  }
+
+  const maxBytes = getMCPImageDataMaxBytes();
+  const estimatedBytes = estimateBase64ImageBytes(item.data);
+  if (estimatedBytes <= maxBytes) {
+    return;
+  }
+
+  throw new Error(
+    `MCP image result exceeds maximum size of ${maxBytes} bytes: ${estimatedBytes} bytes`,
+  );
 }
 
 const RECOGNIZED_PROVIDERS = new Set([
@@ -18,7 +65,6 @@ const RECOGNIZED_PROVIDERS = new Set([
   'ollama',
   'bedrock',
 ]);
-const CONTENT_ARRAY_PROVIDERS = new Set(['google', 'anthropic', 'azureopenai', 'openai']);
 
 const imageFormatters: Record<string, undefined | t.ImageFormatter> = {
   // google: (item) => ({
@@ -39,7 +85,7 @@ const imageFormatters: Record<string, undefined | t.ImageFormatter> = {
   default: (item) => ({
     type: 'image_url',
     image_url: {
-      url: item.data.startsWith('http') ? item.data : `data:${item.mimeType};base64,${item.data}`,
+      url: isRemoteImageUrl(item.data) ? item.data : `data:${item.mimeType};base64,${item.data}`,
     },
   }),
 };
@@ -72,6 +118,9 @@ function parseAsString(result: t.MCPToolCallResponse): string {
         }
         return resourceText.join('\n');
       }
+      if (isImageContent(item)) {
+        assertImageDataWithinLimit(item);
+      }
       return JSON.stringify(item, null, 2);
     })
     .filter(Boolean)
@@ -81,13 +130,13 @@ function parseAsString(result: t.MCPToolCallResponse): string {
 }
 
 /**
- * Converts MCPToolCallResponse content into recognized content block types
- * First element: string or formatted content (excluding image_url)
- * Second element: Recognized types - "image", "image_url", "text", "json"
+ * Converts MCPToolCallResponse content into a plain-text string plus optional artifacts
+ * (images, UI resources). All providers receive string content; images are separated into
+ * artifacts and merged back by the agents package via formatArtifactPayload / formatAnthropicArtifactContent.
  *
- * @param  result - The MCPToolCallResponse object
- * @param provider - The provider name (google, anthropic, openai)
- * @returns Tuple of content and image_urls
+ * @param provider - Used only to distinguish recognized vs. unrecognized providers.
+ * All recognized providers currently produce identical string output;
+ * provider-specific artifact merging is delegated to the agents package.
  */
 export function formatToolContent(
   result: t.MCPToolCallResponse,
@@ -99,13 +148,12 @@ export function formatToolContent(
 
   const content = result?.content ?? [];
   if (!content.length) {
-    return [[{ type: 'text', text: '(No response)' }], undefined];
+    return ['(No response)', undefined];
   }
 
-  const formattedContent: t.FormattedContent[] = [];
   const imageUrls: t.FormattedContent[] = [];
-  let currentTextBlock = '';
   const uiResources: UIResource[] = [];
+  let currentTextBlock = '';
 
   type ContentHandler = undefined | ((item: t.ToolContentPart) => void);
 
@@ -122,17 +170,12 @@ export function formatToolContent(
       if (!isImageContent(item)) {
         return;
       }
-      if (CONTENT_ARRAY_PROVIDERS.has(provider) && currentTextBlock) {
-        formattedContent.push({ type: 'text', text: currentTextBlock });
-        currentTextBlock = '';
-      }
+      assertImageDataWithinLimit(item);
       const formatter = imageFormatters.default as t.ImageFormatter;
       const formattedImage = formatter(item);
 
       if (formattedImage.type === 'image_url') {
         imageUrls.push(formattedImage);
-      } else {
-        formattedContent.push(formattedImage);
       }
     },
 
@@ -195,25 +238,17 @@ UI Resource Markers Available:
     currentTextBlock += uiInstructions;
   }
 
-  if (CONTENT_ARRAY_PROVIDERS.has(provider) && currentTextBlock) {
-    formattedContent.push({ type: 'text', text: currentTextBlock });
-  }
-
   let artifacts: t.Artifacts = undefined;
-  if (imageUrls.length) {
+  if (imageUrls.length > 0) {
     artifacts = { content: imageUrls };
   }
 
-  if (uiResources.length) {
+  if (uiResources.length > 0) {
     artifacts = {
       ...artifacts,
       [Tools.ui_resources]: { data: uiResources },
     };
   }
 
-  if (CONTENT_ARRAY_PROVIDERS.has(provider)) {
-    return [formattedContent, artifacts];
-  }
-
-  return [currentTextBlock, artifacts];
+  return [currentTextBlock || (artifacts !== undefined ? '' : '(No response)'), artifacts];
 }

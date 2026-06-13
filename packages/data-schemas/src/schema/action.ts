@@ -16,7 +16,7 @@ const AuthSchema = new Schema(
   { _id: false },
 );
 
-const Action = new Schema<IAction>({
+const Action: mongoose.Schema<IAction> = new Schema<IAction>({
   user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -46,6 +46,10 @@ const Action = new Schema<IAction>({
     raw_spec: String,
     oauth_client_id: String,
     oauth_client_secret: String,
+  },
+  tenantId: {
+    type: String,
+    index: true,
   },
 });
 

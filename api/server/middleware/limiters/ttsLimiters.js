@@ -1,6 +1,6 @@
 const rateLimit = require('express-rate-limit');
-const { limiterCache } = require('@librechat/api');
 const { ViolationTypes } = require('librechat-data-provider');
+const { limiterCache, removePorts } = require('@librechat/api');
 const logViolation = require('~/cache/logViolation');
 
 const getEnvironmentVariables = () => {
@@ -54,6 +54,7 @@ const createTTSLimiters = () => {
     windowMs: ttsIpWindowMs,
     max: ttsIpMax,
     handler: createTTSHandler(),
+    keyGenerator: removePorts,
     store: limiterCache('tts_ip_limiter'),
   };
 
@@ -61,10 +62,10 @@ const createTTSLimiters = () => {
     windowMs: ttsUserWindowMs,
     max: ttsUserMax,
     handler: createTTSHandler(false),
-    store: limiterCache('tts_user_limiter'),
     keyGenerator: function (req) {
-      return req.user?.id; // Use the user ID or NULL if not available
+      return req.user?.id;
     },
+    store: limiterCache('tts_user_limiter'),
   };
 
   const ttsIpLimiter = rateLimit(ipLimiterOptions);

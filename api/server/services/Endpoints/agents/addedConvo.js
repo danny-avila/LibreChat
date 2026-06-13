@@ -1,12 +1,20 @@
 const { logger } = require('@librechat/data-schemas');
-const { initializeAgent, validateAgentModel } = require('@librechat/api');
-const { loadAddedAgent, setGetAgent, ADDED_AGENT_ID } = require('~/models/loadAddedAgent');
-const { getConvoFiles } = require('~/models/Conversation');
-const { getAgent } = require('~/models/Agent');
+const {
+  ADDED_AGENT_ID,
+  initializeAgent,
+  validateAgentModel,
+  resolveAgentScopedSkillIds,
+  resolveModelSpecSkillIds,
+  loadAddedAgent: loadAddedAgentFn,
+} = require('@librechat/api');
+const { isEphemeralAgentId } = require('librechat-data-provider');
+const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
+const { getMCPServerTools } = require('~/server/services/Config');
+const { canAuthorSkillFiles } = require('./skillDeps');
 const db = require('~/models');
 
-// Initialize the getAgent dependency
-setGetAgent(getAgent);
+const loadAddedAgent = (params) =>
+  loadAddedAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
 
 /**
  * Process addedConvo for parallel agent execution.
@@ -36,6 +44,16 @@ setGetAgent(getAgent);
  * @param {Map} params.agentConfigs - Map of agent configs to add to
  * @param {string} params.primaryAgentId - The primary agent ID
  * @param {Object|undefined} params.userMCPAuthMap - User MCP auth map to merge into
+ * @param {Array} [params.accessibleSkillIds] - Full VIEW-accessible skill IDs for the user
+ * @param {Array} [params.editableSkillIds] - Full EDIT-accessible skill IDs for the user
+ * @param {boolean} [params.skillsCapabilityEnabled] - Whether endpoint Skills are enabled
+ * @param {boolean} [params.ephemeralSkillsToggle] - Per-request ephemeral Skills badge state
+ * @param {boolean} [params.skillCreateAllowed] - Whether the user can create Skills
+ * @param {Record<string, boolean>} [params.skillStates] - Per-user Skill active overrides
+ * @param {boolean} [params.defaultActiveOnShare] - Default active state for shared Skills
+ * @param {boolean} [params.codeEnvAvailable] - `execute_code` capability flag;
+ *   forwarded verbatim to the added agent's `initializeAgent`. @see
+ *   InitializeAgentParams.codeEnvAvailable for full semantics.
  * @returns {Promise<{userMCPAuthMap: Object|undefined}>} The updated userMCPAuthMap
  */
 const processAddedConvo = async ({
@@ -53,17 +71,25 @@ const processAddedConvo = async ({
   primaryAgentId,
   primaryAgent,
   userMCPAuthMap,
+  accessibleSkillIds = [],
+  editableSkillIds = [],
+  skillsCapabilityEnabled = false,
+  ephemeralSkillsToggle = false,
+  skillCreateAllowed = false,
+  skillStates,
+  defaultActiveOnShare,
+  codeEnvAvailable,
 }) => {
   const addedConvo = endpointOption.addedConvo;
-  logger.debug('[processAddedConvo] Called with addedConvo:', {
-    hasAddedConvo: addedConvo != null,
-    addedConvoEndpoint: addedConvo?.endpoint,
-    addedConvoModel: addedConvo?.model,
-    addedConvoAgentId: addedConvo?.agent_id,
-  });
   if (addedConvo == null) {
     return { userMCPAuthMap };
   }
+
+  logger.debug('[processAddedConvo] Processing added conversation', {
+    model: addedConvo.model,
+    agentId: addedConvo.agent_id,
+    endpoint: addedConvo.endpoint,
+  });
 
   try {
     const addedAgent = await loadAddedAgent({ req, conversation: addedConvo, primaryAgent });
@@ -86,6 +112,47 @@ const processAddedConvo = async ({
       return { userMCPAuthMap };
     }
 
+    const selectedModelSpec =
+      addedConvo.spec && Array.isArray(req.config?.modelSpecs?.list)
+        ? req.config.modelSpecs.list.find((modelSpec) => modelSpec.name === addedConvo.spec)
+        : null;
+
+    if (
+      addedAgent &&
+      isEphemeralAgentId(addedAgent.id) &&
+      selectedModelSpec &&
+      Object.hasOwn(selectedModelSpec, 'skills')
+    ) {
+      if (selectedModelSpec.skills === true) {
+        addedAgent.skills_enabled = true;
+        delete addedAgent.skills;
+      } else if (selectedModelSpec.skills === false) {
+        addedAgent.skills_enabled = false;
+        addedAgent.skills = [];
+      } else if (Array.isArray(selectedModelSpec.skills)) {
+        const resolvedSkillIds = await resolveModelSpecSkillIds({
+          names: selectedModelSpec.skills,
+          accessibleSkillIds,
+          getSkillByName: db.getSkillByName,
+        });
+        addedAgent.skills_enabled = true;
+        addedAgent.skills = resolvedSkillIds.map((id) => id.toString());
+      }
+    }
+
+    const scopedSkillIds = resolveAgentScopedSkillIds({
+      agent: addedAgent,
+      accessibleSkillIds,
+      skillsCapabilityEnabled,
+      ephemeralSkillsToggle,
+    });
+    const scopedEditableSkillIds = resolveAgentScopedSkillIds({
+      agent: addedAgent,
+      accessibleSkillIds: editableSkillIds,
+      skillsCapabilityEnabled,
+      ephemeralSkillsToggle,
+    });
+
     const addedConfig = await initializeAgent(
       {
         req,
@@ -97,17 +164,32 @@ const processAddedConvo = async ({
         agent: addedAgent,
         endpointOption,
         allowedProviders,
+        accessibleSkillIds: scopedSkillIds,
+        skillAuthoringAvailable: canAuthorSkillFiles({
+          agent: addedAgent,
+          scopedEditableSkillIds,
+          skillCreateAllowed,
+          skillsCapabilityEnabled,
+          ephemeralSkillsToggle,
+        }),
+        codeEnvAvailable,
+        skillStates,
+        defaultActiveOnShare,
       },
       {
-        getConvoFiles,
         getFiles: db.getFiles,
         getUserKey: db.getUserKey,
         getMessages: db.getMessages,
+        getConvoFiles: db.getConvoFiles,
         updateFilesUsage: db.updateFilesUsage,
         getUserCodeFiles: db.getUserCodeFiles,
         getUserKeyValues: db.getUserKeyValues,
         getToolFilesByIds: db.getToolFilesByIds,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
+        filterFilesByAgentAccess,
+        listSkillsByAccess: db.listSkillsByAccess,
+        listAlwaysApplySkills: db.listAlwaysApplySkills,
+        getSkillByName: db.getSkillByName,
       },
     );
 

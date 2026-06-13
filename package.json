@@ -1,8 +1,8 @@
 {
   "name": "LibreChat",
-  "version": "v0.8.3-rc1",
+  "version": "v0.8.6",
   "description": "",
-  "packageManager": "npm@11.10.0",
+  "packageManager": "npm@11.13.0",
   "workspaces": [
     "api",
     "client",
@@ -38,7 +38,7 @@
     "update-banner": "node config/update-banner.js",
     "delete-banner": "node config/delete-banner.js",
     "backend": "cross-env NODE_ENV=production node api/server/index.js",
-    "backend:inspect": "cross-env NODE_ENV=production node --inspect api/server/index.js",
+    "backend:inspect": "cross-env NODE_ENV=production node --inspect --expose-gc api/server/index.js",
     "backend:dev": "cross-env NODE_ENV=development npx nodemon api/server/index.js",
     "backend:experimental": "cross-env NODE_ENV=production node api/server/experimental.js",
     "backend:stop": "node config/stop-backend.js",
@@ -48,27 +48,37 @@
     "build:client": "cd client && npm run build",
     "build:client-package": "cd packages/client && npm run build",
     "build:packages": "npm run build:data-provider && npm run build:data-schemas && npm run build:api && npm run build:client-package",
+    "build": "npx turbo run build",
+    "build:safe": "npx turbo run build --no-daemon",
     "frontend": "npm run build:data-provider && npm run build:data-schemas && npm run build:api && npm run build:client-package && cd client && npm run build",
     "frontend:ci": "npm run build:data-provider && npm run build:client-package && cd client && npm run build:ci",
     "frontend:dev": "cd client && npm run dev",
-    "e2e": "playwright test --config=e2e/playwright.config.local.ts",
-    "e2e:headed": "playwright test --config=e2e/playwright.config.local.ts --headed",
-    "e2e:a11y": "playwright test --config=e2e/playwright.config.a11y.ts --headed",
-    "e2e:ci": "playwright test --config=e2e/playwright.config.ts",
-    "e2e:debug": "cross-env PWDEBUG=1 playwright test --config=e2e/playwright.config.local.ts",
-    "e2e:codegen": "npx playwright codegen --load-storage=e2e/storageState.json http://localhost:3080/c/new",
-    "e2e:login": "npx playwright codegen --save-storage=e2e/auth.json http://localhost:3080/login",
+    "e2e:prepare": "npm run frontend",
+    "e2e": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.local.ts",
+    "e2e:headed": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.local.ts --headed",
+    "e2e:a11y": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.a11y.ts --headed",
+    "e2e:ci": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.ts",
+    "e2e:mock": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.mock.ts",
+    "e2e:mock:ci": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.mock.ts",
+    "e2e:debug": "npm run e2e:prepare && cross-env PWDEBUG=1 playwright test --config=e2e/playwright.config.local.ts",
+    "e2e:record": "npm run e2e:prepare && cross-env E2E_BASE_URL=http://localhost:3333 node e2e/setup/record.js",
+    "e2e:record:local": "npm run e2e:prepare && node e2e/setup/record.js --profile=local",
+    "e2e:codegen": "npx playwright codegen --target=playwright-test --test-id-attribute=data-testid --load-storage=e2e/storageState.json http://localhost:3080/c/new",
+    "e2e:login": "npx playwright codegen --save-storage=e2e/storageState.json http://localhost:3080/login",
     "e2e:github": "act -W .github/workflows/playwright.yml --secret-file my.secrets",
     "test:client": "cd client && npm run test:ci",
     "test:api": "cd api && npm run test:ci",
     "test:packages:api": "cd packages/api && npm run test:ci",
     "test:packages:data-provider": "cd packages/data-provider && npm run test:ci",
     "test:packages:data-schemas": "cd packages/data-schemas && npm run test:ci",
+    "test:config": "jest --config config/jest.config.js",
     "test:all": "npm run test:client && npm run test:api && npm run test:packages:api && npm run test:packages:data-provider && npm run test:packages:data-schemas",
-    "e2e:update": "playwright test --config=e2e/playwright.config.js --update-snapshots",
+    "e2e:update": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.local.ts --update-snapshots",
     "e2e:report": "npx playwright show-report e2e/playwright-report",
     "lint:fix": "eslint --fix \"{,!(node_modules|venv)/**/}*.{js,jsx,ts,tsx}\"",
     "lint": "eslint \"{,!(node_modules|venv)/**/}*.{js,jsx,ts,tsx}\"",
+    "sort-imports": "node scripts/sort-imports.mts",
+    "sort-imports:check": "node scripts/sort-imports.mts --check",
     "format": "npx prettier --write \"{,!(node_modules|venv)/**/}*.{js,jsx,ts,tsx}\"",
     "b:api": "NODE_ENV=production bun run api/server/index.js",
     "b:api-inspect": "NODE_ENV=production bun --inspect run api/server/index.js",
@@ -91,7 +101,13 @@
     "migrate:agent-permissions:batch": "node config/migrate-agent-permissions.js --batch-size=50",
     "migrate:prompt-permissions:dry-run": "node config/migrate-prompt-permissions.js --dry-run",
     "migrate:prompt-permissions": "node config/migrate-prompt-permissions.js",
-    "migrate:prompt-permissions:batch": "node config/migrate-prompt-permissions.js --batch-size=50"
+    "migrate:prompt-permissions:batch": "node config/migrate-prompt-permissions.js --batch-size=50",
+    "migrate:shared-link-permissions:dry-run": "node config/migrate-shared-link-permissions.js --dry-run",
+    "migrate:shared-link-permissions": "node config/migrate-shared-link-permissions.js",
+    "migrate:shared-link-permissions:batch": "node config/migrate-shared-link-permissions.js --batch-size=50",
+    "migrate:orphaned-agent-files:dry-run": "node config/migrate-orphaned-agent-files.js --dry-run",
+    "migrate:orphaned-agent-files": "node config/migrate-orphaned-agent-files.js",
+    "migrate:orphaned-agent-files:batch": "node config/migrate-orphaned-agent-files.js --batch-size=50"
   },
   "repository": {
     "type": "git",
@@ -106,7 +122,7 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.10.1",
     "@eslint/compat": "^1.2.6",
-    "@eslint/eslintrc": "^3.3.1",
+    "@eslint/eslintrc": "^3.3.4",
     "@eslint/js": "^9.20.0",
     "@playwright/test": "^1.56.1",
     "@types/react-virtualized": "^9.22.0",
@@ -130,24 +146,19 @@
     "lint-staged": "^15.4.3",
     "prettier": "^3.5.0",
     "prettier-plugin-tailwindcss": "^0.6.11",
-    "turbo": "^2.8.7",
-    "typescript-eslint": "^8.24.0"
+    "turbo": "^2.9.17",
+    "typescript-eslint": "^8.60.1"
   },
   "overrides": {
-    "@anthropic-ai/sdk": "0.73.0",
-    "@librechat/agents": {
-      "@langchain/anthropic": {
-        "@anthropic-ai/sdk": "0.73.0",
-        "fast-xml-parser": "5.3.6"
-      },
-      "@anthropic-ai/sdk": "0.73.0",
-      "fast-xml-parser": "5.3.6"
-    },
-    "axios": "1.12.1",
+    "@xmldom/xmldom": "^0.8.13",
     "elliptic": "^6.6.1",
-    "fast-xml-parser": "5.3.6",
     "form-data": "^4.0.4",
+    "langsmith": "^0.6.0",
+    "postcss": "^8.5.13",
     "tslib": "^2.8.1",
+    "@anthropic-ai/sdk": "^0.92.0",
+    "fast-xml-parser": "5.7.2",
+    "serialize-javascript": "7.0.5",
     "mdast-util-gfm-autolink-literal": "2.0.0",
     "remark-gfm": {
       "mdast-util-gfm-autolink-literal": "2.0.0"
@@ -164,7 +175,16 @@
         "katex": "^0.16.21"
       }
     },
-    "langsmith": "0.4.12"
+    "eslint": {
+      "ajv": "6.14.0"
+    },
+    "underscore": "1.13.8",
+    "hono": "^4.12.18",
+    "@hono/node-server": "^1.19.10",
+    "monaco-editor": {
+      "dompurify": "3.4.0"
+    },
+    "svgo": "^2.8.2"
   },
   "nodemonConfig": {
     "ignore": [

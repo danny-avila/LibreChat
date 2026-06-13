@@ -1,6 +1,6 @@
 import { Types } from 'mongoose';
-import logger from '~/config/winston';
 import type * as t from '~/types';
+import logger from '~/config/winston';
 
 /**
  * Formats a date in YYYY-MM-DD format
@@ -10,7 +10,16 @@ const formatDate = (date: Date): string => {
 };
 
 // Factory function that takes mongoose instance and returns the methods
-export function createMemoryMethods(mongoose: typeof import('mongoose')) {
+export function createMemoryMethods(mongoose: typeof import('mongoose')): {
+  setMemory: ({ userId, key, value, tokenCount }: t.SetMemoryParams) => Promise<t.MemoryResult>;
+  createMemory: ({ userId, key, value, tokenCount }: t.SetMemoryParams) => Promise<t.MemoryResult>;
+  deleteMemory: ({ userId, key }: t.DeleteMemoryParams) => Promise<t.MemoryResult>;
+  getAllUserMemories: (userId: string | Types.ObjectId) => Promise<t.IMemoryEntryLean[]>;
+  getFormattedMemories: ({
+    userId,
+  }: t.GetFormattedMemoriesParams) => Promise<t.FormattedMemoriesResult>;
+  deleteAllUserMemories: (userId: string | Types.ObjectId) => Promise<number>;
+} {
   /**
    * Creates a new memory entry for a user
    * Throws an error if a memory with the same key already exists
@@ -158,12 +167,28 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')) {
     }
   }
 
+  /**
+   * Deletes all memory entries for a user
+   */
+  async function deleteAllUserMemories(userId: string | Types.ObjectId): Promise<number> {
+    try {
+      const MemoryEntry = mongoose.models.MemoryEntry;
+      const result = await MemoryEntry.deleteMany({ userId });
+      return result.deletedCount;
+    } catch (error) {
+      throw new Error(
+        `Failed to delete all user memories: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  }
+
   return {
     setMemory,
     createMemory,
     deleteMemory,
     getAllUserMemories,
     getFormattedMemories,
+    deleteAllUserMemories,
   };
 }
 

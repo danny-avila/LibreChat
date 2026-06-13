@@ -1,5 +1,5 @@
-import type { Agents } from 'librechat-data-provider';
 import type { StandardGraph } from '@librechat/agents';
+import type { Agents } from 'librechat-data-provider';
 
 /**
  * Job status enum
@@ -12,6 +12,7 @@ export type JobStatus = 'running' | 'complete' | 'error' | 'aborted';
 export interface SerializableJobData {
   streamId: string;
   userId: string;
+  tenantId?: string;
   status: JobStatus;
   createdAt: number;
   completedAt?: number;
@@ -29,6 +30,9 @@ export interface SerializableJobData {
   /** Response message ID for reconnection */
   responseMessageId?: string;
 
+  /** Whether the user-message created event has been emitted */
+  createdEventEmitted?: boolean;
+
   /** Sender name for UI display */
   sender?: string;
 
@@ -37,6 +41,12 @@ export interface SerializableJobData {
 
   /** Serialized final event for replay */
   finalEvent?: string;
+
+  /** Serialized title event for replay during active-stream resume */
+  titleEvent?: string;
+
+  /** Serialized replay-only stream events for active-stream resume */
+  replayEvents?: string;
 
   /** Endpoint metadata for abort handling - avoids storing functions */
   endpoint?: string;
@@ -65,12 +75,18 @@ export interface SerializableJobData {
  * ```
  */
 export interface UsageMetadata {
+  /** Logical usage bucket for accounting/reporting. Defaults to model response usage. */
+  usage_type?: 'message' | 'summarization';
   /** Total input tokens (prompt tokens) */
   input_tokens?: number;
   /** Total output tokens (completion tokens) */
   output_tokens?: number;
+  /** Total billed tokens when provided by the model/runtime */
+  total_tokens?: number;
   /** Model identifier that generated this usage */
   model?: string;
+  /** Provider identifier that generated this usage */
+  provider?: string;
   /**
    * OpenAI-style cache token details.
    * Present for OpenAI models (GPT-4, o1, etc.)
@@ -91,6 +107,16 @@ export interface UsageMetadata {
    * Present for Claude models. Mutually exclusive with input_token_details.
    */
   cache_read_input_tokens?: number;
+  /**
+   * Breakdown of output token counts. Per the LangChain core contract,
+   * `output_tokens` is the sum of all output token types — these fields
+   * are subsets of `output_tokens`, *not* additional charges.
+   */
+  output_token_details?: {
+    /** Reasoning/thinking tokens generated as chain-of-thought (o1, Gemini thinking, etc.) */
+    reasoning?: number;
+    audio?: number;
+  };
 }
 
 /**
@@ -122,6 +148,20 @@ export interface ResumeState {
   responseMessageId?: string;
   conversationId?: string;
   sender?: string;
+  iconURL?: string;
+  model?: string;
+  titleEvent?: {
+    event: 'title';
+    data?: {
+      conversationId?: string;
+      title?: string;
+    };
+  };
+  replayEvents?: Array<{
+    event: string;
+    data?: unknown;
+    [key: string]: unknown;
+  }>;
 }
 
 /**
@@ -143,6 +183,7 @@ export interface IJobStore {
     streamId: string,
     userId: string,
     conversationId?: string,
+    tenantId?: string,
   ): Promise<SerializableJobData>;
 
   /** Get a job by streamId (streamId === conversationId) */
@@ -163,6 +204,18 @@ export interface IJobStore {
   /** Cleanup expired jobs */
   cleanup(): Promise<number>;
 
+  /**
+   * Record generation activity for a job (e.g. a chunk was emitted), refreshing
+   * its "last active" timestamp so the stale-running-job failsafe does not reap a
+   * stream that is still producing output.
+   *
+   * In-memory: updates an internal last-activity timestamp used by cleanup().
+   * Redis: no-op — the running-job TTL is already refreshed on each appendChunk.
+   *
+   * @param streamId - The stream identifier
+   */
+  recordActivity?(streamId: string): void;
+
   /** Get total job count */
   getJobCount(): Promise<number>;
 
@@ -180,7 +233,7 @@ export interface IJobStore {
    * @param userId - The user ID to query
    * @returns Array of conversation IDs with active jobs
    */
-  getActiveJobIdsByUser(userId: string): Promise<string[]>;
+  getActiveJobIdsByUser(userId: string, tenantId?: string): Promise<string[]>;
 
   // ===== Content State Methods =====
   // These methods manage volatile content state tied to each job.
@@ -329,11 +382,14 @@ export interface IEventTransport {
   /** Listen for all subscribers leaving */
   onAllSubscribersLeft(streamId: string, callback: () => void): void;
 
-  /** Reset publish sequence counter for a stream (used during full stream cleanup) */
-  resetSequence?(streamId: string): void;
-
-  /** Advance subscriber reorder buffer to match publisher sequence (cross-replica safe: doesn't reset publisher counter) */
-  syncReorderBuffer?(streamId: string): void;
+  /**
+   * Advance subscriber reorder buffer to match publisher sequence (cross-replica safe).
+   * @param earlyReplayCount - Number of events replayed from earlyEventBuffer (same-replica).
+   *   Pending entries with seq < earlyReplayCount are duplicates and are pruned; entries at or
+   *   above are live chunks that arrived during the async GET window and are preserved.
+   *   When 0/undefined (cross-replica), all pending entries are treated as live.
+   */
+  syncReorderBuffer?(streamId: string, earlyReplayCount?: number): void | Promise<void>;
 
   /** Cleanup transport resources for a specific stream */
   cleanup(streamId: string): void;

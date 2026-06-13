@@ -55,7 +55,7 @@ const BookmarkTable = () => {
 
   return (
     <BookmarkContext.Provider value={{ bookmarks }}>
-      <div role="region" aria-label={localize('com_ui_bookmarks')} className="mt-2 space-y-3">
+      <div role="region" aria-label={localize('com_ui_bookmarks')} className="space-y-2 px-3 pb-3">
         {/* Header: Filter + Create Button */}
         <div className="flex items-center gap-2">
           <FilterInput
@@ -74,7 +74,7 @@ const BookmarkTable = () => {
                   <Button
                     variant="outline"
                     size="icon"
-                    className="shrink-0 bg-transparent"
+                    className="size-9 shrink-0 bg-transparent"
                     aria-label={localize('com_ui_bookmarks_new')}
                     onClick={() => setCreateOpen(true)}
                   >

@@ -83,7 +83,7 @@ export async function initializeAnthropic({
   const result = getLLMConfig(credentials, clientOptions);
 
   let clientIp = '';
-  if (req.headers['x-forwarded-for']) {
+  if (req.headers?.['x-forwarded-for']) {
     clientIp = (req.headers['x-forwarded-for'] as string).split(',')[0].trim();
   }
 

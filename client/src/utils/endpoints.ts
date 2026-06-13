@@ -137,6 +137,148 @@ interface InitiatedTemplateResult {
   newEndpointType: EModelEndpoint | undefined;
 }
 
+type StoredModelSelection = Pick<
+  t.TConversation,
+  'endpoint' | 'model' | 'spec' | 'agent_id' | 'assistant_id' | 'conversationId'
+>;
+
+function hasSelectionValue(value?: string | null): boolean {
+  return typeof value === 'string' && value.trim() !== '';
+}
+
+function parseStoredModelSelection(
+  value: string | null,
+): Partial<StoredModelSelection> | undefined {
+  if (!value) {
+    return;
+  }
+
+  try {
+    return JSON.parse(value) as Partial<StoredModelSelection>;
+  } catch {
+    return;
+  }
+}
+
+function hasStoredPrefixValue(prefix: string, ignoreValue?: string | null): boolean {
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key?.startsWith(prefix)) {
+      continue;
+    }
+
+    const value = localStorage.getItem(key);
+    if (hasSelectionValue(value) && value !== ignoreValue) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function hasStoredModelValue(softPreset?: t.TModelSpecPreset): boolean {
+  const storedModelValue = localStorage.getItem(LocalStorageKeys.LAST_MODEL);
+  if (!storedModelValue) {
+    return false;
+  }
+
+  try {
+    const storedModels = JSON.parse(storedModelValue) as Record<string, string | null | undefined>;
+    return Object.entries(storedModels).some(
+      ([endpoint, model]) =>
+        hasSelectionValue(model) &&
+        !(endpoint === softPreset?.endpoint && model === softPreset?.model),
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function hasModelSelection(selection?: Partial<StoredModelSelection> | null): boolean {
+  if (!selection) {
+    return false;
+  }
+
+  return (
+    hasSelectionValue(selection.spec) ||
+    hasSelectionValue(selection.agent_id) ||
+    hasSelectionValue(selection.assistant_id) ||
+    hasSelectionValue(selection.model) ||
+    hasSelectionValue(selection.endpoint)
+  );
+}
+
+/**
+ * Whether localStorage holds a model selection the user actually made.
+ * State matching what applying `softDefaultSpec` writes is residue of the
+ * soft default itself, not evidence of a user choice, and is ignored.
+ */
+function hasStoredModelSelection(softDefaultSpec?: t.TModelSpec): boolean {
+  const softPreset = softDefaultSpec?.preset;
+  const lastSpecName = localStorage.getItem(LocalStorageKeys.LAST_SPEC);
+  if (hasSelectionValue(lastSpecName) && lastSpecName !== softDefaultSpec?.name) {
+    return true;
+  }
+
+  if (hasStoredModelValue(softPreset)) {
+    return true;
+  }
+
+  if (
+    hasStoredPrefixValue(LocalStorageKeys.AGENT_ID_PREFIX, softPreset?.agent_id) ||
+    hasStoredPrefixValue(LocalStorageKeys.ASST_ID_PREFIX, softPreset?.assistant_id)
+  ) {
+    return true;
+  }
+
+  const lastConversationSetup = parseStoredModelSelection(
+    localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP + '_0'),
+  );
+  if (softDefaultSpec && lastConversationSetup?.spec === softDefaultSpec.name) {
+    return false;
+  }
+
+  return hasModelSelection(lastConversationSetup);
+}
+
+/**
+ * Whether the selector offers any ephemeral endpoint → model options.
+ * False when the endpoints menu is hidden (`modelSelect` disabled) or only
+ * agents/assistants picks remain; an empty endpoints config means not loaded.
+ */
+function hasEphemeralModelOptions({
+  endpointsConfig,
+  addedEndpoints,
+  modelSelect,
+}: {
+  endpointsConfig?: t.TEndpointsConfig;
+  addedEndpoints?: Array<EModelEndpoint | string>;
+  modelSelect?: boolean;
+}): boolean {
+  if (!modelSelect) {
+    return false;
+  }
+  const included = new Set(addedEndpoints ?? []);
+  const includesEphemeral =
+    included.size === 0 ||
+    [...included].some(
+      (endpoint) => !isAgentsEndpoint(endpoint) && !isAssistantsEndpoint(endpoint),
+    );
+  if (!includesEphemeral) {
+    return false;
+  }
+  if (endpointsConfig == null || Object.keys(endpointsConfig).length === 0) {
+    return true;
+  }
+  return Object.entries(endpointsConfig).some(
+    ([endpoint, config]) =>
+      config != null &&
+      !isAgentsEndpoint(endpoint) &&
+      !isAssistantsEndpoint(endpoint) &&
+      (included.size === 0 || included.has(endpoint)),
+  );
+}
+
 /** Get the conditional logic for switching conversations */
 export function getConvoSwitchLogic(params: ConversationInitParams): InitiatedTemplateResult {
   const { conversation, newEndpoint, endpointsConfig, modularChat = false } = params;
@@ -269,35 +411,81 @@ export function applyModelSpecEphemeralAgent({
 
 /**
  * Gets default model spec from config and user preferences.
- * Priority: admin default → last selected → first spec (when prioritize=true or modelSelect disabled).
- * Otherwise: admin default or last conversation spec.
+ * Priority: hard admin default → prior user selection → soft default.
+ * The soft default yields only to selections the user actually made — its
+ * stored state counts as the live selection only when set on a new chat, so
+ * merely viewing an old soft-spec conversation never re-arms it — and it acts
+ * as the fallback default when no ephemeral endpoint → model options exist.
+ * Legacy first-spec prioritization remains only when no soft default is configured.
  */
-export function getDefaultModelSpec(startupConfig?: t.TStartupConfig):
+export function getDefaultModelSpec(
+  startupConfig?: t.TStartupConfig,
+  endpointsConfig?: t.TEndpointsConfig,
+):
   | {
       default?: t.TModelSpec;
       last?: t.TModelSpec;
+      softDefault?: t.TModelSpec;
     }
   | undefined {
   const { modelSpecs, interface: interfaceConfig } = startupConfig ?? {};
-  const { list, prioritize } = modelSpecs ?? {};
+  const { list, prioritize, addedEndpoints } = modelSpecs ?? {};
   if (!list) {
     return;
   }
   const defaultSpec = list?.find((spec) => spec.default);
+  const softDefaultSpec = list?.find((spec) => spec.softDefault);
+  const lastConversationSetup = parseStoredModelSelection(
+    localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP + '_0'),
+  );
+  const resolveSoftDefault = (): { softDefault: t.TModelSpec } | undefined => {
+    if (!softDefaultSpec) {
+      return;
+    }
+    if (
+      lastConversationSetup?.spec === softDefaultSpec.name &&
+      lastConversationSetup?.conversationId === Constants.NEW_CONVO
+    ) {
+      return { softDefault: softDefaultSpec };
+    }
+    const ephemeralOptions = hasEphemeralModelOptions({
+      endpointsConfig,
+      addedEndpoints,
+      modelSelect: interfaceConfig?.modelSelect,
+    });
+    if (!ephemeralOptions) {
+      return { softDefault: softDefaultSpec };
+    }
+    return hasStoredModelSelection(softDefaultSpec) ? undefined : { softDefault: softDefaultSpec };
+  };
   if (prioritize === true || !interfaceConfig?.modelSelect) {
     const lastSelectedSpecName = localStorage.getItem(LocalStorageKeys.LAST_SPEC);
     const lastSelectedSpec = list?.find((spec) => spec.name === lastSelectedSpecName);
-    return { default: defaultSpec || lastSelectedSpec || list?.[0] };
+    if (defaultSpec) {
+      return { default: defaultSpec };
+    }
+    if (lastSelectedSpec && lastSelectedSpec.name === softDefaultSpec?.name) {
+      return resolveSoftDefault();
+    }
+    if (lastSelectedSpec) {
+      return { last: lastSelectedSpec };
+    }
+    if (softDefaultSpec) {
+      return resolveSoftDefault();
+    }
+    return { default: list?.[0] };
   } else if (defaultSpec) {
     return { default: defaultSpec };
   }
-  const lastConversationSetup = JSON.parse(
-    localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP + '_0') ?? '{}',
-  );
-  if (!lastConversationSetup.spec) {
-    return;
+  const lastConversationSpecName = lastConversationSetup?.spec;
+  if (!hasSelectionValue(lastConversationSpecName)) {
+    return resolveSoftDefault();
   }
-  return { last: list?.find((spec) => spec.name === lastConversationSetup.spec) };
+  const lastSpec = list?.find((spec) => spec.name === lastConversationSpecName);
+  if (lastSpec && lastSpec.name === softDefaultSpec?.name) {
+    return resolveSoftDefault();
+  }
+  return { last: lastSpec };
 }
 
 export function getModelSpecPreset(modelSpec?: t.TModelSpec) {
@@ -311,12 +499,33 @@ export function getModelSpecPreset(modelSpec?: t.TModelSpec) {
   };
 }
 
-/** Gets the default spec iconURL by order or definition.
- *
- * First, the admin defined default, then last selected spec, followed by first spec
+/** Fields set by a model spec that should be cleared when switching to a non-spec conversation. */
+export const specDisplayFieldReset = {
+  spec: null as string | null,
+  iconURL: null as string | null,
+  modelLabel: null as string | null,
+  greeting: undefined as string | undefined,
+};
+
+/**
+ * Merges a spec preset base with URL query settings, clearing spec display fields
+ * when the query doesn't explicitly set a spec. Prevents spec contamination on
+ * agent/assistant share links.
  */
+export function mergeQuerySettingsWithSpec(
+  specPreset: t.TPreset | undefined,
+  querySettings: t.TPreset,
+): t.TPreset {
+  return {
+    ...specPreset,
+    ...querySettings,
+    ...(specPreset != null && querySettings.spec == null ? specDisplayFieldReset : {}),
+  };
+}
+
+/** Gets the model spec iconURL by explicit icon, preset icon, then preset endpoint. */
 export function getModelSpecIconURL(modelSpec: t.TModelSpec) {
-  return modelSpec.iconURL ?? modelSpec.preset.iconURL ?? modelSpec.preset.endpoint ?? '';
+  return modelSpec.iconURL ?? modelSpec.preset?.iconURL ?? modelSpec.preset?.endpoint ?? '';
 }
 
 /** Gets the default frontend-facing endpoint, dependent on iconURL definition.

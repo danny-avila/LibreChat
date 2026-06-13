@@ -5,11 +5,12 @@ import { CheckCircle2, MousePointerClick, SettingsIcon } from 'lucide-react';
 import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TModelSpec } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
-import { CustomMenu as Menu, CustomMenuItem as MenuItem } from '../CustomMenu';
+import { CustomMenu as Menu, CustomMenuItem as MenuItem, CustomMenuSeparator } from '../CustomMenu';
+import MarketplaceItem, { marketplaceSearchMatches } from './Marketplace';
+import { filterModels, shouldRenderEndpointOption } from '../utils';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { renderEndpointModels } from './EndpointModelItem';
 import { ModelSpecItem } from './ModelSpecItem';
-import { filterModels } from '../utils';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -96,7 +97,7 @@ function EndpointMenuContent({
   const localize = useLocalize();
   const { agentsMap, assistantsMap, modelSpecs, selectedValues, endpointSearchValues } =
     useModelSelectorContext();
-  const { model: selectedModel, modelSpec: selectedSpec } = selectedValues;
+  const { modelSpec: selectedSpec } = selectedValues;
   const searchValue = endpointSearchValues[endpoint.value] || '';
 
   const endpointSpecs = useMemo(() => {
@@ -127,22 +128,22 @@ function EndpointMenuContent({
         assistantsMap,
       )
     : null;
+  const renderedModels = filteredModels ?? endpoint.models?.map((model) => model.name) ?? [];
+  const showMarketplace =
+    endpoint.showMarketplace === true && marketplaceSearchMatches(searchValue, localize);
+  const hasSelectableRows = endpointSpecs.length > 0 || renderedModels.length > 0;
 
   return (
     <>
+      {showMarketplace && <MarketplaceItem label={localize('com_agents_marketplace')} />}
+      {showMarketplace && hasSelectableRows && <CustomMenuSeparator />}
       {endpointSpecs.map((spec: TModelSpec) => (
         <ModelSpecItem key={spec.name} spec={spec} isSelected={selectedSpec === spec.name} />
       ))}
       {filteredModels
-        ? renderEndpointModels(
-            endpoint,
-            endpoint.models || [],
-            selectedModel,
-            filteredModels,
-            endpointIndex,
-          )
+        ? renderEndpointModels(endpoint, endpoint.models || [], filteredModels, endpointIndex)
         : endpoint.models &&
-          renderEndpointModels(endpoint, endpoint.models, selectedModel, undefined, endpointIndex)}
+          renderEndpointModels(endpoint, endpoint.models, undefined, endpointIndex)}
     </>
   );
 }
@@ -157,7 +158,7 @@ export function EndpointItem({ endpoint, endpointIndex }: EndpointItemProps) {
     setEndpointSearchValue,
     endpointRequiresUserKey,
   } = useModelSelectorContext();
-  const { endpoint: selectedEndpoint } = selectedValues;
+  const { endpoint: selectedEndpoint, modelSpec: selectedSpec } = selectedValues;
 
   const searchValue = endpointSearchValues[endpoint.value] || '';
   const isUserProvided = useMemo(
@@ -179,7 +180,11 @@ export function EndpointItem({ endpoint, endpointIndex }: EndpointItemProps) {
     </div>
   );
 
-  const isEndpointSelected = selectedEndpoint === endpoint.value;
+  const isEndpointSelected = !selectedSpec && selectedEndpoint === endpoint.value;
+
+  if (!shouldRenderEndpointOption(endpoint)) {
+    return null;
+  }
 
   if (endpoint.hasModels) {
     const placeholder =

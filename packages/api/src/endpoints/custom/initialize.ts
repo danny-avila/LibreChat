@@ -1,5 +1,4 @@
 import {
-  CacheKeys,
   ErrorTypes,
   envVarRegex,
   FetchTokenConfig,
@@ -8,11 +7,12 @@ import {
 import type { TEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { BaseInitializeParams, InitializeResultBase, EndpointTokenConfig } from '~/types';
+import { isUserProvided, checkUserKeyExpiry } from '~/utils';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { getCustomEndpointConfig } from '~/app/config';
 import { fetchModels } from '~/endpoints/models';
-import { isUserProvided, checkUserKeyExpiry } from '~/utils';
-import { standardCache } from '~/cache';
+import { validateEndpointURL } from '~/auth';
+import { tokenConfigCache } from '~/cache';
 
 const { PROXY } = process.env;
 
@@ -31,10 +31,8 @@ function buildCustomOptions(
     customParams: endpointConfig.customParams,
     titleConvo: endpointConfig.titleConvo,
     titleModel: endpointConfig.titleModel,
-    summaryModel: endpointConfig.summaryModel,
     modelDisplayLabel: endpointConfig.modelDisplayLabel,
     titleMethod: endpointConfig.titleMethod ?? 'completion',
-    contextStrategy: endpointConfig.summarize ? 'summarize' : null,
     directEndpoint: endpointConfig.directEndpoint,
     titleMessageRole: endpointConfig.titleMessageRole,
     streamRate: endpointConfig.streamRate,
@@ -90,9 +88,15 @@ export async function initializeCustom({
   const userProvidesKey = isUserProvided(CUSTOM_API_KEY);
   const userProvidesURL = isUserProvided(CUSTOM_BASE_URL);
 
-  let userValues = null;
+  // Expiry is only checked when present: the Agents API sends an OpenAI-compatible
+  // request body that does not include `key` (the expiry timestamp), so expiresAt
+  // will be undefined in that flow. The key is still fetched regardless.
   if (expiresAt && (userProvidesKey || userProvidesURL)) {
     checkUserKeyExpiry(expiresAt, endpoint);
+  }
+
+  let userValues = null;
+  if (userProvidesKey || userProvidesURL) {
     userValues = await db.getUserKeyValues({ userId: req.user?.id ?? '', name: endpoint });
   }
 
@@ -123,15 +127,28 @@ export async function initializeCustom({
     throw new Error(`${endpoint} Base URL not provided.`);
   }
 
+  if (userProvidesURL) {
+    await validateEndpointURL(baseURL, endpoint, appConfig?.endpoints?.allowedAddresses);
+  }
+
   let endpointTokenConfig: EndpointTokenConfig | undefined;
 
   const userId = req.user?.id ?? '';
 
-  const cache = standardCache(CacheKeys.TOKEN_CONFIG);
+  const cache = tokenConfigCache();
   /** tokenConfig is an optional extended property on custom endpoints */
   const hasTokenConfig = (endpointConfig as Record<string, unknown>).tokenConfig != null;
+  // When `endpointConfig.headers` will be forwarded to the model fetch (i.e.
+  // base URL is admin-trusted, so the security guard below leaves them in
+  // place), header templates may resolve against the current user — making
+  // the response, and therefore the derived token config, user-specific.
+  // User-scope the token-config cache key in that case so a cached entry
+  // for one user can't be served to another.
+  const willForwardUserScopedHeaders = !!endpointConfig?.headers && !userProvidesURL;
   const tokenKey =
-    !hasTokenConfig && (userProvidesKey || userProvidesURL) ? `${endpoint}:${userId}` : endpoint;
+    !hasTokenConfig && (userProvidesKey || userProvidesURL || willForwardUserScopedHeaders)
+      ? `${endpoint}:${userId}`
+      : endpoint;
 
   const cachedConfig =
     !hasTokenConfig &&
@@ -146,7 +163,24 @@ export async function initializeCustom({
     endpointConfig.models?.fetch &&
     !endpointTokenConfig
   ) {
-    await fetchModels({ apiKey, baseURL, name: endpoint, user: userId, tokenKey });
+    await fetchModels({
+      apiKey,
+      baseURL,
+      name: endpoint,
+      user: userId,
+      tokenKey,
+      userObject: req.user,
+      // Mirror the security guard in `loadConfigModels`: never forward
+      // header overrides when the base URL is user-supplied — configured
+      // templates like {{LIBRECHAT_OPENID_ID_TOKEN}} would otherwise resolve
+      // and leak the user's identity token to a destination the user controls.
+      headers: userProvidesURL ? undefined : endpointConfig.headers,
+      // Note: when both `headers` and `userObject` are supplied below, the
+      // MODEL_QUERIES cache inside `fetchModels` is automatically skipped,
+      // which prevents a per-user filtered model list from leaking across
+      // users. The token-config cache key (`tokenKey`) is also user-scoped
+      // above when these headers will be forwarded.
+    });
     endpointTokenConfig = (await cache.get(tokenKey)) as EndpointTokenConfig | undefined;
   }
 

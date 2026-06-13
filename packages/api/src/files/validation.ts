@@ -1,6 +1,11 @@
 import { Providers } from '@librechat/agents';
 import { mbToBytes, isOpenAILikeProvider } from 'librechat-data-provider';
 
+export interface ValidationResult {
+  isValid: boolean;
+  error?: string;
+}
+
 export interface PDFValidationResult {
   isValid: boolean;
   error?: string;
@@ -26,9 +31,20 @@ export async function validatePdf(
   fileSize: number,
   provider: Providers,
   configuredFileSizeLimit?: number,
+  model?: string,
 ): Promise<PDFValidationResult> {
   if (provider === Providers.ANTHROPIC) {
     return validateAnthropicPdf(pdfBuffer, fileSize, configuredFileSizeLimit);
+  }
+
+  if (provider === Providers.BEDROCK) {
+    return validateBedrockDocument(
+      fileSize,
+      'application/pdf',
+      pdfBuffer,
+      configuredFileSizeLimit,
+      model,
+    );
   }
 
   if (isOpenAILikeProvider(provider)) {
@@ -109,6 +125,102 @@ async function validateAnthropicPdf(
     return {
       isValid: false,
       error: 'Failed to validate PDF file',
+    };
+  }
+}
+
+/**
+ * Matches Bedrock Claude 4+ model identifiers, including cross-region inference profile IDs.
+ * Pattern: [region.]anthropic.claude-{family}-{version≥4}-{date}-v{n}:{rev}
+ * e.g. "anthropic.claude-sonnet-4-6" or "us.anthropic.claude-sonnet-4-6"
+ */
+const BEDROCK_CLAUDE_4_PLUS_RE = /(?:^|\.)anthropic\.claude-(?:sonnet|opus|haiku)-[4-9]\d*-/;
+const isBedrockClaude4Plus = (model?: string): boolean =>
+  model != null && BEDROCK_CLAUDE_4_PLUS_RE.test(model);
+
+/**
+ * Matches Bedrock Nova model identifiers, including cross-region inference profile IDs.
+ * e.g. "amazon.nova-pro-v1:0" or "us.amazon.nova-pro-v1:0"
+ */
+const isBedrockNova = (model?: string): boolean =>
+  model != null && /(?:^|\.)amazon\.nova-/.test(model);
+
+const pdfMimeType = 'application/pdf';
+const docxMimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+/**
+ * Returns true when the given model + MIME type combination is exempt from
+ * Bedrock's default 4.5 MB per-document limit.
+ *
+ * Per AWS docs (https://docs.aws.amazon.com/bedrock/latest/userguide/inference-api-restrictions.html):
+ * - Claude 4+: PDFs are exempt from the 4.5 MB limit
+ * - Nova: PDFs and DOCX are exempt from the 4.5 MB limit
+ */
+const isExemptFromBedrockDocLimit = (model?: string, mimeType?: string): boolean => {
+  if (mimeType === pdfMimeType) {
+    return isBedrockClaude4Plus(model) || isBedrockNova(model);
+  }
+  if (mimeType === docxMimeType) {
+    return isBedrockNova(model);
+  }
+  return false;
+};
+
+/**
+ * Validates a document against Bedrock size limits. The default limit is 4.5 MB,
+ * but Claude 4+ (PDF) and Nova (PDF/DOCX) models are exempt per AWS docs.
+ * When exempt, falls back to a 32 MB request-level limit as a reasonable upper bound.
+ * @param fileSize - The file size in bytes
+ * @param mimeType - The MIME type of the document
+ * @param fileBuffer - The file buffer (used for PDF header validation)
+ * @param configuredFileSizeLimit - Optional configured file size limit from fileConfig (in bytes)
+ * @param model - Optional Bedrock model identifier for model-specific limit exceptions
+ * @returns Promise that resolves to validation result
+ */
+export async function validateBedrockDocument(
+  fileSize: number,
+  mimeType: string,
+  fileBuffer?: Buffer,
+  configuredFileSizeLimit?: number,
+  model?: string,
+): Promise<ValidationResult> {
+  try {
+    const exempt = isExemptFromBedrockDocLimit(model, mimeType);
+    /** Default 4.5 MB; exempt models (Claude 4+ PDF, Nova PDF/DOCX) default to 32 MB when unconfigured */
+    const providerLimit = exempt ? mbToBytes(32) : mbToBytes(4.5);
+    const effectiveLimit = configuredFileSizeLimit ?? providerLimit;
+
+    if (fileSize > effectiveLimit) {
+      const limitMB = (effectiveLimit / (1024 * 1024)).toFixed(1);
+      return {
+        isValid: false,
+        error: `File size (${(fileSize / (1024 * 1024)).toFixed(1)}MB) exceeds the ${limitMB}MB limit for Bedrock`,
+      };
+    }
+
+    if (mimeType === pdfMimeType && fileBuffer) {
+      if (fileBuffer.length < 5) {
+        return {
+          isValid: false,
+          error: 'Invalid PDF file: too small or corrupted',
+        };
+      }
+
+      const pdfHeader = fileBuffer.subarray(0, 5).toString();
+      if (!pdfHeader.startsWith('%PDF-')) {
+        return {
+          isValid: false,
+          error: 'Invalid PDF file: missing PDF header',
+        };
+      }
+    }
+
+    return { isValid: true };
+  } catch (error) {
+    console.error('Bedrock document validation error:', error);
+    return {
+      isValid: false,
+      error: 'Failed to validate document file',
     };
   }
 }

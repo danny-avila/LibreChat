@@ -1,14 +1,23 @@
 import { useMemo, memo, type FC, useCallback, useEffect, useRef } from 'react';
 import throttle from 'lodash/throttle';
-import { ChevronDown } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
-import { Spinner, useMediaQuery } from '@librechat/client';
-import { List, AutoSizer, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
+import { ChevronDown } from 'lucide-react';
+import { QueryKeys } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
+import { List, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
+import { Spinner, TooltipAnchor, NewChatIcon, useMediaQuery } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
-import { useLocalize, TranslationKeys, useFavorites, useShowMarketplace } from '~/hooks';
+import {
+  useLocalize,
+  TranslationKeys,
+  useFavorites,
+  useShowMarketplace,
+  useNewConvo,
+  useElementSize,
+} from '~/hooks';
+import { groupConversationsByDate, clearMessagesCache, cn } from '~/utils';
 import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
 import { useActiveJobs } from '~/data-provider';
-import { groupConversationsByDate, cn } from '~/utils';
 import Convo from './Convo';
 import store from '~/store';
 
@@ -32,6 +41,7 @@ interface ConversationsProps {
   isSearchLoading: boolean;
   isChatsExpanded: boolean;
   setIsChatsExpanded: (expanded: boolean) => void;
+  showFavorites?: boolean;
 }
 
 interface MeasuredRowProps {
@@ -48,7 +58,7 @@ const MeasuredRow: FC<MeasuredRowProps> = memo(
   ({ cache, rowKey, parent, index, style, children }) => (
     <CellMeasurer cache={cache} columnIndex={0} key={rowKey} parent={parent} rowIndex={index}>
       {({ registerChild }) => (
-        <div ref={registerChild as React.LegacyRef<HTMLDivElement>} style={style}>
+        <div ref={registerChild as React.LegacyRef<HTMLDivElement>} style={style} className="px-3">
           {children}
         </div>
       )}
@@ -76,20 +86,53 @@ interface ChatsHeaderProps {
   onToggle: () => void;
 }
 
+const headerIconButtonClassName =
+  'flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-text-secondary outline-none transition-colors hover:bg-surface-active-alt hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white';
+
 /** Collapsible header for the Chats section */
 const ChatsHeader: FC<ChatsHeaderProps> = memo(({ isExpanded, onToggle }) => {
   const localize = useLocalize();
+  const queryClient = useQueryClient();
+  const { newConversation } = useNewConvo();
+  const conversation = useRecoilValue(store.conversationByIndex(0));
+
+  const handleNewChat = useCallback(() => {
+    clearMessagesCache(queryClient, conversation?.conversationId);
+    queryClient.invalidateQueries([QueryKeys.messages]);
+    newConversation();
+  }, [conversation?.conversationId, newConversation, queryClient]);
+
   return (
-    <button
-      onClick={onToggle}
-      className="group flex w-full items-center justify-between rounded-lg px-1 py-2 text-xs font-bold text-text-secondary outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
-      type="button"
-    >
-      <span className="select-none">{localize('com_ui_chats')}</span>
-      <ChevronDown
-        className={cn('h-3 w-3 transition-transform duration-200', isExpanded ? 'rotate-180' : '')}
+    <div className="flex h-8 w-full items-center gap-0.5 pr-2">
+      <button
+        onClick={onToggle}
+        className="group flex min-w-0 flex-1 items-center gap-1 rounded-lg px-1 py-2 text-xs font-bold text-text-secondary outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
+        type="button"
+        aria-expanded={isExpanded}
+      >
+        <span className="select-none truncate">{localize('com_ui_chats')}</span>
+        <ChevronDown
+          className={cn(
+            'h-3 w-3 shrink-0 transition-transform duration-200',
+            isExpanded ? '' : '-rotate-90',
+          )}
+          aria-hidden="true"
+        />
+      </button>
+      <TooltipAnchor
+        description={localize('com_ui_new_chat')}
+        render={
+          <button
+            type="button"
+            aria-label={localize('com_ui_new_chat')}
+            className={headerIconButtonClassName}
+            onClick={handleNewChat}
+          >
+            <NewChatIcon className="h-4 w-4" />
+          </button>
+        }
       />
-    </button>
+    </div>
   );
 });
 
@@ -99,6 +142,9 @@ const DateLabel: FC<{ groupName: string; isFirst?: boolean }> = memo(({ groupNam
   const localize = useLocalize();
   return (
     <h2
+      aria-label={localize('com_a11y_chats_date_section', {
+        date: localize(groupName as TranslationKeys) || groupName,
+      })}
       className={cn('pl-1 pt-1 text-text-secondary', isFirst === true ? 'mt-0' : 'mt-2')}
       style={{ fontSize: '0.7rem' }}
     >
@@ -111,41 +157,9 @@ DateLabel.displayName = 'DateLabel';
 
 type FlattenedItem =
   | { type: 'favorites' }
-  | { type: 'chats-header' }
   | { type: 'header'; groupName: string }
   | { type: 'convo'; convo: TConversation }
   | { type: 'loading' };
-
-const MemoizedConvo = memo(
-  ({
-    conversation,
-    retainView,
-    toggleNav,
-    isGenerating,
-  }: {
-    conversation: TConversation;
-    retainView: () => void;
-    toggleNav: () => void;
-    isGenerating: boolean;
-  }) => {
-    return (
-      <Convo
-        conversation={conversation}
-        retainView={retainView}
-        toggleNav={toggleNav}
-        isGenerating={isGenerating}
-      />
-    );
-  },
-  (prevProps, nextProps) => {
-    return (
-      prevProps.conversation.conversationId === nextProps.conversation.conversationId &&
-      prevProps.conversation.title === nextProps.conversation.title &&
-      prevProps.conversation.endpoint === nextProps.conversation.endpoint &&
-      prevProps.isGenerating === nextProps.isGenerating
-    );
-  },
-);
 
 const Conversations: FC<ConversationsProps> = ({
   conversations: rawConversations,
@@ -157,6 +171,7 @@ const Conversations: FC<ConversationsProps> = ({
   isSearchLoading,
   isChatsExpanded,
   setIsChatsExpanded,
+  showFavorites = true,
 }) => {
   const localize = useLocalize();
   const search = useRecoilValue(store.search);
@@ -164,6 +179,13 @@ const Conversations: FC<ConversationsProps> = ({
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const convoHeight = isSmallScreen ? 44 : 34;
   const showAgentMarketplace = useShowMarketplace();
+  const {
+    ref: listContainerRef,
+    width: listWidth,
+    height: listHeight,
+  } = useElementSize<HTMLDivElement>();
+
+  const favoritesContentKeyRef = useRef('');
 
   // Fetch active job IDs for showing generation indicators
   const { data: activeJobsData } = useActiveJobs();
@@ -174,7 +196,11 @@ const Conversations: FC<ConversationsProps> = ({
 
   // Determine if FavoritesList will render content
   const shouldShowFavorites =
-    !search.query && (isFavoritesLoading || favorites.length > 0 || showAgentMarketplace);
+    showFavorites &&
+    !search.query &&
+    (isFavoritesLoading || favorites.length > 0 || showAgentMarketplace);
+
+  favoritesContentKeyRef.current = `${favorites.length}-${showAgentMarketplace ? 1 : 0}-${isFavoritesLoading ? 1 : 0}`;
 
   const filteredConversations = useMemo(
     () => rawConversations.filter(Boolean) as TConversation[],
@@ -192,7 +218,6 @@ const Conversations: FC<ConversationsProps> = ({
     if (shouldShowFavorites) {
       items.push({ type: 'favorites' });
     }
-    items.push({ type: 'chats-header' });
 
     if (isChatsExpanded) {
       groupedConversations.forEach(([groupName, convos]) => {
@@ -223,13 +248,11 @@ const Conversations: FC<ConversationsProps> = ({
             return `unknown-${index}`;
           }
           if (item.type === 'favorites') {
-            return 'favorites';
-          }
-          if (item.type === 'chats-header') {
-            return 'chats-header';
+            return `favorites-${favoritesContentKeyRef.current}`;
           }
           if (item.type === 'header') {
-            return `header-${item.groupName}`;
+            const firstHeaderIndex = flattenedItemsRef.current[0]?.type === 'favorites' ? 1 : 0;
+            return `header-${item.groupName}-${index === firstHeaderIndex ? 'first' : 'sub'}`;
           }
           if (item.type === 'convo') {
             return `convo-${item.convo.conversationId}`;
@@ -243,7 +266,6 @@ const Conversations: FC<ConversationsProps> = ({
     [convoHeight],
   );
 
-  // Debounced function to clear cache and recompute heights
   const clearFavoritesCache = useCallback(() => {
     if (cache) {
       cache.clear(0, 0);
@@ -253,13 +275,33 @@ const Conversations: FC<ConversationsProps> = ({
     }
   }, [cache, containerRef]);
 
-  // Clear cache when favorites change
   useEffect(() => {
     const frameId = requestAnimationFrame(() => {
       clearFavoritesCache();
     });
     return () => cancelAnimationFrame(frameId);
-  }, [favorites.length, isFavoritesLoading, clearFavoritesCache]);
+  }, [favorites.length, isFavoritesLoading, showAgentMarketplace, clearFavoritesCache]);
+
+  useEffect(() => {
+    const frameId = requestAnimationFrame(() => {
+      cache.clearAll();
+      if (containerRef.current && 'recomputeRowHeights' in containerRef.current) {
+        containerRef.current.recomputeRowHeights(0);
+      }
+    });
+    return () => cancelAnimationFrame(frameId);
+  }, [search.query, cache, containerRef]);
+
+  /** Grid only re-derives row offsets when the row count changes; reorders that
+   *  keep the count (e.g. a convo bumped across date groups) need an explicit recompute. */
+  useEffect(() => {
+    const frameId = requestAnimationFrame(() => {
+      if (containerRef.current && 'recomputeRowHeights' in containerRef.current) {
+        containerRef.current.recomputeRowHeights(0);
+      }
+    });
+    return () => cancelAnimationFrame(frameId);
+  }, [flattenedItems, containerRef]);
 
   const rowRenderer = useCallback(
     ({ index, key, parent, style }) => {
@@ -277,31 +319,14 @@ const Conversations: FC<ConversationsProps> = ({
       if (item.type === 'favorites') {
         return (
           <MeasuredRow key={key} {...rowProps}>
-            <FavoritesList
-              isSmallScreen={isSmallScreen}
-              toggleNav={toggleNav}
-              onHeightChange={clearFavoritesCache}
-            />
-          </MeasuredRow>
-        );
-      }
-
-      if (item.type === 'chats-header') {
-        return (
-          <MeasuredRow key={key} {...rowProps}>
-            <ChatsHeader
-              isExpanded={isChatsExpanded}
-              onToggle={() => setIsChatsExpanded(!isChatsExpanded)}
-            />
+            <FavoritesList isSmallScreen={isSmallScreen} toggleNav={toggleNav} />
           </MeasuredRow>
         );
       }
 
       if (item.type === 'header') {
-        // First date header index depends on whether favorites row is included
-        // With favorites: [favorites, chats-header, first-header] → index 2
-        // Without favorites: [chats-header, first-header] → index 1
-        const firstHeaderIndex = shouldShowFavorites ? 2 : 1;
+        // First date header index depends on whether the favorites row is included
+        const firstHeaderIndex = flattenedItems[0]?.type === 'favorites' ? 1 : 0;
         return (
           <MeasuredRow key={key} {...rowProps}>
             <DateLabel groupName={item.groupName} isFirst={index === firstHeaderIndex} />
@@ -313,7 +338,7 @@ const Conversations: FC<ConversationsProps> = ({
         const isGenerating = activeJobIds.has(item.convo.conversationId ?? '');
         return (
           <MeasuredRow key={key} {...rowProps}>
-            <MemoizedConvo
+            <Convo
               conversation={item.convo}
               retainView={moveToTop}
               toggleNav={toggleNav}
@@ -325,18 +350,7 @@ const Conversations: FC<ConversationsProps> = ({
 
       return null;
     },
-    [
-      cache,
-      flattenedItems,
-      moveToTop,
-      toggleNav,
-      clearFavoritesCache,
-      isSmallScreen,
-      isChatsExpanded,
-      setIsChatsExpanded,
-      shouldShowFavorites,
-      activeJobIds,
-    ],
+    [cache, flattenedItems, moveToTop, toggleNav, isSmallScreen, activeJobIds],
   );
 
   const getRowHeight = useCallback(
@@ -360,37 +374,41 @@ const Conversations: FC<ConversationsProps> = ({
 
   return (
     <div className="relative flex h-full min-h-0 flex-col pb-2 text-sm text-text-primary">
+      <div className="px-3">
+        <ChatsHeader
+          isExpanded={isChatsExpanded}
+          onToggle={() => setIsChatsExpanded(!isChatsExpanded)}
+        />
+      </div>
       {isSearchLoading ? (
         <div className="flex flex-1 items-center justify-center">
           <Spinner className="text-text-primary" />
           <span className="ml-2 text-text-primary">{localize('com_ui_loading')}</span>
         </div>
       ) : (
-        <div className="flex-1">
-          <AutoSizer>
-            {({ width, height }) => (
-              <List
-                ref={containerRef}
-                width={width}
-                height={height}
-                deferredMeasurementCache={cache}
-                rowCount={flattenedItems.length}
-                rowHeight={getRowHeight}
-                rowRenderer={rowRenderer}
-                overscanRowCount={10}
-                aria-readonly={false}
-                className="outline-none"
-                aria-label="Conversations"
-                onRowsRendered={handleRowsRendered}
-                tabIndex={-1}
-                style={{ outline: 'none', scrollbarGutter: 'stable' }}
-              />
-            )}
-          </AutoSizer>
+        <div ref={listContainerRef} className="min-h-0 flex-1 overflow-hidden">
+          <List
+            ref={containerRef}
+            width={listWidth}
+            height={listHeight}
+            deferredMeasurementCache={cache}
+            rowCount={flattenedItems.length}
+            rowHeight={getRowHeight}
+            rowRenderer={rowRenderer}
+            overscanRowCount={10}
+            aria-readonly={false}
+            className="outline-none"
+            aria-label="Conversations"
+            onRowsRendered={handleRowsRendered}
+            tabIndex={-1}
+            style={{ outline: 'none' }}
+            containerRole="rowgroup"
+          />
         </div>
       )}
     </div>
   );
 };
 
+export { DateLabel };
 export default memo(Conversations);

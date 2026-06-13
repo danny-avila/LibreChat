@@ -1,9 +1,9 @@
-import assistantSchema from '~/schema/assistant';
+import { Model } from 'mongoose';
 import type { IAssistant } from '~/types';
+import { applyTenantIsolation } from '~/models/plugins/tenantIsolation';
+import assistantSchema from '~/schema/assistant';
 
-/**
- * Creates or returns the Assistant model using the provided mongoose instance and schema
- */
-export function createAssistantModel(mongoose: typeof import('mongoose')) {
+export function createAssistantModel(mongoose: typeof import('mongoose')): Model<IAssistant> {
+  applyTenantIsolation(assistantSchema);
   return mongoose.models.Assistant || mongoose.model<IAssistant>('Assistant', assistantSchema);
 }

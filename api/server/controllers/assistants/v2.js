@@ -3,8 +3,8 @@ const { ToolCallTypes } = require('librechat-data-provider');
 const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { validateAndUpdateTool } = require('~/server/services/ActionService');
 const { getCachedTools } = require('~/server/services/Config');
-const { updateAssistantDoc } = require('~/models/Assistant');
 const { manifestToolMap } = require('~/app/clients/tools');
+const { updateAssistantDoc } = require('~/models');
 const { getOpenAIClient } = require('./helpers');
 
 /**

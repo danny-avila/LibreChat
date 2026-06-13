@@ -10,6 +10,50 @@ const mockRecordCollectedUsage = jest
   .mockResolvedValue({ input_tokens: 100, output_tokens: 50 });
 const mockGetBalanceConfig = jest.fn().mockReturnValue({ enabled: true });
 const mockGetTransactionsConfig = jest.fn().mockReturnValue({ enabled: true });
+const mockBuildSkillPrimedIdsByName = jest.fn((manualSkillPrimes, alwaysApplySkillPrimes) => {
+  const primed = {};
+  for (const skill of alwaysApplySkillPrimes ?? []) {
+    primed[skill.name] = skill._id.toString();
+  }
+  for (const skill of manualSkillPrimes ?? []) {
+    primed[skill.name] = skill._id.toString();
+  }
+  return Object.keys(primed).length > 0 ? primed : undefined;
+});
+const mockEnrichWithSkillConfigurable = jest.fn((result) => result);
+const mockBuildAgentToolContext = jest.fn(({ agent, config }) => ({
+  agent,
+  toolRegistry: config.toolRegistry,
+  userMCPAuthMap: config.userMCPAuthMap,
+  tool_resources: config.tool_resources,
+  actionsEnabled: config.actionsEnabled,
+  accessibleSkillIds: config.accessibleSkillIds,
+  activeSkillNames: config.activeSkillNames,
+  codeEnvAvailable: config.codeEnvAvailable,
+  skillAuthoringAvailable: config.skillAuthoringAvailable,
+  fileAuthoringToolNames: config.fileAuthoringToolNames,
+  skillPrimedIdsByName:
+    mockBuildSkillPrimedIdsByName(config.manualSkillPrimes, config.alwaysApplySkillPrimes) ?? {},
+}));
+const mockEnrichLoadedToolsWithAgentContext = jest.fn(({ result, req, ctx }) =>
+  mockEnrichWithSkillConfigurable({
+    result,
+    context: {
+      req,
+      accessibleSkillIds: ctx.accessibleSkillIds,
+      codeEnvAvailable: ctx.codeEnvAvailable === true,
+      skillPrimedIdsByName: ctx.skillPrimedIdsByName,
+      activeSkillNames: ctx.activeSkillNames,
+      skillAuthoringAvailable: ctx.skillAuthoringAvailable === true,
+      fileAuthoringToolNames: ctx.fileAuthoringToolNames,
+    },
+  }),
+);
+const mockCanAuthorSkillFiles = jest.fn(
+  ({ scopedEditableSkillIds = [], skillCreateAllowed }) =>
+    scopedEditableSkillIds.length > 0 || skillCreateAllowed === true,
+);
+const mockGetSkillToolDeps = jest.fn(() => ({}));
 
 jest.mock('nanoid', () => ({
   nanoid: jest.fn(() => 'mock-nanoid-123'),
@@ -41,21 +85,44 @@ jest.mock('@librechat/api', () => ({
     processStream: jest.fn().mockResolvedValue(undefined),
   }),
   buildToolSet: jest.fn().mockReturnValue(new Set()),
+  scopeSkillIds: jest.fn().mockImplementation((ids) => ids),
+  resolveAgentScopedSkillIds: jest
+    .fn()
+    .mockImplementation(({ accessibleSkillIds }) => accessibleSkillIds),
+  loadSkillStates: jest.fn().mockResolvedValue({ skillStates: {}, defaultActiveOnShare: false }),
   createSafeUser: jest.fn().mockReturnValue({ id: 'user-123' }),
   initializeAgent: jest.fn().mockResolvedValue({
+    id: 'agent-123',
     model: 'claude-3',
     model_parameters: {},
     toolRegistry: {},
+    edges: [],
+  }),
+  discoverConnectedAgents: jest.fn().mockResolvedValue({
+    agentConfigs: new Map(),
+    edges: [],
+    skippedAgentIds: new Set(),
+    userMCPAuthMap: undefined,
   }),
   getBalanceConfig: mockGetBalanceConfig,
   getTransactionsConfig: mockGetTransactionsConfig,
   recordCollectedUsage: mockRecordCollectedUsage,
+  extractManualSkills: jest.fn().mockReturnValue(undefined),
+  injectSkillPrimes: jest.fn().mockReturnValue({
+    initialMessages: [],
+    indexTokenCountMap: {},
+    inserted: 0,
+    insertIdx: -1,
+    alwaysApplyDropped: 0,
+    alwaysApplyDedupedFromManual: 0,
+  }),
   createToolExecuteHandler: jest.fn().mockReturnValue({ handle: jest.fn() }),
   // Responses API
   writeDone: jest.fn(),
   buildResponse: jest.fn().mockReturnValue({ id: 'resp_123', output: [] }),
   generateResponseId: jest.fn().mockReturnValue('resp_mock-123'),
   isValidationFailure: jest.fn().mockReturnValue(false),
+  findPiiMatchInMessages: jest.fn().mockReturnValue(null),
   emitResponseCreated: jest.fn(),
   createResponseContext: jest.fn().mockReturnValue({ responseId: 'resp_123' }),
   createResponseTracker: jest.fn().mockReturnValue({
@@ -101,37 +168,70 @@ jest.mock('~/server/services/ToolService', () => ({
   loadToolsForExecution: jest.fn().mockResolvedValue([]),
 }));
 
-jest.mock('~/models/spendTokens', () => ({
-  spendTokens: mockSpendTokens,
-  spendStructuredTokens: mockSpendStructuredTokens,
-}));
+const mockGetMultiplier = jest.fn().mockReturnValue(1);
+const mockGetCacheMultiplier = jest.fn().mockReturnValue(null);
 
-jest.mock('~/server/controllers/agents/callbacks', () => ({
-  createToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
-  createResponsesToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
-}));
+jest.mock('~/server/controllers/agents/callbacks', () => {
+  const noop = { handle: jest.fn() };
+  return {
+    createToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
+    createResponsesToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
+    markSummarizationUsage: jest.fn().mockImplementation((usage) => usage),
+    agentLogHandlerObj: noop,
+    buildSummarizationHandlers: jest.fn().mockReturnValue({
+      on_summarize_start: noop,
+      on_summarize_delta: noop,
+      on_summarize_complete: noop,
+    }),
+  };
+});
 
 jest.mock('~/server/services/PermissionService', () => ({
   findAccessibleResources: jest.fn().mockResolvedValue([]),
+  checkPermission: jest.fn().mockResolvedValue(true),
 }));
 
-jest.mock('~/models/Conversation', () => ({
-  getConvoFiles: jest.fn().mockResolvedValue([]),
-  saveConvo: jest.fn().mockResolvedValue({}),
-  getConvo: jest.fn().mockResolvedValue(null),
+jest.mock('~/server/controllers/ModelController', () => ({
+  getModelsConfig: jest.fn().mockResolvedValue({}),
 }));
 
-jest.mock('~/models/Agent', () => ({
-  getAgent: jest.fn().mockResolvedValue({
-    id: 'agent-123',
-    name: 'Test Agent',
-    provider: 'anthropic',
-    model_parameters: { model: 'claude-3' },
-  }),
-  getAgents: jest.fn().mockResolvedValue([]),
+jest.mock('~/server/services/Files/permissions', () => ({
+  filterFilesByAgentAccess: jest.fn(),
 }));
+
+jest.mock('~/server/services/Endpoints/agents/skillDeps', () => ({
+  getSkillToolDeps: mockGetSkillToolDeps,
+  getSkillDbMethods: jest.fn(() => ({})),
+  canAuthorSkillFiles: mockCanAuthorSkillFiles,
+  withDeploymentSkillIds: jest.fn((ids = []) => ids),
+  enrichWithSkillConfigurable: mockEnrichWithSkillConfigurable,
+  buildSkillPrimedIdsByName: mockBuildSkillPrimedIdsByName,
+  buildAgentToolContext: mockBuildAgentToolContext,
+  enrichLoadedToolsWithAgentContext: mockEnrichLoadedToolsWithAgentContext,
+}));
+
+jest.mock('~/cache', () => ({
+  logViolation: jest.fn(),
+}));
+
+jest.mock('~/server/services/Files/strategies', () => ({
+  getStrategyFunctions: jest.fn().mockReturnValue({}),
+}));
+
+jest.mock('~/server/services/Files/Code/crud', () => ({
+  batchUploadCodeEnvFiles: jest.fn().mockResolvedValue({ session_id: '', files: [] }),
+}));
+
+jest.mock('~/server/services/Files/Code/process', () => ({
+  getSessionInfo: jest.fn().mockResolvedValue(null),
+  checkIfActive: jest.fn().mockReturnValue(false),
+}));
+
+const mockUpdateBalance = jest.fn().mockResolvedValue({});
+const mockBulkInsertTransactions = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('~/models', () => ({
+  getAgent: jest.fn().mockResolvedValue({ id: 'agent-123', name: 'Test Agent' }),
   getFiles: jest.fn(),
   getUserKey: jest.fn(),
   getMessages: jest.fn().mockResolvedValue([]),
@@ -141,6 +241,15 @@ jest.mock('~/models', () => ({
   getUserCodeFiles: jest.fn(),
   getToolFilesByIds: jest.fn(),
   getCodeGeneratedFiles: jest.fn(),
+  updateBalance: mockUpdateBalance,
+  bulkInsertTransactions: mockBulkInsertTransactions,
+  spendTokens: mockSpendTokens,
+  spendStructuredTokens: mockSpendStructuredTokens,
+  getMultiplier: mockGetMultiplier,
+  getCacheMultiplier: mockGetCacheMultiplier,
+  getConvoFiles: jest.fn().mockResolvedValue([]),
+  saveConvo: jest.fn().mockResolvedValue({}),
+  getConvo: jest.fn().mockResolvedValue(null),
 }));
 
 describe('createResponse controller', () => {
@@ -178,13 +287,117 @@ describe('createResponse controller', () => {
     };
   });
 
+  describe('conversation ownership validation', () => {
+    it('should skip ownership check when previous_response_id is not provided', async () => {
+      const { getConvo } = require('~/models');
+      await createResponse(req, res);
+      expect(getConvo).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when previous_response_id is not a string', async () => {
+      const { validateResponseRequest, sendResponsesErrorResponse } = require('@librechat/api');
+      validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Hello',
+          stream: false,
+          previous_response_id: { $gt: '' },
+        },
+      });
+
+      await createResponse(req, res);
+      expect(sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        'previous_response_id must be a string',
+        'invalid_request',
+      );
+    });
+
+    it('should return 404 when conversation is not owned by user', async () => {
+      const { validateResponseRequest, sendResponsesErrorResponse } = require('@librechat/api');
+      const { getConvo } = require('~/models');
+      validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Hello',
+          stream: false,
+          previous_response_id: 'resp_abc',
+        },
+      });
+      getConvo.mockResolvedValueOnce(null);
+
+      await createResponse(req, res);
+      expect(getConvo).toHaveBeenCalledWith('user-123', 'resp_abc');
+      expect(sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        404,
+        'Conversation not found',
+        'not_found',
+      );
+    });
+
+    it('should proceed when conversation is owned by user', async () => {
+      const { validateResponseRequest, sendResponsesErrorResponse } = require('@librechat/api');
+      const { getConvo } = require('~/models');
+      validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Hello',
+          stream: false,
+          previous_response_id: 'resp_abc',
+        },
+      });
+      getConvo.mockResolvedValueOnce({ conversationId: 'resp_abc', user: 'user-123' });
+
+      await createResponse(req, res);
+      expect(getConvo).toHaveBeenCalledWith('user-123', 'resp_abc');
+      expect(sendResponsesErrorResponse).not.toHaveBeenCalledWith(
+        res,
+        404,
+        expect.any(String),
+        expect.any(String),
+      );
+    });
+
+    it('should return 500 when getConvo throws a DB error', async () => {
+      const { validateResponseRequest, sendResponsesErrorResponse } = require('@librechat/api');
+      const { getConvo } = require('~/models');
+      validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Hello',
+          stream: false,
+          previous_response_id: 'resp_abc',
+        },
+      });
+      getConvo.mockRejectedValueOnce(new Error('DB connection failed'));
+
+      await createResponse(req, res);
+      expect(sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        500,
+        expect.any(String),
+        expect.any(String),
+      );
+    });
+  });
+
   describe('token usage recording - non-streaming', () => {
     it('should call recordCollectedUsage after successful non-streaming completion', async () => {
       await createResponse(req, res);
 
       expect(mockRecordCollectedUsage).toHaveBeenCalledTimes(1);
       expect(mockRecordCollectedUsage).toHaveBeenCalledWith(
-        { spendTokens: mockSpendTokens, spendStructuredTokens: mockSpendStructuredTokens },
+        {
+          spendTokens: mockSpendTokens,
+          spendStructuredTokens: mockSpendStructuredTokens,
+          pricing: { getMultiplier: mockGetMultiplier, getCacheMultiplier: mockGetCacheMultiplier },
+          bulkWriteOps: {
+            insertMany: mockBulkInsertTransactions,
+            updateBalance: mockUpdateBalance,
+          },
+        },
         expect.objectContaining({
           user: 'user-123',
           conversationId: expect.any(String),
@@ -209,12 +422,18 @@ describe('createResponse controller', () => {
       );
     });
 
-    it('should pass spendTokens and spendStructuredTokens as dependencies', async () => {
+    it('should pass spendTokens, spendStructuredTokens, pricing, and bulkWriteOps as dependencies', async () => {
       await createResponse(req, res);
 
       const [deps] = mockRecordCollectedUsage.mock.calls[0];
       expect(deps).toHaveProperty('spendTokens', mockSpendTokens);
       expect(deps).toHaveProperty('spendStructuredTokens', mockSpendStructuredTokens);
+      expect(deps).toHaveProperty('pricing');
+      expect(deps.pricing).toHaveProperty('getMultiplier', mockGetMultiplier);
+      expect(deps.pricing).toHaveProperty('getCacheMultiplier', mockGetCacheMultiplier);
+      expect(deps).toHaveProperty('bulkWriteOps');
+      expect(deps.bulkWriteOps).toHaveProperty('insertMany', mockBulkInsertTransactions);
+      expect(deps.bulkWriteOps).toHaveProperty('updateBalance', mockUpdateBalance);
     });
 
     it('should include model from primaryConfig in recordCollectedUsage params', async () => {
@@ -244,7 +463,15 @@ describe('createResponse controller', () => {
 
       expect(mockRecordCollectedUsage).toHaveBeenCalledTimes(1);
       expect(mockRecordCollectedUsage).toHaveBeenCalledWith(
-        { spendTokens: mockSpendTokens, spendStructuredTokens: mockSpendStructuredTokens },
+        {
+          spendTokens: mockSpendTokens,
+          spendStructuredTokens: mockSpendStructuredTokens,
+          pricing: { getMultiplier: mockGetMultiplier, getCacheMultiplier: mockGetCacheMultiplier },
+          bulkWriteOps: {
+            insertMany: mockBulkInsertTransactions,
+            updateBalance: mockUpdateBalance,
+          },
+        },
         expect.objectContaining({
           user: 'user-123',
           context: 'message',
@@ -257,28 +484,7 @@ describe('createResponse controller', () => {
     it('should collect usage from on_chat_model_end events', async () => {
       const api = require('@librechat/api');
 
-      let capturedOnChatModelEnd;
-      api.createAggregatorEventHandlers.mockImplementation(() => {
-        return {
-          on_message_delta: { handle: jest.fn() },
-          on_reasoning_delta: { handle: jest.fn() },
-          on_run_step: { handle: jest.fn() },
-          on_run_step_delta: { handle: jest.fn() },
-          on_chat_model_end: {
-            handle: jest.fn((event, data) => {
-              if (capturedOnChatModelEnd) {
-                capturedOnChatModelEnd(event, data);
-              }
-            }),
-          },
-        };
-      });
-
       api.createRun.mockImplementation(async ({ customHandlers }) => {
-        capturedOnChatModelEnd = (event, data) => {
-          customHandlers.on_chat_model_end.handle(event, data);
-        };
-
         return {
           processStream: jest.fn().mockImplementation(async () => {
             customHandlers.on_chat_model_end.handle('on_chat_model_end', {
@@ -295,7 +501,6 @@ describe('createResponse controller', () => {
       });
 
       await createResponse(req, res);
-
       expect(mockRecordCollectedUsage).toHaveBeenCalledWith(
         expect.any(Object),
         expect.objectContaining({
@@ -307,6 +512,89 @@ describe('createResponse controller', () => {
           ]),
         }),
       );
+    });
+  });
+
+  describe('sub-agent skill priming', () => {
+    it('passes the sub-agent primed skill IDs into non-streaming tool execution', async () => {
+      const {
+        initializeAgent,
+        discoverConnectedAgents,
+        createToolExecuteHandler,
+      } = require('@librechat/api');
+      const { loadToolsForExecution } = require('~/server/services/ToolService');
+      const subAgent = { id: 'agent-sub', name: 'Sub Agent' };
+      const subConfig = {
+        id: 'agent-sub',
+        model: 'claude-3',
+        model_parameters: {},
+        toolRegistry: new Map(),
+        userMCPAuthMap: { sub: { token: 'sub-token' } },
+        tool_resources: { code_interpreter: { file_ids: ['sub-file'] } },
+        actionsEnabled: true,
+        accessibleSkillIds: ['sub-skill-id'],
+        activeSkillNames: ['sub-hidden-skill'],
+        codeEnvAvailable: true,
+        skillAuthoringAvailable: true,
+        fileAuthoringToolNames: ['create_file', 'edit_file'],
+        manualSkillPrimes: [{ name: 'sub-hidden-skill', _id: { toString: () => 'sub-manual-id' } }],
+        alwaysApplySkillPrimes: [
+          { name: 'sub-always-skill', _id: { toString: () => 'sub-always-id' } },
+        ],
+      };
+
+      initializeAgent.mockResolvedValueOnce({
+        id: 'agent-123',
+        model: 'claude-3',
+        model_parameters: {},
+        toolRegistry: new Map(),
+        edges: [{ source: 'agent-123', target: 'agent-sub' }],
+        accessibleSkillIds: ['primary-skill-id'],
+        activeSkillNames: ['primary-skill'],
+        codeEnvAvailable: false,
+        skillAuthoringAvailable: false,
+        fileAuthoringToolNames: [],
+        manualSkillPrimes: [{ name: 'primary-skill', _id: { toString: () => 'primary-skill-id' } }],
+      });
+      discoverConnectedAgents.mockImplementationOnce(async (_params, deps) => {
+        deps.onAgentInitialized('agent-sub', subAgent, subConfig);
+        return {
+          agentConfigs: new Map([['agent-sub', subConfig]]),
+          edges: [],
+          skippedAgentIds: new Set(),
+          userMCPAuthMap: undefined,
+        };
+      });
+
+      await createResponse(req, res);
+
+      const toolExecuteOptions = createToolExecuteHandler.mock.calls.at(-1)[0];
+      await toolExecuteOptions.loadTools(['read_file'], 'agent-sub');
+
+      expect(loadToolsForExecution).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          agent: subAgent,
+          toolRegistry: subConfig.toolRegistry,
+          userMCPAuthMap: subConfig.userMCPAuthMap,
+          tool_resources: subConfig.tool_resources,
+          actionsEnabled: true,
+        }),
+      );
+      expect(mockEnrichWithSkillConfigurable).toHaveBeenLastCalledWith({
+        result: expect.anything(),
+        context: {
+          req,
+          accessibleSkillIds: ['sub-skill-id'],
+          codeEnvAvailable: true,
+          skillPrimedIdsByName: {
+            'sub-always-skill': 'sub-always-id',
+            'sub-hidden-skill': 'sub-manual-id',
+          },
+          activeSkillNames: ['sub-hidden-skill'],
+          skillAuthoringAvailable: true,
+          fileAuthoringToolNames: ['create_file', 'edit_file'],
+        },
+      });
     });
   });
 });

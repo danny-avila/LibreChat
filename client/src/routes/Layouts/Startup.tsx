@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import type { TStartupConfig } from 'librechat-data-provider';
+import { TranslationKeys, useLocalize } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
 import AuthLayout from '~/components/Auth/AuthLayout';
-import { TranslationKeys, useLocalize } from '~/hooks';
+import { REDIRECT_PARAM, SESSION_KEY } from '~/utils';
 
 const headerMap: Record<string, TranslationKeys> = {
   '/login': 'com_auth_welcome_back',
@@ -30,7 +31,12 @@ export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: b
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/c/new', { replace: true });
+      const hasPendingRedirect =
+        new URLSearchParams(window.location.search).has(REDIRECT_PARAM) ||
+        sessionStorage.getItem(SESSION_KEY) != null;
+      if (!hasPendingRedirect) {
+        navigate('/c/new', { replace: true });
+      }
     }
     if (data) {
       setStartupConfig(data);

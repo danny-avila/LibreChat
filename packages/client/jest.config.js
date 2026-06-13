@@ -16,6 +16,7 @@ export default {
   //     lines: 57,
   //   },
   // },
+  maxWorkers: '50%',
   restoreMocks: true,
   testTimeout: 15000,
   // React component testing requires jsdom environment

@@ -6,7 +6,12 @@ import {
   EndpointURLs,
 } from 'librechat-data-provider';
 import type { IRole, IUser } from '@librechat/data-schemas';
-import { checkAccess, generateCheckAccess, skipAgentCheck } from './access';
+import {
+  checkAccess,
+  checkAccessWithRequestCache,
+  generateCheckAccess,
+  skipAgentCheck,
+} from './access';
 
 // Mock logger
 jest.mock('@librechat/data-schemas', () => ({
@@ -216,17 +221,12 @@ describe('access middleware', () => {
 
       defaultParams.getRoleByName.mockResolvedValue(mockRole);
 
-      const checkObject = {
-        projectIds: ['project1'],
-        removeProjectIds: ['project2'],
-      };
+      const checkObject = { id: 'agent123' };
 
       const result = await checkAccess({
         ...defaultParams,
         permissions: [Permissions.USE, Permissions.SHARE],
-        bodyProps: {
-          [Permissions.SHARE]: ['projectIds', 'removeProjectIds'],
-        } as Record<Permissions, string[]>,
+        bodyProps: { [Permissions.SHARE]: ['id'] } as Record<Permissions, string[]>,
         checkObject,
       });
       expect(result).toBe(true);
@@ -244,17 +244,12 @@ describe('access middleware', () => {
 
       defaultParams.getRoleByName.mockResolvedValue(mockRole);
 
-      const checkObject = {
-        projectIds: ['project1'],
-        // missing removeProjectIds
-      };
+      const checkObject = {};
 
       const result = await checkAccess({
         ...defaultParams,
         permissions: [Permissions.SHARE],
-        bodyProps: {
-          [Permissions.SHARE]: ['projectIds', 'removeProjectIds'],
-        } as Record<Permissions, string[]>,
+        bodyProps: {} as Record<Permissions, string[]>,
         checkObject,
       });
       expect(result).toBe(false);
@@ -276,6 +271,100 @@ describe('access middleware', () => {
 
       const result = await checkAccess(defaultParams);
       expect(result).toBe(false);
+    });
+  });
+
+  describe('checkAccessWithRequestCache', () => {
+    const defaultParams = {
+      user: {
+        id: 'user123',
+        role: 'user',
+        email: 'test@example.com',
+        emailVerified: true,
+        provider: 'local',
+      } as IUser,
+      permissionType: PermissionTypes.MCP_SERVERS,
+      permissions: [Permissions.USE],
+      getRoleByName: jest.fn(),
+    };
+
+    const allowedRole = {
+      name: 'user',
+      permissions: {
+        [PermissionTypes.MCP_SERVERS]: {
+          [Permissions.USE]: true,
+          [Permissions.CREATE]: true,
+        },
+      },
+    } as unknown as IRole;
+
+    it('should memoize permission checks for the same request', async () => {
+      defaultParams.getRoleByName.mockResolvedValue(allowedRole);
+
+      const params = {
+        ...defaultParams,
+        req: mockReq as Request,
+      };
+
+      await expect(checkAccessWithRequestCache(params)).resolves.toBe(true);
+      await expect(checkAccessWithRequestCache(params)).resolves.toBe(true);
+
+      expect(defaultParams.getRoleByName).toHaveBeenCalledTimes(1);
+    });
+
+    it('should share an in-flight permission check for the same request', async () => {
+      defaultParams.getRoleByName.mockResolvedValue(allowedRole);
+
+      const params = {
+        ...defaultParams,
+        req: mockReq as Request,
+      };
+
+      await expect(
+        Promise.all([checkAccessWithRequestCache(params), checkAccessWithRequestCache(params)]),
+      ).resolves.toEqual([true, true]);
+
+      expect(defaultParams.getRoleByName).toHaveBeenCalledTimes(1);
+    });
+
+    it('should isolate memoized checks between requests', async () => {
+      defaultParams.getRoleByName.mockResolvedValue(allowedRole);
+
+      await expect(
+        checkAccessWithRequestCache({
+          ...defaultParams,
+          req: mockReq as Request,
+        }),
+      ).resolves.toBe(true);
+      await expect(
+        checkAccessWithRequestCache({
+          ...defaultParams,
+          req: { ...mockReq } as Request,
+        }),
+      ).resolves.toBe(true);
+
+      expect(defaultParams.getRoleByName).toHaveBeenCalledTimes(2);
+    });
+
+    it('should use separate cache entries for different permissions', async () => {
+      defaultParams.getRoleByName.mockResolvedValue(allowedRole);
+
+      await expect(
+        checkAccessWithRequestCache({
+          ...defaultParams,
+          req: mockReq as Request,
+          permissions: [Permissions.USE],
+        }),
+      ).resolves.toBe(true);
+      await expect(
+        checkAccessWithRequestCache({
+          ...defaultParams,
+          req: mockReq as Request,
+          permissions: [Permissions.CREATE],
+        }),
+      ).resolves.toBe(true);
+
+      expect(defaultParams.getRoleByName).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -343,17 +432,12 @@ describe('access middleware', () => {
       } as unknown as IRole;
 
       mockGetRoleByName.mockResolvedValue(mockRole);
-      mockReq.body = {
-        projectIds: ['project1'],
-        removeProjectIds: ['project2'],
-      };
+      mockReq.body = { id: 'agent123' };
 
       const middleware = generateCheckAccess({
         permissionType: PermissionTypes.AGENTS,
         permissions: [Permissions.USE, Permissions.CREATE, Permissions.SHARE],
-        bodyProps: {
-          [Permissions.SHARE]: ['projectIds', 'removeProjectIds'],
-        } as Record<Permissions, string[]>,
+        bodyProps: { [Permissions.SHARE]: ['id'] } as Record<Permissions, string[]>,
         getRoleByName: mockGetRoleByName,
       });
 

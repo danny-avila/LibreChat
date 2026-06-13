@@ -93,19 +93,23 @@ jest.mock('librechat-data-provider', () => {
   };
 });
 
-// Mock data-provider hooks
-jest.mock('~/data-provider', () => ({
-  useGetAgentByIdQuery: jest.fn(() => ({
-    data: null,
-    isLoading: false,
-    error: null,
-  })),
-  useListAgentsQuery: jest.fn(() => ({
-    data: null,
-    isLoading: false,
-    error: null,
-  })),
-}));
+// Mock data-provider hooks while preserving real exports like startupConfigKey
+jest.mock('~/data-provider', () => {
+  const actual = jest.requireActual<typeof import('~/data-provider')>('~/data-provider');
+  return {
+    ...actual,
+    useGetAgentByIdQuery: jest.fn(() => ({
+      data: null,
+      isLoading: false,
+      error: null,
+    })),
+    useListAgentsQuery: jest.fn(() => ({
+      data: null,
+      isLoading: false,
+      error: null,
+    })),
+  };
+});
 
 // Mock global window.history
 global.window = Object.create(window);
@@ -220,9 +224,14 @@ describe('useQueryParams', () => {
       handleSubmit: jest.fn((callback) => () => callback({ text: 'test message' })),
     });
 
-    // Mock startup config to allow processing
     (useQueryClient as jest.Mock).mockReturnValue({
-      getQueryData: jest.fn().mockReturnValue({ modelSpecs: { list: [] } }),
+      getQueryData: jest.fn().mockImplementation((key) => {
+        const k = Array.isArray(key) ? key[0] : key;
+        if (k === 'startupConfig') {
+          return { modelSpecs: { list: [] } };
+        }
+        return null;
+      }),
     });
 
     setUrlParams({ q: 'hello world' });
@@ -241,7 +250,11 @@ describe('useQueryParams', () => {
       'hello world',
       expect.objectContaining({ shouldValidate: true }),
     );
-    expect(window.history.replaceState).toHaveBeenCalled();
+    const mockSetSearchParams = (useSearchParams as jest.Mock).mock.results[0].value[1];
+    const [params, options] = mockSetSearchParams.mock.calls[0];
+    expect(params).toBeInstanceOf(URLSearchParams);
+    expect(params.toString()).toBe('');
+    expect(options).toEqual(expect.objectContaining({ replace: true }));
   });
 
   it('should auto-submit message when submit=true and no settings to apply', () => {
@@ -266,9 +279,14 @@ describe('useQueryParams', () => {
       submitMessage: mockSubmitMessage,
     });
 
-    // Mock startup config to allow processing
     (useQueryClient as jest.Mock).mockReturnValue({
-      getQueryData: jest.fn().mockReturnValue({ modelSpecs: { list: [] } }),
+      getQueryData: jest.fn().mockImplementation((key) => {
+        const k = Array.isArray(key) ? key[0] : key;
+        if (k === 'startupConfig') {
+          return { modelSpecs: { list: [] } };
+        }
+        return null;
+      }),
     });
 
     setUrlParams({ q: 'hello world', submit: 'true' });
@@ -304,13 +322,14 @@ describe('useQueryParams', () => {
       } as unknown as HTMLTextAreaElement,
     };
 
-    // Mock getQueryData to return array format for startupConfig
+    // Mock getQueryData to return array format for startupConfig and endpoints
     const mockGetQueryData = jest.fn().mockImplementation((key) => {
-      if (Array.isArray(key) && key[0] === 'startupConfig') {
+      const k = Array.isArray(key) ? key[0] : key;
+      if (k === 'startupConfig') {
         return { modelSpecs: { list: [] } };
       }
-      if (key === 'startupConfig') {
-        return { modelSpecs: { list: [] } };
+      if (k === 'endpoints') {
+        return {};
       }
       return null;
     });
@@ -396,14 +415,15 @@ describe('useQueryParams', () => {
       newConversation: mockNewConversation,
     });
 
-    // Mock startup config to allow processing
+    // Mock startup config and endpoints to allow processing
     (useQueryClient as jest.Mock).mockReturnValue({
       getQueryData: jest.fn().mockImplementation((key) => {
-        if (Array.isArray(key) && key[0] === 'startupConfig') {
+        const k = Array.isArray(key) ? key[0] : key;
+        if (k === 'startupConfig') {
           return { modelSpecs: { list: [] } };
         }
-        if (key === 'startupConfig') {
-          return { modelSpecs: { list: [] } };
+        if (k === 'endpoints') {
+          return {};
         }
         return null;
       }),
@@ -454,9 +474,14 @@ describe('useQueryParams', () => {
       submitMessage: mockSubmitMessage,
     });
 
-    // Mock startup config to allow processing
     (useQueryClient as jest.Mock).mockReturnValue({
-      getQueryData: jest.fn().mockReturnValue({ modelSpecs: { list: [] } }),
+      getQueryData: jest.fn().mockImplementation((key) => {
+        const k = Array.isArray(key) ? key[0] : key;
+        if (k === 'startupConfig') {
+          return { modelSpecs: { list: [] } };
+        }
+        return null;
+      }),
     });
 
     setUrlParams({ model: 'gpt-4' }); // No submit=true
@@ -500,9 +525,14 @@ describe('useQueryParams', () => {
       submitMessage: mockSubmitMessage,
     });
 
-    // Mock startup config to allow processing
     (useQueryClient as jest.Mock).mockReturnValue({
-      getQueryData: jest.fn().mockReturnValue({ modelSpecs: { list: [] } }),
+      getQueryData: jest.fn().mockImplementation((key) => {
+        const k = Array.isArray(key) ? key[0] : key;
+        if (k === 'startupConfig') {
+          return { modelSpecs: { list: [] } };
+        }
+        return null;
+      }),
     });
 
     setUrlParams({}); // Empty params
@@ -524,6 +554,10 @@ describe('useQueryParams', () => {
     expect(mockSetValue).not.toHaveBeenCalled();
     expect(mockHandleSubmit).not.toHaveBeenCalled();
     expect(mockSubmitMessage).not.toHaveBeenCalled();
-    expect(window.history.replaceState).toHaveBeenCalled();
+    const mockSetSearchParams = (useSearchParams as jest.Mock).mock.results[0].value[1];
+    const [params, options] = mockSetSearchParams.mock.calls[0];
+    expect(params).toBeInstanceOf(URLSearchParams);
+    expect(params.toString()).toBe('');
+    expect(options).toEqual(expect.objectContaining({ replace: true }));
   });
 });

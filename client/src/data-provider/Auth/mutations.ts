@@ -40,14 +40,19 @@ export const useLoginUserMutation = (
     mutationFn: (payload: t.TLoginUser) => dataService.login(payload),
     ...(options || {}),
     onMutate: (vars) => {
+      setQueriesEnabled(false);
       resetDefaultPreset();
       clearStates();
       queryClient.removeQueries();
       options?.onMutate?.(vars);
     },
+    // Queries re-enabled in setUserContext (AuthContext) after setTokenHeader runs
     onSuccess: (...args) => {
-      setQueriesEnabled(true);
       options?.onSuccess?.(...args);
+    },
+    onError: (...args) => {
+      setQueriesEnabled(true);
+      options?.onError?.(...args);
     },
   });
 };
@@ -68,14 +73,14 @@ export const useRefreshTokenMutation = (
 
 /* User */
 export const useDeleteUserMutation = (
-  options?: t.MutationOptions<unknown, undefined>,
-): UseMutationResult<unknown, unknown, undefined, unknown> => {
+  options?: t.MutationOptions<unknown, t.TDeleteUserRequest | undefined>,
+): UseMutationResult<unknown, unknown, t.TDeleteUserRequest | undefined, unknown> => {
   const queryClient = useQueryClient();
   const clearStates = useClearStates();
   const resetDefaultPreset = useResetRecoilState(store.defaultPreset);
 
   return useMutation([MutationKeys.deleteUser], {
-    mutationFn: () => dataService.deleteUser(),
+    mutationFn: (payload?: t.TDeleteUserRequest) => dataService.deleteUser(payload),
     ...(options || {}),
     onSuccess: (...args) => {
       resetDefaultPreset();
@@ -90,11 +95,11 @@ export const useDeleteUserMutation = (
 export const useEnableTwoFactorMutation = (): UseMutationResult<
   t.TEnable2FAResponse,
   unknown,
-  void,
+  t.TEnable2FARequest | undefined,
   unknown
 > => {
   const queryClient = useQueryClient();
-  return useMutation(() => dataService.enableTwoFactor(), {
+  return useMutation((payload?: t.TEnable2FARequest) => dataService.enableTwoFactor(payload), {
     onSuccess: (data) => {
       queryClient.setQueryData([QueryKeys.user, '2fa'], data);
     },
@@ -146,15 +151,18 @@ export const useDisableTwoFactorMutation = (): UseMutationResult<
 export const useRegenerateBackupCodesMutation = (): UseMutationResult<
   t.TRegenerateBackupCodesResponse,
   unknown,
-  void,
+  t.TRegenerateBackupCodesRequest | undefined,
   unknown
 > => {
   const queryClient = useQueryClient();
-  return useMutation(() => dataService.regenerateBackupCodes(), {
-    onSuccess: (data) => {
-      queryClient.setQueryData([QueryKeys.user, '2fa', 'backup'], data);
+  return useMutation(
+    (payload?: t.TRegenerateBackupCodesRequest) => dataService.regenerateBackupCodes(payload),
+    {
+      onSuccess: (data) => {
+        queryClient.setQueryData([QueryKeys.user, '2fa', 'backup'], data);
+      },
     },
-  });
+  );
 };
 
 export const useVerifyTwoFactorTempMutation = (

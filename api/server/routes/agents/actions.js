@@ -1,7 +1,15 @@
 const express = require('express');
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
-const { generateCheckAccess, isActionDomainAllowed } = require('@librechat/api');
+const {
+  generateCheckAccess,
+  planAgentActionUpdate,
+  isActionDomainAllowed,
+  legacyActionDomainEncode,
+  validateActionOAuthMetadata,
+  ACTION_CREDENTIAL_REFRESH_MESSAGE,
+  buildActionOAuthTokenDeleteQueries,
+} = require('@librechat/api');
 const {
   Permissions,
   ResourceType,
@@ -14,17 +22,21 @@ const {
 } = require('librechat-data-provider');
 const { encryptMetadata, domainParser } = require('~/server/services/ActionService');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
-const { getAgent, updateAgent, getListAgentsByAccess } = require('~/models/Agent');
-const { updateAction, getActions, deleteAction } = require('~/models/Action');
+const db = require('~/models');
 const { canAccessAgentResource } = require('~/server/middleware');
-const { getRoleByName } = require('~/models/Role');
 
 const router = express.Router();
+
+async function deleteActionOAuthTokens(action_id) {
+  await Promise.all(
+    buildActionOAuthTokenDeleteQueries(action_id).map((query) => db.deleteTokens(query)),
+  );
+}
 
 const checkAgentCreate = generateCheckAccess({
   permissionType: PermissionTypes.AGENTS,
   permissions: [Permissions.USE, Permissions.CREATE],
-  getRoleByName,
+  getRoleByName: db.getRoleByName,
 });
 
 /**
@@ -43,13 +55,16 @@ router.get('/', async (req, res) => {
       requiredPermissions: PermissionBits.EDIT,
     });
 
-    const agentsResponse = await getListAgentsByAccess({
+    const agentsResponse = await db.getListAgentsByAccess({
       accessibleIds: editableAgentObjectIds,
+      limit: null,
     });
 
     const editableAgentIds = agentsResponse.data.map((agent) => agent.id);
     const actions =
-      editableAgentIds.length > 0 ? await getActions({ agent_id: { $in: editableAgentIds } }) : [];
+      editableAgentIds.length > 0
+        ? await db.getActions({ agent_id: { $in: editableAgentIds } })
+        : [];
 
     res.json(actions);
   } catch (error) {
@@ -83,7 +98,7 @@ router.post(
         return res.status(400).json({ message: 'No functions provided' });
       }
 
-      let metadata = await encryptMetadata(removeNullishValues(_metadata, true));
+      const metadata = await encryptMetadata(removeNullishValues(_metadata, true));
       const appConfig = req.config;
 
       // SECURITY: Validate the OpenAPI spec and extract the server URL
@@ -114,25 +129,28 @@ router.post(
       const isDomainAllowed = await isActionDomainAllowed(
         metadata.domain,
         appConfig?.actions?.allowedDomains,
+        appConfig?.actions?.allowedAddresses,
       );
       if (!isDomainAllowed) {
         return res.status(400).json({ message: 'Domain not allowed' });
       }
 
-      let { domain } = metadata;
-      domain = await domainParser(domain, true);
+      const encodedDomain = await domainParser(metadata.domain, true);
 
-      if (!domain) {
+      if (!encodedDomain) {
         return res.status(400).json({ message: 'No domain provided' });
       }
 
-      const action_id = _action_id ?? nanoid();
+      const legacyDomain = legacyActionDomainEncode(metadata.domain);
+
+      const requestedActionId = _action_id;
+      const action_id = requestedActionId ?? nanoid();
       const initialPromises = [];
 
       // Permissions already validated by middleware - load agent directly
-      initialPromises.push(getAgent({ id: agent_id }));
-      if (_action_id) {
-        initialPromises.push(getActions({ action_id }, true));
+      initialPromises.push(db.getAgent({ id: agent_id }));
+      if (requestedActionId) {
+        initialPromises.push(db.getActions({ action_id: requestedActionId }, true));
       }
 
       /** @type {[Agent, [Action|undefined]]} */
@@ -141,35 +159,51 @@ router.post(
         return res.status(404).json({ message: 'Agent not found for adding action' });
       }
 
-      if (actions_result && actions_result.length) {
-        const action = actions_result[0];
-        metadata = { ...action.metadata, ...metadata };
-      }
-
-      const { actions: _actions = [], author: agent_author } = agent ?? {};
-      const actions = [];
-      for (const action of _actions) {
-        const [_action_domain, current_action_id] = action.split(actionDelimiter);
-        if (current_action_id === action_id) {
-          continue;
+      const storedAction = actions_result?.[0];
+      if (storedAction) {
+        if (storedAction.agent_id !== agent_id) {
+          return res.status(403).json({ message: 'Action does not belong to this agent' });
         }
-
-        actions.push(action);
       }
 
-      actions.push(`${domain}${actionDelimiter}${action_id}`);
+      const { actions: agentActions = [], tools: agentTools = [], author: agent_author } = agent;
+      const plannedUpdate = planAgentActionUpdate({
+        agentActions,
+        agentTools,
+        incomingFunctions: functions,
+        incomingMetadata: metadata,
+        actionId: action_id,
+        requestedActionId,
+        encodedDomain,
+        legacyDomain,
+        previousLegacyDomain: legacyActionDomainEncode(storedAction?.metadata?.domain),
+        storedAction,
+      });
 
-      /** @type {string[]}} */
-      const { tools: _tools = [] } = agent;
+      if (plannedUpdate.requiresCredentialRefresh) {
+        return res.status(400).json({
+          message: ACTION_CREDENTIAL_REFRESH_MESSAGE,
+        });
+      }
 
-      const tools = _tools
-        .filter((tool) => !(tool && (tool.includes(domain) || tool.includes(action_id))))
-        .concat(functions.map((tool) => `${tool.function.name}${actionDelimiter}${domain}`));
+      try {
+        await validateActionOAuthMetadata(
+          plannedUpdate.metadata.auth,
+          appConfig?.actions?.allowedAddresses,
+        );
+      } catch (error) {
+        return res.status(400).json({ message: error.message });
+      }
+
+      if (plannedUpdate.deleteOAuthTokens && requestedActionId) {
+        // Keep the callback URL stable while preventing old OAuth tokens from following a new target.
+        await deleteActionOAuthTokens(requestedActionId);
+      }
 
       // Force version update since actions are changing
-      const updatedAgent = await updateAgent(
+      const updatedAgent = await db.updateAgent(
         { id: agent_id },
-        { tools, actions },
+        { tools: plannedUpdate.tools, actions: plannedUpdate.actions },
         {
           updatingUserId: req.user.id,
           forceVersion: true,
@@ -177,14 +211,21 @@ router.post(
       );
 
       // Only update user field for new actions
-      const actionUpdateData = { metadata, agent_id };
+      const actionUpdateData = {
+        action_id: plannedUpdate.actionId,
+        metadata: plannedUpdate.metadata,
+        agent_id,
+      };
       if (!actions_result || !actions_result.length) {
         // For new actions, use the agent owner's user ID
         actionUpdateData.user = agent_author || req.user.id;
       }
 
-      /** @type {[Action]} */
-      const updatedAction = await updateAction({ action_id }, actionUpdateData);
+      /** @type {Action} */
+      const updatedAction = await db.updateAction(
+        { action_id: requestedActionId ?? action_id, agent_id },
+        actionUpdateData,
+      );
 
       const sensitiveFields = ['api_key', 'oauth_client_id', 'oauth_client_secret'];
       for (let field of sensitiveFields) {
@@ -221,37 +262,43 @@ router.delete(
       const { agent_id, action_id } = req.params;
 
       // Permissions already validated by middleware - load agent directly
-      const agent = await getAgent({ id: agent_id });
+      const agent = await db.getAgent({ id: agent_id });
       if (!agent) {
         return res.status(404).json({ message: 'Agent not found for deleting action' });
       }
 
       const { tools = [], actions = [] } = agent;
 
-      let domain = '';
+      let storedDomain = '';
       const updatedActions = actions.filter((action) => {
         if (action.includes(action_id)) {
-          [domain] = action.split(actionDelimiter);
+          [storedDomain] = action.split(actionDelimiter);
           return false;
         }
         return true;
       });
 
-      domain = await domainParser(domain, true);
-
-      if (!domain) {
+      if (!storedDomain) {
         return res.status(400).json({ message: 'No domain provided' });
       }
 
-      const updatedTools = tools.filter((tool) => !(tool && tool.includes(domain)));
+      const updatedTools = tools.filter(
+        (tool) => !(tool && (tool.includes(storedDomain) || tool.includes(action_id))),
+      );
 
       // Force version update since actions are being removed
-      await updateAgent(
+      await db.updateAgent(
         { id: agent_id },
         { tools: updatedTools, actions: updatedActions },
         { updatingUserId: req.user.id, forceVersion: true },
       );
-      await deleteAction({ action_id });
+      const deleted = await db.deleteAction({ action_id, agent_id });
+      if (!deleted) {
+        logger.warn('[Agent Action Delete] No matching action document found', {
+          action_id,
+          agent_id,
+        });
+      }
       res.status(200).json({ message: 'Action deleted successfully' });
     } catch (error) {
       const message = 'Trouble deleting the Agent Action';

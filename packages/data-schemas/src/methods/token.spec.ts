@@ -149,6 +149,35 @@ describe('Token Methods - Detailed Tests', () => {
       expect(found?.userId.toString()).toBe(user2Id.toString());
     });
 
+    test('should find tokens with explicitly absent optional fields', async () => {
+      const legacyUserId = new mongoose.Types.ObjectId();
+      await Token.create([
+        {
+          token: 'legacy-reset-token',
+          userId: legacyUserId,
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+        {
+          token: 'legacy-identified-token',
+          userId: legacyUserId,
+          identifier: 'oauth-legacy',
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+      ]);
+
+      const found = await methods.findToken({
+        userId: legacyUserId.toString(),
+        email: null,
+        identifier: null,
+        type: null,
+      });
+
+      expect(found).toBeDefined();
+      expect(found?.token).toBe('legacy-reset-token');
+    });
+
     test('should find token by identifier', async () => {
       const found = await methods.findToken({ identifier: 'oauth-123' });
 
@@ -551,6 +580,38 @@ describe('Token Methods - Detailed Tests', () => {
       expect(remainingTokens.find((t) => t.identifier === 'oauth-identifier-456')).toBeUndefined();
     });
 
+    test('should delete tokens matching an identifier pattern', async () => {
+      await Token.create([
+        {
+          token: 'action-access-token',
+          userId: oauthUserId,
+          type: 'oauth',
+          identifier: `${oauthUserId.toString()}:action-1`,
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+        {
+          token: 'other-action-token',
+          userId: oauthUserId,
+          type: 'oauth',
+          identifier: `${oauthUserId.toString()}:action-2`,
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+      ]);
+
+      const result = await methods.deleteTokens({
+        type: 'oauth',
+        identifier: /^[^:]+:action-1$/,
+      });
+
+      expect(result.deletedCount).toBe(1);
+
+      const remaining = await Token.find({ userId: oauthUserId, type: 'oauth' });
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0].identifier).toBe(`${oauthUserId.toString()}:action-2`);
+    });
+
     test('should not delete tokens when undefined fields are passed', async () => {
       // This is the critical test case for the bug fix
       const result = await methods.deleteTokens({
@@ -566,26 +627,135 @@ describe('Token Methods - Detailed Tests', () => {
       expect(remainingTokens).toHaveLength(3);
     });
 
-    test('should delete multiple tokens when they match OR conditions', async () => {
-      // Create tokens that will match multiple conditions
+    test('should delete only tokens with explicitly absent optional fields', async () => {
+      const legacyUserId = new mongoose.Types.ObjectId();
+      await Token.create([
+        {
+          token: 'legacy-reset-token',
+          userId: legacyUserId,
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+        {
+          token: 'legacy-identified-token',
+          userId: legacyUserId,
+          identifier: 'oauth-legacy',
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+        {
+          token: 'typed-reset-token',
+          userId: legacyUserId,
+          type: 'password_reset',
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+      ]);
+
+      const result = await methods.deleteTokens({
+        userId: legacyUserId.toString(),
+        email: null,
+        identifier: null,
+        type: null,
+      });
+
+      expect(result.deletedCount).toBe(1);
+
+      const remainingTokens = await Token.find({ userId: legacyUserId });
+      expect(remainingTokens).toHaveLength(2);
+      expect(remainingTokens.find((t) => t.token === 'legacy-reset-token')).toBeUndefined();
+      expect(remainingTokens.find((t) => t.token === 'legacy-identified-token')).toBeDefined();
+      expect(remainingTokens.find((t) => t.token === 'typed-reset-token')).toBeDefined();
+    });
+
+    test('should only delete tokens matching ALL provided fields (AND semantics)', async () => {
       await Token.create({
-        token: 'multi-match',
-        userId: user2Id, // Will match userId condition
+        token: 'extra-user2-token',
+        userId: user2Id,
         email: 'different@example.com',
         createdAt: new Date(),
         expiresAt: new Date(Date.now() + 3600000),
       });
 
       const result = await methods.deleteTokens({
-        token: 'verify-token-1',
+        token: 'verify-token-2',
         userId: user2Id.toString(),
       });
 
-      // Should delete: verify-token-1 (by token) + verify-token-2 (by userId) + multi-match (by userId)
-      expect(result.deletedCount).toBe(3);
+      expect(result.deletedCount).toBe(1);
 
       const remainingTokens = await Token.find({});
-      expect(remainingTokens).toHaveLength(2);
+      expect(remainingTokens).toHaveLength(4);
+      expect(remainingTokens.find((t) => t.token === 'verify-token-1')).toBeDefined();
+      expect(remainingTokens.find((t) => t.token === 'extra-user2-token')).toBeDefined();
+    });
+
+    test('should delete tokens by type and userId together', async () => {
+      await Token.create([
+        {
+          token: 'mcp-oauth-token',
+          userId: oauthUserId,
+          type: 'mcp_oauth',
+          identifier: 'mcp:test-server',
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+        {
+          token: 'mcp-refresh-token',
+          userId: oauthUserId,
+          type: 'mcp_oauth_refresh',
+          identifier: 'mcp:test-server:refresh',
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+      ]);
+
+      const result = await methods.deleteTokens({
+        userId: oauthUserId.toString(),
+        type: 'mcp_oauth',
+        identifier: 'mcp:test-server',
+      });
+
+      expect(result.deletedCount).toBe(1);
+
+      const remaining = await Token.find({ userId: oauthUserId });
+      expect(remaining).toHaveLength(2);
+      expect(remaining.find((t) => t.type === 'mcp_oauth')).toBeUndefined();
+      expect(remaining.find((t) => t.type === 'mcp_oauth_refresh')).toBeDefined();
+    });
+
+    test('should not delete cross-user tokens with matching identifier', async () => {
+      const userAId = new mongoose.Types.ObjectId();
+      const userBId = new mongoose.Types.ObjectId();
+
+      await Token.create([
+        {
+          token: 'user-a-mcp',
+          userId: userAId,
+          type: 'mcp_oauth',
+          identifier: 'mcp:shared-server',
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+        {
+          token: 'user-b-mcp',
+          userId: userBId,
+          type: 'mcp_oauth',
+          identifier: 'mcp:shared-server',
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+      ]);
+
+      await methods.deleteTokens({
+        userId: userAId.toString(),
+        type: 'mcp_oauth',
+        identifier: 'mcp:shared-server',
+      });
+
+      const userBTokens = await Token.find({ userId: userBId });
+      expect(userBTokens).toHaveLength(1);
+      expect(userBTokens[0].token).toBe('user-b-mcp');
     });
 
     test('should throw error when no query parameters provided', async () => {

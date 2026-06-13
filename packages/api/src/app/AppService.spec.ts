@@ -9,6 +9,7 @@ import {
   defaultAgentCapabilities,
 } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
+import type { FunctionTool } from '@librechat/data-schemas';
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
@@ -60,7 +61,7 @@ const azureGroups = [
 ];
 
 describe('AppService', () => {
-  const mockSystemTools = {
+  const mockSystemTools: Record<string, FunctionTool> = {
     ExampleTool: {
       type: 'function',
       function: {
@@ -85,7 +86,7 @@ describe('AppService', () => {
   it('should correctly assign process.env and initialize app config based on custom config', async () => {
     const config: Partial<TCustomConfig> = {
       registration: { socialLogins: ['testLogin'] },
-      fileStrategy: 'testStrategy' as FileSources,
+      fileStrategy: FileSources.s3,
       balance: {
         enabled: true,
       },
@@ -93,22 +94,20 @@ describe('AppService', () => {
 
     const result = await AppService({ config, systemTools: mockSystemTools });
 
-    expect(process.env.CDN_PROVIDER).toEqual('testStrategy');
+    expect(process.env.CDN_PROVIDER).toEqual('s3');
 
     expect(result).toEqual(
       expect.objectContaining({
         config: expect.objectContaining({
-          fileStrategy: 'testStrategy',
+          fileStrategy: 's3',
         }),
         registration: expect.objectContaining({
           socialLogins: ['testLogin'],
         }),
-        fileStrategy: 'testStrategy',
+        fileStrategy: 's3',
         interfaceConfig: expect.objectContaining({
-          endpointsMenu: true,
           modelSelect: true,
           parameters: true,
-          sidePanel: true,
           presets: true,
         }),
         mcpConfig: null,
@@ -177,6 +176,43 @@ describe('AppService', () => {
     expect(result).toEqual(
       expect.objectContaining({
         imageOutputType: EImageOutputType.PNG,
+      }),
+    );
+  });
+
+  it('should enable summarization when it is configured without enabled flag', async () => {
+    const config = {
+      summarization: {
+        prompt: 'Summarize with emphasis on next actions',
+      },
+    } as Partial<TCustomConfig> & { summarization: Record<string, unknown> };
+
+    const result = await AppService({ config });
+    expect(result).toEqual(
+      expect.objectContaining({
+        summarization: expect.objectContaining({
+          enabled: true,
+          prompt: 'Summarize with emphasis on next actions',
+        }),
+      }),
+    );
+  });
+
+  it('should preserve explicit summarization disable flag', async () => {
+    const config = {
+      summarization: {
+        enabled: false,
+        prompt: 'Ignored while disabled',
+      },
+    } as Partial<TCustomConfig> & { summarization: Record<string, unknown> };
+
+    const result = await AppService({ config });
+    expect(result).toEqual(
+      expect.objectContaining({
+        summarization: expect.objectContaining({
+          enabled: false,
+          prompt: 'Ignored while disabled',
+        }),
       }),
     );
   });
@@ -563,9 +599,9 @@ describe('AppService', () => {
     );
 
     // Verify that optional fields are not set when not provided
-    expect(result.endpoints[EModelEndpoint.openAI].titlePrompt).toBeUndefined();
-    expect(result.endpoints[EModelEndpoint.openAI].titlePromptTemplate).toBeUndefined();
-    expect(result.endpoints[EModelEndpoint.openAI].titleMethod).toBeUndefined();
+    expect(result.endpoints![EModelEndpoint.openAI]!.titlePrompt).toBeUndefined();
+    expect(result.endpoints![EModelEndpoint.openAI]!.titlePromptTemplate).toBeUndefined();
+    expect(result.endpoints![EModelEndpoint.openAI]!.titleMethod).toBeUndefined();
   });
 
   it('should correctly configure titleEndpoint when specified', async () => {
@@ -824,7 +860,7 @@ describe('AppService updating app config and issuing warnings', () => {
     );
 
     // Verify excludedIds is undefined when not provided
-    expect(result.endpoints.assistants.excludedIds).toBeUndefined();
+    expect(result.endpoints!.assistants!.excludedIds).toBeUndefined();
   });
 
   it('should not parse environment variable references in OCR config', async () => {

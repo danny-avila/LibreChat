@@ -8,4 +8,5 @@ export interface IBanner extends Document {
   type: 'banner' | 'popup';
   isPublic: boolean;
   persistable: boolean;
+  tenantId?: string;
 }

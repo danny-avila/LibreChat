@@ -165,9 +165,11 @@ export async function performOCR({
     config.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
   }
 
+  const ocrURL = baseURL.endsWith('/ocr') ? baseURL : `${baseURL}/ocr`;
+
   return axios
     .post(
-      `${baseURL}/ocr`,
+      ocrURL,
       {
         model,
         image_limit: 0,

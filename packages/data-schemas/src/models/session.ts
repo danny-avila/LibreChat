@@ -1,9 +1,9 @@
-import sessionSchema from '~/schema/session';
+import { Model } from 'mongoose';
 import type * as t from '~/types';
+import { applyTenantIsolation } from '~/models/plugins/tenantIsolation';
+import sessionSchema from '~/schema/session';
 
-/**
- * Creates or returns the Session model using the provided mongoose instance and schema
- */
-export function createSessionModel(mongoose: typeof import('mongoose')) {
+export function createSessionModel(mongoose: typeof import('mongoose')): Model<t.ISession> {
+  applyTenantIsolation(sessionSchema);
   return mongoose.models.Session || mongoose.model<t.ISession>('Session', sessionSchema);
 }

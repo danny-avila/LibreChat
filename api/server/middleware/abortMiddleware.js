@@ -1,18 +1,18 @@
 const { logger } = require('@librechat/data-schemas');
+const { isAssistantsEndpoint, ErrorTypes } = require('librechat-data-provider');
 const {
-  countTokens,
   isEnabled,
   sendEvent,
+  countTokens,
   GenerationJobManager,
+  recordCollectedUsage,
   sanitizeMessageForTransmit,
 } = require('@librechat/api');
-const { isAssistantsEndpoint, ErrorTypes } = require('librechat-data-provider');
-const { spendTokens, spendStructuredTokens } = require('~/models/spendTokens');
 const { truncateText, smartTruncateText } = require('~/app/clients/prompts');
 const clearPendingReq = require('~/cache/clearPendingReq');
 const { sendError } = require('~/server/middleware/error');
-const { saveMessage, getConvo } = require('~/models');
 const { abortRun } = require('./abortRun');
+const db = require('~/models');
 
 /**
  * Spend tokens for all models from collected usage.
@@ -27,62 +27,35 @@ const { abortRun } = require('./abortRun');
  * @param {string} params.conversationId - Conversation ID
  * @param {Array<Object>} params.collectedUsage - Usage metadata from all models
  * @param {string} [params.fallbackModel] - Fallback model name if not in usage
+ * @param {string} [params.messageId] - The response message ID for transaction correlation
  */
-async function spendCollectedUsage({ userId, conversationId, collectedUsage, fallbackModel }) {
+async function spendCollectedUsage({
+  userId,
+  conversationId,
+  collectedUsage,
+  fallbackModel,
+  messageId,
+}) {
   if (!collectedUsage || collectedUsage.length === 0) {
     return;
   }
 
-  const spendPromises = [];
-
-  for (const usage of collectedUsage) {
-    if (!usage) {
-      continue;
-    }
-
-    // Support both OpenAI format (input_token_details) and Anthropic format (cache_*_input_tokens)
-    const cache_creation =
-      Number(usage.input_token_details?.cache_creation) ||
-      Number(usage.cache_creation_input_tokens) ||
-      0;
-    const cache_read =
-      Number(usage.input_token_details?.cache_read) || Number(usage.cache_read_input_tokens) || 0;
-
-    const txMetadata = {
-      context: 'abort',
-      conversationId,
+  await recordCollectedUsage(
+    {
+      spendTokens: db.spendTokens,
+      spendStructuredTokens: db.spendStructuredTokens,
+      pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
+      bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
+    },
+    {
       user: userId,
-      model: usage.model ?? fallbackModel,
-    };
-
-    if (cache_creation > 0 || cache_read > 0) {
-      spendPromises.push(
-        spendStructuredTokens(txMetadata, {
-          promptTokens: {
-            input: usage.input_tokens,
-            write: cache_creation,
-            read: cache_read,
-          },
-          completionTokens: usage.output_tokens,
-        }).catch((err) => {
-          logger.error('[abortMiddleware] Error spending structured tokens for abort', err);
-        }),
-      );
-      continue;
-    }
-
-    spendPromises.push(
-      spendTokens(txMetadata, {
-        promptTokens: usage.input_tokens,
-        completionTokens: usage.output_tokens,
-      }).catch((err) => {
-        logger.error('[abortMiddleware] Error spending tokens for abort', err);
-      }),
-    );
-  }
-
-  // Wait for all token spending to complete
-  await Promise.all(spendPromises);
+      conversationId,
+      collectedUsage,
+      context: 'abort',
+      messageId,
+      model: fallbackModel,
+    },
+  );
 
   // Clear the array to prevent double-spending from the AgentClient finally block.
   // The collectedUsage array is shared by reference with AgentClient.collectedUsage,
@@ -144,23 +117,28 @@ async function abortMessage(req, res) {
       conversationId: jobData?.conversationId,
       collectedUsage,
       fallbackModel: jobData?.model,
+      messageId: jobData?.responseMessageId,
     });
   } else {
     // Fallback: no collected usage, use text-based token counting for primary model only
-    await spendTokens(
+    await db.spendTokens(
       { ...responseMessage, context: 'incomplete', user: userId },
       { promptTokens, completionTokens },
     );
   }
 
-  await saveMessage(
-    req,
+  await db.saveMessage(
+    {
+      userId: req?.user?.id,
+      isTemporary: req?.body?.isTemporary,
+      interfaceConfig: req?.config?.interfaceConfig,
+    },
     { ...responseMessage, user: userId },
     { context: 'api/server/middleware/abortMiddleware.js' },
   );
 
   // Get conversation for title
-  const conversation = await getConvo(userId, conversationId);
+  const conversation = await db.getConvo(userId, conversationId);
 
   const finalEvent = {
     title: conversation && !conversation.title ? null : conversation?.title || 'New Chat',
@@ -292,4 +270,5 @@ const handleAbortError = async (res, req, error, data) => {
 module.exports = {
   handleAbort,
   handleAbortError,
+  spendCollectedUsage,
 };

@@ -124,6 +124,13 @@ describe('ServerConfigsDB', () => {
       expect(result.config.dbId).toBeDefined();
     });
 
+    it('should reserve operator-managed server names when creating a DB server', async () => {
+      const config = createSSEConfig('My Test Server', 'A test server');
+      const result = await serverConfigsDB.add('temp-name', config, userId, ['my-test-server']);
+
+      expect(result.serverName).toBe('my-test-server-2');
+    });
+
     it('should grant owner ACL to the user', async () => {
       const config = createSSEConfig('ACL Test Server');
       const result = await serverConfigsDB.add('temp-name', config, userId);
@@ -963,6 +970,17 @@ describe('ServerConfigsDB', () => {
     });
 
     describe('user access', () => {
+      it('should reuse resolved principals for direct and agent access lookups', async () => {
+        const findByIdSpy = jest.spyOn(mongoose.models.User, 'findById');
+
+        try {
+          await serverConfigsDB.getAll(userId, 'USER');
+          expect(findByIdSpy).toHaveBeenCalledTimes(1);
+        } finally {
+          findByIdSpy.mockRestore();
+        }
+      });
+
       it('should return servers directly accessible by user', async () => {
         const config1 = createSSEConfig('User Server 1');
         const config2 = createSSEConfig('User Server 2');
@@ -1296,6 +1314,34 @@ describe('ServerConfigsDB', () => {
       expect(typeof created.config.updatedAt).toBe('number');
       expect(created.config.updatedAt).toBeLessThanOrEqual(Date.now());
     });
+
+    it('should strip admin-only OAuth audience fields from existing DB-backed user configs', async () => {
+      const config = createSSEConfig('Legacy Audience Test', undefined, {
+        client_id: 'public-client-id',
+      });
+      const created = await serverConfigsDB.add('temp', config, userId);
+
+      await mongoose.models.MCPServer.updateOne(
+        { serverName: created.serverName },
+        {
+          $set: {
+            'config.oauth.audience': 'https://api.example.com',
+            'config.oauth.forward_audience_on_refresh': false,
+            'config.oauth.authorization_url':
+              'https://auth.example.com/authorize?audience=https%3A%2F%2Fapi.example.com&client=ok',
+            'config.oauth.token_url':
+              'https://auth.example.com/token?resource=https%3A%2F%2Fapi.example.com&foo=bar',
+          },
+        },
+      );
+
+      const result = await serverConfigsDB.get(created.serverName, userId);
+      expect(result?.oauth?.client_id).toBe('public-client-id');
+      expect(result?.oauth?.authorization_url).toBe('https://auth.example.com/authorize?client=ok');
+      expect(result?.oauth?.token_url).toBe('https://auth.example.com/token?foo=bar');
+      expect(result?.oauth?.audience).toBeUndefined();
+      expect(result?.oauth?.forward_audience_on_refresh).toBeUndefined();
+    });
   });
 
   describe('edge cases', () => {
@@ -1454,6 +1500,104 @@ describe('ServerConfigsDB', () => {
       expect(retrieved?.apiKey?.authorization_type).toBe('bearer');
       // Key should be removed due to decryption failure
       expect(retrieved?.apiKey?.key).toBeUndefined();
+    });
+  });
+
+  describe('DB layer returns decrypted secrets (redaction is at controller layer)', () => {
+    it('should return decrypted apiKey.key to VIEW-only user via get()', async () => {
+      const config: ParsedServerConfig = {
+        type: 'sse',
+        url: 'https://example.com/mcp',
+        title: 'Secret API Key Server',
+        apiKey: {
+          source: 'admin',
+          authorization_type: 'bearer',
+          key: 'admin-secret-api-key',
+        },
+      };
+      const created = await serverConfigsDB.add('temp-name', config, userId);
+
+      const role = await mongoose.models.AccessRole.findOne({
+        accessRoleId: AccessRoleIds.MCPSERVER_VIEWER,
+      });
+      await mongoose.models.AclEntry.create({
+        principalType: PrincipalType.USER,
+        principalModel: PrincipalModel.USER,
+        principalId: new mongoose.Types.ObjectId(userId2),
+        resourceType: ResourceType.MCPSERVER,
+        resourceId: new mongoose.Types.ObjectId(created.config.dbId!),
+        permBits: PermissionBits.VIEW,
+        roleId: role!._id,
+        grantedBy: new mongoose.Types.ObjectId(userId),
+      });
+
+      const result = await serverConfigsDB.get(created.serverName, userId2);
+      expect(result).toBeDefined();
+      expect(result?.apiKey?.key).toBe('admin-secret-api-key');
+    });
+
+    it('should return decrypted oauth.client_secret to VIEW-only user via get()', async () => {
+      const config = createSSEConfig('Secret OAuth Server', 'Test', {
+        client_id: 'my-client-id',
+        client_secret: 'admin-oauth-secret',
+      });
+      const created = await serverConfigsDB.add('temp-name', config, userId);
+
+      const role = await mongoose.models.AccessRole.findOne({
+        accessRoleId: AccessRoleIds.MCPSERVER_VIEWER,
+      });
+      await mongoose.models.AclEntry.create({
+        principalType: PrincipalType.USER,
+        principalModel: PrincipalModel.USER,
+        principalId: new mongoose.Types.ObjectId(userId2),
+        resourceType: ResourceType.MCPSERVER,
+        resourceId: new mongoose.Types.ObjectId(created.config.dbId!),
+        permBits: PermissionBits.VIEW,
+        roleId: role!._id,
+        grantedBy: new mongoose.Types.ObjectId(userId),
+      });
+
+      const result = await serverConfigsDB.get(created.serverName, userId2);
+      expect(result).toBeDefined();
+      expect(result?.oauth?.client_secret).toBe('admin-oauth-secret');
+    });
+
+    it('should return decrypted secrets to VIEW-only user via getAll()', async () => {
+      const config: ParsedServerConfig = {
+        type: 'sse',
+        url: 'https://example.com/mcp',
+        title: 'Shared Secret Server',
+        apiKey: {
+          source: 'admin',
+          authorization_type: 'bearer',
+          key: 'shared-api-key',
+        },
+        oauth: {
+          client_id: 'shared-client',
+          client_secret: 'shared-oauth-secret',
+        },
+      };
+      const created = await serverConfigsDB.add('temp-name', config, userId);
+
+      const role = await mongoose.models.AccessRole.findOne({
+        accessRoleId: AccessRoleIds.MCPSERVER_VIEWER,
+      });
+      await mongoose.models.AclEntry.create({
+        principalType: PrincipalType.USER,
+        principalModel: PrincipalModel.USER,
+        principalId: new mongoose.Types.ObjectId(userId2),
+        resourceType: ResourceType.MCPSERVER,
+        resourceId: new mongoose.Types.ObjectId(created.config.dbId!),
+        permBits: PermissionBits.VIEW,
+        roleId: role!._id,
+        grantedBy: new mongoose.Types.ObjectId(userId),
+      });
+
+      const result = await serverConfigsDB.getAll(userId2);
+      const serverConfig = result[created.serverName];
+      expect(serverConfig).toBeDefined();
+      expect(serverConfig?.apiKey?.key).toBe('shared-api-key');
+      expect(serverConfig?.oauth?.client_secret).toBe('shared-oauth-secret');
     });
   });
 });

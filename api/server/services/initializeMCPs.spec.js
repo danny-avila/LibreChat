@@ -81,6 +81,7 @@ describe('initializeMCPs', () => {
       expect(mockCreateMCPServersRegistry).toHaveBeenCalledWith(
         expect.anything(), // mongoose
         ['localhost'],
+        undefined,
       );
     });
 
@@ -93,7 +94,11 @@ describe('initializeMCPs', () => {
 
       await initializeMCPs();
 
-      expect(mockCreateMCPServersRegistry).toHaveBeenCalledWith(expect.anything(), allowedDomains);
+      expect(mockCreateMCPServersRegistry).toHaveBeenCalledWith(
+        expect.anything(),
+        allowedDomains,
+        undefined,
+      );
     });
 
     it('should handle undefined mcpSettings gracefully', async () => {
@@ -104,7 +109,11 @@ describe('initializeMCPs', () => {
 
       await initializeMCPs();
 
-      expect(mockCreateMCPServersRegistry).toHaveBeenCalledWith(expect.anything(), undefined);
+      expect(mockCreateMCPServersRegistry).toHaveBeenCalledWith(
+        expect.anything(),
+        undefined,
+        undefined,
+      );
     });
 
     it('should throw and log error if MCPServersRegistry initialization fails', async () => {

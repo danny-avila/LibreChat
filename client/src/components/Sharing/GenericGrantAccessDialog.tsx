@@ -180,14 +180,18 @@ export default function GenericGrantAccessDialog({
         return !allSharesMap.has(key);
       });
 
+      const publicChanged = isPublic !== currentIsPublic;
+      const publicRoleChanged = isPublic && publicRole !== currentPublicRole;
+      const sendPublicUpdate = publicChanged || publicRoleChanged;
+
       await updatePermissionsMutation.mutateAsync({
         resourceType,
         resourceId: resourceDbId,
         data: {
           updated,
           removed,
-          public: isPublic,
-          publicAccessRoleId: isPublic ? publicRole : undefined,
+          ...(sendPublicUpdate ? { public: isPublic } : {}),
+          ...(sendPublicUpdate && isPublic ? { publicAccessRoleId: publicRole } : {}),
         },
       });
 
@@ -401,6 +405,7 @@ export default function GenericGrantAccessDialog({
                 </Button>
               </OGDialogClose>
               <Button
+                variant="submit"
                 onClick={handleSave}
                 disabled={
                   updatePermissionsMutation.isLoading ||

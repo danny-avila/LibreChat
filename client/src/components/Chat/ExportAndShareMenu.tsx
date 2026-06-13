@@ -2,11 +2,12 @@ import { useState, useId, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
 import * as Ariakit from '@ariakit/react';
 import { Upload, Share2 } from 'lucide-react';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import { DropdownPopup, TooltipAnchor, useMediaQuery } from '@librechat/client';
 import type * as t from '~/common';
 import ExportModal from '~/components/Nav/ExportConversation/ExportModal';
 import { ShareButton } from '~/components/Conversations/ConvoOptions';
-import { useLocalize } from '~/hooks';
+import { useHasAccess, useLocalize } from '~/hooks';
 import store from '~/store';
 
 export default function ExportAndShareMenu({
@@ -22,6 +23,10 @@ export default function ExportAndShareMenu({
   const menuId = useId();
   const shareButtonRef = useRef<HTMLButtonElement>(null);
   const exportButtonRef = useRef<HTMLButtonElement>(null);
+  const canCreateSharedLinks = useHasAccess({
+    permissionType: PermissionTypes.SHARED_LINKS,
+    permission: Permissions.CREATE,
+  });
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const conversation = useRecoilValue(store.conversationByIndex(0));
 
@@ -48,11 +53,11 @@ export default function ExportAndShareMenu({
       label: localize('com_ui_share'),
       onClick: shareHandler,
       icon: <Share2 className="icon-md mr-2 text-text-secondary" />,
-      show: isSharedButtonEnabled,
+      show: isSharedButtonEnabled && canCreateSharedLinks,
       /** NOTE: THE FOLLOWING PROPS ARE REQUIRED FOR MENU ITEMS THAT OPEN DIALOGS */
       hideOnClick: false,
       ref: shareButtonRef,
-      render: (props) => <button {...props} />,
+      render: (props) => <button {...props} data-testid="share-conversation-menu-item" />,
     },
     {
       label: localize('com_endpoint_export'),
@@ -81,10 +86,10 @@ export default function ExportAndShareMenu({
               <Ariakit.MenuButton
                 id="export-menu-button"
                 aria-label="Export options"
-                className="inline-flex size-10 flex-shrink-0 items-center justify-center rounded-xl border border-border-light bg-presentation text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
+                className="inline-flex size-9 flex-shrink-0 items-center justify-center rounded-xl border border-border-light bg-presentation text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
               >
                 <Share2
-                  className="icon-lg text-text-primary"
+                  className="icon-md text-text-primary"
                   aria-hidden="true"
                   focusable="false"
                 />

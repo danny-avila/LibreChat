@@ -1,10 +1,12 @@
-import agentCategorySchema from '~/schema/agentCategory';
+import { Model } from 'mongoose';
 import type * as t from '~/types';
+import { applyTenantIsolation } from '~/models/plugins/tenantIsolation';
+import agentCategorySchema from '~/schema/agentCategory';
 
-/**
- * Creates or returns the AgentCategory model using the provided mongoose instance and schema
- */
-export function createAgentCategoryModel(mongoose: typeof import('mongoose')) {
+export function createAgentCategoryModel(
+  mongoose: typeof import('mongoose'),
+): Model<t.IAgentCategory> {
+  applyTenantIsolation(agentCategorySchema);
   return (
     mongoose.models.AgentCategory ||
     mongoose.model<t.IAgentCategory>('AgentCategory', agentCategorySchema)

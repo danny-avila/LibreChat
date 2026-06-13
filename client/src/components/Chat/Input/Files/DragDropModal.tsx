@@ -2,20 +2,21 @@ import React, { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { OGDialog, OGDialogTemplate } from '@librechat/client';
 import {
-  Providers,
-  inferMimeType,
-  EToolResources,
-  EModelEndpoint,
-  defaultAgentCapabilities,
-  isDocumentSupportedProvider,
-} from 'librechat-data-provider';
-import {
   ImageUpIcon,
   FileSearch,
   FileType2Icon,
   FileImageIcon,
   TerminalSquareIcon,
 } from 'lucide-react';
+import {
+  Providers,
+  inferMimeType,
+  EToolResources,
+  EModelEndpoint,
+  isBedrockDocumentType,
+  defaultAgentCapabilities,
+  isDocumentSupportedProvider,
+} from 'librechat-data-provider';
 import {
   useAgentToolPermissions,
   useAgentCapabilities,
@@ -67,7 +68,9 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
     const getFileType = (file: File) => inferMimeType(file.name, file.type);
 
     const isAzureWithResponsesApi =
-      currentProvider === EModelEndpoint.azureOpenAI && useResponsesApi;
+      (currentProvider === EModelEndpoint.azureOpenAI ||
+        endpointType === EModelEndpoint.azureOpenAI) &&
+      useResponsesApi === true;
 
     // Check if provider supports document upload
     if (
@@ -77,20 +80,26 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
     ) {
       const supportsImageDocVideoAudio =
         currentProvider === EModelEndpoint.google || currentProvider === Providers.OPENROUTER;
-      const validFileTypes = supportsImageDocVideoAudio
-        ? files.every((file) => {
-            const type = getFileType(file);
-            return (
-              type?.startsWith('image/') ||
-              type?.startsWith('video/') ||
-              type?.startsWith('audio/') ||
-              type === 'application/pdf'
-            );
-          })
-        : files.every((file) => {
-            const type = getFileType(file);
-            return type?.startsWith('image/') || type === 'application/pdf';
-          });
+      const isBedrock =
+        currentProvider === Providers.BEDROCK || endpointType === EModelEndpoint.bedrock;
+
+      const isValidProviderFile = (file: File): boolean => {
+        const type = getFileType(file);
+        if (supportsImageDocVideoAudio) {
+          return (
+            type?.startsWith('image/') ||
+            type?.startsWith('video/') ||
+            type?.startsWith('audio/') ||
+            type === 'application/pdf'
+          );
+        }
+        if (isBedrock) {
+          return type?.startsWith('image/') || isBedrockDocumentType(type);
+        }
+        return type?.startsWith('image/') || type === 'application/pdf';
+      };
+
+      const validFileTypes = files.every(isValidProviderFile);
 
       _options.push({
         label: localize('com_ui_upload_provider'),
@@ -116,7 +125,7 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
     }
     if (capabilities.codeEnabled && codeAllowedByAgent) {
       _options.push({
-        label: localize('com_ui_upload_code_files'),
+        label: localize('com_ui_upload_code_environment'),
         value: EToolResources.execute_code,
         icon: <TerminalSquareIcon className="icon-md" />,
       });
