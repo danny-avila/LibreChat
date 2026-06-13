@@ -22,8 +22,7 @@ function getStrokeClass(percent: number, indeterminate: boolean): string {
   if (percent > 75) {
     return 'stroke-yellow-500';
   }
-  /** Prominent fill so the used portion reads clearly against the muted track */
-  return 'stroke-text-primary';
+  return 'stroke-text-secondary';
 }
 
 export default function Gauge({ percent, indeterminate }: GaugeProps) {
@@ -44,7 +43,7 @@ export default function Gauge({ percent, indeterminate }: GaugeProps) {
         r={RADIUS}
         fill="transparent"
         strokeWidth={STROKE_WIDTH}
-        className="stroke-border-light"
+        className="stroke-border-heavy"
         strokeDasharray={indeterminate ? '2 4' : undefined}
       />
       <circle

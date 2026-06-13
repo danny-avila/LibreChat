@@ -77,11 +77,11 @@ export default function Breakdown({ view, showCost }: BreakdownProps) {
         aria-valuemax={100}
         aria-valuenow={maxTokens != null ? Math.round(percent) : undefined}
         aria-label={localize('com_ui_context_usage')}
-        className="h-2 w-full overflow-hidden rounded-full bg-surface-secondary"
+        className="h-2 w-full overflow-hidden rounded-full bg-surface-tertiary"
       >
         {percent > 0 && (
           <div
-            className="h-full rounded-full bg-text-secondary transition-all duration-300"
+            className="h-full rounded-full bg-text-primary transition-all duration-300"
             style={{ width: `${Math.min(percent, 100)}%` }}
           />
         )}
