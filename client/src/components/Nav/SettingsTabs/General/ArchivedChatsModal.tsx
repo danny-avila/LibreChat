@@ -1,4 +1,5 @@
 import { OGDialog, OGDialogContent, OGDialogHeader, OGDialogTitle } from '@librechat/client';
+import type { RefObject } from 'react';
 import ArchivedChatsTable from './ArchivedChatsTable';
 import { useLocalize } from '~/hooks';
 
@@ -9,7 +10,7 @@ export function ArchivedChatsModal({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  triggerRef?: React.RefObject<HTMLButtonElement | HTMLDivElement | null>;
+  triggerRef?: RefObject<HTMLButtonElement | HTMLDivElement | null>;
 }) {
   const localize = useLocalize();
 
