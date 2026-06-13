@@ -329,9 +329,61 @@ describe('Tool Handlers', () => {
       });
 
       expect(result.loadedTools).toEqual([{ name: 'loaded-mcp-tool' }]);
+      expect(mockGetMCPServerTools).toHaveBeenCalledWith(
+        fakeUser._id.toString(),
+        serverName,
+        serverConfig,
+      );
+      expect(mockCreateMCPTool).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestBody,
+          toolKey,
+          config: serverConfig,
+        }),
+      );
+    });
+
+    it('uses run-scoped MCP tool definitions before cache lookup', async () => {
+      const serverName = 'body-scoped';
+      const toolKey = `search${Constants.mcp_delimiter}${serverName}`;
+      const requestBody = { conversationId: 'conv-123', messageId: 'msg-123' };
+      const serverConfig = {
+        type: 'streamable-http',
+        url: 'https://api.example.com/messages/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+        source: 'yaml',
+      };
+      const runScopedTools = {
+        [toolKey]: {
+          function: {
+            name: toolKey,
+            description: 'Run-scoped search',
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+      };
+
+      mockGetServerConfig.mockResolvedValue(serverConfig);
+      mockCreateMCPTool.mockResolvedValue({ name: 'loaded-mcp-tool' });
+
+      const result = await loadTools({
+        user: fakeUser._id.toString(),
+        tools: [toolKey],
+        options: {
+          mcpAvailableTools: {
+            [serverName]: runScopedTools,
+          },
+          req: {
+            user: { id: fakeUser._id.toString(), role: 'USER' },
+            body: requestBody,
+          },
+        },
+      });
+
+      expect(result.loadedTools).toEqual([{ name: 'loaded-mcp-tool' }]);
       expect(mockGetMCPServerTools).not.toHaveBeenCalled();
       expect(mockCreateMCPTool).toHaveBeenCalledWith(
         expect.objectContaining({
+          availableTools: runScopedTools,
           requestBody,
           toolKey,
           config: serverConfig,
@@ -387,7 +439,7 @@ describe('Tool Handlers', () => {
       });
 
       expect(result.loadedTools).toEqual([{ name: 'search-tool' }, { name: 'lookup-tool' }]);
-      expect(mockGetMCPServerTools).not.toHaveBeenCalled();
+      expect(mockGetMCPServerTools).toHaveBeenCalledTimes(1);
       expect(mockCreateMCPTool).toHaveBeenCalledTimes(2);
       expect(mockCreateMCPTool).toHaveBeenNthCalledWith(
         2,

@@ -15,6 +15,7 @@ import {
   validateAlwaysApply,
   validateRelativePath,
   inferSkillFileCategory,
+  filterExistingSkillIds,
   deriveStructuredFrontmatterFields,
 } from './skill';
 import { createAclEntryMethods } from './aclEntry';
@@ -107,7 +108,21 @@ afterEach(async () => {
   await Skill.deleteMany({});
   await SkillFile.deleteMany({});
   await AclEntry.deleteMany({});
+  await mongoose.models.Agent.deleteMany({});
 });
+
+function makeAgentDoc(skillIds: string[], overrides: Record<string, unknown> = {}) {
+  return {
+    id: `agent_${new mongoose.Types.ObjectId().toString()}`,
+    name: 'Allowlist Agent',
+    provider: 'openai',
+    model: 'gpt-4',
+    author: owner._id,
+    skills: skillIds,
+    skills_enabled: true,
+    ...overrides,
+  };
+}
 
 async function grantOwner(resourceId: mongoose.Types.ObjectId | string) {
   const role = (await AccessRole.findOne({ accessRoleId: AccessRoleIds.SKILL_OWNER }).lean()) as {
@@ -531,6 +546,79 @@ describe('Skill CRUD methods', () => {
     expect(res.deleted).toBe(true);
     expect(await AclEntry.countDocuments({ resourceId: skill._id })).toBe(0);
     expect(await SkillFile.countDocuments({ skillId: skill._id })).toBe(0);
+  });
+
+  it('filterExistingSkillIds matches uppercase-hex candidates and returns canonical ids', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'case-skill' }));
+    const canonical = skill._id.toString();
+
+    const filtered = await filterExistingSkillIds(mongoose, [canonical.toUpperCase()]);
+    expect(filtered).toEqual([canonical]);
+  });
+
+  it('deleteSkill prunes agent allowlists even when skill file cleanup fails', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'flaky-files' }));
+    const Agent = mongoose.models.Agent;
+    const agent = await Agent.create(makeAgentDoc([skill._id.toString()]));
+
+    const deleteManySpy = jest
+      .spyOn(SkillFile, 'deleteMany')
+      .mockRejectedValueOnce(new Error('transient storage failure'));
+    try {
+      await expect(methods.deleteSkill(skill._id.toString())).rejects.toThrow(
+        'transient storage failure',
+      );
+    } finally {
+      deleteManySpy.mockRestore();
+    }
+
+    const agentAfter = (await Agent.findById(agent._id).lean()) as {
+      skills?: string[];
+      skills_enabled?: boolean;
+    } | null;
+    expect(agentAfter?.skills).toEqual([]);
+    expect(agentAfter?.skills_enabled).toBe(false);
+  });
+
+  it('deleteSkill disables skills when the deleted id was the entire allowlist', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'only-skill' }));
+    const Agent = mongoose.models.Agent;
+    const agent = await Agent.create(makeAgentDoc([skill._id.toString()]));
+
+    const res = await methods.deleteSkill(skill._id.toString().toUpperCase());
+    expect(res.deleted).toBe(true);
+
+    const agentAfter = (await Agent.findById(agent._id).lean()) as {
+      skills?: string[];
+      skills_enabled?: boolean;
+    } | null;
+    expect(agentAfter?.skills).toEqual([]);
+    expect(agentAfter?.skills_enabled).toBe(false);
+  });
+
+  it('deleteSkill prunes the deleted id from agent skill allowlists', async () => {
+    const { skill: doomed } = await methods.createSkill(makeSkillInput({ name: 'doomed-skill' }));
+    const { skill: kept } = await methods.createSkill(makeSkillInput({ name: 'kept-skill' }));
+    const Agent = mongoose.models.Agent;
+    const scoped = await Agent.create(makeAgentDoc([doomed._id.toString(), kept._id.toString()]));
+    const untouched = await Agent.create(
+      makeAgentDoc([kept._id.toString()], { name: 'Untouched Agent' }),
+    );
+
+    const res = await methods.deleteSkill(doomed._id.toString());
+    expect(res.deleted).toBe(true);
+
+    const scopedAfter = (await Agent.findById(scoped._id).lean()) as {
+      skills?: string[];
+      skills_enabled?: boolean;
+    } | null;
+    expect(scopedAfter?.skills).toEqual([kept._id.toString()]);
+    expect(scopedAfter?.skills_enabled).toBe(true);
+
+    const untouchedAfter = (await Agent.findById(untouched._id).lean()) as {
+      skills?: string[];
+    } | null;
+    expect(untouchedAfter?.skills).toEqual([kept._id.toString()]);
   });
 
   it('findSkillBySourceIdentity searches only the requested tenant bucket', async () => {
@@ -1791,5 +1879,22 @@ describe('deleteUserSkills', () => {
     expect(deleted).toBe(1);
     expect(await Skill.countDocuments()).toBe(1);
     expect(await Skill.countDocuments({ _id: sharedId })).toBe(1);
+  });
+
+  it('prunes deleted sole-owned skill ids from agent allowlists', async () => {
+    const { skill: mine } = await methods.createSkill(makeSkillInput({ name: 'mine' }));
+    await grantOwner(mine._id);
+    const Agent = mongoose.models.Agent;
+    const agent = await Agent.create(makeAgentDoc([mine._id.toString()]));
+
+    const deleted = await methods.deleteUserSkills(owner._id as mongoose.Types.ObjectId);
+    expect(deleted).toBe(1);
+
+    const agentAfter = (await Agent.findById(agent._id).lean()) as {
+      skills?: string[];
+      skills_enabled?: boolean;
+    } | null;
+    expect(agentAfter?.skills).toEqual([]);
+    expect(agentAfter?.skills_enabled).toBe(false);
   });
 });

@@ -55,6 +55,18 @@ endpoints:
       titleConvo: false
       modelDisplayLabel: 'Mock Provider C'
 
+    # Second non-spec endpoint so e2e tests can switch between two real
+    # ephemeral endpoints (e.g. MCP selection persistence across switches).
+    - name: 'Mock Provider D'
+      apiKey: 'e2e-mock-key-d'
+      baseURL: 'http://127.0.0.1:8889/v1'
+      models:
+        default:
+          - 'mock-model-d'
+        fetch: false
+      titleConvo: false
+      modelDisplayLabel: 'Mock Provider D'
+
 modelSpecs:
   prioritize: true
   # Enforcement would reject sends from the non-spec paths addedEndpoints
@@ -64,6 +76,7 @@ modelSpecs:
   # set) limited to entries that don't collide with the spec labels above.
   addedEndpoints:
     - 'Mock Provider C'
+    - 'Mock Provider D'
     - 'agents'
   list:
     - name: 'e2e-mock-provider-a'
@@ -106,6 +119,18 @@ modelSpecs:
       label: 'E2E Branded'
       description: '<strong>Branded</strong> answers <img src="/assets/openai.svg" alt="brand icon">'
       showOnLanding: true
+      preset:
+        endpoint: 'Mock Provider A'
+        model: 'mock-model-a'
+
+    - name: 'e2e-starters'
+      label: 'E2E Starters'
+      conversation_starters:
+        - 'E2E_REPLY:starter'
+        - 'Plan my week'
+        - 'Third starter prompt'
+        - 'Fourth starter prompt'
+        - 'Fifth starter beyond the cap'
       preset:
         endpoint: 'Mock Provider A'
         model: 'mock-model-a'

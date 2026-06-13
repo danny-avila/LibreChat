@@ -19,6 +19,7 @@ const {
   injectSkillPrimes,
   extractManualSkills,
   recordCollectedUsage,
+  createSubagentUsageSink,
   getTransactionsConfig,
   findPiiMatchInMessages,
   discoverConnectedAgents,
@@ -467,6 +468,7 @@ const createResponse = async (req, res) => {
      * @type {Map<string, {
      *   agent: object,
      *   toolRegistry?: import('@librechat/agents').LCToolRegistry,
+     *   requestScopedConnections?: import('@librechat/api').RequestScopedMCPConnectionStore,
      *   userMCPAuthMap?: Record<string, Record<string, string>>,
      *   tool_resources?: object,
      *   actionsEnabled?: boolean,
@@ -684,6 +686,8 @@ const createResponse = async (req, res) => {
             agent: ctx.agent ?? agent,
             signal: abortController.signal,
             toolRegistry: ctx.toolRegistry,
+            mcpAvailableTools: ctx.mcpAvailableTools,
+            requestScopedConnections: ctx.requestScopedConnections,
             userMCPAuthMap: ctx.userMCPAuthMap,
             tool_resources: ctx.tool_resources,
             actionsEnabled: ctx.actionsEnabled,
@@ -746,6 +750,9 @@ const createResponse = async (req, res) => {
           conversationId,
         },
         user: { id: userId },
+        /** Bills subagent child-run model calls (reported outside the
+         *  streamEvents loop) into the same collectedUsage array. */
+        subagentUsageSink: createSubagentUsageSink(collectedUsage),
       });
 
       if (!run) {
@@ -858,6 +865,8 @@ const createResponse = async (req, res) => {
             agent: ctx.agent ?? agent,
             signal: abortController.signal,
             toolRegistry: ctx.toolRegistry,
+            mcpAvailableTools: ctx.mcpAvailableTools,
+            requestScopedConnections: ctx.requestScopedConnections,
             userMCPAuthMap: ctx.userMCPAuthMap,
             tool_resources: ctx.tool_resources,
             actionsEnabled: ctx.actionsEnabled,
@@ -918,6 +927,9 @@ const createResponse = async (req, res) => {
           conversationId,
         },
         user: { id: userId },
+        /** Bills subagent child-run model calls (reported outside the
+         *  streamEvents loop) into the same collectedUsage array. */
+        subagentUsageSink: createSubagentUsageSink(collectedUsage),
       });
 
       if (!run) {
