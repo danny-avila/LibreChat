@@ -116,11 +116,14 @@ export const LangSelector = ({
         <Dropdown
           value={langcode}
           onChange={onChange}
-          sizeClasses="[--anchor-max-height:256px] max-h-[60vh]"
+          sizeClasses="[--anchor-max-height:256px] max-h-[60vh] w-[220px]"
           options={languageOptions}
           className="z-50"
           aria-labelledby={labelId}
           portal={portal}
+          searchable
+          searchPlaceholder={localize('com_ui_search_language')}
+          searchEmptyText={localize('com_ui_no_results_found')}
         />
       </div>
     </div>
