@@ -120,9 +120,13 @@ export default function useTokenUsage({
   }, [conversationKey, tailId, anchorId, setBranchTotals]);
 
   return useMemo(() => {
+    /** The granular snapshot is for one specific generation. Show it only
+     *  while actively streaming, or when its (response-message) anchor is on
+     *  the viewed branch. A null-anchor snapshot must NOT match every branch —
+     *  that leaked one branch's breakdown onto its siblings. */
     const snapshotActive =
       snapshot != null &&
-      (isSubmitting || snapshot.anchorMessageId == null || branchTotals.containsAnchor);
+      (isSubmitting || (snapshot.anchorMessageId != null && branchTotals.containsAnchor));
 
     if (snapshotActive && snapshot) {
       const breakdown = snapshot.breakdown;
