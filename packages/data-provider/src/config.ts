@@ -1420,12 +1420,14 @@ export enum SearchProviders {
   SERPER = 'serper',
   SEARXNG = 'searxng',
   TAVILY = 'tavily',
+  CRW = 'crw',
 }
 
 export enum ScraperProviders {
   FIRECRAWL = 'firecrawl',
   SERPER = 'serper',
   TAVILY = 'tavily',
+  CRW = 'crw',
 }
 
 export enum RerankerTypes {
@@ -1453,12 +1455,48 @@ export const webSearchSchema = z.object({
   jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
   jinaApiUrl: z.string().optional().default('${JINA_API_URL}'),
   cohereApiKey: z.string().optional().default('${COHERE_API_KEY}'),
+  crwApiKey: z.string().optional().default('${CRW_API_KEY}'),
+  crwApiUrl: z.string().optional().default('${CRW_API_URL}'),
   searchProvider: z.nativeEnum(SearchProviders).optional(),
   scraperProvider: z.nativeEnum(ScraperProviders).optional(),
   rerankerType: z.nativeEnum(RerankerTypes).optional(),
   scraperTimeout: z.number().int().nonnegative().optional(),
   safeSearch: z.nativeEnum(SafeSearchTypes).default(SafeSearchTypes.MODERATE),
   firecrawlOptions: z
+    .object({
+      formats: z.array(z.string()).optional(),
+      includeTags: z.array(z.string()).optional(),
+      excludeTags: z.array(z.string()).optional(),
+      headers: z.record(z.string()).optional(),
+      waitFor: z.number().optional(),
+      timeout: z.number().int().nonnegative().optional(),
+      maxAge: z.number().optional(),
+      mobile: z.boolean().optional(),
+      skipTlsVerification: z.boolean().optional(),
+      blockAds: z.boolean().optional(),
+      removeBase64Images: z.boolean().optional(),
+      parsePDF: z.boolean().optional(),
+      storeInCache: z.boolean().optional(),
+      zeroDataRetention: z.boolean().optional(),
+      location: z
+        .object({
+          country: z.string().optional(),
+          languages: z.array(z.string()).optional(),
+        })
+        .optional(),
+      onlyMainContent: z.boolean().optional(),
+      changeTrackingOptions: z
+        .object({
+          modes: z.array(z.string()).optional(),
+          schema: z.record(z.unknown()).optional(),
+          prompt: z.string().optional(),
+          tag: z.string().nullable().optional(),
+        })
+        .optional(),
+    })
+    .optional(),
+  /** fastCRW: Firecrawl-compatible web scraper; single binary; self-host or cloud. */
+  crwOptions: z
     .object({
       formats: z.array(z.string()).optional(),
       includeTags: z.array(z.string()).optional(),

@@ -12,8 +12,8 @@ export enum DATE_RANGE {
   PAST_YEAR = 'y',
 }
 
-export type SearchProvider = 'serper' | 'searxng' | 'tavily';
-export type ScraperProvider = 'firecrawl' | 'serper' | 'tavily';
+export type SearchProvider = 'serper' | 'searxng' | 'tavily' | 'crw';
+export type ScraperProvider = 'firecrawl' | 'serper' | 'tavily' | 'crw';
 export type RerankerType = 'infinity' | 'jina' | 'cohere' | 'none';
 
 export interface Highlight {
@@ -79,6 +79,8 @@ export interface SearchConfig {
   tavilyApiKey?: string;
   tavilySearchUrl?: string;
   tavilySearchOptions?: TavilyConfig['tavilySearchOptions'];
+  crwApiKey?: string;
+  crwApiUrl?: string;
 }
 
 export type References = {
@@ -141,6 +143,13 @@ export interface TavilyConfig {
   tavilyExtractUrl?: string;
   tavilySearchOptions?: z.infer<typeof webSearchSchema>['tavilySearchOptions'];
   tavilyScraperOptions?: z.infer<typeof webSearchSchema>['tavilyScraperOptions'];
+}
+
+/** fastCRW: Firecrawl-compatible web scraper; single binary; self-host or cloud. */
+export interface CrwConfig {
+  crwApiKey?: string;
+  crwApiUrl?: string;
+  crwOptions?: FirecrawlConfig['firecrawlOptions'];
 }
 
 export interface ScraperContentResult {

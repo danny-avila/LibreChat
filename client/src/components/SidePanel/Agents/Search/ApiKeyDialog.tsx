@@ -92,6 +92,24 @@ export default function ApiKeyDialog({
         },
       },
     },
+    {
+      key: SearchProviders.CRW,
+      label: localize('com_ui_web_search_provider_crw'),
+      inputs: {
+        crwApiUrl: {
+          placeholder: localize('com_ui_web_search_crw_url'),
+          type: 'text' as const,
+        },
+        crwApiKey: {
+          placeholder: localize('com_ui_enter_api_key'),
+          type: 'password' as const,
+          link: {
+            url: 'https://fastcrw.com',
+            text: localize('com_ui_web_search_provider_crw_key'),
+          },
+        },
+      },
+    },
   ];
 
   const rerankerOptions: DropdownOption[] = [
@@ -176,6 +194,24 @@ export default function ApiKeyDialog({
           link: {
             url: 'https://app.tavily.com/home',
             text: localize('com_ui_web_search_scraper_tavily_key'),
+          },
+        },
+      },
+    },
+    {
+      key: ScraperProviders.CRW,
+      label: localize('com_ui_web_search_scraper_crw'),
+      inputs: {
+        crwApiUrl: {
+          placeholder: localize('com_ui_web_search_crw_url'),
+          type: 'text' as const,
+        },
+        crwApiKey: {
+          placeholder: localize('com_ui_enter_api_key'),
+          type: 'password' as const,
+          link: {
+            url: 'https://fastcrw.com',
+            text: localize('com_ui_web_search_scraper_crw_key'),
           },
         },
       },

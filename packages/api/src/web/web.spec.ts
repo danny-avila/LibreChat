@@ -2154,4 +2154,195 @@ describe('web.ts', () => {
       }
     });
   });
+
+  /** fastCRW: Firecrawl-compatible web scraper; single binary; self-host or cloud. */
+  describe('crw (fastCRW) provider', () => {
+    const userId = 'test-user-id';
+    let mockLoadAuthValues: jest.Mock;
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockLoadAuthValues = jest.fn();
+      mockIsSSRFTarget.mockReturnValue(false);
+      mockResolveHostnameSSRF.mockResolvedValue(false);
+    });
+
+    it('should expose crw as both a provider and a scraper in webSearchAuth', () => {
+      expect(webSearchAuth.providers).toHaveProperty('crw');
+      expect(webSearchAuth.providers.crw).toHaveProperty('crwApiKey', 1);
+      expect(webSearchAuth.providers.crw).toHaveProperty('crwApiUrl', 0);
+      expect(webSearchAuth.scrapers).toHaveProperty('crw');
+      expect(webSearchAuth.scrapers.crw).toHaveProperty('crwApiKey', 1);
+      expect(webSearchAuth.scrapers.crw).toHaveProperty('crwApiUrl', 0);
+    });
+
+    it('should authenticate crw as a scraper provider', async () => {
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        serperApiKey: '${SERPER_API_KEY}',
+        crwApiKey: '${CRW_API_KEY}',
+        crwApiUrl: '${CRW_API_URL}',
+        jinaApiKey: '${JINA_API_KEY}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        scraperProvider: 'crw' as ScraperProviders,
+      };
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          result[field] = field === 'CRW_API_URL' ? 'https://fastcrw.com/api' : 'test-api-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authResult.scraperProvider).toBe('crw');
+      expect(result.authResult.crwApiKey).toBe('test-api-key');
+      expect(result.authResult.crwApiUrl).toBe('https://fastcrw.com/api');
+
+      const scraperCalls = mockLoadAuthValues.mock.calls.filter((call) =>
+        call[0].authFields.includes('CRW_API_KEY'),
+      );
+      expect(scraperCalls.length).toBe(1);
+    });
+
+    it('should authenticate crw as a search provider', async () => {
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        crwApiKey: '${CRW_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        firecrawlApiUrl: '${FIRECRAWL_API_URL}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        searchProvider: 'crw' as SearchProviders,
+        scraperProvider: 'firecrawl' as ScraperProviders,
+        rerankerType: 'none' as RerankerTypes,
+      };
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          result[field] =
+            field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authResult.searchProvider).toBe('crw');
+      expect(result.authResult.crwApiKey).toBe('test-api-key');
+    });
+
+    it('should authenticate crw as both search provider and scraper with a shared key', async () => {
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        crwApiKey: '${CRW_API_KEY}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        searchProvider: 'crw' as SearchProviders,
+        scraperProvider: 'crw' as ScraperProviders,
+        rerankerType: 'none' as RerankerTypes,
+        crwOptions: {
+          timeout: 20000,
+        },
+      };
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          result[field] = 'crw-api-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authResult.searchProvider).toBe('crw');
+      expect(result.authResult.scraperProvider).toBe('crw');
+      expect(result.authResult.crwApiKey).toBe('crw-api-key');
+      expect(result.authResult.crwOptions).toEqual(webSearchConfig.crwOptions);
+      expect(result.authResult.scraperTimeout).toBe(20000);
+    });
+
+    it('should fall back to default timeout when crwOptions.timeout is absent', async () => {
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        serperApiKey: '${SERPER_API_KEY}',
+        crwApiKey: '${CRW_API_KEY}',
+        jinaApiKey: '${JINA_API_KEY}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        scraperProvider: 'crw' as ScraperProviders,
+        crwOptions: {
+          formats: ['markdown'],
+        },
+      };
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          result[field] = 'test-api-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authResult.scraperTimeout).toBe(7500);
+      expect(result.authResult.crwOptions).toEqual({ formats: ['markdown'] });
+    });
+
+    it('should block user-provided crwApiUrl resolving to a private host', async () => {
+      mockResolveHostnameSSRF.mockImplementation((hostname: string) =>
+        Promise.resolve(hostname === 'evil.internal-service.com'),
+      );
+
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        serperApiKey: '${SERPER_API_KEY}',
+        crwApiKey: '${CRW_API_KEY}',
+        crwApiUrl: '${CRW_API_URL}',
+        jinaApiKey: '${JINA_API_KEY}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        scraperProvider: 'crw' as ScraperProviders,
+      };
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          if (field === 'CRW_API_URL') {
+            result[field] = 'https://evil.internal-service.com/scrape';
+          } else {
+            result[field] = 'test-api-key';
+          }
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authResult.crwApiUrl).toBeUndefined();
+      expect(result.authenticated).toBe(true);
+      const scrapersAuth = result.authTypes.find(([c]) => c === 'scrapers')?.[1];
+      expect(scrapersAuth).toBe(AuthType.USER_PROVIDED);
+    });
+  });
 });

@@ -753,6 +753,17 @@ endpoints:
 #   # Content scrapers
 #   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
 #   firecrawlApiUrl: '${FIRECRAWL_API_URL}'
+#   # fastCRW (Firecrawl-compatible web scraper; single binary; self-host or cloud)
+#   crwApiKey: '${CRW_API_KEY}'
+#   crwApiUrl: '${CRW_API_URL}'
+#
+# fastCRW as both search and scraper provider example:
+# webSearch:
+#   searchProvider: crw
+#   scraperProvider: crw
+#   crwApiKey: '${CRW_API_KEY}'
+#   # Optional: custom API URL (defaults to https://fastcrw.com/api; set for self-host)
+#   # crwApiUrl: '${CRW_API_URL}'
 #
 # Tavily as both search and scraper provider example:
 # webSearch:

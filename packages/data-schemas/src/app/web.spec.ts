@@ -132,6 +132,7 @@ describe('loadWebSearchConfig', () => {
       expect(result?.serperApiKey).toBe('${SERPER_API_KEY}');
       expect(result?.searxngApiKey).toBe('${SEARXNG_API_KEY}');
       expect(result?.firecrawlApiKey).toBe('${FIRECRAWL_API_KEY}');
+      expect(result?.crwApiKey).toBe('${CRW_API_KEY}');
       expect(result?.jinaApiKey).toBe('${JINA_API_KEY}');
       expect(result?.cohereApiKey).toBe('${COHERE_API_KEY}');
     });
@@ -157,6 +158,7 @@ describe('loadWebSearchConfig', () => {
 
       expect(result?.searxngInstanceUrl).toBe('${SEARXNG_INSTANCE_URL}');
       expect(result?.firecrawlApiUrl).toBe('${FIRECRAWL_API_URL}');
+      expect(result?.crwApiUrl).toBe('${CRW_API_URL}');
       expect(result?.jinaApiUrl).toBe('${JINA_API_URL}');
     });
 
