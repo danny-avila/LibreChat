@@ -28,7 +28,7 @@ import {
 const FLUSH_INTERVAL_MS = 250;
 
 interface UsageSubmissionLike {
-  userMessage?: Pick<TMessage, 'messageId'> | null;
+  userMessage?: Pick<TMessage, 'messageId' | 'conversationId'> | null;
   conversation?: Partial<Pick<TConversation, 'conversationId' | 'endpoint' | 'model'>> | null;
 }
 
@@ -54,6 +54,13 @@ export interface UsageHandlers {
 }
 
 function getConvoKey(submission: UsageSubmissionLike): string {
+  /** On a new chat's first turn the `created` event stamps the real id onto
+   *  the user message while the submission's conversation is still `new`;
+   *  prefer the real id so live writes land where TokenUsage is subscribed */
+  const fromUserMessage = submission.userMessage?.conversationId;
+  if (fromUserMessage != null && fromUserMessage !== Constants.NEW_CONVO) {
+    return fromUserMessage;
+  }
   return submission.conversation?.conversationId ?? Constants.NEW_CONVO;
 }
 
