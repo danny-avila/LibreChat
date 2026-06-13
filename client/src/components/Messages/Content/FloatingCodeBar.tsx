@@ -13,7 +13,7 @@ interface FloatingCodeBarProps extends CodeBarProps {
 }
 
 const FloatingCodeBar: React.FC<FloatingCodeBarProps> = React.memo(
-  ({ lang, codeRef, blockIndex, plugin = null, allowExecution = true, isVisible }) => {
+  ({ lang, error, codeRef, blockIndex, plugin = null, allowExecution = true, isVisible }) => {
     const { isCopied, buttonRef, handleCopy } = useCopyCode(codeRef);
     const {
       isDownloaded,
@@ -35,13 +35,15 @@ const FloatingCodeBar: React.FC<FloatingCodeBarProps> = React.memo(
             {allowExecution === true && (
               <RunCode lang={lang} codeRef={codeRef} blockIndex={blockIndex} iconOnly />
             )}
-            <DownloadButton
-              ref={downloadButtonRef}
-              isDownloaded={isDownloaded}
-              iconOnly
-              tabIndex={isVisible ? 0 : -1}
-              onClick={handleDownload}
-            />
+            {error !== true && (
+              <DownloadButton
+                ref={downloadButtonRef}
+                isDownloaded={isDownloaded}
+                iconOnly
+                tabIndex={isVisible ? 0 : -1}
+                onClick={handleDownload}
+              />
+            )}
             <CopyButton
               ref={buttonRef}
               isCopied={isCopied}
