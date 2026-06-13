@@ -31,7 +31,11 @@ export const useTokenConfigQuery = (
     staleTime: Infinity,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
-    refetchOnMount: false,
+    /** Refetch on mount only when stale — with `staleTime: Infinity` that's
+     *  exclusively after a user-key change invalidates `tokenConfig`, so a
+     *  settings change made while the gauge is unmounted is picked up on
+     *  return instead of serving the prior key's resolved config */
+    refetchOnMount: true,
     ...config,
     enabled: (config?.enabled ?? true) === true && queriesEnabled,
   });

@@ -1,8 +1,14 @@
 import { useMemo } from 'react';
-import { isAgentsEndpoint } from 'librechat-data-provider';
+import { Providers, EModelEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
 import type { TConversation, TModelTokenomics } from 'librechat-data-provider';
 import { useGetStartupConfig, useTokenConfigQuery, useGetAgentByIdQuery } from '~/data-provider';
 import { getModelSpec } from '~/utils';
+
+/** Gemini tokenomics are advertised under the `google` endpoint, so a
+ *  Vertex-backed agent (`provider: 'vertexai'`) must look up there. */
+function normalizeTokenConfigKey(endpoint: string): string {
+  return endpoint === Providers.VERTEXAI ? EModelEndpoint.google : endpoint;
+}
 
 export interface TokenLimits {
   /** Statically resolved max context; live snapshots override this at run time */
@@ -46,6 +52,7 @@ export default function useTokenLimits(conversation: TConversation | null): Toke
       lookupEndpoint = specPreset.endpoint ?? lookupEndpoint;
       lookupModel = lookupModel || (specPreset.model ?? '');
     }
+    lookupEndpoint = normalizeTokenConfigKey(lookupEndpoint);
 
     const rates = tokenConfig?.[lookupEndpoint]?.[lookupModel];
     const maxContextTokens =
