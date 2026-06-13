@@ -23,15 +23,19 @@ type PlaceholderValue =
   | readonly PlaceholderValue[]
   | { readonly [key: string]: PlaceholderValue };
 
-type UserScopedConnectionConfig = Pick<
-  ParsedServerConfig,
-  'requiresOAuth' | 'customUserVars' | 'obo' | 'source' | 'dbId'
-> & {
+type UserScopedConnectionConfig = Pick<ParsedServerConfig, 'requiresOAuth' | 'source' | 'dbId'> & {
   args?: string[];
-  env?: Record<string, string>;
-  headers?: Record<string, string>;
+  /** Loosened from the parsed shapes so raw (pre-inspection) configs qualify;
+   *  scoping predicates only check key presence */
+  obo?: { scopes?: string } | null;
+  customUserVars?: Record<
+    string,
+    { description?: string; title?: string; sensitive?: boolean } | undefined
+  >;
+  env?: Record<string, string | undefined>;
+  headers?: Record<string, string | undefined>;
   oauth?: PlaceholderValue;
-  oauth_headers?: Record<string, string>;
+  oauth_headers?: Record<string, string | undefined>;
   url?: string;
 };
 
@@ -67,7 +71,9 @@ export function requiresOAuthMachinery(
 }
 
 /** Checks that `customUserVars` is present AND non-empty (guards against truthy `{}`) */
-export function hasCustomUserVars(config: Pick<ParsedServerConfig, 'customUserVars'>): boolean {
+export function hasCustomUserVars(
+  config: Pick<UserScopedConnectionConfig, 'customUserVars'>,
+): boolean {
   return !!config.customUserVars && Object.keys(config.customUserVars).length > 0;
 }
 

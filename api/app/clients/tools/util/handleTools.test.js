@@ -329,7 +329,11 @@ describe('Tool Handlers', () => {
       });
 
       expect(result.loadedTools).toEqual([{ name: 'loaded-mcp-tool' }]);
-      expect(mockGetMCPServerTools).not.toHaveBeenCalled();
+      expect(mockGetMCPServerTools).toHaveBeenCalledWith(
+        fakeUser._id.toString(),
+        serverName,
+        serverConfig,
+      );
       expect(mockCreateMCPTool).toHaveBeenCalledWith(
         expect.objectContaining({
           requestBody,
@@ -435,7 +439,7 @@ describe('Tool Handlers', () => {
       });
 
       expect(result.loadedTools).toEqual([{ name: 'search-tool' }, { name: 'lookup-tool' }]);
-      expect(mockGetMCPServerTools).not.toHaveBeenCalled();
+      expect(mockGetMCPServerTools).toHaveBeenCalledTimes(1);
       expect(mockCreateMCPTool).toHaveBeenCalledTimes(2);
       expect(mockCreateMCPTool).toHaveBeenNthCalledWith(
         2,
