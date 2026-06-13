@@ -1,7 +1,7 @@
+import type { RecordUsageDeps, RecordUsageParams, SubagentUsageEvent } from './usage';
 import type { UsageMetadata } from '../stream/interfaces/IJobStore';
-import type { RecordUsageDeps, RecordUsageParams } from './usage';
 import type { BulkWriteDeps, PricingFns } from './transactions';
-import { recordCollectedUsage } from './usage';
+import { createSubagentUsageSink, recordCollectedUsage } from './usage';
 
 describe('recordCollectedUsage', () => {
   let mockSpendTokens: jest.Mock;
@@ -144,6 +144,119 @@ describe('recordCollectedUsage', () => {
           model: 'gpt-4.1-mini',
         }),
         expect.any(Object),
+      );
+    });
+  });
+
+  describe('subagent usage segregation', () => {
+    it('bills subagent entries under separate context while excluding them from reported totals', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          usage_type: 'message',
+          input_tokens: 120,
+          output_tokens: 40,
+          model: 'gpt-4',
+        },
+        {
+          usage_type: 'subagent',
+          input_tokens: 900,
+          output_tokens: 700,
+          model: 'claude-haiku-4-5',
+          provider: 'anthropic',
+        },
+        {
+          usage_type: 'subagent',
+          input_tokens: 1100,
+          output_tokens: 300,
+          model: 'claude-haiku-4-5',
+          provider: 'anthropic',
+        },
+      ];
+
+      const result = await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      /**
+       * `input_tokens` comes from the first MESSAGE usage; `output_tokens`
+       * excludes subagent completions — the result becomes the parent
+       * response message's tokenCount, and child output the parent never
+       * saw must not distort next-turn context accounting.
+       */
+      expect(result).toEqual({ input_tokens: 120, output_tokens: 40 });
+      /** ...but every subagent call is still billed against balance. */
+      expect(mockSpendTokens).toHaveBeenCalledTimes(3);
+      expect(mockSpendTokens).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          context: 'subagent',
+          model: 'claude-haiku-4-5',
+        }),
+        { promptTokens: 900, completionTokens: 700 },
+      );
+      expect(mockSpendTokens).toHaveBeenNthCalledWith(
+        3,
+        expect.objectContaining({
+          context: 'subagent',
+          model: 'claude-haiku-4-5',
+        }),
+        { promptTokens: 1100, completionTokens: 300 },
+      );
+    });
+
+    it('does not let a leading subagent entry hijack reported input_tokens', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          usage_type: 'subagent',
+          input_tokens: 5000,
+          output_tokens: 900,
+          model: 'claude-haiku-4-5',
+        },
+        {
+          input_tokens: 120,
+          output_tokens: 40,
+          model: 'gpt-4',
+        },
+      ];
+
+      const result = await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(result).toEqual({ input_tokens: 120, output_tokens: 40 });
+      expect(mockSpendTokens).toHaveBeenCalledTimes(2);
+    });
+
+    it('uses structured spend for subagent entries with cache tokens', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        { input_tokens: 100, output_tokens: 50, model: 'gpt-4' },
+        {
+          usage_type: 'subagent',
+          input_tokens: 200,
+          output_tokens: 80,
+          model: 'claude-haiku-4-5',
+          provider: 'anthropic',
+          input_token_details: { cache_creation: 60, cache_read: 30 },
+        },
+      ];
+
+      await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockSpendStructuredTokens).toHaveBeenCalledTimes(1);
+      expect(mockSpendStructuredTokens).toHaveBeenCalledWith(
+        expect.objectContaining({
+          context: 'subagent',
+          model: 'claude-haiku-4-5',
+        }),
+        {
+          promptTokens: { input: 200, write: 60, read: 30 },
+          completionTokens: 80,
+        },
       );
     });
   });
@@ -1213,5 +1326,114 @@ describe('recordCollectedUsage', () => {
 
       expect(result).toEqual({ input_tokens: 100, output_tokens: 110 });
     });
+  });
+});
+
+describe('createSubagentUsageSink', () => {
+  const makeEvent = (overrides: Partial<SubagentUsageEvent> = {}): SubagentUsageEvent => ({
+    usage: { input_tokens: 900, output_tokens: 700, total_tokens: 1600 },
+    model: 'claude-haiku-4-5',
+    provider: 'anthropic',
+    subagentType: 'researcher',
+    subagentRunId: 'run-1_sub_abc',
+    subagentAgentId: 'researcher',
+    runId: 'run-1',
+    ...overrides,
+  });
+
+  it('pushes usage tagged with usage_type subagent and the child model/provider', () => {
+    const collectedUsage: UsageMetadata[] = [];
+    const sink = createSubagentUsageSink(collectedUsage);
+
+    sink(makeEvent());
+
+    expect(collectedUsage).toEqual([
+      {
+        usage_type: 'subagent',
+        input_tokens: 900,
+        output_tokens: 700,
+        total_tokens: 1600,
+        model: 'claude-haiku-4-5',
+        provider: 'anthropic',
+      },
+    ]);
+  });
+
+  it('preserves cache token details from the child call', () => {
+    const collectedUsage: UsageMetadata[] = [];
+    const sink = createSubagentUsageSink(collectedUsage);
+
+    sink(
+      makeEvent({
+        usage: {
+          input_tokens: 200,
+          output_tokens: 80,
+          total_tokens: 280,
+          input_token_details: { cache_creation: 60, cache_read: 30 },
+        } as SubagentUsageEvent['usage'],
+      }),
+    );
+
+    expect(collectedUsage[0].input_token_details).toEqual({
+      cache_creation: 60,
+      cache_read: 30,
+    });
+  });
+
+  it('omits model/provider tags when the event carries none', () => {
+    const collectedUsage: UsageMetadata[] = [];
+    const sink = createSubagentUsageSink(collectedUsage);
+
+    sink(makeEvent({ model: undefined, provider: undefined }));
+
+    expect(collectedUsage).toHaveLength(1);
+    expect(collectedUsage[0].usage_type).toBe('subagent');
+    expect(collectedUsage[0]).not.toHaveProperty('model');
+    expect(collectedUsage[0]).not.toHaveProperty('provider');
+  });
+
+  it('ignores events without usage', () => {
+    const collectedUsage: UsageMetadata[] = [];
+    const sink = createSubagentUsageSink(collectedUsage);
+
+    sink(makeEvent({ usage: undefined as unknown as SubagentUsageEvent['usage'] }));
+
+    expect(collectedUsage).toEqual([]);
+  });
+
+  it('round-trips into recordCollectedUsage as billed subagent transactions', async () => {
+    const collectedUsage: UsageMetadata[] = [];
+    const sink = createSubagentUsageSink(collectedUsage);
+
+    /** Parent's own call, collected by ModelEndHandler as usual. */
+    collectedUsage.push({ input_tokens: 120, output_tokens: 40, model: 'gpt-4' });
+    /** Child calls reported through the sink mid-run. */
+    sink(makeEvent());
+    sink(
+      makeEvent({
+        usage: { input_tokens: 1100, output_tokens: 300, total_tokens: 1400 },
+      }),
+    );
+
+    const spendTokens = jest.fn().mockResolvedValue(undefined);
+    const spendStructuredTokens = jest.fn().mockResolvedValue(undefined);
+    const result = await recordCollectedUsage(
+      { spendTokens, spendStructuredTokens },
+      {
+        user: 'user-123',
+        conversationId: 'convo-123',
+        model: 'gpt-4',
+        collectedUsage,
+      },
+    );
+
+    /** All three calls billed; child output excluded from reported totals. */
+    expect(spendTokens).toHaveBeenCalledTimes(3);
+    expect(spendTokens).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ context: 'subagent', model: 'claude-haiku-4-5' }),
+      { promptTokens: 900, completionTokens: 700 },
+    );
+    expect(result).toEqual({ input_tokens: 120, output_tokens: 40 });
   });
 });
