@@ -242,6 +242,16 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
    */
   const subagentAggregatorsByToolCallId = new Map();
 
+  /** Backend prices each model call authoritatively (premium tiers, cache
+   *  rates) and emits the cost on on_token_usage when contextCost is on, so
+   *  the gauge sums real costs instead of re-deriving from base rates.
+   *  `endpointTokenConfig` is filled in once `primaryConfig` resolves below so
+   *  custom-endpoint agents price with their configured rates, not defaults. */
+  const usageCost = {
+    enabled: appConfig?.interfaceConfig?.contextCost === true,
+    pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
+  };
+
   const eventHandlers = getDefaultHandlers({
     res,
     toolExecuteOptions,
@@ -252,13 +262,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     collectedThoughtSignatures,
     streamId,
     subagentAggregatorsByToolCallId,
-    /** Backend prices each model call authoritatively (premium tiers, cache
-     *  rates) and emits the cost on on_token_usage when contextCost is on, so
-     *  the gauge sums real costs instead of re-deriving from base rates */
-    usageCost: {
-      enabled: appConfig?.interfaceConfig?.contextCost === true,
-      pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
-    },
+    usageCost,
   });
 
   if (!endpointOption.agent) {
@@ -388,6 +392,11 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       getSkillByName: skillDbMethods.getSkillByName,
     },
   );
+
+  /** Price emitted usage with the primary agent's resolved endpoint config so
+   *  custom-endpoint agents reflect configured rates (mirrors the AgentClient
+   *  spending path, which reads the same config). */
+  usageCost.endpointTokenConfig = primaryConfig.endpointTokenConfig;
 
   logger.debug(
     `[initializeClient] Storing tool context for ${primaryConfig.id}: ${primaryConfig.toolDefinitions?.length ?? 0} tools, registry size: ${primaryConfig.toolRegistry?.size ?? '0'}`,
@@ -908,6 +917,9 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     maxContextTokens: primaryConfig.maxContextTokens,
     endpoint: isEphemeralAgentId(primaryConfig.id) ? primaryConfig.endpoint : EModelEndpoint.agents,
     subagentAggregatorsByToolCallId,
+    /** Resolved endpoint token/pricing config so spending and cost reflect
+     *  configured rates for custom-endpoint agents instead of defaults. */
+    endpointTokenConfig: primaryConfig.endpointTokenConfig,
   });
 
   if (streamId) {

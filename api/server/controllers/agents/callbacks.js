@@ -305,7 +305,10 @@ function getDefaultHandlers({
     let payload = data;
     if (usageCost?.enabled === true && usageCost.pricing) {
       try {
-        payload = { ...data, cost: computeUsageCostUSD(data, usageCost.pricing) };
+        payload = {
+          ...data,
+          cost: computeUsageCostUSD(data, usageCost.pricing, usageCost.endpointTokenConfig),
+        };
       } catch (err) {
         logger.warn('[getDefaultHandlers] Failed to compute usage cost', err);
       }

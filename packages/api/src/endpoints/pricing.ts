@@ -42,9 +42,9 @@ export function buildTokenConfigMap(
     const entry: Record<string, TModelTokenomics> = {};
     for (const model of models) {
       const tokenomics: TModelTokenomics = {};
-      const context = override
-        ? (getModelMaxTokens(model, endpointKey, override) ?? getModelMaxTokens(model, endpointKey))
-        : getModelMaxTokens(model, endpointKey);
+      /** getModelMaxTokens falls back to the built-in map for models absent
+       *  from a partial override, so a single call covers both cases. */
+      const context = getModelMaxTokens(model, endpointKey, override);
       if (context != null) {
         tokenomics.context = context;
       }
