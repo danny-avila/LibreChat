@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import { Providers } from 'librechat-data-provider';
+import { inputTokensIncludesCache } from 'librechat-data-provider';
 import type { TCustomConfig, TTransactionsConfig } from 'librechat-data-provider';
 import type {
   StructuredTokenUsage,
@@ -22,33 +22,6 @@ type SpendStructuredTokensFn = (
   txData: TxMetadata,
   tokenUsage: StructuredTokenUsage,
 ) => Promise<unknown>;
-
-/**
- * Providers whose `usage_metadata.input_tokens` ALREADY INCLUDES cached tokens
- * (i.e. `input_token_details.cache_*` is a subset, not an additional charge):
- *
- *   - Google / Vertex AI: `input_tokens` = `promptTokenCount` (includes `cachedContentTokenCount`)
- *   - OpenAI / Azure OpenAI: `input_tokens` = `prompt_tokens` (includes `prompt_tokens_details.cached_tokens`)
- *   - xAI, DeepSeek, OpenRouter, Moonshot: extend `ChatOpenAI`, same semantics
- *
- * Anthropic and Bedrock keep cache values separate from `input_tokens`, so they
- * must be added back to compute the total prompt size — that's the historical
- * additive default. Providers not listed here fall through to additive.
- */
-const SUBSET_PROVIDERS: ReadonlySet<string> = new Set([
-  Providers.OPENAI,
-  Providers.AZURE,
-  Providers.GOOGLE,
-  Providers.VERTEXAI,
-  Providers.XAI,
-  Providers.DEEPSEEK,
-  Providers.OPENROUTER,
-  Providers.MOONSHOT,
-]);
-
-function inputTokensIncludesCache(provider?: string): boolean {
-  return provider != null && SUBSET_PROVIDERS.has(provider);
-}
 
 /**
  * Resolves `completionTokens` for billing, repairing providers whose

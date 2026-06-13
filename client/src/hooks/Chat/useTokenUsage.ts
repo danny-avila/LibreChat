@@ -67,9 +67,12 @@ export default function useTokenUsage({
     }
     let total = 0;
     for (const bucket of Object.values(usageTotals.byRate)) {
+      /** Endpoint-specific config wins (a custom endpoint may price a known
+       *  model name differently); the adapter provider is the fallback, which
+       *  is what resolves agent runs keyed under the underlying provider */
       const rates =
-        (bucket.provider != null ? tokenConfig?.[bucket.provider]?.[bucket.model] : undefined) ??
-        tokenConfig?.[bucket.endpoint]?.[bucket.model];
+        tokenConfig?.[bucket.endpoint]?.[bucket.model] ??
+        (bucket.provider != null ? tokenConfig?.[bucket.provider]?.[bucket.model] : undefined);
       total += costFromUnits(bucket, rates);
     }
     return total;

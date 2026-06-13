@@ -115,11 +115,13 @@ export default function useUsageHandler(): UsageHandlers {
       const totalsAtom = usageTotalsFamily(convoKey);
       const prev = jotai.get(totalsAtom);
       const bucket = prev.byRate[bucketKey];
+      /** Display the same normalized units that drive billing: input is the
+       *  uncached portion, output includes repaired completion tokens */
       jotai.set(totalsAtom, {
-        input: prev.input + (data.input_tokens ?? 0),
-        output: prev.output + (data.output_tokens ?? 0),
-        cacheWrite: prev.cacheWrite + (data.input_token_details?.cache_creation ?? 0),
-        cacheRead: prev.cacheRead + (data.input_token_details?.cache_read ?? 0),
+        input: prev.input + units.input,
+        output: prev.output + units.output,
+        cacheWrite: prev.cacheWrite + units.cacheWrite,
+        cacheRead: prev.cacheRead + units.cacheRead,
         eventCount: prev.eventCount + 1,
         byRate: {
           ...prev.byRate,

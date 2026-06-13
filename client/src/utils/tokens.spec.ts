@@ -1,4 +1,4 @@
-import { Constants } from 'librechat-data-provider';
+import { Constants, Providers } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import {
   buildIndex,
@@ -146,6 +146,63 @@ describe('calcUsageCost', () => {
   it('returns 0 without rates', () => {
     expect(calcUsageCost({ input_tokens: 100, output_tokens: 100 })).toBe(0);
     expect(calcUsageCost({ input_tokens: 100 }, { context: 1000 })).toBe(0);
+  });
+
+  it('classifies cache additively for Anthropic even when cache <= input', () => {
+    /** The magnitude heuristic would wrongly treat this as inclusive and drop
+     *  cache from input; the provider says additive */
+    const event = {
+      input_tokens: 900,
+      output_tokens: 100,
+      provider: Providers.ANTHROPIC,
+      input_token_details: { cache_read: 100 },
+    };
+    expect(normalizeUsageUnits(event)).toEqual({
+      input: 900,
+      output: 100,
+      cacheWrite: 0,
+      cacheRead: 100,
+    });
+    expect(calcUsageCost(event, rates)).toBeCloseTo((900 * 3 + 100 * 0.3 + 100 * 15) / 1e6);
+  });
+
+  it('keeps subset semantics for OpenAI regardless of magnitude', () => {
+    const event = {
+      input_tokens: 900,
+      output_tokens: 100,
+      provider: Providers.OPENAI,
+      input_token_details: { cache_read: 100 },
+    };
+    expect(normalizeUsageUnits(event)).toEqual({
+      input: 800,
+      output: 100,
+      cacheWrite: 0,
+      cacheRead: 100,
+    });
+  });
+
+  it('repairs under-reported completion tokens (Vertex thinking)', () => {
+    const event = {
+      input_tokens: 1000,
+      output_tokens: 200,
+      total_tokens: 1500,
+      provider: Providers.VERTEXAI,
+    };
+    /** total - input = 500 recovers the dropped thinking tokens */
+    expect(normalizeUsageUnits(event).output).toBe(500);
+  });
+
+  it('does not mistake additive cache for missing completion tokens', () => {
+    /** Anthropic total includes cache; without the cache adjustment the repair
+     *  would falsely inflate completion */
+    const event = {
+      input_tokens: 1000,
+      output_tokens: 200,
+      total_tokens: 1700,
+      provider: Providers.ANTHROPIC,
+      input_token_details: { cache_creation: 300, cache_read: 200 },
+    };
+    expect(normalizeUsageUnits(event).output).toBe(200);
   });
 
   it('prices summed normalized units identically to per-event costs', () => {

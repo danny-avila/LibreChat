@@ -84,6 +84,34 @@ describe('buildTokenConfigMap', () => {
     expect(map.MyProxy['gpt-4o-mini'].prompt).toBeGreaterThan(0);
   });
 
+  it('carries static cache rates from the override', () => {
+    const override: EndpointTokenConfig = {
+      'cached-model': {
+        prompt: 3,
+        completion: 15,
+        context: 200000,
+        cacheRead: 0.3,
+        cacheWrite: 3.75,
+      } as EndpointTokenConfig[string],
+    };
+    const map = buildTokenConfigMap(
+      {
+        modelsConfig: { MyProxy: ['cached-model'] },
+        endpointTokenConfigs: { MyProxy: override },
+        includePricing: true,
+      },
+      deps,
+    );
+
+    expect(map.MyProxy['cached-model']).toEqual({
+      context: 200000,
+      prompt: 3,
+      completion: 15,
+      cacheRead: 0.3,
+      cacheWrite: 3.75,
+    });
+  });
+
   it('skips endpoints with empty model lists', () => {
     const map = buildTokenConfigMap({ modelsConfig: { [EModelEndpoint.agents]: [] } }, deps);
     expect(map[EModelEndpoint.agents]).toBeUndefined();

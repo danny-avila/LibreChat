@@ -54,6 +54,14 @@ export function buildTokenConfigMap(
         if (overrideRates?.prompt != null || overrideRates?.completion != null) {
           tokenomics.prompt = overrideRates.prompt;
           tokenomics.completion = overrideRates.completion;
+          /** Carry admin-configured cache rates; client falls back to the
+           *  prompt rate for whichever cache rate is absent */
+          if (overrideRates.cacheWrite != null) {
+            tokenomics.cacheWrite = overrideRates.cacheWrite;
+          }
+          if (overrideRates.cacheRead != null) {
+            tokenomics.cacheRead = overrideRates.cacheRead;
+          }
         } else {
           const valueKey = deps.getValueKey(model, endpoint);
           tokenomics.prompt = deps.getMultiplier({

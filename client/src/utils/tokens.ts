@@ -1,4 +1,4 @@
-import { Tools, Constants } from 'librechat-data-provider';
+import { Tools, Constants, inputTokensIncludesCache } from 'librechat-data-provider';
 import type { TMessage, TTokenUsageEvent, TModelTokenomics } from 'librechat-data-provider';
 
 export interface TokenEntry {
@@ -242,20 +242,35 @@ export interface CostUnits {
 }
 
 /**
- * Normalizes one call's usage into billable units. Mirrors the
- * cache-detection heuristic used in token accounting: cache counts are
- * additive when they exceed base input (Anthropic), otherwise cache reads
- * are included in input tokens (OpenAI) — applied per event so units stay
- * correct when summed across calls.
+ * Normalizes one call's usage into billable units, mirroring the backend's
+ * authoritative `splitUsage`/`resolveCompletionTokens`
+ * (packages/api/src/agents/usage.ts):
+ *   - cache classification is by provider, not magnitude — Anthropic/Bedrock
+ *     keep cache additive (input is uncached-only); subset providers fold
+ *     cache into `input_tokens`. Falls back to a magnitude heuristic only when
+ *     the provider is unknown.
+ *   - completion is repaired for providers (e.g. Vertex) that under-report
+ *     `output_tokens` but carry the gap in `total_tokens`.
+ * Applied per event so units stay correct when summed across calls.
  */
 export function normalizeUsageUnits(usage: TTokenUsageEvent): CostUnits {
-  const input = usage.input_tokens ?? 0;
-  const output = usage.output_tokens ?? 0;
+  const rawInput = usage.input_tokens ?? 0;
+  const rawOutput = usage.output_tokens ?? 0;
+  const total = usage.total_tokens ?? 0;
   const cacheWrite = usage.input_token_details?.cache_creation ?? 0;
   const cacheRead = usage.input_token_details?.cache_read ?? 0;
-  const cacheIsAdditive = cacheWrite + cacheRead > input;
+
+  const includesCache =
+    usage.provider != null
+      ? inputTokensIncludesCache(usage.provider)
+      : cacheWrite + cacheRead <= rawInput;
+
+  const cacheAdjustment = includesCache ? 0 : cacheRead + cacheWrite;
+  const output =
+    total > rawInput + rawOutput + cacheAdjustment ? total - rawInput - cacheAdjustment : rawOutput;
+
   return {
-    input: cacheIsAdditive ? input : Math.max(0, input - cacheRead - cacheWrite),
+    input: includesCache ? Math.max(0, rawInput - cacheRead - cacheWrite) : rawInput,
     output,
     cacheWrite,
     cacheRead,

@@ -853,6 +853,8 @@ export const endpointSchema = baseEndpointSchema.merge(
           prompt: z.number(),
           completion: z.number(),
           context: z.number(),
+          cacheRead: z.number().optional(),
+          cacheWrite: z.number().optional(),
         }),
       )
       .optional(),
