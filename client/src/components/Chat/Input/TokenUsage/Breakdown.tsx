@@ -87,7 +87,10 @@ export default function Breakdown({ view, showCost }: BreakdownProps) {
         )}
       </div>
 
-      <div className="space-y-1.5">
+      <div
+        className="space-y-1.5"
+        data-testid={breakdown ? 'context-breakdown' : 'context-estimate'}
+      >
         {breakdown ? (
           <>
             <Row

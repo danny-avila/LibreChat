@@ -1,10 +1,12 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import {
-  MOCK_ENDPOINTS,
-  NEW_CHAT_PATH,
   mockReply,
   sendMessage,
+  messagesView,
+  MOCK_ENDPOINTS,
+  NEW_CHAT_PATH,
+  isAgentsStream,
   selectMockEndpoint,
 } from './helpers';
 
@@ -14,6 +16,33 @@ const gaugeMeter = (page: Page) => gauge(page).getByRole('meter');
 async function expectGaugeAboveZero(page: Page) {
   await expect(gauge(page)).toBeVisible({ timeout: 20000 });
   await expect(gaugeMeter(page)).toHaveAttribute('aria-valuenow', /[1-9]/, { timeout: 20000 });
+}
+
+/** Opens the gauge hover popover and returns its region locator. */
+async function openBreakdown(page: Page) {
+  await expectGaugeAboveZero(page);
+  await gauge(page).hover();
+  const popover = page.getByRole('region', { name: 'Context usage' });
+  await expect(popover).toBeVisible({ timeout: 10000 });
+  return popover;
+}
+
+/** Granularity lives only in the live `on_context_usage` snapshot; its rows
+ *  render under the `context-breakdown` testid, the coarse message-history
+ *  fallback under `context-estimate`. They are mutually exclusive. */
+async function expectGranular(page: Page) {
+  const popover = await openBreakdown(page);
+  await expect(popover.getByTestId('context-breakdown')).toBeVisible({ timeout: 10000 });
+  await expect(popover.getByTestId('context-estimate')).toHaveCount(0);
+  await expect(popover.getByText('Messages', { exact: true })).toBeVisible();
+  await expect(popover.getByText('Free space', { exact: true })).toBeVisible();
+}
+
+async function sendAndAwaitReply(page: Page, text: string) {
+  const response = await sendMessage(page, text);
+  expect(response.ok()).toBeTruthy();
+  await expect(mockReply(page)).toBeVisible({ timeout: 20000 });
+  await expect(page).toHaveURL(/\/c\/(?!new)/, { timeout: 15000 });
 }
 
 test.describe('context usage gauge', () => {
@@ -56,5 +85,50 @@ test.describe('context usage gauge', () => {
     await page.reload({ timeout: 15000 });
     await expect(mockReply(page)).toBeVisible({ timeout: 20000 });
     await expectGaugeAboveZero(page);
+  });
+
+  test('renders the granular breakdown from the live context snapshot', async ({ page }) => {
+    test.setTimeout(120000);
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+
+    await sendAndAwaitReply(page, 'hello');
+
+    /** The agents pipeline emits on_context_usage on each model call, so the
+     *  breakdown — not the estimate fallback — drives the popover. */
+    await expectGranular(page);
+  });
+
+  test('preserves the granular breakdown after switching branches', async ({ page }) => {
+    test.setTimeout(150000);
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+
+    await sendAndAwaitReply(page, 'hello');
+
+    /** Branch A: the just-generated branch shows its live snapshot. */
+    await expectGranular(page);
+    await page.keyboard.press('Escape');
+
+    /** Regenerate to create a sibling branch (B), which overwrites the single
+     *  live snapshot and anchors it to B's response (proven selectors mirror
+     *  chat.spec.ts's branch test). */
+    const assistantMessage = messagesView(page).locator('.message-render').nth(1);
+    await assistantMessage.hover();
+    const regenerateButton = assistantMessage.locator('button[title="Regenerate"]').last();
+    await expect(regenerateButton).toBeVisible();
+    const [regen] = await Promise.all([
+      page.waitForResponse(isAgentsStream, { timeout: 30000 }),
+      regenerateButton.click(),
+    ]);
+    expect(regen.ok()).toBeTruthy();
+    await expect(page.getByText('2 / 2')).toBeVisible({ timeout: 20000 });
+
+    /** Switch back to branch A. Its live snapshot was overwritten by B, so the
+     *  rows can only survive via the per-anchor snapshot history map. */
+    await page.getByRole('button', { name: 'Previous sibling message' }).click();
+    await expect(page.getByText('1 / 2')).toBeVisible({ timeout: 10000 });
+
+    await expectGranular(page);
   });
 });
