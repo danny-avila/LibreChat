@@ -13,16 +13,16 @@ const {
   findOpenIDUser,
   getOpenIdEmail,
   getOpenIdIssuer,
-  getOpenIdProxyDispatcher,
   getBalanceConfig,
+  selectOpenIdRole,
+  getAvatarSaveParams,
   isEmailDomainAllowed,
   getAvatarFileStrategy,
-  getAvatarSaveParams,
-  selectOpenIdRole,
+  resolveAppConfigForUser,
+  getOpenIdProxyDispatcher,
   getOpenIdRoleSyncOptions,
   getOpenIdRolesForOpenIdSync,
   getLibreChatRolesForOpenIdSync,
-  resolveAppConfigForUser,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
