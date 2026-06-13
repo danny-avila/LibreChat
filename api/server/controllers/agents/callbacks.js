@@ -120,22 +120,36 @@ class ModelEndHandler {
           taggedUsage.cache_creation_input_tokens;
         const cache_read =
           taggedUsage.input_token_details?.cache_read ?? taggedUsage.cache_read_input_tokens;
-        await this.emitUsage({
-          input_tokens: taggedUsage.input_tokens,
-          output_tokens: taggedUsage.output_tokens,
-          total_tokens: taggedUsage.total_tokens,
-          input_token_details:
-            cache_creation != null || cache_read != null
-              ? { cache_creation, cache_read }
-              : undefined,
-          model: taggedUsage.model,
-          provider: taggedUsage.provider,
-          usage_type: taggedUsage.usage_type,
-          runId: metadata?.run_id,
-          /** Per-run sequence so identical payloads from distinct calls
-           *  stay distinguishable during resume dedupe */
-          seq: this.collectedUsage.length,
-        });
+        /** Hidden sequential-agent calls are billed but not shown; tag them
+         *  non-primary so the client folds them into cost/totals only and
+         *  doesn't inflate the visible conversation's live context gauge */
+        const hidden =
+          !checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node) &&
+          metadata?.hide_sequential_outputs === true;
+        const usage_type = taggedUsage.usage_type ?? (hidden ? 'sequential' : undefined);
+        try {
+          await this.emitUsage({
+            input_tokens: taggedUsage.input_tokens,
+            output_tokens: taggedUsage.output_tokens,
+            total_tokens: taggedUsage.total_tokens,
+            input_token_details:
+              cache_creation != null || cache_read != null
+                ? { cache_creation, cache_read }
+                : undefined,
+            model: taggedUsage.model,
+            provider: taggedUsage.provider,
+            usage_type,
+            runId: metadata?.run_id,
+            /** Per-run sequence so identical payloads from distinct calls
+             *  stay distinguishable during resume dedupe */
+            seq: this.collectedUsage.length,
+          });
+        } catch (err) {
+          /** Best-effort telemetry: a failed emit (closed SSE, Redis publish
+           *  error) must not abort the handler before the thought-signature
+           *  capture below, or resumed tool-call requests lose that metadata */
+          logger.warn('[ModelEndHandler] Failed to emit token usage', err);
+        }
       }
 
       /**
