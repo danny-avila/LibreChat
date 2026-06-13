@@ -6,7 +6,6 @@ import { useParams } from 'react-router-dom';
 import { Constants, buildTree } from 'librechat-data-provider';
 import type { TChatProject, TMessage } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
-import { ChatContext, AddedChatContext, ChatFormProvider, useFileMapContext } from '~/Providers';
 import {
   useAddedResponse,
   useResumeOnLoad,
@@ -14,11 +13,12 @@ import {
   useChatHelpers,
   useLocalize,
 } from '~/hooks';
+import { ChatContext, AddedChatContext, ChatFormProvider, useFileMapContext } from '~/Providers';
 import ConversationStarters from './Input/ConversationStarters';
 import { useGetMessagesByConvoId } from '~/data-provider';
+import ProjectLandingChip from './ProjectLandingChip';
 import MessagesView from './Messages/MessagesView';
 import Presentation from './Presentation';
-import ProjectLandingChip from './ProjectLandingChip';
 import ChatForm from './Input/ChatForm';
 import Landing from './Landing';
 import Header from './Header';
