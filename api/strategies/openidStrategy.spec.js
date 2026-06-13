@@ -4,9 +4,9 @@ const jwtDecode = require('jsonwebtoken/decode');
 const { ErrorTypes, FileSources } = require('librechat-data-provider');
 const { findUser, createUser, updateUser, findRolesByNames } = require('~/models');
 const {
-  getOpenIdIssuer,
   getOpenIdProxyDispatcher,
   resolveAppConfigForUser,
+  getOpenIdIssuer,
   isEnabled,
 } = require('@librechat/api');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
