@@ -21,6 +21,8 @@ const {
   applyContextToAgent,
   isMemoryAgentEnabled,
   recordCollectedUsage,
+  sendEvent,
+  computeUsageCostUSD,
   createSubagentUsageSink,
   isDeepSeekReasoningProvider,
   GenerationJobManager,
@@ -52,6 +54,7 @@ const {
 } = require('@librechat/agents');
 const {
   Constants,
+  UsageEvents,
   Permissions,
   VisionModes,
   ContentTypes,
@@ -128,6 +131,11 @@ class AgentClient extends BaseClient {
      *  harvests `contentParts` onto the matching `subagent` tool_call
      *  so the child's full activity survives a page refresh. */
     this.subagentAggregatorsByToolCallId = subagentAggregatorsByToolCallId ?? new Map();
+    /** In-flight `on_token_usage` emits from subagent child runs. The sink
+     *  fires the emitter without awaiting, so chatCompletion's finally flushes
+     *  these before returning — otherwise job cleanup can race the persist.
+     *  @type {Promise<void>[]} */
+    this.pendingSubagentEmits = [];
     /** @type {AgentClientOptions} */
     this.options = Object.assign({ endpoint: options.endpoint }, clientOptions);
     /** @type {string} */
@@ -876,6 +884,77 @@ class AgentClient extends BaseClient {
   }
 
   /**
+   * Builds the subagent usage emitter for {@link createSubagentUsageSink}.
+   * Streams each billed child-run usage to the client as an `on_token_usage`
+   * event tagged `subagent` (folds into session cost/totals, not the live
+   * gauge), with the authoritative cost when `interface.contextCost` is on.
+   * Returns undefined when there's no stream to write to.
+   * @param {AppConfig} [appConfig]
+   * @returns {((usage: UsageMetadata) => void) | undefined}
+   */
+  buildSubagentUsageEmitter(appConfig) {
+    const res = this.options.res;
+    const streamId = this.options.req?._resumableStreamId || null;
+    if (!res && !streamId) {
+      return undefined;
+    }
+    const includeCost = appConfig?.interfaceConfig?.contextCost === true;
+    const endpointTokenConfig = this.options.endpointTokenConfig;
+    return (usage) => {
+      const data = {
+        input_tokens: usage.input_tokens,
+        output_tokens: usage.output_tokens,
+        total_tokens: usage.total_tokens,
+        input_token_details: this.subagentCacheDetails(usage),
+        model: usage.model,
+        provider: usage.provider,
+        usage_type: 'subagent',
+        runId: this.responseMessageId,
+        /** Unique per collected entry (post-push length) for resume dedupe */
+        seq: this.collectedUsage.length,
+        cost: includeCost
+          ? computeUsageCostUSD(
+              usage,
+              { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
+              endpointTokenConfig,
+            )
+          : undefined,
+      };
+      /** The sink fires this without awaiting, so retain the promise and flush
+       *  it in chatCompletion's finally — emitChunk persists (HSET) before
+       *  publishing, and job cleanup must not race that persist or resumed
+       *  clients miss billed subagent usage. */
+      const emit = (async () => {
+        try {
+          if (streamId) {
+            await GenerationJobManager.emitChunk(streamId, {
+              event: UsageEvents.ON_TOKEN_USAGE,
+              data,
+            });
+          } else {
+            sendEvent(res, { event: UsageEvents.ON_TOKEN_USAGE, data });
+          }
+        } catch (err) {
+          logger.warn('[AgentClient] Failed to emit subagent usage', err);
+        }
+      })();
+      this.pendingSubagentEmits.push(emit);
+      return emit;
+    };
+  }
+
+  /** Normalizes a subagent usage event's cache token details for emission. */
+  subagentCacheDetails(usage) {
+    const cache_creation =
+      usage.input_token_details?.cache_creation ?? usage.cache_creation_input_tokens;
+    const cache_read = usage.input_token_details?.cache_read ?? usage.cache_read_input_tokens;
+    if (cache_creation == null && cache_read == null) {
+      return undefined;
+    }
+    return { cache_creation, cache_read };
+  }
+
+  /**
    * @param {TMessage} responseMessage
    * @returns {number}
    */
@@ -1141,8 +1220,14 @@ class AgentClient extends BaseClient {
           /** Bills subagent child-run model calls — child graphs execute
            *  outside the streamEvents loop, so ModelEndHandler never sees
            *  them. Entries land in collectedUsage tagged
-           *  `usage_type: 'subagent'` and are spent by recordCollectedUsage. */
-          subagentUsageSink: createSubagentUsageSink(this.collectedUsage),
+           *  `usage_type: 'subagent'` and are spent by recordCollectedUsage.
+           *  The sink also streams each as an `on_token_usage` event so the
+           *  gauge's session cost/totals include billed subagent usage (the
+           *  `subagent` tag keeps it out of the live context meter). */
+          subagentUsageSink: createSubagentUsageSink(
+            this.collectedUsage,
+            this.buildSubagentUsageEmitter(appConfig),
+          ),
         });
 
         if (!run) {
@@ -1258,6 +1343,14 @@ class AgentClient extends BaseClient {
       }
 
       this.finalizeSubagentContent();
+
+      /** Flush subagent usage emits the sink fired without awaiting, so their
+       *  persist/publish completes before we return and the job is cleaned up
+       *  (resumed clients read this persisted usage). */
+      if (this.pendingSubagentEmits.length > 0) {
+        await Promise.allSettled(this.pendingSubagentEmits);
+        this.pendingSubagentEmits = [];
+      }
 
       try {
         const attachments = await this.awaitMemoryWithTimeout(memoryPromise);

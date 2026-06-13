@@ -17,6 +17,49 @@ import { tokenConfigCache } from '~/cache';
 const { PROXY } = process.env;
 
 /**
+ * Cache key for an endpoint's fetched token config. User-scoped when the
+ * model fetch can resolve per-user: user-provided key/URL, or header
+ * templates forwarded against an admin-trusted base URL — making the
+ * response, and therefore the derived token config, user-specific.
+ */
+export function getTokenConfigKey(
+  endpointConfig: Partial<TEndpoint>,
+  endpoint: string,
+  userId: string,
+): string {
+  const hasTokenConfig = endpointConfig.tokenConfig != null;
+  const userProvidesKey = isUserProvided(extractEnvVariable(endpointConfig.apiKey ?? ''));
+  const userProvidesURL = isUserProvided(extractEnvVariable(endpointConfig.baseURL ?? ''));
+  const willForwardUserScopedHeaders = !!endpointConfig?.headers && !userProvidesURL;
+  return !hasTokenConfig && (userProvidesKey || userProvidesURL || willForwardUserScopedHeaders)
+    ? `${endpoint}:${userId}`
+    : endpoint;
+}
+
+/**
+ * Maps an admin-facing static `tokenConfig` to the billing shape: the UI uses
+ * `cacheWrite`/`cacheRead`, but `getCacheMultiplier` indexes `write`/`read`.
+ * Adds those keys (preserving the originals) so cache tokens bill at the
+ * configured rate instead of the prompt-rate fallback.
+ */
+function toBillingTokenConfig(
+  tokenConfig: Record<string, Record<string, number>>,
+): EndpointTokenConfig {
+  const result: EndpointTokenConfig = {};
+  for (const [model, rates] of Object.entries(tokenConfig)) {
+    const mapped = { ...rates } as Record<string, number>;
+    if (rates.cacheWrite != null) {
+      mapped.write = rates.cacheWrite;
+    }
+    if (rates.cacheRead != null) {
+      mapped.read = rates.cacheRead;
+    }
+    result[model] = mapped as EndpointTokenConfig[string];
+  }
+  return result;
+}
+
+/**
  * Builds custom options from endpoint configuration
  */
 function buildCustomOptions(
@@ -136,26 +179,23 @@ export async function initializeCustom({
   const userId = req.user?.id ?? '';
 
   const cache = tokenConfigCache();
-  /** tokenConfig is an optional extended property on custom endpoints */
-  const hasTokenConfig = (endpointConfig as Record<string, unknown>).tokenConfig != null;
-  // When `endpointConfig.headers` will be forwarded to the model fetch (i.e.
-  // base URL is admin-trusted, so the security guard below leaves them in
-  // place), header templates may resolve against the current user — making
-  // the response, and therefore the derived token config, user-specific.
-  // User-scope the token-config cache key in that case so a cached entry
-  // for one user can't be served to another.
-  const willForwardUserScopedHeaders = !!endpointConfig?.headers && !userProvidesURL;
-  const tokenKey =
-    !hasTokenConfig && (userProvidesKey || userProvidesURL || willForwardUserScopedHeaders)
-      ? `${endpoint}:${userId}`
-      : endpoint;
+  const hasTokenConfig = endpointConfig.tokenConfig != null;
+  const tokenKey = getTokenConfigKey(endpointConfig, endpoint, userId);
 
-  const cachedConfig =
-    !hasTokenConfig &&
-    FetchTokenConfig[endpoint.toLowerCase() as keyof typeof FetchTokenConfig] &&
-    (await cache.get(tokenKey));
-
-  endpointTokenConfig = (cachedConfig as EndpointTokenConfig) || undefined;
+  if (hasTokenConfig) {
+    /** A static override is authoritative — use it for the agent's billing
+     *  and balance checks, not just the advertised UI token config. Mirror
+     *  the admin-facing `cacheWrite`/`cacheRead` keys onto the `write`/`read`
+     *  keys the billing multiplier reads. */
+    endpointTokenConfig = toBillingTokenConfig(
+      endpointConfig.tokenConfig as Record<string, Record<string, number>>,
+    );
+  } else {
+    const cachedConfig =
+      FetchTokenConfig[endpoint.toLowerCase() as keyof typeof FetchTokenConfig] &&
+      (await cache.get(tokenKey));
+    endpointTokenConfig = (cachedConfig as EndpointTokenConfig) || undefined;
+  }
 
   if (
     FetchTokenConfig[endpoint.toLowerCase() as keyof typeof FetchTokenConfig] &&

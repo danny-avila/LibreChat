@@ -1,7 +1,7 @@
 import type { RecordUsageDeps, RecordUsageParams, SubagentUsageEvent } from './usage';
 import type { UsageMetadata } from '../stream/interfaces/IJobStore';
 import type { BulkWriteDeps, PricingFns } from './transactions';
-import { createSubagentUsageSink, recordCollectedUsage } from './usage';
+import { computeUsageCostUSD, createSubagentUsageSink, recordCollectedUsage } from './usage';
 
 describe('recordCollectedUsage', () => {
   let mockSpendTokens: jest.Mock;
@@ -202,6 +202,25 @@ describe('recordCollectedUsage', () => {
           model: 'claude-haiku-4-5',
         }),
         { promptTokens: 1100, completionTokens: 300 },
+      );
+    });
+
+    it('bills hidden sequential-agent usage but excludes it from reported totals', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        { usage_type: 'message', input_tokens: 120, output_tokens: 40, model: 'gpt-4' },
+        { usage_type: 'sequential', input_tokens: 800, output_tokens: 250, model: 'gpt-4' },
+      ];
+
+      const result = await recordCollectedUsage(deps, { ...baseParams, collectedUsage });
+
+      /** Hidden intermediate output stays out of the parent's tokenCount... */
+      expect(result).toEqual({ input_tokens: 120, output_tokens: 40 });
+      /** ...but is still billed under its own context. */
+      expect(mockSpendTokens).toHaveBeenCalledTimes(2);
+      expect(mockSpendTokens).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ context: 'sequential', model: 'gpt-4' }),
+        { promptTokens: 800, completionTokens: 250 },
       );
     });
 
@@ -1435,5 +1454,52 @@ describe('createSubagentUsageSink', () => {
       { promptTokens: 900, completionTokens: 700 },
     );
     expect(result).toEqual({ input_tokens: 120, output_tokens: 40 });
+  });
+});
+
+describe('computeUsageCostUSD', () => {
+  /** Stub pricing: base prompt 3 / completion 15, cache write 3.75 / read 0.3;
+   *  a premium tier above 200k input prompt tokens (8 / 40). Mirrors the
+   *  shape of the real getMultiplier(inputTokenCount) premium switch. */
+  const pricing: PricingFns = {
+    getMultiplier: ({ tokenType, inputTokenCount }) => {
+      const premium = (inputTokenCount ?? 0) > 200000;
+      if (tokenType === 'completion') {
+        return premium ? 40 : 15;
+      }
+      return premium ? 8 : 3;
+    },
+    getCacheMultiplier: ({ cacheType }) => (cacheType === 'write' ? 3.75 : 0.3),
+  };
+
+  it('prices a standard call at base rates', () => {
+    const cost = computeUsageCostUSD(
+      { input_tokens: 1000, output_tokens: 500, model: 'gpt-4', provider: 'openAI' },
+      pricing,
+    );
+    expect(cost).toBeCloseTo((1000 * 3 + 500 * 15) / 1e6);
+  });
+
+  it('applies the premium tier when the call exceeds the input threshold', () => {
+    /** The exact gap finding A flagged: a long-context call bills premium */
+    const cost = computeUsageCostUSD(
+      { input_tokens: 300000, output_tokens: 1000, model: 'gpt-5.5', provider: 'openAI' },
+      pricing,
+    );
+    expect(cost).toBeCloseTo((300000 * 8 + 1000 * 40) / 1e6);
+  });
+
+  it('prices additive cache tokens (Anthropic) at cache rates', () => {
+    const cost = computeUsageCostUSD(
+      {
+        input_tokens: 1000,
+        output_tokens: 500,
+        model: 'claude-haiku-4-5',
+        provider: 'anthropic',
+        input_token_details: { cache_creation: 2000, cache_read: 10000 },
+      },
+      pricing,
+    );
+    expect(cost).toBeCloseTo((1000 * 3 + 2000 * 3.75 + 10000 * 0.3 + 500 * 15) / 1e6);
   });
 });

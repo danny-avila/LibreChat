@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import { Providers } from 'librechat-data-provider';
+import { inputTokensIncludesCache } from 'librechat-data-provider';
 import type { TCustomConfig, TTransactionsConfig } from 'librechat-data-provider';
 import type {
   StructuredTokenUsage,
@@ -22,33 +22,6 @@ type SpendStructuredTokensFn = (
   txData: TxMetadata,
   tokenUsage: StructuredTokenUsage,
 ) => Promise<unknown>;
-
-/**
- * Providers whose `usage_metadata.input_tokens` ALREADY INCLUDES cached tokens
- * (i.e. `input_token_details.cache_*` is a subset, not an additional charge):
- *
- *   - Google / Vertex AI: `input_tokens` = `promptTokenCount` (includes `cachedContentTokenCount`)
- *   - OpenAI / Azure OpenAI: `input_tokens` = `prompt_tokens` (includes `prompt_tokens_details.cached_tokens`)
- *   - xAI, DeepSeek, OpenRouter, Moonshot: extend `ChatOpenAI`, same semantics
- *
- * Anthropic and Bedrock keep cache values separate from `input_tokens`, so they
- * must be added back to compute the total prompt size — that's the historical
- * additive default. Providers not listed here fall through to additive.
- */
-const SUBSET_PROVIDERS: ReadonlySet<string> = new Set([
-  Providers.OPENAI,
-  Providers.AZURE,
-  Providers.GOOGLE,
-  Providers.VERTEXAI,
-  Providers.XAI,
-  Providers.DEEPSEEK,
-  Providers.OPENROUTER,
-  Providers.MOONSHOT,
-]);
-
-function inputTokensIncludesCache(provider?: string): boolean {
-  return provider != null && SUBSET_PROVIDERS.has(provider);
-}
 
 /**
  * Resolves `completionTokens` for billing, repairing providers whose
@@ -143,6 +116,47 @@ export interface RecordUsageDeps {
   bulkWriteOps?: BulkWriteDeps;
 }
 
+/**
+ * Authoritative USD cost of one model call. Reuses the exact billing
+ * functions (`prepareTokenSpend`/`prepareStructuredTokenSpend` → `getMultiplier`
+ * with `inputTokenCount` for premium tiers) so the figure emitted to the
+ * client matches what is charged against balance — the client must not
+ * re-derive pricing from base rates. `tokenValue` is credits (USD × 1e6).
+ */
+export function computeUsageCostUSD(
+  usage: UsageMetadata,
+  pricing: PricingFns,
+  endpointTokenConfig?: EndpointTokenConfig,
+): number {
+  const { inputOnly, cacheCreation, cacheRead, completion } = splitUsage(usage);
+  /** user/context/conversationId only populate the transaction doc, which is
+   *  discarded here — only `tokenValue` (credits) is summed */
+  const txData: TxMetadata = {
+    user: '',
+    context: 'message',
+    conversationId: '',
+    model: usage.model,
+    endpointTokenConfig,
+  };
+  const entries =
+    cacheCreation > 0 || cacheRead > 0
+      ? prepareStructuredTokenSpend(
+          txData,
+          {
+            promptTokens: { input: inputOnly, write: cacheCreation, read: cacheRead },
+            completionTokens: completion,
+          },
+          pricing,
+        )
+      : prepareTokenSpend(
+          txData,
+          { promptTokens: inputOnly, completionTokens: completion },
+          pricing,
+        );
+  const credits = entries.reduce((sum, entry) => sum + Math.abs(entry.tokenValue), 0);
+  return credits / 1e6;
+}
+
 export interface RecordUsageParams {
   user: string;
   conversationId: string;
@@ -190,6 +204,9 @@ export async function recordCollectedUsage(
   const messageUsages: UsageMetadata[] = [];
   const summarizationUsages: UsageMetadata[] = [];
   const subagentUsages: UsageMetadata[] = [];
+  /** Hidden sequential-agent calls: billed, but excluded from the reported
+   *  output total since their output never reaches the visible message */
+  const sequentialUsages: UsageMetadata[] = [];
   for (const usage of collectedUsage) {
     if (usage == null) {
       continue;
@@ -198,6 +215,8 @@ export async function recordCollectedUsage(
       summarizationUsages.push(usage);
     } else if (usage.usage_type === 'subagent') {
       subagentUsages.push(usage);
+    } else if (usage.usage_type === 'sequential') {
+      sequentialUsages.push(usage);
     } else {
       messageUsages.push(usage);
     }
@@ -310,6 +329,7 @@ export async function recordCollectedUsage(
    * distort next-turn context accounting by orders of magnitude.
    */
   processUsageGroup(subagentUsages, 'subagent', allDocs, { excludeFromOutputTotal: true });
+  processUsageGroup(sequentialUsages, 'sequential', allDocs, { excludeFromOutputTotal: true });
   if (useBulk && allDocs.length > 0) {
     try {
       await bulkWriteTransactions({ user, docs: allDocs }, bulkWriteOps);
@@ -360,6 +380,7 @@ export interface SubagentUsageEvent {
  */
 export function createSubagentUsageSink(
   collectedUsage: UsageMetadata[],
+  onUsage?: (usage: UsageMetadata) => void,
 ): (event: SubagentUsageEvent) => void {
   return (event) => {
     if (event?.usage == null) {
@@ -373,5 +394,9 @@ export function createSubagentUsageSink(
       usage.provider = event.provider;
     }
     collectedUsage.push(usage);
+    /** Lets the host stream the billed child usage to the client (tagged
+     *  `subagent`, so it folds into session cost/totals but not the live
+     *  gauge) — child runs never reach ModelEndHandler's emit path. */
+    onUsage?.(usage);
   };
 }

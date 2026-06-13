@@ -48,6 +48,12 @@ export interface SerializableJobData {
   /** Serialized replay-only stream events for active-stream resume */
   replayEvents?: string;
 
+  /** Serialized latest context usage snapshot for active-stream resume */
+  contextUsage?: string;
+
+  /** Serialized token usage events for active-stream resume (cross-replica safe) */
+  tokenUsage?: string;
+
   /** Endpoint metadata for abort handling - avoids storing functions */
   endpoint?: string;
   iconURL?: string;
@@ -76,7 +82,7 @@ export interface SerializableJobData {
  */
 export interface UsageMetadata {
   /** Logical usage bucket for accounting/reporting. Defaults to model response usage. */
-  usage_type?: 'message' | 'summarization' | 'subagent';
+  usage_type?: 'message' | 'summarization' | 'subagent' | 'sequential';
   /** Total input tokens (prompt tokens) */
   input_tokens?: number;
   /** Total output tokens (completion tokens) */
