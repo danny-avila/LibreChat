@@ -689,6 +689,7 @@ router.post(
 
       const result = await reinitMCPServer({
         user,
+        req,
         serverName,
         serverConfig,
         configServers,

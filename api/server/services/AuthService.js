@@ -791,13 +791,27 @@ const setOpenIDAuthTokens = (
 
     /** Store tokens server-side in session to avoid large cookies */
     if (req.session) {
-      req.session.openidTokens = {
+      const sessionOpenidTokens = {
         accessToken: tokenset.access_token,
         idToken: logoutIdToken,
         refreshToken: refreshToken,
         expiresAt: expirationDate.getTime(),
         lastRefreshedAt: Date.now(),
       };
+      /**
+       * Capture the access-token's own expiry (unix seconds) when the IdP
+       * advertises one. Lets downstream consumers — notably the OBO inline-
+       * refresh path in `OpenIDSessionRefresh.js` — reuse opaque (non-JWT)
+       * access tokens without burning an IdP refresh on the first tool call.
+       * Without this, the very first OBO call after login or SPA refresh would
+       * always trigger a redundant inline refresh whenever the IdP issues
+       * opaque access tokens (e.g. Microsoft Graph audiences).
+       */
+      if (typeof tokenset.expires_in === 'number') {
+        sessionOpenidTokens.accessTokenExpiresAt =
+          Math.floor(Date.now() / 1000) + tokenset.expires_in;
+      }
+      req.session.openidTokens = sessionOpenidTokens;
     } else {
       logger.warn('[setOpenIDAuthTokens] No session available, falling back to cookies');
       res.cookie('openid_access_token', tokenset.access_token, {

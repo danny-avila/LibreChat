@@ -1838,6 +1838,28 @@ describe('MCP Routes', () => {
       });
     });
 
+    /**
+     * Codex Finding 2 regression: the reinitialize route must forward `req`
+     * to reinitMCPServer so that OBO servers can build a session-aware
+     * upstream-token closure. Without this, OBO reinit fails with
+     * `missing_upstream_token` even when the user has a valid session.
+     */
+    it('should forward req into reinitMCPServer so OBO upstream-token closure has session access', async () => {
+      const mockMcpManager = {
+        disconnectUserConnection: jest.fn().mockResolvedValue(),
+      };
+      mockRegistryInstance.getServerConfig.mockResolvedValue({});
+      require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
+      require('~/config').getFlowStateManager.mockReturnValue({});
+      require('~/cache').getLogStores.mockReturnValue({});
+      const reinitSpy = require('~/server/services/Tools/mcp').reinitMCPServer;
+      reinitSpy.mockResolvedValue({ success: true, serverName: 'obo-server' });
+
+      await request(app).post('/api/mcp/obo-server/reinitialize');
+
+      expect(reinitSpy).toHaveBeenCalledWith(expect.objectContaining({ req: expect.any(Object) }));
+    });
+
     it('should return 500 when unexpected error occurs', async () => {
       const mockMcpManager = {
         disconnectUserConnection: jest.fn(),

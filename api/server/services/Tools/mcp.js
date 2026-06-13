@@ -155,7 +155,11 @@ async function reinitMCPServer({
         graphTokenResolver: getGraphApiToken,
         oboTokenResolver: exchangeOboToken,
         oboTrustChecker: createOboTrustChecker(),
-        upstreamTokenProvider: createOpenIDSessionTokenProvider({ req, user }),
+        upstreamTokenProvider: createOpenIDSessionTokenProvider({
+          req,
+          user,
+          tokenPreference: 'access_token',
+        }),
       });
 
       logger.info(`[MCP Reinitialize] Successfully established connection for ${serverName}`);
@@ -193,7 +197,11 @@ async function reinitMCPServer({
             graphTokenResolver: getGraphApiToken,
             oboTokenResolver: exchangeOboToken,
             oboTrustChecker: createOboTrustChecker(),
-            upstreamTokenProvider: createOpenIDSessionTokenProvider({ req, user }),
+            upstreamTokenProvider: createOpenIDSessionTokenProvider({
+              req,
+              user,
+              tokenPreference: 'access_token',
+            }),
           });
 
           if (discoveryResult.tools && discoveryResult.tools.length > 0) {

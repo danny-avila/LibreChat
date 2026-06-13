@@ -1,8 +1,33 @@
 const jwt = require('jsonwebtoken');
+const crypto = require('node:crypto');
 const openIdClient = require('openid-client');
 const { logger } = require('@librechat/data-schemas');
 const { isEnabled, buildOpenIDRefreshParams } = require('@librechat/api');
 const { getOpenIdConfig } = require('~/strategies/openidStrategy');
+
+/**
+ * Shape of `req.session.openidTokens`. Established by `setOpenIDAuthTokens`
+ * (`api/server/services/AuthService.js`) on login/refresh, mutated in place by
+ * this module on inline refresh, and consumed by `refreshController` and
+ * `LogoutController`. Distinct from the snake_case `OIDCTokens` type in
+ * `@librechat/data-schemas` (which describes `IUser.federatedTokens` /
+ * `IUser.openidTokens` — model fields, not the express-session field).
+ *
+ * Express-session's SessionData is open by design, so this contract lives in
+ * comments rather than a TS interface; keep this and AuthService.js in sync
+ * when the shape changes.
+ *
+ * @typedef {Object} SessionOpenIDTokens
+ * @property {string} [accessToken]            — IdP access token (may be opaque).
+ * @property {string} [idToken]                — IdP ID token (always JWT).
+ * @property {string} [refreshToken]           — IdP refresh token.
+ * @property {number} [expiresAt]              — SESSION cookie expiry (ms).
+ * @property {number} [lastRefreshedAt]        — wall-clock ms of the last server-side rotation.
+ * @property {number} [accessTokenExpiresAt]   — access token expiry (unix seconds), captured
+ *                                               from the IdP `tokenset.expires_in` so opaque
+ *                                               access tokens can still be reused without
+ *                                               redundant refreshes.
+ */
 
 /**
  * Skew buffer for the upstream access-token expiry check. Mirrors
@@ -12,18 +37,68 @@ const { getOpenIdConfig } = require('~/strategies/openidStrategy');
 const UPSTREAM_TOKEN_EXPIRY_BUFFER_SECONDS = 30;
 
 /**
- * In-flight upstream refreshes keyed by user id (openidId preferred, falling
- * back to local user._id). Mirrors the single-flight pattern in
- * `OboTokenService.js`. A fan-out of tool calls landing on an expired session
- * coalesces into one IdP refresh-token grant. Process-local: multi-worker
- * deployments may double-refresh on the very first concurrent miss across
- * workers — acceptable because the IdP accepts both and the session store
- * uses last-write-wins.
+ * In-flight upstream refreshes keyed by `getSingleFlightKey(req, user)` —
+ * a composite of `tenantId:openidIssuer:openidId:sessionId`. See that helper
+ * for the rationale on why each component is needed; in short, per-session
+ * keying prevents refresh-token rotation from breaking sibling sessions, and
+ * tenant+issuer keying prevents cross-tenant token crossover when distinct
+ * users share an IdP `sub`.
+ *
+ * A fan-out of tool calls landing on an expired session within the SAME
+ * session coalesces into one IdP refresh-token grant. Mirrors the
+ * single-flight pattern in `OboTokenService.js`.
+ *
+ * Process-local: multi-worker deployments may double-refresh on the very
+ * first concurrent miss across workers — acceptable because the IdP accepts
+ * both and the session store uses last-write-wins.
  */
 const inFlightRefreshes = new Map();
 
-function getOpenidUserKey(user) {
-  return user?.openidId || user?.id || user?._id?.toString?.() || null;
+/**
+ * Returns the single-flight key for a refresh attempt, composed from the
+ * Express session id, the user's tenant (if any), and the IdP issuer + sub.
+ * Tightening past `openidId` alone serves two purposes:
+ *
+ *  1. Same human, multiple sessions: refresh-token rotation by the IdP would
+ *     otherwise let session A's refresh invalidate session B's stored
+ *     refresh_token, leaving B silently broken. Per-session keying ensures
+ *     each session refreshes its own credentials.
+ *  2. Multi-tenant deployments where two distinct users share an IdP `sub`
+ *     (different issuers, same sub): tenant + issuer disambiguates them so
+ *     tokens never cross tenant boundaries via shared in-flight Promises.
+ *
+ * Concurrent tool calls inside the SAME session still coalesce — the common
+ * case the single-flight is designed for (a fan-out of MCP tool calls in one
+ * agent run) is unaffected.
+ *
+ * Returns null when there's no usable identity at all; callers fall through
+ * to a non-coalesced refresh, which is safe but missing the optimization.
+ */
+function getSingleFlightKey(req, user) {
+  const sub = user?.openidId || user?.id || user?._id?.toString?.();
+  if (!sub) {
+    return null;
+  }
+  const sessionId = req?.sessionID || 'no-session';
+  const tenantId = user?.tenantId || 'no-tenant';
+  const issuer = user?.openidIssuer || 'no-issuer';
+  return `${tenantId}:${issuer}:${sub}:${sessionId}`;
+}
+
+/**
+ * Returns a short SHA-256 prefix of the single-flight key for use in logs.
+ * Preserves correlation across "started" / "joined" / "completed" log events
+ * for the same refresh attempt without leaking the underlying values:
+ *
+ *   - sessionId is effectively a credential (cookie material) and must never
+ *     reach log sinks in clear text.
+ *   - openidId (the IdP `sub`) and openidIssuer are tenant/user fingerprints.
+ *
+ * 12 hex chars = 48 bits of entropy: ~7×10^14 distinct keys before a 50%
+ * collision chance — more than enough for correlating concurrent refreshes.
+ */
+function hashKeyForLogs(key) {
+  return crypto.createHash('sha256').update(key).digest('hex').slice(0, 12);
 }
 
 function decodeJwtExp(token) {
@@ -43,37 +118,93 @@ function decodeJwtExp(token) {
 }
 
 /**
- * Returns true when the session's primary upstream token (id_token preferred,
- * access_token fallback) is still valid for at least `buffer` seconds. This
- * matches the candidate-selection used for refreshController reuse so the two
- * paths agree on what counts as "still valid".
+ * Returns the access token's expiry in unix seconds, preferring the JWT `exp`
+ * claim and falling back to the persisted `accessTokenExpiresAt` written from
+ * the IdP's `tokenset.expires_in` on the previous refresh.
+ *
+ * The fallback exists because some IdPs (Microsoft Entra for Graph audiences,
+ * Auth0 without a custom audience) issue OPAQUE access tokens whose expiry
+ * cannot be decoded locally. Without this lookup, every OBO call would treat
+ * the session as expired and burn an IdP refresh, risking refresh-token
+ * rotation thrash under concurrent tool calls.
+ *
+ * @param {{ accessToken?: string, accessTokenExpiresAt?: number }} sessionTokens
+ * @returns {number | null} unix seconds, or null when no source proves an expiry
  */
-function isLiveSessionTokenStillValid(sessionTokens) {
-  const now = Math.floor(Date.now() / 1000);
-  const candidates = [sessionTokens?.idToken, sessionTokens?.accessToken];
-  for (const token of candidates) {
-    const exp = decodeJwtExp(token);
-    if (exp != null && exp > now + UPSTREAM_TOKEN_EXPIRY_BUFFER_SECONDS) {
-      return true;
-    }
+function getAccessTokenExp(sessionTokens) {
+  const fromJwt = decodeJwtExp(sessionTokens?.accessToken);
+  if (fromJwt != null) {
+    return fromJwt;
   }
-  return false;
+  const persisted = sessionTokens?.accessTokenExpiresAt;
+  return typeof persisted === 'number' ? persisted : null;
 }
 
 /**
- * Builds the OIDCTokens shape consumed by `resolveOboToken`. `expires_at` is
- * derived from the id_token JWT exp claim (or access_token as fallback) so it
- * matches what `extractOpenIDTokenInfo` would have produced from the user
- * snapshot — keeping `isOpenIDTokenValid`'s comparison meaningful.
+ * Returns true when the session token nominated by `tokenPreference` is still
+ * valid for at least the skew buffer. Required argument (no default) so every
+ * caller is explicit about which token's freshness gates this check.
+ *
+ * Use 'access_token' for OBO and any flow whose downstream sends the access
+ * token to the IdP as an assertion (jwt-bearer / on-behalf-of) — those flows
+ * fail when the access token is expired even if the id_token is still fresh.
+ * Access-token expiry is read via `getAccessTokenExp`, which handles opaque
+ * (non-JWT) tokens by falling back to the persisted `accessTokenExpiresAt`.
+ *
+ * Use 'id_token' for flows whose downstream is the LibreChat backend itself
+ * (e.g. session-token reuse in `refreshController`); the id_token is the
+ * standard JWT signed for the client_id audience and is the bearer the SPA
+ * sends back to LibreChat.
+ *
+ * @param {{ accessToken?: string, idToken?: string, accessTokenExpiresAt?: number }} sessionTokens
+ * @param {'access_token' | 'id_token'} tokenPreference
  */
-function buildOIDCTokensFromSession(sessionTokens) {
-  const expFromJwt =
-    decodeJwtExp(sessionTokens?.idToken) ?? decodeJwtExp(sessionTokens?.accessToken);
+function isLiveSessionTokenStillValid(sessionTokens, tokenPreference) {
+  if (tokenPreference !== 'access_token' && tokenPreference !== 'id_token') {
+    throw new Error(
+      `[OpenIDSessionRefresh] tokenPreference must be 'access_token' or 'id_token', got: ${tokenPreference}`,
+    );
+  }
+  const now = Math.floor(Date.now() / 1000);
+  const exp =
+    tokenPreference === 'access_token'
+      ? getAccessTokenExp(sessionTokens)
+      : decodeJwtExp(sessionTokens?.idToken);
+  return exp != null && exp > now + UPSTREAM_TOKEN_EXPIRY_BUFFER_SECONDS;
+}
+
+/**
+ * Builds the OIDCTokens shape consumed by `resolveOboToken`. Required
+ * `tokenPreference` selects which token's expiry becomes `expires_at` —
+ * caller intent must match what the downstream consumer actually validates.
+ * `expiresAtOverride` (unix seconds) wins when the caller has an authoritative
+ * value such as the IdP's `tokenset.expires_in` from a fresh refresh response;
+ * use it after refresh so we never attribute a prior token's `exp` to a freshly
+ * rotated counterpart. For 'access_token', the fallback uses `getAccessTokenExp`
+ * so opaque tokens are handled correctly via the persisted `accessTokenExpiresAt`.
+ *
+ * @param {{ accessToken?: string, idToken?: string, refreshToken?: string, accessTokenExpiresAt?: number }} sessionTokens
+ * @param {'access_token' | 'id_token'} tokenPreference
+ * @param {number} [expiresAtOverride] — unix seconds (preferred when present)
+ */
+function buildOIDCTokensFromSession(sessionTokens, tokenPreference, expiresAtOverride) {
+  if (tokenPreference !== 'access_token' && tokenPreference !== 'id_token') {
+    throw new Error(
+      `[OpenIDSessionRefresh] tokenPreference must be 'access_token' or 'id_token', got: ${tokenPreference}`,
+    );
+  }
+  let expiresAt = expiresAtOverride;
+  if (expiresAt == null) {
+    expiresAt =
+      tokenPreference === 'access_token'
+        ? (getAccessTokenExp(sessionTokens) ?? undefined)
+        : (decodeJwtExp(sessionTokens?.idToken) ?? undefined);
+  }
   return {
     access_token: sessionTokens?.accessToken,
     id_token: sessionTokens?.idToken,
     refresh_token: sessionTokens?.refreshToken,
-    expires_at: expFromJwt ?? undefined,
+    expires_at: expiresAt ?? undefined,
   };
 }
 
@@ -92,7 +223,7 @@ async function persistSession(req) {
   });
 }
 
-async function performIdpRefresh(req) {
+async function performIdpRefresh(req, tokenPreference) {
   const sessionTokens = req?.session?.openidTokens;
   const refreshToken = sessionTokens?.refreshToken;
   if (!refreshToken) {
@@ -119,6 +250,30 @@ async function performIdpRefresh(req) {
   const nextIdToken = tokenset.id_token || sessionTokens.idToken;
   const nextRefreshToken = tokenset.refresh_token || refreshToken;
 
+  /**
+   * Capture the freshly-issued access-token's expiry (unix seconds) so the
+   * next OBO call can reuse it without a redundant refresh — critical for
+   * opaque (non-JWT) access tokens whose expiry isn't readable from the
+   * token itself. Source order:
+   *   1. tokenset.expires_in — IdP's authoritative value for the new access
+   *      token. Always preferred when present.
+   *   2. decodeJwtExp(tokenset.access_token) — only when access_token is
+   *      itself a JWT. Decoding is a fact about THIS token, not a guess.
+   *
+   * Deliberately do NOT fall back to id_token's exp: id_token TTL is governed
+   * by IdP session policy and is often longer than access-token TTL. Trusting
+   * it would mark an opaque access token reusable past its real lifetime, so
+   * a stale token would be sent to the OBO IdP and rejected. When neither
+   * source proves an expiry, leave `accessTokenExpiresAt` unset; the next
+   * freshness check will correctly fall through to refresh.
+   */
+  let nextAccessTokenExp = null;
+  if (typeof tokenset.expires_in === 'number') {
+    nextAccessTokenExp = Math.floor(Date.now() / 1000) + tokenset.expires_in;
+  } else {
+    nextAccessTokenExp = decodeJwtExp(tokenset.access_token);
+  }
+
   const updatedSessionTokens = {
     ...sessionTokens,
     accessToken: tokenset.access_token,
@@ -126,47 +281,68 @@ async function performIdpRefresh(req) {
     refreshToken: nextRefreshToken,
     lastRefreshedAt: Date.now(),
   };
+  if (nextAccessTokenExp != null) {
+    updatedSessionTokens.accessTokenExpiresAt = nextAccessTokenExp;
+  } else {
+    /** Drop a stale value rather than carry it across an unknown-expiry rotation. */
+    delete updatedSessionTokens.accessTokenExpiresAt;
+  }
 
   req.session.openidTokens = updatedSessionTokens;
   await persistSession(req);
 
   logger.info('[OpenIDSessionRefresh] Inline refresh succeeded');
-  return buildOIDCTokensFromSession(updatedSessionTokens);
+  /**
+   * Pass the same expiry as the explicit `expiresAtOverride` so the returned
+   * OIDCTokens carries it directly, regardless of token preference. After
+   * refresh the IdP's value is authoritative and supersedes any decode.
+   */
+  return buildOIDCTokensFromSession(
+    updatedSessionTokens,
+    tokenPreference,
+    nextAccessTokenExp ?? undefined,
+  );
 }
 
-async function refreshOrReuseSession(req) {
+async function refreshOrReuseSession(req, tokenPreference) {
   const sessionTokens = req?.session?.openidTokens;
   if (!sessionTokens) {
     logger.debug('[OpenIDSessionRefresh] No session tokens to refresh from');
     return null;
   }
 
-  if (isLiveSessionTokenStillValid(sessionTokens)) {
+  if (isLiveSessionTokenStillValid(sessionTokens, tokenPreference)) {
     logger.debug('[OpenIDSessionRefresh] Live session token reused');
-    return buildOIDCTokensFromSession(sessionTokens);
+    return buildOIDCTokensFromSession(sessionTokens, tokenPreference);
   }
 
-  return performIdpRefresh(req);
+  return performIdpRefresh(req, tokenPreference);
 }
 
 /**
  * Single-flighted entry point. Concurrent callers for the same user share one
  * in-flight refresh. The map is cleared in finally so a failed refresh does
  * not pin subsequent retries.
+ *
+ * @param {import('express').Request} req
+ * @param {import('@librechat/data-schemas').IUser} user
+ * @param {'access_token' | 'id_token'} tokenPreference — required; selects
+ *   which token's `exp` gates the live-vs-refresh decision and populates the
+ *   returned `expires_at`. OBO callers pass 'access_token'.
  */
-async function refreshOpenIDSession(req, user) {
-  const key = getOpenidUserKey(user);
+async function refreshOpenIDSession(req, user, tokenPreference) {
+  const key = getSingleFlightKey(req, user);
   if (!key) {
-    return refreshOrReuseSession(req);
+    return refreshOrReuseSession(req, tokenPreference);
   }
 
   const inFlight = inFlightRefreshes.get(key);
   if (inFlight) {
-    logger.debug(`[OpenIDSessionRefresh] Joining in-flight refresh for user: ${key}`);
+    logger.debug(`[OpenIDSessionRefresh] Joining in-flight refresh (key=${hashKeyForLogs(key)})`);
     return inFlight;
   }
 
-  const promise = refreshOrReuseSession(req).finally(() => {
+  const promise = refreshOrReuseSession(req, tokenPreference).finally(() => {
     if (inFlightRefreshes.get(key) === promise) {
       inFlightRefreshes.delete(key);
     }
@@ -198,6 +374,11 @@ function isOIDCRefreshApplicable(user) {
  * call time (not at request validation), which is what makes the walk-away
  * failure mode recover without a user-visible re-authentication.
  *
+ * `tokenPreference` is required and identifies which upstream token's freshness
+ * gates the closure. OBO needs 'access_token' because the OBO exchange uses
+ * the access token as the jwt-bearer assertion; using id_token preference here
+ * would let an expired access token reach the IdP under a still-fresh id_token.
+ *
  * Closure contract (matches `UpstreamTokenProvider` in obo.ts):
  *   - resolves to non-null OIDCTokens when fresh tokens are available.
  *   - resolves to null when refresh is not applicable / no session.
@@ -207,9 +388,15 @@ function isOIDCRefreshApplicable(user) {
  * @param {object} args
  * @param {import('express').Request} [args.req]
  * @param {import('@librechat/data-schemas').IUser} [args.user]
+ * @param {'access_token' | 'id_token'} args.tokenPreference
  * @returns {() => Promise<import('@librechat/data-schemas').OIDCTokens | null>}
  */
-function createOpenIDSessionTokenProvider({ req, user }) {
+function createOpenIDSessionTokenProvider({ req, user, tokenPreference }) {
+  if (tokenPreference !== 'access_token' && tokenPreference !== 'id_token') {
+    throw new Error(
+      `[OpenIDSessionRefresh] createOpenIDSessionTokenProvider requires tokenPreference 'access_token' or 'id_token', got: ${tokenPreference}`,
+    );
+  }
   return async function upstreamTokenProvider() {
     if (!isOIDCRefreshApplicable(user)) {
       return null;
@@ -220,7 +407,7 @@ function createOpenIDSessionTokenProvider({ req, user }) {
       );
       return null;
     }
-    return refreshOpenIDSession(req, user);
+    return refreshOpenIDSession(req, user, tokenPreference);
   };
 }
 
@@ -232,5 +419,6 @@ module.exports = {
     UPSTREAM_TOKEN_EXPIRY_BUFFER_SECONDS,
     inFlightRefreshes,
     isLiveSessionTokenStillValid,
+    getAccessTokenExp,
   },
 };

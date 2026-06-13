@@ -1314,6 +1314,7 @@ describe('User parameter passing tests', () => {
       expect(mockCreateOpenIDSessionTokenProvider).toHaveBeenCalledWith({
         req: mockReq,
         user: mockUser,
+        tokenPreference: 'access_token',
       });
       expect(mockCallTool).toHaveBeenCalledWith(
         expect.objectContaining({

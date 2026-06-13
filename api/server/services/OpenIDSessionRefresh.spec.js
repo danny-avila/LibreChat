@@ -31,7 +31,8 @@ const SECRET = 'test-secret';
 
 const makeJwt = (exp) => jwt.sign({ sub: 'user-123', exp }, SECRET);
 
-const buildReq = (sessionTokens) => ({
+const buildReq = (sessionTokens, sessionId = 'session-A') => ({
+  sessionID: sessionId,
   session: Object.assign(
     {
       save: jest.fn((cb) => cb(null)),
@@ -40,10 +41,11 @@ const buildReq = (sessionTokens) => ({
   ),
 });
 
-const makeOpenIdUser = () => ({
+const makeOpenIdUser = (overrides = {}) => ({
   id: 'local-id-1',
   openidId: 'oidc-sub-123',
   provider: 'openid',
+  ...overrides,
 });
 
 describe('OpenIDSessionRefresh', () => {
@@ -56,11 +58,31 @@ describe('OpenIDSessionRefresh', () => {
   });
 
   describe('createOpenIDSessionTokenProvider closure no-op cases', () => {
+    it('throws when tokenPreference is missing', () => {
+      expect(() =>
+        createOpenIDSessionTokenProvider({
+          req: buildReq({ accessToken: makeJwt(Date.now() / 1000 + 600) }),
+          user: makeOpenIdUser(),
+        }),
+      ).toThrow(/tokenPreference/);
+    });
+
+    it('throws when tokenPreference is invalid', () => {
+      expect(() =>
+        createOpenIDSessionTokenProvider({
+          req: buildReq({ accessToken: makeJwt(Date.now() / 1000 + 600) }),
+          user: makeOpenIdUser(),
+          tokenPreference: 'bogus',
+        }),
+      ).toThrow(/tokenPreference/);
+    });
+
     it('returns null when OPENID_REUSE_TOKENS is disabled', async () => {
       isEnabled.mockReturnValue(false);
       const provider = createOpenIDSessionTokenProvider({
         req: buildReq({ accessToken: makeJwt(Date.now() / 1000 + 600) }),
         user: makeOpenIdUser(),
+        tokenPreference: 'access_token',
       });
       await expect(provider()).resolves.toBeNull();
       expect(openIdClient.refreshTokenGrant).not.toHaveBeenCalled();
@@ -70,6 +92,7 @@ describe('OpenIDSessionRefresh', () => {
       const provider = createOpenIDSessionTokenProvider({
         req: buildReq({ accessToken: makeJwt(Date.now() / 1000 + 600) }),
         user: { id: 'local-1', provider: 'local' },
+        tokenPreference: 'access_token',
       });
       await expect(provider()).resolves.toBeNull();
       expect(openIdClient.refreshTokenGrant).not.toHaveBeenCalled();
@@ -79,6 +102,7 @@ describe('OpenIDSessionRefresh', () => {
       const provider = createOpenIDSessionTokenProvider({
         req: buildReq({ accessToken: makeJwt(Date.now() / 1000 + 600) }),
         user: undefined,
+        tokenPreference: 'access_token',
       });
       await expect(provider()).resolves.toBeNull();
     });
@@ -87,6 +111,7 @@ describe('OpenIDSessionRefresh', () => {
       const provider = createOpenIDSessionTokenProvider({
         req: buildReq(undefined),
         user: makeOpenIdUser(),
+        tokenPreference: 'access_token',
       });
       await expect(provider()).resolves.toBeNull();
       expect(openIdClient.refreshTokenGrant).not.toHaveBeenCalled();
@@ -96,33 +121,62 @@ describe('OpenIDSessionRefresh', () => {
       const provider = createOpenIDSessionTokenProvider({
         req: undefined,
         user: makeOpenIdUser(),
+        tokenPreference: 'access_token',
       });
       await expect(provider()).resolves.toBeNull();
     });
   });
 
   describe('refreshOpenIDSession live-token reuse', () => {
-    it('returns live tokens without calling IdP when id_token still valid past skew', async () => {
+    it('returns live tokens without calling IdP when access_token still valid past skew', async () => {
       const farFutureExp = Math.floor(Date.now() / 1000) + 600;
       const sessionTokens = {
-        accessToken: 'opaque-access-token',
+        accessToken: makeJwt(farFutureExp),
         idToken: makeJwt(farFutureExp),
         refreshToken: 'rt-1',
       };
       const req = buildReq(sessionTokens);
 
-      const result = await refreshOpenIDSession(req, makeOpenIdUser());
+      const result = await refreshOpenIDSession(req, makeOpenIdUser(), 'access_token');
 
       expect(openIdClient.refreshTokenGrant).not.toHaveBeenCalled();
       expect(result).toEqual({
-        access_token: 'opaque-access-token',
+        access_token: sessionTokens.accessToken,
         id_token: sessionTokens.idToken,
         refresh_token: 'rt-1',
         expires_at: farFutureExp,
       });
     });
 
-    it('falls through to refresh when id_token expires within the skew buffer', async () => {
+    /**
+     * The bug fixed by Codex Finding 1a: id_token can outlive access_token.
+     * Old behavior would declare "live" because id_token is fresh, sending an
+     * expired access_token to the OBO IdP. New behavior must trigger a refresh.
+     */
+    it('refreshes when access_token is expired even if id_token is still fresh', async () => {
+      const accessExp = Math.floor(Date.now() / 1000) - 30;
+      const idExp = Math.floor(Date.now() / 1000) + 3600;
+      const sessionTokens = {
+        accessToken: makeJwt(accessExp),
+        idToken: makeJwt(idExp),
+        refreshToken: 'rt-asym',
+      };
+      const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: makeJwt(refreshedExp),
+        id_token: makeJwt(refreshedExp),
+        refresh_token: 'rt-asym-2',
+        expires_in: 3600,
+      });
+      const req = buildReq(sessionTokens);
+
+      const result = await refreshOpenIDSession(req, makeOpenIdUser(), 'access_token');
+
+      expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(1);
+      expect(result.access_token).not.toBe(sessionTokens.accessToken);
+    });
+
+    it('falls through to refresh when access_token expires within the skew buffer', async () => {
       const veryNearExp = Math.floor(Date.now() / 1000) + 10; // < 30s buffer
       const sessionTokens = {
         accessToken: makeJwt(veryNearExp),
@@ -131,27 +185,25 @@ describe('OpenIDSessionRefresh', () => {
       };
       const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
       openIdClient.refreshTokenGrant.mockResolvedValueOnce({
-        access_token: 'new-access',
+        access_token: makeJwt(refreshedExp),
         id_token: makeJwt(refreshedExp),
         refresh_token: 'rt-3',
         expires_in: 3600,
       });
       const req = buildReq(sessionTokens);
 
-      const result = await refreshOpenIDSession(req, makeOpenIdUser());
+      const result = await refreshOpenIDSession(req, makeOpenIdUser(), 'access_token');
 
       expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(1);
       expect(buildOpenIDRefreshParams).toHaveBeenCalled();
-      expect(result.access_token).toBe('new-access');
       expect(result.refresh_token).toBe('rt-3');
       expect(req.session.openidTokens.refreshToken).toBe('rt-3');
-      expect(req.session.openidTokens.accessToken).toBe('new-access');
       expect(req.session.save).toHaveBeenCalled();
     });
   });
 
   describe('refreshOpenIDSession refresh path', () => {
-    it('refreshes when id_token is expired and persists session', async () => {
+    it('refreshes when access_token is expired and persists session', async () => {
       const expiredExp = Math.floor(Date.now() / 1000) - 60;
       const sessionTokens = {
         accessToken: makeJwt(expiredExp),
@@ -160,21 +212,20 @@ describe('OpenIDSessionRefresh', () => {
       };
       const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
       openIdClient.refreshTokenGrant.mockResolvedValueOnce({
-        access_token: 'new-access',
+        access_token: makeJwt(refreshedExp),
         id_token: makeJwt(refreshedExp),
         refresh_token: 'rt-new',
         expires_in: 3600,
       });
       const req = buildReq(sessionTokens);
 
-      const result = await refreshOpenIDSession(req, makeOpenIdUser());
+      const result = await refreshOpenIDSession(req, makeOpenIdUser(), 'access_token');
 
       expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(1);
       expect(req.session.save).toHaveBeenCalledTimes(1);
-      expect(result.access_token).toBe('new-access');
+      expect(typeof result.access_token).toBe('string');
       expect(req.session.openidTokens).toEqual(
         expect.objectContaining({
-          accessToken: 'new-access',
           refreshToken: 'rt-new',
           lastRefreshedAt: expect.any(Number),
         }),
@@ -189,19 +240,49 @@ describe('OpenIDSessionRefresh', () => {
         idToken: priorIdToken,
         refreshToken: 'rt-keep',
       };
+      const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
       openIdClient.refreshTokenGrant.mockResolvedValueOnce({
-        access_token: 'new-access',
+        access_token: makeJwt(refreshedExp),
         // id_token and refresh_token both omitted
         expires_in: 3600,
       });
       const req = buildReq(sessionTokens);
 
-      const result = await refreshOpenIDSession(req, makeOpenIdUser());
+      const result = await refreshOpenIDSession(req, makeOpenIdUser(), 'access_token');
 
       expect(result.id_token).toBe(priorIdToken);
       expect(result.refresh_token).toBe('rt-keep');
       expect(req.session.openidTokens.idToken).toBe(priorIdToken);
       expect(req.session.openidTokens.refreshToken).toBe('rt-keep');
+    });
+
+    /**
+     * The bug fixed by Codex Finding 1b: when IdP rotates only access_token,
+     * derive expires_at from the IdP's tokenset.expires_in (authoritative for
+     * the new access_token) rather than the prior id_token's exp claim. The
+     * latter would cause `isOpenIDTokenValid` to reject a fresh credential.
+     */
+    it('uses tokenset.expires_in (not prior id_token exp) for expires_at after rotation-omits-id-token refresh', async () => {
+      const expiredExp = Math.floor(Date.now() / 1000) - 60;
+      const sessionTokens = {
+        accessToken: makeJwt(expiredExp),
+        idToken: makeJwt(expiredExp),
+        refreshToken: 'rt-rot',
+      };
+      // IdP omits id_token; expires_in is the only authoritative expiry source
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: makeJwt(Math.floor(Date.now() / 1000) + 3600),
+        // id_token omitted
+        expires_in: 3600,
+      });
+      const req = buildReq(sessionTokens);
+      const beforeSec = Math.floor(Date.now() / 1000);
+
+      const result = await refreshOpenIDSession(req, makeOpenIdUser(), 'access_token');
+
+      // expires_at should be ~now + 3600, NOT the stale prior id_token exp
+      expect(result.expires_at).toBeGreaterThanOrEqual(beforeSec + 3590);
+      expect(result.expires_at).toBeLessThanOrEqual(beforeSec + 3610);
     });
 
     it('returns null when session lacks a refresh_token (cannot refresh)', async () => {
@@ -213,7 +294,7 @@ describe('OpenIDSessionRefresh', () => {
       };
       const req = buildReq(sessionTokens);
 
-      const result = await refreshOpenIDSession(req, makeOpenIdUser());
+      const result = await refreshOpenIDSession(req, makeOpenIdUser(), 'access_token');
 
       expect(openIdClient.refreshTokenGrant).not.toHaveBeenCalled();
       expect(result).toBeNull();
@@ -229,7 +310,9 @@ describe('OpenIDSessionRefresh', () => {
       openIdClient.refreshTokenGrant.mockRejectedValueOnce(new Error('invalid_grant'));
       const req = buildReq(sessionTokens);
 
-      await expect(refreshOpenIDSession(req, makeOpenIdUser())).rejects.toThrow('invalid_grant');
+      await expect(refreshOpenIDSession(req, makeOpenIdUser(), 'access_token')).rejects.toThrow(
+        'invalid_grant',
+      );
       expect(req.session.save).not.toHaveBeenCalled();
     });
 
@@ -246,12 +329,14 @@ describe('OpenIDSessionRefresh', () => {
       });
       const req = buildReq(sessionTokens);
 
-      await expect(refreshOpenIDSession(req, makeOpenIdUser())).rejects.toThrow(/no access_token/i);
+      await expect(refreshOpenIDSession(req, makeOpenIdUser(), 'access_token')).rejects.toThrow(
+        /no access_token/i,
+      );
     });
   });
 
   describe('single-flight coalescing', () => {
-    it('shares one refreshTokenGrant call across concurrent waiters with same userId', async () => {
+    it('shares one refreshTokenGrant call across concurrent waiters in the SAME session', async () => {
       const expiredExp = Math.floor(Date.now() / 1000) - 60;
       const sessionTokens = {
         accessToken: makeJwt(expiredExp),
@@ -264,18 +349,18 @@ describe('OpenIDSessionRefresh', () => {
       });
       openIdClient.refreshTokenGrant.mockReturnValueOnce(grantPromise);
 
-      const req = buildReq(sessionTokens);
+      const req = buildReq(sessionTokens, 'session-shared');
       const user = makeOpenIdUser();
 
-      const p1 = refreshOpenIDSession(req, user);
-      const p2 = refreshOpenIDSession(req, user);
+      const p1 = refreshOpenIDSession(req, user, 'access_token');
+      const p2 = refreshOpenIDSession(req, user, 'access_token');
 
       // Both calls land before the IdP responds
       expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(1);
 
       const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
       resolveGrant({
-        access_token: 'new-access',
+        access_token: makeJwt(refreshedExp),
         id_token: makeJwt(refreshedExp),
         refresh_token: 'rt-rotated',
         expires_in: 3600,
@@ -283,8 +368,67 @@ describe('OpenIDSessionRefresh', () => {
 
       const [r1, r2] = await Promise.all([p1, p2]);
       expect(r1).toBe(r2);
-      expect(r1.access_token).toBe('new-access');
       expect(__internals.inFlightRefreshes.size).toBe(0);
+    });
+
+    /**
+     * Codex Finding 3: distinct sessions for the same OpenID subject must NOT
+     * share an in-flight refresh, otherwise refresh-token rotation breaks the
+     * non-winning session silently. Per-sessionID keying isolates them.
+     */
+    it('does NOT share an in-flight refresh across DIFFERENT sessions for the same user', async () => {
+      const expiredExp = Math.floor(Date.now() / 1000) - 60;
+      const reqA = buildReq(
+        {
+          accessToken: makeJwt(expiredExp),
+          idToken: makeJwt(expiredExp),
+          refreshToken: 'rt-A',
+        },
+        'session-A',
+      );
+      const reqB = buildReq(
+        {
+          accessToken: makeJwt(expiredExp),
+          idToken: makeJwt(expiredExp),
+          refreshToken: 'rt-B',
+        },
+        'session-B',
+      );
+      let resolveA;
+      let resolveB;
+      const promiseA = new Promise((resolve) => {
+        resolveA = resolve;
+      });
+      const promiseB = new Promise((resolve) => {
+        resolveB = resolve;
+      });
+      openIdClient.refreshTokenGrant.mockReturnValueOnce(promiseA).mockReturnValueOnce(promiseB);
+
+      const user = makeOpenIdUser();
+      const pA = refreshOpenIDSession(reqA, user, 'access_token');
+      const pB = refreshOpenIDSession(reqB, user, 'access_token');
+
+      // Two refreshes started, one per session
+      expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(2);
+
+      const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
+      resolveA({
+        access_token: makeJwt(refreshedExp),
+        id_token: makeJwt(refreshedExp),
+        refresh_token: 'rt-A-rotated',
+        expires_in: 3600,
+      });
+      resolveB({
+        access_token: makeJwt(refreshedExp),
+        id_token: makeJwt(refreshedExp),
+        refresh_token: 'rt-B-rotated',
+        expires_in: 3600,
+      });
+
+      const [rA, rB] = await Promise.all([pA, pB]);
+      expect(rA).not.toBe(rB);
+      expect(reqA.session.openidTokens.refreshToken).toBe('rt-A-rotated');
+      expect(reqB.session.openidTokens.refreshToken).toBe('rt-B-rotated');
     });
 
     it('clears in-flight slot on rejection so subsequent attempts can retry', async () => {
@@ -298,19 +442,19 @@ describe('OpenIDSessionRefresh', () => {
       const req = buildReq(sessionTokens);
       const user = makeOpenIdUser();
 
-      await expect(refreshOpenIDSession(req, user)).rejects.toThrow('transient');
+      await expect(refreshOpenIDSession(req, user, 'access_token')).rejects.toThrow('transient');
       expect(__internals.inFlightRefreshes.size).toBe(0);
 
       // Second attempt: succeed
       const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
       openIdClient.refreshTokenGrant.mockResolvedValueOnce({
-        access_token: 'new-access',
+        access_token: makeJwt(refreshedExp),
         id_token: makeJwt(refreshedExp),
         refresh_token: 'rt-recovered',
         expires_in: 3600,
       });
-      const result = await refreshOpenIDSession(req, user);
-      expect(result.access_token).toBe('new-access');
+      const result = await refreshOpenIDSession(req, user, 'access_token');
+      expect(result.refresh_token).toBe('rt-recovered');
     });
   });
 
@@ -318,18 +462,19 @@ describe('OpenIDSessionRefresh', () => {
     it('returns the live OIDCTokens shape from a valid session', async () => {
       const farFutureExp = Math.floor(Date.now() / 1000) + 600;
       const sessionTokens = {
-        accessToken: 'access-1',
+        accessToken: makeJwt(farFutureExp),
         idToken: makeJwt(farFutureExp),
         refreshToken: 'rt-1',
       };
       const provider = createOpenIDSessionTokenProvider({
         req: buildReq(sessionTokens),
         user: makeOpenIdUser(),
+        tokenPreference: 'access_token',
       });
 
       const result = await provider();
       expect(result).toEqual({
-        access_token: 'access-1',
+        access_token: sessionTokens.accessToken,
         id_token: sessionTokens.idToken,
         refresh_token: 'rt-1',
         expires_at: farFutureExp,
@@ -347,9 +492,186 @@ describe('OpenIDSessionRefresh', () => {
       const provider = createOpenIDSessionTokenProvider({
         req: buildReq(sessionTokens),
         user: makeOpenIdUser(),
+        tokenPreference: 'access_token',
       });
 
       await expect(provider()).rejects.toThrow('invalid_grant');
+    });
+  });
+
+  /**
+   * Codex Finding 4: opaque (non-JWT) access tokens make `decodeJwtExp` return
+   * null, which would force every OBO call to refresh even when the previous
+   * refresh response advertised a still-valid `expires_in`. The fix persists
+   * `accessTokenExpiresAt` (unix seconds) on each refresh and uses it as a
+   * fallback for the freshness check + `expires_at` derivation.
+   */
+  describe('opaque access token support (accessTokenExpiresAt fallback)', () => {
+    it('reuses live opaque access_token when accessTokenExpiresAt is in the future', async () => {
+      const farFutureExp = Math.floor(Date.now() / 1000) + 600;
+      const sessionTokens = {
+        accessToken: 'opaque-blob-not-a-jwt',
+        idToken: makeJwt(farFutureExp),
+        refreshToken: 'rt-opaque',
+        accessTokenExpiresAt: farFutureExp,
+      };
+      const req = buildReq(sessionTokens);
+
+      const result = await refreshOpenIDSession(req, makeOpenIdUser(), 'access_token');
+
+      expect(openIdClient.refreshTokenGrant).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        access_token: 'opaque-blob-not-a-jwt',
+        id_token: sessionTokens.idToken,
+        refresh_token: 'rt-opaque',
+        expires_at: farFutureExp,
+      });
+    });
+
+    it('refreshes opaque access_token when accessTokenExpiresAt has passed', async () => {
+      const expiredExp = Math.floor(Date.now() / 1000) - 60;
+      const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
+      const sessionTokens = {
+        accessToken: 'opaque-stale',
+        idToken: makeJwt(refreshedExp), // id_token still valid
+        refreshToken: 'rt-opaque-stale',
+        accessTokenExpiresAt: expiredExp,
+      };
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: 'opaque-fresh',
+        // IdP omits id_token (Auth0 rotation off / MS personal); we use expires_in
+        expires_in: 3600,
+      });
+      const req = buildReq(sessionTokens);
+
+      const result = await refreshOpenIDSession(req, makeOpenIdUser(), 'access_token');
+
+      expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(1);
+      expect(result.access_token).toBe('opaque-fresh');
+    });
+
+    it('refreshes opaque access_token when no JWT exp and no accessTokenExpiresAt are present', async () => {
+      const refreshedExp = Math.floor(Date.now() / 1000) + 3600;
+      const sessionTokens = {
+        accessToken: 'opaque-no-expiry',
+        idToken: makeJwt(refreshedExp),
+        refreshToken: 'rt-no-exp',
+        // accessTokenExpiresAt deliberately omitted
+      };
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: 'opaque-fresh',
+        expires_in: 3600,
+      });
+      const req = buildReq(sessionTokens);
+
+      await refreshOpenIDSession(req, makeOpenIdUser(), 'access_token');
+
+      expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(1);
+    });
+
+    it('persists accessTokenExpiresAt to req.session.openidTokens after a refresh with expires_in', async () => {
+      const expiredExp = Math.floor(Date.now() / 1000) - 60;
+      const sessionTokens = {
+        accessToken: 'opaque-stale',
+        idToken: makeJwt(expiredExp),
+        refreshToken: 'rt-persist',
+      };
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: 'opaque-fresh',
+        expires_in: 3600,
+      });
+      const req = buildReq(sessionTokens);
+      const beforeSec = Math.floor(Date.now() / 1000);
+
+      await refreshOpenIDSession(req, makeOpenIdUser(), 'access_token');
+
+      const persistedExp = req.session.openidTokens.accessTokenExpiresAt;
+      expect(typeof persistedExp).toBe('number');
+      expect(persistedExp).toBeGreaterThanOrEqual(beforeSec + 3590);
+      expect(persistedExp).toBeLessThanOrEqual(beforeSec + 3610);
+    });
+
+    it('drops a stale accessTokenExpiresAt when the new tokenset has neither expires_in nor a JWT access_token', async () => {
+      const expiredExp = Math.floor(Date.now() / 1000) - 60;
+      const sessionTokens = {
+        accessToken: 'opaque-old',
+        idToken: makeJwt(expiredExp),
+        refreshToken: 'rt-drop',
+        accessTokenExpiresAt: expiredExp, // stale carry-over
+      };
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: 'opaque-fresh-no-meta',
+        // no expires_in, no JWT access_token, no id_token
+      });
+      const req = buildReq(sessionTokens);
+
+      await refreshOpenIDSession(req, makeOpenIdUser(), 'access_token');
+
+      expect(req.session.openidTokens).not.toHaveProperty('accessTokenExpiresAt');
+    });
+
+    it('getAccessTokenExp prefers JWT exp over the persisted accessTokenExpiresAt', () => {
+      const jwtExp = Math.floor(Date.now() / 1000) + 600;
+      const persistedExp = Math.floor(Date.now() / 1000) - 60; // stale
+      const result = __internals.getAccessTokenExp({
+        accessToken: makeJwt(jwtExp),
+        accessTokenExpiresAt: persistedExp,
+      });
+      expect(result).toBe(jwtExp);
+    });
+
+    it('getAccessTokenExp returns null when neither a decodable JWT nor a persisted expiry is present', () => {
+      const result = __internals.getAccessTokenExp({
+        accessToken: 'opaque',
+      });
+      expect(result).toBeNull();
+    });
+
+    /**
+     * Codex Finding 6: id_token TTL is governed by IdP session policy and is
+     * often longer than access-token TTL. Trusting it as access-token expiry
+     * would mark an opaque access token reusable past its real lifetime,
+     * sending an expired credential to the OBO IdP. The fallback chain must
+     * be expires_in → JWT access_token exp → unset (NOT id_token exp).
+     */
+    it('does NOT fall back to id_token exp for accessTokenExpiresAt when expires_in is missing', async () => {
+      const longLivedIdTokenExp = Math.floor(Date.now() / 1000) + 86400; // 24h
+      const sessionTokens = {
+        accessToken: 'opaque-old',
+        idToken: makeJwt(Math.floor(Date.now() / 1000) - 60),
+        refreshToken: 'rt-no-fallback',
+      };
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: 'opaque-fresh', // opaque, NOT a JWT
+        id_token: makeJwt(longLivedIdTokenExp), // long-lived id_token
+        // no expires_in
+      });
+      const req = buildReq(sessionTokens);
+
+      await refreshOpenIDSession(req, makeOpenIdUser(), 'access_token');
+
+      // The long-lived id_token exp must NOT have been borrowed for the access token.
+      expect(req.session.openidTokens).not.toHaveProperty('accessTokenExpiresAt');
+    });
+
+    it('falls back to JWT access_token exp for accessTokenExpiresAt when expires_in is missing', async () => {
+      const accessExp = Math.floor(Date.now() / 1000) + 1800; // 30min
+      const sessionTokens = {
+        accessToken: 'opaque-old',
+        idToken: makeJwt(Math.floor(Date.now() / 1000) - 60),
+        refreshToken: 'rt-jwt-access',
+      };
+      openIdClient.refreshTokenGrant.mockResolvedValueOnce({
+        access_token: makeJwt(accessExp), // JWT access token
+        id_token: makeJwt(Math.floor(Date.now() / 1000) + 86400), // long-lived; should NOT win
+        // no expires_in
+      });
+      const req = buildReq(sessionTokens);
+
+      await refreshOpenIDSession(req, makeOpenIdUser(), 'access_token');
+
+      // accessTokenExpiresAt comes from the access token's own JWT exp, not the id_token.
+      expect(req.session.openidTokens.accessTokenExpiresAt).toBe(accessExp);
     });
   });
 });

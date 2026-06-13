@@ -231,6 +231,48 @@ describe('setOpenIDAuthTokens', () => {
       expect(req.session.openidTokens.lastRefreshedAt).toEqual(expect.any(Number));
     });
 
+    /**
+     * Codex Finding 5: persist the access-token's expiry (unix seconds) so the
+     * first OBO call after login or SPA refresh can reuse a still-valid OPAQUE
+     * access token without burning a redundant inline refresh. The expiry comes
+     * from the IdP's `tokenset.expires_in`; downstream consumers (notably
+     * `OpenIDSessionRefresh.getAccessTokenExp`) read it as a fallback when the
+     * access token isn't a JWT and can't be decoded.
+     */
+    it('should persist accessTokenExpiresAt when tokenset.expires_in is provided', () => {
+      const tokenset = {
+        id_token: 'the-id-token',
+        access_token: 'the-access-token',
+        refresh_token: 'the-refresh-token',
+        expires_in: 3600,
+      };
+      const req = mockRequest();
+      const res = mockResponse();
+      const beforeSec = Math.floor(Date.now() / 1000);
+
+      setOpenIDAuthTokens(tokenset, req, res, 'user-123');
+
+      const persisted = req.session.openidTokens.accessTokenExpiresAt;
+      expect(typeof persisted).toBe('number');
+      expect(persisted).toBeGreaterThanOrEqual(beforeSec + 3590);
+      expect(persisted).toBeLessThanOrEqual(beforeSec + 3610);
+    });
+
+    it('should NOT persist accessTokenExpiresAt when tokenset.expires_in is missing', () => {
+      const tokenset = {
+        id_token: 'the-id-token',
+        access_token: 'the-access-token',
+        refresh_token: 'the-refresh-token',
+        // expires_in deliberately omitted
+      };
+      const req = mockRequest();
+      const res = mockResponse();
+
+      setOpenIDAuthTokens(tokenset, req, res, 'user-123');
+
+      expect(req.session.openidTokens).not.toHaveProperty('accessTokenExpiresAt');
+    });
+
     it('should return the existing unexpired session id_token when refresh omits one', () => {
       const existingIdToken = jwt.sign(
         { sub: 'user-123', exp: Math.floor(Date.now() / 1000) + 3600 },

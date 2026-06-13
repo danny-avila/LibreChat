@@ -835,10 +835,17 @@ function createToolInstance({
        * for `req.session.openidTokens` and only the request layer can refresh
        * and persist it via `req.session.save()`. No-op when reuse is off, the
        * user is non-OpenID, or the session lacks openidTokens.
+       *
+       * `tokenPreference: 'access_token'` is required for OBO: the OBO grant
+       * sends the upstream access token to the IdP as the jwt-bearer assertion,
+       * so freshness must gate on access_token.exp specifically. An expired
+       * access_token under a still-fresh id_token would otherwise reach the
+       * IdP and be rejected.
        */
       const upstreamTokenProvider = createOpenIDSessionTokenProvider({
         req: capturedReq,
         user: effectiveUser,
+        tokenPreference: 'access_token',
       });
 
       const result = await mcpManager.callTool({
