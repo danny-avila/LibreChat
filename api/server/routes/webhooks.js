@@ -55,26 +55,23 @@ router.post('/notifications', async (req, res) => {
       return res.status(403).json({ message: 'Forbidden: Invalid API key' });
     }
 
-    let { messageId, question, originalQuestion, customMessage, userId, type } = req.body;
+    let { messageId, question, originalQuestion, customMessage, userId, type, threadId } = req.body;
 
-    let message;
-
-    if (originalQuestion && !messageId && !userId) {
-      return res.status(400).json({ message: 'Missing messageId' });
-    }
-
+    // Resolve userId from messageId or threadId (threadId = conversationId in messages collection)
     if (messageId) {
-      // 🔍 Find message
-      message = await Message.findOne({ messageId }).lean();
+      const message = await Message.findOne({ messageId }).lean();
       if (!message || !message.user) {
-        return res.status(404).json({
-          message: 'Message not found or missing user',
-          messageId,
-        });
+        return res.status(404).json({ message: 'Message not found or missing user', messageId });
       }
-
-      //  const userId = "69cd061cd64d4be60a4d6575"; // ⚠️ hardcoded (be careful)
       userId = message.user;
+    } else if (threadId) {
+      const message = await Message.findOne({ conversationId: threadId }).lean();
+      if (!message || !message.user) {
+        return res.status(404).json({ message: 'No message found for threadId', threadId });
+      }
+      userId = message.user;
+    } else if (!userId) {
+      return res.status(400).json({ message: 'Missing messageId, threadId, or userId' });
     }
 
     const user = await User.findById(userId).lean();
