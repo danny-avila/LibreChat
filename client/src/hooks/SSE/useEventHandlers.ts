@@ -68,6 +68,16 @@ type TTitleEvent = {
 const hasRealTitle = (title?: string | null): title is string =>
   title != null && title !== '' && title !== 'New Chat';
 
+/** Skill caches refreshed when a chat turn authors a skill via `create_file`/`edit_file`. */
+const SKILL_QUERY_KEYS = [
+  QueryKeys.skills,
+  QueryKeys.skill,
+  QueryKeys.skillFiles,
+  QueryKeys.skillFileContent,
+  QueryKeys.skillTree,
+  QueryKeys.skillNodeContent,
+] as const;
+
 export const buildCreatedInitialResponse = ({
   initialResponse,
   userMessage,
@@ -277,12 +287,21 @@ export default function useEventHandlers({
   const { token } = useAuthContext();
 
   const { contentHandler, resetContentHandler } = useContentHandler({ setMessages, getMessages });
+  /** `refetchType: 'all'` so cached-but-unmounted skill queries refresh too —
+   *  they opt out of `refetchOnMount`, so a plain invalidation would leave
+   *  the Skills panel stale until a manual refresh. */
+  const onSkillAuthoringComplete = useCallback(() => {
+    for (const key of SKILL_QUERY_KEYS) {
+      queryClient.invalidateQueries({ queryKey: [key], refetchType: 'all' });
+    }
+  }, [queryClient]);
   const { stepHandler, clearStepMaps, resetSubagentAtoms, syncStepMessage } = useStepHandler({
     setMessages,
     getMessages,
     announcePolite,
     setIsSubmitting,
     lastAnnouncementTimeRef,
+    onSkillAuthoringComplete,
   });
   const attachmentHandler = useAttachmentHandler(queryClient);
 
