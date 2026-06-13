@@ -164,10 +164,6 @@ export class RedisJobStore implements IJobStore {
     // For cluster mode, we can't pipeline keys on different slots
     // The job key uses hash tag {streamId}, runningJobs and userJobs are on different slots
     if (this.isCluster) {
-      // DEL before HSET: a reused streamId (retry/superseded run) would
-      // otherwise inherit the prior job's contextUsage/tokenUsage fields,
-      // since HSET only overwrites the keys present in the fresh job.
-      await this.redis.del(key);
       await this.redis.hset(key, this.serializeJob(job));
       await this.redis.expire(key, this.ttl.running);
       await this.redis.sadd(KEYS.runningJobs, streamId);
@@ -177,8 +173,6 @@ export class RedisJobStore implements IJobStore {
       }
     } else {
       const pipeline = this.redis.pipeline();
-      // See cluster branch: clear stale fields before writing the fresh job.
-      pipeline.del(key);
       pipeline.hset(key, this.serializeJob(job));
       pipeline.expire(key, this.ttl.running);
       pipeline.sadd(KEYS.runningJobs, streamId);
