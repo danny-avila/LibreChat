@@ -255,8 +255,10 @@ describe('countTrailingOutputChars', () => {
     expect(countTrailingOutputChars([text('aaaa'), tool(), think('bb'), text('ccc')])).toBe(5);
   });
 
-  it('skips trailing in-progress tool parts before collecting', () => {
-    expect(countTrailingOutputChars([text('aaaa'), tool(), text('ccc'), tool()])).toBe(3);
+  it('returns 0 when the latest part is a tool call (no in-flight output)', () => {
+    /** Once a tool call is emitted, its preceding text is folded into the next
+     *  snapshot's messageTokens — counting it here would double-count. */
+    expect(countTrailingOutputChars([text('aaaa'), tool(), text('ccc'), tool()])).toBe(0);
   });
 
   it('stops at the previous tool boundary', () => {

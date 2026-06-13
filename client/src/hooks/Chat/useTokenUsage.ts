@@ -118,8 +118,21 @@ export default function useTokenUsage({
   }, [conversationKey, queryClient, setBranchTotals]);
 
   useEffect(() => {
+    /** The cache subscriber is muted during streaming to avoid per-chunk O(n)
+     *  rebuilds, but the `created` event still moves the tail to the new
+     *  response message. Without a snapshot (non-agent streams, or a lib that
+     *  predates on_context_usage) sumBranch would miss that tail in the stale
+     *  index and drop history + prompt. Re-index from the cache on tail change
+     *  while submitting — bounded, since tailId only shifts on
+     *  created/finalize/branch-switch, never per chunk. */
+    if (isSubmittingRef.current) {
+      buildIndex(
+        conversationKey,
+        queryClient.getQueryData<TMessage[]>([QueryKeys.messages, conversationKey]),
+      );
+    }
     setBranchTotals(sumBranch(conversationKey, tailId, anchorId));
-  }, [conversationKey, tailId, anchorId, setBranchTotals]);
+  }, [conversationKey, tailId, anchorId, setBranchTotals, queryClient]);
 
   return useMemo(() => {
     /** The granular snapshot is for one specific generation. Show the live one

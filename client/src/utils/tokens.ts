@@ -233,21 +233,21 @@ function getOutputChars(part: unknown): number | null {
 }
 
 /**
- * Chars of the trailing contiguous text/think parts in aggregated content —
- * the model output produced since the last tool boundary, which the latest
- * context snapshot does not yet account for. Trailing non-text parts
- * (in-progress tool calls) are skipped before collecting.
+ * Chars of the contiguous text/think parts at the very END of aggregated
+ * content — the output the model is actively producing on the current call,
+ * which the latest pre-invoke context snapshot does not yet account for.
+ *
+ * Crucially this does NOT skip a trailing tool-call part: once the model has
+ * emitted a tool call, that call's text is already folded into the next
+ * snapshot's `messageTokens`, so counting it would double-count against the
+ * snapshot. A tool call at the end therefore yields 0 (nothing new in flight).
  */
 export function countTrailingOutputChars(content?: unknown[] | null): number {
   if (!Array.isArray(content) || content.length === 0) {
     return 0;
   }
-  let i = content.length - 1;
-  while (i >= 0 && getOutputChars(content[i]) == null) {
-    i--;
-  }
   let chars = 0;
-  for (; i >= 0; i--) {
+  for (let i = content.length - 1; i >= 0; i--) {
     const partChars = getOutputChars(content[i]);
     if (partChars == null) {
       break;

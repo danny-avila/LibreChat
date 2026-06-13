@@ -661,17 +661,18 @@ export default function useResumableSSE(
             backfillUsage(data.resumeState?.collectedUsage ?? [], resumeSubmission);
             if (data.resumeState?.contextUsage) {
               contextHandler(data.resumeState.contextUsage, resumeSubmission);
-            } else {
-              /** Output streamed before this resume is not re-delivered as
-               *  deltas — estimate it from the trailing aggregated content.
-               *  Skip when a resumed snapshot is present: its `messageTokens`
-               *  already accounts for produced output, so seeding the trailing
-               *  text again would double-count until the next snapshot. */
-              seedLive(
-                countTrailingOutputChars(data.resumeState?.aggregatedContent),
-                resumeSubmission,
-              );
             }
+            /** Output streamed before this resume is not re-delivered as deltas
+             *  — estimate it from the trailing aggregated content. This is
+             *  needed even with a snapshot: the snapshot is pre-invoke, so the
+             *  in-flight output it precedes rides on the live estimate.
+             *  countTrailingOutputChars only counts output at the very end (0
+             *  when paused at a tool call), so a snapshot's budget is never
+             *  double-counted. */
+            seedLive(
+              countTrailingOutputChars(data.resumeState?.aggregatedContent),
+              resumeSubmission,
+            );
 
             if (data.resumeState?.runSteps) {
               for (const runStep of data.resumeState.runSteps) {

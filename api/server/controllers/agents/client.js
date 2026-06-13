@@ -131,6 +131,11 @@ class AgentClient extends BaseClient {
      *  harvests `contentParts` onto the matching `subagent` tool_call
      *  so the child's full activity survives a page refresh. */
     this.subagentAggregatorsByToolCallId = subagentAggregatorsByToolCallId ?? new Map();
+    /** In-flight `on_token_usage` emits from subagent child runs. The sink
+     *  fires the emitter without awaiting, so chatCompletion's finally flushes
+     *  these before returning — otherwise job cleanup can race the persist.
+     *  @type {Promise<void>[]} */
+    this.pendingSubagentEmits = [];
     /** @type {AgentClientOptions} */
     this.options = Object.assign({ endpoint: options.endpoint }, clientOptions);
     /** @type {string} */
@@ -895,48 +900,58 @@ class AgentClient extends BaseClient {
     }
     const includeCost = appConfig?.interfaceConfig?.contextCost === true;
     const endpointTokenConfig = this.options.endpointTokenConfig;
-    return async (usage) => {
-      try {
-        const cache_creation =
-          usage.input_token_details?.cache_creation ?? usage.cache_creation_input_tokens;
-        const cache_read = usage.input_token_details?.cache_read ?? usage.cache_read_input_tokens;
-        const data = {
-          input_tokens: usage.input_tokens,
-          output_tokens: usage.output_tokens,
-          total_tokens: usage.total_tokens,
-          input_token_details:
-            cache_creation != null || cache_read != null
-              ? { cache_creation, cache_read }
-              : undefined,
-          model: usage.model,
-          provider: usage.provider,
-          usage_type: 'subagent',
-          runId: this.responseMessageId,
-          /** Unique per collected entry (post-push length) for resume dedupe */
-          seq: this.collectedUsage.length,
-          cost: includeCost
-            ? computeUsageCostUSD(
-                usage,
-                { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
-                endpointTokenConfig,
-              )
-            : undefined,
-        };
-        if (streamId) {
-          /** Await like every other emitChunk caller: it persists the usage
-           *  (HSET) before publishing, so a floating promise can race job
-           *  cleanup and let a Redis/publish failure escape this try/catch. */
-          await GenerationJobManager.emitChunk(streamId, {
-            event: UsageEvents.ON_TOKEN_USAGE,
-            data,
-          });
-        } else {
-          sendEvent(res, { event: UsageEvents.ON_TOKEN_USAGE, data });
+    return (usage) => {
+      const data = {
+        input_tokens: usage.input_tokens,
+        output_tokens: usage.output_tokens,
+        total_tokens: usage.total_tokens,
+        input_token_details: this.subagentCacheDetails(usage),
+        model: usage.model,
+        provider: usage.provider,
+        usage_type: 'subagent',
+        runId: this.responseMessageId,
+        /** Unique per collected entry (post-push length) for resume dedupe */
+        seq: this.collectedUsage.length,
+        cost: includeCost
+          ? computeUsageCostUSD(
+              usage,
+              { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
+              endpointTokenConfig,
+            )
+          : undefined,
+      };
+      /** The sink fires this without awaiting, so retain the promise and flush
+       *  it in chatCompletion's finally — emitChunk persists (HSET) before
+       *  publishing, and job cleanup must not race that persist or resumed
+       *  clients miss billed subagent usage. */
+      const emit = (async () => {
+        try {
+          if (streamId) {
+            await GenerationJobManager.emitChunk(streamId, {
+              event: UsageEvents.ON_TOKEN_USAGE,
+              data,
+            });
+          } else {
+            sendEvent(res, { event: UsageEvents.ON_TOKEN_USAGE, data });
+          }
+        } catch (err) {
+          logger.warn('[AgentClient] Failed to emit subagent usage', err);
         }
-      } catch (err) {
-        logger.warn('[AgentClient] Failed to emit subagent usage', err);
-      }
+      })();
+      this.pendingSubagentEmits.push(emit);
+      return emit;
     };
+  }
+
+  /** Normalizes a subagent usage event's cache token details for emission. */
+  subagentCacheDetails(usage) {
+    const cache_creation =
+      usage.input_token_details?.cache_creation ?? usage.cache_creation_input_tokens;
+    const cache_read = usage.input_token_details?.cache_read ?? usage.cache_read_input_tokens;
+    if (cache_creation == null && cache_read == null) {
+      return undefined;
+    }
+    return { cache_creation, cache_read };
   }
 
   /**
@@ -1328,6 +1343,14 @@ class AgentClient extends BaseClient {
       }
 
       this.finalizeSubagentContent();
+
+      /** Flush subagent usage emits the sink fired without awaiting, so their
+       *  persist/publish completes before we return and the job is cleaned up
+       *  (resumed clients read this persisted usage). */
+      if (this.pendingSubagentEmits.length > 0) {
+        await Promise.allSettled(this.pendingSubagentEmits);
+        this.pendingSubagentEmits = [];
+      }
 
       try {
         const attachments = await this.awaitMemoryWithTimeout(memoryPromise);
