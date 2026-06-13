@@ -1,7 +1,6 @@
 import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
 import { BedrockRuntimeClient } from '@aws-sdk/client-bedrock-runtime';
-import type { BedrockRuntimeClientConfig } from '@aws-sdk/client-bedrock-runtime';
 import {
   AuthType,
   EModelEndpoint,
@@ -10,6 +9,7 @@ import {
   bedrockOutputParser,
   removeNullishValues,
 } from 'librechat-data-provider';
+import type { BedrockRuntimeClientConfig } from '@aws-sdk/client-bedrock-runtime';
 import type {
   BaseInitializeParams,
   InitializeResultBase,
@@ -17,8 +17,8 @@ import type {
   GuardrailConfiguration,
   InferenceProfileConfig,
 } from '~/types';
-import { checkUserKeyExpiry } from '~/utils';
 import { getHttpsProxyAgent } from '~/utils/proxy';
+import { checkUserKeyExpiry } from '~/utils';
 
 const BEDROCK_CREDENTIALS_ERROR = 'Bedrock credentials not provided. Please provide them again.';
 

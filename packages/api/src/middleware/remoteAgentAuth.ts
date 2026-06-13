@@ -3,20 +3,20 @@ import jwksRsa from 'jwks-rsa';
 import { fetch as undiciFetch } from 'undici';
 import { getTenantId, logger, tenantStorage } from '@librechat/data-schemas';
 import { SystemRoles, isRemoteOidcUrlAllowed } from 'librechat-data-provider';
-import type { RequestHandler, Request, Response, NextFunction } from 'express';
 import type { AppConfig, IUser, RoleMethods, UserMethods } from '@librechat/data-schemas';
+import type { RequestHandler, Request, Response, NextFunction } from 'express';
 import type { Algorithm, JwtPayload, VerifyOptions } from 'jsonwebtoken';
 import type { TAgentsEndpoint } from 'librechat-data-provider';
 import type { RequestInit } from 'undici';
 import type { GetAppConfigOptions } from '../app/service';
-import { findOpenIDUser, getOpenIdEmail, normalizeOpenIdIssuer } from '../auth/openid';
-import { getEnvProxyDispatcher, getHttpsProxyAgent } from '~/utils/proxy';
 import {
   getLibreChatRolesForOpenIdSync,
   getOpenIdRolesForOpenIdSync,
   getOpenIdRoleSyncOptions,
   selectOpenIdRole,
 } from '../auth/openidRoleSync';
+import { findOpenIDUser, getOpenIdEmail, normalizeOpenIdIssuer } from '../auth/openid';
+import { getEnvProxyDispatcher, getHttpsProxyAgent } from '~/utils/proxy';
 import { isEnabled, math } from '~/utils';
 
 export interface RemoteAgentAuthDeps {

@@ -1,4 +1,3 @@
-import type { Dispatcher } from 'undici';
 import { logger } from '@librechat/data-schemas';
 import { AnthropicClientOptions } from '@librechat/agents';
 import {
@@ -8,6 +7,7 @@ import {
   ThinkingDisplay,
   AuthKeys,
 } from 'librechat-data-provider';
+import type { Dispatcher } from 'undici';
 import type {
   AnthropicLLMConfigResult,
   AnthropicConfigOptions,

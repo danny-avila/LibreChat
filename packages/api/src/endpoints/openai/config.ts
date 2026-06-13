@@ -5,8 +5,8 @@ import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm
 import { getOpenAILLMConfig, extractDefaultParams } from './llm';
 import { getGoogleConfig } from '~/endpoints/google/llm';
 import { transformToOpenAIConfig } from './transform';
-import { constructAzureURL } from '~/utils/azure';
 import { getProxyDispatcher } from '~/utils/proxy';
+import { constructAzureURL } from '~/utils/azure';
 import { createFetch } from '~/utils/generators';
 
 type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
