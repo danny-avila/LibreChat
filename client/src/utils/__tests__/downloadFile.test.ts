@@ -88,6 +88,13 @@ describe('getCodeBlockFilename', () => {
     expect(getCodeBlockFilename(' RUST ')).toBe('code.rs');
   });
 
+  it('maps alphanumeric language aliases instead of treating them as extensions', () => {
+    expect(getCodeBlockFilename('python3')).toBe('code.py');
+    expect(getCodeBlockFilename('nodejs')).toBe('code.js');
+    expect(getCodeBlockFilename('node')).toBe('code.js');
+    expect(getCodeBlockFilename('golang')).toBe('code.go');
+  });
+
   it('passes extension-like hints through unchanged', () => {
     expect(getCodeBlockFilename('py')).toBe('code.py');
     expect(getCodeBlockFilename('tsx')).toBe('code.tsx');

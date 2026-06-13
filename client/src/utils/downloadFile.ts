@@ -9,8 +9,12 @@ export const isHttpDownloadTarget = (target?: string | null): boolean =>
  */
 const LANGUAGE_TO_EXTENSION: Record<string, string> = {
   javascript: 'js',
+  node: 'js',
+  nodejs: 'js',
   typescript: 'ts',
   python: 'py',
+  python3: 'py',
+  golang: 'go',
   ruby: 'rb',
   perl: 'pl',
   rust: 'rs',
