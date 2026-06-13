@@ -8,12 +8,13 @@ import type {
   TContextUsageEvent,
 } from 'librechat-data-provider';
 import {
-  EMPTY_USAGE_TOTALS,
+  markUsageFolded,
   liveTokensFamily,
+  removeUsageAtoms,
   calibrationFamily,
   usageTotalsFamily,
   branchTotalsFamily,
-  removeUsageAtoms,
+  migrateUsageFolded,
   contextSnapshotFamily,
 } from '~/store/usage';
 import {
@@ -46,7 +47,7 @@ export interface UsageHandlers {
   tapContent: (text: unknown, submission: UsageSubmissionLike) => void;
   finalizeUsage: (data: FinalDataLike, submission: UsageSubmissionLike) => void;
   resetLive: (submission: UsageSubmissionLike) => void;
-  /** Replaces accumulated totals with the run's collected usage on resume */
+  /** Idempotently folds the resumed run's collected usage into the totals */
   backfillUsage: (entries: TTokenUsageEvent[], submission: UsageSubmissionLike) => void;
   /** Seeds the live estimate from already-streamed output chars on resume */
   seedLive: (chars: number, submission: UsageSubmissionLike) => void;
@@ -115,8 +116,19 @@ export default function useUsageHandler(): UsageHandlers {
       setLive(convoKey, 0);
     };
 
-    const foldUsage = (data: TTokenUsageEvent, submission: UsageSubmissionLike) => {
+    /** Folds one usage event into the totals exactly once per conversation.
+     *  Returns false when the event was already counted (live then replayed
+     *  on resume), so callers can skip the live-estimate bump too. */
+    const foldUsage = (data: TTokenUsageEvent, submission: UsageSubmissionLike): boolean => {
       const convoKey = getConvoKey(submission);
+      /** runId+seq is unique per model call; fall back to the payload when a
+       *  source predates the sequence tag */
+      const usageKey =
+        data.runId != null && data.seq != null ? `${data.runId}:${data.seq}` : JSON.stringify(data);
+      if (!markUsageFolded(convoKey, usageKey)) {
+        return false;
+      }
+
       const endpoint = submission.conversation?.endpoint ?? '';
       const model = data.model ?? submission.conversation?.model ?? '';
       const units = normalizeUsageUnits(data);
@@ -148,14 +160,16 @@ export default function useUsageHandler(): UsageHandlers {
             : { provider: data.provider, endpoint, model, ...units },
         },
       });
+      return true;
     };
 
     const usageHandler: UsageHandlers['usageHandler'] = (data, submission) => {
-      foldUsage(data, submission);
+      const folded = foldUsage(data, submission);
 
       /** Only primary-call usage drives the live context estimate; tagged
-       *  buckets (summarization, subagent) fold into totals/cost only */
-      if (data.usage_type != null) {
+       *  buckets (summarization, subagent) fold into totals/cost only. Skip
+       *  the bump for an already-counted event replayed on resume. */
+      if (!folded || data.usage_type != null) {
         return;
       }
       confirmedRef.current += data.output_tokens ?? 0;
@@ -203,7 +217,9 @@ export default function useUsageHandler(): UsageHandlers {
     };
 
     const backfillUsage: UsageHandlers['backfillUsage'] = (entries, submission) => {
-      jotai.set(usageTotalsFamily(getConvoKey(submission)), EMPTY_USAGE_TOTALS);
+      /** Fold the resumed run's persisted events idempotently — never reset
+       *  the conversation totals, or a reconnect mid-stream would drop the
+       *  usage of prompts already completed earlier in the session */
       for (const entry of entries) {
         foldUsage(entry, submission);
       }
@@ -231,6 +247,7 @@ export default function useUsageHandler(): UsageHandlers {
 
       if (realId !== fromKey) {
         migrateIndex(fromKey, realId);
+        migrateUsageFolded(fromKey, realId);
         jotai.set(contextSnapshotFamily(realId), jotai.get(contextSnapshotFamily(fromKey)));
         jotai.set(usageTotalsFamily(realId), jotai.get(usageTotalsFamily(fromKey)));
         jotai.set(calibrationFamily(realId), jotai.get(calibrationFamily(fromKey)));

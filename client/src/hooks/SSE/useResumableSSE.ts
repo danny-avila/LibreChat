@@ -22,7 +22,6 @@ import type {
   TSubmission,
   TConversation,
   EventSubmission,
-  TTokenUsageEvent,
 } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
 import type { ActiveJobsResponse } from '~/data-provider';
@@ -656,22 +655,10 @@ export default function useResumableSSE(
              * via multiset matching; events that raced past the snapshot read
              * still fold so multi-call runs don't undercount.
              */
-            const backfilledUsage = data.resumeState?.collectedUsage;
-            backfillUsage(backfilledUsage ?? [], resumeSubmission);
-            const backfillCounts = new Map<string, number>();
-            for (const entry of backfilledUsage ?? []) {
-              const key = JSON.stringify(entry);
-              backfillCounts.set(key, (backfillCounts.get(key) ?? 0) + 1);
-            }
-            const foldIfNotBackfilled = (usageData: TTokenUsageEvent) => {
-              const key = JSON.stringify(usageData);
-              const count = backfillCounts.get(key) ?? 0;
-              if (count > 0) {
-                backfillCounts.set(key, count - 1);
-                return;
-              }
-              usageHandler(usageData, resumeSubmission);
-            };
+            /** Fold the run's persisted usage; events also replayed below are
+             *  deduped by (runId, seq) inside the handler, so prior prompts in
+             *  this conversation keep their usage and gap events still count */
+            backfillUsage(data.resumeState?.collectedUsage ?? [], resumeSubmission);
             if (data.resumeState?.contextUsage) {
               contextHandler(data.resumeState.contextUsage, resumeSubmission);
             }
@@ -765,8 +752,14 @@ export default function useResumableSSE(
                 if (replayEvent.event === UsageEvents.ON_CONTEXT_USAGE) {
                   contextHandler(replayEvent.data, resumeSubmission);
                 } else if (replayEvent.event === UsageEvents.ON_TOKEN_USAGE) {
-                  foldIfNotBackfilled(replayEvent.data);
+                  usageHandler(replayEvent.data, resumeSubmission);
                 } else if (replayEvent.event != null) {
+                  if (
+                    replayEvent.event === StepEvents.ON_MESSAGE_DELTA ||
+                    replayEvent.event === StepEvents.ON_REASONING_DELTA
+                  ) {
+                    tapStream(replayEvent.data, resumeSubmission);
+                  }
                   stepHandler(replayEvent, resumeSubmission);
                 }
               }
@@ -780,10 +773,19 @@ export default function useResumableSSE(
                 } else if (pendingEvent.event === UsageEvents.ON_CONTEXT_USAGE) {
                   contextHandler(pendingEvent.data, resumeSubmission);
                 } else if (pendingEvent.event === UsageEvents.ON_TOKEN_USAGE) {
-                  foldIfNotBackfilled(pendingEvent.data);
+                  usageHandler(pendingEvent.data, resumeSubmission);
                 } else if (pendingEvent.event != null) {
+                  if (
+                    pendingEvent.event === StepEvents.ON_MESSAGE_DELTA ||
+                    pendingEvent.event === StepEvents.ON_REASONING_DELTA
+                  ) {
+                    tapStream(pendingEvent.data, resumeSubmission);
+                  }
                   stepHandler(pendingEvent, resumeSubmission);
                 } else if (pendingEvent.type != null) {
+                  /** Gap output streamed past the resume snapshot must reach the
+                   *  live estimate too, not just the message UI */
+                  tapContent(pendingEvent.text, resumeSubmission);
                   contentHandler({ data: pendingEvent, submission: resumeSubmission });
                 }
               }
