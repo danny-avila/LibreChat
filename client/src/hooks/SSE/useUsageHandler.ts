@@ -253,18 +253,26 @@ export default function useUsageHandler(): UsageHandlers {
         jotai.set(calibrationFamily(realId), responseMeta.calibrationRatio);
       }
 
-      const tailId = data.responseMessage?.messageId ?? data.requestMessage?.messageId ?? null;
-      const anchorId = submission.userMessage?.messageId ?? null;
+      const userMsgId = submission.userMessage?.messageId ?? null;
+      const responseId = data.responseMessage?.messageId ?? null;
+      const tailId = responseId ?? data.requestMessage?.messageId ?? null;
       if (tailId) {
-        jotai.set(branchTotalsFamily(realId), sumBranch(realId, tailId, anchorId));
+        jotai.set(branchTotalsFamily(realId), sumBranch(realId, tailId, responseId ?? userMsgId));
       }
 
-      /** The snapshot was taken pre-invoke — carry the output streamed since
-       *  then so the gauge keeps the final response after live resets */
       const snapshotAtom = contextSnapshotFamily(realId);
       const snapshot = jotai.get(snapshotAtom);
-      if (snapshot != null && liveAtFinalize > 0 && snapshot.anchorMessageId === anchorId) {
-        jotai.set(snapshotAtom, { ...snapshot, completedOutputTokens: liveAtFinalize });
+      /** Re-anchor the snapshot from the user message — shared by both branches
+       *  when a response is regenerated — to the branch-unique response message,
+       *  so switching to a sibling branch falls back to that branch's own
+       *  totals instead of showing this generation's snapshot. Also carry the
+       *  output streamed since the pre-invoke snapshot, kept after live resets. */
+      if (snapshot != null && snapshot.anchorMessageId === userMsgId) {
+        jotai.set(snapshotAtom, {
+          ...snapshot,
+          anchorMessageId: responseId ?? snapshot.anchorMessageId,
+          ...(liveAtFinalize > 0 && { completedOutputTokens: liveAtFinalize }),
+        });
       }
 
       streamCharsRef.current = 0;
