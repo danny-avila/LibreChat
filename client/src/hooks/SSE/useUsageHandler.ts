@@ -172,7 +172,9 @@ export default function useUsageHandler(): UsageHandlers {
       if (!folded || data.usage_type != null) {
         return;
       }
-      confirmedRef.current += data.output_tokens ?? 0;
+      /** Use the repaired completion count (not raw output_tokens) so the
+       *  snapshot gauge keeps the full response for under-reporting providers */
+      confirmedRef.current += normalizeUsageUnits(data).output;
       streamCharsRef.current = 0;
       setLive(getConvoKey(submission), confirmedRef.current);
     };

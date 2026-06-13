@@ -7,12 +7,13 @@ import type { ContextSnapshot, UsageTotals } from '~/store/usage';
 import type { BranchTotals } from '~/utils/tokens';
 import {
   liveTokensFamily,
+  removeUsageAtoms,
   usageTotalsFamily,
   branchTotalsFamily,
   contextSnapshotFamily,
 } from '~/store/usage';
+import { buildIndex, sumBranch, clearIndex, costFromUnits } from '~/utils';
 import { useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
-import { buildIndex, sumBranch, costFromUnits } from '~/utils';
 import { useTokenConfigQuery } from '~/data-provider';
 import useTokenLimits from './useTokenLimits';
 
@@ -120,7 +121,17 @@ export default function useTokenUsage({
       }
       rebuild(event.query.state.data as TMessage[] | undefined);
     });
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      /** Bound memory to open conversations — drop this one's token index and
+       *  usage atoms on switch/unmount; both rebuild from the query cache on
+       *  return. NEW_CONVO is migrated to its real id by finalizeUsage, so
+       *  leave it alone to avoid racing that handoff. */
+      if (conversationKey !== Constants.NEW_CONVO) {
+        clearIndex(conversationKey);
+        removeUsageAtoms(conversationKey);
+      }
+    };
   }, [conversationKey, queryClient, setBranchTotals]);
 
   useEffect(() => {

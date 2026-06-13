@@ -72,11 +72,14 @@ function TokenUsageIndicator({
 /** Config gate kept outside the indicator so disabled deployments mount nothing */
 const TokenUsage = memo(function TokenUsage(props: TokenUsageProps) {
   const { data: startupConfig } = useGetStartupConfig();
-  if (startupConfig?.interface?.contextUsage === false) {
+  /** Wait for config before mounting: until it loads `contextUsage === false`
+   *  reads as undefined, so a disabled deployment would briefly mount the
+   *  indicator and fire the token-config query on first load */
+  if (startupConfig == null || startupConfig.interface?.contextUsage === false) {
     return null;
   }
   return (
-    <TokenUsageIndicator {...props} showCost={startupConfig?.interface?.contextCost === true} />
+    <TokenUsageIndicator {...props} showCost={startupConfig.interface?.contextCost === true} />
   );
 });
 

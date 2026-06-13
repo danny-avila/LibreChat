@@ -376,9 +376,21 @@ describe('initializeCustom – token-config fetch header forwarding', () => {
       } as unknown as BaseInitializeParams['db'],
     };
 
-    const result = (await initializeCustom(params)) as { endpointTokenConfig?: unknown };
+    const result = (await initializeCustom(params)) as {
+      endpointTokenConfig?: Record<string, Record<string, number>>;
+    };
 
     expect(fetchModels).not.toHaveBeenCalled();
-    expect(result.endpointTokenConfig).toEqual(tokenConfig);
+    /** Original rates pass through, plus the billing-shape cache keys so
+     *  getCacheMultiplier (which reads `write`/`read`) finds them */
+    expect(result.endpointTokenConfig?.['gpt-4']).toEqual({
+      prompt: 1.5,
+      completion: 4.5,
+      context: 32000,
+      cacheRead: 0.3,
+      cacheWrite: 1.8,
+      write: 1.8,
+      read: 0.3,
+    });
   });
 });

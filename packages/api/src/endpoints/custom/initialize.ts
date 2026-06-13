@@ -37,6 +37,29 @@ export function getTokenConfigKey(
 }
 
 /**
+ * Maps an admin-facing static `tokenConfig` to the billing shape: the UI uses
+ * `cacheWrite`/`cacheRead`, but `getCacheMultiplier` indexes `write`/`read`.
+ * Adds those keys (preserving the originals) so cache tokens bill at the
+ * configured rate instead of the prompt-rate fallback.
+ */
+function toBillingTokenConfig(
+  tokenConfig: Record<string, Record<string, number>>,
+): EndpointTokenConfig {
+  const result: EndpointTokenConfig = {};
+  for (const [model, rates] of Object.entries(tokenConfig)) {
+    const mapped = { ...rates } as Record<string, number>;
+    if (rates.cacheWrite != null) {
+      mapped.write = rates.cacheWrite;
+    }
+    if (rates.cacheRead != null) {
+      mapped.read = rates.cacheRead;
+    }
+    result[model] = mapped as EndpointTokenConfig[string];
+  }
+  return result;
+}
+
+/**
  * Builds custom options from endpoint configuration
  */
 function buildCustomOptions(
@@ -161,8 +184,12 @@ export async function initializeCustom({
 
   if (hasTokenConfig) {
     /** A static override is authoritative — use it for the agent's billing
-     *  and balance checks, not just the advertised UI token config */
-    endpointTokenConfig = endpointConfig.tokenConfig as EndpointTokenConfig;
+     *  and balance checks, not just the advertised UI token config. Mirror
+     *  the admin-facing `cacheWrite`/`cacheRead` keys onto the `write`/`read`
+     *  keys the billing multiplier reads. */
+    endpointTokenConfig = toBillingTokenConfig(
+      endpointConfig.tokenConfig as Record<string, Record<string, number>>,
+    );
   } else {
     const cachedConfig =
       FetchTokenConfig[endpoint.toLowerCase() as keyof typeof FetchTokenConfig] &&
