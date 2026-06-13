@@ -92,15 +92,7 @@ class ModelEndHandler {
       if (!usage) {
         return this.finalize(errorMessage);
       }
-      const modelName = metadata?.ls_model_name || agentContext.clientOptions?.model;
-      if (modelName) {
-        usage.model = modelName;
-      }
-      if (agentContext.provider) {
-        usage.provider = agentContext.provider;
-      }
-
-      const taggedUsage = markSummarizationUsage(usage, metadata);
+      const taggedUsage = tagUsageAttribution(usage, metadata, agentContext);
 
       this.collectedUsage.push(taggedUsage);
 
@@ -1041,6 +1033,40 @@ function markSummarizationUsage(usage, metadata) {
   return usage;
 }
 
+function resolveUsageAgentId(agentContext, metadata) {
+  const candidates = [
+    agentContext?.agentId,
+    agentContext?.id,
+    agentContext?.agent?.id,
+    metadata?.agentId,
+    metadata?.agent_id,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.length > 0) {
+      return candidate;
+    }
+  }
+  if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
+    return metadata.last_agent_id;
+  }
+  return undefined;
+}
+
+function tagUsageAttribution(usage, metadata, agentContext = {}) {
+  const modelName = metadata?.ls_model_name || agentContext.clientOptions?.model;
+  if (modelName) {
+    usage.model = modelName;
+  }
+  if (agentContext.provider) {
+    usage.provider = agentContext.provider;
+  }
+  const agentId = resolveUsageAgentId(agentContext, metadata);
+  if (agentId) {
+    usage.agentId = agentId;
+  }
+  return markSummarizationUsage(usage, metadata);
+}
+
 const agentLogHandlerObj = { handle: agentLogHandler };
 
 /**
@@ -1076,6 +1102,8 @@ module.exports = {
   createToolEndCallback,
   isStreamWritable,
   markSummarizationUsage,
+  tagUsageAttribution,
+  resolveUsageAgentId,
   buildSummarizationHandlers,
   createResponsesToolEndCallback,
 };

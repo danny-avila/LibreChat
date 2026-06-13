@@ -237,6 +237,8 @@ describe('recordCollectedUsage — bulk path parity', () => {
       const result = await recordCollectedUsage(deps, { ...baseParams, collectedUsage });
 
       expect(result?.input_tokens).toBe(140); // 100 + 25 + 15
+      expect(result?.cache_creation_input_tokens).toBe(25);
+      expect(result?.cache_read_input_tokens).toBe(15);
       expect(mockInsertMany).toHaveBeenCalledTimes(1);
       expect(mockSpendStructuredTokens).not.toHaveBeenCalled();
 
@@ -387,7 +389,7 @@ describe('recordCollectedUsage — bulk path parity', () => {
   describe('transaction metadata — doc fields match what legacy would pass to spendTokens', () => {
     it('should pass all metadata fields to docs', async () => {
       const collectedUsage: UsageMetadata[] = [
-        { input_tokens: 100, output_tokens: 50, model: 'gpt-4' },
+        { input_tokens: 100, output_tokens: 50, model: 'gpt-4', agentId: 'agent_insights' },
       ];
       const endpointTokenConfig = { 'gpt-4': { prompt: 0.01, completion: 0.03, context: 8192 } };
 
@@ -403,6 +405,7 @@ describe('recordCollectedUsage — bulk path parity', () => {
         expect(doc.user).toBe('user-123');
         expect(doc.conversationId).toBe('convo-123');
         expect(doc.model).toBe('gpt-4');
+        expect(doc.agentId).toBe('agent_insights');
         expect(doc.context).toBe('message');
         expect(doc.messageId).toBe('msg-123');
       }

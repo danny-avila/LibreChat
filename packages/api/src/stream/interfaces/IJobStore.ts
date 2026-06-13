@@ -87,6 +87,8 @@ export interface UsageMetadata {
   model?: string;
   /** Provider identifier that generated this usage */
   provider?: string;
+  /** Agent identifier that generated this usage */
+  agentId?: string;
   /**
    * OpenAI-style cache token details.
    * Present for OpenAI models (GPT-4, o1, etc.)
