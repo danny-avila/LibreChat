@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
 import * as Tabs from '@radix-ui/react-tabs';
+import { X, ChevronLeft } from 'lucide-react';
+import { useMediaQuery } from '@librechat/client';
 import { SettingsTabValues } from 'librechat-data-provider';
 import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react';
 import type { TDialogProps } from '~/common';
@@ -9,13 +10,30 @@ import { useSettingsContext } from './context';
 import { useLocalize } from '~/hooks';
 import Sidebar from './Sidebar';
 import Content from './Content';
+import { TABS } from './types';
 import { cn } from '~/utils';
 
 export default function SettingsDialog({ open, onOpenChange }: TDialogProps) {
   const localize = useLocalize();
   const ctx = useSettingsContext();
+  const isSmallScreen = useMediaQuery('(max-width: 767px)');
   const [activeTab, setActiveTab] = useState<SettingsTab>(SettingsTabValues.GENERAL);
   const [query, setQuery] = useState('');
+  const [mobileDetail, setMobileDetail] = useState(false);
+
+  const searching = query.trim().length > 0;
+  const inDetail = isSmallScreen && mobileDetail && !searching;
+  const showSidebar = !isSmallScreen || !inDetail;
+  const showContent = !isSmallScreen || inDetail || searching;
+  const hideTabs = isSmallScreen && searching;
+  const activeMeta = TABS.find((t) => t.id === activeTab);
+
+  const selectTab = (tab: SettingsTab) => {
+    setActiveTab(tab);
+    if (isSmallScreen) {
+      setMobileDetail(true);
+    }
+  };
 
   return (
     <Transition appear show={open}>
@@ -49,9 +67,23 @@ export default function SettingsDialog({ open, onOpenChange }: TDialogProps) {
                 as="div"
                 className="flex items-center justify-between border-b border-border-light p-5"
               >
-                <h2 className="text-lg font-medium text-text-primary">
-                  {localize('com_nav_settings')}
-                </h2>
+                {inDetail ? (
+                  <button
+                    type="button"
+                    onClick={() => setMobileDetail(false)}
+                    className="-ml-1 flex items-center gap-1 rounded-lg p-1 text-text-primary transition-colors hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-border-xheavy"
+                    aria-label={localize('com_ui_back')}
+                  >
+                    <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+                    <span className="text-lg font-medium">
+                      {activeMeta ? localize(activeMeta.labelKey) : localize('com_nav_settings')}
+                    </span>
+                  </button>
+                ) : (
+                  <h2 className="text-lg font-medium text-text-primary">
+                    {localize('com_nav_settings')}
+                  </h2>
+                )}
                 <button
                   type="button"
                   onClick={() => onOpenChange(false)}
@@ -65,17 +97,23 @@ export default function SettingsDialog({ open, onOpenChange }: TDialogProps) {
                 value={activeTab}
                 onValueChange={(v) => setActiveTab(v as SettingsTab)}
                 orientation="vertical"
-                className="flex flex-1 flex-col gap-6 overflow-hidden p-5 md:flex-row"
+                className="flex flex-1 flex-col gap-4 overflow-hidden p-5 md:flex-row md:gap-6"
               >
-                <Sidebar
-                  ctx={ctx}
-                  query={query}
-                  onQueryChange={setQuery}
-                  onSelectTab={setActiveTab}
-                />
-                <div className="flex-1 overflow-y-auto md:pr-1">
-                  <Content activeTab={activeTab} query={query} ctx={ctx} />
-                </div>
+                {showSidebar && (
+                  <Sidebar
+                    ctx={ctx}
+                    query={query}
+                    onQueryChange={setQuery}
+                    onSelectTab={selectTab}
+                    showChevron={isSmallScreen}
+                    hideTabs={hideTabs}
+                  />
+                )}
+                {showContent && (
+                  <div className="flex-1 overflow-y-auto md:pr-1">
+                    <Content activeTab={activeTab} query={query} ctx={ctx} />
+                  </div>
+                )}
               </Tabs.Root>
             </DialogPanel>
           </div>

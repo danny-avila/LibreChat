@@ -24,7 +24,7 @@ describe('SettingsDialog', () => {
 
   it('switches to search results when typing a query', async () => {
     render(<SettingsDialog open onOpenChange={jest.fn()} />);
-    await userEvent.type(screen.getByRole('searchbox'), 'language');
+    await userEvent.type(screen.getByRole('textbox'), 'language');
     expect(await screen.findByLabelText('Search results')).toBeInTheDocument();
   });
 });
