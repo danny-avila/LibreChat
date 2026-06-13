@@ -895,7 +895,7 @@ class AgentClient extends BaseClient {
     }
     const includeCost = appConfig?.interfaceConfig?.contextCost === true;
     const endpointTokenConfig = this.options.endpointTokenConfig;
-    return (usage) => {
+    return async (usage) => {
       try {
         const cache_creation =
           usage.input_token_details?.cache_creation ?? usage.cache_creation_input_tokens;
@@ -923,7 +923,13 @@ class AgentClient extends BaseClient {
             : undefined,
         };
         if (streamId) {
-          GenerationJobManager.emitChunk(streamId, { event: UsageEvents.ON_TOKEN_USAGE, data });
+          /** Await like every other emitChunk caller: it persists the usage
+           *  (HSET) before publishing, so a floating promise can race job
+           *  cleanup and let a Redis/publish failure escape this try/catch. */
+          await GenerationJobManager.emitChunk(streamId, {
+            event: UsageEvents.ON_TOKEN_USAGE,
+            data,
+          });
         } else {
           sendEvent(res, { event: UsageEvents.ON_TOKEN_USAGE, data });
         }
