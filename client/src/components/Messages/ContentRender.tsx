@@ -226,6 +226,7 @@ const ContentRender = memo(function ContentRender({
               isLatestMessage={isLatestMessage}
               isSubmitting={isSubmitting}
               isCreatedByUser={msg.isCreatedByUser}
+              createdAt={msg.createdAt ?? msg.clientTimestamp}
               conversationId={conversation?.conversationId}
               content={msg.content as Array<TMessageContentParts | undefined>}
             />

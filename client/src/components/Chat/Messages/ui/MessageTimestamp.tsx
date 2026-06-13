@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import useTimeTick from '~/hooks/useTimeTick';
 import { getMessageTimestamp } from '~/utils';
 
 /**
@@ -11,10 +11,9 @@ import { getMessageTimestamp } from '~/utils';
  */
 export default function MessageTimestamp({ value }: { value?: string | null }) {
   const { i18n } = useTranslation();
-  const timestamp = useMemo(
-    () => getMessageTimestamp(value, i18n.language),
-    [value, i18n.language],
-  );
+  // Re-render on a shared interval so relative labels stay current while idle.
+  useTimeTick();
+  const timestamp = getMessageTimestamp(value, i18n.language);
 
   if (!timestamp) {
     return null;
