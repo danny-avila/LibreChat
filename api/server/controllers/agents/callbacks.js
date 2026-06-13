@@ -110,7 +110,18 @@ class ModelEndHandler {
         usage.provider = agentContext.provider;
       }
 
-      const taggedUsage = markSummarizationUsage(usage, metadata);
+      let taggedUsage = markSummarizationUsage(usage, metadata);
+      /** Hidden intermediate sequential-agent calls are billed but never shown.
+       *  Tag them non-primary on the COLLECTED usage too (not just the emit) so
+       *  recordCollectedUsage excludes their output from the parent's tokenCount
+       *  and the client folds them into cost/totals only — not the live gauge. */
+      if (
+        taggedUsage.usage_type == null &&
+        !checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node) &&
+        metadata?.hide_sequential_outputs === true
+      ) {
+        taggedUsage = { ...taggedUsage, usage_type: 'sequential' };
+      }
 
       this.collectedUsage.push(taggedUsage);
 
@@ -121,13 +132,6 @@ class ModelEndHandler {
           taggedUsage.cache_creation_input_tokens;
         const cache_read =
           taggedUsage.input_token_details?.cache_read ?? taggedUsage.cache_read_input_tokens;
-        /** Hidden sequential-agent calls are billed but not shown; tag them
-         *  non-primary so the client folds them into cost/totals only and
-         *  doesn't inflate the visible conversation's live context gauge */
-        const hidden =
-          !checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node) &&
-          metadata?.hide_sequential_outputs === true;
-        const usage_type = taggedUsage.usage_type ?? (hidden ? 'sequential' : undefined);
         try {
           await this.emitUsage({
             input_tokens: taggedUsage.input_tokens,
@@ -139,7 +143,7 @@ class ModelEndHandler {
                 : undefined,
             model: taggedUsage.model,
             provider: taggedUsage.provider,
-            usage_type,
+            usage_type: taggedUsage.usage_type,
             runId: metadata?.run_id,
             /** Per-run sequence so identical payloads from distinct calls
              *  stay distinguishable during resume dedupe */

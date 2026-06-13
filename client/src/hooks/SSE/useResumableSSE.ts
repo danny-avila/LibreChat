@@ -843,6 +843,9 @@ export default function useResumableSSE(
           console.log('[ResumableSSE] Stream 404, invalidating messages for:', convoId);
           sse.close();
           removeActiveJob(currentStreamId);
+          /** Terminal: drop any in-flight live estimate so the gauge doesn't
+           *  keep counting stale streamed output after the stream ends */
+          resetLive({ ...currentSubmission, userMessage });
           clearAllDrafts(convoId);
           if (optimisticStreamIdsRef.current.has(currentStreamId)) {
             clearAllDrafts(Constants.NEW_CONVO);
@@ -981,6 +984,9 @@ export default function useResumableSSE(
           console.error('[ResumableSSE] Max reconnect attempts reached');
           sse.close();
           errorHandler({ data: undefined, submission: currentSubmission as EventSubmission });
+          /** Terminal: clear the in-flight live estimate like the other
+           *  stop-reconnecting paths so the gauge doesn't show stale tokens */
+          resetLive({ ...currentSubmission, userMessage });
           // Optimistically remove from active jobs on max retries
           removeActiveJob(currentStreamId);
           if (

@@ -82,7 +82,7 @@ export interface SerializableJobData {
  */
 export interface UsageMetadata {
   /** Logical usage bucket for accounting/reporting. Defaults to model response usage. */
-  usage_type?: 'message' | 'summarization' | 'subagent';
+  usage_type?: 'message' | 'summarization' | 'subagent' | 'sequential';
   /** Total input tokens (prompt tokens) */
   input_tokens?: number;
   /** Total output tokens (completion tokens) */

@@ -21,6 +21,8 @@ const {
   applyContextToAgent,
   isMemoryAgentEnabled,
   recordCollectedUsage,
+  sendEvent,
+  computeUsageCostUSD,
   createSubagentUsageSink,
   isDeepSeekReasoningProvider,
   GenerationJobManager,
@@ -52,6 +54,7 @@ const {
 } = require('@librechat/agents');
 const {
   Constants,
+  UsageEvents,
   Permissions,
   VisionModes,
   ContentTypes,
@@ -876,6 +879,61 @@ class AgentClient extends BaseClient {
   }
 
   /**
+   * Builds the subagent usage emitter for {@link createSubagentUsageSink}.
+   * Streams each billed child-run usage to the client as an `on_token_usage`
+   * event tagged `subagent` (folds into session cost/totals, not the live
+   * gauge), with the authoritative cost when `interface.contextCost` is on.
+   * Returns undefined when there's no stream to write to.
+   * @param {AppConfig} [appConfig]
+   * @returns {((usage: UsageMetadata) => void) | undefined}
+   */
+  buildSubagentUsageEmitter(appConfig) {
+    const res = this.options.res;
+    const streamId = this.options.req?._resumableStreamId || null;
+    if (!res && !streamId) {
+      return undefined;
+    }
+    const includeCost = appConfig?.interfaceConfig?.contextCost === true;
+    const endpointTokenConfig = this.options.endpointTokenConfig;
+    return (usage) => {
+      try {
+        const cache_creation =
+          usage.input_token_details?.cache_creation ?? usage.cache_creation_input_tokens;
+        const cache_read = usage.input_token_details?.cache_read ?? usage.cache_read_input_tokens;
+        const data = {
+          input_tokens: usage.input_tokens,
+          output_tokens: usage.output_tokens,
+          total_tokens: usage.total_tokens,
+          input_token_details:
+            cache_creation != null || cache_read != null
+              ? { cache_creation, cache_read }
+              : undefined,
+          model: usage.model,
+          provider: usage.provider,
+          usage_type: 'subagent',
+          runId: this.responseMessageId,
+          /** Unique per collected entry (post-push length) for resume dedupe */
+          seq: this.collectedUsage.length,
+          cost: includeCost
+            ? computeUsageCostUSD(
+                usage,
+                { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
+                endpointTokenConfig,
+              )
+            : undefined,
+        };
+        if (streamId) {
+          GenerationJobManager.emitChunk(streamId, { event: UsageEvents.ON_TOKEN_USAGE, data });
+        } else {
+          sendEvent(res, { event: UsageEvents.ON_TOKEN_USAGE, data });
+        }
+      } catch (err) {
+        logger.warn('[AgentClient] Failed to emit subagent usage', err);
+      }
+    };
+  }
+
+  /**
    * @param {TMessage} responseMessage
    * @returns {number}
    */
@@ -1141,8 +1199,14 @@ class AgentClient extends BaseClient {
           /** Bills subagent child-run model calls — child graphs execute
            *  outside the streamEvents loop, so ModelEndHandler never sees
            *  them. Entries land in collectedUsage tagged
-           *  `usage_type: 'subagent'` and are spent by recordCollectedUsage. */
-          subagentUsageSink: createSubagentUsageSink(this.collectedUsage),
+           *  `usage_type: 'subagent'` and are spent by recordCollectedUsage.
+           *  The sink also streams each as an `on_token_usage` event so the
+           *  gauge's session cost/totals include billed subagent usage (the
+           *  `subagent` tag keeps it out of the live context meter). */
+          subagentUsageSink: createSubagentUsageSink(
+            this.collectedUsage,
+            this.buildSubagentUsageEmitter(appConfig),
+          ),
         });
 
         if (!run) {

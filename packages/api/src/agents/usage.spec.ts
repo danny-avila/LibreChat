@@ -205,6 +205,25 @@ describe('recordCollectedUsage', () => {
       );
     });
 
+    it('bills hidden sequential-agent usage but excludes it from reported totals', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        { usage_type: 'message', input_tokens: 120, output_tokens: 40, model: 'gpt-4' },
+        { usage_type: 'sequential', input_tokens: 800, output_tokens: 250, model: 'gpt-4' },
+      ];
+
+      const result = await recordCollectedUsage(deps, { ...baseParams, collectedUsage });
+
+      /** Hidden intermediate output stays out of the parent's tokenCount... */
+      expect(result).toEqual({ input_tokens: 120, output_tokens: 40 });
+      /** ...but is still billed under its own context. */
+      expect(mockSpendTokens).toHaveBeenCalledTimes(2);
+      expect(mockSpendTokens).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ context: 'sequential', model: 'gpt-4' }),
+        { promptTokens: 800, completionTokens: 250 },
+      );
+    });
+
     it('does not let a leading subagent entry hijack reported input_tokens', async () => {
       const collectedUsage: UsageMetadata[] = [
         {

@@ -204,6 +204,9 @@ export async function recordCollectedUsage(
   const messageUsages: UsageMetadata[] = [];
   const summarizationUsages: UsageMetadata[] = [];
   const subagentUsages: UsageMetadata[] = [];
+  /** Hidden sequential-agent calls: billed, but excluded from the reported
+   *  output total since their output never reaches the visible message */
+  const sequentialUsages: UsageMetadata[] = [];
   for (const usage of collectedUsage) {
     if (usage == null) {
       continue;
@@ -212,6 +215,8 @@ export async function recordCollectedUsage(
       summarizationUsages.push(usage);
     } else if (usage.usage_type === 'subagent') {
       subagentUsages.push(usage);
+    } else if (usage.usage_type === 'sequential') {
+      sequentialUsages.push(usage);
     } else {
       messageUsages.push(usage);
     }
@@ -324,6 +329,7 @@ export async function recordCollectedUsage(
    * distort next-turn context accounting by orders of magnitude.
    */
   processUsageGroup(subagentUsages, 'subagent', allDocs, { excludeFromOutputTotal: true });
+  processUsageGroup(sequentialUsages, 'sequential', allDocs, { excludeFromOutputTotal: true });
   if (useBulk && allDocs.length > 0) {
     try {
       await bulkWriteTransactions({ user, docs: allDocs }, bulkWriteOps);
@@ -374,6 +380,7 @@ export interface SubagentUsageEvent {
  */
 export function createSubagentUsageSink(
   collectedUsage: UsageMetadata[],
+  onUsage?: (usage: UsageMetadata) => void,
 ): (event: SubagentUsageEvent) => void {
   return (event) => {
     if (event?.usage == null) {
@@ -387,5 +394,9 @@ export function createSubagentUsageSink(
       usage.provider = event.provider;
     }
     collectedUsage.push(usage);
+    /** Lets the host stream the billed child usage to the client (tagged
+     *  `subagent`, so it folds into session cost/totals but not the live
+     *  gauge) — child runs never reach ModelEndHandler's emit path. */
+    onUsage?.(usage);
   };
 }
