@@ -117,3 +117,15 @@ modelSpecs:
       preset:
         endpoint: 'Mock Provider A'
         model: 'mock-model-a'
+
+    - name: 'e2e-starters'
+      label: 'E2E Starters'
+      conversation_starters:
+        - 'E2E_REPLY:starter'
+        - 'Plan my week'
+        - 'Third starter prompt'
+        - 'Fourth starter prompt'
+        - 'Fifth starter beyond the cap'
+      preset:
+        endpoint: 'Mock Provider A'
+        model: 'mock-model-a'
