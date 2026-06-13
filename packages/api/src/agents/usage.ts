@@ -116,6 +116,47 @@ export interface RecordUsageDeps {
   bulkWriteOps?: BulkWriteDeps;
 }
 
+/**
+ * Authoritative USD cost of one model call. Reuses the exact billing
+ * functions (`prepareTokenSpend`/`prepareStructuredTokenSpend` → `getMultiplier`
+ * with `inputTokenCount` for premium tiers) so the figure emitted to the
+ * client matches what is charged against balance — the client must not
+ * re-derive pricing from base rates. `tokenValue` is credits (USD × 1e6).
+ */
+export function computeUsageCostUSD(
+  usage: UsageMetadata,
+  pricing: PricingFns,
+  endpointTokenConfig?: EndpointTokenConfig,
+): number {
+  const { inputOnly, cacheCreation, cacheRead, completion } = splitUsage(usage);
+  /** user/context/conversationId only populate the transaction doc, which is
+   *  discarded here — only `tokenValue` (credits) is summed */
+  const txData: TxMetadata = {
+    user: '',
+    context: 'message',
+    conversationId: '',
+    model: usage.model,
+    endpointTokenConfig,
+  };
+  const entries =
+    cacheCreation > 0 || cacheRead > 0
+      ? prepareStructuredTokenSpend(
+          txData,
+          {
+            promptTokens: { input: inputOnly, write: cacheCreation, read: cacheRead },
+            completionTokens: completion,
+          },
+          pricing,
+        )
+      : prepareTokenSpend(
+          txData,
+          { promptTokens: inputOnly, completionTokens: completion },
+          pricing,
+        );
+  const credits = entries.reduce((sum, entry) => sum + Math.abs(entry.tokenValue), 0);
+  return credits / 1e6;
+}
+
 export interface RecordUsageParams {
   user: string;
   conversationId: string;

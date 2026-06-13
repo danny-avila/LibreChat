@@ -15,6 +15,7 @@ const {
 } = require('@librechat/agents');
 const {
   sendEvent,
+  computeUsageCostUSD,
   GenerationJobManager,
   writeAttachmentEvent,
   createToolExecuteHandler,
@@ -268,6 +269,7 @@ function feedSubagentAggregator(aggregator, event) {
  * @param {Array<UsageMetadata>} options.collectedUsage - The list of collected usage metadata.
  * @param {string | null} [options.streamId] - The stream ID for resumable mode, or null for standard mode.
  * @param {ToolExecuteOptions} [options.toolExecuteOptions] - Options for event-driven tool execution.
+ * @param {UsageCostDeps} [options.usageCost] - Pricing context for authoritative per-event cost.
  * @returns {Record<string, t.EventHandler>} The default handlers.
  * @throws {Error} If the request is not found.
  */
@@ -281,17 +283,36 @@ function getDefaultHandlers({
   toolExecuteOptions = null,
   summarizationOptions = null,
   subagentAggregatorsByToolCallId = null,
+  usageCost = null,
 }) {
   if (!res || !aggregateContent) {
     throw new Error(
       `[getDefaultHandlers] Missing required options: res: ${!res}, aggregateContent: ${!aggregateContent}`,
     );
   }
+  /**
+   * Emit a token-usage event, attaching the authoritative per-event USD cost
+   * when cost display is enabled. The backend is the single source of truth
+   * for pricing (premium tiers, cache rates) — the client sums these instead
+   * of re-deriving from base rates.
+   * @param {Record<string, unknown>} data
+   */
+  const emitTokenUsage = (data) => {
+    let payload = data;
+    if (usageCost?.enabled === true && usageCost.pricing) {
+      try {
+        payload = { ...data, cost: computeUsageCostUSD(data, usageCost.pricing) };
+      } catch (err) {
+        logger.warn('[getDefaultHandlers] Failed to compute usage cost', err);
+      }
+    }
+    return emitEvent(res, streamId, { event: UsageEvents.ON_TOKEN_USAGE, data: payload });
+  };
   const handlers = {
     [GraphEvents.CHAT_MODEL_END]: new ModelEndHandler(
       collectedUsage,
       collectedThoughtSignatures,
-      (data) => emitEvent(res, streamId, { event: UsageEvents.ON_TOKEN_USAGE, data }),
+      emitTokenUsage,
     ),
     [GraphEvents.TOOL_END]: new ToolEndHandler(toolEndCallback, logger),
     [GraphEvents.ON_RUN_STEP]: {

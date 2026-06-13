@@ -252,6 +252,13 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     collectedThoughtSignatures,
     streamId,
     subagentAggregatorsByToolCallId,
+    /** Backend prices each model call authoritatively (premium tiers, cache
+     *  rates) and emits the cost on on_token_usage when contextCost is on, so
+     *  the gauge sums real costs instead of re-deriving from base rates */
+    usageCost: {
+      enabled: appConfig?.interfaceConfig?.contextCost === true,
+      pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
+    },
   });
 
   if (!endpointOption.agent) {

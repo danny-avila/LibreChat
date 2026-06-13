@@ -136,36 +136,21 @@ export default function useUsageHandler(): UsageHandlers {
         return false;
       }
 
-      const endpoint = submission.conversation?.endpoint ?? '';
-      const model = data.model ?? submission.conversation?.model ?? '';
+      /** Displayed counts use the same normalized units billing does: input is
+       *  the uncached portion, output includes repaired completion tokens */
       const units = normalizeUsageUnits(data);
-      /** Cost is priced at render from these buckets — never baked in here,
-       *  so events arriving before the token config load still get priced */
-      const bucketKey = `${data.provider ?? ''}|${endpoint}|${model}`;
 
       const totalsAtom = usageTotalsFamily(convoKey);
       const prev = jotai.get(totalsAtom);
-      const bucket = prev.byRate[bucketKey];
-      /** Display the same normalized units that drive billing: input is the
-       *  uncached portion, output includes repaired completion tokens */
       jotai.set(totalsAtom, {
         input: prev.input + units.input,
         output: prev.output + units.output,
         cacheWrite: prev.cacheWrite + units.cacheWrite,
         cacheRead: prev.cacheRead + units.cacheRead,
         eventCount: prev.eventCount + 1,
-        byRate: {
-          ...prev.byRate,
-          [bucketKey]: bucket
-            ? {
-                ...bucket,
-                input: bucket.input + units.input,
-                output: bucket.output + units.output,
-                cacheWrite: bucket.cacheWrite + units.cacheWrite,
-                cacheRead: bucket.cacheRead + units.cacheRead,
-              }
-            : { provider: data.provider, endpoint, model, ...units },
-        },
+        /** Authoritative per-event cost from the backend (premium tiers, cache
+         *  rates); absent when contextCost is disabled — sums to 0 then */
+        costUSD: prev.costUSD + (data.cost ?? 0),
       });
       return true;
     };

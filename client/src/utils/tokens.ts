@@ -1,5 +1,5 @@
 import { Tools, Constants, inputTokensIncludesCache } from 'librechat-data-provider';
-import type { TMessage, TTokenUsageEvent, TModelTokenomics } from 'librechat-data-provider';
+import type { TMessage, TTokenUsageEvent } from 'librechat-data-provider';
 
 export interface TokenEntry {
   tokenCount: number;
@@ -275,27 +275,6 @@ export function normalizeUsageUnits(usage: TTokenUsageEvent): CostUnits {
     cacheWrite,
     cacheRead,
   };
-}
-
-/** USD cost of normalized usage units at the given per-million-token rates */
-export function costFromUnits(units: CostUnits, rates?: TModelTokenomics): number {
-  if (!rates || rates.prompt == null || rates.completion == null) {
-    return 0;
-  }
-  const writeRate = rates.cacheWrite ?? rates.prompt;
-  const readRate = rates.cacheRead ?? rates.prompt;
-  return (
-    (units.input * rates.prompt +
-      units.cacheWrite * writeRate +
-      units.cacheRead * readRate +
-      units.output * rates.completion) /
-    1e6
-  );
-}
-
-/** USD cost of one model call */
-export function calcUsageCost(usage: TTokenUsageEvent, rates?: TModelTokenomics): number {
-  return costFromUnits(normalizeUsageUnits(usage), rates);
 }
 
 export function formatTokens(count: number): string {

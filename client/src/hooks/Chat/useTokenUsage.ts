@@ -12,9 +12,8 @@ import {
   branchTotalsFamily,
   contextSnapshotFamily,
 } from '~/store/usage';
-import { buildIndex, sumBranch, clearIndex, costFromUnits } from '~/utils';
 import { useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
-import { useTokenConfigQuery } from '~/data-provider';
+import { buildIndex, sumBranch, clearIndex } from '~/utils';
 import useTokenLimits from './useTokenLimits';
 
 export interface TokenUsageParams {
@@ -59,30 +58,12 @@ export default function useTokenUsage({
   const liveTokens = useAtomValue(liveTokensFamily(conversationKey));
   const setBranchTotals = useSetAtom(branchTotalsFamily(conversationKey));
   const limits = useTokenLimits(conversation);
-  const { data: tokenConfig } = useTokenConfigQuery();
 
-  /** Priced at render so events folded before the token-config load still count */
-  const costUSD = useMemo(() => {
-    if (usageTotals.eventCount === 0) {
-      return undefined;
-    }
-    let total = 0;
-    for (const bucket of Object.values(usageTotals.byRate)) {
-      /** Resolution order, most to least specific:
-       *  1. the usage event's own endpoint (a custom endpoint pricing a known
-       *     model name differently)
-       *  2. the agent's resolved backing endpoint — an Agents conversation
-       *     reports endpoint `agents` and adapter provider `openAI`, neither of
-       *     which keys the custom endpoint's tokenConfig
-       *  3. the adapter provider, as a last resort */
-      const rates =
-        tokenConfig?.[bucket.endpoint]?.[bucket.model] ??
-        (limits.endpoint != null ? tokenConfig?.[limits.endpoint]?.[bucket.model] : undefined) ??
-        (bucket.provider != null ? tokenConfig?.[bucket.provider]?.[bucket.model] : undefined);
-      total += costFromUnits(bucket, rates);
-    }
-    return total;
-  }, [usageTotals, tokenConfig, limits.endpoint]);
+  /** Authoritative session cost: the backend prices each call (premium tiers,
+   *  cache rates) and emits it on the usage event; we just sum. Undefined
+   *  until usage events arrive — the cost row is additionally gated on
+   *  `interface.contextCost`, under which the backend actually emits cost. */
+  const costUSD = usageTotals.eventCount > 0 ? usageTotals.costUSD : undefined;
 
   const isSubmittingRef = useRef(isSubmitting);
   isSubmittingRef.current = isSubmitting;

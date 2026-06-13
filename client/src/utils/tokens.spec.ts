@@ -8,8 +8,6 @@ import {
   hasIndex,
   sumBranch,
   estimateTokens,
-  calcUsageCost,
-  costFromUnits,
   normalizeUsageUnits,
   formatCost,
   groupToolTokens,
@@ -116,120 +114,66 @@ describe('estimateTokens', () => {
   });
 });
 
-describe('calcUsageCost', () => {
-  const rates = { prompt: 3, completion: 15, cacheWrite: 3.75, cacheRead: 0.3 };
-
-  it('prices additive cache usage (Anthropic pattern)', () => {
-    const cost = calcUsageCost(
-      {
-        input_tokens: 1000,
-        output_tokens: 500,
-        input_token_details: { cache_creation: 2000, cache_read: 10000 },
-      },
-      rates,
-    );
-    expect(cost).toBeCloseTo((1000 * 3 + 2000 * 3.75 + 10000 * 0.3 + 500 * 15) / 1e6);
-  });
-
-  it('prices inclusive cache usage (OpenAI pattern)', () => {
-    const cost = calcUsageCost(
-      {
-        input_tokens: 10000,
-        output_tokens: 500,
-        input_token_details: { cache_read: 4000 },
-      },
-      rates,
-    );
-    expect(cost).toBeCloseTo((6000 * 3 + 4000 * 0.3 + 500 * 15) / 1e6);
-  });
-
-  it('returns 0 without rates', () => {
-    expect(calcUsageCost({ input_tokens: 100, output_tokens: 100 })).toBe(0);
-    expect(calcUsageCost({ input_tokens: 100 }, { context: 1000 })).toBe(0);
-  });
-
-  it('classifies cache additively for Anthropic even when cache <= input', () => {
-    /** The magnitude heuristic would wrongly treat this as inclusive and drop
-     *  cache from input; the provider says additive */
-    const event = {
-      input_tokens: 900,
-      output_tokens: 100,
-      provider: Providers.ANTHROPIC,
-      input_token_details: { cache_read: 100 },
-    };
-    expect(normalizeUsageUnits(event)).toEqual({
-      input: 900,
-      output: 100,
-      cacheWrite: 0,
-      cacheRead: 100,
-    });
-    expect(calcUsageCost(event, rates)).toBeCloseTo((900 * 3 + 100 * 0.3 + 100 * 15) / 1e6);
+describe('normalizeUsageUnits', () => {
+  it('keeps cache additive for Anthropic even when cache <= input', () => {
+    /** Magnitude heuristic would wrongly treat this as inclusive and drop
+     *  cache from input; the provider says additive (input is uncached-only) */
+    expect(
+      normalizeUsageUnits({
+        input_tokens: 900,
+        output_tokens: 100,
+        provider: Providers.ANTHROPIC,
+        input_token_details: { cache_read: 100 },
+      }),
+    ).toEqual({ input: 900, output: 100, cacheWrite: 0, cacheRead: 100 });
   });
 
   it('keeps subset semantics for OpenAI regardless of magnitude', () => {
-    const event = {
-      input_tokens: 900,
-      output_tokens: 100,
-      provider: Providers.OPENAI,
-      input_token_details: { cache_read: 100 },
-    };
-    expect(normalizeUsageUnits(event)).toEqual({
-      input: 800,
-      output: 100,
-      cacheWrite: 0,
-      cacheRead: 100,
-    });
+    expect(
+      normalizeUsageUnits({
+        input_tokens: 900,
+        output_tokens: 100,
+        provider: Providers.OPENAI,
+        input_token_details: { cache_read: 100 },
+      }),
+    ).toEqual({ input: 800, output: 100, cacheWrite: 0, cacheRead: 100 });
+  });
+
+  it('falls back to a magnitude heuristic when provider is unknown', () => {
+    /** cacheSum (12000) > input (1000) ⇒ additive */
+    expect(
+      normalizeUsageUnits({
+        input_tokens: 1000,
+        output_tokens: 500,
+        input_token_details: { cache_creation: 2000, cache_read: 10000 },
+      }),
+    ).toEqual({ input: 1000, output: 500, cacheWrite: 2000, cacheRead: 10000 });
   });
 
   it('repairs under-reported completion tokens (Vertex thinking)', () => {
-    const event = {
-      input_tokens: 1000,
-      output_tokens: 200,
-      total_tokens: 1500,
-      provider: Providers.VERTEXAI,
-    };
     /** total - input = 500 recovers the dropped thinking tokens */
-    expect(normalizeUsageUnits(event).output).toBe(500);
+    expect(
+      normalizeUsageUnits({
+        input_tokens: 1000,
+        output_tokens: 200,
+        total_tokens: 1500,
+        provider: Providers.VERTEXAI,
+      }).output,
+    ).toBe(500);
   });
 
   it('does not mistake additive cache for missing completion tokens', () => {
     /** Anthropic total includes cache; without the cache adjustment the repair
      *  would falsely inflate completion */
-    const event = {
-      input_tokens: 1000,
-      output_tokens: 200,
-      total_tokens: 1700,
-      provider: Providers.ANTHROPIC,
-      input_token_details: { cache_creation: 300, cache_read: 200 },
-    };
-    expect(normalizeUsageUnits(event).output).toBe(200);
-  });
-
-  it('prices summed normalized units identically to per-event costs', () => {
-    const anthropicEvent = {
-      input_tokens: 1000,
-      output_tokens: 500,
-      input_token_details: { cache_creation: 2000, cache_read: 10000 },
-    };
-    const openAIEvent = {
-      input_tokens: 10000,
-      output_tokens: 500,
-      input_token_details: { cache_read: 4000 },
-    };
-    const perEvent = calcUsageCost(anthropicEvent, rates) + calcUsageCost(openAIEvent, rates);
-
-    const a = normalizeUsageUnits(anthropicEvent);
-    const b = normalizeUsageUnits(openAIEvent);
-    const summed = costFromUnits(
-      {
-        input: a.input + b.input,
-        output: a.output + b.output,
-        cacheWrite: a.cacheWrite + b.cacheWrite,
-        cacheRead: a.cacheRead + b.cacheRead,
-      },
-      rates,
-    );
-    expect(summed).toBeCloseTo(perEvent);
+    expect(
+      normalizeUsageUnits({
+        input_tokens: 1000,
+        output_tokens: 200,
+        total_tokens: 1700,
+        provider: Providers.ANTHROPIC,
+        input_token_details: { cache_creation: 300, cache_read: 200 },
+      }).output,
+    ).toBe(200);
   });
 });
 
