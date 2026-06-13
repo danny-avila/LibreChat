@@ -1,4 +1,3 @@
-import { ProxyAgent } from 'undici';
 import { Providers } from '@librechat/agents';
 import { KnownEndpoints, EModelEndpoint, ReasoningParameterFormat } from 'librechat-data-provider';
 import type * as t from '~/types';
@@ -7,6 +6,7 @@ import { getOpenAILLMConfig, extractDefaultParams } from './llm';
 import { getGoogleConfig } from '~/endpoints/google/llm';
 import { transformToOpenAIConfig } from './transform';
 import { constructAzureURL } from '~/utils/azure';
+import { getProxyDispatcher } from '~/utils/proxy';
 import { createFetch } from '~/utils/generators';
 
 type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -207,10 +207,10 @@ export function getOpenAIConfig(
     configOptions.defaultQuery = defaultQuery;
   }
 
-  if (proxy) {
-    const proxyAgent = new ProxyAgent(proxy);
+  const proxyDispatcher = getProxyDispatcher(proxy);
+  if (proxyDispatcher) {
     configOptions.fetchOptions = {
-      dispatcher: proxyAgent,
+      dispatcher: proxyDispatcher,
     };
   }
 

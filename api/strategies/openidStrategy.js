@@ -64,7 +64,7 @@ async function customFetch(url, options) {
     let fetchOptions = options;
     const dispatcher = getOpenIdProxyDispatcher();
     if (dispatcher) {
-      logger.info(`[openidStrategy] proxy agent configured: ${process.env.PROXY}`);
+      logger.info('[openidStrategy] proxy dispatcher configured');
       fetchOptions = {
         ...options,
         dispatcher,

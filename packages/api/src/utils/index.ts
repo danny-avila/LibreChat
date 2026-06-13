@@ -18,6 +18,7 @@ export * from './math';
 export * from './oidc';
 export * from './openid';
 export * from './promise';
+export * from './proxy';
 export * from './ports';
 export * from './sanitizeTitle';
 export * from './text';

@@ -1,4 +1,3 @@
-import { HttpsProxyAgent } from 'https-proxy-agent';
 import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
 import { BedrockRuntimeClient } from '@aws-sdk/client-bedrock-runtime';
@@ -19,6 +18,7 @@ import type {
   InferenceProfileConfig,
 } from '~/types';
 import { checkUserKeyExpiry } from '~/utils';
+import { getHttpsProxyAgent } from '~/utils/proxy';
 
 const BEDROCK_CREDENTIALS_ERROR = 'Bedrock credentials not provided. Please provide them again.';
 
@@ -77,8 +77,8 @@ function getUserCredentialValue(
  * HTTP/HTTPS proxies and reverse proxies.
  *
  * Proxy Support:
- * - When the PROXY environment variable is set, creates a custom BedrockRuntimeClient
- *   with an HttpsProxyAgent to route all Bedrock API calls through the specified proxy
+ * - When proxy env vars are set, creates a custom BedrockRuntimeClient
+ *   with an HttpsProxyAgent to route Bedrock API calls through the resolved proxy
  * - The custom client is fully configured with credentials, region, and endpoint,
  *   and is passed directly to ChatBedrockConverse via the 'client' parameter
  *
@@ -117,7 +117,6 @@ export async function initializeBedrock({
     BEDROCK_AWS_BEARER_TOKEN,
     BEDROCK_REVERSE_PROXY,
     BEDROCK_AWS_DEFAULT_REGION,
-    PROXY,
   } = process.env;
 
   const { key: expiresAt } = req.body;
@@ -255,8 +254,8 @@ export async function initializeBedrock({
     credentials.secretAccessKey !== '';
   const hasBearerToken = typeof bearerToken === 'string' && bearerToken !== '';
 
-  if (PROXY || hasBearerToken) {
-    const proxyAgent = PROXY ? new HttpsProxyAgent(PROXY) : undefined;
+  const proxyAgent = getHttpsProxyAgent();
+  if (proxyAgent || hasBearerToken) {
     const credentialProvider =
       !hasCompleteCredentials && !hasBearerToken && BEDROCK_AWS_PROFILE
         ? fromNodeProviderChain({ profile: BEDROCK_AWS_PROFILE })
