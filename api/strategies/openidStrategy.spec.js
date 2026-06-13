@@ -3,10 +3,15 @@ const fetch = require('node-fetch');
 const jwtDecode = require('jsonwebtoken/decode');
 const { ErrorTypes, FileSources } = require('librechat-data-provider');
 const { findUser, createUser, updateUser, findRolesByNames } = require('~/models');
-const { getOpenIdIssuer, resolveAppConfigForUser, isEnabled } = require('@librechat/api');
+const {
+  getOpenIdIssuer,
+  getOpenIdProxyDispatcher,
+  resolveAppConfigForUser,
+  isEnabled,
+} = require('@librechat/api');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { getAppConfig } = require('~/server/services/Config');
-const { setupOpenId, getProxyDispatcher } = require('./openidStrategy');
+const { setupOpenId } = require('./openidStrategy');
 
 const mockCloudfrontFileSource = FileSources.cloudfront ?? 'cloudfront';
 
@@ -15,7 +20,6 @@ jest.mock('node-fetch');
 jest.mock('jsonwebtoken/decode');
 jest.mock('undici', () => ({
   fetch: jest.fn(),
-  EnvHttpProxyAgent: jest.fn(),
 }));
 jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: jest.fn(() => ({
@@ -74,6 +78,7 @@ jest.mock('@librechat/api', () => {
       enabled: false,
     })),
     getOpenIdIssuer: jest.fn(() => 'https://fake-issuer.com'),
+    getOpenIdProxyDispatcher: jest.fn(() => undefined),
     getAvatarFileStrategy: jest.fn((config, fallbackStrategy) => {
       const { FileSources } = jest.requireActual('librechat-data-provider');
       if (config?.fileStrategies) {
@@ -216,6 +221,7 @@ describe('setupOpenId', () => {
       get: jest.fn(),
       set: jest.fn(),
     }));
+    getOpenIdProxyDispatcher.mockReturnValue(undefined);
     require('openid-client').genericGrantRequest.mockReset();
     require('openid-client').genericGrantRequest.mockResolvedValue({
       access_token: 'exchanged_graph_token',
@@ -341,6 +347,32 @@ describe('setupOpenId', () => {
       const [, , metadata] = openidClient.discovery.mock.calls.at(-1);
       expect(metadata.client_secret).toBe('my-secret');
       expect(metadata.token_endpoint_auth_method).toBeUndefined();
+    });
+
+    it('uses the shared OpenID proxy dispatcher for custom fetch requests', async () => {
+      const dispatcher = { dispatch: jest.fn() };
+      const response = { status: 204, statusText: 'No Content', headers: new Headers() };
+      getOpenIdProxyDispatcher.mockReturnValue(dispatcher);
+      undici.fetch.mockResolvedValue(response);
+
+      await setupOpenId();
+
+      const [, , , , options] = openidClient.discovery.mock.calls.at(-1);
+      const openIdFetch = options[openidClient.customFetch];
+      await expect(
+        openIdFetch('https://issuer.example.com/.well-known/openid-configuration', {
+          method: 'GET',
+        }),
+      ).resolves.toBe(response);
+
+      expect(getOpenIdProxyDispatcher).toHaveBeenCalled();
+      expect(undici.fetch).toHaveBeenCalledWith(
+        'https://issuer.example.com/.well-known/openid-configuration',
+        {
+          method: 'GET',
+          dispatcher,
+        },
+      );
     });
   });
 
@@ -2557,69 +2589,5 @@ describe('getRoleSource', () => {
     expect(() => getRoleSource('access', 'required role', {}, userinfo)).toThrow(
       'Invalid token specified',
     );
-  });
-});
-
-describe('getProxyDispatcher', () => {
-  beforeEach(() => {
-    undici.EnvHttpProxyAgent.mockClear();
-    delete process.env.PROXY;
-    delete process.env.NO_PROXY;
-    delete process.env.no_proxy;
-  });
-
-  afterAll(() => {
-    delete process.env.PROXY;
-    delete process.env.NO_PROXY;
-    delete process.env.no_proxy;
-  });
-
-  it('returns undefined when PROXY is not set', () => {
-    expect(getProxyDispatcher()).toBeUndefined();
-    expect(undici.EnvHttpProxyAgent).not.toHaveBeenCalled();
-  });
-
-  it('creates a NO_PROXY-aware agent for both protocols when PROXY is set', () => {
-    process.env.PROXY = 'http://corporate-proxy:8080';
-
-    const dispatcher = getProxyDispatcher();
-
-    expect(dispatcher).toBeInstanceOf(undici.EnvHttpProxyAgent);
-    expect(undici.EnvHttpProxyAgent).toHaveBeenCalledWith({
-      httpProxy: 'http://corporate-proxy:8080',
-      httpsProxy: 'http://corporate-proxy:8080',
-    });
-  });
-
-  it('reuses the same agent across calls', () => {
-    process.env.PROXY = 'http://corporate-proxy:8080';
-    process.env.NO_PROXY = 'localhost,.internal-domain.com';
-
-    const first = getProxyDispatcher();
-    const second = getProxyDispatcher();
-
-    expect(second).toBe(first);
-    expect(undici.EnvHttpProxyAgent).toHaveBeenCalledTimes(1);
-  });
-
-  it('rebuilds the agent when NO_PROXY changes', () => {
-    process.env.PROXY = 'http://corporate-proxy:8080';
-    process.env.NO_PROXY = 'localhost';
-    getProxyDispatcher();
-
-    process.env.NO_PROXY = 'localhost,.internal-domain.com';
-    getProxyDispatcher();
-
-    expect(undici.EnvHttpProxyAgent).toHaveBeenCalledTimes(2);
-  });
-
-  it('rebuilds the agent when PROXY changes', () => {
-    process.env.PROXY = 'http://corporate-proxy:8080';
-    getProxyDispatcher();
-
-    process.env.PROXY = 'http://other-proxy:3128';
-    getProxyDispatcher();
-
-    expect(undici.EnvHttpProxyAgent).toHaveBeenCalledTimes(2);
   });
 });
