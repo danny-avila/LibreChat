@@ -18,12 +18,18 @@ const {
  * @returns {(Object)} - The formatted message.
  */
 const formatVisionMessage = ({ message, image_urls, endpoint }) => {
+  // Omit an empty text part for image-only messages. Anthropic rejects empty
+  // text content blocks with HTTP 400, and an empty block adds nothing for
+  // other providers either.
+  const hasText = typeof message.content === 'string' && message.content.trim() !== '';
+  const textPart = hasText ? [{ type: ContentTypes.TEXT, text: message.content }] : [];
+
   if (endpoint === EModelEndpoint.anthropic) {
-    message.content = [...image_urls, { type: ContentTypes.TEXT, text: message.content }];
+    message.content = [...image_urls, ...textPart];
     return message;
   }
 
-  message.content = [{ type: ContentTypes.TEXT, text: message.content }, ...image_urls];
+  message.content = [...textPart, ...image_urls];
 
   return message;
 };

@@ -29,6 +29,7 @@ import type { TAskFunction, ExtendedFile } from '~/common';
 import {
   logger,
   hasStreamStartFailed,
+  isSubmittableMessage,
   createDualMessageContent,
   getRouteChatProjectId,
 } from '~/utils';
@@ -242,7 +243,18 @@ export default function useChatFunctions({
     setShowStopButton(false);
 
     text = text.trim();
-    if (!!isSubmitting || text === '') {
+    /**
+     * Attached files make an otherwise empty draft submittable — e.g.
+     * replying to an agent that asked for a document upload. Replayed turns
+     * (regenerate, or save-and-submit carrying `overrideFiles`) reuse stored
+     * attachments that aren't in the compose `files` map, so count those too
+     * and never re-block a regenerate of an already-validated file-only turn.
+     */
+    const replayFileCount = overrideFiles?.length ?? 0;
+    if (
+      !!isSubmitting ||
+      (!isRegenerate && !isSubmittableMessage(text, (files?.size ?? 0) + replayFileCount))
+    ) {
       return;
     }
 
