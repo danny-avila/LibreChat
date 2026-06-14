@@ -210,6 +210,25 @@ export type TBackupCode = {
   usedAt: Date | null;
 };
 
+export type TUserLocationCoordinates = {
+  latitude: number;
+  longitude: number;
+};
+
+export type TUserLocation = {
+  enabled: boolean;
+  source?: 'auto' | 'manual';
+  /** User-typed override; reported as `place` when set */
+  manual?: string;
+  /** Resolved "City, Region, Country" */
+  place?: string;
+  /** Rounded (~2 decimals) for privacy */
+  coordinates?: TUserLocationCoordinates;
+  /** IANA timezone, e.g. "Europe/Berlin" */
+  timezone?: string;
+  updatedAt?: string | Date;
+};
+
 export type TUser = {
   id: string;
   username: string;
@@ -224,6 +243,7 @@ export type TUser = {
   backupCodes?: TBackupCode[];
   personalization?: {
     memories?: boolean;
+    location?: TUserLocation;
   };
   createdAt: string;
   updatedAt: string;
