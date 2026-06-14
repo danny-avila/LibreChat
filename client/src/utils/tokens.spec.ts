@@ -234,11 +234,27 @@ describe('normalizeUsageUnits', () => {
 });
 
 describe('formatCost', () => {
-  it('formats across magnitude bands', () => {
+  it('formats across magnitude bands (USD default, unchanged)', () => {
     expect(formatCost(0)).toBe('$0.00');
     expect(formatCost(0.004)).toBe('<$0.01');
     expect(formatCost(0.0523)).toBe('$0.0523');
     expect(formatCost(1.234)).toBe('$1.23');
+  });
+
+  it('applies the static USD→local rate', () => {
+    expect(formatCost(2, { code: 'USD', rate: 0.5 })).toBe('$1.00');
+    expect(formatCost(10, { code: 'USD', rate: 0.1 })).toBe('$1.00');
+  });
+
+  it('formats in the configured currency', () => {
+    const eur = formatCost(5, { code: 'EUR', rate: 1 });
+    expect(eur).toContain('€');
+    expect(eur).toContain('5');
+    expect(formatCost(5, { code: 'JPY', rate: 1 })).toContain('¥');
+  });
+
+  it('falls back to USD on a malformed currency code', () => {
+    expect(formatCost(5, { code: 'invalid', rate: 1 })).toBe('$5.00');
   });
 });
 

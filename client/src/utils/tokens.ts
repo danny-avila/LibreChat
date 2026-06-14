@@ -472,15 +472,53 @@ export function formatTokens(count: number): string {
   return formatted.replace(/\.0(?=[A-Za-z]|$)/, '');
 }
 
-export function formatCost(usd: number): string {
-  if (usd <= 0) {
-    return '$0.00';
+/** Display currency for the context cost. `rate` is a static USD→local
+ *  multiplier (no live FX); `code` is an ISO-4217 currency for Intl formatting. */
+export interface CurrencyConfig {
+  code: string;
+  rate: number;
+}
+
+const DEFAULT_CURRENCY: CurrencyConfig = { code: 'USD', rate: 1 };
+const currencyFormatters = new Map<string, Intl.NumberFormat>();
+
+function currencyFormatter(code: string, minDigits: number, maxDigits: number): Intl.NumberFormat {
+  const key = `${code}:${minDigits}:${maxDigits}`;
+  const cached = currencyFormatters.get(key);
+  if (cached != null) {
+    return cached;
   }
-  if (usd < 0.01) {
-    return '<$0.01';
+  let formatter: Intl.NumberFormat;
+  try {
+    formatter = new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: code,
+      minimumFractionDigits: minDigits,
+      maximumFractionDigits: maxDigits,
+    });
+  } catch {
+    formatter = new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: minDigits,
+      maximumFractionDigits: maxDigits,
+    });
   }
-  if (usd < 1) {
-    return `$${usd.toFixed(4)}`;
+  currencyFormatters.set(key, formatter);
+  return formatter;
+}
+
+export function formatCost(usd: number, currency: CurrencyConfig = DEFAULT_CURRENCY): string {
+  const amount = usd * currency.rate;
+  const { code } = currency;
+  if (amount <= 0) {
+    return currencyFormatter(code, 2, 2).format(0);
   }
-  return `$${usd.toFixed(2)}`;
+  if (amount < 0.01) {
+    return `<${currencyFormatter(code, 2, 2).format(0.01)}`;
+  }
+  if (amount < 1) {
+    return currencyFormatter(code, 4, 4).format(amount);
+  }
+  return currencyFormatter(code, 2, 2).format(amount);
 }
