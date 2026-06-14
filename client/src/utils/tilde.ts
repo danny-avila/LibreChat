@@ -1,4 +1,3 @@
-import { visit } from 'unist-util-visit';
 import type { Node } from 'unist';
 
 interface TextNode extends Node {
@@ -8,6 +7,9 @@ interface TextNode extends Node {
 interface LinkNode extends Node {
   type: 'link';
   url: string;
+}
+interface ParentNode extends Node {
+  children?: Node[];
 }
 
 /**
@@ -49,19 +51,27 @@ export function normalizeApproxTildes(value: string): string {
   return value.replace(APPROX_TILDE_REGEX, TILDE_OPERATOR);
 }
 
+function normalizeTextNodes(node: Node, parent?: Node): void {
+  if (node.type === 'text') {
+    const textNode = node as TextNode;
+    if (typeof textNode.value === 'string' && !isAutolinkLabel(textNode.value, parent)) {
+      textNode.value = normalizeApproxTildes(textNode.value);
+    }
+    return;
+  }
+  const children = (node as ParentNode).children;
+  if (!children) return;
+  for (const child of children) {
+    normalizeTextNodes(child, node);
+  }
+}
+
 /**
  * remark plugin that neutralizes "approximately" tildes in text nodes before
- * `remark-supersub` runs. Operating on the parsed tree means code, links, math, and URL
+ * `remark-supersub` runs. Walking the parsed tree means code, links, math, and URL
  * destinations are structurally excluded — none of them are `text` nodes. Autolink labels
  * (which display the URL itself) are skipped so the visible URL is preserved verbatim.
  */
 export function remarkApproxTilde() {
-  return (tree: Node) => {
-    visit(tree, 'text', (node, _index, parent) => {
-      const textNode = node as TextNode;
-      if (typeof textNode.value !== 'string') return;
-      if (isAutolinkLabel(textNode.value, parent)) return;
-      textNode.value = normalizeApproxTildes(textNode.value);
-    });
-  };
+  return (tree: Node) => normalizeTextNodes(tree);
 }
