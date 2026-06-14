@@ -181,5 +181,13 @@ test.describe('context usage gauge', () => {
     await expect(page.getByText('1 / 2')).toBeVisible({ timeout: 10000 });
 
     await expectGranular(page);
+
+    /** Branch cost must also survive the switch (live, no reload): branch A's
+     *  flushed usage is restored from the sticky usage history even though its
+     *  cache message lacks metadata.usage and B's regenerate dropped it. */
+    const popover = page.getByRole('region', { name: 'Context usage' });
+    const costSection = popover.getByTestId('token-usage-cost');
+    await expect(costSection).toBeVisible();
+    await expect(costSection.getByText(/\$\d|<\$0\.01/)).toBeVisible();
   });
 });

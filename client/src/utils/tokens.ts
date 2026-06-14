@@ -62,6 +62,21 @@ export const EMPTY_BRANCH: BranchTotals = {
 /** Module-level token index: conversationId → messageId → entry. Not render state. */
 const registry = new Map<string, Map<string, TokenEntry>>();
 
+/**
+ * Sticky per-response usage: conversationId → messageId → usage. Written only by
+ * the live finalize/stop flush (`setEntryUsage`) and never rebuilt from the
+ * messages cache, so a response's usage survives mid-session index rebuilds even
+ * when its cache message lacks `metadata.usage` AND it was transiently dropped
+ * from the cache (e.g. a sibling branch during a regenerate). `buildIndex`
+ * restores from here so branch cost persists across branch switches — the cost
+ * analog of `snapshotsByAnchorFamily` for the breakdown. Cleared on convo switch.
+ */
+const usageHistory = new Map<string, Map<string, BranchUsage>>();
+
+function stickyUsage(conversationId: string, messageId: string): BranchUsage | undefined {
+  return usageHistory.get(conversationId)?.get(messageId);
+}
+
 /** Reads the persisted per-response usage rollup off a message's metadata.
  *  The backend already normalized per-event into display units, so this reads
  *  them directly. Absent for user messages and pre-feature responses (they
@@ -122,23 +137,19 @@ function toEntry(message: Partial<TMessage>): TokenEntry {
 }
 
 /** Full O(n) rebuild — only on discrete cache replacements (load, refetch, edits).
- *  Preserves a prior entry's `usage` when the rebuilt message carries none:
- *  per-message usage is immutable and the live finalize flushes it into the
- *  index (`setEntryUsage`) before the persisted `metadata.usage` reaches the
- *  cache, so a mid-session rebuild (e.g. during regenerate) must not wipe an
- *  earlier branch's flushed usage. */
+ *  Restores a response's `usage` from the sticky history when the rebuilt message
+ *  carries none: per-message usage is immutable and the live finalize flushes it
+ *  into the index (`setEntryUsage`) before the persisted `metadata.usage` reaches
+ *  the cache, so a mid-session rebuild (e.g. during regenerate) must not wipe an
+ *  earlier branch's flushed usage — which would drop its branch cost on switch. */
 export function buildIndex(conversationId: string, messages?: TMessage[] | null): void {
-  const previous = registry.get(conversationId);
   const index = new Map<string, TokenEntry>();
   if (messages != null) {
     for (const message of messages) {
       if (message?.messageId) {
         const entry = toEntry(message);
         if (entry.usage == null) {
-          const priorUsage = previous?.get(message.messageId)?.usage;
-          if (priorUsage != null) {
-            entry.usage = priorUsage;
-          }
+          entry.usage = stickyUsage(conversationId, message.messageId);
         }
         index.set(message.messageId, entry);
       }
@@ -159,7 +170,11 @@ export function upsertEntries(
   }
   for (const message of messages) {
     if (message?.messageId) {
-      index.set(message.messageId, toEntry(message));
+      const entry = toEntry(message);
+      if (entry.usage == null) {
+        entry.usage = stickyUsage(conversationId, message.messageId);
+      }
+      index.set(message.messageId, entry);
     }
   }
 }
@@ -170,15 +185,20 @@ export function migrateIndex(fromId: string, toId: string): void {
     return;
   }
   const index = registry.get(fromId);
-  if (!index) {
-    return;
+  if (index) {
+    registry.delete(fromId);
+    registry.set(toId, index);
   }
-  registry.delete(fromId);
-  registry.set(toId, index);
+  const usage = usageHistory.get(fromId);
+  if (usage) {
+    usageHistory.delete(fromId);
+    usageHistory.set(toId, usage);
+  }
 }
 
 export function clearIndex(conversationId: string): void {
   registry.delete(conversationId);
+  usageHistory.delete(conversationId);
 }
 
 export function hasIndex(conversationId: string): boolean {
@@ -243,11 +263,21 @@ export function sumTotalUsage(conversationId: string): BranchUsage {
 }
 
 /**
- * Attaches a response's usage to its index entry. Used by the live finalize
- * path to flush the in-flight accumulator into the index once the response is
- * counted (the persisted `metadata.usage` reaches `buildIndex` on reload).
+ * Attaches a response's usage to its index entry AND the sticky usage history.
+ * Used by the live finalize/stop flush. The history copy lets `buildIndex`
+ * restore the usage after a rebuild (the persisted `metadata.usage` reaches
+ * `buildIndex` on reload; the sticky copy covers the in-session window before
+ * that, including a sibling transiently dropped from the cache on regenerate).
  */
 export function setEntryUsage(conversationId: string, messageId: string, usage: BranchUsage): void {
+  /** Remember it durably first so a later rebuild — or a transient cache drop
+   *  during regenerate — can restore it even when the entry isn't present yet. */
+  let history = usageHistory.get(conversationId);
+  if (!history) {
+    history = new Map<string, BranchUsage>();
+    usageHistory.set(conversationId, history);
+  }
+  history.set(messageId, usage);
   const entry = registry.get(conversationId)?.get(messageId);
   if (entry) {
     entry.usage = usage;

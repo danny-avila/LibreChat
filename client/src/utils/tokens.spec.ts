@@ -382,6 +382,34 @@ describe('per-message usage index (branch + total)', () => {
     expect(sumBranch(CONVO, 'a1').usage.input).toBe(100);
   });
 
+  it('restores branch cost from sticky history after regenerate drops then re-adds a sibling', () => {
+    /** a1 generated live; its cache message never carries metadata.usage */
+    buildIndex(CONVO, [msg('u1', Constants.NO_PARENT, true, 10), msg('a1', 'u1', false, 50)]);
+    setEntryUsage(CONVO, 'a1', {
+      input: 100,
+      output: 50,
+      cacheWrite: 0,
+      cacheRead: 0,
+      cost: 0.01,
+      costKnown: true,
+    });
+
+    /** Regenerate streaming shows only the active branch — a1 is dropped */
+    buildIndex(CONVO, [msg('u1', Constants.NO_PARENT, true, 10), msg('a1-alt', 'u1', false, 60)]);
+    expect(sumBranch(CONVO, 'a1').usage).toEqual(EMPTY_USAGE);
+
+    /** Post-regenerate full rebuild re-adds a1 (still no metadata.usage) */
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 10),
+      msg('a1', 'u1', false, 50),
+      msg('a1-alt', 'u1', false, 60),
+    ]);
+
+    /** Switching back to branch A must still show its cost (the reported bug) */
+    expect(sumBranch(CONVO, 'a1').usage.cost).toBeCloseTo(0.01);
+    expect(sumBranch(CONVO, 'a1').usage.input).toBe(100);
+  });
+
   it('scopes branch usage to the active thread while total spans all branches', () => {
     /** Regenerate: a1 and a1-alt are sibling responses under the same user msg */
     buildIndex(CONVO, [
