@@ -26,6 +26,8 @@ const {
   aggregateEmittedUsage,
   resolveAgentTokenConfig,
   buildPersistedContextUsage,
+  computeSummaryUsedTokens,
+  priorRunOutputTokens,
   createSubagentUsageSink,
   isDeepSeekReasoningProvider,
   GenerationJobManager,
@@ -869,16 +871,49 @@ class AgentClient extends BaseClient {
       metadata.thoughtSignatures = signatures;
     }
     const usageEvents = this.usageEmitSink ?? [];
-    /** Persist the breakdown only when the FINAL visible call (the one the latest
-     *  snapshot precedes) emitted usage — i.e. as many primary usage events as
-     *  visible snapshots. If the final call emitted no usage_metadata (provider
-     *  gap, or interrupted after an earlier call did emit), `completedOutputTokens`
-     *  would be an earlier call's output the latest snapshot already counts, so
-     *  reload would over-report; fall back to the coarse per-message estimate. */
-    const primaryUsageCount = usageEvents.filter((event) => event.usage_type == null).length;
-    const snapshotCount = this.contextUsageSink?.count ?? 0;
-    if (this.contextUsageSink?.latest && snapshotCount > 0 && primaryUsageCount >= snapshotCount) {
-      metadata.contextUsage = buildPersistedContextUsage(this.contextUsageSink.latest, usageEvents);
+    /** Persist the breakdown only when the latest snapshot's OWN run completed —
+     *  i.e. a PRIMARY usage event (usage_type == null) from that run's id arrived
+     *  AFTER the snapshot. Matching by run id keeps `completedOutputTokens` a real
+     *  post-snapshot delta even when parallel/direct runs interleave (A snapshot →
+     *  B snapshot → A usage must NOT persist B's snapshot with A's output); an
+     *  interrupted final call that emits no usage falls back to the per-message
+     *  estimate. It still keeps the post-summary snapshot: the summarization detour
+     *  emits an extra snapshot whose following primary usage shares that run's id,
+     *  which the old snapshot-count guard miscounted and wrongly dropped. Events
+     *  without a run id (older lib / resume) match any snapshot for back-compat. */
+    const latestSnapshot = this.contextUsageSink?.latest;
+    const latestSnapshotUsageIndex = this.contextUsageSink?.latestUsageIndex ?? 0;
+    const latestSnapshotRunId = latestSnapshot?.runId;
+    const hasPrimaryAfterSnapshot = usageEvents
+      .slice(latestSnapshotUsageIndex)
+      .some(
+        (event) =>
+          event.usage_type == null &&
+          (latestSnapshotRunId == null ||
+            event.runId == null ||
+            event.runId === latestSnapshotRunId),
+      );
+    if (latestSnapshot && hasPrimaryAfterSnapshot) {
+      metadata.contextUsage = buildPersistedContextUsage(latestSnapshot, usageEvents);
+    }
+    /** Lightweight summarization marker — persisted whenever this turn compacted
+     *  the context, INDEPENDENT of the snapshot guard above. When the client has
+     *  no usable snapshot on the branch and falls back to the per-message
+     *  estimate, it caps the discarded pre-summary history at this baseline
+     *  instead of re-summing it (the gauge otherwise reads 100% forever). Shared
+     *  with the abort save path via `computeSummaryUsedTokens`. Subtract the
+     *  response's earlier tool-loop outputs (the primaries that preceded the
+     *  latest snapshot, same run): those tokens are inside the snapshot baseline
+     *  AND in the response `tokenCount` the client estimate adds on top, so
+     *  leaving them in the marker double-counts them on a multi-call turn. */
+    const priorOutputTokens = priorRunOutputTokens(
+      usageEvents,
+      latestSnapshotUsageIndex,
+      latestSnapshotRunId,
+    );
+    const summaryUsedTokens = computeSummaryUsedTokens(latestSnapshot, priorOutputTokens);
+    if (summaryUsedTokens != null) {
+      metadata.summaryUsedTokens = summaryUsedTokens;
     }
     const usage = aggregateEmittedUsage(usageEvents);
     if (usage) {

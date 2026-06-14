@@ -232,7 +232,13 @@ export default function useTokenUsage({
       };
     }
 
-    const usedTokens = branchTotals.input + branchTotals.output + liveTokens;
+    /** `summaryBaseline` is the compacted-context size from the deepest
+     *  summarized response on the branch (0 if none). The branch walk stops
+     *  there, so input/output are post-summary only — adding the baseline keeps
+     *  the estimate from re-summing the discarded pre-summary history (which
+     *  otherwise pins the gauge at 100% forever after a compaction). */
+    const usedTokens =
+      branchTotals.input + branchTotals.output + branchTotals.summaryBaseline + liveTokens;
     const maxTokens = limits.maxContextTokens;
     return {
       usedTokens,

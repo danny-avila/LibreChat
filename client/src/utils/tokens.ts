@@ -31,6 +31,10 @@ export interface TokenEntry {
   parentMessageId: string | null;
   /** Per-response provider usage from `metadata.usage` (response messages only) */
   usage?: BranchUsage;
+  /** Pre-invoke compacted context size (`metadata.summaryUsedTokens`) for a
+   *  response whose turn summarized. Caps the estimate so it stops re-summing
+   *  the now-discarded pre-summary history. */
+  summaryUsedTokens?: number;
 }
 
 export interface BranchTotals {
@@ -47,6 +51,11 @@ export interface BranchTotals {
   containsAnchor: boolean;
   /** Provider usage/cost summed along the active branch */
   usage: BranchUsage;
+  /** Compacted-context baseline from the deepest summarized response on the
+   *  branch (0 if none). The branch walk stops there, so `input`/`output` cover
+   *  only the post-summary messages; the estimate adds this to avoid counting
+   *  the discarded pre-summary history. */
+  summaryBaseline: number;
 }
 
 export const EMPTY_BRANCH: BranchTotals = {
@@ -57,6 +66,7 @@ export const EMPTY_BRANCH: BranchTotals = {
   tailId: null,
   containsAnchor: false,
   usage: EMPTY_USAGE,
+  summaryBaseline: 0,
 };
 
 /** Module-level token index: conversationId → messageId → entry. Not render state. */
@@ -128,11 +138,16 @@ function addUsage(target: BranchUsage, usage?: BranchUsage): void {
 }
 
 function toEntry(message: Partial<TMessage>): TokenEntry {
+  const summaryUsedTokens = message.metadata?.summaryUsedTokens;
   return {
     tokenCount: typeof message.tokenCount === 'number' ? message.tokenCount : 0,
     isCreatedByUser: message.isCreatedByUser === true,
     parentMessageId: message.parentMessageId ?? null,
     usage: readPersistedUsage(message),
+    summaryUsedTokens:
+      typeof summaryUsedTokens === 'number' && summaryUsedTokens > 0
+        ? summaryUsedTokens
+        : undefined,
   };
 }
 
@@ -218,6 +233,11 @@ export function sumBranch(
 
   const totals = { input: 0, output: 0, counted: 0, total: 0, containsAnchor: false };
   const usage: BranchUsage = { ...EMPTY_USAGE };
+  let summaryBaseline = 0;
+  /** Once a summary marker is crossed, older turns are out of the CONTEXT WINDOW
+   *  (subsumed by the baseline) — but their provider spend still happened, so the
+   *  usage/cost walk continues to the root while context counting stops. */
+  let contextCapped = false;
   let currentId: string | null = tailId;
   let guard = index.size;
 
@@ -227,10 +247,15 @@ export function sumBranch(
       break;
     }
     totals.total += 1;
-    if (anchorId != null && currentId === anchorId) {
+    /** Only match the anchor while still inside the active context window. An
+     *  anchor OLDER than the deepest summary marker belongs to a pre-summary
+     *  snapshot; treating it as on-branch would let `useTokenUsage` revive that
+     *  stale breakdown (discarded history) over the summary-baseline estimate
+     *  that `findBranchSnapshotAnchor` correctly refuses to recover. */
+    if (!contextCapped && anchorId != null && currentId === anchorId) {
       totals.containsAnchor = true;
     }
-    if (entry.tokenCount > 0) {
+    if (!contextCapped && entry.tokenCount > 0) {
       totals.counted += 1;
       if (entry.isCreatedByUser) {
         totals.input += entry.tokenCount;
@@ -238,11 +263,19 @@ export function sumBranch(
         totals.output += entry.tokenCount;
       }
     }
+    /** Cost/usage is cumulative spend — never truncated at the summary boundary. */
     addUsage(usage, entry.usage);
+    /** This response's turn compacted the history: its own output is counted
+     *  above; record the pre-invoke compacted baseline and stop counting context
+     *  tokens for older (summarized-away) turns, but keep walking for cost. */
+    if (!contextCapped && entry.summaryUsedTokens != null) {
+      summaryBaseline = entry.summaryUsedTokens;
+      contextCapped = true;
+    }
     currentId = entry.parentMessageId;
   }
 
-  return { ...totals, tailId, usage };
+  return { ...totals, tailId, usage, summaryBaseline };
 }
 
 /**
@@ -310,6 +343,12 @@ export function findBranchSnapshotAnchor(
     const entry: TokenEntry | undefined = index.get(currentId);
     if (!entry) {
       break;
+    }
+    /** Stop at a summarized response that has no snapshot of its own: crossing it
+     *  would recover an older PRE-summary snapshot (discarded history), which the
+     *  summary-baseline estimate is meant to replace. */
+    if (entry.summaryUsedTokens != null) {
+      return null;
     }
     currentId = entry.parentMessageId;
   }

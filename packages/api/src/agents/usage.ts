@@ -247,16 +247,23 @@ function normalizeEventUnits(event: TTokenUsageEvent): {
   };
 }
 
-/** Output tokens of the response's final primary model call — the call the
- *  latest pre-invoke snapshot precedes. Persisted as the snapshot's
- *  `completedOutputTokens` so a reloaded multi-call turn adds only this delta
- *  (matching the live finalizer) instead of the full response `tokenCount`,
- *  which the snapshot already counts for earlier steps. */
-function finalCallOutputTokens(events: ReadonlyArray<TTokenUsageEvent>): number {
+/** Output tokens of the final primary model call belonging to the snapshot's
+ *  run — the call the latest pre-invoke snapshot precedes. Persisted as the
+ *  snapshot's `completedOutputTokens` so a reloaded multi-call turn adds only
+ *  this delta (matching the live finalizer) instead of the full response
+ *  `tokenCount`, which the snapshot already counts for earlier steps. Filtering
+ *  by `runId` prevents a parallel run's later usage from being attributed to this
+ *  snapshot; untagged events (older lib / resume) match any run for back-compat. */
+function finalCallOutputTokens(events: ReadonlyArray<TTokenUsageEvent>, runId?: string): number {
   for (let i = events.length - 1; i >= 0; i--) {
-    if (events[i].usage_type == null) {
-      return normalizeEventUnits(events[i]).output;
+    const event = events[i];
+    if (event.usage_type != null) {
+      continue;
     }
+    if (runId != null && event.runId != null && event.runId !== runId) {
+      continue;
+    }
+    return normalizeEventUnits(event).output;
   }
   return 0;
 }
@@ -273,7 +280,7 @@ export function buildPersistedContextUsage(
   usageEvents: ReadonlyArray<TTokenUsageEvent> = [],
 ): TContextUsageEvent {
   const { breakdown } = snapshot;
-  const completedOutputTokens = finalCallOutputTokens(usageEvents);
+  const completedOutputTokens = finalCallOutputTokens(usageEvents, snapshot.runId);
   let toolTokenCounts = breakdown.toolTokenCounts;
   if (toolTokenCounts != null) {
     const trimmed: Record<string, number> = {};
@@ -289,6 +296,83 @@ export function buildPersistedContextUsage(
     breakdown: { ...breakdown, toolTokenCounts },
     ...(completedOutputTokens > 0 && { completedOutputTokens }),
   };
+}
+
+/**
+ * Sum of this response's output tokens already folded into a later snapshot's
+ * pre-invoke baseline that the response message's `tokenCount` ALSO carries — the
+ * overlap `computeSummaryUsedTokens` subtracts from the marker so the live-path
+ * client estimate (`summaryBaseline + responseTokenCount`) doesn't double-count:
+ *  - earlier tool-loop PRIMARY calls: a multi-call turn's first output sits in the
+ *    kept-message context of the next call's snapshot AND in `tokenCount`.
+ *  - the SUMMARIZATION call's generated summary: it sits in the snapshot baseline
+ *    as `summaryTokens` AND in `tokenCount` (`recordCollectedUsage` folds
+ *    summarization completion into the reported output total; subagent/sequential
+ *    are kept out of that total, so they are excluded here too).
+ *
+ * Both are matched by `runId` and bounded by `beforeIndex` to the calls that
+ * preceded the snapshot. The summarize detour inherits the graph run id
+ * (`traceConfig` spreads `config.metadata.run_id`), so it shares the snapshot's
+ * `runId`; a parallel sibling run's summary carries a DIFFERENT `runId` and must
+ * NOT be subtracted (its summary lives in the sibling's baseline, not this one).
+ * Untagged events (older lib / resume) match any run for back-compat.
+ *
+ * Only the live path (which builds `tokenCount` via `recordCollectedUsage`) calls
+ * this; the abort path subtracts nothing — see {@link buildAbortedResponseMetadata}.
+ */
+export function priorRunOutputTokens(
+  events: ReadonlyArray<TTokenUsageEvent>,
+  beforeIndex: number,
+  runId?: string,
+): number {
+  let total = 0;
+  const end = Math.min(beforeIndex, events.length);
+  for (let i = 0; i < end; i++) {
+    const event = events[i];
+    if (event.usage_type != null && event.usage_type !== 'summarization') {
+      continue;
+    }
+    if (runId != null && event.runId != null && event.runId !== runId) {
+      continue;
+    }
+    total += normalizeEventUnits(event).output;
+  }
+  return total;
+}
+
+/**
+ * Pre-invoke compacted context size for a summarized turn (instructions +
+ * summary + kept messages), or `undefined` when the turn did not summarize.
+ * Persisted as the lightweight `summaryUsedTokens` marker so the client estimate
+ * fallback caps the discarded pre-summary history instead of re-summing it (the
+ * gauge otherwise reads 100% in perpetuity after a compaction). Pre-invoke, so
+ * it carries none of the `completedOutputTokens` ambiguity that keeps the full
+ * snapshot off some save paths. `summaryTokens` is a SEPARATE breakdown field, so
+ * the non-`remainingContextTokens` fallback adds it explicitly.
+ *
+ * `priorOutputTokens` (this response's earlier tool-loop outputs, see
+ * {@link priorRunOutputTokens}) is subtracted: those tokens are inside the
+ * baseline's kept messages AND in the response message's `tokenCount` the client
+ * adds on top, so leaving them in the marker double-counts them on a tool-loop
+ * summarized turn. Single-call turns pass 0 and are unaffected.
+ */
+export function computeSummaryUsedTokens(
+  snapshot: TContextUsageEvent | null | undefined,
+  priorOutputTokens = 0,
+): number | undefined {
+  const summaryTokens = snapshot?.breakdown?.summaryTokens ?? 0;
+  if (!snapshot || summaryTokens <= 0) {
+    return undefined;
+  }
+  const maxTokens = snapshot.contextBudget ?? snapshot.breakdown.maxContextTokens ?? 0;
+  const baseUsed =
+    snapshot.remainingContextTokens != null
+      ? maxTokens - snapshot.remainingContextTokens
+      : (snapshot.effectiveInstructionTokens ?? snapshot.breakdown.instructionTokens ?? 0) +
+        summaryTokens +
+        (snapshot.breakdown.messageTokens ?? 0);
+  const adjusted = baseUsed - Math.max(0, priorOutputTokens);
+  return adjusted > 0 ? Math.round(adjusted) : undefined;
 }
 
 function parseUsageEvents(value?: string | null): TTokenUsageEvent[] {
@@ -309,21 +393,50 @@ function parseUsageEvents(value?: string | null): TTokenUsageEvent[] {
  * reload (finding: stopped responses otherwise lose cost). Shared by every abort
  * save path (agents abort route + legacy abort middleware).
  *
- * Deliberately persists ONLY `usage`, not `contextUsage`: unlike the live path,
- * the abort path can't tell whether the FINAL call (the one the latest snapshot
- * precedes) emitted usage — the job stores only the latest snapshot, not the
- * snapshot count. If the final call emitted none, `completedOutputTokens` would
- * reuse an earlier call's output the snapshot already counts → reload
- * over-reports. A stopped/incomplete response therefore falls back to the coarse
- * per-message gauge estimate on reload, which is both safe and apt for an
- * interrupted turn that never reached a clean pre-invoke breakdown.
+ * Deliberately omits the full `contextUsage`: unlike the live path, the abort
+ * path can't tell whether the FINAL call (the one the latest snapshot precedes)
+ * emitted usage — the job stores only the latest snapshot, not the snapshot
+ * count. If the final call emitted none, `completedOutputTokens` would reuse an
+ * earlier call's output the snapshot already counts → reload over-reports. So a
+ * stopped response falls back to the per-message gauge estimate on reload.
+ *
+ * It DOES persist the `summaryUsedTokens` marker when the stopped turn had
+ * summarized: that marker is pre-invoke (no `completedOutputTokens` ambiguity),
+ * and without it the fallback estimate re-sums the history the compaction
+ * discarded — leaving a stopped summarized turn pinned at 100%. Unlike the live
+ * path, the abort `tokenCount` comes from `countTokens(text)` (abortMiddleware) or
+ * is absent (agents abort route) — it does NOT fold in the summarization or
+ * earlier-call output the way `recordCollectedUsage` does. So the marker subtracts
+ * NOTHING: the full pre-invoke baseline is correct, and the client adds only the
+ * partial answer text on top (no overlap to cancel).
  */
 export function buildAbortedResponseMetadata(
-  job: { tokenUsage?: string | null } | null | undefined,
-): { usage?: TResponseUsage } | undefined {
+  job: { tokenUsage?: string | null; contextUsage?: string | null } | null | undefined,
+): { usage?: TResponseUsage; summaryUsedTokens?: number } | undefined {
   const events = parseUsageEvents(job?.tokenUsage);
   const usage = aggregateEmittedUsage(events);
-  return usage ? { usage } : undefined;
+
+  let snapshot: TContextUsageEvent | null = null;
+  if (typeof job?.contextUsage === 'string' && job.contextUsage.length > 0) {
+    try {
+      snapshot = JSON.parse(job.contextUsage) as TContextUsageEvent;
+    } catch {
+      snapshot = null;
+    }
+  }
+  /** Subtract nothing: the abort `tokenCount` (countTokens(text) or absent) does
+   *  not fold in summarization/earlier-call output, so the full baseline is the
+   *  marker and the client's partial-text addition has no overlap to cancel. */
+  const summaryUsedTokens = computeSummaryUsedTokens(snapshot);
+
+  const metadata: { usage?: TResponseUsage; summaryUsedTokens?: number } = {};
+  if (usage) {
+    metadata.usage = usage;
+  }
+  if (summaryUsedTokens != null) {
+    metadata.summaryUsedTokens = summaryUsedTokens;
+  }
+  return Object.keys(metadata).length > 0 ? metadata : undefined;
 }
 
 /**

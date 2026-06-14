@@ -546,16 +546,23 @@ function getDefaultHandlers({
           checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node) ||
           !metadata?.hide_sequential_outputs
         ) {
-          await emitEvent(res, streamId, { event, data });
-          /** Capture the latest visible snapshot (last-wins) + count visible
-           *  snapshots (one per model call). The count lets the save path persist
-           *  the breakdown only when the FINAL call emitted usage (primary usage
-           *  events === snapshots), so completedOutputTokens is a real
-           *  post-snapshot delta and reload doesn't over-report. */
+          /** Capture the latest visible snapshot (last-wins) and how many usage
+           *  events preceded it BEFORE awaiting the emit. `emitEvent` can yield
+           *  (resumable SSE / Redis publish); with parallel runs active this
+           *  call's own primary usage could land in `usageEmitSink` during that
+           *  yield, pushing `latestUsageIndex` past the very event that proves the
+           *  snapshot completed — the save path would then slice it away and drop
+           *  a valid breakdown. The recorded index lets the save path persist only
+           *  when a PRIMARY usage follows this snapshot (the snapshot's call
+           *  actually invoked the model); a summarization detour emits a snapshot
+           *  whose only following usage is tagged `summarization`, which a plain
+           *  snapshot-count would over-count and wrongly drop. */
           if (contextUsageSink) {
             contextUsageSink.latest = data;
             contextUsageSink.count = (contextUsageSink.count ?? 0) + 1;
+            contextUsageSink.latestUsageIndex = usageEmitSink?.length ?? 0;
           }
+          await emitEvent(res, streamId, { event, data });
         }
       },
     };
