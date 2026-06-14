@@ -1402,9 +1402,12 @@ class AgentClient extends BaseClient {
           '[api/server/controllers/agents/client.js #sendCompletion] Unhandled error type',
           err,
         );
+        const isRecursionLimit = err?.name === 'GraphRecursionError';
         this.contentParts.push({
           type: ContentTypes.ERROR,
-          [ContentTypes.ERROR]: `An error occurred while processing the request${err?.message ? `: ${err.message}` : ''}`,
+          [ContentTypes.ERROR]: isRecursionLimit
+            ? 'The agent reached its tool call limit for this turn. Send a new message to continue the conversation.'
+            : `An error occurred while processing the request${err?.message ? `: ${err.message}` : ''}`,
         });
       }
     } finally {

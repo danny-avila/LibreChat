@@ -1020,7 +1020,12 @@ const createResponse = async (req, res) => {
       );
     }
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'An error occurred';
+    const isRecursionLimit = error?.name === 'GraphRecursionError';
+    const errorMessage = isRecursionLimit
+      ? 'The agent reached its tool call limit. Send a new request to continue.'
+      : error instanceof Error
+        ? error.message
+        : 'An error occurred';
     logger.error('[Responses API] Error:', error);
 
     // Check if we already started streaming (headers sent)
