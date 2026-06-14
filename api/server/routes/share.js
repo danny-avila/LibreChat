@@ -91,7 +91,9 @@ const SAFE_INLINE_TYPES = new Set([
  * Resolve a snapshotted file for a shared link. A file_id absent from the
  * share's snapshot is denied (404) — this prevents a viewer from reaching files
  * outside the shared-link snapshot. Only legacy shares (no `fileSnapshots` field
- * at all) trigger a lazy backfill; an ordinary miss does not rebuild.
+ * at all) trigger a lazy backfill; an ordinary miss does not rebuild. The live
+ * file record is also required: if the original was deleted/expired, return a
+ * clean 404 instead of letting the stream error after headers are sent.
  */
 const resolveShareFile = async (req, res, next) => {
   try {
@@ -106,7 +108,17 @@ const resolveShareFile = async (req, res, next) => {
       );
       return res.status(404).json({ message: 'File not found in shared link' });
     }
+
+    const [liveFile] = await getFiles({ file_id }, null, {});
+    if (!liveFile) {
+      logger.warn(
+        `[shareFileAccess] Snapshotted file ${file_id} no longer available for share ${shareId}`,
+      );
+      return res.status(404).json({ message: 'File no longer available' });
+    }
+
     req.shareFile = snapshot;
+    req.liveFile = liveFile;
     return next();
   } catch (error) {
     logger.error('[shareFileAccess] Error resolving shared file:', error);
@@ -166,8 +178,8 @@ if (allowSharedLinks) {
   router.get(
     '/:shareId',
     optionalJwtAuth,
-    configMiddleware,
     canAccessSharedLink,
+    configMiddleware,
     async (req, res) => {
       try {
         const share = await getSharedMessages(req.params.shareId, req.shareResourceId, {
@@ -195,27 +207,22 @@ if (allowSharedLinks) {
     '/:shareId/files/:file_id/preview',
     optionalJwtAuth,
     optionalShareFileAuth,
-    configMiddleware,
     canAccessSharedLink,
+    configMiddleware,
     resolveShareFile,
-    async (req, res) => {
-      try {
-        const { file_id } = req.params;
-        const [liveFile] = await getFiles({ file_id }, null, {});
-        const status = liveFile?.status || 'ready';
-        const payload = { file_id, status };
-        if (status === 'ready' && liveFile?.text != null) {
-          payload.text = liveFile.text;
-          payload.textFormat = liveFile.textFormat ?? null;
-        } else if (status === 'failed' && liveFile?.previewError) {
-          payload.previewError = liveFile.previewError;
-        }
-        res.set('Cache-Control', 'private, no-store');
-        return res.status(200).json(payload);
-      } catch (error) {
-        logger.error('[shareFileAccess] Error fetching shared preview:', error);
-        return res.status(500).json({ message: 'Error fetching preview' });
+    (req, res) => {
+      const { file_id } = req.params;
+      const liveFile = req.liveFile;
+      const status = liveFile?.status || 'ready';
+      const payload = { file_id, status };
+      if (status === 'ready' && liveFile?.text != null) {
+        payload.text = liveFile.text;
+        payload.textFormat = liveFile.textFormat ?? null;
+      } else if (status === 'failed' && liveFile?.previewError) {
+        payload.previewError = liveFile.previewError;
       }
+      res.set('Cache-Control', 'private, no-store');
+      return res.status(200).json(payload);
     },
   );
 
@@ -224,8 +231,8 @@ if (allowSharedLinks) {
     '/:shareId/files/:file_id/download',
     optionalJwtAuth,
     optionalShareFileAuth,
-    configMiddleware,
     canAccessSharedLink,
+    configMiddleware,
     resolveShareFile,
     async (req, res) => {
       try {
@@ -246,8 +253,8 @@ if (allowSharedLinks) {
     '/:shareId/files/:file_id',
     optionalJwtAuth,
     optionalShareFileAuth,
-    configMiddleware,
     canAccessSharedLink,
+    configMiddleware,
     resolveShareFile,
     async (req, res) => {
       try {

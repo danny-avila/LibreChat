@@ -1861,5 +1861,53 @@ describe('Share Methods', () => {
       const saved = await SharedLink.findOne({ shareId }).lean();
       expect(saved?.fileSnapshots).toHaveLength(1);
     });
+
+    test('does not snapshot transient text-source files', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const textId = await createFile(userId, { source: 'text' });
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'rag context',
+        isCreatedByUser: true,
+        files: [{ file_id: textId }],
+      });
+
+      const result = await shareMethods.createSharedLink(userId, conversationId);
+      const saved = await SharedLink.findOne({ shareId: result.shareId }).lean();
+      expect(saved?.fileSnapshots ?? []).toHaveLength(0);
+    });
+
+    test('updateSharedLink clears snapshots when snapshotFiles is disabled', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const docId = await createFile(userId);
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'doc',
+        isCreatedByUser: true,
+        files: [{ file_id: docId }],
+      });
+
+      const created = await shareMethods.createSharedLink(userId, conversationId);
+      let saved = await SharedLink.findOne({ shareId: created.shareId }).lean();
+      expect(saved?.fileSnapshots).toHaveLength(1);
+
+      const updated = await shareMethods.updateSharedLink(
+        userId,
+        created.shareId,
+        undefined,
+        undefined,
+        false,
+      );
+      saved = await SharedLink.findOne({ shareId: updated.shareId }).lean();
+      expect(saved?.fileSnapshots).toBeUndefined();
+    });
   });
 });

@@ -372,6 +372,8 @@ describe('share-scoped file routes', () => {
     mockGetStrategyFunctions.mockReturnValue({
       getDownloadStream: jest.fn(async () => Readable.from(['file-bytes'])),
     });
+    // Live file record present by default (resolveShareFile requires it).
+    getFiles.mockResolvedValue([{ status: 'ready' }]);
   });
 
   it('serves a snapshotted image inline from its original stored object', async () => {
@@ -482,5 +484,18 @@ describe('share-scoped file routes', () => {
 
     expect(response.status).toBe(200);
     expect(backfillSharedLinkFiles).toHaveBeenCalledWith('share-123', 'file-1');
+  });
+
+  it('404s cleanly when the snapshotted file is no longer available', async () => {
+    getSharedLinkFile.mockResolvedValue({
+      file: { file_id: 'file-1', source: 'local', filepath: '/uploads/owner/gone.pdf' },
+      hasSnapshots: true,
+    });
+    getFiles.mockResolvedValue([]); // original record deleted/expired
+
+    const response = await request(buildApp()).get('/api/share/share-123/files/file-1');
+
+    expect(response.status).toBe(404);
+    expect(mockGetStrategyFunctions).not.toHaveBeenCalled();
   });
 });

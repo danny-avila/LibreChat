@@ -99,11 +99,12 @@ function sanitizeSharedFiles(files: unknown): t.SharedFile[] | undefined {
 }
 
 /**
- * Sources whose stored objects can be streamed/previewed through the share-scoped
- * routes with only `storageKey`/`filepath` + the request. Sources requiring
+ * Sources backed by a durable stored object that the share-scoped routes can
+ * stream with only `storageKey`/`filepath` + the request. Sources requiring
  * owner-specific credentials (openai/azure assistants, execute_code, vectordb,
  * OCR/parser pipelines) are skipped — those files degrade to a 404 in the share
- * view rather than being exposed.
+ * view. `FileSources.text` is intentionally excluded: its `filepath` is a Multer
+ * temp path that the upload route deletes, so there is nothing durable to stream.
  */
 const SNAPSHOT_STREAMABLE_SOURCES = new Set<string>([
   FileSources.local,
@@ -111,7 +112,6 @@ const SNAPSHOT_STREAMABLE_SOURCES = new Set<string>([
   FileSources.cloudfront,
   FileSources.azure_blob,
   FileSources.firebase,
-  FileSources.text,
 ]);
 
 /** Collect `file_id`s from a message's `files`/`attachments` array into `target`. */
@@ -813,6 +813,12 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
             user,
           )
         : [];
+      // Clear any prior snapshot when snapshotting is off so a disabled-feature
+      // update can't keep serving stale file ids that the update dropped.
+      const unset = {
+        ...(expiredAt === null ? { expiredAt: 1 } : {}),
+        ...(snapshotFiles ? {} : { fileSnapshots: 1 }),
+      };
       const update = {
         $set: {
           messages: updatedMessages,
@@ -822,7 +828,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
           ...(hasNewExpiration && { expiredAt }),
           ...(snapshotFiles && { fileSnapshots }),
         },
-        ...(expiredAt === null ? { $unset: { expiredAt: 1 } } : {}),
+        ...(Object.keys(unset).length > 0 ? { $unset: unset } : {}),
       };
 
       const updatedShare = (await SharedLink.findOneAndUpdate({ shareId, user }, update, {
