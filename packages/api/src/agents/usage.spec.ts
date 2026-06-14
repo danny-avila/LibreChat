@@ -8,6 +8,7 @@ import {
   createSubagentUsageSink,
   recordCollectedUsage,
   buildPersistedContextUsage,
+  buildAbortedResponseMetadata,
 } from './usage';
 
 describe('recordCollectedUsage', () => {
@@ -1664,5 +1665,61 @@ describe('buildPersistedContextUsage', () => {
 
   it('omits completedOutputTokens when there are no primary calls', () => {
     expect(buildPersistedContextUsage(baseSnapshot, []).completedOutputTokens).toBeUndefined();
+  });
+});
+
+describe('buildAbortedResponseMetadata', () => {
+  const snapshot: TContextUsageEvent = {
+    runId: 'run-1',
+    breakdown: {
+      maxContextTokens: 8000,
+      instructionTokens: 100,
+      systemMessageTokens: 80,
+      dynamicInstructionTokens: 20,
+      toolSchemaTokens: 30,
+      summaryTokens: 0,
+      toolCount: 1,
+      messageCount: 2,
+      messageTokens: 300,
+      availableForMessages: 7000,
+    },
+    contextBudget: 7800,
+  };
+
+  it('returns undefined for an empty job', () => {
+    expect(buildAbortedResponseMetadata(undefined)).toBeUndefined();
+    expect(buildAbortedResponseMetadata({})).toBeUndefined();
+    expect(buildAbortedResponseMetadata({ tokenUsage: 'not json' })).toBeUndefined();
+  });
+
+  it('rebuilds the usage rollup + breakdown from the job’s persisted fields', () => {
+    const events: TTokenUsageEvent[] = [
+      { input_tokens: 100, output_tokens: 20, total_tokens: 120, provider: 'openAI', cost: 0.001 },
+    ];
+    const result = buildAbortedResponseMetadata({
+      tokenUsage: JSON.stringify(events),
+      contextUsage: JSON.stringify(snapshot),
+    });
+    expect(result?.usage).toEqual({
+      input: 100,
+      output: 20,
+      cacheWrite: 0,
+      cacheRead: 0,
+      cost: 0.001,
+    });
+    expect(result?.contextUsage?.completedOutputTokens).toBe(20);
+    expect(result?.contextUsage?.breakdown.maxContextTokens).toBe(8000);
+  });
+
+  it('persists usage but skips the breakdown when no primary usage event exists', () => {
+    const events: TTokenUsageEvent[] = [
+      { input_tokens: 40, output_tokens: 5, usage_type: 'subagent', provider: 'openAI' },
+    ];
+    const result = buildAbortedResponseMetadata({
+      tokenUsage: JSON.stringify(events),
+      contextUsage: JSON.stringify(snapshot),
+    });
+    expect(result?.usage).toBeDefined();
+    expect(result?.contextUsage).toBeUndefined();
   });
 });

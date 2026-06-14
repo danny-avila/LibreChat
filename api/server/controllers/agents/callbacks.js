@@ -274,8 +274,9 @@ function feedSubagentAggregator(aggregator, event) {
  * @param {string | null} [options.streamId] - The stream ID for resumable mode, or null for standard mode.
  * @param {ToolExecuteOptions} [options.toolExecuteOptions] - Options for event-driven tool execution.
  * @param {UsageCostDeps} [options.usageCost] - Pricing context for authoritative per-event cost.
- * @param {{ latest: TContextUsageEvent | null }} [options.contextUsageSink] - Mutable holder
- *   captured with the latest visible context snapshot for persistence on the response message.
+ * @param {{ latest: TContextUsageEvent | null, count: number }} [options.contextUsageSink] - Mutable
+ *   holder for the latest visible context snapshot + a count of visible snapshots (model calls),
+ *   used to persist the breakdown only when the final call emitted usage.
  * @param {Array<TTokenUsageEvent>} [options.usageEmitSink] - Array collecting each emitted
  *   `on_token_usage` payload (incl. cost) so the response's usage rollup can be persisted.
  * @returns {Record<string, t.EventHandler>} The default handlers.
@@ -532,10 +533,14 @@ function getDefaultHandlers({
           !metadata?.hide_sequential_outputs
         ) {
           await emitEvent(res, streamId, { event, data });
-          /** Capture the latest visible snapshot (last-wins) for persistence on
-           *  the response message — only visible snapshots, matching the emit. */
+          /** Capture the latest visible snapshot (last-wins) + count visible
+           *  snapshots (one per model call). The count lets the save path persist
+           *  the breakdown only when the FINAL call emitted usage (primary usage
+           *  events === snapshots), so completedOutputTokens is a real
+           *  post-snapshot delta and reload doesn't over-report. */
           if (contextUsageSink) {
             contextUsageSink.latest = data;
+            contextUsageSink.count = (contextUsageSink.count ?? 0) + 1;
           }
         }
       },

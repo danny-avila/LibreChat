@@ -868,13 +868,15 @@ class AgentClient extends BaseClient {
       metadata.thoughtSignatures = signatures;
     }
     const usageEvents = this.usageEmitSink ?? [];
-    /** A primary (non-tagged) usage event means the response's post-snapshot
-     *  output is known. Without one (provider emitted no usage_metadata) we
-     *  can't size the final reply, so skip persisting the pre-invoke snapshot —
-     *  reload then falls back to the coarse per-message tokenCount estimate
-     *  (accurate totals) rather than a snapshot that undercounts the reply. */
-    const hasPrimaryUsage = usageEvents.some((event) => event.usage_type == null);
-    if (this.contextUsageSink?.latest && hasPrimaryUsage) {
+    /** Persist the breakdown only when the FINAL visible call (the one the latest
+     *  snapshot precedes) emitted usage — i.e. as many primary usage events as
+     *  visible snapshots. If the final call emitted no usage_metadata (provider
+     *  gap, or interrupted after an earlier call did emit), `completedOutputTokens`
+     *  would be an earlier call's output the latest snapshot already counts, so
+     *  reload would over-report; fall back to the coarse per-message estimate. */
+    const primaryUsageCount = usageEvents.filter((event) => event.usage_type == null).length;
+    const snapshotCount = this.contextUsageSink?.count ?? 0;
+    if (this.contextUsageSink?.latest && snapshotCount > 0 && primaryUsageCount >= snapshotCount) {
       metadata.contextUsage = buildPersistedContextUsage(this.contextUsageSink.latest, usageEvents);
     }
     const usage = aggregateEmittedUsage(usageEvents);

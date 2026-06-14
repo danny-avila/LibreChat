@@ -255,8 +255,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   /** Latest visible context snapshot + every emitted usage payload for this
    *  response, captured by the handlers and persisted on the response message's
    *  metadata so the breakdown and branch/total cost survive a reload.
-   *  @type {{ latest: import('librechat-data-provider').TContextUsageEvent | null }} */
-  const contextUsageSink = { latest: null };
+   *  @type {{ latest: import('librechat-data-provider').TContextUsageEvent | null, count: number }} */
+  const contextUsageSink = { latest: null, count: 0 };
   /** @type {Array<import('librechat-data-provider').TTokenUsageEvent>} */
   const usageEmitSink = [];
 
