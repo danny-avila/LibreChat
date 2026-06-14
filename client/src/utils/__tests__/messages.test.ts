@@ -1,6 +1,10 @@
 import type { TMessage } from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
-import { getMessageAriaLabel, getHeaderPrefixForScreenReader } from '../messages';
+import {
+  getMessageAriaLabel,
+  resolveSiblingSelection,
+  getHeaderPrefixForScreenReader,
+} from '../messages';
 
 const translations: Record<string, string> = {
   com_endpoint_message: 'Message',
@@ -78,5 +82,46 @@ describe('getHeaderPrefixForScreenReader', () => {
   it('omits number when depth is negative', () => {
     const msg = makeMessage({ isCreatedByUser: false, depth: -5 });
     expect(getHeaderPrefixForScreenReader(msg, localize)).toBe('Response: ');
+  });
+});
+
+describe('resolveSiblingSelection', () => {
+  it('shows the newest sibling on first sighting of a fork', () => {
+    const seen = new Set<string>();
+    expect(resolveSiblingSelection(['a', 'b'], seen, null)).toEqual({ index: 1, selectedId: 'b' });
+  });
+
+  it('focuses a genuinely new sibling (regeneration/edit/new turn)', () => {
+    const seen = new Set(['a']);
+    // 'b' was never seen here → it is the freshly created branch
+    expect(resolveSiblingSelection(['a', 'b'], seen, 'a')).toEqual({ index: 1, selectedId: 'b' });
+  });
+
+  it('preserves the selected branch when children merely churn (the bug)', () => {
+    // both ids already seen — a sibling was transiently dropped and restored
+    // while a regeneration elsewhere streamed; keep the user on 'a'
+    const seen = new Set(['a', 'b']);
+    expect(resolveSiblingSelection(['a', 'b'], seen, 'a')).toEqual({ index: 0, selectedId: 'a' });
+  });
+
+  it('falls back to newest when the selected branch disappears', () => {
+    // 'a' (the regenerated-away response) is gone; only seen 'b' remains
+    const seen = new Set(['a', 'b']);
+    expect(resolveSiblingSelection(['b'], seen, 'a')).toEqual({ index: 0, selectedId: 'b' });
+  });
+
+  it('keeps selection across a transient drop then restore', () => {
+    const seen = new Set(['a', 'b']);
+    // drop: only 'a' present → preserved
+    expect(resolveSiblingSelection(['a'], seen, 'a')).toEqual({ index: 0, selectedId: 'a' });
+    // restore: 'b' returns but is already seen → stay on 'a' (now at index 0)
+    expect(resolveSiblingSelection(['a', 'b'], seen, 'a')).toEqual({ index: 0, selectedId: 'a' });
+  });
+
+  it('handles an empty fork', () => {
+    expect(resolveSiblingSelection([], new Set(['a']), 'a')).toEqual({
+      index: -1,
+      selectedId: 'a',
+    });
   });
 });

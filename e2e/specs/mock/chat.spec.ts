@@ -188,6 +188,61 @@ test.describe('core chat loop', () => {
     await expect(page.getByText(followUpMessage)).toBeVisible();
   });
 
+  test('keeps the viewed branch when regenerating its latest response with an earlier branch present', async ({
+    page,
+  }) => {
+    test.setTimeout(120000);
+    const firstMessage = 'first turn from e2e';
+    const secondMessage = 'second turn from e2e';
+
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+
+    let response = await sendMessage(page, firstMessage);
+    expect(response.ok()).toBeTruthy();
+    await expect(mockReply(page).first()).toBeVisible();
+    response = await sendMessage(page, secondMessage);
+    expect(response.ok()).toBeTruthy();
+    await expect(page.getByText(secondMessage)).toBeVisible();
+
+    // Regenerate the INITIAL response → a second root-level branch the second
+    // turn does not belong to.
+    const firstAssistant = messagesView(page).locator('.message-render').nth(1);
+    await firstAssistant.hover();
+    const regenInitial = firstAssistant.locator('button[title="Regenerate"]').last();
+    await expect(regenInitial).toBeVisible();
+    [response] = await Promise.all([
+      page.waitForResponse(isAgentsStream, { timeout: 30000 }),
+      regenInitial.click(),
+    ]);
+    expect(response.ok()).toBeTruthy();
+    await expect(page.getByText('2 / 2')).toBeVisible();
+    await expect(page.getByText(secondMessage)).toHaveCount(0);
+
+    // Back to the ORIGINAL branch (both turns present).
+    await page.getByRole('button', { name: 'Previous sibling message' }).click();
+    await expect(page.getByText('1 / 2')).toBeVisible();
+    await expect(page.getByText(secondMessage)).toBeVisible();
+
+    // Regenerate the LATEST response on the original branch. The bug snapped the
+    // root fork back to the newest (regenerated-initial) branch, dropping the
+    // original thread; the view must stay put.
+    const latestAssistant = messagesView(page).locator('.message-render').last();
+    await latestAssistant.hover();
+    const regenLatest = latestAssistant.locator('button[title="Regenerate"]').last();
+    await expect(regenLatest).toBeVisible();
+    [response] = await Promise.all([
+      page.waitForResponse(isAgentsStream, { timeout: 30000 }),
+      regenLatest.click(),
+    ]);
+    expect(response.ok()).toBeTruthy();
+
+    // Still on the original branch: the second turn survives and the root fork
+    // still reads 1 / 2 (rather than snapping to the regenerated-initial branch).
+    await expect(page.getByText(secondMessage)).toBeVisible();
+    await expect(page.getByText('1 / 2')).toBeVisible();
+  });
+
   test('keeps upload-to-provider CSV attached to the sent message and model input', async ({
     page,
   }) => {

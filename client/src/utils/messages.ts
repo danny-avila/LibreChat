@@ -137,6 +137,49 @@ export const getBranchSiblingIndexesForTarget = (
   return branchIndexes;
 };
 
+export type SiblingSelection = {
+  /** Array position of the sibling to display (last = newest); -1 when empty. */
+  index: number;
+  /** The message id now considered the user's committed branch at this fork. */
+  selectedId: string | null;
+};
+
+/**
+ * Decides which sibling a fork should display when its children change, given
+ * the ids ever seen at this fork and the user's currently-committed branch.
+ *
+ * - First sighting of a fork (`seen` empty) → newest sibling (load default).
+ * - A genuinely new sibling (an id never seen here) → focus it. This is a
+ *   submission/regeneration/edit at this fork; the newest such id wins.
+ * - Otherwise the children merely churned — e.g. an unrelated sibling branch
+ *   was transiently dropped and restored while a regeneration elsewhere
+ *   streamed (`getRegenerateSubmissionMessages` slices the flat array). Keep
+ *   the user's selected branch instead of snapping to the newest.
+ */
+export const resolveSiblingSelection = (
+  ids: string[],
+  seen: ReadonlySet<string>,
+  selectedId: string | null,
+): SiblingSelection => {
+  if (ids.length === 0) {
+    return { index: -1, selectedId };
+  }
+
+  if (seen.size === 0) {
+    return { index: ids.length - 1, selectedId: ids[ids.length - 1] };
+  }
+
+  for (let i = ids.length - 1; i >= 0; i--) {
+    if (!seen.has(ids[i])) {
+      return { index: i, selectedId: ids[i] };
+    }
+  }
+
+  const keepIdx = selectedId != null ? ids.indexOf(selectedId) : -1;
+  const index = keepIdx >= 0 ? keepIdx : ids.length - 1;
+  return { index, selectedId: ids[index] };
+};
+
 export const getLatestText = (message?: TMessage | null, includeIndex?: boolean): string => {
   if (!message) {
     return '';
