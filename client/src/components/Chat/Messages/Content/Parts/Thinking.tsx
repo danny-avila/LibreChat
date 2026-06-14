@@ -184,7 +184,7 @@ export const FloatingThinkingBar = memo(
               aria-expanded={isExpanded}
               aria-controls={contentId}
               className={cn(
-                'flex items-center justify-center rounded p-1.5 text-text-tertiary',
+                'flex items-center justify-center rounded-lg p-1.5 text-text-tertiary',
                 'hover:bg-surface-hover hover:text-text-primary',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
               )}
@@ -207,7 +207,7 @@ export const FloatingThinkingBar = memo(
                 onClick={handleCopy}
                 aria-label={copyTooltip}
                 className={cn(
-                  'flex items-center justify-center rounded p-1.5 text-text-tertiary',
+                  'flex items-center justify-center rounded-lg p-1.5 text-text-tertiary',
                   'hover:bg-surface-hover hover:text-text-primary',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
                 )}

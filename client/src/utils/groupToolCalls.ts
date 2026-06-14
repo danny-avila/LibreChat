@@ -22,30 +22,54 @@ function isGroupableToolCall(part: TMessageContentParts): boolean {
   return true;
 }
 
+/** Reasoning ("Thoughts") parts are transparent to grouping: a thought
+ *  interleaved between tool calls joins the run instead of splitting it, so
+ *  reasoning models that think between every call still collapse into a single
+ *  tool group. A run becomes a group once it holds ≥2 tool calls, OR a single
+ *  tool call accompanied by reasoning — so a lone tool wrapped in thinking
+ *  (e.g. a skill invocation) still gets the grouped chrome with its thoughts
+ *  folded in. A run of pure reasoning (no tool call) keeps rendering as its own
+ *  standalone card. */
+function isReasoningPart(part: TMessageContentParts): boolean {
+  return part.type === ContentTypes.THINK;
+}
+
+function countToolCalls(parts: PartWithIndex[]): number {
+  let count = 0;
+  for (const { part } of parts) {
+    if (isGroupableToolCall(part)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
 export function groupSequentialToolCalls(parts: PartWithIndex[]): GroupedPart[] {
   const result: GroupedPart[] = [];
-  let currentGroup: PartWithIndex[] = [];
+  let currentRun: PartWithIndex[] = [];
 
-  const flushGroup = () => {
-    if (currentGroup.length >= 2) {
-      result.push({ type: 'tool-group', parts: [...currentGroup] });
+  const flushRun = () => {
+    const toolCallCount = countToolCalls(currentRun);
+    const hasReasoning = currentRun.some((p) => isReasoningPart(p.part));
+    if (toolCallCount >= 2 || (toolCallCount >= 1 && hasReasoning)) {
+      result.push({ type: 'tool-group', parts: [...currentRun] });
     } else {
-      for (const p of currentGroup) {
+      for (const p of currentRun) {
         result.push({ type: 'single', part: p });
       }
     }
-    currentGroup = [];
+    currentRun = [];
   };
 
   for (const item of parts) {
-    if (isGroupableToolCall(item.part)) {
-      currentGroup.push(item);
+    if (isGroupableToolCall(item.part) || isReasoningPart(item.part)) {
+      currentRun.push(item);
     } else {
-      flushGroup();
+      flushRun();
       result.push({ type: 'single', part: item });
     }
   }
-  flushGroup();
+  flushRun();
 
   return result;
 }
