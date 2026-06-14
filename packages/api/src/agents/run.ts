@@ -36,6 +36,7 @@ import type { SubagentUsageEvent } from '~/agents/usage';
 import type * as t from '~/types';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { getProviderConfig } from '~/endpoints/config/providers';
+import { extractDefaultParams } from '~/endpoints/openai/llm';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { resolveConfigHeaders } from '~/utils/headers';
@@ -474,6 +475,7 @@ function resolveSummarizationProvider(
         headers: resolvedHeaders,
         addParams: customEndpointConfig.addParams,
         dropParams: customEndpointConfig.dropParams,
+        defaultParams: extractDefaultParams(customEndpointConfig.customParams?.paramDefinitions),
       });
       const { apiKey: resolvedApiKey, ...llmConfigOverrides } = llmConfig as Record<
         string,

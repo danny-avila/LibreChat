@@ -446,6 +446,26 @@ describe('initializeCustom – native Anthropic provider', () => {
     expect(options.useLegacyContent).toBeUndefined();
   });
 
+  it('applies customParams.paramDefinitions defaults on the native path', async () => {
+    const params = createAnthropicParams({
+      provider: 'anthropic',
+      apiKey: 'sk-ant-custom',
+      baseURL: 'https://gateway.example.com',
+      models: { default: ['claude-sonnet-4-5'] },
+      customParams: {
+        defaultParamsEndpoint: 'anthropic',
+        paramDefinitions: [{ key: 'web_search', default: true }],
+      },
+    });
+
+    const options = await initializeCustom(params);
+
+    /** `web_search: true` default flows through to the Anthropic web_search tool */
+    expect(options.tools).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'web_search' })]),
+    );
+  });
+
   it('still uses the OpenAI-compatible client when no provider is set', async () => {
     const params = createAnthropicParams({
       apiKey: 'sk-test',

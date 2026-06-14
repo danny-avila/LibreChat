@@ -15,6 +15,7 @@ import type {
   AnthropicModelOptions,
 } from '~/types';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
+import { extractDefaultParams } from '~/endpoints/openai/llm';
 import { isUserProvided, checkUserKeyExpiry } from '~/utils';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { getCustomEndpointConfig } from '~/app/config';
@@ -123,6 +124,9 @@ function buildAnthropicCustomConfig({
     headers: endpointConfig.headers,
     addParams: endpointConfig.addParams,
     dropParams: endpointConfig.dropParams,
+    /** Apply admin `customParams.paramDefinitions` defaults (e.g. promptCache,
+     *  web_search, thinking) the OpenAI-compatible path gets via `getOpenAIConfig`. */
+    defaultParams: extractDefaultParams(endpointConfig.customParams?.paramDefinitions),
   });
   return {
     llmConfig: result.llmConfig as InitializeResultBase['llmConfig'],

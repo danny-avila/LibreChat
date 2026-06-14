@@ -153,15 +153,7 @@ export function getProviderConfig({
       throw new Error(`Provider ${provider} not supported`);
     }
     getOptions = initializeCustom;
-    /**
-     * Custom endpoints default to the OpenAI-compatible client. An explicit
-     * `provider: anthropic` routes them through the native Anthropic
-     * `/v1/messages` client instead (`initializeCustom` builds the right config).
-     */
-    overrideProvider =
-      customEndpointConfig.provider === EModelEndpoint.anthropic
-        ? Providers.ANTHROPIC
-        : Providers.OPENAI;
+    overrideProvider = Providers.OPENAI;
   }
 
   if (isKnownCustomProvider(overrideProvider) && !customEndpointConfig) {
@@ -204,6 +196,18 @@ export function getProviderConfig({
     if (!customEndpointConfig) {
       throw new Error(`Provider ${provider} not supported`);
     }
+  }
+
+  /**
+   * Custom endpoints default to the OpenAI-compatible client. An explicit
+   * `provider: anthropic` routes them through the native Anthropic `/v1/messages`
+   * client (`initializeCustom` builds the right config). Applied here — after all
+   * `customEndpointConfig` resolution — so it also wins when the endpoint name
+   * collides with a known custom-provider (e.g. `openrouter`), ensuring
+   * `overrideProvider`-derived values (token/context budget) use the Anthropic map.
+   */
+  if (customEndpointConfig?.provider === EModelEndpoint.anthropic) {
+    overrideProvider = Providers.ANTHROPIC;
   }
 
   return {

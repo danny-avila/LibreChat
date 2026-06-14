@@ -123,6 +123,24 @@ describe('getProviderConfig', () => {
     expect(result.overrideProvider).toBe(Providers.OPENAI);
     expect(result.customEndpointConfig?.name).toBe('My-LLM');
   });
+
+  it('applies provider:anthropic even when the endpoint name collides with a known custom provider', () => {
+    // `openrouter` resolves via `providerConfigMap` first (skipping the generic
+    // custom branch); the override must still be re-applied from the config so
+    // overrideProvider-derived values (token/context budget) use the Anthropic map.
+    const appConfig = buildAppConfig([
+      {
+        name: 'openrouter',
+        baseURL: 'https://gateway.example.com',
+        apiKey: 'sk-ant',
+        provider: EModelEndpoint.anthropic,
+      },
+    ]);
+
+    const result = getProviderConfig({ provider: 'openrouter', appConfig });
+
+    expect(result.overrideProvider).toBe(Providers.ANTHROPIC);
+  });
 });
 
 describe('resolveTitleTiming', () => {
