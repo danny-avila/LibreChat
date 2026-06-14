@@ -299,16 +299,20 @@ export function buildPersistedContextUsage(
 }
 
 /**
- * Sum of this response's own earlier (tool-loop) primary output tokens already
- * folded into a later snapshot's pre-invoke baseline. A multi-call turn's first
- * call output sits in the kept-message context of the second call's snapshot, so
- * those tokens appear in BOTH the snapshot baseline and the response message's
- * full `tokenCount`. `computeSummaryUsedTokens` subtracts this from the marker so
- * the client estimate (`summaryBaseline + responseTokenCount`) doesn't
- * double-count them. `beforeIndex` bounds the walk to calls that preceded the
- * snapshot (the live path knows it; the abort path passes the full length, since
- * an interrupted turn's final call emits no usage so every primary is earlier).
- * Untagged events (older lib / resume) match any run for back-compat.
+ * Sum of this response's output tokens already folded into a later snapshot's
+ * pre-invoke baseline that the response message's `tokenCount` ALSO carries — the
+ * overlap `computeSummaryUsedTokens` subtracts from the marker so the client
+ * estimate (`summaryBaseline + responseTokenCount`) doesn't double-count them:
+ *  - earlier tool-loop PRIMARY calls: a multi-call turn's first output sits in the
+ *    kept-message context of the next call's snapshot AND in `tokenCount`;
+ *  - the SUMMARIZATION call's generated summary: it sits in the snapshot baseline
+ *    as `summaryTokens` AND in `tokenCount` (`recordCollectedUsage` folds
+ *    summarization completion into the reported output total; subagent/sequential
+ *    are excluded from that total, so they are excluded here too).
+ * `beforeIndex` bounds the walk to calls that preceded the snapshot (the live path
+ * knows it; the abort path passes the full length, since an interrupted turn's
+ * final call emits no usage so every counted call is earlier). Untagged events
+ * (older lib / resume) match any run for back-compat.
  */
 export function priorRunOutputTokens(
   events: ReadonlyArray<TTokenUsageEvent>,
@@ -319,7 +323,9 @@ export function priorRunOutputTokens(
   const end = Math.min(beforeIndex, events.length);
   for (let i = 0; i < end; i++) {
     const event = events[i];
-    if (event.usage_type != null) {
+    /** Only outputs that land in the response `tokenCount`: primary calls and the
+     *  summarization call (whose summary the baseline also counts). */
+    if (event.usage_type != null && event.usage_type !== 'summarization') {
       continue;
     }
     if (runId != null && event.runId != null && event.runId !== runId) {
@@ -394,9 +400,9 @@ function parseUsageEvents(value?: string | null): TTokenUsageEvent[] {
  * summarized: that marker is pre-invoke (no `completedOutputTokens` ambiguity),
  * and without it the fallback estimate re-sums the history the compaction
  * discarded — leaving a stopped summarized turn pinned at 100%. The marker
- * subtracts the response's earlier tool-loop outputs ({@link priorRunOutputTokens}):
- * the interrupted final call emitted no usage, so every persisted primary usage
- * is an earlier call whose output the baseline already counts.
+ * subtracts the outputs the baseline already counts ({@link priorRunOutputTokens}):
+ * the interrupted final call emitted no usage, so every persisted primary (plus
+ * the summarization call) is an earlier output the baseline already includes.
  */
 export function buildAbortedResponseMetadata(
   job: { tokenUsage?: string | null; contextUsage?: string | null } | null | undefined,

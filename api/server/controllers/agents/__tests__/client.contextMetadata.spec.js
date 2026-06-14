@@ -55,27 +55,31 @@ describe('AgentClient.buildResponseMetadata — snapshot persistence + summary m
   it('persists the post-summary snapshot when the only pre-primary usage is the summarization', () => {
     /** A summarized turn: the summarization usage precedes the post-summary
      *  snapshot (index 1), then the model's primary usage follows it. The old
-     *  count guard miscounted and dropped this; the new guard keeps it. */
+     *  count guard miscounted and dropped this; the new guard keeps it. The
+     *  marker subtracts the summarization output (5): the generated summary is in
+     *  the snapshot baseline (summaryTokens) AND the response tokenCount, so
+     *  300 − 5 = 295 keeps the client estimate from counting it twice. */
     const meta = buildMeta({
       snap: snapshot(80),
       latestUsageIndex: 1,
       usageEvents: [summarizationUsage, primary],
     });
     expect(meta.contextUsage).toBeDefined();
-    expect(meta.summaryUsedTokens).toBe(300);
+    expect(meta.summaryUsedTokens).toBe(295);
   });
 
   it('still emits the summary marker when the final call emitted no usage', () => {
     /** Interrupted summarized turn: no primary usage follows the latest snapshot,
      *  so the snapshot is (correctly) not persisted — but the coarse marker
-     *  survives so the client estimate still caps the discarded history. */
+     *  survives so the client estimate still caps the discarded history. The
+     *  summarization output (5) is subtracted (300 − 5 = 295). */
     const meta = buildMeta({
       snap: snapshot(80),
       latestUsageIndex: 1,
       usageEvents: [summarizationUsage],
     });
     expect(meta.contextUsage).toBeUndefined();
-    expect(meta.summaryUsedTokens).toBe(300);
+    expect(meta.summaryUsedTokens).toBe(295);
   });
 
   it('drops the snapshot and emits no marker when the final call had no usage and no summary', () => {

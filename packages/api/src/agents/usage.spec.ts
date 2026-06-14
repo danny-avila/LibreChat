@@ -1875,13 +1875,18 @@ describe('priorRunOutputTokens', () => {
     expect(priorRunOutputTokens(events, 2, 'run-1')).toBe(50);
   });
 
-  it('skips non-primary (tagged) usage and other runs', () => {
+  it('counts the summarization output but skips subagent/sequential and other runs', () => {
+    /** The summarization output is in the response tokenCount AND the baseline
+     *  (summaryTokens), so it must be subtracted; subagent/sequential are excluded
+     *  from the reported output total, so they must NOT be. */
     const events = [
-      ev({ output_tokens: 20, runId: 'run-1' }),
-      ev({ output_tokens: 8, runId: 'run-1', usage_type: 'summarization' }),
-      ev({ output_tokens: 40, runId: 'run-2' }),
+      ev({ output_tokens: 20, runId: 'run-1' }), // primary
+      ev({ output_tokens: 8, runId: 'run-1', usage_type: 'summarization' }), // counted
+      ev({ output_tokens: 5, runId: 'run-1', usage_type: 'subagent' }), // skipped
+      ev({ output_tokens: 7, runId: 'run-1', usage_type: 'sequential' }), // skipped
+      ev({ output_tokens: 40, runId: 'run-2' }), // other run
     ];
-    expect(priorRunOutputTokens(events, 3, 'run-1')).toBe(20);
+    expect(priorRunOutputTokens(events, 5, 'run-1')).toBe(28);
   });
 
   it('matches untagged events for back-compat and returns 0 with no prior calls', () => {
