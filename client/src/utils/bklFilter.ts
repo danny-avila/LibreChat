@@ -90,10 +90,14 @@ export const buildBklReferenceTag = (matterUids?: string[] | null): string => {
 
 const BKL_TAG_RE =
   /^(?:\[BKL_FILTER:\{.*?\}\]|\[BKL_REFERENCE:\{.*?\}\]|\[BKL_GUIDED_RETRY:[A-Za-z0-9_-]+\]|\[BKL_QUERY_ENHANCE:on\]|\[BKL_QUERY_CHOICES:[A-Za-z0-9+/=]+\])\s*/;
+const BKL_QUERY_CHOICES_PARTIAL_RE = /^\[BKL_QUERY_CHOICES:[A-Za-z0-9+/=]*$/;
 
 export const stripBklTags = (text: string | null | undefined): string => {
   if (!text) return text ?? '';
   let out = text;
+  if (BKL_QUERY_CHOICES_PARTIAL_RE.test(out)) {
+    return '';
+  }
   // Strip potentially multiple prefixed tags (filter may appear after guided retry or vice versa).
   let prev = '';
   while (prev !== out) {
