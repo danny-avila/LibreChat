@@ -1875,11 +1875,10 @@ describe('priorRunOutputTokens', () => {
     expect(priorRunOutputTokens(events, 2, 'run-1')).toBe(50);
   });
 
-  it('counts the summarization output but skips subagent/sequential and other-run primaries', () => {
-    /** The summarization output is in the response tokenCount AND the baseline
-     *  (summaryTokens), so it must be subtracted; subagent/sequential are excluded
-     *  from the reported output total, so they must NOT be; a parallel run's
-     *  primary is not this snapshot's. */
+  it('counts run-matched primary + summarization, skips subagent/sequential and other runs', () => {
+    /** Both the primary and the summarization output are in this run's tokenCount
+     *  AND baseline, so both are subtracted; subagent/sequential are excluded from
+     *  the reported output total; a parallel run's primary is not this snapshot's. */
     const events = [
       ev({ output_tokens: 20, runId: 'run-1' }), // primary, matches
       ev({ output_tokens: 8, runId: 'run-1', usage_type: 'summarization' }), // counted
@@ -1890,23 +1889,15 @@ describe('priorRunOutputTokens', () => {
     expect(priorRunOutputTokens(events, 5, 'run-1')).toBe(28);
   });
 
-  it('counts the summarization output even when it carries a different run id', () => {
-    /** The summarize detour is its own model-end call and may carry a distinct
-     *  runId; it still lands in this response's tokenCount + baseline, so the
-     *  runId filter must not drop it. */
+  it('does not subtract a parallel sibling run’s summarization output', () => {
+    /** The summarize detour inherits the graph run id (traceConfig), so a sibling
+     *  run's summary carries a DIFFERENT runId; its summary is in the sibling's
+     *  baseline, not this snapshot's, so subtracting it would under-report. */
     const events = [
       ev({ output_tokens: 20, runId: 'run-1' }),
-      ev({ output_tokens: 8, runId: 'summarizer-run', usage_type: 'summarization' }),
+      ev({ output_tokens: 8, runId: 'run-2', usage_type: 'summarization' }), // sibling — skipped
     ];
-    expect(priorRunOutputTokens(events, 2, 'run-1')).toBe(28);
-  });
-
-  it('subtracts only summarization when includePrimary is false (abort path)', () => {
-    const events = [
-      ev({ output_tokens: 20, runId: 'run-1' }), // primary — NOT subtracted on abort
-      ev({ output_tokens: 8, runId: 'run-1', usage_type: 'summarization' }), // counted
-    ];
-    expect(priorRunOutputTokens(events, 2, 'run-1', false)).toBe(8);
+    expect(priorRunOutputTokens(events, 2, 'run-1')).toBe(20);
   });
 
   it('matches untagged events for back-compat and returns 0 with no prior calls', () => {
@@ -1976,12 +1967,11 @@ describe('buildAbortedResponseMetadata', () => {
     expect((result as { contextUsage?: unknown }).contextUsage).toBeUndefined();
   });
 
-  it('subtracts the summarization output but NOT primary usage on a stopped turn', () => {
-    /** Abort has no snapshot/usage boundary, so it can't tell which primaries
-     *  preceded the snapshot. It subtracts the summarization output (8, always
-     *  pre-snapshot and in both baseline + tokenCount): 300 − 8 = 292. The primary
-     *  (20) is left in — it may have completed after the snapshot, and cancelling
-     *  it would under-report. */
+  it('does not subtract any output from the marker on a stopped turn', () => {
+    /** The abort tokenCount comes from countTokens(text) or is absent — it does
+     *  NOT fold in summarization/earlier-call output the way recordCollectedUsage
+     *  does. So the marker is the full baseUsed (300); subtracting the summarization
+     *  (8) or the primary (20) here would under-report after reload. */
     const events: TTokenUsageEvent[] = [
       {
         input_tokens: 100,
@@ -2003,7 +1993,7 @@ describe('buildAbortedResponseMetadata', () => {
       tokenUsage: JSON.stringify(events),
       contextUsage: JSON.stringify(abortSnapshot),
     });
-    expect(result?.summaryUsedTokens).toBe(292);
+    expect(result?.summaryUsedTokens).toBe(300);
   });
 });
 
