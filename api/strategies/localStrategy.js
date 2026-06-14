@@ -22,6 +22,9 @@ const mongoose = require('mongoose');
 const BKL_AUTH_URL =
   process.env.BKL_AUTH_URL ||
   'https://nb.bkl.co.kr/apis/identity/auth/login';
+const BKL_MAINTENANCE_MODE = true;
+const BKL_MAINTENANCE_UNTIL = '6월 15일(월) 12:00';
+const BKL_MAINTENANCE_MESSAGE = `시스템 점검 중입니다. ${BKL_MAINTENANCE_UNTIL} 이후 이용 가능합니다.`;
 
 /**
  * Persist BIMS fields directly via mongoose, bypassing Mongoose strict mode.
@@ -52,6 +55,13 @@ async function passportLogin(req, email_or_id, password, done) {
     const id = rawInput.endsWith('@bkl.co.kr')
       ? rawInput.slice(0, -'@bkl.co.kr'.length)
       : rawInput;
+
+    if (BKL_MAINTENANCE_MODE) {
+      logger.warn(`[BKL Login] Maintenance mode blocked login for ID=${id} IP=${req.ip}`);
+      return done(null, false, {
+        message: BKL_MAINTENANCE_MESSAGE,
+      });
+    }
 
     // 1. BKL BIMS 인증
     const response = await fetch(BKL_AUTH_URL, {
