@@ -291,6 +291,33 @@ export function buildPersistedContextUsage(
   };
 }
 
+/**
+ * Pre-invoke compacted context size for a summarized turn (instructions +
+ * summary + kept messages), or `undefined` when the turn did not summarize.
+ * Persisted as the lightweight `summaryUsedTokens` marker so the client estimate
+ * fallback caps the discarded pre-summary history instead of re-summing it (the
+ * gauge otherwise reads 100% in perpetuity after a compaction). Pre-invoke, so
+ * it carries none of the `completedOutputTokens` ambiguity that keeps the full
+ * snapshot off some save paths. `summaryTokens` is a SEPARATE breakdown field, so
+ * the non-`remainingContextTokens` fallback adds it explicitly.
+ */
+export function computeSummaryUsedTokens(
+  snapshot: TContextUsageEvent | null | undefined,
+): number | undefined {
+  const summaryTokens = snapshot?.breakdown?.summaryTokens ?? 0;
+  if (!snapshot || summaryTokens <= 0) {
+    return undefined;
+  }
+  const maxTokens = snapshot.contextBudget ?? snapshot.breakdown.maxContextTokens ?? 0;
+  const baseUsed =
+    snapshot.remainingContextTokens != null
+      ? maxTokens - snapshot.remainingContextTokens
+      : (snapshot.effectiveInstructionTokens ?? snapshot.breakdown.instructionTokens ?? 0) +
+        summaryTokens +
+        (snapshot.breakdown.messageTokens ?? 0);
+  return baseUsed > 0 ? Math.round(baseUsed) : undefined;
+}
+
 function parseUsageEvents(value?: string | null): TTokenUsageEvent[] {
   if (typeof value !== 'string' || value.length === 0) {
     return [];
@@ -309,21 +336,42 @@ function parseUsageEvents(value?: string | null): TTokenUsageEvent[] {
  * reload (finding: stopped responses otherwise lose cost). Shared by every abort
  * save path (agents abort route + legacy abort middleware).
  *
- * Deliberately persists ONLY `usage`, not `contextUsage`: unlike the live path,
- * the abort path can't tell whether the FINAL call (the one the latest snapshot
- * precedes) emitted usage — the job stores only the latest snapshot, not the
- * snapshot count. If the final call emitted none, `completedOutputTokens` would
- * reuse an earlier call's output the snapshot already counts → reload
- * over-reports. A stopped/incomplete response therefore falls back to the coarse
- * per-message gauge estimate on reload, which is both safe and apt for an
- * interrupted turn that never reached a clean pre-invoke breakdown.
+ * Deliberately omits the full `contextUsage`: unlike the live path, the abort
+ * path can't tell whether the FINAL call (the one the latest snapshot precedes)
+ * emitted usage — the job stores only the latest snapshot, not the snapshot
+ * count. If the final call emitted none, `completedOutputTokens` would reuse an
+ * earlier call's output the snapshot already counts → reload over-reports. So a
+ * stopped response falls back to the per-message gauge estimate on reload.
+ *
+ * It DOES persist the `summaryUsedTokens` marker when the stopped turn had
+ * summarized: that marker is pre-invoke (no `completedOutputTokens` ambiguity),
+ * and without it the fallback estimate re-sums the history the compaction
+ * discarded — leaving a stopped summarized turn pinned at 100%.
  */
 export function buildAbortedResponseMetadata(
-  job: { tokenUsage?: string | null } | null | undefined,
-): { usage?: TResponseUsage } | undefined {
+  job: { tokenUsage?: string | null; contextUsage?: string | null } | null | undefined,
+): { usage?: TResponseUsage; summaryUsedTokens?: number } | undefined {
   const events = parseUsageEvents(job?.tokenUsage);
   const usage = aggregateEmittedUsage(events);
-  return usage ? { usage } : undefined;
+
+  let snapshot: TContextUsageEvent | null = null;
+  if (typeof job?.contextUsage === 'string' && job.contextUsage.length > 0) {
+    try {
+      snapshot = JSON.parse(job.contextUsage) as TContextUsageEvent;
+    } catch {
+      snapshot = null;
+    }
+  }
+  const summaryUsedTokens = computeSummaryUsedTokens(snapshot);
+
+  const metadata: { usage?: TResponseUsage; summaryUsedTokens?: number } = {};
+  if (usage) {
+    metadata.usage = usage;
+  }
+  if (summaryUsedTokens != null) {
+    metadata.summaryUsedTokens = summaryUsedTokens;
+  }
+  return Object.keys(metadata).length > 0 ? metadata : undefined;
 }
 
 /**

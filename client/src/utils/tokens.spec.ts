@@ -118,6 +118,34 @@ describe('token index', () => {
     expect(totals.input + totals.output + totals.summaryBaseline).toBe(580);
   });
 
+  it('keeps provider usage/cost across the full branch even past a summary marker', () => {
+    const summarized = {
+      messageId: 'a2',
+      parentMessageId: 'u2',
+      isCreatedByUser: false,
+      tokenCount: 40,
+      conversationId: CONVO,
+      text: '',
+      metadata: { usage: USAGE_B, summaryUsedTokens: 500 },
+    } as TMessage;
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 10),
+      responseMsg('a1', 'u1', 9000, USAGE_A) /** pre-summary spend */,
+      msg('u2', 'a1', true, 200),
+      summarized,
+      msg('u3', 'a2', true, 15),
+      responseMsg('a3', 'u3', 25, USAGE_A) /** post-summary spend */,
+    ]);
+
+    const totals = sumBranch(CONVO, 'a3');
+    /** Context is capped at the marker... */
+    expect(totals.summaryBaseline).toBe(500);
+    /** ...but cost/usage is cumulative spend and spans the WHOLE branch
+     *  (a1 + a2 + a3 = 0.01 + 0.02 + 0.01), not truncated at the summary boundary. */
+    expect(totals.usage.cost).toBeCloseTo(0.04);
+    expect(totals.usage.input).toBe(400); // 100 + 200 + 100
+  });
+
   it('flags whether the anchor message is on the branch', () => {
     buildIndex(CONVO, [
       msg('u1', Constants.NO_PARENT, true, 10),
@@ -188,6 +216,31 @@ describe('findBranchSnapshotAnchor', () => {
     expect(findBranchSnapshotAnchor(CONVO, 'a1', new Map([['other', 1]]))).toBeNull();
     expect(findBranchSnapshotAnchor(CONVO, 'a1', new Map())).toBeNull();
     expect(findBranchSnapshotAnchor('unknown', 'a1', new Map([['a1', 1]]))).toBeNull();
+  });
+
+  it('does not cross a summary marker to recover a stale pre-summary snapshot', () => {
+    const summarized = {
+      messageId: 'a2',
+      parentMessageId: 'u2',
+      isCreatedByUser: false,
+      tokenCount: 40,
+      conversationId: CONVO,
+      text: '',
+      metadata: { summaryUsedTokens: 500 },
+    } as TMessage;
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 10),
+      msg('a1', 'u1', false, 20) /** has a snapshot, but pre-summary */,
+      msg('u2', 'a1', true, 30),
+      summarized /** compacted here, no snapshot of its own */,
+      msg('u3', 'a2', true, 15),
+      msg('a3', 'u3', false, 25),
+    ]);
+    /** a1 is the only stored anchor, but it sits before the summary — the walk
+     *  must stop at a2 and return null so the summary-baseline estimate is used. */
+    expect(findBranchSnapshotAnchor(CONVO, 'a3', new Map([['a1', 1]]))).toBeNull();
+    /** When the summarized response itself has a snapshot, return it. */
+    expect(findBranchSnapshotAnchor(CONVO, 'a3', new Map([['a2', 1]]))).toBe('a2');
   });
 });
 

@@ -133,6 +133,13 @@ export default function Breakdown({ view, showCost, currency }: BreakdownProps) 
           </>
         ) : (
           <>
+            {view.branchTotals.summaryBaseline > 0 && (
+              <Row
+                label={localize('com_ui_context_summary')}
+                value={view.branchTotals.summaryBaseline}
+                max={maxTokens}
+              />
+            )}
             <Row label={localize('com_ui_input')} value={view.branchTotals.input} />
             <Row
               label={localize('com_ui_output')}

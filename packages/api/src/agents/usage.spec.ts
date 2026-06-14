@@ -10,6 +10,7 @@ import {
   resolveAgentTokenConfig,
   buildPersistedContextUsage,
   buildAbortedResponseMetadata,
+  computeSummaryUsedTokens,
 } from './usage';
 
 describe('recordCollectedUsage', () => {
@@ -1754,6 +1755,48 @@ describe('buildPersistedContextUsage', () => {
   });
 });
 
+describe('computeSummaryUsedTokens', () => {
+  const summarized = (over?: Partial<TContextUsageEvent>): TContextUsageEvent => ({
+    runId: 'run-1',
+    breakdown: {
+      maxContextTokens: 1000,
+      instructionTokens: 50,
+      systemMessageTokens: 50,
+      dynamicInstructionTokens: 0,
+      toolSchemaTokens: 0,
+      summaryTokens: 80,
+      toolCount: 0,
+      messageCount: 1,
+      messageTokens: 20,
+      availableForMessages: 900,
+    },
+    contextBudget: 1000,
+    remainingContextTokens: 700,
+    effectiveInstructionTokens: 50,
+    ...over,
+  });
+
+  it('uses contextBudget − remainingContextTokens when available', () => {
+    expect(computeSummaryUsedTokens(summarized())).toBe(300);
+  });
+
+  it('falls back to instructions + summary + messages, including summaryTokens', () => {
+    /** summaryTokens is a separate breakdown field, so the no-remaining fallback
+     *  must add it: 50 + 80 + 20 = 150, not 70. */
+    expect(computeSummaryUsedTokens(summarized({ remainingContextTokens: undefined }))).toBe(150);
+  });
+
+  it('returns undefined when the turn did not summarize', () => {
+    expect(
+      computeSummaryUsedTokens(
+        summarized({ breakdown: { ...summarized().breakdown, summaryTokens: 0 } }),
+      ),
+    ).toBeUndefined();
+    expect(computeSummaryUsedTokens(null)).toBeUndefined();
+    expect(computeSummaryUsedTokens(undefined)).toBeUndefined();
+  });
+});
+
 describe('buildAbortedResponseMetadata', () => {
   it('returns undefined for an empty job', () => {
     expect(buildAbortedResponseMetadata(undefined)).toBeUndefined();
@@ -1781,6 +1824,36 @@ describe('buildAbortedResponseMetadata', () => {
     ];
     const result = buildAbortedResponseMetadata({ tokenUsage: JSON.stringify(events) });
     expect(result).toEqual({ usage: { input: 100, output: 20, cacheWrite: 0, cacheRead: 0 } });
+    expect((result as { contextUsage?: unknown }).contextUsage).toBeUndefined();
+  });
+
+  it('persists the summary marker (but not the full snapshot) for a stopped summarized turn', () => {
+    const events: TTokenUsageEvent[] = [
+      { input_tokens: 100, output_tokens: 20, total_tokens: 120, provider: 'openAI' },
+    ];
+    const snapshot: TContextUsageEvent = {
+      runId: 'run-1',
+      breakdown: {
+        maxContextTokens: 1000,
+        instructionTokens: 50,
+        systemMessageTokens: 50,
+        dynamicInstructionTokens: 0,
+        toolSchemaTokens: 0,
+        summaryTokens: 80,
+        toolCount: 0,
+        messageCount: 1,
+        messageTokens: 20,
+        availableForMessages: 900,
+      },
+      contextBudget: 1000,
+      remainingContextTokens: 700,
+    };
+    const result = buildAbortedResponseMetadata({
+      tokenUsage: JSON.stringify(events),
+      contextUsage: JSON.stringify(snapshot),
+    });
+    expect(result?.summaryUsedTokens).toBe(300);
+    /** The full snapshot stays off the abort path (completedOutputTokens ambiguity). */
     expect((result as { contextUsage?: unknown }).contextUsage).toBeUndefined();
   });
 });

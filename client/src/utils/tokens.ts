@@ -234,6 +234,10 @@ export function sumBranch(
   const totals = { input: 0, output: 0, counted: 0, total: 0, containsAnchor: false };
   const usage: BranchUsage = { ...EMPTY_USAGE };
   let summaryBaseline = 0;
+  /** Once a summary marker is crossed, older turns are out of the CONTEXT WINDOW
+   *  (subsumed by the baseline) — but their provider spend still happened, so the
+   *  usage/cost walk continues to the root while context counting stops. */
+  let contextCapped = false;
   let currentId: string | null = tailId;
   let guard = index.size;
 
@@ -246,7 +250,7 @@ export function sumBranch(
     if (anchorId != null && currentId === anchorId) {
       totals.containsAnchor = true;
     }
-    if (entry.tokenCount > 0) {
+    if (!contextCapped && entry.tokenCount > 0) {
       totals.counted += 1;
       if (entry.isCreatedByUser) {
         totals.input += entry.tokenCount;
@@ -254,13 +258,14 @@ export function sumBranch(
         totals.output += entry.tokenCount;
       }
     }
+    /** Cost/usage is cumulative spend — never truncated at the summary boundary. */
     addUsage(usage, entry.usage);
-    /** This response's turn compacted the history: count its own output (already
-     *  done above), record the pre-invoke compacted baseline, and stop — every
-     *  older message is subsumed by the summary and must not be re-summed. */
-    if (entry.summaryUsedTokens != null) {
+    /** This response's turn compacted the history: its own output is counted
+     *  above; record the pre-invoke compacted baseline and stop counting context
+     *  tokens for older (summarized-away) turns, but keep walking for cost. */
+    if (!contextCapped && entry.summaryUsedTokens != null) {
       summaryBaseline = entry.summaryUsedTokens;
-      break;
+      contextCapped = true;
     }
     currentId = entry.parentMessageId;
   }
@@ -333,6 +338,12 @@ export function findBranchSnapshotAnchor(
     const entry: TokenEntry | undefined = index.get(currentId);
     if (!entry) {
       break;
+    }
+    /** Stop at a summarized response that has no snapshot of its own: crossing it
+     *  would recover an older PRE-summary snapshot (discarded history), which the
+     *  summary-baseline estimate is meant to replace. */
+    if (entry.summaryUsedTokens != null) {
+      return null;
     }
     currentId = entry.parentMessageId;
   }

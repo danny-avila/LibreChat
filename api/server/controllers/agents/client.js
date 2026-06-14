@@ -26,6 +26,7 @@ const {
   aggregateEmittedUsage,
   resolveAgentTokenConfig,
   buildPersistedContextUsage,
+  computeSummaryUsedTokens,
   createSubagentUsageSink,
   isDeepSeekReasoningProvider,
   GenerationJobManager,
@@ -885,24 +886,14 @@ class AgentClient extends BaseClient {
       metadata.contextUsage = buildPersistedContextUsage(this.contextUsageSink.latest, usageEvents);
     }
     /** Lightweight summarization marker — persisted whenever this turn compacted
-     *  the context (summaryTokens > 0), INDEPENDENT of the snapshot guard above.
-     *  It records the pre-invoke compacted context size (instructions + summary +
-     *  kept messages). When the client has no usable snapshot on the branch and
-     *  falls back to the per-message estimate, it sums messages back to this
-     *  response then adds this baseline instead of re-summing the now-discarded
-     *  history — so the gauge can't read 100% in perpetuity after a compaction. */
-    const snapshot = this.contextUsageSink?.latest;
-    const summaryTokens = snapshot?.breakdown?.summaryTokens ?? 0;
-    if (snapshot && summaryTokens > 0) {
-      const maxTokens = snapshot.contextBudget ?? snapshot.breakdown?.maxContextTokens ?? 0;
-      const baseUsed =
-        snapshot.remainingContextTokens != null
-          ? maxTokens - snapshot.remainingContextTokens
-          : (snapshot.effectiveInstructionTokens ?? snapshot.breakdown?.instructionTokens ?? 0) +
-            (snapshot.breakdown?.messageTokens ?? 0);
-      if (baseUsed > 0) {
-        metadata.summaryUsedTokens = Math.round(baseUsed);
-      }
+     *  the context, INDEPENDENT of the snapshot guard above. When the client has
+     *  no usable snapshot on the branch and falls back to the per-message
+     *  estimate, it caps the discarded pre-summary history at this baseline
+     *  instead of re-summing it (the gauge otherwise reads 100% forever). Shared
+     *  with the abort save path via `computeSummaryUsedTokens`. */
+    const summaryUsedTokens = computeSummaryUsedTokens(this.contextUsageSink?.latest);
+    if (summaryUsedTokens != null) {
+      metadata.summaryUsedTokens = summaryUsedTokens;
     }
     const usage = aggregateEmittedUsage(usageEvents);
     if (usage) {
