@@ -141,26 +141,21 @@ export default function WebSearch({
     return [];
   }, [searchResults, attachments, ownTurn]);
 
-  const processedSources = useMemo(() => {
+  // Show favicons from the raw SERP results immediately rather than waiting for
+  // each source to flip to `processed`; the agents scrape barrier would otherwise
+  // freeze the stack on "Searching the web" for the slowest scrape's duration.
+  const streamingSources = useMemo(() => {
     if (complete && !finalizing) {
       return [];
     }
-    if (!searchResults) {
-      return [];
-    }
-    const result = searchResults[ownTurn];
+    const result = searchResults?.[ownTurn];
     if (!result) {
       return [];
     }
-    if (finalizing) {
-      return [...(result.organic || []), ...(result.topStories || [])];
-    }
-    return [...(result.organic || []), ...(result.topStories || [])].filter(
-      (source) => source.processed === true,
-    );
+    return [...(result.organic || []), ...(result.topStories || [])];
   }, [searchResults, complete, finalizing, ownTurn]);
 
-  const showSources = processedSources.length > 0;
+  const showSources = streamingSources.length > 0;
   const progressText = useMemo(() => {
     let text: ProgressKeys =
       ownTurn !== '0' ? 'com_ui_web_searching_again' : 'com_ui_web_searching';
@@ -278,7 +273,7 @@ export default function WebSearch({
       <span className="sr-only" aria-live="polite" aria-atomic="true">
         {progressText}
       </span>
-      {showSources && <StackedFavicons sources={processedSources} start={-5} />}
+      {showSources && <StackedFavicons sources={streamingSources} start={-5} />}
       <Globe className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
       <span className="tool-status-text shimmer font-medium text-text-secondary">
         {progressText}

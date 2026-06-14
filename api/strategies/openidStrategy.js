@@ -14,14 +14,15 @@ const {
   getOpenIdEmail,
   getOpenIdIssuer,
   getBalanceConfig,
+  selectOpenIdRole,
+  getAvatarSaveParams,
   isEmailDomainAllowed,
   getAvatarFileStrategy,
-  getAvatarSaveParams,
-  selectOpenIdRole,
+  resolveAppConfigForUser,
+  getOpenIdProxyDispatcher,
   getOpenIdRoleSyncOptions,
   getOpenIdRolesForOpenIdSync,
   getLibreChatRolesForOpenIdSync,
-  resolveAppConfigForUser,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
@@ -61,11 +62,12 @@ async function customFetch(url, options) {
   try {
     /** @type {undici.RequestInit} */
     let fetchOptions = options;
-    if (process.env.PROXY) {
-      logger.info(`[openidStrategy] proxy agent configured: ${process.env.PROXY}`);
+    const dispatcher = getOpenIdProxyDispatcher();
+    if (dispatcher) {
+      logger.info('[openidStrategy] proxy dispatcher configured');
       fetchOptions = {
         ...options,
-        dispatcher: new undici.ProxyAgent(process.env.PROXY),
+        dispatcher,
       };
     }
 
@@ -107,6 +109,12 @@ This violates RFC 7235 and may cause issues with strict OAuth clients. Removing 
 /** @typedef {Configuration | null}  */
 let openidConfig = null;
 
+const getOpenIdAuthorizationAudience = () =>
+  (process.env.OPENID_AUDIENCE ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .find(Boolean);
+
 /**
  * Custom OpenID Strategy
  *
@@ -127,10 +135,11 @@ class CustomOpenIDStrategy extends OpenIDStrategy {
       params.set('state', options.state);
     }
 
-    if (process.env.OPENID_AUDIENCE) {
-      params.set('audience', process.env.OPENID_AUDIENCE);
+    const authorizationAudience = getOpenIdAuthorizationAudience();
+    if (authorizationAudience) {
+      params.set('audience', authorizationAudience);
       logger.debug(
-        `[openidStrategy] Adding audience to authorization request: ${process.env.OPENID_AUDIENCE}`,
+        `[openidStrategy] Adding audience to authorization request: ${authorizationAudience}`,
       );
     }
 
@@ -412,9 +421,9 @@ async function resolveGroupsFromOverage(accessToken, sub) {
       body: JSON.stringify({ securityEnabledOnly: false }),
     };
 
-    if (process.env.PROXY) {
-      const { ProxyAgent } = undici;
-      fetchOptions.dispatcher = new ProxyAgent(process.env.PROXY);
+    const dispatcher = getOpenIdProxyDispatcher();
+    if (dispatcher) {
+      fetchOptions.dispatcher = dispatcher;
     }
 
     const response = await undici.fetch(url, fetchOptions);

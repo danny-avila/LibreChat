@@ -846,6 +846,18 @@ export const endpointSchema = baseEndpointSchema.merge(
       .optional(),
     directEndpoint: z.boolean().optional(),
     titleMessageRole: z.enum(['system', 'user', 'assistant']).optional(),
+    /** Static per-model token config: context window and per-million-token rates */
+    tokenConfig: z
+      .record(
+        z.object({
+          prompt: z.number(),
+          completion: z.number(),
+          context: z.number(),
+          cacheRead: z.number().optional(),
+          cacheWrite: z.number().optional(),
+        }),
+      )
+      .optional(),
   }),
 );
 
@@ -1167,6 +1179,14 @@ export const interfaceSchema = z
     retainAgentFiles: z.boolean().optional(),
     runCode: z.boolean().optional(),
     webSearch: z.boolean().optional(),
+    contextUsage: z.boolean().optional(),
+    contextCost: z.boolean().optional(),
+    currency: z
+      .object({
+        code: z.string(),
+        rate: z.number().positive(),
+      })
+      .optional(),
     peoplePicker: z
       .object({
         users: z.boolean().optional(),
@@ -1236,6 +1256,8 @@ export const interfaceSchema = z
     autoSubmitFromUrl: true,
     runCode: true,
     webSearch: true,
+    contextUsage: true,
+    contextCost: true,
     peoplePicker: {
       users: true,
       groups: true,

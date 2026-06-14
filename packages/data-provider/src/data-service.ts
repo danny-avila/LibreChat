@@ -245,6 +245,10 @@ export const getAIEndpoints = (): Promise<t.TEndpointsConfig> => {
   return request.get(endpoints.aiEndpoints());
 };
 
+export const getTokenConfig = (): Promise<t.TTokenConfigMap> => {
+  return request.get(endpoints.tokenConfig());
+};
+
 export const getModels = async (): Promise<t.TModelsConfig> => {
   return request.get(endpoints.models());
 };

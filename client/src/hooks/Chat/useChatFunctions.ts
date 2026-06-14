@@ -32,6 +32,7 @@ import {
   createDualMessageContent,
   getRouteChatProjectId,
 } from '~/utils';
+import useFocusRegeneratedResponse from '~/hooks/Chat/useFocusRegeneratedResponse';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import store, { useGetEphemeralAgent } from '~/store';
@@ -149,12 +150,32 @@ export function getRegenerateSubmissionMessages({
   initialResponseId?: string | null;
 }): TMessage[] {
   if (targetResponseMessage?.messageId) {
-    const targetIndex = messages.findIndex(
-      (message) => message.messageId === targetResponseMessage.messageId,
-    );
-    if (targetIndex >= 0) {
-      return messages.slice(0, targetIndex);
+    /**
+     * Remove the response being regenerated and its descendants only — NOT a
+     * flat `slice(0, targetIndex)`, which also drops unrelated sibling branches
+     * that merely sit later in the array. That collapse made the optimistic
+     * render briefly lose other branches mid-regenerate (visible flash, and the
+     * scroll jumping to the shrunken content). Keeping them holds the thread —
+     * and scroll — steady. This array is render-only; the server regenerates
+     * from `parentMessageId`, so removing by subtree never affects the payload.
+     */
+    const removed = new Set<string>([targetResponseMessage.messageId]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const message of messages) {
+        const parentMessageId = message.parentMessageId;
+        if (
+          parentMessageId != null &&
+          removed.has(parentMessageId) &&
+          !removed.has(message.messageId)
+        ) {
+          removed.add(message.messageId);
+          grew = true;
+        }
+      }
     }
+    return messages.filter((message) => !removed.has(message.messageId));
   }
 
   return messages.filter((msg) => msg.messageId !== initialResponseId);
@@ -192,6 +213,7 @@ export default function useChatFunctions({
   const { getExpiry } = useUserKey(immutableConversation?.endpoint ?? '');
   const setIsSubmitting = useSetRecoilState(store.isSubmittingFamily(index));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
+  const focusRegeneratedResponse = useFocusRegeneratedResponse();
 
   /**
    * Atomically read + reset the per-conversation queue of manually-invoked
@@ -554,6 +576,7 @@ export default function useChatFunctions({
 
     if (isRegenerate) {
       setMessages([...submissionMessages, initialResponse]);
+      focusRegeneratedResponse(initialResponse.parentMessageId);
     } else {
       setMessages([...submissionMessages, currentMsg, initialResponse]);
     }

@@ -49,6 +49,7 @@ describe('useStepHandler', () => {
   const mockSetMessages = jest.fn();
   const mockGetMessages = jest.fn();
   const mockAnnouncePolite = jest.fn();
+  const mockOnSkillAuthoringComplete = jest.fn();
   const mockLastAnnouncementTimeRef = { current: 0 };
 
   const createHookParams = () => ({
@@ -56,6 +57,7 @@ describe('useStepHandler', () => {
     getMessages: mockGetMessages,
     announcePolite: mockAnnouncePolite,
     lastAnnouncementTimeRef: mockLastAnnouncementTimeRef,
+    onSkillAuthoringComplete: mockOnSkillAuthoringComplete,
   });
 
   const createUserMessage = (overrides: Partial<TMessage> = {}): TMessage => ({
@@ -1443,6 +1445,86 @@ describe('useStepHandler', () => {
       );
       expect(toolCallContent?.tool_call?.output).toBe('Tool result output');
       expect(toolCallContent?.tool_call?.progress).toBe(1);
+    });
+
+    it('signals skill authoring when a completed create_file call targets a skill path', () => {
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createToolCallRunStep();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      const completedEvent = {
+        result: {
+          id: 'step-tool-1',
+          index: 0,
+          tool_call: {
+            id: 'tool-call-1',
+            name: 'create_file',
+            args: JSON.stringify({ file_path: 'skills/demo/SKILL.md', content: '# Demo' }),
+            output: 'Updated skills/demo/SKILL.md (6 chars).',
+            type: ToolCallTypes.TOOL_CALL,
+          },
+        },
+      };
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP_COMPLETED,
+            data: completedEvent as { result: Agents.ToolEndEvent },
+          },
+          submission,
+        );
+      });
+
+      expect(mockOnSkillAuthoringComplete).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not signal skill authoring for non-skill file authoring calls', () => {
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createToolCallRunStep();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      const completedEvent = {
+        result: {
+          id: 'step-tool-1',
+          index: 0,
+          tool_call: {
+            id: 'tool-call-1',
+            name: 'create_file',
+            args: JSON.stringify({ file_path: '/mnt/data/report.md', content: '# Report' }),
+            output: 'Created /mnt/data/report.md (8 chars).',
+            type: ToolCallTypes.TOOL_CALL,
+          },
+        },
+      };
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP_COMPLETED,
+            data: completedEvent as { result: Agents.ToolEndEvent },
+          },
+          submission,
+        );
+      });
+
+      expect(mockOnSkillAuthoringComplete).not.toHaveBeenCalled();
     });
 
     it('should warn when step not found for completed event', () => {

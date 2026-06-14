@@ -1,11 +1,14 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { X } from 'lucide-react';
+import { useQueries } from '@tanstack/react-query';
 import { Switch, useToastContext } from '@librechat/client';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
 import {
   EModelEndpoint,
   PermissionTypes,
   Permissions,
+  QueryKeys,
+  dataService,
   getEndpointField,
 } from 'librechat-data-provider';
 import type { AgentForm, IconComponentTypes } from '~/common';
@@ -18,14 +21,14 @@ import {
   cn,
 } from '~/utils';
 import { ToolSelectDialog, MCPToolSelectDialog } from '~/components/Tools';
-import { SkillSelectDialog } from '~/components/Skills/dialogs';
 import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
+import { useListSkillsQuery, useGetAgentFiles } from '~/data-provider';
 import { useFileMapContext, useAgentPanelContext } from '~/Providers';
+import { useLocalize, useVisibleTools, useHasAccess } from '~/hooks';
+import { SkillSelectDialog } from '~/components/Skills/dialogs';
 import AgentCategorySelector from './AgentCategorySelector';
 import Action from '~/components/SidePanel/Builder/Action';
-import { useLocalize, useVisibleTools, useHasAccess } from '~/hooks';
 import { Panel, isEphemeralAgent } from '~/common';
-import { useListSkillsQuery, useGetAgentFiles } from '~/data-provider';
 import { icons } from '~/hooks/Endpoint/Icons';
 import Instructions from './Instructions';
 import AgentAvatar from './AgentAvatar';
@@ -36,6 +39,14 @@ import Artifacts from './Artifacts';
 import AgentTool from './AgentTool';
 import CodeForm from './Code/Form';
 import MCPTools from './MCPTools';
+
+/** A skill lookup only counts as a confirmed miss on 404/403 — deleted or no
+ *  longer shared. Transient/network/server errors must not present a valid
+ *  configured skill as removable. */
+const isConfirmedSkillMiss = (error: unknown): boolean => {
+  const status = (error as { response?: { status?: number } } | null)?.response?.status;
+  return status === 404 || status === 403;
+};
 
 const labelClass = 'mb-2 text-token-text-primary block text-sm font-medium';
 const inputClass = cn(
@@ -110,6 +121,36 @@ export default function AgentConfig() {
     }
     return map;
   }, [skillsData?.skills]);
+
+  /** Allowlist ids missing from the first catalog page (`limit: 100`) are
+   *  resolved individually — a cache miss alone must never present a valid
+   *  configured skill as unavailable and invite its removal. */
+  const unresolvedSkillIds = useMemo(
+    () => (skillsData === undefined ? [] : (skills ?? []).filter((id) => !skillsMap.has(id))),
+    [skills, skillsMap, skillsData],
+  );
+  const unresolvedSkillQueries = useQueries({
+    queries: unresolvedSkillIds.map((skillId) => ({
+      queryKey: [QueryKeys.skill, skillId],
+      queryFn: () => dataService.getSkill(skillId),
+      retry: false,
+      refetchOnMount: false,
+      refetchOnReconnect: false,
+      refetchOnWindowFocus: false,
+    })),
+  });
+  const unresolvedSkills = useMemo(() => {
+    const map = new Map<string, { name?: string; missing: boolean }>();
+    unresolvedSkillIds.forEach((skillId, index) => {
+      const query = unresolvedSkillQueries[index];
+      if (query?.isError === true && isConfirmedSkillMiss(query.error)) {
+        map.set(skillId, { missing: true });
+      } else if (query?.data?.name) {
+        map.set(skillId, { name: query.data.name, missing: false });
+      }
+    });
+    return map;
+  }, [unresolvedSkillIds, unresolvedSkillQueries]);
 
   const { data: agentFiles = [] } = useGetAgentFiles(agent_id);
 
@@ -380,16 +421,31 @@ export default function AgentConfig() {
             >
               <div className="mb-1">
                 {(skills ?? []).map((skillId) => {
-                  const skillName = skillsMap.get(skillId);
-                  if (!skillName) {
+                  const skillName = skillsMap.get(skillId) ?? unresolvedSkills.get(skillId)?.name;
+                  /** Hide chips while the catalog page or per-id lookup is in
+                   *  flight. Once the backend confirms a miss (deleted or no
+                   *  longer shared), the id must stay visible and removable —
+                   *  otherwise the allowlist silently scopes the agent to
+                   *  zero skills with no way to fix it in the UI. */
+                  if (!skillName && unresolvedSkills.get(skillId)?.missing !== true) {
                     return null;
                   }
+                  const isUnavailable = !skillName;
                   return (
                     <div
                       key={skillId}
                       className="mb-1 flex items-center justify-between rounded-md border border-border-light px-3 py-2 text-sm"
                     >
-                      <span className="truncate text-text-primary">{skillName}</span>
+                      <span
+                        className={
+                          isUnavailable
+                            ? 'truncate italic text-text-secondary'
+                            : 'truncate text-text-primary'
+                        }
+                        title={isUnavailable ? skillId : undefined}
+                      >
+                        {skillName ?? localize('com_ui_skill_unavailable')}
+                      </span>
                       <button
                         type="button"
                         onClick={() => {
@@ -401,7 +457,9 @@ export default function AgentConfig() {
                           );
                         }}
                         className="ml-2 flex-shrink-0 text-text-secondary transition-colors hover:text-text-primary"
-                        aria-label={localize('com_ui_remove_skill_var', { 0: skillName })}
+                        aria-label={localize('com_ui_remove_skill_var', {
+                          0: skillName ?? skillId,
+                        })}
                         disabled={skillsActive !== true}
                       >
                         <X className="h-4 w-4" aria-hidden="true" />
