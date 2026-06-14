@@ -267,6 +267,21 @@ describe('formatCost', () => {
     expect(formatCost(10, { code: 'EURO', rate: 0.92 })).toBe('$10.00');
   });
 
+  it('rejects well-formed but non-ISO codes that Intl would accept', () => {
+    /** `EUU`/`RMB` are 3 letters so Intl does not throw; the ISO-4217 set must
+     *  still reject them and fall back to USD (no converted amount, no rate). */
+    expect(formatCost(10, { code: 'EUU', rate: 0.92 })).toBe('$10.00');
+    expect(formatCost(10, { code: 'RMB', rate: 0.5 })).toBe('$10.00');
+  });
+
+  it('uses the currency minor unit for three-decimal currencies', () => {
+    /** KWD has 3 fractional digits, so the tiny threshold is 0.001, not 0.01. */
+    const small = formatCost(0.005, { code: 'KWD', rate: 1 });
+    expect(small).toContain('0.005');
+    expect(small).not.toContain('<');
+    expect(formatCost(0.0005, { code: 'KWD', rate: 1 })).toContain('0.001');
+  });
+
   it('falls back to rate 1 when rate is not a finite positive number', () => {
     /** Partial admin override (code set before rate) must never render NaN. */
     const eur = formatCost(10, { code: 'EUR', rate: undefined as unknown as number });

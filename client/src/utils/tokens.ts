@@ -481,23 +481,45 @@ export interface CurrencyConfig {
 
 const DEFAULT_CURRENCY: CurrencyConfig = { code: 'USD', rate: 1 };
 const currencyFormatters = new Map<string, Intl.NumberFormat>();
-/** Default fraction digits for a currency (USD→2, JPY→0), or null when the code
- *  is not a well-formed / supported ISO-4217 code. */
-const currencyDigits = new Map<string, number | null>();
+const currencyDigits = new Map<string, number>();
+let supportedCurrencies: Set<string> | null | undefined;
 
-function maxFractionDigits(code: string): number | null {
+/** True only for codes recognized as ISO-4217. `Intl.NumberFormat` accepts any
+ *  well-formed three-letter code (e.g. `EUU`, `RMB`) without throwing, so the
+ *  ISO-4217 set is the real guard against typo'd / non-ISO codes. */
+function isSupportedCurrency(code: unknown): code is string {
+  if (typeof code !== 'string' || code.length === 0) {
+    return false;
+  }
+  const upper = code.toUpperCase();
+  if (supportedCurrencies === undefined) {
+    const supportedValuesOf = (
+      Intl as typeof Intl & { supportedValuesOf?: (key: string) => string[] }
+    ).supportedValuesOf;
+    supportedCurrencies =
+      typeof supportedValuesOf === 'function' ? new Set(supportedValuesOf('currency')) : null;
+  }
+  if (supportedCurrencies != null) {
+    return supportedCurrencies.has(upper);
+  }
+  /** Older runtime without `supportedValuesOf`: accept any code Intl can build. */
+  try {
+    new Intl.NumberFormat(undefined, { style: 'currency', currency: upper });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Default fraction digits for a validated currency: USD→2, JPY→0, KWD→3. */
+function maxFractionDigits(code: string): number {
   const cached = currencyDigits.get(code);
   if (cached !== undefined) {
     return cached;
   }
-  let digits: number | null;
-  try {
-    digits =
-      new Intl.NumberFormat(undefined, { style: 'currency', currency: code }).resolvedOptions()
-        .maximumFractionDigits ?? 2;
-  } catch {
-    digits = null;
-  }
+  const digits =
+    new Intl.NumberFormat(undefined, { style: 'currency', currency: code }).resolvedOptions()
+      .maximumFractionDigits ?? 2;
   currencyDigits.set(code, digits);
   return digits;
 }
@@ -522,20 +544,17 @@ export function formatCost(usd: number, currency: CurrencyConfig = DEFAULT_CURRE
    *  rate 1 — never present a converted amount under the wrong symbol. A
    *  non-finite/negative rate (e.g. a partial admin override that set `code`
    *  before `rate`) falls back to 1 so a cost never renders as `NaN`. */
-  let code = currency?.code ?? DEFAULT_CURRENCY.code;
-  let base = maxFractionDigits(code);
-  let rate = Number.isFinite(currency?.rate) && (currency.rate as number) > 0 ? currency.rate : 1;
-  if (base == null) {
-    code = DEFAULT_CURRENCY.code;
-    rate = 1;
-    base = 2;
+  let code = DEFAULT_CURRENCY.code;
+  let rate = 1;
+  if (isSupportedCurrency(currency?.code)) {
+    code = currency.code.toUpperCase();
+    rate = Number.isFinite(currency?.rate) && (currency.rate as number) > 0 ? currency.rate : 1;
   }
+  const base = maxFractionDigits(code);
 
   const amount = usd * rate;
-  /** Sub-unit precision only for currencies that have minor units, so
-   *  zero-decimal currencies (e.g. JPY) keep their convention. */
-  const precise = base > 0 ? base + 2 : 0;
-  const smallest = base > 0 ? 0.01 : 1;
+  /** The currency's own minor unit — USD/EUR→0.01, JPY→1, KWD→0.001. */
+  const smallest = Math.pow(10, -base);
 
   if (amount <= 0) {
     return currencyFormatter(code, base, base).format(0);
@@ -544,7 +563,9 @@ export function formatCost(usd: number, currency: CurrencyConfig = DEFAULT_CURRE
     return `<${currencyFormatter(code, base, base).format(smallest)}`;
   }
   if (amount < 1 && base > 0) {
-    return currencyFormatter(code, precise, precise).format(amount);
+    /** Extra precision for sub-unit costs; trailing zeros trim to the currency's
+     *  own scale (min = base). */
+    return currencyFormatter(code, base, base + 2).format(amount);
   }
   return currencyFormatter(code, base, base).format(amount);
 }
