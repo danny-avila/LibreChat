@@ -1,12 +1,21 @@
+import { Providers } from '@librechat/agents';
 import {
   ErrorTypes,
   envVarRegex,
+  EModelEndpoint,
   FetchTokenConfig,
   extractEnvVariable,
 } from 'librechat-data-provider';
 import type { TEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
-import type { BaseInitializeParams, InitializeResultBase, EndpointTokenConfig } from '~/types';
+import type {
+  BaseInitializeParams,
+  InitializeResultBase,
+  EndpointTokenConfig,
+  AnthropicModelOptions,
+} from '~/types';
+import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
+import { extractDefaultParams } from '~/endpoints/openai/llm';
 import { isUserProvided, checkUserKeyExpiry } from '~/utils';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { getCustomEndpointConfig } from '~/app/config';
@@ -88,6 +97,42 @@ function buildCustomOptions(
   }
 
   return customOptions;
+}
+
+/**
+ * Builds a native Anthropic (`/v1/messages`) config for a custom endpoint that
+ * declares `provider: anthropic`, pointing the Anthropic client at the custom
+ * `baseURL`/`apiKey`. Returns `provider: anthropic` so the agent uses the native
+ * Anthropic client instead of the OpenAI-compatible one. Headers stay unresolved
+ * here and resolve at request time via `resolveConfigHeaders`.
+ */
+function buildAnthropicCustomConfig({
+  apiKey,
+  baseURL,
+  modelOptions,
+  endpointConfig,
+}: {
+  apiKey: string;
+  baseURL: string;
+  modelOptions: AnthropicModelOptions;
+  endpointConfig: Partial<TEndpoint>;
+}): InitializeResultBase {
+  const result = getAnthropicLLMConfig(apiKey, {
+    modelOptions,
+    proxy: PROXY ?? undefined,
+    reverseProxyUrl: baseURL,
+    headers: endpointConfig.headers,
+    addParams: endpointConfig.addParams,
+    dropParams: endpointConfig.dropParams,
+    /** Apply admin `customParams.paramDefinitions` defaults (e.g. promptCache,
+     *  web_search, thinking) the OpenAI-compatible path gets via `getOpenAIConfig`. */
+    defaultParams: extractDefaultParams(endpointConfig.customParams?.paramDefinitions),
+  });
+  return {
+    llmConfig: result.llmConfig as InitializeResultBase['llmConfig'],
+    tools: result.tools,
+    provider: Providers.ANTHROPIC,
+  };
 }
 
 /**
@@ -233,15 +278,29 @@ export async function initializeCustom({
   };
 
   const modelOptions = { ...(model_parameters ?? {}), user: userId };
-  const finalClientOptions = {
-    modelOptions,
-    ...clientOptions,
-  };
 
-  const options = getOpenAIConfig(apiKey, finalClientOptions, endpoint);
-  if (options != null) {
-    (options as InitializeResultBase).useLegacyContent = true;
-    (options as InitializeResultBase).endpointTokenConfig = endpointTokenConfig;
+  let options: InitializeResultBase;
+  if (endpointConfig.provider === EModelEndpoint.anthropic) {
+    /** Native Anthropic `/v1/messages` client against the custom baseURL/apiKey.
+     *  `useLegacyContent` is intentionally left unset (matches the built-in
+     *  Anthropic endpoint, which uses native content formatting). */
+    options = buildAnthropicCustomConfig({
+      apiKey,
+      baseURL,
+      modelOptions: modelOptions as AnthropicModelOptions,
+      endpointConfig,
+    });
+    options.endpointTokenConfig = endpointTokenConfig;
+  } else {
+    const finalClientOptions = {
+      modelOptions,
+      ...clientOptions,
+    };
+    options = getOpenAIConfig(apiKey, finalClientOptions, endpoint);
+    if (options != null) {
+      options.useLegacyContent = true;
+      options.endpointTokenConfig = endpointTokenConfig;
+    }
   }
 
   const streamRate = clientOptions.streamRate as number | undefined;
