@@ -253,12 +253,17 @@ describe('usage events through the real agents pipeline', () => {
       expect(usageEmitSink).toHaveLength(2);
 
       const usage = aggregateEmittedUsage(usageEmitSink);
-      expect(usage).toMatchObject({
-        input_tokens: FIRST_CALL_USAGE.input_tokens + SECOND_CALL_USAGE.input_tokens,
-        output_tokens: FIRST_CALL_USAGE.output_tokens + SECOND_CALL_USAGE.output_tokens,
-        total_tokens: FIRST_CALL_USAGE.total_tokens + SECOND_CALL_USAGE.total_tokens,
-        input_token_details: SECOND_CALL_USAGE.input_token_details,
-        provider: Providers.OPENAI,
+      /** Display units: openAI is cache-subset, so input excludes cache
+       *  (150−30−50=70); output is repaired completion */
+      expect(usage).toEqual({
+        input:
+          FIRST_CALL_USAGE.input_tokens +
+          (SECOND_CALL_USAGE.input_tokens -
+            SECOND_CALL_USAGE.input_token_details.cache_creation -
+            SECOND_CALL_USAGE.input_token_details.cache_read),
+        output: FIRST_CALL_USAGE.output_tokens + SECOND_CALL_USAGE.output_tokens,
+        cacheWrite: SECOND_CALL_USAGE.input_token_details.cache_creation,
+        cacheRead: SECOND_CALL_USAGE.input_token_details.cache_read,
       });
       /** contextCost off → no cost folded into the rollup */
       expect(usage.cost).toBeUndefined();

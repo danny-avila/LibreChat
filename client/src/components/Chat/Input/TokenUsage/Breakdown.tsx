@@ -33,6 +33,11 @@ interface BreakdownProps {
 export default function Breakdown({ view, showCost }: BreakdownProps) {
   const localize = useLocalize();
   const { usedTokens, maxTokens, percent, snapshot, snapshotActive, branchUsage, hasUsage } = view;
+  /** Total spans all branches and is a superset of the active branch, so it is
+   *  always ≥ branch cost; use an epsilon so floating-point summation order
+   *  (branch walks tail→root, total walks insertion order) can't surface a
+   *  spurious all-branches row in an unbranched conversation. */
+  const hasBranches = view.totalCost - view.branchCost > 1e-9;
 
   const breakdown = snapshotActive ? snapshot?.breakdown : undefined;
   const instructionTokens =
@@ -155,19 +160,19 @@ export default function Breakdown({ view, showCost }: BreakdownProps) {
         </>
       )}
 
-      {showCost && hasUsage && (
+      {showCost && hasUsage && branchUsage.costKnown && (
         <>
           <div className="border-t border-border-light" role="separator" />
           <div className="space-y-1.5" data-testid="token-usage-cost">
             <div className="flex items-center justify-between text-sm">
               <span className="text-text-secondary">
-                {view.totalCost !== view.branchCost
+                {hasBranches
                   ? localize('com_ui_context_cost_branch')
                   : localize('com_ui_context_cost')}
               </span>
               <span className="font-medium text-text-primary">{formatCost(view.branchCost)}</span>
             </div>
-            {view.totalCost !== view.branchCost && (
+            {hasBranches && (
               <div className="flex items-center justify-between text-xs">
                 <span className="text-text-secondary">{localize('com_ui_context_cost_total')}</span>
                 <span className="text-text-secondary">{formatCost(view.totalCost)}</span>

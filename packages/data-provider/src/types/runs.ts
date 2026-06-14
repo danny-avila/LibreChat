@@ -78,6 +78,28 @@ export type TContextUsageEvent = {
   /** Tokens still free after instructions + pruned messages */
   remainingContextTokens?: number;
   calibrationRatio?: number;
+  /** Output tokens of the response's final model call (the call this pre-invoke
+   *  snapshot precedes). Populated only on the persisted `metadata.contextUsage`
+   *  blob so a reloaded multi-call turn adds the same post-snapshot delta the
+   *  live finalizer did — not the full response `tokenCount`, which the snapshot
+   *  already includes for earlier steps. */
+  completedOutputTokens?: number;
+};
+
+/**
+ * Per-response usage rollup persisted on `responseMessage.metadata.usage`, in
+ * display units (input excludes cache; output includes repaired completion).
+ * Normalized per-event on the backend before summing so a reloaded conversation
+ * reproduces the live branch/total usage exactly, even for mixed-provider turns
+ * (summarization/subagent calls on a different provider than the primary).
+ */
+export type TResponseUsage = {
+  input: number;
+  output: number;
+  cacheWrite: number;
+  cacheRead: number;
+  /** Authoritative USD cost; present only when `interface.contextCost` was on at save */
+  cost?: number;
 };
 
 /** Provider-reported usage for a single completed model call. */

@@ -1,5 +1,5 @@
 import { Constants, Providers } from 'librechat-data-provider';
-import type { TMessage, TTokenUsageEvent } from 'librechat-data-provider';
+import type { TMessage, TResponseUsage } from 'librechat-data-provider';
 import {
   buildIndex,
   upsertEntries,
@@ -39,12 +39,13 @@ function msg(
   } as TMessage;
 }
 
-/** Response message carrying a persisted `metadata.usage` rollup. */
+/** Response message carrying a persisted `metadata.usage` rollup (the backend
+ *  persists already-normalized display units). */
 function responseMsg(
   messageId: string,
   parentMessageId: string | null,
   tokenCount: number,
-  usage: TTokenUsageEvent,
+  usage: TResponseUsage,
 ): TMessage {
   return {
     messageId,
@@ -57,21 +58,8 @@ function responseMsg(
   } as TMessage;
 }
 
-/** OpenAI is a cache-subset provider, so input is uncached and output is raw. */
-const USAGE_A: TTokenUsageEvent = {
-  input_tokens: 100,
-  output_tokens: 50,
-  total_tokens: 150,
-  provider: Providers.OPENAI,
-  cost: 0.01,
-};
-const USAGE_B: TTokenUsageEvent = {
-  input_tokens: 200,
-  output_tokens: 80,
-  total_tokens: 280,
-  provider: Providers.OPENAI,
-  cost: 0.02,
-};
+const USAGE_A: TResponseUsage = { input: 100, output: 50, cacheWrite: 0, cacheRead: 0, cost: 0.01 };
+const USAGE_B: TResponseUsage = { input: 200, output: 80, cacheWrite: 0, cacheRead: 0, cost: 0.02 };
 
 describe('token index', () => {
   afterEach(() => {
@@ -330,31 +318,68 @@ describe('per-message usage index (branch + total)', () => {
       cacheWrite: 0,
       cacheRead: 0,
       cost: 0.03,
+      costKnown: true,
     });
   });
 
-  it('normalizes cache-subset usage (input excludes cache) per the live path', () => {
+  it('reads persisted display units (incl. cache) directly', () => {
+    /** The backend already normalized per-event; the client reads as-is */
     buildIndex(CONVO, [
       msg('u1', Constants.NO_PARENT, true, 10),
       responseMsg('a1', 'u1', 100, {
-        input_tokens: 1000,
-        output_tokens: 100,
-        total_tokens: 1100,
-        input_token_details: { cache_read: 400 },
-        provider: Providers.OPENAI,
+        input: 600,
+        output: 100,
+        cacheWrite: 0,
+        cacheRead: 400,
         cost: 0.03,
       }),
     ]);
 
     const { usage } = sumBranch(CONVO, 'a1');
-    /** Mirrors normalizeUsageUnits: input = raw − cache for subset providers */
-    expect(usage).toEqual({ input: 600, output: 100, cacheWrite: 0, cacheRead: 400, cost: 0.03 });
+    expect(usage).toEqual({
+      input: 600,
+      output: 100,
+      cacheWrite: 0,
+      cacheRead: 400,
+      cost: 0.03,
+      costKnown: true,
+    });
+  });
+
+  it('marks cost unknown when persisted usage omits cost (contextCost off)', () => {
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 10),
+      responseMsg('a1', 'u1', 50, { input: 100, output: 50, cacheWrite: 0, cacheRead: 0 }),
+    ]);
+    const { usage } = sumBranch(CONVO, 'a1');
+    expect(usage.costKnown).toBe(false);
+    expect(usage.cost).toBe(0);
+    expect(usage.input).toBe(100);
   });
 
   it('messages without metadata.usage contribute zero (backward compat)', () => {
     buildIndex(CONVO, [msg('u1', Constants.NO_PARENT, true, 10), msg('a1', 'u1', false, 50)]);
     expect(sumBranch(CONVO, 'a1').usage).toEqual(EMPTY_USAGE);
     expect(sumTotalUsage(CONVO)).toEqual(EMPTY_USAGE);
+  });
+
+  it('preserves a prior entry usage when a rebuilt message lacks metadata.usage', () => {
+    /** Live finalize flushes usage into the index before persisted metadata
+     *  reaches the cache; a mid-session rebuild from a cache message without
+     *  metadata.usage must not wipe it (regenerate keeps the sibling's cost). */
+    buildIndex(CONVO, [msg('u1', Constants.NO_PARENT, true, 10), msg('a1', 'u1', false, 50)]);
+    setEntryUsage(CONVO, 'a1', {
+      input: 100,
+      output: 50,
+      cacheWrite: 0,
+      cacheRead: 0,
+      cost: 0.01,
+      costKnown: true,
+    });
+    /** Rebuild from the same cache (still no metadata.usage on a1) */
+    buildIndex(CONVO, [msg('u1', Constants.NO_PARENT, true, 10), msg('a1', 'u1', false, 50)]);
+    expect(sumBranch(CONVO, 'a1').usage.cost).toBeCloseTo(0.01);
+    expect(sumBranch(CONVO, 'a1').usage.input).toBe(100);
   });
 
   it('scopes branch usage to the active thread while total spans all branches', () => {
@@ -393,20 +418,28 @@ describe('per-message usage index (branch + total)', () => {
     buildIndex(CONVO, [msg('u1', Constants.NO_PARENT, true, 10), msg('a1', 'u1', false, 50)]);
     /** Live response entry has no metadata.usage until persisted; finalize flushes it */
     expect(sumBranch(CONVO, 'a1').usage).toEqual(EMPTY_USAGE);
-    setEntryUsage(CONVO, 'a1', { input: 100, output: 50, cacheWrite: 0, cacheRead: 0, cost: 0.01 });
+    setEntryUsage(CONVO, 'a1', {
+      input: 100,
+      output: 50,
+      cacheWrite: 0,
+      cacheRead: 0,
+      cost: 0.01,
+      costKnown: true,
+    });
     expect(sumBranch(CONVO, 'a1').usage.cost).toBeCloseTo(0.01);
     expect(sumBranch(CONVO, 'a1').usage.input).toBe(100);
   });
 
-  it('mergeUsage sums two usage records', () => {
-    const a = { input: 1, output: 2, cacheWrite: 3, cacheRead: 4, cost: 0.5 };
-    const b = { input: 10, output: 20, cacheWrite: 30, cacheRead: 40, cost: 1.5 };
+  it('mergeUsage sums two usage records and ORs costKnown', () => {
+    const a = { input: 1, output: 2, cacheWrite: 3, cacheRead: 4, cost: 0.5, costKnown: false };
+    const b = { input: 10, output: 20, cacheWrite: 30, cacheRead: 40, cost: 1.5, costKnown: true };
     expect(mergeUsage(a, b)).toEqual({
       input: 11,
       output: 22,
       cacheWrite: 33,
       cacheRead: 44,
       cost: 2,
+      costKnown: true,
     });
   });
 

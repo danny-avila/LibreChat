@@ -1,5 +1,5 @@
 import { Tools, Constants, inputTokensIncludesCache } from 'librechat-data-provider';
-import type { TMessage, TTokenUsageEvent } from 'librechat-data-provider';
+import type { TMessage, TResponseUsage, TTokenUsageEvent } from 'librechat-data-provider';
 
 /** Provider-reported usage of one response, in display units (post-normalize). */
 export interface BranchUsage {
@@ -9,6 +9,9 @@ export interface BranchUsage {
   cacheRead: number;
   /** Authoritative USD cost; 0 when `interface.contextCost` was off at save */
   cost: number;
+  /** Whether any contributing response carried a known cost — gates the cost row
+   *  so turns saved without cost don't render a misleading `$0.00`. */
+  costKnown: boolean;
 }
 
 export const EMPTY_USAGE: BranchUsage = {
@@ -17,6 +20,7 @@ export const EMPTY_USAGE: BranchUsage = {
   cacheWrite: 0,
   cacheRead: 0,
   cost: 0,
+  costKnown: false,
 };
 
 export interface TokenEntry {
@@ -56,22 +60,24 @@ export const EMPTY_BRANCH: BranchTotals = {
 /** Module-level token index: conversationId → messageId → entry. Not render state. */
 const registry = new Map<string, Map<string, TokenEntry>>();
 
-/** Reads the persisted per-response usage rollup off a message's metadata,
- *  normalized into display units. Absent for user messages and pre-feature
- *  responses (they contribute 0 to branch/total). */
+/** Reads the persisted per-response usage rollup off a message's metadata.
+ *  The backend already normalized per-event into display units, so this reads
+ *  them directly. Absent for user messages and pre-feature responses (they
+ *  contribute 0 to branch/total). */
 function readPersistedUsage(message: Partial<TMessage>): BranchUsage | undefined {
   const usage = message.metadata?.usage;
   if (usage == null || typeof usage !== 'object') {
     return undefined;
   }
-  const event = usage as TTokenUsageEvent;
-  const units = normalizeUsageUnits(event);
+  const persisted = usage as TResponseUsage;
   return {
-    input: units.input,
-    output: units.output,
-    cacheWrite: units.cacheWrite,
-    cacheRead: units.cacheRead,
-    cost: event.cost ?? 0,
+    input: persisted.input ?? 0,
+    output: persisted.output ?? 0,
+    cacheWrite: persisted.cacheWrite ?? 0,
+    cacheRead: persisted.cacheRead ?? 0,
+    cost: persisted.cost ?? 0,
+    /** Cost is omitted when saved with `contextCost` off — don't render $0.00 */
+    costKnown: typeof persisted.cost === 'number',
   };
 }
 
@@ -83,6 +89,7 @@ export function mergeUsage(a: BranchUsage, b: BranchUsage): BranchUsage {
     cacheWrite: a.cacheWrite + b.cacheWrite,
     cacheRead: a.cacheRead + b.cacheRead,
     cost: a.cost + b.cost,
+    costKnown: a.costKnown || b.costKnown,
   };
 }
 
@@ -96,6 +103,9 @@ function addUsage(target: BranchUsage, usage?: BranchUsage): void {
   target.cacheWrite += usage.cacheWrite;
   target.cacheRead += usage.cacheRead;
   target.cost += usage.cost;
+  if (usage.costKnown) {
+    target.costKnown = true;
+  }
 }
 
 function toEntry(message: Partial<TMessage>): TokenEntry {
@@ -107,13 +117,26 @@ function toEntry(message: Partial<TMessage>): TokenEntry {
   };
 }
 
-/** Full O(n) rebuild — only on discrete cache replacements (load, refetch, edits) */
+/** Full O(n) rebuild — only on discrete cache replacements (load, refetch, edits).
+ *  Preserves a prior entry's `usage` when the rebuilt message carries none:
+ *  per-message usage is immutable and the live finalize flushes it into the
+ *  index (`setEntryUsage`) before the persisted `metadata.usage` reaches the
+ *  cache, so a mid-session rebuild (e.g. during regenerate) must not wipe an
+ *  earlier branch's flushed usage. */
 export function buildIndex(conversationId: string, messages?: TMessage[] | null): void {
+  const previous = registry.get(conversationId);
   const index = new Map<string, TokenEntry>();
   if (messages != null) {
     for (const message of messages) {
       if (message?.messageId) {
-        index.set(message.messageId, toEntry(message));
+        const entry = toEntry(message);
+        if (entry.usage == null) {
+          const priorUsage = previous?.get(message.messageId)?.usage;
+          if (priorUsage != null) {
+            entry.usage = priorUsage;
+          }
+        }
+        index.set(message.messageId, entry);
       }
     }
   }

@@ -1516,7 +1516,7 @@ describe('aggregateEmittedUsage', () => {
     expect(aggregateEmittedUsage([])).toBeNull();
   });
 
-  it('sums raw counts, cache details, and cost across the response calls', () => {
+  it('normalizes each call into display units (input excludes cache) and sums cost', () => {
     const events: TTokenUsageEvent[] = [
       {
         input_tokens: 100,
@@ -1536,14 +1536,12 @@ describe('aggregateEmittedUsage', () => {
         cost: 0.002,
       },
     ];
-    const rollup = aggregateEmittedUsage(events);
-    expect(rollup).toEqual({
-      input_tokens: 250,
-      output_tokens: 30,
-      total_tokens: 280,
-      input_token_details: { cache_creation: 30, cache_read: 50 },
-      model: 'gpt-4o-mini',
-      provider: 'openAI',
+    /** openAI is cache-subset: input excludes cache (150−30−50=70) */
+    expect(aggregateEmittedUsage(events)).toEqual({
+      input: 170,
+      output: 30,
+      cacheWrite: 30,
+      cacheRead: 50,
       cost: 0.003,
     });
   });
@@ -1552,26 +1550,34 @@ describe('aggregateEmittedUsage', () => {
     const rollup = aggregateEmittedUsage([
       { input_tokens: 100, output_tokens: 20, total_tokens: 120, provider: 'openAI' },
     ]);
+    expect(rollup).toEqual({ input: 100, output: 20, cacheWrite: 0, cacheRead: 0 });
     expect(rollup?.cost).toBeUndefined();
   });
 
-  it('folds subagent/summarization calls into the rollup, takes model/provider from the first', () => {
+  it('normalizes mixed-provider calls per their own provider before summing', () => {
+    /** anthropic is additive (cache separate from input), openAI is subset */
     const rollup = aggregateEmittedUsage([
-      { input_tokens: 100, output_tokens: 20, provider: 'anthropic', model: 'claude', cost: 0.01 },
       {
-        input_tokens: 40,
+        input_tokens: 100,
+        output_tokens: 20,
+        provider: 'anthropic',
+        input_token_details: { cache_read: 40 },
+        cost: 0.01,
+      },
+      {
+        input_tokens: 90,
         output_tokens: 5,
         usage_type: 'subagent',
         provider: 'openAI',
-        model: 'gpt-4o',
+        input_token_details: { cache_read: 30 },
         cost: 0.02,
       },
     ]);
-    expect(rollup?.input_tokens).toBe(140);
-    expect(rollup?.output_tokens).toBe(25);
+    /** anthropic input stays 100 (additive); openAI input 90−30=60 → 160 */
+    expect(rollup?.input).toBe(160);
+    expect(rollup?.output).toBe(25);
+    expect(rollup?.cacheRead).toBe(70);
     expect(rollup?.cost).toBeCloseTo(0.03);
-    expect(rollup?.provider).toBe('anthropic');
-    expect(rollup?.model).toBe('claude');
   });
 });
 
@@ -1613,5 +1619,27 @@ describe('buildPersistedContextUsage', () => {
     const result = buildPersistedContextUsage({ ...baseSnapshot, breakdown });
     expect(result.breakdown.toolTokenCounts).toBeUndefined();
     expect(result.breakdown.messageTokens).toBe(500);
+  });
+
+  it('records the final primary call output as completedOutputTokens', () => {
+    /** The latest snapshot precedes the final call, so its post-snapshot delta
+     *  is that call's output — not the full multi-call response tokenCount. */
+    const events: TTokenUsageEvent[] = [
+      { input_tokens: 100, output_tokens: 40, total_tokens: 140, provider: 'openAI' },
+      { input_tokens: 200, output_tokens: 25, total_tokens: 225, provider: 'openAI' },
+      {
+        input_tokens: 50,
+        output_tokens: 12,
+        usage_type: 'subagent',
+        provider: 'openAI',
+      },
+    ];
+    const result = buildPersistedContextUsage(baseSnapshot, events);
+    /** Last PRIMARY call's completion (25), skipping the trailing subagent event */
+    expect(result.completedOutputTokens).toBe(25);
+  });
+
+  it('omits completedOutputTokens when there are no primary calls', () => {
+    expect(buildPersistedContextUsage(baseSnapshot, []).completedOutputTokens).toBeUndefined();
   });
 });

@@ -2,6 +2,7 @@ import { logger } from '@librechat/data-schemas';
 import { inputTokensIncludesCache } from 'librechat-data-provider';
 import type {
   TCustomConfig,
+  TResponseUsage,
   TTokenUsageEvent,
   TContextUsageEvent,
   TTransactionsConfig,
@@ -166,81 +167,85 @@ export function computeUsageCostUSD(
  * Aggregates the per-model-call `on_token_usage` payloads emitted for one
  * response into a single rollup, persisted on `responseMessage.metadata.usage`.
  *
- * Sums the raw provider counts and the authoritative per-event `cost` from the
- * same payloads the live client folds, so a reloaded conversation reproduces
- * the branch/total usage and cost the live session showed. `cost` is included
- * only when at least one event carried it (i.e. `interface.contextCost` was on);
- * `model`/`provider` come from the first emitted call (the primary agent's), so
- * the client's per-event `normalizeUsageUnits` classifies cache the same way it
- * did live for the common single-provider path.
+ * Each event is normalized into display units with the SAME logic the live
+ * client uses (`splitUsage`: input excludes cache, output is repaired) BEFORE
+ * summing, so the rollup reproduces the live branch/total usage exactly even
+ * when a turn mixes providers (e.g. a summarization or subagent call on a
+ * different provider than the primary). `cost` is the additive sum of the
+ * authoritative per-event cost, included only when at least one event carried
+ * it (i.e. `interface.contextCost` was on).
  */
 export function aggregateEmittedUsage(
   events: ReadonlyArray<TTokenUsageEvent>,
-): TTokenUsageEvent | null {
+): TResponseUsage | null {
   if (events.length === 0) {
     return null;
   }
   let input = 0;
   let output = 0;
-  let total = 0;
-  let cacheCreation = 0;
+  let cacheWrite = 0;
   let cacheRead = 0;
   let cost = 0;
   let hasCost = false;
-  let model: string | undefined;
-  let provider: string | undefined;
   for (const event of events) {
-    input += event.input_tokens ?? 0;
-    output += event.output_tokens ?? 0;
-    total += event.total_tokens ?? 0;
-    cacheCreation += event.input_token_details?.cache_creation ?? 0;
-    cacheRead += event.input_token_details?.cache_read ?? 0;
+    const split = splitUsage(event);
+    input += split.inputOnly;
+    output += split.completion;
+    cacheWrite += split.cacheCreation;
+    cacheRead += split.cacheRead;
     if (event.cost != null) {
       cost += event.cost;
       hasCost = true;
     }
-    model ??= event.model;
-    provider ??= event.provider;
   }
-  const rollup: TTokenUsageEvent = {
-    input_tokens: input,
-    output_tokens: output,
-    total_tokens: total,
-    model,
-    provider,
-  };
-  if (cacheCreation > 0 || cacheRead > 0) {
-    rollup.input_token_details = { cache_creation: cacheCreation, cache_read: cacheRead };
-  }
+  const rollup: TResponseUsage = { input, output, cacheWrite, cacheRead };
   if (hasCost) {
     rollup.cost = cost;
   }
   return rollup;
 }
 
+/** Output tokens of the response's final primary model call — the call the
+ *  latest pre-invoke snapshot precedes. Persisted as the snapshot's
+ *  `completedOutputTokens` so a reloaded multi-call turn adds only this delta
+ *  (matching the live finalizer) instead of the full response `tokenCount`,
+ *  which the snapshot already counts for earlier steps. */
+function finalCallOutputTokens(events: ReadonlyArray<TTokenUsageEvent>): number {
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i].usage_type == null) {
+      return splitUsage(events[i]).completion;
+    }
+  }
+  return 0;
+}
+
 /**
  * Projects the latest live context snapshot into the blob persisted on
  * `responseMessage.metadata.contextUsage`. Trims zero-valued per-tool counts
- * (privacy/size); the client re-anchors it to the response message id and reads
- * the response's `tokenCount` as the completed output on rehydrate.
+ * (privacy/size) and records the final call's output as `completedOutputTokens`
+ * so rehydration adds the same post-snapshot delta the live gauge did. The
+ * client re-anchors the blob to the response message id on load.
  */
-export function buildPersistedContextUsage(snapshot: TContextUsageEvent): TContextUsageEvent {
+export function buildPersistedContextUsage(
+  snapshot: TContextUsageEvent,
+  usageEvents: ReadonlyArray<TTokenUsageEvent> = [],
+): TContextUsageEvent {
   const { breakdown } = snapshot;
-  if (breakdown.toolTokenCounts == null) {
-    return { ...snapshot };
-  }
-  const trimmed: Record<string, number> = {};
-  for (const [name, count] of Object.entries(breakdown.toolTokenCounts)) {
-    if (count > 0) {
-      trimmed[name] = count;
+  const completedOutputTokens = finalCallOutputTokens(usageEvents);
+  let toolTokenCounts = breakdown.toolTokenCounts;
+  if (toolTokenCounts != null) {
+    const trimmed: Record<string, number> = {};
+    for (const [name, count] of Object.entries(toolTokenCounts)) {
+      if (count > 0) {
+        trimmed[name] = count;
+      }
     }
+    toolTokenCounts = Object.keys(trimmed).length > 0 ? trimmed : undefined;
   }
   return {
     ...snapshot,
-    breakdown: {
-      ...breakdown,
-      toolTokenCounts: Object.keys(trimmed).length > 0 ? trimmed : undefined,
-    },
+    breakdown: { ...breakdown, toolTokenCounts },
+    ...(completedOutputTokens > 0 && { completedOutputTokens }),
   };
 }
 

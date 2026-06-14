@@ -159,6 +159,7 @@ export default function useUsageHandler(): UsageHandlers {
         /** Authoritative per-event cost from the backend (premium tiers, cache
          *  rates); absent when contextCost is disabled — sums to 0 then */
         costUSD: prev.costUSD + (data.cost ?? 0),
+        costKnown: prev.costKnown || data.cost != null,
       });
       return true;
     };
@@ -278,6 +279,7 @@ export default function useUsageHandler(): UsageHandlers {
           cacheWrite: pending.cacheWrite,
           cacheRead: pending.cacheRead,
           cost: pending.costUSD,
+          costKnown: pending.costKnown,
         });
       }
       jotai.set(pendingAtom, EMPTY_USAGE_TOTALS);

@@ -90,6 +90,7 @@ export default function useTokenUsage({
       cacheWrite: pendingUsage.cacheWrite,
       cacheRead: pendingUsage.cacheRead,
       cost: pendingUsage.costUSD,
+      costKnown: pendingUsage.costKnown,
     }),
     [pendingUsage],
   );

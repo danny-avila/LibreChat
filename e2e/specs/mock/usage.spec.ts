@@ -133,10 +133,18 @@ test.describe('context usage gauge', () => {
     expect(regen.ok()).toBeTruthy();
     await expect(page.getByText('2 / 2')).toBeVisible({ timeout: 20000 });
 
-    /** Two branches: the cost is branch-scoped (live, not just on reload) and a
-     *  muted all-branches total appears because it exceeds the single branch. */
+    /** Branch cost is shown live for the regenerated branch. */
     popover = await openBreakdown(page);
-    const costSection = popover.getByTestId('token-usage-cost');
+    await expect(popover.getByTestId('token-usage-cost')).toBeVisible();
+    await page.keyboard.press('Escape');
+
+    /** After reload both branches rehydrate from persisted metadata.usage, so
+     *  the cost is branch-scoped and a muted all-branches total appears (it
+     *  exceeds the single viewed branch). */
+    await page.reload({ timeout: 15000 });
+    await expect(mockReply(page)).toBeVisible({ timeout: 20000 });
+    const reloaded = await openBreakdown(page);
+    const costSection = reloaded.getByTestId('token-usage-cost');
     await expect(costSection).toBeVisible();
     await expect(costSection.getByText('Cost (this branch)')).toBeVisible();
     await expect(costSection.getByText('All branches')).toBeVisible();

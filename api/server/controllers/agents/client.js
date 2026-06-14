@@ -853,14 +853,14 @@ class AgentClient extends BaseClient {
    * @returns {{
    *   thoughtSignatures?: Record<string, string>,
    *   contextUsage?: import('librechat-data-provider').TContextUsageEvent,
-   *   usage?: import('librechat-data-provider').TTokenUsageEvent,
+   *   usage?: import('librechat-data-provider').TResponseUsage,
    * } | undefined}
    */
   buildResponseMetadata() {
     /** @type {{
      *   thoughtSignatures?: Record<string, string>,
      *   contextUsage?: import('librechat-data-provider').TContextUsageEvent,
-     *   usage?: import('librechat-data-provider').TTokenUsageEvent,
+     *   usage?: import('librechat-data-provider').TResponseUsage,
      * }} */
     const metadata = {};
     const signatures = this.collectedThoughtSignatures;
@@ -868,7 +868,10 @@ class AgentClient extends BaseClient {
       metadata.thoughtSignatures = signatures;
     }
     if (this.contextUsageSink?.latest) {
-      metadata.contextUsage = buildPersistedContextUsage(this.contextUsageSink.latest);
+      metadata.contextUsage = buildPersistedContextUsage(
+        this.contextUsageSink.latest,
+        this.usageEmitSink ?? [],
+      );
     }
     const usage = this.usageEmitSink ? aggregateEmittedUsage(this.usageEmitSink) : null;
     if (usage) {
