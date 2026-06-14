@@ -33,6 +33,19 @@ describe('mergeHeaders', () => {
     expect(base).toEqual({ a: '1' });
     expect(override).toEqual({ b: '2' });
   });
+
+  it('replaces a case-variant base key with the override (no duplicate header names)', () => {
+    const merged = mergeHeaders({ authorization: 'custom' }, { Authorization: 'Bearer managed' });
+    expect(merged).toEqual({ Authorization: 'Bearer managed' });
+  });
+
+  it('unions anthropic-beta case-insensitively, keeping the override casing', () => {
+    const merged = mergeHeaders(
+      { 'anthropic-beta': 'custom-beta' },
+      { 'Anthropic-Beta': 'managed-beta' },
+    );
+    expect(merged).toEqual({ 'Anthropic-Beta': 'custom-beta,managed-beta' });
+  });
 });
 
 describe('resolveConfigHeaders', () => {

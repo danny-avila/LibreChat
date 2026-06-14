@@ -74,6 +74,18 @@ export async function initializeOpenAI({
     streaming: true,
   };
 
+  /**
+   * Custom headers are forwarded only when the destination URL is admin-trusted.
+   * When the user supplies the base URL, withhold them — they may carry
+   * `${SECRET}` gateway values or user/OpenID token placeholders resolved later
+   * by `resolveConfigHeaders`, which must not reach a user-controlled endpoint.
+   */
+  const trustedURL = !userProvidesURL;
+  const globalHeaders = trustedURL ? allConfig?.headers : undefined;
+  const openAIHeaders = trustedURL
+    ? mergeHeaders(allConfig?.headers, openAIConfig?.headers)
+    : undefined;
+
   const isAzureOpenAI = endpoint === EModelEndpoint.azureOpenAI;
   const azureConfig = isAzureOpenAI && appConfig?.endpoints?.[EModelEndpoint.azureOpenAI];
   let isServerless = false;
@@ -93,8 +105,10 @@ export async function initializeOpenAI({
     isServerless = serverless === true;
 
     clientOptions.reverseProxyUrl = configBaseURL ?? clientOptions.reverseProxyUrl;
+    /** `endpoints.all` headers apply globally; Azure-managed headers (and the
+     *  `api-key`/version headers added in `getOpenAIConfig`) stay authoritative. */
     clientOptions.headers = resolveHeaders({
-      headers: { ...headers, ...(clientOptions.headers ?? {}) },
+      headers: { ...globalHeaders, ...headers, ...(clientOptions.headers ?? {}) },
       user: req.user,
     });
 
@@ -121,15 +135,18 @@ export async function initializeOpenAI({
     clientOptions.azure =
       userProvidesKey && userValues?.apiKey ? JSON.parse(userValues.apiKey) : getAzureCredentials();
     apiKey = clientOptions.azure ? clientOptions.azure.azureOpenAIApiKey : undefined;
+    /** Env-var Azure path has no per-model headers; still honor global `all` headers. */
+    if (globalHeaders) {
+      clientOptions.headers = { ...globalHeaders };
+    }
   } else {
     /**
-     * Attach admin-configured custom headers for the built-in OpenAI endpoint.
-     * Kept unresolved here so request-body placeholders resolve at request time
-     * via `resolveConfigHeaders` (Azure handles its own headers above).
+     * Attach admin-configured custom headers for the built-in OpenAI endpoint
+     * (endpoint over global `all`). Kept unresolved here so request-body
+     * placeholders resolve at request time via `resolveConfigHeaders`.
      */
-    const headers = mergeHeaders(allConfig?.headers, openAIConfig?.headers);
-    if (headers) {
-      clientOptions.headers = headers;
+    if (openAIHeaders) {
+      clientOptions.headers = openAIHeaders;
     }
   }
 

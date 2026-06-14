@@ -1624,11 +1624,21 @@ class AgentClient extends BaseClient {
       delete clientOptions.modelKwargs.max_output_tokens;
     }
 
+    /** `omitTitleOptions` drops the Anthropic `clientOptions` carrier (thinking,
+     *  streaming, etc.), which would also drop its `defaultHeaders` — preserve
+     *  just the headers so gateway/reverse-proxy metadata still reaches title
+     *  requests (the proxy may require it for auth/routing). */
+    const anthropicDefaultHeaders = clientOptions?.clientOptions?.defaultHeaders;
+
     clientOptions = Object.assign(
       Object.fromEntries(
         Object.entries(clientOptions).filter(([key]) => !omitTitleOptions.has(key)),
       ),
     );
+
+    if (anthropicDefaultHeaders != null && clientOptions.clientOptions == null) {
+      clientOptions.clientOptions = { defaultHeaders: anthropicDefaultHeaders };
+    }
 
     if (
       provider === Providers.GOOGLE &&
@@ -1638,10 +1648,9 @@ class AgentClient extends BaseClient {
       clientOptions.json = true;
     }
 
-    /** Resolve request-based headers across provider-specific header locations
-     *  (OpenAI `configuration.defaultHeaders`, Google `customHeaders`). The
-     *  Anthropic `clientOptions` carrier is stripped from title requests via
-     *  `omitTitleOptions`, so its headers do not apply to title generation.
+    /** Resolve request-based headers across provider-specific header locations:
+     *  OpenAI `configuration.defaultHeaders`, Anthropic `clientOptions.defaultHeaders`
+     *  (preserved above), and Google `customHeaders`.
      */
     resolveConfigHeaders({
       llmConfig: clientOptions,

@@ -3,11 +3,23 @@ import type { IUser } from '@librechat/data-schemas';
 import type { RequestBody, RunLLMConfig } from '~/types';
 import { resolveHeaders } from './env';
 
+/** Comma-unions two header values (deduped, trimmed), e.g. `anthropic-beta`. */
+function unionCsv(a: string, b: string): string {
+  const values = [a, b]
+    .flatMap((value) => value.split(','))
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return Array.from(new Set(values)).join(',');
+}
+
 /**
- * Merges two header maps, with `override` winning on key collisions. The
- * `anthropic-beta` header is special-cased: values from both sides are
- * comma-unioned (deduped) so a custom beta coexists with provider-managed
- * betas instead of clobbering them.
+ * Merges two header maps, with `override` winning on key collisions. Matching is
+ * case-insensitive (HTTP header names are), so an `override` key replaces any
+ * case variant from `base` rather than leaving both names in the output (which
+ * clients may collapse, breaking auth or protocol headers); the `override`
+ * casing is kept. The `anthropic-beta` header is special-cased: values from both
+ * sides are comma-unioned (deduped) so a custom beta coexists with
+ * provider-managed betas instead of clobbering them.
  *
  * Used both to layer endpoint headers over global (`endpoints.all`) headers and
  * to attach admin-configured custom headers beneath provider-managed headers
@@ -23,16 +35,28 @@ export function mergeHeaders(
     return undefined;
   }
 
-  const merged: Record<string, string> = { ...(base ?? {}), ...(override ?? {}) };
+  const merged: Record<string, string> = { ...(base ?? {}) };
+  if (!override) {
+    return merged;
+  }
 
-  const baseBeta = base?.['anthropic-beta'];
-  const overrideBeta = override?.['anthropic-beta'];
-  if (baseBeta && overrideBeta) {
-    const betaValues = [baseBeta, overrideBeta]
-      .flatMap((value) => value.split(','))
-      .map((value) => value.trim())
-      .filter(Boolean);
-    merged['anthropic-beta'] = Array.from(new Set(betaValues)).join(',');
+  const baseKeyByLower = new Map<string, string>(
+    Object.keys(merged).map((key) => [key.toLowerCase(), key]),
+  );
+
+  for (const [key, value] of Object.entries(override)) {
+    const lower = key.toLowerCase();
+    const existingKey = baseKeyByLower.get(lower);
+    const nextValue =
+      lower === 'anthropic-beta' && existingKey != null
+        ? unionCsv(merged[existingKey], value)
+        : value;
+
+    if (existingKey != null && existingKey !== key) {
+      delete merged[existingKey];
+    }
+    merged[key] = nextValue;
+    baseKeyByLower.set(lower, key);
   }
 
   return merged;
