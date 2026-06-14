@@ -137,67 +137,6 @@ export const getBranchSiblingIndexesForTarget = (
   return branchIndexes;
 };
 
-export type SiblingSelection = {
-  /** Array position of the sibling to display (last = newest); -1 when empty. */
-  index: number;
-  /** The message id now considered the user's committed branch at this fork. */
-  selectedId: string | null;
-};
-
-/**
- * Decides which sibling a fork should display when its children change, given
- * the ids ever seen at this fork, the user's committed branch, and how many
- * siblings the fork had on the previous render (`prevCount`).
- *
- * - First sighting of a fork (`seen` empty) → newest sibling (load default).
- * - A genuinely-new sibling that GREW the set (`ids.length > prevCount`) takes
- *   focus — a submission/regeneration/edit/follow-up at this fork. The newest
- *   never-seen id wins. Crucially this requires growth: a same-count id swap
- *   (placeholder→server churn, e.g. `useStepHandler` re-keying the in-flight
- *   response to its run id) and a restored already-seen sibling are NOT new.
- * - Otherwise the committed selection wins while still present, so neither a
- *   churned id nor a transiently-restored branch steals focus after the user
- *   switched away.
- * - Committed selection gone (regenerated away, or its own placeholder id was
- *   just replaced) → focus the newest never-seen id, else the newest. This is
- *   how the in-flight response keeps focus across its own id swap.
- */
-export const resolveSiblingSelection = (
-  ids: string[],
-  seen: ReadonlySet<string>,
-  selectedId: string | null,
-  prevCount: number,
-): SiblingSelection => {
-  if (ids.length === 0) {
-    return { index: -1, selectedId };
-  }
-
-  if (seen.size === 0) {
-    return { index: ids.length - 1, selectedId: ids[ids.length - 1] };
-  }
-
-  if (ids.length > prevCount) {
-    for (let i = ids.length - 1; i >= 0; i--) {
-      if (!seen.has(ids[i])) {
-        return { index: i, selectedId: ids[i] };
-      }
-    }
-  }
-
-  const keepIdx = selectedId != null ? ids.indexOf(selectedId) : -1;
-  if (keepIdx >= 0) {
-    return { index: keepIdx, selectedId };
-  }
-
-  for (let i = ids.length - 1; i >= 0; i--) {
-    if (!seen.has(ids[i])) {
-      return { index: i, selectedId: ids[i] };
-    }
-  }
-
-  return { index: ids.length - 1, selectedId: ids[ids.length - 1] };
-};
-
 export const getLatestText = (message?: TMessage | null, includeIndex?: boolean): string => {
   if (!message) {
     return '';
