@@ -6,12 +6,13 @@ interface TextNode extends Node {
   value: string;
 }
 
-// "Approximately" tilde: a `~` prefixing a number at a prose boundary — start, whitespace,
-// or open bracket — e.g. `~50%`, `~ -3%`, `~$5`. Running on parsed text nodes (never code,
-// links, math, or URL destinations) means only real prose is touched. Word-attached and
-// closed-number subscripts (`H~2~O`, `a ~2~ b`) are excluded so genuine supersub subscripts
-// survive. Markdown decodes `\~` to `~` before this runs, so escaped tildes are covered too.
-const APPROX_TILDE_REGEX = /(?<=^|[\s([{])~(?=[ \t]?[-−+]?\$?\d)(?![ \t]?[-−+]?\$?[\d.,]*~)/g;
+// "Approximately" tilde: a `~` prefixing a number that is not attached to a preceding word —
+// e.g. `~50%`, `~ -3%`, `~$5`, `"~50%"`, `(~10%)`. Running on parsed text nodes (never code,
+// links, math, or URL destinations) means only real prose is touched, so the boundary can be
+// permissive: anything except a word character or another tilde. Word-attached and
+// closed-number subscripts (`H~2~O`, `a ~2~ b`) are excluded so genuine subscripts survive.
+// Markdown decodes `\~` to `~` before this runs, so escaped tildes are covered too.
+const APPROX_TILDE_REGEX = /(?<![\w~])~(?=[ \t]?[-−+]?\$?\d)(?![ \t]?[-−+]?\$?[\d.,]*~)/g;
 // U+223C TILDE OPERATOR — renders as a tilde but is not split by remark-supersub.
 const TILDE_OPERATOR = '∼';
 

@@ -27,6 +27,10 @@ describe('normalizeApproxTildes', () => {
     expect(normalizeApproxTildes('is ~ -3% from')).toBe(`is ${T} -3% from`);
   });
 
+  test('neutralizes quoted approximations', () => {
+    expect(normalizeApproxTildes('about "~50%" and "~10%"')).toBe(`about "${T}50%" and "${T}10%"`);
+  });
+
   test('preserves word-attached subscripts', () => {
     expect(normalizeApproxTildes('H~2~O and x~1~')).toBe('H~2~O and x~1~');
   });
