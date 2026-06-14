@@ -247,16 +247,23 @@ function normalizeEventUnits(event: TTokenUsageEvent): {
   };
 }
 
-/** Output tokens of the response's final primary model call — the call the
- *  latest pre-invoke snapshot precedes. Persisted as the snapshot's
- *  `completedOutputTokens` so a reloaded multi-call turn adds only this delta
- *  (matching the live finalizer) instead of the full response `tokenCount`,
- *  which the snapshot already counts for earlier steps. */
-function finalCallOutputTokens(events: ReadonlyArray<TTokenUsageEvent>): number {
+/** Output tokens of the final primary model call belonging to the snapshot's
+ *  run — the call the latest pre-invoke snapshot precedes. Persisted as the
+ *  snapshot's `completedOutputTokens` so a reloaded multi-call turn adds only
+ *  this delta (matching the live finalizer) instead of the full response
+ *  `tokenCount`, which the snapshot already counts for earlier steps. Filtering
+ *  by `runId` prevents a parallel run's later usage from being attributed to this
+ *  snapshot; untagged events (older lib / resume) match any run for back-compat. */
+function finalCallOutputTokens(events: ReadonlyArray<TTokenUsageEvent>, runId?: string): number {
   for (let i = events.length - 1; i >= 0; i--) {
-    if (events[i].usage_type == null) {
-      return normalizeEventUnits(events[i]).output;
+    const event = events[i];
+    if (event.usage_type != null) {
+      continue;
     }
+    if (runId != null && event.runId != null && event.runId !== runId) {
+      continue;
+    }
+    return normalizeEventUnits(event).output;
   }
   return 0;
 }
@@ -273,7 +280,7 @@ export function buildPersistedContextUsage(
   usageEvents: ReadonlyArray<TTokenUsageEvent> = [],
 ): TContextUsageEvent {
   const { breakdown } = snapshot;
-  const completedOutputTokens = finalCallOutputTokens(usageEvents);
+  const completedOutputTokens = finalCallOutputTokens(usageEvents, snapshot.runId);
   let toolTokenCounts = breakdown.toolTokenCounts;
   if (toolTokenCounts != null) {
     const trimmed: Record<string, number> = {};

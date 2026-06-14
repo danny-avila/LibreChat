@@ -870,20 +870,30 @@ class AgentClient extends BaseClient {
       metadata.thoughtSignatures = signatures;
     }
     const usageEvents = this.usageEmitSink ?? [];
-    /** Persist the breakdown only when the latest snapshot's call actually
-     *  invoked the model — i.e. a PRIMARY usage event (usage_type == null)
-     *  arrived AFTER that snapshot. This keeps `completedOutputTokens` a real
-     *  post-snapshot delta (an interrupted final call that emits no usage falls
-     *  back to the per-message estimate) while correctly persisting the
-     *  post-summary snapshot: a summarization detour emits an extra snapshot
-     *  whose only following usage is tagged `summarization`, which the old
-     *  snapshot-count guard miscounted and wrongly dropped. */
+    /** Persist the breakdown only when the latest snapshot's OWN run completed —
+     *  i.e. a PRIMARY usage event (usage_type == null) from that run's id arrived
+     *  AFTER the snapshot. Matching by run id keeps `completedOutputTokens` a real
+     *  post-snapshot delta even when parallel/direct runs interleave (A snapshot →
+     *  B snapshot → A usage must NOT persist B's snapshot with A's output); an
+     *  interrupted final call that emits no usage falls back to the per-message
+     *  estimate. It still keeps the post-summary snapshot: the summarization detour
+     *  emits an extra snapshot whose following primary usage shares that run's id,
+     *  which the old snapshot-count guard miscounted and wrongly dropped. Events
+     *  without a run id (older lib / resume) match any snapshot for back-compat. */
+    const latestSnapshot = this.contextUsageSink?.latest;
     const latestSnapshotUsageIndex = this.contextUsageSink?.latestUsageIndex ?? 0;
+    const latestSnapshotRunId = latestSnapshot?.runId;
     const hasPrimaryAfterSnapshot = usageEvents
       .slice(latestSnapshotUsageIndex)
-      .some((event) => event.usage_type == null);
-    if (this.contextUsageSink?.latest && hasPrimaryAfterSnapshot) {
-      metadata.contextUsage = buildPersistedContextUsage(this.contextUsageSink.latest, usageEvents);
+      .some(
+        (event) =>
+          event.usage_type == null &&
+          (latestSnapshotRunId == null ||
+            event.runId == null ||
+            event.runId === latestSnapshotRunId),
+      );
+    if (latestSnapshot && hasPrimaryAfterSnapshot) {
+      metadata.contextUsage = buildPersistedContextUsage(latestSnapshot, usageEvents);
     }
     /** Lightweight summarization marker — persisted whenever this turn compacted
      *  the context, INDEPENDENT of the snapshot guard above. When the client has

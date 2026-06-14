@@ -1753,6 +1753,55 @@ describe('buildPersistedContextUsage', () => {
   it('omits completedOutputTokens when there are no primary calls', () => {
     expect(buildPersistedContextUsage(baseSnapshot, []).completedOutputTokens).toBeUndefined();
   });
+
+  it('attributes completedOutputTokens to the snapshot run, not a parallel run', () => {
+    /** Parallel/direct runs interleave: this snapshot is run-1, but run-2 emits a
+     *  later primary usage. The persisted delta must be run-1's own output (40),
+     *  never run-2's trailing output (99). */
+    const events: TTokenUsageEvent[] = [
+      {
+        input_tokens: 100,
+        output_tokens: 40,
+        total_tokens: 140,
+        provider: 'openAI',
+        runId: 'run-1',
+      },
+      {
+        input_tokens: 200,
+        output_tokens: 99,
+        total_tokens: 299,
+        provider: 'openAI',
+        runId: 'run-2',
+      },
+    ];
+    const result = buildPersistedContextUsage(baseSnapshot, events);
+    expect(result.completedOutputTokens).toBe(40);
+  });
+
+  it('omits completedOutputTokens when only other runs emitted usage', () => {
+    /** The snapshot run never completed (no matching primary); a sibling run's
+     *  output must not be borrowed — fall back to the per-message estimate. */
+    const events: TTokenUsageEvent[] = [
+      {
+        input_tokens: 200,
+        output_tokens: 99,
+        total_tokens: 299,
+        provider: 'openAI',
+        runId: 'run-2',
+      },
+    ];
+    expect(buildPersistedContextUsage(baseSnapshot, events).completedOutputTokens).toBeUndefined();
+  });
+
+  it('matches untagged usage events for back-compat (older lib / resume)', () => {
+    /** Events without a runId predate run tagging; they match any snapshot so the
+     *  last primary (25) is still recorded. */
+    const events: TTokenUsageEvent[] = [
+      { input_tokens: 100, output_tokens: 40, total_tokens: 140, provider: 'openAI' },
+      { input_tokens: 200, output_tokens: 25, total_tokens: 225, provider: 'openAI' },
+    ];
+    expect(buildPersistedContextUsage(baseSnapshot, events).completedOutputTokens).toBe(25);
+  });
 });
 
 describe('computeSummaryUsedTokens', () => {

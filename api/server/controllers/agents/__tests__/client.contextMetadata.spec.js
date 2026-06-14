@@ -26,6 +26,13 @@ const snapshot = (summaryTokens) => ({
 
 const primary = { input_tokens: 10, output_tokens: 5, total_tokens: 15 };
 const summarizationUsage = { ...primary, usage_type: 'summarization' };
+const primaryFor = (runId, output_tokens) => ({
+  input_tokens: 10,
+  output_tokens,
+  total_tokens: 10 + output_tokens,
+  provider: 'openAI',
+  runId,
+});
 
 function buildMeta({ snap, latestUsageIndex, usageEvents }) {
   const self = {
@@ -75,5 +82,27 @@ describe('AgentClient.buildResponseMetadata — snapshot persistence + summary m
     const meta = buildMeta({ snap: snapshot(0), latestUsageIndex: 1, usageEvents: [primary] });
     expect(meta.contextUsage).toBeUndefined();
     expect(meta.summaryUsedTokens).toBeUndefined();
+  });
+
+  it('does not persist the snapshot when only a parallel run produced post-snapshot usage', () => {
+    /** A snapshot (run-1) → B snapshot (run-1 is latest) but the only following
+     *  usage belongs to a sibling run (run-2). The guard must NOT persist run-1's
+     *  snapshot with run-2's output — it falls back to the per-message estimate. */
+    const meta = buildMeta({
+      snap: snapshot(0),
+      latestUsageIndex: 0,
+      usageEvents: [primaryFor('run-2', 99)],
+    });
+    expect(meta.contextUsage).toBeUndefined();
+  });
+
+  it('persists with the snapshot run output when its own primary usage follows', () => {
+    const meta = buildMeta({
+      snap: snapshot(0),
+      latestUsageIndex: 0,
+      usageEvents: [primaryFor('run-2', 99), primaryFor('run-1', 7)],
+    });
+    expect(meta.contextUsage).toBeDefined();
+    expect(meta.contextUsage.completedOutputTokens).toBe(7);
   });
 });
