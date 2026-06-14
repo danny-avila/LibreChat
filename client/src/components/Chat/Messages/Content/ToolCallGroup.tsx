@@ -1,7 +1,7 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Button } from '@librechat/client';
-import { ChevronDown, MessageCircleQuestion, Users } from 'lucide-react';
+import { ChevronDown, Lightbulb, MessageCircleQuestion, Users } from 'lucide-react';
 import { Tools, Constants, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
 import type {
   TAttachment,
@@ -22,7 +22,7 @@ import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { isBashProgrammaticToolCall } from './routing';
 import { ASK_USER_QUESTION } from '~/utils/approval';
 import { StackedToolIcons } from './ToolOutput';
-import { AttachmentGroup } from './Parts';
+import { AttachmentGroup, ReasoningCompact } from './Parts';
 import store from '~/store';
 
 interface ToolMeta {
@@ -154,6 +154,14 @@ export default function ToolCallGroup({
   const toolNames = useMemo(() => toolMetadata.map((m) => m.name), [toolMetadata]);
   const iconToolNames = useMemo(() => toolMetadata.map((m) => m.iconName), [toolMetadata]);
 
+  /** Reasoning interleaved with the tool calls renders inside the body but is
+   *  hidden while collapsed — surface a lightbulb in the header so the summary
+   *  hints that the group also contains thoughts. */
+  const hasReasoning = useMemo(
+    () => parts.some((p) => p.part.type === ContentTypes.THINK),
+    [parts],
+  );
+
   /** Subagent tool calls get their own label verb ("Running/Ran N agents")
    *  since "Used N tools" reads oddly when the "tools" are actually child
    *  agents. `subagentCount === count` ⇒ the group is 100% subagents. */
@@ -206,7 +214,10 @@ export default function ToolCallGroup({
   /** A labeled activity block is summarized by its header, so it collapses
    *  even at a single tool call — agent runs are full of one-call batches,
    *  and leaving those expanded defeats the grouping. */
-  const autoCollapse = !autoExpand && allCompleted && (count >= 2 || activityLabelText.length > 0);
+  /** Every group has >= 1 tool; collapse a completed one by default just like
+   *  a multi-tool group, so a lone tool-with-thinking group (a skill, say)
+   *  stays visually consistent with the larger groups around it. */
+  const autoCollapse = !autoExpand && allCompleted && (count >= 1 || activityLabelText.length > 0);
   const initialState = initialExpansionState?.userOverride === true ? initialExpansionState : null;
   const [isExpanded, setIsExpanded] = useState(
     initialState?.isExpanded ?? (autoExpand || !autoCollapse),
@@ -307,7 +318,9 @@ export default function ToolCallGroup({
         ? localize('com_ui_asked_n_questions', { 0: String(count) })
         : localize('com_ui_asking_n_questions', { 0: String(count) });
     }
-    return localize('com_ui_used_n_tools', { 0: String(count) });
+    return count === 1
+      ? localize('com_ui_used_one_tool')
+      : localize('com_ui_used_n_tools', { 0: String(count) });
   };
   /** The generated line wins over the generic category verb — but only once
    *  it exists. An unfilled label part leaves the block rendering exactly as
@@ -336,7 +349,7 @@ export default function ToolCallGroup({
         className="inline-flex h-auto w-full items-center justify-start gap-2 rounded-none bg-transparent p-0 py-1 text-text-secondary hover:bg-transparent hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy focus-visible:ring-offset-0"
         onClick={handleToggle}
         aria-expanded={isExpanded}
-        aria-label={groupLabel}
+        aria-label={hasReasoning ? `${groupLabel}, ${localize('com_ui_thoughts')}` : groupLabel}
       >
         {allSubagents || allAskQuestions ? (
           /** Homogeneous category groups get a single category glyph instead
@@ -379,6 +392,9 @@ export default function ToolCallGroup({
             · {toolNameSummary}
           </span>
         )}
+        {hasReasoning && (
+          <Lightbulb className="size-3.5 shrink-0 text-text-secondary" aria-hidden="true" />
+        )}
         <ChevronDown
           className={cn(
             'size-4 shrink-0 text-text-secondary transition-transform duration-200 ease-out',
@@ -396,9 +412,20 @@ export default function ToolCallGroup({
         {shouldRenderBody && (
           <div className="overflow-hidden" ref={expandRef}>
             <div className="py-0.5 pl-4">
-              {parts.map(({ part, idx }) =>
-                renderPart(part, idx, isLast && idx === lastContentIdx, handleToolExpand),
-              )}
+              {parts.map(({ part, idx }) => {
+                if (part.type === ContentTypes.THINK) {
+                  const think = part.think;
+                  const reasoning = typeof think === 'string' ? think : (think?.value ?? '');
+                  const label =
+                    isSubmitting && idx === lastContentIdx
+                      ? localize('com_ui_thinking')
+                      : localize('com_ui_thoughts');
+                  return (
+                    <ReasoningCompact key={`reasoning-${idx}`} reasoning={reasoning} label={label} />
+                  );
+                }
+                return renderPart(part, idx, isLast && idx === lastContentIdx, handleToolExpand);
+              })}
             </div>
           </div>
         )}
