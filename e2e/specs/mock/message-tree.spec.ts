@@ -819,6 +819,60 @@ test.describe('message tree stream operations', () => {
     await expect(messagesView(page).getByText(reply3)).toBeVisible();
   });
 
+  test('does not flash the kept sibling before the created event when regenerating a non-latest sibling', async ({
+    page,
+  }) => {
+    // Same hazard at the optimistic (pre-`created`) render: useChatFunctions
+    // appends the placeholder and renders it before the request resolves. Gate
+    // the regenerate request so only that optimistic frame is on screen — with
+    // no `created` event to fall back on — and assert the kept sibling is
+    // already gone (the regenerating placeholder took its place). This isolates
+    // the optimistic focus; the createdHandler focus cannot mask a regression
+    // because `created` never arrives during the assertion.
+    const label = uniqueLabel('regen-precreated');
+    const prompt = countedPrompt(label);
+    const reply1 = countedReplyText(label, 1);
+    const reply2 = countedReplyText(label, 2);
+    const reply3 = countedReplyText(label, 3);
+
+    await openMockChat(page);
+    await sendAndExpectReply(page, prompt, reply1);
+
+    await waitForGenerationStart(page, () => clickMessageTitleButton(page, reply1, 'Regenerate'));
+    await expect(messagesView(page).getByText(reply2)).toBeVisible({ timeout: 30000 });
+
+    await clickSibling(page, reply2, 'Previous');
+    await expect(messagesView(page).getByText(reply1)).toBeVisible();
+    await expect(messagesView(page).getByText(reply2)).toBeHidden();
+
+    // Hold the SSE stream so the `created` event cannot arrive: the optimistic
+    // render is all there is. The chat POST returns a stream id; the stream
+    // itself is a separate GET (/api/agents/chat/stream/<id>) — gate that one,
+    // not the POST, which must complete to hand back the id.
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(/\/api\/agents\/chat\/stream\//, async (route: Route) => {
+      await gate;
+      return route.continue();
+    });
+
+    try {
+      await clickMessageTitleButton(page, reply1, 'Regenerate');
+      // The stream is gated, so the regenerating response has no text yet.
+      await expect(messagesView(page).getByText(reply3)).toBeHidden();
+      // Pre-`created` window: the kept sibling must not be the one on screen —
+      // the regenerating placeholder has already taken its place.
+      await expect(messagesView(page).getByText(reply2)).toBeHidden({ timeout: 5000 });
+      await expect(messagesView(page).getByText(reply1)).toBeHidden();
+    } finally {
+      release();
+    }
+
+    await expect(messagesView(page).getByText(reply3)).toBeVisible({ timeout: 30000 });
+  });
+
   test('resumes pending OAuth on the selected older branch after reload', async ({ page }) => {
     const label = uniqueLabel('oauth-branch');
     const rootPrompt = countedPrompt(`${label}-root`);

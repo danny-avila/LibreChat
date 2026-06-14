@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { v4 } from 'uuid';
-import { useSetRecoilState, useRecoilCallback } from 'recoil';
+import { useSetRecoilState } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -38,6 +38,7 @@ import {
   queueTitleGeneration,
   markTitleGenerationProcessed,
 } from '~/data-provider';
+import useFocusRegeneratedResponse from '~/hooks/Chat/useFocusRegeneratedResponse';
 import { shouldResetSubagentAtomsOnConversationChange } from './cleanup';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
@@ -488,24 +489,7 @@ export default function useEventHandlers({
     [queryClient, setMessages, isAddedRequest, announcePolite, setConversation, setShowStopButton],
   );
 
-  /**
-   * Focus a regenerated response's fork on its newest sibling. A regeneration
-   * appends the new response as the newest child of its parent, but when the
-   * parent already had multiple siblings the child count is unchanged (the slice
-   * keeps unrelated branches), so MultiMessage's length-change reset never fires
-   * and the view would stay on the kept sibling. Selecting reversed index 0
-   * (newest = the appended response) makes the regenerating branch visible.
-   */
-  const focusRegeneratedResponse = useRecoilCallback(
-    ({ set }) =>
-      (parentMessageId?: string | null) => {
-        if (parentMessageId == null) {
-          return;
-        }
-        set(store.messagesSiblingIdxFamily(parentMessageId), 0);
-      },
-    [],
-  );
+  const focusRegeneratedResponse = useFocusRegeneratedResponse();
 
   const createdHandler = useCallback(
     (data: TResData, submission: EventSubmission) => {

@@ -32,6 +32,7 @@ import {
   createDualMessageContent,
   getRouteChatProjectId,
 } from '~/utils';
+import useFocusRegeneratedResponse from '~/hooks/Chat/useFocusRegeneratedResponse';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import store, { useGetEphemeralAgent } from '~/store';
@@ -212,6 +213,7 @@ export default function useChatFunctions({
   const { getExpiry } = useUserKey(immutableConversation?.endpoint ?? '');
   const setIsSubmitting = useSetRecoilState(store.isSubmittingFamily(index));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
+  const focusRegeneratedResponse = useFocusRegeneratedResponse();
 
   /**
    * Atomically read + reset the per-conversation queue of manually-invoked
@@ -574,6 +576,7 @@ export default function useChatFunctions({
 
     if (isRegenerate) {
       setMessages([...submissionMessages, initialResponse]);
+      focusRegeneratedResponse(initialResponse.parentMessageId);
     } else {
       setMessages([...submissionMessages, currentMsg, initialResponse]);
     }
