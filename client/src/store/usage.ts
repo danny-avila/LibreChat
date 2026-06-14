@@ -1,8 +1,8 @@
-import { atom } from 'jotai';
 import { atomFamily } from 'jotai/utils';
-import type { TContextUsageEvent } from 'librechat-data-provider';
-import type { BranchTotals } from '~/utils/tokens';
-import { EMPTY_BRANCH } from '~/utils/tokens';
+import { atom, getDefaultStore } from 'jotai';
+import type { TMessage, TContextUsageEvent } from 'librechat-data-provider';
+import type { BranchTotals, BranchUsage } from '~/utils/tokens';
+import { EMPTY_BRANCH, EMPTY_USAGE } from '~/utils/tokens';
 
 /** Latest backend context snapshot, anchored to the run's user message for staleness checks */
 export interface ContextSnapshot extends TContextUsageEvent {
@@ -11,7 +11,13 @@ export interface ContextSnapshot extends TContextUsageEvent {
   completedOutputTokens?: number;
 }
 
-/** Cumulative provider-reported usage for the conversation's current session */
+/**
+ * In-flight usage for the streaming response only — a single-response pending
+ * holder. `foldUsage` accumulates the current response's `on_token_usage`
+ * events here; `finalizeUsage` flushes it into the per-message index and resets
+ * it. Branch/total figures are otherwise derived by summing the index, so this
+ * is the only live add (counted exactly once at finalize).
+ */
 export interface UsageTotals {
   input: number;
   output: number;
@@ -55,8 +61,14 @@ export const snapshotsByAnchorFamily = atomFamily((_conversationId: string) =>
   atom<Map<string, ContextSnapshot>>(new Map()),
 );
 
-export const usageTotalsFamily = atomFamily((_conversationId: string) =>
+/** In-flight usage of the streaming response; flushed into the index at finalize. */
+export const pendingUsageFamily = atomFamily((_conversationId: string) =>
   atom<UsageTotals>(EMPTY_USAGE_TOTALS),
+);
+
+/** Provider usage/cost summed across all branches of the conversation. */
+export const totalUsageFamily = atomFamily((_conversationId: string) =>
+  atom<BranchUsage>(EMPTY_USAGE),
 );
 
 /** Throttled in-flight output token estimate for the current model call */
@@ -106,8 +118,47 @@ export function removeUsageAtoms(conversationId: string): void {
   branchTotalsFamily.remove(conversationId);
   contextSnapshotFamily.remove(conversationId);
   snapshotsByAnchorFamily.remove(conversationId);
-  usageTotalsFamily.remove(conversationId);
+  pendingUsageFamily.remove(conversationId);
+  totalUsageFamily.remove(conversationId);
   liveTokensFamily.remove(conversationId);
   calibrationFamily.remove(conversationId);
   foldedUsageKeys.delete(conversationId);
+}
+
+/**
+ * Rehydrates per-branch context breakdowns from persisted `metadata.contextUsage`
+ * into the snapshot-history map so the granular gauge survives a reload / opening
+ * an existing conversation. Merges, never clobbers — a live finalized snapshot
+ * for the same response id wins. Re-anchors each blob to its (branch-unique)
+ * response message id and reads the response's `tokenCount` as completed output.
+ */
+export function hydrateSnapshots(conversationId: string, messages?: TMessage[] | null): void {
+  if (messages == null || messages.length === 0) {
+    return;
+  }
+  const store = getDefaultStore();
+  const historyAtom = snapshotsByAnchorFamily(conversationId);
+  const current = store.get(historyAtom);
+  let next: Map<string, ContextSnapshot> | null = null;
+  for (const message of messages) {
+    const id = message?.messageId;
+    if (!id || current.has(id)) {
+      continue;
+    }
+    const blob = message.metadata?.contextUsage;
+    if (blob == null || typeof blob !== 'object') {
+      continue;
+    }
+    const snapshot: ContextSnapshot = {
+      ...(blob as TContextUsageEvent),
+      anchorMessageId: id,
+      completedOutputTokens:
+        typeof message.tokenCount === 'number' ? message.tokenCount : undefined,
+    };
+    next ??= new Map(current);
+    next.set(id, snapshot);
+  }
+  if (next != null) {
+    store.set(historyAtom, next);
+  }
 }

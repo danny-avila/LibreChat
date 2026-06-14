@@ -252,6 +252,14 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
   };
 
+  /** Latest visible context snapshot + every emitted usage payload for this
+   *  response, captured by the handlers and persisted on the response message's
+   *  metadata so the breakdown and branch/total cost survive a reload.
+   *  @type {{ latest: import('librechat-data-provider').TContextUsageEvent | null }} */
+  const contextUsageSink = { latest: null };
+  /** @type {Array<import('librechat-data-provider').TTokenUsageEvent>} */
+  const usageEmitSink = [];
+
   const eventHandlers = getDefaultHandlers({
     res,
     toolExecuteOptions,
@@ -263,6 +271,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     streamId,
     subagentAggregatorsByToolCallId,
     usageCost,
+    contextUsageSink,
+    usageEmitSink,
   });
 
   if (!endpointOption.agent) {
@@ -920,6 +930,10 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     /** Resolved endpoint token/pricing config so spending and cost reflect
      *  configured rates for custom-endpoint agents instead of defaults. */
     endpointTokenConfig: primaryConfig.endpointTokenConfig,
+    /** Capture sinks the handlers fill during the run; `sendCompletion` reads
+     *  them to persist the breakdown + usage rollup on the response message. */
+    contextUsageSink,
+    usageEmitSink,
   });
 
   if (streamId) {

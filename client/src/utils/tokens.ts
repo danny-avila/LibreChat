@@ -1,10 +1,30 @@
 import { Tools, Constants, inputTokensIncludesCache } from 'librechat-data-provider';
 import type { TMessage, TTokenUsageEvent } from 'librechat-data-provider';
 
+/** Provider-reported usage of one response, in display units (post-normalize). */
+export interface BranchUsage {
+  input: number;
+  output: number;
+  cacheWrite: number;
+  cacheRead: number;
+  /** Authoritative USD cost; 0 when `interface.contextCost` was off at save */
+  cost: number;
+}
+
+export const EMPTY_USAGE: BranchUsage = {
+  input: 0,
+  output: 0,
+  cacheWrite: 0,
+  cacheRead: 0,
+  cost: 0,
+};
+
 export interface TokenEntry {
   tokenCount: number;
   isCreatedByUser: boolean;
   parentMessageId: string | null;
+  /** Per-response provider usage from `metadata.usage` (response messages only) */
+  usage?: BranchUsage;
 }
 
 export interface BranchTotals {
@@ -19,6 +39,8 @@ export interface BranchTotals {
   tailId: string | null;
   /** Whether the latest run's anchor message is on this branch */
   containsAnchor: boolean;
+  /** Provider usage/cost summed along the active branch */
+  usage: BranchUsage;
 }
 
 export const EMPTY_BRANCH: BranchTotals = {
@@ -28,16 +50,60 @@ export const EMPTY_BRANCH: BranchTotals = {
   total: 0,
   tailId: null,
   containsAnchor: false,
+  usage: EMPTY_USAGE,
 };
 
 /** Module-level token index: conversationId → messageId → entry. Not render state. */
 const registry = new Map<string, Map<string, TokenEntry>>();
+
+/** Reads the persisted per-response usage rollup off a message's metadata,
+ *  normalized into display units. Absent for user messages and pre-feature
+ *  responses (they contribute 0 to branch/total). */
+function readPersistedUsage(message: Partial<TMessage>): BranchUsage | undefined {
+  const usage = message.metadata?.usage;
+  if (usage == null || typeof usage !== 'object') {
+    return undefined;
+  }
+  const event = usage as TTokenUsageEvent;
+  const units = normalizeUsageUnits(event);
+  return {
+    input: units.input,
+    output: units.output,
+    cacheWrite: units.cacheWrite,
+    cacheRead: units.cacheRead,
+    cost: event.cost ?? 0,
+  };
+}
+
+/** Pure sum of two usage records — for combining branch/total with pending. */
+export function mergeUsage(a: BranchUsage, b: BranchUsage): BranchUsage {
+  return {
+    input: a.input + b.input,
+    output: a.output + b.output,
+    cacheWrite: a.cacheWrite + b.cacheWrite,
+    cacheRead: a.cacheRead + b.cacheRead,
+    cost: a.cost + b.cost,
+  };
+}
+
+/** Accumulates one entry's usage into a running total (in place). */
+function addUsage(target: BranchUsage, usage?: BranchUsage): void {
+  if (usage == null) {
+    return;
+  }
+  target.input += usage.input;
+  target.output += usage.output;
+  target.cacheWrite += usage.cacheWrite;
+  target.cacheRead += usage.cacheRead;
+  target.cost += usage.cost;
+}
 
 function toEntry(message: Partial<TMessage>): TokenEntry {
   return {
     tokenCount: typeof message.tokenCount === 'number' ? message.tokenCount : 0,
     isCreatedByUser: message.isCreatedByUser === true,
     parentMessageId: message.parentMessageId ?? null,
+    usage: readPersistedUsage(message),
   };
 }
 
@@ -104,6 +170,7 @@ export function sumBranch(
   }
 
   const totals = { input: 0, output: 0, counted: 0, total: 0, containsAnchor: false };
+  const usage: BranchUsage = { ...EMPTY_USAGE };
   let currentId: string | null = tailId;
   let guard = index.size;
 
@@ -124,10 +191,40 @@ export function sumBranch(
         totals.output += entry.tokenCount;
       }
     }
+    addUsage(usage, entry.usage);
     currentId = entry.parentMessageId;
   }
 
-  return { ...totals, tailId };
+  return { ...totals, tailId, usage };
+}
+
+/**
+ * Sums provider usage/cost across EVERY message in the conversation (all
+ * branches, including regenerated/abandoned responses) — the conversation
+ * total, shown alongside the branch figure when they differ.
+ */
+export function sumTotalUsage(conversationId: string): BranchUsage {
+  const usage: BranchUsage = { ...EMPTY_USAGE };
+  const index = registry.get(conversationId);
+  if (!index) {
+    return usage;
+  }
+  for (const entry of index.values()) {
+    addUsage(usage, entry.usage);
+  }
+  return usage;
+}
+
+/**
+ * Attaches a response's usage to its index entry. Used by the live finalize
+ * path to flush the in-flight accumulator into the index once the response is
+ * counted (the persisted `metadata.usage` reaches `buildIndex` on reload).
+ */
+export function setEntryUsage(conversationId: string, messageId: string, usage: BranchUsage): void {
+  const entry = registry.get(conversationId)?.get(messageId);
+  if (entry) {
+    entry.usage = usage;
+  }
 }
 
 /**

@@ -11,18 +11,22 @@ import type { ContextSnapshot } from '~/store/usage';
 import {
   markUsageFolded,
   liveTokensFamily,
+  totalUsageFamily,
   removeUsageAtoms,
   calibrationFamily,
-  usageTotalsFamily,
+  pendingUsageFamily,
   branchTotalsFamily,
   migrateUsageFolded,
+  EMPTY_USAGE_TOTALS,
   contextSnapshotFamily,
   snapshotsByAnchorFamily,
 } from '~/store/usage';
 import {
   sumBranch,
+  setEntryUsage,
   upsertEntries,
   migrateIndex,
+  sumTotalUsage,
   estimateTokens,
   normalizeUsageUnits,
 } from '~/utils';
@@ -125,9 +129,11 @@ export default function useUsageHandler(): UsageHandlers {
       setLive(convoKey, 0);
     };
 
-    /** Folds one usage event into the totals exactly once per conversation.
-     *  Returns false when the event was already counted (live then replayed
-     *  on resume), so callers can skip the live-estimate bump too. */
+    /** Folds one usage event into the in-flight pending holder exactly once per
+     *  conversation. Returns false when the event was already counted (live then
+     *  replayed on resume), so callers can skip the live-estimate bump too.
+     *  `finalizeUsage` flushes the accumulated pending into the per-message index
+     *  and resets it, so branch/total stay index-derived (no double count). */
     const foldUsage = (data: TTokenUsageEvent, submission: UsageSubmissionLike): boolean => {
       const convoKey = getConvoKey(submission);
       /** runId+seq is unique per model call; fall back to the payload when a
@@ -142,9 +148,9 @@ export default function useUsageHandler(): UsageHandlers {
        *  the uncached portion, output includes repaired completion tokens */
       const units = normalizeUsageUnits(data);
 
-      const totalsAtom = usageTotalsFamily(convoKey);
-      const prev = jotai.get(totalsAtom);
-      jotai.set(totalsAtom, {
+      const pendingAtom = pendingUsageFamily(convoKey);
+      const prev = jotai.get(pendingAtom);
+      jotai.set(pendingAtom, {
         input: prev.input + units.input,
         output: prev.output + units.output,
         cacheWrite: prev.cacheWrite + units.cacheWrite,
@@ -246,7 +252,7 @@ export default function useUsageHandler(): UsageHandlers {
         migrateUsageFolded(fromKey, realId);
         jotai.set(contextSnapshotFamily(realId), jotai.get(contextSnapshotFamily(fromKey)));
         jotai.set(snapshotsByAnchorFamily(realId), jotai.get(snapshotsByAnchorFamily(fromKey)));
-        jotai.set(usageTotalsFamily(realId), jotai.get(usageTotalsFamily(fromKey)));
+        jotai.set(pendingUsageFamily(realId), jotai.get(pendingUsageFamily(fromKey)));
         jotai.set(calibrationFamily(realId), jotai.get(calibrationFamily(fromKey)));
         removeUsageAtoms(fromKey);
       }
@@ -258,10 +264,29 @@ export default function useUsageHandler(): UsageHandlers {
 
       const userMsgId = submission.userMessage?.messageId ?? null;
       const responseId = data.responseMessage?.messageId ?? null;
+
+      /** Flush the in-flight response's pending usage into its index entry, then
+       *  reset pending. Branch/total are summed from the index, so this single
+       *  add is counted exactly once; the persisted `metadata.usage` reproduces
+       *  it on reload. */
+      const pendingAtom = pendingUsageFamily(realId);
+      const pending = jotai.get(pendingAtom);
+      if (responseId != null) {
+        setEntryUsage(realId, responseId, {
+          input: pending.input,
+          output: pending.output,
+          cacheWrite: pending.cacheWrite,
+          cacheRead: pending.cacheRead,
+          cost: pending.costUSD,
+        });
+      }
+      jotai.set(pendingAtom, EMPTY_USAGE_TOTALS);
+
       const tailId = responseId ?? data.requestMessage?.messageId ?? null;
       if (tailId) {
         jotai.set(branchTotalsFamily(realId), sumBranch(realId, tailId, responseId ?? userMsgId));
       }
+      jotai.set(totalUsageFamily(realId), sumTotalUsage(realId));
 
       const snapshotAtom = contextSnapshotFamily(realId);
       const snapshot = jotai.get(snapshotAtom);

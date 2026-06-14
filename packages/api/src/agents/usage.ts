@@ -1,6 +1,11 @@
 import { logger } from '@librechat/data-schemas';
 import { inputTokensIncludesCache } from 'librechat-data-provider';
-import type { TCustomConfig, TTransactionsConfig } from 'librechat-data-provider';
+import type {
+  TCustomConfig,
+  TTokenUsageEvent,
+  TContextUsageEvent,
+  TTransactionsConfig,
+} from 'librechat-data-provider';
 import type {
   StructuredTokenUsage,
   BulkWriteDeps,
@@ -155,6 +160,88 @@ export function computeUsageCostUSD(
         );
   const credits = entries.reduce((sum, entry) => sum + Math.abs(entry.tokenValue), 0);
   return credits / 1e6;
+}
+
+/**
+ * Aggregates the per-model-call `on_token_usage` payloads emitted for one
+ * response into a single rollup, persisted on `responseMessage.metadata.usage`.
+ *
+ * Sums the raw provider counts and the authoritative per-event `cost` from the
+ * same payloads the live client folds, so a reloaded conversation reproduces
+ * the branch/total usage and cost the live session showed. `cost` is included
+ * only when at least one event carried it (i.e. `interface.contextCost` was on);
+ * `model`/`provider` come from the first emitted call (the primary agent's), so
+ * the client's per-event `normalizeUsageUnits` classifies cache the same way it
+ * did live for the common single-provider path.
+ */
+export function aggregateEmittedUsage(
+  events: ReadonlyArray<TTokenUsageEvent>,
+): TTokenUsageEvent | null {
+  if (events.length === 0) {
+    return null;
+  }
+  let input = 0;
+  let output = 0;
+  let total = 0;
+  let cacheCreation = 0;
+  let cacheRead = 0;
+  let cost = 0;
+  let hasCost = false;
+  let model: string | undefined;
+  let provider: string | undefined;
+  for (const event of events) {
+    input += event.input_tokens ?? 0;
+    output += event.output_tokens ?? 0;
+    total += event.total_tokens ?? 0;
+    cacheCreation += event.input_token_details?.cache_creation ?? 0;
+    cacheRead += event.input_token_details?.cache_read ?? 0;
+    if (event.cost != null) {
+      cost += event.cost;
+      hasCost = true;
+    }
+    model ??= event.model;
+    provider ??= event.provider;
+  }
+  const rollup: TTokenUsageEvent = {
+    input_tokens: input,
+    output_tokens: output,
+    total_tokens: total,
+    model,
+    provider,
+  };
+  if (cacheCreation > 0 || cacheRead > 0) {
+    rollup.input_token_details = { cache_creation: cacheCreation, cache_read: cacheRead };
+  }
+  if (hasCost) {
+    rollup.cost = cost;
+  }
+  return rollup;
+}
+
+/**
+ * Projects the latest live context snapshot into the blob persisted on
+ * `responseMessage.metadata.contextUsage`. Trims zero-valued per-tool counts
+ * (privacy/size); the client re-anchors it to the response message id and reads
+ * the response's `tokenCount` as the completed output on rehydrate.
+ */
+export function buildPersistedContextUsage(snapshot: TContextUsageEvent): TContextUsageEvent {
+  const { breakdown } = snapshot;
+  if (breakdown.toolTokenCounts == null) {
+    return { ...snapshot };
+  }
+  const trimmed: Record<string, number> = {};
+  for (const [name, count] of Object.entries(breakdown.toolTokenCounts)) {
+    if (count > 0) {
+      trimmed[name] = count;
+    }
+  }
+  return {
+    ...snapshot,
+    breakdown: {
+      ...breakdown,
+      toolTokenCounts: Object.keys(trimmed).length > 0 ? trimmed : undefined,
+    },
+  };
 }
 
 export interface RecordUsageParams {

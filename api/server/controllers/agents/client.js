@@ -23,6 +23,8 @@ const {
   recordCollectedUsage,
   sendEvent,
   computeUsageCostUSD,
+  aggregateEmittedUsage,
+  buildPersistedContextUsage,
   createSubagentUsageSink,
   isDeepSeekReasoningProvider,
   GenerationJobManager,
@@ -108,11 +110,22 @@ class AgentClient extends BaseClient {
       artifactPromises,
       maxContextTokens,
       subagentAggregatorsByToolCallId,
+      contextUsageSink,
+      usageEmitSink,
       ...clientOptions
     } = options;
 
     this.agentConfigs = agentConfigs;
     this.maxContextTokens = maxContextTokens;
+    /** Latest visible context snapshot for this response, captured live by the
+     *  ON_CONTEXT_USAGE handler; persisted on `metadata.contextUsage`.
+     *  @type {{ latest: import('librechat-data-provider').TContextUsageEvent | null } | undefined} */
+    this.contextUsageSink = contextUsageSink;
+    /** Every emitted `on_token_usage` payload for this response (primary,
+     *  summarization, sequential, and subagent); aggregated into the rollup
+     *  persisted on `metadata.usage`.
+     *  @type {Array<import('librechat-data-provider').TTokenUsageEvent> | undefined} */
+    this.usageEmitSink = usageEmitSink;
     /** @type {MessageContentComplex[]} */
     this.contentParts = contentParts;
     /** @type {Array<UsageMetadata>} */
@@ -828,11 +841,40 @@ class AgentClient extends BaseClient {
     });
 
     const completion = filterMalformedContentParts(this.contentParts);
+    const metadata = this.buildResponseMetadata();
+    return metadata ? { completion, metadata } : { completion };
+  }
+
+  /**
+   * Assembles the response message `metadata`: Vertex thought signatures plus
+   * the persisted context breakdown (Part A) and the usage/cost rollup (Part B),
+   * which rebuild the gauge breakdown and branch/total cost across reloads.
+   * Returns undefined when nothing was captured.
+   * @returns {{
+   *   thoughtSignatures?: Record<string, string>,
+   *   contextUsage?: import('librechat-data-provider').TContextUsageEvent,
+   *   usage?: import('librechat-data-provider').TTokenUsageEvent,
+   * } | undefined}
+   */
+  buildResponseMetadata() {
+    /** @type {{
+     *   thoughtSignatures?: Record<string, string>,
+     *   contextUsage?: import('librechat-data-provider').TContextUsageEvent,
+     *   usage?: import('librechat-data-provider').TTokenUsageEvent,
+     * }} */
+    const metadata = {};
     const signatures = this.collectedThoughtSignatures;
-    if (!signatures || Object.keys(signatures).length === 0) {
-      return { completion };
+    if (signatures && Object.keys(signatures).length > 0) {
+      metadata.thoughtSignatures = signatures;
     }
-    return { completion, metadata: { thoughtSignatures: signatures } };
+    if (this.contextUsageSink?.latest) {
+      metadata.contextUsage = buildPersistedContextUsage(this.contextUsageSink.latest);
+    }
+    const usage = this.usageEmitSink ? aggregateEmittedUsage(this.usageEmitSink) : null;
+    if (usage) {
+      metadata.usage = usage;
+    }
+    return Object.keys(metadata).length > 0 ? metadata : undefined;
   }
 
   /**
@@ -920,6 +962,12 @@ class AgentClient extends BaseClient {
             )
           : undefined,
       };
+      /** Fold into the response's usage rollup (synchronously, regardless of
+       *  emit success) so the persisted total matches the live session, which
+       *  also folds subagent usage into its cost/totals. */
+      if (this.usageEmitSink) {
+        this.usageEmitSink.push(data);
+      }
       /** The sink fires this without awaiting, so retain the promise and flush
        *  it in chatCompletion's finally — emitChunk persists (HSET) before
        *  publishing, and job cleanup must not race that persist or resumed

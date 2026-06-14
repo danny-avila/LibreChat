@@ -3,17 +3,26 @@ import { useAtomValue, useSetAtom } from 'jotai';
 import { useQueryClient } from '@tanstack/react-query';
 import { Constants, QueryKeys } from 'librechat-data-provider';
 import type { TMessage, TConversation, TModelTokenomics } from 'librechat-data-provider';
-import type { ContextSnapshot, UsageTotals } from '~/store/usage';
-import type { BranchTotals } from '~/utils/tokens';
+import type { BranchTotals, BranchUsage } from '~/utils/tokens';
+import type { ContextSnapshot } from '~/store/usage';
 import {
   liveTokensFamily,
+  totalUsageFamily,
   removeUsageAtoms,
-  usageTotalsFamily,
+  hydrateSnapshots,
+  pendingUsageFamily,
   branchTotalsFamily,
   contextSnapshotFamily,
   snapshotsByAnchorFamily,
 } from '~/store/usage';
-import { buildIndex, sumBranch, clearIndex, findBranchSnapshotAnchor } from '~/utils';
+import {
+  buildIndex,
+  sumBranch,
+  clearIndex,
+  mergeUsage,
+  sumTotalUsage,
+  findBranchSnapshotAnchor,
+} from '~/utils';
 import { useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
 import useTokenLimits from './useTokenLimits';
 
@@ -33,11 +42,18 @@ export interface TokenUsageView {
   snapshot: ContextSnapshot | null;
   snapshotActive: boolean;
   branchTotals: BranchTotals;
-  usageTotals: UsageTotals;
+  /** Provider usage along the active branch (matches the gauge), incl. in-flight */
+  branchUsage: BranchUsage;
+  /** Provider usage across all branches of the conversation */
+  totalUsage: BranchUsage;
+  /** Whether any usage is available to display (branch has token usage) */
+  hasUsage: boolean;
+  /** Authoritative branch cost; the cost row is gated on `interface.contextCost` at render */
+  branchCost: number;
+  /** Authoritative cost across all branches (shown when it differs from branch) */
+  totalCost: number;
   liveTokens: number;
   rates?: TModelTokenomics;
-  /** Session cost from provider-reported usage; undefined until usage events arrive */
-  costUSD?: number;
 }
 
 /**
@@ -55,17 +71,38 @@ export default function useTokenUsage({
   const tailId = useLatestMessageId(index);
   const snapshot = useAtomValue(contextSnapshotFamily(conversationKey));
   const snapshotsByAnchor = useAtomValue(snapshotsByAnchorFamily(conversationKey));
-  const usageTotals = useAtomValue(usageTotalsFamily(conversationKey));
+  const pendingUsage = useAtomValue(pendingUsageFamily(conversationKey));
+  const totalUsageBase = useAtomValue(totalUsageFamily(conversationKey));
   const branchTotals = useAtomValue(branchTotalsFamily(conversationKey));
   const liveTokens = useAtomValue(liveTokensFamily(conversationKey));
   const setBranchTotals = useSetAtom(branchTotalsFamily(conversationKey));
+  const setTotalUsage = useSetAtom(totalUsageFamily(conversationKey));
   const limits = useTokenLimits(conversation);
 
-  /** Authoritative session cost: the backend prices each call (premium tiers,
-   *  cache rates) and emits it on the usage event; we just sum. Undefined
-   *  until usage events arrive — the cost row is additionally gated on
-   *  `interface.contextCost`, under which the backend actually emits cost. */
-  const costUSD = usageTotals.eventCount > 0 ? usageTotals.costUSD : undefined;
+  /** Branch/total provider usage is index-derived; the in-flight response is
+   *  the only live add (the pending holder), counted into both — it sits on the
+   *  active branch tail and inside the conversation. The backend prices each
+   *  call (premium tiers, cache rates), so cost sums authoritatively. */
+  const pendingAsUsage: BranchUsage = useMemo(
+    () => ({
+      input: pendingUsage.input,
+      output: pendingUsage.output,
+      cacheWrite: pendingUsage.cacheWrite,
+      cacheRead: pendingUsage.cacheRead,
+      cost: pendingUsage.costUSD,
+    }),
+    [pendingUsage],
+  );
+  const branchUsage = useMemo(
+    () => mergeUsage(branchTotals.usage, pendingAsUsage),
+    [branchTotals.usage, pendingAsUsage],
+  );
+  const totalUsage = useMemo(
+    () => mergeUsage(totalUsageBase, pendingAsUsage),
+    [totalUsageBase, pendingAsUsage],
+  );
+  const hasUsage =
+    branchUsage.input + branchUsage.output + branchUsage.cacheRead + branchUsage.cacheWrite > 0;
 
   const isSubmittingRef = useRef(isSubmitting);
   isSubmittingRef.current = isSubmitting;
@@ -85,7 +122,11 @@ export default function useTokenUsage({
       }
       lastIndexed = messages;
       buildIndex(conversationKey, messages);
+      /** Restore each branch's persisted breakdown (Part A) without clobbering
+       *  a live finalized snapshot for the same response id. */
+      hydrateSnapshots(conversationKey, messages);
       setBranchTotals(sumBranch(conversationKey, tailIdRef.current, anchorIdRef.current));
+      setTotalUsage(sumTotalUsage(conversationKey));
     };
 
     rebuild(queryClient.getQueryData<TMessage[]>([QueryKeys.messages, conversationKey]));
@@ -115,7 +156,7 @@ export default function useTokenUsage({
         removeUsageAtoms(conversationKey);
       }
     };
-  }, [conversationKey, queryClient, setBranchTotals]);
+  }, [conversationKey, queryClient, setBranchTotals, setTotalUsage]);
 
   useEffect(() => {
     /** The cache subscriber is muted during streaming to avoid per-chunk O(n)
@@ -132,7 +173,8 @@ export default function useTokenUsage({
       );
     }
     setBranchTotals(sumBranch(conversationKey, tailId, anchorId));
-  }, [conversationKey, tailId, anchorId, setBranchTotals, queryClient]);
+    setTotalUsage(sumTotalUsage(conversationKey));
+  }, [conversationKey, tailId, anchorId, setBranchTotals, setTotalUsage, queryClient]);
 
   return useMemo(() => {
     /** The granular snapshot is for one specific generation. Show the live one
@@ -179,10 +221,13 @@ export default function useTokenUsage({
         snapshot: activeSnapshot,
         snapshotActive: true,
         branchTotals,
-        usageTotals,
+        branchUsage,
+        totalUsage,
+        hasUsage,
+        branchCost: branchUsage.cost,
+        totalCost: totalUsage.cost,
         liveTokens,
         rates: limits.rates,
-        costUSD,
       };
     }
 
@@ -197,19 +242,23 @@ export default function useTokenUsage({
       snapshot: null,
       snapshotActive: false,
       branchTotals,
-      usageTotals,
+      branchUsage,
+      totalUsage,
+      hasUsage,
+      branchCost: branchUsage.cost,
+      totalCost: totalUsage.cost,
       liveTokens,
       rates: limits.rates,
-      costUSD,
     };
   }, [
     snapshot,
     isSubmitting,
     branchTotals,
-    usageTotals,
+    branchUsage,
+    totalUsage,
+    hasUsage,
     liveTokens,
     limits,
-    costUSD,
     snapshotsByAnchor,
     conversationKey,
   ]);

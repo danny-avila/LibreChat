@@ -1,7 +1,14 @@
+import type { TContextUsageEvent, TTokenUsageEvent } from 'librechat-data-provider';
 import type { RecordUsageDeps, RecordUsageParams, SubagentUsageEvent } from './usage';
 import type { UsageMetadata } from '../stream/interfaces/IJobStore';
 import type { BulkWriteDeps, PricingFns } from './transactions';
-import { computeUsageCostUSD, createSubagentUsageSink, recordCollectedUsage } from './usage';
+import {
+  computeUsageCostUSD,
+  aggregateEmittedUsage,
+  createSubagentUsageSink,
+  recordCollectedUsage,
+  buildPersistedContextUsage,
+} from './usage';
 
 describe('recordCollectedUsage', () => {
   let mockSpendTokens: jest.Mock;
@@ -1501,5 +1508,110 @@ describe('computeUsageCostUSD', () => {
       pricing,
     );
     expect(cost).toBeCloseTo((1000 * 3 + 2000 * 3.75 + 10000 * 0.3 + 500 * 15) / 1e6);
+  });
+});
+
+describe('aggregateEmittedUsage', () => {
+  it('returns null for no emitted events', () => {
+    expect(aggregateEmittedUsage([])).toBeNull();
+  });
+
+  it('sums raw counts, cache details, and cost across the response calls', () => {
+    const events: TTokenUsageEvent[] = [
+      {
+        input_tokens: 100,
+        output_tokens: 20,
+        total_tokens: 120,
+        model: 'gpt-4o-mini',
+        provider: 'openAI',
+        cost: 0.001,
+      },
+      {
+        input_tokens: 150,
+        output_tokens: 10,
+        total_tokens: 160,
+        input_token_details: { cache_creation: 30, cache_read: 50 },
+        model: 'gpt-4o-mini',
+        provider: 'openAI',
+        cost: 0.002,
+      },
+    ];
+    const rollup = aggregateEmittedUsage(events);
+    expect(rollup).toEqual({
+      input_tokens: 250,
+      output_tokens: 30,
+      total_tokens: 280,
+      input_token_details: { cache_creation: 30, cache_read: 50 },
+      model: 'gpt-4o-mini',
+      provider: 'openAI',
+      cost: 0.003,
+    });
+  });
+
+  it('omits cost when no event carried it (contextCost off)', () => {
+    const rollup = aggregateEmittedUsage([
+      { input_tokens: 100, output_tokens: 20, total_tokens: 120, provider: 'openAI' },
+    ]);
+    expect(rollup?.cost).toBeUndefined();
+  });
+
+  it('folds subagent/summarization calls into the rollup, takes model/provider from the first', () => {
+    const rollup = aggregateEmittedUsage([
+      { input_tokens: 100, output_tokens: 20, provider: 'anthropic', model: 'claude', cost: 0.01 },
+      {
+        input_tokens: 40,
+        output_tokens: 5,
+        usage_type: 'subagent',
+        provider: 'openAI',
+        model: 'gpt-4o',
+        cost: 0.02,
+      },
+    ]);
+    expect(rollup?.input_tokens).toBe(140);
+    expect(rollup?.output_tokens).toBe(25);
+    expect(rollup?.cost).toBeCloseTo(0.03);
+    expect(rollup?.provider).toBe('anthropic');
+    expect(rollup?.model).toBe('claude');
+  });
+});
+
+describe('buildPersistedContextUsage', () => {
+  const baseSnapshot: TContextUsageEvent = {
+    runId: 'run-1',
+    breakdown: {
+      maxContextTokens: 8000,
+      instructionTokens: 100,
+      systemMessageTokens: 80,
+      dynamicInstructionTokens: 20,
+      toolSchemaTokens: 30,
+      summaryTokens: 0,
+      toolCount: 2,
+      messageCount: 3,
+      messageTokens: 500,
+      availableForMessages: 7000,
+      toolTokenCounts: { add: 15, noop: 0 },
+    },
+    contextBudget: 7800,
+  };
+
+  it('trims zero-valued per-tool counts', () => {
+    const result = buildPersistedContextUsage(baseSnapshot);
+    expect(result.breakdown.toolTokenCounts).toEqual({ add: 15 });
+    expect(result.contextBudget).toBe(7800);
+  });
+
+  it('drops the tool counts object entirely when all are zero', () => {
+    const result = buildPersistedContextUsage({
+      ...baseSnapshot,
+      breakdown: { ...baseSnapshot.breakdown, toolTokenCounts: { add: 0 } },
+    });
+    expect(result.breakdown.toolTokenCounts).toBeUndefined();
+  });
+
+  it('passes through a snapshot without tool counts', () => {
+    const { toolTokenCounts: _omit, ...breakdown } = baseSnapshot.breakdown;
+    const result = buildPersistedContextUsage({ ...baseSnapshot, breakdown });
+    expect(result.breakdown.toolTokenCounts).toBeUndefined();
+    expect(result.breakdown.messageTokens).toBe(500);
   });
 });

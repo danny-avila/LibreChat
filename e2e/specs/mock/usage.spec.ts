@@ -74,17 +74,26 @@ test.describe('context usage gauge', () => {
     await expect(usageSection.getByText('Output', { exact: true })).toBeVisible();
 
     /** Cost row: interface.contextCost is enabled in the harness yaml, the
-     *  token-config endpoint prices mock models at the default rate, and
-     *  the fake model emits usage — so a $ value must render */
-    await expect(popover.getByText('Session cost')).toBeVisible();
-    await expect(popover.getByText(/\$\d|<\$0\.01/)).toBeVisible();
+     *  token-config endpoint prices mock models at the default rate, and the
+     *  fake model emits usage — so a $ value must render. A single (unbranched)
+     *  conversation shows only the branch cost, no all-branches total line. */
+    const costSection = popover.getByTestId('token-usage-cost');
+    await expect(costSection).toBeVisible();
+    await expect(costSection.getByText(/\$\d|<\$0\.01/)).toBeVisible();
+    await expect(costSection.getByText('All branches')).toHaveCount(0);
     await page.keyboard.press('Escape');
 
-    /** Fallback path: after reload there is no snapshot — the gauge rebuilds
-     *  from per-message tokenCount history returned by the messages query */
+    /** Persistence (Parts A + B): after reload the breakdown rehydrates from
+     *  the response message's metadata.contextUsage + metadata.usage — the
+     *  granular rows AND the branch cost survive without generating a turn. */
     await page.reload({ timeout: 15000 });
     await expect(mockReply(page)).toBeVisible({ timeout: 20000 });
     await expectGaugeAboveZero(page);
+    const reloaded = await openBreakdown(page);
+    await expect(reloaded.getByTestId('context-breakdown')).toBeVisible({ timeout: 10000 });
+    const reloadedCost = reloaded.getByTestId('token-usage-cost');
+    await expect(reloadedCost).toBeVisible();
+    await expect(reloadedCost.getByText(/\$\d|<\$0\.01/)).toBeVisible();
   });
 
   test('renders the granular breakdown from the live context snapshot', async ({ page }) => {
@@ -97,6 +106,40 @@ test.describe('context usage gauge', () => {
     /** The agents pipeline emits on_context_usage on each model call, so the
      *  breakdown — not the estimate fallback — drives the popover. */
     await expectGranular(page);
+  });
+
+  test('shows branch cost with an all-branches total after regenerating', async ({ page }) => {
+    test.setTimeout(150000);
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+
+    await sendAndAwaitReply(page, 'hello');
+
+    /** Single branch: branch cost == total, so no all-branches line renders. */
+    let popover = await openBreakdown(page);
+    await expect(popover.getByTestId('token-usage-cost')).toBeVisible();
+    await expect(popover.getByText('All branches')).toHaveCount(0);
+    await page.keyboard.press('Escape');
+
+    /** Regenerate to create a sibling branch (B). */
+    const assistantMessage = messagesView(page).locator('.message-render').nth(1);
+    await assistantMessage.hover();
+    const regenerateButton = assistantMessage.locator('button[title="Regenerate"]').last();
+    await expect(regenerateButton).toBeVisible();
+    const [regen] = await Promise.all([
+      page.waitForResponse(isAgentsStream, { timeout: 30000 }),
+      regenerateButton.click(),
+    ]);
+    expect(regen.ok()).toBeTruthy();
+    await expect(page.getByText('2 / 2')).toBeVisible({ timeout: 20000 });
+
+    /** Two branches: the cost is branch-scoped (live, not just on reload) and a
+     *  muted all-branches total appears because it exceeds the single branch. */
+    popover = await openBreakdown(page);
+    const costSection = popover.getByTestId('token-usage-cost');
+    await expect(costSection).toBeVisible();
+    await expect(costSection.getByText('Cost (this branch)')).toBeVisible();
+    await expect(costSection.getByText('All branches')).toBeVisible();
   });
 
   test('preserves the granular breakdown after switching branches', async ({ page }) => {
