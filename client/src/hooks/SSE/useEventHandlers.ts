@@ -38,6 +38,7 @@ import {
   queueTitleGeneration,
   markTitleGenerationProcessed,
 } from '~/data-provider';
+import useFocusRegeneratedResponse from '~/hooks/Chat/useFocusRegeneratedResponse';
 import { shouldResetSubagentAtomsOnConversationChange } from './cleanup';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
@@ -488,6 +489,8 @@ export default function useEventHandlers({
     [queryClient, setMessages, isAddedRequest, announcePolite, setConversation, setShowStopButton],
   );
 
+  const focusRegeneratedResponse = useFocusRegeneratedResponse();
+
   const createdHandler = useCallback(
     (data: TResData, submission: EventSubmission) => {
       queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
@@ -510,6 +513,7 @@ export default function useEventHandlers({
       });
       if (isRegenerate) {
         setMessages([...messages, initialResponse]);
+        focusRegeneratedResponse(initialResponse.parentMessageId);
       } else {
         setMessages([...messages, userMessage, initialResponse]);
       }
@@ -580,6 +584,7 @@ export default function useEventHandlers({
       announcePolite,
       setConversation,
       applyAgentTemplate,
+      focusRegeneratedResponse,
     ],
   );
 
