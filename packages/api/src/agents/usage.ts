@@ -303,29 +303,39 @@ export function buildPersistedContextUsage(
  * pre-invoke baseline that the response message's `tokenCount` ALSO carries — the
  * overlap `computeSummaryUsedTokens` subtracts from the marker so the client
  * estimate (`summaryBaseline + responseTokenCount`) doesn't double-count them:
- *  - earlier tool-loop PRIMARY calls: a multi-call turn's first output sits in the
- *    kept-message context of the next call's snapshot AND in `tokenCount`;
  *  - the SUMMARIZATION call's generated summary: it sits in the snapshot baseline
  *    as `summaryTokens` AND in `tokenCount` (`recordCollectedUsage` folds
  *    summarization completion into the reported output total; subagent/sequential
- *    are excluded from that total, so they are excluded here too).
- * `beforeIndex` bounds the walk to calls that preceded the snapshot (the live path
- * knows it; the abort path passes the full length, since an interrupted turn's
- * final call emits no usage so every counted call is earlier). Untagged events
- * (older lib / resume) match any run for back-compat.
+ *    are excluded from that total, so they are excluded here too). The summarize
+ *    detour always runs BEFORE the answer snapshot and is its own model-end call
+ *    that may carry a different `runId`, so it is counted regardless of `runId`
+ *    and is safe even past `beforeIndex`.
+ *  - earlier tool-loop PRIMARY calls (only when `includePrimary`): a multi-call
+ *    turn's first output sits in the kept-message context of the next call's
+ *    snapshot AND in `tokenCount`. These are matched by `runId` (parallel runs)
+ *    and bounded by `beforeIndex` to the calls that preceded the snapshot.
+ *
+ * The abort path has no snapshot/usage boundary (the job stores only the latest
+ * snapshot, not its index), so it passes `includePrimary = false`: a primary that
+ * completed AFTER the latest snapshot is NOT in the baseline, and subtracting it
+ * would cancel real output and under-report. Untagged primaries (older lib /
+ * resume) match any run for back-compat.
  */
 export function priorRunOutputTokens(
   events: ReadonlyArray<TTokenUsageEvent>,
   beforeIndex: number,
   runId?: string,
+  includePrimary = true,
 ): number {
   let total = 0;
   const end = Math.min(beforeIndex, events.length);
   for (let i = 0; i < end; i++) {
     const event = events[i];
-    /** Only outputs that land in the response `tokenCount`: primary calls and the
-     *  summarization call (whose summary the baseline also counts). */
-    if (event.usage_type != null && event.usage_type !== 'summarization') {
+    if (event.usage_type === 'summarization') {
+      total += normalizeEventUnits(event).output;
+      continue;
+    }
+    if (!includePrimary || event.usage_type != null) {
       continue;
     }
     if (runId != null && event.runId != null && event.runId !== runId) {
@@ -400,9 +410,11 @@ function parseUsageEvents(value?: string | null): TTokenUsageEvent[] {
  * summarized: that marker is pre-invoke (no `completedOutputTokens` ambiguity),
  * and without it the fallback estimate re-sums the history the compaction
  * discarded — leaving a stopped summarized turn pinned at 100%. The marker
- * subtracts the outputs the baseline already counts ({@link priorRunOutputTokens}):
- * the interrupted final call emitted no usage, so every persisted primary (plus
- * the summarization call) is an earlier output the baseline already includes.
+ * subtracts only the summarization output ({@link priorRunOutputTokens} with
+ * `includePrimary = false`): the summary is in BOTH the baseline and `tokenCount`,
+ * but without a snapshot/usage boundary the abort path can't tell which primaries
+ * preceded the snapshot, so it leaves them in to avoid cancelling output that
+ * completed after it (which would under-report).
  */
 export function buildAbortedResponseMetadata(
   job: { tokenUsage?: string | null; contextUsage?: string | null } | null | undefined,
@@ -418,7 +430,10 @@ export function buildAbortedResponseMetadata(
       snapshot = null;
     }
   }
-  const priorOutputTokens = priorRunOutputTokens(events, events.length, snapshot?.runId);
+  /** Abort has no snapshot/usage boundary, so subtract only the summarization
+   *  output (always pre-snapshot) — never primaries, which may have completed
+   *  after the latest snapshot and would under-report if cancelled here. */
+  const priorOutputTokens = priorRunOutputTokens(events, events.length, snapshot?.runId, false);
   const summaryUsedTokens = computeSummaryUsedTokens(snapshot, priorOutputTokens);
 
   const metadata: { usage?: TResponseUsage; summaryUsedTokens?: number } = {};

@@ -1875,18 +1875,38 @@ describe('priorRunOutputTokens', () => {
     expect(priorRunOutputTokens(events, 2, 'run-1')).toBe(50);
   });
 
-  it('counts the summarization output but skips subagent/sequential and other runs', () => {
+  it('counts the summarization output but skips subagent/sequential and other-run primaries', () => {
     /** The summarization output is in the response tokenCount AND the baseline
      *  (summaryTokens), so it must be subtracted; subagent/sequential are excluded
-     *  from the reported output total, so they must NOT be. */
+     *  from the reported output total, so they must NOT be; a parallel run's
+     *  primary is not this snapshot's. */
     const events = [
-      ev({ output_tokens: 20, runId: 'run-1' }), // primary
+      ev({ output_tokens: 20, runId: 'run-1' }), // primary, matches
       ev({ output_tokens: 8, runId: 'run-1', usage_type: 'summarization' }), // counted
       ev({ output_tokens: 5, runId: 'run-1', usage_type: 'subagent' }), // skipped
       ev({ output_tokens: 7, runId: 'run-1', usage_type: 'sequential' }), // skipped
-      ev({ output_tokens: 40, runId: 'run-2' }), // other run
+      ev({ output_tokens: 40, runId: 'run-2' }), // other-run primary — skipped
     ];
     expect(priorRunOutputTokens(events, 5, 'run-1')).toBe(28);
+  });
+
+  it('counts the summarization output even when it carries a different run id', () => {
+    /** The summarize detour is its own model-end call and may carry a distinct
+     *  runId; it still lands in this response's tokenCount + baseline, so the
+     *  runId filter must not drop it. */
+    const events = [
+      ev({ output_tokens: 20, runId: 'run-1' }),
+      ev({ output_tokens: 8, runId: 'summarizer-run', usage_type: 'summarization' }),
+    ];
+    expect(priorRunOutputTokens(events, 2, 'run-1')).toBe(28);
+  });
+
+  it('subtracts only summarization when includePrimary is false (abort path)', () => {
+    const events = [
+      ev({ output_tokens: 20, runId: 'run-1' }), // primary — NOT subtracted on abort
+      ev({ output_tokens: 8, runId: 'run-1', usage_type: 'summarization' }), // counted
+    ];
+    expect(priorRunOutputTokens(events, 2, 'run-1', false)).toBe(8);
   });
 
   it('matches untagged events for back-compat and returns 0 with no prior calls', () => {
@@ -1956,11 +1976,12 @@ describe('buildAbortedResponseMetadata', () => {
     expect((result as { contextUsage?: unknown }).contextUsage).toBeUndefined();
   });
 
-  it('subtracts earlier tool-loop outputs from the marker on a stopped multi-call turn', () => {
-    /** An interrupted tool-loop: the earlier call completed (output 20) and is
-     *  baked into the baseline; the final call was stopped (no usage). The marker
-     *  drops that 20 (300 − 20 = 280) so the client estimate, which re-adds the
-     *  response's full tokenCount, doesn't double-count it. */
+  it('subtracts the summarization output but NOT primary usage on a stopped turn', () => {
+    /** Abort has no snapshot/usage boundary, so it can't tell which primaries
+     *  preceded the snapshot. It subtracts the summarization output (8, always
+     *  pre-snapshot and in both baseline + tokenCount): 300 − 8 = 292. The primary
+     *  (20) is left in — it may have completed after the snapshot, and cancelling
+     *  it would under-report. */
     const events: TTokenUsageEvent[] = [
       {
         input_tokens: 100,
@@ -1969,12 +1990,20 @@ describe('buildAbortedResponseMetadata', () => {
         provider: 'openAI',
         runId: 'run-1',
       },
+      {
+        input_tokens: 60,
+        output_tokens: 8,
+        total_tokens: 68,
+        provider: 'openAI',
+        runId: 'run-1',
+        usage_type: 'summarization',
+      },
     ];
     const result = buildAbortedResponseMetadata({
       tokenUsage: JSON.stringify(events),
       contextUsage: JSON.stringify(abortSnapshot),
     });
-    expect(result?.summaryUsedTokens).toBe(280);
+    expect(result?.summaryUsedTokens).toBe(292);
   });
 });
 
