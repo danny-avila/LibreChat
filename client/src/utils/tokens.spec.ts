@@ -250,11 +250,30 @@ describe('formatCost', () => {
     const eur = formatCost(5, { code: 'EUR', rate: 1 });
     expect(eur).toContain('€');
     expect(eur).toContain('5');
-    expect(formatCost(5, { code: 'JPY', rate: 1 })).toContain('¥');
+  });
+
+  it('respects zero-decimal currencies', () => {
+    const jpy = formatCost(5, { code: 'JPY', rate: 1 });
+    expect(jpy).toContain('¥');
+    expect(jpy).not.toContain('.');
   });
 
   it('falls back to USD on a malformed currency code', () => {
     expect(formatCost(5, { code: 'invalid', rate: 1 })).toBe('$5.00');
+  });
+
+  it('drops the rate too when the currency code is unsupported', () => {
+    /** A typo in `code` must not leave a converted amount under the $ symbol. */
+    expect(formatCost(10, { code: 'EURO', rate: 0.92 })).toBe('$10.00');
+  });
+
+  it('falls back to rate 1 when rate is not a finite positive number', () => {
+    /** Partial admin override (code set before rate) must never render NaN. */
+    const eur = formatCost(10, { code: 'EUR', rate: undefined as unknown as number });
+    expect(eur).toContain('€');
+    expect(eur).toContain('10');
+    expect(eur).not.toContain('NaN');
+    expect(formatCost(10, { code: 'USD', rate: Number.NaN })).toBe('$10.00');
   });
 });
 

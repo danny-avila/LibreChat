@@ -481,44 +481,70 @@ export interface CurrencyConfig {
 
 const DEFAULT_CURRENCY: CurrencyConfig = { code: 'USD', rate: 1 };
 const currencyFormatters = new Map<string, Intl.NumberFormat>();
+/** Default fraction digits for a currency (USD→2, JPY→0), or null when the code
+ *  is not a well-formed / supported ISO-4217 code. */
+const currencyDigits = new Map<string, number | null>();
+
+function maxFractionDigits(code: string): number | null {
+  const cached = currencyDigits.get(code);
+  if (cached !== undefined) {
+    return cached;
+  }
+  let digits: number | null;
+  try {
+    digits =
+      new Intl.NumberFormat(undefined, { style: 'currency', currency: code }).resolvedOptions()
+        .maximumFractionDigits ?? 2;
+  } catch {
+    digits = null;
+  }
+  currencyDigits.set(code, digits);
+  return digits;
+}
 
 function currencyFormatter(code: string, minDigits: number, maxDigits: number): Intl.NumberFormat {
   const key = `${code}:${minDigits}:${maxDigits}`;
-  const cached = currencyFormatters.get(key);
-  if (cached != null) {
-    return cached;
-  }
-  let formatter: Intl.NumberFormat;
-  try {
+  let formatter = currencyFormatters.get(key);
+  if (formatter == null) {
     formatter = new Intl.NumberFormat(undefined, {
       style: 'currency',
       currency: code,
       minimumFractionDigits: minDigits,
       maximumFractionDigits: maxDigits,
     });
-  } catch {
-    formatter = new Intl.NumberFormat(undefined, {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: minDigits,
-      maximumFractionDigits: maxDigits,
-    });
+    currencyFormatters.set(key, formatter);
   }
-  currencyFormatters.set(key, formatter);
   return formatter;
 }
 
 export function formatCost(usd: number, currency: CurrencyConfig = DEFAULT_CURRENCY): string {
-  const amount = usd * currency.rate;
-  const { code } = currency;
+  /** Resolve to a safe (code, rate): an unsupported code falls back to USD AND
+   *  rate 1 — never present a converted amount under the wrong symbol. A
+   *  non-finite/negative rate (e.g. a partial admin override that set `code`
+   *  before `rate`) falls back to 1 so a cost never renders as `NaN`. */
+  let code = currency?.code ?? DEFAULT_CURRENCY.code;
+  let base = maxFractionDigits(code);
+  let rate = Number.isFinite(currency?.rate) && (currency.rate as number) > 0 ? currency.rate : 1;
+  if (base == null) {
+    code = DEFAULT_CURRENCY.code;
+    rate = 1;
+    base = 2;
+  }
+
+  const amount = usd * rate;
+  /** Sub-unit precision only for currencies that have minor units, so
+   *  zero-decimal currencies (e.g. JPY) keep their convention. */
+  const precise = base > 0 ? base + 2 : 0;
+  const smallest = base > 0 ? 0.01 : 1;
+
   if (amount <= 0) {
-    return currencyFormatter(code, 2, 2).format(0);
+    return currencyFormatter(code, base, base).format(0);
   }
-  if (amount < 0.01) {
-    return `<${currencyFormatter(code, 2, 2).format(0.01)}`;
+  if (amount < smallest) {
+    return `<${currencyFormatter(code, base, base).format(smallest)}`;
   }
-  if (amount < 1) {
-    return currencyFormatter(code, 4, 4).format(amount);
+  if (amount < 1 && base > 0) {
+    return currencyFormatter(code, precise, precise).format(amount);
   }
-  return currencyFormatter(code, 2, 2).format(amount);
+  return currencyFormatter(code, base, base).format(amount);
 }
