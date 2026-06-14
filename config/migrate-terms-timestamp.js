@@ -63,7 +63,9 @@ const connect = require('./connect');
         // Use createdAt as fallback for termsAcceptedAt
         const termsAcceptedAt = user.createdAt || new Date();
         if (!user.createdAt) {
-          console.yellow(`Warning: User ${user._id} has no createdAt, using current date for termsAcceptedAt`);
+          console.yellow(
+            `Warning: User ${user._id} has no createdAt, using current date for termsAcceptedAt`,
+          );
         }
         await User.updateOne({ _id: user._id }, { $set: { termsAcceptedAt } });
         migratedCount++;
@@ -81,6 +83,7 @@ const connect = require('./connect');
     console.green(`Successfully migrated: ${migratedCount} user(s)`);
     if (errorCount > 0) {
       console.red(`Errors encountered: ${errorCount}`);
+      silentExit(1);
     }
   } catch (error) {
     console.red('Error during migration:', error);

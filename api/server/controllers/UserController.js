@@ -102,6 +102,16 @@ const getTermsStatusController = async (req, res) => {
 
 const acceptTermsController = async (req, res) => {
   try {
+    const existing = await db.getUserById(req.user.id, 'termsAccepted termsAcceptedAt');
+    if (!existing) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    if (existing.termsAccepted && existing.termsAcceptedAt) {
+      return res.status(200).json({
+        message: 'Terms accepted successfully',
+        termsAcceptedAt: existing.termsAcceptedAt,
+      });
+    }
     const user = await db.updateUser(req.user.id, {
       termsAccepted: true,
       termsAcceptedAt: new Date(),

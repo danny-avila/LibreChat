@@ -111,11 +111,12 @@ afterEach(async () => {
 const {
   deleteUserController,
   getUserController,
+  acceptTermsController,
   resendVerificationController,
   verifyEmailController,
 } = require('./UserController');
 const { Group } = require('~/db/models');
-const { deleteConvos } = require('~/models');
+const { deleteConvos, getUserById, updateUser } = require('~/models');
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
 
 describe('verifyEmailController', () => {
@@ -253,6 +254,80 @@ describe('getUserController', () => {
     expect(sentUser).not.toHaveProperty('openidTokens');
     expect(sentUser).not.toHaveProperty('tokenset');
     expect(sentUser).not.toHaveProperty('safeLookingRuntimeField');
+  });
+});
+
+describe('acceptTermsController', () => {
+  const mockRes = {
+    status: jest.fn().mockReturnThis(),
+    json: jest.fn().mockReturnThis(),
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('returns 404 when the user does not exist', async () => {
+    getUserById.mockResolvedValueOnce(null);
+
+    await acceptTermsController({ user: { id: 'missing-user' } }, mockRes);
+
+    expect(mockRes.status).toHaveBeenCalledWith(404);
+    expect(mockRes.json).toHaveBeenCalledWith({ message: 'User not found' });
+    expect(updateUser).not.toHaveBeenCalled();
+  });
+
+  it('records the acceptance timestamp on first acceptance', async () => {
+    const acceptedAt = new Date('2026-06-14T10:00:00.000Z');
+    getUserById.mockResolvedValueOnce({ termsAccepted: false, termsAcceptedAt: null });
+    updateUser.mockResolvedValueOnce({ termsAccepted: true, termsAcceptedAt: acceptedAt });
+
+    await acceptTermsController({ user: { id: 'user-id' } }, mockRes);
+
+    expect(updateUser).toHaveBeenCalledWith('user-id', {
+      termsAccepted: true,
+      termsAcceptedAt: expect.any(Date),
+    });
+    expect(mockRes.status).toHaveBeenCalledWith(200);
+    expect(mockRes.json).toHaveBeenCalledWith({
+      message: 'Terms accepted successfully',
+      termsAcceptedAt: acceptedAt,
+    });
+  });
+
+  it('preserves the original timestamp when terms were already accepted', async () => {
+    const originalAcceptedAt = new Date('2026-01-01T00:00:00.000Z');
+    getUserById.mockResolvedValueOnce({
+      termsAccepted: true,
+      termsAcceptedAt: originalAcceptedAt,
+    });
+
+    await acceptTermsController({ user: { id: 'user-id' } }, mockRes);
+
+    expect(updateUser).not.toHaveBeenCalled();
+    expect(mockRes.status).toHaveBeenCalledWith(200);
+    expect(mockRes.json).toHaveBeenCalledWith({
+      message: 'Terms accepted successfully',
+      termsAcceptedAt: originalAcceptedAt,
+    });
+  });
+
+  it('backfills a timestamp for legacy accepted users without one', async () => {
+    const backfilledAt = new Date('2026-06-14T12:00:00.000Z');
+    getUserById.mockResolvedValueOnce({ termsAccepted: true, termsAcceptedAt: null });
+    updateUser.mockResolvedValueOnce({ termsAccepted: true, termsAcceptedAt: backfilledAt });
+
+    await acceptTermsController({ user: { id: 'legacy-user' } }, mockRes);
+
+    expect(updateUser).toHaveBeenCalledWith('legacy-user', {
+      termsAccepted: true,
+      termsAcceptedAt: expect.any(Date),
+    });
+    expect(mockRes.status).toHaveBeenCalledWith(200);
+    expect(mockRes.json).toHaveBeenCalledWith({
+      message: 'Terms accepted successfully',
+      termsAcceptedAt: backfilledAt,
+    });
   });
 });
 
