@@ -30,11 +30,13 @@ export default function MultiMessage({
    */
   const seenRef = useRef<Set<string>>(new Set());
   const selectedIdRef = useRef<string | null>(null);
+  const prevCountRef = useRef(0);
   const forkRef = useRef<string | null | undefined>(messageId);
   if (forkRef.current !== messageId) {
     forkRef.current = messageId;
     seenRef.current = new Set();
     selectedIdRef.current = null;
+    prevCountRef.current = 0;
   }
 
   const treeRef = useRef(messagesTree);
@@ -59,15 +61,18 @@ export default function MultiMessage({
   useEffect(() => {
     const ids = JSON.parse(idsKey) as string[];
     if (ids.length === 0) {
+      prevCountRef.current = 0;
       return;
     }
     const { index, selectedId } = resolveSiblingSelection(
       ids,
       seenRef.current,
       selectedIdRef.current,
+      prevCountRef.current,
     );
     ids.forEach((id) => seenRef.current.add(id));
     selectedIdRef.current = selectedId;
+    prevCountRef.current = ids.length;
     if (index >= 0) {
       setSiblingIdx(ids.length - 1 - index);
     }
