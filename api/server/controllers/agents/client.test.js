@@ -225,6 +225,51 @@ describe('AgentClient - titleConvo', () => {
       expect(generateTitleCall.clientOptions.model).toBe('gpt-3.5-turbo');
     });
 
+    it('preserves Anthropic custom headers on title requests despite omitTitleOptions', async () => {
+      const prevKey = process.env.ANTHROPIC_API_KEY;
+      process.env.ANTHROPIC_API_KEY = 'sk-ant-test';
+      try {
+        const req = {
+          user: { id: 'user-123' },
+          body: { model: 'claude-sonnet-4-5', endpoint: EModelEndpoint.anthropic, key: null },
+          config: {
+            endpoints: {
+              [EModelEndpoint.anthropic]: {
+                headers: { 'X-Conversation-Id': '{{LIBRECHAT_BODY_CONVERSATIONID}}' },
+              },
+            },
+          },
+        };
+        const agent = {
+          id: 'agent-anthropic',
+          endpoint: EModelEndpoint.anthropic,
+          provider: EModelEndpoint.anthropic,
+          model_parameters: { model: 'claude-sonnet-4-5' },
+        };
+        const anthropicClient = new AgentClient({ req, res: {}, agent, endpointTokenConfig: {} });
+        anthropicClient.run = mockRun;
+        anthropicClient.responseMessageId = 'response-123';
+        anthropicClient.conversationId = 'convo-123';
+        anthropicClient.contentParts = [{ type: 'text', text: 'Test content' }];
+        anthropicClient.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+        await anthropicClient.titleConvo({ text: 'Hello', abortController: new AbortController() });
+
+        const defaultHeaders =
+          mockRun.generateTitle.mock.calls[0][0].clientOptions?.clientOptions?.defaultHeaders;
+        // Custom header survives the `omitTitleOptions` strip and resolves the conversationId
+        expect(defaultHeaders?.['X-Conversation-Id']).toBe('convo-123');
+        // Provider-managed beta header is preserved alongside it
+        expect(defaultHeaders?.['anthropic-beta']).toBeDefined();
+      } finally {
+        if (prevKey === undefined) {
+          delete process.env.ANTHROPIC_API_KEY;
+        } else {
+          process.env.ANTHROPIC_API_KEY = prevKey;
+        }
+      }
+    });
+
     it('should handle missing endpoint config gracefully', async () => {
       // Remove endpoint config
       mockReq.config = { endpoints: {} };

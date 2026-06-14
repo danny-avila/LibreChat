@@ -9,9 +9,9 @@ const {
   logToolError,
   sanitizeTitle,
   payloadParser,
-  resolveHeaders,
   createSafeUser,
   initializeAgent,
+  resolveConfigHeaders,
   countTokens,
   getBalanceConfig,
   omitTitleOptions,
@@ -1624,11 +1624,24 @@ class AgentClient extends BaseClient {
       delete clientOptions.modelKwargs.max_output_tokens;
     }
 
+    /** `omitTitleOptions` drops the Anthropic `clientOptions` carrier (thinking,
+     *  streaming, etc.), which would also drop its `defaultHeaders` — preserve the
+     *  original `clientOptions` object so gateway/reverse-proxy metadata still
+     *  reaches title requests (the proxy may require it for auth/routing). Restore
+     *  the SAME object reference, not a copy: the Vertex `createClient` closure from
+     *  `getLLMConfig` closes over this object, so `resolveConfigHeaders` must mutate
+     *  the very object the client is built from. */
+    const anthropicClientOptions = clientOptions?.clientOptions;
+
     clientOptions = Object.assign(
       Object.fromEntries(
         Object.entries(clientOptions).filter(([key]) => !omitTitleOptions.has(key)),
       ),
     );
+
+    if (anthropicClientOptions?.defaultHeaders != null && clientOptions.clientOptions == null) {
+      clientOptions.clientOptions = anthropicClientOptions;
+    }
 
     if (
       provider === Providers.GOOGLE &&
@@ -1638,20 +1651,19 @@ class AgentClient extends BaseClient {
       clientOptions.json = true;
     }
 
-    /** Resolve request-based headers for Custom Endpoints. Note: if this is added to
-     *  non-custom endpoints, needs consideration of varying provider header configs.
+    /** Resolve request-based headers across provider-specific header locations:
+     *  OpenAI `configuration.defaultHeaders`, Anthropic `clientOptions.defaultHeaders`
+     *  (preserved above), and Google `customHeaders`.
      */
-    if (clientOptions?.configuration?.defaultHeaders != null) {
-      clientOptions.configuration.defaultHeaders = resolveHeaders({
-        headers: clientOptions.configuration.defaultHeaders,
-        user: createSafeUser(this.options.req?.user),
-        body: {
-          messageId: this.responseMessageId,
-          conversationId: this.conversationId,
-          parentMessageId: this.parentMessageId,
-        },
-      });
-    }
+    resolveConfigHeaders({
+      llmConfig: clientOptions,
+      user: createSafeUser(this.options.req?.user),
+      body: {
+        messageId: this.responseMessageId,
+        conversationId: this.conversationId,
+        parentMessageId: this.parentMessageId,
+      },
+    });
 
     try {
       const titleResult = await this.run.generateTitle({

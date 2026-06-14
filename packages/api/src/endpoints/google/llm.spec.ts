@@ -1,5 +1,6 @@
 import { Providers } from '@librechat/agents';
 import { AuthKeys, ThinkingLevel } from 'librechat-data-provider';
+import type { GoogleClientOptions } from '@librechat/agents';
 import type * as t from '~/types';
 import { getGoogleConfig, getSafetySettings, knownGoogleParams } from './llm';
 
@@ -1505,5 +1506,35 @@ describe('knownGoogleParams', () => {
     expect(knownGoogleParams.has('max_tokens')).toBe(false);
     expect(knownGoogleParams.has('frequency_penalty')).toBe(false);
     expect(knownGoogleParams.has('presence_penalty')).toBe(false);
+  });
+
+  describe('custom headers', () => {
+    const credentials = { [AuthKeys.GOOGLE_API_KEY]: 'test-api-key' };
+
+    it('attaches admin-configured headers to customHeaders, keeping placeholders intact', () => {
+      const result = getGoogleConfig(credentials, {
+        modelOptions: { model: 'gemini-1.5-flash' },
+        headers: {
+          'cf-aig-metadata': '{"user_email":"{{LIBRECHAT_USER_EMAIL}}"}',
+        },
+      });
+
+      expect((result.llmConfig as GoogleClientOptions).customHeaders).toEqual({
+        'cf-aig-metadata': '{"user_email":"{{LIBRECHAT_USER_EMAIL}}"}',
+      });
+    });
+
+    it('does not let custom headers override the provider-managed Authorization header', () => {
+      const result = getGoogleConfig(credentials, {
+        modelOptions: { model: 'gemini-1.5-flash' },
+        authHeader: true,
+        headers: { Authorization: 'Bearer attacker', 'X-Conversation-Id': 'cid' },
+      });
+
+      expect((result.llmConfig as GoogleClientOptions).customHeaders).toEqual({
+        Authorization: 'Bearer test-api-key',
+        'X-Conversation-Id': 'cid',
+      });
+    });
   });
 });
