@@ -121,13 +121,14 @@ describe('proxy helpers', () => {
   });
 
   it('matches NO_PROXY wildcard, domains, host ports, and whitespace separators', () => {
-    const noProxy = 'localhost, .internal.example api.example.com:8443 *.service.local';
+    const noProxy = 'localhost, .internal.example api.example.com:8443 *.service.local *wild.local';
 
     expect(shouldBypassProxy('https://localhost/login', noProxy)).toBe(true);
     expect(shouldBypassProxy('https://sso.internal.example/login', noProxy)).toBe(true);
     expect(shouldBypassProxy('https://api.example.com:8443/models', noProxy)).toBe(true);
     expect(shouldBypassProxy('https://api.example.com/models', noProxy)).toBe(false);
     expect(shouldBypassProxy('https://foo.service.local/search', noProxy)).toBe(true);
+    expect(shouldBypassProxy('https://api.wild.local/search', noProxy)).toBe(true);
     expect(shouldBypassProxy('https://example.com', '*')).toBe(true);
   });
 
@@ -183,10 +184,16 @@ describe('proxy helpers', () => {
     expect(MockHttpsProxyAgent).not.toHaveBeenCalled();
   });
 
-  it('does not apply an HTTPS agent to plain HTTP axios targets', () => {
+  it('applies axios native proxy config to plain HTTP targets', () => {
     process.env.HTTP_PROXY = 'http://http-proxy:8080';
 
-    expect(applyAxiosProxyConfig({}, 'http://api.external.example/models')).toEqual({});
+    expect(applyAxiosProxyConfig({}, 'http://api.external.example/models')).toEqual({
+      proxy: {
+        host: 'http-proxy',
+        port: 8080,
+        protocol: 'http',
+      },
+    });
     expect(MockHttpsProxyAgent).not.toHaveBeenCalled();
   });
 });

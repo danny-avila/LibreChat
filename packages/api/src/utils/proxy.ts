@@ -1,6 +1,6 @@
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { EnvHttpProxyAgent, ProxyAgent } from 'undici';
-import type { AxiosRequestConfig } from 'axios';
+import type { AxiosRequestConfig, AxiosProxyConfig } from 'axios';
 import type { Dispatcher } from 'undici';
 
 export type ProxyEnvConfig = {
@@ -116,8 +116,9 @@ function getNoProxyEntry(entry: string): { host: string; port: number } {
   }
 
   const parsed = (trimmed.match(/:/g) ?? []).length === 1 ? trimmed.match(/^(.+):(\d+)$/) : null;
+  const host = normalizeHostname(parsed ? parsed[1] : trimmed);
   return {
-    host: normalizeHostname(parsed ? parsed[1] : trimmed).replace(/^\*\./, '.'),
+    host: host === '*' ? host : host.replace(/^\*\.?/, '.'),
     port: parsed ? Number.parseInt(parsed[2], 10) : 0,
   };
 }
@@ -188,6 +189,27 @@ export function getHttpsProxyAgent(targetUrl?: string | URL): HttpsProxyAgentIns
   return agent;
 }
 
+function getAxiosProxyConfig(proxyUrl: string): AxiosProxyConfig {
+  const url = new URL(proxyUrl);
+  const proxyConfig: Partial<AxiosProxyConfig> = {
+    host: url.hostname.replace(/^\[|\]$/g, ''),
+    protocol: url.protocol.replace(':', ''),
+  };
+
+  if (url.port) {
+    proxyConfig.port = Number.parseInt(url.port, 10);
+  }
+
+  if (url.username || url.password) {
+    proxyConfig.auth = {
+      username: decodeURIComponent(url.username),
+      password: decodeURIComponent(url.password),
+    };
+  }
+
+  return proxyConfig as AxiosProxyConfig;
+}
+
 export function applyAxiosProxyConfig(
   config: AxiosRequestConfig,
   targetUrl?: string | URL,
@@ -195,6 +217,12 @@ export function applyAxiosProxyConfig(
   const resolution = getProxyResolution(targetUrl);
   if (resolution.bypassed) {
     config.proxy = false;
+    return config;
+  }
+
+  const url = parseUrl(targetUrl);
+  if (url && (url.protocol === 'http:' || url.protocol === 'ws:') && resolution.proxyUrl) {
+    config.proxy = getAxiosProxyConfig(resolution.proxyUrl);
     return config;
   }
 
