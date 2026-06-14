@@ -7,8 +7,8 @@ import {
   ScraperProviders,
   SearchCategories,
 } from 'librechat-data-provider';
-import type { SearchApiKeyFormData } from '~/hooks/Plugins/useAuthSearchTool';
 import type { UseFormRegister, UseFormHandleSubmit } from 'react-hook-form';
+import type { SearchApiKeyFormData } from '~/hooks/Plugins/useAuthSearchTool';
 import InputSection, { type DropdownOption } from './InputSection';
 import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize } from '~/hooks';
