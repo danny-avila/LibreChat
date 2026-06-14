@@ -97,6 +97,35 @@ describe('remarkApproxTilde', () => {
     expect(linkText.value).toBe(`${T}50% off`);
   });
 
+  test('preserves an autolink label that displays the URL', () => {
+    const label: TextNode = { type: 'text', value: 'https://example.com/~50/file' };
+    const link: LinkNode = {
+      type: 'link',
+      url: 'https://example.com/~50/file',
+      children: [label],
+    };
+    remarkApproxTilde()({ type: 'root', children: [link] } as Node);
+    expect(label.value).toBe('https://example.com/~50/file');
+  });
+
+  test('preserves a www autolink label whose href has an implied scheme', () => {
+    const label: TextNode = { type: 'text', value: 'www.example.com/~50/x' };
+    const link: LinkNode = {
+      type: 'link',
+      url: 'http://www.example.com/~50/x',
+      children: [label],
+    };
+    remarkApproxTilde()({ type: 'root', children: [link] } as Node);
+    expect(label.value).toBe('www.example.com/~50/x');
+  });
+
+  test('still converts a regular link label that is prose', () => {
+    const label: TextNode = { type: 'text', value: '~50% to ~10% off' };
+    const link: LinkNode = { type: 'link', url: 'https://example.com', children: [label] };
+    remarkApproxTilde()({ type: 'root', children: [link] } as Node);
+    expect(label.value).toBe(`${T}50% to ${T}10% off`);
+  });
+
   test('removes both tildes of an approximation pair so no `~` remains to subscript', () => {
     const node: TextNode = { type: 'text', value: 'first ~50% then ~10% drop' };
     const tree: Node = { type: 'root', children: [node] } as Node;

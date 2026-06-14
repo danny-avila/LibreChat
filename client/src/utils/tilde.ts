@@ -5,6 +5,28 @@ interface TextNode extends Node {
   type: 'text';
   value: string;
 }
+interface LinkNode extends Node {
+  type: 'link';
+  url: string;
+}
+
+/**
+ * A GFM autolink renders the URL itself as its label, so the label text node equals the
+ * destination (with an implied scheme for `www.`/email links). Rewriting it would change the
+ * URL the user sees while leaving the href intact, so these are left untouched.
+ */
+function isAutolinkLabel(value: string, parent?: Node): boolean {
+  if (!parent || parent.type !== 'link') {
+    return false;
+  }
+  const url = (parent as LinkNode).url;
+  return (
+    url === value ||
+    url === `http://${value}` ||
+    url === `https://${value}` ||
+    url === `mailto:${value}`
+  );
+}
 
 // "Approximately" tilde: a `~` prefixing a number that is not attached to a preceding word —
 // e.g. `~50%`, `~ -3%`, `~$5`, `"~50%"`, `(~10%)`. Running on parsed text nodes (never code,
@@ -30,13 +52,15 @@ export function normalizeApproxTildes(value: string): string {
 /**
  * remark plugin that neutralizes "approximately" tildes in text nodes before
  * `remark-supersub` runs. Operating on the parsed tree means code, links, math, and URL
- * destinations are structurally excluded — none of them are `text` nodes.
+ * destinations are structurally excluded — none of them are `text` nodes. Autolink labels
+ * (which display the URL itself) are skipped so the visible URL is preserved verbatim.
  */
 export function remarkApproxTilde() {
   return (tree: Node) => {
-    visit(tree, 'text', (node) => {
+    visit(tree, 'text', (node, _index, parent) => {
       const textNode = node as TextNode;
       if (typeof textNode.value !== 'string') return;
+      if (isAutolinkLabel(textNode.value, parent)) return;
       textNode.value = normalizeApproxTildes(textNode.value);
     });
   };
