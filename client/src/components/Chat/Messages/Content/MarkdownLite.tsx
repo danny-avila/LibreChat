@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo } from 'react';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
@@ -9,7 +9,7 @@ import type { PluggableList } from 'unified';
 import { code, codeNoExecution, a, p, img, table } from './MarkdownComponents';
 import { CodeBlockProvider, ArtifactProvider } from '~/Providers';
 import MarkdownErrorBoundary from './MarkdownErrorBoundary';
-import { langSubset, preprocessTilde } from '~/utils';
+import { langSubset, remarkApproxTilde } from '~/utils';
 
 const MarkdownLite = memo(
   ({ content = '', codeExecution = true }: { content?: string; codeExecution?: boolean }) => {
@@ -25,14 +25,13 @@ const MarkdownLite = memo(
       ],
     ];
 
-    const processedContent = useMemo(() => preprocessTilde(content), [content]);
-
     return (
       <MarkdownErrorBoundary content={content} codeExecution={codeExecution}>
         <ArtifactProvider>
           <CodeBlockProvider>
             <ReactMarkdown
               remarkPlugins={[
+                remarkApproxTilde,
                 /** @ts-ignore */
                 supersub,
                 remarkGfm,
@@ -52,7 +51,7 @@ const MarkdownLite = memo(
                 }
               }
             >
-              {processedContent}
+              {content}
             </ReactMarkdown>
           </CodeBlockProvider>
         </ArtifactProvider>

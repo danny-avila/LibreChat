@@ -2,8 +2,8 @@ import React, { memo, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { getRemarkPlugins, getRehypePlugins, getMarkdownComponents } from './markdownConfig';
 import MarkdownErrorBoundary from './MarkdownErrorBoundary';
-import { preprocessLaTeX, preprocessTilde } from '~/utils';
 import MarkdownBlocks from './MarkdownBlocks';
+import { preprocessLaTeX } from '~/utils';
 import store from '~/store';
 
 type TContentProps = {
@@ -19,8 +19,7 @@ const Markdown = memo(function Markdown({ content = '', isLatestMessage }: TCont
     if (isInitializing) {
       return '';
     }
-    const processed = preprocessTilde(content);
-    return LaTeXParsing ? preprocessLaTeX(processed) : processed;
+    return LaTeXParsing ? preprocessLaTeX(content) : content;
   }, [content, LaTeXParsing, isInitializing]);
 
   if (isInitializing) {
