@@ -153,7 +153,15 @@ export function getProviderConfig({
       throw new Error(`Provider ${provider} not supported`);
     }
     getOptions = initializeCustom;
-    overrideProvider = Providers.OPENAI;
+    /**
+     * Custom endpoints default to the OpenAI-compatible client. An explicit
+     * `provider: anthropic` routes them through the native Anthropic
+     * `/v1/messages` client instead (`initializeCustom` builds the right config).
+     */
+    overrideProvider =
+      customEndpointConfig.provider === EModelEndpoint.anthropic
+        ? Providers.ANTHROPIC
+        : Providers.OPENAI;
   }
 
   if (isKnownCustomProvider(overrideProvider) && !customEndpointConfig) {

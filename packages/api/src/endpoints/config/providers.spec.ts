@@ -4,7 +4,7 @@ import type { AppConfig } from '@librechat/data-schemas';
 import { getProviderConfig, providerConfigMap, resolveTitleTiming } from './providers';
 
 const buildAppConfig = (
-  customEndpoints: Array<{ name: string; baseURL?: string; apiKey?: string }>,
+  customEndpoints: Array<{ name: string; baseURL?: string; apiKey?: string; provider?: string }>,
 ): AppConfig =>
   ({
     endpoints: {
@@ -95,6 +95,33 @@ describe('getProviderConfig', () => {
     expect(() =>
       getProviderConfig({ provider: 'openrouter', appConfig: buildAppConfig([]) }),
     ).toThrow('Provider openrouter not supported');
+  });
+
+  it('routes a custom endpoint with provider:anthropic to the Anthropic client', () => {
+    const appConfig = buildAppConfig([
+      {
+        name: 'Claude-Compatible',
+        baseURL: 'https://gateway.example.com',
+        apiKey: 'sk-ant',
+        provider: EModelEndpoint.anthropic,
+      },
+    ]);
+
+    const result = getProviderConfig({ provider: 'Claude-Compatible', appConfig });
+
+    expect(result.overrideProvider).toBe(Providers.ANTHROPIC);
+    expect(result.customEndpointConfig?.provider).toBe(EModelEndpoint.anthropic);
+  });
+
+  it('defaults a custom endpoint without provider to the OpenAI-compatible client', () => {
+    const appConfig = buildAppConfig([
+      { name: 'My-LLM', baseURL: 'https://api.example.com/v1', apiKey: 'sk-test' },
+    ]);
+
+    const result = getProviderConfig({ provider: 'My-LLM', appConfig });
+
+    expect(result.overrideProvider).toBe(Providers.OPENAI);
+    expect(result.customEndpointConfig?.name).toBe('My-LLM');
   });
 });
 

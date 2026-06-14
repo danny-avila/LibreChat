@@ -508,6 +508,29 @@ endpoints:
   #     #     deploymentName: claude-3-5-haiku@20241022  # Override for this model
 
   custom:
+    # Anthropic-compatible Example (native `/v1/messages` API)
+    # Set `provider: anthropic` to use the native Anthropic client instead of the
+    # default OpenAI-compatible one — for Anthropic itself or Anthropic-compatible
+    # gateways (e.g. AI gateways, OpenCode Zen). The `baseURL` must be the API root
+    # the Anthropic SDK appends `/v1/messages` to. List models explicitly: model
+    # auto-fetch uses the OpenAI `/models` convention and is not used for this provider.
+    - name: 'Claude-Compatible'
+      provider: 'anthropic'
+      apiKey: '${ANTHROPIC_API_KEY}'
+      baseURL: 'https://api.anthropic.com'
+      # (optional) headers forwarded on every request (e.g. for a reverse proxy);
+      # values support the same placeholders as built-in endpoints.
+      headers:
+        anthropic-version: '2023-06-01'
+      models:
+        default:
+          - 'claude-sonnet-4-5'
+          - 'claude-opus-4-5'
+        fetch: false
+      titleConvo: true
+      titleModel: 'claude-sonnet-4-5'
+      modelDisplayLabel: 'Claude (Compatible)'
+
     # Groq Example
     - name: 'groq'
       apiKey: '${GROQ_API_KEY}'
