@@ -149,12 +149,15 @@ export type SiblingSelection = {
  * the ids ever seen at this fork and the user's currently-committed branch.
  *
  * - First sighting of a fork (`seen` empty) → newest sibling (load default).
- * - A genuinely new sibling (an id never seen here) → focus it. This is a
- *   submission/regeneration/edit at this fork; the newest such id wins.
- * - Otherwise the children merely churned — e.g. an unrelated sibling branch
- *   was transiently dropped and restored while a regeneration elsewhere
- *   streamed (`getRegenerateSubmissionMessages` slices the flat array). Keep
- *   the user's selected branch instead of snapping to the newest.
+ * - The committed selection, if still present, wins. An explicit choice must
+ *   not be stolen by a freshly-appearing id — notably a placeholder→server id
+ *   swap of *another* sibling mid-stream (e.g. `useStepHandler` re-keys the
+ *   in-flight response to its run id), which would otherwise look "new" and
+ *   snap focus back to the streaming branch after the user switched away.
+ * - Committed selection gone (regenerated away, or its own placeholder id was
+ *   just replaced) → focus the newest genuinely-new sibling, else the newest.
+ *   This is how a submission/regeneration/edit at this fork takes focus: the
+ *   slice removes the old response, so its id is absent and the new one wins.
  */
 export const resolveSiblingSelection = (
   ids: string[],
@@ -169,15 +172,18 @@ export const resolveSiblingSelection = (
     return { index: ids.length - 1, selectedId: ids[ids.length - 1] };
   }
 
+  const keepIdx = selectedId != null ? ids.indexOf(selectedId) : -1;
+  if (keepIdx >= 0) {
+    return { index: keepIdx, selectedId };
+  }
+
   for (let i = ids.length - 1; i >= 0; i--) {
     if (!seen.has(ids[i])) {
       return { index: i, selectedId: ids[i] };
     }
   }
 
-  const keepIdx = selectedId != null ? ids.indexOf(selectedId) : -1;
-  const index = keepIdx >= 0 ? keepIdx : ids.length - 1;
-  return { index, selectedId: ids[index] };
+  return { index: ids.length - 1, selectedId: ids[ids.length - 1] };
 };
 
 export const getLatestText = (message?: TMessage | null, includeIndex?: boolean): string => {

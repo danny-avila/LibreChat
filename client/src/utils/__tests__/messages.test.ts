@@ -91,10 +91,11 @@ describe('resolveSiblingSelection', () => {
     expect(resolveSiblingSelection(['a', 'b'], seen, null)).toEqual({ index: 1, selectedId: 'b' });
   });
 
-  it('focuses a genuinely new sibling (regeneration/edit/new turn)', () => {
+  it('focuses a new sibling when the prior selection is gone (regen removed it)', () => {
+    // The regenerate slice removes the old response, so its id ('a') is absent
+    // and the freshly-streamed sibling ('b') takes focus.
     const seen = new Set(['a']);
-    // 'b' was never seen here → it is the freshly created branch
-    expect(resolveSiblingSelection(['a', 'b'], seen, 'a')).toEqual({ index: 1, selectedId: 'b' });
+    expect(resolveSiblingSelection(['b'], seen, 'a')).toEqual({ index: 0, selectedId: 'b' });
   });
 
   it('preserves the selected branch when children merely churn (the bug)', () => {
@@ -102,6 +103,25 @@ describe('resolveSiblingSelection', () => {
     // while a regeneration elsewhere streamed; keep the user on 'a'
     const seen = new Set(['a', 'b']);
     expect(resolveSiblingSelection(['a', 'b'], seen, 'a')).toEqual({ index: 0, selectedId: 'a' });
+  });
+
+  it('does not let a placeholder→server id swap steal an explicit selection', () => {
+    // User regenerated (in-flight 'a-prelim'), then switched to sibling 'b';
+    // the in-flight id churns to 'a-server'. With 'b' selected, stay on 'b'.
+    const seen = new Set(['a-prelim', 'b']);
+    expect(resolveSiblingSelection(['b', 'a-server'], seen, 'b')).toEqual({
+      index: 0,
+      selectedId: 'b',
+    });
+  });
+
+  it('follows its own placeholder→server id swap when that branch is selected', () => {
+    // Viewing the in-flight regen ('a-prelim'); its id churns to 'a-server'.
+    const seen = new Set(['a-prelim']);
+    expect(resolveSiblingSelection(['a-server'], seen, 'a-prelim')).toEqual({
+      index: 0,
+      selectedId: 'a-server',
+    });
   });
 
   it('falls back to newest when the selected branch disappears', () => {
