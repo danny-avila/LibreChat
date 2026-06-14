@@ -109,6 +109,28 @@ export function resolveConfigHeaders({
 
   const googleConfig = llmConfig as GoogleClientOptions;
   if (googleConfig.customHeaders != null) {
-    googleConfig.customHeaders = resolve(googleConfig.customHeaders as Record<string, string>);
+    googleConfig.customHeaders = resolveCustomHeaders(
+      googleConfig.customHeaders as Record<string, string>,
+      resolve,
+    );
   }
+}
+
+/**
+ * Resolves Google `customHeaders` while leaving the provider-managed
+ * `Authorization` header untouched. That header is built from the API key
+ * (possibly user-provided when `GOOGLE_KEY=user_provided`), not an admin
+ * template, so passing it through placeholder/env resolution could expand a
+ * user-controlled `${ENV}` reference and leak server environment values.
+ */
+function resolveCustomHeaders(
+  headers: Record<string, string>,
+  resolve: (headers: Record<string, string>) => Record<string, string>,
+): Record<string, string> {
+  const managed: Record<string, string> = {};
+  const templated: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    (key.toLowerCase() === 'authorization' ? managed : templated)[key] = value;
+  }
+  return { ...resolve(templated), ...managed };
 }

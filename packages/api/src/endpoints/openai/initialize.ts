@@ -105,12 +105,17 @@ export async function initializeOpenAI({
     isServerless = serverless === true;
 
     clientOptions.reverseProxyUrl = configBaseURL ?? clientOptions.reverseProxyUrl;
-    /** `endpoints.all` headers apply globally; Azure-managed headers (and the
-     *  `api-key`/version headers added in `getOpenAIConfig`) stay authoritative. */
     clientOptions.headers = resolveHeaders({
-      headers: { ...globalHeaders, ...headers, ...(clientOptions.headers ?? {}) },
+      headers: { ...headers, ...(clientOptions.headers ?? {}) },
       user: req.user,
     });
+    /** `endpoints.all` headers apply globally, but stay unresolved here — they are
+     *  resolved once at request time by `resolveConfigHeaders`. Resolving them now
+     *  (in addition) would re-expand already-substituted user values, violating the
+     *  env-before-user invariant. Azure-managed headers stay authoritative. */
+    if (globalHeaders) {
+      clientOptions.headers = mergeHeaders(globalHeaders, clientOptions.headers);
+    }
 
     const groupName = modelGroupMap[modelName || '']?.group;
     if (groupName && groupMap[groupName]) {

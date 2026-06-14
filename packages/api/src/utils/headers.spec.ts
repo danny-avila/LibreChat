@@ -114,6 +114,26 @@ describe('resolveConfigHeaders', () => {
     });
   });
 
+  it('does not env-expand the provider-managed Google Authorization header', () => {
+    process.env.HEADERS_SPEC_SECRET = 'server-secret';
+    const llmConfig = {
+      customHeaders: {
+        Authorization: 'Bearer ${HEADERS_SPEC_SECRET}',
+        'X-Conversation-Id': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+      },
+    } as unknown as RunLLMConfig;
+
+    resolveConfigHeaders({ llmConfig, user, body });
+
+    const customHeaders = (llmConfig as unknown as { customHeaders: Record<string, string> })
+      .customHeaders;
+    /** Auth header (built from a possibly user-provided key) is left untouched */
+    expect(customHeaders.Authorization).toBe('Bearer ${HEADERS_SPEC_SECRET}');
+    /** Admin metadata headers still resolve */
+    expect(customHeaders['X-Conversation-Id']).toBe('convo-abc');
+    delete process.env.HEADERS_SPEC_SECRET;
+  });
+
   it('resolves env-var placeholders in header values', () => {
     process.env.HEADERS_SPEC_GATEWAY_KEY = 'secret-key';
     const llmConfig = {

@@ -197,12 +197,12 @@ describe('initializeOpenAI – custom headers', () => {
     expect(options.headers).toBeUndefined();
   });
 
-  it('applies endpoints.all headers to the env-based Azure path', async () => {
+  it('applies endpoints.all headers to the env-based Azure path, unresolved at init', async () => {
     (getAzureCredentials as jest.Mock).mockReturnValueOnce({ azureOpenAIApiKey: 'az-key' });
     const params = createParams({ AZURE_API_KEY: 'az-key' });
     params.endpoint = EModelEndpoint.azureOpenAI;
     (params.req.config as { endpoints: Record<string, unknown> }).endpoints = {
-      all: { headers: { 'X-Global': 'g' } },
+      all: { headers: { 'X-Global': '{{LIBRECHAT_USER_ID}}' } },
     };
 
     try {
@@ -212,6 +212,7 @@ describe('initializeOpenAI – custom headers', () => {
     }
 
     const options = mockGetOpenAIConfig.mock.calls[0][1] as { headers?: Record<string, string> };
-    expect(options.headers).toEqual({ 'X-Global': 'g' });
+    // Left unresolved here; request-time resolveConfigHeaders resolves it once
+    expect(options.headers).toEqual({ 'X-Global': '{{LIBRECHAT_USER_ID}}' });
   });
 });
