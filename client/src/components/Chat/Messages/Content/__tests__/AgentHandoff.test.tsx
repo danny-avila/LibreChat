@@ -59,7 +59,7 @@ describe('AgentHandoff - A11Y accessibility stubs', () => {
       args: '{"key":"value"}',
     });
 
-    const button = screen.getByRole('button');
+    const button = screen.getByRole('button', { name: /Transferred to/i });
     expect(button.tagName).toBe('BUTTON');
   });
 
@@ -69,7 +69,7 @@ describe('AgentHandoff - A11Y accessibility stubs', () => {
       args: '{"key":"value"}',
     });
 
-    const button = screen.getByRole('button');
+    const button = screen.getByRole('button', { name: /Transferred to/i });
     expect(button).toHaveAttribute('aria-label');
     expect(button.getAttribute('aria-label')).toContain('Transferred to');
     expect(button.getAttribute('aria-label')).toContain('Test Agent');
@@ -81,7 +81,7 @@ describe('AgentHandoff - A11Y accessibility stubs', () => {
       args: '{"key":"value"}',
     });
 
-    const button = screen.getByRole('button');
+    const button = screen.getByRole('button', { name: /Transferred to/i });
     expect(button.className).toContain('focus-visible:ring-2');
   });
 
@@ -91,7 +91,7 @@ describe('AgentHandoff - A11Y accessibility stubs', () => {
       args: '',
     });
 
-    const button = screen.getByRole('button');
+    const button = screen.getByRole('button', { name: /Transferred to/i });
     expect(button).toBeDisabled();
   });
 });
