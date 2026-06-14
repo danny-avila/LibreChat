@@ -12,6 +12,7 @@ const {
 const {
   GenerationJobManager,
   aggregateEmittedUsage,
+  resolveAgentTokenConfig,
   buildPersistedContextUsage,
 } = require('@librechat/api');
 const { getDefaultHandlers } = require('~/server/controllers/agents/callbacks');
@@ -299,6 +300,61 @@ describe('usage events through the real agents pipeline', () => {
     const usage = aggregateEmittedUsage(usageEmitSink);
     expect(usage.cost).toBeGreaterThan(0);
     expect(usage.cost).toBeCloseTo(usageEmitSink.reduce((sum, e) => sum + e.cost, 0));
+  });
+
+  test('emit path prices each call by its producing agent and strips the agentId tag', () => {
+    const res = createMockRes();
+    const usageEmitSink = [];
+    /** Two endpoints share a model id but bill at different rates. */
+    const primaryConfig = { 'gpt-4': { prompt: 0.01, completion: 0.03, context: 8192 } };
+    const subagentConfig = { 'gpt-4': { prompt: 0.05, completion: 0.15, context: 8192 } };
+    const byAgentId = new Map([
+      ['primary', primaryConfig],
+      ['sub', subagentConfig],
+    ]);
+    const usageCost = {
+      enabled: true,
+      endpointTokenConfig: primaryConfig,
+      pricing: {
+        getMultiplier: ({ tokenType, model, endpointTokenConfig }) =>
+          endpointTokenConfig?.[model]?.[tokenType] ?? 0,
+        getCacheMultiplier: () => 0,
+      },
+      resolveEndpointTokenConfig: (usage) =>
+        resolveAgentTokenConfig({ agentId: usage?.agentId, byAgentId, fallback: primaryConfig }),
+    };
+
+    const { aggregateContent } = createContentAggregator();
+    const handlers = getDefaultHandlers({
+      res,
+      aggregateContent,
+      toolEndCallback: () => {},
+      collectedUsage: [],
+      usageEmitSink,
+      usageCost,
+    });
+    /** The CHAT_MODEL_END handler's emitUsage IS the real emitTokenUsage closure. */
+    const emitUsage = handlers[GraphEvents.CHAT_MODEL_END].emitUsage;
+    const call = { model: 'gpt-4', input_tokens: 100, output_tokens: 50, total_tokens: 150 };
+    emitUsage({ ...call, agentId: 'sub' });
+    emitUsage({ ...call, agentId: 'primary' });
+
+    const events = res.events.filter((e) => e.event === 'on_token_usage');
+    expect(events).toHaveLength(2);
+    /** agentId is an internal pricing tag — never streamed to the client nor
+     *  folded into the persisted rollup. */
+    for (const e of events) {
+      expect(e.data.agentId).toBeUndefined();
+    }
+    for (const entry of usageEmitSink) {
+      expect(entry.agentId).toBeUndefined();
+    }
+    /** Same tokens + model id, but the subagent endpoint's higher rates price
+     *  its call above the primary — proving per-agent emit pricing. The 5× ratio
+     *  ((100·0.05+50·0.15)/(100·0.01+50·0.03)) is scale-independent of credit units. */
+    expect(events[1].data.cost).toBeGreaterThan(0);
+    expect(events[0].data.cost).toBeGreaterThan(events[1].data.cost);
+    expect(events[0].data.cost / events[1].data.cost).toBeCloseTo(5);
   });
 
   test('persists usage and context snapshot for resume via GenerationJobManager', async () => {

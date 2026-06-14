@@ -7,6 +7,7 @@ import {
   aggregateEmittedUsage,
   createSubagentUsageSink,
   recordCollectedUsage,
+  resolveAgentTokenConfig,
   buildPersistedContextUsage,
   buildAbortedResponseMetadata,
 } from './usage';
@@ -809,6 +810,77 @@ describe('recordCollectedUsage', () => {
       );
     });
 
+    it('prices each usage with its agent endpoint config (multi-endpoint graph)', async () => {
+      /** Two endpoints share a model id but bill at different rates. */
+      const primaryConfig = { 'shared-model': { prompt: 0.01, completion: 0.03, context: 8192 } };
+      const subagentConfig = { 'shared-model': { prompt: 0.05, completion: 0.15, context: 8192 } };
+      const byAgent: Record<string, typeof primaryConfig> = {
+        primary: primaryConfig,
+        sub: subagentConfig,
+      };
+      const collectedUsage: UsageMetadata[] = [
+        {
+          usage_type: 'message',
+          agentId: 'primary',
+          input_tokens: 100,
+          output_tokens: 50,
+          model: 'shared-model',
+        },
+        {
+          usage_type: 'subagent',
+          agentId: 'sub',
+          input_tokens: 200,
+          output_tokens: 80,
+          model: 'shared-model',
+        },
+      ];
+
+      await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+        endpointTokenConfig: primaryConfig,
+        resolveEndpointTokenConfig: (usage) =>
+          usage.agentId != null ? byAgent[usage.agentId] : undefined,
+      });
+
+      expect(mockSpendTokens).toHaveBeenCalledWith(
+        expect.objectContaining({
+          context: 'message',
+          model: 'shared-model',
+          endpointTokenConfig: primaryConfig,
+        }),
+        { promptTokens: 100, completionTokens: 50 },
+      );
+      expect(mockSpendTokens).toHaveBeenCalledWith(
+        expect.objectContaining({
+          context: 'subagent',
+          model: 'shared-model',
+          endpointTokenConfig: subagentConfig,
+        }),
+        { promptTokens: 200, completionTokens: 80 },
+      );
+    });
+
+    it('trusts the resolver result, including undefined (built-in pricing for known agents)', async () => {
+      const batch = { 'gpt-4': { prompt: 0.01, completion: 0.03, context: 8192 } };
+      await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage: [
+          { agentId: 'known-openai', input_tokens: 100, output_tokens: 50, model: 'gpt-4' },
+        ],
+        endpointTokenConfig: batch,
+        /** A known agent with no configured rates: the resolver returns undefined
+         *  and the billing path must honor it (built-in pricing), NOT re-apply
+         *  the batch/primary config. */
+        resolveEndpointTokenConfig: () => undefined,
+      });
+
+      expect(mockSpendTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ endpointTokenConfig: undefined }),
+        { promptTokens: 100, completionTokens: 50 },
+      );
+    });
+
     it('should use default context "message" when not provided', async () => {
       const collectedUsage: UsageMetadata[] = [
         { input_tokens: 100, output_tokens: 50, model: 'gpt-4' },
@@ -1382,8 +1454,22 @@ describe('createSubagentUsageSink', () => {
         total_tokens: 1600,
         model: 'claude-haiku-4-5',
         provider: 'anthropic',
+        agentId: 'researcher',
       },
     ]);
+  });
+
+  it('tags the child agent id so the host can price with the subagent endpoint config', () => {
+    const collectedUsage: UsageMetadata[] = [];
+    const emitted: UsageMetadata[] = [];
+    const sink = createSubagentUsageSink(collectedUsage, (u) => emitted.push(u));
+
+    sink(makeEvent({ subagentAgentId: 'agent_xyz' }));
+
+    expect(collectedUsage[0].agentId).toBe('agent_xyz');
+    /** The same tagged object is handed to onUsage (the live emitter). */
+    expect(emitted[0]).toBe(collectedUsage[0]);
+    expect(emitted[0].agentId).toBe('agent_xyz');
   });
 
   it('preserves cache token details from the child call', () => {
@@ -1696,5 +1782,50 @@ describe('buildAbortedResponseMetadata', () => {
     const result = buildAbortedResponseMetadata({ tokenUsage: JSON.stringify(events) });
     expect(result).toEqual({ usage: { input: 100, output: 20, cacheWrite: 0, cacheRead: 0 } });
     expect((result as { contextUsage?: unknown }).contextUsage).toBeUndefined();
+  });
+});
+
+describe('resolveAgentTokenConfig', () => {
+  const primary = { 'gpt-4': { prompt: 0.01, completion: 0.03, context: 8192 } };
+  const subagent = { 'gpt-4': { prompt: 0.05, completion: 0.15, context: 8192 } };
+
+  it('returns the producing agent’s own config', () => {
+    const byAgentId = new Map([
+      ['primary', primary],
+      ['sub', subagent],
+    ]);
+    expect(resolveAgentTokenConfig({ agentId: 'sub', byAgentId, fallback: primary })).toBe(
+      subagent,
+    );
+  });
+
+  it('returns undefined for a known agent with no configured rates (built-in pricing)', () => {
+    /** A known non-custom agent (e.g. a normal OpenAI agent) is recorded with an
+     *  undefined config; it must NOT inherit the custom-primary rates. */
+    const byAgentId = new Map<string, typeof primary | undefined>([
+      ['primary', primary],
+      ['known-openai', undefined],
+    ]);
+    expect(
+      resolveAgentTokenConfig({ agentId: 'known-openai', byAgentId, fallback: primary }),
+    ).toBeUndefined();
+  });
+
+  it('falls back to the primary config for an untagged usage', () => {
+    const byAgentId = new Map([['primary', primary]]);
+    expect(resolveAgentTokenConfig({ agentId: undefined, byAgentId, fallback: primary })).toBe(
+      primary,
+    );
+  });
+
+  it('falls back to the primary config for an unknown agent id', () => {
+    const byAgentId = new Map([['primary', primary]]);
+    expect(resolveAgentTokenConfig({ agentId: 'ghost', byAgentId, fallback: primary })).toBe(
+      primary,
+    );
+  });
+
+  it('returns the fallback when there is no per-agent map (single-endpoint graphs)', () => {
+    expect(resolveAgentTokenConfig({ agentId: 'primary', fallback: primary })).toBe(primary);
   });
 });
