@@ -902,6 +902,8 @@
   "com_ui_context_usage": "Context usage",
   "com_ui_context_usage_label": "Context window: {{0}} of {{1}} tokens used ({{2}}%)",
   "com_ui_context_usage_label_unknown": "Context usage: {{0}} tokens used",
+  "com_ui_context_usage_snapshot": "Context {{0}} / {{1}} ({{2}}%)",
+  "com_ui_context_usage_snapshot_unknown": "Context {{0}}",
   "com_ui_context_window": "Context window",
   "com_ui_continue": "Continue",
   "com_ui_continue_oauth": "Continue with OAuth",

@@ -1,4 +1,5 @@
 import type { TokenUsageView } from '~/hooks/Chat/useTokenUsage';
+import type { CurrencyConfig } from '~/utils';
 import { groupToolTokens, formatTokens, formatCost } from '~/utils';
 import { useLocalize } from '~/hooks';
 
@@ -28,9 +29,10 @@ function Row({ label, value, max }: RowProps) {
 interface BreakdownProps {
   view: TokenUsageView;
   showCost: boolean;
+  currency?: CurrencyConfig;
 }
 
-export default function Breakdown({ view, showCost }: BreakdownProps) {
+export default function Breakdown({ view, showCost, currency }: BreakdownProps) {
   const localize = useLocalize();
   const { usedTokens, maxTokens, percent, snapshot, snapshotActive, branchUsage, hasUsage } = view;
   /** Show the all-branches total only when it (a) exceeds the active branch —
@@ -170,12 +172,14 @@ export default function Breakdown({ view, showCost }: BreakdownProps) {
                   ? localize('com_ui_context_cost_branch')
                   : localize('com_ui_context_cost')}
               </span>
-              <span className="font-medium text-text-primary">{formatCost(view.branchCost)}</span>
+              <span className="font-medium text-text-primary">
+                {formatCost(view.branchCost, currency)}
+              </span>
             </div>
             {showTotal && (
               <div className="flex items-center justify-between text-xs">
                 <span className="text-text-secondary">{localize('com_ui_context_cost_total')}</span>
-                <span className="text-text-secondary">{formatCost(view.totalCost)}</span>
+                <span className="text-text-secondary">{formatCost(view.totalCost, currency)}</span>
               </div>
             )}
           </div>

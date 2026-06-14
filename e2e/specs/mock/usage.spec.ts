@@ -18,10 +18,10 @@ async function expectGaugeAboveZero(page: Page) {
   await expect(gaugeMeter(page)).toHaveAttribute('aria-valuenow', /[1-9]/, { timeout: 20000 });
 }
 
-/** Opens the gauge hover popover and returns its region locator. */
+/** Opens the gauge breakdown popover (click, not hover) and returns its region. */
 async function openBreakdown(page: Page) {
   await expectGaugeAboveZero(page);
-  await gauge(page).hover();
+  await gauge(page).click();
   const popover = page.getByRole('region', { name: 'Context usage' });
   await expect(popover).toBeVisible({ timeout: 10000 });
   return popover;
@@ -64,7 +64,7 @@ test.describe('context usage gauge', () => {
     /** Breakdown popover: context section always; the usage section is
      *  scoped by testid since the pre-snapshot fallback renders its own
      *  Input/Output rows when the lib predates on_context_usage */
-    await gauge(page).hover();
+    await gauge(page).click();
     const popover = page.getByRole('region', { name: 'Context usage' });
     await expect(popover).toBeVisible({ timeout: 10000 });
     await expect(popover.getByText('Context window')).toBeVisible();
@@ -191,5 +191,40 @@ test.describe('context usage gauge', () => {
     /** Branch A also has siblings, so both a branch-cost row and an all-branches
      *  total render — assert at least one cost value is present. */
     await expect(costSection.getByText(/\$\d|<\$0\.01/).first()).toBeVisible();
+  });
+
+  test('hides on a new chat, then reveals snapshot on hover and breakdown on click', async ({
+    page,
+  }) => {
+    test.setTimeout(120000);
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+
+    /** A fresh, message-less chat shows no gauge (it is not mounted). */
+    await expect(gauge(page)).toHaveCount(0);
+
+    await sendAndAwaitReply(page, 'hello');
+    await expectGaugeAboveZero(page);
+
+    /** Hover surfaces the compact snapshot tooltip — not the full breakdown. */
+    await gauge(page).hover();
+    const tooltip = page.getByRole('tooltip');
+    await expect(tooltip).toBeVisible({ timeout: 10000 });
+    await expect(tooltip).toContainText('Context');
+    await expect(page.getByRole('region', { name: 'Context usage' })).toHaveCount(0);
+
+    /** Click opens the breakdown popover; Escape (focus-away) closes it. */
+    await gauge(page).click();
+    const popover = page.getByRole('region', { name: 'Context usage' });
+    await expect(popover).toBeVisible({ timeout: 10000 });
+    await expect(popover.getByText('Context window')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(popover).toBeHidden({ timeout: 10000 });
+
+    /** Reopen, then dismiss by clicking outside (blur). */
+    await gauge(page).click();
+    await expect(popover).toBeVisible({ timeout: 10000 });
+    await messagesView(page).click({ position: { x: 5, y: 5 } });
+    await expect(popover).toBeHidden({ timeout: 10000 });
   });
 });
