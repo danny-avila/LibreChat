@@ -14,14 +14,17 @@ jest.mock('@librechat/api', () => ({
   updateSharedLinkPermissionsExpiration: (...args) =>
     mockUpdateSharedLinkPermissionsExpiration(...args),
   ensureLinkPermissions: jest.fn(),
+  isFileSnapshotEnabled: jest.fn(() => true),
   deleteSharedLinkWithCleanup: jest.fn(),
   getSharedLinkExpiration: (...args) => mockGetSharedLinkExpiration(...args),
   isActiveExpirationDate: jest.fn((expiredAt) => expiredAt > new Date()),
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
-  logger: { error: jest.fn() },
+  logger: { error: jest.fn(), warn: jest.fn() },
   createTempChatExpirationDate: jest.fn(() => new Date('2030-01-01T00:00:00.000Z')),
+  runAsSystem: jest.fn((fn) => fn()),
+  tenantStorage: { run: jest.fn((_ctx, fn) => fn()) },
 }));
 
 jest.mock('librechat-data-provider', () => ({
@@ -35,6 +38,14 @@ jest.mock('librechat-data-provider', () => ({
   RetentionMode: {
     ALL: 'all',
     TEMPORARY: 'temporary',
+  },
+  FileSources: {
+    local: 'local',
+    s3: 's3',
+    cloudfront: 'cloudfront',
+    azure_blob: 'azure_blob',
+    firebase: 'firebase',
+    text: 'text',
   },
 }));
 
@@ -56,13 +67,26 @@ jest.mock('~/models', () => ({
   deleteSharedLink: jest.fn(),
   getSharedLinks: jest.fn(),
   getSharedLink: jest.fn(),
+  getSharedLinkFile: jest.fn(),
+  backfillSharedLinkFiles: jest.fn(),
   getRoleByName: jest.fn(),
+}));
+
+const mockGetStrategyFunctions = jest.fn();
+jest.mock('~/server/services/Files/strategies', () => ({
+  getStrategyFunctions: (...args) => mockGetStrategyFunctions(...args),
+}));
+jest.mock('~/server/utils/files', () => ({
+  cleanFileName: jest.fn((name) => name),
+  getContentDisposition: jest.fn((name, disposition = 'attachment') => `${disposition}; ${name}`),
 }));
 
 jest.mock('~/server/middleware/canAccessSharedLink', () => (_req, _res, next) => next());
 jest.mock('~/server/middleware/optionalJwtAuth', () => (req, _res, next) => next());
 jest.mock('~/server/middleware/requireJwtAuth', () => (req, res, next) => next());
+jest.mock('~/server/middleware/config/app', () => (_req, _res, next) => next());
 
+const { Readable } = require('stream');
 const { RetentionMode } = require('librechat-data-provider');
 const { createTempChatExpirationDate, logger } = require('@librechat/data-schemas');
 const { deleteSharedLinkWithCleanup } = require('@librechat/api');
@@ -70,6 +94,8 @@ const {
   getSharedMessages,
   createSharedLink,
   updateSharedLink,
+  getSharedLinkFile,
+  backfillSharedLinkFiles,
   getRoleByName,
 } = require('~/models');
 const shareRouter = require('../share');
@@ -147,6 +173,7 @@ describe('share routes retention', () => {
       'convo-123',
       'msg-123',
       new Date('2030-01-01T00:00:00.000Z'),
+      true,
     );
     expect(mockGrantCreationPermissions).toHaveBeenCalledWith(
       'link-123',
@@ -210,6 +237,7 @@ describe('share routes retention', () => {
       'share-123',
       undefined,
       new Date('2030-01-01T00:00:00.000Z'),
+      true,
     );
     expect(mockUpdateSharedLinkPermissionsExpiration).toHaveBeenCalledWith(
       'link-456',
@@ -253,7 +281,7 @@ describe('share routes retention', () => {
     const response = await request(buildApp()).patch('/api/share/share-123');
 
     expect(response.status).toBe(200);
-    expect(updateSharedLink).toHaveBeenCalledWith('user-123', 'share-123', undefined, null);
+    expect(updateSharedLink).toHaveBeenCalledWith('user-123', 'share-123', undefined, null, true);
     expect(mockUpdateSharedLinkPermissionsExpiration).toHaveBeenCalledWith('link-456', null);
     expect(mockSharedLinksAccess).not.toHaveBeenCalled();
   });
@@ -266,7 +294,13 @@ describe('share routes retention', () => {
     const response = await request(buildApp()).patch('/api/share/share-123');
 
     expect(response.status).toBe(200);
-    expect(updateSharedLink).toHaveBeenCalledWith('user-123', 'share-123', undefined, undefined);
+    expect(updateSharedLink).toHaveBeenCalledWith(
+      'user-123',
+      'share-123',
+      undefined,
+      undefined,
+      true,
+    );
     expect(mockUpdateSharedLinkPermissionsExpiration).not.toHaveBeenCalled();
   });
 
@@ -286,7 +320,7 @@ describe('share routes retention', () => {
       '[getSharedLinkExpiration] Error creating expiration date:',
       error,
     );
-    expect(updateSharedLink).toHaveBeenCalledWith('user-123', 'share-123', undefined, null);
+    expect(updateSharedLink).toHaveBeenCalledWith('user-123', 'share-123', undefined, null, true);
     expect(mockUpdateSharedLinkPermissionsExpiration).toHaveBeenCalledWith('link-456', null);
   });
 
@@ -305,6 +339,7 @@ describe('share routes retention', () => {
       'share-123',
       'msg-456',
       new Date('2030-01-01T00:00:00.000Z'),
+      true,
     );
   });
 
@@ -325,5 +360,94 @@ describe('share routes retention', () => {
     expect(response.status).toBe(200);
     expect(mockSharedLinksAccess).not.toHaveBeenCalled();
     expect(deleteSharedLinkWithCleanup).toHaveBeenCalledWith('user-123', 'share-123');
+  });
+});
+
+describe('share-scoped file routes', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetStrategyFunctions.mockReturnValue({
+      getDownloadStream: jest.fn(async () => Readable.from(['file-bytes'])),
+    });
+  });
+
+  it('serves a snapshotted file inline from its original stored object', async () => {
+    const getDownloadStream = jest.fn(async () => Readable.from(['file-bytes']));
+    mockGetStrategyFunctions.mockReturnValue({ getDownloadStream });
+    getSharedLinkFile.mockResolvedValue({
+      file_id: 'file-1',
+      source: 'local',
+      filepath: '/uploads/owner/file-1',
+      type: 'application/pdf',
+      filename: 'report.pdf',
+    });
+
+    const response = await request(buildApp()).get('/api/share/share-123/files/file-1');
+
+    expect(response.status).toBe(200);
+    expect(response.headers['content-type']).toContain('application/pdf');
+    expect(mockGetStrategyFunctions).toHaveBeenCalledWith('local');
+    expect(getDownloadStream).toHaveBeenCalledWith(expect.anything(), '/uploads/owner/file-1');
+    expect(backfillSharedLinkFiles).not.toHaveBeenCalled();
+  });
+
+  it('downloads a snapshotted file as an attachment', async () => {
+    getSharedLinkFile.mockResolvedValue({
+      file_id: 'file-1',
+      source: 'local',
+      filepath: '/uploads/owner/file-1',
+      type: 'application/pdf',
+      filename: 'report.pdf',
+    });
+
+    const response = await request(buildApp()).get('/api/share/share-123/files/file-1/download');
+
+    expect(response.status).toBe(200);
+    expect(response.headers['content-disposition']).toContain('attachment');
+  });
+
+  it('returns preview status from the snapshot without polling owner routes', async () => {
+    getSharedLinkFile.mockResolvedValue({
+      file_id: 'file-1',
+      status: 'ready',
+      text: 'extracted text',
+      textFormat: 'text',
+    });
+
+    const response = await request(buildApp()).get('/api/share/share-123/files/file-1/preview');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      file_id: 'file-1',
+      status: 'ready',
+      text: 'extracted text',
+      textFormat: 'text',
+    });
+  });
+
+  it('404s for a file that is not part of the shared-link snapshot', async () => {
+    getSharedLinkFile.mockResolvedValue(null);
+    backfillSharedLinkFiles.mockResolvedValue(null);
+
+    const response = await request(buildApp()).get('/api/share/share-123/files/not-shared');
+
+    expect(response.status).toBe(404);
+    expect(mockGetStrategyFunctions).not.toHaveBeenCalled();
+  });
+
+  it('lazily backfills a legacy share missing the snapshot', async () => {
+    getSharedLinkFile.mockResolvedValue(null);
+    backfillSharedLinkFiles.mockResolvedValue({
+      file_id: 'file-1',
+      source: 'local',
+      filepath: '/uploads/owner/file-1',
+      type: 'image/png',
+      filename: 'pic.png',
+    });
+
+    const response = await request(buildApp()).get('/api/share/share-123/files/file-1');
+
+    expect(response.status).toBe(200);
+    expect(backfillSharedLinkFiles).toHaveBeenCalledWith('share-123', 'file-1');
   });
 });

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useRecoilCallback, useSetRecoilState } from 'recoil';
 import type { TAttachment, TFile, TFilePreview } from 'librechat-data-provider';
 import { useFilePreview } from '~/data-provider';
+import { useShareContext } from '~/Providers';
 import store from '~/store';
 
 interface UseAttachmentPreviewSyncResult {
@@ -99,9 +100,10 @@ export default function useAttachmentPreviewSync(
   const baseStatus: 'pending' | 'ready' | 'failed' = file?.status ?? 'ready';
   const messageId = (attachment as Partial<TAttachment> | undefined)?.messageId;
 
+  const { shareId } = useShareContext();
   const enabled = !!fileId && baseStatus === 'pending';
 
-  const previewQuery = useFilePreview(fileId, { enabled });
+  const previewQuery = useFilePreview(fileId, { enabled }, shareId);
 
   /* Effective status: prefer the polled record once it arrives, since
    * the SSE handler may have already moved the cache forward and the

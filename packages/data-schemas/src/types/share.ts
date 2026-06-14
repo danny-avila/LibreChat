@@ -1,6 +1,31 @@
 import type { Types } from 'mongoose';
 import type { IMessage } from './message';
 
+/**
+ * Immutable snapshot of a file referenced by a shared chat snapshot. Captured at
+ * share create/update so shared-link viewers can preview/download the file through
+ * the share-scoped routes without consulting the original owner's live file ACL.
+ * References the original stored object (no byte copy); only the metadata needed to
+ * stream/preview is duplicated.
+ */
+export interface SharedFileSnapshot {
+  file_id: string;
+  source?: string;
+  storageKey?: string;
+  filepath?: string;
+  type?: string;
+  filename?: string;
+  bytes?: number;
+  width?: number;
+  height?: number;
+  model?: string;
+  text?: string;
+  textFormat?: 'html' | 'text';
+  status?: 'pending' | 'ready' | 'failed';
+  previewError?: string;
+  tenantId?: string;
+}
+
 export interface ISharedLink {
   _id?: Types.ObjectId;
   conversationId: string;
@@ -14,6 +39,8 @@ export interface ISharedLink {
   updatedAt?: Date;
   /** Owning tenant for multi-tenant deployments (read by the shared-link access middleware). */
   tenantId?: string;
+  /** Per-share file snapshot referenced by the share-scoped file routes. */
+  fileSnapshots?: SharedFileSnapshot[];
 }
 
 export interface ShareServiceError extends Error {

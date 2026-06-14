@@ -3,9 +3,10 @@ import copy from 'copy-to-clipboard';
 import { useRecoilValue } from 'recoil';
 import { Download } from 'lucide-react';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
-import CopyButton from '~/components/Messages/Content/CopyButton';
+import { useFileDownload, useSharedFileDownload } from '~/data-provider';
 import { logger, sortPagesByRelevance, triggerDownload } from '~/utils';
-import { useFileDownload } from '~/data-provider';
+import CopyButton from '~/components/Messages/Content/CopyButton';
+import { useShareContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -136,7 +137,11 @@ export default function FilePreviewDialog({
 }: FilePreviewDialogProps) {
   const localize = useLocalize();
   const user = useRecoilValue(store.user);
-  const { refetch: downloadFile } = useFileDownload(user?.id ?? '', fileId, { direct: false });
+  const { shareId } = useShareContext();
+  const { refetch: downloadOwned } = useFileDownload(user?.id ?? '', fileId, { direct: false });
+  const { refetch: downloadShared } = useSharedFileDownload(shareId, fileId);
+  // Shared views authorize file access through the share, not the owner's ACL.
+  const downloadFile = shareId ? downloadShared : downloadOwned;
 
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [fileBlobUrl, setFileBlobUrl] = useState<string | null>(null);

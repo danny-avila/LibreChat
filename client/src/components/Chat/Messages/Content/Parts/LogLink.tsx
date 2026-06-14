@@ -1,8 +1,9 @@
 import React from 'react';
-import { FileSources } from 'librechat-data-provider';
 import { useToastContext } from '@librechat/client';
+import { FileSources, sharedFileDownload } from 'librechat-data-provider';
 import { useCodeOutputDownload, useFileDownload } from '~/data-provider';
 import { isHttpDownloadTarget, triggerDownload } from '~/utils';
+import { useShareContext } from '~/Providers';
 
 interface LogLinkProps {
   href: string;
@@ -47,6 +48,7 @@ export const useAttachmentLink = ({
   source,
 }: AttachmentLinkOptions) => {
   const { showToast } = useToastContext();
+  const { shareId } = useShareContext();
 
   const useLocalDownload = isLocallyStoredSource(source) && !!file_id && !!user;
   const { refetch: downloadFromApi } = useFileDownload(user, file_id, { source });
@@ -55,6 +57,13 @@ export const useAttachmentLink = ({
   const handleDownload = async (event: React.MouseEvent<HTMLAnchorElement | HTMLButtonElement>) => {
     event.preventDefault();
     try {
+      // In a shared view, snapshotted files are served through the share-scoped
+      // route, authorized by shared-link permission rather than owner ACL.
+      if (shareId && file_id) {
+        triggerDownload(sharedFileDownload(shareId, file_id), filename);
+        return;
+      }
+
       if (!useLocalDownload && isHttpDownloadTarget(href)) {
         triggerDownload(href, filename);
         return;
