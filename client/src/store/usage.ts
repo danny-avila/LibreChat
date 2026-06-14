@@ -117,6 +117,16 @@ export function migrateUsageFolded(fromId: string, toId: string): void {
   foldedUsageKeys.delete(fromId);
 }
 
+/**
+ * Forgets a conversation's folded usage-event identities so a subsequent resume
+ * can re-fold them. Used when a terminal close discards the in-flight pending
+ * usage: `backfillUsage` would otherwise treat the persisted events as already
+ * folded and never rebuild pending after a navigate-away-then-resume.
+ */
+export function clearUsageFolded(conversationId: string): void {
+  foldedUsageKeys.delete(conversationId);
+}
+
 /** Jotai atomFamily entries are never GC'd — call on conversation switch/cleanup */
 export function removeUsageAtoms(conversationId: string): void {
   branchTotalsFamily.remove(conversationId);

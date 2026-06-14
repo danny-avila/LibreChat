@@ -303,42 +303,27 @@ function parseUsageEvents(value?: string | null): TTokenUsageEvent[] {
   }
 }
 
-function parseContextSnapshot(value?: string | null): TContextUsageEvent | null {
-  if (typeof value !== 'string' || value.length === 0) {
-    return null;
-  }
-  try {
-    return JSON.parse(value) as TContextUsageEvent;
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Builds the response `metadata` for a STOPPED generation from the job's
- * persisted usage/snapshot, so a stopped reply keeps its cost rollup and context
- * breakdown on reload — parity with the live `sendCompletion` path. The emitted
- * usage payloads (with cost) and the latest snapshot were persisted to the job
- * by `trackTokenUsage` / `trackContextUsage`. Shared by every abort save path
- * (agents abort route + legacy abort middleware). The breakdown is persisted
- * only when a primary usage event exists (post-snapshot output is known),
- * mirroring `AgentClient.buildResponseMetadata`.
+ * persisted emitted usage, so a stopped reply keeps its accurate cost rollup on
+ * reload (finding: stopped responses otherwise lose cost). Shared by every abort
+ * save path (agents abort route + legacy abort middleware).
+ *
+ * Deliberately persists ONLY `usage`, not `contextUsage`: unlike the live path,
+ * the abort path can't tell whether the FINAL call (the one the latest snapshot
+ * precedes) emitted usage — the job stores only the latest snapshot, not the
+ * snapshot count. If the final call emitted none, `completedOutputTokens` would
+ * reuse an earlier call's output the snapshot already counts → reload
+ * over-reports. A stopped/incomplete response therefore falls back to the coarse
+ * per-message gauge estimate on reload, which is both safe and apt for an
+ * interrupted turn that never reached a clean pre-invoke breakdown.
  */
 export function buildAbortedResponseMetadata(
-  job: { tokenUsage?: string | null; contextUsage?: string | null } | null | undefined,
-): { usage?: TResponseUsage; contextUsage?: TContextUsageEvent } | undefined {
+  job: { tokenUsage?: string | null } | null | undefined,
+): { usage?: TResponseUsage } | undefined {
   const events = parseUsageEvents(job?.tokenUsage);
-  const metadata: { usage?: TResponseUsage; contextUsage?: TContextUsageEvent } = {};
   const usage = aggregateEmittedUsage(events);
-  if (usage) {
-    metadata.usage = usage;
-  }
-  const snapshot = parseContextSnapshot(job?.contextUsage);
-  const hasPrimaryUsage = events.some((event) => event && event.usage_type == null);
-  if (snapshot && hasPrimaryUsage) {
-    metadata.contextUsage = buildPersistedContextUsage(snapshot, events);
-  }
-  return Object.keys(metadata).length > 0 ? metadata : undefined;
+  return usage ? { usage } : undefined;
 }
 
 export interface RecordUsageParams {

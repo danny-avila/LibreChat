@@ -13,6 +13,7 @@ import {
   liveTokensFamily,
   totalUsageFamily,
   removeUsageAtoms,
+  clearUsageFolded,
   calibrationFamily,
   pendingUsageFamily,
   branchTotalsFamily,
@@ -244,10 +245,14 @@ export default function useUsageHandler(): UsageHandlers {
       confirmedRef.current = 0;
       const convoKey = getConvoKey(submission);
       setLive(convoKey, 0);
-      /** Terminal path with no salvageable response (stream error): discard the
-       *  in-flight pending usage so it can't merge into the next response. The
-       *  user-stop path uses `attributePending` to keep it on the partial reply. */
+      /** Terminal path with no salvageable response (stream error / intentional
+       *  close): discard the in-flight pending usage so it can't merge into the
+       *  next response. The user-stop path uses `attributePending` to keep it on
+       *  the partial reply. Also forget the folded-event identities so a resume's
+       *  `backfillUsage` can rebuild pending — otherwise it sees them as already
+       *  folded and the response's usage stays missing until a full reload. */
       jotai.set(pendingUsageFamily(convoKey), EMPTY_USAGE_TOTALS);
+      clearUsageFolded(convoKey);
     };
 
     const attributePending: UsageHandlers['attributePending'] = (responseId, submission) => {
