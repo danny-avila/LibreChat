@@ -46,6 +46,7 @@ const {
   buildAgentScopedContext,
   buildSkillPrimeContentParts,
   buildInitialToolSessions,
+  getLangfuseUserId,
 } = require('@librechat/api');
 const {
   Callback,
@@ -1069,7 +1070,7 @@ class AgentClient extends BaseClient {
         configurable: {
           thread_id: this.conversationId,
           last_agent_index: this.agentConfigs?.size ?? 0,
-          user_id: this.user ?? this.options.req.user?.id,
+          user_id: getLangfuseUserId(this.options.req?.user) ?? this.user ?? this.options.req?.user?.id,
           hide_sequential_outputs: this.options.agent.hide_sequential_outputs,
           requestBody: {
             messageId: this.responseMessageId,
@@ -1672,7 +1673,7 @@ class AgentClient extends BaseClient {
           ],
           configurable: {
             thread_id: this.conversationId,
-            user_id: this.user ?? this.options.req.user?.id,
+            user_id: getLangfuseUserId(this.options.req?.user) ?? this.user ?? this.options.req?.user?.id,
           },
         },
       });
