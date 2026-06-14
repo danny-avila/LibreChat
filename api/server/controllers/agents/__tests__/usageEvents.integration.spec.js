@@ -1,7 +1,7 @@
 const { z } = require('zod');
 const { tool } = require('@langchain/core/tools');
 const { ChatGenerationChunk } = require('@langchain/core/outputs');
-const { HumanMessage, AIMessageChunk } = require('@langchain/core/messages');
+const { HumanMessage, AIMessage, AIMessageChunk } = require('@langchain/core/messages');
 const {
   Run,
   Providers,
@@ -376,5 +376,96 @@ describe('usage events through the real agents pipeline', () => {
       /** Latest-wins: the persisted snapshot is the second call's */
       expect(resumeState.contextUsage.prePruneContextTokens).toBeGreaterThan(0);
     }
+  });
+
+  /** Drives a real summarization (tight context + padded history); self-summarize
+   *  reuses the overridden fake model so no API key is needed. */
+  async function runSummarizationLoop({ res, collectedUsage, contextUsageSink, usageEmitSink }) {
+    const { aggregateContent } = createContentAggregator();
+    const handlers = getDefaultHandlers({
+      res,
+      aggregateContent,
+      toolEndCallback: () => {},
+      collectedUsage,
+      contextUsageSink,
+      usageEmitSink,
+      summarizationOptions: { enabled: true },
+    });
+
+    const pad = 'context detail to overflow the tiny budget. '.repeat(40);
+    const history = [
+      new HumanMessage(`Turn 1 question. ${pad}`),
+      new AIMessage(`Turn 1 answer. ${pad}`),
+      new HumanMessage(`Turn 2 question. ${pad}`),
+      new AIMessage(`Turn 2 answer. ${pad}`),
+      new HumanMessage(`Final question after a lot of prior history. ${pad}`),
+    ];
+    const indexTokenCountMap = {};
+    history.forEach((message, i) => {
+      indexTokenCountMap[i] = charCounter(message);
+    });
+
+    const run = await Run.create({
+      runId: `summ-e2e-${Date.now()}`,
+      graphConfig: {
+        type: 'standard',
+        llmConfig: {
+          provider: Providers.OPENAI,
+          model: 'gpt-4o-mini',
+          streaming: true,
+          streamUsage: false,
+        },
+        instructions: 'You are a helpful assistant.',
+        maxContextTokens: 700,
+        summarizationEnabled: true,
+        summarizationConfig: { provider: Providers.OPENAI, model: 'gpt-4o-mini' },
+      },
+      returnContent: true,
+      customHandlers: handlers,
+      tokenCounter: charCounter,
+      indexTokenCountMap,
+    });
+
+    run.Graph.overrideModel = new UsageFakeModel(
+      { responses: ['## Summary\nPrior turns compacted.', 'Here is the final answer.'] },
+      [{ input_tokens: 40, output_tokens: 8, total_tokens: 48 }],
+    );
+
+    await run.processStream(
+      { messages: history },
+      {
+        configurable: { thread_id: 'summ-e2e-thread', user_id: 'user-1' },
+        streamMode: 'values',
+        version: 'v2',
+      },
+    );
+    return run;
+  }
+
+  /** A summarized turn compacts the context (summary tokens replace the older
+   *  turns) and the reduced snapshot is persisted — the latest snapshot is
+   *  followed by a primary usage, so the save guard keeps it and the client
+   *  uses the snapshot (not the inflated whole-history estimate). */
+  test('persists the reduced (compacted) snapshot after summarization', async () => {
+    if (!hasContextUsageEvent) {
+      return;
+    }
+    const res = createMockRes();
+    const contextUsageSink = { latest: null, count: 0 };
+    const usageEmitSink = [];
+    await runSummarizationLoop({ res, collectedUsage: [], contextUsageSink, usageEmitSink });
+
+    const snapshot = contextUsageSink.latest;
+    /** Summarization fired: a summary exists and the kept message tokens are
+     *  small (the compacted context, not the full history). */
+    expect(snapshot?.breakdown?.summaryTokens).toBeGreaterThan(0);
+    expect(snapshot?.breakdown?.messageTokens).toBeLessThan(snapshot?.breakdown?.summaryTokens);
+
+    /** The save guard keeps it: a primary usage follows the latest snapshot. */
+    const afterLatest = usageEmitSink.slice(contextUsageSink.latestUsageIndex ?? 0);
+    expect(afterLatest.some((e) => e.usage_type == null)).toBe(true);
+    expect(
+      buildPersistedContextUsage(snapshot, usageEmitSink).breakdown.summaryTokens,
+    ).toBeGreaterThan(0);
   });
 });

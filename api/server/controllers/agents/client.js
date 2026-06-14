@@ -869,16 +869,40 @@ class AgentClient extends BaseClient {
       metadata.thoughtSignatures = signatures;
     }
     const usageEvents = this.usageEmitSink ?? [];
-    /** Persist the breakdown only when the FINAL visible call (the one the latest
-     *  snapshot precedes) emitted usage — i.e. as many primary usage events as
-     *  visible snapshots. If the final call emitted no usage_metadata (provider
-     *  gap, or interrupted after an earlier call did emit), `completedOutputTokens`
-     *  would be an earlier call's output the latest snapshot already counts, so
-     *  reload would over-report; fall back to the coarse per-message estimate. */
-    const primaryUsageCount = usageEvents.filter((event) => event.usage_type == null).length;
-    const snapshotCount = this.contextUsageSink?.count ?? 0;
-    if (this.contextUsageSink?.latest && snapshotCount > 0 && primaryUsageCount >= snapshotCount) {
+    /** Persist the breakdown only when the latest snapshot's call actually
+     *  invoked the model — i.e. a PRIMARY usage event (usage_type == null)
+     *  arrived AFTER that snapshot. This keeps `completedOutputTokens` a real
+     *  post-snapshot delta (an interrupted final call that emits no usage falls
+     *  back to the per-message estimate) while correctly persisting the
+     *  post-summary snapshot: a summarization detour emits an extra snapshot
+     *  whose only following usage is tagged `summarization`, which the old
+     *  snapshot-count guard miscounted and wrongly dropped. */
+    const latestSnapshotUsageIndex = this.contextUsageSink?.latestUsageIndex ?? 0;
+    const hasPrimaryAfterSnapshot = usageEvents
+      .slice(latestSnapshotUsageIndex)
+      .some((event) => event.usage_type == null);
+    if (this.contextUsageSink?.latest && hasPrimaryAfterSnapshot) {
       metadata.contextUsage = buildPersistedContextUsage(this.contextUsageSink.latest, usageEvents);
+    }
+    /** Lightweight summarization marker — persisted whenever this turn compacted
+     *  the context (summaryTokens > 0), INDEPENDENT of the snapshot guard above.
+     *  It records the pre-invoke compacted context size (instructions + summary +
+     *  kept messages). When the client has no usable snapshot on the branch and
+     *  falls back to the per-message estimate, it sums messages back to this
+     *  response then adds this baseline instead of re-summing the now-discarded
+     *  history — so the gauge can't read 100% in perpetuity after a compaction. */
+    const snapshot = this.contextUsageSink?.latest;
+    const summaryTokens = snapshot?.breakdown?.summaryTokens ?? 0;
+    if (snapshot && summaryTokens > 0) {
+      const maxTokens = snapshot.contextBudget ?? snapshot.breakdown?.maxContextTokens ?? 0;
+      const baseUsed =
+        snapshot.remainingContextTokens != null
+          ? maxTokens - snapshot.remainingContextTokens
+          : (snapshot.effectiveInstructionTokens ?? snapshot.breakdown?.instructionTokens ?? 0) +
+            (snapshot.breakdown?.messageTokens ?? 0);
+      if (baseUsed > 0) {
+        metadata.summaryUsedTokens = Math.round(baseUsed);
+      }
     }
     const usage = aggregateEmittedUsage(usageEvents);
     if (usage) {

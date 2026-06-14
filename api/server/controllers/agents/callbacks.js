@@ -547,14 +547,17 @@ function getDefaultHandlers({
           !metadata?.hide_sequential_outputs
         ) {
           await emitEvent(res, streamId, { event, data });
-          /** Capture the latest visible snapshot (last-wins) + count visible
-           *  snapshots (one per model call). The count lets the save path persist
-           *  the breakdown only when the FINAL call emitted usage (primary usage
-           *  events === snapshots), so completedOutputTokens is a real
-           *  post-snapshot delta and reload doesn't over-report. */
+          /** Capture the latest visible snapshot (last-wins). Record how many
+           *  usage events preceded it so the save path can persist only when a
+           *  PRIMARY usage event follows this snapshot — i.e. the snapshot's call
+           *  actually invoked the model. A summarization detour emits a snapshot
+           *  with no following primary usage (its usage is tagged
+           *  `summarization`), so a plain snapshot-count would over-count and
+           *  wrongly drop the real post-summary snapshot. */
           if (contextUsageSink) {
             contextUsageSink.latest = data;
             contextUsageSink.count = (contextUsageSink.count ?? 0) + 1;
+            contextUsageSink.latestUsageIndex = usageEmitSink?.length ?? 0;
           }
         }
       },
