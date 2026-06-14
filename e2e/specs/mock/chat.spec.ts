@@ -6,6 +6,8 @@ import {
   NEW_CHAT_PATH,
   messagesView,
   mockReply,
+  replyText,
+  replyPrompt,
   selectMockEndpoint,
   sendMessage,
 } from './helpers';
@@ -240,6 +242,69 @@ test.describe('core chat loop', () => {
     // Still on the original branch: the second turn survives and the root fork
     // still reads 1 / 2 (rather than snapping to the regenerated-initial branch).
     await expect(page.getByText(secondMessage)).toBeVisible();
+    await expect(page.getByText('1 / 2')).toBeVisible();
+  });
+
+  test('preserves a long original branch when regenerating early then later on it', async ({
+    page,
+  }) => {
+    test.setTimeout(150000);
+    // Labeled prompts give each turn a unique reply, so we can both settle on
+    // it (turn complete) and assert which branch is visible.
+    const turns = [
+      { prompt: replyPrompt('lb-one'), reply: replyText('lb-one') },
+      { prompt: replyPrompt('lb-two'), reply: replyText('lb-two') },
+      { prompt: replyPrompt('lb-three'), reply: replyText('lb-three') },
+    ];
+
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+
+    // Build a three-turn thread (the "long running thread"), waiting for each
+    // turn's unique reply to render before sending the next.
+    for (const turn of turns) {
+      const response = await sendMessage(page, turn.prompt);
+      expect(response.ok()).toBeTruthy();
+      await expect(messagesView(page).getByText(turn.reply)).toBeVisible({ timeout: 30000 });
+    }
+
+    // Regenerate from an EARLIER part of the branch (the first response). This
+    // forks a fresh root branch that does not contain the later turns.
+    const earlyAssistant = messagesView(page).locator('.message-render').nth(1);
+    await earlyAssistant.hover();
+    const regenEarly = earlyAssistant.locator('button[title="Regenerate"]').last();
+    await expect(regenEarly).toBeVisible();
+    let [response] = await Promise.all([
+      page.waitForResponse(isAgentsStream, { timeout: 30000 }),
+      regenEarly.click(),
+    ]);
+    expect(response.ok()).toBeTruthy();
+    await expect(page.getByText('2 / 2')).toBeVisible();
+    // The fresh branch does not contain the later turns' replies.
+    await expect(messagesView(page).getByText(turns[1].reply)).toHaveCount(0);
+    await expect(messagesView(page).getByText(turns[2].reply)).toHaveCount(0);
+
+    // Go back to the ORIGINAL branch — all three turns are present again.
+    await page.getByRole('button', { name: 'Previous sibling message' }).click();
+    await expect(page.getByText('1 / 2')).toBeVisible();
+    await expect(messagesView(page).getByText(turns[1].reply)).toBeVisible();
+    await expect(messagesView(page).getByText(turns[2].reply)).toBeVisible();
+
+    // Regenerate from LATER in the original branch (its latest response). The
+    // bug snapped the early fork back to the regenerated branch, collapsing the
+    // long original thread; it must stay intact.
+    const lateAssistant = messagesView(page).locator('.message-render').last();
+    await lateAssistant.hover();
+    const regenLate = lateAssistant.locator('button[title="Regenerate"]').last();
+    await expect(regenLate).toBeVisible();
+    [response] = await Promise.all([
+      page.waitForResponse(isAgentsStream, { timeout: 30000 }),
+      regenLate.click(),
+    ]);
+    expect(response.ok()).toBeTruthy();
+
+    // The whole original branch survives and its first fork still reads 1 / 2.
+    await expect(messagesView(page).getByText(turns[1].reply)).toBeVisible();
     await expect(page.getByText('1 / 2')).toBeVisible();
   });
 
