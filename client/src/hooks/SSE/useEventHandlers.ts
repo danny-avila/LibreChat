@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { v4 } from 'uuid';
-import { useSetRecoilState } from 'recoil';
+import { useSetRecoilState, useRecoilCallback } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -488,6 +488,25 @@ export default function useEventHandlers({
     [queryClient, setMessages, isAddedRequest, announcePolite, setConversation, setShowStopButton],
   );
 
+  /**
+   * Focus a regenerated response's fork on its newest sibling. A regeneration
+   * appends the new response as the newest child of its parent, but when the
+   * parent already had multiple siblings the child count is unchanged (the slice
+   * keeps unrelated branches), so MultiMessage's length-change reset never fires
+   * and the view would stay on the kept sibling. Selecting reversed index 0
+   * (newest = the appended response) makes the regenerating branch visible.
+   */
+  const focusRegeneratedResponse = useRecoilCallback(
+    ({ set }) =>
+      (parentMessageId?: string | null) => {
+        if (parentMessageId == null) {
+          return;
+        }
+        set(store.messagesSiblingIdxFamily(parentMessageId), 0);
+      },
+    [],
+  );
+
   const createdHandler = useCallback(
     (data: TResData, submission: EventSubmission) => {
       queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
@@ -510,6 +529,7 @@ export default function useEventHandlers({
       });
       if (isRegenerate) {
         setMessages([...messages, initialResponse]);
+        focusRegeneratedResponse(initialResponse.parentMessageId);
       } else {
         setMessages([...messages, userMessage, initialResponse]);
       }
@@ -580,6 +600,7 @@ export default function useEventHandlers({
       announcePolite,
       setConversation,
       applyAgentTemplate,
+      focusRegeneratedResponse,
     ],
   );
 

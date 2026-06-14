@@ -23,6 +23,7 @@ const ASSERT_PROVIDER_FILE_MARKER = 'E2E_ASSERT_PROVIDER_FILE:';
 const REPLY_MARKER = 'E2E_REPLY:';
 const COUNTED_REPLY_MARKER = 'E2E_COUNTED_REPLY:';
 const SLOW_REPLY_MARKER = 'E2E_SLOW_REPLY:';
+const SLOW_COUNTED_REPLY_MARKER = 'E2E_SLOW_COUNTED_REPLY:';
 const RESUME_ICON_REPLY_MARKER = 'E2E_RESUME_ICON_REPLY:';
 const FORCED_ERROR_MARKER = 'E2E_FORCED_ERROR:';
 const MARKDOWN_REPLY_MARKER = 'E2E_MARKDOWN_REPLY';
@@ -49,6 +50,7 @@ const SKILL_DESCRIPTION =
 const EDITED_SKILL_DESCRIPTION =
   'Use this edited skill to verify LibreChat skill file authoring in mock end-to-end tests.';
 const countedReplies = new Map();
+const slowCountedReplies = new Map();
 
 function messageType(message) {
   if (typeof message.getType === 'function') {
@@ -281,6 +283,20 @@ function replyResponses(text) {
     ).join(' ');
     return {
       responses: [`E2E slow reply ${slowName} ${chunks}`],
+      sleep: SLOW_CHUNK_DELAY_MS,
+    };
+  }
+
+  const slowCountedName = getMarkerValue(text, SLOW_COUNTED_REPLY_MARKER);
+  if (slowCountedName) {
+    const count = (slowCountedReplies.get(slowCountedName) ?? 0) + 1;
+    slowCountedReplies.set(slowCountedName, count);
+    const chunks = Array.from(
+      { length: SLOW_REPLY_CHUNKS },
+      (_, index) => `chunk-${String(index).padStart(3, '0')}`,
+    ).join(' ');
+    return {
+      responses: [`E2E slow counted reply ${slowCountedName} #${count} ${chunks}`],
       sleep: SLOW_CHUNK_DELAY_MS,
     };
   }
