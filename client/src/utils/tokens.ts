@@ -9,8 +9,10 @@ export interface BranchUsage {
   cacheRead: number;
   /** Authoritative USD cost; 0 when `interface.contextCost` was off at save */
   cost: number;
-  /** Whether any contributing response carried a known cost — gates the cost row
-   *  so turns saved without cost don't render a misleading `$0.00`. */
+  /** Whether cost coverage is COMPLETE — every usage-bearing response summed
+   *  here carried a cost. Gates the cost row so a partial sum (some turns saved
+   *  before cost display was on) never renders an under-reported total. Starts
+   *  true (vacuous) and is ANDed; pair with `hasUsage` to require ≥1 entry. */
   costKnown: boolean;
 }
 
@@ -20,7 +22,7 @@ export const EMPTY_USAGE: BranchUsage = {
   cacheWrite: 0,
   cacheRead: 0,
   cost: 0,
-  costKnown: false,
+  costKnown: true,
 };
 
 export interface TokenEntry {
@@ -89,7 +91,8 @@ export function mergeUsage(a: BranchUsage, b: BranchUsage): BranchUsage {
     cacheWrite: a.cacheWrite + b.cacheWrite,
     cacheRead: a.cacheRead + b.cacheRead,
     cost: a.cost + b.cost,
-    costKnown: a.costKnown || b.costKnown,
+    /** Coverage stays complete only if BOTH sides are complete */
+    costKnown: a.costKnown && b.costKnown,
   };
 }
 
@@ -103,8 +106,9 @@ function addUsage(target: BranchUsage, usage?: BranchUsage): void {
   target.cacheWrite += usage.cacheWrite;
   target.cacheRead += usage.cacheRead;
   target.cost += usage.cost;
-  if (usage.costKnown) {
-    target.costKnown = true;
+  /** A usage-bearing entry without a cost breaks complete coverage */
+  if (!usage.costKnown) {
+    target.costKnown = false;
   }
 }
 

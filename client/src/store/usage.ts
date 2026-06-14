@@ -27,7 +27,8 @@ export interface UsageTotals {
   /** Summed authoritative per-event cost from the backend (premium tiers,
    *  cache rates). Populated only when `interface.contextCost` is enabled. */
   costUSD: number;
-  /** Whether any folded event carried a cost (gates the cost row) */
+  /** Whether cost coverage is complete — every folded event carried a cost
+   *  (ANDed, vacuously true when empty); gates the cost row. */
   costKnown: boolean;
 }
 
@@ -38,7 +39,7 @@ export const EMPTY_USAGE_TOTALS: UsageTotals = {
   cacheRead: 0,
   eventCount: 0,
   costUSD: 0,
-  costKnown: false,
+  costKnown: true,
 };
 
 /**
@@ -153,15 +154,15 @@ export function hydrateSnapshots(conversationId: string, messages?: TMessage[] |
       continue;
     }
     const event = blob as TContextUsageEvent;
-    /** Prefer the persisted post-snapshot delta (the final call's output); fall
-     *  back to the response `tokenCount` only for blobs predating that field. */
-    const completedOutputTokens =
-      event.completedOutputTokens ??
-      (typeof message.tokenCount === 'number' ? message.tokenCount : undefined);
+    /** Use ONLY the persisted post-snapshot delta (the final call's output). Do
+     *  NOT fall back to the full response `tokenCount`: the snapshot already
+     *  counts earlier steps' output for multi-call turns, so adding the whole
+     *  tokenCount would double-count after reload. Absent (rare: no usage event)
+     *  contributes 0, matching the snapshot's pre-final-call base. */
     const snapshot: ContextSnapshot = {
       ...event,
       anchorMessageId: id,
-      completedOutputTokens,
+      completedOutputTokens: event.completedOutputTokens,
     };
     next ??= new Map(current);
     next.set(id, snapshot);

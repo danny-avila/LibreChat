@@ -159,7 +159,8 @@ export default function useUsageHandler(): UsageHandlers {
         /** Authoritative per-event cost from the backend (premium tiers, cache
          *  rates); absent when contextCost is disabled — sums to 0 then */
         costUSD: prev.costUSD + (data.cost ?? 0),
-        costKnown: prev.costKnown || data.cost != null,
+        /** Coverage is complete only if EVERY folded event carried a cost */
+        costKnown: prev.costKnown && data.cost != null,
       });
       return true;
     };
@@ -216,7 +217,12 @@ export default function useUsageHandler(): UsageHandlers {
     const resetLive: UsageHandlers['resetLive'] = (submission) => {
       streamCharsRef.current = 0;
       confirmedRef.current = 0;
-      setLive(getConvoKey(submission), 0);
+      const convoKey = getConvoKey(submission);
+      setLive(convoKey, 0);
+      /** Terminal path (abort/error): discard the in-flight response's pending
+       *  usage. Without a final event `finalizeUsage` never flushes it, so it
+       *  would otherwise merge into the next response in this conversation. */
+      jotai.set(pendingUsageFamily(convoKey), EMPTY_USAGE_TOTALS);
     };
 
     const backfillUsage: UsageHandlers['backfillUsage'] = (entries, submission) => {

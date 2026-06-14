@@ -430,7 +430,7 @@ describe('per-message usage index (branch + total)', () => {
     expect(sumBranch(CONVO, 'a1').usage.input).toBe(100);
   });
 
-  it('mergeUsage sums two usage records and ORs costKnown', () => {
+  it('mergeUsage sums records and ANDs costKnown (incomplete coverage wins)', () => {
     const a = { input: 1, output: 2, cacheWrite: 3, cacheRead: 4, cost: 0.5, costKnown: false };
     const b = { input: 10, output: 20, cacheWrite: 30, cacheRead: 40, cost: 1.5, costKnown: true };
     expect(mergeUsage(a, b)).toEqual({
@@ -439,8 +439,23 @@ describe('per-message usage index (branch + total)', () => {
       cacheWrite: 33,
       cacheRead: 44,
       cost: 2,
-      costKnown: true,
+      costKnown: false,
     });
+  });
+
+  it('marks branch cost incomplete when any usage-bearing entry lacks cost', () => {
+    /** A turn saved before cost display was on (no cost) alongside one with cost
+     *  → the summed cost under-reports, so coverage is incomplete. */
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 10),
+      responseMsg('a1', 'u1', 50, { input: 100, output: 50, cacheWrite: 0, cacheRead: 0 }),
+      responseMsg('a2', 'a1', 60, USAGE_B),
+    ]);
+    const { usage } = sumBranch(CONVO, 'a2');
+    expect(usage.costKnown).toBe(false);
+    /** Cost still sums what it can, but coverage is flagged incomplete */
+    expect(usage.cost).toBeCloseTo(0.02);
+    expect(sumTotalUsage(CONVO).costKnown).toBe(false);
   });
 
   it('EMPTY_BRANCH carries an empty usage record', () => {
