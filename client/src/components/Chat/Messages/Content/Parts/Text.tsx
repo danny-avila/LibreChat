@@ -3,7 +3,7 @@ import { useRecoilValue } from 'recoil';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import Markdown from '~/components/Chat/Messages/Content/Markdown';
 import { useMessageContext } from '~/Providers';
-import { cn } from '~/utils';
+import { cn, stripBklTags } from '~/utils';
 import store from '~/store';
 
 type TextPartProps = {
@@ -21,22 +21,23 @@ const TextPart = memo(function TextPart({ text, isCreatedByUser, showCursor }: T
   const { isSubmitting = false, isLatestMessage = false } = useMessageContext();
   const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
   const showCursorState = useMemo(() => showCursor && isSubmitting, [showCursor, isSubmitting]);
+  const displayText = useMemo(() => stripBklTags(text), [text]);
 
   const content: ContentType = useMemo(() => {
     if (!isCreatedByUser) {
-      return <Markdown content={text} isLatestMessage={isLatestMessage} />;
+      return <Markdown content={displayText} isLatestMessage={isLatestMessage} />;
     } else if (enableUserMsgMarkdown) {
-      return <MarkdownLite content={text} />;
+      return <MarkdownLite content={displayText} />;
     } else {
-      return <>{text}</>;
+      return <>{displayText}</>;
     }
-  }, [isCreatedByUser, enableUserMsgMarkdown, text, isLatestMessage]);
+  }, [isCreatedByUser, enableUserMsgMarkdown, displayText, isLatestMessage]);
 
   return (
     <div
       className={cn(
         isSubmitting ? 'submitting' : '',
-        showCursorState && !!text.length ? 'result-streaming' : '',
+        showCursorState && !!displayText.length ? 'result-streaming' : '',
         'markdown prose message-content dark:prose-invert light w-full break-words',
         isCreatedByUser && !enableUserMsgMarkdown && 'whitespace-pre-wrap',
         isCreatedByUser ? 'dark:text-gray-20' : 'dark:text-gray-100',

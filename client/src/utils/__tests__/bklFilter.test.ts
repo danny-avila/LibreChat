@@ -33,6 +33,12 @@ describe('bklFilter', () => {
     expect(stripBklTags(text)).toBe('');
   });
 
+  it('strips partial streaming BKL query choices control tags', () => {
+    const text = '[BKL_QUERY_CHOICES:eyJjYW5kaWRhdGVzIjpb';
+
+    expect(stripBklTags(text)).toBe('');
+  });
+
   it('parses BKL query choices payloads for the A/B/C panel', () => {
     const payload = {
       candidates: [{ id: 'a', query: '삼성디스플레이 중대재해 자문', rationale: '자문 중심' }],
