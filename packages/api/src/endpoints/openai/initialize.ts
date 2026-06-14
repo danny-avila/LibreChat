@@ -5,7 +5,13 @@ import type {
   OpenAIConfigOptions,
   UserKeyValues,
 } from '~/types';
-import { getAzureCredentials, resolveHeaders, isUserProvided, checkUserKeyExpiry } from '~/utils';
+import {
+  mergeHeaders,
+  resolveHeaders,
+  isUserProvided,
+  checkUserKeyExpiry,
+  getAzureCredentials,
+} from '~/utils';
 import { validateEndpointURL } from '~/auth';
 import { getOpenAIConfig } from './config';
 
@@ -24,6 +30,8 @@ export async function initializeOpenAI({
   db,
 }: BaseInitializeParams): Promise<InitializeResultBase> {
   const appConfig = req.config;
+  const openAIConfig = appConfig?.endpoints?.[EModelEndpoint.openAI];
+  const allConfig = appConfig?.endpoints?.all;
   const { PROXY, OPENAI_API_KEY, AZURE_API_KEY, OPENAI_REVERSE_PROXY, AZURE_OPENAI_BASEURL } =
     process.env;
 
@@ -113,6 +121,16 @@ export async function initializeOpenAI({
     clientOptions.azure =
       userProvidesKey && userValues?.apiKey ? JSON.parse(userValues.apiKey) : getAzureCredentials();
     apiKey = clientOptions.azure ? clientOptions.azure.azureOpenAIApiKey : undefined;
+  } else {
+    /**
+     * Attach admin-configured custom headers for the built-in OpenAI endpoint.
+     * Kept unresolved here so request-body placeholders resolve at request time
+     * via `resolveConfigHeaders` (Azure handles its own headers above).
+     */
+    const headers = mergeHeaders(allConfig?.headers, openAIConfig?.headers);
+    if (headers) {
+      clientOptions.headers = headers;
+    }
   }
 
   if (userProvidesKey && !apiKey) {
@@ -145,8 +163,6 @@ export async function initializeOpenAI({
     (options as InitializeResultBase).useLegacyContent = true;
   }
 
-  const openAIConfig = appConfig?.endpoints?.[EModelEndpoint.openAI];
-  const allConfig = appConfig?.endpoints?.all;
   const azureRate = modelName?.includes('gpt-4') ? 30 : 17;
 
   let streamRate: number | undefined;

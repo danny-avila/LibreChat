@@ -7,7 +7,7 @@ import type {
   GoogleConfigOptions,
   GoogleCredentials,
 } from '~/types';
-import { isEnabled, loadServiceKey, checkUserKeyExpiry } from '~/utils';
+import { isEnabled, loadServiceKey, checkUserKeyExpiry, mergeHeaders } from '~/utils';
 import { getGoogleConfig } from './llm';
 
 /**
@@ -82,10 +82,13 @@ export async function initializeGoogle({
     clientOptions.streamRate = allConfig.streamRate;
   }
 
+  const headers = mergeHeaders(allConfig?.headers, googleConfig?.headers);
+
   clientOptions = {
     reverseProxyUrl: GOOGLE_REVERSE_PROXY ?? undefined,
     authHeader: isEnabled(GOOGLE_AUTH_HEADER) ?? undefined,
     proxy: PROXY ?? undefined,
+    ...(headers && { headers }),
     modelOptions: model_parameters ?? {},
     forceVertex: isVertexEndpoint,
     projectId: isVertexEndpoint

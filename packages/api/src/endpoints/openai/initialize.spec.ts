@@ -15,6 +15,7 @@ jest.mock('./config', () => ({
 }));
 
 jest.mock('~/utils', () => ({
+  ...jest.requireActual('~/utils'),
   getAzureCredentials: jest.fn(),
   resolveHeaders: jest.fn(() => ({})),
   isUserProvided: (val: string) => val === 'user_provided',
@@ -132,5 +133,47 @@ describe('initializeOpenAI – SSRF guard wiring', () => {
     }
 
     expect(mockGetOpenAIConfig).not.toHaveBeenCalled();
+  });
+});
+
+describe('initializeOpenAI – custom headers', () => {
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('forwards configured endpoint headers (merged over endpoints.all) to getOpenAIConfig', async () => {
+    const params = createParams({ OPENAI_API_KEY: 'sk-test' });
+    (params.req.config as { endpoints: Record<string, unknown> }).endpoints = {
+      all: { headers: { 'X-Common': 'all', 'X-Override': 'all' } },
+      [EModelEndpoint.openAI]: {
+        headers: { 'X-Override': 'openai', 'cf-aig-metadata': '{{LIBRECHAT_BODY_CONVERSATIONID}}' },
+      },
+    };
+
+    try {
+      await initializeOpenAI(params);
+    } finally {
+      (params as unknown as { _restore: () => void })._restore();
+    }
+
+    const options = mockGetOpenAIConfig.mock.calls[0][1] as { headers?: Record<string, string> };
+    expect(options.headers).toEqual({
+      'X-Common': 'all',
+      'X-Override': 'openai',
+      'cf-aig-metadata': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+    });
+  });
+
+  it('does not set headers when none are configured', async () => {
+    const params = createParams({ OPENAI_API_KEY: 'sk-test' });
+
+    try {
+      await initializeOpenAI(params);
+    } finally {
+      (params as unknown as { _restore: () => void })._restore();
+    }
+
+    const options = mockGetOpenAIConfig.mock.calls[0][1] as { headers?: Record<string, string> };
+    expect(options.headers).toBeUndefined();
   });
 });

@@ -10,6 +10,7 @@ export * from './files';
 export * from './import';
 export * from './generators';
 export * from './graph';
+export * from './headers';
 export * from './path';
 export * from './key';
 export * from './latex';

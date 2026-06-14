@@ -9,9 +9,9 @@ const {
   logToolError,
   sanitizeTitle,
   payloadParser,
-  resolveHeaders,
   createSafeUser,
   initializeAgent,
+  resolveConfigHeaders,
   countTokens,
   getBalanceConfig,
   omitTitleOptions,
@@ -1638,20 +1638,20 @@ class AgentClient extends BaseClient {
       clientOptions.json = true;
     }
 
-    /** Resolve request-based headers for Custom Endpoints. Note: if this is added to
-     *  non-custom endpoints, needs consideration of varying provider header configs.
+    /** Resolve request-based headers across provider-specific header locations
+     *  (OpenAI `configuration.defaultHeaders`, Google `customHeaders`). The
+     *  Anthropic `clientOptions` carrier is stripped from title requests via
+     *  `omitTitleOptions`, so its headers do not apply to title generation.
      */
-    if (clientOptions?.configuration?.defaultHeaders != null) {
-      clientOptions.configuration.defaultHeaders = resolveHeaders({
-        headers: clientOptions.configuration.defaultHeaders,
-        user: createSafeUser(this.options.req?.user),
-        body: {
-          messageId: this.responseMessageId,
-          conversationId: this.conversationId,
-          parentMessageId: this.parentMessageId,
-        },
-      });
-    }
+    resolveConfigHeaders({
+      llmConfig: clientOptions,
+      user: createSafeUser(this.options.req?.user),
+      body: {
+        messageId: this.responseMessageId,
+        conversationId: this.conversationId,
+        parentMessageId: this.parentMessageId,
+      },
+    });
 
     try {
       const titleResult = await this.run.generateTitle({

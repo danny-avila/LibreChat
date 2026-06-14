@@ -18,6 +18,7 @@ jest.mock('./llm', () => ({
 }));
 
 jest.mock('~/utils', () => ({
+  ...jest.requireActual('~/utils'),
   isEnabled: (value: unknown) => mockIsEnabled(value),
   loadServiceKey: (keyPath: unknown) => mockLoadServiceKey(keyPath),
   checkUserKeyExpiry: (expiresAt: unknown, endpoint: unknown) =>

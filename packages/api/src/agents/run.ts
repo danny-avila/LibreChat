@@ -36,6 +36,7 @@ import type * as t from '~/types';
 import { getProviderConfig } from '~/endpoints/config/providers';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
+import { resolveConfigHeaders } from '~/utils/headers';
 import { applyTestRunHook } from '~/agents/testHook';
 import { isUserProvided } from '~/utils/common';
 
@@ -887,18 +888,17 @@ export async function createRun({
       .trim();
 
     /**
-     * Resolve request-based headers for Custom Endpoints. Note: if this is added to
-     *  non-custom endpoints, needs consideration of varying provider header configs.
-     *  This is done at this step because the request body may contain dynamic values
-     *  that need to be resolved after agent initialization.
+     * Resolve request-based headers across provider-specific header locations
+     * (OpenAI `configuration.defaultHeaders`, Anthropic `clientOptions.defaultHeaders`,
+     * Google `customHeaders`). Done at this step because the request body may
+     * contain dynamic values (e.g. conversationId) that are only known after
+     * agent initialization.
      */
-    if (llmConfig?.configuration?.defaultHeaders != null) {
-      llmConfig.configuration.defaultHeaders = resolveHeaders({
-        headers: llmConfig.configuration.defaultHeaders as Record<string, string>,
-        user: createSafeUser(user),
-        body: requestBody,
-      });
-    }
+    resolveConfigHeaders({
+      llmConfig,
+      user: createSafeUser(user),
+      body: requestBody,
+    });
 
     /** Resolves issues with new OpenAI usage field */
     if (

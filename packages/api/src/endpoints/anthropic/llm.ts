@@ -27,6 +27,7 @@ import {
   getVertexDeploymentName,
 } from './vertex';
 import { getProxyDispatcher } from '~/utils/proxy';
+import { mergeHeaders } from '~/utils/headers';
 
 const WEB_SEARCH_BETA = 'web-search-2025-03-05';
 
@@ -331,6 +332,21 @@ function getLLMConfig(
     requestOptions.clientOptions.defaultHeaders = appendAnthropicBetaHeader(
       requestOptions.clientOptions.defaultHeaders as Record<string, string> | undefined,
       FINE_GRAINED_TOOL_STREAMING_BETA,
+    );
+  }
+
+  /**
+   * Attach admin-configured custom headers (e.g. AI-gateway metadata) beneath
+   * the provider-managed headers above, so beta/protocol headers always win.
+   * Placeholders are kept intact here and resolved at request time.
+   */
+  if (options.headers && Object.keys(options.headers).length > 0 && !shouldDropClientOptions) {
+    if (!requestOptions.clientOptions) {
+      requestOptions.clientOptions = {};
+    }
+    requestOptions.clientOptions.defaultHeaders = mergeHeaders(
+      options.headers,
+      requestOptions.clientOptions.defaultHeaders as Record<string, string> | undefined,
     );
   }
 
