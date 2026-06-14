@@ -160,19 +160,19 @@ export default function useTokenUsage({
   }, [conversationKey, queryClient, setBranchTotals, setTotalUsage]);
 
   useEffect(() => {
-    /** The cache subscriber is muted during streaming to avoid per-chunk O(n)
-     *  rebuilds, but the `created` event still moves the tail to the new
-     *  response message. Without a snapshot (non-agent streams, or a lib that
-     *  predates on_context_usage) sumBranch would miss that tail in the stale
-     *  index and drop history + prompt. Re-index from the cache on tail change
-     *  while submitting — bounded, since tailId only shifts on
-     *  created/finalize/branch-switch, never per chunk. */
-    if (isSubmittingRef.current) {
-      buildIndex(
-        conversationKey,
-        queryClient.getQueryData<TMessage[]>([QueryKeys.messages, conversationKey]),
-      );
-    }
+    /** Re-index from the cache on every tail change (created/finalize during a
+     *  stream AND branch switches). Branch switches don't fire a cache `updated`
+     *  event, so the subscriber below can't catch them; without rebuilding here
+     *  the index stays on whatever the last stream left it — which may have
+     *  dropped the now-viewed branch's response, so sumBranch would find no
+     *  tokens/usage and the gauge + branch cost would blank out. Bounded: tailId
+     *  only shifts on created/finalize/branch-switch, never per chunk. Usage for
+     *  responses whose cache message lacks `metadata.usage` is restored from the
+     *  sticky history inside buildIndex. */
+    buildIndex(
+      conversationKey,
+      queryClient.getQueryData<TMessage[]>([QueryKeys.messages, conversationKey]),
+    );
     setBranchTotals(sumBranch(conversationKey, tailId, anchorId));
     setTotalUsage(sumTotalUsage(conversationKey));
   }, [conversationKey, tailId, anchorId, setBranchTotals, setTotalUsage, queryClient]);

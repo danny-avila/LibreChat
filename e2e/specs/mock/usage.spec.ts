@@ -188,6 +188,8 @@ test.describe('context usage gauge', () => {
     const popover = page.getByRole('region', { name: 'Context usage' });
     const costSection = popover.getByTestId('token-usage-cost');
     await expect(costSection).toBeVisible();
-    await expect(costSection.getByText(/\$\d|<\$0\.01/)).toBeVisible();
+    /** Branch A also has siblings, so both a branch-cost row and an all-branches
+     *  total render — assert at least one cost value is present. */
+    await expect(costSection.getByText(/\$\d|<\$0\.01/).first()).toBeVisible();
   });
 });
