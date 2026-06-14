@@ -20,6 +20,7 @@ const {
 const { FileSources, PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
   getFiles,
+  updateFile,
   getSharedMessages,
   createSharedLink,
   updateSharedLink,
@@ -70,6 +71,10 @@ const allowSharedLinks =
 const runWithTenant = (tenantId, fn) =>
   tenantId ? tenantStorage.run({ tenantId }, fn) : runAsSystem(fn);
 
+/** Mirrors the owner preview route: pending records older than this are swept to
+ * 'failed' on the next poll so the client poller terminates. */
+const PREVIEW_LAZY_SWEEP_CUTOFF_MS = 2 * 60 * 1000;
+
 /**
  * MIME types that are safe to render inline. Everything else (text/html, SVG,
  * and other active content) is served as an `attachment` so a public viewer
@@ -97,9 +102,15 @@ const SAFE_INLINE_TYPES = new Set([
  */
 const resolveShareFile = async (req, res, next) => {
   try {
+    // Honor the toggle as a real kill switch: when disabled, stop serving
+    // share-scoped files even for shares that already have a snapshot.
+    if (!isFileSnapshotEnabled(req.config)) {
+      return res.status(404).json({ message: 'Shared file access is disabled' });
+    }
+
     const { shareId, file_id } = req.params;
     let { file: snapshot, hasSnapshots } = await getSharedLinkFile(shareId, file_id);
-    if (!snapshot && !hasSnapshots && isFileSnapshotEnabled(req.config)) {
+    if (!snapshot && !hasSnapshots) {
       snapshot = await backfillSharedLinkFiles(shareId, file_id);
     }
     if (!snapshot) {
@@ -113,6 +124,16 @@ const resolveShareFile = async (req, res, next) => {
     if (!liveFile) {
       logger.warn(
         `[shareFileAccess] Snapshotted file ${file_id} no longer available for share ${shareId}`,
+      );
+      return res.status(404).json({ message: 'File no longer available' });
+    }
+
+    // Pin to the snapshotted version: if the file_id was reused/overwritten by a
+    // later turn (new previewRevision), the shared version is gone — refuse to
+    // serve so an old link can't surface post-share content.
+    if ((snapshot.previewRevision ?? null) !== (liveFile.previewRevision ?? null)) {
+      logger.warn(
+        `[shareFileAccess] Snapshot revision mismatch for file ${file_id} (share ${shareId})`,
       );
       return res.status(404).json({ message: 'File no longer available' });
     }
@@ -210,19 +231,38 @@ if (allowSharedLinks) {
     canAccessSharedLink,
     configMiddleware,
     resolveShareFile,
-    (req, res) => {
-      const { file_id } = req.params;
-      const liveFile = req.liveFile;
-      const status = liveFile?.status || 'ready';
-      const payload = { file_id, status };
-      if (status === 'ready' && liveFile?.text != null) {
-        payload.text = liveFile.text;
-        payload.textFormat = liveFile.textFormat ?? null;
-      } else if (status === 'failed' && liveFile?.previewError) {
-        payload.previewError = liveFile.previewError;
+    async (req, res) => {
+      try {
+        const { file_id } = req.params;
+        let liveFile = req.liveFile;
+        // Lazy-sweep orphaned pending records to 'failed' so the client preview
+        // poller reaches a terminal state (mirrors the owner preview route).
+        if (liveFile?.status === 'pending' && liveFile.updatedAt instanceof Date) {
+          const ageMs = Date.now() - liveFile.updatedAt.getTime();
+          if (ageMs > PREVIEW_LAZY_SWEEP_CUTOFF_MS) {
+            const swept = await updateFile(
+              { file_id, status: 'failed', previewError: 'orphaned' },
+              { status: 'pending', updatedAt: liveFile.updatedAt },
+            );
+            if (swept) {
+              liveFile = swept;
+            }
+          }
+        }
+        const status = liveFile?.status || 'ready';
+        const payload = { file_id, status };
+        if (status === 'ready' && liveFile?.text != null) {
+          payload.text = liveFile.text;
+          payload.textFormat = liveFile.textFormat ?? null;
+        } else if (status === 'failed' && liveFile?.previewError) {
+          payload.previewError = liveFile.previewError;
+        }
+        res.set('Cache-Control', 'private, no-store');
+        return res.status(200).json(payload);
+      } catch (error) {
+        logger.error('[shareFileAccess] Error fetching shared preview:', error);
+        return res.status(500).json({ message: 'Error fetching preview' });
       }
-      res.set('Cache-Control', 'private, no-store');
-      return res.status(200).json(payload);
     },
   );
 

@@ -1,7 +1,7 @@
 const cookie = require('cookie');
 const jwt = require('jsonwebtoken');
 const { isEnabled } = require('@librechat/api');
-const { logger } = require('@librechat/data-schemas');
+const { logger, runAsSystem } = require('@librechat/data-schemas');
 const { SystemRoles } = require('librechat-data-provider');
 const { getUserById } = require('~/models');
 
@@ -46,7 +46,13 @@ const optionalShareFileAuth = async (req, res, next) => {
       return next();
     }
 
-    const user = await getUserById(userId, '-password -__v -totpSecret -backupCodes');
+    // Resolve in system context: this runs before canAccessSharedLink establishes
+    // the share tenant, so under strict tenant isolation a tenant-scoped User
+    // query would otherwise throw. The viewer's id comes from their own verified
+    // refresh token; the share's tenant-scoped ACL check still gates access.
+    const user = await runAsSystem(() =>
+      getUserById(userId, '-password -__v -totpSecret -backupCodes'),
+    );
     if (user) {
       user.id = user._id.toString();
       if (!user.role) {

@@ -62,6 +62,7 @@ jest.mock('mongoose', () => ({
 
 jest.mock('~/models', () => ({
   getFiles: jest.fn(),
+  updateFile: jest.fn(),
   getSharedMessages: jest.fn(),
   createSharedLink: jest.fn(),
   updateSharedLink: jest.fn(),
@@ -91,9 +92,10 @@ jest.mock('~/server/middleware/config/app', () => (_req, _res, next) => next());
 const { Readable } = require('stream');
 const { RetentionMode } = require('librechat-data-provider');
 const { createTempChatExpirationDate, logger } = require('@librechat/data-schemas');
-const { deleteSharedLinkWithCleanup } = require('@librechat/api');
+const { deleteSharedLinkWithCleanup, isFileSnapshotEnabled } = require('@librechat/api');
 const {
   getFiles,
+  updateFile,
   getSharedMessages,
   createSharedLink,
   updateSharedLink,
@@ -497,5 +499,56 @@ describe('share-scoped file routes', () => {
 
     expect(response.status).toBe(404);
     expect(mockGetStrategyFunctions).not.toHaveBeenCalled();
+  });
+
+  it('404s (no serving) when the snapshot feature is disabled', async () => {
+    isFileSnapshotEnabled.mockReturnValueOnce(false);
+
+    const response = await request(buildApp()).get('/api/share/share-123/files/file-1');
+
+    expect(response.status).toBe(404);
+    expect(getSharedLinkFile).not.toHaveBeenCalled();
+    expect(mockGetStrategyFunctions).not.toHaveBeenCalled();
+  });
+
+  it('404s when the snapshotted file version was overwritten (revision mismatch)', async () => {
+    getSharedLinkFile.mockResolvedValue({
+      file: {
+        file_id: 'file-1',
+        source: 'local',
+        filepath: '/uploads/owner/x',
+        previewRevision: 'r1',
+      },
+      hasSnapshots: true,
+    });
+    getFiles.mockResolvedValue([{ status: 'ready', previewRevision: 'r2' }]);
+
+    const response = await request(buildApp()).get('/api/share/share-123/files/file-1');
+
+    expect(response.status).toBe(404);
+    expect(mockGetStrategyFunctions).not.toHaveBeenCalled();
+  });
+
+  it('sweeps an orphaned pending preview to failed', async () => {
+    getSharedLinkFile.mockResolvedValue({
+      file: { file_id: 'file-1', source: 'local' },
+      hasSnapshots: true,
+    });
+    const stale = new Date(Date.now() - 5 * 60 * 1000);
+    getFiles.mockResolvedValue([{ status: 'pending', updatedAt: stale }]);
+    updateFile.mockResolvedValue({ status: 'failed', previewError: 'orphaned' });
+
+    const response = await request(buildApp()).get('/api/share/share-123/files/file-1/preview');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      file_id: 'file-1',
+      status: 'failed',
+      previewError: 'orphaned',
+    });
+    expect(updateFile).toHaveBeenCalledWith(
+      { file_id: 'file-1', status: 'failed', previewError: 'orphaned' },
+      { status: 'pending', updatedAt: stale },
+    );
   });
 });

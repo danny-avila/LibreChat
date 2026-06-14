@@ -176,6 +176,7 @@ async function buildFileSnapshots(
       width: file.width,
       height: file.height,
       model: file.model,
+      previewRevision: file.previewRevision,
       tenantId: file.tenantId,
     });
   }
