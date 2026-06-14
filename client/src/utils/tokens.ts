@@ -31,6 +31,10 @@ export interface TokenEntry {
   parentMessageId: string | null;
   /** Per-response provider usage from `metadata.usage` (response messages only) */
   usage?: BranchUsage;
+  /** Pre-invoke compacted context size (`metadata.summaryUsedTokens`) for a
+   *  response whose turn summarized. Caps the estimate so it stops re-summing
+   *  the now-discarded pre-summary history. */
+  summaryUsedTokens?: number;
 }
 
 export interface BranchTotals {
@@ -47,6 +51,11 @@ export interface BranchTotals {
   containsAnchor: boolean;
   /** Provider usage/cost summed along the active branch */
   usage: BranchUsage;
+  /** Compacted-context baseline from the deepest summarized response on the
+   *  branch (0 if none). The branch walk stops there, so `input`/`output` cover
+   *  only the post-summary messages; the estimate adds this to avoid counting
+   *  the discarded pre-summary history. */
+  summaryBaseline: number;
 }
 
 export const EMPTY_BRANCH: BranchTotals = {
@@ -57,6 +66,7 @@ export const EMPTY_BRANCH: BranchTotals = {
   tailId: null,
   containsAnchor: false,
   usage: EMPTY_USAGE,
+  summaryBaseline: 0,
 };
 
 /** Module-level token index: conversationId → messageId → entry. Not render state. */
@@ -128,11 +138,16 @@ function addUsage(target: BranchUsage, usage?: BranchUsage): void {
 }
 
 function toEntry(message: Partial<TMessage>): TokenEntry {
+  const summaryUsedTokens = message.metadata?.summaryUsedTokens;
   return {
     tokenCount: typeof message.tokenCount === 'number' ? message.tokenCount : 0,
     isCreatedByUser: message.isCreatedByUser === true,
     parentMessageId: message.parentMessageId ?? null,
     usage: readPersistedUsage(message),
+    summaryUsedTokens:
+      typeof summaryUsedTokens === 'number' && summaryUsedTokens > 0
+        ? summaryUsedTokens
+        : undefined,
   };
 }
 
@@ -218,6 +233,7 @@ export function sumBranch(
 
   const totals = { input: 0, output: 0, counted: 0, total: 0, containsAnchor: false };
   const usage: BranchUsage = { ...EMPTY_USAGE };
+  let summaryBaseline = 0;
   let currentId: string | null = tailId;
   let guard = index.size;
 
@@ -239,10 +255,17 @@ export function sumBranch(
       }
     }
     addUsage(usage, entry.usage);
+    /** This response's turn compacted the history: count its own output (already
+     *  done above), record the pre-invoke compacted baseline, and stop — every
+     *  older message is subsumed by the summary and must not be re-summed. */
+    if (entry.summaryUsedTokens != null) {
+      summaryBaseline = entry.summaryUsedTokens;
+      break;
+    }
     currentId = entry.parentMessageId;
   }
 
-  return { ...totals, tailId, usage };
+  return { ...totals, tailId, usage, summaryBaseline };
 }
 
 /**

@@ -88,6 +88,36 @@ describe('token index', () => {
     expect(altTotals.output).toBe(1019);
   });
 
+  it('caps the branch at a summary marker instead of re-summing compacted history', () => {
+    const summarized = {
+      messageId: 'a2',
+      parentMessageId: 'u2',
+      isCreatedByUser: false,
+      tokenCount: 40,
+      conversationId: CONVO,
+      text: '',
+      /** a2's turn compacted the history; pre-invoke context was 500 tokens. */
+      metadata: { summaryUsedTokens: 500 },
+    } as TMessage;
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 100),
+      msg('a1', 'u1', false, 9000) /** huge pre-summary history, now discarded */,
+      msg('u2', 'a1', true, 200),
+      summarized,
+      msg('u3', 'a2', true, 15),
+      msg('a3', 'u3', false, 25),
+    ]);
+
+    const totals = sumBranch(CONVO, 'a3');
+    /** Walk stops at a2: only its output + the post-summary turn are summed. */
+    expect(totals.summaryBaseline).toBe(500);
+    expect(totals.input).toBe(15);
+    expect(totals.output).toBe(65); // a3 (25) + a2 (40)
+    /** Estimate used = post-summary + compacted baseline = 580, not the 9380
+     *  raw history sum that pinned the gauge at 100%. */
+    expect(totals.input + totals.output + totals.summaryBaseline).toBe(580);
+  });
+
   it('flags whether the anchor message is on the branch', () => {
     buildIndex(CONVO, [
       msg('u1', Constants.NO_PARENT, true, 10),
