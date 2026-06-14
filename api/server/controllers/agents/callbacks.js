@@ -274,6 +274,11 @@ function feedSubagentAggregator(aggregator, event) {
  * @param {string | null} [options.streamId] - The stream ID for resumable mode, or null for standard mode.
  * @param {ToolExecuteOptions} [options.toolExecuteOptions] - Options for event-driven tool execution.
  * @param {UsageCostDeps} [options.usageCost] - Pricing context for authoritative per-event cost.
+ * @param {{ latest: TContextUsageEvent | null, count: number }} [options.contextUsageSink] - Mutable
+ *   holder for the latest visible context snapshot + a count of visible snapshots (model calls),
+ *   used to persist the breakdown only when the final call emitted usage.
+ * @param {Array<TTokenUsageEvent>} [options.usageEmitSink] - Array collecting each emitted
+ *   `on_token_usage` payload (incl. cost) so the response's usage rollup can be persisted.
  * @returns {Record<string, t.EventHandler>} The default handlers.
  * @throws {Error} If the request is not found.
  */
@@ -288,6 +293,8 @@ function getDefaultHandlers({
   summarizationOptions = null,
   subagentAggregatorsByToolCallId = null,
   usageCost = null,
+  contextUsageSink = null,
+  usageEmitSink = null,
 }) {
   if (!res || !aggregateContent) {
     throw new Error(
@@ -312,6 +319,11 @@ function getDefaultHandlers({
       } catch (err) {
         logger.warn('[getDefaultHandlers] Failed to compute usage cost', err);
       }
+    }
+    /** Collect the same payload the client folds so the response's usage rollup
+     *  persisted on `metadata.usage` reproduces the live branch/total + cost. */
+    if (usageEmitSink) {
+      usageEmitSink.push(payload);
     }
     return emitEvent(res, streamId, { event: UsageEvents.ON_TOKEN_USAGE, data: payload });
   };
@@ -521,6 +533,15 @@ function getDefaultHandlers({
           !metadata?.hide_sequential_outputs
         ) {
           await emitEvent(res, streamId, { event, data });
+          /** Capture the latest visible snapshot (last-wins) + count visible
+           *  snapshots (one per model call). The count lets the save path persist
+           *  the breakdown only when the FINAL call emitted usage (primary usage
+           *  events === snapshots), so completedOutputTokens is a real
+           *  post-snapshot delta and reload doesn't over-report. */
+          if (contextUsageSink) {
+            contextUsageSink.latest = data;
+            contextUsageSink.count = (contextUsageSink.count ?? 0) + 1;
+          }
         }
       },
     };

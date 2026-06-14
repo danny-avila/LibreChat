@@ -1,6 +1,12 @@
 import { logger } from '@librechat/data-schemas';
 import { inputTokensIncludesCache } from 'librechat-data-provider';
-import type { TCustomConfig, TTransactionsConfig } from 'librechat-data-provider';
+import type {
+  TCustomConfig,
+  TResponseUsage,
+  TTokenUsageEvent,
+  TContextUsageEvent,
+  TTransactionsConfig,
+} from 'librechat-data-provider';
 import type {
   StructuredTokenUsage,
   BulkWriteDeps,
@@ -155,6 +161,169 @@ export function computeUsageCostUSD(
         );
   const credits = entries.reduce((sum, entry) => sum + Math.abs(entry.tokenValue), 0);
   return credits / 1e6;
+}
+
+/**
+ * Aggregates the per-model-call `on_token_usage` payloads emitted for one
+ * response into a single rollup, persisted on `responseMessage.metadata.usage`.
+ *
+ * Each event is normalized into display units with the SAME logic the live
+ * client uses (`splitUsage`: input excludes cache, output is repaired) BEFORE
+ * summing, so the rollup reproduces the live branch/total usage exactly even
+ * when a turn mixes providers (e.g. a summarization or subagent call on a
+ * different provider than the primary). `cost` is the additive sum of the
+ * authoritative per-event cost, included only when at least one event carried
+ * it (i.e. `interface.contextCost` was on).
+ */
+export function aggregateEmittedUsage(
+  events: ReadonlyArray<TTokenUsageEvent>,
+): TResponseUsage | null {
+  if (events.length === 0) {
+    return null;
+  }
+  let input = 0;
+  let output = 0;
+  let cacheWrite = 0;
+  let cacheRead = 0;
+  let cost = 0;
+  /** Persist cost only with COMPLETE coverage — every call priced. A partial
+   *  sum (e.g. one call's `computeUsageCostUSD` threw and emitted without cost)
+   *  would read back as authoritative and under-report; omitting it makes the
+   *  client treat coverage as unknown and hide the cost, matching the live fold.
+   *  Naturally false when `contextCost` is off (no event carries cost). */
+  let allHaveCost = true;
+  for (const event of events) {
+    const units = normalizeEventUnits(event);
+    input += units.input;
+    output += units.output;
+    cacheWrite += units.cacheWrite;
+    cacheRead += units.cacheRead;
+    if (event.cost != null) {
+      cost += event.cost;
+    } else {
+      allHaveCost = false;
+    }
+  }
+  const rollup: TResponseUsage = { input, output, cacheWrite, cacheRead };
+  if (allHaveCost) {
+    rollup.cost = cost;
+  }
+  return rollup;
+}
+
+/**
+ * Per-event display-unit normalization, mirroring the client's
+ * `normalizeUsageUnits` EXACTLY — including the magnitude fallback when
+ * `provider` is absent — so a reloaded rollup matches what the live client
+ * folded. This is deliberately distinct from billing `splitUsage`, which treats
+ * a missing provider as additive (no magnitude fallback); the divergence only
+ * surfaces for provider-less cached events (e.g. some OpenAI-compatible/custom
+ * payloads), where the client subtracts cache from input but `splitUsage`
+ * would not. Keep in sync with `normalizeUsageUnits` in client/src/utils/tokens.ts.
+ */
+function normalizeEventUnits(event: TTokenUsageEvent): {
+  input: number;
+  output: number;
+  cacheWrite: number;
+  cacheRead: number;
+} {
+  const rawInput = event.input_tokens ?? 0;
+  const rawOutput = event.output_tokens ?? 0;
+  const total = event.total_tokens ?? 0;
+  const cacheWrite = event.input_token_details?.cache_creation ?? 0;
+  const cacheRead = event.input_token_details?.cache_read ?? 0;
+  const includesCache =
+    event.provider != null
+      ? inputTokensIncludesCache(event.provider)
+      : cacheWrite + cacheRead <= rawInput;
+  const cacheAdjustment = includesCache ? 0 : cacheRead + cacheWrite;
+  const output =
+    total > rawInput + rawOutput + cacheAdjustment ? total - rawInput - cacheAdjustment : rawOutput;
+  return {
+    input: includesCache ? Math.max(0, rawInput - cacheRead - cacheWrite) : rawInput,
+    output,
+    cacheWrite,
+    cacheRead,
+  };
+}
+
+/** Output tokens of the response's final primary model call — the call the
+ *  latest pre-invoke snapshot precedes. Persisted as the snapshot's
+ *  `completedOutputTokens` so a reloaded multi-call turn adds only this delta
+ *  (matching the live finalizer) instead of the full response `tokenCount`,
+ *  which the snapshot already counts for earlier steps. */
+function finalCallOutputTokens(events: ReadonlyArray<TTokenUsageEvent>): number {
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i].usage_type == null) {
+      return normalizeEventUnits(events[i]).output;
+    }
+  }
+  return 0;
+}
+
+/**
+ * Projects the latest live context snapshot into the blob persisted on
+ * `responseMessage.metadata.contextUsage`. Trims zero-valued per-tool counts
+ * (privacy/size) and records the final call's output as `completedOutputTokens`
+ * so rehydration adds the same post-snapshot delta the live gauge did. The
+ * client re-anchors the blob to the response message id on load.
+ */
+export function buildPersistedContextUsage(
+  snapshot: TContextUsageEvent,
+  usageEvents: ReadonlyArray<TTokenUsageEvent> = [],
+): TContextUsageEvent {
+  const { breakdown } = snapshot;
+  const completedOutputTokens = finalCallOutputTokens(usageEvents);
+  let toolTokenCounts = breakdown.toolTokenCounts;
+  if (toolTokenCounts != null) {
+    const trimmed: Record<string, number> = {};
+    for (const [name, count] of Object.entries(toolTokenCounts)) {
+      if (count > 0) {
+        trimmed[name] = count;
+      }
+    }
+    toolTokenCounts = Object.keys(trimmed).length > 0 ? trimmed : undefined;
+  }
+  return {
+    ...snapshot,
+    breakdown: { ...breakdown, toolTokenCounts },
+    ...(completedOutputTokens > 0 && { completedOutputTokens }),
+  };
+}
+
+function parseUsageEvents(value?: string | null): TTokenUsageEvent[] {
+  if (typeof value !== 'string' || value.length === 0) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? (parsed as TTokenUsageEvent[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Builds the response `metadata` for a STOPPED generation from the job's
+ * persisted emitted usage, so a stopped reply keeps its accurate cost rollup on
+ * reload (finding: stopped responses otherwise lose cost). Shared by every abort
+ * save path (agents abort route + legacy abort middleware).
+ *
+ * Deliberately persists ONLY `usage`, not `contextUsage`: unlike the live path,
+ * the abort path can't tell whether the FINAL call (the one the latest snapshot
+ * precedes) emitted usage — the job stores only the latest snapshot, not the
+ * snapshot count. If the final call emitted none, `completedOutputTokens` would
+ * reuse an earlier call's output the snapshot already counts → reload
+ * over-reports. A stopped/incomplete response therefore falls back to the coarse
+ * per-message gauge estimate on reload, which is both safe and apt for an
+ * interrupted turn that never reached a clean pre-invoke breakdown.
+ */
+export function buildAbortedResponseMetadata(
+  job: { tokenUsage?: string | null } | null | undefined,
+): { usage?: TResponseUsage } | undefined {
+  const events = parseUsageEvents(job?.tokenUsage);
+  const usage = aggregateEmittedUsage(events);
+  return usage ? { usage } : undefined;
 }
 
 export interface RecordUsageParams {

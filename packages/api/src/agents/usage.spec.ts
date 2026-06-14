@@ -1,7 +1,15 @@
+import type { TContextUsageEvent, TTokenUsageEvent } from 'librechat-data-provider';
 import type { RecordUsageDeps, RecordUsageParams, SubagentUsageEvent } from './usage';
 import type { UsageMetadata } from '../stream/interfaces/IJobStore';
 import type { BulkWriteDeps, PricingFns } from './transactions';
-import { computeUsageCostUSD, createSubagentUsageSink, recordCollectedUsage } from './usage';
+import {
+  computeUsageCostUSD,
+  aggregateEmittedUsage,
+  createSubagentUsageSink,
+  recordCollectedUsage,
+  buildPersistedContextUsage,
+  buildAbortedResponseMetadata,
+} from './usage';
 
 describe('recordCollectedUsage', () => {
   let mockSpendTokens: jest.Mock;
@@ -1501,5 +1509,192 @@ describe('computeUsageCostUSD', () => {
       pricing,
     );
     expect(cost).toBeCloseTo((1000 * 3 + 2000 * 3.75 + 10000 * 0.3 + 500 * 15) / 1e6);
+  });
+});
+
+describe('aggregateEmittedUsage', () => {
+  it('returns null for no emitted events', () => {
+    expect(aggregateEmittedUsage([])).toBeNull();
+  });
+
+  it('normalizes each call into display units (input excludes cache) and sums cost', () => {
+    const events: TTokenUsageEvent[] = [
+      {
+        input_tokens: 100,
+        output_tokens: 20,
+        total_tokens: 120,
+        model: 'gpt-4o-mini',
+        provider: 'openAI',
+        cost: 0.001,
+      },
+      {
+        input_tokens: 150,
+        output_tokens: 10,
+        total_tokens: 160,
+        input_token_details: { cache_creation: 30, cache_read: 50 },
+        model: 'gpt-4o-mini',
+        provider: 'openAI',
+        cost: 0.002,
+      },
+    ];
+    /** openAI is cache-subset: input excludes cache (150−30−50=70) */
+    expect(aggregateEmittedUsage(events)).toEqual({
+      input: 170,
+      output: 30,
+      cacheWrite: 30,
+      cacheRead: 50,
+      cost: 0.003,
+    });
+  });
+
+  it('omits cost when no event carried it (contextCost off)', () => {
+    const rollup = aggregateEmittedUsage([
+      { input_tokens: 100, output_tokens: 20, total_tokens: 120, provider: 'openAI' },
+    ]);
+    expect(rollup).toEqual({ input: 100, output: 20, cacheWrite: 0, cacheRead: 0 });
+    expect(rollup?.cost).toBeUndefined();
+  });
+
+  it('omits cost when any call lacked it (partial pricing failure)', () => {
+    /** One call priced, one missing cost (e.g. computeUsageCostUSD threw) →
+     *  the sum would under-report, so coverage is incomplete and cost omitted. */
+    const rollup = aggregateEmittedUsage([
+      { input_tokens: 100, output_tokens: 20, provider: 'openAI', cost: 0.01 },
+      { input_tokens: 50, output_tokens: 10, provider: 'openAI' },
+    ]);
+    expect(rollup?.cost).toBeUndefined();
+    expect(rollup?.input).toBe(150);
+    expect(rollup?.output).toBe(30);
+  });
+
+  it('normalizes mixed-provider calls per their own provider before summing', () => {
+    /** anthropic is additive (cache separate from input), openAI is subset */
+    const rollup = aggregateEmittedUsage([
+      {
+        input_tokens: 100,
+        output_tokens: 20,
+        provider: 'anthropic',
+        input_token_details: { cache_read: 40 },
+        cost: 0.01,
+      },
+      {
+        input_tokens: 90,
+        output_tokens: 5,
+        usage_type: 'subagent',
+        provider: 'openAI',
+        input_token_details: { cache_read: 30 },
+        cost: 0.02,
+      },
+    ]);
+    /** anthropic input stays 100 (additive); openAI input 90−30=60 → 160 */
+    expect(rollup?.input).toBe(160);
+    expect(rollup?.output).toBe(25);
+    expect(rollup?.cacheRead).toBe(70);
+    expect(rollup?.cost).toBeCloseTo(0.03);
+  });
+
+  it('uses the magnitude fallback for provider-less cached events (matches live)', () => {
+    /** No provider: the client's normalizeUsageUnits uses a magnitude heuristic
+     *  (cache ≤ input ⇒ input includes cache), so the rollup must too — billing
+     *  splitUsage would treat it as additive and leave input at 1000, diverging
+     *  from the live display after reload. */
+    const rollup = aggregateEmittedUsage([
+      { input_tokens: 1000, output_tokens: 100, input_token_details: { cache_read: 400 } },
+    ]);
+    expect(rollup).toEqual({ input: 600, output: 100, cacheWrite: 0, cacheRead: 400 });
+  });
+});
+
+describe('buildPersistedContextUsage', () => {
+  const baseSnapshot: TContextUsageEvent = {
+    runId: 'run-1',
+    breakdown: {
+      maxContextTokens: 8000,
+      instructionTokens: 100,
+      systemMessageTokens: 80,
+      dynamicInstructionTokens: 20,
+      toolSchemaTokens: 30,
+      summaryTokens: 0,
+      toolCount: 2,
+      messageCount: 3,
+      messageTokens: 500,
+      availableForMessages: 7000,
+      toolTokenCounts: { add: 15, noop: 0 },
+    },
+    contextBudget: 7800,
+  };
+
+  it('trims zero-valued per-tool counts', () => {
+    const result = buildPersistedContextUsage(baseSnapshot);
+    expect(result.breakdown.toolTokenCounts).toEqual({ add: 15 });
+    expect(result.contextBudget).toBe(7800);
+  });
+
+  it('drops the tool counts object entirely when all are zero', () => {
+    const result = buildPersistedContextUsage({
+      ...baseSnapshot,
+      breakdown: { ...baseSnapshot.breakdown, toolTokenCounts: { add: 0 } },
+    });
+    expect(result.breakdown.toolTokenCounts).toBeUndefined();
+  });
+
+  it('passes through a snapshot without tool counts', () => {
+    const { toolTokenCounts: _omit, ...breakdown } = baseSnapshot.breakdown;
+    const result = buildPersistedContextUsage({ ...baseSnapshot, breakdown });
+    expect(result.breakdown.toolTokenCounts).toBeUndefined();
+    expect(result.breakdown.messageTokens).toBe(500);
+  });
+
+  it('records the final primary call output as completedOutputTokens', () => {
+    /** The latest snapshot precedes the final call, so its post-snapshot delta
+     *  is that call's output — not the full multi-call response tokenCount. */
+    const events: TTokenUsageEvent[] = [
+      { input_tokens: 100, output_tokens: 40, total_tokens: 140, provider: 'openAI' },
+      { input_tokens: 200, output_tokens: 25, total_tokens: 225, provider: 'openAI' },
+      {
+        input_tokens: 50,
+        output_tokens: 12,
+        usage_type: 'subagent',
+        provider: 'openAI',
+      },
+    ];
+    const result = buildPersistedContextUsage(baseSnapshot, events);
+    /** Last PRIMARY call's completion (25), skipping the trailing subagent event */
+    expect(result.completedOutputTokens).toBe(25);
+  });
+
+  it('omits completedOutputTokens when there are no primary calls', () => {
+    expect(buildPersistedContextUsage(baseSnapshot, []).completedOutputTokens).toBeUndefined();
+  });
+});
+
+describe('buildAbortedResponseMetadata', () => {
+  it('returns undefined for an empty job', () => {
+    expect(buildAbortedResponseMetadata(undefined)).toBeUndefined();
+    expect(buildAbortedResponseMetadata({})).toBeUndefined();
+    expect(buildAbortedResponseMetadata({ tokenUsage: 'not json' })).toBeUndefined();
+  });
+
+  it('rebuilds the usage/cost rollup from the job’s persisted emitted usage', () => {
+    const events: TTokenUsageEvent[] = [
+      { input_tokens: 100, output_tokens: 20, total_tokens: 120, provider: 'openAI', cost: 0.001 },
+    ];
+    const result = buildAbortedResponseMetadata({ tokenUsage: JSON.stringify(events) });
+    expect(result?.usage).toEqual({
+      input: 100,
+      output: 20,
+      cacheWrite: 0,
+      cacheRead: 0,
+      cost: 0.001,
+    });
+  });
+
+  it('never persists a breakdown for a stopped response (avoids final-call over-count)', () => {
+    const events: TTokenUsageEvent[] = [
+      { input_tokens: 100, output_tokens: 20, total_tokens: 120, provider: 'openAI' },
+    ];
+    const result = buildAbortedResponseMetadata({ tokenUsage: JSON.stringify(events) });
+    expect(result).toEqual({ usage: { input: 100, output: 20, cacheWrite: 0, cacheRead: 0 } });
+    expect((result as { contextUsage?: unknown }).contextUsage).toBeUndefined();
   });
 });

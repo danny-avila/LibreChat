@@ -32,7 +32,12 @@ interface BreakdownProps {
 
 export default function Breakdown({ view, showCost }: BreakdownProps) {
   const localize = useLocalize();
-  const { usedTokens, maxTokens, percent, snapshot, snapshotActive, usageTotals } = view;
+  const { usedTokens, maxTokens, percent, snapshot, snapshotActive, branchUsage, hasUsage } = view;
+  /** Show the all-branches total only when it (a) exceeds the active branch —
+   *  epsilon guards against float summation order surfacing a spurious row in an
+   *  unbranched conversation — and (b) has COMPLETE cost coverage, so a sibling
+   *  branch saved without cost can't render an under-reported total. */
+  const showTotal = view.totalUsage.costKnown && view.totalCost - view.branchCost > 1e-9;
 
   const breakdown = snapshotActive ? snapshot?.breakdown : undefined;
   const instructionTokens =
@@ -139,28 +144,40 @@ export default function Breakdown({ view, showCost }: BreakdownProps) {
         )}
       </div>
 
-      {usageTotals.eventCount > 0 && (
+      {hasUsage && (
         <>
           <div className="border-t border-border-light" role="separator" />
           <div className="space-y-1.5" data-testid="token-usage-totals">
-            <Row label={localize('com_ui_input')} value={usageTotals.input} />
-            <Row label={localize('com_ui_output')} value={usageTotals.output} />
-            {usageTotals.cacheRead > 0 && (
-              <Row label={localize('com_ui_cache_read')} value={usageTotals.cacheRead} />
+            <Row label={localize('com_ui_input')} value={branchUsage.input} />
+            <Row label={localize('com_ui_output')} value={branchUsage.output} />
+            {branchUsage.cacheRead > 0 && (
+              <Row label={localize('com_ui_cache_read')} value={branchUsage.cacheRead} />
             )}
-            {usageTotals.cacheWrite > 0 && (
-              <Row label={localize('com_ui_cache_write')} value={usageTotals.cacheWrite} />
+            {branchUsage.cacheWrite > 0 && (
+              <Row label={localize('com_ui_cache_write')} value={branchUsage.cacheWrite} />
             )}
           </div>
         </>
       )}
 
-      {showCost && view.costUSD != null && (
+      {showCost && hasUsage && branchUsage.costKnown && (
         <>
           <div className="border-t border-border-light" role="separator" />
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-text-secondary">{localize('com_ui_session_cost')}</span>
-            <span className="font-medium text-text-primary">{formatCost(view.costUSD)}</span>
+          <div className="space-y-1.5" data-testid="token-usage-cost">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-text-secondary">
+                {showTotal
+                  ? localize('com_ui_context_cost_branch')
+                  : localize('com_ui_context_cost')}
+              </span>
+              <span className="font-medium text-text-primary">{formatCost(view.branchCost)}</span>
+            </div>
+            {showTotal && (
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-text-secondary">{localize('com_ui_context_cost_total')}</span>
+                <span className="text-text-secondary">{formatCost(view.totalCost)}</span>
+              </div>
+            )}
           </div>
         </>
       )}

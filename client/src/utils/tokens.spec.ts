@@ -1,5 +1,5 @@
 import { Constants, Providers } from 'librechat-data-provider';
-import type { TMessage } from 'librechat-data-provider';
+import type { TMessage, TResponseUsage } from 'librechat-data-provider';
 import {
   buildIndex,
   upsertEntries,
@@ -7,6 +7,9 @@ import {
   clearIndex,
   hasIndex,
   sumBranch,
+  mergeUsage,
+  setEntryUsage,
+  sumTotalUsage,
   findBranchSnapshotAnchor,
   estimateTokens,
   normalizeUsageUnits,
@@ -14,6 +17,7 @@ import {
   groupToolTokens,
   countTrailingOutputChars,
   EMPTY_BRANCH,
+  EMPTY_USAGE,
   EMPTY_TOOL_GROUPS,
 } from './tokens';
 
@@ -34,6 +38,28 @@ function msg(
     text: '',
   } as TMessage;
 }
+
+/** Response message carrying a persisted `metadata.usage` rollup (the backend
+ *  persists already-normalized display units). */
+function responseMsg(
+  messageId: string,
+  parentMessageId: string | null,
+  tokenCount: number,
+  usage: TResponseUsage,
+): TMessage {
+  return {
+    messageId,
+    parentMessageId,
+    isCreatedByUser: false,
+    tokenCount,
+    conversationId: CONVO,
+    text: '',
+    metadata: { usage },
+  } as TMessage;
+}
+
+const USAGE_A: TResponseUsage = { input: 100, output: 50, cacheWrite: 0, cacheRead: 0, cost: 0.01 };
+const USAGE_B: TResponseUsage = { input: 200, output: 80, cacheWrite: 0, cacheRead: 0, cost: 0.02 };
 
 describe('token index', () => {
   afterEach(() => {
@@ -269,5 +295,199 @@ describe('countTrailingOutputChars', () => {
     expect(countTrailingOutputChars(undefined)).toBe(0);
     expect(countTrailingOutputChars([])).toBe(0);
     expect(countTrailingOutputChars([tool()])).toBe(0);
+  });
+});
+
+describe('per-message usage index (branch + total)', () => {
+  afterEach(() => {
+    clearIndex(CONVO);
+  });
+
+  it('reads metadata.usage onto entries and sums it along the branch', () => {
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 10),
+      responseMsg('a1', 'u1', 50, USAGE_A),
+      msg('u2', 'a1', true, 30),
+      responseMsg('a2', 'u2', 80, USAGE_B),
+    ]);
+
+    const { usage } = sumBranch(CONVO, 'a2');
+    expect(usage).toEqual({
+      input: 300,
+      output: 130,
+      cacheWrite: 0,
+      cacheRead: 0,
+      cost: 0.03,
+      costKnown: true,
+    });
+  });
+
+  it('reads persisted display units (incl. cache) directly', () => {
+    /** The backend already normalized per-event; the client reads as-is */
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 10),
+      responseMsg('a1', 'u1', 100, {
+        input: 600,
+        output: 100,
+        cacheWrite: 0,
+        cacheRead: 400,
+        cost: 0.03,
+      }),
+    ]);
+
+    const { usage } = sumBranch(CONVO, 'a1');
+    expect(usage).toEqual({
+      input: 600,
+      output: 100,
+      cacheWrite: 0,
+      cacheRead: 400,
+      cost: 0.03,
+      costKnown: true,
+    });
+  });
+
+  it('marks cost unknown when persisted usage omits cost (contextCost off)', () => {
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 10),
+      responseMsg('a1', 'u1', 50, { input: 100, output: 50, cacheWrite: 0, cacheRead: 0 }),
+    ]);
+    const { usage } = sumBranch(CONVO, 'a1');
+    expect(usage.costKnown).toBe(false);
+    expect(usage.cost).toBe(0);
+    expect(usage.input).toBe(100);
+  });
+
+  it('messages without metadata.usage contribute zero (backward compat)', () => {
+    buildIndex(CONVO, [msg('u1', Constants.NO_PARENT, true, 10), msg('a1', 'u1', false, 50)]);
+    expect(sumBranch(CONVO, 'a1').usage).toEqual(EMPTY_USAGE);
+    expect(sumTotalUsage(CONVO)).toEqual(EMPTY_USAGE);
+  });
+
+  it('preserves a prior entry usage when a rebuilt message lacks metadata.usage', () => {
+    /** Live finalize flushes usage into the index before persisted metadata
+     *  reaches the cache; a mid-session rebuild from a cache message without
+     *  metadata.usage must not wipe it (regenerate keeps the sibling's cost). */
+    buildIndex(CONVO, [msg('u1', Constants.NO_PARENT, true, 10), msg('a1', 'u1', false, 50)]);
+    setEntryUsage(CONVO, 'a1', {
+      input: 100,
+      output: 50,
+      cacheWrite: 0,
+      cacheRead: 0,
+      cost: 0.01,
+      costKnown: true,
+    });
+    /** Rebuild from the same cache (still no metadata.usage on a1) */
+    buildIndex(CONVO, [msg('u1', Constants.NO_PARENT, true, 10), msg('a1', 'u1', false, 50)]);
+    expect(sumBranch(CONVO, 'a1').usage.cost).toBeCloseTo(0.01);
+    expect(sumBranch(CONVO, 'a1').usage.input).toBe(100);
+  });
+
+  it('restores branch cost from sticky history after regenerate drops then re-adds a sibling', () => {
+    /** a1 generated live; its cache message never carries metadata.usage */
+    buildIndex(CONVO, [msg('u1', Constants.NO_PARENT, true, 10), msg('a1', 'u1', false, 50)]);
+    setEntryUsage(CONVO, 'a1', {
+      input: 100,
+      output: 50,
+      cacheWrite: 0,
+      cacheRead: 0,
+      cost: 0.01,
+      costKnown: true,
+    });
+
+    /** Regenerate streaming shows only the active branch — a1 is dropped */
+    buildIndex(CONVO, [msg('u1', Constants.NO_PARENT, true, 10), msg('a1-alt', 'u1', false, 60)]);
+    expect(sumBranch(CONVO, 'a1').usage).toEqual(EMPTY_USAGE);
+
+    /** Post-regenerate full rebuild re-adds a1 (still no metadata.usage) */
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 10),
+      msg('a1', 'u1', false, 50),
+      msg('a1-alt', 'u1', false, 60),
+    ]);
+
+    /** Switching back to branch A must still show its cost (the reported bug) */
+    expect(sumBranch(CONVO, 'a1').usage.cost).toBeCloseTo(0.01);
+    expect(sumBranch(CONVO, 'a1').usage.input).toBe(100);
+  });
+
+  it('scopes branch usage to the active thread while total spans all branches', () => {
+    /** Regenerate: a1 and a1-alt are sibling responses under the same user msg */
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 10),
+      responseMsg('a1', 'u1', 50, USAGE_A),
+      responseMsg('a1-alt', 'u1', 80, USAGE_B),
+    ]);
+
+    /** Viewing branch B (the regenerated response) */
+    expect(sumBranch(CONVO, 'a1-alt').usage.cost).toBeCloseTo(0.02);
+    /** Viewing branch A (the original) */
+    expect(sumBranch(CONVO, 'a1').usage.cost).toBeCloseTo(0.01);
+    /** Total spans both abandoned + active branches */
+    const total = sumTotalUsage(CONVO);
+    expect(total.cost).toBeCloseTo(0.03);
+    expect(total.input).toBe(300);
+    expect(total.output).toBe(130);
+  });
+
+  it('is idempotent across rebuilds', () => {
+    const messages = [
+      msg('u1', Constants.NO_PARENT, true, 10),
+      responseMsg('a1', 'u1', 50, USAGE_A),
+      responseMsg('a1-alt', 'u1', 80, USAGE_B),
+    ];
+    buildIndex(CONVO, messages);
+    const first = sumTotalUsage(CONVO);
+    buildIndex(CONVO, messages);
+    const second = sumTotalUsage(CONVO);
+    expect(second).toEqual(first);
+  });
+
+  it('flushes a live response usage via setEntryUsage (no metadata yet)', () => {
+    buildIndex(CONVO, [msg('u1', Constants.NO_PARENT, true, 10), msg('a1', 'u1', false, 50)]);
+    /** Live response entry has no metadata.usage until persisted; finalize flushes it */
+    expect(sumBranch(CONVO, 'a1').usage).toEqual(EMPTY_USAGE);
+    setEntryUsage(CONVO, 'a1', {
+      input: 100,
+      output: 50,
+      cacheWrite: 0,
+      cacheRead: 0,
+      cost: 0.01,
+      costKnown: true,
+    });
+    expect(sumBranch(CONVO, 'a1').usage.cost).toBeCloseTo(0.01);
+    expect(sumBranch(CONVO, 'a1').usage.input).toBe(100);
+  });
+
+  it('mergeUsage sums records and ANDs costKnown (incomplete coverage wins)', () => {
+    const a = { input: 1, output: 2, cacheWrite: 3, cacheRead: 4, cost: 0.5, costKnown: false };
+    const b = { input: 10, output: 20, cacheWrite: 30, cacheRead: 40, cost: 1.5, costKnown: true };
+    expect(mergeUsage(a, b)).toEqual({
+      input: 11,
+      output: 22,
+      cacheWrite: 33,
+      cacheRead: 44,
+      cost: 2,
+      costKnown: false,
+    });
+  });
+
+  it('marks branch cost incomplete when any usage-bearing entry lacks cost', () => {
+    /** A turn saved before cost display was on (no cost) alongside one with cost
+     *  → the summed cost under-reports, so coverage is incomplete. */
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 10),
+      responseMsg('a1', 'u1', 50, { input: 100, output: 50, cacheWrite: 0, cacheRead: 0 }),
+      responseMsg('a2', 'a1', 60, USAGE_B),
+    ]);
+    const { usage } = sumBranch(CONVO, 'a2');
+    expect(usage.costKnown).toBe(false);
+    /** Cost still sums what it can, but coverage is flagged incomplete */
+    expect(usage.cost).toBeCloseTo(0.02);
+    expect(sumTotalUsage(CONVO).costKnown).toBe(false);
+  });
+
+  it('EMPTY_BRANCH carries an empty usage record', () => {
+    expect(sumBranch('missing-convo', 'x')).toBe(EMPTY_BRANCH);
+    expect(EMPTY_BRANCH.usage).toEqual(EMPTY_USAGE);
   });
 });

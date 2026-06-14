@@ -11,18 +11,23 @@ import type { ContextSnapshot } from '~/store/usage';
 import {
   markUsageFolded,
   liveTokensFamily,
+  totalUsageFamily,
   removeUsageAtoms,
+  clearUsageFolded,
   calibrationFamily,
-  usageTotalsFamily,
+  pendingUsageFamily,
   branchTotalsFamily,
   migrateUsageFolded,
+  EMPTY_USAGE_TOTALS,
   contextSnapshotFamily,
   snapshotsByAnchorFamily,
 } from '~/store/usage';
 import {
   sumBranch,
+  setEntryUsage,
   upsertEntries,
   migrateIndex,
+  sumTotalUsage,
   estimateTokens,
   normalizeUsageUnits,
 } from '~/utils';
@@ -49,6 +54,10 @@ export interface UsageHandlers {
   tapContent: (text: unknown, submission: UsageSubmissionLike) => void;
   finalizeUsage: (data: FinalDataLike, submission: UsageSubmissionLike) => void;
   resetLive: (submission: UsageSubmissionLike) => void;
+  /** Terminal stop: attribute the in-flight pending usage to the stopped partial
+   *  response (so its billed tokens aren't dropped), then reset pending so it
+   *  can't leak into the next response. Discards when no response id is known. */
+  attributePending: (responseId: string | null, submission: UsageSubmissionLike) => void;
   /** Idempotently folds the resumed run's collected usage into the totals */
   backfillUsage: (entries: TTokenUsageEvent[], submission: UsageSubmissionLike) => void;
   /** Seeds the live estimate from already-streamed output chars on resume */
@@ -111,6 +120,27 @@ export default function useUsageHandler(): UsageHandlers {
       jotai.set(liveTokensFamily(convoKey), value);
     };
 
+    /** Flush the in-flight pending usage into a response's index entry, then
+     *  reset pending. Only flushes when events were actually folded this session
+     *  (eventCount > 0), so a finalize that carries persisted `metadata.usage`
+     *  but folded nothing — a late/second resumable subscriber — keeps the entry
+     *  loaded by `upsertEntries` instead of overwriting it with an empty record. */
+    const flushPendingInto = (convoKey: string, responseId: string | null) => {
+      const pendingAtom = pendingUsageFamily(convoKey);
+      const pending = jotai.get(pendingAtom);
+      if (responseId != null && pending.eventCount > 0) {
+        setEntryUsage(convoKey, responseId, {
+          input: pending.input,
+          output: pending.output,
+          cacheWrite: pending.cacheWrite,
+          cacheRead: pending.cacheRead,
+          cost: pending.costUSD,
+          costKnown: pending.costKnown,
+        });
+      }
+      jotai.set(pendingAtom, EMPTY_USAGE_TOTALS);
+    };
+
     const contextHandler: UsageHandlers['contextHandler'] = (data, submission) => {
       const convoKey = getConvoKey(submission);
       jotai.set(contextSnapshotFamily(convoKey), {
@@ -125,9 +155,11 @@ export default function useUsageHandler(): UsageHandlers {
       setLive(convoKey, 0);
     };
 
-    /** Folds one usage event into the totals exactly once per conversation.
-     *  Returns false when the event was already counted (live then replayed
-     *  on resume), so callers can skip the live-estimate bump too. */
+    /** Folds one usage event into the in-flight pending holder exactly once per
+     *  conversation. Returns false when the event was already counted (live then
+     *  replayed on resume), so callers can skip the live-estimate bump too.
+     *  `finalizeUsage` flushes the accumulated pending into the per-message index
+     *  and resets it, so branch/total stay index-derived (no double count). */
     const foldUsage = (data: TTokenUsageEvent, submission: UsageSubmissionLike): boolean => {
       const convoKey = getConvoKey(submission);
       /** runId+seq is unique per model call; fall back to the payload when a
@@ -142,9 +174,9 @@ export default function useUsageHandler(): UsageHandlers {
        *  the uncached portion, output includes repaired completion tokens */
       const units = normalizeUsageUnits(data);
 
-      const totalsAtom = usageTotalsFamily(convoKey);
-      const prev = jotai.get(totalsAtom);
-      jotai.set(totalsAtom, {
+      const pendingAtom = pendingUsageFamily(convoKey);
+      const prev = jotai.get(pendingAtom);
+      jotai.set(pendingAtom, {
         input: prev.input + units.input,
         output: prev.output + units.output,
         cacheWrite: prev.cacheWrite + units.cacheWrite,
@@ -153,6 +185,8 @@ export default function useUsageHandler(): UsageHandlers {
         /** Authoritative per-event cost from the backend (premium tiers, cache
          *  rates); absent when contextCost is disabled — sums to 0 then */
         costUSD: prev.costUSD + (data.cost ?? 0),
+        /** Coverage is complete only if EVERY folded event carried a cost */
+        costKnown: prev.costKnown && data.cost != null,
       });
       return true;
     };
@@ -209,7 +243,31 @@ export default function useUsageHandler(): UsageHandlers {
     const resetLive: UsageHandlers['resetLive'] = (submission) => {
       streamCharsRef.current = 0;
       confirmedRef.current = 0;
-      setLive(getConvoKey(submission), 0);
+      const convoKey = getConvoKey(submission);
+      setLive(convoKey, 0);
+      /** Terminal path with no salvageable response (stream error / intentional
+       *  close): discard the in-flight pending usage so it can't merge into the
+       *  next response. The user-stop path uses `attributePending` to keep it on
+       *  the partial reply. Also forget the folded-event identities so a resume's
+       *  `backfillUsage` can rebuild pending — otherwise it sees them as already
+       *  folded and the response's usage stays missing until a full reload. */
+      jotai.set(pendingUsageFamily(convoKey), EMPTY_USAGE_TOTALS);
+      clearUsageFolded(convoKey);
+    };
+
+    const attributePending: UsageHandlers['attributePending'] = (responseId, submission) => {
+      const convoKey = getConvoKey(submission);
+      /** Flush the billed-but-uncommitted usage onto the stopped partial reply
+       *  (when its id is known and events were folded), then reset pending and
+       *  the live estimate. Index-derived branch/total then reflect it. */
+      flushPendingInto(convoKey, responseId);
+      if (responseId != null) {
+        jotai.set(branchTotalsFamily(convoKey), sumBranch(convoKey, responseId, responseId));
+        jotai.set(totalUsageFamily(convoKey), sumTotalUsage(convoKey));
+      }
+      streamCharsRef.current = 0;
+      confirmedRef.current = 0;
+      setLive(convoKey, 0);
     };
 
     const backfillUsage: UsageHandlers['backfillUsage'] = (entries, submission) => {
@@ -246,7 +304,7 @@ export default function useUsageHandler(): UsageHandlers {
         migrateUsageFolded(fromKey, realId);
         jotai.set(contextSnapshotFamily(realId), jotai.get(contextSnapshotFamily(fromKey)));
         jotai.set(snapshotsByAnchorFamily(realId), jotai.get(snapshotsByAnchorFamily(fromKey)));
-        jotai.set(usageTotalsFamily(realId), jotai.get(usageTotalsFamily(fromKey)));
+        jotai.set(pendingUsageFamily(realId), jotai.get(pendingUsageFamily(fromKey)));
         jotai.set(calibrationFamily(realId), jotai.get(calibrationFamily(fromKey)));
         removeUsageAtoms(fromKey);
       }
@@ -258,10 +316,18 @@ export default function useUsageHandler(): UsageHandlers {
 
       const userMsgId = submission.userMessage?.messageId ?? null;
       const responseId = data.responseMessage?.messageId ?? null;
+
+      /** Flush the in-flight response's pending usage into its index entry, then
+       *  reset pending. Branch/total are summed from the index, so this single
+       *  add is counted exactly once; the persisted `metadata.usage` reproduces
+       *  it on reload. */
+      flushPendingInto(realId, responseId);
+
       const tailId = responseId ?? data.requestMessage?.messageId ?? null;
       if (tailId) {
         jotai.set(branchTotalsFamily(realId), sumBranch(realId, tailId, responseId ?? userMsgId));
       }
+      jotai.set(totalUsageFamily(realId), sumTotalUsage(realId));
 
       const snapshotAtom = contextSnapshotFamily(realId);
       const snapshot = jotai.get(snapshotAtom);
@@ -300,6 +366,7 @@ export default function useUsageHandler(): UsageHandlers {
       tapContent,
       finalizeUsage,
       resetLive,
+      attributePending,
       backfillUsage,
       seedLive,
     };

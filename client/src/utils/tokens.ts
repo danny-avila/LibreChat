@@ -1,10 +1,36 @@
 import { Tools, Constants, inputTokensIncludesCache } from 'librechat-data-provider';
-import type { TMessage, TTokenUsageEvent } from 'librechat-data-provider';
+import type { TMessage, TResponseUsage, TTokenUsageEvent } from 'librechat-data-provider';
+
+/** Provider-reported usage of one response, in display units (post-normalize). */
+export interface BranchUsage {
+  input: number;
+  output: number;
+  cacheWrite: number;
+  cacheRead: number;
+  /** Authoritative USD cost; 0 when `interface.contextCost` was off at save */
+  cost: number;
+  /** Whether cost coverage is COMPLETE — every usage-bearing response summed
+   *  here carried a cost. Gates the cost row so a partial sum (some turns saved
+   *  before cost display was on) never renders an under-reported total. Starts
+   *  true (vacuous) and is ANDed; pair with `hasUsage` to require ≥1 entry. */
+  costKnown: boolean;
+}
+
+export const EMPTY_USAGE: BranchUsage = {
+  input: 0,
+  output: 0,
+  cacheWrite: 0,
+  cacheRead: 0,
+  cost: 0,
+  costKnown: true,
+};
 
 export interface TokenEntry {
   tokenCount: number;
   isCreatedByUser: boolean;
   parentMessageId: string | null;
+  /** Per-response provider usage from `metadata.usage` (response messages only) */
+  usage?: BranchUsage;
 }
 
 export interface BranchTotals {
@@ -19,6 +45,8 @@ export interface BranchTotals {
   tailId: string | null;
   /** Whether the latest run's anchor message is on this branch */
   containsAnchor: boolean;
+  /** Provider usage/cost summed along the active branch */
+  usage: BranchUsage;
 }
 
 export const EMPTY_BRANCH: BranchTotals = {
@@ -28,26 +56,102 @@ export const EMPTY_BRANCH: BranchTotals = {
   total: 0,
   tailId: null,
   containsAnchor: false,
+  usage: EMPTY_USAGE,
 };
 
 /** Module-level token index: conversationId → messageId → entry. Not render state. */
 const registry = new Map<string, Map<string, TokenEntry>>();
+
+/**
+ * Sticky per-response usage: conversationId → messageId → usage. Written only by
+ * the live finalize/stop flush (`setEntryUsage`) and never rebuilt from the
+ * messages cache, so a response's usage survives mid-session index rebuilds even
+ * when its cache message lacks `metadata.usage` AND it was transiently dropped
+ * from the cache (e.g. a sibling branch during a regenerate). `buildIndex`
+ * restores from here so branch cost persists across branch switches — the cost
+ * analog of `snapshotsByAnchorFamily` for the breakdown. Cleared on convo switch.
+ */
+const usageHistory = new Map<string, Map<string, BranchUsage>>();
+
+function stickyUsage(conversationId: string, messageId: string): BranchUsage | undefined {
+  return usageHistory.get(conversationId)?.get(messageId);
+}
+
+/** Reads the persisted per-response usage rollup off a message's metadata.
+ *  The backend already normalized per-event into display units, so this reads
+ *  them directly. Absent for user messages and pre-feature responses (they
+ *  contribute 0 to branch/total). */
+function readPersistedUsage(message: Partial<TMessage>): BranchUsage | undefined {
+  const usage = message.metadata?.usage;
+  if (usage == null || typeof usage !== 'object') {
+    return undefined;
+  }
+  const persisted = usage as TResponseUsage;
+  return {
+    input: persisted.input ?? 0,
+    output: persisted.output ?? 0,
+    cacheWrite: persisted.cacheWrite ?? 0,
+    cacheRead: persisted.cacheRead ?? 0,
+    cost: persisted.cost ?? 0,
+    /** Cost is omitted when saved with `contextCost` off — don't render $0.00 */
+    costKnown: typeof persisted.cost === 'number',
+  };
+}
+
+/** Pure sum of two usage records — for combining branch/total with pending. */
+export function mergeUsage(a: BranchUsage, b: BranchUsage): BranchUsage {
+  return {
+    input: a.input + b.input,
+    output: a.output + b.output,
+    cacheWrite: a.cacheWrite + b.cacheWrite,
+    cacheRead: a.cacheRead + b.cacheRead,
+    cost: a.cost + b.cost,
+    /** Coverage stays complete only if BOTH sides are complete */
+    costKnown: a.costKnown && b.costKnown,
+  };
+}
+
+/** Accumulates one entry's usage into a running total (in place). */
+function addUsage(target: BranchUsage, usage?: BranchUsage): void {
+  if (usage == null) {
+    return;
+  }
+  target.input += usage.input;
+  target.output += usage.output;
+  target.cacheWrite += usage.cacheWrite;
+  target.cacheRead += usage.cacheRead;
+  target.cost += usage.cost;
+  /** A usage-bearing entry without a cost breaks complete coverage */
+  if (!usage.costKnown) {
+    target.costKnown = false;
+  }
+}
 
 function toEntry(message: Partial<TMessage>): TokenEntry {
   return {
     tokenCount: typeof message.tokenCount === 'number' ? message.tokenCount : 0,
     isCreatedByUser: message.isCreatedByUser === true,
     parentMessageId: message.parentMessageId ?? null,
+    usage: readPersistedUsage(message),
   };
 }
 
-/** Full O(n) rebuild — only on discrete cache replacements (load, refetch, edits) */
+/** Full O(n) rebuild — only on discrete cache replacements (load, refetch, edits).
+ *  Restores a response's `usage` from the sticky history when the rebuilt message
+ *  carries none: per-message usage is immutable and the live finalize flushes it
+ *  into the index (`setEntryUsage`) before the persisted `metadata.usage` reaches
+ *  the cache, so a mid-session rebuild (e.g. during regenerate) must not wipe an
+ *  earlier branch's flushed usage — which would drop its branch cost on switch. */
 export function buildIndex(conversationId: string, messages?: TMessage[] | null): void {
   const index = new Map<string, TokenEntry>();
   if (messages != null) {
     for (const message of messages) {
       if (message?.messageId) {
-        index.set(message.messageId, toEntry(message));
+        const entry = toEntry(message);
+        if (entry.usage == null) {
+          entry.usage = stickyUsage(conversationId, message.messageId);
+        }
+        index.set(message.messageId, entry);
       }
     }
   }
@@ -66,7 +170,11 @@ export function upsertEntries(
   }
   for (const message of messages) {
     if (message?.messageId) {
-      index.set(message.messageId, toEntry(message));
+      const entry = toEntry(message);
+      if (entry.usage == null) {
+        entry.usage = stickyUsage(conversationId, message.messageId);
+      }
+      index.set(message.messageId, entry);
     }
   }
 }
@@ -77,15 +185,20 @@ export function migrateIndex(fromId: string, toId: string): void {
     return;
   }
   const index = registry.get(fromId);
-  if (!index) {
-    return;
+  if (index) {
+    registry.delete(fromId);
+    registry.set(toId, index);
   }
-  registry.delete(fromId);
-  registry.set(toId, index);
+  const usage = usageHistory.get(fromId);
+  if (usage) {
+    usageHistory.delete(fromId);
+    usageHistory.set(toId, usage);
+  }
 }
 
 export function clearIndex(conversationId: string): void {
   registry.delete(conversationId);
+  usageHistory.delete(conversationId);
 }
 
 export function hasIndex(conversationId: string): boolean {
@@ -104,6 +217,7 @@ export function sumBranch(
   }
 
   const totals = { input: 0, output: 0, counted: 0, total: 0, containsAnchor: false };
+  const usage: BranchUsage = { ...EMPTY_USAGE };
   let currentId: string | null = tailId;
   let guard = index.size;
 
@@ -124,10 +238,50 @@ export function sumBranch(
         totals.output += entry.tokenCount;
       }
     }
+    addUsage(usage, entry.usage);
     currentId = entry.parentMessageId;
   }
 
-  return { ...totals, tailId };
+  return { ...totals, tailId, usage };
+}
+
+/**
+ * Sums provider usage/cost across EVERY message in the conversation (all
+ * branches, including regenerated/abandoned responses) — the conversation
+ * total, shown alongside the branch figure when they differ.
+ */
+export function sumTotalUsage(conversationId: string): BranchUsage {
+  const usage: BranchUsage = { ...EMPTY_USAGE };
+  const index = registry.get(conversationId);
+  if (!index) {
+    return usage;
+  }
+  for (const entry of index.values()) {
+    addUsage(usage, entry.usage);
+  }
+  return usage;
+}
+
+/**
+ * Attaches a response's usage to its index entry AND the sticky usage history.
+ * Used by the live finalize/stop flush. The history copy lets `buildIndex`
+ * restore the usage after a rebuild (the persisted `metadata.usage` reaches
+ * `buildIndex` on reload; the sticky copy covers the in-session window before
+ * that, including a sibling transiently dropped from the cache on regenerate).
+ */
+export function setEntryUsage(conversationId: string, messageId: string, usage: BranchUsage): void {
+  /** Remember it durably first so a later rebuild — or a transient cache drop
+   *  during regenerate — can restore it even when the entry isn't present yet. */
+  let history = usageHistory.get(conversationId);
+  if (!history) {
+    history = new Map<string, BranchUsage>();
+    usageHistory.set(conversationId, history);
+  }
+  history.set(messageId, usage);
+  const entry = registry.get(conversationId)?.get(messageId);
+  if (entry) {
+    entry.usage = usage;
+  }
 }
 
 /**

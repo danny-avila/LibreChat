@@ -9,7 +9,11 @@ const {
   FakeChatModel,
   createContentAggregator,
 } = require('@librechat/agents');
-const { GenerationJobManager } = require('@librechat/api');
+const {
+  GenerationJobManager,
+  aggregateEmittedUsage,
+  buildPersistedContextUsage,
+} = require('@librechat/api');
 const { getDefaultHandlers } = require('~/server/controllers/agents/callbacks');
 
 jest.mock('nanoid', () => ({
@@ -112,7 +116,14 @@ const SECOND_CALL_USAGE = {
 
 const MAX_CONTEXT_TOKENS = 8000;
 
-async function runToolLoop({ res, streamId = null, collectedUsage }) {
+async function runToolLoop({
+  res,
+  streamId = null,
+  collectedUsage,
+  contextUsageSink = null,
+  usageEmitSink = null,
+  usageCost = null,
+}) {
   const { contentParts, aggregateContent } = createContentAggregator();
   const handlers = getDefaultHandlers({
     res,
@@ -120,6 +131,9 @@ async function runToolLoop({ res, streamId = null, collectedUsage }) {
     toolEndCallback: () => {},
     collectedUsage,
     streamId,
+    contextUsageSink,
+    usageEmitSink,
+    usageCost,
   });
 
   const run = await Run.create({
@@ -228,6 +242,63 @@ describe('usage events through the real agents pipeline', () => {
     const firstUsageIndex = res.events.findIndex((e) => e.event === 'on_token_usage');
     expect(firstContextIndex).toBeGreaterThanOrEqual(0);
     expect(firstContextIndex).toBeLessThan(firstUsageIndex);
+  });
+
+  test('captures the usage rollup + latest context snapshot for message persistence', () => {
+    const res = createMockRes();
+    const contextUsageSink = { latest: null };
+    const usageEmitSink = [];
+    return runToolLoop({ res, collectedUsage: [], contextUsageSink, usageEmitSink }).then(() => {
+      /** Both model calls' emitted payloads are captured for the rollup */
+      expect(usageEmitSink).toHaveLength(2);
+
+      const usage = aggregateEmittedUsage(usageEmitSink);
+      /** Display units: openAI is cache-subset, so input excludes cache
+       *  (150−30−50=70); output is repaired completion */
+      expect(usage).toEqual({
+        input:
+          FIRST_CALL_USAGE.input_tokens +
+          (SECOND_CALL_USAGE.input_tokens -
+            SECOND_CALL_USAGE.input_token_details.cache_creation -
+            SECOND_CALL_USAGE.input_token_details.cache_read),
+        output: FIRST_CALL_USAGE.output_tokens + SECOND_CALL_USAGE.output_tokens,
+        cacheWrite: SECOND_CALL_USAGE.input_token_details.cache_creation,
+        cacheRead: SECOND_CALL_USAGE.input_token_details.cache_read,
+      });
+      /** contextCost off → no cost folded into the rollup */
+      expect(usage.cost).toBeUndefined();
+
+      if (hasContextUsageEvent) {
+        expect(contextUsageSink.latest).not.toBeNull();
+        const persisted = buildPersistedContextUsage(contextUsageSink.latest);
+        expect(persisted.breakdown.maxContextTokens).toBe(MAX_CONTEXT_TOKENS);
+        /** Zero-valued tool counts are trimmed from the persisted blob */
+        for (const count of Object.values(persisted.breakdown.toolTokenCounts ?? {})) {
+          expect(count).toBeGreaterThan(0);
+        }
+      }
+    });
+  });
+
+  test('folds authoritative per-event cost into the rollup when contextCost is on', async () => {
+    const res = createMockRes();
+    const usageEmitSink = [];
+    /** Stub pricing mirroring getMultiplier/getCacheMultiplier shape */
+    const usageCost = {
+      enabled: true,
+      pricing: {
+        getMultiplier: ({ tokenType }) => (tokenType === 'completion' ? 15 : 3),
+        getCacheMultiplier: ({ cacheType }) => (cacheType === 'write' ? 3.75 : 0.3),
+      },
+    };
+    await runToolLoop({ res, collectedUsage: [], usageEmitSink, usageCost });
+
+    for (const event of usageEmitSink) {
+      expect(typeof event.cost).toBe('number');
+    }
+    const usage = aggregateEmittedUsage(usageEmitSink);
+    expect(usage.cost).toBeGreaterThan(0);
+    expect(usage.cost).toBeCloseTo(usageEmitSink.reduce((sum, e) => sum + e.cost, 0));
   });
 
   test('persists usage and context snapshot for resume via GenerationJobManager', async () => {
