@@ -87,20 +87,12 @@ export function createSharedLinkAccessMiddleware(deps: SharedLinkAccessDeps) {
         await autoMigrateLegacyLink(rawShare);
       }
 
-      const reqRecord = req as unknown as Record<string, unknown>;
-      const grantAccess = (isPublic: boolean): void => {
-        reqRecord.shareResourceId = resourceId;
-        // `sharePublic` is true only when the share is anonymously reachable, so
-        // callers can route file URLs through the (unauthenticated) share path.
-        reqRecord.sharePublic = isPublic;
-        next();
-      };
-
       const publicGranted = await hasPublicViewPermission(resourceId);
 
       if (publicGranted) {
         if (isEnabled(process.env.ALLOW_SHARED_LINKS_PUBLIC)) {
-          grantAccess(true);
+          (req as unknown as Record<string, unknown>).shareResourceId = resourceId;
+          next();
           return;
         }
 
@@ -109,7 +101,8 @@ export function createSharedLinkAccessMiddleware(deps: SharedLinkAccessDeps) {
           return;
         }
 
-        grantAccess(false);
+        (req as unknown as Record<string, unknown>).shareResourceId = resourceId;
+        next();
         return;
       }
 
@@ -137,7 +130,8 @@ export function createSharedLinkAccessMiddleware(deps: SharedLinkAccessDeps) {
         return;
       }
 
-      grantAccess(false);
+      (req as unknown as Record<string, unknown>).shareResourceId = resourceId;
+      next();
     });
   };
 }

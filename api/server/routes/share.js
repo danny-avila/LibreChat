@@ -32,6 +32,7 @@ const {
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { cleanFileName, getContentDisposition } = require('~/server/utils/files');
 const canAccessSharedLink = require('~/server/middleware/canAccessSharedLink');
+const optionalShareFileAuth = require('~/server/middleware/optionalShareFileAuth');
 const optionalJwtAuth = require('~/server/middleware/optionalJwtAuth');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const configMiddleware = require('~/server/middleware/config/app');
@@ -171,7 +172,6 @@ if (allowSharedLinks) {
       try {
         const share = await getSharedMessages(req.params.shareId, req.shareResourceId, {
           snapshotFiles: isFileSnapshotEnabled(req.config),
-          isPublic: req.sharePublic === true,
         });
         if (share) {
           res.set('Cache-Control', 'private, no-store');
@@ -194,6 +194,7 @@ if (allowSharedLinks) {
   router.get(
     '/:shareId/files/:file_id/preview',
     optionalJwtAuth,
+    optionalShareFileAuth,
     configMiddleware,
     canAccessSharedLink,
     resolveShareFile,
@@ -222,6 +223,7 @@ if (allowSharedLinks) {
   router.get(
     '/:shareId/files/:file_id/download',
     optionalJwtAuth,
+    optionalShareFileAuth,
     configMiddleware,
     canAccessSharedLink,
     resolveShareFile,
@@ -243,6 +245,7 @@ if (allowSharedLinks) {
   router.get(
     '/:shareId/files/:file_id',
     optionalJwtAuth,
+    optionalShareFileAuth,
     configMiddleware,
     canAccessSharedLink,
     resolveShareFile,

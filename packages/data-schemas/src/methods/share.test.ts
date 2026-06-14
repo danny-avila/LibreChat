@@ -1808,7 +1808,7 @@ describe('Share Methods', () => {
       expect(saved?.fileSnapshots ?? []).toHaveLength(0);
     });
 
-    test('getSharedMessages does not rewrite URLs for non-public shares', async () => {
+    test('getSharedMessages does not rewrite URLs when snapshotFiles is disabled', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
       const conversationId = `conv_${nanoid()}`;
       await seedConversation(userId, conversationId);
@@ -1824,7 +1824,9 @@ describe('Share Methods', () => {
       });
 
       const { shareId } = await shareMethods.createSharedLink(userId, conversationId);
-      const result = await shareMethods.getSharedMessages(shareId, undefined, { isPublic: false });
+      const result = await shareMethods.getSharedMessages(shareId, undefined, {
+        snapshotFiles: false,
+      });
       const file = (result?.messages[0].files?.[0] ?? {}) as Record<string, unknown>;
       expect(file.filepath).toBe(originalPath);
     });
@@ -1851,7 +1853,7 @@ describe('Share Methods', () => {
         messages: [message._id],
       });
 
-      const result = await shareMethods.getSharedMessages(shareId, undefined, { isPublic: true });
+      const result = await shareMethods.getSharedMessages(shareId);
       const file = (result?.messages[0].files?.[0] ?? {}) as Record<string, unknown>;
       expect(file.filepath).toBe(`/api/share/${shareId}/files/${docId}`);
 

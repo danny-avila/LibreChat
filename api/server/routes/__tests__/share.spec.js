@@ -83,6 +83,7 @@ jest.mock('~/server/utils/files', () => ({
 }));
 
 jest.mock('~/server/middleware/canAccessSharedLink', () => (_req, _res, next) => next());
+jest.mock('~/server/middleware/optionalShareFileAuth', () => (_req, _res, next) => next());
 jest.mock('~/server/middleware/optionalJwtAuth', () => (req, _res, next) => next());
 jest.mock('~/server/middleware/requireJwtAuth', () => (req, res, next) => next());
 jest.mock('~/server/middleware/config/app', () => (_req, _res, next) => next());

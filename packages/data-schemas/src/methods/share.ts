@@ -394,7 +394,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
   getSharedMessages: (
     shareId: string,
     shareObjectId?: string,
-    options?: { snapshotFiles?: boolean; isPublic?: boolean },
+    options?: { snapshotFiles?: boolean },
   ) => Promise<t.SharedMessagesResult | null>;
   getSharedLinkFile: (
     shareId: string,
@@ -418,7 +418,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
   async function getSharedMessages(
     shareId: string,
     shareObjectId?: string,
-    options?: { snapshotFiles?: boolean; isPublic?: boolean },
+    options?: { snapshotFiles?: boolean },
   ): Promise<t.SharedMessagesResult | null> {
     try {
       const SharedLink = mongoose.models.SharedLink as Model<t.ISharedLink>;
@@ -448,12 +448,13 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       const resolvedShareId = share.shareId || shareId;
 
       /**
-       * Only rewrite render URLs to the share route for public shares: `<img>` and
-       * anchor requests can't carry the bearer token, so for non-public (ACL) shares
-       * the original paths are left untouched (no auth regression). Legacy public
-       * shares are backfilled here so their first view rewrites correctly.
+       * Rewrite render URLs to the share route so viewers load files through the
+       * authorized share path (the route accepts the bearer token or the
+       * `refreshToken` cookie for header-less `<img>`/anchor requests, so this
+       * works for public and non-public shares alike). Legacy shares are
+       * backfilled here so their first view rewrites correctly.
        */
-      const shouldRewrite = options?.isPublic !== false && options?.snapshotFiles !== false;
+      const shouldRewrite = options?.snapshotFiles !== false;
       let fileSnapshots = share.fileSnapshots;
       if (shouldRewrite && fileSnapshots === undefined && share._id) {
         fileSnapshots = await buildFileSnapshots(mongoose, messagesToShare, share.user);
