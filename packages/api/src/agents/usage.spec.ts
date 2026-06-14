@@ -1554,6 +1554,18 @@ describe('aggregateEmittedUsage', () => {
     expect(rollup?.cost).toBeUndefined();
   });
 
+  it('omits cost when any call lacked it (partial pricing failure)', () => {
+    /** One call priced, one missing cost (e.g. computeUsageCostUSD threw) →
+     *  the sum would under-report, so coverage is incomplete and cost omitted. */
+    const rollup = aggregateEmittedUsage([
+      { input_tokens: 100, output_tokens: 20, provider: 'openAI', cost: 0.01 },
+      { input_tokens: 50, output_tokens: 10, provider: 'openAI' },
+    ]);
+    expect(rollup?.cost).toBeUndefined();
+    expect(rollup?.input).toBe(150);
+    expect(rollup?.output).toBe(30);
+  });
+
   it('normalizes mixed-provider calls per their own provider before summing', () => {
     /** anthropic is additive (cache separate from input), openAI is subset */
     const rollup = aggregateEmittedUsage([

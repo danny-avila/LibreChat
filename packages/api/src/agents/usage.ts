@@ -186,7 +186,12 @@ export function aggregateEmittedUsage(
   let cacheWrite = 0;
   let cacheRead = 0;
   let cost = 0;
-  let hasCost = false;
+  /** Persist cost only with COMPLETE coverage — every call priced. A partial
+   *  sum (e.g. one call's `computeUsageCostUSD` threw and emitted without cost)
+   *  would read back as authoritative and under-report; omitting it makes the
+   *  client treat coverage as unknown and hide the cost, matching the live fold.
+   *  Naturally false when `contextCost` is off (no event carries cost). */
+  let allHaveCost = true;
   for (const event of events) {
     const units = normalizeEventUnits(event);
     input += units.input;
@@ -195,11 +200,12 @@ export function aggregateEmittedUsage(
     cacheRead += units.cacheRead;
     if (event.cost != null) {
       cost += event.cost;
-      hasCost = true;
+    } else {
+      allHaveCost = false;
     }
   }
   const rollup: TResponseUsage = { input, output, cacheWrite, cacheRead };
-  if (hasCost) {
+  if (allHaveCost) {
     rollup.cost = cost;
   }
   return rollup;

@@ -67,8 +67,15 @@ export default function useSSE(
   const balanceQuery = useGetUserBalance({
     enabled: !!isAuthenticated && startupConfig?.balance?.enabled,
   });
-  const { contextHandler, usageHandler, tapStream, tapContent, finalizeUsage, resetLive } =
-    useUsageHandler();
+  const {
+    contextHandler,
+    usageHandler,
+    tapStream,
+    tapContent,
+    finalizeUsage,
+    resetLive,
+    attributePending,
+  } = useUsageHandler();
 
   useEffect(() => {
     if (submission == null || Object.keys(submission).length === 0) {
@@ -186,9 +193,15 @@ export default function useSSE(
       }
 
       setCompleted((prev) => new Set(prev.add(streamKey)));
-      resetLive({ ...submission, userMessage });
       const latestMessages = getMessages();
       const conversationId = latestMessages?.[latestMessages.length - 1]?.conversationId;
+      /** Attribute usage billed before the stop to the partial response (the
+       *  branch tail), then reset pending — so it neither drops nor leaks into
+       *  the next response. Falls back to a plain reset when no response exists. */
+      const tail = latestMessages?.[latestMessages.length - 1];
+      const partialResponseId =
+        tail != null && tail.isCreatedByUser === false ? tail.messageId : null;
+      attributePending(partialResponseId, { ...submission, userMessage });
       try {
         await abortConversation(
           conversationId ??
