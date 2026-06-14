@@ -52,6 +52,8 @@ describe('loadWebSearchConfig', () => {
         firecrawlApiKey: '${FIRECRAWL_API_KEY}',
         firecrawlApiUrl: '${FIRECRAWL_API_URL}',
         firecrawlVersion: '${FIRECRAWL_VERSION}',
+        crwApiKey: '${CRW_API_KEY}',
+        crwApiUrl: '${CRW_API_URL}',
         jinaApiKey: '${JINA_API_KEY}',
         jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
