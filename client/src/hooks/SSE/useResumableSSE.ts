@@ -10,6 +10,7 @@ import {
   ErrorTypes,
   StepEvents,
   apiBaseUrl,
+  UsageEvents,
   createPayload,
   ViolationTypes,
   removeNullishValues,
@@ -29,6 +30,7 @@ import {
   clearAllDrafts,
   removeConvoFromAllQueries,
   upsertConvoInAllQueries,
+  countTrailingOutputChars,
   markStreamStartFailedMetadata,
 } from '~/utils';
 import {
@@ -39,6 +41,7 @@ import {
 } from '~/data-provider';
 import useEventHandlers, { buildCreatedInitialResponse } from './useEventHandlers';
 import { useAuthContext } from '~/hooks/AuthContext';
+import useUsageHandler from './useUsageHandler';
 import store from '~/store';
 
 type ChatHelpers = Pick<
@@ -473,6 +476,16 @@ export default function useResumableSSE(
   const balanceQuery = useGetUserBalance({
     enabled: !!isAuthenticated && startupConfig?.balance?.enabled,
   });
+  const {
+    contextHandler,
+    usageHandler,
+    tapStream,
+    tapContent,
+    finalizeUsage,
+    backfillUsage,
+    resetLive,
+    seedLive,
+  } = useUsageHandler();
 
   /**
    * Subscribe to stream via SSE library (supports custom headers)
@@ -530,6 +543,7 @@ export default function useResumableSSE(
             }
             try {
               finalHandler(data, currentSubmission as EventSubmission);
+              finalizeUsage(data, { ...currentSubmission, userMessage });
             } catch (error) {
               console.error('[ResumableSSE] Error in finalHandler:', error);
               setIsSubmitting(false);
@@ -589,7 +603,23 @@ export default function useResumableSSE(
             return;
           }
 
+          if (data.event === UsageEvents.ON_CONTEXT_USAGE) {
+            contextHandler(data.data, { ...currentSubmission, userMessage });
+            return;
+          }
+
+          if (data.event === UsageEvents.ON_TOKEN_USAGE) {
+            usageHandler(data.data, { ...currentSubmission, userMessage });
+            return;
+          }
+
           if (data.event != null) {
+            if (
+              data.event === StepEvents.ON_MESSAGE_DELTA ||
+              data.event === StepEvents.ON_REASONING_DELTA
+            ) {
+              tapStream(data.data, { ...currentSubmission, userMessage });
+            }
             if (!isResume && !createdStreamIdsRef.current.has(currentStreamId)) {
               if (isOAuthStepEvent(data)) {
                 preCreatedStepEvents.push(data);
@@ -619,6 +649,30 @@ export default function useResumableSSE(
             currentSubmission = resumeSubmission;
             submissionRef.current = resumeSubmission;
             userMessage = resumeSubmission.userMessage;
+            /**
+             * Totals rebuild from the persisted backfill at sync. Replayed or
+             * gap usage events already represented in the snapshot are skipped
+             * via multiset matching; events that raced past the snapshot read
+             * still fold so multi-call runs don't undercount.
+             */
+            /** Fold the run's persisted usage; events also replayed below are
+             *  deduped by (runId, seq) inside the handler, so prior prompts in
+             *  this conversation keep their usage and gap events still count */
+            backfillUsage(data.resumeState?.collectedUsage ?? [], resumeSubmission);
+            if (data.resumeState?.contextUsage) {
+              contextHandler(data.resumeState.contextUsage, resumeSubmission);
+            }
+            /** Output streamed before this resume is not re-delivered as deltas
+             *  — estimate it from the trailing aggregated content. This is
+             *  needed even with a snapshot: the snapshot is pre-invoke, so the
+             *  in-flight output it precedes rides on the live estimate.
+             *  countTrailingOutputChars only counts output at the very end (0
+             *  when paused at a tool call), so a snapshot's budget is never
+             *  double-counted. */
+            seedLive(
+              countTrailingOutputChars(data.resumeState?.aggregatedContent),
+              resumeSubmission,
+            );
 
             if (data.resumeState?.runSteps) {
               for (const runStep of data.resumeState.runSteps) {
@@ -700,7 +754,17 @@ export default function useResumableSSE(
                 `[ResumableSSE] Replaying ${data.resumeState.replayEvents.length} resume events`,
               );
               for (const replayEvent of data.resumeState.replayEvents) {
-                if (replayEvent.event != null) {
+                if (replayEvent.event === UsageEvents.ON_CONTEXT_USAGE) {
+                  contextHandler(replayEvent.data, resumeSubmission);
+                } else if (replayEvent.event === UsageEvents.ON_TOKEN_USAGE) {
+                  usageHandler(replayEvent.data, resumeSubmission);
+                } else if (replayEvent.event != null) {
+                  if (
+                    replayEvent.event === StepEvents.ON_MESSAGE_DELTA ||
+                    replayEvent.event === StepEvents.ON_REASONING_DELTA
+                  ) {
+                    tapStream(replayEvent.data, resumeSubmission);
+                  }
                   stepHandler(replayEvent, resumeSubmission);
                 }
               }
@@ -711,9 +775,22 @@ export default function useResumableSSE(
               for (const pendingEvent of data.pendingEvents) {
                 if (pendingEvent.event === 'title') {
                   titleHandler(pendingEvent);
+                } else if (pendingEvent.event === UsageEvents.ON_CONTEXT_USAGE) {
+                  contextHandler(pendingEvent.data, resumeSubmission);
+                } else if (pendingEvent.event === UsageEvents.ON_TOKEN_USAGE) {
+                  usageHandler(pendingEvent.data, resumeSubmission);
                 } else if (pendingEvent.event != null) {
+                  if (
+                    pendingEvent.event === StepEvents.ON_MESSAGE_DELTA ||
+                    pendingEvent.event === StepEvents.ON_REASONING_DELTA
+                  ) {
+                    tapStream(pendingEvent.data, resumeSubmission);
+                  }
                   stepHandler(pendingEvent, resumeSubmission);
                 } else if (pendingEvent.type != null) {
+                  /** Gap output streamed past the resume snapshot must reach the
+                   *  live estimate too, not just the message UI */
+                  tapContent(pendingEvent.text, resumeSubmission);
                   contentHandler({ data: pendingEvent, submission: resumeSubmission });
                 }
               }
@@ -729,6 +806,7 @@ export default function useResumableSSE(
             if (text != null && index !== textIndex) {
               textIndex = index;
             }
+            tapContent(text, { ...currentSubmission, userMessage });
             contentHandler({ data, submission: currentSubmission as EventSubmission });
             return;
           }
@@ -740,6 +818,9 @@ export default function useResumableSSE(
               parentMessageId: data.parentMessageId,
               messageId: data.messageId,
             };
+            /** Legacy non-agent streams send cumulative text here — feed the
+             *  live estimate like the content path above */
+            tapContent(text, { ...currentSubmission, userMessage });
             messageHandler(text, { ...currentSubmission, userMessage, initialResponse });
           }
         } catch (error) {
@@ -767,6 +848,9 @@ export default function useResumableSSE(
           console.log('[ResumableSSE] Stream 404, invalidating messages for:', convoId);
           sse.close();
           removeActiveJob(currentStreamId);
+          /** Terminal: drop any in-flight live estimate so the gauge doesn't
+           *  keep counting stale streamed output after the stream ends */
+          resetLive({ ...currentSubmission, userMessage });
           clearAllDrafts(convoId);
           if (optimisticStreamIdsRef.current.has(currentStreamId)) {
             clearAllDrafts(Constants.NEW_CONVO);
@@ -821,6 +905,7 @@ export default function useResumableSSE(
           console.log('[ResumableSSE] Server-sent error event received:', e.data);
           sse.close();
           removeActiveJob(currentStreamId);
+          resetLive({ ...currentSubmission, userMessage });
           if (
             !createdStreamIdsRef.current.has(currentStreamId) &&
             optimisticStreamIdsRef.current.has(currentStreamId)
@@ -904,6 +989,9 @@ export default function useResumableSSE(
           console.error('[ResumableSSE] Max reconnect attempts reached');
           sse.close();
           errorHandler({ data: undefined, submission: currentSubmission as EventSubmission });
+          /** Terminal: clear the in-flight live estimate like the other
+           *  stop-reconnecting paths so the gauge doesn't show stale tokens */
+          resetLive({ ...currentSubmission, userMessage });
           // Optimistically remove from active jobs on max retries
           removeActiveJob(currentStreamId);
           if (
@@ -943,6 +1031,11 @@ export default function useResumableSSE(
         setIsSubmitting(false);
         setShowStopButton(false);
         setStreamId(null);
+        /** Intentional close without a final event (explicit stop, or navigation
+         *  while generating): discard the in-flight pending usage so it can't
+         *  merge into the next response in this conversation. On a resume the
+         *  collected usage is re-folded via backfillUsage, so nothing is lost. */
+        resetLive({ ...currentSubmission, userMessage });
       });
 
       // Start the SSE connection
@@ -994,6 +1087,14 @@ export default function useResumableSSE(
       balanceQuery,
       removeActiveJob,
       queryClient,
+      contextHandler,
+      usageHandler,
+      tapStream,
+      tapContent,
+      finalizeUsage,
+      backfillUsage,
+      resetLive,
+      seedLive,
     ],
   );
 

@@ -96,7 +96,7 @@ const getMCPTools = async (req, res) => {
         try {
           return {
             serverName,
-            tools: await getMCPServerTools(userId, serverName),
+            tools: await getMCPServerTools(userId, serverName, mcpConfig[serverName]),
           };
         } catch (error) {
           logger.error(`[getMCPTools] Error fetching cached tools for ${serverName}:`, error);
@@ -125,7 +125,12 @@ const getMCPTools = async (req, res) => {
 
       if (Object.keys(serverTools).length > 0) {
         // Cache asynchronously without blocking
-        cacheMCPServerTools({ userId, serverName, serverTools }).catch((err) =>
+        cacheMCPServerTools({
+          userId,
+          serverName,
+          serverTools,
+          serverConfig: mcpConfig[serverName],
+        }).catch((err) =>
           logger.error(`[getMCPTools] Failed to cache tools for ${serverName}:`, err),
         );
       }

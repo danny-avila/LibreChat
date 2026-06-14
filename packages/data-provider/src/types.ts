@@ -454,6 +454,18 @@ export type TEndpointsConfig =
 
 export type TModelsConfig = Record<string, string[]>;
 
+/** Server-resolved context window and pricing for one model. Rates are USD per 1M tokens. */
+export type TModelTokenomics = {
+  context?: number;
+  prompt?: number;
+  completion?: number;
+  cacheWrite?: number;
+  cacheRead?: number;
+};
+
+/** endpoint → model → resolved tokenomics, from GET /api/endpoints/token-config */
+export type TTokenConfigMap = Record<string, Record<string, TModelTokenomics>>;
+
 export type TUpdateTokenCountResponse = {
   count: number;
 };

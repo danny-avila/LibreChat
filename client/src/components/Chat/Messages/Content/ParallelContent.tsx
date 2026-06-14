@@ -1,10 +1,10 @@
 import { memo, useMemo } from 'react';
 import type { TMessageContentParts, SearchResultData, TAttachment } from 'librechat-data-provider';
-import { SearchContext } from '~/Providers';
 import MemoryArtifacts from './MemoryArtifacts';
 import Sources from '~/components/Web/Sources';
-import { EmptyText } from './Parts';
+import { SearchContext } from '~/Providers';
 import SiblingHeader from './SiblingHeader';
+import { EmptyText } from './Parts';
 import Container from './Container';
 import { cn } from '~/utils';
 
@@ -137,6 +137,7 @@ type ParallelColumnsProps = {
   columns: ParallelColumn[];
   groupId: number;
   messageId: string;
+  createdAt?: string | null;
   isSubmitting: boolean;
   lastContentIdx: number;
   conversationId?: string | null;
@@ -150,6 +151,7 @@ export const ParallelColumns = memo(function ParallelColumns({
   columns,
   groupId,
   messageId,
+  createdAt,
   conversationId,
   isSubmitting,
   lastContentIdx,
@@ -169,6 +171,7 @@ export const ParallelColumns = memo(function ParallelColumns({
             <SiblingHeader
               agentId={agentId}
               messageId={messageId}
+              createdAt={createdAt}
               isSubmitting={isSubmitting}
               conversationId={conversationId}
             />
@@ -193,6 +196,7 @@ export const ParallelColumns = memo(function ParallelColumns({
 type ParallelContentRendererProps = {
   content?: Array<TMessageContentParts | undefined>;
   messageId: string;
+  createdAt?: string | null;
   conversationId?: string | null;
   attachments?: TAttachment[];
   searchResults?: { [key: string]: SearchResultData };
@@ -207,6 +211,7 @@ type ParallelContentRendererProps = {
 export const ParallelContentRenderer = memo(function ParallelContentRenderer({
   content,
   messageId,
+  createdAt,
   conversationId,
   attachments,
   searchResults,
@@ -253,6 +258,7 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
           columns={columns}
           groupId={groupId}
           messageId={messageId}
+          createdAt={createdAt}
           renderPart={renderPart}
           isSubmitting={isSubmitting}
           conversationId={conversationId}

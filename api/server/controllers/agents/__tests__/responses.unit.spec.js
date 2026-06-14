@@ -159,6 +159,7 @@ jest.mock('@librechat/api', () => ({
   extractRemoteAgentResponseFiles: mockExtractRemoteAgentResponseFiles,
   attachDocumentsToMessageContent: mockAttachDocumentsToMessageContent,
   remoteInlineFileMarkerPrefix,
+  createSubagentUsageSink: jest.fn().mockReturnValue(jest.fn()),
   extractManualSkills: jest.fn().mockReturnValue(undefined),
   injectSkillPrimes: jest.fn().mockReturnValue({
     initialMessages: [],

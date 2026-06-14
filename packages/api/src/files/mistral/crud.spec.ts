@@ -1721,10 +1721,16 @@ describe('MistralOCR Service', () => {
 
   describe('Proxy Configuration', () => {
     const originalProxy = process.env.PROXY;
+    const originalHttpProxy = process.env.HTTP_PROXY;
+    const originalHttpsProxy = process.env.HTTPS_PROXY;
+    const originalNoProxy = process.env.NO_PROXY;
 
     beforeEach(() => {
       // Reset the HttpsProxyAgent mock to its default implementation
       (HttpsProxyAgent as unknown as jest.Mock).mockImplementation((url) => ({ proxyUrl: url }));
+      delete process.env.HTTP_PROXY;
+      delete process.env.HTTPS_PROXY;
+      delete process.env.NO_PROXY;
       // Clear any previous axios mock calls
       mockAxios.post!.mockClear();
       mockAxios.get!.mockClear();
@@ -1736,6 +1742,21 @@ describe('MistralOCR Service', () => {
         process.env.PROXY = originalProxy;
       } else {
         delete process.env.PROXY;
+      }
+      if (originalHttpProxy) {
+        process.env.HTTP_PROXY = originalHttpProxy;
+      } else {
+        delete process.env.HTTP_PROXY;
+      }
+      if (originalHttpsProxy) {
+        process.env.HTTPS_PROXY = originalHttpsProxy;
+      } else {
+        delete process.env.HTTPS_PROXY;
+      }
+      if (originalNoProxy) {
+        process.env.NO_PROXY = originalNoProxy;
+      } else {
+        delete process.env.NO_PROXY;
       }
       // Clear mocks after each test to prevent leaking
       mockAxios.post!.mockClear();

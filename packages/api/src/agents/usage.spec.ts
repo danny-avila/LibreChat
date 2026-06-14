@@ -1,7 +1,16 @@
+import type { TContextUsageEvent, TTokenUsageEvent } from 'librechat-data-provider';
+import type { RecordUsageDeps, RecordUsageParams, SubagentUsageEvent } from './usage';
 import type { UsageMetadata } from '../stream/interfaces/IJobStore';
-import type { RecordUsageDeps, RecordUsageParams } from './usage';
 import type { BulkWriteDeps, PricingFns } from './transactions';
-import { recordCollectedUsage } from './usage';
+import {
+  computeUsageCostUSD,
+  aggregateEmittedUsage,
+  createSubagentUsageSink,
+  recordCollectedUsage,
+  resolveAgentTokenConfig,
+  buildPersistedContextUsage,
+  buildAbortedResponseMetadata,
+} from './usage';
 
 describe('recordCollectedUsage', () => {
   let mockSpendTokens: jest.Mock;
@@ -144,6 +153,138 @@ describe('recordCollectedUsage', () => {
           model: 'gpt-4.1-mini',
         }),
         expect.any(Object),
+      );
+    });
+  });
+
+  describe('subagent usage segregation', () => {
+    it('bills subagent entries under separate context while excluding them from reported totals', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          usage_type: 'message',
+          input_tokens: 120,
+          output_tokens: 40,
+          model: 'gpt-4',
+        },
+        {
+          usage_type: 'subagent',
+          input_tokens: 900,
+          output_tokens: 700,
+          model: 'claude-haiku-4-5',
+          provider: 'anthropic',
+        },
+        {
+          usage_type: 'subagent',
+          input_tokens: 1100,
+          output_tokens: 300,
+          model: 'claude-haiku-4-5',
+          provider: 'anthropic',
+        },
+      ];
+
+      const result = await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      /**
+       * `input_tokens` comes from the first MESSAGE usage; `output_tokens`
+       * excludes subagent completions — the result becomes the parent
+       * response message's tokenCount, and child output the parent never
+       * saw must not distort next-turn context accounting.
+       */
+      expect(result).toEqual({ input_tokens: 120, output_tokens: 40 });
+      /** ...but every subagent call is still billed against balance. */
+      expect(mockSpendTokens).toHaveBeenCalledTimes(3);
+      expect(mockSpendTokens).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          context: 'subagent',
+          model: 'claude-haiku-4-5',
+        }),
+        { promptTokens: 900, completionTokens: 700 },
+      );
+      expect(mockSpendTokens).toHaveBeenNthCalledWith(
+        3,
+        expect.objectContaining({
+          context: 'subagent',
+          model: 'claude-haiku-4-5',
+        }),
+        { promptTokens: 1100, completionTokens: 300 },
+      );
+    });
+
+    it('bills hidden sequential-agent usage but excludes it from reported totals', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        { usage_type: 'message', input_tokens: 120, output_tokens: 40, model: 'gpt-4' },
+        { usage_type: 'sequential', input_tokens: 800, output_tokens: 250, model: 'gpt-4' },
+      ];
+
+      const result = await recordCollectedUsage(deps, { ...baseParams, collectedUsage });
+
+      /** Hidden intermediate output stays out of the parent's tokenCount... */
+      expect(result).toEqual({ input_tokens: 120, output_tokens: 40 });
+      /** ...but is still billed under its own context. */
+      expect(mockSpendTokens).toHaveBeenCalledTimes(2);
+      expect(mockSpendTokens).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ context: 'sequential', model: 'gpt-4' }),
+        { promptTokens: 800, completionTokens: 250 },
+      );
+    });
+
+    it('does not let a leading subagent entry hijack reported input_tokens', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        {
+          usage_type: 'subagent',
+          input_tokens: 5000,
+          output_tokens: 900,
+          model: 'claude-haiku-4-5',
+        },
+        {
+          input_tokens: 120,
+          output_tokens: 40,
+          model: 'gpt-4',
+        },
+      ];
+
+      const result = await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(result).toEqual({ input_tokens: 120, output_tokens: 40 });
+      expect(mockSpendTokens).toHaveBeenCalledTimes(2);
+    });
+
+    it('uses structured spend for subagent entries with cache tokens', async () => {
+      const collectedUsage: UsageMetadata[] = [
+        { input_tokens: 100, output_tokens: 50, model: 'gpt-4' },
+        {
+          usage_type: 'subagent',
+          input_tokens: 200,
+          output_tokens: 80,
+          model: 'claude-haiku-4-5',
+          provider: 'anthropic',
+          input_token_details: { cache_creation: 60, cache_read: 30 },
+        },
+      ];
+
+      await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+      });
+
+      expect(mockSpendStructuredTokens).toHaveBeenCalledTimes(1);
+      expect(mockSpendStructuredTokens).toHaveBeenCalledWith(
+        expect.objectContaining({
+          context: 'subagent',
+          model: 'claude-haiku-4-5',
+        }),
+        {
+          promptTokens: { input: 200, write: 60, read: 30 },
+          completionTokens: 80,
+        },
       );
     });
   });
@@ -665,6 +806,77 @@ describe('recordCollectedUsage', () => {
           transactions: { enabled: true },
           endpointTokenConfig,
         },
+        { promptTokens: 100, completionTokens: 50 },
+      );
+    });
+
+    it('prices each usage with its agent endpoint config (multi-endpoint graph)', async () => {
+      /** Two endpoints share a model id but bill at different rates. */
+      const primaryConfig = { 'shared-model': { prompt: 0.01, completion: 0.03, context: 8192 } };
+      const subagentConfig = { 'shared-model': { prompt: 0.05, completion: 0.15, context: 8192 } };
+      const byAgent: Record<string, typeof primaryConfig> = {
+        primary: primaryConfig,
+        sub: subagentConfig,
+      };
+      const collectedUsage: UsageMetadata[] = [
+        {
+          usage_type: 'message',
+          agentId: 'primary',
+          input_tokens: 100,
+          output_tokens: 50,
+          model: 'shared-model',
+        },
+        {
+          usage_type: 'subagent',
+          agentId: 'sub',
+          input_tokens: 200,
+          output_tokens: 80,
+          model: 'shared-model',
+        },
+      ];
+
+      await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+        endpointTokenConfig: primaryConfig,
+        resolveEndpointTokenConfig: (usage) =>
+          usage.agentId != null ? byAgent[usage.agentId] : undefined,
+      });
+
+      expect(mockSpendTokens).toHaveBeenCalledWith(
+        expect.objectContaining({
+          context: 'message',
+          model: 'shared-model',
+          endpointTokenConfig: primaryConfig,
+        }),
+        { promptTokens: 100, completionTokens: 50 },
+      );
+      expect(mockSpendTokens).toHaveBeenCalledWith(
+        expect.objectContaining({
+          context: 'subagent',
+          model: 'shared-model',
+          endpointTokenConfig: subagentConfig,
+        }),
+        { promptTokens: 200, completionTokens: 80 },
+      );
+    });
+
+    it('trusts the resolver result, including undefined (built-in pricing for known agents)', async () => {
+      const batch = { 'gpt-4': { prompt: 0.01, completion: 0.03, context: 8192 } };
+      await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage: [
+          { agentId: 'known-openai', input_tokens: 100, output_tokens: 50, model: 'gpt-4' },
+        ],
+        endpointTokenConfig: batch,
+        /** A known agent with no configured rates: the resolver returns undefined
+         *  and the billing path must honor it (built-in pricing), NOT re-apply
+         *  the batch/primary config. */
+        resolveEndpointTokenConfig: () => undefined,
+      });
+
+      expect(mockSpendTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ endpointTokenConfig: undefined }),
         { promptTokens: 100, completionTokens: 50 },
       );
     });
@@ -1213,5 +1425,407 @@ describe('recordCollectedUsage', () => {
 
       expect(result).toEqual({ input_tokens: 100, output_tokens: 110 });
     });
+  });
+});
+
+describe('createSubagentUsageSink', () => {
+  const makeEvent = (overrides: Partial<SubagentUsageEvent> = {}): SubagentUsageEvent => ({
+    usage: { input_tokens: 900, output_tokens: 700, total_tokens: 1600 },
+    model: 'claude-haiku-4-5',
+    provider: 'anthropic',
+    subagentType: 'researcher',
+    subagentRunId: 'run-1_sub_abc',
+    subagentAgentId: 'researcher',
+    runId: 'run-1',
+    ...overrides,
+  });
+
+  it('pushes usage tagged with usage_type subagent and the child model/provider', () => {
+    const collectedUsage: UsageMetadata[] = [];
+    const sink = createSubagentUsageSink(collectedUsage);
+
+    sink(makeEvent());
+
+    expect(collectedUsage).toEqual([
+      {
+        usage_type: 'subagent',
+        input_tokens: 900,
+        output_tokens: 700,
+        total_tokens: 1600,
+        model: 'claude-haiku-4-5',
+        provider: 'anthropic',
+        agentId: 'researcher',
+      },
+    ]);
+  });
+
+  it('tags the child agent id so the host can price with the subagent endpoint config', () => {
+    const collectedUsage: UsageMetadata[] = [];
+    const emitted: UsageMetadata[] = [];
+    const sink = createSubagentUsageSink(collectedUsage, (u) => emitted.push(u));
+
+    sink(makeEvent({ subagentAgentId: 'agent_xyz' }));
+
+    expect(collectedUsage[0].agentId).toBe('agent_xyz');
+    /** The same tagged object is handed to onUsage (the live emitter). */
+    expect(emitted[0]).toBe(collectedUsage[0]);
+    expect(emitted[0].agentId).toBe('agent_xyz');
+  });
+
+  it('preserves cache token details from the child call', () => {
+    const collectedUsage: UsageMetadata[] = [];
+    const sink = createSubagentUsageSink(collectedUsage);
+
+    sink(
+      makeEvent({
+        usage: {
+          input_tokens: 200,
+          output_tokens: 80,
+          total_tokens: 280,
+          input_token_details: { cache_creation: 60, cache_read: 30 },
+        } as SubagentUsageEvent['usage'],
+      }),
+    );
+
+    expect(collectedUsage[0].input_token_details).toEqual({
+      cache_creation: 60,
+      cache_read: 30,
+    });
+  });
+
+  it('omits model/provider tags when the event carries none', () => {
+    const collectedUsage: UsageMetadata[] = [];
+    const sink = createSubagentUsageSink(collectedUsage);
+
+    sink(makeEvent({ model: undefined, provider: undefined }));
+
+    expect(collectedUsage).toHaveLength(1);
+    expect(collectedUsage[0].usage_type).toBe('subagent');
+    expect(collectedUsage[0]).not.toHaveProperty('model');
+    expect(collectedUsage[0]).not.toHaveProperty('provider');
+  });
+
+  it('ignores events without usage', () => {
+    const collectedUsage: UsageMetadata[] = [];
+    const sink = createSubagentUsageSink(collectedUsage);
+
+    sink(makeEvent({ usage: undefined as unknown as SubagentUsageEvent['usage'] }));
+
+    expect(collectedUsage).toEqual([]);
+  });
+
+  it('round-trips into recordCollectedUsage as billed subagent transactions', async () => {
+    const collectedUsage: UsageMetadata[] = [];
+    const sink = createSubagentUsageSink(collectedUsage);
+
+    /** Parent's own call, collected by ModelEndHandler as usual. */
+    collectedUsage.push({ input_tokens: 120, output_tokens: 40, model: 'gpt-4' });
+    /** Child calls reported through the sink mid-run. */
+    sink(makeEvent());
+    sink(
+      makeEvent({
+        usage: { input_tokens: 1100, output_tokens: 300, total_tokens: 1400 },
+      }),
+    );
+
+    const spendTokens = jest.fn().mockResolvedValue(undefined);
+    const spendStructuredTokens = jest.fn().mockResolvedValue(undefined);
+    const result = await recordCollectedUsage(
+      { spendTokens, spendStructuredTokens },
+      {
+        user: 'user-123',
+        conversationId: 'convo-123',
+        model: 'gpt-4',
+        collectedUsage,
+      },
+    );
+
+    /** All three calls billed; child output excluded from reported totals. */
+    expect(spendTokens).toHaveBeenCalledTimes(3);
+    expect(spendTokens).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ context: 'subagent', model: 'claude-haiku-4-5' }),
+      { promptTokens: 900, completionTokens: 700 },
+    );
+    expect(result).toEqual({ input_tokens: 120, output_tokens: 40 });
+  });
+});
+
+describe('computeUsageCostUSD', () => {
+  /** Stub pricing: base prompt 3 / completion 15, cache write 3.75 / read 0.3;
+   *  a premium tier above 200k input prompt tokens (8 / 40). Mirrors the
+   *  shape of the real getMultiplier(inputTokenCount) premium switch. */
+  const pricing: PricingFns = {
+    getMultiplier: ({ tokenType, inputTokenCount }) => {
+      const premium = (inputTokenCount ?? 0) > 200000;
+      if (tokenType === 'completion') {
+        return premium ? 40 : 15;
+      }
+      return premium ? 8 : 3;
+    },
+    getCacheMultiplier: ({ cacheType }) => (cacheType === 'write' ? 3.75 : 0.3),
+  };
+
+  it('prices a standard call at base rates', () => {
+    const cost = computeUsageCostUSD(
+      { input_tokens: 1000, output_tokens: 500, model: 'gpt-4', provider: 'openAI' },
+      pricing,
+    );
+    expect(cost).toBeCloseTo((1000 * 3 + 500 * 15) / 1e6);
+  });
+
+  it('applies the premium tier when the call exceeds the input threshold', () => {
+    /** The exact gap finding A flagged: a long-context call bills premium */
+    const cost = computeUsageCostUSD(
+      { input_tokens: 300000, output_tokens: 1000, model: 'gpt-5.5', provider: 'openAI' },
+      pricing,
+    );
+    expect(cost).toBeCloseTo((300000 * 8 + 1000 * 40) / 1e6);
+  });
+
+  it('prices additive cache tokens (Anthropic) at cache rates', () => {
+    const cost = computeUsageCostUSD(
+      {
+        input_tokens: 1000,
+        output_tokens: 500,
+        model: 'claude-haiku-4-5',
+        provider: 'anthropic',
+        input_token_details: { cache_creation: 2000, cache_read: 10000 },
+      },
+      pricing,
+    );
+    expect(cost).toBeCloseTo((1000 * 3 + 2000 * 3.75 + 10000 * 0.3 + 500 * 15) / 1e6);
+  });
+});
+
+describe('aggregateEmittedUsage', () => {
+  it('returns null for no emitted events', () => {
+    expect(aggregateEmittedUsage([])).toBeNull();
+  });
+
+  it('normalizes each call into display units (input excludes cache) and sums cost', () => {
+    const events: TTokenUsageEvent[] = [
+      {
+        input_tokens: 100,
+        output_tokens: 20,
+        total_tokens: 120,
+        model: 'gpt-4o-mini',
+        provider: 'openAI',
+        cost: 0.001,
+      },
+      {
+        input_tokens: 150,
+        output_tokens: 10,
+        total_tokens: 160,
+        input_token_details: { cache_creation: 30, cache_read: 50 },
+        model: 'gpt-4o-mini',
+        provider: 'openAI',
+        cost: 0.002,
+      },
+    ];
+    /** openAI is cache-subset: input excludes cache (150−30−50=70) */
+    expect(aggregateEmittedUsage(events)).toEqual({
+      input: 170,
+      output: 30,
+      cacheWrite: 30,
+      cacheRead: 50,
+      cost: 0.003,
+    });
+  });
+
+  it('omits cost when no event carried it (contextCost off)', () => {
+    const rollup = aggregateEmittedUsage([
+      { input_tokens: 100, output_tokens: 20, total_tokens: 120, provider: 'openAI' },
+    ]);
+    expect(rollup).toEqual({ input: 100, output: 20, cacheWrite: 0, cacheRead: 0 });
+    expect(rollup?.cost).toBeUndefined();
+  });
+
+  it('omits cost when any call lacked it (partial pricing failure)', () => {
+    /** One call priced, one missing cost (e.g. computeUsageCostUSD threw) →
+     *  the sum would under-report, so coverage is incomplete and cost omitted. */
+    const rollup = aggregateEmittedUsage([
+      { input_tokens: 100, output_tokens: 20, provider: 'openAI', cost: 0.01 },
+      { input_tokens: 50, output_tokens: 10, provider: 'openAI' },
+    ]);
+    expect(rollup?.cost).toBeUndefined();
+    expect(rollup?.input).toBe(150);
+    expect(rollup?.output).toBe(30);
+  });
+
+  it('normalizes mixed-provider calls per their own provider before summing', () => {
+    /** anthropic is additive (cache separate from input), openAI is subset */
+    const rollup = aggregateEmittedUsage([
+      {
+        input_tokens: 100,
+        output_tokens: 20,
+        provider: 'anthropic',
+        input_token_details: { cache_read: 40 },
+        cost: 0.01,
+      },
+      {
+        input_tokens: 90,
+        output_tokens: 5,
+        usage_type: 'subagent',
+        provider: 'openAI',
+        input_token_details: { cache_read: 30 },
+        cost: 0.02,
+      },
+    ]);
+    /** anthropic input stays 100 (additive); openAI input 90−30=60 → 160 */
+    expect(rollup?.input).toBe(160);
+    expect(rollup?.output).toBe(25);
+    expect(rollup?.cacheRead).toBe(70);
+    expect(rollup?.cost).toBeCloseTo(0.03);
+  });
+
+  it('uses the magnitude fallback for provider-less cached events (matches live)', () => {
+    /** No provider: the client's normalizeUsageUnits uses a magnitude heuristic
+     *  (cache ≤ input ⇒ input includes cache), so the rollup must too — billing
+     *  splitUsage would treat it as additive and leave input at 1000, diverging
+     *  from the live display after reload. */
+    const rollup = aggregateEmittedUsage([
+      { input_tokens: 1000, output_tokens: 100, input_token_details: { cache_read: 400 } },
+    ]);
+    expect(rollup).toEqual({ input: 600, output: 100, cacheWrite: 0, cacheRead: 400 });
+  });
+});
+
+describe('buildPersistedContextUsage', () => {
+  const baseSnapshot: TContextUsageEvent = {
+    runId: 'run-1',
+    breakdown: {
+      maxContextTokens: 8000,
+      instructionTokens: 100,
+      systemMessageTokens: 80,
+      dynamicInstructionTokens: 20,
+      toolSchemaTokens: 30,
+      summaryTokens: 0,
+      toolCount: 2,
+      messageCount: 3,
+      messageTokens: 500,
+      availableForMessages: 7000,
+      toolTokenCounts: { add: 15, noop: 0 },
+    },
+    contextBudget: 7800,
+  };
+
+  it('trims zero-valued per-tool counts', () => {
+    const result = buildPersistedContextUsage(baseSnapshot);
+    expect(result.breakdown.toolTokenCounts).toEqual({ add: 15 });
+    expect(result.contextBudget).toBe(7800);
+  });
+
+  it('drops the tool counts object entirely when all are zero', () => {
+    const result = buildPersistedContextUsage({
+      ...baseSnapshot,
+      breakdown: { ...baseSnapshot.breakdown, toolTokenCounts: { add: 0 } },
+    });
+    expect(result.breakdown.toolTokenCounts).toBeUndefined();
+  });
+
+  it('passes through a snapshot without tool counts', () => {
+    const { toolTokenCounts: _omit, ...breakdown } = baseSnapshot.breakdown;
+    const result = buildPersistedContextUsage({ ...baseSnapshot, breakdown });
+    expect(result.breakdown.toolTokenCounts).toBeUndefined();
+    expect(result.breakdown.messageTokens).toBe(500);
+  });
+
+  it('records the final primary call output as completedOutputTokens', () => {
+    /** The latest snapshot precedes the final call, so its post-snapshot delta
+     *  is that call's output — not the full multi-call response tokenCount. */
+    const events: TTokenUsageEvent[] = [
+      { input_tokens: 100, output_tokens: 40, total_tokens: 140, provider: 'openAI' },
+      { input_tokens: 200, output_tokens: 25, total_tokens: 225, provider: 'openAI' },
+      {
+        input_tokens: 50,
+        output_tokens: 12,
+        usage_type: 'subagent',
+        provider: 'openAI',
+      },
+    ];
+    const result = buildPersistedContextUsage(baseSnapshot, events);
+    /** Last PRIMARY call's completion (25), skipping the trailing subagent event */
+    expect(result.completedOutputTokens).toBe(25);
+  });
+
+  it('omits completedOutputTokens when there are no primary calls', () => {
+    expect(buildPersistedContextUsage(baseSnapshot, []).completedOutputTokens).toBeUndefined();
+  });
+});
+
+describe('buildAbortedResponseMetadata', () => {
+  it('returns undefined for an empty job', () => {
+    expect(buildAbortedResponseMetadata(undefined)).toBeUndefined();
+    expect(buildAbortedResponseMetadata({})).toBeUndefined();
+    expect(buildAbortedResponseMetadata({ tokenUsage: 'not json' })).toBeUndefined();
+  });
+
+  it('rebuilds the usage/cost rollup from the job’s persisted emitted usage', () => {
+    const events: TTokenUsageEvent[] = [
+      { input_tokens: 100, output_tokens: 20, total_tokens: 120, provider: 'openAI', cost: 0.001 },
+    ];
+    const result = buildAbortedResponseMetadata({ tokenUsage: JSON.stringify(events) });
+    expect(result?.usage).toEqual({
+      input: 100,
+      output: 20,
+      cacheWrite: 0,
+      cacheRead: 0,
+      cost: 0.001,
+    });
+  });
+
+  it('never persists a breakdown for a stopped response (avoids final-call over-count)', () => {
+    const events: TTokenUsageEvent[] = [
+      { input_tokens: 100, output_tokens: 20, total_tokens: 120, provider: 'openAI' },
+    ];
+    const result = buildAbortedResponseMetadata({ tokenUsage: JSON.stringify(events) });
+    expect(result).toEqual({ usage: { input: 100, output: 20, cacheWrite: 0, cacheRead: 0 } });
+    expect((result as { contextUsage?: unknown }).contextUsage).toBeUndefined();
+  });
+});
+
+describe('resolveAgentTokenConfig', () => {
+  const primary = { 'gpt-4': { prompt: 0.01, completion: 0.03, context: 8192 } };
+  const subagent = { 'gpt-4': { prompt: 0.05, completion: 0.15, context: 8192 } };
+
+  it('returns the producing agent’s own config', () => {
+    const byAgentId = new Map([
+      ['primary', primary],
+      ['sub', subagent],
+    ]);
+    expect(resolveAgentTokenConfig({ agentId: 'sub', byAgentId, fallback: primary })).toBe(
+      subagent,
+    );
+  });
+
+  it('returns undefined for a known agent with no configured rates (built-in pricing)', () => {
+    /** A known non-custom agent (e.g. a normal OpenAI agent) is recorded with an
+     *  undefined config; it must NOT inherit the custom-primary rates. */
+    const byAgentId = new Map<string, typeof primary | undefined>([
+      ['primary', primary],
+      ['known-openai', undefined],
+    ]);
+    expect(
+      resolveAgentTokenConfig({ agentId: 'known-openai', byAgentId, fallback: primary }),
+    ).toBeUndefined();
+  });
+
+  it('falls back to the primary config for an untagged usage', () => {
+    const byAgentId = new Map([['primary', primary]]);
+    expect(resolveAgentTokenConfig({ agentId: undefined, byAgentId, fallback: primary })).toBe(
+      primary,
+    );
+  });
+
+  it('falls back to the primary config for an unknown agent id', () => {
+    const byAgentId = new Map([['primary', primary]]);
+    expect(resolveAgentTokenConfig({ agentId: 'ghost', byAgentId, fallback: primary })).toBe(
+      primary,
+    );
+  });
+
+  it('returns the fallback when there is no per-agent map (single-endpoint graphs)', () => {
+    expect(resolveAgentTokenConfig({ agentId: 'primary', fallback: primary })).toBe(primary);
   });
 });

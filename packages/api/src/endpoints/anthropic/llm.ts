@@ -1,4 +1,3 @@
-import { Dispatcher, ProxyAgent } from 'undici';
 import { logger } from '@librechat/data-schemas';
 import { AnthropicClientOptions } from '@librechat/agents';
 import {
@@ -8,6 +7,7 @@ import {
   ThinkingDisplay,
   AuthKeys,
 } from 'librechat-data-provider';
+import type { Dispatcher } from 'undici';
 import type {
   AnthropicLLMConfigResult,
   AnthropicConfigOptions,
@@ -26,6 +26,7 @@ import {
   isAnthropicVertexCredentials,
   getVertexDeploymentName,
 } from './vertex';
+import { getProxyDispatcher } from '~/utils/proxy';
 
 const WEB_SEARCH_BETA = 'web-search-2025-03-05';
 
@@ -227,10 +228,10 @@ function getLLMConfig(
     requestOptions.clientOptions.defaultHeaders = headers;
   }
 
-  if (options.proxy && requestOptions.clientOptions) {
-    const proxyAgent = new ProxyAgent(options.proxy);
+  const proxyDispatcher = getProxyDispatcher(options.proxy);
+  if (proxyDispatcher && requestOptions.clientOptions) {
     requestOptions.clientOptions.fetchOptions = {
-      dispatcher: proxyAgent,
+      dispatcher: proxyDispatcher,
     };
   }
 

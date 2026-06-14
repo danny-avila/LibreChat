@@ -28,6 +28,7 @@ const {
   extractRemoteAgentChatFiles,
   recordCollectedUsage,
   attachDocumentsToMessageContent,
+  createSubagentUsageSink,
   getTransactionsConfig,
   resolveRecursionLimit,
   findPiiMatchInMessages,
@@ -859,6 +860,9 @@ const OpenAIChatCompletionController = async (req, res) => {
         conversationId,
       },
       user: { id: userId },
+      /** Bills subagent child-run model calls (reported outside the
+       *  streamEvents loop) into the same collectedUsage array. */
+      subagentUsageSink: createSubagentUsageSink(collectedUsage),
     });
 
     if (!run) {

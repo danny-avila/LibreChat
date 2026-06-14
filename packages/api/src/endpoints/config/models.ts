@@ -11,6 +11,8 @@ import type { AppConfig } from '@librechat/data-schemas';
 import type { ServerRequest, GetUserKeyValuesFunction, UserKeyValues } from '~/types';
 import type { FetchModelsParams } from '~/endpoints/models';
 import { fetchModels as defaultFetchModels } from '~/endpoints/models';
+import { getTokenConfigKey } from '~/endpoints/custom/initialize';
+import { tokenConfigCache } from '~/cache';
 import { isUserProvided } from '~/utils';
 
 /**
@@ -96,6 +98,9 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
 
     const fetchPromisesMap: Record<string, Promise<string[]>> = {};
     const uniqueKeyToEndpointsMap: Record<string, string[]> = {};
+    /** tokenKey the deduped fetch cached its token config under, so siblings
+     *  sharing the fetch can be backfilled with the same config afterward */
+    const uniqueKeyToTokenKey: Record<string, string> = {};
     const endpointsMap: Record<string, TEndpoint> = {};
 
     const resolved: ResolvedEndpoint[] = [];
@@ -174,9 +179,12 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
       const uniqueKey = `${BASE_URL}__${API_KEY}__${headersFingerprint(endpointHeaders)}`;
 
       if (models?.fetch && !apiKeyIsUserProvided && !baseURLIsUserProvided) {
-        fetchPromisesMap[uniqueKey] =
-          fetchPromisesMap[uniqueKey] ||
-          fetchModels({
+        if (!fetchPromisesMap[uniqueKey]) {
+          /** User-scoped when configured headers resolve per user — the
+           *  derived token config must not be cached under the shared name */
+          const tokenKey = getTokenConfigKey(endpoint, name, req.user?.id ?? '');
+          uniqueKeyToTokenKey[uniqueKey] = tokenKey;
+          fetchPromisesMap[uniqueKey] = fetchModels({
             name,
             apiKey: API_KEY,
             baseURL: BASE_URL,
@@ -185,7 +193,9 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
             headers: endpointHeaders,
             direct: endpoint.directEndpoint,
             userIdQuery: models.userIdQuery,
+            tokenKey,
           });
+        }
         uniqueKeyToEndpointsMap[uniqueKey] = uniqueKeyToEndpointsMap[uniqueKey] || [];
         uniqueKeyToEndpointsMap[uniqueKey].push(name);
         continue;
@@ -216,6 +226,8 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
               direct: endpoint.directEndpoint,
               userIdQuery: models.userIdQuery,
               skipCache: true,
+              /** Fetched with the user's key/URL — always user-scoped */
+              tokenKey: getTokenConfigKey(endpoint, name, req.user?.id ?? ''),
             });
           uniqueKeyToEndpointsMap[userFetchKey] = uniqueKeyToEndpointsMap[userFetchKey] || [];
           uniqueKeyToEndpointsMap[userFetchKey].push(name);
@@ -248,6 +260,23 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
           typeof m === 'string' ? m : m.name,
         );
         modelsConfig[name] = !modelData?.length ? defaults : modelData;
+      }
+
+      /** A shared fetch caches token config under one endpoint's tokenKey;
+       *  copy it to the siblings so /token-config resolves each by its own
+       *  name (the query is staleTime:Infinity and won't recover otherwise) */
+      const winnerTokenKey = uniqueKeyToTokenKey[currentKey];
+      if (settled.status === 'fulfilled' && winnerTokenKey != null && associatedNames.length > 1) {
+        const cache = tokenConfigCache();
+        const config = await cache.get(winnerTokenKey);
+        if (config != null) {
+          for (const name of associatedNames) {
+            const siblingKey = getTokenConfigKey(endpointsMap[name], name, req.user?.id ?? '');
+            if (siblingKey !== winnerTokenKey) {
+              await cache.set(siblingKey, config);
+            }
+          }
+        }
       }
     }
 
