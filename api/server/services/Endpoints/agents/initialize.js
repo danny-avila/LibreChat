@@ -9,6 +9,7 @@ const {
   GenerationJobManager,
   getCustomEndpointConfig,
   discoverConnectedAgents,
+  resolveAgentTokenConfig,
   resolveAgentScopedSkillIds,
   resolveModelSpecSkillIds,
   buildAgentContextAttachmentsByAgentId,
@@ -908,14 +909,23 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
    *  `agentToolContexts` (the one map holding every agent, including pure
    *  subagents pruned from `agentConfigs`) so usage billed/emitted for a
    *  connected or subagent on a different custom endpoint is priced with THAT
-   *  agent's configured rates instead of the primary's.
-   *  @type {Map<string, import('@librechat/api').EndpointTokenConfig>} */
+   *  agent's configured rates instead of the primary's. Every known agent is
+   *  recorded — even with an `undefined` config — so the resolver can tell a
+   *  known non-custom agent (built-in pricing) from an untagged/unknown one
+   *  (primary fallback).
+   *  @type {Map<string, import('@librechat/api').EndpointTokenConfig | undefined>} */
   const endpointTokenConfigByAgentId = new Map();
   for (const [agentId, ctx] of agentToolContexts) {
-    if (ctx?.endpointTokenConfig != null) {
-      endpointTokenConfigByAgentId.set(agentId, ctx.endpointTokenConfig);
-    }
+    endpointTokenConfigByAgentId.set(agentId, ctx?.endpointTokenConfig);
   }
+  /** Price emitted usage per producing agent too, so the streamed/persisted
+   *  `metadata.usage.cost` matches the per-agent balance transaction. */
+  usageCost.resolveEndpointTokenConfig = (usage) =>
+    resolveAgentTokenConfig({
+      agentId: usage?.agentId,
+      byAgentId: endpointTokenConfigByAgentId,
+      fallback: usageCost.endpointTokenConfig,
+    });
 
   const client = new AgentClient({
     req,

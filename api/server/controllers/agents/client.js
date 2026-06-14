@@ -24,6 +24,7 @@ const {
   sendEvent,
   computeUsageCostUSD,
   aggregateEmittedUsage,
+  resolveAgentTokenConfig,
   buildPersistedContextUsage,
   createSubagentUsageSink,
   isDeepSeekReasoningProvider,
@@ -888,18 +889,20 @@ class AgentClient extends BaseClient {
 
   /**
    * Resolves the endpoint token config for a usage item by its producing agent
-   * (multi-endpoint graphs: connected agents + subagents). Falls back to the
-   * primary agent's config when the agent isn't tagged/known or has no
-   * configured rates — so single-endpoint graphs are unchanged.
+   * (multi-endpoint graphs: connected agents + subagents). A known agent's
+   * config is authoritative — including `undefined`, which prices with built-in
+   * rates (e.g. a non-custom agent in a custom-primary graph). Only an
+   * untagged/unknown agent falls back to the primary config, so single-endpoint
+   * graphs are unchanged.
    * @param {UsageMetadata} usage
    * @returns {import('@librechat/api').EndpointTokenConfig | undefined}
    */
   resolveAgentEndpointTokenConfig(usage) {
-    const perAgent =
-      usage?.agentId != null
-        ? this.options.endpointTokenConfigByAgentId?.get(usage.agentId)
-        : undefined;
-    return perAgent ?? this.options.endpointTokenConfig;
+    return resolveAgentTokenConfig({
+      agentId: usage?.agentId,
+      byAgentId: this.options.endpointTokenConfigByAgentId,
+      fallback: this.options.endpointTokenConfig,
+    });
   }
 
   /**

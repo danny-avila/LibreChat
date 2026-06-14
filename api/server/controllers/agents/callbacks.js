@@ -149,6 +149,9 @@ class ModelEndHandler {
             model: taggedUsage.model,
             provider: taggedUsage.provider,
             usage_type: taggedUsage.usage_type,
+            /** Producing agent for per-endpoint pricing; consumed by the emit
+             *  cost resolver and not included in the emitted/persisted payload. */
+            agentId: taggedUsage.agentId,
             runId: metadata?.run_id,
             /** Per-run sequence so identical payloads from distinct calls
              *  stay distinguishable during resume dedupe */
@@ -313,13 +316,19 @@ function getDefaultHandlers({
    * of re-deriving from base rates.
    * @param {Record<string, unknown>} data
    */
-  const emitTokenUsage = (data) => {
+  const emitTokenUsage = ({ agentId, ...data }) => {
     let payload = data;
     if (usageCost?.enabled === true && usageCost.pricing) {
       try {
+        /** Price with the producing agent's config (multi-endpoint graphs) so
+         *  the streamed/persisted cost matches the per-agent balance transaction;
+         *  `agentId` is resolved here, not forwarded to the client or rollup. */
+        const endpointTokenConfig = usageCost.resolveEndpointTokenConfig
+          ? usageCost.resolveEndpointTokenConfig({ agentId })
+          : usageCost.endpointTokenConfig;
         payload = {
           ...data,
-          cost: computeUsageCostUSD(data, usageCost.pricing, usageCost.endpointTokenConfig),
+          cost: computeUsageCostUSD(data, usageCost.pricing, endpointTokenConfig),
         };
       } catch (err) {
         logger.warn('[getDefaultHandlers] Failed to compute usage cost', err);

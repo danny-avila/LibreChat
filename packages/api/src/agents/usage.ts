@@ -326,6 +326,31 @@ export function buildAbortedResponseMetadata(
   return usage ? { usage } : undefined;
 }
 
+/**
+ * Resolves the endpoint token config for a usage item by its producing agent.
+ * Multi-endpoint graphs tag each call with `agentId`; that agent's resolved
+ * config is authoritative — including `undefined`, which means "no configured
+ * rates, use built-in pricing" (e.g. a non-custom agent in a custom-primary
+ * graph). Only an untagged or unknown agent falls back to `fallback` (the
+ * primary config), so single-endpoint graphs are unchanged. `byAgentId` must
+ * hold an entry for every known agent (value may be `undefined`) so `has`
+ * distinguishes "known, no rates" from "unknown".
+ */
+export function resolveAgentTokenConfig({
+  agentId,
+  byAgentId,
+  fallback,
+}: {
+  agentId?: string | null;
+  byAgentId?: Map<string, EndpointTokenConfig | undefined>;
+  fallback?: EndpointTokenConfig;
+}): EndpointTokenConfig | undefined {
+  if (agentId != null && byAgentId?.has(agentId)) {
+    return byAgentId.get(agentId);
+  }
+  return fallback;
+}
+
 export interface RecordUsageParams {
   user: string;
   conversationId: string;
@@ -338,10 +363,11 @@ export interface RecordUsageParams {
   endpointTokenConfig?: EndpointTokenConfig;
   /**
    * Per-usage endpoint token config resolver for multi-endpoint graphs. Called
-   * with each usage item; a non-nullish result prices that item with the
-   * resolving agent's endpoint config instead of the batch `endpointTokenConfig`.
-   * Falls back to `endpointTokenConfig` when omitted or it returns nullish, so
-   * single-config callers (responses.js / openai.js) are unaffected.
+   * with each usage item; when provided it is authoritative — its result prices
+   * that item, including `undefined` (built-in pricing for a known agent with no
+   * configured rates). It owns its own fallback to the primary config for
+   * untagged/unknown agents (see {@link resolveAgentTokenConfig}). Single-config
+   * callers (responses.js / openai.js) omit it and use `endpointTokenConfig`.
    */
   resolveEndpointTokenConfig?: (usage: UsageMetadata) => EndpointTokenConfig | undefined;
 }
@@ -431,9 +457,12 @@ export async function recordCollectedUsage(
         messageId,
         transactions,
         conversationId,
-        /** Price with the producing agent's endpoint config when resolvable
-         *  (multi-endpoint graphs); otherwise the batch config. */
-        endpointTokenConfig: resolveEndpointTokenConfig?.(usage) ?? endpointTokenConfig,
+        /** Price with the producing agent's endpoint config when a resolver is
+         *  provided (multi-endpoint graphs); it owns the fallback to the primary
+         *  config, so `undefined` here means built-in pricing, not the batch one. */
+        endpointTokenConfig: resolveEndpointTokenConfig
+          ? resolveEndpointTokenConfig(usage)
+          : endpointTokenConfig,
         context: usageContext,
         model: usage.model ?? model,
       };
