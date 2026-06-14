@@ -133,6 +133,24 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
           type: Boolean,
           default: true,
         },
+        location: {
+          type: {
+            enabled: { type: Boolean, default: false },
+            source: { type: String, enum: ['auto', 'manual'] },
+            manual: { type: String, maxlength: 256 },
+            place: { type: String, maxlength: 256 },
+            coordinates: {
+              type: {
+                latitude: { type: Number },
+                longitude: { type: Number },
+              },
+              default: undefined,
+            },
+            timezone: { type: String, maxlength: 64 },
+            updatedAt: { type: Date },
+          },
+          default: undefined,
+        },
       },
       default: {},
     },

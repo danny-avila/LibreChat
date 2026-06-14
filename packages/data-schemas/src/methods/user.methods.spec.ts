@@ -1,9 +1,9 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type * as t from '~/types';
+import balanceSchema from '~/schema/balance';
 import { createUserMethods } from './user';
 import userSchema from '~/schema/user';
-import balanceSchema from '~/schema/balance';
 
 /** Mocking crypto for generateToken */
 jest.mock('~/crypto', () => ({
@@ -691,6 +691,41 @@ describe('User Methods - Database Tests', () => {
 
       expect(found).toBeDefined();
       expect(found?.provider).toBe('saml');
+    });
+  });
+
+  describe('updateUserLocation', () => {
+    it('persists a manual location on a user with no personalization object', async () => {
+      const user = await mongoose.models.User.create({ email: 'loc1@test.com' });
+      const updated = await methods.updateUserLocation(user._id.toString(), {
+        enabled: true,
+        source: 'manual',
+        manual: 'Berlin, Germany',
+        timezone: 'Europe/Berlin',
+      });
+      expect(updated?.personalization?.location?.enabled).toBe(true);
+      expect(updated?.personalization?.location?.manual).toBe('Berlin, Germany');
+      expect(updated?.personalization?.location?.timezone).toBe('Europe/Berlin');
+    });
+
+    it('persists device coordinates and place', async () => {
+      const user = await mongoose.models.User.create({ email: 'loc2@test.com' });
+      const updated = await methods.updateUserLocation(user._id.toString(), {
+        enabled: true,
+        source: 'auto',
+        place: 'Paris, Île-de-France, France',
+        coordinates: { latitude: 48.85, longitude: 2.35 },
+        timezone: 'Europe/Paris',
+      });
+      expect(updated?.personalization?.location?.place).toBe('Paris, Île-de-France, France');
+      expect(updated?.personalization?.location?.coordinates?.latitude).toBe(48.85);
+    });
+
+    it('returns null for a missing user', async () => {
+      const result = await methods.updateUserLocation(new mongoose.Types.ObjectId().toString(), {
+        enabled: false,
+      });
+      expect(result).toBeNull();
     });
   });
 

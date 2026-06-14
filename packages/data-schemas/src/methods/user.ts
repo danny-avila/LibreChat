@@ -106,6 +106,10 @@ export function createUserMethods(mongoose: typeof import('mongoose')): {
     action: 'install' | 'uninstall',
   ) => Promise<IUser | null>;
   toggleUserMemories: (userId: string, memoriesEnabled: boolean) => Promise<IUser | null>;
+  updateUserLocation: (
+    userId: string,
+    location: import('librechat-data-provider').TUserLocation,
+  ) => Promise<IUser | null>;
 } {
   /**
    * Normalizes email fields in search criteria to lowercase and trimmed.
@@ -339,6 +343,33 @@ export function createUserMethods(mongoose: typeof import('mongoose')): {
   }
 
   /**
+   * Update a user's location personalization setting.
+   * Creates the personalization object if it doesn't exist.
+   */
+  async function updateUserLocation(
+    userId: string,
+    location: import('librechat-data-provider').TUserLocation,
+  ): Promise<IUser | null> {
+    const User = mongoose.models.User;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return null;
+    }
+
+    const updateOperation = {
+      $set: {
+        'personalization.location': { ...location, updatedAt: new Date() },
+      },
+    };
+
+    return await User.findByIdAndUpdate(userId, updateOperation, {
+      new: true,
+      runValidators: true,
+    }).lean<IUser>();
+  }
+
+  /**
    * Search for users by pattern matching on name, email, or username (case-insensitive)
    * @param searchPattern - The pattern to search for
    * @param limit - Maximum number of results to return
@@ -517,6 +548,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')): {
     deleteUserById,
     updateUserPlugins,
     toggleUserMemories,
+    updateUserLocation,
   };
 }
 
