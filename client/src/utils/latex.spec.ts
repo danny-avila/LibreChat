@@ -304,8 +304,35 @@ describe('preprocessTilde', () => {
     expect(preprocessTilde(content)).toBe(content);
   });
 
-  test('ignores tildes already escaped with a backslash', () => {
-    const content = 'literal \\~50 percent';
+  test('neutralizes escaped approximation tildes (markdown decodes the backslash)', () => {
+    expect(preprocessTilde('literal \\~50 percent')).toBe(`literal ${T}50 percent`);
+  });
+
+  test('neutralizes an escaped approximation tilde pair', () => {
+    expect(preprocessTilde('\\~50% down then \\~10% more')).toBe(`${T}50% down then ${T}10% more`);
+  });
+
+  test('preserves tildes in markdown link URLs', () => {
+    const content = 'see [src](https://example.com/~50/file) here';
+    expect(preprocessTilde(content)).toBe(content);
+  });
+
+  test('preserves tildes in autolink URLs', () => {
+    const content = 'visit https://example.com/~50/file now';
+    expect(preprocessTilde(content)).toBe(content);
+  });
+
+  test('converts approximation tildes in link display text', () => {
+    expect(preprocessTilde('[~50% off](url)')).toBe(`[${T}50% off](url)`);
+  });
+
+  test('preserves tildes inside dollar math delimiters', () => {
+    const content = 'value $~10$ and $$~20$$ here';
+    expect(preprocessTilde(content)).toBe(content);
+  });
+
+  test('preserves tildes inside backslash math delimiters', () => {
+    const content = 'inline \\(~10\\) and block \\[~20\\] math';
     expect(preprocessTilde(content)).toBe(content);
   });
 

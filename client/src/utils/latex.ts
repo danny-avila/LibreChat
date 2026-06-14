@@ -6,10 +6,13 @@ const MHCHEM_PU_ESCAPED_REGEX = /\$\\\\pu\{[^}]*\}\$/g;
 const CURRENCY_REGEX =
   /(?<![\\$])\$(?!\$)(?=\d+(?:,\d{3})*(?:\.\d+)?(?:[KMBkmb])?(?:\s|$|[^a-zA-Z\d]))/g;
 const SINGLE_DOLLAR_REGEX = /(?<!\\)\$(?!\$)((?:[^$\n]|\\[$])+?)(?<!\\)(?<!`)\$(?!\$)/g;
-// "Approximately" tilde: a `~` that prefixes a number (e.g. `~50%`, `~ -3%`, `~$5`).
-// Excluded: tildes attached to a word and closed-number subscripts like `H~2~O` or
-// `x ~2~ y`, so genuine subscripts are preserved.
-const APPROX_TILDE_REGEX = /(?<![\w~\\])~(?=[ \t]?[-−+]?\$?\d)(?![ \t]?[-−+]?\$?[\d.,]*~)/g;
+// "Approximately" tilde: a `~` (optionally backslash-escaped, since markdown decodes
+// `\~` before supersub) that prefixes a number at a prose boundary — start, whitespace,
+// or open bracket — e.g. `~50%`, `~ -3%`, `~$5`. Excluded so real syntax survives:
+// word-attached/closed-number subscripts (`H~2~O`, `a ~2~ b`), URL path tildes (`/~50`),
+// and math delimiters (`$~10$`, `\(~10\)`).
+const APPROX_TILDE_REGEX =
+  /(?<=^|[\s([{])(?<!\\[([{])\\?~(?=[ \t]?[-−+]?\$?\d)(?![ \t]?[-−+]?\$?[\d.,]*~)/g;
 // U+223C TILDE OPERATOR — renders as a tilde but is not split by remark-supersub.
 const APPROX_TILDE_REPLACEMENT = '∼';
 
@@ -182,7 +185,7 @@ export function preprocessTilde(content: string): string {
     if (isInCodeBlock(match.index, codeRegions)) continue;
     parts.push(content.substring(lastIndex, match.index));
     parts.push(APPROX_TILDE_REPLACEMENT);
-    lastIndex = match.index + 1;
+    lastIndex = match.index + match[0].length;
   }
 
   // No replacements made — avoid allocating a new string
