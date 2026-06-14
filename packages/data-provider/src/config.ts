@@ -1181,6 +1181,12 @@ export const interfaceSchema = z
     webSearch: z.boolean().optional(),
     contextUsage: z.boolean().optional(),
     contextCost: z.boolean().optional(),
+    currency: z
+      .object({
+        code: z.string(),
+        rate: z.number().positive(),
+      })
+      .optional(),
     peoplePicker: z
       .object({
         users: z.boolean().optional(),
@@ -1251,7 +1257,7 @@ export const interfaceSchema = z
     runCode: true,
     webSearch: true,
     contextUsage: true,
-    contextCost: false,
+    contextCost: true,
     peoplePicker: {
       users: true,
       groups: true,
