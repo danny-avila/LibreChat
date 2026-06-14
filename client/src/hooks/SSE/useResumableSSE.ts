@@ -1031,6 +1031,11 @@ export default function useResumableSSE(
         setIsSubmitting(false);
         setShowStopButton(false);
         setStreamId(null);
+        /** Intentional close without a final event (explicit stop, or navigation
+         *  while generating): discard the in-flight pending usage so it can't
+         *  merge into the next response in this conversation. On a resume the
+         *  collected usage is re-folded via backfillUsage, so nothing is lost. */
+        resetLive({ ...currentSubmission, userMessage });
       });
 
       // Start the SSE connection

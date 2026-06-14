@@ -6,7 +6,9 @@ const {
   countTokens,
   GenerationJobManager,
   recordCollectedUsage,
+  aggregateEmittedUsage,
   sanitizeMessageForTransmit,
+  buildPersistedContextUsage,
 } = require('@librechat/api');
 const { truncateText, smartTruncateText } = require('~/app/clients/prompts');
 const clearPendingReq = require('~/cache/clearPendingReq');
@@ -63,6 +65,44 @@ async function spendCollectedUsage({
   collectedUsage.length = 0;
 }
 
+function parseJobJson(value) {
+  if (typeof value !== 'string' || value.length === 0) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Builds the response `metadata` for a stopped generation so its usage/cost
+ * rollup and context breakdown survive a reload — parity with the normal
+ * `sendCompletion` path. The emitted usage payloads (with cost) and the latest
+ * context snapshot were persisted to the job by `trackTokenUsage` /
+ * `trackContextUsage`. The breakdown is persisted only when a primary usage
+ * event exists (post-snapshot output is known), mirroring `buildResponseMetadata`.
+ * @param {Record<string, unknown> | null | undefined} jobData
+ * @returns {{ usage?: object, contextUsage?: object } | undefined}
+ */
+function buildAbortResponseMetadata(jobData) {
+  const emitted = parseJobJson(jobData?.tokenUsage);
+  const events = Array.isArray(emitted) ? emitted : [];
+  /** @type {{ usage?: object, contextUsage?: object }} */
+  const metadata = {};
+  const usage = aggregateEmittedUsage(events);
+  if (usage) {
+    metadata.usage = usage;
+  }
+  const snapshot = parseJobJson(jobData?.contextUsage);
+  const hasPrimaryUsage = events.some((event) => event && event.usage_type == null);
+  if (snapshot && hasPrimaryUsage) {
+    metadata.contextUsage = buildPersistedContextUsage(snapshot, events);
+  }
+  return Object.keys(metadata).length > 0 ? metadata : undefined;
+}
+
 /**
  * Abort an active message generation.
  * Uses GenerationJobManager for all agent requests.
@@ -109,6 +149,14 @@ async function abortMessage(req, res) {
     isCreatedByUser: false,
     tokenCount: completionTokens,
   };
+
+  /** Persist the usage/cost rollup + context breakdown for the stopped response
+   *  so its branch/total cost and granular rows survive a reload, matching the
+   *  normal completion path. */
+  const abortMetadata = buildAbortResponseMetadata(jobData);
+  if (abortMetadata) {
+    responseMessage.metadata = abortMetadata;
+  }
 
   // Spend tokens for ALL models from collectedUsage (handles parallel agents/addedConvo)
   if (collectedUsage && collectedUsage.length > 0) {
