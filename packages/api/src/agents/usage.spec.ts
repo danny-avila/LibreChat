@@ -11,6 +11,7 @@ import {
   buildPersistedContextUsage,
   buildAbortedResponseMetadata,
   computeSummaryUsedTokens,
+  priorRunOutputTokens,
 } from './usage';
 
 describe('recordCollectedUsage', () => {
@@ -1844,6 +1845,50 @@ describe('computeSummaryUsedTokens', () => {
     expect(computeSummaryUsedTokens(null)).toBeUndefined();
     expect(computeSummaryUsedTokens(undefined)).toBeUndefined();
   });
+
+  it('subtracts the response’s earlier tool-loop outputs from the marker', () => {
+    /** 300 baseUsed − 90 earlier outputs = 210, so the client estimate
+     *  (summaryBaseline + full response tokenCount) doesn’t double-count them. */
+    expect(computeSummaryUsedTokens(summarized(), 90)).toBe(210);
+  });
+
+  it('clamps to undefined when the prior outputs exceed the baseline', () => {
+    expect(computeSummaryUsedTokens(summarized(), 5000)).toBeUndefined();
+  });
+});
+
+describe('priorRunOutputTokens', () => {
+  const ev = (over: Partial<TTokenUsageEvent>): TTokenUsageEvent => ({
+    input_tokens: 10,
+    output_tokens: 0,
+    total_tokens: 10,
+    provider: 'openAI',
+    ...over,
+  });
+
+  it('sums primary outputs before the index for the matching run', () => {
+    const events = [
+      ev({ output_tokens: 20, runId: 'run-1' }),
+      ev({ output_tokens: 30, runId: 'run-1' }),
+      ev({ output_tokens: 99, runId: 'run-1' }), // at/after the index — excluded
+    ];
+    expect(priorRunOutputTokens(events, 2, 'run-1')).toBe(50);
+  });
+
+  it('skips non-primary (tagged) usage and other runs', () => {
+    const events = [
+      ev({ output_tokens: 20, runId: 'run-1' }),
+      ev({ output_tokens: 8, runId: 'run-1', usage_type: 'summarization' }),
+      ev({ output_tokens: 40, runId: 'run-2' }),
+    ];
+    expect(priorRunOutputTokens(events, 3, 'run-1')).toBe(20);
+  });
+
+  it('matches untagged events for back-compat and returns 0 with no prior calls', () => {
+    const events = [ev({ output_tokens: 20 }), ev({ output_tokens: 30 })];
+    expect(priorRunOutputTokens(events, 2, 'run-1')).toBe(50);
+    expect(priorRunOutputTokens(events, 0, 'run-1')).toBe(0);
+  });
 });
 
 describe('buildAbortedResponseMetadata', () => {
@@ -1876,34 +1921,55 @@ describe('buildAbortedResponseMetadata', () => {
     expect((result as { contextUsage?: unknown }).contextUsage).toBeUndefined();
   });
 
+  const abortSnapshot: TContextUsageEvent = {
+    runId: 'run-1',
+    breakdown: {
+      maxContextTokens: 1000,
+      instructionTokens: 50,
+      systemMessageTokens: 50,
+      dynamicInstructionTokens: 0,
+      toolSchemaTokens: 0,
+      summaryTokens: 80,
+      toolCount: 0,
+      messageCount: 1,
+      messageTokens: 20,
+      availableForMessages: 900,
+    },
+    contextBudget: 1000,
+    remainingContextTokens: 700,
+  };
+
   it('persists the summary marker (but not the full snapshot) for a stopped summarized turn', () => {
-    const events: TTokenUsageEvent[] = [
-      { input_tokens: 100, output_tokens: 20, total_tokens: 120, provider: 'openAI' },
-    ];
-    const snapshot: TContextUsageEvent = {
-      runId: 'run-1',
-      breakdown: {
-        maxContextTokens: 1000,
-        instructionTokens: 50,
-        systemMessageTokens: 50,
-        dynamicInstructionTokens: 0,
-        toolSchemaTokens: 0,
-        summaryTokens: 80,
-        toolCount: 0,
-        messageCount: 1,
-        messageTokens: 20,
-        availableForMessages: 900,
-      },
-      contextBudget: 1000,
-      remainingContextTokens: 700,
-    };
+    /** A single-call stopped turn: the interrupted call emitted no usage, so the
+     *  marker is the full baseUsed (300) with nothing to subtract. */
     const result = buildAbortedResponseMetadata({
-      tokenUsage: JSON.stringify(events),
-      contextUsage: JSON.stringify(snapshot),
+      tokenUsage: JSON.stringify([]),
+      contextUsage: JSON.stringify(abortSnapshot),
     });
     expect(result?.summaryUsedTokens).toBe(300);
     /** The full snapshot stays off the abort path (completedOutputTokens ambiguity). */
     expect((result as { contextUsage?: unknown }).contextUsage).toBeUndefined();
+  });
+
+  it('subtracts earlier tool-loop outputs from the marker on a stopped multi-call turn', () => {
+    /** An interrupted tool-loop: the earlier call completed (output 20) and is
+     *  baked into the baseline; the final call was stopped (no usage). The marker
+     *  drops that 20 (300 − 20 = 280) so the client estimate, which re-adds the
+     *  response's full tokenCount, doesn't double-count it. */
+    const events: TTokenUsageEvent[] = [
+      {
+        input_tokens: 100,
+        output_tokens: 20,
+        total_tokens: 120,
+        provider: 'openAI',
+        runId: 'run-1',
+      },
+    ];
+    const result = buildAbortedResponseMetadata({
+      tokenUsage: JSON.stringify(events),
+      contextUsage: JSON.stringify(abortSnapshot),
+    });
+    expect(result?.summaryUsedTokens).toBe(280);
   });
 });
 

@@ -299,6 +299,38 @@ export function buildPersistedContextUsage(
 }
 
 /**
+ * Sum of this response's own earlier (tool-loop) primary output tokens already
+ * folded into a later snapshot's pre-invoke baseline. A multi-call turn's first
+ * call output sits in the kept-message context of the second call's snapshot, so
+ * those tokens appear in BOTH the snapshot baseline and the response message's
+ * full `tokenCount`. `computeSummaryUsedTokens` subtracts this from the marker so
+ * the client estimate (`summaryBaseline + responseTokenCount`) doesn't
+ * double-count them. `beforeIndex` bounds the walk to calls that preceded the
+ * snapshot (the live path knows it; the abort path passes the full length, since
+ * an interrupted turn's final call emits no usage so every primary is earlier).
+ * Untagged events (older lib / resume) match any run for back-compat.
+ */
+export function priorRunOutputTokens(
+  events: ReadonlyArray<TTokenUsageEvent>,
+  beforeIndex: number,
+  runId?: string,
+): number {
+  let total = 0;
+  const end = Math.min(beforeIndex, events.length);
+  for (let i = 0; i < end; i++) {
+    const event = events[i];
+    if (event.usage_type != null) {
+      continue;
+    }
+    if (runId != null && event.runId != null && event.runId !== runId) {
+      continue;
+    }
+    total += normalizeEventUnits(event).output;
+  }
+  return total;
+}
+
+/**
  * Pre-invoke compacted context size for a summarized turn (instructions +
  * summary + kept messages), or `undefined` when the turn did not summarize.
  * Persisted as the lightweight `summaryUsedTokens` marker so the client estimate
@@ -307,9 +339,16 @@ export function buildPersistedContextUsage(
  * it carries none of the `completedOutputTokens` ambiguity that keeps the full
  * snapshot off some save paths. `summaryTokens` is a SEPARATE breakdown field, so
  * the non-`remainingContextTokens` fallback adds it explicitly.
+ *
+ * `priorOutputTokens` (this response's earlier tool-loop outputs, see
+ * {@link priorRunOutputTokens}) is subtracted: those tokens are inside the
+ * baseline's kept messages AND in the response message's `tokenCount` the client
+ * adds on top, so leaving them in the marker double-counts them on a tool-loop
+ * summarized turn. Single-call turns pass 0 and are unaffected.
  */
 export function computeSummaryUsedTokens(
   snapshot: TContextUsageEvent | null | undefined,
+  priorOutputTokens = 0,
 ): number | undefined {
   const summaryTokens = snapshot?.breakdown?.summaryTokens ?? 0;
   if (!snapshot || summaryTokens <= 0) {
@@ -322,7 +361,8 @@ export function computeSummaryUsedTokens(
       : (snapshot.effectiveInstructionTokens ?? snapshot.breakdown.instructionTokens ?? 0) +
         summaryTokens +
         (snapshot.breakdown.messageTokens ?? 0);
-  return baseUsed > 0 ? Math.round(baseUsed) : undefined;
+  const adjusted = baseUsed - Math.max(0, priorOutputTokens);
+  return adjusted > 0 ? Math.round(adjusted) : undefined;
 }
 
 function parseUsageEvents(value?: string | null): TTokenUsageEvent[] {
@@ -353,7 +393,10 @@ function parseUsageEvents(value?: string | null): TTokenUsageEvent[] {
  * It DOES persist the `summaryUsedTokens` marker when the stopped turn had
  * summarized: that marker is pre-invoke (no `completedOutputTokens` ambiguity),
  * and without it the fallback estimate re-sums the history the compaction
- * discarded — leaving a stopped summarized turn pinned at 100%.
+ * discarded — leaving a stopped summarized turn pinned at 100%. The marker
+ * subtracts the response's earlier tool-loop outputs ({@link priorRunOutputTokens}):
+ * the interrupted final call emitted no usage, so every persisted primary usage
+ * is an earlier call whose output the baseline already counts.
  */
 export function buildAbortedResponseMetadata(
   job: { tokenUsage?: string | null; contextUsage?: string | null } | null | undefined,
@@ -369,7 +412,8 @@ export function buildAbortedResponseMetadata(
       snapshot = null;
     }
   }
-  const summaryUsedTokens = computeSummaryUsedTokens(snapshot);
+  const priorOutputTokens = priorRunOutputTokens(events, events.length, snapshot?.runId);
+  const summaryUsedTokens = computeSummaryUsedTokens(snapshot, priorOutputTokens);
 
   const metadata: { usage?: TResponseUsage; summaryUsedTokens?: number } = {};
   if (usage) {

@@ -105,4 +105,31 @@ describe('AgentClient.buildResponseMetadata — snapshot persistence + summary m
     expect(meta.contextUsage).toBeDefined();
     expect(meta.contextUsage.completedOutputTokens).toBe(7);
   });
+
+  it('subtracts earlier tool-loop output from the summary marker (interrupted turn)', () => {
+    /** Multi-call summarized turn stopped before the final usage: the earlier
+     *  call (output 40) is baked into baseUsed (300), so the marker is 300 − 40 =
+     *  260. No primary follows the snapshot, so the full snapshot is not persisted
+     *  and the client uses this marker — which must not double-count the 40 that
+     *  the response tokenCount also carries. */
+    const meta = buildMeta({
+      snap: snapshot(80),
+      latestUsageIndex: 1,
+      usageEvents: [primaryFor('run-1', 40)],
+    });
+    expect(meta.contextUsage).toBeUndefined();
+    expect(meta.summaryUsedTokens).toBe(260);
+  });
+
+  it('subtracts only this run’s earlier output, not a parallel run’s', () => {
+    const meta = buildMeta({
+      snap: snapshot(80),
+      latestUsageIndex: 2,
+      usageEvents: [primaryFor('run-2', 999), primaryFor('run-1', 40), primaryFor('run-1', 5)],
+    });
+    /** baseUsed 300 − run-1's earlier 40 = 260; run-2's 999 is ignored. */
+    expect(meta.summaryUsedTokens).toBe(260);
+    /** run-1's own primary follows the snapshot → snapshot persisted with output 5. */
+    expect(meta.contextUsage.completedOutputTokens).toBe(5);
+  });
 });

@@ -27,6 +27,7 @@ const {
   resolveAgentTokenConfig,
   buildPersistedContextUsage,
   computeSummaryUsedTokens,
+  priorRunOutputTokens,
   createSubagentUsageSink,
   isDeepSeekReasoningProvider,
   GenerationJobManager,
@@ -900,8 +901,17 @@ class AgentClient extends BaseClient {
      *  no usable snapshot on the branch and falls back to the per-message
      *  estimate, it caps the discarded pre-summary history at this baseline
      *  instead of re-summing it (the gauge otherwise reads 100% forever). Shared
-     *  with the abort save path via `computeSummaryUsedTokens`. */
-    const summaryUsedTokens = computeSummaryUsedTokens(this.contextUsageSink?.latest);
+     *  with the abort save path via `computeSummaryUsedTokens`. Subtract the
+     *  response's earlier tool-loop outputs (the primaries that preceded the
+     *  latest snapshot, same run): those tokens are inside the snapshot baseline
+     *  AND in the response `tokenCount` the client estimate adds on top, so
+     *  leaving them in the marker double-counts them on a multi-call turn. */
+    const priorOutputTokens = priorRunOutputTokens(
+      usageEvents,
+      latestSnapshotUsageIndex,
+      latestSnapshotRunId,
+    );
+    const summaryUsedTokens = computeSummaryUsedTokens(latestSnapshot, priorOutputTokens);
     if (summaryUsedTokens != null) {
       metadata.summaryUsedTokens = summaryUsedTokens;
     }

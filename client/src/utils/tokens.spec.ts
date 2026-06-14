@@ -157,6 +157,34 @@ describe('token index', () => {
     expect(sumBranch(CONVO, 'a1-alt', 'a1').containsAnchor).toBe(false);
   });
 
+  it('stops matching the anchor once the context is capped at a summary marker', () => {
+    const summarized = {
+      messageId: 'a2',
+      parentMessageId: 'u2',
+      isCreatedByUser: false,
+      tokenCount: 40,
+      conversationId: CONVO,
+      text: '',
+      metadata: { summaryUsedTokens: 500 },
+    } as TMessage;
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 100),
+      msg('a1', 'u1', false, 20),
+      msg('u2', 'a1', true, 200),
+      summarized,
+      msg('u3', 'a2', true, 15),
+      msg('a3', 'u3', false, 25),
+    ]);
+    /** a1 is older than the summary marker (a2): a snapshot anchored there is
+     *  pre-summary, so it must NOT count as on-branch — else useTokenUsage revives
+     *  that stale breakdown over the summary-baseline estimate. */
+    expect(sumBranch(CONVO, 'a3', 'a1').containsAnchor).toBe(false);
+    /** The summarized response's own (post-summary) snapshot still matches... */
+    expect(sumBranch(CONVO, 'a3', 'a2').containsAnchor).toBe(true);
+    /** ...as does a snapshot from a newer turn. */
+    expect(sumBranch(CONVO, 'a3', 'a3').containsAnchor).toBe(true);
+  });
+
   it('tracks uncounted messages and tolerates missing parents', () => {
     buildIndex(CONVO, [msg('u2', 'missing-parent', true, undefined), msg('a2', 'u2', false, 15)]);
 

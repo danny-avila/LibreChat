@@ -247,7 +247,12 @@ export function sumBranch(
       break;
     }
     totals.total += 1;
-    if (anchorId != null && currentId === anchorId) {
+    /** Only match the anchor while still inside the active context window. An
+     *  anchor OLDER than the deepest summary marker belongs to a pre-summary
+     *  snapshot; treating it as on-branch would let `useTokenUsage` revive that
+     *  stale breakdown (discarded history) over the summary-baseline estimate
+     *  that `findBranchSnapshotAnchor` correctly refuses to recover. */
+    if (!contextCapped && anchorId != null && currentId === anchorId) {
       totals.containsAnchor = true;
     }
     if (!contextCapped && entry.tokenCount > 0) {
