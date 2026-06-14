@@ -1,4 +1,4 @@
-import type { AnthropicClientOptions, GoogleClientOptions } from '@librechat/agents';
+import type { AnthropicClientOptions } from '@librechat/agents';
 import type { IUser } from '@librechat/data-schemas';
 import type { RequestBody, RunLLMConfig } from '~/types';
 import { resolveHeaders } from './env';
@@ -65,17 +65,30 @@ export function mergeHeaders(
 type DefaultHeadersContainer = { defaultHeaders?: Record<string, string> };
 
 /**
+ * Header maps already resolved by `resolveConfigHeaders`. `resolveConfigHeaders`
+ * mutates config objects in place, and the same initialized agent (hence the same
+ * nested header objects) can flow through `buildAgentInput` more than once (root +
+ * subagent, multiple parents). Resolving twice would run env expansion over values
+ * already substituted with user/body data, violating the env-before-user invariant
+ * documented in `resolveHeaders`. Tracking resolved maps makes resolution
+ * idempotent across reuse. Keyed by object identity (per-request fresh objects), so
+ * nothing carries across requests.
+ */
+const resolvedHeaderMaps = new WeakSet<object>();
+
+/**
  * Resolves placeholder templates in the outbound request headers of a built LLM
- * config, mutating it in place. Header maps live in provider-specific locations:
- *
- * - `configuration.defaultHeaders` — OpenAI-compatible (OpenAI / Azure / custom)
- * - `clientOptions.defaultHeaders` — native Anthropic (including Vertex)
- * - `customHeaders` — native Google / Vertex AI
+ * config, mutating it in place. Handles the OpenAI-compatible
+ * `configuration.defaultHeaders` (OpenAI / Azure / custom) and the native
+ * Anthropic `clientOptions.defaultHeaders` (including Vertex) carriers. Native
+ * Google `customHeaders` are intentionally NOT handled here — they are resolved
+ * once at init in `initializeGoogle`, so the provider-managed `Authorization`
+ * header (built from a possibly user-provided key) never passes through env
+ * expansion.
  *
  * Resolution runs at request time so request-body placeholders (e.g.
  * `{{LIBRECHAT_BODY_CONVERSATIONID}}`) resolve against the live request. It is a
- * no-op for header values without placeholders, so it is safe to call for every
- * provider regardless of whether custom headers were configured.
+ * no-op for header values without placeholders, and idempotent under config reuse.
  */
 export function resolveConfigHeaders({
   llmConfig,
@@ -92,45 +105,24 @@ export function resolveConfigHeaders({
     return;
   }
 
-  const resolve = (headers: Record<string, string>): Record<string, string> =>
-    resolveHeaders({ headers, user, body, customUserVars });
+  const resolveOnce = (headers: Record<string, string>): Record<string, string> => {
+    if (resolvedHeaderMaps.has(headers)) {
+      return headers;
+    }
+    const resolved = resolveHeaders({ headers, user, body, customUserVars });
+    resolvedHeaderMaps.add(resolved);
+    return resolved;
+  };
 
   const configuration = llmConfig.configuration as DefaultHeadersContainer | undefined;
   if (configuration?.defaultHeaders != null) {
-    configuration.defaultHeaders = resolve(configuration.defaultHeaders);
+    configuration.defaultHeaders = resolveOnce(configuration.defaultHeaders);
   }
 
   const clientOptions = (llmConfig as AnthropicClientOptions).clientOptions as
     | DefaultHeadersContainer
     | undefined;
   if (clientOptions?.defaultHeaders != null) {
-    clientOptions.defaultHeaders = resolve(clientOptions.defaultHeaders);
+    clientOptions.defaultHeaders = resolveOnce(clientOptions.defaultHeaders);
   }
-
-  const googleConfig = llmConfig as GoogleClientOptions;
-  if (googleConfig.customHeaders != null) {
-    googleConfig.customHeaders = resolveCustomHeaders(
-      googleConfig.customHeaders as Record<string, string>,
-      resolve,
-    );
-  }
-}
-
-/**
- * Resolves Google `customHeaders` while leaving the provider-managed
- * `Authorization` header untouched. That header is built from the API key
- * (possibly user-provided when `GOOGLE_KEY=user_provided`), not an admin
- * template, so passing it through placeholder/env resolution could expand a
- * user-controlled `${ENV}` reference and leak server environment values.
- */
-function resolveCustomHeaders(
-  headers: Record<string, string>,
-  resolve: (headers: Record<string, string>) => Record<string, string>,
-): Record<string, string> {
-  const managed: Record<string, string> = {};
-  const templated: Record<string, string> = {};
-  for (const [key, value] of Object.entries(headers)) {
-    (key.toLowerCase() === 'authorization' ? managed : templated)[key] = value;
-  }
-  return { ...resolve(templated), ...managed };
 }

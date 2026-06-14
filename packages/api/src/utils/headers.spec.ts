@@ -96,42 +96,41 @@ describe('resolveConfigHeaders', () => {
     });
   });
 
-  it('resolves Google-style customHeaders', () => {
+  it('leaves Google customHeaders untouched (resolved at init, not request time)', () => {
     const llmConfig = {
       customHeaders: {
         'X-Conversation-Id': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
-        Authorization: 'Bearer static-token',
+        Authorization: 'Bearer ${SOME_KEY}',
       },
     } as unknown as RunLLMConfig;
 
     resolveConfigHeaders({ llmConfig, user, body });
 
+    // Native Google headers are resolved in initializeGoogle; resolveConfigHeaders
+    // must not re-process them (keeps the key-derived auth out of env expansion).
     expect(
       (llmConfig as unknown as { customHeaders: Record<string, string> }).customHeaders,
     ).toEqual({
-      'X-Conversation-Id': 'convo-abc',
-      Authorization: 'Bearer static-token',
+      'X-Conversation-Id': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+      Authorization: 'Bearer ${SOME_KEY}',
     });
   });
 
-  it('does not env-expand the provider-managed Google Authorization header', () => {
-    process.env.HEADERS_SPEC_SECRET = 'server-secret';
+  it('resolves each header map only once across repeated calls (idempotent under reuse)', () => {
+    process.env.HEADERS_SPEC_IDEMPOTENT = 'env-value';
+    const reusedUser = { id: 'u', name: '${HEADERS_SPEC_IDEMPOTENT}' };
     const llmConfig = {
-      customHeaders: {
-        Authorization: 'Bearer ${HEADERS_SPEC_SECRET}',
-        'X-Conversation-Id': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
-      },
+      configuration: { defaultHeaders: { 'X-Name': '{{LIBRECHAT_USER_NAME}}' } },
     } as unknown as RunLLMConfig;
 
-    resolveConfigHeaders({ llmConfig, user, body });
+    resolveConfigHeaders({ llmConfig, user: reusedUser, body });
+    // Second pass must NOT re-expand the now-substituted ${...} from the user name
+    resolveConfigHeaders({ llmConfig, user: reusedUser, body });
 
-    const customHeaders = (llmConfig as unknown as { customHeaders: Record<string, string> })
-      .customHeaders;
-    /** Auth header (built from a possibly user-provided key) is left untouched */
-    expect(customHeaders.Authorization).toBe('Bearer ${HEADERS_SPEC_SECRET}');
-    /** Admin metadata headers still resolve */
-    expect(customHeaders['X-Conversation-Id']).toBe('convo-abc');
-    delete process.env.HEADERS_SPEC_SECRET;
+    expect(llmConfig.configuration?.defaultHeaders).toEqual({
+      'X-Name': '${HEADERS_SPEC_IDEMPOTENT}',
+    });
+    delete process.env.HEADERS_SPEC_IDEMPOTENT;
   });
 
   it('resolves env-var placeholders in header values', () => {

@@ -128,4 +128,40 @@ describe('initializeGoogle', () => {
       }),
     );
   });
+
+  it('resolves configured headers at init (merged over endpoints.all) before getGoogleConfig', async () => {
+    process.env.GOOGLE_KEY = 'test-api-key';
+
+    const req = {
+      body: { conversationId: 'convo-9' },
+      user: { id: 'user-1' },
+      config: {
+        endpoints: {
+          all: { headers: { 'X-Common': 'all', 'X-Override': 'all' } },
+          [EModelEndpoint.google]: {
+            headers: {
+              'X-Override': 'google',
+              'X-Conversation-Id': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+              'X-User-Id': '{{LIBRECHAT_USER_ID}}',
+            },
+          },
+        },
+      },
+    } as unknown as ServerRequest;
+
+    await initializeGoogle({
+      req,
+      endpoint: EModelEndpoint.google,
+      model_parameters: { model: 'gemini-2.5-flash' },
+      db: createDb(),
+    });
+
+    const [, options] = getGoogleConfigCall();
+    expect(options.headers).toEqual({
+      'X-Common': 'all',
+      'X-Override': 'google',
+      'X-Conversation-Id': 'convo-9',
+      'X-User-Id': 'user-1',
+    });
+  });
 });

@@ -1625,10 +1625,13 @@ class AgentClient extends BaseClient {
     }
 
     /** `omitTitleOptions` drops the Anthropic `clientOptions` carrier (thinking,
-     *  streaming, etc.), which would also drop its `defaultHeaders` — preserve
-     *  just the headers so gateway/reverse-proxy metadata still reaches title
-     *  requests (the proxy may require it for auth/routing). */
-    const anthropicDefaultHeaders = clientOptions?.clientOptions?.defaultHeaders;
+     *  streaming, etc.), which would also drop its `defaultHeaders` — preserve the
+     *  original `clientOptions` object so gateway/reverse-proxy metadata still
+     *  reaches title requests (the proxy may require it for auth/routing). Restore
+     *  the SAME object reference, not a copy: the Vertex `createClient` closure from
+     *  `getLLMConfig` closes over this object, so `resolveConfigHeaders` must mutate
+     *  the very object the client is built from. */
+    const anthropicClientOptions = clientOptions?.clientOptions;
 
     clientOptions = Object.assign(
       Object.fromEntries(
@@ -1636,8 +1639,8 @@ class AgentClient extends BaseClient {
       ),
     );
 
-    if (anthropicDefaultHeaders != null && clientOptions.clientOptions == null) {
-      clientOptions.clientOptions = { defaultHeaders: anthropicDefaultHeaders };
+    if (anthropicClientOptions?.defaultHeaders != null && clientOptions.clientOptions == null) {
+      clientOptions.clientOptions = anthropicClientOptions;
     }
 
     if (

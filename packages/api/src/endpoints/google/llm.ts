@@ -493,7 +493,8 @@ export function getGoogleConfig(
   /**
    * Attach admin-configured custom headers (e.g. AI-gateway metadata) beneath
    * the provider-managed `Authorization` header above, so auth always wins.
-   * Placeholders are kept intact here and resolved at request time.
+   * `options.headers` are already resolved by `initializeGoogle`, keeping the
+   * key-derived `Authorization` out of placeholder/env expansion.
    */
   if (options.headers && Object.keys(options.headers).length > 0) {
     (llmConfig as GoogleClientOptions).customHeaders = mergeHeaders(
