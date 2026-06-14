@@ -6,6 +6,12 @@ const MHCHEM_PU_ESCAPED_REGEX = /\$\\\\pu\{[^}]*\}\$/g;
 const CURRENCY_REGEX =
   /(?<![\\$])\$(?!\$)(?=\d+(?:,\d{3})*(?:\.\d+)?(?:[KMBkmb])?(?:\s|$|[^a-zA-Z\d]))/g;
 const SINGLE_DOLLAR_REGEX = /(?<!\\)\$(?!\$)((?:[^$\n]|\\[$])+?)(?<!\\)(?<!`)\$(?!\$)/g;
+// "Approximately" tilde: a `~` that prefixes a number (e.g. `~50%`, `~ -3%`, `~$5`).
+// Excluded: tildes attached to a word and closed-number subscripts like `H~2~O` or
+// `x ~2~ y`, so genuine subscripts are preserved.
+const APPROX_TILDE_REGEX = /(?<![\w~\\])~(?=[ \t]?[-−+]?\$?\d)(?![ \t]?[-−+]?\$?[\d.,]*~)/g;
+// U+223C TILDE OPERATOR — renders as a tilde but is not split by remark-supersub.
+const APPROX_TILDE_REPLACEMENT = '∼';
 
 /**
  * Escapes mhchem package notation in LaTeX by converting single dollar delimiters to double dollars
@@ -149,4 +155,39 @@ export function preprocessLaTeX(content: string): string {
   result.push(processed.substring(lastIndex));
 
   return result.join('');
+}
+
+/**
+ * Replaces "approximately" tildes (e.g. `~50%`) with the Unicode tilde operator so
+ * `remark-supersub` does not pair them into spurious `<sub>` ranges. A backslash
+ * escape cannot help here: micromark resolves `\~` back to `~` before supersub runs,
+ * so the glyph itself must change. Subscripts attached to a word (`H~2~O`) and tildes
+ * inside code blocks are left untouched. Optimized for high-frequency execution.
+ * @param content The input string that may contain approximation tildes.
+ * @returns The processed string with approximation tildes neutralized.
+ */
+export function preprocessTilde(content: string): string {
+  // Early return for most common case
+  if (!content.includes('~')) return content;
+
+  const codeRegions = findCodeBlockRegions(content);
+  const parts: string[] = [];
+  let lastIndex = 0;
+
+  // Reset regex for reuse
+  APPROX_TILDE_REGEX.lastIndex = 0;
+
+  let match: RegExpExecArray | null;
+  while ((match = APPROX_TILDE_REGEX.exec(content)) !== null) {
+    if (isInCodeBlock(match.index, codeRegions)) continue;
+    parts.push(content.substring(lastIndex, match.index));
+    parts.push(APPROX_TILDE_REPLACEMENT);
+    lastIndex = match.index + 1;
+  }
+
+  // No replacements made — avoid allocating a new string
+  if (lastIndex === 0) return content;
+
+  parts.push(content.substring(lastIndex));
+  return parts.join('');
 }

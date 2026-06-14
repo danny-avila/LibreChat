@@ -1,4 +1,4 @@
-import { preprocessLaTeX } from './latex';
+import { preprocessLaTeX, preprocessTilde } from './latex';
 
 describe('preprocessLaTeX', () => {
   test('returns the same string if no LaTeX patterns are found', () => {
@@ -250,5 +250,83 @@ y$ which spans lines`;
     const content = 'Revenue: $5M to $10M, funding: $1.5B, price: $5K';
     const expected = 'Revenue: \\$5M to \\$10M, funding: \\$1.5B, price: \\$5K';
     expect(preprocessLaTeX(content)).toBe(expected);
+  });
+});
+
+describe('preprocessTilde', () => {
+  const T = '∼'; // U+223C TILDE OPERATOR
+
+  test('returns the same string when no tilde is present', () => {
+    const content = 'This is a test string without any tilde';
+    expect(preprocessTilde(content)).toBe(content);
+  });
+
+  test('neutralizes paired approximation tildes that would become subscript', () => {
+    const content =
+      'The first leg down. ~50% of IPOs close day 2 below day 1. Modest (a few percent to ~10%).';
+    const expected = `The first leg down. ${T}50% of IPOs close day 2 below day 1. Modest (a few percent to ${T}10%).`;
+    expect(preprocessTilde(content)).toBe(expected);
+  });
+
+  test('neutralizes a single approximation tilde', () => {
+    expect(preprocessTilde('about ~50 people')).toBe(`about ${T}50 people`);
+  });
+
+  test('neutralizes approximation tilde before currency', () => {
+    expect(preprocessTilde('costs ~$50 total')).toBe(`costs ${T}$50 total`);
+  });
+
+  test('neutralizes approximation tilde with a space and negative number', () => {
+    expect(preprocessTilde('mega-IPO is ~ -3% from day-1')).toBe(`mega-IPO is ${T} -3% from day-1`);
+  });
+
+  test('neutralizes approximation tilde after an opening parenthesis', () => {
+    expect(preprocessTilde('range (~10% to ~20%)')).toBe(`range (${T}10% to ${T}20%)`);
+  });
+
+  test('preserves genuine subscripts attached to a word', () => {
+    const content = 'Water is H~2~O and the value is x~1~';
+    expect(preprocessTilde(content)).toBe(content);
+  });
+
+  test('preserves a space-delimited closed-number subscript', () => {
+    const content = 'the term a ~2~ in the series';
+    expect(preprocessTilde(content)).toBe(content);
+  });
+
+  test('preserves home directory paths', () => {
+    const content = 'Open ~/Documents/file and ~/.config';
+    expect(preprocessTilde(content)).toBe(content);
+  });
+
+  test('preserves GFM strikethrough', () => {
+    const content = 'This is ~~deleted text~~ here';
+    expect(preprocessTilde(content)).toBe(content);
+  });
+
+  test('ignores tildes already escaped with a backslash', () => {
+    const content = 'literal \\~50 percent';
+    expect(preprocessTilde(content)).toBe(content);
+  });
+
+  test('ignores tildes inside inline code', () => {
+    const content = 'Outside ~50% and inside `~50%` code';
+    const expected = `Outside ${T}50% and inside \`~50%\` code`;
+    expect(preprocessTilde(content)).toBe(expected);
+  });
+
+  test('ignores tildes inside multiline code blocks', () => {
+    const content = '```\n~50% in code\n~/path\n```\nOutside ~10%';
+    const expected = `\`\`\`\n~50% in code\n~/path\n\`\`\`\nOutside ${T}10%`;
+    expect(preprocessTilde(content)).toBe(expected);
+  });
+
+  test('does not match a tilde attached to a preceding number', () => {
+    const content = 'range 5~10 items';
+    expect(preprocessTilde(content)).toBe(content);
+  });
+
+  test('handles empty string', () => {
+    expect(preprocessTilde('')).toBe('');
   });
 });
