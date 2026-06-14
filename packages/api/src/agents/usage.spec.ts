@@ -1579,6 +1579,17 @@ describe('aggregateEmittedUsage', () => {
     expect(rollup?.cacheRead).toBe(70);
     expect(rollup?.cost).toBeCloseTo(0.03);
   });
+
+  it('uses the magnitude fallback for provider-less cached events (matches live)', () => {
+    /** No provider: the client's normalizeUsageUnits uses a magnitude heuristic
+     *  (cache ≤ input ⇒ input includes cache), so the rollup must too — billing
+     *  splitUsage would treat it as additive and leave input at 1000, diverging
+     *  from the live display after reload. */
+    const rollup = aggregateEmittedUsage([
+      { input_tokens: 1000, output_tokens: 100, input_token_details: { cache_read: 400 } },
+    ]);
+    expect(rollup).toEqual({ input: 600, output: 100, cacheWrite: 0, cacheRead: 400 });
+  });
 });
 
 describe('buildPersistedContextUsage', () => {

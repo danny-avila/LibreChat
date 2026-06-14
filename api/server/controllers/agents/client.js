@@ -867,13 +867,17 @@ class AgentClient extends BaseClient {
     if (signatures && Object.keys(signatures).length > 0) {
       metadata.thoughtSignatures = signatures;
     }
-    if (this.contextUsageSink?.latest) {
-      metadata.contextUsage = buildPersistedContextUsage(
-        this.contextUsageSink.latest,
-        this.usageEmitSink ?? [],
-      );
+    const usageEvents = this.usageEmitSink ?? [];
+    /** A primary (non-tagged) usage event means the response's post-snapshot
+     *  output is known. Without one (provider emitted no usage_metadata) we
+     *  can't size the final reply, so skip persisting the pre-invoke snapshot —
+     *  reload then falls back to the coarse per-message tokenCount estimate
+     *  (accurate totals) rather than a snapshot that undercounts the reply. */
+    const hasPrimaryUsage = usageEvents.some((event) => event.usage_type == null);
+    if (this.contextUsageSink?.latest && hasPrimaryUsage) {
+      metadata.contextUsage = buildPersistedContextUsage(this.contextUsageSink.latest, usageEvents);
     }
-    const usage = this.usageEmitSink ? aggregateEmittedUsage(this.usageEmitSink) : null;
+    const usage = aggregateEmittedUsage(usageEvents);
     if (usage) {
       metadata.usage = usage;
     }

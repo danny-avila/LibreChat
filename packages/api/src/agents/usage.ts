@@ -188,11 +188,11 @@ export function aggregateEmittedUsage(
   let cost = 0;
   let hasCost = false;
   for (const event of events) {
-    const split = splitUsage(event);
-    input += split.inputOnly;
-    output += split.completion;
-    cacheWrite += split.cacheCreation;
-    cacheRead += split.cacheRead;
+    const units = normalizeEventUnits(event);
+    input += units.input;
+    output += units.output;
+    cacheWrite += units.cacheWrite;
+    cacheRead += units.cacheRead;
     if (event.cost != null) {
       cost += event.cost;
       hasCost = true;
@@ -205,6 +205,42 @@ export function aggregateEmittedUsage(
   return rollup;
 }
 
+/**
+ * Per-event display-unit normalization, mirroring the client's
+ * `normalizeUsageUnits` EXACTLY — including the magnitude fallback when
+ * `provider` is absent — so a reloaded rollup matches what the live client
+ * folded. This is deliberately distinct from billing `splitUsage`, which treats
+ * a missing provider as additive (no magnitude fallback); the divergence only
+ * surfaces for provider-less cached events (e.g. some OpenAI-compatible/custom
+ * payloads), where the client subtracts cache from input but `splitUsage`
+ * would not. Keep in sync with `normalizeUsageUnits` in client/src/utils/tokens.ts.
+ */
+function normalizeEventUnits(event: TTokenUsageEvent): {
+  input: number;
+  output: number;
+  cacheWrite: number;
+  cacheRead: number;
+} {
+  const rawInput = event.input_tokens ?? 0;
+  const rawOutput = event.output_tokens ?? 0;
+  const total = event.total_tokens ?? 0;
+  const cacheWrite = event.input_token_details?.cache_creation ?? 0;
+  const cacheRead = event.input_token_details?.cache_read ?? 0;
+  const includesCache =
+    event.provider != null
+      ? inputTokensIncludesCache(event.provider)
+      : cacheWrite + cacheRead <= rawInput;
+  const cacheAdjustment = includesCache ? 0 : cacheRead + cacheWrite;
+  const output =
+    total > rawInput + rawOutput + cacheAdjustment ? total - rawInput - cacheAdjustment : rawOutput;
+  return {
+    input: includesCache ? Math.max(0, rawInput - cacheRead - cacheWrite) : rawInput,
+    output,
+    cacheWrite,
+    cacheRead,
+  };
+}
+
 /** Output tokens of the response's final primary model call — the call the
  *  latest pre-invoke snapshot precedes. Persisted as the snapshot's
  *  `completedOutputTokens` so a reloaded multi-call turn adds only this delta
@@ -213,7 +249,7 @@ export function aggregateEmittedUsage(
 function finalCallOutputTokens(events: ReadonlyArray<TTokenUsageEvent>): number {
   for (let i = events.length - 1; i >= 0; i--) {
     if (events[i].usage_type == null) {
-      return splitUsage(events[i]).completion;
+      return normalizeEventUnits(events[i]).output;
     }
   }
   return 0;
