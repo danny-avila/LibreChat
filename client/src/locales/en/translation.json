@@ -1958,6 +1958,7 @@
   "com_ui_use_prompt": "Use Prompt",
   "com_ui_used": "Used",
   "com_ui_used_n_tools": "Used {{0}} tools",
+  "com_ui_used_one_tool": "Used 1 tool",
   "com_ui_user": "User",
   "com_ui_user_group_permissions": "User & Group Permissions",
   "com_ui_user_provides_key": "Each user provides their own key",

@@ -1,6 +1,6 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
-import { ChevronDown, Users } from 'lucide-react';
+import { ChevronDown, Users, Lightbulb } from 'lucide-react';
 import { Tools, Constants, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
 import type {
   TAttachment,
@@ -10,12 +10,12 @@ import type {
 } from 'librechat-data-provider';
 import type { PartWithIndex } from './ParallelContent';
 import { useLocalize, useExpandCollapse, scheduleMessageContentLayoutReconcile } from '~/hooks';
+import { AttachmentGroup, ReasoningCompact } from './Parts';
+import { isBashProgrammaticToolCall } from './routing';
 import { cn, getToolDisplayLabel } from '~/utils';
 import { StackedToolIcons } from './ToolOutput';
 import { useMCPIconMap } from '~/hooks/MCP';
-import { AttachmentGroup } from './Parts';
 import store from '~/store';
-import { isBashProgrammaticToolCall } from './routing';
 
 interface ToolMeta {
   name: string;
@@ -106,15 +106,29 @@ export default function ToolCallGroup({
   const mcpIconMap = useMCPIconMap();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const cancelLayoutReconcileRef = useRef<(() => void) | null>(null);
-  const count = parts.length;
 
-  const toolMetadata = useMemo(() => parts.map((p) => getToolMeta(p.part)), [parts]);
+  /** `parts` may include interleaved reasoning ("Thoughts") parts that render
+   *  inside the body but are not tools — count and summarize only the real tool
+   *  calls so the header reads "Used N tools" and the stacked icons stay clean. */
+  const toolMetadata = useMemo(
+    () => parts.map((p) => getToolMeta(p.part)).filter((m): m is ToolMeta => m != null),
+    [parts],
+  );
+  const count = toolMetadata.length;
   const allCompleted = useMemo(
-    () => toolMetadata.every((m) => m?.hasOutput === true),
+    () => toolMetadata.every((m) => m.hasOutput === true),
     [toolMetadata],
   );
-  const toolNames = useMemo(() => toolMetadata.map((m) => m?.name ?? ''), [toolMetadata]);
-  const iconToolNames = useMemo(() => toolMetadata.map((m) => m?.iconName ?? ''), [toolMetadata]);
+  const toolNames = useMemo(() => toolMetadata.map((m) => m.name), [toolMetadata]);
+  const iconToolNames = useMemo(() => toolMetadata.map((m) => m.iconName), [toolMetadata]);
+
+  /** Reasoning interleaved with the tool calls renders inside the body but is
+   *  hidden while collapsed — surface a lightbulb in the header so the summary
+   *  hints that the group also contains thoughts. */
+  const hasReasoning = useMemo(
+    () => parts.some((p) => p.part.type === ContentTypes.THINK),
+    [parts],
+  );
 
   /** Subagent tool calls get their own label verb ("Running/Ran N agents")
    *  since "Used N tools" reads oddly when the "tools" are actually child
@@ -151,7 +165,10 @@ export default function ToolCallGroup({
   }, [toolNames, localize]);
 
   const autoExpand = useRecoilValue(store.autoExpandTools);
-  const autoCollapse = !autoExpand && count >= 2 && allCompleted;
+  /** Every group has ≥1 tool; collapse a completed one by default just like a
+   *  multi-tool group, so a lone tool-with-thinking group (e.g. a skill) stays
+   *  visually consistent with the larger groups around it. */
+  const autoCollapse = !autoExpand && count >= 1 && allCompleted;
   const initialState = initialExpansionState?.userOverride === true ? initialExpansionState : null;
   const [isExpanded, setIsExpanded] = useState(
     initialState?.isExpanded ?? (autoExpand || !autoCollapse),
@@ -221,12 +238,14 @@ export default function ToolCallGroup({
     subagentsDone
       ? localize('com_ui_ran_n_agents', { 0: String(count) })
       : localize('com_ui_running_n_agents', { 0: String(count) });
-  const groupLabel = allSubagents
-    ? getSubagentLabel()
-    : localize('com_ui_used_n_tools', { 0: String(count) });
+  const getToolsLabel = () =>
+    count === 1
+      ? localize('com_ui_used_one_tool')
+      : localize('com_ui_used_n_tools', { 0: String(count) });
+  const groupLabel = allSubagents ? getSubagentLabel() : getToolsLabel();
 
   const hasActiveToolCall = useMemo(
-    () => isSubmitting && toolMetadata.some((m) => m && !m.hasOutput),
+    () => isSubmitting && toolMetadata.some((m) => !m.hasOutput),
     [toolMetadata, isSubmitting],
   );
 
@@ -244,7 +263,7 @@ export default function ToolCallGroup({
         className="inline-flex w-full items-center gap-2 py-1 text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
         onClick={handleToggle}
         aria-expanded={isExpanded}
-        aria-label={groupLabel}
+        aria-label={hasReasoning ? `${groupLabel}, ${localize('com_ui_thoughts')}` : groupLabel}
       >
         {allSubagents ? (
           /** Subagent groups don't have per-tool icons — StackedToolIcons
@@ -275,6 +294,9 @@ export default function ToolCallGroup({
         {toolNameSummary && !allSubagents && (
           <span className="text-xs font-normal text-text-secondary">— {toolNameSummary}</span>
         )}
+        {hasReasoning && (
+          <Lightbulb className="size-3.5 shrink-0 text-text-secondary" aria-hidden="true" />
+        )}
         <ChevronDown
           className={cn(
             'size-4 shrink-0 text-text-secondary transition-transform duration-200 ease-out',
@@ -287,9 +309,24 @@ export default function ToolCallGroup({
         {shouldRenderBody && (
           <div className="overflow-hidden" ref={expandRef}>
             <div className="py-0.5 pl-4">
-              {parts.map(({ part, idx }) =>
-                renderPart(part, idx, isLast && idx === lastContentIdx, handleToolExpand),
-              )}
+              {parts.map(({ part, idx }) => {
+                if (part.type === ContentTypes.THINK) {
+                  const think = part.think;
+                  const reasoning = typeof think === 'string' ? think : (think?.value ?? '');
+                  const label =
+                    isSubmitting && idx === lastContentIdx
+                      ? localize('com_ui_thinking')
+                      : localize('com_ui_thoughts');
+                  return (
+                    <ReasoningCompact
+                      key={`reasoning-${idx}`}
+                      reasoning={reasoning}
+                      label={label}
+                    />
+                  );
+                }
+                return renderPart(part, idx, isLast && idx === lastContentIdx, handleToolExpand);
+              })}
             </div>
           </div>
         )}
