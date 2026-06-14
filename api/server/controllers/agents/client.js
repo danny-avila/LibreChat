@@ -887,6 +887,22 @@ class AgentClient extends BaseClient {
   }
 
   /**
+   * Resolves the endpoint token config for a usage item by its producing agent
+   * (multi-endpoint graphs: connected agents + subagents). Falls back to the
+   * primary agent's config when the agent isn't tagged/known or has no
+   * configured rates — so single-endpoint graphs are unchanged.
+   * @param {UsageMetadata} usage
+   * @returns {import('@librechat/api').EndpointTokenConfig | undefined}
+   */
+  resolveAgentEndpointTokenConfig(usage) {
+    const perAgent =
+      usage?.agentId != null
+        ? this.options.endpointTokenConfigByAgentId?.get(usage.agentId)
+        : undefined;
+    return perAgent ?? this.options.endpointTokenConfig;
+  }
+
+  /**
    * @param {Object} params
    * @param {string} [params.model]
    * @param {string} [params.context='message']
@@ -918,6 +934,7 @@ class AgentClient extends BaseClient {
         balance,
         transactions,
         endpointTokenConfig: this.options.endpointTokenConfig,
+        resolveEndpointTokenConfig: (usage) => this.resolveAgentEndpointTokenConfig(usage),
       },
     );
 
@@ -950,7 +967,6 @@ class AgentClient extends BaseClient {
       return undefined;
     }
     const includeCost = appConfig?.interfaceConfig?.contextCost === true;
-    const endpointTokenConfig = this.options.endpointTokenConfig;
     return (usage) => {
       const data = {
         input_tokens: usage.input_tokens,
@@ -963,11 +979,13 @@ class AgentClient extends BaseClient {
         runId: this.responseMessageId,
         /** Unique per collected entry (post-push length) for resume dedupe */
         seq: this.collectedUsage.length,
+        /** Price with the SUBAGENT's own endpoint token config (its endpoint may
+         *  differ from the parent's); `usage.agentId` is tagged by the sink. */
         cost: includeCost
           ? computeUsageCostUSD(
               usage,
               { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
-              endpointTokenConfig,
+              this.resolveAgentEndpointTokenConfig(usage),
             )
           : undefined,
       };

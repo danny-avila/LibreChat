@@ -809,6 +809,74 @@ describe('recordCollectedUsage', () => {
       );
     });
 
+    it('prices each usage with its agent endpoint config (multi-endpoint graph)', async () => {
+      /** Two endpoints share a model id but bill at different rates. */
+      const primaryConfig = { 'shared-model': { prompt: 0.01, completion: 0.03, context: 8192 } };
+      const subagentConfig = { 'shared-model': { prompt: 0.05, completion: 0.15, context: 8192 } };
+      const byAgent: Record<string, typeof primaryConfig> = {
+        primary: primaryConfig,
+        sub: subagentConfig,
+      };
+      const collectedUsage: UsageMetadata[] = [
+        {
+          usage_type: 'message',
+          agentId: 'primary',
+          input_tokens: 100,
+          output_tokens: 50,
+          model: 'shared-model',
+        },
+        {
+          usage_type: 'subagent',
+          agentId: 'sub',
+          input_tokens: 200,
+          output_tokens: 80,
+          model: 'shared-model',
+        },
+      ];
+
+      await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage,
+        endpointTokenConfig: primaryConfig,
+        resolveEndpointTokenConfig: (usage) =>
+          usage.agentId != null ? byAgent[usage.agentId] : undefined,
+      });
+
+      expect(mockSpendTokens).toHaveBeenCalledWith(
+        expect.objectContaining({
+          context: 'message',
+          model: 'shared-model',
+          endpointTokenConfig: primaryConfig,
+        }),
+        { promptTokens: 100, completionTokens: 50 },
+      );
+      expect(mockSpendTokens).toHaveBeenCalledWith(
+        expect.objectContaining({
+          context: 'subagent',
+          model: 'shared-model',
+          endpointTokenConfig: subagentConfig,
+        }),
+        { promptTokens: 200, completionTokens: 80 },
+      );
+    });
+
+    it('falls back to the batch endpointTokenConfig when the resolver returns nullish', async () => {
+      const batch = { 'gpt-4': { prompt: 0.01, completion: 0.03, context: 8192 } };
+      await recordCollectedUsage(deps, {
+        ...baseParams,
+        collectedUsage: [
+          { agentId: 'unknown', input_tokens: 100, output_tokens: 50, model: 'gpt-4' },
+        ],
+        endpointTokenConfig: batch,
+        resolveEndpointTokenConfig: () => undefined,
+      });
+
+      expect(mockSpendTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ endpointTokenConfig: batch }),
+        { promptTokens: 100, completionTokens: 50 },
+      );
+    });
+
     it('should use default context "message" when not provided', async () => {
       const collectedUsage: UsageMetadata[] = [
         { input_tokens: 100, output_tokens: 50, model: 'gpt-4' },
@@ -1382,8 +1450,22 @@ describe('createSubagentUsageSink', () => {
         total_tokens: 1600,
         model: 'claude-haiku-4-5',
         provider: 'anthropic',
+        agentId: 'researcher',
       },
     ]);
+  });
+
+  it('tags the child agent id so the host can price with the subagent endpoint config', () => {
+    const collectedUsage: UsageMetadata[] = [];
+    const emitted: UsageMetadata[] = [];
+    const sink = createSubagentUsageSink(collectedUsage, (u) => emitted.push(u));
+
+    sink(makeEvent({ subagentAgentId: 'agent_xyz' }));
+
+    expect(collectedUsage[0].agentId).toBe('agent_xyz');
+    /** The same tagged object is handed to onUsage (the live emitter). */
+    expect(emitted[0]).toBe(collectedUsage[0]);
+    expect(emitted[0].agentId).toBe('agent_xyz');
   });
 
   it('preserves cache token details from the child call', () => {

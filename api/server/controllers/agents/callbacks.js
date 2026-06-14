@@ -109,6 +109,11 @@ class ModelEndHandler {
       if (agentContext.provider) {
         usage.provider = agentContext.provider;
       }
+      /** Tag the producing agent so multi-endpoint graphs can price each call
+       *  with its own endpoint token config (recordCollectedUsage resolver). */
+      if (agentContext.agentId) {
+        usage.agentId = agentContext.agentId;
+      }
 
       let taggedUsage = markSummarizationUsage(usage, metadata);
       /** Hidden intermediate sequential-agent calls are billed but never shown.

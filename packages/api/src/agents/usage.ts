@@ -336,6 +336,14 @@ export interface RecordUsageParams {
   balance?: Partial<TCustomConfig['balance']> | null;
   transactions?: Partial<TTransactionsConfig>;
   endpointTokenConfig?: EndpointTokenConfig;
+  /**
+   * Per-usage endpoint token config resolver for multi-endpoint graphs. Called
+   * with each usage item; a non-nullish result prices that item with the
+   * resolving agent's endpoint config instead of the batch `endpointTokenConfig`.
+   * Falls back to `endpointTokenConfig` when omitted or it returns nullish, so
+   * single-config callers (responses.js / openai.js) are unaffected.
+   */
+  resolveEndpointTokenConfig?: (usage: UsageMetadata) => EndpointTokenConfig | undefined;
 }
 
 export interface RecordUsageResult {
@@ -363,6 +371,7 @@ export async function recordCollectedUsage(
     conversationId,
     collectedUsage,
     endpointTokenConfig,
+    resolveEndpointTokenConfig,
     context = 'message',
   } = params;
 
@@ -422,7 +431,9 @@ export async function recordCollectedUsage(
         messageId,
         transactions,
         conversationId,
-        endpointTokenConfig,
+        /** Price with the producing agent's endpoint config when resolvable
+         *  (multi-endpoint graphs); otherwise the batch config. */
+        endpointTokenConfig: resolveEndpointTokenConfig?.(usage) ?? endpointTokenConfig,
         context: usageContext,
         model: usage.model ?? model,
       };
@@ -561,6 +572,12 @@ export function createSubagentUsageSink(
     }
     if (event.provider != null && event.provider !== '') {
       usage.provider = event.provider;
+    }
+    /** Tag the child's agent id so the host can price this usage with the
+     *  subagent's own endpoint token config (its endpoint may differ from the
+     *  parent's). The same tagged object is pushed AND handed to `onUsage`. */
+    if (event.subagentAgentId != null && event.subagentAgentId !== '') {
+      usage.agentId = event.subagentAgentId;
     }
     collectedUsage.push(usage);
     /** Lets the host stream the billed child usage to the client (tagged
