@@ -143,6 +143,22 @@ describe('proxy helpers', () => {
     expect(getProxyUrlForUrl('https://sso.internal.example/login')).toBeUndefined();
   });
 
+  it('falls back to HTTP_PROXY for HTTPS axios-style agents', () => {
+    process.env.HTTP_PROXY = 'http://single-proxy:8080';
+
+    expect(getProxyUrlForUrl('https://api.external.example/models')).toBe(
+      'http://single-proxy:8080',
+    );
+
+    const config = applyAxiosProxyConfig({}, 'https://api.external.example/models');
+
+    expect(config).toEqual({
+      httpsAgent: expect.any(Object),
+      proxy: false,
+    });
+    expect(MockHttpsProxyAgent).toHaveBeenCalledWith('http://single-proxy:8080');
+  });
+
   it('applies cached HttpsProxyAgent and disables axios native proxy handling', () => {
     process.env.HTTPS_PROXY = 'http://https-proxy:8080';
 
@@ -157,11 +173,13 @@ describe('proxy helpers', () => {
     expect(MockHttpsProxyAgent).toHaveBeenCalledWith('http://https-proxy:8080');
   });
 
-  it('does not apply axios proxy config for NO_PROXY targets', () => {
-    process.env.HTTPS_PROXY = 'http://https-proxy:8080';
+  it('disables axios native proxy handling for NO_PROXY targets', () => {
+    process.env.proxy = 'http://axios-default-proxy:8080';
     process.env.NO_PROXY = 'internal.example';
 
-    expect(applyAxiosProxyConfig({}, 'https://sso.internal.example/login')).toEqual({});
+    expect(applyAxiosProxyConfig({}, 'https://sso.internal.example/login')).toEqual({
+      proxy: false,
+    });
     expect(MockHttpsProxyAgent).not.toHaveBeenCalled();
   });
 

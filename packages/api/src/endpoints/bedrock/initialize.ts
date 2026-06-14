@@ -28,6 +28,16 @@ type ParsedBedrockUserCredentials = Partial<Record<UserCredentialKey, UserCreden
   apiKey?: string;
 };
 
+function getBedrockProxyTarget(region?: string, reverseProxy?: string): string | undefined {
+  const trimmedReverseProxy = reverseProxy?.trim();
+  if (trimmedReverseProxy) return `https://${trimmedReverseProxy}`;
+
+  const trimmedRegion = region?.trim();
+  if (!trimmedRegion) return undefined;
+
+  return `https://bedrock-runtime.${trimmedRegion}.amazonaws.com`;
+}
+
 function isParsedBedrockUserCredentials(value: unknown): value is ParsedBedrockUserCredentials {
   return value != null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -254,7 +264,10 @@ export async function initializeBedrock({
     credentials.secretAccessKey !== '';
   const hasBearerToken = typeof bearerToken === 'string' && bearerToken !== '';
 
-  const proxyAgent = getHttpsProxyAgent();
+  const bedrockRegion = typeof llmConfig.region === 'string' ? llmConfig.region : undefined;
+  const proxyAgent = getHttpsProxyAgent(
+    getBedrockProxyTarget(bedrockRegion, BEDROCK_REVERSE_PROXY),
+  );
   if (proxyAgent || hasBearerToken) {
     const credentialProvider =
       !hasCompleteCredentials && !hasBearerToken && BEDROCK_AWS_PROFILE

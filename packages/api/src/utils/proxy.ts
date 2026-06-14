@@ -10,6 +10,10 @@ export type ProxyEnvConfig = {
 };
 
 type HttpsProxyAgentInstance = InstanceType<typeof HttpsProxyAgent>;
+type ProxyResolution = {
+  proxyUrl?: string;
+  bypassed: boolean;
+};
 
 let envProxyDispatcher: EnvHttpProxyAgent | undefined;
 let envProxyDispatcherKey: string | undefined;
@@ -146,17 +150,27 @@ export function shouldBypassProxy(targetUrl: string | URL, noProxy?: string): bo
     });
 }
 
-export function getProxyUrlForUrl(targetUrl?: string | URL): string | undefined {
+function getProxyResolution(targetUrl?: string | URL): ProxyResolution {
   const proxyConfig = getProxyEnvConfig();
-  if (!proxyConfig) return undefined;
+  if (!proxyConfig) return { bypassed: false };
 
   const url = parseUrl(targetUrl);
-  if (url && shouldBypassProxy(url, proxyConfig.noProxy)) return undefined;
+  if (url && shouldBypassProxy(url, proxyConfig.noProxy)) {
+    return { bypassed: true };
+  }
 
-  if (!url) return proxyConfig.httpsProxy ?? proxyConfig.httpProxy;
-  if (url.protocol === 'http:' || url.protocol === 'ws:') return proxyConfig.httpProxy;
-  if (url.protocol === 'https:' || url.protocol === 'wss:') return proxyConfig.httpsProxy;
-  return undefined;
+  if (!url) return { proxyUrl: proxyConfig.httpsProxy ?? proxyConfig.httpProxy, bypassed: false };
+  if (url.protocol === 'http:' || url.protocol === 'ws:') {
+    return { proxyUrl: proxyConfig.httpProxy, bypassed: false };
+  }
+  if (url.protocol === 'https:' || url.protocol === 'wss:') {
+    return { proxyUrl: proxyConfig.httpsProxy ?? proxyConfig.httpProxy, bypassed: false };
+  }
+  return { bypassed: false };
+}
+
+export function getProxyUrlForUrl(targetUrl?: string | URL): string | undefined {
+  return getProxyResolution(targetUrl).proxyUrl;
 }
 
 export function getHttpsProxyAgent(targetUrl?: string | URL): HttpsProxyAgentInstance | undefined {
@@ -178,6 +192,12 @@ export function applyAxiosProxyConfig(
   config: AxiosRequestConfig,
   targetUrl?: string | URL,
 ): AxiosRequestConfig {
+  const resolution = getProxyResolution(targetUrl);
+  if (resolution.bypassed) {
+    config.proxy = false;
+    return config;
+  }
+
   const agent = getHttpsProxyAgent(targetUrl);
   if (!agent) return config;
 
