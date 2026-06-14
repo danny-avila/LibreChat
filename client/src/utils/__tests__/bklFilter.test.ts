@@ -1,5 +1,11 @@
 import { TextDecoder } from 'util';
-import { parseBklQueryChoices, stripBklTags } from '../bklFilter';
+import {
+  BKL_QUERY_CHOICES_PENDING_TEXT,
+  BKL_QUERY_CHOICES_READY_TEXT,
+  getBklDisplayText,
+  parseBklQueryChoices,
+  stripBklTags,
+} from '../bklFilter';
 
 describe('bklFilter', () => {
   const originalAtob = globalThis.atob;
@@ -37,6 +43,15 @@ describe('bklFilter', () => {
     const text = '[BKL_QUERY_CHOICES:eyJjYW5kaWRhdGVzIjpb';
 
     expect(stripBklTags(text)).toBe('');
+  });
+
+  it('shows user-facing placeholders for BKL query choice messages', () => {
+    expect(getBklDisplayText('[BKL_QUERY_CHOICES:eyJjYW5kaWRhdGVzIjpbXX0=]')).toBe(
+      BKL_QUERY_CHOICES_READY_TEXT,
+    );
+    expect(getBklDisplayText('[BKL_QUERY_CHOICES:eyJjYW5kaWRhdGVzIjpb')).toBe(
+      BKL_QUERY_CHOICES_PENDING_TEXT,
+    );
   });
 
   it('parses BKL query choices payloads for the A/B/C panel', () => {

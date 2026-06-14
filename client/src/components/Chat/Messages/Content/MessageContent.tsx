@@ -11,7 +11,7 @@ import Thinking from './Parts/Thinking';
 import { useLocalize } from '~/hooks';
 import Container from './Container';
 import Markdown from './Markdown';
-import { cn, stripBklTags } from '~/utils';
+import { cn, getBklDisplayText } from '~/utils';
 import store from '~/store';
 
 const ERROR_CONNECTION_TEXT = 'Error connecting to server, try refreshing the page.';
@@ -102,7 +102,7 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
 
   // Strip BKL control tags from both user and assistant messages. Assistant-side
   // BKL_QUERY_CHOICES is rendered by ChatForm as the A/B/C choice panel.
-  const displayText = useMemo(() => stripBklTags(text), [text]);
+  const displayText = useMemo(() => getBklDisplayText(text), [text]);
 
   const content = useMemo(() => {
     if (!isCreatedByUser) {

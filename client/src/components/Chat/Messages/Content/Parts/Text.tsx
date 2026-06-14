@@ -3,7 +3,7 @@ import { useRecoilValue } from 'recoil';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import Markdown from '~/components/Chat/Messages/Content/Markdown';
 import { useMessageContext } from '~/Providers';
-import { cn, stripBklTags } from '~/utils';
+import { cn, getBklDisplayText } from '~/utils';
 import store from '~/store';
 
 type TextPartProps = {
@@ -21,7 +21,7 @@ const TextPart = memo(function TextPart({ text, isCreatedByUser, showCursor }: T
   const { isSubmitting = false, isLatestMessage = false } = useMessageContext();
   const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
   const showCursorState = useMemo(() => showCursor && isSubmitting, [showCursor, isSubmitting]);
-  const displayText = useMemo(() => stripBklTags(text), [text]);
+  const displayText = useMemo(() => getBklDisplayText(text), [text]);
 
   const content: ContentType = useMemo(() => {
     if (!isCreatedByUser) {

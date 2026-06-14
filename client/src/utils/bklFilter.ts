@@ -90,7 +90,11 @@ export const buildBklReferenceTag = (matterUids?: string[] | null): string => {
 
 const BKL_TAG_RE =
   /^(?:\[BKL_FILTER:\{.*?\}\]|\[BKL_REFERENCE:\{.*?\}\]|\[BKL_GUIDED_RETRY:[A-Za-z0-9_-]+\]|\[BKL_QUERY_ENHANCE:on\]|\[BKL_QUERY_CHOICES:[A-Za-z0-9+/=]+\])\s*/;
+const BKL_QUERY_CHOICES_COMPLETE_RE = /^\[BKL_QUERY_CHOICES:[A-Za-z0-9+/=]+\]\s*$/;
 const BKL_QUERY_CHOICES_PARTIAL_RE = /^\[BKL_QUERY_CHOICES:[A-Za-z0-9+/=]*$/;
+export const BKL_QUERY_CHOICES_READY_TEXT =
+  '쿼리 강화 후보를 준비했습니다. 아래 선택지에서 질문을 골라 주세요.';
+export const BKL_QUERY_CHOICES_PENDING_TEXT = '쿼리 강화 후보를 준비 중입니다.';
 
 export const stripBklTags = (text: string | null | undefined): string => {
   if (!text) return text ?? '';
@@ -106,6 +110,17 @@ export const stripBklTags = (text: string | null | undefined): string => {
   }
   out = out.replace(/\[\/\/\]: # \(bkl_rid:[a-zA-Z0-9_-]+\)/g, '');
   return out;
+};
+
+export const getBklDisplayText = (text: string | null | undefined): string => {
+  if (!text) return text ?? '';
+  if (BKL_QUERY_CHOICES_COMPLETE_RE.test(text)) {
+    return BKL_QUERY_CHOICES_READY_TEXT;
+  }
+  if (BKL_QUERY_CHOICES_PARTIAL_RE.test(text)) {
+    return BKL_QUERY_CHOICES_PENDING_TEXT;
+  }
+  return stripBklTags(text);
 };
 
 export interface BklQueryCandidate {
