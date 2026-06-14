@@ -19,10 +19,6 @@ export interface SharedFileSnapshot {
   width?: number;
   height?: number;
   model?: string;
-  text?: string;
-  textFormat?: 'html' | 'text';
-  status?: 'pending' | 'ready' | 'failed';
-  previewError?: string;
   tenantId?: string;
 }
 

@@ -131,13 +131,21 @@ function collectFileIds(items: unknown, target: Set<string>): void {
 
 /**
  * Build the per-share file snapshot from the messages being shared. Captures only
- * the metadata the share-scoped routes need to stream/preview each file; references
- * the original stored object (no byte copy).
+ * the metadata the share-scoped routes need to stream each file; references the
+ * original stored object (no byte copy). The lookup is scoped to the sharing
+ * user's own files so a message referencing another user's `file_id` can never
+ * widen access to it. Preview text/status is intentionally NOT embedded — it is
+ * read live from the file record so snapshots stay small and never go stale.
  */
 async function buildFileSnapshots(
   mongoose: typeof import('mongoose'),
   messages: t.IMessage[],
+  ownerId?: string,
 ): Promise<t.SharedFileSnapshot[]> {
+  if (!ownerId) {
+    return [];
+  }
+
   const fileIds = new Set<string>();
   for (const message of messages) {
     collectFileIds(message.files, fileIds);
@@ -149,7 +157,7 @@ async function buildFileSnapshots(
   }
 
   const File = mongoose.models.File as Model<t.IMongoFile>;
-  const files = await File.find({ file_id: { $in: Array.from(fileIds) } }).lean();
+  const files = await File.find({ file_id: { $in: Array.from(fileIds) }, user: ownerId }).lean();
 
   const snapshots: t.SharedFileSnapshot[] = [];
   for (const file of files) {
@@ -168,10 +176,6 @@ async function buildFileSnapshots(
       width: file.width,
       height: file.height,
       model: file.model,
-      text: file.text,
-      textFormat: file.textFormat,
-      status: file.status,
-      previewError: file.previewError,
       tenantId: file.tenantId,
     });
   }
@@ -390,8 +394,12 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
   getSharedMessages: (
     shareId: string,
     shareObjectId?: string,
+    options?: { snapshotFiles?: boolean; isPublic?: boolean },
   ) => Promise<t.SharedMessagesResult | null>;
-  getSharedLinkFile: (shareId: string, fileId: string) => Promise<t.SharedFileSnapshot | null>;
+  getSharedLinkFile: (
+    shareId: string,
+    fileId: string,
+  ) => Promise<{ file: t.SharedFileSnapshot | null; hasSnapshots: boolean }>;
   backfillSharedLinkFiles: (
     shareId: string,
     fileId?: string,
@@ -410,6 +418,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
   async function getSharedMessages(
     shareId: string,
     shareObjectId?: string,
+    options?: { snapshotFiles?: boolean; isPublic?: boolean },
   ): Promise<t.SharedMessagesResult | null> {
     try {
       const SharedLink = mongoose.models.SharedLink as Model<t.ISharedLink>;
@@ -422,7 +431,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
           path: 'messages',
           select: '-_id -__v -user',
         })
-        .select('-_id -__v -user')
+        .select('-__v')
         .lean()) as (t.ISharedLink & { messages: t.IMessage[] }) | null;
 
       if (!share?.conversationId) {
@@ -437,9 +446,22 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
 
       const newConvoId = anonymizeConvoId(share.conversationId);
       const resolvedShareId = share.shareId || shareId;
-      const snapshotIds = new Set<string>(
-        (share.fileSnapshots ?? []).map((snapshot) => snapshot.file_id),
-      );
+
+      /**
+       * Only rewrite render URLs to the share route for public shares: `<img>` and
+       * anchor requests can't carry the bearer token, so for non-public (ACL) shares
+       * the original paths are left untouched (no auth regression). Legacy public
+       * shares are backfilled here so their first view rewrites correctly.
+       */
+      const shouldRewrite = options?.isPublic !== false && options?.snapshotFiles !== false;
+      let fileSnapshots = share.fileSnapshots;
+      if (shouldRewrite && fileSnapshots === undefined && share._id) {
+        fileSnapshots = await buildFileSnapshots(mongoose, messagesToShare, share.user);
+        await SharedLink.updateOne({ _id: share._id }, { $set: { fileSnapshots } });
+      }
+      const snapshotIds = shouldRewrite
+        ? new Set<string>((fileSnapshots ?? []).map((snapshot) => snapshot.file_id))
+        : new Set<string>();
       const result: t.SharedMessagesResult = {
         shareId: resolvedShareId,
         title: share.title,
@@ -671,6 +693,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
             targetMessageId
               ? getMessagesUpToTarget(messagesForSnapshot, targetMessageId)
               : messagesForSnapshot,
+            user,
           )
         : [];
 
@@ -786,6 +809,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
             resolvedTargetMessageId
               ? getMessagesUpToTarget(messagesForSnapshot, resolvedTargetMessageId)
               : messagesForSnapshot,
+            user,
           )
         : [];
       const update = {
@@ -867,13 +891,16 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
   }
 
   /**
-   * Get a single file snapshot entry for a shared link, used by the share-scoped
-   * file routes to authorize and stream/preview a file without the owner's ACL.
+   * Resolve a single file snapshot entry for a shared link, used by the
+   * share-scoped file routes to authorize a file without the owner's ACL.
+   * `hasSnapshots` distinguishes a legacy share (field absent → caller may
+   * backfill) from an ordinary miss (field present but file not in it → 404,
+   * no rebuild).
    */
   async function getSharedLinkFile(
     shareId: string,
     fileId: string,
-  ): Promise<t.SharedFileSnapshot | null> {
+  ): Promise<{ file: t.SharedFileSnapshot | null; hasSnapshots: boolean }> {
     const SharedLink = mongoose.models.SharedLink as Model<t.ISharedLink>;
     const share = (await SharedLink.findOne({
       shareId,
@@ -883,10 +910,12 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       .lean()) as Pick<t.ISharedLink, 'fileSnapshots'> | null;
 
     if (!share) {
-      return null;
+      return { file: null, hasSnapshots: false };
     }
 
-    return share.fileSnapshots?.find((snapshot) => snapshot.file_id === fileId) ?? null;
+    const hasSnapshots = share.fileSnapshots !== undefined;
+    const file = share.fileSnapshots?.find((snapshot) => snapshot.file_id === fileId) ?? null;
+    return { file, hasSnapshots };
   }
 
   /**
@@ -916,7 +945,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         messages = getMessagesUpToTarget(messages, share.targetMessageId);
       }
 
-      const fileSnapshots = await buildFileSnapshots(mongoose, messages);
+      const fileSnapshots = await buildFileSnapshots(mongoose, messages, share.user);
       await SharedLink.updateOne({ shareId }, { $set: { fileSnapshots } });
 
       if (fileId) {

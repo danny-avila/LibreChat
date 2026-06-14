@@ -61,6 +61,7 @@ jest.mock('mongoose', () => ({
 }));
 
 jest.mock('~/models', () => ({
+  getFiles: jest.fn(),
   getSharedMessages: jest.fn(),
   createSharedLink: jest.fn(),
   updateSharedLink: jest.fn(),
@@ -91,6 +92,7 @@ const { RetentionMode } = require('librechat-data-provider');
 const { createTempChatExpirationDate, logger } = require('@librechat/data-schemas');
 const { deleteSharedLinkWithCleanup } = require('@librechat/api');
 const {
+  getFiles,
   getSharedMessages,
   createSharedLink,
   updateSharedLink,
@@ -371,33 +373,63 @@ describe('share-scoped file routes', () => {
     });
   });
 
-  it('serves a snapshotted file inline from its original stored object', async () => {
+  it('serves a snapshotted image inline from its original stored object', async () => {
     const getDownloadStream = jest.fn(async () => Readable.from(['file-bytes']));
     mockGetStrategyFunctions.mockReturnValue({ getDownloadStream });
     getSharedLinkFile.mockResolvedValue({
-      file_id: 'file-1',
-      source: 'local',
-      filepath: '/uploads/owner/file-1',
-      type: 'application/pdf',
-      filename: 'report.pdf',
+      file: {
+        file_id: 'file-1',
+        source: 'local',
+        filepath: '/images/owner/pic.png',
+        type: 'image/png',
+        filename: 'pic.png',
+      },
+      hasSnapshots: true,
     });
 
     const response = await request(buildApp()).get('/api/share/share-123/files/file-1');
 
     expect(response.status).toBe(200);
-    expect(response.headers['content-type']).toContain('application/pdf');
+    expect(response.headers['content-type']).toContain('image/png');
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
+    expect(response.headers['content-disposition']).toContain('inline');
     expect(mockGetStrategyFunctions).toHaveBeenCalledWith('local');
-    expect(getDownloadStream).toHaveBeenCalledWith(expect.anything(), '/uploads/owner/file-1');
+    expect(getDownloadStream).toHaveBeenCalledWith(expect.anything(), '/images/owner/pic.png');
     expect(backfillSharedLinkFiles).not.toHaveBeenCalled();
+  });
+
+  it('forces attachment for unsafe inline types (no stored XSS)', async () => {
+    const getDownloadStream = jest.fn(async () => Readable.from(['<svg/>']));
+    mockGetStrategyFunctions.mockReturnValue({ getDownloadStream });
+    getSharedLinkFile.mockResolvedValue({
+      file: {
+        file_id: 'file-1',
+        source: 'local',
+        filepath: '/uploads/owner/evil.svg',
+        type: 'image/svg+xml',
+        filename: 'evil.svg',
+      },
+      hasSnapshots: true,
+    });
+
+    const response = await request(buildApp()).get('/api/share/share-123/files/file-1');
+
+    expect(response.status).toBe(200);
+    expect(response.headers['content-type']).toContain('application/octet-stream');
+    expect(response.headers['content-disposition']).toContain('attachment');
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
   });
 
   it('downloads a snapshotted file as an attachment', async () => {
     getSharedLinkFile.mockResolvedValue({
-      file_id: 'file-1',
-      source: 'local',
-      filepath: '/uploads/owner/file-1',
-      type: 'application/pdf',
-      filename: 'report.pdf',
+      file: {
+        file_id: 'file-1',
+        source: 'local',
+        filepath: '/uploads/owner/file-1',
+        type: 'application/pdf',
+        filename: 'report.pdf',
+      },
+      hasSnapshots: true,
     });
 
     const response = await request(buildApp()).get('/api/share/share-123/files/file-1/download');
@@ -406,13 +438,12 @@ describe('share-scoped file routes', () => {
     expect(response.headers['content-disposition']).toContain('attachment');
   });
 
-  it('returns preview status from the snapshot without polling owner routes', async () => {
+  it('returns preview status read live from the file record', async () => {
     getSharedLinkFile.mockResolvedValue({
-      file_id: 'file-1',
-      status: 'ready',
-      text: 'extracted text',
-      textFormat: 'text',
+      file: { file_id: 'file-1', source: 'local' },
+      hasSnapshots: true,
     });
+    getFiles.mockResolvedValue([{ status: 'ready', text: 'extracted text', textFormat: 'text' }]);
 
     const response = await request(buildApp()).get('/api/share/share-123/files/file-1/preview');
 
@@ -423,24 +454,25 @@ describe('share-scoped file routes', () => {
       text: 'extracted text',
       textFormat: 'text',
     });
+    expect(getFiles).toHaveBeenCalledWith({ file_id: 'file-1' }, null, {});
   });
 
-  it('404s for a file that is not part of the shared-link snapshot', async () => {
-    getSharedLinkFile.mockResolvedValue(null);
-    backfillSharedLinkFiles.mockResolvedValue(null);
+  it('404s for a file not in the snapshot without rebuilding it', async () => {
+    getSharedLinkFile.mockResolvedValue({ file: null, hasSnapshots: true });
 
     const response = await request(buildApp()).get('/api/share/share-123/files/not-shared');
 
     expect(response.status).toBe(404);
+    expect(backfillSharedLinkFiles).not.toHaveBeenCalled();
     expect(mockGetStrategyFunctions).not.toHaveBeenCalled();
   });
 
-  it('lazily backfills a legacy share missing the snapshot', async () => {
-    getSharedLinkFile.mockResolvedValue(null);
+  it('lazily backfills only a legacy share that has no snapshot field', async () => {
+    getSharedLinkFile.mockResolvedValue({ file: null, hasSnapshots: false });
     backfillSharedLinkFiles.mockResolvedValue({
       file_id: 'file-1',
       source: 'local',
-      filepath: '/uploads/owner/file-1',
+      filepath: '/images/owner/pic.png',
       type: 'image/png',
       filename: 'pic.png',
     });

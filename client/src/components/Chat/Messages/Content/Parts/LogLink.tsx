@@ -57,9 +57,11 @@ export const useAttachmentLink = ({
   const handleDownload = async (event: React.MouseEvent<HTMLAnchorElement | HTMLButtonElement>) => {
     event.preventDefault();
     try {
-      // In a shared view, snapshotted files are served through the share-scoped
-      // route, authorized by shared-link permission rather than owner ACL.
-      if (shareId && file_id) {
+      // In a shared view, a snapshotted file's href is rewritten to the share
+      // route; download it through the share-scoped path (authorized by share
+      // permission, not owner ACL). Non-snapshotted files fall through so the
+      // original href / code-output path still works when snapshots are disabled.
+      if (shareId && file_id && href.startsWith('/api/share/')) {
         triggerDownload(sharedFileDownload(shareId, file_id), filename);
         return;
       }

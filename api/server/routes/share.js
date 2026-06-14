@@ -19,6 +19,7 @@ const {
 } = require('@librechat/data-schemas');
 const { FileSources, PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
+  getFiles,
   getSharedMessages,
   createSharedLink,
   updateSharedLink,
@@ -69,16 +70,33 @@ const runWithTenant = (tenantId, fn) =>
   tenantId ? tenantStorage.run({ tenantId }, fn) : runAsSystem(fn);
 
 /**
+ * MIME types that are safe to render inline. Everything else (text/html, SVG,
+ * and other active content) is served as an `attachment` so a public viewer
+ * can't execute uploaded bytes under the app origin by opening the URL directly.
+ */
+const SAFE_INLINE_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/gif',
+  'image/webp',
+  'image/bmp',
+  'image/avif',
+  'image/x-icon',
+  'application/pdf',
+]);
+
+/**
  * Resolve a snapshotted file for a shared link. A file_id absent from the
- * share's snapshot is denied (404) — this is what prevents a viewer from
- * reaching files outside the shared-link snapshot. Lazily backfills legacy
- * shares that predate the feature.
+ * share's snapshot is denied (404) — this prevents a viewer from reaching files
+ * outside the shared-link snapshot. Only legacy shares (no `fileSnapshots` field
+ * at all) trigger a lazy backfill; an ordinary miss does not rebuild.
  */
 const resolveShareFile = async (req, res, next) => {
   try {
     const { shareId, file_id } = req.params;
-    let snapshot = await getSharedLinkFile(shareId, file_id);
-    if (!snapshot && isFileSnapshotEnabled(req.config)) {
+    let { file: snapshot, hasSnapshots } = await getSharedLinkFile(shareId, file_id);
+    if (!snapshot && !hasSnapshots && isFileSnapshotEnabled(req.config)) {
       snapshot = await backfillSharedLinkFiles(shareId, file_id);
     }
     if (!snapshot) {
@@ -96,12 +114,18 @@ const resolveShareFile = async (req, res, next) => {
 };
 
 /** Stream (or redirect to) a snapshotted file from its original stored object. */
-const streamSharedFile = async (req, res, file, disposition) => {
+const streamSharedFile = async (req, res, file, requestedDisposition) => {
   const source = file.source || FileSources.local;
   const { getDownloadStream, getDownloadURL } = getStrategyFunctions(source);
 
+  // Inline only safe preview types; anything else is forced to attachment.
+  const disposition =
+    requestedDisposition === 'inline' && SAFE_INLINE_TYPES.has(file.type) ? 'inline' : 'attachment';
+
+  // Redirect to a signed storage URL only when explicitly requested (?direct=true);
+  // by default stream through the server so blob (XHR) callers work without bucket CORS.
   const isDirectSource = source === FileSources.s3 || source === FileSources.cloudfront;
-  if (disposition === 'attachment' && getDownloadURL && isDirectSource) {
+  if (req.query.direct === 'true' && getDownloadURL && isDirectSource) {
     try {
       const url = await getDownloadURL({
         req,
@@ -127,52 +151,70 @@ const streamSharedFile = async (req, res, file, disposition) => {
     logger.error('[shareFileAccess] Stream error:', error);
   });
 
-  if (disposition === 'attachment') {
-    res.setHeader('Content-Disposition', getContentDisposition(file.filename, 'attachment'));
-    res.setHeader('Content-Type', 'application/octet-stream');
-  } else {
-    res.setHeader('Content-Disposition', getContentDisposition(file.filename, 'inline'));
-    res.setHeader('Content-Type', file.type || 'application/octet-stream');
-  }
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Disposition', getContentDisposition(file.filename, disposition));
+  res.setHeader(
+    'Content-Type',
+    disposition === 'inline' ? file.type || 'application/octet-stream' : 'application/octet-stream',
+  );
   res.setHeader('Cache-Control', 'private, max-age=3600');
   return fileStream.pipe(res);
 };
 
 if (allowSharedLinks) {
-  router.get('/:shareId', optionalJwtAuth, canAccessSharedLink, async (req, res) => {
-    try {
-      const share = await getSharedMessages(req.params.shareId, req.shareResourceId);
-      if (share) {
-        res.set('Cache-Control', 'private, no-store');
-        res.status(200).json(share);
-      } else {
-        res.status(404).end();
+  router.get(
+    '/:shareId',
+    optionalJwtAuth,
+    configMiddleware,
+    canAccessSharedLink,
+    async (req, res) => {
+      try {
+        const share = await getSharedMessages(req.params.shareId, req.shareResourceId, {
+          snapshotFiles: isFileSnapshotEnabled(req.config),
+          isPublic: req.sharePublic === true,
+        });
+        if (share) {
+          res.set('Cache-Control', 'private, no-store');
+          res.status(200).json(share);
+        } else {
+          res.status(404).end();
+        }
+      } catch (error) {
+        logger.error('Error getting shared messages:', error);
+        res.status(500).json({ message: 'Error getting shared messages' });
       }
-    } catch (error) {
-      logger.error('Error getting shared messages:', error);
-      res.status(500).json({ message: 'Error getting shared messages' });
-    }
-  });
+    },
+  );
 
-  /** Preview status (text/textFormat) for a snapshotted file, from the snapshot. */
+  /**
+   * Preview status for a snapshotted file. Read live from the file record so the
+   * status is always current (deferred previews may resolve after the share was
+   * created) and large extracted text is never embedded in the share document.
+   */
   router.get(
     '/:shareId/files/:file_id/preview',
     optionalJwtAuth,
     configMiddleware,
     canAccessSharedLink,
     resolveShareFile,
-    (req, res) => {
-      const file = req.shareFile;
-      const status = file.status || 'ready';
-      const payload = { file_id: req.params.file_id, status };
-      if (status === 'ready' && file.text != null) {
-        payload.text = file.text;
-        payload.textFormat = file.textFormat ?? null;
-      } else if (status === 'failed' && file.previewError) {
-        payload.previewError = file.previewError;
+    async (req, res) => {
+      try {
+        const { file_id } = req.params;
+        const [liveFile] = await getFiles({ file_id }, null, {});
+        const status = liveFile?.status || 'ready';
+        const payload = { file_id, status };
+        if (status === 'ready' && liveFile?.text != null) {
+          payload.text = liveFile.text;
+          payload.textFormat = liveFile.textFormat ?? null;
+        } else if (status === 'failed' && liveFile?.previewError) {
+          payload.previewError = liveFile.previewError;
+        }
+        res.set('Cache-Control', 'private, no-store');
+        return res.status(200).json(payload);
+      } catch (error) {
+        logger.error('[shareFileAccess] Error fetching shared preview:', error);
+        return res.status(500).json({ message: 'Error fetching preview' });
       }
-      res.set('Cache-Control', 'private, no-store');
-      return res.status(200).json(payload);
     },
   );
 

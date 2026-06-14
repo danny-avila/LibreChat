@@ -1,8 +1,8 @@
-import { getTenantId, runAsSystem, tenantStorage } from '@librechat/data-schemas';
 import { ResourceType, PermissionBits } from 'librechat-data-provider';
+import { getTenantId, runAsSystem, tenantStorage } from '@librechat/data-schemas';
 import type { Request, Response, NextFunction } from 'express';
-import type { Types, Model } from 'mongoose';
 import type { IUser } from '@librechat/data-schemas';
+import type { Types, Model } from 'mongoose';
 import { AccessControlService } from '~/acl/accessControlService';
 import { autoMigrateLegacyLink } from './service';
 import { isEnabled } from '~/utils';
@@ -87,12 +87,20 @@ export function createSharedLinkAccessMiddleware(deps: SharedLinkAccessDeps) {
         await autoMigrateLegacyLink(rawShare);
       }
 
+      const reqRecord = req as unknown as Record<string, unknown>;
+      const grantAccess = (isPublic: boolean): void => {
+        reqRecord.shareResourceId = resourceId;
+        // `sharePublic` is true only when the share is anonymously reachable, so
+        // callers can route file URLs through the (unauthenticated) share path.
+        reqRecord.sharePublic = isPublic;
+        next();
+      };
+
       const publicGranted = await hasPublicViewPermission(resourceId);
 
       if (publicGranted) {
         if (isEnabled(process.env.ALLOW_SHARED_LINKS_PUBLIC)) {
-          (req as unknown as Record<string, unknown>).shareResourceId = resourceId;
-          next();
+          grantAccess(true);
           return;
         }
 
@@ -101,8 +109,7 @@ export function createSharedLinkAccessMiddleware(deps: SharedLinkAccessDeps) {
           return;
         }
 
-        (req as unknown as Record<string, unknown>).shareResourceId = resourceId;
-        next();
+        grantAccess(false);
         return;
       }
 
@@ -130,8 +137,7 @@ export function createSharedLinkAccessMiddleware(deps: SharedLinkAccessDeps) {
         return;
       }
 
-      (req as unknown as Record<string, unknown>).shareResourceId = resourceId;
-      next();
+      grantAccess(false);
     });
   };
 }

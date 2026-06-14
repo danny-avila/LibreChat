@@ -1744,10 +1744,12 @@ describe('Share Methods', () => {
       const { shareId } = await shareMethods.createSharedLink(userId, conversationId);
 
       const found = await shareMethods.getSharedLinkFile(shareId, docId);
-      expect(found?.file_id).toBe(docId);
+      expect(found.file?.file_id).toBe(docId);
+      expect(found.hasSnapshots).toBe(true);
 
       const missing = await shareMethods.getSharedLinkFile(shareId, 'file_does_not_exist');
-      expect(missing).toBeNull();
+      expect(missing.file).toBeNull();
+      expect(missing.hasSnapshots).toBe(true);
     });
 
     test('backfillSharedLinkFiles populates a legacy share missing snapshots', async () => {
@@ -1773,11 +1775,87 @@ describe('Share Methods', () => {
         messages: [message._id],
       });
 
-      expect(await shareMethods.getSharedLinkFile(shareId, docId)).toBeNull();
+      const before = await shareMethods.getSharedLinkFile(shareId, docId);
+      expect(before.file).toBeNull();
+      expect(before.hasSnapshots).toBe(false);
 
       const backfilled = await shareMethods.backfillSharedLinkFiles(shareId, docId);
       expect((backfilled as t.SharedFileSnapshot)?.file_id).toBe(docId);
 
+      const saved = await SharedLink.findOne({ shareId }).lean();
+      expect(saved?.fileSnapshots).toHaveLength(1);
+    });
+
+    test('does not snapshot a file owned by another user', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const otherUserId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      // File belongs to another user but is referenced in the sharer's message.
+      const victimId = await createFile(otherUserId);
+
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'borrowed file id',
+        isCreatedByUser: true,
+        files: [{ file_id: victimId }],
+      });
+
+      const result = await shareMethods.createSharedLink(userId, conversationId);
+      const saved = await SharedLink.findOne({ shareId: result.shareId }).lean();
+      expect(saved?.fileSnapshots ?? []).toHaveLength(0);
+    });
+
+    test('getSharedMessages does not rewrite URLs for non-public shares', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const docId = await createFile(userId);
+      const originalPath = `/uploads/${userId}/${docId}`;
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'doc',
+        isCreatedByUser: true,
+        files: [{ file_id: docId, filepath: originalPath }],
+      });
+
+      const { shareId } = await shareMethods.createSharedLink(userId, conversationId);
+      const result = await shareMethods.getSharedMessages(shareId, undefined, { isPublic: false });
+      const file = (result?.messages[0].files?.[0] ?? {}) as Record<string, unknown>;
+      expect(file.filepath).toBe(originalPath);
+    });
+
+    test('getSharedMessages backfills and rewrites a legacy share on read', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const docId = await createFile(userId);
+      const message = await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'doc',
+        isCreatedByUser: true,
+        files: [{ file_id: docId, filepath: `/uploads/${userId}/${docId}` }],
+      });
+
+      const shareId = `share_${nanoid()}`;
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: [message._id],
+      });
+
+      const result = await shareMethods.getSharedMessages(shareId, undefined, { isPublic: true });
+      const file = (result?.messages[0].files?.[0] ?? {}) as Record<string, unknown>;
+      expect(file.filepath).toBe(`/api/share/${shareId}/files/${docId}`);
+
+      // snapshot persisted by the lazy backfill
       const saved = await SharedLink.findOne({ shareId }).lean();
       expect(saved?.fileSnapshots).toHaveLength(1);
     });

@@ -15,6 +15,7 @@ interface FilePreviewDialogProps {
   onOpenChange: (open: boolean) => void;
   fileName: string;
   fileId?: string;
+  filePath?: string;
   relevance?: number;
   pages?: number[];
   pageRelevance?: Record<number, number>;
@@ -129,6 +130,7 @@ export default function FilePreviewDialog({
   onOpenChange,
   fileName,
   fileId,
+  filePath,
   relevance,
   pages,
   pageRelevance,
@@ -140,8 +142,10 @@ export default function FilePreviewDialog({
   const { shareId } = useShareContext();
   const { refetch: downloadOwned } = useFileDownload(user?.id ?? '', fileId, { direct: false });
   const { refetch: downloadShared } = useSharedFileDownload(shareId, fileId);
-  // Shared views authorize file access through the share, not the owner's ACL.
-  const downloadFile = shareId ? downloadShared : downloadOwned;
+  // Use the share route only for snapshotted files (filepath rewritten to the
+  // share path); otherwise fall back to the owner route.
+  const useShared = !!shareId && (filePath?.startsWith('/api/share/') ?? false);
+  const downloadFile = useShared ? downloadShared : downloadOwned;
 
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [fileBlobUrl, setFileBlobUrl] = useState<string | null>(null);
