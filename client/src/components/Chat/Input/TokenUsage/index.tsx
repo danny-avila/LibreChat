@@ -1,9 +1,11 @@
 import { memo } from 'react';
-import { HoverCard, HoverCardTrigger, HoverCardContent, HoverCardPortal } from '@librechat/client';
+import * as Ariakit from '@ariakit/react';
+import { TooltipAnchor } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
+import type { CurrencyConfig } from '~/utils';
+import { formatTokens, formatCost, cn } from '~/utils';
 import useTokenUsage from '~/hooks/Chat/useTokenUsage';
 import { useGetStartupConfig } from '~/data-provider';
-import { formatTokens } from '~/utils';
 import { useLocalize } from '~/hooks';
 import Breakdown from './Breakdown';
 import Gauge from './Gauge';
@@ -19,13 +21,18 @@ function TokenUsageIndicator({
   conversation,
   isSubmitting,
   showCost,
+  currency,
 }: TokenUsageProps & {
   showCost: boolean;
+  currency?: CurrencyConfig;
 }) {
   const localize = useLocalize();
   const view = useTokenUsage({ index, conversation, isSubmitting });
+  const popover = Ariakit.usePopoverStore({ placement: 'top' });
 
-  if (view.usedTokens <= 0 && view.maxTokens == null) {
+  /** Hide until the branch has data — keeps a fresh, message-less chat clean and
+   *  lets the indicator animate into view once the first tokens land. */
+  if (view.usedTokens <= 0) {
     return null;
   }
 
@@ -38,34 +45,60 @@ function TokenUsageIndicator({
       })
     : localize('com_ui_context_usage_label_unknown', { 0: formatTokens(view.usedTokens) });
 
+  const snapshotSummary = hasMax
+    ? localize('com_ui_context_usage_snapshot', {
+        0: formatTokens(view.usedTokens),
+        1: formatTokens(view.maxTokens ?? 0),
+        2: String(Math.round(view.percent)),
+      })
+    : localize('com_ui_context_usage_snapshot_unknown', { 0: formatTokens(view.usedTokens) });
+  const snapshot =
+    showCost && view.hasUsage && view.branchUsage.costKnown
+      ? `${snapshotSummary} · ${formatCost(view.branchCost, currency)}`
+      : snapshotSummary;
+
   return (
-    <HoverCard openDelay={150} closeDelay={100}>
-      <HoverCardTrigger asChild>
-        <button
-          type="button"
-          data-testid="token-usage"
-          className="flex size-9 items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label={ariaLabel}
-          aria-haspopup="dialog"
-        >
-          <span
-            role="meter"
-            aria-valuemin={0}
-            aria-valuemax={hasMax ? view.maxTokens : undefined}
-            aria-valuenow={view.usedTokens}
-            aria-label={localize('com_ui_context_usage')}
-            className="flex items-center justify-center"
+    <>
+      <TooltipAnchor
+        description={snapshot}
+        side="top"
+        render={
+          <Ariakit.PopoverDisclosure
+            store={popover}
+            type="button"
+            data-testid="token-usage"
+            aria-label={ariaLabel}
+            aria-haspopup="dialog"
+            className={cn(
+              'flex size-9 items-center justify-center rounded-full p-1 transition-colors',
+              'hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              'duration-300 animate-in fade-in zoom-in-95',
+            )}
           >
-            <Gauge percent={view.percent} indeterminate={!hasMax} />
-          </span>
-        </button>
-      </HoverCardTrigger>
-      <HoverCardPortal>
-        <HoverCardContent side="top" align="end" className="w-auto p-3">
-          <Breakdown view={view} showCost={showCost} />
-        </HoverCardContent>
-      </HoverCardPortal>
-    </HoverCard>
+            <span
+              role="meter"
+              aria-valuemin={0}
+              aria-valuemax={hasMax ? view.maxTokens : undefined}
+              aria-valuenow={view.usedTokens}
+              aria-label={localize('com_ui_context_usage')}
+              className="flex items-center justify-center"
+            >
+              <Gauge percent={view.percent} indeterminate={!hasMax} />
+            </span>
+          </Ariakit.PopoverDisclosure>
+        }
+      />
+      <Ariakit.Popover
+        store={popover}
+        gutter={8}
+        portal
+        unmountOnHide
+        aria-label={localize('com_ui_context_usage')}
+        className="z-50 rounded-xl border border-border-medium bg-surface-secondary p-3 shadow-lg focus:outline-none"
+      >
+        <Breakdown view={view} showCost={showCost} currency={currency} />
+      </Ariakit.Popover>
+    </>
   );
 }
 
@@ -79,7 +112,11 @@ const TokenUsage = memo(function TokenUsage(props: TokenUsageProps) {
     return null;
   }
   return (
-    <TokenUsageIndicator {...props} showCost={startupConfig.interface?.contextCost === true} />
+    <TokenUsageIndicator
+      {...props}
+      showCost={startupConfig.interface?.contextCost === true}
+      currency={startupConfig.interface?.currency}
+    />
   );
 });
 
