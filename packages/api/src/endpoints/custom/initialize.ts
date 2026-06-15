@@ -111,17 +111,19 @@ function buildAnthropicCustomConfig({
   baseURL,
   modelOptions,
   endpointConfig,
+  userProvidesURL,
 }: {
   apiKey: string;
   baseURL: string;
   modelOptions: AnthropicModelOptions;
   endpointConfig: Partial<TEndpoint>;
+  userProvidesURL: boolean;
 }): InitializeResultBase {
   const result = getAnthropicLLMConfig(apiKey, {
     modelOptions,
     proxy: PROXY ?? undefined,
     reverseProxyUrl: baseURL,
-    headers: endpointConfig.headers,
+    headers: userProvidesURL ? undefined : endpointConfig.headers,
     addParams: endpointConfig.addParams,
     dropParams: endpointConfig.dropParams,
     /** Apply admin `customParams.paramDefinitions` defaults (e.g. promptCache,
@@ -289,6 +291,7 @@ export async function initializeCustom({
       baseURL,
       modelOptions: modelOptions as AnthropicModelOptions,
       endpointConfig,
+      userProvidesURL,
     });
     options.endpointTokenConfig = endpointTokenConfig;
   } else {
