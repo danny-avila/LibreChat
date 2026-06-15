@@ -1,7 +1,7 @@
 import { AuthType, EModelEndpoint } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
-import { createLoadConfigModels } from './models';
 import { SCOPED_TOKEN_CONFIG_KEY_PREFIX } from '../keys';
+import { createLoadConfigModels } from './models';
 
 jest.mock('~/utils', () => {
   const original = jest.requireActual('~/utils');
