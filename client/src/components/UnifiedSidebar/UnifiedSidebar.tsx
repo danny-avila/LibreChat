@@ -16,6 +16,7 @@ import store from '~/store';
 const COLLAPSED_WIDTH = 52;
 const SIDEBAR_WIDTH = 260;
 const TRANSITION_MS = 300;
+const SNAP_MS = 150;
 const EASING = 'cubic-bezier(0.2, 0, 0, 1)';
 
 /**
@@ -117,7 +118,11 @@ function UnifiedSidebar() {
             width: expanded ? SIDEBAR_WIDTH : COLLAPSED_WIDTH,
             minWidth: expanded ? SIDEBAR_WIDTH : COLLAPSED_WIDTH,
             maxWidth: expanded ? SIDEBAR_WIDTH : COLLAPSED_WIDTH,
-            transition: `width ${TRANSITION_MS}ms ${EASING}, min-width ${TRANSITION_MS}ms ${EASING}, max-width ${TRANSITION_MS}ms ${EASING}`,
+            // Collapsing: let FullSidebar slide out first (TRANSITION_MS), then snap the width.
+            // Expanding: grow the aside immediately so FullSidebar has room to slide into.
+            transition: expanded
+              ? `width ${TRANSITION_MS}ms ${EASING}, min-width ${TRANSITION_MS}ms ${EASING}, max-width ${TRANSITION_MS}ms ${EASING}`
+              : `width ${SNAP_MS}ms ${EASING} ${TRANSITION_MS}ms, min-width ${SNAP_MS}ms ${EASING} ${TRANSITION_MS}ms, max-width ${SNAP_MS}ms ${EASING} ${TRANSITION_MS}ms`,
           }}
           aria-label={localize('com_nav_control_panel')}
         >

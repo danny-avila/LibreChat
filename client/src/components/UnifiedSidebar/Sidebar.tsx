@@ -219,7 +219,7 @@ function Sidebar({
   onExpand: () => void;
 }) {
   return (
-    <div className="relative h-full w-full overflow-hidden">
+    <div className="relative h-full w-full">
       {/* Icon strip — always rendered as the base layer */}
       <div className="absolute inset-y-0 left-0 w-[52px]">
         <ExpandedPanel
