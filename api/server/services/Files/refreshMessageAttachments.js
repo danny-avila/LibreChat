@@ -11,6 +11,35 @@ const { FileSources } = require('librechat-data-provider');
 const DEFAULT_BUFFER_SECONDS = 3600;
 
 /**
+ * Cap on concurrent refresh calls per response. A single conversation can
+ * carry dozens of attachments; the refresh primitives are CPU-cheap (local
+ * HMAC) but unbounded `Promise.all` over them can still spike event-loop
+ * latency and, where a backend does need a network round-trip (e.g.
+ * delegation key refresh), can hammer it. A small fixed limit keeps tail
+ * latency bounded without measurably hurting throughput.
+ */
+const DEFAULT_CONCURRENCY = 8;
+
+/**
+ * Redact the query string from a signed URL before logging. Presigned URLs
+ * are short-lived credentials (`X-Amz-Signature`, `X-Amz-Security-Token`,
+ * etc. live in the query string); leaving them in log sinks defeats the
+ * purpose of the TTL. Falls back to a fixed placeholder if the URL won't
+ * parse so the log line still has shape.
+ *
+ * @param {string} signedUrl
+ * @returns {string}
+ */
+function redactSignedUrlForLog(signedUrl) {
+  try {
+    const u = new URL(signedUrl);
+    return `${u.origin}${u.pathname}`;
+  } catch {
+    return '<unparseable url>';
+  }
+}
+
+/**
  * @typedef {Object} AttachmentLike
  * @property {string} [source]
  * @property {string} [filepath]
@@ -60,7 +89,7 @@ async function refreshAttachment(attachment, bufferSeconds, cache) {
         return newUrl || filepath;
       } catch (error) {
         logger.error(
-          `[refreshMessageAttachments] Error refreshing signed URL for "${filepath}":`,
+          `[refreshMessageAttachments] Error refreshing signed URL for "${redactSignedUrlForLog(filepath)}":`,
           error,
         );
         return filepath;
@@ -72,6 +101,33 @@ async function refreshAttachment(attachment, bufferSeconds, cache) {
   if (resolved && resolved !== filepath) {
     attachment.filepath = resolved;
   }
+}
+
+/**
+ * Drain an array of async task factories with at most `concurrency` in
+ * flight. No new dependency — small inline worker-pool.
+ *
+ * @param {Array<() => Promise<unknown>>} taskFactories
+ * @param {number} concurrency
+ * @returns {Promise<void>}
+ */
+async function runWithConcurrency(taskFactories, concurrency) {
+  if (taskFactories.length === 0) {
+    return;
+  }
+  const limit = Math.max(1, concurrency);
+  if (taskFactories.length <= limit) {
+    await Promise.all(taskFactories.map((fn) => fn()));
+    return;
+  }
+  let cursor = 0;
+  const workers = new Array(Math.min(limit, taskFactories.length)).fill(null).map(async () => {
+    while (cursor < taskFactories.length) {
+      const i = cursor++;
+      await taskFactories[i]();
+    }
+  });
+  await Promise.all(workers);
 }
 
 /**
@@ -89,7 +145,7 @@ async function refreshAttachment(attachment, bufferSeconds, cache) {
  *
  * @template {Record<string, unknown>} TRow
  * @param {TRow | TRow[] | null | undefined} rows
- * @param {{ bufferSeconds?: number }} [options]
+ * @param {{ bufferSeconds?: number, concurrency?: number }} [options]
  * @returns {Promise<TRow | TRow[] | null | undefined>}
  */
 async function refreshMessageAttachmentUrls(rows, options = {}) {
@@ -97,12 +153,13 @@ async function refreshMessageAttachmentUrls(rows, options = {}) {
     return rows;
   }
   const bufferSeconds = options.bufferSeconds ?? DEFAULT_BUFFER_SECONDS;
+  const concurrency = options.concurrency ?? DEFAULT_CONCURRENCY;
   const list = Array.isArray(rows) ? rows : [rows];
   if (list.length === 0) {
     return rows;
   }
   const cache = new Map();
-  const tasks = [];
+  const taskFactories = [];
   for (const row of list) {
     if (!row || typeof row !== 'object') {
       continue;
@@ -113,18 +170,19 @@ async function refreshMessageAttachmentUrls(rows, options = {}) {
         continue;
       }
       for (const entry of entries) {
-        tasks.push(refreshAttachment(entry, bufferSeconds, cache));
+        taskFactories.push(() => refreshAttachment(entry, bufferSeconds, cache));
       }
     }
   }
-  if (tasks.length > 0) {
-    await Promise.all(tasks);
-  }
+  await runWithConcurrency(taskFactories, concurrency);
   return rows;
 }
 
 module.exports = {
   refreshMessageAttachmentUrls,
   refreshAttachment,
+  redactSignedUrlForLog,
+  runWithConcurrency,
   DEFAULT_BUFFER_SECONDS,
+  DEFAULT_CONCURRENCY,
 };

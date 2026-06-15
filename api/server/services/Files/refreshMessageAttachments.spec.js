@@ -154,3 +154,69 @@ describe('refreshMessageAttachmentUrls', () => {
     expect(rows[0].attachments[0].filepath).toBe(FRESH);
   });
 });
+
+describe('redactSignedUrlForLog', () => {
+  const { redactSignedUrlForLog } = require('./refreshMessageAttachments');
+
+  test('strips the query string (signature + token would otherwise leak)', () => {
+    const u =
+      'https://bucket.s3.amazonaws.com/uploads/u/x?X-Amz-Signature=abc&X-Amz-Security-Token=xyz&X-Amz-Date=20260615';
+    expect(redactSignedUrlForLog(u)).toBe('https://bucket.s3.amazonaws.com/uploads/u/x');
+  });
+
+  test('returns a stable placeholder for unparseable inputs', () => {
+    expect(redactSignedUrlForLog('not a url')).toBe('<unparseable url>');
+  });
+
+  test('error path logs only the redacted URL, never the signature', async () => {
+    refreshS3Url.mockRejectedValue(new Error('boom'));
+    const { logger } = require('@librechat/data-schemas');
+    const rows = [
+      {
+        attachments: [
+          {
+            source: FileSources.s3,
+            filepath:
+              'https://bucket.s3.amazonaws.com/uploads/u/x?X-Amz-Signature=SECRET&X-Amz-Date=20260615',
+          },
+        ],
+      },
+    ];
+    await refreshMessageAttachmentUrls(rows);
+    expect(logger.error).toHaveBeenCalled();
+    const logged = logger.error.mock.calls[0][0];
+    expect(logged).not.toContain('SECRET');
+    expect(logged).not.toContain('X-Amz-Signature');
+    expect(logged).toContain('https://bucket.s3.amazonaws.com/uploads/u/x');
+  });
+});
+
+describe('runWithConcurrency', () => {
+  const { runWithConcurrency } = require('./refreshMessageAttachments');
+
+  test('caps in-flight tasks at the configured limit', async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const total = 25;
+    const limit = 4;
+    const factories = Array.from({ length: total }, () => async () => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 5));
+      inFlight -= 1;
+    });
+    await runWithConcurrency(factories, limit);
+    expect(peak).toBeLessThanOrEqual(limit);
+    expect(peak).toBeGreaterThan(1);
+  });
+
+  test('returns immediately on empty input', async () => {
+    await expect(runWithConcurrency([], 8)).resolves.toBeUndefined();
+  });
+
+  test('fast-path when task count <= limit (no worker loop)', async () => {
+    const calls = [];
+    await runWithConcurrency([async () => calls.push('a'), async () => calls.push('b')], 8);
+    expect(calls.sort()).toEqual(['a', 'b']);
+  });
+});
