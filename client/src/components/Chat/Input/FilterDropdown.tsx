@@ -24,6 +24,7 @@ interface FilterDropdownProps {
 }
 
 type DateField = 'start' | 'end';
+type FilterTab = 'period' | 'extension' | 'matter' | 'document';
 
 interface QuickOption {
   preset: Exclude<PeriodFilterPreset, 'custom'>;
@@ -108,14 +109,18 @@ const FilterDropdown = ({ disabled }: FilterDropdownProps) => {
   const localize = useLocalize();
   const isDisabled = disabled ?? false;
   const [isOpen, setIsOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<FilterTab>('period');
   const [activeField, setActiveField] = useState<DateField | null>(null);
   const [periodFilter, setPeriodFilter] = useRecoilState(store.periodFilter);
   const [filterMatters, setFilterMatters] = useRecoilState(store.filterBklMatters);
   const [filterDocs, setFilterDocs] = useRecoilState(store.filterBklDocs);
   const [matterSearch, setMatterSearch] = useState('');
   const [docSearch, setDocSearch] = useState('');
-  const { data: mattersData } = useBklMattersQuery(isOpen);
-  const { data: docsData, isFetching: isDocsFetching } = useBklDocsQuery(docSearch, isOpen);
+  const { data: mattersData } = useBklMattersQuery(isOpen && activeTab === 'matter');
+  const { data: docsData, isFetching: isDocsFetching } = useBklDocsQuery(
+    docSearch,
+    isOpen && activeTab === 'document',
+  );
 
   const menu = Ariakit.useMenuStore({ open: isOpen, setOpen: setIsOpen });
 
@@ -212,6 +217,25 @@ const FilterDropdown = ({ disabled }: FilterDropdownProps) => {
   }, [activeField, startDate, endDate]);
 
   const selectedExts = periodFilter.extensionGroups ?? [];
+  const isPeriodActive =
+    periodFilter.preset !== DEFAULT_PERIOD_FILTER.preset ||
+    periodFilter.startDate !== null ||
+    periodFilter.endDate !== null;
+  const tabs: { id: FilterTab; label: string; count?: number; active: boolean }[] = [
+    { id: 'period', label: '기간', active: isPeriodActive },
+    {
+      id: 'extension',
+      label: localize('com_document_search_filter_extension'),
+      count: selectedExts.length,
+      active: selectedExts.length > 0,
+    },
+    { id: 'matter', label: '사건', count: filterMatters.length, active: filterMatters.length > 0 },
+    { id: 'document', label: '문서', count: filterDocs.length, active: filterDocs.length > 0 },
+  ];
+  const handleSelectTab = useCallback((tab: FilterTab) => {
+    setActiveTab(tab);
+    setActiveField(null);
+  }, []);
   const matterCandidates: BklMatter[] = useMemo(() => {
     if (!mattersData || !matterSearch.trim()) return [];
     const exclude = new Set(filterMatters.map((m) => m.matter_uid));
@@ -286,191 +310,240 @@ const FilterDropdown = ({ disabled }: FilterDropdownProps) => {
         hideOnHoverOutside={false}
         className="popover-ui z-50 w-[320px] !overflow-visible !p-2"
       >
-        {/* 기간 */}
-        <div className="px-2.5 pb-1 pt-0.5 text-xs font-medium text-text-secondary">
-          {localize('com_ui_period_quick_access')}
-        </div>
-        {QUICK_OPTIONS.map((option) => {
-          const isSelected =
-            periodFilter.preset === option.preset &&
-            periodFilter.startDate === null &&
-            periodFilter.endDate === null;
-          return (
-            <Ariakit.MenuItem
-              key={option.preset}
-              hideOnClick={false}
-              onClick={() => handleSelectPreset(option.preset)}
-              className="group flex w-full cursor-pointer items-center justify-between gap-5 rounded-lg px-3 py-2 text-sm text-text-primary outline-none hover:bg-surface-hover focus:bg-surface-hover md:px-2.5"
-            >
-              <span>{localize(option.labelKey as Parameters<typeof localize>[0])}</span>
-              {isSelected && (
-                <Check className="h-4 w-4 text-text-primary" aria-hidden="true" />
+        <div
+          role="tablist"
+          aria-label="필터 범주"
+          className="mb-2 grid grid-cols-4 gap-1 rounded-xl bg-surface-secondary p-1"
+        >
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              onClick={() => handleSelectTab(tab.id)}
+              className={cn(
+                'relative rounded-lg px-2 py-1.5 text-xs font-medium text-text-secondary transition-colors',
+                'hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-opacity-50',
+                activeTab === tab.id && 'bg-surface-primary text-text-primary shadow-sm',
               )}
-            </Ariakit.MenuItem>
-          );
-        })}
-        <Ariakit.MenuSeparator className="my-1 h-px border-border-medium" />
-        <div className="flex items-center justify-between px-2.5 py-1">
-          <span className="text-xs font-medium text-text-secondary">
-            {localize('com_ui_period_custom')}
-          </span>
-          {periodFilter.preset === 'custom' && (
-            <Check className="h-4 w-4 text-text-primary" aria-hidden="true" />
-          )}
+            >
+              <span>{tab.label}</span>
+              {tab.count ? (
+                <span className="ml-1 rounded-full bg-blue-500 px-1.5 py-0.5 text-[10px] leading-none text-white">
+                  {tab.count}
+                </span>
+              ) : tab.active ? (
+                <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-blue-500 align-middle" />
+              ) : null}
+            </button>
+          ))}
         </div>
-        <div className="flex items-center gap-1.5 px-1 pb-1">
-          <DateTrigger
-            label={localize('com_ui_period_start')}
-            value={periodFilter.startDate}
-            placeholderKey="com_ui_period_pick"
-            isOpen={activeField === 'start'}
-            onToggle={() => toggleField('start')}
-          />
-          <DateTrigger
-            label={localize('com_ui_period_end')}
-            value={periodFilter.endDate}
-            placeholderKey="com_ui_period_pick"
-            isOpen={activeField === 'end'}
-            onToggle={() => toggleField('end')}
-          />
-        </div>
-        {activeField && (
-          <div
-            className="rdp-bkl mx-1 mb-1 mt-1 rounded-lg border border-border-light bg-surface-primary p-1"
-            onKeyDown={(e) => e.stopPropagation()}
-          >
-            <DayPicker
-              mode="single"
-              selected={activeSelected}
-              onSelect={(d) => handleSelectDate(activeField, d)}
-              locale={dpLocale}
-              numberOfMonths={1}
-              defaultMonth={activeDefaultMonth}
-              disabled={activeDisabled}
-              showOutsideDays
-              weekStartsOn={0}
-            />
-          </div>
-        )}
 
-        {/* 확장자 (문서 검색과 동일한 6-chip, 다중 선택) */}
-        <Ariakit.MenuSeparator className="my-1 h-px border-border-medium" />
-        <div className="px-2.5 pb-1 pt-0.5 text-xs font-medium text-text-secondary">
-          {localize('com_document_search_filter_extension')}
-        </div>
-        <div className="flex flex-wrap gap-1.5 px-1.5 pb-1 pt-0.5">
-          {EXTENSION_OPTIONS.map((opt) => {
-            const active = selectedExts.includes(opt.id);
-            return (
-              <button
-                key={opt.id}
-                type="button"
-                onClick={() => toggleExt(opt.id)}
-                aria-pressed={active}
-                title={opt.hint}
-                className={cn(
-                  'inline-flex h-7 items-center gap-1 rounded-full border px-2.5 text-xs font-medium transition-colors',
-                  active
-                    ? 'border-text-primary bg-text-primary text-surface-primary'
-                    : 'border-border-medium bg-surface-primary text-text-secondary hover:border-border-heavy hover:text-text-primary',
+        <div className="max-h-[420px] overflow-y-auto px-0.5 pb-1">
+          {activeTab === 'period' && (
+            <>
+              <div className="px-2.5 pb-1 pt-0.5 text-xs font-medium text-text-secondary">
+                {localize('com_ui_period_quick_access')}
+              </div>
+              {QUICK_OPTIONS.map((option) => {
+                const isSelected =
+                  periodFilter.preset === option.preset &&
+                  periodFilter.startDate === null &&
+                  periodFilter.endDate === null;
+                return (
+                  <Ariakit.MenuItem
+                    key={option.preset}
+                    hideOnClick={false}
+                    onClick={() => handleSelectPreset(option.preset)}
+                    className="group flex w-full cursor-pointer items-center justify-between gap-5 rounded-lg px-3 py-2 text-sm text-text-primary outline-none hover:bg-surface-hover focus:bg-surface-hover md:px-2.5"
+                  >
+                    <span>{localize(option.labelKey as Parameters<typeof localize>[0])}</span>
+                    {isSelected && (
+                      <Check className="h-4 w-4 text-text-primary" aria-hidden="true" />
+                    )}
+                  </Ariakit.MenuItem>
+                );
+              })}
+              <Ariakit.MenuSeparator className="my-1 h-px border-border-medium" />
+              <div className="flex items-center justify-between px-2.5 py-1">
+                <span className="text-xs font-medium text-text-secondary">
+                  {localize('com_ui_period_custom')}
+                </span>
+                {periodFilter.preset === 'custom' && (
+                  <Check className="h-4 w-4 text-text-primary" aria-hidden="true" />
                 )}
-              >
-                {active && <Check className="h-3 w-3" aria-hidden="true" />}
-                {opt.label}
-              </button>
-            );
-          })}
-        </div>
-
-        <Ariakit.MenuSeparator className="my-1 h-px border-border-medium" />
-        <div className="px-2.5 pb-1 pt-0.5 text-xs font-medium text-text-secondary">
-          사건 hard filter
-        </div>
-        <div className="px-1.5 pb-1">
-          <div className="mb-1 flex flex-wrap gap-1">
-            {filterMatters.map((m) => (
-              <button
-                key={m.matter_uid}
-                type="button"
-                onClick={() =>
-                  setFilterMatters((prev) => prev.filter((item) => item.matter_uid !== m.matter_uid))
-                }
-                className="inline-flex max-w-full items-center gap-1 rounded-full border border-border-medium px-2 py-1 text-xs text-text-secondary hover:text-text-primary"
-              >
-                <Briefcase className="h-3 w-3" />
-                <span className="truncate">{m.label}</span>
-                <X className="h-3 w-3" />
-              </button>
-            ))}
-          </div>
-          <input
-            value={matterSearch}
-            onChange={(e) => setMatterSearch(e.target.value)}
-            placeholder="사건명/사건번호 검색"
-            className="w-full rounded-md border border-border-light bg-surface-primary px-2 py-1.5 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none"
-            onKeyDown={(e) => e.stopPropagation()}
-          />
-          {matterCandidates.length > 0 && (
-            <div className="mt-1 max-h-36 overflow-y-auto rounded-md border border-border-light">
-              {matterCandidates.map((m) => (
-                <button
-                  key={m.matter_uid}
-                  type="button"
-                  onClick={() => addMatter(m)}
-                  className="block w-full px-2 py-1.5 text-left text-xs hover:bg-surface-hover"
+              </div>
+              <div className="flex items-center gap-1.5 px-1 pb-1">
+                <DateTrigger
+                  label={localize('com_ui_period_start')}
+                  value={periodFilter.startDate}
+                  placeholderKey="com_ui_period_pick"
+                  isOpen={activeField === 'start'}
+                  onToggle={() => toggleField('start')}
+                />
+                <DateTrigger
+                  label={localize('com_ui_period_end')}
+                  value={periodFilter.endDate}
+                  placeholderKey="com_ui_period_pick"
+                  isOpen={activeField === 'end'}
+                  onToggle={() => toggleField('end')}
+                />
+              </div>
+              {activeField && (
+                <div
+                  className="rdp-bkl mx-1 mb-1 mt-1 rounded-lg border border-border-light bg-surface-primary p-1"
+                  onKeyDown={(e) => e.stopPropagation()}
                 >
-                  <div className="truncate font-medium">{m.case_alias || m.case_number || m.matter_uid}</div>
-                  <div className="truncate text-text-tertiary">{m.client || m.case_name}</div>
-                </button>
-              ))}
+                  <DayPicker
+                    mode="single"
+                    selected={activeSelected}
+                    onSelect={(d) => handleSelectDate(activeField, d)}
+                    locale={dpLocale}
+                    numberOfMonths={1}
+                    defaultMonth={activeDefaultMonth}
+                    disabled={activeDisabled}
+                    showOutsideDays
+                    weekStartsOn={0}
+                  />
+                </div>
+              )}
+            </>
+          )}
+
+          {activeTab === 'extension' && (
+            <>
+              <div className="px-2.5 pb-2 pt-0.5 text-xs font-medium text-text-secondary">
+                {localize('com_document_search_filter_extension')}
+              </div>
+              <div className="grid grid-cols-2 gap-2 px-1.5 pb-1 pt-0.5">
+                {EXTENSION_OPTIONS.map((opt) => {
+                  const active = selectedExts.includes(opt.id);
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => toggleExt(opt.id)}
+                      aria-pressed={active}
+                      title={opt.hint}
+                      className={cn(
+                        'inline-flex h-9 items-center justify-center gap-1 rounded-full border px-3 text-xs font-medium transition-colors',
+                        active
+                          ? 'border-text-primary bg-text-primary text-surface-primary'
+                          : 'border-border-medium bg-surface-primary text-text-secondary hover:border-border-heavy hover:text-text-primary',
+                      )}
+                    >
+                      {active && <Check className="h-3 w-3" aria-hidden="true" />}
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {activeTab === 'matter' && (
+            <div className="px-1.5 pb-1">
+              <div className="px-1 pb-2 text-xs font-medium text-text-secondary">
+                사건 hard filter
+              </div>
+              <div className="mb-1 flex flex-wrap gap-1">
+                {filterMatters.map((m) => (
+                  <button
+                    key={m.matter_uid}
+                    type="button"
+                    onClick={() =>
+                      setFilterMatters((prev) =>
+                        prev.filter((item) => item.matter_uid !== m.matter_uid),
+                      )
+                    }
+                    className="inline-flex max-w-full items-center gap-1 rounded-full border border-border-medium px-2 py-1 text-xs text-text-secondary hover:text-text-primary"
+                  >
+                    <Briefcase className="h-3 w-3" />
+                    <span className="truncate">{m.label}</span>
+                    <X className="h-3 w-3" />
+                  </button>
+                ))}
+              </div>
+              <input
+                value={matterSearch}
+                onChange={(e) => setMatterSearch(e.target.value)}
+                placeholder="사건명/사건번호 검색"
+                className="w-full rounded-md border border-border-light bg-surface-primary px-2 py-1.5 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none"
+                onKeyDown={(e) => e.stopPropagation()}
+              />
+              {matterCandidates.length > 0 && (
+                <div className="mt-1 max-h-56 overflow-y-auto rounded-md border border-border-light">
+                  {matterCandidates.map((m) => (
+                    <button
+                      key={m.matter_uid}
+                      type="button"
+                      onClick={() => addMatter(m)}
+                      className="block w-full px-2 py-1.5 text-left text-xs hover:bg-surface-hover"
+                    >
+                      <div className="truncate font-medium">
+                        {m.case_alias || m.case_number || m.matter_uid}
+                      </div>
+                      <div className="truncate text-text-tertiary">{m.client || m.case_name}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
-        </div>
 
-        <Ariakit.MenuSeparator className="my-1 h-px border-border-medium" />
-        <div className="px-2.5 pb-1 pt-0.5 text-xs font-medium text-text-secondary">
-          문서 hard inject
-        </div>
-        <div className="px-1.5 pb-1">
-          <div className="mb-1 flex flex-wrap gap-1">
-            {filterDocs.map((d) => (
-              <button
-                key={d.doc_id}
-                type="button"
-                onClick={() => setFilterDocs((prev) => prev.filter((item) => item.doc_id !== d.doc_id))}
-                className="inline-flex max-w-full items-center gap-1 rounded-full border border-border-medium px-2 py-1 text-xs text-text-secondary hover:text-text-primary"
-              >
-                <FileText className="h-3 w-3" />
-                <span className="max-w-40 truncate">{d.label}</span>
-                <X className="h-3 w-3" />
-              </button>
-            ))}
-          </div>
-          <input
-            value={docSearch}
-            onChange={(e) => setDocSearch(e.target.value)}
-            placeholder="문서명/doc_id 검색"
-            className="w-full rounded-md border border-border-light bg-surface-primary px-2 py-1.5 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none"
-            onKeyDown={(e) => e.stopPropagation()}
-          />
-          {docSearch.trim().length >= 2 && (
-            <div className="mt-1 max-h-36 overflow-y-auto rounded-md border border-border-light">
-              {isDocsFetching && (
-                <div className="px-2 py-2 text-xs text-text-tertiary">문서 검색 중...</div>
-              )}
-              {docCandidates.map((doc) => (
-                <button
-                  key={doc.doc_id}
-                  type="button"
-                  onClick={() => addDoc(doc)}
-                  className="block w-full px-2 py-1.5 text-left text-xs hover:bg-surface-hover"
-                >
-                  <div className="truncate font-medium">{doc.file_name || doc.doc_id}</div>
-                  <div className="truncate text-text-tertiary">{doc.imanage_doc_id || doc.doc_id}</div>
-                </button>
-              ))}
-              {!isDocsFetching && docCandidates.length === 0 && (
-                <div className="px-2 py-2 text-xs text-text-tertiary">일치하는 문서가 없습니다.</div>
+          {activeTab === 'document' && (
+            <div className="px-1.5 pb-1">
+              <div className="px-1 pb-2 text-xs font-medium text-text-secondary">
+                문서 hard inject
+              </div>
+              <div className="mb-1 flex flex-wrap gap-1">
+                {filterDocs.map((d) => (
+                  <button
+                    key={d.doc_id}
+                    type="button"
+                    onClick={() =>
+                      setFilterDocs((prev) => prev.filter((item) => item.doc_id !== d.doc_id))
+                    }
+                    className="inline-flex max-w-full items-center gap-1 rounded-full border border-border-medium px-2 py-1 text-xs text-text-secondary hover:text-text-primary"
+                  >
+                    <FileText className="h-3 w-3" />
+                    <span className="max-w-40 truncate">{d.label}</span>
+                    <X className="h-3 w-3" />
+                  </button>
+                ))}
+              </div>
+              <input
+                value={docSearch}
+                onChange={(e) => setDocSearch(e.target.value)}
+                placeholder="문서명/doc_id 검색"
+                className="w-full rounded-md border border-border-light bg-surface-primary px-2 py-1.5 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none"
+                onKeyDown={(e) => e.stopPropagation()}
+              />
+              {docSearch.trim().length >= 2 && (
+                <div className="mt-1 max-h-56 overflow-y-auto rounded-md border border-border-light">
+                  {isDocsFetching && (
+                    <div className="px-2 py-2 text-xs text-text-tertiary">문서 검색 중...</div>
+                  )}
+                  {docCandidates.map((doc) => (
+                    <button
+                      key={doc.doc_id}
+                      type="button"
+                      onClick={() => addDoc(doc)}
+                      className="block w-full px-2 py-1.5 text-left text-xs hover:bg-surface-hover"
+                    >
+                      <div className="truncate font-medium">{doc.file_name || doc.doc_id}</div>
+                      <div className="truncate text-text-tertiary">
+                        {doc.imanage_doc_id || doc.doc_id}
+                      </div>
+                    </button>
+                  ))}
+                  {!isDocsFetching && docCandidates.length === 0 && (
+                    <div className="px-2 py-2 text-xs text-text-tertiary">
+                      일치하는 문서가 없습니다.
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}
