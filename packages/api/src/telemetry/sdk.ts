@@ -12,8 +12,8 @@ import type { NodeSDKConfiguration } from '@opentelemetry/sdk-node';
 import type { Span, Attributes } from '@opentelemetry/api';
 import type { RequestOptions } from 'node:http';
 import type { TelemetryConfig, TelemetryStatus } from './config';
-import { getTelemetryConfig } from './config';
 import { registerShutdownTask } from '../app/shutdown';
+import { getTelemetryConfig } from './config';
 
 export interface TelemetryController {
   readonly enabled: boolean;

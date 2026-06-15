@@ -1,8 +1,8 @@
 import { Socket } from 'node:net';
 import { IncomingMessage } from 'node:http';
 import { Agent as HttpsAgent } from 'node:https';
-import type { Span } from '@opentelemetry/api';
 import type { RequestOptions } from 'node:http';
+import type { Span } from '@opentelemetry/api';
 
 interface HttpInstrumentationOptions {
   requestHook?: (span: Span, request: object) => void;
