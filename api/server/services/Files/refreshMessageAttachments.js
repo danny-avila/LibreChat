@@ -52,14 +52,22 @@ function redactSignedUrlForLog(signedUrl) {
  */
 
 /**
- * Per-source refresh dispatch. Add a new entry here when another storage
- * backend grows a refresh primitive (e.g. Azure SAS).
+ * Per-source refresh dispatch. Resolved lazily so this module can be
+ * required by callers (including existing test suites) that mock
+ * `@librechat/api` or `librechat-data-provider` without including
+ * `refreshS3Url` / `FileSources` in the mock — missing dependencies just
+ * mean "no refresher available for that source", same as any other
+ * non-S3 entry.
  *
- * @type {Record<string, (att: AttachmentLike, bufferSeconds: number) => Promise<string>>}
+ * @returns {Record<string, (att: AttachmentLike, bufferSeconds: number) => Promise<string>>}
  */
-const refresherBySource = {
-  [FileSources.s3]: (att, bufferSeconds) => refreshS3Url(att, bufferSeconds),
-};
+function getRefresherBySource() {
+  const out = {};
+  if (FileSources && typeof FileSources.s3 === 'string' && typeof refreshS3Url === 'function') {
+    out[FileSources.s3] = (att, bufferSeconds) => refreshS3Url(att, bufferSeconds);
+  }
+  return out;
+}
 
 /**
  * Cheap eligibility check used at enqueue time so the concurrency pool only
@@ -78,7 +86,7 @@ function isRefreshable(attachment) {
   if (typeof att.filepath !== 'string' || att.filepath.length === 0) {
     return false;
   }
-  return Object.prototype.hasOwnProperty.call(refresherBySource, att.source);
+  return Object.prototype.hasOwnProperty.call(getRefresherBySource(), att.source);
 }
 
 /**
@@ -99,7 +107,7 @@ async function refreshAttachment(attachment, bufferSeconds, cache) {
     return;
   }
   const filepath = attachment.filepath;
-  const refresher = refresherBySource[attachment.source];
+  const refresher = getRefresherBySource()[attachment.source];
   let pending = cache.get(filepath);
   if (!pending) {
     pending = (async () => {
