@@ -42,6 +42,12 @@ export class EcsStack extends cdk.Stack {
   public readonly s3Bucket: s3.Bucket;
   public mongoService?: ecs.FargateService;
 
+  private readonly envFilesBucket = s3.Bucket.fromBucketArn(
+    this,
+    'EnvFilesBucket',
+    'arn:aws:s3:::nj-librechat-env-files',
+  );
+
   constructor(scope: Construct, id: string, props: EcsServicesProps) {
     super(scope, id, props);
     const vpc = ec2.Vpc.fromLookup(this, 'ExistingVpc', {
@@ -62,18 +68,37 @@ export class EcsStack extends cdk.Stack {
       mongoSecret.grantRead(commonExecRole);
     }
 
-    const librechatService = this.CreateLibrechatService(props, cluster, commonExecRole, isProd, mongoSecret);
+    const librechatService = this.CreateLibrechatService(
+      props,
+      cluster,
+      commonExecRole,
+      isProd,
+      mongoSecret,
+    );
     this.listener = librechatService.listener;
     this.loadBalancer = librechatService.loadBalancer;
     this.service = librechatService;
 
     librechatService.service.enableCloudMap({ name: 'librechat' });
 
-    const ragApiService = this.CreateRagApiService(props, commonExecRole, cluster, librechatService);
+    const ragApiService = this.CreateRagApiService(
+      props,
+      commonExecRole,
+      cluster,
+      librechatService,
+    );
 
     if (!isProd) {
-      this.CreateDatabaseSidecars(props, commonExecRole, vpc, cluster, librechatService, mongoSecret);
+      this.CreateDatabaseSidecars(
+        props,
+        commonExecRole,
+        vpc,
+        cluster,
+        librechatService,
+        mongoSecret,
+      );
       this.CreateAdminPanelService(props, commonExecRole, vpc, cluster, librechatService);
+      this.CreateMeilisearchService(props, commonExecRole, vpc, cluster, librechatService);
     }
   }
 
@@ -203,7 +228,7 @@ export class EcsStack extends cdk.Stack {
       HOST: '0.0.0.0',
       ADMIN_PANEL_URL: `https://${props.envVars.domainName}/admin`,
       LOG_LEVEL: 'info',
-      MEILI_HOST: 'http://rag_api.internal:7700',
+      MEILI_HOST: 'http://meilisearch.internal:7700',
       RAG_API_URL: 'http://rag_api.internal:8000',
       CONFIG_PATH: '/app/nj/nj-librechat.yaml',
       AWS_BUCKET_NAME: this.s3Bucket.bucketName,
@@ -219,7 +244,9 @@ export class EcsStack extends cdk.Stack {
       REDIS_USE_ALTERNATIVE_DNS_LOOKUP: 'true',
       REDIS_CLUSTER_SAFE_DELETE: 'true',
 
-      ...(!isProd && !mongoSecret ? { MONGO_URI: 'mongodb://mongodb.internal:27017/LibreChat' } : {}),
+      ...(!isProd && !mongoSecret
+        ? { MONGO_URI: 'mongodb://mongodb.internal:27017/LibreChat' }
+        : {}),
       ...(!isProd && props.rdsEndpoint && props.rdsPort
         ? {
             POSTGRES_HOST: props.rdsEndpoint,
@@ -230,7 +257,9 @@ export class EcsStack extends cdk.Stack {
 
     const envSecrets: Record<string, ecs.Secret> = {
       ...(isProd ? { MONGO_URI: ecs.Secret.fromSecretsManager(docdbSecret, 'uri') } : {}),
-      ...(!isProd && mongoSecret ? { MONGO_URI: ecs.Secret.fromSecretsManager(mongoSecret, 'uri') } : {}),
+      ...(!isProd && mongoSecret
+        ? { MONGO_URI: ecs.Secret.fromSecretsManager(mongoSecret, 'uri') }
+        : {}),
       ...(!isProd && props.rdsSecret
         ? {
             POSTGRES_USER: ecs.Secret.fromSecretsManager(props.rdsSecret, 'username'),
@@ -247,8 +276,7 @@ export class EcsStack extends cdk.Stack {
       secrets: envSecrets,
       environmentFiles: [
         ecs.EnvironmentFile.fromBucket(
-          s3.Bucket.fromBucketArn(this, 'EnvFilesBucket', 'arn:aws:s3:::nj-librechat-env-files'),
-          `${props.envVars.env}.env`,
+          s3.Bucket.fromBucketArn(this.envFilesBucket, `${props.envVars.env}.env`),
         ),
       ],
       portMappings: [{ containerPort: 3080 }],
@@ -437,7 +465,6 @@ export class EcsStack extends cdk.Stack {
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
     });
 
-
     // Allow RAG API to connect to RDS
     if (props.rdsSecurityGroup && props.rdsPort) {
       ragApiService.connections.allowTo(
@@ -485,10 +512,14 @@ export class EcsStack extends cdk.Stack {
       props.adminPanelSessionSecretArn,
     );
     sessionSecret.grantRead(commonExecRole);
-    commonExecRole.addToPolicy(new iam.PolicyStatement({
-      actions: ['secretsmanager:GetSecretValue'],
-      resources: [`arn:aws:secretsmanager:${this.region}:${this.account}:secret:ai-assistant/admin-panel/session-secret-*`],
-    }));
+    commonExecRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ['secretsmanager:GetSecretValue'],
+        resources: [
+          `arn:aws:secretsmanager:${this.region}:${this.account}:secret:ai-assistant/admin-panel/session-secret-*`,
+        ],
+      }),
+    );
 
     taskDef.addContainer('librechat-admin-panel', {
       image: ecs.ContainerImage.fromRegistry(props.librechatAdminImage),
@@ -566,6 +597,74 @@ export class EcsStack extends cdk.Stack {
     });
 
     new cdk.CfnOutput(this, 'AdminPanelImageUri', { value: props.librechatAdminImage });
+  }
+
+  private CreateMeilisearchService(
+    props: EcsServicesProps,
+    commonExecRole: iam.Role,
+    vpc: ec2.IVpc,
+    cluster: ecs.Cluster,
+    librechatService: ecsPatterns.ApplicationLoadBalancedFargateService,
+  ): ecs.FargateService {
+    const meiliFiles = new efs.FileSystem(this, 'MeiliFs', {
+      vpc,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      encrypted: true,
+    });
+    const meiliTaskDef = new ecs.FargateTaskDefinition(this, 'MeilisearchTaskDef', {
+      cpu: 256,
+      memoryLimitMiB: 512,
+      executionRole: commonExecRole,
+    });
+
+    meiliTaskDef.addVolume({
+      name: 'meiliData',
+      efsVolumeConfiguration: {
+        fileSystemId: meiliFiles.fileSystemId,
+        transitEncryption: 'ENABLED',
+      },
+    });
+
+    const meiliImage = `${this.account}.dkr.ecr.${this.region}.amazonaws.com/newjersey/meilisearch:v1.35.1`;
+
+    const meiliContainer = meiliTaskDef.addContainer('meilisearch', {
+      image: ecs.ContainerImage.fromRegistry(meiliImage),
+      logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'meilisearch' }),
+      portMappings: [{ containerPort: 7700 }],
+      environmentFiles: [
+        ecs.EnvironmentFile.fromBucket(
+          s3.Bucket.fromBucketArn(this.envFilesBucket, `${props.envVars.env}.env`),
+        ),
+      ],
+    });
+
+    meiliContainer.addMountPoints({
+      sourceVolume: 'meiliData',
+      containerPath: '/meili_data',
+      readOnly: false,
+    });
+
+    const meiliService = new ecs.FargateService(this, 'MeilisearchService', {
+      cluster,
+      taskDefinition: meiliTaskDef,
+      desiredCount: 1,
+      enableExecuteCommand: true,
+      cloudMapOptions: {
+        name: 'meilisearch',
+      },
+      vpcSubnets: {
+        subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
+      },
+    });
+
+    meiliFiles.connections.allowDefaultPortFrom(meiliService);
+
+    meiliService.connections.allowFrom(
+      librechatService.service,
+      ec2.Port.tcp(7700),
+      'Librechat to Meilisearch',
+    );
+    return meiliService;
   }
 
   private CreateFileS3Bucket() {

@@ -59,7 +59,12 @@ export class KitchenSinkStack extends cdk.Stack {
     const vectorDbService = this.createVectorDbService(vpc, cluster, execRole);
     const meiliService = this.createMeiliSearchService(vpc, cluster, execRole, envBucket);
     const ollamaService = this.createOllamaService(vpc, cluster, execRole);
-    const ragApiService = this.createRagApiService(cluster, execRole, envBucket, props.ragApiJwtSecretArn);
+    const ragApiService = this.createRagApiService(
+      cluster,
+      execRole,
+      envBucket,
+      props.ragApiJwtSecretArn,
+    );
     const librechatService = this.createLibrechatService(
       vpc,
       cluster,
@@ -400,7 +405,11 @@ export class KitchenSinkStack extends cdk.Stack {
       }),
     );
 
-    const jwtSecret = secrets.Secret.fromSecretCompleteArn(this, 'RagApiJwtSecret', ragApiJwtSecretArn);
+    const jwtSecret = secrets.Secret.fromSecretCompleteArn(
+      this,
+      'RagApiJwtSecret',
+      ragApiJwtSecretArn,
+    );
     jwtSecret.grantRead(execRole);
 
     const taskDef = new ecs.FargateTaskDefinition(this, 'RagApiTaskDef', {
