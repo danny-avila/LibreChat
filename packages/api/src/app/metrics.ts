@@ -137,6 +137,16 @@ export type GenerationStreamSubscriptionResult =
   | 'error'
   | 'found'
   | 'missing';
+export type RumProxyEndpoint = 'traces' | 'logs' | 'unknown';
+export type RumProxyResult =
+  | 'success'
+  | 'auth_drop'
+  | 'bad_request'
+  | 'not_configured'
+  | 'collector_4xx'
+  | 'collector_5xx'
+  | 'collector_error'
+  | 'collector_timeout';
 
 type OpenIDUserLookupMetrics = {
   recordLookup: (result: OpenIDUserLookupResult, durationSeconds: number) => void;
@@ -179,6 +189,14 @@ let generationJobMetrics: GenerationJobMetrics = {
   recordResumePendingEvents: () => undefined,
 };
 
+type RumProxyMetrics = {
+  recordRequest: (endpoint: RumProxyEndpoint, result: RumProxyResult) => void;
+};
+
+let rumProxyMetrics: RumProxyMetrics = {
+  recordRequest: () => undefined,
+};
+
 const resetMetricRecorders = (): void => {
   openIDUserLookupMetrics = {
     recordLookup: () => undefined,
@@ -191,6 +209,9 @@ const resetMetricRecorders = (): void => {
     setJobsInFlight: () => undefined,
     recordSubscription: () => undefined,
     recordResumePendingEvents: () => undefined,
+  };
+  rumProxyMetrics = {
+    recordRequest: () => undefined,
   };
 };
 
@@ -215,6 +236,10 @@ export function recordGenerationStreamResumePendingEvents(
   count: number,
 ): void {
   generationJobMetrics.recordResumePendingEvents(store, count);
+}
+
+export function recordRumProxyRequest(endpoint: RumProxyEndpoint, result: RumProxyResult): void {
+  rumProxyMetrics.recordRequest(endpoint, result);
 }
 
 const getElapsedSeconds = (startedAt: bigint): number =>
@@ -493,6 +518,13 @@ export function createMetrics(): PrometheusMetrics {
     registers: [registry],
   });
 
+  const rumProxyRequests = new Counter({
+    name: 'rum_proxy_requests_total',
+    help: 'RUM proxy requests by endpoint and result',
+    labelNames: ['endpoint', 'result'] as const,
+    registers: [registry],
+  });
+
   generationJobMetrics = {
     recordJob: (store, result) => generationJobs.inc({ store, result }),
     setJobsInFlight: (store, count) => generationJobsInFlight.set({ store }, count),
@@ -500,6 +532,10 @@ export function createMetrics(): PrometheusMetrics {
       generationStreamSubscriptions.inc({ store, type, result }),
     recordResumePendingEvents: (store, count) =>
       generationStreamResumePendingEvents.inc({ store }, count),
+  };
+
+  rumProxyMetrics = {
+    recordRequest: (endpoint, result) => rumProxyRequests.inc({ endpoint, result }),
   };
 
   const metricsMiddleware = (req: Request, res: Response, next: NextFunction): void => {

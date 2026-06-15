@@ -10,6 +10,7 @@ const {
   buildSafeAuthLogContext,
   formatAuthLogMessage,
   maybeRefreshCloudFrontAuthCookiesMiddleware,
+  recordRumProxyRequest,
 } = require('@librechat/api');
 
 const hasPassportStrategy = (strategy) =>
@@ -58,6 +59,16 @@ const dropRumTelemetry = (res) => {
   if (!res.headersSent) {
     res.status(204).end();
   }
+};
+
+const getRumProxyEndpoint = (req) => {
+  if (req.path === '/v1/traces') {
+    return 'traces';
+  }
+  if (req.path === '/v1/logs') {
+    return 'logs';
+  }
+  return 'unknown';
 };
 
 /**
@@ -190,6 +201,7 @@ const requireRumProxyAuth = (req, res, next) => {
         if (index + 1 < strategies.length) {
           return authenticateWithStrategy(index + 1);
         }
+        recordRumProxyRequest(getRumProxyEndpoint(req), 'auth_drop');
         dropRumTelemetry(res);
         return;
       }
@@ -198,6 +210,7 @@ const requireRumProxyAuth = (req, res, next) => {
         if (index + 1 < strategies.length) {
           return authenticateWithStrategy(index + 1);
         }
+        recordRumProxyRequest(getRumProxyEndpoint(req), 'auth_drop');
         dropRumTelemetry(res);
         return;
       }

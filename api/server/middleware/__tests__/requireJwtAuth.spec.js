@@ -213,6 +213,7 @@ jest.mock('@librechat/api', () => {
     normalizeContextValue(req.headers?.['x-correlation-id']);
   return {
     isEnabled: jest.fn(() => false),
+    recordRumProxyRequest: jest.fn(),
     getAuthFailureReason,
     getAuthFailureErrorName,
     buildSafeAuthLogContext,
@@ -237,7 +238,11 @@ jest.mock('@librechat/api', () => {
 const requireJwtAuth = require('../requireJwtAuth');
 const { requireRumProxyAuth } = requireJwtAuth;
 const { getTenantId, getUserId, logger } = require('@librechat/data-schemas');
-const { isEnabled, maybeRefreshCloudFrontAuthCookiesMiddleware } = require('@librechat/api');
+const {
+  isEnabled,
+  maybeRefreshCloudFrontAuthCookiesMiddleware,
+  recordRumProxyRequest,
+} = require('@librechat/api');
 const passport = require('passport');
 
 const jwtSecret = 'test-refresh-secret';
@@ -287,6 +292,7 @@ describe('requireJwtAuth tenant context chaining', () => {
     logger.info.mockClear();
     logger.warn.mockClear();
     logger.error.mockClear();
+    recordRumProxyRequest.mockClear();
     passport.authenticate.mockClear();
     passport._strategy.mockClear();
     if (originalJwtSecret === undefined) {
@@ -858,6 +864,7 @@ describe('requireRumProxyAuth', () => {
     logger.info.mockClear();
     logger.warn.mockClear();
     logger.error.mockClear();
+    recordRumProxyRequest.mockClear();
     passport.authenticate.mockClear();
     passport._strategy.mockClear();
     if (originalJwtSecret === undefined) {
@@ -881,6 +888,7 @@ describe('requireRumProxyAuth', () => {
     );
     expect(req.authStrategy).toBe('jwt');
     expect(maybeRefreshCloudFrontAuthCookiesMiddleware).not.toHaveBeenCalled();
+    expect(recordRumProxyRequest).not.toHaveBeenCalled();
     expect(res.status).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalled();
   });
@@ -907,6 +915,7 @@ describe('requireRumProxyAuth', () => {
     );
     expect(req.authStrategy).toBe('openidJwt');
     expect(maybeRefreshCloudFrontAuthCookiesMiddleware).not.toHaveBeenCalled();
+    expect(recordRumProxyRequest).not.toHaveBeenCalled();
     expect(res.status).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalled();
   });
@@ -932,12 +941,14 @@ describe('requireRumProxyAuth', () => {
 
     expect(passport.authenticate).toHaveBeenCalledTimes(2);
     expect(req.authStrategy).toBe('jwt');
+    expect(recordRumProxyRequest).not.toHaveBeenCalled();
     expect(res.status).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalled();
   });
 
   it('drops invalid telemetry auth with 204 instead of returning an app auth error', () => {
     const req = mockReq(undefined, {
+      path: '/v1/traces',
       _mockStrategies: {
         jwt: {
           user: false,
@@ -953,6 +964,7 @@ describe('requireRumProxyAuth', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(maybeRefreshCloudFrontAuthCookiesMiddleware).not.toHaveBeenCalled();
+    expect(recordRumProxyRequest).toHaveBeenCalledWith('traces', 'auth_drop');
     expect(res.status).toHaveBeenCalledWith(204);
     expect(res.end).toHaveBeenCalled();
   });
