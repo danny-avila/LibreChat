@@ -350,6 +350,7 @@ Please follow these instructions when using tools from the respective MCP server
     options,
     tokenMethods,
     requestBody,
+    requestScopedConnections,
     flowManager,
     oauthStart,
     oauthEnd,
@@ -367,6 +368,7 @@ Please follow these instructions when using tools from the respective MCP server
     toolArguments?: Record<string, unknown>;
     options?: RequestOptions;
     requestBody?: RequestBody;
+    requestScopedConnections?: t.RequestScopedMCPConnectionStore;
     tokenMethods?: TokenMethods;
     customUserVars?: Record<string, string>;
     flowManager: FlowStateManager<MCPOAuthTokens | null>;
@@ -399,6 +401,7 @@ Please follow these instructions when using tools from the respective MCP server
         signal: options?.signal,
         customUserVars,
         requestBody,
+        requestScopedConnections,
         serverConfig: providedConfig,
       });
 
@@ -419,7 +422,8 @@ Please follow these instructions when using tools from the respective MCP server
         );
       }
       const isDbSourced = isUserSourced(rawConfig);
-      disconnectAfterCall = !!userId && requiresEphemeralUserConnection(rawConfig);
+      disconnectAfterCall =
+        !!userId && requiresEphemeralUserConnection(rawConfig) && !requestScopedConnections;
 
       /** Pre-process Graph token placeholders (async) before the synchronous processMCPEnv pass */
       const graphProcessedConfig = isDbSourced

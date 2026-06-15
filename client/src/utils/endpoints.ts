@@ -139,7 +139,7 @@ interface InitiatedTemplateResult {
 
 type StoredModelSelection = Pick<
   t.TConversation,
-  'endpoint' | 'model' | 'spec' | 'agent_id' | 'assistant_id'
+  'endpoint' | 'model' | 'spec' | 'agent_id' | 'assistant_id' | 'conversationId'
 >;
 
 function hasSelectionValue(value?: string | null): boolean {
@@ -160,14 +160,15 @@ function parseStoredModelSelection(
   }
 }
 
-function hasStoredPrefixValue(prefix: string): boolean {
+function hasStoredPrefixValue(prefix: string, ignoreValue?: string | null): boolean {
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
     if (!key?.startsWith(prefix)) {
       continue;
     }
 
-    if (hasSelectionValue(localStorage.getItem(key))) {
+    const value = localStorage.getItem(key);
+    if (hasSelectionValue(value) && value !== ignoreValue) {
       return true;
     }
   }
@@ -175,7 +176,7 @@ function hasStoredPrefixValue(prefix: string): boolean {
   return false;
 }
 
-function hasStoredModelValue(): boolean {
+function hasStoredModelValue(softPreset?: t.TModelSpecPreset): boolean {
   const storedModelValue = localStorage.getItem(LocalStorageKeys.LAST_MODEL);
   if (!storedModelValue) {
     return false;
@@ -183,7 +184,11 @@ function hasStoredModelValue(): boolean {
 
   try {
     const storedModels = JSON.parse(storedModelValue) as Record<string, string | null | undefined>;
-    return Object.values(storedModels).some(hasSelectionValue);
+    return Object.entries(storedModels).some(
+      ([endpoint, model]) =>
+        hasSelectionValue(model) &&
+        !(endpoint === softPreset?.endpoint && model === softPreset?.model),
+    );
   } catch {
     return false;
   }
@@ -205,22 +210,23 @@ export function hasModelSelection(selection?: Partial<StoredModelSelection> | nu
 
 /**
  * Whether localStorage holds a model selection the user actually made.
- * Only spec entries naming `softDefaultSpec` are residue of the soft default
- * itself — selections that merely match its preset still count as user choices.
+ * State matching what applying `softDefaultSpec` writes is residue of the
+ * soft default itself, not evidence of a user choice, and is ignored.
  */
 function hasStoredModelSelection(softDefaultSpec?: t.TModelSpec): boolean {
+  const softPreset = softDefaultSpec?.preset;
   const lastSpecName = localStorage.getItem(LocalStorageKeys.LAST_SPEC);
   if (hasSelectionValue(lastSpecName) && lastSpecName !== softDefaultSpec?.name) {
     return true;
   }
 
-  if (hasStoredModelValue()) {
+  if (hasStoredModelValue(softPreset)) {
     return true;
   }
 
   if (
-    hasStoredPrefixValue(LocalStorageKeys.AGENT_ID_PREFIX) ||
-    hasStoredPrefixValue(LocalStorageKeys.ASST_ID_PREFIX)
+    hasStoredPrefixValue(LocalStorageKeys.AGENT_ID_PREFIX, softPreset?.agent_id) ||
+    hasStoredPrefixValue(LocalStorageKeys.ASST_ID_PREFIX, softPreset?.assistant_id)
   ) {
     return true;
   }
@@ -406,7 +412,9 @@ export function applyModelSpecEphemeralAgent({
 /**
  * Gets default model spec from config and user preferences.
  * Priority: hard admin default → prior user selection → soft default.
- * The soft default yields only to selections the user actually made, and acts
+ * The soft default yields only to selections the user actually made — its
+ * stored state counts as the live selection only when set on a new chat, so
+ * merely viewing an old soft-spec conversation never re-arms it — and it acts
  * as the fallback default when no ephemeral endpoint → model options exist.
  * Legacy first-spec prioritization remains only when no soft default is configured.
  */
@@ -434,7 +442,10 @@ export function getDefaultModelSpec(
     if (!softDefaultSpec) {
       return;
     }
-    if (lastConversationSetup?.spec === softDefaultSpec.name) {
+    if (
+      lastConversationSetup?.spec === softDefaultSpec.name &&
+      lastConversationSetup?.conversationId === Constants.NEW_CONVO
+    ) {
       return { softDefault: softDefaultSpec };
     }
     const ephemeralOptions = hasEphemeralModelOptions({

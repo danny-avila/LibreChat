@@ -144,6 +144,11 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
   it('disconnects ephemeral BODY-scoped connections after loading tools', async () => {
     const disconnect = jest.fn().mockResolvedValue(undefined);
     const tools = [{ name: 'search', inputSchema: { type: 'object', properties: {} } }];
+    const serverConfig = {
+      type: 'streamable-http',
+      url: 'https://thingy.example.com/messages/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+      source: 'yaml',
+    };
     mockGetConnection.mockResolvedValue({
       disconnect,
       fetchTools: jest.fn().mockResolvedValue(tools),
@@ -152,11 +157,7 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
     await reinitMCPServer({
       user,
       serverName,
-      serverConfig: {
-        type: 'streamable-http',
-        url: 'https://thingy.example.com/messages/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
-        source: 'yaml',
-      },
+      serverConfig,
       requestBody: { messageId: 'msg-789' },
       userMCPAuthMap: undefined,
     });
@@ -165,7 +166,7 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
     expect(mockUpdateMCPServerTools).toHaveBeenCalledWith(
       expect.objectContaining({
         tools,
-        skipCache: true,
+        serverConfig,
       }),
     );
   });

@@ -351,4 +351,136 @@ describe('initializeCustom – token-config fetch header forwarding', () => {
       }),
     );
   });
+
+  it('uses a static tokenConfig for billing and skips the model fetch', async () => {
+    const tokenConfig = {
+      'gpt-4': { prompt: 1.5, completion: 4.5, context: 32000, cacheRead: 0.3, cacheWrite: 1.8 },
+    };
+    mockGetCustomEndpointConfig.mockReturnValue({
+      apiKey: 'sk-test-key',
+      baseURL: 'https://openrouter.ai/api/v1',
+      models: { fetch: true },
+      tokenConfig,
+    });
+
+    const params: BaseInitializeParams = {
+      req: {
+        user: { id: 'user-1', email: 'user@example.com' },
+        body: { key: '2099-01-01' },
+        config: {},
+      } as unknown as BaseInitializeParams['req'],
+      endpoint: 'openrouter',
+      model_parameters: { model: 'gpt-4' },
+      db: {
+        getUserKeyValues: jest.fn(),
+      } as unknown as BaseInitializeParams['db'],
+    };
+
+    const result = (await initializeCustom(params)) as {
+      endpointTokenConfig?: Record<string, Record<string, number>>;
+    };
+
+    expect(fetchModels).not.toHaveBeenCalled();
+    /** Original rates pass through, plus the billing-shape cache keys so
+     *  getCacheMultiplier (which reads `write`/`read`) finds them */
+    expect(result.endpointTokenConfig?.['gpt-4']).toEqual({
+      prompt: 1.5,
+      completion: 4.5,
+      context: 32000,
+      cacheRead: 0.3,
+      cacheWrite: 1.8,
+      write: 1.8,
+      read: 0.3,
+    });
+  });
+});
+
+describe('initializeCustom – native Anthropic provider', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  function createAnthropicParams(
+    config: Record<string, unknown>,
+    model_parameters: Record<string, unknown> = { model: 'claude-sonnet-4-5' },
+  ): BaseInitializeParams {
+    mockGetCustomEndpointConfig.mockReturnValue(config);
+    return {
+      req: {
+        user: { id: 'user-1' },
+        body: { conversationId: 'convo-1' },
+        config: {},
+      } as unknown as BaseInitializeParams['req'],
+      endpoint: 'Claude-Compatible',
+      model_parameters,
+      db: {
+        getUserKeyValues: jest.fn(),
+        getUserKey: jest.fn(),
+      } as unknown as BaseInitializeParams['db'],
+    };
+  }
+
+  it('builds a native Anthropic config pointed at the custom baseURL/apiKey', async () => {
+    const params = createAnthropicParams({
+      provider: 'anthropic',
+      apiKey: 'sk-ant-custom',
+      baseURL: 'https://gateway.example.com',
+      headers: { 'anthropic-version': '2023-06-01' },
+      models: { default: ['claude-sonnet-4-5'] },
+    });
+
+    const options = await initializeCustom(params);
+
+    /** Routed to the native Anthropic client, not the OpenAI-compatible one */
+    expect(mockGetOpenAIConfig).not.toHaveBeenCalled();
+    expect(options.provider).toBe('anthropic');
+    /** Custom baseURL/key wired into the native Anthropic config */
+    expect(options.llmConfig).toHaveProperty('anthropicApiUrl', 'https://gateway.example.com');
+    expect(options.llmConfig).toHaveProperty('apiKey', 'sk-ant-custom');
+    /** Configured header attached (kept unresolved for request-time resolution) */
+    const defaultHeaders = (
+      options.llmConfig as { clientOptions?: { defaultHeaders?: Record<string, string> } }
+    ).clientOptions?.defaultHeaders;
+    expect(defaultHeaders?.['anthropic-version']).toBe('2023-06-01');
+    /** Native Anthropic path must NOT use OpenAI legacy content formatting */
+    expect(options.useLegacyContent).toBeUndefined();
+  });
+
+  it('applies customParams.paramDefinitions defaults on the native path', async () => {
+    const params = createAnthropicParams({
+      provider: 'anthropic',
+      apiKey: 'sk-ant-custom',
+      baseURL: 'https://gateway.example.com',
+      models: { default: ['claude-sonnet-4-5'] },
+      customParams: {
+        defaultParamsEndpoint: 'anthropic',
+        paramDefinitions: [{ key: 'web_search', default: true }],
+      },
+    });
+
+    const options = await initializeCustom(params);
+
+    /** `web_search: true` default flows through to the Anthropic web_search tool */
+    expect(options.tools).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'web_search' })]),
+    );
+  });
+
+  it('still uses the OpenAI-compatible client when no provider is set', async () => {
+    const params = createAnthropicParams({
+      apiKey: 'sk-test',
+      baseURL: 'https://api.example.com/v1',
+      models: { default: ['gpt-4o'] },
+    });
+
+    const options = await initializeCustom(params);
+
+    expect(mockGetOpenAIConfig).toHaveBeenCalledWith(
+      'sk-test',
+      expect.any(Object),
+      'Claude-Compatible',
+    );
+    expect(options.useLegacyContent).toBe(true);
+    expect(options.provider).toBeUndefined();
+  });
 });

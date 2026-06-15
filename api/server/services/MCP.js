@@ -387,6 +387,7 @@ function createOAuthCallback({ runStepEmitter, runStepDeltaEmitter }) {
  * @param {number} [params.index]
  * @param {string | null} [params.streamId] - The stream ID for resumable mode.
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
+ * @param {import('@librechat/api').RequestScopedMCPConnectionStore} [params.requestScopedConnections]
  * @param {import('@librechat/api').ParsedServerConfig} [params.serverConfig] - Used to bypass reconnect throttling for request-scoped servers.
  * @returns { Promise<Array<typeof tool | { _call: (toolInput: Object | string) => unknown}>> } An object with `_call` method to execute the tool input.
  */
@@ -400,6 +401,7 @@ async function reconnectServer({
   configServers,
   userMCPAuthMap,
   requestBody,
+  requestScopedConnections,
   streamId = null,
 }) {
   logger.debug(
@@ -477,6 +479,7 @@ async function reconnectServer({
       flowManager,
       userMCPAuthMap,
       requestBody,
+      requestScopedConnections,
       forceNew: true,
       returnOnOAuth: false,
       connectionTimeout: Time.THIRTY_SECONDS,
@@ -507,6 +510,7 @@ async function reconnectServer({
  * @param {string | null} [params.streamId] - The stream ID for resumable mode.
  * @param {import('@librechat/api').ParsedServerConfig} [params.config]
  * @param {import('@librechat/api').RequestBody} [params.requestBody]
+ * @param {import('@librechat/api').RequestScopedMCPConnectionStore} [params.requestScopedConnections]
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  * @returns { Promise<Array<typeof tool | { _call: (toolInput: Object | string) => unknown}>> } An object with `_call` method to execute the tool input.
  */
@@ -522,6 +526,7 @@ async function createMCPTools({
   configServers,
   userMCPAuthMap,
   requestBody,
+  requestScopedConnections,
   streamId = null,
 }) {
   const serverConfig =
@@ -560,6 +565,7 @@ async function createMCPTools({
     configServers,
     userMCPAuthMap,
     requestBody,
+    requestScopedConnections,
     streamId,
   });
   if (result === null) {
@@ -584,6 +590,7 @@ async function createMCPTools({
       availableTools: result.availableTools,
       toolKey: `${tool.name}${Constants.mcp_delimiter}${serverName}`,
       requestBody,
+      requestScopedConnections,
       config: serverConfig,
     });
     if (toolInstance) {
@@ -608,6 +615,7 @@ async function createMCPTools({
  * @param {Providers | EModelEndpoint} params.provider - The provider for the tool.
  * @param {LCAvailableTools} [params.availableTools]
  * @param {import('@librechat/api').RequestBody} [params.requestBody]
+ * @param {import('@librechat/api').RequestScopedMCPConnectionStore} [params.requestScopedConnections]
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  * @param {import('@librechat/api').ParsedServerConfig} [params.config]
  * @param {(availableTools: LCAvailableTools) => void} [params.onAvailableTools]
@@ -624,6 +632,7 @@ async function createMCPTool({
   userMCPAuthMap,
   availableTools,
   requestBody,
+  requestScopedConnections,
   config,
   configServers,
   onAvailableTools,
@@ -683,6 +692,7 @@ async function createMCPTool({
       configServers,
       userMCPAuthMap,
       requestBody,
+      requestScopedConnections,
       streamId,
     });
     if (result?.availableTools) {
@@ -708,6 +718,7 @@ async function createMCPTool({
     mcpPermissionContext,
     user,
     requestBody,
+    requestScopedConnections,
     provider,
     toolName,
     serverName,
@@ -722,6 +733,7 @@ function createToolInstance({
   mcpPermissionContext,
   user: capturedUser = null,
   requestBody: capturedRequestBody,
+  requestScopedConnections: capturedRequestScopedConnections,
   toolName,
   serverName,
   serverConfig: capturedServerConfig,
@@ -816,6 +828,8 @@ function createToolInstance({
         },
         user: effectiveUser,
         requestBody: config?.configurable?.requestBody ?? capturedRequestBody,
+        requestScopedConnections:
+          config?.configurable?.requestScopedConnections ?? capturedRequestScopedConnections,
         customUserVars,
         flowManager,
         tokenMethods: {

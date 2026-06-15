@@ -45,6 +45,7 @@ const { checkMigrations } = require('./services/start/migration');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
+const createSpaFallback = require('./utils/fallback');
 const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
@@ -279,7 +280,7 @@ const startServer = async () => {
   app.use('/api', apiNotFound);
 
   /** SPA fallback - serve index.html for all unmatched routes */
-  app.use(sendIndexHtml);
+  app.use(createSpaFallback(sendIndexHtml));
 
   /** Record trace errors before the final error controller. */
   if (telemetry.enabled) {
