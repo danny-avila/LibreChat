@@ -79,6 +79,7 @@ export interface AdminConfigDeps {
     overrides: Partial<TCustomConfig>,
     priority: number,
     session?: ClientSession,
+    options?: { expectEmpty?: boolean },
   ) => Promise<IConfig | null>;
   patchConfigFields: (
     principalType: PrincipalType,
@@ -106,12 +107,14 @@ export interface AdminConfigDeps {
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
     session?: ClientSession,
+    options?: { expectEmpty?: boolean },
   ) => Promise<IConfig | null>;
   toggleConfigActive: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
     isActive: boolean,
     session?: ClientSession,
+    options?: { expectEmpty?: boolean },
   ) => Promise<IConfig | null>;
   hasConfigCapability: (
     user: CapabilityUser,
@@ -390,24 +393,18 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
-      if (!hasBroadManage) {
-        const existing = await findConfigByPrincipal(principalType, principalId, {
-          includeInactive: true,
-        });
-        const overrideKeys = Object.keys(existing?.overrides ?? {});
-        const tombstoneList = existing?.tombstones ?? [];
-        if (existing && (overrideKeys.length > 0 || tombstoneList.length > 0)) {
-          return res.status(403).json({ error: 'Insufficient permissions' });
-        }
-      }
-
       const config = await upsertConfig(
         principalType,
         principalId,
         principalModel(principalType),
         filteredOverrides,
         priority ?? DEFAULT_PRIORITY,
+        undefined,
+        { expectEmpty: !hasBroadManage },
       );
+      if (!config && !hasBroadManage) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
+      }
 
       invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
         logger.error('[adminConfig] Cache invalidation failed after upsert:', err),
@@ -705,30 +702,19 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
-      if (!hasBroadManage) {
-        const existing = await findConfigByPrincipal(principalType, principalId, {
-          includeInactive: true,
-        });
-        const overrideKeys = Object.keys(existing?.overrides ?? {});
-        const tombstoneList = existing?.tombstones ?? [];
-        if (existing && (overrideKeys.length > 0 || tombstoneList.length > 0)) {
-          return res.status(403).json({ error: 'Insufficient permissions' });
-        }
-      }
-
-      const config = await deleteConfig(principalType, principalId);
+      const config = await deleteConfig(principalType, principalId, undefined, {
+        expectEmpty: !hasBroadManage,
+      });
       if (!config) {
-        return res.status(404).json({ error: 'Config not found' });
-      }
-
-      if (!hasBroadManage) {
-        const postOverrideKeys = Object.keys(config.overrides ?? {});
-        const postTombstones = config.tombstones ?? [];
-        if (postOverrideKeys.length > 0 || postTombstones.length > 0) {
-          logger.warn(
-            `[adminConfig] TOCTOU race on delete of ${principalType}/${principalId}: assign-only caller ${user.id} deleted a doc whose state was non-empty at deletion time (overrides=${postOverrideKeys.length}, tombstones=${postTombstones.length}). A concurrent broad-manage write landed between the empty-state guard and the delete.`,
-          );
+        if (!hasBroadManage) {
+          const exists = await findConfigByPrincipal(principalType, principalId, {
+            includeInactive: true,
+          });
+          if (exists) {
+            return res.status(403).json({ error: 'Insufficient permissions' });
+          }
         }
+        return res.status(404).json({ error: 'Config not found' });
       }
 
       invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
@@ -778,30 +764,19 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
-      if (!hasBroadManage) {
-        const existing = await findConfigByPrincipal(principalType, principalId, {
-          includeInactive: true,
-        });
-        const overrideKeys = Object.keys(existing?.overrides ?? {});
-        const tombstoneList = existing?.tombstones ?? [];
-        if (existing && (overrideKeys.length > 0 || tombstoneList.length > 0)) {
-          return res.status(403).json({ error: 'Insufficient permissions' });
-        }
-      }
-
-      const config = await toggleConfigActive(principalType, principalId, isActive);
+      const config = await toggleConfigActive(principalType, principalId, isActive, undefined, {
+        expectEmpty: !hasBroadManage,
+      });
       if (!config) {
-        return res.status(404).json({ error: 'Config not found' });
-      }
-
-      if (!hasBroadManage) {
-        const postOverrideKeys = Object.keys(config.overrides ?? {});
-        const postTombstones = config.tombstones ?? [];
-        if (postOverrideKeys.length > 0 || postTombstones.length > 0) {
-          logger.warn(
-            `[adminConfig] TOCTOU race on toggle of ${principalType}/${principalId}: assign-only caller ${user.id} toggled isActive on a doc whose state was non-empty at toggle time (overrides=${postOverrideKeys.length}, tombstones=${postTombstones.length}). A concurrent broad-manage write landed between the empty-state guard and the toggle.`,
-          );
+        if (!hasBroadManage) {
+          const exists = await findConfigByPrincipal(principalType, principalId, {
+            includeInactive: true,
+          });
+          if (exists) {
+            return res.status(403).json({ error: 'Insufficient permissions' });
+          }
         }
+        return res.status(404).json({ error: 'Config not found' });
       }
 
       invalidateConfigCaches?.(user.tenantId)?.catch((err) =>

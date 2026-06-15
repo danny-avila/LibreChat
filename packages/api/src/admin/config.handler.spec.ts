@@ -1,4 +1,3 @@
-import { logger } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 import { createAdminConfigHandlers } from './config';
@@ -688,7 +687,15 @@ describe('createAdminConfigHandlers', () => {
       expect(res.statusCode).toBe(201);
       expect(res.body).toHaveProperty('config');
       expect(res.body?.config).toHaveProperty('_id', 'c1');
-      expect(upsertConfig).toHaveBeenCalledWith('role', 'admin', expect.anything(), {}, 5);
+      expect(upsertConfig).toHaveBeenCalledWith(
+        'role',
+        'admin',
+        expect.anything(),
+        {},
+        5,
+        undefined,
+        expect.objectContaining({ expectEmpty: expect.any(Boolean) }),
+      );
     });
 
     it('returns no-op message when overrides is empty and no priority is provided', async () => {
@@ -1045,14 +1052,13 @@ describe('createAdminConfigHandlers', () => {
     });
   });
 
-  describe('scope-lifecycle: existing-overrides guard for assign-only callers', () => {
-    it('empty-overrides upsert is rejected when existing doc has non-empty overrides', async () => {
+  describe('scope-lifecycle: atomic empty-state guard for assign-only callers', () => {
+    it('empty-overrides upsert is rejected when atomic filter mismatches (existing doc not empty)', async () => {
       const { handlers, deps } = createHandlers({
         hasConfigCapability: jest.fn().mockResolvedValue(false),
         hasCapability: jest.fn().mockResolvedValue(true),
-        findConfigByPrincipal: jest.fn().mockResolvedValue({
-          _id: 'c1',
-          overrides: { endpoints: { custom: true } },
+        upsertConfig: jest.fn(async (_pt, _pi, _pm, _o, _p, _session, opts) => {
+          return opts?.expectEmpty ? null : { _id: 'c1', configVersion: 1 };
         }),
       });
       const req = mockReq({
@@ -1064,212 +1070,129 @@ describe('createAdminConfigHandlers', () => {
       await handlers.upsertConfigOverrides(req, res);
 
       expect(res.statusCode).toBe(403);
-      expect(deps.upsertConfig).not.toHaveBeenCalled();
-    });
-
-    it('delete is rejected when existing doc has non-empty overrides', async () => {
-      const { handlers, deps } = createHandlers({
-        hasConfigCapability: jest.fn().mockResolvedValue(false),
-        hasCapability: jest.fn().mockResolvedValue(true),
-        findConfigByPrincipal: jest.fn().mockResolvedValue({
-          _id: 'c1',
-          overrides: { endpoints: { custom: true } },
-        }),
-      });
-      const req = mockReq({ params: { principalType: 'role', principalId: 'admin' } });
-      const res = mockRes();
-
-      await handlers.deleteConfigOverrides(req, res);
-
-      expect(res.statusCode).toBe(403);
-      expect(deps.deleteConfig).not.toHaveBeenCalled();
-    });
-
-    it('toggle is rejected when existing doc has non-empty overrides', async () => {
-      const { handlers, deps } = createHandlers({
-        hasConfigCapability: jest.fn().mockResolvedValue(false),
-        hasCapability: jest.fn().mockResolvedValue(true),
-        findConfigByPrincipal: jest.fn().mockResolvedValue({
-          _id: 'c1',
-          overrides: { endpoints: { custom: true } },
-        }),
-      });
-      const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
-        body: { isActive: false },
-      });
-      const res = mockRes();
-
-      await handlers.toggleConfig(req, res);
-
-      expect(res.statusCode).toBe(403);
-      expect(deps.toggleConfigActive).not.toHaveBeenCalled();
-    });
-
-    it('delete succeeds for assign-only caller when existing doc has empty overrides', async () => {
-      const { handlers, deps } = createHandlers({
-        hasConfigCapability: jest.fn().mockResolvedValue(false),
-        hasCapability: jest.fn().mockResolvedValue(true),
-        findConfigByPrincipal: jest.fn().mockResolvedValue({ _id: 'c1', overrides: {} }),
-      });
-      const req = mockReq({ params: { principalType: 'role', principalId: 'admin' } });
-      const res = mockRes();
-
-      await handlers.deleteConfigOverrides(req, res);
-
-      expect(res.statusCode).toBe(200);
-      expect(deps.deleteConfig).toHaveBeenCalled();
-    });
-
-    it('upsert empty payload is rejected when existing doc has tombstones (no overrides)', async () => {
-      const { handlers, deps } = createHandlers({
-        hasConfigCapability: jest.fn().mockResolvedValue(false),
-        hasCapability: jest.fn().mockResolvedValue(true),
-        findConfigByPrincipal: jest.fn().mockResolvedValue({
-          _id: 'c1',
-          overrides: {},
-          tombstones: ['endpoints.openai.apiKey'],
-        }),
-      });
-      const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
-        body: { overrides: {}, priority: 5 },
-      });
-      const res = mockRes();
-
-      await handlers.upsertConfigOverrides(req, res);
-
-      expect(res.statusCode).toBe(403);
-      expect(deps.upsertConfig).not.toHaveBeenCalled();
-    });
-
-    it('delete is rejected when existing doc has tombstones (no overrides)', async () => {
-      const { handlers, deps } = createHandlers({
-        hasConfigCapability: jest.fn().mockResolvedValue(false),
-        hasCapability: jest.fn().mockResolvedValue(true),
-        findConfigByPrincipal: jest.fn().mockResolvedValue({
-          _id: 'c1',
-          overrides: {},
-          tombstones: ['endpoints.openai.apiKey'],
-        }),
-      });
-      const req = mockReq({ params: { principalType: 'role', principalId: 'admin' } });
-      const res = mockRes();
-
-      await handlers.deleteConfigOverrides(req, res);
-
-      expect(res.statusCode).toBe(403);
-      expect(deps.deleteConfig).not.toHaveBeenCalled();
-    });
-
-    it('toggle is rejected when existing doc has tombstones (no overrides)', async () => {
-      const { handlers, deps } = createHandlers({
-        hasConfigCapability: jest.fn().mockResolvedValue(false),
-        hasCapability: jest.fn().mockResolvedValue(true),
-        findConfigByPrincipal: jest.fn().mockResolvedValue({
-          _id: 'c1',
-          overrides: {},
-          tombstones: ['endpoints.openai.apiKey'],
-        }),
-      });
-      const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
-        body: { isActive: false },
-      });
-      const res = mockRes();
-
-      await handlers.toggleConfig(req, res);
-
-      expect(res.statusCode).toBe(403);
-      expect(deps.toggleConfigActive).not.toHaveBeenCalled();
-    });
-
-    it('broad-manage caller bypasses the existing-overrides guard', async () => {
-      const { handlers, deps } = createHandlers({
-        hasConfigCapability: jest.fn().mockResolvedValue(true),
-        findConfigByPrincipal: jest.fn().mockResolvedValue({
-          _id: 'c1',
-          overrides: { endpoints: { custom: true } },
-        }),
-      });
-      const req = mockReq({ params: { principalType: 'role', principalId: 'admin' } });
-      const res = mockRes();
-
-      await handlers.deleteConfigOverrides(req, res);
-
-      expect(res.statusCode).toBe(200);
-      expect(deps.deleteConfig).toHaveBeenCalled();
-    });
-  });
-
-  describe('scope-lifecycle: post-write race detection for assign-only callers', () => {
-    it('logger.warn fires when delete returns a doc with non-empty overrides (race detected)', async () => {
-      const warnSpy = jest.spyOn(logger, 'warn').mockImplementation((() => logger) as never);
-      const { handlers } = createHandlers({
-        hasConfigCapability: jest.fn().mockResolvedValue(false),
-        hasCapability: jest.fn().mockResolvedValue(true),
-        findConfigByPrincipal: jest.fn().mockResolvedValue({ _id: 'c1', overrides: {} }),
-        deleteConfig: jest.fn().mockResolvedValue({
-          _id: 'c1',
-          overrides: { endpoints: { custom: true } },
-        }),
-      });
-      const req = mockReq({ params: { principalType: 'role', principalId: 'admin' } });
-      const res = mockRes();
-
-      await handlers.deleteConfigOverrides(req, res);
-
-      expect(res.statusCode).toBe(200);
-      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('TOCTOU race on delete'));
-      warnSpy.mockRestore();
-    });
-
-    it('logger.warn fires when toggle returns a doc with non-empty tombstones (race detected)', async () => {
-      const warnSpy = jest.spyOn(logger, 'warn').mockImplementation((() => logger) as never);
-      const { handlers } = createHandlers({
-        hasConfigCapability: jest.fn().mockResolvedValue(false),
-        hasCapability: jest.fn().mockResolvedValue(true),
-        findConfigByPrincipal: jest.fn().mockResolvedValue({ _id: 'c1', overrides: {} }),
-        toggleConfigActive: jest.fn().mockResolvedValue({
-          _id: 'c1',
-          overrides: {},
-          tombstones: ['endpoints.openai.apiKey'],
-          isActive: false,
-        }),
-      });
-      const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
-        body: { isActive: false },
-      });
-      const res = mockRes();
-
-      await handlers.toggleConfig(req, res);
-
-      expect(res.statusCode).toBe(200);
-      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('TOCTOU race on toggle'));
-      warnSpy.mockRestore();
-    });
-
-    it('logger.warn does NOT fire when broad-manage caller deletes a non-empty doc', async () => {
-      const warnSpy = jest.spyOn(logger, 'warn').mockImplementation((() => logger) as never);
-      const { handlers } = createHandlers({
-        hasConfigCapability: jest.fn().mockResolvedValue(true),
-        deleteConfig: jest.fn().mockResolvedValue({
-          _id: 'c1',
-          overrides: { endpoints: { custom: true } },
-        }),
-      });
-      const req = mockReq({ params: { principalType: 'role', principalId: 'admin' } });
-      const res = mockRes();
-
-      await handlers.deleteConfigOverrides(req, res);
-
-      expect(res.statusCode).toBe(200);
-      const tomboCalls = warnSpy.mock.calls.filter((call) =>
-        String(call[0] ?? '').includes('TOCTOU'),
+      expect(deps.upsertConfig).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        undefined,
+        { expectEmpty: true },
       );
-      expect(tomboCalls.length).toBe(0);
-      warnSpy.mockRestore();
+    });
+
+    it('delete is rejected with 403 when atomic filter mismatches and doc still exists', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn().mockResolvedValue(true),
+        deleteConfig: jest.fn(async (_pt, _pi, _session, opts) => {
+          return opts?.expectEmpty ? null : { _id: 'c1' };
+        }),
+        findConfigByPrincipal: jest.fn().mockResolvedValue({
+          _id: 'c1',
+          overrides: { endpoints: { custom: true } },
+        }),
+      });
+      const req = mockReq({ params: { principalType: 'role', principalId: 'admin' } });
+      const res = mockRes();
+
+      await handlers.deleteConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(403);
+      expect(deps.deleteConfig).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        undefined,
+        { expectEmpty: true },
+      );
+    });
+
+    it('toggle is rejected with 403 when atomic filter mismatches and doc still exists', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn().mockResolvedValue(true),
+        toggleConfigActive: jest.fn(async (_pt, _pi, _isActive, _session, opts) => {
+          return opts?.expectEmpty ? null : { _id: 'c1', isActive: false };
+        }),
+        findConfigByPrincipal: jest.fn().mockResolvedValue({
+          _id: 'c1',
+          tombstones: ['endpoints.openai.apiKey'],
+        }),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { isActive: false },
+      });
+      const res = mockRes();
+
+      await handlers.toggleConfig(req, res);
+
+      expect(res.statusCode).toBe(403);
+      expect(deps.toggleConfigActive).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        undefined,
+        { expectEmpty: true },
+      );
+    });
+
+    it('delete returns 404 when atomic filter mismatches and doc does not exist', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn().mockResolvedValue(true),
+        deleteConfig: jest.fn().mockResolvedValue(null),
+        findConfigByPrincipal: jest.fn().mockResolvedValue(null),
+      });
+      const req = mockReq({ params: { principalType: 'role', principalId: 'admin' } });
+      const res = mockRes();
+
+      await handlers.deleteConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(404);
+      expect(deps.findConfigByPrincipal).toHaveBeenCalled();
+    });
+
+    it('delete succeeds for assign-only caller when atomic filter matches', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn().mockResolvedValue(true),
+        deleteConfig: jest.fn().mockResolvedValue({ _id: 'c1', overrides: {} }),
+      });
+      const req = mockReq({ params: { principalType: 'role', principalId: 'admin' } });
+      const res = mockRes();
+
+      await handlers.deleteConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(deps.deleteConfig).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        undefined,
+        { expectEmpty: true },
+      );
+    });
+
+    it('broad-manage caller calls destructive op without expectEmpty option', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(true),
+        deleteConfig: jest.fn().mockResolvedValue({
+          _id: 'c1',
+          overrides: { endpoints: { custom: true } },
+        }),
+      });
+      const req = mockReq({ params: { principalType: 'role', principalId: 'admin' } });
+      const res = mockRes();
+
+      await handlers.deleteConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(deps.deleteConfig).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        undefined,
+        { expectEmpty: false },
+      );
     });
   });
 
