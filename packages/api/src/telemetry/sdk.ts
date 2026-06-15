@@ -317,9 +317,7 @@ function createSdk(config: TelemetryConfig): NodeSDK {
     }),
     new ExpressInstrumentation(),
     new MongoDBInstrumentation(),
-    new MongooseInstrumentation({
-      suppressInternalInstrumentation: !config.mongooseInternalTracingEnabled,
-    }),
+    new MongooseInstrumentation(),
     new UndiciInstrumentation({
       startSpanHook: (request: UndiciRequestInfo) => getSanitizedUndiciUrlAttributes(request),
     }),
