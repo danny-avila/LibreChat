@@ -207,7 +207,11 @@ describe('telemetry SDK lifecycle', () => {
     expect(mockMongooseInstrumentation).toHaveBeenCalledWith({
       suppressInternalInstrumentation: false,
     });
+    expect(mockHttpInstrumentation).toHaveBeenCalledTimes(1);
+    expect(mockExpressInstrumentation).toHaveBeenCalledTimes(1);
+    expect(mockMongoDBInstrumentation).toHaveBeenCalledTimes(1);
     expect(mockIORedisInstrumentation).toHaveBeenCalledTimes(1);
+    expect(mockUndiciInstrumentation).toHaveBeenCalledTimes(1);
   });
 
   it('tracks HTTP server request spans for completion updates', () => {
