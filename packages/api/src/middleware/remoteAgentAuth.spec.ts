@@ -1493,10 +1493,7 @@ describe('createRemoteAgentAuth', () => {
         true,
         true,
       );
-      const createPayload = deps.createUser.mock.calls[0]![0] as unknown as Record<
-        string,
-        unknown
-      >;
+      const createPayload = deps.createUser.mock.calls[0]![0] as unknown as Record<string, unknown>;
       expect(createPayload).toBeDefined();
       expectNoPersistedTokenFields(createPayload);
       expect(req.user).toMatchObject({
