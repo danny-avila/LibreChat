@@ -4,6 +4,7 @@ const { isEnabled, getBalanceConfig } = require('@librechat/api');
 const { Constants, CacheKeys, defaultSocialLogins } = require('librechat-data-provider');
 const { getLdapConfig } = require('~/server/services/Config/ldap');
 const { getAppConfig } = require('~/server/services/Config/app');
+const { getBklMaintenanceConfig } = require('~/server/services/Config/bklMaintenance');
 const { getProjectByName } = require('~/models/Project');
 const { getLogStores } = require('~/cache');
 
@@ -26,7 +27,10 @@ router.get('/', async function (req, res) {
 
   const cachedStartupConfig = await cache.get(CacheKeys.STARTUP_CONFIG);
   if (cachedStartupConfig) {
-    res.send(cachedStartupConfig);
+    res.send({
+      ...cachedStartupConfig,
+      bklMaintenance: getBklMaintenanceConfig(),
+    });
     return;
   }
 
@@ -107,6 +111,7 @@ router.get('/', async function (req, res) {
       sharePointPickerGraphScope: process.env.SHAREPOINT_PICKER_GRAPH_SCOPE,
       sharePointPickerSharePointScope: process.env.SHAREPOINT_PICKER_SHAREPOINT_SCOPE,
       openidReuseTokens,
+      bklMaintenance: getBklMaintenanceConfig(),
       conversationImportMaxFileSize: process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES
         ? parseInt(process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES, 10)
         : 0,

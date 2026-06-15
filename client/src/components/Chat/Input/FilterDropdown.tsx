@@ -348,9 +348,6 @@ const FilterDropdown = ({ disabled }: FilterDropdownProps) => {
         <div className="max-h-[420px] overflow-y-auto px-0.5 pb-1">
           {activeTab === 'period' && (
             <>
-              <div className="px-2.5 pb-1 pt-0.5 text-xs font-medium text-text-secondary">
-                {localize('com_ui_period_quick_access')}
-              </div>
               {QUICK_OPTIONS.map((option) => {
                 const isSelected =
                   periodFilter.preset === option.preset &&
@@ -418,9 +415,6 @@ const FilterDropdown = ({ disabled }: FilterDropdownProps) => {
 
           {activeTab === 'extension' && (
             <>
-              <div className="px-2.5 pb-2 pt-0.5 text-xs font-medium text-text-secondary">
-                {localize('com_document_search_filter_extension')}
-              </div>
               <div className="grid grid-cols-2 gap-2 px-1.5 pb-1 pt-0.5">
                 {EXTENSION_OPTIONS.map((opt) => {
                   const active = selectedExts.includes(opt.id);
@@ -449,9 +443,6 @@ const FilterDropdown = ({ disabled }: FilterDropdownProps) => {
 
           {activeTab === 'matter' && (
             <div className="px-1.5 pb-1">
-              <div className="px-1 pb-2 text-xs font-medium text-text-secondary">
-                사건 hard filter
-              </div>
               <div className="mb-1 flex flex-wrap gap-1">
                 {filterMatters.map((m) => (
                   <button
@@ -503,9 +494,6 @@ const FilterDropdown = ({ disabled }: FilterDropdownProps) => {
 
           {activeTab === 'document' && (
             <div className="px-1.5 pb-1">
-              <div className="px-1 pb-2 text-xs font-medium text-text-secondary">
-                문서 hard inject
-              </div>
               <div className="mb-1 flex flex-wrap gap-1">
                 {filterDocs.map((d) => (
                   <button
@@ -525,7 +513,7 @@ const FilterDropdown = ({ disabled }: FilterDropdownProps) => {
               <input
                 value={docSearch}
                 onChange={(e) => setDocSearch(e.target.value)}
-                placeholder="문서명/doc_id 검색"
+                placeholder="문서명/문서번호 검색"
                 className="w-full rounded-md border border-border-light bg-surface-primary px-2 py-1.5 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none"
                 onKeyDown={(e) => e.stopPropagation()}
                 onBeforeInput={stopMenuInputEvent}

@@ -15,9 +15,6 @@ type TLoginFormProps = {
   setError: Pick<TAuthContext, 'setError'>['setError'];
 };
 
-const MAINTENANCE = false;
-const MAINTENANCE_UNTIL = '6월 15일(월) 12:00';
-
 const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, setError }) => {
   const localize = useLocalize();
   const { theme } = useContext(ThemeContext);
@@ -34,6 +31,14 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
   const useUsernameLogin = config?.ldap?.username;
   const validTheme = isDark(theme) ? 'dark' : 'light';
   const requireCaptcha = Boolean(startupConfig.turnstile?.siteKey);
+  const bklMaintenance = startupConfig.bklMaintenance;
+  const isBklMaintenance = bklMaintenance?.enabled === true;
+  const bklMaintenanceUntil = bklMaintenance?.until;
+  const bklMaintenanceMessage =
+    bklMaintenance?.message ||
+    (bklMaintenanceUntil
+      ? `서버 점검 중입니다. ${bklMaintenanceUntil} 이후 이용 가능합니다.`
+      : '서버 점검 중입니다. 잠시 후 다시 시도해 주세요.');
 
   useEffect(() => {
     if (error && error.includes('422') && !showResendLink) {
@@ -97,7 +102,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
               id="email"
               autoComplete={useUsernameLogin ? 'username' : 'email'}
               aria-label={localize('com_auth_email')}
-              disabled={MAINTENANCE}
+              disabled={isBklMaintenance}
               {...register('email', {
                 required: localize('com_auth_email_required'),
                 maxLength: { value: 120, message: localize('com_auth_email_max_length') },
@@ -127,7 +132,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
               id="password"
               autoComplete="current-password"
               aria-label={localize('com_auth_password')}
-              disabled={MAINTENANCE}
+              disabled={isBklMaintenance}
               {...register('password', {
                 required: localize('com_auth_password_required'),
                 minLength: {
@@ -178,16 +183,16 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
             aria-label={localize('com_auth_continue')}
             data-testid="login-button"
             type="submit"
-            disabled={MAINTENANCE || (requireCaptcha && !turnstileToken) || isSubmitting}
+            disabled={isBklMaintenance || (requireCaptcha && !turnstileToken) || isSubmitting}
             variant="submit"
             className="h-12 w-full rounded-2xl"
           >
             {isSubmitting ? <Spinner /> : localize('com_auth_continue')}
           </Button>
         </div>
-        {MAINTENANCE && (
+        {isBklMaintenance && (
           <div className="mt-4 rounded-xl border border-yellow-400 bg-yellow-50 px-4 py-3 text-sm text-yellow-800 dark:border-yellow-600 dark:bg-yellow-900/20 dark:text-yellow-300">
-            서버 점검 중입니다. {MAINTENANCE_UNTIL} 이후 이용 가능합니다.
+            {bklMaintenanceMessage}
           </div>
         )}
       </form>
