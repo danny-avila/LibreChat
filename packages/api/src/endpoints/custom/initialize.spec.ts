@@ -407,14 +407,17 @@ describe('initializeCustom – native Anthropic provider', () => {
     mockGetCustomEndpointConfig.mockReturnValue(config);
     return {
       req: {
-        user: { id: 'user-1' },
+        user: { id: 'user-1', email: 'user@example.com' },
         body: { conversationId: 'convo-1' },
         config: {},
       } as unknown as BaseInitializeParams['req'],
       endpoint: 'Claude-Compatible',
       model_parameters,
       db: {
-        getUserKeyValues: jest.fn(),
+        getUserKeyValues: jest.fn().mockResolvedValue({
+          apiKey: 'sk-user-key',
+          baseURL: 'https://user-controlled.example.com',
+        }),
         getUserKey: jest.fn(),
       } as unknown as BaseInitializeParams['db'],
     };
@@ -444,6 +447,36 @@ describe('initializeCustom – native Anthropic provider', () => {
     expect(defaultHeaders?.['anthropic-version']).toBe('2023-06-01');
     /** Native Anthropic path must NOT use OpenAI legacy content formatting */
     expect(options.useLegacyContent).toBeUndefined();
+  });
+
+  it('withholds configured headers when the user supplies the base URL', async () => {
+    const params = createAnthropicParams({
+      provider: 'anthropic',
+      apiKey: 'sk-ant-custom',
+      baseURL: AuthType.USER_PROVIDED,
+      headers: {
+        Authorization: 'Bearer ${GATEWAY_SECRET}',
+        'X-User-Email': '{{LIBRECHAT_USER_EMAIL}}',
+      },
+      models: { default: ['claude-sonnet-4-5'] },
+    });
+
+    const options = await initializeCustom(params);
+
+    expect(mockValidateEndpointURL).toHaveBeenCalledWith(
+      'https://user-controlled.example.com',
+      'Claude-Compatible',
+      undefined,
+    );
+    expect(options.llmConfig).toHaveProperty(
+      'anthropicApiUrl',
+      'https://user-controlled.example.com',
+    );
+    const defaultHeaders = (
+      options.llmConfig as { clientOptions?: { defaultHeaders?: Record<string, string> } }
+    ).clientOptions?.defaultHeaders;
+    expect(defaultHeaders?.Authorization).toBeUndefined();
+    expect(defaultHeaders?.['X-User-Email']).toBeUndefined();
   });
 
   it('applies customParams.paramDefinitions defaults on the native path', async () => {
