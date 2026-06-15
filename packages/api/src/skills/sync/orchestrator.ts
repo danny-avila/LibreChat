@@ -37,11 +37,6 @@ type SkillSyncTriggerLogger = {
   error: (message: string, error?: unknown) => void;
 };
 
-type WithRequestTenantOptions = {
-  disableRunOnStartup?: boolean;
-  filterConfiguredTenants?: boolean;
-};
-
 export type SkillSyncTriggerRunnerFactoryInput = {
   getConfig: () => MaybePromise<SkillSyncConfig | undefined>;
   loadAppConfig: () => MaybePromise<SkillSyncAppConfigLike | undefined>;
@@ -96,31 +91,57 @@ function getRequestTenantId(user: SkillSyncRequestUser | undefined): string | un
 function withRequestTenant(
   config: SkillSyncConfigWithGitHub,
   user: SkillSyncRequestUser | undefined,
-  { disableRunOnStartup = false, filterConfiguredTenants = false }: WithRequestTenantOptions = {},
+  { disableRunOnStartup = false }: { disableRunOnStartup?: boolean } = {},
 ): SkillSyncConfig {
   const tenantId = getRequestTenantId(user);
-  const sources =
-    filterConfiguredTenants && !tenantId
-      ? []
-      : config.github.sources
-          .filter(
-            (source) =>
-              !filterConfiguredTenants || !source.tenantId || source.tenantId === tenantId,
-          )
-          .map((source) => ({
-            ...source,
-            // Tenant-scoped requests derive their tenant from the request; platform
-            // requests have no tenant and preserve an explicitly configured source.
-            tenantId:
-              filterConfiguredTenants && !source.tenantId
-                ? undefined
-                : (tenantId ?? source.tenantId),
-          }));
   return {
     ...config,
     github: {
       ...config.github,
       ...(disableRunOnStartup ? { runOnStartup: false } : {}),
+      sources: config.github.sources.map((source) => ({
+        ...source,
+        // Tenant-scoped requests derive their tenant from the request; platform
+        // requests have no tenant and preserve an explicitly configured source.
+        tenantId: tenantId ?? source.tenantId,
+      })),
+    },
+  };
+}
+
+function isSameGitHubSource(
+  left: ResolvedGitHubSkillSyncConfig['sources'][number] | undefined,
+  right: ResolvedGitHubSkillSyncConfig['sources'][number] | undefined,
+): boolean {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
+function withAdminReadableTenantScope(
+  config: SkillSyncConfigWithGitHub,
+  user: SkillSyncRequestUser | undefined,
+  base: SkillSyncConfigWithGitHub | undefined,
+): SkillSyncConfig {
+  const tenantId = getRequestTenantId(user);
+  const baseSourceById = new Map(base?.github.sources.map((source) => [source.id, source]) ?? []);
+  const sources = tenantId
+    ? config.github.sources.flatMap((source) => {
+        const baseSource = baseSourceById.get(source.id);
+        if (isSameGitHubSource(source, baseSource)) {
+          if (source.tenantId && source.tenantId !== tenantId) {
+            return [];
+          }
+          return [{ ...source, tenantId: source.tenantId ? tenantId : undefined }];
+        }
+        if (source.tenantId && source.tenantId !== tenantId) {
+          return [];
+        }
+        return [{ ...source, tenantId }];
+      })
+    : [];
+  return {
+    ...config,
+    github: {
+      ...config.github,
       sources,
     },
   };
@@ -160,10 +181,11 @@ function getAdminRequestSkillSyncConfig(
   }
 
   const base = parseSkillSyncConfig(appConfig?.config?.skillSync, logger);
+  const baseWithGitHub = hasGitHubConfig(base) ? base : undefined;
+  if (!allowServerCredentials) {
+    return withAdminReadableTenantScope(resolved, user, baseWithGitHub);
+  }
   if (isSameSkillSyncConfig(resolved, base)) {
-    if (!allowServerCredentials) {
-      return withRequestTenant(resolved, user, { filterConfiguredTenants: true });
-    }
     return resolved;
   }
 
