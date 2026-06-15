@@ -721,6 +721,16 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(404).json({ error: 'Config not found' });
       }
 
+      if (!hasBroadManage) {
+        const postOverrideKeys = Object.keys(config.overrides ?? {});
+        const postTombstones = config.tombstones ?? [];
+        if (postOverrideKeys.length > 0 || postTombstones.length > 0) {
+          logger.warn(
+            `[adminConfig] TOCTOU race on delete of ${principalType}/${principalId}: assign-only caller ${user.id} deleted a doc whose state was non-empty at deletion time (overrides=${postOverrideKeys.length}, tombstones=${postTombstones.length}). A concurrent broad-manage write landed between the empty-state guard and the delete.`,
+          );
+        }
+      }
+
       invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
         logger.error('[adminConfig] Cache invalidation failed after config delete:', err),
       );
@@ -782,6 +792,16 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       const config = await toggleConfigActive(principalType, principalId, isActive);
       if (!config) {
         return res.status(404).json({ error: 'Config not found' });
+      }
+
+      if (!hasBroadManage) {
+        const postOverrideKeys = Object.keys(config.overrides ?? {});
+        const postTombstones = config.tombstones ?? [];
+        if (postOverrideKeys.length > 0 || postTombstones.length > 0) {
+          logger.warn(
+            `[adminConfig] TOCTOU race on toggle of ${principalType}/${principalId}: assign-only caller ${user.id} toggled isActive on a doc whose state was non-empty at toggle time (overrides=${postOverrideKeys.length}, tombstones=${postTombstones.length}). A concurrent broad-manage write landed between the empty-state guard and the toggle.`,
+          );
+        }
       }
 
       invalidateConfigCaches?.(user.tenantId)?.catch((err) =>

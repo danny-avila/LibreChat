@@ -1,3 +1,4 @@
+import { logger } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 import { createAdminConfigHandlers } from './config';
@@ -1198,6 +1199,77 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(200);
       expect(deps.deleteConfig).toHaveBeenCalled();
+    });
+  });
+
+  describe('scope-lifecycle: post-write race detection for assign-only callers', () => {
+    it('logger.warn fires when delete returns a doc with non-empty overrides (race detected)', async () => {
+      const warnSpy = jest.spyOn(logger, 'warn').mockImplementation((() => logger) as never);
+      const { handlers } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn().mockResolvedValue(true),
+        findConfigByPrincipal: jest.fn().mockResolvedValue({ _id: 'c1', overrides: {} }),
+        deleteConfig: jest.fn().mockResolvedValue({
+          _id: 'c1',
+          overrides: { endpoints: { custom: true } },
+        }),
+      });
+      const req = mockReq({ params: { principalType: 'role', principalId: 'admin' } });
+      const res = mockRes();
+
+      await handlers.deleteConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('TOCTOU race on delete'));
+      warnSpy.mockRestore();
+    });
+
+    it('logger.warn fires when toggle returns a doc with non-empty tombstones (race detected)', async () => {
+      const warnSpy = jest.spyOn(logger, 'warn').mockImplementation((() => logger) as never);
+      const { handlers } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn().mockResolvedValue(true),
+        findConfigByPrincipal: jest.fn().mockResolvedValue({ _id: 'c1', overrides: {} }),
+        toggleConfigActive: jest.fn().mockResolvedValue({
+          _id: 'c1',
+          overrides: {},
+          tombstones: ['endpoints.openai.apiKey'],
+          isActive: false,
+        }),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { isActive: false },
+      });
+      const res = mockRes();
+
+      await handlers.toggleConfig(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('TOCTOU race on toggle'));
+      warnSpy.mockRestore();
+    });
+
+    it('logger.warn does NOT fire when broad-manage caller deletes a non-empty doc', async () => {
+      const warnSpy = jest.spyOn(logger, 'warn').mockImplementation((() => logger) as never);
+      const { handlers } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(true),
+        deleteConfig: jest.fn().mockResolvedValue({
+          _id: 'c1',
+          overrides: { endpoints: { custom: true } },
+        }),
+      });
+      const req = mockReq({ params: { principalType: 'role', principalId: 'admin' } });
+      const res = mockRes();
+
+      await handlers.deleteConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const tomboCalls = warnSpy.mock.calls.filter((call) =>
+        String(call[0] ?? '').includes('TOCTOU'),
+      );
+      expect(tomboCalls.length).toBe(0);
+      warnSpy.mockRestore();
     });
   });
 
