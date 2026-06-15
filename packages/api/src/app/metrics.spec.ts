@@ -280,6 +280,7 @@ describe('createMetrics', () => {
 
     recordRumProxyRequest('traces', 'success');
     recordRumProxyRequest('traces', 'auth_drop');
+    recordRumProxyRequest('logs', 'auth_error');
     recordRumProxyRequest('logs', 'collector_5xx');
 
     const response = await request(app)
@@ -292,6 +293,9 @@ describe('createMetrics', () => {
     );
     expect(response.text).toMatch(
       /rum_proxy_requests_total\{endpoint="traces",result="auth_drop"\} 1/,
+    );
+    expect(response.text).toMatch(
+      /rum_proxy_requests_total\{endpoint="logs",result="auth_error"\} 1/,
     );
     expect(response.text).toMatch(
       /rum_proxy_requests_total\{endpoint="logs",result="collector_5xx"\} 1/,

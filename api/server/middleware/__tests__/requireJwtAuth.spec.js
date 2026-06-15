@@ -970,7 +970,7 @@ describe('requireRumProxyAuth', () => {
     expect(res.end).toHaveBeenCalled();
   });
 
-  it('logs passport errors while still dropping telemetry auth failures', () => {
+  it('records passport errors separately from ordinary telemetry auth drops', () => {
     mockPassportError = new Error('passport unavailable');
     const req = mockReq(undefined, { path: '/v1/logs' });
     const res = mockRes();
@@ -979,15 +979,8 @@ describe('requireRumProxyAuth', () => {
     requireRumProxyAuth(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining('[requireRumProxyAuth] Passport auth error'),
-      expect.objectContaining({
-        auth_strategy: 'jwt',
-        reason: 'passport unavailable',
-        rum_endpoint: 'logs',
-      }),
-    );
-    expect(recordRumProxyRequest).toHaveBeenCalledWith('logs', 'auth_drop');
+    expect(logger.warn).not.toHaveBeenCalled();
+    expect(recordRumProxyRequest).toHaveBeenCalledWith('logs', 'auth_error');
     expect(res.status).toHaveBeenCalledWith(204);
     expect(res.end).toHaveBeenCalled();
   });

@@ -141,6 +141,7 @@ export type RumProxyEndpoint = 'traces' | 'logs' | 'unknown';
 export type RumProxyResult =
   | 'success'
   | 'auth_drop'
+  | 'auth_error'
   | 'bad_request'
   | 'not_configured'
   | 'collector_4xx'
