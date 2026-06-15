@@ -1,4 +1,5 @@
 import { memo, useCallback, lazy, Suspense } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilValue } from 'recoil';
 import { SquarePen } from 'lucide-react';
@@ -95,6 +96,33 @@ const NavIconButton = memo(function NavIconButton({
     [link, isActive, setActive, expanded, onExpand, onCollapse],
   );
 
+  const buttonClass = cn(
+    'h-9 w-9 rounded-lg',
+    isActive ? 'bg-surface-active-alt text-text-primary' : 'text-text-secondary',
+  );
+
+  if (link.href) {
+    return (
+      <TooltipAnchor
+        description={localize(link.title)}
+        side="right"
+        render={
+          <Link
+            to={link.href}
+            aria-label={localize(link.title)}
+            aria-current={isActive ? 'page' : undefined}
+            className={cn(
+              'inline-flex items-center justify-center rounded-lg transition-colors hover:bg-surface-hover',
+              buttonClass,
+            )}
+          >
+            <link.icon className="h-5 w-5" aria-hidden="true" />
+          </Link>
+        }
+      />
+    );
+  }
+
   return (
     <TooltipAnchor
       description={localize(link.title)}
@@ -105,10 +133,7 @@ const NavIconButton = memo(function NavIconButton({
           variant="ghost"
           aria-label={localize(link.title)}
           aria-pressed={isActive}
-          className={cn(
-            'h-9 w-9 rounded-lg',
-            isActive ? 'bg-surface-active-alt text-text-primary' : 'text-text-secondary',
-          )}
+          className={buttonClass}
           onClick={handleClick}
         >
           <link.icon className="h-5 w-5" aria-hidden="true" />
@@ -130,8 +155,12 @@ function ExpandedPanel({
   onExpand?: () => void;
 }) {
   const localize = useLocalize();
+  const { pathname } = useLocation();
   const { active, setActive } = useActivePanel();
-  const effectiveActive = resolveActivePanel(active, links);
+  const effectiveActive = (() => {
+    const matched = links.find((l) => l.href && pathname.startsWith(l.href));
+    return matched ? matched.id : resolveActivePanel(active, links);
+  })();
 
   const toggleLabel = expanded ? 'com_nav_close_sidebar' : 'com_nav_open_sidebar';
   const toggleClick = expanded ? onCollapse : onExpand;
