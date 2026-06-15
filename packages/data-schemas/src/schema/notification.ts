@@ -2,7 +2,7 @@ import { Schema } from 'mongoose';
 import { notificationTypes } from 'librechat-data-provider';
 import type { INotification } from '~/types/notification';
 
-const notificationSchema = new Schema<INotification>(
+const notificationSchema: Schema<INotification> = new Schema<INotification>(
   {
     user: {
       type: String,

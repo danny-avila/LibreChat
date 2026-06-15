@@ -1,6 +1,8 @@
 const express = require('express');
 const request = require('supertest');
 
+jest.mock('@librechat/api', () => jest.requireActual('../../../../packages/api/dist'));
+
 const mockCreateBroadcastNotification = jest.fn();
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -33,9 +35,13 @@ jest.mock('~/server/middleware/roles/capabilities', () => ({
 
 const adminNotificationsRoute = require('../admin/notifications');
 
-function createApp(user) {
+function createApp(user, { withGlobalParser = false } = {}) {
   const app = express();
-  app.use(express.json());
+  if (withGlobalParser) {
+    app.use(express.json({ limit: '3mb' }));
+  } else {
+    app.use(express.json());
+  }
   app.use((req, _res, next) => {
     req.user = user;
     next();
@@ -85,6 +91,22 @@ describe('Admin notifications route', () => {
       link: '/c/new',
     });
     expect(response.body).toEqual({ created: true, createdCount: 42 });
+  });
+
+  it('rejects payloads larger than 100KB even with a global 3MB parser', async () => {
+    const app = createApp({ id: 'admin-1', role: 'ADMIN' }, { withGlobalParser: true });
+
+    const response = await request(app)
+      .post('/api/admin/notifications/broadcast')
+      .send({
+        type: 'announcement',
+        title: 'x'.repeat(102400),
+        message: 'y',
+      })
+      .expect(413);
+
+    expect(response.body.error).toBe('Request body too large');
+    expect(mockCreateBroadcastNotification).not.toHaveBeenCalled();
   });
 
   it('rejects broadcast types other than announcement', async () => {

@@ -1,6 +1,10 @@
-import mongoose from 'mongoose';
+import mongoose, { Types } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createNotificationMethods } from './notification';
+import {
+  BROADCAST_USER_BATCH_SIZE,
+  createNotificationMethods,
+  InvalidNotificationCursorError,
+} from './notification';
 import { createModels } from '../models';
 
 jest.mock('~/config/winston', () => ({
@@ -15,10 +19,17 @@ let createNotification: ReturnType<typeof createNotificationMethods>['createNoti
 let createBroadcastNotification: ReturnType<
   typeof createNotificationMethods
 >['createBroadcastNotification'];
-let listNotificationsForUser: ReturnType<typeof createNotificationMethods>['listNotificationsForUser'];
+let listNotificationsForUser: ReturnType<
+  typeof createNotificationMethods
+>['listNotificationsForUser'];
 let markNotificationRead: ReturnType<typeof createNotificationMethods>['markNotificationRead'];
-let markAllNotificationsRead: ReturnType<typeof createNotificationMethods>['markAllNotificationsRead'];
+let markAllNotificationsRead: ReturnType<
+  typeof createNotificationMethods
+>['markAllNotificationsRead'];
 let deleteNotification: ReturnType<typeof createNotificationMethods>['deleteNotification'];
+let deleteAllUserNotifications: ReturnType<
+  typeof createNotificationMethods
+>['deleteAllUserNotifications'];
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
@@ -32,6 +43,7 @@ beforeAll(async () => {
   markNotificationRead = methods.markNotificationRead;
   markAllNotificationsRead = methods.markAllNotificationsRead;
   deleteNotification = methods.deleteNotification;
+  deleteAllUserNotifications = methods.deleteAllUserNotifications;
 });
 
 afterAll(async () => {
@@ -88,6 +100,26 @@ describe('Notification methods', () => {
     });
     expect(second.notifications).toHaveLength(1);
     expect(second.notifications[0].title).not.toBe(first.notifications[0].title);
+  });
+
+  it('rejects invalid pagination cursors', async () => {
+    await expect(
+      listNotificationsForUser('user-a', { cursor: 'not-valid-base64!!!' }),
+    ).rejects.toThrow(InvalidNotificationCursorError);
+
+    const invalidDateCursor = Buffer.from(
+      JSON.stringify({ createdAt: 'not-a-date', _id: new Types.ObjectId().toString() }),
+    ).toString('base64');
+    await expect(listNotificationsForUser('user-a', { cursor: invalidDateCursor })).rejects.toThrow(
+      InvalidNotificationCursorError,
+    );
+
+    const invalidIdCursor = Buffer.from(
+      JSON.stringify({ createdAt: new Date().toISOString(), _id: 'invalid-id' }),
+    ).toString('base64');
+    await expect(listNotificationsForUser('user-a', { cursor: invalidIdCursor })).rejects.toThrow(
+      InvalidNotificationCursorError,
+    );
   });
 
   it('filters unread only', async () => {
@@ -153,6 +185,35 @@ describe('Notification methods', () => {
     expect(page.notifications).toHaveLength(0);
   });
 
+  it('deletes all notifications for a user', async () => {
+    await createNotification({
+      userId: 'user-a',
+      type: 'generic',
+      title: 'A',
+      message: 'a',
+    });
+    await createNotification({
+      userId: 'user-a',
+      type: 'system',
+      title: 'B',
+      message: 'b',
+    });
+    await createNotification({
+      userId: 'user-b',
+      type: 'generic',
+      title: 'Other',
+      message: 'other',
+    });
+
+    const deletedCount = await deleteAllUserNotifications('user-a');
+    expect(deletedCount).toBe(2);
+
+    const userAPage = await listNotificationsForUser('user-a', { limit: 10 });
+    const userBPage = await listNotificationsForUser('user-b', { limit: 10 });
+    expect(userAPage.notifications).toHaveLength(0);
+    expect(userBPage.notifications).toHaveLength(1);
+  });
+
   it('does not list other users notifications', async () => {
     await createNotification({
       userId: 'user-a',
@@ -187,7 +248,9 @@ describe('Notification methods', () => {
 
     expect(createdCount).toBe(2);
 
-    const users = await mongoose.models.User.find({}, { _id: 1 }).lean();
+    const users = await mongoose.models.User.find({}, { _id: 1 }).lean<
+      Array<{ _id: Types.ObjectId }>
+    >();
     const [firstUser, secondUser] = users;
 
     const firstInbox = await listNotificationsForUser(firstUser._id.toString(), { limit: 10 });
@@ -197,6 +260,27 @@ describe('Notification methods', () => {
     expect(secondInbox.notifications).toHaveLength(1);
     expect(firstInbox.notifications[0].type).toBe('announcement');
     expect(secondInbox.notifications[0].type).toBe('announcement');
+  });
+
+  it('broadcasts in batches for large user tables', async () => {
+    const userCount = BROADCAST_USER_BATCH_SIZE + 1;
+    await mongoose.models.User.insertMany(
+      Array.from({ length: userCount }, (_, index) => ({
+        email: `batch-user-${index}@example.com`,
+        emailVerified: true,
+        provider: 'local',
+      })),
+    );
+
+    const { createdCount } = await createBroadcastNotification({
+      type: 'announcement',
+      title: 'Batch test',
+      message: 'Broadcast to many users',
+    });
+
+    expect(createdCount).toBe(userCount);
+    const notificationCount = await mongoose.models.Notification.countDocuments();
+    expect(notificationCount).toBe(userCount);
   });
 
   it('supports mark-read and mark-all-read for announcement notifications', async () => {

@@ -8,6 +8,7 @@ export { createModels } from './models';
 export {
   createMethods,
   RoleConflictError,
+  InvalidNotificationCursorError,
   DEFAULT_REFRESH_TOKEN_EXPIRY,
   DEFAULT_SESSION_EXPIRY,
   tokenValues,

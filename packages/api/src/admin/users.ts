@@ -40,10 +40,18 @@ export interface AdminUsersDeps {
     principalType: PrincipalType;
     principalId: string | Types.ObjectId;
   }) => Promise<void>;
+  deleteAllUserNotifications: (userId: string) => Promise<number>;
 }
 
 export function createAdminUsersHandlers(deps: AdminUsersDeps) {
-  const { findUsers, countUsers, deleteUserById, deleteConfig, deleteAclEntries } = deps;
+  const {
+    findUsers,
+    countUsers,
+    deleteUserById,
+    deleteConfig,
+    deleteAclEntries,
+    deleteAllUserNotifications,
+  } = deps;
 
   async function listUsersHandler(req: ServerRequest, res: Response) {
     try {
@@ -162,6 +170,7 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
       const cleanupResults = await Promise.allSettled([
         deleteConfig(PrincipalType.USER, id),
         deleteAclEntries({ principalType: PrincipalType.USER, principalId: objectId }),
+        deleteAllUserNotifications(id),
       ]);
       for (const r of cleanupResults) {
         if (r.status === 'rejected') {

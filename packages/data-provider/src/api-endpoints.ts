@@ -460,14 +460,20 @@ export const memories = () => `${BASE_URL}/api/memories`;
 export const memory = (key: string) => `${memories()}/${encodeURIComponent(key)}`;
 export const memoryPreferences = () => `${memories()}/preferences`;
 
+function notificationUnreadOnlyParam(unreadOnly?: boolean): string | undefined {
+  if (unreadOnly === undefined) {
+    return undefined;
+  }
+  return unreadOnly ? 'true' : 'false';
+}
+
 /* Notifications */
 export const notifications = (params?: q.NotificationsListParams) => {
   const query = params
     ? buildQuery({
         cursor: params.cursor,
         limit: params.limit,
-        unreadOnly:
-          params.unreadOnly === true ? 'true' : params.unreadOnly === false ? 'false' : undefined,
+        unreadOnly: notificationUnreadOnlyParam(params.unreadOnly),
       })
     : '';
   return `${BASE_URL}/api/notifications${query}`;
