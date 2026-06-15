@@ -16,6 +16,7 @@ import ChatForm from './Input/ChatForm';
 import Landing from './Landing';
 import Header from './Header';
 import BklTopBanner from './BklTopBanner';
+import BklFeatureCarousel from './BklFeatureCarousel';
 import Footer from './Footer';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -102,6 +103,7 @@ function ChatView({ index = 0 }: { index?: number }) {
                     )}
                   >
                     <ChatForm index={index} />
+                    {isLandingPage && <BklFeatureCarousel />}
                     {isLandingPage ? <ConversationStarters /> : <Footer />}
                   </div>
                 </div>
