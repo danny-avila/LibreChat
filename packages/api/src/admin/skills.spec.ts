@@ -125,7 +125,7 @@ describe('createAdminSkillsSyncHandlers', () => {
     );
   });
 
-  it('filters tenant-scoped status reads to the request tenant', async () => {
+  it('filters tenant-scoped status reads to the request tenant and unscoped sources', async () => {
     const runner = {
       getStatus: jest.fn(async () => ({
         enabled: true,
@@ -138,6 +138,13 @@ describe('createAdminSkillsSyncHandlers', () => {
             status: 'succeeded',
             syncedSkillCount: 4,
             syncedFileCount: 8,
+          }),
+          createSourceStatus({
+            sourceId: 'shared-source',
+            tenantId: undefined,
+            status: 'succeeded',
+            syncedSkillCount: 2,
+            syncedFileCount: 3,
           }),
           createSourceStatus({
             sourceId: 'tenant-b-source',
@@ -181,12 +188,22 @@ describe('createAdminSkillsSyncHandlers', () => {
             syncedSkillCount: 4,
             syncedFileCount: 8,
           }),
+          expect.objectContaining({
+            sourceId: 'shared-source',
+            tenantId: undefined,
+            status: 'succeeded',
+            syncedSkillCount: 2,
+            syncedFileCount: 3,
+          }),
         ],
       }),
     );
     const response = res.json.mock.calls[0]?.[0] as { sources: Array<{ tenantId?: string }> };
-    expect(response.sources).toHaveLength(1);
-    expect(response.sources).toEqual([expect.objectContaining({ sourceId: 'tenant-a-source' })]);
+    expect(response.sources).toHaveLength(2);
+    expect(response.sources).toEqual([
+      expect.objectContaining({ sourceId: 'tenant-a-source' }),
+      expect.objectContaining({ sourceId: 'shared-source', tenantId: undefined }),
+    ]);
   });
 
   it('redacts credential-related errors from tenant-scoped status reads', async () => {

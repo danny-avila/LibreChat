@@ -111,7 +111,10 @@ function withRequestTenant(
             ...source,
             // Tenant-scoped requests derive their tenant from the request; platform
             // requests have no tenant and preserve an explicitly configured source.
-            tenantId: tenantId ?? source.tenantId,
+            tenantId:
+              filterConfiguredTenants && !source.tenantId
+                ? undefined
+                : (tenantId ?? source.tenantId),
           }));
   return {
     ...config,

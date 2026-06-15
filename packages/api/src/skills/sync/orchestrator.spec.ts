@@ -250,7 +250,7 @@ describe('createSkillSyncTriggerOrchestrator', () => {
     );
   });
 
-  it('filters admin base skillSync status sources for tenant-scoped readers', async () => {
+  it('filters admin base skillSync status sources without rewriting unscoped sources', async () => {
     const config = skillSync({
       sources: [
         {
@@ -284,7 +284,7 @@ describe('createSkillSyncTriggerOrchestrator', () => {
 
     expect(runnerConfig?.github?.sources).toEqual([
       expect.objectContaining({ id: 'tenant-a-source', tenantId: 'tenant-a' }),
-      expect.objectContaining({ id: 'shared-source', tenantId: 'tenant-a' }),
+      expect.objectContaining({ id: 'shared-source', tenantId: undefined }),
     ]);
   });
 

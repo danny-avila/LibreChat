@@ -170,7 +170,7 @@ function getVisibleSourceStatuses<T extends ISkillSyncStatus>(
   if (!tenantId) {
     return [];
   }
-  return sources.filter((source) => source.tenantId === tenantId);
+  return sources.filter((source) => !source.tenantId || source.tenantId === tenantId);
 }
 
 function isCredentialKey(value: unknown): value is string {
