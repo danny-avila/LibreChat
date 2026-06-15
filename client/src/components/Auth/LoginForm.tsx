@@ -15,7 +15,7 @@ type TLoginFormProps = {
   setError: Pick<TAuthContext, 'setError'>['setError'];
 };
 
-const MAINTENANCE = true;
+const MAINTENANCE = false;
 const MAINTENANCE_UNTIL = '6월 15일(월) 12:00';
 
 const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, setError }) => {
