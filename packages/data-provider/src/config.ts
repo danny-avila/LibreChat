@@ -1274,7 +1274,7 @@ export const interfaceSchema = z
     runCode: true,
     webSearch: true,
     contextUsage: true,
-    contextCost: true,
+    contextCost: false,
     peoplePicker: {
       users: true,
       groups: true,
