@@ -34,7 +34,8 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
   const localize = useLocalize();
   const [activeTab, setActiveTab] = useState(SettingsTabValues.GENERAL);
   const tabRefs = useRef({});
-  const { hasAnyPersonalizationFeature, hasMemoryOptOut } = usePersonalizationAccess();
+  const { hasAnyPersonalizationFeature, hasMemoryOptOut, hasLocationSharing } =
+    usePersonalizationAccess();
   const aboutEnabled = startupConfig?.interface?.buildInfo !== false;
 
   useEffect(() => {
@@ -254,6 +255,7 @@ export default function Settings({ open, onOpenChange }: TDialogProps) {
                       <Tabs.Content value={SettingsTabValues.PERSONALIZATION} tabIndex={-1}>
                         <Personalization
                           hasMemoryOptOut={hasMemoryOptOut}
+                          hasLocationSharing={hasLocationSharing}
                           hasAnyPersonalizationFeature={hasAnyPersonalizationFeature}
                         />
                       </Tabs.Content>
