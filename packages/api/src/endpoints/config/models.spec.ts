@@ -1,5 +1,6 @@
 import { AuthType, EModelEndpoint } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
+import { SCOPED_TOKEN_CONFIG_KEY_PREFIX } from '../keys';
 import { createLoadConfigModels } from './models';
 
 jest.mock('~/utils', () => {
@@ -105,6 +106,34 @@ describe('createLoadConfigModels – user-provided baseURL header guard', () => 
         headers,
       }),
     );
+  });
+
+  it('tenant-scopes the fetched token config cache key for system-defined endpoints', async () => {
+    const loadConfigModels = createLoadConfigModels({
+      getAppConfig: jest.fn().mockResolvedValue(
+        buildAppConfig({
+          baseURL: 'https://admin-trusted.example.com/v1',
+          apiKey: 'sk-system-key',
+        }),
+      ),
+      getUserKeyValues: jest.fn(),
+      fetchModels,
+    });
+
+    const req = {
+      user: { id: 'user-1', tenantId: 'tenant-a' },
+      config: undefined,
+    } as unknown as ServerRequest;
+
+    await loadConfigModels(req);
+
+    expect(fetchModels).toHaveBeenCalledTimes(1);
+    const tokenKey = fetchModels.mock.calls[0][0].tokenKey;
+    expect(fetchModels.mock.calls[0][0].name).toBe('TestProxy');
+    expect(tokenKey.startsWith(SCOPED_TOKEN_CONFIG_KEY_PREFIX)).toBe(true);
+    expect(tokenKey).not.toBe('tenant:tenant-a:TestProxy');
+    expect(tokenKey).not.toContain('tenant-a');
+    expect(tokenKey).not.toContain('TestProxy');
   });
 });
 

@@ -102,6 +102,7 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
      *  sharing the fetch can be backfilled with the same config afterward */
     const uniqueKeyToTokenKey: Record<string, string> = {};
     const endpointsMap: Record<string, TEndpoint> = {};
+    const tenantId = req.user?.tenantId;
 
     const resolved: ResolvedEndpoint[] = [];
     const userKeyEndpoints: ResolvedEndpoint[] = [];
@@ -182,7 +183,7 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
         if (!fetchPromisesMap[uniqueKey]) {
           /** User-scoped when configured headers resolve per user — the
            *  derived token config must not be cached under the shared name */
-          const tokenKey = getTokenConfigKey(endpoint, name, req.user?.id ?? '');
+          const tokenKey = getTokenConfigKey(endpoint, name, req.user?.id ?? '', tenantId);
           uniqueKeyToTokenKey[uniqueKey] = tokenKey;
           fetchPromisesMap[uniqueKey] = fetchModels({
             name,
@@ -227,7 +228,7 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
               userIdQuery: models.userIdQuery,
               skipCache: true,
               /** Fetched with the user's key/URL — always user-scoped */
-              tokenKey: getTokenConfigKey(endpoint, name, req.user?.id ?? ''),
+              tokenKey: getTokenConfigKey(endpoint, name, req.user?.id ?? '', tenantId),
             });
           uniqueKeyToEndpointsMap[userFetchKey] = uniqueKeyToEndpointsMap[userFetchKey] || [];
           uniqueKeyToEndpointsMap[userFetchKey].push(name);
@@ -271,7 +272,12 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
         const config = await cache.get(winnerTokenKey);
         if (config != null) {
           for (const name of associatedNames) {
-            const siblingKey = getTokenConfigKey(endpointsMap[name], name, req.user?.id ?? '');
+            const siblingKey = getTokenConfigKey(
+              endpointsMap[name],
+              name,
+              req.user?.id ?? '',
+              tenantId,
+            );
             if (siblingKey !== winnerTokenKey) {
               await cache.set(siblingKey, config);
             }
