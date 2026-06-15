@@ -1,0 +1,91 @@
+version: 1.1.5
+cache: true
+interface:
+  sidePanel: false
+endpoints:
+  custom:
+    - name: BKL DB AI
+      apiKey: bkl-internal
+      baseURL: ${BKL_API_BASE_URL}/v1
+      headers:
+        X-BKL-User-Id: '{{LIBRECHAT_USER_ID}}'
+        X-BKL-User-Name: '{{LIBRECHAT_USER_USERNAME}}'
+        X-BKL-Conversation-Id: '{{LIBRECHAT_BODY_CONVERSATIONID}}'
+        X-BKL-Parent-Message-Id: '{{LIBRECHAT_BODY_PARENTMESSAGEID}}'
+        X-BKL-Message-Id: '{{LIBRECHAT_BODY_MESSAGEID}}'
+        X-LC-User-Role: '{{LIBRECHAT_USER_ROLE}}'
+      models:
+        default:
+          - bkl-search
+        fetch: false
+      titleConvo: true
+      titleModel: current_model
+      titleMethod: completion
+      titlePrompt: |-
+        [BKL_SYSTEM_TASK:title]
+        다음 대화 내용을 바탕으로 한국어 5단어 이내의 간결한 제목을 작성하세요.
+        - 따옴표·마침표·이모지 등 문장부호와 장식 문자는 사용하지 마세요.
+        - 영어 단어 대신 가능한 한 자연스러운 한국어를 사용하세요.
+        - 제목 외 다른 설명이나 머리말은 출력하지 말고, 제목 자체만 한 줄로 출력하세요.
+
+        대화:
+        {convo}
+      modelDisplayLabel: bkl DB AI
+      dropParams:
+        - frequency_penalty
+        - presence_penalty
+        - top_p
+        - user
+ocr:
+  strategy: azure_mistral_ocr
+  baseURL: http://ai-ocr:8090/v1
+  apiKey: bkl-internal
+  mistralModel: bkl-ocr
+fileConfig:
+  endpoints:
+    agents: &bkl_file_uploads
+      fileLimit: 10
+      fileSizeLimit: 50
+      totalSizeLimit: 100
+      supportedMimeTypes:
+        - application/pdf
+        - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+        - application/msword
+        - application/vnd.openxmlformats-officedocument.presentationml.presentation
+        - application/vnd.ms-powerpoint
+        - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+        - application/vnd.ms-excel
+        - application/x-hwp
+        - application/x-hwpx
+        - application/vnd.hancom.hwp
+        - application/haansofthwp
+        - application/haansoftxhwp
+        - application/vnd.hancom.hwpx
+        - application/haansofthwpx
+        - application/vnd.ms-outlook
+        - message/rfc822
+        - text/plain
+        - text/markdown
+        - image/.*
+    BKL DB AI: *bkl_file_uploads
+    default: *bkl_file_uploads
+  ocr:
+    supportedMimeTypes:
+      - application/pdf
+      - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+      - application/msword
+      - application/vnd.openxmlformats-officedocument.presentationml.presentation
+      - application/vnd.ms-powerpoint
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      - application/vnd.ms-excel
+      - application/x-hwp
+      - application/x-hwpx
+      - application/vnd.hancom.hwp
+      - application/haansofthwp
+      - application/haansoftxhwp
+      - application/vnd.hancom.hwpx
+      - application/haansofthwpx
+      - application/vnd.ms-outlook
+      - message/rfc822
+      - text/plain
+      - text/markdown

@@ -49,7 +49,9 @@ RUN \
 
 # Node API setup
 EXPOSE 3080
-ENV HOST=0.0.0.0
+ENV HOST=0.0.0.0 \
+    ENDPOINTS=custom \
+    CONFIG_PATH=/app/config/bkl-librechat.yaml
 CMD ["npm", "run", "backend"]
 
 # Optional: for client with nginx routing
