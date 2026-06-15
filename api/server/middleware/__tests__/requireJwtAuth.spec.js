@@ -888,6 +888,7 @@ describe('requireRumProxyAuth', () => {
     );
     expect(req.authStrategy).toBe('jwt');
     expect(maybeRefreshCloudFrontAuthCookiesMiddleware).not.toHaveBeenCalled();
+    // Success is recorded by the proxy.
     expect(recordRumProxyRequest).not.toHaveBeenCalled();
     expect(res.status).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalled();
