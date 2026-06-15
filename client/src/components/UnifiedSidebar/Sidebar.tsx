@@ -218,17 +218,30 @@ function Sidebar({
   onCollapse: () => void;
   onExpand: () => void;
 }) {
-  if (expanded) {
-    return <FullSidebar links={links} onCollapse={onCollapse} />;
-  }
-
   return (
-    <ExpandedPanel
-      links={links}
-      expanded={false}
-      onExpand={onExpand}
-      onCollapse={onCollapse}
-    />
+    <div className="relative h-full w-full overflow-hidden">
+      {/* Icon strip — always rendered as the base layer */}
+      <div className="absolute inset-y-0 left-0 w-[52px]">
+        <ExpandedPanel
+          links={links}
+          expanded={false}
+          onExpand={onExpand}
+          onCollapse={onCollapse}
+        />
+      </div>
+
+      {/* Full sidebar — slides in/out over the icon strip */}
+      <div
+        className="absolute inset-0"
+        style={{
+          transform: expanded ? 'translateX(0)' : 'translateX(-100%)',
+          transition: 'transform 300ms cubic-bezier(0.2, 0, 0, 1)',
+        }}
+        inert={!expanded ? ('' as unknown as boolean) : undefined}
+      >
+        <FullSidebar links={links} onCollapse={onCollapse} />
+      </div>
+    </div>
   );
 }
 
