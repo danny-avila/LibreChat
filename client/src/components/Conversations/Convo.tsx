@@ -1,4 +1,5 @@
 import React, { memo, useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { Pin } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { Constants } from 'librechat-data-provider';
@@ -275,6 +276,9 @@ function Conversation({
           <ConversationEndpointIcon conversation={conversation} size={20} context="menu-item" />
           */}
         </ConvoLink>
+      )}
+      {conversation.pinned === true && (
+        <Pin className="icon-sm mr-1 shrink-0 text-text-primary" aria-hidden="true" />
       )}
       <div
         className={cn(
