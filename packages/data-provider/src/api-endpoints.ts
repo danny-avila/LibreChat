@@ -1,7 +1,7 @@
 import type { StartupConfigContext } from './config';
 import type { AssistantsEndpoint } from './schemas';
-import * as q from './types/queries';
 import { ResourceType } from './accessPermissions';
+import * as q from './types/queries';
 
 let BASE_URL = '';
 if (
@@ -147,6 +147,8 @@ export const presets = () => `${BASE_URL}/api/presets`;
 export const deletePreset = () => `${BASE_URL}/api/presets/delete`;
 
 export const aiEndpoints = () => `${BASE_URL}/api/endpoints`;
+
+export const tokenConfig = () => `${BASE_URL}/api/endpoints/token-config`;
 
 export const models = () => `${BASE_URL}/api/models`;
 
@@ -403,6 +405,12 @@ export const skillFiles = (id: string) => `${getSkill(id)}/files`;
 
 export const skillFile = (id: string, relativePath: string) =>
   `${skillFiles(id)}/${encodeURIComponent(relativePath)}`;
+
+export const adminSkillsSync = () => `${BASE_URL}/api/admin/skills/sync`;
+export const adminSkillsSyncStatus = () => `${adminSkillsSync()}/status`;
+export const adminSkillsSyncRun = () => `${adminSkillsSync()}/run`;
+export const adminSkillsSyncCredential = (credentialKey: string) =>
+  `${adminSkillsSync()}/credentials/${encodeURIComponent(credentialKey)}`;
 
 /**
  * Skill filesystem tree (phase 2). URL shape mirrors the original UI PR so

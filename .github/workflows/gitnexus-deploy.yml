@@ -84,7 +84,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  GITNEXUS_VERSION: '1.6.5'
+  GITNEXUS_VERSION: '1.6.7'
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/librechat-gitnexus
 
 jobs:
@@ -460,10 +460,11 @@ jobs:
 
             # ── Disk cleanup ──────────────────────────────────────
             # Docker accumulates old image layers, dangling images, and
-            # build cache across deploys. On a 60GB droplet with a 700MB+
-            # gitnexus image, this fills the disk after ~40 deploys.
-            # Prune everything not used by currently-running containers
-            # BEFORE pulling the new image so the extract has room.
+            # build cache across deploys. This droplet is only ~8.7GB
+            # usable with a 700MB+ gitnexus image, so disk pressure is
+            # constant. Prune everything not used by currently-running
+            # containers BEFORE pulling the new image so the extract has
+            # room; the post-recreate prune below reclaims the old image.
             echo "Disk before cleanup:"
             df -h / | tail -1
             # Omit --volumes: Caddy's caddy-data and caddy-config volumes
@@ -475,15 +476,26 @@ jobs:
             echo "Disk after cleanup:"
             df -h / | tail -1
 
-            # Fail fast if disk is critically low even after prune
+            # Fail fast if disk is critically low even after prune. The
+            # gitnexus image is ~700MB and shares most layers with the
+            # running one, so an incremental pull needs well under 1GB.
+            # 1536MB leaves headroom on this small droplet without the
+            # over-conservative 2GB guard aborting on a healthy box.
             AVAIL_MB=$(df --output=avail -m / | tail -1 | tr -d ' ')
-            if [ "$AVAIL_MB" -lt 2048 ]; then
+            if [ "$AVAIL_MB" -lt 1536 ]; then
               echo "::error::Disk critically low (${AVAIL_MB}MB free). Aborting deploy."
               exit 1
             fi
 
             docker compose pull gitnexus
             docker compose up -d --force-recreate gitnexus
+
+            # The previous gitnexus image is now dangling (the running
+            # container was recreated onto the freshly pulled image). The
+            # pre-pull prune above couldn't touch it because it was still
+            # in use at that point. Reclaim it now so the old generation
+            # doesn't accumulate — critical on this 10GB droplet.
+            docker image prune -f 2>/dev/null || true
 
             # Reload Caddy in-place so a changed Caddyfile takes effect
             # without losing TLS certs or restarting connections. If caddy

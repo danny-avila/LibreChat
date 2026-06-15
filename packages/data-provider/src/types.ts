@@ -10,11 +10,11 @@ import type {
   ReasoningResponseKey,
   ReasoningParameterFormat,
 } from './schemas';
-import type { Agent, AgentSubagentsConfig } from './types/assistants';
 import type { RefillIntervalUnit } from './balance';
 import type { SettingDefinition } from './generate';
 import type { TMinimalFeedback } from './feedback';
 import type { ContentTypes } from './types/runs';
+import type { Agent } from './types/assistants';
 
 export * from './schemas';
 
@@ -107,7 +107,6 @@ export type TEphemeralAgent = {
   execute_code?: boolean;
   artifacts?: string;
   skills?: boolean;
-  subagents?: AgentSubagentsConfig;
 };
 
 export type TPayload = Partial<TMessage> &
@@ -454,6 +453,18 @@ export type TEndpointsConfig =
   | undefined;
 
 export type TModelsConfig = Record<string, string[]>;
+
+/** Server-resolved context window and pricing for one model. Rates are USD per 1M tokens. */
+export type TModelTokenomics = {
+  context?: number;
+  prompt?: number;
+  completion?: number;
+  cacheWrite?: number;
+  cacheRead?: number;
+};
+
+/** endpoint → model → resolved tokenomics, from GET /api/endpoints/token-config */
+export type TTokenConfigMap = Record<string, Record<string, TModelTokenomics>>;
 
 export type TUpdateTokenCountResponse = {
   count: number;

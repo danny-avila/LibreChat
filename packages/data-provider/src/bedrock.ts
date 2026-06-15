@@ -105,7 +105,13 @@ function parseSonnetVersion(model: string): { major: number; minor: number } | n
   return null;
 }
 
-/** Checks if a model supports adaptive thinking (Opus 4.6+, Sonnet 4.6+) */
+/**
+ * Mythos-class detection (Claude Fable / Mythos) lives in `schemas.ts` as
+ * `isMythosClassModel` — the single source of truth for the family names.
+ * The helpers below OR it in alongside the `opus`/`sonnet` version parsers.
+ */
+
+/** Checks if a model supports adaptive thinking (Opus 4.6+, Sonnet 4.6+, Fable/Mythos) */
 export function supportsAdaptiveThinking(model: string): boolean {
   const opus = parseOpusVersion(model);
   if (opus && (opus.major > 4 || (opus.major === 4 && opus.minor >= 6))) {
@@ -113,6 +119,9 @@ export function supportsAdaptiveThinking(model: string): boolean {
   }
   const sonnet = parseSonnetVersion(model);
   if (sonnet != null && (sonnet.major > 4 || (sonnet.major === 4 && sonnet.minor >= 6))) {
+    return true;
+  }
+  if (s.isMythosClassModel(model)) {
     return true;
   }
   return false;
@@ -133,6 +142,9 @@ export function omitsThinkingByDefault(model: string): boolean {
   if (opus && (opus.major > 4 || (opus.major === 4 && opus.minor >= 7))) {
     return true;
   }
+  if (s.isMythosClassModel(model)) {
+    return true;
+  }
   return false;
 }
 
@@ -141,10 +153,13 @@ export function omitsSamplingParameters(model: string): boolean {
   if (opus && (opus.major > 4 || (opus.major === 4 && opus.minor >= 7))) {
     return true;
   }
+  if (s.isMythosClassModel(model)) {
+    return true;
+  }
   return false;
 }
 
-/** Checks if a model has a 1M context window (Sonnet 4.6+, Opus 4.6+, Opus 5+) */
+/** Checks if a model has a 1M context window (Sonnet 4.6+, Opus 4.6+, Opus 5+, Fable/Mythos) */
 export function supportsContext1m(model: string): boolean {
   const sonnet = parseSonnetVersion(model);
   if (sonnet != null && (sonnet.major > 4 || (sonnet.major === 4 && sonnet.minor >= 6))) {
@@ -152,6 +167,9 @@ export function supportsContext1m(model: string): boolean {
   }
   const opus = parseOpusVersion(model);
   if (opus && (opus.major > 4 || (opus.major === 4 && opus.minor >= 6))) {
+    return true;
+  }
+  if (s.isMythosClassModel(model)) {
     return true;
   }
   return false;
@@ -167,6 +185,8 @@ export function supportsContext1m(model: string): boolean {
 function getBedrockAnthropicBetaHeaders(model: string): string[] {
   const betaHeaders: string[] = [];
 
+  /** Mythos-class (Fable/Mythos) is intentionally not matched: these betas are built-in/no-op for the
+   * 4.7+ generation (Fable has native 128K output), so omitting them on Bedrock is lossless. */
   const isClaude4PlusModel =
     /anthropic\.claude-(?:[4-9](?:\.\d+)?(?:-\d+)?-(?:sonnet|opus|haiku)|(?:sonnet|opus|haiku)-[4-9])/.test(
       model,
@@ -334,13 +354,14 @@ export const bedrockInputParser = s.tConversationSchema
       }
     });
 
-    /** Default thinking and thinkingBudget for 'anthropic.claude-3-7-sonnet' models, if not defined */
+    /** Configure thinking for Bedrock Anthropic models: 3.7 Sonnet, Claude 4+ (opus/sonnet/haiku), and Mythos-class (Fable/Mythos). */
     if (
       typeof typedData.model === 'string' &&
       (typedData.model.includes('anthropic.claude-3-7-sonnet') ||
         /anthropic\.claude-(?:[4-9](?:\.\d+)?(?:-\d+)?-(?:sonnet|opus|haiku)|(?:sonnet|opus|haiku)-[4-9])/.test(
           typedData.model,
-        ))
+        ) ||
+        s.isMythosClassModel(typedData.model))
     ) {
       const isAdaptive = supportsAdaptiveThinking(typedData.model as string);
 

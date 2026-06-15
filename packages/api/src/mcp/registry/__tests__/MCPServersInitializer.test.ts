@@ -1,12 +1,12 @@
 import { logger } from '@librechat/data-schemas';
-import * as t from '~/mcp/types';
-import { isLeader } from '~/cluster';
 import { registryStatusCache } from '~/mcp/registry/cache/RegistryStatusCache';
 import { MCPServersInitializer } from '~/mcp/registry/MCPServersInitializer';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPConnection } from '~/mcp/connection';
+import { isLeader } from '~/cluster';
+import * as t from '~/mcp/types';
 
 const FIXED_TIME = 1699564800000;
 const originalDateNow = Date.now;
@@ -367,35 +367,35 @@ describe('MCPServersInitializer', () => {
       expect(mockInspect).toHaveBeenCalledTimes(5);
       expect(mockInspect).toHaveBeenCalledWith(
         'disabled_server',
-        testConfigs.disabled_server,
+        { ...testConfigs.disabled_server, source: 'yaml' },
         undefined,
         undefined,
         undefined,
       );
       expect(mockInspect).toHaveBeenCalledWith(
         'oauth_server',
-        testConfigs.oauth_server,
+        { ...testConfigs.oauth_server, source: 'yaml' },
         undefined,
         undefined,
         undefined,
       );
       expect(mockInspect).toHaveBeenCalledWith(
         'file_tools_server',
-        testConfigs.file_tools_server,
+        { ...testConfigs.file_tools_server, source: 'yaml' },
         undefined,
         undefined,
         undefined,
       );
       expect(mockInspect).toHaveBeenCalledWith(
         'search_tools_server',
-        testConfigs.search_tools_server,
+        { ...testConfigs.search_tools_server, source: 'yaml' },
         undefined,
         undefined,
         undefined,
       );
       expect(mockInspect).toHaveBeenCalledWith(
         'remote_no_oauth_server',
-        testConfigs.remote_no_oauth_server,
+        { ...testConfigs.remote_no_oauth_server, source: 'yaml' },
         undefined,
         undefined,
         undefined,

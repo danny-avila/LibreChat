@@ -45,6 +45,7 @@ import {
   resolveAlwaysApplySkills,
   injectManualSkillPrimes,
   injectSkillPrimes,
+  collectFreshSkillPrimeNames,
   extractManualSkills,
   isSkillPrimeMessage,
   buildSkillPrimeContentParts,
@@ -2245,5 +2246,47 @@ describe('injectSkillPrimes', () => {
     expect(result.alwaysApplyDedupedFromManual).toBe(1);
     expect(result.alwaysApplyDropped).toBe(0);
     expect(result.inserted).toBe(2);
+  });
+});
+
+describe('collectFreshSkillPrimeNames', () => {
+  it('returns the union of manual + always-apply prime names', () => {
+    const names = collectFreshSkillPrimeNames({
+      manualSkillPrimes: [{ name: 'pdf-analyzer' }, { name: 'code-review' }],
+      alwaysApplySkillPrimes: [{ name: 'clickhouse-best-practices' }],
+    });
+    expect(names).toEqual(new Set(['pdf-analyzer', 'code-review', 'clickhouse-best-practices']));
+  });
+
+  it('dedupes a skill that is both manual and always-apply', () => {
+    const names = collectFreshSkillPrimeNames({
+      manualSkillPrimes: [{ name: 'clickhouse-best-practices' }],
+      alwaysApplySkillPrimes: [{ name: 'clickhouse-best-practices' }],
+    });
+    expect(names.size).toBe(1);
+    expect(names.has('clickhouse-best-practices')).toBe(true);
+  });
+
+  it('handles undefined / empty inputs', () => {
+    expect(collectFreshSkillPrimeNames({}).size).toBe(0);
+    expect(
+      collectFreshSkillPrimeNames({
+        manualSkillPrimes: [],
+        alwaysApplySkillPrimes: [],
+      }).size,
+    ).toBe(0);
+  });
+
+  it('collects names from only one side when the other is absent', () => {
+    expect(
+      collectFreshSkillPrimeNames({
+        alwaysApplySkillPrimes: [{ name: 'only-always' }],
+      }),
+    ).toEqual(new Set(['only-always']));
+    expect(
+      collectFreshSkillPrimeNames({
+        manualSkillPrimes: [{ name: 'only-manual' }],
+      }),
+    ).toEqual(new Set(['only-manual']));
   });
 });

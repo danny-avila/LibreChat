@@ -1087,6 +1087,32 @@ export function injectManualSkillPrimes(
   return { initialMessages, indexTokenCountMap, inserted: numPrimes, insertIdx };
 }
 
+/**
+ * Collects the set of skill names primed fresh this turn — the union of manual
+ * ($-popover) and always-apply (frontmatter) primes. Passed to
+ * `formatAgentMessages` as `skipSkillBodyNames` so a skill that is BOTH primed
+ * this turn AND present in history (as a `skill` tool_call) has its SKILL.md
+ * body injected exactly once — by the fresh prime via `injectSkillPrimes` — and
+ * is NOT also reconstructed from history. Names absent from this set still
+ * reconstruct from history, preserving sticky manual re-priming across turns.
+ */
+export function collectFreshSkillPrimeNames({
+  manualSkillPrimes,
+  alwaysApplySkillPrimes,
+}: {
+  manualSkillPrimes?: Pick<ResolvedManualSkill, 'name'>[];
+  alwaysApplySkillPrimes?: Pick<ResolvedAlwaysApplySkill, 'name'>[];
+}): Set<string> {
+  const names = new Set<string>();
+  for (const prime of manualSkillPrimes ?? []) {
+    names.add(prime.name);
+  }
+  for (const prime of alwaysApplySkillPrimes ?? []) {
+    names.add(prime.name);
+  }
+  return names;
+}
+
 export interface InjectSkillPrimesParams {
   /** Formatted LangChain messages produced by `formatAgentMessages`. Mutated in place. */
   initialMessages: BaseMessage[];

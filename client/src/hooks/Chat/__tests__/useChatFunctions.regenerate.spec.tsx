@@ -31,6 +31,7 @@ jest.mock('recoil', () => ({
       snapshot: {
         getLoadable: () => ({ state: 'hasValue', contents: [] }),
       },
+      set: jest.fn(),
       reset: jest.fn(),
     }),
 }));
@@ -48,6 +49,7 @@ jest.mock('~/store', () => ({
     isSubmittingFamily: () => 'isSubmitting',
     showStopButtonByIndex: () => 'showStopButton',
     pendingManualSkillsByConvoId: () => 'pendingManualSkills',
+    messagesSiblingIdxFamily: () => 'messagesSiblingIdx',
   },
   useGetEphemeralAgent: () => mockGetEphemeralAgent,
 }));

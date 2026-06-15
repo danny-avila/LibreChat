@@ -1,5 +1,10 @@
 const express = require('express');
-const { isEnabled, GenerationJobManager, hasPersistableAbortContent } = require('@librechat/api');
+const {
+  isEnabled,
+  GenerationJobManager,
+  hasPersistableAbortContent,
+  buildAbortedResponseMetadata,
+} = require('@librechat/api');
 const { createSseStreamTelemetry } = require('@librechat/api/telemetry');
 const { logger } = require('@librechat/data-schemas');
 const {
@@ -290,6 +295,15 @@ router.post('/chat/abort', async (req, res) => {
         isCreatedByUser: false,
         user: userId,
       };
+
+      /** Persist the usage/cost rollup + context breakdown for the stopped
+       *  response (from the job's tracked tokenUsage/contextUsage) so its
+       *  branch/total cost and granular rows survive a reload — parity with the
+       *  normal completion path. */
+      const abortMetadata = buildAbortedResponseMetadata(jobData);
+      if (abortMetadata) {
+        responseMessage.metadata = abortMetadata;
+      }
 
       try {
         await saveMessage(

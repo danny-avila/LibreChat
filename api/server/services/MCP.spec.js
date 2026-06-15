@@ -1,5 +1,6 @@
 // Mock all dependencies - define mocks before imports
-// Mock all dependencies
+const mockGetTenantId = jest.fn();
+
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
     debug: jest.fn(),
@@ -7,6 +8,7 @@ jest.mock('@librechat/data-schemas', () => ({
     info: jest.fn(),
     warn: jest.fn(),
   },
+  getTenantId: mockGetTenantId,
 }));
 
 // Create mock registry instance
@@ -94,6 +96,7 @@ describe('tests for the new helper functions used by the MCP connection status e
   beforeEach(() => {
     jest.clearAllMocks();
     jest.spyOn(MCPOAuthHandler, 'generateFlowId');
+    mockGetTenantId.mockReturnValue(undefined);
 
     mockGetMCPManager = require('~/config').getMCPManager;
     mockGetFlowStateManager = require('~/config').getFlowStateManager;
@@ -329,8 +332,8 @@ describe('tests for the new helper functions used by the MCP connection status e
     it('should detect failed flow when TTL not specified and flow exceeds default TTL', async () => {
       const mockFlowState = {
         status: 'PENDING',
-        createdAt: Date.now() - 200000, // 200 seconds ago (> 180s default TTL)
-        // ttl not specified, should use 180000 default
+        createdAt: Date.now() - 16 * 60 * 1000, // 16 minutes ago (past the PENDING_STALE_MS window)
+        // ttl not specified, should fall back to the PENDING_STALE_MS default
       };
       const mockFlowManager = { getFlowState: jest.fn(() => mockFlowState) };
       mockGetFlowStateManager.mockReturnValue(mockFlowManager);
@@ -358,6 +361,28 @@ describe('tests for the new helper functions used by the MCP connection status e
           flowId: mockFlowId,
         }),
       );
+    });
+
+    it('should check the tenant-scoped OAuth flow when tenant context exists', async () => {
+      mockGetTenantId.mockReturnValue('tenant/a');
+      MCPOAuthHandler.generateFlowId.mockReturnValue('tenant-flow-id');
+      const mockFlowState = {
+        status: 'PENDING',
+        createdAt: Date.now() - 60000,
+        ttl: 180000,
+      };
+      const mockFlowManager = { getFlowState: jest.fn(() => mockFlowState) };
+      mockGetFlowStateManager.mockReturnValue(mockFlowManager);
+
+      const result = await checkOAuthFlowStatus(mockUserId, mockServerName);
+
+      expect(MCPOAuthHandler.generateFlowId).toHaveBeenCalledWith(
+        mockUserId,
+        mockServerName,
+        'tenant/a',
+      );
+      expect(mockFlowManager.getFlowState).toHaveBeenCalledWith('tenant-flow-id', 'mcp_oauth');
+      expect(result).toEqual({ hasActiveFlow: true, hasFailedFlow: false });
     });
 
     it('should return false flags for other statuses', async () => {
@@ -749,6 +774,7 @@ describe('User parameter passing tests', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetTenantId.mockReturnValue(undefined);
     mockReinitMCPServer = require('./Tools/mcp').reinitMCPServer;
     mockGetMCPManager = require('~/config').getMCPManager;
     mockGetFlowStateManager = require('~/config').getFlowStateManager;
@@ -811,6 +837,57 @@ describe('User parameter passing tests', () => {
       expect(mockReinitMCPServer.mock.calls[0][0].user).toBe(mockUser);
     });
 
+    it('should fail tenant-scoped OAuth flows when tool loading is aborted', async () => {
+      const mockUser = { id: 'tenant-user', name: 'Tenant User' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const abortController = new AbortController();
+      const mockFlowManager = {
+        createFlowWithHandler: jest.fn(),
+        failFlow: jest.fn(),
+      };
+      mockGetTenantId.mockReturnValue('tenant/a');
+      mockGetFlowStateManager.mockReturnValue(mockFlowManager);
+      MCPOAuthHandler.generateFlowId.mockReturnValue('tenant-flow-id');
+
+      let resolveReinit;
+      mockReinitMCPServer.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveReinit = resolve;
+          }),
+      );
+
+      const createToolsPromise = createMCPTools({
+        res: mockRes,
+        user: mockUser,
+        serverName: 'tenant-abort-server',
+        provider: 'openai',
+        signal: abortController.signal,
+        userMCPAuthMap: {},
+        config: { type: 'stdio' },
+      });
+
+      abortController.abort();
+      resolveReinit({ tools: [], availableTools: {} });
+      await createToolsPromise;
+
+      expect(MCPOAuthHandler.generateFlowId).toHaveBeenCalledWith(
+        mockUser.id,
+        'tenant-abort-server',
+        'tenant/a',
+      );
+      expect(mockFlowManager.failFlow).toHaveBeenCalledWith(
+        'tenant-flow-id',
+        'mcp_oauth',
+        expect.any(Error),
+      );
+      expect(mockFlowManager.failFlow).toHaveBeenCalledWith(
+        'tenant-flow-id',
+        'mcp_get_tokens',
+        expect.any(Error),
+      );
+    });
+
     it('should throw error if user is not provided', async () => {
       const mockRes = { write: jest.fn(), flush: jest.fn() };
 
@@ -871,6 +948,37 @@ describe('User parameter passing tests', () => {
         }),
       );
       expect(mockReinitMCPServer.mock.calls[0][0].user).toBe(mockUser);
+    });
+
+    it('should report available tools discovered during single tool reinit', async () => {
+      const mockUser = { id: 'user-discovery-callback', role: 'USER' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const onAvailableTools = jest.fn();
+      const discoveredTools = {
+        [`my-tool${D}my-server`]: {
+          function: { description: 'My Tool', parameters: {} },
+        },
+        [`other-tool${D}my-server`]: {
+          function: { description: 'Other Tool', parameters: {} },
+        },
+      };
+
+      mockReinitMCPServer.mockResolvedValue({
+        availableTools: discoveredTools,
+      });
+
+      const result = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: `my-tool${D}my-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: undefined,
+        onAvailableTools,
+      });
+
+      expect(result).toBeDefined();
+      expect(onAvailableTools).toHaveBeenCalledWith(discoveredTools);
     });
 
     it('should not call reinitMCPServer when tool is in cache', async () => {
@@ -1016,6 +1124,126 @@ describe('User parameter passing tests', () => {
 
       expect(getRoleByName).toHaveBeenCalledTimes(1);
       expect(mockCallTool).toHaveBeenCalledTimes(2);
+    });
+
+    it('should pass the captured user to MCPManager.callTool when invocation config omits configurable.user', async () => {
+      const mockUser = { id: 'captured-user', email: 'captured@example.com', role: 'USER' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const { getRoleByName } = require('~/models');
+      getRoleByName.mockResolvedValue({
+        permissions: {
+          [PermissionTypes.MCP_SERVERS]: {
+            [Permissions.USE]: true,
+          },
+        },
+      });
+
+      const mockCallTool = jest.fn().mockResolvedValue(['ok', null]);
+      mockGetMCPManager.mockReturnValue({
+        callTool: mockCallTool,
+      });
+
+      const mcpTool = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: `test-tool${D}test-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: {
+          [`test-tool${D}test-server`]: {
+            function: {
+              description: 'Cached tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+      });
+
+      await expect(
+        mcpTool.invoke(
+          {},
+          {
+            configurable: {
+              user_id: mockUser.id,
+            },
+            metadata: {
+              provider: 'openai',
+              thread_id: 'thread-1',
+              run_id: 'run-1',
+            },
+            toolCall: {},
+          },
+        ),
+      ).resolves.toBe('ok');
+
+      expect(mockCallTool).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName: 'test-server',
+          toolName: 'test-tool',
+          user: mockUser,
+        }),
+      );
+    });
+
+    it('should pass captured request body when invocation config omits requestBody', async () => {
+      const mockUser = { id: 'captured-body-user', email: 'captured@example.com', role: 'USER' };
+      const requestBody = { conversationId: 'conv-123', messageId: 'msg-123' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const { getRoleByName } = require('~/models');
+      getRoleByName.mockResolvedValue({
+        permissions: {
+          [PermissionTypes.MCP_SERVERS]: {
+            [Permissions.USE]: true,
+          },
+        },
+      });
+
+      const mockCallTool = jest.fn().mockResolvedValue(['ok', null]);
+      mockGetMCPManager.mockReturnValue({
+        callTool: mockCallTool,
+      });
+
+      const mcpTool = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        requestBody,
+        toolKey: `test-tool${D}test-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: {
+          [`test-tool${D}test-server`]: {
+            function: {
+              description: 'Cached tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+      });
+
+      await expect(
+        mcpTool.invoke(
+          {},
+          {
+            configurable: {
+              user: mockUser,
+            },
+            metadata: {
+              provider: 'openai',
+              thread_id: 'thread-1',
+              run_id: 'run-1',
+            },
+            toolCall: {},
+          },
+        ),
+      ).resolves.toBe('ok');
+
+      expect(mockCallTool).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName: 'test-server',
+          toolName: 'test-tool',
+          requestBody,
+        }),
+      );
     });
   });
 
@@ -1185,6 +1413,50 @@ describe('User parameter passing tests', () => {
         tenantId: undefined,
         userId: 'domain-test-user',
       });
+    });
+
+    it('should validate the resolved runtime URL for tool creation', async () => {
+      const mockUser = { id: 'runtime-domain-user', role: 'user' };
+      const requestBody = { conversationId: 'tenant-a' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+
+      mockRegistryInstance.getServerConfig.mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://{{LIBRECHAT_BODY_CONVERSATIONID}}.example.com/sse',
+        source: 'yaml',
+      });
+
+      mockGetAppConfig.mockResolvedValue({
+        mcpSettings: { allowedDomains: ['*.example.com'] },
+      });
+
+      mockIsMCPDomainAllowed.mockResolvedValueOnce(true);
+
+      const result = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        requestBody,
+        toolKey: `test-tool${D}test-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: {
+          [`test-tool${D}test-server`]: {
+            function: {
+              description: 'Test tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+      });
+
+      expect(result).toBeDefined();
+      expect(mockIsMCPDomainAllowed).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: 'https://tenant-a.example.com/sse',
+        }),
+        ['*.example.com'],
+        undefined,
+      );
     });
 
     it('should skip domain validation for stdio transports (no URL)', async () => {
@@ -1469,6 +1741,56 @@ describe('User parameter passing tests', () => {
       expect(result.name).toContain('tool-2');
       // Still only 1 real reconnect — user B was protected by the cache
       expect(mockReinitMCPServer).toHaveBeenCalledTimes(1);
+    });
+
+    it('should bypass the negative cache for request-scoped tools', async () => {
+      const userA = { id: 'request-scoped-user-A' };
+      const userB = { id: 'request-scoped-user-B' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const serverName = 'request-scoped-server';
+      const toolKey = `tenant-tool${D}${serverName}`;
+
+      mockRegistryInstance.getServerConfig.mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://api.example.com/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+        source: 'yaml',
+      });
+
+      mockReinitMCPServer
+        .mockResolvedValueOnce({
+          availableTools: {},
+        })
+        .mockResolvedValueOnce({
+          availableTools: {
+            [toolKey]: {
+              function: { description: 'Tenant tool', parameters: {} },
+            },
+          },
+        });
+
+      await createMCPTool({
+        res: mockRes,
+        user: userA,
+        requestBody: { messageId: 'message-a' },
+        toolKey,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: undefined,
+      });
+
+      const result = await createMCPTool({
+        res: mockRes,
+        user: userB,
+        requestBody: { messageId: 'message-b' },
+        toolKey,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: undefined,
+      });
+
+      expect(result).toBeDefined();
+      expect(result.name).toContain('tenant-tool');
+      expect(mockReinitMCPServer).toHaveBeenCalledTimes(2);
     });
   });
 

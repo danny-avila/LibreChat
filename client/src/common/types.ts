@@ -369,7 +369,7 @@ export type TOptions = {
   addedConvo?: t.TConversation;
 };
 
-export type TAskFunction = (props: TAskProps, options?: TOptions) => void;
+export type TAskFunction = (props: TAskProps, options?: TOptions) => false | void;
 
 /**
  * Stable context object passed from non-memo'd wrapper components (Message, MessageContent)
@@ -658,5 +658,8 @@ export type TThread = { id: string; createdAt: string };
 declare global {
   interface Window {
     google_tag_manager?: unknown;
+    __LIBRECHAT_CONFIG__?: {
+      enableQueryDevtools?: boolean;
+    };
   }
 }

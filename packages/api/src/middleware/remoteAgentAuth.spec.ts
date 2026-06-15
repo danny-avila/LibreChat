@@ -23,6 +23,11 @@ jest.mock('~/utils', () => ({
   math: jest.fn(() => 60000),
 }));
 
+jest.mock('~/utils/proxy', () => ({
+  getEnvProxyDispatcher: jest.fn(),
+  getHttpsProxyAgent: jest.fn(),
+}));
+
 const mockGetSigningKey = jest.fn();
 const mockGetSigningKeys = jest.fn();
 
@@ -32,7 +37,6 @@ jest.mock('jwks-rsa', () =>
 
 jest.mock('undici', () => ({
   fetch: jest.fn(),
-  ProxyAgent: jest.fn((proxy: string) => ({ proxy })),
 }));
 
 jest.mock('jsonwebtoken', () => ({
@@ -48,16 +52,18 @@ jest.mock('../auth/openid', () => {
 import jwt from 'jsonwebtoken';
 import jwksRsa from 'jwks-rsa';
 import { SystemRoles } from 'librechat-data-provider';
-import { ProxyAgent, fetch as undiciFetch } from 'undici';
+import { fetch as undiciFetch } from 'undici';
 import { logger, tenantStorage } from '@librechat/data-schemas';
 import { clearRemoteAgentAuthCache, createRemoteAgentAuth } from './remoteAgentAuth';
 import { findOpenIDUser, getOpenIdEmail } from '../auth/openid';
 import { isEnabled, math } from '~/utils';
+import { getEnvProxyDispatcher, getHttpsProxyAgent } from '~/utils/proxy';
 
 const mockFetch = undiciFetch as jest.Mock;
-const mockProxyAgent = ProxyAgent as unknown as jest.Mock;
 const mockMath = math as jest.Mock;
 const mockIsEnabled = isEnabled as jest.Mock;
+const mockGetEnvProxyDispatcher = getEnvProxyDispatcher as jest.Mock;
+const mockGetHttpsProxyAgent = getHttpsProxyAgent as jest.Mock;
 const realFindOpenIDUser =
   jest.requireActual<typeof import('../auth/openid')>('../auth/openid').findOpenIDUser;
 const mockFindOpenIDUser = findOpenIDUser as jest.MockedFunction<typeof findOpenIDUser>;
@@ -252,6 +258,8 @@ describe('createRemoteAgentAuth', () => {
     mockFetch.mockReset();
     mockMath.mockReturnValue(60000);
     mockIsEnabled.mockImplementation((value?: string) => value === 'true');
+    mockGetEnvProxyDispatcher.mockReturnValue(undefined);
+    mockGetHttpsProxyAgent.mockReturnValue(undefined);
     mockFindOpenIDUser.mockImplementation(realFindOpenIDUser);
     mockNext = jest.fn();
   });
@@ -1091,8 +1099,9 @@ describe('createRemoteAgentAuth', () => {
       expect(mockNext).not.toHaveBeenCalled();
     });
 
-    it('uses a proxy agent for discovery when PROXY is set', async () => {
-      process.env.PROXY = 'http://proxy.example.com';
+    it('uses a proxy dispatcher for discovery when configured', async () => {
+      const proxyDispatcher = { dispatch: jest.fn() };
+      mockGetEnvProxyDispatcher.mockReturnValue(proxyDispatcher);
       const issuer = 'https://issuer-proxy.example.com';
 
       mockFetch.mockResolvedValue({
@@ -1108,10 +1117,9 @@ describe('createRemoteAgentAuth', () => {
         mockNext,
       );
 
-      expect(mockProxyAgent).toHaveBeenCalledWith('http://proxy.example.com');
       expect(mockFetch).toHaveBeenCalledWith(
         `${issuer}/.well-known/openid-configuration`,
-        expect.objectContaining({ dispatcher: { proxy: 'http://proxy.example.com' } }),
+        expect.objectContaining({ dispatcher: proxyDispatcher }),
       );
     });
 

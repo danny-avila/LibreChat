@@ -69,6 +69,7 @@ const { manifestToolMap, toolkits } = require('~/app/clients/tools/manifest');
 const { createOnSearchResults } = require('~/server/services/Tools/search');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
 const { createMCPPermissionContext, resolveConfigServers } = require('~/server/services/MCP');
+const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
 const { redactMessage } = require('~/config/parsers');
@@ -529,6 +530,7 @@ const isBuiltInTool = (toolName) =>
  * @returns {Promise<{
  *   toolDefinitions?: import('@librechat/api').LCTool[];
  *   toolRegistry?: Map<string, import('@librechat/api').LCTool>;
+ *   mcpAvailableTools?: Record<string, import('@librechat/api').LCAvailableTools>;
  *   userMCPAuthMap?: Record<string, Record<string, string>>;
  *   hasDeferredTools?: boolean;
  * }>}
@@ -604,6 +606,15 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
   const emittedOAuthStarts = new Map();
   const oauthToolCallIds = new Map();
   const oauthStepIndexes = new Map();
+  /** @type {Record<string, import('@librechat/api').LCAvailableTools>} */
+  const mcpAvailableTools = {};
+  const requestScopedConnections = getMCPRequestContext(req, res);
+  const rememberMCPAvailableTools = (serverName, availableTools) => {
+    if (!availableTools || Object.keys(availableTools).length === 0) {
+      return;
+    }
+    mcpAvailableTools[serverName] = availableTools;
+  };
 
   const createOAuthEmitter = (serverName, index) => {
     return async (authURL, options) => {
@@ -743,8 +754,13 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       return null;
     }
 
-    const cached = await getMCPServerTools(userId, serverName);
+    if (mcpAvailableTools[serverName]) {
+      return mcpAvailableTools[serverName];
+    }
+
+    const cached = await getMCPServerTools(userId, serverName, serverConfig);
     if (cached) {
+      rememberMCPAvailableTools(serverName, cached);
       await addPendingOAuthServer();
       return cached;
     }
@@ -767,8 +783,11 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       serverName,
       configServers,
       userMCPAuthMap,
+      requestBody: req.body,
+      requestScopedConnections,
     });
 
+    rememberMCPAvailableTools(serverName, result?.availableTools);
     return result?.availableTools || null;
   };
 
@@ -840,6 +859,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
       deferredToolsEnabled,
       programmaticToolsEnabled,
       codeExecutionEnabled,
+      provider: agent.provider,
     },
     {
       isBuiltInTool,
@@ -884,6 +904,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
           configServers,
           userMCPAuthMap,
           flowManager,
+          requestBody: req.body,
           returnOnOAuth: false,
           oauthStart,
           oauthEnd: createOAuthEndEmitter(serverName),
@@ -891,6 +912,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
         });
 
         if (result?.availableTools) {
+          rememberMCPAvailableTools(serverName, result.availableTools);
           logger.info(`[Tool Definitions] OAuth completed for ${serverName}, tools available`);
           return { serverName, success: true };
         }
@@ -919,6 +941,7 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
           deferredToolsEnabled,
           programmaticToolsEnabled,
           codeExecutionEnabled,
+          provider: agent.provider,
         },
         {
           isBuiltInTool,
@@ -1018,6 +1041,8 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
 
   return {
     toolRegistry,
+    mcpAvailableTools,
+    requestScopedConnections,
     userMCPAuthMap,
     toolContextMap,
     dynamicToolContextMap,
@@ -1144,6 +1169,7 @@ async function loadAgentTools({
       uploadImageBuffer,
       returnMetadata: true,
       mcpPermissionContext,
+      requestScopedConnections: getMCPRequestContext(req, res),
       [Tools.web_search]: webSearchCallbacks,
     },
     webSearch: appConfig.webSearch,
@@ -1219,6 +1245,7 @@ async function loadAgentTools({
   if (!hasActionTools) {
     return {
       toolRegistry,
+      requestScopedConnections: getMCPRequestContext(req, res),
       userMCPAuthMap,
       toolContextMap,
       dynamicToolContextMap,
@@ -1237,6 +1264,7 @@ async function loadAgentTools({
     }
     return {
       toolRegistry,
+      requestScopedConnections: getMCPRequestContext(req, res),
       userMCPAuthMap,
       toolContextMap,
       dynamicToolContextMap,
@@ -1365,6 +1393,7 @@ async function loadAgentTools({
 
   return {
     toolRegistry,
+    requestScopedConnections: getMCPRequestContext(req, res),
     toolContextMap,
     dynamicToolContextMap,
     userMCPAuthMap,
@@ -1390,6 +1419,8 @@ async function loadAgentTools({
  * @param {Object} params.agent - The agent object
  * @param {string[]} params.toolNames - Names of tools to load
  * @param {Map} [params.toolRegistry] - Tool registry
+ * @param {Record<string, import('@librechat/api').LCAvailableTools>} [params.mcpAvailableTools] - Run-scoped MCP tool definitions
+ * @param {import('@librechat/api').RequestScopedMCPConnectionStore} [params.requestScopedConnections] - Run-scoped MCP connections
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap] - User MCP auth map
  * @param {Object} [params.tool_resources] - Tool resources
  * @param {string|null} [params.streamId] - Stream ID for web search callbacks
@@ -1403,6 +1434,8 @@ async function loadToolsForExecution({
   agent,
   toolNames,
   toolRegistry,
+  mcpAvailableTools,
+  requestScopedConnections,
   userMCPAuthMap,
   tool_resources,
   streamId = null,
@@ -1410,7 +1443,8 @@ async function loadToolsForExecution({
 }) {
   const appConfig = req.config;
   const allLoadedTools = [];
-  const configurable = { userMCPAuthMap };
+  const mcpRequestScopedConnections = requestScopedConnections ?? getMCPRequestContext(req, res);
+  const configurable = { userMCPAuthMap, requestScopedConnections: mcpRequestScopedConnections };
 
   const isToolSearch = toolNames.includes(AgentConstants.TOOL_SEARCH);
   const ptcToolNames = [
@@ -1530,6 +1564,8 @@ async function loadToolsForExecution({
         processFileURL,
         uploadImageBuffer,
         returnMetadata: true,
+        mcpAvailableTools,
+        requestScopedConnections: mcpRequestScopedConnections,
         [Tools.web_search]: webSearchCallbacks,
       },
       webSearch: appConfig?.webSearch,

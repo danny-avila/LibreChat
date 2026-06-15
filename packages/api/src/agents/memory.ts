@@ -18,8 +18,9 @@ import type { DynamicStructuredTool } from '@librechat/agents/langchain/tools';
 import type { ObjectId, MemoryMethods, IUser } from '@librechat/data-schemas';
 import type { TAttachment, MemoryArtifact } from 'librechat-data-provider';
 import type { Response as ServerResponse } from 'express';
+import type { RunLLMConfig } from '~/types';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
-import { resolveHeaders, createSafeUser } from '~/utils';
+import { resolveConfigHeaders, createSafeUser } from '~/utils';
 import Tokenizer from '~/utils/tokenizer';
 
 type RequiredMemoryMethods = Pick<
@@ -355,6 +356,7 @@ ${memory ?? 'No existing memories'}`;
     const finalLLMConfig = {
       ...defaultLLMConfig,
       ...normalizeMemoryLLMConfig(llmConfig),
+      maxRetries: 0,
       /**
        * Ensure streaming is always disabled for memory processing
        */
@@ -404,13 +406,17 @@ ${memory ?? 'No existing memories'}`;
       delete (finalLLMConfig as Record<string, unknown>).temperature;
     }
 
-    const llmConfigWithHeaders = finalLLMConfig as OpenAIClientOptions;
-    if (llmConfigWithHeaders?.configuration?.defaultHeaders != null) {
-      llmConfigWithHeaders.configuration.defaultHeaders = resolveHeaders({
-        headers: llmConfigWithHeaders.configuration.defaultHeaders as Record<string, string>,
-        user: user ? createSafeUser(user) : undefined,
-      });
-    }
+    /**
+     * Resolve request-based headers across provider-specific carriers (OpenAI
+     * `configuration.defaultHeaders`, native Anthropic `clientOptions.defaultHeaders`)
+     * so gateway-fronted built-in providers receive resolved metadata/auth headers
+     * on memory extraction too. Native Google headers are resolved at init.
+     */
+    resolveConfigHeaders({
+      llmConfig: finalLLMConfig as unknown as RunLLMConfig,
+      user: user ? createSafeUser(user) : undefined,
+      body: { conversationId, messageId },
+    });
 
     const artifactPromises: Promise<TAttachment | null>[] = [];
     const memoryCallback = createMemoryCallback({ res, artifactPromises, streamId });

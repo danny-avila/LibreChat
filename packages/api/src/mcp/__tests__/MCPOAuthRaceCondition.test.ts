@@ -36,6 +36,10 @@ jest.mock('~/auth', () => ({
   resolveHostnameSSRF: jest.fn(async () => false),
 }));
 
+jest.mock('~/auth/domain', () => ({
+  isMCPDomainAllowed: jest.fn().mockResolvedValue(true),
+}));
+
 jest.mock('~/mcp/mcpConfig', () => ({
   mcpConfig: { CONNECTION_CHECK_TTL: 0, USER_CONNECTION_IDLE_TIMEOUT: 30 * 60 * 1000 },
 }));
