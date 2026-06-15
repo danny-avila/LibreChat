@@ -20,14 +20,15 @@ import { isUserProvided, checkUserKeyExpiry } from '~/utils';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { getCustomEndpointConfig } from '~/app/config';
 import { fetchModels } from '~/endpoints/models';
+import { getScopedTokenConfigKey } from '~/endpoints/keys';
 import { validateEndpointURL } from '~/auth';
 import { tokenConfigCache } from '~/cache';
 
 const { PROXY } = process.env;
 
-function getTenantTokenPrefix(tenantId?: string | null): string {
+function getTenantTokenScope(tenantId?: string | null): string {
   const normalizedTenantId = typeof tenantId === 'string' ? tenantId.trim() : '';
-  return normalizedTenantId ? `tenant:${normalizedTenantId}:` : '';
+  return normalizedTenantId;
 }
 
 /**
@@ -45,17 +46,22 @@ export function getTokenConfigKey(
   tenantId?: string | null,
 ): string {
   const hasTokenConfig = endpointConfig.tokenConfig != null;
+  if (hasTokenConfig) {
+    return endpoint;
+  }
+
   const userProvidesKey = isUserProvided(extractEnvVariable(endpointConfig.apiKey ?? ''));
   const userProvidesURL = isUserProvided(extractEnvVariable(endpointConfig.baseURL ?? ''));
   const willForwardUserScopedHeaders = !!endpointConfig?.headers && !userProvidesURL;
-  const tenantPrefix = getTenantTokenPrefix(tenantId);
-  const userKey = tenantPrefix
-    ? `${tenantPrefix}${endpoint}:user:${userId}`
-    : `${endpoint}:${userId}`;
+  const tenantScope = getTenantTokenScope(tenantId);
 
-  return !hasTokenConfig && (userProvidesKey || userProvidesURL || willForwardUserScopedHeaders)
-    ? userKey
-    : `${tenantPrefix}${endpoint}`;
+  if (userProvidesKey || userProvidesURL || willForwardUserScopedHeaders) {
+    return tenantScope
+      ? getScopedTokenConfigKey('tenant-user', [tenantScope, endpoint, userId])
+      : `${endpoint}:${userId}`;
+  }
+
+  return tenantScope ? getScopedTokenConfigKey('tenant', [tenantScope, endpoint]) : endpoint;
 }
 
 /**

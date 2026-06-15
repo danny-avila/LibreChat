@@ -20,6 +20,7 @@ import {
   inputSchema,
   applyAxiosProxyConfig,
 } from '~/utils';
+import { getModelCacheTokenConfigKey, isScopedTokenConfigKey } from '~/endpoints/keys';
 import { standardCache, tokenConfigCache } from '~/cache';
 
 export interface FetchModelsParams {
@@ -79,6 +80,19 @@ async function fetchOllamaModels(
   );
 
   return response.data.models.map((tag) => tag.name);
+}
+
+async function backfillTokenConfigFromModelCache(
+  cacheKey: string,
+  tokenKey: string,
+): Promise<boolean> {
+  const cachedTokenConfig = await tokenConfigCache().get(getModelCacheTokenConfigKey(cacheKey));
+  if (cachedTokenConfig == null) {
+    return false;
+  }
+
+  await tokenConfigCache().set(tokenKey, cachedTokenConfig);
+  return true;
 }
 
 /**
@@ -142,7 +156,16 @@ export async function fetchModels({
   if (modelsCache && cacheKey) {
     const cachedModels = await modelsCache.get(cacheKey);
     if (cachedModels) {
-      return cachedModels as string[];
+      if (createTokenConfig && tokenKey) {
+        const tokenConfigBackfilled = await backfillTokenConfigFromModelCache(cacheKey, tokenKey);
+        if (!tokenConfigBackfilled && isScopedTokenConfigKey(tokenKey)) {
+          models = cachedModels as string[];
+        } else {
+          return cachedModels as string[];
+        }
+      } else {
+        return cachedModels as string[];
+      }
     }
   }
 
@@ -221,7 +244,11 @@ export async function fetchModels({
     const validationResult = inputSchema.safeParse(input);
     if (validationResult.success && createTokenConfig) {
       const endpointTokenConfig = processModelData(input);
-      await tokenConfigCache().set(tokenKey ?? name, endpointTokenConfig);
+      const cache = tokenConfigCache();
+      await cache.set(tokenKey ?? name, endpointTokenConfig);
+      if (modelsCache && cacheKey) {
+        await cache.set(getModelCacheTokenConfigKey(cacheKey), endpointTokenConfig);
+      }
     }
     models = input.data.map((item: { id: string }) => item.id);
   } catch (error) {

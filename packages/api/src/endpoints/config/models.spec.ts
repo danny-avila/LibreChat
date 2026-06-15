@@ -1,6 +1,7 @@
 import { AuthType, EModelEndpoint } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
 import { createLoadConfigModels } from './models';
+import { SCOPED_TOKEN_CONFIG_KEY_PREFIX } from '../keys';
 
 jest.mock('~/utils', () => {
   const original = jest.requireActual('~/utils');
@@ -127,12 +128,12 @@ describe('createLoadConfigModels – user-provided baseURL header guard', () => 
     await loadConfigModels(req);
 
     expect(fetchModels).toHaveBeenCalledTimes(1);
-    expect(fetchModels).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'TestProxy',
-        tokenKey: 'tenant:tenant-a:TestProxy',
-      }),
-    );
+    const tokenKey = fetchModels.mock.calls[0][0].tokenKey;
+    expect(fetchModels.mock.calls[0][0].name).toBe('TestProxy');
+    expect(tokenKey.startsWith(SCOPED_TOKEN_CONFIG_KEY_PREFIX)).toBe(true);
+    expect(tokenKey).not.toBe('tenant:tenant-a:TestProxy');
+    expect(tokenKey).not.toContain('tenant-a');
+    expect(tokenKey).not.toContain('TestProxy');
   });
 });
 

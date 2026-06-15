@@ -34,6 +34,7 @@ jest.mock('~/app/config', () => ({
 }));
 
 import { getTokenConfigKey, initializeCustom } from './initialize';
+import { SCOPED_TOKEN_CONFIG_KEY_PREFIX } from '../keys';
 
 function createParams(overrides: {
   apiKey?: string;
@@ -325,12 +326,10 @@ describe('initializeCustom – token-config fetch header forwarding', () => {
 
     await initializeCustom(params);
 
-    expect(fetchModels).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'openrouter',
-        tokenKey: 'tenant:tenant-a:openrouter',
-      }),
-    );
+    const tokenKey = fetchModels.mock.calls[0][0].tokenKey;
+    expect(fetchModels.mock.calls[0][0].name).toBe('openrouter');
+    expect(tokenKey.startsWith(SCOPED_TOKEN_CONFIG_KEY_PREFIX)).toBe(true);
+    expect(tokenKey).not.toBe('tenant:tenant-a:openrouter');
   });
 
   it('user-scopes the tokenKey when headers will be forwarded (admin-trusted base URL)', async () => {
@@ -444,9 +443,13 @@ describe('getTokenConfigKey – tenant fallback', () => {
   });
 
   it('adds tenant scope only when tenant context is non-empty', () => {
-    expect(getTokenConfigKey(endpointConfig, 'openrouter', 'user-1', ' tenant-a ')).toBe(
-      'tenant:tenant-a:openrouter',
-    );
+    const key = getTokenConfigKey(endpointConfig, 'openrouter', 'user-1', ' tenant-a ');
+
+    expect(key.startsWith(SCOPED_TOKEN_CONFIG_KEY_PREFIX)).toBe(true);
+    expect(key).not.toBe('tenant:tenant-a:openrouter');
+    expect(key).not.toContain('openrouter');
+    expect(key).not.toContain('tenant-a');
+    expect(key).toBe(getTokenConfigKey(endpointConfig, 'openrouter', 'user-1', 'tenant-a'));
   });
 });
 

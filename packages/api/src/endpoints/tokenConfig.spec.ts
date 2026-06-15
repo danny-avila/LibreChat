@@ -8,6 +8,7 @@ jest.mock('~/cache', () => ({
 }));
 
 import { resolveTokenConfigMap } from './tokenConfig';
+import { SCOPED_TOKEN_CONFIG_KEY_PREFIX } from './keys';
 
 const deps: TokenomicsDeps = {
   getValueKey: () => 'value-key',
@@ -58,7 +59,7 @@ describe('resolveTokenConfigMap', () => {
 
   it('uses a tenant-scoped cache key for fetched custom endpoint token config', async () => {
     mockCacheGet.mockImplementation(async (key: string) => {
-      if (key === 'tenant:tenant-b:MyProxy') {
+      if (key.startsWith(SCOPED_TOKEN_CONFIG_KEY_PREFIX)) {
         return { 'custom-model': { prompt: 2, completion: 6, context: 16000 } };
       }
       if (key === 'MyProxy') {
@@ -78,7 +79,11 @@ describe('resolveTokenConfigMap', () => {
       deps,
     );
 
-    expect(mockCacheGet).toHaveBeenCalledWith('tenant:tenant-b:MyProxy');
+    const tokenKey = mockCacheGet.mock.calls[0][0];
+    expect(tokenKey.startsWith(SCOPED_TOKEN_CONFIG_KEY_PREFIX)).toBe(true);
+    expect(tokenKey).not.toBe('tenant:tenant-b:MyProxy');
+    expect(tokenKey).not.toContain('tenant-b');
+    expect(tokenKey).not.toContain('MyProxy');
     expect(map.MyProxy['custom-model'].context).toBe(16000);
     expect(map.MyProxy['custom-model'].prompt).toBe(2);
   });
