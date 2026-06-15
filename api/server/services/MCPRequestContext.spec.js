@@ -8,10 +8,7 @@ jest.mock('@librechat/data-schemas', () => ({
   logger: mockLogger,
 }));
 
-const {
-  getMCPRequestContext,
-  cleanupMCPRequestContextForReq,
-} = require('./MCPRequestContext');
+const { getMCPRequestContext, cleanupMCPRequestContextForReq } = require('./MCPRequestContext');
 
 function createResponse({ ended = false } = {}) {
   const res = new EventEmitter();
