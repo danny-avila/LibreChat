@@ -789,6 +789,11 @@ export type TStartupConfig = {
   sharePointPickerGraphScope?: string;
   sharePointPickerSharePointScope?: string;
   openidReuseTokens?: boolean;
+  bklMaintenance?: {
+    enabled: boolean;
+    until: string;
+    message: string;
+  };
   minPasswordLength?: number;
   webSearch?: {
     searchProvider?: SearchProviders;
