@@ -2,13 +2,14 @@ import { useCallback, useId, useMemo, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { useRecoilValue } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, ArrowUpDown, Check, Folder, Plus } from 'lucide-react';
+import { ArrowLeft, ArrowUpDown, Check, Plus } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { QueryKeys } from 'librechat-data-provider';
 import type { ConversationListResponse } from 'librechat-data-provider';
 import { Spinner, DropdownPopup } from '@librechat/client';
 import type { MenuItemProps, RenderProp } from '~/common';
 import { useConversationsInfiniteQuery, useProjectQuery } from '~/data-provider';
+import PageHeader from '~/components/ui/PageHeader';
 import { useLocalize, useNewConvo } from '~/hooks';
 import { cn, clearMessagesCache } from '~/utils';
 import ProjectChatList from './ProjectChatList';
@@ -127,31 +128,23 @@ export default function ProjectWorkspace() {
 
   return (
     <main className="flex h-full min-h-0 flex-col overflow-y-auto bg-surface-primary text-text-primary">
-      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 pb-10 pt-4 md:px-6 lg:pt-8">
+      <div className="px-6">
         <button
           type="button"
           onClick={() => navigate('/projects')}
-          className="-ml-1.5 inline-flex w-fit items-center gap-1.5 rounded-lg px-2 py-1 text-sm text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+          className="-ml-1.5 mt-3 inline-flex w-fit items-center gap-1.5 rounded-lg px-2 py-1 text-sm text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
           {localize('com_ui_all_projects')}
         </button>
+      </div>
 
-        <header className="mt-5 flex items-start gap-3">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-surface-secondary text-text-secondary">
-            <Folder className="h-6 w-6" aria-hidden="true" />
-          </span>
-          <div className="min-w-0 flex-1 pt-0.5">
-            <h1 className="truncate text-2xl font-semibold tracking-tight text-text-primary">
-              {project.name}
-            </h1>
-            {project.description ? (
-              <p className="mt-0.5 line-clamp-2 text-sm text-text-secondary">
-                {project.description}
-              </p>
-            ) : null}
-          </div>
-        </header>
+      <PageHeader title={project.name} />
+
+      <div className="flex w-full flex-1 flex-col px-6 pb-6">
+        {project.description ? (
+          <p className="mt-3 line-clamp-2 text-sm text-text-secondary">{project.description}</p>
+        ) : null}
 
         <button
           type="button"
