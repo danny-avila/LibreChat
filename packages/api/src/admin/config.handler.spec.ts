@@ -1120,6 +1120,69 @@ describe('createAdminConfigHandlers', () => {
       expect(deps.deleteConfig).toHaveBeenCalled();
     });
 
+    it('upsert empty payload is rejected when existing doc has tombstones (no overrides)', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn().mockResolvedValue(true),
+        findConfigByPrincipal: jest.fn().mockResolvedValue({
+          _id: 'c1',
+          overrides: {},
+          tombstones: ['endpoints.openai.apiKey'],
+        }),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { overrides: {}, priority: 5 },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(403);
+      expect(deps.upsertConfig).not.toHaveBeenCalled();
+    });
+
+    it('delete is rejected when existing doc has tombstones (no overrides)', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn().mockResolvedValue(true),
+        findConfigByPrincipal: jest.fn().mockResolvedValue({
+          _id: 'c1',
+          overrides: {},
+          tombstones: ['endpoints.openai.apiKey'],
+        }),
+      });
+      const req = mockReq({ params: { principalType: 'role', principalId: 'admin' } });
+      const res = mockRes();
+
+      await handlers.deleteConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(403);
+      expect(deps.deleteConfig).not.toHaveBeenCalled();
+    });
+
+    it('toggle is rejected when existing doc has tombstones (no overrides)', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn().mockResolvedValue(true),
+        findConfigByPrincipal: jest.fn().mockResolvedValue({
+          _id: 'c1',
+          overrides: {},
+          tombstones: ['endpoints.openai.apiKey'],
+        }),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { isActive: false },
+      });
+      const res = mockRes();
+
+      await handlers.toggleConfig(req, res);
+
+      expect(res.statusCode).toBe(403);
+      expect(deps.toggleConfigActive).not.toHaveBeenCalled();
+    });
+
     it('broad-manage caller bypasses the existing-overrides guard', async () => {
       const { handlers, deps } = createHandlers({
         hasConfigCapability: jest.fn().mockResolvedValue(true),

@@ -394,7 +394,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         const existing = await findConfigByPrincipal(principalType, principalId, {
           includeInactive: true,
         });
-        if (existing && Object.keys(existing.overrides ?? {}).length > 0) {
+        const overrideKeys = Object.keys(existing?.overrides ?? {});
+        const tombstoneList = existing?.tombstones ?? [];
+        if (existing && (overrideKeys.length > 0 || tombstoneList.length > 0)) {
           return res.status(403).json({ error: 'Insufficient permissions' });
         }
       }
@@ -707,7 +709,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         const existing = await findConfigByPrincipal(principalType, principalId, {
           includeInactive: true,
         });
-        if (existing && Object.keys(existing.overrides ?? {}).length > 0) {
+        const overrideKeys = Object.keys(existing?.overrides ?? {});
+        const tombstoneList = existing?.tombstones ?? [];
+        if (existing && (overrideKeys.length > 0 || tombstoneList.length > 0)) {
           return res.status(403).json({ error: 'Insufficient permissions' });
         }
       }
@@ -768,7 +772,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         const existing = await findConfigByPrincipal(principalType, principalId, {
           includeInactive: true,
         });
-        if (existing && Object.keys(existing.overrides ?? {}).length > 0) {
+        const overrideKeys = Object.keys(existing?.overrides ?? {});
+        const tombstoneList = existing?.tombstones ?? [];
+        if (existing && (overrideKeys.length > 0 || tombstoneList.length > 0)) {
           return res.status(403).json({ error: 'Insufficient permissions' });
         }
       }
