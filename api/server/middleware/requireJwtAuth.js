@@ -35,6 +35,31 @@ const getAuthenticatedUserId = (user) => user?.id?.toString?.() ?? user?._id?.to
 const refreshCloudFrontCookies =
   maybeRefreshCloudFrontAuthCookiesMiddleware ?? ((_req, _res, next) => next());
 
+const getAuthStrategies = (req) => {
+  const cookieHeader = req.headers.cookie;
+  const parsedCookies = cookieHeader ? cookies.parse(cookieHeader) : {};
+  const tokenProvider = parsedCookies.token_provider;
+  const openidReuseEnabled = isEnabled(process.env.OPENID_REUSE_TOKENS);
+  const openidJwtAvailable = openidReuseEnabled && hasPassportStrategy('openidJwt');
+  const openIdReuseUserId = getValidOpenIdReuseUserId(parsedCookies);
+  const useOpenIdJwt =
+    tokenProvider === 'openid' && openidJwtAvailable && openIdReuseUserId != null;
+
+  return {
+    tokenProvider,
+    openidReuseEnabled,
+    openidJwtAvailable,
+    openIdReuseUserId,
+    strategies: useOpenIdJwt ? ['openidJwt', 'jwt'] : ['jwt'],
+  };
+};
+
+const dropRumTelemetry = (res) => {
+  if (!res.headersSent) {
+    res.status(204).end();
+  }
+};
+
 /**
  * Custom Middleware to handle JWT authentication, with support for OpenID token reuse.
  * Switches between JWT and OpenID authentication based on cookies and environment settings.
@@ -44,15 +69,8 @@ const refreshCloudFrontCookies =
  * for downstream Mongoose tenant isolation and structured logging.
  */
 const requireJwtAuth = (req, res, next) => {
-  const cookieHeader = req.headers.cookie;
-  const parsedCookies = cookieHeader ? cookies.parse(cookieHeader) : {};
-  const tokenProvider = parsedCookies.token_provider;
-  const openidReuseEnabled = isEnabled(process.env.OPENID_REUSE_TOKENS);
-  const openidJwtAvailable = openidReuseEnabled && hasPassportStrategy('openidJwt');
-  const openIdReuseUserId = getValidOpenIdReuseUserId(parsedCookies);
-  const useOpenIdJwt =
-    tokenProvider === 'openid' && openidJwtAvailable && openIdReuseUserId != null;
-  const strategies = useOpenIdJwt ? ['openidJwt', 'jwt'] : ['jwt'];
+  const { tokenProvider, openidReuseEnabled, openidJwtAvailable, openIdReuseUserId, strategies } =
+    getAuthStrategies(req);
   const authLogState = {
     tokenProvider,
     openidReuseEnabled,
@@ -162,4 +180,36 @@ const requireJwtAuth = (req, res, next) => {
   authenticateWithStrategy(0);
 };
 
+const requireRumProxyAuth = (req, res, next) => {
+  const { openIdReuseUserId, strategies } = getAuthStrategies(req);
+
+  const authenticateWithStrategy = (index) => {
+    const strategy = strategies[index];
+    passport.authenticate(strategy, { session: false }, (err, user) => {
+      if (err || !user) {
+        if (index + 1 < strategies.length) {
+          return authenticateWithStrategy(index + 1);
+        }
+        dropRumTelemetry(res);
+        return;
+      }
+
+      if (strategy === 'openidJwt' && getAuthenticatedUserId(user) !== openIdReuseUserId) {
+        if (index + 1 < strategies.length) {
+          return authenticateWithStrategy(index + 1);
+        }
+        dropRumTelemetry(res);
+        return;
+      }
+
+      req.user = user;
+      req.authStrategy = strategy;
+      next();
+    })(req, res, next);
+  };
+
+  authenticateWithStrategy(0);
+};
+
 module.exports = requireJwtAuth;
+module.exports.requireRumProxyAuth = requireRumProxyAuth;
