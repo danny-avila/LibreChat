@@ -1,6 +1,6 @@
-import { enrichOpenIdProfile } from './openidUserInfo';
-import type { OpenIdAccountClaims } from './openidAccount';
 import type { OpenIdRuntimeConfig } from './openidUserInfo';
+import type { OpenIdAccountClaims } from './openidAccount';
+import { enrichOpenIdProfile } from './openidUserInfo';
 
 const claims: OpenIdAccountClaims = {
   sub: 'sub-123',

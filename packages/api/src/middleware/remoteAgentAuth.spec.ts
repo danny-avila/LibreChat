@@ -1,5 +1,6 @@
 import type {
   AppConfig,
+  IRole,
   IUser,
   RoleMethods,
   UserGroupMethods,
@@ -363,7 +364,7 @@ function makeDeps(appConfig: AppConfig = makeConfig()) {
       makeUser(update as Partial<IUser>),
     ),
     getRolesByNames: mockMethod<RoleMethods['findRolesByNames']>(async (roleNames) =>
-      roleNames.map((roleName) => ({ name: roleName })),
+      roleNames.map((roleName) => ({ name: roleName }) as IRole),
     ),
     bulkUpdateGroups: mockMethod<UserGroupMethods['bulkUpdateGroups']>(async () => updateResult),
     findGroupsByExternalIds: mockMethod<UserGroupMethods['findGroupsByExternalIds']>(
@@ -1492,7 +1493,10 @@ describe('createRemoteAgentAuth', () => {
         true,
         true,
       );
-      const createPayload = deps.createUser.mock.calls[0]![0] as Record<string, unknown>;
+      const createPayload = deps.createUser.mock.calls[0]![0] as unknown as Record<
+        string,
+        unknown
+      >;
       expect(createPayload).toBeDefined();
       expectNoPersistedTokenFields(createPayload);
       expect(req.user).toMatchObject({

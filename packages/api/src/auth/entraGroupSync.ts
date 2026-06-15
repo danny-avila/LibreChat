@@ -2,9 +2,8 @@ import { logger } from '@librechat/data-schemas';
 import { isRemoteOidcUrlAllowed } from 'librechat-data-provider';
 import type { IUser, UserGroupMethods } from '@librechat/data-schemas';
 import type { RemoteAuthFetch } from './fetch';
-
-import { fetchRemoteAuth } from './fetch';
 import { normalizeOpenIdIssuer } from './openid';
+import { fetchRemoteAuth } from './fetch';
 import { isEnabled } from '~/utils';
 
 export type EntraGroupSyncOptions = {
@@ -398,10 +397,13 @@ async function syncMemberships({
     groupIds: missingGroupIds,
     fetcher,
   });
-  const resolvedGroupIds = unique([
-    ...existingGroups.map((group) => group.idOnTheSource),
-    ...missingGroupDetails.map((group) => group.id),
-  ]);
+
+  const resolvedGroupIds = unique(
+    [
+      ...existingGroups.map((group) => group.idOnTheSource),
+      ...missingGroupDetails.map((group) => group.id),
+    ].filter((id): id is string => typeof id === 'string'),
+  );
 
   await Promise.all(
     missingGroupDetails.map((group) =>

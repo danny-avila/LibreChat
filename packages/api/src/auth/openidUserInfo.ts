@@ -1,8 +1,8 @@
 import { isRemoteOidcUrlAllowed } from 'librechat-data-provider';
 import type { OpenIdAccountClaims, OpenIdAccountProfile } from './openidAccount';
 import type { RemoteAuthFetch } from './fetch';
-import { fetchRemoteAuth } from './fetch';
 import { normalizeOpenIdIssuer } from './openid';
+import { fetchRemoteAuth } from './fetch';
 import { isEnabled } from '~/utils';
 
 export type OpenIdRuntimeConfig = {

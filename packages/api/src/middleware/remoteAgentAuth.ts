@@ -3,7 +3,6 @@ import jwksRsa from 'jwks-rsa';
 import { fetch as undiciFetch } from 'undici';
 import { getTenantId, logger, tenantStorage } from '@librechat/data-schemas';
 import { SystemRoles, isRemoteOidcUrlAllowed } from 'librechat-data-provider';
-import type { RequestHandler, Request, Response, NextFunction } from 'express';
 import type {
   AppConfig,
   IUser,
@@ -11,24 +10,11 @@ import type {
   UserGroupMethods,
   UserMethods,
 } from '@librechat/data-schemas';
+import type { RequestHandler, Request, Response, NextFunction } from 'express';
 import type { Algorithm, JwtPayload, VerifyOptions } from 'jsonwebtoken';
 import type { TAgentsEndpoint } from 'librechat-data-provider';
 import type { RequestInit } from 'undici';
 import type { GetAppConfigOptions } from '../app/service';
-import {
-  type EntraGroupSyncResult,
-  syncUserEntraGroupMemberships,
-  type EntraGroupSyncDbMethods,
-  type EntraGroupSyncOptions,
-  type EntraGraphConfig,
-} from '../auth/entraGroupSync';
-import {
-  resolveOpenIdAccount,
-  type OpenIdAccountMethods,
-  type OpenIdAccountOptions,
-  type OpenIdAccountProfile,
-} from '../auth/openidAccount';
-import { enrichOpenIdProfile } from '../auth/openidUserInfo';
 import {
   readFederatedAuthCache,
   writeFederatedAuthCache as writeFederatedAuthCacheEntry,
@@ -37,13 +23,27 @@ import {
   type FederatedAuthCacheOptions,
 } from '../auth/federatedAuthCache';
 import {
+  type EntraGroupSyncResult,
+  syncUserEntraGroupMemberships,
+  type EntraGroupSyncDbMethods,
+  type EntraGroupSyncOptions,
+  type EntraGraphConfig,
+} from '../auth/entraGroupSync';
+import {
   getLibreChatRolesForOpenIdSync,
   getOpenIdRolesForOpenIdSync,
   getOpenIdRoleSyncOptions,
   selectOpenIdRole,
 } from '../auth/openidRoleSync';
-import { normalizeOpenIdIssuer } from '../auth/openid';
+import {
+  resolveOpenIdAccount,
+  type OpenIdAccountMethods,
+  type OpenIdAccountOptions,
+  type OpenIdAccountProfile,
+} from '../auth/openidAccount';
 import { getEnvProxyDispatcher, getHttpsProxyAgent } from '~/utils/proxy';
+import { enrichOpenIdProfile } from '../auth/openidUserInfo';
+import { normalizeOpenIdIssuer } from '../auth/openid';
 import { isEnabled, math } from '~/utils';
 
 export interface RemoteAgentAuthDeps {

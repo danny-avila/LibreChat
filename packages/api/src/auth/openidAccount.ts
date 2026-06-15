@@ -1,9 +1,8 @@
 import { SystemRoles } from 'librechat-data-provider';
 import type { IUser, AppConfig, UserMethods, BalanceConfig } from '@librechat/data-schemas';
-
+import { findOpenIDUser, getOpenIdEmail, normalizeOpenIdIssuer } from './openid';
 import { getBalanceConfig } from '~/app/config';
 import { isEmailDomainAllowed } from './domain';
-import { findOpenIDUser, getOpenIdEmail, normalizeOpenIdIssuer } from './openid';
 
 export type OpenIdAccountClaims = {
   sub?: unknown;

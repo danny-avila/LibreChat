@@ -1,14 +1,13 @@
 import { Types } from 'mongoose';
 import { logger } from '@librechat/data-schemas';
 import type { IGroup, IUser, UserGroupMethods } from '@librechat/data-schemas';
-
-import { syncUserEntraGroupMemberships } from './entraGroupSync';
 import type {
   EntraGroupSyncDbMethods,
   EntraGraphConfig,
   EntraGroupSyncOptions,
   EntraGroupSyncResult,
 } from './entraGroupSync';
+import { syncUserEntraGroupMemberships } from './entraGroupSync';
 
 const graphConfig: EntraGraphConfig = {
   issuer: 'https://issuer.example.com/tenant/v2.0',
