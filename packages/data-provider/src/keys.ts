@@ -126,4 +126,5 @@ export enum MutationKeys {
   updateSkillNode = 'updateSkillNode',
   deleteSkillNode = 'deleteSkillNode',
   updateSkillNodeContent = 'updateSkillNodeContent',
+  convoPin = 'convoPin',
 }

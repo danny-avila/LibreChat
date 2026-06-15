@@ -1,6 +1,7 @@
 import type { AxiosResponse } from 'axios';
 import type { TFileConfig } from './file-config';
 import type * as t from './types';
+import { TPinConversationRequest, TPinConversationResponse } from 'src/nj/convos';
 import * as permissions from './accessPermissions';
 import * as endpoints from './api-endpoints';
 import * as mcp from './types/mcpServers';
@@ -11,10 +12,10 @@ import * as q from './types/queries';
 import * as sk from './types/skills';
 import * as f from './types/files';
 import * as config from './config';
+import * as nj from './nj/files';
 import request from './request';
 import * as s from './schemas';
 import * as r from './roles';
-import * as nj from './nj/files';
 
 export function revokeUserKey(name: string): Promise<unknown> {
   return request.delete(endpoints.revokeUserKey(name));
@@ -825,6 +826,12 @@ export function assignConversationToProject(
 ): Promise<t.TAssignConversationToProjectResponse> {
   const { conversationId, projectId } = payload;
   return request.put(endpoints.projectConversation(conversationId), { projectId });
+}
+
+export function pinConversation(
+  payload: TPinConversationRequest,
+): Promise<TPinConversationResponse> {
+  return request.post(endpoints.pinConversation(), { arg: payload });
 }
 
 export function genTitle(payload: m.TGenTitleRequest): Promise<m.TGenTitleResponse> {

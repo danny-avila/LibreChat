@@ -54,3 +54,4 @@ export * from './codeEnvRef';
 
 /* NJ: custom code for ourselves */
 export * from './nj/files';
+export * from './nj/convos';

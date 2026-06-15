@@ -1,7 +1,7 @@
 import type { StartupConfigContext } from './config';
 import type { AssistantsEndpoint } from './schemas';
-import * as q from './types/queries';
 import { ResourceType } from './accessPermissions';
+import * as q from './types/queries';
 
 let BASE_URL = '';
 if (
@@ -115,6 +115,7 @@ export const genTitle = (conversationId: string) =>
 export const updateConversation = () => `${conversationsRoot}/update`;
 
 export const archiveConversation = () => `${conversationsRoot}/archive`;
+export const pinConversation = () => `${conversationsRoot}/pin`;
 
 export const deleteConversation = () => `${conversationsRoot}`;
 
