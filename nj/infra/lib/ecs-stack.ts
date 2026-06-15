@@ -276,8 +276,8 @@ export class EcsStack extends cdk.Stack {
       secrets: envSecrets,
       environmentFiles: [
         ecs.EnvironmentFile.fromBucket(
-          s3.Bucket.fromBucketArn(this.envFilesBucket, `${props.envVars.env}.env`),
-        ),
+          this.envFilesBucket, 
+          `${props.envVars.env}.env`),
       ],
       portMappings: [{ containerPort: 3080 }],
       command: ['npm', 'run', 'backend'],
@@ -633,8 +633,8 @@ export class EcsStack extends cdk.Stack {
       portMappings: [{ containerPort: 7700 }],
       environmentFiles: [
         ecs.EnvironmentFile.fromBucket(
-          s3.Bucket.fromBucketArn(this.envFilesBucket, `${props.envVars.env}.env`),
-        ),
+          this.envFilesBucket, 
+          `${props.envVars.env}.env`),
       ],
     });
 
