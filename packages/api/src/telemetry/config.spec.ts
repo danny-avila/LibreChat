@@ -9,7 +9,7 @@ describe('getTelemetryConfig', () => {
     expect(config.serviceName).toBe('librechat');
     expect(config.healthPath).toBe('/health');
     expect(config.ioredisTracingEnabled).toBe(false);
-    expect(config.mongooseInternalTracingEnabled).toBe(false);
+    expect(config.mongooseInternalTracingEnabled).toBe(true);
   });
 
   it('enables tracing only when OTEL_TRACING_ENABLED is true', () => {
@@ -46,13 +46,20 @@ describe('getTelemetryConfig', () => {
     expect(config.serviceVersion).toBe('0.8.5');
   });
 
-  it('enables noisy database instrumentation only when explicitly configured', () => {
+  it('enables ioredis instrumentation only when explicitly configured', () => {
     const config = getTelemetryConfig({
       OTEL_IOREDIS_TRACING_ENABLED: 'true',
-      OTEL_MONGOOSE_INTERNAL_TRACING_ENABLED: 'TRUE',
     });
 
     expect(config.ioredisTracingEnabled).toBe(true);
     expect(config.mongooseInternalTracingEnabled).toBe(true);
+  });
+
+  it('allows mongoose internal instrumentation to be explicitly disabled', () => {
+    const config = getTelemetryConfig({
+      OTEL_MONGOOSE_INTERNAL_TRACING_ENABLED: 'false',
+    });
+
+    expect(config.mongooseInternalTracingEnabled).toBe(false);
   });
 });

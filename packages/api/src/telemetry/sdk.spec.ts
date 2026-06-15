@@ -191,16 +191,15 @@ describe('telemetry SDK lifecycle', () => {
     expect(mockExpressInstrumentation).toHaveBeenCalledTimes(1);
     expect(mockMongoDBInstrumentation).toHaveBeenCalledTimes(1);
     expect(mockMongooseInstrumentation).toHaveBeenCalledWith({
-      suppressInternalInstrumentation: true,
+      suppressInternalInstrumentation: false,
     });
     expect(mockIORedisInstrumentation).not.toHaveBeenCalled();
     expect(mockUndiciInstrumentation).toHaveBeenCalledTimes(1);
   });
 
-  it('enables noisy database instrumentation when explicitly configured', () => {
+  it('enables ioredis instrumentation when explicitly configured', () => {
     initializeTelemetry({
       OTEL_IOREDIS_TRACING_ENABLED: 'true',
-      OTEL_MONGOOSE_INTERNAL_TRACING_ENABLED: 'true',
       OTEL_TRACING_ENABLED: 'true',
     });
 
@@ -212,6 +211,18 @@ describe('telemetry SDK lifecycle', () => {
     expect(mockMongoDBInstrumentation).toHaveBeenCalledTimes(1);
     expect(mockIORedisInstrumentation).toHaveBeenCalledTimes(1);
     expect(mockUndiciInstrumentation).toHaveBeenCalledTimes(1);
+  });
+
+  it('suppresses mongoose internal instrumentation when explicitly disabled', () => {
+    initializeTelemetry({
+      OTEL_MONGOOSE_INTERNAL_TRACING_ENABLED: 'false',
+      OTEL_TRACING_ENABLED: 'true',
+    });
+
+    expect(mockMongooseInstrumentation).toHaveBeenCalledWith({
+      suppressInternalInstrumentation: true,
+    });
+    expect(mockIORedisInstrumentation).not.toHaveBeenCalled();
   });
 
   it('tracks HTTP server request spans for completion updates', () => {

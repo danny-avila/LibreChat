@@ -23,6 +23,16 @@ function isTruthy(value?: string | boolean | null): boolean {
   return false;
 }
 
+function isFalsey(value?: string | boolean | null): boolean {
+  if (typeof value === 'boolean') {
+    return !value;
+  }
+  if (typeof value === 'string') {
+    return value.trim().toLowerCase() === 'false';
+  }
+  return false;
+}
+
 function normalizeEnvValue(value?: string): string | undefined {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
@@ -35,7 +45,7 @@ export function getTelemetryConfig(env: NodeJS.ProcessEnv = process.env): Teleme
   const serviceVersion =
     normalizeEnvValue(env.OTEL_SERVICE_VERSION) ?? normalizeEnvValue(env.npm_package_version);
   const ioredisTracingEnabled = isTruthy(env.OTEL_IOREDIS_TRACING_ENABLED);
-  const mongooseInternalTracingEnabled = isTruthy(env.OTEL_MONGOOSE_INTERNAL_TRACING_ENABLED);
+  const mongooseInternalTracingEnabled = !isFalsey(env.OTEL_MONGOOSE_INTERNAL_TRACING_ENABLED);
 
   return {
     enabled,
