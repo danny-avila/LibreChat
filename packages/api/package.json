@@ -72,6 +72,7 @@
     "@types/node-fetch": "^2.6.13",
     "@types/react": "^18.2.18",
     "@types/sanitize-html": "^2.13.0",
+    "@types/supertest": "^7.2.0",
     "@types/winston": "^2.4.4",
     "@types/yauzl": "^2.10.3",
     "aws-sdk-client-mock": "^4.1.0",
