@@ -3,10 +3,12 @@ import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import EmptyPromptPreview from '../display/EmptyPromptPreview';
 import CreatePromptForm from '../forms/CreatePromptForm';
-import { useHasAccess } from '~/hooks';
+import PageHeader from '~/components/ui/PageHeader';
+import { useHasAccess, useLocalize } from '~/hooks';
 import PromptForm from '../forms/PromptForm';
 
 export default function InlinePromptsView() {
+  const localize = useLocalize();
   const { promptId } = useParams();
   const navigate = useNavigate();
   const isNew = promptId === undefined;
@@ -37,7 +39,8 @@ export default function InlinePromptsView() {
   }
 
   return (
-    <div className="flex h-full w-full flex-col overflow-y-auto bg-presentation">
+    <div className="flex h-full w-full flex-col overflow-y-auto bg-surface-primary text-text-primary">
+      {isNew && <PageHeader title={localize('com_ui_prompts')} />}
       {isNew ? (
         <CreatePromptForm onSuccess={handleCreateSuccess} />
       ) : (
