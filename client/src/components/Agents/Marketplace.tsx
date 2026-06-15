@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { useMediaQuery } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import { useSearchParams, useParams, useNavigate } from 'react-router-dom';
 import type t from 'librechat-data-provider';
@@ -7,6 +6,7 @@ import { useDocumentTitle, useHasAccess, useLocalize, TranslationKeys } from '~/
 import { useGetEndpointsQuery, useGetAgentCategoriesQuery } from '~/data-provider';
 import MarketplaceAdminSettings from './MarketplaceAdminSettings';
 import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
+import PageHeader from '~/components/ui/PageHeader';
 import { SidePanelGroup } from '~/components/SidePanel';
 import CategoryTabs from './CategoryTabs';
 import SearchBar from './SearchBar';
@@ -29,8 +29,6 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
   const navigate = useNavigate();
   const { category } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
-
-  const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
   // Get URL parameters
   const searchQuery = searchParams.get('q') || '';
@@ -202,28 +200,16 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
             ref={scrollContainerRef}
             className="scrollbar-gutter-stable relative flex h-full flex-col overflow-y-auto overflow-x-hidden"
           >
-            {/* Hero Section - scrolls away */}
-            {!isSmallScreen && (
-              <div className="container mx-auto max-w-4xl">
-                <div className={cn('mb-8 text-center', 'mt-12')}>
-                  <h1 className="mb-3 text-3xl font-bold tracking-tight text-text-primary md:text-5xl">
-                    {localize('com_agents_marketplace')}
-                  </h1>
-                  <p className="mx-auto mb-6 max-w-2xl text-lg text-text-secondary">
-                    {localize('com_agents_marketplace_subtitle')}
-                  </p>
-                </div>
-              </div>
-            )}
+            <PageHeader title={localize('com_agents_marketplace')} />
             {/* Sticky wrapper for search bar and categories */}
-            <div className="sticky top-0 z-10 mt-4 bg-presentation pb-4 md:mt-0">
-              <div className="container mx-auto max-w-4xl px-4">
-                <div className="mx-auto mb-3 flex max-w-2xl items-center justify-between gap-2 md:hidden">
+            <div className="sticky top-0 z-10 bg-presentation pb-4">
+              <div className="px-6">
+                <div className="mb-3 flex items-center justify-between gap-2 md:hidden">
                   <OpenSidebar />
                   <MarketplaceAdminSettings compact />
                 </div>
                 {/* Search bar */}
-                <div className="mx-auto flex max-w-2xl gap-2 pb-6">
+                <div className="flex gap-2 pb-6">
                   <SearchBar value={searchQuery} onSearch={handleSearch} />
                   {/* TODO: Remove this once we have a better way to handle admin settings */}
                   <div className="hidden md:block">
@@ -241,7 +227,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
               </div>
             </div>
             {/* Scrollable content area */}
-            <div className="container mx-auto max-w-4xl px-4 pb-8">
+            <div className="px-6 pb-8">
               {/* Two-pane animated container wrapping category header + grid */}
               <div className="relative overflow-hidden">
                 {/* Current content pane */}
