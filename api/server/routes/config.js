@@ -181,6 +181,18 @@ function buildWebSearchConfig(appConfig) {
   };
 }
 
+function buildLocationStartupConfig(appConfig) {
+  const loc = appConfig?.location;
+  if (!loc || loc.enabled === false) {
+    return undefined;
+  }
+  const out = { enabled: true };
+  if (loc.geocoder?.endpoint) {
+    out.geocoder = { endpoint: loc.geocoder.endpoint };
+  }
+  return out;
+}
+
 function buildCloudFrontStartupConfig() {
   const config = getCloudFrontConfig();
   if (
@@ -282,6 +294,11 @@ router.get('/', async function (req, res) {
     const webSearch = buildWebSearchConfig(appConfig);
     if (webSearch) {
       payload.webSearch = webSearch;
+    }
+
+    const location = buildLocationStartupConfig(appConfig);
+    if (location) {
+      payload.location = location;
     }
 
     const buildInfo = buildBuildInfoPayload(appConfig?.interfaceConfig);

@@ -63,6 +63,8 @@ export interface AppConfig {
   summarization?: SummarizationConfig;
   /** Web search configuration */
   webSearch?: TCustomConfig['webSearch'];
+  /** Location feature configuration */
+  location?: TCustomConfig['location'];
   /** Message filter configuration (PII and future filter types) */
   messageFilter?: TCustomConfig['messageFilter'];
   /** Skill sync configuration */

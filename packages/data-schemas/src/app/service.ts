@@ -8,6 +8,7 @@ import type { TCustomConfig, FileSources, DeepPartial } from 'librechat-data-pro
 import type { AppConfig, FunctionTool } from '~/types/app';
 import { loadDefaultInterface } from './interface';
 import { loadTurnstileConfig } from './turnstile';
+import { loadLocationConfig } from './location';
 import { agentsConfigSetup } from './agents';
 import { loadWebSearchConfig } from './web';
 import { processModelSpecs } from './specs';
@@ -97,6 +98,7 @@ export const AppService = async (params?: {
 
   const ocr = loadOCRConfig(config.ocr);
   const webSearch = loadWebSearchConfig(config.webSearch);
+  const location = loadLocationConfig(config.location);
   const memory = loadMemoryConfig(config.memory);
   const summarization = loadSummarizationConfig(config);
   const skillSync = loadSkillSyncConfig(config);
@@ -139,6 +141,7 @@ export const AppService = async (params?: {
     balance,
     skillSync,
     webSearch,
+    location,
     mcpSettings,
     fileStrategy,
     registration,

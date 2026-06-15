@@ -1409,6 +1409,12 @@ export type TStartupConfig = {
     scraperProvider?: ScraperProviders;
     rerankerType?: RerankerTypes;
   };
+  location?: {
+    enabled: boolean;
+    geocoder?: {
+      endpoint?: string;
+    };
+  };
   cloudFront?: {
     cookieRefresh?: {
       endpoint: string;
@@ -1561,6 +1567,17 @@ export const webSearchSchema = z.object({
 
 export type TWebSearchConfig = DeepPartial<z.infer<typeof webSearchSchema>>;
 
+export const locationSchema = z.object({
+  enabled: z.boolean().default(true),
+  geocoder: z
+    .object({
+      endpoint: z.string().url().optional(),
+    })
+    .optional(),
+});
+
+export type TLocationConfig = z.infer<typeof locationSchema>;
+
 export const ocrSchema = z.object({
   mistralModel: z.string().optional(),
   apiKey: z.string().optional().default('${OCR_API_KEY}'),
@@ -1687,6 +1704,7 @@ export const configSchema = z.object({
   cache: z.boolean().default(true),
   ocr: ocrSchema.optional(),
   webSearch: webSearchSchema.optional(),
+  location: locationSchema.optional(),
   memory: memorySchema.optional(),
   summarization: summarizationConfigSchema.optional(),
   skillSync: skillSyncConfigSchema,
