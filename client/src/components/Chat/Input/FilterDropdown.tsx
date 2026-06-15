@@ -67,6 +67,10 @@ const isActiveFilter = (state: PeriodFilterState): boolean =>
   state.endDate !== null ||
   (state.extensionGroups && state.extensionGroups.length > 0);
 
+const stopMenuInputEvent = (event: React.SyntheticEvent<HTMLInputElement>) => {
+  event.stopPropagation();
+};
+
 interface DateTriggerProps {
   label: string;
   value: string | null;
@@ -306,6 +310,7 @@ const FilterDropdown = ({ disabled }: FilterDropdownProps) => {
         portal
         unmountOnHide
         gutter={4}
+        composite={false}
         /* flip=true(기본)로 두어 입력창이 뷰포트 하단 가까이 있을 때 자동으로 위로 뒤집히도록 한다. */
         hideOnHoverOutside={false}
         className="popover-ui z-50 w-[320px] !overflow-visible !p-2"
@@ -471,6 +476,10 @@ const FilterDropdown = ({ disabled }: FilterDropdownProps) => {
                 placeholder="사건명/사건번호 검색"
                 className="w-full rounded-md border border-border-light bg-surface-primary px-2 py-1.5 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none"
                 onKeyDown={(e) => e.stopPropagation()}
+                onBeforeInput={stopMenuInputEvent}
+                onPointerDown={stopMenuInputEvent}
+                onMouseDown={stopMenuInputEvent}
+                onClick={stopMenuInputEvent}
               />
               {matterCandidates.length > 0 && (
                 <div className="mt-1 max-h-56 overflow-y-auto rounded-md border border-border-light">
@@ -519,6 +528,10 @@ const FilterDropdown = ({ disabled }: FilterDropdownProps) => {
                 placeholder="문서명/doc_id 검색"
                 className="w-full rounded-md border border-border-light bg-surface-primary px-2 py-1.5 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none"
                 onKeyDown={(e) => e.stopPropagation()}
+                onBeforeInput={stopMenuInputEvent}
+                onPointerDown={stopMenuInputEvent}
+                onMouseDown={stopMenuInputEvent}
+                onClick={stopMenuInputEvent}
               />
               {docSearch.trim().length >= 2 && (
                 <div className="mt-1 max-h-56 overflow-y-auto rounded-md border border-border-light">
