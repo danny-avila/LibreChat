@@ -2,7 +2,6 @@
 import { EventEmitter } from 'events';
 import express from 'express';
 import type { Request, Response } from 'express';
-import request from 'supertest';
 import {
   createMetrics,
   instrumentMongooseQueryMetrics,
@@ -14,6 +13,28 @@ import {
   recordRumProxyRequest,
   setGenerationJobsInFlight,
 } from './metrics';
+
+type SuperTestResponse = {
+  text: string;
+};
+
+type SuperTestRequest = Promise<SuperTestResponse> & {
+  attach(field: string, file: Uint8Array, filename?: string): SuperTestRequest;
+  expect(status: number): SuperTestRequest;
+  send(body: Uint8Array | object | string): SuperTestRequest;
+  set(field: string, value: string): SuperTestRequest;
+};
+
+type SuperTest = {
+  delete(url: string): SuperTestRequest;
+  get(url: string): SuperTestRequest;
+  post(url: string): SuperTestRequest;
+};
+
+type SuperTestFactory = (app: express.Express) => SuperTest;
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const request = require('supertest') as SuperTestFactory;
 
 describe('normalizePath', () => {
   it.each([
