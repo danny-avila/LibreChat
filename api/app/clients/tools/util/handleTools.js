@@ -34,6 +34,7 @@ const {
   TavilySearchResults,
   createGeminiImageTool,
   createOpenAIImageTools,
+  createLocationTool,
 } = require('../');
 const {
   createMCPTool,
@@ -229,6 +230,9 @@ const loadTools = async ({
         userId: user,
         fileStrategy,
       });
+    },
+    get_location: async () => {
+      return createLocationTool({ userId: user, req: options.req });
     },
   };
 

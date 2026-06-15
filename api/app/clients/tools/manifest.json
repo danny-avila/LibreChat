@@ -166,5 +166,12 @@
         "optional": true
       }
     ]
+  },
+  {
+    "name": "Get Location",
+    "pluginKey": "get_location",
+    "description": "Returns the user's shared location (place, coordinates, timezone) so the assistant can tailor language, units, and regional context.",
+    "icon": "assets/google-search.svg",
+    "authConfig": []
   }
 ]

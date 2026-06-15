@@ -445,6 +445,16 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     toolType: 'builtin',
     responseFormat: geminiToolkit.gemini_image_gen.responseFormat,
   },
+  get_location: {
+    name: 'get_location',
+    description: "Returns the user's current location (place, coordinates, timezone) when shared.",
+    schema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+    toolType: 'builtin',
+  },
 };
 
 /**
