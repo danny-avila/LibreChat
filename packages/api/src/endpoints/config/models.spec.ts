@@ -106,6 +106,34 @@ describe('createLoadConfigModels – user-provided baseURL header guard', () => 
       }),
     );
   });
+
+  it('tenant-scopes the fetched token config cache key for system-defined endpoints', async () => {
+    const loadConfigModels = createLoadConfigModels({
+      getAppConfig: jest.fn().mockResolvedValue(
+        buildAppConfig({
+          baseURL: 'https://admin-trusted.example.com/v1',
+          apiKey: 'sk-system-key',
+        }),
+      ),
+      getUserKeyValues: jest.fn(),
+      fetchModels,
+    });
+
+    const req = {
+      user: { id: 'user-1', tenantId: 'tenant-a' },
+      config: undefined,
+    } as unknown as ServerRequest;
+
+    await loadConfigModels(req);
+
+    expect(fetchModels).toHaveBeenCalledTimes(1);
+    expect(fetchModels).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'TestProxy',
+        tokenKey: 'tenant:tenant-a:TestProxy',
+      }),
+    );
+  });
 });
 
 describe('createLoadConfigModels – in-request fetch coalescing', () => {

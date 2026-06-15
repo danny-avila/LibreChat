@@ -33,7 +33,7 @@ jest.mock('~/app/config', () => ({
   getCustomEndpointConfig: (...args: unknown[]) => mockGetCustomEndpointConfig(...args),
 }));
 
-import { initializeCustom } from './initialize';
+import { getTokenConfigKey, initializeCustom } from './initialize';
 
 function createParams(overrides: {
   apiKey?: string;
@@ -219,6 +219,7 @@ describe('initializeCustom – token-config fetch header forwarding', () => {
     baseURL?: string;
     userBaseURL?: string;
     headers?: Record<string, string>;
+    tenantId?: string;
   }): BaseInitializeParams {
     const { apiKey = 'sk-test-key', baseURL = 'https://openrouter.ai/api/v1' } = overrides;
 
@@ -238,7 +239,7 @@ describe('initializeCustom – token-config fetch header forwarding', () => {
 
     return {
       req: {
-        user: { id: 'user-1', email: 'user@example.com' },
+        user: { id: 'user-1', email: 'user@example.com', tenantId: overrides.tenantId },
         body: { key: '2099-01-01' },
         config: {},
       } as unknown as BaseInitializeParams['req'],
@@ -311,6 +312,23 @@ describe('initializeCustom – token-config fetch header forwarding', () => {
         name: 'openrouter',
         tokenKey: 'openrouter',
         headers: undefined,
+      }),
+    );
+  });
+
+  it('tenant-scopes the tokenKey when a tenant id is present', async () => {
+    const params = createTokenConfigParams({
+      apiKey: 'sk-test-key',
+      baseURL: 'https://openrouter.ai/api/v1',
+      tenantId: 'tenant-a',
+    });
+
+    await initializeCustom(params);
+
+    expect(fetchModels).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'openrouter',
+        tokenKey: 'tenant:tenant-a:openrouter',
       }),
     );
   });
@@ -392,6 +410,43 @@ describe('initializeCustom – token-config fetch header forwarding', () => {
       write: 1.8,
       read: 0.3,
     });
+  });
+});
+
+describe('getTokenConfigKey – tenant fallback', () => {
+  const endpointConfig = {
+    apiKey: 'sk-test-key',
+    baseURL: 'https://openrouter.ai/api/v1',
+  };
+
+  it('keeps legacy shared keys when tenant context is unavailable or empty', () => {
+    const tenantIds = [undefined, null, '', '   '] as Array<string | null | undefined>;
+
+    for (const tenantId of tenantIds) {
+      expect(getTokenConfigKey(endpointConfig, 'openrouter', 'user-1', tenantId)).toBe(
+        'openrouter',
+      );
+    }
+  });
+
+  it('keeps legacy user-scoped keys when tenant context is unavailable or empty', () => {
+    const userScopedConfig = {
+      ...endpointConfig,
+      headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ID_TOKEN}}' },
+    };
+    const tenantIds = [undefined, null, '', '   '] as Array<string | null | undefined>;
+
+    for (const tenantId of tenantIds) {
+      expect(getTokenConfigKey(userScopedConfig, 'openrouter', 'user-1', tenantId)).toBe(
+        'openrouter:user-1',
+      );
+    }
+  });
+
+  it('adds tenant scope only when tenant context is non-empty', () => {
+    expect(getTokenConfigKey(endpointConfig, 'openrouter', 'user-1', ' tenant-a ')).toBe(
+      'tenant:tenant-a:openrouter',
+    );
   });
 });
 

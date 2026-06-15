@@ -56,6 +56,56 @@ describe('resolveTokenConfigMap', () => {
     expect(map.MyProxy['custom-model'].prompt).toBe(2);
   });
 
+  it('uses a tenant-scoped cache key for fetched custom endpoint token config', async () => {
+    mockCacheGet.mockImplementation(async (key: string) => {
+      if (key === 'tenant:tenant-b:MyProxy') {
+        return { 'custom-model': { prompt: 2, completion: 6, context: 16000 } };
+      }
+      if (key === 'MyProxy') {
+        return { 'custom-model': { prompt: 12, completion: 24, context: 111111 } };
+      }
+      return null;
+    });
+    const appConfig = appConfigWith([{ name: 'MyProxy', models: { fetch: true } }]);
+
+    const map = await resolveTokenConfigMap(
+      {
+        appConfig,
+        modelsConfig: { MyProxy: ['custom-model'] },
+        userId: 'user-2',
+        tenantId: 'tenant-b',
+      },
+      deps,
+    );
+
+    expect(mockCacheGet).toHaveBeenCalledWith('tenant:tenant-b:MyProxy');
+    expect(map.MyProxy['custom-model'].context).toBe(16000);
+    expect(map.MyProxy['custom-model'].prompt).toBe(2);
+  });
+
+  it('uses the legacy cache key when tenant context is unavailable or empty', async () => {
+    mockCacheGet.mockResolvedValue({ 'custom-model': { prompt: 2, completion: 6, context: 8000 } });
+    const appConfig = appConfigWith([{ name: 'MyProxy', models: { fetch: true } }]);
+    const tenantIds = [undefined, null, '', '   '] as Array<string | null | undefined>;
+
+    for (const tenantId of tenantIds) {
+      mockCacheGet.mockClear();
+      const map = await resolveTokenConfigMap(
+        {
+          appConfig,
+          modelsConfig: { MyProxy: ['custom-model'] },
+          userId: 'user-1',
+          tenantId,
+        },
+        deps,
+      );
+
+      expect(mockCacheGet).toHaveBeenCalledWith('MyProxy');
+      expect(mockCacheGet.mock.calls.every(([key]) => key === 'MyProxy')).toBe(true);
+      expect(map.MyProxy['custom-model'].context).toBe(8000);
+    }
+  });
+
   it('omits pricing when contextCost is disabled', async () => {
     const appConfig = appConfigWith(
       [

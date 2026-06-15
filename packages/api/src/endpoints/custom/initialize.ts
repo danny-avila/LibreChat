@@ -25,24 +25,37 @@ import { tokenConfigCache } from '~/cache';
 
 const { PROXY } = process.env;
 
+function getTenantTokenPrefix(tenantId?: string | null): string {
+  const normalizedTenantId = typeof tenantId === 'string' ? tenantId.trim() : '';
+  return normalizedTenantId ? `tenant:${normalizedTenantId}:` : '';
+}
+
 /**
  * Cache key for an endpoint's fetched token config. User-scoped when the
  * model fetch can resolve per-user: user-provided key/URL, or header
  * templates forwarded against an admin-trusted base URL — making the
- * response, and therefore the derived token config, user-specific.
+ * response, and therefore the derived token config, user-specific. Otherwise
+ * tenant-scoped when a tenant id is available because custom endpoint config
+ * is resolved per tenant.
  */
 export function getTokenConfigKey(
   endpointConfig: Partial<TEndpoint>,
   endpoint: string,
   userId: string,
+  tenantId?: string | null,
 ): string {
   const hasTokenConfig = endpointConfig.tokenConfig != null;
   const userProvidesKey = isUserProvided(extractEnvVariable(endpointConfig.apiKey ?? ''));
   const userProvidesURL = isUserProvided(extractEnvVariable(endpointConfig.baseURL ?? ''));
   const willForwardUserScopedHeaders = !!endpointConfig?.headers && !userProvidesURL;
+  const tenantPrefix = getTenantTokenPrefix(tenantId);
+  const userKey = tenantPrefix
+    ? `${tenantPrefix}${endpoint}:user:${userId}`
+    : `${endpoint}:${userId}`;
+
   return !hasTokenConfig && (userProvidesKey || userProvidesURL || willForwardUserScopedHeaders)
-    ? `${endpoint}:${userId}`
-    : endpoint;
+    ? userKey
+    : `${tenantPrefix}${endpoint}`;
 }
 
 /**
@@ -222,10 +235,11 @@ export async function initializeCustom({
   let endpointTokenConfig: EndpointTokenConfig | undefined;
 
   const userId = req.user?.id ?? '';
+  const tenantId = req.user?.tenantId;
 
   const cache = tokenConfigCache();
   const hasTokenConfig = endpointConfig.tokenConfig != null;
-  const tokenKey = getTokenConfigKey(endpointConfig, endpoint, userId);
+  const tokenKey = getTokenConfigKey(endpointConfig, endpoint, userId, tenantId);
 
   if (hasTokenConfig) {
     /** A static override is authoritative — use it for the agent's billing
