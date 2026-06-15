@@ -14,6 +14,7 @@ export {
   cacheTokenValues,
   premiumTokenValues,
   defaultRate,
+  createTxMethods,
   permissionBitSupersets,
   partitionIssues,
   validateSkillName,

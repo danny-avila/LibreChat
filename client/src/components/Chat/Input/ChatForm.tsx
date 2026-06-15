@@ -6,12 +6,6 @@ import { Constants, isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-dat
 import type { TConversation } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter, ConvoGenerator } from '~/common';
 import {
-  useChatContext,
-  useChatFormContext,
-  useAddedChatContext,
-  useAssistantsMapContext,
-} from '~/Providers';
-import {
   useTextarea,
   useAutoSave,
   useLocalize,
@@ -21,6 +15,12 @@ import {
   useSubmitMessage,
   useFocusChatEffect,
 } from '~/hooks';
+import {
+  useChatContext,
+  useChatFormContext,
+  useAddedChatContext,
+  useAssistantsMapContext,
+} from '~/Providers';
 import PendingManualSkillsChips from './PendingManualSkillsChips';
 import { cn, getModelSpec, removeFocusRings } from '~/utils';
 import { useGetStartupConfig } from '~/data-provider';
@@ -28,11 +28,12 @@ import { mainTextareaId, BadgeItem } from '~/common';
 import AttachFileChat from './Files/AttachFileChat';
 import FileFormChat from './Files/FileFormChat';
 import TextareaHeader from './TextareaHeader';
-import SkillsCommand from './SkillsCommand';
 import PromptsCommand from './PromptsCommand';
+import SkillsCommand from './SkillsCommand';
 import AudioRecorder from './AudioRecorder';
 import CollapseChat from './CollapseChat';
 import StreamAudio from './StreamAudio';
+import TokenUsage from './TokenUsage';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
 import EditBadges from './EditBadges';
@@ -379,6 +380,7 @@ const ChatForm = memo(function ChatForm({
                 }
               />
               <div className="mx-auto flex" />
+              <TokenUsage index={index} conversation={conversation} isSubmitting={isSubmitting} />
               {SpeechToText && (
                 <AudioRecorder
                   methods={methods}
@@ -445,6 +447,7 @@ function ChatFormWrapper({ index = 0, placeholder }: { index?: number; placehold
       conversation?.spec,
       conversation?.useResponsesApi,
       conversation?.model,
+      conversation?.maxContextTokens,
       hasMessages,
     ],
   );

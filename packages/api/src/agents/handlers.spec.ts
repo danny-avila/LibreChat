@@ -2928,3 +2928,108 @@ describe('createToolExecuteHandler', () => {
     });
   });
 });
+
+describe('per-call onResult reporting', () => {
+  function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+    let resolveFn!: (value: T) => void;
+    const promise = new Promise<T>((res) => {
+      resolveFn = res;
+    });
+    return { promise, resolve: resolveFn };
+  }
+
+  it('reports each result as it settles, before the batch resolves', async () => {
+    const slowGate = deferred<void>();
+    const timeline: string[] = [];
+
+    const fastTool = {
+      name: 'fast_tool',
+      invoke: jest.fn(async () => {
+        timeline.push('fast:done');
+        return { content: 'fast result' };
+      }),
+    };
+    const slowTool = {
+      name: 'slow_tool',
+      invoke: jest.fn(async () => {
+        await slowGate.promise;
+        timeline.push('slow:done');
+        return { content: 'slow result' };
+      }),
+    };
+
+    const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+      loadedTools: [fastTool, slowTool] as never[],
+    }));
+    const handler = createToolExecuteHandler({ loadTools });
+
+    const reported: ToolExecuteResult[] = [];
+    const batchPromise = new Promise<ToolExecuteResult[]>((resolve, reject) => {
+      const request = {
+        toolCalls: [
+          { id: 'call_fast', name: 'fast_tool', args: {} },
+          { id: 'call_slow', name: 'slow_tool', args: {} },
+        ],
+        resolve,
+        reject,
+        onResult: (result: ToolExecuteResult) => {
+          reported.push(result);
+          timeline.push(`reported:${result.toolCallId}`);
+        },
+      } as ToolExecuteBatchRequest & {
+        onResult: (result: ToolExecuteResult) => void;
+      };
+      handler.handle('on_tool_execute', request);
+    });
+
+    // Let the fast tool settle and report while the slow tool is gated.
+    await new Promise((res) => setTimeout(res, 0));
+    expect(reported.map((r) => r.toolCallId)).toEqual(['call_fast']);
+
+    slowGate.resolve();
+    const results = await batchPromise;
+
+    expect(reported.map((r) => r.toolCallId)).toEqual(['call_fast', 'call_slow']);
+    expect(timeline.indexOf('reported:call_fast')).toBeLessThan(timeline.indexOf('slow:done'));
+    expect(results.map((r) => r.toolCallId).sort()).toEqual(['call_fast', 'call_slow']);
+    expect(results.find((r) => r.toolCallId === 'call_fast')?.content).toBe('fast result');
+  });
+
+  it('keeps the batch resolving when onResult throws', async () => {
+    const tool = {
+      name: 'sturdy_tool',
+      invoke: jest.fn(async () => ({ content: 'ok' })),
+    };
+    const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+      loadedTools: [tool] as never[],
+    }));
+    const handler = createToolExecuteHandler({ loadTools });
+
+    const results = await new Promise<ToolExecuteResult[]>((resolve, reject) => {
+      const request = {
+        toolCalls: [{ id: 'call_1', name: 'sturdy_tool', args: {} }],
+        resolve,
+        reject,
+        onResult: () => {
+          throw new Error('listener exploded');
+        },
+      } as ToolExecuteBatchRequest & { onResult: () => void };
+      handler.handle('on_tool_execute', request);
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({ toolCallId: 'call_1', content: 'ok' });
+  });
+
+  it('behaves identically when no onResult is provided', async () => {
+    const capturedConfigs: Record<string, unknown>[] = [];
+    const handler = createHandler(capturedConfigs);
+
+    const results = await invokeHandler(handler, [
+      { id: 'call_1', name: Constants.EXECUTE_CODE, args: { lang: 'py', code: '1' } },
+    ]);
+
+    expect(results).toHaveLength(1);
+    expect(results[0].status).toBe('success');
+  });
+});

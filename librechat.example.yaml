@@ -419,6 +419,21 @@ endpoints:
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["deferred_tools", "execute_code", "file_search", "actions", "tools"]
 
+  # (optional) Custom request headers for the built-in OpenAI / Google endpoints.
+  # Forwarded on every request to the provider (or an AI gateway / reverse proxy
+  # in front of it) while keeping provider-native request shaping intact. Values
+  # support env vars (${VAR}), user fields ({{LIBRECHAT_USER_*}}), and request-body
+  # fields ({{LIBRECHAT_BODY_CONVERSATIONID}}). Set the same `headers:` block under
+  # `endpoints.all` to apply globally across endpoints (endpoint values win on key
+  # collisions). NOTE: send metadata headers like these only behind a gateway that
+  # consumes them — native provider APIs ignore unknown headers.
+  # openAI:
+  #   headers:
+  #     cf-aig-metadata: '{"user_email":"{{LIBRECHAT_USER_EMAIL}}","app":"librechat"}'
+  # google:
+  #   headers:
+  #     cf-aig-metadata: '{"user_email":"{{LIBRECHAT_USER_EMAIL}}","app":"librechat"}'
+
   # Anthropic endpoint configuration with Vertex AI support
   # Use this to run Anthropic Claude models through Google Cloud Vertex AI
   # anthropic:
@@ -426,6 +441,12 @@ endpoints:
   #   streamRate: 20
   #   # (optional) Title model for conversation titles
   #   titleModel: claude-3.5-haiku  # Use the visible model name (key from models config)
+  #   # (optional) Custom request headers, same placeholder resolution as above.
+  #   # Useful for correlating reverse-proxied requests by conversation, since an
+  #   # unknown header is simply ignored by the native Anthropic API.
+  #   headers:
+  #     cf-aig-metadata: '{"user_email":"{{LIBRECHAT_USER_EMAIL}}","app":"librechat"}'
+  #     X-Conversation-Id: '{{LIBRECHAT_BODY_CONVERSATIONID}}'
   #
   #   # Vertex AI Configuration - enables running Claude models via Google Cloud
   #   # This is similar to Azure OpenAI but for Anthropic models on Google Cloud
@@ -487,6 +508,29 @@ endpoints:
   #     #     deploymentName: claude-3-5-haiku@20241022  # Override for this model
 
   custom:
+    # Anthropic-compatible Example (native `/v1/messages` API)
+    # Set `provider: anthropic` to use the native Anthropic client instead of the
+    # default OpenAI-compatible one — for Anthropic itself or Anthropic-compatible
+    # gateways (e.g. AI gateways, OpenCode Zen). The `baseURL` must be the API root
+    # the Anthropic SDK appends `/v1/messages` to. List models explicitly: model
+    # auto-fetch uses the OpenAI `/models` convention and is not used for this provider.
+    - name: 'Claude-Compatible'
+      provider: 'anthropic'
+      apiKey: '${ANTHROPIC_API_KEY}'
+      baseURL: 'https://api.anthropic.com'
+      # (optional) headers forwarded on every request (e.g. for a reverse proxy);
+      # values support the same placeholders as built-in endpoints.
+      headers:
+        anthropic-version: '2023-06-01'
+      models:
+        default:
+          - 'claude-sonnet-4-5'
+          - 'claude-opus-4-5'
+        fetch: false
+      titleConvo: true
+      titleModel: 'claude-sonnet-4-5'
+      modelDisplayLabel: 'Claude (Compatible)'
+
     # Groq Example
     - name: 'groq'
       apiKey: '${GROQ_API_KEY}'

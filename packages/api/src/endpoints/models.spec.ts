@@ -343,6 +343,24 @@ describe('getOpenAIModels', () => {
     expect(models).toEqual(['gpt-env-key']);
   });
 
+  it('forwards configured custom headers to the OpenAI model fetch', async () => {
+    mockedAxios.get.mockResolvedValue({ data: { data: [{ id: 'gpt-x' }] } });
+    process.env.OPENAI_API_KEY = 'sk-env';
+
+    await getOpenAIModels({
+      user: 'user456',
+      headers: { 'cf-aig-token': 'tok' },
+      userObject: { id: 'user456' },
+    });
+
+    expect(mockedAxios.get).toHaveBeenCalledWith(
+      expect.stringContaining('https://api.openai.com/v1/models'),
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'cf-aig-token': 'tok' }),
+      }),
+    );
+  });
+
   it('returns `AZURE_OPENAI_MODELS` with `azure` flag (and fetch fails)', async () => {
     process.env.AZURE_OPENAI_MODELS = 'azure-model,azure-model-2';
     const models = await getOpenAIModels({ azure: true });
@@ -737,7 +755,7 @@ describe('getAnthropicModels', () => {
     );
   });
 
-  it('should pass custom headers for Anthropic endpoint', async () => {
+  it('forwards custom headers for the Anthropic endpoint alongside managed auth', async () => {
     const customHeaders = {
       'X-Custom-Header': 'custom-value',
     };
@@ -760,9 +778,29 @@ describe('getAnthropicModels', () => {
       expect.any(String),
       expect.objectContaining({
         headers: {
+          'X-Custom-Header': 'custom-value',
           'x-api-key': 'test-anthropic-key',
           'anthropic-version': expect.any(String),
         },
+      }),
+    );
+  });
+
+  it('threads configured headers through getAnthropicModels to the fetch', async () => {
+    delete process.env.ANTHROPIC_MODELS;
+    process.env.ANTHROPIC_API_KEY = 'test-anthropic-key';
+    mockedAxios.get.mockResolvedValue({ data: { data: [{ id: 'claude-3' }] } });
+
+    await getAnthropicModels({
+      user: 'user123',
+      headers: { 'cf-aig-token': 'tok' },
+      userObject: { id: 'user123' },
+    });
+
+    expect(mockedAxios.get).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'cf-aig-token': 'tok' }),
       }),
     );
   });

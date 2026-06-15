@@ -1,7 +1,7 @@
 import { EModelEndpoint, AuthKeys } from 'librechat-data-provider';
 import type { BaseInitializeParams, InitializeResultBase, AnthropicConfigOptions } from '~/types';
-import { checkUserKeyExpiry, isEnabled } from '~/utils';
 import { loadAnthropicVertexCredentials, getVertexCredentialOptions } from './vertex';
+import { checkUserKeyExpiry, isEnabled, mergeHeaders } from '~/utils';
 import { getLLMConfig } from './llm';
 
 /**
@@ -64,6 +64,11 @@ export async function initializeAnthropic({
     credentials[AuthKeys.ANTHROPIC_API_KEY] = anthropicApiKey;
   }
 
+  const anthropicConfig = appConfig?.endpoints?.[EModelEndpoint.anthropic];
+  const allConfig = appConfig?.endpoints?.all;
+
+  const headers = mergeHeaders(allConfig?.headers, anthropicConfig?.headers);
+
   const clientOptions: AnthropicConfigOptions = {
     proxy: PROXY ?? undefined,
     reverseProxyUrl: ANTHROPIC_REVERSE_PROXY ?? undefined,
@@ -71,14 +76,12 @@ export async function initializeAnthropic({
       ...(model_parameters ?? {}),
       user: req.user?.id,
     },
+    ...(headers && { headers }),
     // Pass Vertex AI options if configured
     ...(vertexOptions && { vertexOptions }),
     // Pass full Vertex AI config including model mappings
     ...(vertexConfig && { vertexConfig }),
   };
-
-  const anthropicConfig = appConfig?.endpoints?.[EModelEndpoint.anthropic];
-  const allConfig = appConfig?.endpoints?.all;
 
   const result = getLLMConfig(credentials, clientOptions);
 

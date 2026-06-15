@@ -272,6 +272,11 @@ function buildSkillPrimedIdsByName(manualSkillPrimes, alwaysApplySkillPrimes) {
 function buildAgentToolContext({ agent, config }) {
   return {
     agent,
+    /** Per-agent resolved endpoint token/pricing config. Retained here because
+     *  `agentToolContexts` is the one map that holds every agent — including
+     *  pure subagents pruned from `agentConfigs` — so usage can be priced with
+     *  the producing agent's config in multi-endpoint graphs. */
+    endpointTokenConfig: config.endpointTokenConfig,
     toolRegistry: config.toolRegistry,
     mcpAvailableTools: config.mcpAvailableTools,
     requestScopedConnections: config.requestScopedConnections,

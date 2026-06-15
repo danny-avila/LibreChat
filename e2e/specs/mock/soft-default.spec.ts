@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { NEW_CHAT_PATH, getAccessToken, requestJson } from './helpers';
+import { NEW_CHAT_PATH, getAccessToken, mockReply, requestJson, sendMessage } from './helpers';
 
 /** Label of the `softDefault: true` spec in e2e/config/librechat.e2e.yaml. */
 const SOFT_DEFAULT_LABEL = 'E2E Soft Default';
@@ -53,6 +53,18 @@ async function selectEphemeralModel(page: Page) {
   await expect(modelTrigger(page)).toContainText(EPHEMERAL_ENDPOINT.model);
 }
 
+async function sendAndAwaitReply(page: Page, text: string) {
+  const response = await sendMessage(page, text);
+  expect(response.ok()).toBeTruthy();
+  await expect(mockReply(page)).toBeVisible({ timeout: 20000 });
+  await expect(page).toHaveURL(/\/c\/(?!new)/, { timeout: 15000 });
+}
+
+async function newChat(page: Page) {
+  await page.getByTestId('new-chat-button').click();
+  await expect(page).toHaveURL(/\/c\/new/, { timeout: 15000 });
+}
+
 test.describe('soft default model spec', () => {
   test('applies the soft default on a fresh instance and stays applied across reloads', async ({
     page,
@@ -102,5 +114,36 @@ test.describe('soft default model spec', () => {
     await page.getByTestId('new-chat-button').click();
     await expect(page).toHaveURL(/\/c\/new/, { timeout: 15000 });
     await expect(modelTrigger(page)).toContainText(EPHEMERAL_ENDPOINT.model, { timeout: 15000 });
+  });
+
+  test('stays soft on New Chat after the first conversation is sent', async ({ page }) => {
+    test.setTimeout(120000);
+    await startFresh(page);
+    await expect(modelTrigger(page)).toContainText(SOFT_DEFAULT_LABEL, { timeout: 15000 });
+
+    await sendAndAwaitReply(page, 'first soft conversation');
+
+    await newChat(page);
+    await expect(modelTrigger(page)).toContainText(SOFT_DEFAULT_LABEL, { timeout: 15000 });
+  });
+
+  test('viewing an old soft conversation does not re-arm it over a prior selection', async ({
+    page,
+  }) => {
+    test.setTimeout(120000);
+    await startFresh(page);
+    await expect(modelTrigger(page)).toContainText(SOFT_DEFAULT_LABEL, { timeout: 15000 });
+
+    await sendAndAwaitReply(page, 'soft history conversation');
+    const softConvoUrl = page.url();
+
+    await newChat(page);
+    await selectEphemeralModel(page);
+
+    await page.goto(softConvoUrl, { timeout: 10000 });
+    await expect(modelTrigger(page)).toContainText(SOFT_DEFAULT_LABEL, { timeout: 15000 });
+
+    await newChat(page);
+    await expect(modelTrigger(page)).not.toContainText(SOFT_DEFAULT_LABEL, { timeout: 15000 });
   });
 });

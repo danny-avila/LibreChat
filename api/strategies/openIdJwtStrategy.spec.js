@@ -28,6 +28,7 @@ jest.mock('@librechat/api', () => ({
   getOpenIdEmail: jest.requireActual('@librechat/api').getOpenIdEmail,
   getOpenIdIssuer: jest.fn(() => 'https://issuer.example.com'),
   normalizeOpenIdIssuer: jest.requireActual('@librechat/api').normalizeOpenIdIssuer,
+  getHttpsProxyAgent: jest.fn(() => undefined),
   math: jest.fn((val, fallback) => fallback),
 }));
 jest.mock('~/models', () => ({
