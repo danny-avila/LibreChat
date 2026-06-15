@@ -700,7 +700,6 @@ class BaseClient {
       user,
     );
     this.savedMessageIds.add(responseMessage.messageId);
-    delete responseMessage.tokenCount;
     return responseMessage;
   }
 
@@ -1217,8 +1216,8 @@ class BaseClient {
     const provider = this.options.agent?.provider ?? this.options.endpoint;
     const isBedrock = provider === EModelEndpoint.bedrock;
 
-    if (!this._mergedFileConfig && this.options.req?.config?.fileConfig) {
-      this._mergedFileConfig = mergeFileConfig(this.options.req.config.fileConfig);
+    if (!this._mergedFileConfig) {
+      this._mergedFileConfig = mergeFileConfig(this.options.req?.config?.fileConfig);
       const endpoint = this.options.agent?.endpoint ?? this.options.endpoint;
       this._endpointFileConfig = getEndpointFileConfig({
         fileConfig: this._mergedFileConfig,

@@ -19,10 +19,11 @@ import type {
 import type { SearchResultData, UIResource, TPlugin } from 'librechat-data-provider';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
 import type { LCTool } from '@librechat/agents';
+import type { OboTokenResolver, OboTrustChecker } from '~/mcp/oauth/obo';
+import type { GraphTokenResolver } from '~/utils/graph';
 import type { FlowStateManager } from '~/flow/manager';
 import type { RequestBody } from '~/types/http';
 import type * as o from '~/mcp/oauth/types';
-import type { OboTokenResolver, OboTrustChecker } from '~/mcp/oauth/obo';
 
 export type StdioOptions = z.infer<typeof StdioOptionsSchema>;
 export type WebSocketOptions = z.infer<typeof WebSocketOptionsSchema>;
@@ -191,6 +192,10 @@ export interface BasicConnectionOptions {
   allowedAddresses?: string[] | null;
   /** When true, only resolve customUserVars in processMCPEnv (for DB-stored servers) */
   dbSourced?: boolean;
+  /** When true, serverConfig has already gone through processMCPEnv for this request */
+  skipEnvProcessing?: boolean;
+  /** When true, the connection is intentionally short-lived for a single request/tool call */
+  ephemeralConnection?: boolean;
 }
 
 /** User context for placeholder resolution in MCP connections (non-OAuth and OAuth alike) */
@@ -198,15 +203,28 @@ export interface UserConnectionContext {
   user?: IUser;
   customUserVars?: Record<string, string>;
   requestBody?: RequestBody;
+  requestScopedConnections?: RequestScopedMCPConnectionStore;
+  graphTokenResolver?: GraphTokenResolver;
   connectionTimeout?: number;
 }
+
+export interface RequestScopedMCPConnectionStore {
+  connections: Map<string, unknown>;
+  pending: Map<string, Promise<unknown>>;
+}
+
+export interface OAuthStartOptions {
+  expiresAt?: number;
+}
+
+export type OAuthStartHandler = (authURL: string, options?: OAuthStartOptions) => Promise<void>;
 
 export interface OAuthConnectionOptions extends UserConnectionContext {
   useOAuth: true;
   flowManager: FlowStateManager<o.MCPOAuthTokens | null>;
   tokenMethods?: TokenMethods;
   signal?: AbortSignal;
-  oauthStart?: (authURL: string) => Promise<void>;
+  oauthStart?: OAuthStartHandler;
   oauthEnd?: () => Promise<void>;
   returnOnOAuth?: boolean;
   oboTokenResolver?: OboTokenResolver;
@@ -217,11 +235,12 @@ export interface OAuthConnectionOptions extends UserConnectionContext {
 export interface UserMCPConnectionOptions extends UserConnectionContext {
   serverName: string;
   forceNew?: boolean;
+  ephemeralConnection?: boolean;
   serverConfig?: ParsedServerConfig;
   flowManager?: FlowStateManager<o.MCPOAuthTokens | null>;
   tokenMethods?: TokenMethods;
   signal?: AbortSignal;
-  oauthStart?: (authURL: string) => Promise<void>;
+  oauthStart?: OAuthStartHandler;
   oauthEnd?: () => Promise<void>;
   returnOnOAuth?: boolean;
   oboTokenResolver?: OboTokenResolver;
@@ -234,9 +253,10 @@ export interface ToolDiscoveryOptions {
   flowManager?: FlowStateManager<o.MCPOAuthTokens | null>;
   tokenMethods?: TokenMethods;
   signal?: AbortSignal;
-  oauthStart?: (authURL: string) => Promise<void>;
+  oauthStart?: OAuthStartHandler;
   customUserVars?: Record<string, string>;
   requestBody?: RequestBody;
+  graphTokenResolver?: GraphTokenResolver;
   connectionTimeout?: number;
   /** Pre-resolved config-source servers for tenant-scoped lookup */
   configServers?: Record<string, ParsedServerConfig>;

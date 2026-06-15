@@ -84,8 +84,15 @@ const createProjectInput = (req: ProjectRequest): CreateChatProjectInput | null 
   };
 };
 
-export function createProjectHandlers(deps: ProjectHandlerDependencies) {
-  async function listProjects(req: ProjectRequest, res: Response) {
+export function createProjectHandlers(deps: ProjectHandlerDependencies): {
+  listProjects: (req: ProjectRequest, res: Response) => Promise<Response>;
+  createProject: (req: ProjectRequest, res: Response) => Promise<Response>;
+  assignConversationToProject: (req: ProjectRequest, res: Response) => Promise<Response>;
+  getProject: (req: ProjectRequest, res: Response) => Promise<Response>;
+  updateProject: (req: ProjectRequest, res: Response) => Promise<Response>;
+  deleteProject: (req: ProjectRequest, res: Response) => Promise<Response>;
+} {
+  async function listProjects(req: ProjectRequest, res: Response): Promise<Response> {
     try {
       const result = await deps.listChatProjects(getUserId(req), {
         cursor: queryString(req.query.cursor),
@@ -101,7 +108,7 @@ export function createProjectHandlers(deps: ProjectHandlerDependencies) {
     }
   }
 
-  async function createProject(req: ProjectRequest, res: Response) {
+  async function createProject(req: ProjectRequest, res: Response): Promise<Response> {
     const input = createProjectInput(req);
     if (!input) {
       return res.status(400).json({ error: 'name is required' });
@@ -116,7 +123,10 @@ export function createProjectHandlers(deps: ProjectHandlerDependencies) {
     }
   }
 
-  async function assignConversationToProject(req: ProjectRequest, res: Response) {
+  async function assignConversationToProject(
+    req: ProjectRequest,
+    res: Response,
+  ): Promise<Response> {
     const { conversationId } = req.params;
     const projectId = req.body?.projectId ?? null;
 
@@ -143,7 +153,7 @@ export function createProjectHandlers(deps: ProjectHandlerDependencies) {
     }
   }
 
-  async function getProject(req: ProjectRequest, res: Response) {
+  async function getProject(req: ProjectRequest, res: Response): Promise<Response> {
     const { projectId } = req.params;
     if (!isValidObjectIdString(projectId)) {
       return res.status(404).json({ error: PROJECT_NOT_FOUND });
@@ -161,7 +171,7 @@ export function createProjectHandlers(deps: ProjectHandlerDependencies) {
     }
   }
 
-  async function updateProject(req: ProjectRequest, res: Response) {
+  async function updateProject(req: ProjectRequest, res: Response): Promise<Response> {
     const { projectId } = req.params;
     if (!isValidObjectIdString(projectId)) {
       return res.status(404).json({ error: PROJECT_NOT_FOUND });
@@ -191,7 +201,7 @@ export function createProjectHandlers(deps: ProjectHandlerDependencies) {
     }
   }
 
-  async function deleteProject(req: ProjectRequest, res: Response) {
+  async function deleteProject(req: ProjectRequest, res: Response): Promise<Response> {
     const { projectId } = req.params;
     if (!isValidObjectIdString(projectId)) {
       return res.status(404).json({ error: PROJECT_NOT_FOUND });

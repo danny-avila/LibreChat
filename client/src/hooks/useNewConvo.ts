@@ -30,10 +30,12 @@ import {
   getDefaultModelSpec,
   getDefaultEndpoint,
   getModelSpecPreset,
+  hasModelSelection,
   buildDefaultConvo,
   logger,
 } from '~/utils';
 import { useDeleteFilesMutation, useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
+import useGetConversation from './Conversations/useGetConversation';
 import useAssistantListMap from './Assistants/useAssistantListMap';
 import { useResetChatBadges } from './useChatBadges';
 import { useApplyModelSpecEffects } from './Agents';
@@ -45,6 +47,7 @@ const useNewConvo = (index = 0) => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { data: startupConfig } = useGetStartupConfig();
+  const getConversation = useGetConversation(index);
   const applyModelSpecEffects = useApplyModelSpecEffects();
   const clearAllConversations = store.useClearConvoState();
   const defaultPreset = useRecoilValue(store.defaultPreset);
@@ -320,24 +323,26 @@ const useNewConvo = (index = 0) => {
       };
 
       let preset = _preset;
-      const result = getDefaultModelSpec(startupConfig);
-      const defaultModelSpec = result?.default ?? result?.last;
-      if (
-        !preset &&
-        startupConfig &&
-        (startupConfig.modelSpecs?.prioritize === true ||
-          (startupConfig.interface?.modelSelect ?? true) !== true ||
-          (result?.last != null &&
-            Object.keys(_template).filter((key) => key !== 'chatProjectId').length === 0)) &&
-        defaultModelSpec
-      ) {
+      const result = getDefaultModelSpec(startupConfig, endpointsConfig);
+      const defaultModelSpec = result?.default ?? result?.last ?? result?.softDefault;
+      const shouldApplyModelSpec =
+        result?.softDefault != null
+          ? !hasModelSelection(_template)
+          : startupConfig?.modelSpecs?.prioritize === true ||
+            (startupConfig?.interface?.modelSelect ?? true) !== true ||
+            (result?.last != null &&
+              Object.keys(_template).filter((key) => key !== 'chatProjectId').length === 0);
+      if (!preset && startupConfig && shouldApplyModelSpec && defaultModelSpec) {
         preset = getModelSpecPreset(defaultModelSpec);
       }
 
+      const prevConversation = getConversation();
       applyModelSpecEffects({
         startupConfig,
         specName: preset?.spec,
         convoId: conversation.conversationId,
+        prevConvoId: prevConversation?.conversationId,
+        prevSpecName: prevConversation?.spec,
       });
 
       if (conversation.conversationId === Constants.NEW_CONVO && !modelsData) {
@@ -383,6 +388,8 @@ const useNewConvo = (index = 0) => {
       resetBadges,
       startupConfig,
       saveBadgesState,
+      endpointsConfig,
+      getConversation,
       pauseGlobalAudio,
       switchToConversation,
       applyModelSpecEffects,

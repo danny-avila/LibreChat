@@ -161,7 +161,13 @@ const {
   getStorageMetadata,
 } = require('@librechat/api');
 
-const { processCodeOutput, getSessionInfo, readSandboxFile, primeFiles } = require('./process');
+const {
+  processCodeOutput,
+  getSessionInfo,
+  readSandboxFile,
+  writeSandboxFile,
+  primeFiles,
+} = require('./process');
 
 describe('Code Process', () => {
   const mockReq = {
@@ -1623,6 +1629,95 @@ describe('Code Process', () => {
 
         expect(mockAxios.mock.calls[0][0].timeout).toBe(15000);
       });
+    });
+  });
+
+  describe('writeSandboxFile', () => {
+    function extractWritePayload() {
+      const code = mockAxios.mock.calls[0][0].data.code;
+      const match = /payload = "([^"]+)"/.exec(code);
+      expect(match).not.toBeNull();
+      const payload = JSON.parse(Buffer.from(match[1], 'base64').toString('utf8'));
+      return {
+        file_path: payload.file_path,
+        content: Buffer.from(payload.content_b64, 'base64').toString('utf8'),
+        code,
+      };
+    }
+
+    it('POSTs a bash python writer to /exec and forwards session context', async () => {
+      mockAxios.mockResolvedValueOnce({
+        data: {
+          stdout: 'WROTE 11 bytes to /mnt/data/new.txt\n',
+          stderr: '',
+          session_id: 'sess-new',
+          files: [{ id: 'file-new', name: 'new.txt', storage_session_id: 'sess-new' }],
+        },
+      });
+      const files = [{ id: 'f1', name: 'input.csv', session_id: 'sess-prev' }];
+
+      const result = await writeSandboxFile({
+        file_path: '/mnt/data/new.txt',
+        content: 'hello world',
+        session_id: 'sess-prev',
+        files,
+        req: mockReq,
+      });
+
+      const call = mockAxios.mock.calls[0][0];
+      expect(call.method).toBe('post');
+      expect(call.url).toBe('https://code-api.example.com/exec');
+      expect(call.data.lang).toBe('bash');
+      expect(call.data.session_id).toBe('sess-prev');
+      expect(call.data.files).toEqual(files);
+      expect(call.timeout).toBe(15000);
+      expect(call.httpAgent).toBe(codeServerHttpAgent);
+      expect(call.httpsAgent).toBe(codeServerHttpsAgent);
+      expect(result).toMatchObject({
+        stdout: 'WROTE 11 bytes to /mnt/data/new.txt\n',
+        session_id: 'sess-new',
+        files: [{ id: 'file-new', name: 'new.txt' }],
+      });
+    });
+
+    it('encodes path and content in a base64 JSON payload instead of shell-interpolating them', async () => {
+      mockAxios.mockResolvedValueOnce({ data: { stdout: 'ok', stderr: '', session_id: 'sess' } });
+      const trickyPath = `/mnt/data/quote'$(whoami).txt`;
+      const trickyContent = "hello ' $(rm -rf /)\nsecond line";
+
+      await writeSandboxFile({
+        file_path: trickyPath,
+        content: trickyContent,
+      });
+
+      const { file_path, content, code } = extractWritePayload();
+      expect(file_path).toBe(trickyPath);
+      expect(content).toBe(trickyContent);
+      expect(code).not.toContain(trickyPath);
+      expect(code).not.toContain(trickyContent);
+    });
+
+    it('returns null when getCodeBaseURL is not configured', async () => {
+      const { getCodeBaseURL } = require('@librechat/agents');
+      getCodeBaseURL.mockReturnValueOnce('');
+
+      const result = await writeSandboxFile({
+        file_path: '/mnt/data/x.txt',
+        content: 'x',
+      });
+
+      expect(result).toBeNull();
+      expect(mockAxios).not.toHaveBeenCalled();
+    });
+
+    it('throws when the writer reports stderr without stdout', async () => {
+      mockAxios.mockResolvedValueOnce({
+        data: { stdout: '', stderr: 'Permission denied\n' },
+      });
+
+      await expect(writeSandboxFile({ file_path: '/root/nope.txt', content: 'x' })).rejects.toThrow(
+        'Permission denied',
+      );
     });
   });
 

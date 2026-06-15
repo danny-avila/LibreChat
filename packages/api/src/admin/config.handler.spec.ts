@@ -49,6 +49,9 @@ function createHandlers(overrides = {}) {
     patchConfigFields: jest
       .fn()
       .mockResolvedValue({ _id: 'c1', overrides: { registration: { enabled: false } } }),
+    tombstoneConfigField: jest
+      .fn()
+      .mockResolvedValue({ _id: 'c1', tombstones: ['mcpServers.github'] }),
     unsetConfigField: jest.fn().mockResolvedValue({ _id: 'c1', overrides: {} }),
     deleteConfig: jest.fn().mockResolvedValue({ _id: 'c1' }),
     toggleConfigActive: jest.fn().mockResolvedValue({ _id: 'c1', isActive: false }),
@@ -188,6 +191,29 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(201);
       const savedOverrides = deps.upsertConfig.mock.calls[0][3];
+      expect(savedOverrides.interface).toEqual({ modelSelect: false });
+    });
+
+    it('preserves skillSync sections in admin overrides', async () => {
+      const { handlers, deps } = createHandlers({
+        upsertConfig: jest.fn().mockResolvedValue({ _id: 'c1', configVersion: 1 }),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          overrides: {
+            skillSync: { github: { enabled: true } },
+            interface: { modelSelect: false },
+          },
+        },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(201);
+      const savedOverrides = deps.upsertConfig.mock.calls[0][3];
+      expect(savedOverrides.skillSync).toEqual({ github: { enabled: true } });
       expect(savedOverrides.interface).toEqual({ modelSelect: false });
     });
 
@@ -335,6 +361,24 @@ describe('createAdminConfigHandlers', () => {
       expect(deps.unsetConfigField).not.toHaveBeenCalled();
     });
 
+    it('allows deleting skillSync field paths', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        query: { fieldPath: 'skillSync.github.enabled' },
+      });
+      const res = mockRes();
+
+      await handlers.deleteConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(deps.unsetConfigField).toHaveBeenCalledWith(
+        'role',
+        'admin',
+        'skillSync.github.enabled',
+      );
+    });
+
     it('allows deleting interface UI field paths', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
@@ -377,6 +421,78 @@ describe('createAdminConfigHandlers', () => {
     });
   });
 
+  describe('tombstoneConfigField', () => {
+    it('writes an explicit tombstone for a valid field path', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { fieldPath: 'mcpServers.github' },
+      });
+      const res = mockRes();
+
+      await handlers.tombstoneConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(deps.tombstoneConfigField).toHaveBeenCalledWith(
+        'role',
+        'admin',
+        expect.anything(),
+        'mcpServers.github',
+        10,
+      );
+    });
+
+    it('uses the existing config priority when priority is omitted', async () => {
+      const { handlers, deps } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue({ _id: 'c1', priority: 42 }),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { fieldPath: 'mcpServers.github' },
+      });
+      const res = mockRes();
+
+      await handlers.tombstoneConfigField(req, res);
+
+      expect(deps.tombstoneConfigField).toHaveBeenCalledWith(
+        'role',
+        'admin',
+        expect.anything(),
+        'mcpServers.github',
+        42,
+      );
+    });
+
+    it('blocks interface permission paths', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { fieldPath: 'interface.mcpServers.use' },
+      });
+      const res = mockRes();
+
+      await handlers.tombstoneConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body!.message).toBeDefined();
+      expect(deps.tombstoneConfigField).not.toHaveBeenCalled();
+    });
+
+    it('rejects unsafe field paths', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { fieldPath: '__proto__.polluted' },
+      });
+      const res = mockRes();
+
+      await handlers.tombstoneConfigField(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(deps.tombstoneConfigField).not.toHaveBeenCalled();
+    });
+  });
+
   describe('patchConfigField', () => {
     it('returns 403 when user lacks capability for section', async () => {
       const { handlers } = createHandlers({
@@ -412,6 +528,27 @@ describe('createAdminConfigHandlers', () => {
       const patchedFields = deps.patchConfigFields.mock.calls[0][3];
       expect(patchedFields['interface.modelSelect']).toBe(false);
       expect(patchedFields['interface.prompts']).toBeUndefined();
+    });
+
+    it('preserves skillSync field entries in patches', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          entries: [
+            { fieldPath: 'skillSync.github.enabled', value: true },
+            { fieldPath: 'interface.modelSelect', value: false },
+          ],
+        },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const patchedFields = deps.patchConfigFields.mock.calls[0][3];
+      expect(patchedFields['skillSync.github.enabled']).toBe(true);
+      expect(patchedFields['interface.modelSelect']).toBe(false);
     });
 
     it('blocks peoplePicker permission sub-key paths', async () => {
@@ -639,6 +776,13 @@ describe('createAdminConfigHandlers', () => {
       reqOverrides: {
         params: { principalType: 'role', principalId: 'admin' },
         query: { fieldPath: 'interface.modelSelect' },
+      },
+    },
+    {
+      name: 'tombstoneConfigField',
+      reqOverrides: {
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { fieldPath: 'mcpServers.github' },
       },
     },
     {

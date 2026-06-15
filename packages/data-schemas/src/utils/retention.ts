@@ -28,5 +28,5 @@ export const buildRetentionVisibilityFilter = <
     ],
   }) as FilterQuery<T>;
 
-export const createFallbackRetentionDate = (now = Date.now()): Date =>
+export const createFallbackRetentionDate = (now: number = Date.now()): Date =>
   new Date(now + DEFAULT_RETENTION_HOURS * 60 * 60 * 1000);

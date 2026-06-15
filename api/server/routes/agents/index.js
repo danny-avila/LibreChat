@@ -1,5 +1,10 @@
 const express = require('express');
-const { isEnabled, GenerationJobManager } = require('@librechat/api');
+const {
+  isEnabled,
+  GenerationJobManager,
+  hasPersistableAbortContent,
+  buildAbortedResponseMetadata,
+} = require('@librechat/api');
 const { createSseStreamTelemetry } = require('@librechat/api/telemetry');
 const { logger } = require('@librechat/data-schemas');
 const {
@@ -42,8 +47,6 @@ router.use('/v1', openai);
 router.use(requireJwtAuth);
 router.use(checkBan);
 router.use(uaParser);
-
-router.use('/', v1);
 
 /**
  * Stream endpoints - mounted before chatRouter to bypass rate limiters
@@ -273,7 +276,8 @@ router.post('/chat/abort', async (req, res) => {
     if (
       abortResult.success &&
       abortResult.jobData?.userMessage?.messageId &&
-      abortResult.jobData?.responseMessageId
+      abortResult.jobData?.responseMessageId &&
+      hasPersistableAbortContent(abortResult.content)
     ) {
       const { jobData, content, text } = abortResult;
       const responseMessage = {
@@ -284,12 +288,22 @@ router.post('/chat/abort', async (req, res) => {
         text: text || '',
         sender: jobData.sender || 'AI',
         endpoint: jobData.endpoint,
+        iconURL: jobData.iconURL,
         model: jobData.model,
         unfinished: true,
         error: false,
         isCreatedByUser: false,
         user: userId,
       };
+
+      /** Persist the usage/cost rollup + context breakdown for the stopped
+       *  response (from the job's tracked tokenUsage/contextUsage) so its
+       *  branch/total cost and granular rows survive a reload — parity with the
+       *  normal completion path. */
+      const abortMetadata = buildAbortedResponseMetadata(jobData);
+      if (abortMetadata) {
+        responseMessage.metadata = abortMetadata;
+      }
 
       try {
         await saveMessage(
@@ -313,6 +327,8 @@ router.post('/chat/abort', async (req, res) => {
   logger.warn(`[AgentStream] Job not found for streamId: ${jobStreamId}`);
   return res.status(404).json({ error: 'Job not found', streamId: jobStreamId });
 });
+
+router.use('/', v1);
 
 const chatRouter = express.Router();
 chatRouter.use(configMiddleware);

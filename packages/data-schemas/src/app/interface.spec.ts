@@ -27,6 +27,93 @@ describe('loadDefaultInterface', () => {
     expect(interfaceConfig?.autoSubmitFromUrl).toBe(false);
   });
 
+  it('preserves a disabled build info flag', async () => {
+    const config: Partial<TCustomConfig> = {
+      interface: {
+        buildInfo: false,
+      },
+    };
+
+    const interfaceConfig = await loadDefaultInterface({
+      config,
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.buildInfo).toBe(false);
+  });
+
+  it('uses the schema default for build info when not configured', async () => {
+    const interfaceConfig = await loadDefaultInterface({
+      config: {},
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.buildInfo).toBe(true);
+  });
+
+  it('preserves enabled build info config', async () => {
+    const config: Partial<TCustomConfig> = {
+      interface: {
+        buildInfo: true,
+      },
+    };
+
+    const interfaceConfig = await loadDefaultInterface({
+      config,
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.buildInfo).toBe(true);
+  });
+
+  it('enables context cost by default', async () => {
+    const interfaceConfig = await loadDefaultInterface({
+      config: {},
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.contextCost).toBe(true);
+  });
+
+  it('preserves a disabled context cost flag', async () => {
+    const config: Partial<TCustomConfig> = {
+      interface: {
+        contextCost: false,
+      },
+    };
+
+    const interfaceConfig = await loadDefaultInterface({
+      config,
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.contextCost).toBe(false);
+  });
+
+  it('passes through a configured display currency', async () => {
+    const config: Partial<TCustomConfig> = {
+      interface: {
+        currency: { code: 'EUR', rate: 0.92 },
+      },
+    };
+
+    const interfaceConfig = await loadDefaultInterface({
+      config,
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.currency).toEqual({ code: 'EUR', rate: 0.92 });
+  });
+
+  it('omits currency when it is not configured', async () => {
+    const interfaceConfig = await loadDefaultInterface({
+      config: {},
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.currency).toBeUndefined();
+  });
+
   it('preserves enabled URL auto-submit config', async () => {
     const config: Partial<TCustomConfig> = {
       interface: {

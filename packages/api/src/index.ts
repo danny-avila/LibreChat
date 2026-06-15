@@ -9,6 +9,7 @@ export * from './auth';
 /* API Keys */
 export * from './apiKeys';
 /* MCP */
+export * from './mcp/mcpConfig';
 export * from './mcp/registry/MCPServersRegistry';
 export * from './mcp/MCPManager';
 export * from './mcp/connection';
@@ -24,6 +25,8 @@ export * from './utils';
 export { default as Tokenizer, countTokens } from './utils/tokenizer';
 export type { EncodingName } from './utils/tokenizer';
 export * from './db/utils';
+/* HTML */
+export * from './html';
 /* OAuth */
 export * from './oauth';
 export * from './mcp/oauth/OAuthReconnectionManager';
@@ -39,6 +42,8 @@ export * from './memory';
 export * from './modelSpecs';
 /* Agents */
 export * from './agents';
+/* Actions */
+export * from './actions';
 /* Prompts */
 export * from './prompts';
 /* Projects */
@@ -55,6 +60,8 @@ export * from './storage';
 export * from './tools';
 /* web search */
 export * from './web';
+/* Langfuse */
+export * from './langfuse';
 /* Cache */
 export * from './cache';
 /* Shared Links */

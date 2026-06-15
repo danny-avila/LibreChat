@@ -1082,6 +1082,42 @@ describe('getLLMConfig', () => {
         expect(result.llmConfig).not.toHaveProperty('topK');
       });
 
+      it('should set adaptive thinking with summarized display for Fable 5', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: { model: 'claude-fable-5', thinking: true },
+        });
+
+        const thinking = result.llmConfig.thinking as unknown as {
+          type: string;
+          display?: string;
+        };
+        expect(thinking.type).toBe('adaptive');
+        expect(thinking.display).toBe('summarized');
+      });
+
+      it('should default Fable 5 max output tokens to 128K', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: { model: 'claude-fable-5', thinking: true },
+        });
+        expect(result.llmConfig.maxTokens).toBe(128000);
+      });
+
+      it('should omit sampling parameters for Fable 5', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-fable-5',
+            thinking: true,
+            temperature: 0.7,
+            topP: 0.9,
+            topK: 40,
+          },
+        });
+
+        expect(result.llmConfig).not.toHaveProperty('temperature');
+        expect(result.llmConfig).not.toHaveProperty('topP');
+        expect(result.llmConfig).not.toHaveProperty('topK');
+      });
+
       it('should NOT set thinking.display for pre-Opus-4.7 adaptive models', () => {
         const pre47Models = ['claude-opus-4-6', 'claude-sonnet-4-6'];
 
@@ -1823,6 +1859,57 @@ describe('getLLMConfig', () => {
           expect(result.llmConfig.stopSequences).toEqual(expected);
         });
       });
+    });
+  });
+
+  describe('custom headers', () => {
+    it('attaches admin-configured headers while preserving native Anthropic formatting', () => {
+      const result = getLLMConfig('test-key', {
+        modelOptions: { model: 'claude-sonnet-4-5' },
+        reverseProxyUrl: 'https://gateway.example.com',
+        headers: {
+          'cf-aig-metadata': '{"user_email":"{{LIBRECHAT_USER_EMAIL}}","app":"librechat"}',
+        },
+      });
+
+      const clientOptions = result.llmConfig.clientOptions;
+      /** Provider-managed beta header is preserved */
+      expect((clientOptions?.defaultHeaders as Record<string, string>)['anthropic-beta']).toBe(
+        FINE_GRAINED_TOOL_STREAMING_BETA,
+      );
+      /** Custom header is attached, placeholders kept intact for request-time resolution */
+      expect((clientOptions?.defaultHeaders as Record<string, string>)['cf-aig-metadata']).toBe(
+        '{"user_email":"{{LIBRECHAT_USER_EMAIL}}","app":"librechat"}',
+      );
+      /** Native request shaping is untouched */
+      expect(result.llmConfig).toHaveProperty('model', 'claude-sonnet-4-5');
+      expect(result.llmConfig).toHaveProperty('stream', true);
+      expect(result.llmConfig.invocationKwargs?.metadata).toEqual({ user_id: undefined });
+      expect(result.llmConfig).toHaveProperty('anthropicApiUrl', 'https://gateway.example.com');
+    });
+
+    it('does not let custom headers override the provider-managed anthropic-beta header', () => {
+      const result = getLLMConfig('test-key', {
+        modelOptions: { model: 'claude-3-5-sonnet' },
+        headers: { 'anthropic-beta': 'custom-beta' },
+      });
+
+      const beta = (result.llmConfig.clientOptions?.defaultHeaders as Record<string, string>)[
+        'anthropic-beta'
+      ];
+      /** Custom beta is unioned with managed betas rather than clobbering them */
+      expect(beta).toContain(FINE_GRAINED_TOOL_STREAMING_BETA);
+      expect(beta).toContain('custom-beta');
+    });
+
+    it('does not attach custom headers when clientOptions are dropped', () => {
+      const result = getLLMConfig('test-key', {
+        modelOptions: { model: 'claude-3-opus' },
+        dropParams: ['clientOptions'],
+        headers: { 'cf-aig-metadata': 'x' },
+      });
+
+      expect(result.llmConfig).not.toHaveProperty('clientOptions');
     });
   });
 });

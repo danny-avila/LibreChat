@@ -4,6 +4,7 @@ export * from './openidAccount';
 export * from './openidUserInfo';
 export * from './entraGroupSync';
 export * from './federatedAuthCache';
+export * from './proxy';
 export * from './exchange';
 export * from './refresh';
 export * from './agent';
