@@ -23,6 +23,58 @@ const mockFilterPersistableAbortContent = jest.fn((content) =>
 const mockGetConvo = jest.fn();
 const mockGetMessages = jest.fn();
 const mockSaveMessage = jest.fn();
+let mockMCPContexts = new WeakMap();
+
+const mockCreateMCPRequestContext = jest.fn(() => ({
+  connections: new Map(),
+  pending: new Map(),
+  cleanupStarted: false,
+  cleanupOnResponse: false,
+  responseCleanupAttached: false,
+}));
+const mockGetMCPRequestContext = jest.fn((req) => {
+  if (!req) {
+    return undefined;
+  }
+
+  let context = mockMCPContexts.get(req);
+  if (!context) {
+    context = mockCreateMCPRequestContext();
+    mockMCPContexts.set(req, context);
+  }
+
+  return context.cleanupStarted ? undefined : context;
+});
+const mockCleanupMCPRequestContext = jest.fn(async (context) => {
+  if (!context || context.cleanupStarted) {
+    return;
+  }
+
+  context.cleanupStarted = true;
+  const connections = new Set(context.connections.values());
+  const settled = await Promise.allSettled(context.pending.values());
+  for (const result of settled) {
+    if (result.status === 'fulfilled' && result.value) {
+      connections.add(result.value);
+    }
+  }
+
+  await Promise.allSettled(Array.from(connections).map((connection) => connection.disconnect?.()));
+  context.connections.clear();
+  context.pending.clear();
+});
+const mockCleanupMCPRequestContextForReq = jest.fn(async (req) => {
+  const context = mockMCPContexts.get(req);
+  if (!context) {
+    return;
+  }
+
+  try {
+    await mockCleanupMCPRequestContext(context);
+  } finally {
+    mockMCPContexts.delete(req);
+  }
+});
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: mockLogger,
@@ -34,7 +86,11 @@ jest.mock('@librechat/api', () => ({
   buildMessageFiles: jest.fn(() => []),
   resolveTitleTiming: jest.fn(() => 'immediate'),
   GenerationJobManager: mockGenerationJobManager,
+  cleanupMCPRequestContext: (...args) => mockCleanupMCPRequestContext(...args),
+  createMCPRequestContext: (...args) => mockCreateMCPRequestContext(...args),
+  getMCPRequestContext: (...args) => mockGetMCPRequestContext(...args),
   filterPersistableAbortContent: (...args) => mockFilterPersistableAbortContent(...args),
+  cleanupMCPRequestContextForReq: (...args) => mockCleanupMCPRequestContextForReq(...args),
   decrementPendingRequest: (...args) => mockDecrementPendingRequest(...args),
   sanitizeMessageForTransmit: jest.fn((message) => message),
   checkAndIncrementPendingRequest: (...args) => mockCheckAndIncrementPendingRequest(...args),
@@ -107,6 +163,7 @@ function nextTick() {
 describe('ResumableAgentController resume metadata', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockMCPContexts = new WeakMap();
     mockCheckAndIncrementPendingRequest.mockResolvedValue({ allowed: true });
     mockDecrementPendingRequest.mockResolvedValue(undefined);
     mockGetConvo.mockResolvedValue({ createdAt: '2026-06-07T00:00:00.000Z' });

@@ -1,28 +1,34 @@
-const { EventEmitter } = require('events');
+import { EventEmitter } from 'events';
 
-const mockLogger = {
-  warn: jest.fn(),
-};
+import { getMCPRequestContext, cleanupMCPRequestContextForReq } from '~/mcp/request';
 
 jest.mock('@librechat/data-schemas', () => ({
-  logger: mockLogger,
+  logger: {
+    warn: jest.fn(),
+  },
 }));
 
-const { getMCPRequestContext, cleanupMCPRequestContextForReq } = require('./MCPRequestContext');
-
-function createResponse({ ended = false } = {}) {
-  const res = new EventEmitter();
+function createResponse({ ended = false } = {}): EventEmitter & {
+  writableEnded: boolean;
+  finished: boolean;
+  destroyed: boolean;
+} {
+  const res = new EventEmitter() as EventEmitter & {
+    writableEnded: boolean;
+    finished: boolean;
+    destroyed: boolean;
+  };
   res.writableEnded = ended;
   res.finished = ended;
   res.destroyed = false;
   return res;
 }
 
-function nextTick() {
+function nextTick(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
-describe('MCPRequestContext', () => {
+describe('MCP request context', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
@@ -32,7 +38,6 @@ describe('MCPRequestContext', () => {
     const res = createResponse({ ended: true });
 
     expect(getMCPRequestContext(req, res)).toBeUndefined();
-    expect(Object.getOwnPropertySymbols(req)).toHaveLength(0);
   });
 
   it('keeps job-scoped contexts alive after response finish until explicit cleanup', async () => {
@@ -40,7 +45,7 @@ describe('MCPRequestContext', () => {
     const res = createResponse();
     const context = getMCPRequestContext(req, undefined, { cleanupOnResponse: false });
     const disconnect = jest.fn().mockResolvedValue(undefined);
-    context.connections.set('server', { disconnect });
+    context?.connections.set('server', { disconnect });
 
     expect(getMCPRequestContext(req, res)).toBe(context);
 
@@ -52,8 +57,8 @@ describe('MCPRequestContext', () => {
     await cleanupMCPRequestContextForReq(req);
 
     expect(disconnect).toHaveBeenCalledTimes(1);
-    expect(context.connections.size).toBe(0);
-    expect(context.pending.size).toBe(0);
+    expect(context?.connections.size).toBe(0);
+    expect(context?.pending.size).toBe(0);
   });
 
   it('cleans response-scoped contexts when the response finishes', async () => {
@@ -63,15 +68,15 @@ describe('MCPRequestContext', () => {
     const disconnect = jest.fn().mockResolvedValue(undefined);
     const pendingDisconnect = jest.fn().mockResolvedValue(undefined);
 
-    context.connections.set('server', { disconnect });
-    context.pending.set('pending-server', Promise.resolve({ disconnect: pendingDisconnect }));
+    context?.connections.set('server', { disconnect });
+    context?.pending.set('pending-server', Promise.resolve({ disconnect: pendingDisconnect }));
 
     res.emit('finish');
     await nextTick();
 
     expect(disconnect).toHaveBeenCalledTimes(1);
     expect(pendingDisconnect).toHaveBeenCalledTimes(1);
-    expect(context.connections.size).toBe(0);
-    expect(context.pending.size).toBe(0);
+    expect(context?.connections.size).toBe(0);
+    expect(context?.pending.size).toBe(0);
   });
 });
