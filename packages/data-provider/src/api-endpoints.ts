@@ -1,7 +1,7 @@
 import type { StartupConfigContext } from './config';
 import type { AssistantsEndpoint } from './schemas';
-import * as q from './types/queries';
 import { ResourceType } from './accessPermissions';
+import * as q from './types/queries';
 
 let BASE_URL = '';
 if (
@@ -74,13 +74,12 @@ export const shareMessages = (shareId: string) => `${shareRoot}/${shareId}`;
 export const getSharedLink = (conversationId: string) => `${shareRoot}/link/${conversationId}`;
 export const getSharedLinks = (
   pageSize: number,
-  isPublic: boolean,
   sortBy: 'title' | 'createdAt',
   sortDirection: 'asc' | 'desc',
   search?: string,
   cursor?: string,
 ) =>
-  `${shareRoot}?pageSize=${pageSize}&isPublic=${isPublic}&sortBy=${sortBy}&sortDirection=${sortDirection}${
+  `${shareRoot}?pageSize=${pageSize}&sortBy=${sortBy}&sortDirection=${sortDirection}${
     search ? `&search=${search}` : ''
   }${cursor ? `&cursor=${cursor}` : ''}`;
 export const createSharedLink = (conversationId: string) => `${shareRoot}/${conversationId}`;
@@ -127,6 +126,17 @@ export const forkConversation = () => `${conversationsRoot}/fork`;
 
 export const duplicateConversation = () => `${conversationsRoot}/duplicate`;
 
+export const projectsRoot = `${BASE_URL}/api/projects`;
+
+export const projects = (params: q.ProjectListParams = {}) => {
+  return `${projectsRoot}${buildQuery(params)}`;
+};
+
+export const projectById = (id: string) => `${projectsRoot}/${encodeURIComponent(id)}`;
+
+export const projectConversation = (conversationId: string) =>
+  `${projectsRoot}/conversations/${encodeURIComponent(conversationId)}`;
+
 export const search = (q: string, cursor?: string | null) =>
   `${BASE_URL}/api/search?q=${q}${cursor ? `&cursor=${cursor}` : ''}`;
 
@@ -137,6 +147,8 @@ export const presets = () => `${BASE_URL}/api/presets`;
 export const deletePreset = () => `${BASE_URL}/api/presets/delete`;
 
 export const aiEndpoints = () => `${BASE_URL}/api/endpoints`;
+
+export const tokenConfig = () => `${BASE_URL}/api/endpoints/token-config`;
 
 export const models = () => `${BASE_URL}/api/models`;
 
@@ -393,6 +405,12 @@ export const skillFiles = (id: string) => `${getSkill(id)}/files`;
 
 export const skillFile = (id: string, relativePath: string) =>
   `${skillFiles(id)}/${encodeURIComponent(relativePath)}`;
+
+export const adminSkillsSync = () => `${BASE_URL}/api/admin/skills/sync`;
+export const adminSkillsSyncStatus = () => `${adminSkillsSync()}/status`;
+export const adminSkillsSyncRun = () => `${adminSkillsSync()}/run`;
+export const adminSkillsSyncCredential = (credentialKey: string) =>
+  `${adminSkillsSync()}/credentials/${encodeURIComponent(credentialKey)}`;
 
 /**
  * Skill filesystem tree (phase 2). URL shape mirrors the original UI PR so

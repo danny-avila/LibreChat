@@ -21,6 +21,7 @@ export default function useToolCallState(
   isSubmitting: boolean,
   output: string,
   hasInput: boolean,
+  onExpand?: () => void,
 ): ToolCallState {
   const autoExpand = useRecoilValue(store.autoExpandTools);
   const hasOutput = output.length > 0;
@@ -37,7 +38,15 @@ export default function useToolCallState(
   }, [autoExpand, hasContent]);
 
   const progress = useProgress(initialProgress);
-  const toggleCode = useCallback(() => setShowCode((prev) => !prev), []);
+  const toggleCode = useCallback(() => {
+    setShowCode((prev) => {
+      const next = !prev;
+      if (next) {
+        onExpand?.();
+      }
+      return next;
+    });
+  }, [onExpand]);
   const cancelled = !isSubmitting && progress < 1 && !hasError;
 
   return {

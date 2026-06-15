@@ -1,7 +1,6 @@
-import crypto from 'crypto';
 import axios from 'axios';
+import crypto from 'crypto';
 import { logger } from '@librechat/data-schemas';
-import { HttpsProxyAgent } from 'https-proxy-agent';
 import {
   Time,
   CacheKeys,
@@ -10,6 +9,7 @@ import {
   defaultModels,
 } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
+import type { AxiosRequestConfig } from 'axios';
 import {
   processModelData,
   extractBaseURL,
@@ -18,6 +18,7 @@ import {
   deriveBaseURL,
   logAxiosError,
   inputSchema,
+  applyAxiosProxyConfig,
 } from '~/utils';
 import { standardCache, tokenConfigCache } from '~/cache';
 
@@ -126,7 +127,16 @@ export async function fetchModels({
     return models;
   }
 
-  const shouldCache = !skipCache && !(userIdQuery && user);
+  // The MODEL_QUERIES cache is keyed by baseURL+apiKey only. That's safe
+  // when the response is identical for every caller, but fails when callers
+  // forward header templates that resolve to a user-bound value (e.g.
+  // `Authorization: Bearer {{LIBRECHAT_OPENID_ID_TOKEN}}`): one user's
+  // filtered list could otherwise be served to the next request that
+  // shares the same baseURL+apiKey. Skip the cache whenever both `headers`
+  // and `userObject` are supplied, since that's the signal the caller is
+  // resolving headers against a specific user's identity.
+  const hasUserScopedHeaders = !!headers && Object.keys(headers).length > 0 && !!userObject;
+  const shouldCache = !skipCache && !(userIdQuery && user) && !hasUserScopedHeaders;
   const cacheKey = shouldCache ? modelsCacheKey(baseURL ?? '', apiKey) : '';
   const modelsCache = shouldCache ? standardCache(CacheKeys.MODEL_QUERIES) : null;
   if (modelsCache && cacheKey) {
@@ -156,28 +166,43 @@ export async function fetchModels({
   }
 
   try {
-    const options: {
+    // Resolve template variables (e.g. {{LIBRECHAT_OPENID_ID_TOKEN}}) in the
+    // configured headers, mirroring fetchOllamaModels above. Without this,
+    // placeholder strings are forwarded literally on the model-fetch path.
+    const resolvedHeaders = resolveHeaders({
+      headers: headers ?? undefined,
+      user: userObject,
+    });
+
+    const options: AxiosRequestConfig & {
       headers: Record<string, string>;
       timeout: number;
-      httpsAgent?: HttpsProxyAgent<string>;
     } = {
       headers: {
-        ...(headers ?? {}),
+        ...resolvedHeaders,
       },
       timeout: 5000,
     };
 
     if (name === EModelEndpoint.anthropic) {
+      // Keep configured custom headers (e.g. gateway metadata) while the
+      // provider-managed auth/version headers stay authoritative.
       options.headers = {
+        ...resolvedHeaders,
         'x-api-key': apiKey,
         'anthropic-version': process.env.ANTHROPIC_VERSION || '2023-06-01',
       };
     } else {
-      options.headers.Authorization = `Bearer ${apiKey}`;
-    }
-
-    if (process.env.PROXY) {
-      options.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
+      // Only fall back to the apiKey-based Bearer when the configured
+      // headers did not already supply an Authorization. This lets
+      // auth-aware proxies (e.g. LiteLLM with JWT auth) receive the user's
+      // token on /v1/models so they can return a per-user filtered list.
+      const hasAuthHeader = Object.keys(options.headers).some(
+        (k) => k.toLowerCase() === 'authorization',
+      );
+      if (!hasAuthHeader) {
+        options.headers.Authorization = `Bearer ${apiKey}`;
+      }
     }
 
     if (process.env.OPENAI_ORGANIZATION && baseURL?.includes('openai')) {
@@ -188,6 +213,7 @@ export async function fetchModels({
     if (user && userIdQuery) {
       url.searchParams.append('user', user);
     }
+    applyAxiosProxyConfig(options, url);
     const res = await axios.get(url.toString(), options);
 
     const input = res.data;
@@ -226,6 +252,10 @@ export interface GetOpenAIModelsOptions {
   openAIApiKey?: string;
   /** Skip MODEL_QUERIES cache (e.g., for user-provided keys) */
   skipCache?: boolean;
+  /** Configured custom headers forwarded to the (gateway-fronted) provider */
+  headers?: Record<string, string> | null;
+  /** User object for resolving header placeholders */
+  userObject?: Partial<IUser>;
 }
 
 function resolveOpenAIApiKey(opts: GetOpenAIModelsOptions): string | undefined {
@@ -266,6 +296,8 @@ export async function fetchOpenAIModels(
       user: opts.user,
       name: EModelEndpoint.openAI,
       skipCache: opts.skipCache,
+      headers: opts.headers,
+      userObject: opts.userObject,
     });
   }
 
@@ -274,7 +306,7 @@ export async function fetchOpenAIModels(
   }
 
   if (baseURL === openaiBaseURL) {
-    const regex = /(text-davinci-003|gpt-|o\d+)/;
+    const regex = /(text-davinci-003|gpt-|o\d+|chat-latest)/;
     const excludeRegex = /audio|realtime/;
     models = models.filter((model) => regex.test(model) && !excludeRegex.test(model));
     const instructModels = models.filter((model) => model.includes('instruct'));
@@ -326,7 +358,12 @@ export async function getOpenAIModels(opts: GetOpenAIModelsOptions = {}): Promis
  * @returns Promise resolving to array of model IDs
  */
 export async function fetchAnthropicModels(
-  opts: { user?: string; skipCache?: boolean } = {},
+  opts: {
+    user?: string;
+    skipCache?: boolean;
+    headers?: Record<string, string> | null;
+    userObject?: Partial<IUser>;
+  } = {},
   _models: string[] = [],
 ): Promise<string[]> {
   let models = _models.slice() ?? [];
@@ -351,6 +388,8 @@ export async function fetchAnthropicModels(
       name: EModelEndpoint.anthropic,
       tokenKey: EModelEndpoint.anthropic,
       skipCache: opts.skipCache,
+      headers: opts.headers,
+      userObject: opts.userObject,
     });
   }
 
@@ -367,7 +406,12 @@ export async function fetchAnthropicModels(
  * @returns Promise resolving to array of model IDs
  */
 export async function getAnthropicModels(
-  opts: { user?: string; vertexModels?: string[] } = {},
+  opts: {
+    user?: string;
+    vertexModels?: string[];
+    headers?: Record<string, string> | null;
+    userObject?: Partial<IUser>;
+  } = {},
 ): Promise<string[]> {
   const models = defaultModels[EModelEndpoint.anthropic];
 

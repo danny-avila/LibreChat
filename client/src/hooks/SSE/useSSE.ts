@@ -2,13 +2,20 @@ import { useEffect, useState } from 'react';
 import { v4 } from 'uuid';
 import { SSE } from 'sse.js';
 import { useSetRecoilState } from 'recoil';
-import { request, createPayload, removeNullishValues } from 'librechat-data-provider';
+import {
+  request,
+  UsageEvents,
+  StepEvents,
+  createPayload,
+  removeNullishValues,
+} from 'librechat-data-provider';
 import type { TMessage, TPayload, TSubmission, EventSubmission } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData } from '~/common';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
+import useUsageHandler from './useUsageHandler';
 import { clearAllDrafts } from '~/utils';
 import store from '~/store';
 
@@ -42,6 +49,7 @@ export default function useSSE(
     messageHandler,
     contentHandler,
     createdHandler,
+    titleHandler,
     attachmentHandler,
     abortConversation,
   } = useEventHandlers({
@@ -59,6 +67,15 @@ export default function useSSE(
   const balanceQuery = useGetUserBalance({
     enabled: !!isAuthenticated && startupConfig?.balance?.enabled,
   });
+  const {
+    contextHandler,
+    usageHandler,
+    tapStream,
+    tapContent,
+    finalizeUsage,
+    resetLive,
+    attributePending,
+  } = useUsageHandler();
 
   useEffect(() => {
     if (submission == null || Object.keys(submission).length === 0) {
@@ -95,6 +112,7 @@ export default function useSSE(
         clearAllDrafts(submission.conversation?.conversationId);
         try {
           finalHandler(data, submission as EventSubmission);
+          finalizeUsage(data, { ...submission, userMessage });
         } catch (error) {
           console.error('Error in finalHandler:', error);
           setIsSubmitting(false);
@@ -113,7 +131,19 @@ export default function useSSE(
         };
 
         createdHandler(data, { ...submission, userMessage } as EventSubmission);
+      } else if (data.event === 'title') {
+        titleHandler(data);
+      } else if (data.event === UsageEvents.ON_CONTEXT_USAGE) {
+        contextHandler(data.data, { ...submission, userMessage });
+      } else if (data.event === UsageEvents.ON_TOKEN_USAGE) {
+        usageHandler(data.data, { ...submission, userMessage });
       } else if (data.event != null) {
+        if (
+          data.event === StepEvents.ON_MESSAGE_DELTA ||
+          data.event === StepEvents.ON_REASONING_DELTA
+        ) {
+          tapStream(data.data, { ...submission, userMessage });
+        }
         stepHandler(data, { ...submission, userMessage } as EventSubmission);
       } else if (data.sync != null) {
         const runId = v4();
@@ -126,6 +156,7 @@ export default function useSSE(
           textIndex = index;
         }
 
+        tapContent(text, { ...submission, userMessage });
         contentHandler({ data, submission: submission as EventSubmission });
       } else {
         const text = data.text ?? data.response;
@@ -137,6 +168,9 @@ export default function useSSE(
         };
 
         if (data.message != null) {
+          /** Legacy non-agent streams (handleText) send cumulative text here,
+           *  not via the content path — feed it to the live estimate too */
+          tapContent(text, { ...submission, userMessage });
           messageHandler(text, { ...submission, userMessage, initialResponse });
         }
       }
@@ -161,6 +195,13 @@ export default function useSSE(
       setCompleted((prev) => new Set(prev.add(streamKey)));
       const latestMessages = getMessages();
       const conversationId = latestMessages?.[latestMessages.length - 1]?.conversationId;
+      /** Attribute usage billed before the stop to the partial response (the
+       *  branch tail), then reset pending — so it neither drops nor leaks into
+       *  the next response. Falls back to a plain reset when no response exists. */
+      const tail = latestMessages?.[latestMessages.length - 1];
+      const partialResponseId =
+        tail != null && tail.isCreatedByUser === false ? tail.messageId : null;
+      attributePending(partialResponseId, { ...submission, userMessage });
       try {
         await abortConversation(
           conversationId ??
@@ -203,6 +244,7 @@ export default function useSSE(
 
       console.log('error in server stream.');
       (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
+      resetLive({ ...submission, userMessage });
 
       let data: TResData | undefined = undefined;
       try {

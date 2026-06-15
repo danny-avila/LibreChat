@@ -339,11 +339,13 @@ export class MCPServersRegistry {
     reservedServerNames?: Iterable<string>,
   ): Promise<t.AddServerResult> {
     const configRepo = this.getConfigRepository(storageLocation);
+    const source = (storageLocation === 'CACHE' ? 'yaml' : 'user') as t.MCPServerSource;
+    const configForInspection = { ...config, source } as t.ParsedServerConfig;
     let parsedConfig: t.ParsedServerConfig;
     try {
       parsedConfig = await MCPServerInspector.inspect(
         serverName,
-        config,
+        configForInspection,
         undefined,
         this.allowedDomains,
         this.allowedAddresses,
@@ -357,7 +359,7 @@ export class MCPServersRegistry {
     }
     const tagged = {
       ...parsedConfig,
-      source: (storageLocation === 'CACHE' ? 'yaml' : 'user') as t.MCPServerSource,
+      source,
     };
     const result =
       storageLocation === 'DB'
@@ -426,6 +428,7 @@ export class MCPServersRegistry {
     userId?: string,
   ): Promise<t.ParsedServerConfig> {
     const configRepo = this.getConfigRepository(storageLocation);
+    const source = (storageLocation === 'CACHE' ? 'yaml' : 'user') as t.MCPServerSource;
 
     // Merge existing admin API key if not provided in update (needed for inspection)
     let configForInspection = { ...config };
@@ -446,7 +449,7 @@ export class MCPServersRegistry {
     try {
       parsedConfig = await MCPServerInspector.inspect(
         serverName,
-        configForInspection,
+        { ...configForInspection, source } as t.ParsedServerConfig,
         undefined,
         this.allowedDomains,
         this.allowedAddresses,
@@ -578,10 +581,14 @@ export class MCPServersRegistry {
     logger.info(`${prefix} Lazy-initializing config-source server`);
 
     try {
+      const configForInspection = {
+        ...rawConfig,
+        source: 'config' as const,
+      } as t.ParsedServerConfig;
       const inspected = await withTimeout(
         MCPServerInspector.inspect(
           serverName,
-          rawConfig,
+          configForInspection,
           undefined,
           this.allowedDomains,
           this.allowedAddresses,

@@ -1,4 +1,5 @@
 import { useContext, useCallback, useEffect, useState } from 'react';
+import { JSX } from 'react/jsx-runtime';
 import { Sun, Moon, Monitor } from 'lucide-react';
 import { ThemeContext, isDark } from '../theme';
 import { useLocalize } from '../hooks';
@@ -54,7 +55,7 @@ const Theme = ({ theme, onChange }: { theme: string; onChange: (value: string) =
   );
 };
 
-const ThemeSelector = ({ returnThemeOnly }: { returnThemeOnly?: boolean }) => {
+const ThemeSelector = ({ returnThemeOnly }: { returnThemeOnly?: boolean }): JSX.Element => {
   const { theme, setTheme } = useContext(ThemeContext);
   const [announcement, setAnnouncement] = useState('');
   const localize = useLocalize();

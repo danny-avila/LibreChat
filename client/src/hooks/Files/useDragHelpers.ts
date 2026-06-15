@@ -83,7 +83,7 @@ export default function useDragHelpers() {
         currentEndpoint,
         agent?.provider,
       );
-      const cfg = queryClient.getQueryData<t.FileConfig>([QueryKeys.fileConfig]);
+      const cfg = queryClient.getQueryData<t.TFileConfig>([QueryKeys.fileConfig]);
       if (cfg) {
         const mergedCfg = mergeFileConfig(cfg);
         const endpointCfg = getEndpointFileConfig({

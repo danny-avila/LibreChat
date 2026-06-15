@@ -10,11 +10,6 @@ jest.mock('react-virtualized', () => {
   const actual = jest.requireActual('react-virtualized');
   return {
     ...actual,
-    AutoSizer: ({
-      children,
-    }: {
-      children: (size: { width: number; height: number }) => React.ReactNode;
-    }) => children({ width: 300, height: 600 }),
     CellMeasurer: ({
       children,
     }: {
@@ -48,11 +43,15 @@ jest.mock('react-virtualized', () => {
 });
 
 jest.mock('~/store', () => {
-  const { atom } = jest.requireActual('recoil');
+  const { atom, atomFamily } = jest.requireActual('recoil');
   return {
     __esModule: true,
     default: {
       search: atom({ key: 'test-conversations-search', default: { query: '' } }),
+      conversationByIndex: atomFamily({
+        key: 'test-conversations-convo-by-index',
+        default: null,
+      }),
     },
   };
 });
@@ -70,12 +69,20 @@ jest.mock('~/hooks', () => ({
   useFavorites: () => mockFavoritesState,
   useLocalize: () => (key: string) => key,
   useShowMarketplace: () => mockShowMarketplace,
+  useNewConvo: () => ({ newConversation: jest.fn() }),
+  useElementSize: () => ({ ref: jest.fn(), width: 300, height: 600 }),
   TranslationKeys: {},
+}));
+
+jest.mock('@tanstack/react-query', () => ({
+  useQueryClient: () => ({ invalidateQueries: jest.fn() }),
 }));
 
 jest.mock('@librechat/client', () => ({
   Spinner: () => <div data-testid="spinner" />,
   useMediaQuery: () => false,
+  TooltipAnchor: ({ render }: { render: React.ReactNode }) => render,
+  NewChatIcon: () => <svg data-testid="new-chat-icon" />,
 }));
 
 jest.mock('~/data-provider', () => ({
@@ -84,6 +91,7 @@ jest.mock('~/data-provider', () => ({
 
 jest.mock('~/utils', () => ({
   groupConversationsByDate: () => [],
+  clearMessagesCache: jest.fn(),
   cn: (...args: unknown[]) => args.filter(Boolean).join(' '),
 }));
 

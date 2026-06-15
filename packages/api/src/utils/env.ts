@@ -379,6 +379,22 @@ export function processMCPEnv(params: {
     newObj.headers = processedHeaders;
   }
 
+  // Process OAuth headers if they exist; sent on OAuth discovery/token requests
+  if ('oauth_headers' in newObj && newObj.oauth_headers) {
+    const processedOAuthHeaders: Record<string, string> = {};
+    for (const [key, originalValue] of Object.entries(newObj.oauth_headers)) {
+      processedOAuthHeaders[key] = processSingleValue({
+        user,
+        body,
+        dbSourced,
+        originalValue,
+        customUserVars,
+        isHeader: true,
+      });
+    }
+    newObj.oauth_headers = processedOAuthHeaders;
+  }
+
   // Process URL if it exists (for WebSocket, SSE, StreamableHTTP types)
   if ('url' in newObj && newObj.url) {
     newObj.url = processSingleValue({
@@ -503,7 +519,7 @@ export function resolveHeaders(options?: {
   user?: Partial<IUser> | { id: string };
   body?: RequestBody;
   customUserVars?: Record<string, string>;
-}) {
+}): Record<string, string> {
   const { headers, user, body, customUserVars } = options ?? {};
   const inputHeaders = headers ?? {};
 

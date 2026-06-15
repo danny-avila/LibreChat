@@ -35,6 +35,10 @@ interface CapabilityStore {
   results: Map<string, boolean>;
 }
 
+const DENIAL_WARN_INTERVAL_MS = 5 * 60 * 1000;
+const MAX_DENIAL_WARN_KEYS = 1000;
+const recentDenialWarnings = new Map<string, number>();
+
 export type HasCapabilityFn = (
   user: CapabilityUser,
   capability: SystemCapability,
@@ -58,7 +62,8 @@ export type HasConfigCapabilityFn = (
  * Outside a request context (background jobs, tests), the store is undefined
  * and every check falls through to the database — correct behavior.
  */
-export const capabilityStore = new AsyncLocalStorage<CapabilityStore>();
+export const capabilityStore: AsyncLocalStorage<CapabilityStore> =
+  new AsyncLocalStorage<CapabilityStore>();
 
 export function capabilityContextMiddleware(
   _req: ServerRequest,
@@ -73,6 +78,24 @@ export function capabilityContextMiddleware(
     );
   }
   capabilityStore.run({ principals: new Map(), results: new Map() }, next);
+}
+
+function warnDeniedCapabilityOnce(key: string, message: string): void {
+  const now = Date.now();
+  const lastLoggedAt = recentDenialWarnings.get(key);
+  if (lastLoggedAt !== undefined && now - lastLoggedAt < DENIAL_WARN_INTERVAL_MS) {
+    return;
+  }
+
+  if (recentDenialWarnings.size >= MAX_DENIAL_WARN_KEYS) {
+    const oldestKey = recentDenialWarnings.keys().next().value;
+    if (oldestKey !== undefined) {
+      recentDenialWarnings.delete(oldestKey);
+    }
+  }
+
+  recentDenialWarnings.set(key, now);
+  logger.warn(message);
 }
 
 /**
@@ -191,7 +214,10 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
           return;
         }
 
-        logger.warn(`[requireCapability] Forbidden: user ${id} missing capability '${capability}'`);
+        warnDeniedCapabilityOnce(
+          `missing-capability:${id}:${capability}`,
+          `[requireCapability] Forbidden: user ${id} missing capability '${capability}'`,
+        );
         res.status(403).json({ message: 'Forbidden' });
       } catch (err) {
         logger.error(`[requireCapability] Error checking capability: ${capability}`, err);

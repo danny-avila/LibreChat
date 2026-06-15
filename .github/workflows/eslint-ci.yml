@@ -27,10 +27,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Node.js 20.x
+      - name: Set up Node.js 24.16.0
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '24.16.0'
           cache: npm
 
       - name: Install dependencies
@@ -91,6 +91,34 @@ jobs:
             echo ""
             echo "::error::Prettier formatting drift detected. Fix locally with:"
             echo "::error::  npx prettier --write <files>"
+            echo "::error::Or rely on the lint-staged pre-commit hook (do not bypass with --no-verify)."
+            exit 1
+          fi
+
+      # Verify import ordering on the same set of changed files. The script
+      # only sorts files under known source roots, so unrelated changed files
+      # (configs, etc.) are ignored. Matches the lint-staged pre-commit hook.
+      - name: Check import sorting on changed files
+        run: |
+          BASE_SHA=$(jq --raw-output .pull_request.base.sha "$GITHUB_EVENT_PATH")
+          mapfile -d '' -t CHANGED_FILES < <(
+            git diff -z --name-only --diff-filter=ACMRTUXB "$BASE_SHA" HEAD |
+              grep -zE '^(api|client|packages)/.*\.(js|jsx|ts|tsx)$' || true
+          )
+
+          if [[ ${#CHANGED_FILES[@]} -eq 0 ]]; then
+            echo "No matching files changed. Skipping import-sort check."
+            exit 0
+          fi
+
+          echo "Files to check:"
+          printf '%s\n' "${CHANGED_FILES[@]}"
+
+          # `--check` lists offending files and exits non-zero without writing.
+          if ! node scripts/sort-imports.mts --check "${CHANGED_FILES[@]}"; then
+            echo ""
+            echo "::error::Import order drift detected. Fix locally with:"
+            echo "::error::  npm run sort-imports"
             echo "::error::Or rely on the lint-staged pre-commit hook (do not bypass with --no-verify)."
             exit 1
           fi

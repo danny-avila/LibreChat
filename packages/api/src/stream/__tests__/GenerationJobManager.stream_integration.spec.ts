@@ -1,6 +1,11 @@
 /* eslint jest/no-standalone-expect: ["error", { "additionalTestBlockFunctions": ["testRedis"] }] */
 import type { Redis, Cluster } from 'ioredis';
 import type { ServerSentEvent, StreamEvent, CreatedEvent } from '~/types';
+import {
+  ioredisClient as staticRedisClient,
+  keyvRedisClient as staticKeyvClient,
+  keyvRedisClientReady,
+} from '~/cache/redisClients';
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { RedisEventTransport } from '~/stream/implementations/RedisEventTransport';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
@@ -8,11 +13,6 @@ import { GenerationJobManagerClass } from '~/stream/GenerationJobManager';
 import { RedisJobStore } from '~/stream/implementations/RedisJobStore';
 import { createStreamServices } from '~/stream/createStreamServices';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
-import {
-  ioredisClient as staticRedisClient,
-  keyvRedisClient as staticKeyvClient,
-  keyvRedisClientReady,
-} from '~/cache/redisClients';
 
 /** Suppress winston Console transport output (survives jest.resetModules) */
 jest.spyOn(console, 'log').mockImplementation();
@@ -404,11 +404,21 @@ describe('GenerationJobManager Integration Tests', () => {
         await GenerationJobManager.updateMetadata(streamId, {
           sender: 'ConsistencyAgent',
           responseMessageId: 'resp-123',
+          iconURL: 'https://example.com/spec-icon.png',
+          model: 'gpt-4.1',
         });
 
         const updated = await GenerationJobManager.getJob(streamId);
         expect(updated?.metadata?.sender).toBe('ConsistencyAgent');
         expect(updated?.metadata?.responseMessageId).toBe('resp-123');
+        expect(updated?.metadata?.iconURL).toBe('https://example.com/spec-icon.png');
+        expect(updated?.metadata?.model).toBe('gpt-4.1');
+
+        const resumeState = await GenerationJobManager.getResumeState(streamId);
+        expect(resumeState?.sender).toBe('ConsistencyAgent');
+        expect(resumeState?.responseMessageId).toBe('resp-123');
+        expect(resumeState?.iconURL).toBe('https://example.com/spec-icon.png');
+        expect(resumeState?.model).toBe('gpt-4.1');
 
         await GenerationJobManager.completeJob(streamId);
 
@@ -1353,6 +1363,28 @@ describe('GenerationJobManager Integration Tests', () => {
       expect((resumeEvents[0] as StreamEvent).event).toBe('on_message_delta');
 
       sub2?.unsubscribe();
+      await manager.destroy();
+    });
+
+    test('should include emitted title event in resume state', async () => {
+      const manager = createInMemoryManager();
+      const streamId = `title-resume-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1', streamId);
+
+      const titleEvent = {
+        event: 'title',
+        data: {
+          conversationId: streamId,
+          title: 'Resumed Title',
+        },
+      } satisfies ServerSentEvent;
+
+      await manager.emitChunk(streamId, titleEvent);
+
+      const resumeState = await manager.getResumeState(streamId);
+
+      expect(resumeState?.titleEvent).toEqual(titleEvent);
+
       await manager.destroy();
     });
 

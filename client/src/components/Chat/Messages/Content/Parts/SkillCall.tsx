@@ -16,6 +16,7 @@ export default function SkillCall({
   output = '',
   attachments,
   hideAttachments = false,
+  onExpand,
 }: {
   initialProgress: number;
   isSubmitting: boolean;
@@ -23,12 +24,13 @@ export default function SkillCall({
   output?: string;
   attachments?: TAttachment[];
   hideAttachments?: boolean;
+  onExpand?: () => void;
 }) {
   const localize = useLocalize();
   const skillName = useMemo(() => parseJsonField(args, 'skillName'), [args]);
 
   const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasError, hasOutput } =
-    useToolCallState(initialProgress, isSubmitting, output, !!skillName);
+    useToolCallState(initialProgress, isSubmitting, output, !!skillName, onExpand);
 
   return (
     <>
