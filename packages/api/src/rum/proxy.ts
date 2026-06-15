@@ -1,7 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
-import { recordRumProxyRequest } from '~/app/metrics';
 import type { RumProxyEndpoint, RumProxyResult } from '~/app/metrics';
+import { recordRumProxyRequest } from '~/app/metrics';
 import { isEnabled } from '~/utils';
 
 const DEFAULT_PROXY_PATH = '/api/rum';

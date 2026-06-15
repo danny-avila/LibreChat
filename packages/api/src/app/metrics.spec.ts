@@ -1,8 +1,8 @@
 /// <reference types="jest" />
-import { EventEmitter } from 'events';
 import express from 'express';
-import type { Request, Response } from 'express';
 import request from 'supertest';
+import { EventEmitter } from 'events';
+import type { Request, Response } from 'express';
 import {
   createMetrics,
   instrumentMongooseQueryMetrics,
