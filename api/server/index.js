@@ -145,6 +145,9 @@ const startServer = async () => {
   if (process.env.BKL_ADMIN_API_DISABLE !== '1' && !isEnabled(process.env.BKL_ADMIN_API_DISABLE)) {
     app.use('/admin-api', bklAdmin);
   }
+  app.use(/^\/admin(?:\/.*)?$/, (_req, res) => {
+    res.status(404).type('text').send('BKL admin dashboard is not bundled in this image.');
+  });
 
   /* API Endpoints */
   app.use('/api/auth', routes.auth);

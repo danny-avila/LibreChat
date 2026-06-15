@@ -20,9 +20,7 @@ const { getBklMaintenanceConfig } = require('~/server/services/Config/bklMainten
 const crypto = require('crypto');
 const mongoose = require('mongoose');
 
-const BKL_AUTH_URL =
-  process.env.BKL_AUTH_URL ||
-  'https://nb.bkl.co.kr/apis/identity/auth/login';
+const BKL_AUTH_URL = process.env.BKL_AUTH_URL || 'https://nb.bkl.co.kr/apis/identity/auth/login';
 
 /**
  * Persist BIMS fields directly via mongoose, bypassing Mongoose strict mode.
@@ -50,9 +48,7 @@ async function persistBklFields(userId, bklFields) {
 async function passportLogin(req, email_or_id, password, done) {
   try {
     const rawInput = email_or_id.trim();
-    const id = rawInput.endsWith('@bkl.co.kr')
-      ? rawInput.slice(0, -'@bkl.co.kr'.length)
-      : rawInput;
+    const id = rawInput.endsWith('@bkl.co.kr') ? rawInput.slice(0, -'@bkl.co.kr'.length) : rawInput;
 
     const bklMaintenance = getBklMaintenanceConfig();
     if (bklMaintenance.enabled) {
@@ -60,6 +56,29 @@ async function passportLogin(req, email_or_id, password, done) {
       return done(null, false, {
         message: bklMaintenance.message,
       });
+    }
+
+    const candidateEmail = rawInput.includes('@') ? rawInput : `${rawInput}@bkl.co.kr`;
+    const bypassUser = await findUser(
+      { email: candidateEmail },
+      '+password bkl_bypass_auth bkl_collection',
+    );
+    if (bypassUser && bypassUser.bkl_bypass_auth === true) {
+      const bcrypt = require('bcryptjs');
+      const match = await bcrypt.compare(password, bypassUser.password || '');
+      if (!match) {
+        logger.warn(`[BKL Login] [bypass] wrong password for ${candidateEmail}`);
+        return done(null, false, { message: '아이디 또는 비밀번호가 올바르지 않습니다.' });
+      }
+
+      await persistBklFields(bypassUser._id, { bkl_last_login_at: new Date() });
+      const safeUser = await findUser({ email: candidateEmail });
+      logger.info(
+        `[BKL Login] [bypass] login OK: ${candidateEmail} collection=${
+          safeUser && safeUser.bkl_collection
+        }`,
+      );
+      return done(null, safeUser || bypassUser);
     }
 
     // 1. BKL BIMS 인증

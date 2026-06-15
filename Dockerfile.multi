@@ -83,5 +83,7 @@ COPY --from=api-package-build /app/packages/api/dist ./packages/api/dist
 COPY --from=client-build /app/client/dist ./client/dist
 WORKDIR /app/api
 EXPOSE 3080
-ENV HOST=0.0.0.0
+ENV HOST=0.0.0.0 \
+    ENDPOINTS=custom \
+    CONFIG_PATH=/app/config/bkl-librechat.yaml
 CMD ["node", "server/index.js"]
