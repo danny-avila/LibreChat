@@ -202,6 +202,8 @@ router.post('/archive', validateConvoAccess, async (req, res) => {
   }
 });
 
+router.use('/', require('../../nj/routes/convos/convos'));
+
 /** Maximum allowed length for conversation titles */
 const MAX_CONVO_TITLE_LENGTH = 1024;
 
