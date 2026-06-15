@@ -3,7 +3,12 @@ const fetch = require('node-fetch');
 const jwtDecode = require('jsonwebtoken/decode');
 const { ErrorTypes, FileSources } = require('librechat-data-provider');
 const { findUser, createUser, updateUser, findRolesByNames } = require('~/models');
-const { getOpenIdIssuer, resolveAppConfigForUser, isEnabled } = require('@librechat/api');
+const {
+  getOpenIdProxyDispatcher,
+  resolveAppConfigForUser,
+  getOpenIdIssuer,
+  isEnabled,
+} = require('@librechat/api');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { getAppConfig } = require('~/server/services/Config');
 const { setupOpenId } = require('./openidStrategy');
@@ -15,7 +20,6 @@ jest.mock('node-fetch');
 jest.mock('jsonwebtoken/decode');
 jest.mock('undici', () => ({
   fetch: jest.fn(),
-  ProxyAgent: jest.fn(),
 }));
 jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: jest.fn(() => ({
@@ -74,6 +78,7 @@ jest.mock('@librechat/api', () => {
       enabled: false,
     })),
     getOpenIdIssuer: jest.fn(() => 'https://fake-issuer.com'),
+    getOpenIdProxyDispatcher: jest.fn(() => undefined),
     getAvatarFileStrategy: jest.fn((config, fallbackStrategy) => {
       const { FileSources } = jest.requireActual('librechat-data-provider');
       if (config?.fileStrategies) {
@@ -216,6 +221,7 @@ describe('setupOpenId', () => {
       get: jest.fn(),
       set: jest.fn(),
     }));
+    getOpenIdProxyDispatcher.mockReturnValue(undefined);
     require('openid-client').genericGrantRequest.mockReset();
     require('openid-client').genericGrantRequest.mockResolvedValue({
       access_token: 'exchanged_graph_token',
@@ -341,6 +347,32 @@ describe('setupOpenId', () => {
       const [, , metadata] = openidClient.discovery.mock.calls.at(-1);
       expect(metadata.client_secret).toBe('my-secret');
       expect(metadata.token_endpoint_auth_method).toBeUndefined();
+    });
+
+    it('uses the shared OpenID proxy dispatcher for custom fetch requests', async () => {
+      const dispatcher = { dispatch: jest.fn() };
+      const response = { status: 204, statusText: 'No Content', headers: new Headers() };
+      getOpenIdProxyDispatcher.mockReturnValue(dispatcher);
+      undici.fetch.mockResolvedValue(response);
+
+      await setupOpenId();
+
+      const [, , , , options] = openidClient.discovery.mock.calls.at(-1);
+      const openIdFetch = options[openidClient.customFetch];
+      await expect(
+        openIdFetch('https://issuer.example.com/.well-known/openid-configuration', {
+          method: 'GET',
+        }),
+      ).resolves.toBe(response);
+
+      expect(getOpenIdProxyDispatcher).toHaveBeenCalled();
+      expect(undici.fetch).toHaveBeenCalledWith(
+        'https://issuer.example.com/.well-known/openid-configuration',
+        {
+          method: 'GET',
+          dispatcher,
+        },
+      );
     });
   });
 

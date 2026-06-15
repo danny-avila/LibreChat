@@ -91,7 +91,7 @@ function getRequestTenantId(user: SkillSyncRequestUser | undefined): string | un
 function withRequestTenant(
   config: SkillSyncConfigWithGitHub,
   user: SkillSyncRequestUser | undefined,
-  { disableRunOnStartup = false } = {},
+  { disableRunOnStartup = false }: { disableRunOnStartup?: boolean } = {},
 ): SkillSyncConfig {
   const tenantId = getRequestTenantId(user);
   return {
@@ -105,6 +105,44 @@ function withRequestTenant(
         // requests have no tenant and preserve an explicitly configured source.
         tenantId: tenantId ?? source.tenantId,
       })),
+    },
+  };
+}
+
+function isSameGitHubSource(
+  left: ResolvedGitHubSkillSyncConfig['sources'][number] | undefined,
+  right: ResolvedGitHubSkillSyncConfig['sources'][number] | undefined,
+): boolean {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
+function withAdminReadableTenantScope(
+  config: SkillSyncConfigWithGitHub,
+  user: SkillSyncRequestUser | undefined,
+  base: SkillSyncConfigWithGitHub | undefined,
+): SkillSyncConfig {
+  const tenantId = getRequestTenantId(user);
+  const baseSourceById = new Map(base?.github.sources.map((source) => [source.id, source]) ?? []);
+  const sources = tenantId
+    ? config.github.sources.flatMap((source) => {
+        const baseSource = baseSourceById.get(source.id);
+        if (isSameGitHubSource(source, baseSource)) {
+          if (source.tenantId && source.tenantId !== tenantId) {
+            return [];
+          }
+          return [{ ...source, tenantId: source.tenantId ? tenantId : undefined }];
+        }
+        if (source.tenantId && source.tenantId !== tenantId) {
+          return [];
+        }
+        return [{ ...source, tenantId }];
+      })
+    : [];
+  return {
+    ...config,
+    github: {
+      ...config.github,
+      sources,
     },
   };
 }
@@ -135,6 +173,7 @@ function getAdminRequestSkillSyncConfig(
   appConfig: SkillSyncAppConfigLike | undefined,
   user: SkillSyncRequestUser | undefined,
   logger: SkillSyncTriggerLogger,
+  { allowServerCredentials = false }: { allowServerCredentials?: boolean } = {},
 ): SkillSyncConfig | undefined {
   const resolved = parseSkillSyncConfig(appConfig?.skillSync, logger);
   if (!hasGitHubConfig(resolved)) {
@@ -142,6 +181,10 @@ function getAdminRequestSkillSyncConfig(
   }
 
   const base = parseSkillSyncConfig(appConfig?.config?.skillSync, logger);
+  const baseWithGitHub = hasGitHubConfig(base) ? base : undefined;
+  if (!allowServerCredentials) {
+    return withAdminReadableTenantScope(resolved, user, baseWithGitHub);
+  }
   if (isSameSkillSyncConfig(resolved, base)) {
     return resolved;
   }
@@ -212,11 +255,14 @@ export function createSkillSyncTriggerOrchestrator(
   const staleRunningMs = deps.staleRunningMs ?? REQUEST_SYNC_STALE_RUNNING_MS;
 
   function getRunnerForAdminRequest(request: SkillSyncRequestLike): GitHubSkillSyncRunner {
-    const config = getAdminRequestSkillSyncConfig(request.config, request.user, deps.logger);
+    const allowServerCredentials = Boolean(request.skillSyncAllowServerCredentials);
+    const config = getAdminRequestSkillSyncConfig(request.config, request.user, deps.logger, {
+      allowServerCredentials,
+    });
     return deps.createRunner({
       getConfig: async () => config,
       loadAppConfig: async () => request.config,
-      allowServerCredentials: Boolean(request.skillSyncAllowServerCredentials),
+      allowServerCredentials,
     });
   }
 

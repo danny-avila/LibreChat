@@ -3,6 +3,7 @@ import { googleSettings, AuthKeys, removeNullishValues } from 'librechat-data-pr
 import type { GoogleClientOptions, VertexAIClientOptions } from '@librechat/agents';
 import type { GoogleAIToolType } from '@librechat/agents/langchain/google-common';
 import type * as t from '~/types';
+import { mergeHeaders } from '~/utils/headers';
 import { isEnabled } from '~/utils';
 
 type GoogleThinkingLevel = 'THINKING_LEVEL_UNSPECIFIED' | 'MINIMAL' | 'LOW' | 'MEDIUM' | 'HIGH';
@@ -487,6 +488,19 @@ export function getGoogleConfig(
     (llmConfig as GoogleClientOptions).customHeaders = {
       Authorization: `Bearer ${apiKey}`,
     };
+  }
+
+  /**
+   * Attach admin-configured custom headers (e.g. AI-gateway metadata) beneath
+   * the provider-managed `Authorization` header above, so auth always wins.
+   * `options.headers` are already resolved by `initializeGoogle`, keeping the
+   * key-derived `Authorization` out of placeholder/env expansion.
+   */
+  if (options.headers && Object.keys(options.headers).length > 0) {
+    (llmConfig as GoogleClientOptions).customHeaders = mergeHeaders(
+      options.headers,
+      (llmConfig as GoogleClientOptions).customHeaders as Record<string, string> | undefined,
+    );
   }
 
   /** Handle defaultParams first - only process Google-native params if undefined */

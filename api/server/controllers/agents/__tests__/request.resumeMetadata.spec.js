@@ -1,3 +1,5 @@
+const { EventEmitter } = require('events');
+
 const mockLogger = {
   debug: jest.fn(),
   warn: jest.fn(),
@@ -21,6 +23,58 @@ const mockFilterPersistableAbortContent = jest.fn((content) =>
 const mockGetConvo = jest.fn();
 const mockGetMessages = jest.fn();
 const mockSaveMessage = jest.fn();
+let mockMCPContexts = new WeakMap();
+
+const mockCreateMCPRequestContext = jest.fn(() => ({
+  connections: new Map(),
+  pending: new Map(),
+  cleanupStarted: false,
+  cleanupOnResponse: false,
+  responseCleanupAttached: false,
+}));
+const mockGetMCPRequestContext = jest.fn((req) => {
+  if (!req) {
+    return undefined;
+  }
+
+  let context = mockMCPContexts.get(req);
+  if (!context) {
+    context = mockCreateMCPRequestContext();
+    mockMCPContexts.set(req, context);
+  }
+
+  return context.cleanupStarted ? undefined : context;
+});
+const mockCleanupMCPRequestContext = jest.fn(async (context) => {
+  if (!context || context.cleanupStarted) {
+    return;
+  }
+
+  context.cleanupStarted = true;
+  const connections = new Set(context.connections.values());
+  const settled = await Promise.allSettled(context.pending.values());
+  for (const result of settled) {
+    if (result.status === 'fulfilled' && result.value) {
+      connections.add(result.value);
+    }
+  }
+
+  await Promise.allSettled(Array.from(connections).map((connection) => connection.disconnect?.()));
+  context.connections.clear();
+  context.pending.clear();
+});
+const mockCleanupMCPRequestContextForReq = jest.fn(async (req) => {
+  const context = mockMCPContexts.get(req);
+  if (!context) {
+    return;
+  }
+
+  try {
+    await mockCleanupMCPRequestContext(context);
+  } finally {
+    mockMCPContexts.delete(req);
+  }
+});
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: mockLogger,
@@ -32,7 +86,11 @@ jest.mock('@librechat/api', () => ({
   buildMessageFiles: jest.fn(() => []),
   resolveTitleTiming: jest.fn(() => 'immediate'),
   GenerationJobManager: mockGenerationJobManager,
+  cleanupMCPRequestContext: (...args) => mockCleanupMCPRequestContext(...args),
+  createMCPRequestContext: (...args) => mockCreateMCPRequestContext(...args),
+  getMCPRequestContext: (...args) => mockGetMCPRequestContext(...args),
   filterPersistableAbortContent: (...args) => mockFilterPersistableAbortContent(...args),
+  cleanupMCPRequestContextForReq: (...args) => mockCleanupMCPRequestContextForReq(...args),
   decrementPendingRequest: (...args) => mockDecrementPendingRequest(...args),
   sanitizeMessageForTransmit: jest.fn((message) => message),
   checkAndIncrementPendingRequest: (...args) => mockCheckAndIncrementPendingRequest(...args),
@@ -79,10 +137,33 @@ jest.mock('~/models', () => ({
 }));
 
 const AgentController = require('../request');
+const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
+
+function createResumableResponse() {
+  const res = new EventEmitter();
+  res.headersSent = false;
+  res.writableEnded = false;
+  res.finished = false;
+  res.destroyed = false;
+  res.json = jest.fn(() => {
+    res.headersSent = true;
+    res.writableEnded = true;
+    res.finished = true;
+    res.emit('finish');
+    return res;
+  });
+  res.status = jest.fn(() => res);
+  return res;
+}
+
+function nextTick() {
+  return new Promise((resolve) => setImmediate(resolve));
+}
 
 describe('ResumableAgentController resume metadata', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockMCPContexts = new WeakMap();
     mockCheckAndIncrementPendingRequest.mockResolvedValue({ allowed: true });
     mockDecrementPendingRequest.mockResolvedValue(undefined);
     mockGetConvo.mockResolvedValue({ createdAt: '2026-06-07T00:00:00.000Z' });
@@ -225,6 +306,47 @@ describe('ResumableAgentController resume metadata', () => {
     );
     expect(mockGenerationJobManager.updateMetadata.mock.invocationCallOrder[0]).toBeLessThan(
       initializeClient.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('keeps request-scoped MCP connections until resumable initialization finishes', async () => {
+    const conversationId = 'conversation-123';
+    const disconnect = jest.fn().mockResolvedValue(undefined);
+    const initializeClient = jest.fn(async ({ req, res }) => {
+      const context = getMCPRequestContext(req, res);
+      context.connections.set('mcp-server', { disconnect });
+
+      await nextTick();
+      expect(disconnect).not.toHaveBeenCalled();
+
+      throw new Error('stop after request-scoped MCP connection');
+    });
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Use a BODY-scoped MCP server.',
+        messageId: 'user-message',
+        parentMessageId: 'parent-message',
+        conversationId,
+        endpointOption: {
+          endpoint: 'agents',
+          modelOptions: { model: 'gpt-4.1' },
+        },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+
+    await AgentController(req, res, jest.fn(), initializeClient, null);
+
+    expect(res.json).toHaveBeenCalledWith({
+      streamId: conversationId,
+      conversationId,
+      status: 'started',
+    });
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    expect(disconnect.mock.invocationCallOrder[0]).toBeLessThan(
+      mockDecrementPendingRequest.mock.invocationCallOrder[0],
     );
   });
 

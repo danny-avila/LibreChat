@@ -1,7 +1,6 @@
 import axios from 'axios';
 import crypto from 'crypto';
 import { logger } from '@librechat/data-schemas';
-import { HttpsProxyAgent } from 'https-proxy-agent';
 import {
   Time,
   CacheKeys,
@@ -10,6 +9,7 @@ import {
   defaultModels,
 } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
+import type { AxiosRequestConfig } from 'axios';
 import {
   processModelData,
   extractBaseURL,
@@ -18,7 +18,9 @@ import {
   deriveBaseURL,
   logAxiosError,
   inputSchema,
+  applyAxiosProxyConfig,
 } from '~/utils';
+import { getModelCacheTokenConfigKey, isScopedTokenConfigKey } from '~/endpoints/keys';
 import { standardCache, tokenConfigCache } from '~/cache';
 
 export interface FetchModelsParams {
@@ -78,6 +80,19 @@ async function fetchOllamaModels(
   );
 
   return response.data.models.map((tag) => tag.name);
+}
+
+async function backfillTokenConfigFromModelCache(
+  cacheKey: string,
+  tokenKey: string,
+): Promise<boolean> {
+  const cachedTokenConfig = await tokenConfigCache().get(getModelCacheTokenConfigKey(cacheKey));
+  if (cachedTokenConfig == null) {
+    return false;
+  }
+
+  await tokenConfigCache().set(tokenKey, cachedTokenConfig);
+  return true;
 }
 
 /**
@@ -141,7 +156,16 @@ export async function fetchModels({
   if (modelsCache && cacheKey) {
     const cachedModels = await modelsCache.get(cacheKey);
     if (cachedModels) {
-      return cachedModels as string[];
+      if (createTokenConfig && tokenKey) {
+        const tokenConfigBackfilled = await backfillTokenConfigFromModelCache(cacheKey, tokenKey);
+        if (!tokenConfigBackfilled && isScopedTokenConfigKey(tokenKey)) {
+          models = cachedModels as string[];
+        } else {
+          return cachedModels as string[];
+        }
+      } else {
+        return cachedModels as string[];
+      }
     }
   }
 
@@ -173,10 +197,9 @@ export async function fetchModels({
       user: userObject,
     });
 
-    const options: {
+    const options: AxiosRequestConfig & {
       headers: Record<string, string>;
       timeout: number;
-      httpsAgent?: HttpsProxyAgent<string>;
     } = {
       headers: {
         ...resolvedHeaders,
@@ -185,7 +208,10 @@ export async function fetchModels({
     };
 
     if (name === EModelEndpoint.anthropic) {
+      // Keep configured custom headers (e.g. gateway metadata) while the
+      // provider-managed auth/version headers stay authoritative.
       options.headers = {
+        ...resolvedHeaders,
         'x-api-key': apiKey,
         'anthropic-version': process.env.ANTHROPIC_VERSION || '2023-06-01',
       };
@@ -202,10 +228,6 @@ export async function fetchModels({
       }
     }
 
-    if (process.env.PROXY) {
-      options.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
-    }
-
     if (process.env.OPENAI_ORGANIZATION && baseURL?.includes('openai')) {
       options.headers['OpenAI-Organization'] = process.env.OPENAI_ORGANIZATION;
     }
@@ -214,6 +236,7 @@ export async function fetchModels({
     if (user && userIdQuery) {
       url.searchParams.append('user', user);
     }
+    applyAxiosProxyConfig(options, url);
     const res = await axios.get(url.toString(), options);
 
     const input = res.data;
@@ -221,7 +244,11 @@ export async function fetchModels({
     const validationResult = inputSchema.safeParse(input);
     if (validationResult.success && createTokenConfig) {
       const endpointTokenConfig = processModelData(input);
-      await tokenConfigCache().set(tokenKey ?? name, endpointTokenConfig);
+      const cache = tokenConfigCache();
+      await cache.set(tokenKey ?? name, endpointTokenConfig);
+      if (modelsCache && cacheKey) {
+        await cache.set(getModelCacheTokenConfigKey(cacheKey), endpointTokenConfig);
+      }
     }
     models = input.data.map((item: { id: string }) => item.id);
   } catch (error) {
@@ -252,6 +279,10 @@ export interface GetOpenAIModelsOptions {
   openAIApiKey?: string;
   /** Skip MODEL_QUERIES cache (e.g., for user-provided keys) */
   skipCache?: boolean;
+  /** Configured custom headers forwarded to the (gateway-fronted) provider */
+  headers?: Record<string, string> | null;
+  /** User object for resolving header placeholders */
+  userObject?: Partial<IUser>;
 }
 
 function resolveOpenAIApiKey(opts: GetOpenAIModelsOptions): string | undefined {
@@ -292,6 +323,8 @@ export async function fetchOpenAIModels(
       user: opts.user,
       name: EModelEndpoint.openAI,
       skipCache: opts.skipCache,
+      headers: opts.headers,
+      userObject: opts.userObject,
     });
   }
 
@@ -352,7 +385,12 @@ export async function getOpenAIModels(opts: GetOpenAIModelsOptions = {}): Promis
  * @returns Promise resolving to array of model IDs
  */
 export async function fetchAnthropicModels(
-  opts: { user?: string; skipCache?: boolean } = {},
+  opts: {
+    user?: string;
+    skipCache?: boolean;
+    headers?: Record<string, string> | null;
+    userObject?: Partial<IUser>;
+  } = {},
   _models: string[] = [],
 ): Promise<string[]> {
   let models = _models.slice() ?? [];
@@ -377,6 +415,8 @@ export async function fetchAnthropicModels(
       name: EModelEndpoint.anthropic,
       tokenKey: EModelEndpoint.anthropic,
       skipCache: opts.skipCache,
+      headers: opts.headers,
+      userObject: opts.userObject,
     });
   }
 
@@ -393,7 +433,12 @@ export async function fetchAnthropicModels(
  * @returns Promise resolving to array of model IDs
  */
 export async function getAnthropicModels(
-  opts: { user?: string; vertexModels?: string[] } = {},
+  opts: {
+    user?: string;
+    vertexModels?: string[];
+    headers?: Record<string, string> | null;
+    userObject?: Partial<IUser>;
+  } = {},
 ): Promise<string[]> {
   const models = defaultModels[EModelEndpoint.anthropic];
 
