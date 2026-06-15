@@ -7,6 +7,8 @@ function createMCPRequestContext() {
     connections: new Map(),
     pending: new Map(),
     cleanupStarted: false,
+    cleanupOnResponse: true,
+    responseCleanupAttached: false,
   };
 }
 
@@ -41,28 +43,81 @@ async function cleanupMCPRequestContext(context) {
   context.pending.clear();
 }
 
-function getMCPRequestContext(req, res) {
+function isResponseFinished(res) {
+  return Boolean(res?.writableEnded || res?.finished || res?.destroyed);
+}
+
+function runCleanup(context) {
+  cleanupMCPRequestContext(context).catch((error) => {
+    logger.warn('[MCP Request Context] Cleanup failed', error);
+  });
+}
+
+function attachResponseCleanup(context, res) {
+  if (!res || context.responseCleanupAttached || context.cleanupOnResponse === false) {
+    return;
+  }
+
+  const cleanup = () => runCleanup(context);
+  if (isResponseFinished(res)) {
+    cleanup();
+    return;
+  }
+
+  if (typeof res.once !== 'function') {
+    return;
+  }
+
+  context.responseCleanupAttached = true;
+  res.once('finish', cleanup);
+  res.once('close', cleanup);
+
+  if (isResponseFinished(res)) {
+    cleanup();
+  }
+}
+
+function getMCPRequestContext(req, res, options = {}) {
   if (!req) {
     return undefined;
   }
 
+  const cleanupOnResponse = options.cleanupOnResponse !== false;
   if (!req[MCP_REQUEST_CONTEXT]) {
-    const context = createMCPRequestContext();
-    req[MCP_REQUEST_CONTEXT] = context;
+    if (cleanupOnResponse && isResponseFinished(res)) {
+      return undefined;
+    }
 
-    const cleanup = () => {
-      cleanupMCPRequestContext(context).catch((error) => {
-        logger.warn('[MCP Request Context] Cleanup failed', error);
-      });
-    };
-    res?.once?.('finish', cleanup);
-    res?.once?.('close', cleanup);
+    const context = createMCPRequestContext();
+    context.cleanupOnResponse = cleanupOnResponse;
+    req[MCP_REQUEST_CONTEXT] = context;
+  } else if (!cleanupOnResponse) {
+    req[MCP_REQUEST_CONTEXT].cleanupOnResponse = false;
   }
 
-  return req[MCP_REQUEST_CONTEXT];
+  const context = req[MCP_REQUEST_CONTEXT];
+  if (cleanupOnResponse) {
+    attachResponseCleanup(context, res);
+  }
+
+  return context.cleanupStarted ? undefined : context;
+}
+
+async function cleanupMCPRequestContextForReq(req) {
+  const context = req?.[MCP_REQUEST_CONTEXT];
+  if (!context) {
+    return;
+  }
+
+  try {
+    await cleanupMCPRequestContext(context);
+  } finally {
+    delete req[MCP_REQUEST_CONTEXT];
+  }
 }
 
 module.exports = {
+  cleanupMCPRequestContextForReq,
   cleanupMCPRequestContext,
   createMCPRequestContext,
   getMCPRequestContext,

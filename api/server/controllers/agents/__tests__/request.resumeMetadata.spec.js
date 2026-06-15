@@ -1,3 +1,5 @@
+const { EventEmitter } = require('events');
+
 const mockLogger = {
   debug: jest.fn(),
   warn: jest.fn(),
@@ -79,6 +81,28 @@ jest.mock('~/models', () => ({
 }));
 
 const AgentController = require('../request');
+const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
+
+function createResumableResponse() {
+  const res = new EventEmitter();
+  res.headersSent = false;
+  res.writableEnded = false;
+  res.finished = false;
+  res.destroyed = false;
+  res.json = jest.fn(() => {
+    res.headersSent = true;
+    res.writableEnded = true;
+    res.finished = true;
+    res.emit('finish');
+    return res;
+  });
+  res.status = jest.fn(() => res);
+  return res;
+}
+
+function nextTick() {
+  return new Promise((resolve) => setImmediate(resolve));
+}
 
 describe('ResumableAgentController resume metadata', () => {
   beforeEach(() => {
@@ -225,6 +249,47 @@ describe('ResumableAgentController resume metadata', () => {
     );
     expect(mockGenerationJobManager.updateMetadata.mock.invocationCallOrder[0]).toBeLessThan(
       initializeClient.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('keeps request-scoped MCP connections until resumable initialization finishes', async () => {
+    const conversationId = 'conversation-123';
+    const disconnect = jest.fn().mockResolvedValue(undefined);
+    const initializeClient = jest.fn(async ({ req, res }) => {
+      const context = getMCPRequestContext(req, res);
+      context.connections.set('mcp-server', { disconnect });
+
+      await nextTick();
+      expect(disconnect).not.toHaveBeenCalled();
+
+      throw new Error('stop after request-scoped MCP connection');
+    });
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Use a BODY-scoped MCP server.',
+        messageId: 'user-message',
+        parentMessageId: 'parent-message',
+        conversationId,
+        endpointOption: {
+          endpoint: 'agents',
+          modelOptions: { model: 'gpt-4.1' },
+        },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+
+    await AgentController(req, res, jest.fn(), initializeClient, null);
+
+    expect(res.json).toHaveBeenCalledWith({
+      streamId: conversationId,
+      conversationId,
+      status: 'started',
+    });
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    expect(disconnect.mock.invocationCallOrder[0]).toBeLessThan(
+      mockDecrementPendingRequest.mock.invocationCallOrder[0],
     );
   });
 
