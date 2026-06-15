@@ -34,7 +34,7 @@ const {
   TavilySearchResults,
   createGeminiImageTool,
   createOpenAIImageTools,
-  createLocationTool,
+  GetLocation,
 } = require('../');
 const {
   createMCPTool,
@@ -182,6 +182,7 @@ const loadTools = async ({
     google: GoogleSearchAPI,
     open_weather: OpenWeather,
     wolfram: StructuredWolfram,
+    get_location: GetLocation,
     'stable-diffusion': StructuredSD,
     'azure-ai-search': StructuredACS,
     traversaal_search: TraversaalSearch,
@@ -231,9 +232,6 @@ const loadTools = async ({
         fileStrategy,
       });
     },
-    get_location: async () => {
-      return createLocationTool({ userId: user, req: options.req });
-    },
   };
 
   const requestedTools = {};
@@ -264,6 +262,7 @@ const loadTools = async ({
     dalle: imageGenOptions,
     'stable-diffusion': imageGenOptions,
     gemini_image_gen: imageGenOptions,
+    get_location: { req: options.req },
   };
 
   /** @type {Record<string, string>} */

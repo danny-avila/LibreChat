@@ -12,7 +12,7 @@ const TraversaalSearch = require('./structured/TraversaalSearch');
 const createOpenAIImageTools = require('./structured/OpenAIImageTools');
 const TavilySearchResults = require('./structured/TavilySearchResults');
 const createGeminiImageTool = require('./structured/GeminiImageGen');
-const createLocationTool = require('./structured/GetLocation');
+const GetLocation = require('./structured/GetLocation');
 
 module.exports = {
   ...manifest,
@@ -28,5 +28,5 @@ module.exports = {
   TavilySearchResults,
   createOpenAIImageTools,
   createGeminiImageTool,
-  createLocationTool,
+  GetLocation,
 };

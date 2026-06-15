@@ -1,14 +1,13 @@
-const createLocationTool = require('./GetLocation');
+const GetLocation = require('./GetLocation');
 
 const makeReq = ({ location, featureEnabled = true } = {}) => ({
   config: { location: { enabled: featureEnabled } },
   user: { id: 'user-1', personalization: location ? { location } : {} },
 });
 
-describe('createLocationTool', () => {
+describe('GetLocation tool', () => {
   it('returns the user location when enabled', async () => {
-    const tool = await createLocationTool({
-      userId: 'user-1',
+    const tool = new GetLocation({
       req: makeReq({
         location: {
           enabled: true,
@@ -24,17 +23,22 @@ describe('createLocationTool', () => {
   });
 
   it('returns a not-shared message when the user has not opted in', async () => {
-    const tool = await createLocationTool({ userId: 'user-1', req: makeReq({}) });
+    const tool = new GetLocation({ req: makeReq({}) });
     const result = await tool.invoke({});
     expect(result).toMatch(/has not shared/i);
   });
 
   it('returns a disabled message when the admin flag is off', async () => {
-    const tool = await createLocationTool({
-      userId: 'user-1',
+    const tool = new GetLocation({
       req: makeReq({ location: { enabled: true, manual: 'X' }, featureEnabled: false }),
     });
     const result = await tool.invoke({});
     expect(result).toMatch(/disabled/i);
+  });
+
+  it('can be constructed without request context (override) for tool discovery', () => {
+    const tool = new GetLocation({ override: true });
+    expect(tool.name).toBe('get_location');
+    expect(tool.schema).toBeDefined();
   });
 });

@@ -6,9 +6,16 @@ import * as authQueries from '~/data-provider/Auth/queries';
 import Personalization from '../Personalization';
 
 const mockMutate = jest.fn();
+const mockShowToast = jest.fn();
+
+jest.mock('@librechat/client', () => ({
+  ...jest.requireActual('@librechat/client'),
+  useToastContext: () => ({ showToast: mockShowToast }),
+}));
 
 beforeEach(() => {
   mockMutate.mockClear();
+  mockShowToast.mockClear();
 
   jest
     .spyOn(authQueries, 'useGetUserQuery')
@@ -62,5 +69,29 @@ describe('Personalization location section', () => {
     expect(mockMutate).toHaveBeenCalledWith(
       expect.objectContaining({ manual: 'Tokyo, Japan', source: 'manual' }),
     );
+  });
+
+  it('shows a warning toast when geolocation is denied and does not call mutate with auto source', async () => {
+    const deniedError = Object.assign(new Error('denied'), {
+      code: 1,
+      PERMISSION_DENIED: 1,
+    });
+    jest
+      .spyOn(global.navigator.geolocation, 'getCurrentPosition')
+      .mockImplementation((_success, error) => error?.(deniedError as GeolocationPositionError));
+
+    render(
+      <Personalization hasMemoryOptOut={false} hasLocationSharing hasAnyPersonalizationFeature />,
+    );
+
+    const button = screen.getByText('Use my device location');
+    fireEvent.click(button);
+
+    await waitFor(() => expect(mockShowToast).toHaveBeenCalled());
+    expect(mockShowToast).toHaveBeenCalledWith(expect.objectContaining({ status: 'warning' }));
+
+    expect(mockMutate).not.toHaveBeenCalledWith(expect.objectContaining({ source: 'auto' }));
+
+    expect(screen.getByLabelText('Set location manually')).toBeInTheDocument();
   });
 });

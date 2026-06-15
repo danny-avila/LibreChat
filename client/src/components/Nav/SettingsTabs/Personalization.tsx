@@ -73,7 +73,12 @@ export default function Personalization({
 
   const handleLocationToggle = (checked: boolean) => {
     setLocationEnabled(checked);
-    persistLocation({ enabled: checked, source: 'manual', manual: manualLocation || undefined });
+    const existing = user?.personalization?.location;
+    persistLocation({
+      ...(existing ?? {}),
+      enabled: checked,
+      manual: manualLocation || existing?.manual,
+    });
   };
 
   const handleManualBlur = () => {

@@ -2,6 +2,13 @@ const DEFAULT_ENDPOINT = 'https://api.bigdatacloud.net/data/reverse-geocode-clie
 
 const round = (n: number) => Math.round(n * 100) / 100;
 
+interface BigDataCloudResponse {
+  city?: string;
+  locality?: string;
+  principalSubdivision?: string;
+  countryName?: string;
+}
+
 export interface ResolvedLocation {
   place?: string;
   coordinates: { latitude: number; longitude: number };
@@ -31,9 +38,9 @@ export async function reverseGeocode(
     if (!response.ok) {
       return { coordinates, timezone };
     }
-    const data = await response.json();
+    const data = (await response.json()) as BigDataCloudResponse;
     const place = [data.city || data.locality, data.principalSubdivision, data.countryName]
-      .filter((part: unknown): part is string => typeof part === 'string' && part.length > 0)
+      .filter((part): part is string => typeof part === 'string' && part.length > 0)
       .join(', ');
     return { place: place || undefined, coordinates, timezone };
   } catch {
