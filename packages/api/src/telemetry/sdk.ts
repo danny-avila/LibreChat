@@ -297,34 +297,41 @@ function getResourceAttributes(config: TelemetryConfig): Attributes {
 }
 
 function createSdk(config: TelemetryConfig): NodeSDK {
+  const instrumentations: NodeSDKConfiguration['instrumentations'] = [
+    new HttpInstrumentation({
+      headersToSpanAttributes: {
+        client: { requestHeaders: [], responseHeaders: [] },
+        server: { requestHeaders: [], responseHeaders: [] },
+      },
+      requestHook: (span: Span, request: object) => {
+        if (request instanceof IncomingMessage) {
+          requestSpans.set(request, span);
+        }
+      },
+      startIncomingSpanHook: (request: IncomingMessage) =>
+        getSanitizedIncomingUrlAttributes(request, config.healthPath),
+      startOutgoingSpanHook: (request: RequestOptions) =>
+        getSanitizedOutgoingHttpUrlAttributes(request),
+      ignoreIncomingRequestHook: (request: IncomingMessage) =>
+        shouldIgnoreIncomingRequest(request, config.healthPath),
+    }),
+    new ExpressInstrumentation(),
+    new MongoDBInstrumentation(),
+    new MongooseInstrumentation({
+      suppressInternalInstrumentation: !config.mongooseInternalTracingEnabled,
+    }),
+    new UndiciInstrumentation({
+      startSpanHook: (request: UndiciRequestInfo) => getSanitizedUndiciUrlAttributes(request),
+    }),
+  ];
+
+  if (config.ioredisTracingEnabled) {
+    instrumentations.push(new IORedisInstrumentation());
+  }
+
   const sdkConfig: Partial<NodeSDKConfiguration> = {
     resource: resourceFromAttributes(getResourceAttributes(config)),
-    instrumentations: [
-      new HttpInstrumentation({
-        headersToSpanAttributes: {
-          client: { requestHeaders: [], responseHeaders: [] },
-          server: { requestHeaders: [], responseHeaders: [] },
-        },
-        requestHook: (span: Span, request: object) => {
-          if (request instanceof IncomingMessage) {
-            requestSpans.set(request, span);
-          }
-        },
-        startIncomingSpanHook: (request: IncomingMessage) =>
-          getSanitizedIncomingUrlAttributes(request, config.healthPath),
-        startOutgoingSpanHook: (request: RequestOptions) =>
-          getSanitizedOutgoingHttpUrlAttributes(request),
-        ignoreIncomingRequestHook: (request: IncomingMessage) =>
-          shouldIgnoreIncomingRequest(request, config.healthPath),
-      }),
-      new ExpressInstrumentation(),
-      new MongoDBInstrumentation(),
-      new MongooseInstrumentation(),
-      new IORedisInstrumentation(),
-      new UndiciInstrumentation({
-        startSpanHook: (request: UndiciRequestInfo) => getSanitizedUndiciUrlAttributes(request),
-      }),
-    ],
+    instrumentations,
   };
 
   return new NodeSDK(sdkConfig);
