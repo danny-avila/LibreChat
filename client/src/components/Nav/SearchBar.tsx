@@ -109,16 +109,16 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
   return (
     <div
       ref={ref}
-      className="group relative flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg border-2 border-transparent px-3 py-1.5 text-text-primary focus-within:border-ring-primary focus-within:bg-surface-active-alt hover:bg-surface-active-alt"
+      className="group relative flex h-7 min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-md border border-border-light bg-surface-secondary px-2 py-1 text-text-primary focus-within:border-ring-primary focus-within:bg-surface-active-alt hover:bg-surface-active-alt"
     >
       <Search
         aria-hidden="true"
-        className="absolute left-3 h-4 w-4 text-text-secondary group-focus-within:text-text-primary group-hover:text-text-primary"
+        className="absolute left-2 h-3.5 w-3.5 text-text-secondary group-focus-within:text-text-primary group-hover:text-text-primary"
       />
       <input
         type="text"
         ref={inputRef}
-        className="m-0 mr-0 w-full border-none bg-transparent p-0 pl-7 text-sm leading-tight placeholder-text-secondary placeholder-opacity-100 focus-visible:outline-none group-focus-within:placeholder-text-primary group-hover:placeholder-text-primary"
+        className="m-0 mr-0 w-full border-none bg-transparent p-0 pl-5 text-xs leading-tight placeholder-text-secondary placeholder-opacity-100 focus-visible:outline-none group-focus-within:placeholder-text-primary group-hover:placeholder-text-primary"
         value={text}
         onChange={onChange}
         onKeyDown={(e) => {
@@ -136,15 +136,15 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
         type="button"
         aria-label={localize('com_ui_clear_search')}
         className={cn(
-          'absolute right-[7px] flex h-5 w-5 items-center justify-center rounded-full border-none bg-transparent p-0 transition-opacity duration-200',
+          'absolute right-1.5 flex h-4 w-4 items-center justify-center rounded-full border-none bg-transparent p-0 transition-opacity duration-200',
           showClearIcon ? 'opacity-100' : 'opacity-0',
-          isSmallScreen === true ? 'right-[16px]' : '',
+          isSmallScreen === true ? 'right-3' : '',
         )}
         onClick={() => clearText(location.pathname)}
         tabIndex={showClearIcon ? 0 : -1}
         disabled={!showClearIcon}
       >
-        <X className="h-5 w-5 cursor-pointer" aria-hidden="true" />
+        <X className="h-3.5 w-3.5 cursor-pointer" aria-hidden="true" />
       </button>
     </div>
   );

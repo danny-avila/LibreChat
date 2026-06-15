@@ -57,7 +57,7 @@ const MeasuredRow: FC<MeasuredRowProps> = memo(
   ({ cache, rowKey, parent, index, style, children }) => (
     <CellMeasurer cache={cache} columnIndex={0} key={rowKey} parent={parent} rowIndex={index}>
       {({ registerChild }) => (
-        <div ref={registerChild as React.LegacyRef<HTMLDivElement>} style={style} className="px-3">
+        <div ref={registerChild as React.LegacyRef<HTMLDivElement>} style={style} className="px-2">
           {children}
         </div>
       )}
@@ -102,17 +102,23 @@ const ChatsHeader: FC<ChatsHeaderProps> = memo(({ isExpanded, onToggle }) => {
   }, [conversation?.conversationId, newConversation, queryClient]);
 
   return (
-    <div className="flex h-8 w-full items-center gap-0.5 pr-2">
+    <div className="flex h-7 w-full items-center justify-between gap-0.5 pr-1">
       <button
         onClick={onToggle}
-        className="group flex min-w-0 flex-1 items-center gap-1 rounded-lg px-1 py-2 text-xs font-bold text-text-secondary outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
+        className="flex min-w-0 flex-1 items-center gap-1 rounded px-1 py-1 outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
         type="button"
         aria-expanded={isExpanded}
+        aria-label={localize('com_ui_chats')}
       >
-        <span className="select-none truncate">{localize('com_ui_chats')}</span>
+        <span
+          className="select-none truncate tracking-wide text-text-secondary"
+          style={{ fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}
+        >
+          {localize('com_ui_chats')}
+        </span>
         <ChevronDown
           className={cn(
-            'h-3 w-3 shrink-0 transition-transform duration-200',
+            'h-3 w-3 shrink-0 text-text-secondary transition-transform duration-200',
             isExpanded ? '' : '-rotate-90',
           )}
           aria-hidden="true"
@@ -127,7 +133,7 @@ const ChatsHeader: FC<ChatsHeaderProps> = memo(({ isExpanded, onToggle }) => {
             className={headerIconButtonClassName}
             onClick={handleNewChat}
           >
-            <NewChatIcon className="h-4 w-4" />
+            <NewChatIcon className="h-3.5 w-3.5" />
           </button>
         }
       />
@@ -144,8 +150,11 @@ const DateLabel: FC<{ groupName: string; isFirst?: boolean }> = memo(({ groupNam
       aria-label={localize('com_a11y_chats_date_section', {
         date: localize(groupName as TranslationKeys) || groupName,
       })}
-      className={cn('pl-1 pt-1 text-text-secondary', isFirst === true ? 'mt-0' : 'mt-2')}
-      style={{ fontSize: '0.7rem' }}
+      className={cn(
+        'select-none pl-1 tracking-wide text-text-secondary',
+        isFirst === true ? 'pt-1' : 'mt-3 pt-1',
+      )}
+      style={{ fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}
     >
       {localize(groupName as TranslationKeys) || groupName}
     </h2>
@@ -176,7 +185,7 @@ const Conversations: FC<ConversationsProps> = ({
   const search = useRecoilValue(store.search);
   const { favorites, isLoading: isFavoritesLoading } = useFavorites();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
-  const convoHeight = isSmallScreen ? 44 : 34;
+  const convoHeight = isSmallScreen ? 40 : 32;
   const showAgentMarketplace = useShowMarketplace();
 
   const favoritesContentKeyRef = useRef('');
@@ -356,7 +365,7 @@ const Conversations: FC<ConversationsProps> = ({
 
   return (
     <div className="relative flex h-full min-h-0 flex-col pb-2 text-sm text-text-primary">
-      <div className="px-3">
+      <div className="px-2">
         <ChatsHeader
           isExpanded={isChatsExpanded}
           onToggle={() => setIsChatsExpanded(!isChatsExpanded)}

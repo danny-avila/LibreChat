@@ -326,13 +326,13 @@ const ProjectItem = memo(
 
     return (
       <li className="list-none">
-        <div className="group/project-row relative flex h-9 items-center rounded-lg text-sm text-text-primary transition-colors hover:bg-surface-active-alt">
+        <div className="group/project-row relative flex h-8 items-center rounded-md text-sm text-text-primary transition-colors hover:bg-surface-hover">
           <button
             type="button"
             onClick={() => setExpanded((prev) => !prev)}
             aria-expanded={expanded}
             aria-label={project.name}
-            className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg py-1.5 pl-1.5 pr-14 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
+            className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md py-1 pl-1.5 pr-14 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
           >
             <ChevronRight
               className={cn(
@@ -494,21 +494,26 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
   }
 
   return (
-    <div className="flex flex-col px-3 text-sm">
-      <div className="flex h-8 w-full items-center gap-0.5 pr-2">
+    <div className="flex flex-col px-2 text-sm">
+      <div className="flex h-7 w-full items-center gap-0.5 pr-1">
         <button
           onClick={() => {
             setStoredExpanded(!isExpanded);
             setHasToggledSection(true);
           }}
-          className="group flex min-w-0 flex-1 items-center gap-1 rounded-lg px-1 py-2 text-xs font-bold text-text-secondary outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
+          className="flex min-w-0 flex-1 items-center gap-1 rounded px-1 py-1 outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
           type="button"
           aria-expanded={isExpanded}
         >
-          <span className="select-none truncate">{localize('com_ui_projects')}</span>
+          <span
+            className="select-none truncate tracking-wide text-text-secondary"
+            style={{ fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}
+          >
+            {localize('com_ui_projects')}
+          </span>
           <ChevronDown
             className={cn(
-              'h-3 w-3 shrink-0 transition-transform duration-200',
+              'h-3 w-3 shrink-0 text-text-secondary transition-transform duration-200',
               isExpanded ? '' : '-rotate-90',
             )}
             aria-hidden="true"

@@ -106,11 +106,11 @@ const ConversationsSection = memo(() => {
 
   return (
     <div
-      className="flex h-full min-h-0 flex-col overflow-hidden pb-3 pt-2"
+      className="flex h-full min-h-0 flex-col overflow-hidden pb-2 pt-2"
       role="region"
       aria-label={localize('com_ui_chat_history')}
     >
-      <div className="flex items-center gap-0.5 px-3">
+      <div className="flex items-center gap-0.5 px-2">
         {hasAccessToBookmarks && (
           <Suspense fallback={null}>
             <BookmarkNav tags={tags} setTags={setTags} />
@@ -119,7 +119,7 @@ const ConversationsSection = memo(() => {
         {search.enabled && <SearchBar isSmallScreen={isSmallScreen} />}
       </div>
       {!search.query && (
-        <div className="px-3">
+        <div className="px-2">
           <FavoritesList isSmallScreen={isSmallScreen} toggleNav={toggleNav} />
         </div>
       )}

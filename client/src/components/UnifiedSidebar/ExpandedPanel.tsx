@@ -48,10 +48,10 @@ const NewChatButton = memo(function NewChatButton({
           href="/c/new"
           data-testid="new-chat-button"
           aria-label={localize('com_ui_new_chat')}
-          className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-surface-hover"
+          className="flex h-8 w-8 items-center justify-center rounded-md transition-colors hover:bg-surface-hover"
           onClick={handleClick}
         >
-          <SquarePen className="h-5 w-5 text-text-primary" />
+          <SquarePen className="h-4 w-4 text-text-secondary" />
         </a>
       }
     />
@@ -106,12 +106,14 @@ const NavIconButton = memo(function NavIconButton({
           aria-label={localize(link.title)}
           aria-pressed={isActive}
           className={cn(
-            'h-9 w-9 rounded-lg',
-            isActive ? 'bg-surface-active-alt text-text-primary' : 'text-text-secondary',
+            'h-8 w-8 rounded-md',
+            isActive
+              ? 'bg-surface-active-alt text-text-primary'
+              : 'text-text-secondary hover:text-text-primary',
           )}
           onClick={handleClick}
         >
-          <link.icon className="h-5 w-5" aria-hidden="true" />
+          <link.icon className="h-4 w-4" aria-hidden="true" />
         </Button>
       }
     />
@@ -137,7 +139,7 @@ function ExpandedPanel({
   const toggleClick = expanded ? onCollapse : onExpand;
 
   return (
-    <div className="flex h-full flex-shrink-0 flex-col gap-2 border-r border-border-light bg-surface-primary-alt px-2 py-2">
+    <div className="flex h-full w-[52px] flex-shrink-0 flex-col items-center gap-1 border-r border-border-light bg-surface-primary-alt py-2">
       <TooltipAnchor
         side="right"
         description={localize(toggleLabel)}
@@ -149,16 +151,18 @@ function ExpandedPanel({
             variant="ghost"
             aria-label={localize(toggleLabel)}
             aria-expanded={expanded}
-            className="h-9 w-9 rounded-lg"
+            className="h-8 w-8 rounded-md text-text-secondary hover:text-text-primary"
             onClick={toggleClick}
           >
-            <Sidebar aria-hidden="true" className="h-5 w-5 text-text-primary" />
+            <Sidebar aria-hidden="true" className="h-4 w-4" />
           </Button>
         }
       />
       <NewChatButton setActive={setActive} />
-      <div className="mx-2 border-b border-border-light" />
-      <div className="flex flex-col gap-1 overflow-y-auto">
+
+      <div className="my-1 w-6 border-b border-border-light" />
+
+      <div className="flex flex-col gap-0.5 overflow-y-auto">
         {links.map((link) => (
           <NavIconButton
             key={link.id}
@@ -173,7 +177,7 @@ function ExpandedPanel({
       </div>
 
       <div className="mt-auto">
-        <Suspense fallback={<Skeleton className="h-9 w-9 rounded-lg" />}>
+        <Suspense fallback={<Skeleton className="h-8 w-8 rounded-md" />}>
           <AccountSettings collapsed />
         </Suspense>
       </div>
