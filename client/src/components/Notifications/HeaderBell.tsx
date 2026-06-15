@@ -1,7 +1,7 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import * as Ariakit from '@ariakit/react';
 import { useNavigate } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
-import { Content, Portal, Root, Trigger } from '@radix-ui/react-popover';
 import { Bell, BellDot, ExternalLink, Megaphone, ShieldAlert } from 'lucide-react';
 import {
   Accordion,
@@ -21,12 +21,28 @@ import {
 import { cn } from '~/utils';
 
 const READ_SECTION_VALUE = 'read-notifications';
+const PANEL_ID = 'notification-panel';
+const PANEL_TITLE_ID = 'notification-panel-title';
+const UNREAD_LIST_ID = 'notification-unread-list';
 
-const markReadButtonClass =
-  'cursor-pointer rounded-md px-2 py-1 text-xs font-medium text-text-secondary transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-60';
+const sidebarIconButtonClassName =
+  'relative flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-surface-active-alt aria-[expanded=true]:bg-surface-active-alt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white';
 
-const linkIconButtonClass =
-  'absolute right-2 top-2 rounded-md p-1 text-text-secondary transition-colors hover:bg-surface-hover';
+const actionButtonClassName =
+  'inline-flex min-h-9 cursor-pointer items-center rounded-md px-3 py-1.5 text-xs font-medium text-text-primary transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black disabled:cursor-not-allowed disabled:opacity-60 dark:focus-visible:ring-white';
+
+const linkIconButtonClassName =
+  'absolute right-2 top-2 inline-flex min-h-9 min-w-9 items-center justify-center rounded-md p-1 text-text-primary transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white';
+
+function resolvePopoverPlacement(
+  panelSide: 'left' | 'right',
+  panelDirection: 'up' | 'down',
+): 'top-start' | 'top-end' | 'bottom-start' | 'bottom-end' {
+  if (panelDirection === 'up') {
+    return panelSide === 'left' ? 'top-start' : 'top-end';
+  }
+  return panelSide === 'left' ? 'bottom-start' : 'bottom-end';
+}
 
 function resolveTypeIcon(type: TNotification['type']) {
   if (type === 'announcement') {
@@ -43,20 +59,27 @@ function NotificationCard({
   onMarkRead,
   onOpenLink,
   isMarkingRead,
+  titleId,
 }: {
   notification: TNotification;
   onMarkRead: (id: string) => void;
   onOpenLink: (notification: TNotification) => void;
   isMarkingRead: boolean;
+  titleId: string;
 }) {
   const localize = useLocalize();
   const timestamp = formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true });
   const markAsReadLabel = localize('com_ui_mark_as_read');
   const openLinkLabel = localize('com_ui_notification_open_link');
   const hasLink = Boolean(notification.link);
+  const readStateLabel = notification.read
+    ? localize('com_ui_notification_read')
+    : localize('com_ui_notification_unread');
+  const typeLabel = `${readStateLabel}, ${notification.type}`;
 
   return (
     <article
+      aria-labelledby={titleId}
       className={cn(
         'relative rounded-lg border px-3 py-2',
         notification.read
@@ -64,31 +87,29 @@ function NotificationCard({
           : 'border-border-light bg-surface-hover',
       )}
     >
+      <span className="sr-only">{typeLabel}</span>
       {hasLink ? (
-        <TooltipAnchor
-          description={openLinkLabel}
-          side="left"
-          render={
-            <button
-              type="button"
-              aria-label={openLinkLabel}
-              className={linkIconButtonClass}
-              onClick={(e) => {
-                e.stopPropagation();
-                onOpenLink(notification);
-              }}
-            >
-              <ExternalLink className="size-4" aria-hidden="true" />
-            </button>
-          }
-        />
+        <button
+          type="button"
+          aria-label={openLinkLabel}
+          className={linkIconButtonClassName}
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenLink(notification);
+          }}
+        >
+          <ExternalLink className="size-4" aria-hidden="true" />
+        </button>
       ) : null}
       <div className="mb-1 flex items-center gap-2 pr-6">
-        <span className="text-text-secondary">{resolveTypeIcon(notification.type)}</span>
+        <span className="text-text-secondary" aria-hidden="true">
+          {resolveTypeIcon(notification.type)}
+        </span>
         <span
+          id={titleId}
           className={cn(
-            'line-clamp-1 text-sm',
-            notification.read ? 'font-medium text-text-primary' : 'font-semibold text-text-primary',
+            'line-clamp-1 text-sm text-text-primary',
+            notification.read ? 'font-medium' : 'font-semibold',
           )}
         >
           {notification.title}
@@ -96,13 +117,13 @@ function NotificationCard({
       </div>
       <p className="line-clamp-2 text-xs text-text-secondary">{notification.message}</p>
       <div className="mt-1 flex items-end justify-between gap-2">
-        <span className="text-[11px] text-text-tertiary">{timestamp}</span>
+        <span className="text-xs text-text-secondary">{timestamp}</span>
         {!notification.read ? (
           <button
             type="button"
             aria-label={markAsReadLabel}
             disabled={isMarkingRead}
-            className={cn(markReadButtonClass, 'flex-shrink-0')}
+            className={cn(actionButtonClassName, 'flex-shrink-0')}
             onClick={(e) => {
               e.stopPropagation();
               onMarkRead(notification.id);
@@ -113,6 +134,86 @@ function NotificationCard({
         ) : null}
       </div>
     </article>
+  );
+}
+
+function renderPanelBody({
+  isLoading,
+  hasNotifications,
+  unread,
+  read,
+  localize,
+  handleMarkRead,
+  handleOpenLink,
+  markReadMutation,
+  cardIdPrefix,
+}: {
+  isLoading: boolean;
+  hasNotifications: boolean;
+  unread: TNotification[];
+  read: TNotification[];
+  localize: ReturnType<typeof useLocalize>;
+  handleMarkRead: (id: string) => void;
+  handleOpenLink: (notification: TNotification) => void;
+  markReadMutation: ReturnType<typeof useMarkNotificationReadMutation>;
+  cardIdPrefix: string;
+}) {
+  if (isLoading) {
+    return <p className="px-2 py-3 text-sm text-text-secondary">{localize('com_ui_loading')}</p>;
+  }
+
+  if (!hasNotifications) {
+    return (
+      <p className="px-2 py-3 text-sm text-text-secondary">
+        {localize('com_ui_notifications_empty')}
+      </p>
+    );
+  }
+
+  return (
+    <>
+      {unread.length > 0 ? (
+        <div id={UNREAD_LIST_ID} role="list" aria-label={localize('com_ui_notification_unread')}>
+          {unread.map((notification) => (
+            <div key={notification.id} role="listitem">
+              <NotificationCard
+                notification={notification}
+                onMarkRead={handleMarkRead}
+                onOpenLink={handleOpenLink}
+                isMarkingRead={
+                  markReadMutation.isLoading && markReadMutation.variables === notification.id
+                }
+                titleId={`${cardIdPrefix}-unread-${notification.id}`}
+              />
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {read.length > 0 ? (
+        <Accordion type="single" collapsible className="w-full">
+          <AccordionItem value={READ_SECTION_VALUE} className="border-none">
+            <AccordionTrigger className="px-2 py-2 text-xs font-medium text-text-primary hover:no-underline">
+              {localize('com_ui_notifications_read_section', { count: read.length })}
+            </AccordionTrigger>
+            <AccordionContent className="space-y-1 pb-0 pt-0">
+              <div role="list" aria-label={localize('com_ui_notification_read')}>
+                {read.map((notification) => (
+                  <div key={notification.id} role="listitem">
+                    <NotificationCard
+                      notification={notification}
+                      onMarkRead={handleMarkRead}
+                      onOpenLink={handleOpenLink}
+                      isMarkingRead={false}
+                      titleId={`${cardIdPrefix}-read-${notification.id}`}
+                    />
+                  </div>
+                ))}
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      ) : null}
+    </>
   );
 }
 
@@ -127,13 +228,35 @@ export default function HeaderBell({
 }) {
   const localize = useLocalize();
   const navigate = useNavigate();
+  const cardIdPrefix = useId();
+  const bellButtonRef = useRef<HTMLButtonElement>(null);
   const [isOpen, setIsOpen] = useState(false);
+  const [announcement, setAnnouncement] = useState('');
   const unreadCount = useUnreadNotificationCount();
   const hasUnread = unreadCount > 0;
   const badgeCount = unreadCount > 99 ? '99+' : String(unreadCount);
   const markReadMutation = useMarkNotificationReadMutation();
-  const markAllReadMutation = useMarkAllNotificationsReadMutation();
-  const { data, isLoading } = useNotificationsQuery(
+  const markAllReadMutation = useMarkAllNotificationsReadMutation({
+    onSuccess: () => {
+      setAnnouncement(localize('com_ui_mark_all_as_read'));
+    },
+  });
+
+  const popover = Ariakit.usePopoverStore({
+    placement: resolvePopoverPlacement(panelSide, panelDirection),
+    open: isOpen,
+    setOpen: setIsOpen,
+  });
+
+  const { data: unreadData, isLoading: isUnreadLoading } = useNotificationsQuery(
+    { unreadOnly: true, limit: 100 },
+    {
+      enabled: isOpen,
+      refetchOnMount: true,
+    },
+  );
+
+  const { data: recentData, isLoading: isRecentLoading } = useNotificationsQuery(
     { limit: 50 },
     {
       enabled: isOpen,
@@ -141,32 +264,47 @@ export default function HeaderBell({
     },
   );
 
-  const { unread, read } = useMemo(() => {
-    const list = data?.notifications ?? [];
-    const sorted = [...list].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
-    const unreadList: TNotification[] = [];
-    const readList: TNotification[] = [];
-    for (const notification of sorted) {
-      if (notification.read) {
-        readList.push(notification);
-      } else {
-        unreadList.push(notification);
-      }
-    }
-    return { unread: unreadList, read: readList };
-  }, [data?.notifications]);
+  const unread = useMemo(() => {
+    const list = unreadData?.notifications ?? [];
+    return [...list].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+  }, [unreadData?.notifications]);
 
+  const read = useMemo(() => {
+    const list = recentData?.notifications ?? [];
+    return [...list]
+      .filter((notification) => notification.read)
+      .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+  }, [recentData?.notifications]);
+
+  const isLoading = isUnreadLoading || isRecentLoading;
   const hasNotifications = unread.length > 0 || read.length > 0;
 
   const label = hasUnread
     ? localize('com_ui_notifications_unread_count', { count: unreadCount })
     : localize('com_ui_notifications');
 
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+    if (isLoading) {
+      setAnnouncement(localize('com_ui_loading'));
+      return;
+    }
+    if (!hasNotifications) {
+      setAnnouncement(localize('com_ui_notifications_empty'));
+    }
+  }, [hasNotifications, isLoading, isOpen, localize]);
+
   const handleMarkRead = useCallback(
     (id: string) => {
-      markReadMutation.mutate(id);
+      markReadMutation.mutate(id, {
+        onSuccess: () => {
+          setAnnouncement(localize('com_ui_mark_as_read'));
+        },
+      });
     },
-    [markReadMutation],
+    [localize, markReadMutation],
   );
 
   const handleOpenLink = useCallback(
@@ -186,106 +324,79 @@ export default function HeaderBell({
     [navigate],
   );
 
-  const popoverSide = panelDirection === 'up' ? 'top' : 'bottom';
-  const popoverAlign = panelSide === 'left' ? 'start' : 'end';
-
   return (
-    <Root open={isOpen} onOpenChange={setIsOpen}>
-      <div className={className}>
-        <TooltipAnchor
-          description={label}
-          render={
-            <Trigger asChild>
-              <button
-                id="notification-bell-button"
-                type="button"
-                aria-label={label}
-                aria-expanded={isOpen}
-                className="relative inline-flex size-9 flex-shrink-0 cursor-pointer items-center justify-center rounded-xl border border-border-light bg-presentation text-text-primary shadow-sm transition-all ease-in-out hover:bg-surface-active-alt"
-              >
-                <Bell className="icon-md" aria-hidden="true" />
-                {hasUnread ? (
-                  <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-red-600 px-1 text-center text-[10px] font-semibold leading-5 text-white">
-                    {badgeCount}
-                  </span>
-                ) : null}
-              </button>
-            </Trigger>
-          }
-        />
-        <Portal>
-          <Content
-            side={popoverSide}
-            align={popoverAlign}
-            sideOffset={8}
-            collisionPadding={12}
-            onOpenAutoFocus={(e) => e.preventDefault()}
-            className="z-[125] w-[22rem] max-w-[calc(100vw-1.5rem)] rounded-xl border border-border-light bg-surface-primary p-3 shadow-xl outline-none"
+    <div className={className}>
+      <span className="sr-only" aria-live="polite" aria-atomic="true">
+        {announcement}
+      </span>
+      <TooltipAnchor
+        side="right"
+        description={label}
+        render={
+          <Ariakit.PopoverDisclosure
+            ref={bellButtonRef}
+            store={popover}
+            id="notification-bell-button"
+            type="button"
+            aria-label={label}
+            aria-haspopup="dialog"
+            aria-controls={PANEL_ID}
+            className={sidebarIconButtonClassName}
           >
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <p className="text-sm font-semibold text-text-primary">
-                {localize('com_ui_notifications')}
-              </p>
-              {hasUnread ? (
-                <button
-                  type="button"
-                  onClick={() => markAllReadMutation.mutate()}
-                  disabled={markAllReadMutation.isLoading}
-                  className={markReadButtonClass}
-                >
-                  {localize('com_ui_mark_all_as_read')}
-                </button>
-              ) : null}
-            </div>
-            <div className="max-h-96 space-y-1 overflow-y-auto pr-1">
-              {isLoading ? (
-                <p className="px-2 py-3 text-sm text-text-secondary">
-                  {localize('com_ui_loading')}
-                </p>
-              ) : !hasNotifications ? (
-                <p className="px-2 py-3 text-sm text-text-secondary">
-                  {localize('com_ui_notifications_empty')}
-                </p>
-              ) : (
-                <>
-                  {unread.map((notification) => (
-                    <NotificationCard
-                      key={notification.id}
-                      notification={notification}
-                      onMarkRead={handleMarkRead}
-                      onOpenLink={handleOpenLink}
-                      isMarkingRead={
-                        markReadMutation.isLoading &&
-                        markReadMutation.variables === notification.id
-                      }
-                    />
-                  ))}
-                  {read.length > 0 ? (
-                    <Accordion type="single" collapsible className="w-full">
-                      <AccordionItem value={READ_SECTION_VALUE} className="border-none">
-                        <AccordionTrigger className="px-2 py-2 text-xs font-medium text-text-secondary hover:no-underline">
-                          {localize('com_ui_notifications_read_section', { count: read.length })}
-                        </AccordionTrigger>
-                        <AccordionContent className="space-y-1 pb-0 pt-0">
-                          {read.map((notification) => (
-                            <NotificationCard
-                              key={notification.id}
-                              notification={notification}
-                              onMarkRead={handleMarkRead}
-                              onOpenLink={handleOpenLink}
-                              isMarkingRead={false}
-                            />
-                          ))}
-                        </AccordionContent>
-                      </AccordionItem>
-                    </Accordion>
-                  ) : null}
-                </>
-              )}
-            </div>
-          </Content>
-        </Portal>
-      </div>
-    </Root>
+            <Bell className="h-5 w-5 text-text-primary" aria-hidden="true" />
+            {hasUnread ? (
+              <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-red-700 px-1 text-center text-[10px] font-semibold leading-5 text-white dark:bg-red-600">
+                {badgeCount}
+              </span>
+            ) : null}
+          </Ariakit.PopoverDisclosure>
+        }
+      />
+      <Ariakit.Popover
+        store={popover}
+        id={PANEL_ID}
+        portal
+        unmountOnHide
+        gutter={8}
+        shift={12}
+        aria-labelledby={PANEL_TITLE_ID}
+        finalFocus={bellButtonRef}
+        className="notifications-popover popover-ui z-[125] w-[22rem] max-w-[calc(100vw-1.5rem)] rounded-xl border border-border-light p-3 shadow-xl outline-none"
+      >
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <p id={PANEL_TITLE_ID} className="text-sm font-semibold text-text-primary">
+            {localize('com_ui_notifications')}
+          </p>
+          {hasUnread ? (
+            <button
+              type="button"
+              onClick={() => markAllReadMutation.mutate()}
+              disabled={markAllReadMutation.isLoading}
+              aria-busy={markAllReadMutation.isLoading}
+              className={actionButtonClassName}
+            >
+              {localize('com_ui_mark_all_as_read')}
+            </button>
+          ) : null}
+        </div>
+        <div
+          className="max-h-96 space-y-1 overflow-y-auto pr-1"
+          role="region"
+          aria-label={localize('com_ui_notifications')}
+        >
+          {renderPanelBody({
+            isLoading,
+            hasNotifications,
+            unread,
+            read,
+            localize,
+            handleMarkRead,
+            handleOpenLink,
+            markReadMutation,
+            cardIdPrefix,
+          })}
+        </div>
+      </Ariakit.Popover>
+    </div>
   );
 }

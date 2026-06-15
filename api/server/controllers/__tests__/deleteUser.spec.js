@@ -66,6 +66,7 @@ jest.mock('~/models', () => ({
   deleteAssistants: jest.fn(),
   deleteConversationTags: jest.fn(),
   deleteAllUserMemories: jest.fn(),
+  deleteAllUserNotifications: jest.fn(),
   deleteActions: jest.fn(),
   deleteTokens: jest.fn(),
   removeUserFromAllGroups: jest.fn(),

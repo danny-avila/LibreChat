@@ -1,6 +1,8 @@
 const express = require('express');
 const request = require('supertest');
 
+jest.mock('@librechat/api', () => jest.requireActual('../../../../packages/api/dist'));
+
 const mockListNotificationsForUser = jest.fn();
 const mockCreateNotification = jest.fn();
 
@@ -59,6 +61,20 @@ describe('Notifications route', () => {
     const response = await request(app).get('/api/notifications').expect(401);
     expect(response.body.error).toBe('Authentication required');
     expect(mockListNotificationsForUser).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 for invalid pagination cursor', async () => {
+    const invalidCursorError = new Error('Invalid cursor');
+    invalidCursorError.name = 'InvalidNotificationCursorError';
+    mockListNotificationsForUser.mockRejectedValue(invalidCursorError);
+    const app = createApp({ id: 'user-1', role: 'USER' });
+
+    const response = await request(app)
+      .get('/api/notifications')
+      .query({ cursor: 'invalid-cursor' })
+      .expect(400);
+
+    expect(response.body.error).toBe('Invalid cursor');
   });
 
   it('lists notifications for authenticated user', async () => {

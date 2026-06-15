@@ -1,6 +1,7 @@
 const express = require('express');
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const { notificationTypes } = require('librechat-data-provider');
+const { enforceJsonBodySizeLimit } = require('@librechat/api');
 const {
   createNotification,
   listNotificationsForUser,
@@ -12,7 +13,7 @@ const { requireJwtAuth } = require('~/server/middleware');
 const { requireCapability } = require('~/server/middleware/roles/capabilities');
 
 const router = express.Router();
-const notificationPayloadLimit = express.json({ limit: '100kb' });
+const NOTIFICATION_PAYLOAD_LIMIT_BYTES = 102400;
 const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
 
 router.use(requireJwtAuth);
@@ -31,6 +32,9 @@ router.get('/', async (req, res) => {
     });
     res.json(result);
   } catch (error) {
+    if (error.name === 'InvalidNotificationCursorError') {
+      return res.status(400).json({ error: 'Invalid cursor' });
+    }
     res.status(500).json({ error: error.message });
   }
 });
@@ -52,38 +56,43 @@ router.post('/read-all', async (req, res) => {
  * Body: { type, title, message, link? } — for the authenticated admin user.
  * Production fan-out: POST /api/admin/notifications/broadcast or server model methods.
  */
-router.post('/', requireAdminAccess, notificationPayloadLimit, async (req, res) => {
-  const { type, title, message, link } = req.body;
+router.post(
+  '/',
+  requireAdminAccess,
+  enforceJsonBodySizeLimit(NOTIFICATION_PAYLOAD_LIMIT_BYTES),
+  async (req, res) => {
+    const { type, title, message, link } = req.body;
 
-  if (typeof type !== 'string' || !notificationTypes.includes(type)) {
-    return res.status(400).json({ error: 'Invalid or missing notification type.' });
-  }
+    if (typeof type !== 'string' || !notificationTypes.includes(type)) {
+      return res.status(400).json({ error: 'Invalid or missing notification type.' });
+    }
 
-  if (typeof title !== 'string' || title.trim() === '') {
-    return res.status(400).json({ error: 'Title is required and must be a non-empty string.' });
-  }
+    if (typeof title !== 'string' || title.trim() === '') {
+      return res.status(400).json({ error: 'Title is required and must be a non-empty string.' });
+    }
 
-  if (typeof message !== 'string' || message.trim() === '') {
-    return res.status(400).json({ error: 'Message is required and must be a non-empty string.' });
-  }
+    if (typeof message !== 'string' || message.trim() === '') {
+      return res.status(400).json({ error: 'Message is required and must be a non-empty string.' });
+    }
 
-  if (link !== undefined && link !== null && typeof link !== 'string') {
-    return res.status(400).json({ error: 'Link must be a string when provided.' });
-  }
+    if (link !== undefined && link !== null && typeof link !== 'string') {
+      return res.status(400).json({ error: 'Link must be a string when provided.' });
+    }
 
-  try {
-    const notification = await createNotification({
-      userId: req.user.id,
-      type,
-      title: title.trim(),
-      message: message.trim(),
-      link: typeof link === 'string' && link.length > 0 ? link : undefined,
-    });
-    res.status(201).json({ created: true, notification });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
+    try {
+      const notification = await createNotification({
+        userId: req.user.id,
+        type,
+        title: title.trim(),
+        message: message.trim(),
+        link: typeof link === 'string' && link.length > 0 ? link : undefined,
+      });
+      res.status(201).json({ created: true, notification });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+);
 
 /**
  * PATCH /notifications/:id/read
