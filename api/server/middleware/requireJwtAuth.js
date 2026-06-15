@@ -71,6 +71,9 @@ const getRumProxyEndpoint = (req) => {
   return 'unknown';
 };
 
+const isOpenIdReuseUser = (strategy, user, openIdReuseUserId) =>
+  strategy !== 'openidJwt' || getAuthenticatedUserId(user) === openIdReuseUserId;
+
 /**
  * Custom Middleware to handle JWT authentication, with support for OpenID token reuse.
  * Switches between JWT and OpenID authentication based on cookies and environment settings.
@@ -193,35 +196,40 @@ const requireJwtAuth = (req, res, next) => {
 
 const requireRumProxyAuth = (req, res, next) => {
   const { openIdReuseUserId, strategies } = getAuthStrategies(req);
+  const endpoint = getRumProxyEndpoint(req);
 
-  const authenticateWithStrategy = (index) => {
-    const strategy = strategies[index];
+  const dropTelemetry = () => {
+    recordRumProxyRequest(endpoint, 'auth_drop');
+    dropRumTelemetry(res);
+  };
+
+  const finishAuthentication = (strategy, user) => {
+    req.user = user;
+    req.authStrategy = strategy;
+    next();
+  };
+
+  let nextStrategyIndex = 0;
+  const tryNextStrategy = () => {
+    const strategy = strategies[nextStrategyIndex];
+    nextStrategyIndex += 1;
+
+    if (!strategy) {
+      dropTelemetry();
+      return;
+    }
+
     passport.authenticate(strategy, { session: false }, (err, user) => {
-      if (err || !user) {
-        if (index + 1 < strategies.length) {
-          return authenticateWithStrategy(index + 1);
-        }
-        recordRumProxyRequest(getRumProxyEndpoint(req), 'auth_drop');
-        dropRumTelemetry(res);
+      if (err || !user || !isOpenIdReuseUser(strategy, user, openIdReuseUserId)) {
+        tryNextStrategy();
         return;
       }
 
-      if (strategy === 'openidJwt' && getAuthenticatedUserId(user) !== openIdReuseUserId) {
-        if (index + 1 < strategies.length) {
-          return authenticateWithStrategy(index + 1);
-        }
-        recordRumProxyRequest(getRumProxyEndpoint(req), 'auth_drop');
-        dropRumTelemetry(res);
-        return;
-      }
-
-      req.user = user;
-      req.authStrategy = strategy;
-      next();
+      finishAuthentication(strategy, user);
     })(req, res, next);
   };
 
-  authenticateWithStrategy(0);
+  tryNextStrategy();
 };
 
 module.exports = requireJwtAuth;
