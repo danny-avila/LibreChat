@@ -4,6 +4,7 @@ import type {
   AdminTenant,
   AdminTenantAdmin,
   ITenant,
+  IToken,
   IUser,
   TenantStatus,
 } from '@librechat/data-schemas';
@@ -12,6 +13,13 @@ import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 import type { IsPlatformAdminFn } from '~/middleware/platform';
 import { createInvite, type InviteDeps } from '~/auth/invite';
+import {
+  adjustPaginationForPending,
+  collectRegisteredEmails,
+  filterInvitesBySearch,
+  filterPendingInvitesForRegisteredEmails,
+  inviteDisplayName,
+} from './pendingInvites';
 import { parsePagination } from './pagination';
 
 const MAX_NAME_LENGTH = 200;
@@ -87,6 +95,10 @@ export interface AdminTenantsDeps {
   countUsersByTenantId: (tenantId: string) => Promise<number>;
   deleteGrantsForTenant: (tenantId: string) => Promise<void>;
   isPlatformAdmin: IsPlatformAdminFn;
+  findPendingUserInvites: (filter: {
+    tenantId?: string;
+    role?: 'ADMIN' | 'USER';
+  }) => Promise<IToken[]>;
 }
 
 function toAdminTenant(tenant: ITenant, userCount?: number): AdminTenant {
@@ -128,6 +140,7 @@ export function createAdminTenantsHandlers(deps: AdminTenantsDeps) {
     countUsersByTenantId,
     deleteGrantsForTenant,
     isPlatformAdmin,
+    findPendingUserInvites,
   } = deps;
 
   async function listTenantsHandler(req: ServerRequest, res: Response) {
@@ -354,6 +367,7 @@ export function createAdminTenantsHandlers(deps: AdminTenantsDeps) {
       }
 
       const filter: FilterQuery<IUser> = { ...TENANT_ADMIN_FILTER };
+      let tenantSlugFilter: string | undefined;
 
       if (tenantMongoId) {
         if (!isValidObjectIdString(tenantMongoId)) {
@@ -363,6 +377,7 @@ export function createAdminTenantsHandlers(deps: AdminTenantsDeps) {
         if (!tenant) {
           return res.status(404).json({ error: 'Tenant not found' });
         }
+        tenantSlugFilter = tenant.tenantId;
         filter.tenantId = tenant.tenantId;
       }
 
@@ -373,18 +388,48 @@ export function createAdminTenantsHandlers(deps: AdminTenantsDeps) {
       }
 
       const { limit, offset } = parsePagination(req.query);
-      const [users, total] = await runAsSystem(() =>
+
+      const registeredUserFilter: FilterQuery<IUser> = tenantSlugFilter
+        ? { tenantId: tenantSlugFilter }
+        : {};
+      const [registeredUsers, rawInvites] = await runAsSystem(() =>
+        Promise.all([
+          findUsers(registeredUserFilter, 'email'),
+          findPendingUserInvites({
+            ...(tenantSlugFilter && { tenantId: tenantSlugFilter }),
+            role: SystemRoles.ADMIN,
+          }),
+        ]),
+      );
+
+      const pendingInvites = filterPendingInvitesForRegisteredEmails(
+        filterInvitesBySearch(rawInvites, search),
+        collectRegisteredEmails(registeredUsers),
+      );
+      const { userLimit, userOffset } = adjustPaginationForPending(
+        limit,
+        offset,
+        pendingInvites.length,
+      );
+
+      const [users, totalAdmins] = await runAsSystem(() =>
         Promise.all([
           findUsers(filter, TENANT_ADMIN_FIELDS, {
-            limit,
-            offset,
+            limit: userLimit,
+            offset: userOffset,
             sort: { createdAt: -1 },
           }),
           countUsers(filter),
         ]),
       );
 
-      const tenantSlugs = [...new Set(users.map((u) => u.tenantId).filter(Boolean))] as string[];
+      const tenantSlugs = [
+        ...new Set(
+          [...users.map((u) => u.tenantId), ...pendingInvites.map((i) => i.tenantId)].filter(
+            Boolean,
+          ),
+        ),
+      ] as string[];
       const tenantNames = await Promise.all(
         tenantSlugs.map(async (slug) => {
           const tenant = await findTenantById(slug);
@@ -393,14 +438,35 @@ export function createAdminTenantsHandlers(deps: AdminTenantsDeps) {
       );
       const tenantNameBySlug = new Map(tenantNames);
 
-      const admins: AdminTenantAdmin[] = users.map((user) => ({
+      const activeAdmins: AdminTenantAdmin[] = users.map((user) => ({
         id: user._id?.toString() ?? '',
         name: user.name ?? '',
         email: user.email ?? '',
         tenantId: user.tenantId ?? '',
         tenantName: tenantNameBySlug.get(user.tenantId ?? '') ?? user.tenantId ?? '',
+        status: 'active',
         ...(user.createdAt && { createdAt: user.createdAt.toISOString() }),
       }));
+
+      const pendingRows: AdminTenantAdmin[] =
+        offset === 0
+          ? pendingInvites.map((invite) => {
+              const email = invite.email?.trim().toLowerCase() ?? '';
+              const slug = invite.tenantId ?? '';
+              return {
+                id: `invite:${invite._id?.toString() ?? email}`,
+                name: inviteDisplayName(email),
+                email,
+                tenantId: slug,
+                tenantName: tenantNameBySlug.get(slug) ?? slug,
+                status: 'pending' as const,
+                invitedAt: invite.createdAt?.toISOString(),
+              };
+            })
+          : [];
+
+      const admins = [...pendingRows, ...activeAdmins];
+      const total = totalAdmins + pendingInvites.length;
 
       return res.status(200).json({ admins, total });
     } catch (err) {

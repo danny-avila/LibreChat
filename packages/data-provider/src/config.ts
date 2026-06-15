@@ -1106,6 +1106,10 @@ export type TStartupConfig = {
   sharePointPickerSharePointScope?: string;
   openidReuseTokens?: boolean;
   allowAccountDeletion: boolean;
+  /** True when the authenticated user may open the external admin panel. */
+  adminPanelAccess?: boolean;
+  /** Base URL of the external admin panel (present when adminPanelAccess is true). */
+  adminPanelUrl?: string;
   minPasswordLength?: number;
   webSearch?: {
     searchProvider?: SearchProviders;

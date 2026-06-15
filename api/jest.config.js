@@ -1,6 +1,7 @@
 module.exports = {
   testEnvironment: 'node',
   clearMocks: true,
+  experimentalVmModules: true,
   roots: ['<rootDir>'],
   coverageDirectory: 'coverage',
   maxWorkers: '50%',
@@ -11,6 +12,7 @@ module.exports = {
     '~/data/auth.json': '<rootDir>/__mocks__/auth.mock.json',
     '^openid-client/passport$': '<rootDir>/test/__mocks__/openid-client-passport.js',
     '^openid-client$': '<rootDir>/test/__mocks__/openid-client.js',
+    '^ai-tokenizer/encoding/(.*)$': '<rootDir>/../node_modules/ai-tokenizer/dist/encoding/$1.cjs',
   },
   transformIgnorePatterns: ['/node_modules/(?!(openid-client|oauth4webapi|jose)/).*/'],
 };

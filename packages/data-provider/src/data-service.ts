@@ -236,6 +236,10 @@ export const getStartupConfig = (): Promise<
   return request.get(endpoints.config());
 };
 
+export const createAdminPanelSession = (): Promise<{ url: string }> => {
+  return request.post(endpoints.adminSession());
+};
+
 export const getAIEndpoints = (): Promise<t.TEndpointsConfig> => {
   return request.get(endpoints.aiEndpoints());
 };

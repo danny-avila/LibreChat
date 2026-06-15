@@ -28,6 +28,7 @@ const handlers = createAdminUsersHandlers({
   deleteUserById: db.deleteUserById,
   deleteConfig: db.deleteConfig,
   deleteAclEntries: db.deleteAclEntries,
+  findPendingUserInvites: db.findPendingUserInvites,
 });
 
 router.use(requireJwtAuth, requireAdminAccess, superAdminContextMiddleware);

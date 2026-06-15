@@ -117,12 +117,55 @@ export function createTokenMethods(mongoose: typeof import('mongoose')) {
     }
   }
 
+  /**
+   * Lists unexpired user-invite tokens for a tenant.
+   * Includes legacy invite tokens created before `type: 'invite'` was set.
+   */
+  async function findPendingUserInvites(filter: {
+    tenantId?: string;
+    role?: 'ADMIN' | 'USER';
+  }): Promise<IToken[]> {
+    try {
+      const Token = mongoose.models.Token;
+      const now = new Date();
+      const query: Record<string, unknown> = {
+        email: { $exists: true, $nin: [null, ''] },
+        expiresAt: { $gt: now },
+        $or: [{ type: 'invite' }, { type: { $exists: false } }, { type: null }],
+      };
+      if (filter.tenantId) {
+        query.tenantId = filter.tenantId;
+      }
+      const tokens = await Token.find(query).sort({ createdAt: -1 }).lean<IToken[]>();
+
+      if (!filter.role) {
+        return tokens;
+      }
+
+      return tokens.filter((token) => {
+        const metadata = token.metadata;
+        let role: unknown;
+        if (metadata instanceof Map) {
+          role = metadata.get('role');
+        } else if (metadata && typeof metadata === 'object') {
+          role = (metadata as Record<string, unknown>).role;
+        }
+        const effectiveRole = role === 'ADMIN' ? 'ADMIN' : 'USER';
+        return effectiveRole === filter.role;
+      });
+    } catch (error) {
+      logger.debug('An error occurred while finding pending user invites:', error);
+      throw error;
+    }
+  }
+
   // Return all methods
   return {
     findToken,
     createToken,
     updateToken,
     deleteTokens,
+    findPendingUserInvites,
   };
 }
 

@@ -111,6 +111,8 @@ export type AdminMember = {
   joinedAt?: string;
 };
 
+export type AdminUserMembershipStatus = 'active' | 'pending';
+
 /** Full user info returned by the admin user list endpoint. */
 export type AdminUserListItem = {
   id: string;
@@ -120,8 +122,10 @@ export type AdminUserListItem = {
   avatar: string;
   role: string;
   provider: string;
+  status: AdminUserMembershipStatus;
   createdAt?: string;
   updatedAt?: string;
+  invitedAt?: string;
 };
 
 /** Tenant-scoped admin user returned by the platform admin API. */
@@ -131,7 +135,9 @@ export type AdminTenantAdmin = {
   email: string;
   tenantId: string;
   tenantName: string;
+  status: AdminUserMembershipStatus;
   createdAt?: string;
+  invitedAt?: string;
 };
 
 /** Tenant as returned by the admin API. */

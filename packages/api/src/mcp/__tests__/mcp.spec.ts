@@ -849,7 +849,7 @@ describe('Environment Variable Extraction (MCP)', () => {
       expect('env' in result && result.env).toEqual({
         PROCESS_MODE: 'production',
         USER_HOME_DIR: '/home/john.doe',
-        SYSTEM_PATH: process.env.PATH, // Actual value of PATH from the test environment
+        SYSTEM_PATH: process.env.PATH ?? '${PATH}', // Resolved if PATH is in env; otherwise placeholder stays
       });
     });
 

@@ -1,6 +1,7 @@
 const express = require('express');
 const {
   isEnabled,
+  getAdminPanelUrl,
   getBalanceConfig,
   getCloudFrontConfig,
   sanitizeModelSpecs,
@@ -220,6 +221,22 @@ router.get('/', async function (req, res) {
       } catch (err) {
         logger.warn(`[config] ACCESS_ADMIN capability check failed: ${err.message}`);
       }
+    }
+
+    try {
+      const userId = req.user.id ?? req.user._id?.toString();
+      if (userId) {
+        const hasAdminAccess = await hasCapability(
+          { id: userId, role: req.user.role ?? '', tenantId: req.user.tenantId },
+          SystemCapabilities.ACCESS_ADMIN,
+        );
+        if (hasAdminAccess) {
+          payload.adminPanelAccess = true;
+          payload.adminPanelUrl = getAdminPanelUrl();
+        }
+      }
+    } catch (err) {
+      logger.warn(`[config] admin panel access check failed: ${err.message}`);
     }
 
     return res.status(200).send(payload);

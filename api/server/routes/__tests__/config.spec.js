@@ -433,7 +433,7 @@ describe('GET /api/config', () => {
       const response = await request(app).get('/api/config');
 
       expect(response.body.allowAccountDeletion).toBe(true);
-      expect(mockHasCapability).not.toHaveBeenCalled();
+      expect(mockHasCapability).toHaveBeenCalledTimes(1);
     });
 
     it('should return 500 when getAppConfig throws', async () => {

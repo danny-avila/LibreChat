@@ -1,7 +1,14 @@
 import { useState, memo, useRef } from 'react';
 import * as Menu from '@ariakit/react/menu';
-import { FileText, LogOut } from 'lucide-react';
-import { LinkIcon, GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
+import { FileText, LogOut, Shield } from 'lucide-react';
+import {
+  LinkIcon,
+  GearIcon,
+  DropdownMenuSeparator,
+  Avatar,
+  useToastContext,
+} from '@librechat/client';
+import { dataService } from 'librechat-data-provider';
 import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
@@ -17,7 +24,27 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
   });
   const [showSettings, setShowSettings] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
+  const [openingAdminPanel, setOpeningAdminPanel] = useState(false);
   const accountSettingsButtonRef = useRef<HTMLButtonElement>(null);
+  const { showToast } = useToastContext();
+
+  const handleOpenAdminPanel = async () => {
+    if (openingAdminPanel) {
+      return;
+    }
+    setOpeningAdminPanel(true);
+    try {
+      const { url } = await dataService.createAdminPanelSession();
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch {
+      showToast({
+        message: localize('com_nav_admin_panel_error'),
+        status: 'error',
+      });
+    } finally {
+      setOpeningAdminPanel(false);
+    }
+  };
 
   return (
     <Menu.MenuProvider>
@@ -86,6 +113,16 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
           <GearIcon className="icon-md" aria-hidden="true" />
           {localize('com_nav_settings')}
         </Menu.MenuItem>
+        {startupConfig?.adminPanelAccess === true && (
+          <Menu.MenuItem
+            onClick={handleOpenAdminPanel}
+            disabled={openingAdminPanel}
+            className="select-item text-sm"
+          >
+            <Shield className="icon-md" aria-hidden="true" />
+            {openingAdminPanel ? localize('com_ui_loading') : localize('com_nav_admin_panel')}
+          </Menu.MenuItem>
+        )}
         <DropdownMenuSeparator />
         <Menu.MenuItem onClick={() => logout()} className="select-item text-sm">
           <LogOut className="icon-md" aria-hidden="true" />

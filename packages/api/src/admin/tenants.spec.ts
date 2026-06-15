@@ -23,6 +23,7 @@ describe('createAdminTenantsHandlers', () => {
   const countUsersByTenantId = jest.fn();
   const deleteGrantsForTenant = jest.fn();
   const isPlatformAdmin = jest.fn();
+  const findPendingUserInvites = jest.fn();
 
   const handlers = createAdminTenantsHandlers({
     findUser,
@@ -45,6 +46,7 @@ describe('createAdminTenantsHandlers', () => {
     countUsersByTenantId,
     deleteGrantsForTenant,
     isPlatformAdmin,
+    findPendingUserInvites,
   });
 
   const mongoId = '507f1f77bcf86cd799439011';
@@ -53,6 +55,7 @@ describe('createAdminTenantsHandlers', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     countUsersByTenantId.mockResolvedValue(0);
+    findPendingUserInvites.mockResolvedValue([]);
   });
 
   it('createTenant provisions tenant and seeds grants', async () => {

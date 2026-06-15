@@ -6,6 +6,7 @@ export interface InviteDeps {
     userId: Types.ObjectId;
     email: string;
     token: string;
+    type?: string;
     createdAt: number;
     expiresIn: number;
     tenantId?: string;
@@ -36,6 +37,7 @@ export async function createInvite(
     await deps.createToken({
       userId: fakeUserId,
       email,
+      type: 'invite',
       token: hash,
       createdAt: Date.now(),
       expiresIn: 604800,

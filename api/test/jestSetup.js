@@ -37,3 +37,5 @@ process.env.ALLOW_EMAIL_LOGIN = 'true';
 // This can be overridden in individual tests if needed
 jest.setTimeout(30000);
 process.env.OPENAI_API_KEY = 'test';
+process.env.SUPER_ADMIN_EMAIL = 'superadmin@test.example.com';
+process.env.SUPER_ADMIN_PASSWORD = 'SuperAdminTestPass1!';

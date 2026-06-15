@@ -13,6 +13,7 @@ const {
   isEnabled,
   getAdminPanelUrl,
   exchangeAdminCode,
+  generateAdminExchangeCode,
   createSetBalanceConfig,
   storeAndStripChallenge,
   tenantContextMiddleware,
@@ -82,6 +83,49 @@ router.post(
   requireAdminAccess,
   setBalanceConfig,
   loginController,
+);
+
+/**
+ * Creates a one-time admin panel session for an already-authenticated admin user.
+ * Returns a callback URL the client can open to exchange the code for an admin session.
+ *
+ * POST /api/admin/session
+ * Response: { url: string }
+ */
+router.post(
+  '/session',
+  middleware.requireJwtAuth,
+  tenantContextMiddleware,
+  requireAdminAccess,
+  async (req, res) => {
+    try {
+      const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
+      const sessionExpiry = Number(process.env.SESSION_EXPIRY) || DEFAULT_SESSION_EXPIRY;
+      const token = await generateToken(req.user, sessionExpiry);
+      const refreshToken =
+        req.user.provider === 'openid' && isEnabled(process.env.OPENID_REUSE_TOKENS) === true
+          ? req.user.tokenset?.refresh_token || req.user.federatedTokens?.refresh_token
+          : undefined;
+      const expiresAt = Date.now() + sessionExpiry;
+      const adminPanelUrl = getAdminPanelUrl();
+      const adminOrigin = new URL(adminPanelUrl).origin;
+      const exchangeCode = await generateAdminExchangeCode(
+        cache,
+        req.user,
+        token,
+        refreshToken,
+        adminOrigin,
+        undefined,
+        expiresAt,
+      );
+      const callbackUrl = new URL(`${adminPanelUrl}/auth/session/callback`);
+      callbackUrl.searchParams.set('code', exchangeCode);
+      return res.status(200).json({ url: callbackUrl.toString() });
+    } catch (error) {
+      logger.error('[admin/session] Failed to create admin panel session:', error);
+      return res.status(500).json({ error: 'Failed to create admin panel session' });
+    }
+  },
 );
 
 router.get('/verify', middleware.requireJwtAuth, requireAdminAccess, async (req, res) => {

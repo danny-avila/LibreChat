@@ -36,6 +36,7 @@ const handlers = createAdminTenantsHandlers({
   countUsersByTenantId: db.countUsersByTenantId,
   deleteGrantsForTenant: db.deleteGrantsForTenant,
   isPlatformAdmin,
+  findPendingUserInvites: db.findPendingUserInvites,
 });
 
 router.use(requireJwtAuth, requireAdminAccess, superAdminContextMiddleware);

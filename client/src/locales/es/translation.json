@@ -331,6 +331,8 @@
   "com_hide_examples": "Ocultar ejemplos",
   "com_nav_2fa": "Autenticación en dos pasos",
   "com_nav_account_settings": "Configuración de la cuenta",
+  "com_nav_admin_panel": "Panel de administración",
+  "com_nav_admin_panel_error": "No se pudo abrir el panel de administración. Inténtalo de nuevo.",
   "com_nav_always_make_prod": "Convertir siempre las nuevas versiones en producción",
   "com_nav_archive_created_at": "CreadoEn",
   "com_nav_archive_name": "Nombre",

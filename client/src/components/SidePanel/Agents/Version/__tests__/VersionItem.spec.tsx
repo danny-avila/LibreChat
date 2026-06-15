@@ -43,7 +43,7 @@ describe('VersionItem', () => {
   test('renders version number and timestamp', () => {
     render(<VersionItem {...defaultProps} />);
     expect(screen.getByText('Version 2')).toBeInTheDocument();
-    const date = new Date('2023-01-01T00:00:00Z').toLocaleString();
+    const date = new Date('2023-01-01T00:00:00Z').toLocaleString().replace(/\s+/g, ' ').trim();
     expect(screen.getByText(date)).toBeInTheDocument();
   });
 
@@ -98,7 +98,10 @@ describe('VersionItem', () => {
       createdAt: '2023-01-01T00:00:00Z',
     };
     render(<VersionItem {...defaultProps} version={versionWithBothDates} />);
-    const updatedDate = new Date('2023-01-02T00:00:00Z').toLocaleString();
+    const updatedDate = new Date('2023-01-02T00:00:00Z')
+      .toLocaleString()
+      .replace(/\s+/g, ' ')
+      .trim();
     expect(screen.getByText(updatedDate)).toBeInTheDocument();
   });
 
@@ -113,7 +116,10 @@ describe('VersionItem', () => {
         }}
       />,
     );
-    const createdDate = new Date('2023-01-01T00:00:00Z').toLocaleString();
+    const createdDate = new Date('2023-01-01T00:00:00Z')
+      .toLocaleString()
+      .replace(/\s+/g, ' ')
+      .trim();
     expect(screen.getByText(createdDate)).toBeInTheDocument();
   });
 

@@ -63,7 +63,7 @@ export async function loadServiceKey(keyPath: string): Promise<GoogleServiceKey 
   } else if (!serviceKey) {
     // It's a file path
     try {
-      const absolutePath = path.isAbsolute(keyPath) ? keyPath : path.resolve(keyPath);
+      const absolutePath = path.resolve(keyPath);
       const { content: fileContent } = await readFileAsString(absolutePath);
       serviceKey = JSON.parse(fileContent);
     } catch (error) {

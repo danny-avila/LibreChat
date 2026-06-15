@@ -3,6 +3,7 @@ import { PrincipalType, SystemRoles } from 'librechat-data-provider';
 import { logger, isValidObjectIdString, runAsSystem } from '@librechat/data-schemas';
 import type {
   IUser,
+  IToken,
   IConfig,
   AdminUserListItem,
   AdminUserSearchResult,
@@ -12,6 +13,13 @@ import type { FilterQuery } from 'mongoose';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 import { createInvite, type InviteDeps } from '~/auth/invite';
+import {
+  adjustPaginationForPending,
+  collectRegisteredEmails,
+  filterPendingInvitesForRegisteredEmails,
+  getInviteRoleFromMetadata,
+  inviteDisplayName,
+} from './pendingInvites';
 import { getCallerTenantId, getTenantScopedUserFilter } from './tenant';
 import { parsePagination } from './pagination';
 
@@ -78,6 +86,10 @@ export interface AdminUsersDeps {
     principalType: PrincipalType;
     principalId: string | Types.ObjectId;
   }) => Promise<void>;
+  findPendingUserInvites: (filter: {
+    tenantId?: string;
+    role?: 'ADMIN' | 'USER';
+  }) => Promise<IToken[]>;
 }
 
 export function createAdminUsersHandlers(deps: AdminUsersDeps) {
@@ -94,18 +106,42 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
     deleteUserById,
     deleteConfig,
     deleteAclEntries,
+    findPendingUserInvites,
   } = deps;
 
   async function listUsersHandler(req: ServerRequest, res: Response) {
     try {
       const filter = getTenantScopedUserFilter(req);
+      const callerTenantId = getCallerTenantId(req);
       const { limit, offset } = parsePagination(req.query);
-      const [users, total] = await Promise.all([
-        findUsers(filter, USER_LIST_FIELDS, { limit, offset, sort: { createdAt: -1 } }),
+
+      let pendingInvites: IToken[] = [];
+      if (callerTenantId) {
+        const [registeredUsers, rawInvites] = await Promise.all([
+          findUsers(filter, 'email'),
+          findPendingUserInvites({ tenantId: callerTenantId, role: SystemRoles.USER }),
+        ]);
+        pendingInvites = filterPendingInvitesForRegisteredEmails(
+          rawInvites,
+          collectRegisteredEmails(registeredUsers),
+        );
+      }
+
+      const { userLimit, userOffset } = adjustPaginationForPending(
+        limit,
+        offset,
+        pendingInvites.length,
+      );
+      const [users, totalUsers] = await Promise.all([
+        findUsers(filter, USER_LIST_FIELDS, {
+          limit: userLimit,
+          offset: userOffset,
+          sort: { createdAt: -1 },
+        }),
         countUsers(filter),
       ]);
 
-      const mapped: AdminUserListItem[] = users.map((u) => ({
+      const mappedActive: AdminUserListItem[] = users.map((u) => ({
         id: u._id?.toString() ?? '',
         name: u.name ?? '',
         username: u.username ?? '',
@@ -113,9 +149,31 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
         avatar: u.avatar ?? '',
         role: u.role ?? 'USER',
         provider: u.provider ?? 'local',
+        status: 'active',
         createdAt: u.createdAt?.toISOString(),
         updatedAt: u.updatedAt?.toISOString(),
       }));
+
+      const pendingRows: AdminUserListItem[] =
+        offset === 0
+          ? pendingInvites.map((invite) => {
+              const email = invite.email?.trim().toLowerCase() ?? '';
+              return {
+                id: `invite:${invite._id?.toString() ?? email}`,
+                name: inviteDisplayName(email),
+                username: '',
+                email,
+                avatar: '',
+                role: getInviteRoleFromMetadata(invite.metadata),
+                provider: 'invite',
+                status: 'pending',
+                invitedAt: invite.createdAt?.toISOString(),
+              };
+            })
+          : [];
+
+      const mapped = [...pendingRows, ...mappedActive];
+      const total = totalUsers + pendingInvites.length;
 
       return res.status(200).json({ users: mapped, total, limit, offset });
     } catch (error) {
