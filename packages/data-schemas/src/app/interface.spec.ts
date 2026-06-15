@@ -66,13 +66,13 @@ describe('loadDefaultInterface', () => {
     expect(interfaceConfig?.buildInfo).toBe(true);
   });
 
-  it('enables context cost by default', async () => {
+  it('disables context cost by default', async () => {
     const interfaceConfig = await loadDefaultInterface({
       config: {},
       configDefaults: getConfigDefaults(),
     });
 
-    expect(interfaceConfig?.contextCost).toBe(true);
+    expect(interfaceConfig?.contextCost).toBe(false);
   });
 
   it('preserves a disabled context cost flag', async () => {
@@ -88,6 +88,21 @@ describe('loadDefaultInterface', () => {
     });
 
     expect(interfaceConfig?.contextCost).toBe(false);
+  });
+
+  it('preserves enabled context cost config', async () => {
+    const config: Partial<TCustomConfig> = {
+      interface: {
+        contextCost: true,
+      },
+    };
+
+    const interfaceConfig = await loadDefaultInterface({
+      config,
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.contextCost).toBe(true);
   });
 
   it('passes through a configured display currency', async () => {
