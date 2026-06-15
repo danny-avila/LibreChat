@@ -61,6 +61,7 @@ const dropRumTelemetry = (res) => {
   }
 };
 
+// Keep in sync with packages/api/src/rum/proxy.ts; auth drops are recorded before proxy code runs.
 const getRumProxyEndpoint = (req) => {
   if (req.path === '/v1/traces') {
     return 'traces';
@@ -195,12 +196,34 @@ const requireJwtAuth = (req, res, next) => {
 };
 
 const requireRumProxyAuth = (req, res, next) => {
-  const { openIdReuseUserId, strategies } = getAuthStrategies(req);
+  const { tokenProvider, openidReuseEnabled, openidJwtAvailable, openIdReuseUserId, strategies } =
+    getAuthStrategies(req);
   const endpoint = getRumProxyEndpoint(req);
+  const authLogState = {
+    tokenProvider,
+    openidReuseEnabled,
+    openidJwtAvailable,
+    hasOpenIdReuseUserId: openIdReuseUserId != null,
+  };
 
   const dropTelemetry = () => {
     recordRumProxyRequest(endpoint, 'auth_drop');
     dropRumTelemetry(res);
+  };
+
+  const logPassportError = (strategy, err) => {
+    if (!err) {
+      return;
+    }
+    const message = '[requireRumProxyAuth] Passport auth error while authenticating RUM telemetry';
+    const context = buildSafeAuthLogContext(req, authLogState, {
+      auth_strategy: strategy,
+      attempted_strategies: strategies,
+      reason: getAuthFailureReason(err),
+      error_name: getAuthFailureErrorName(err),
+      rum_endpoint: endpoint,
+    });
+    logger.warn(formatAuthLogMessage(message, context), context);
   };
 
   const finishAuthentication = (strategy, user) => {
@@ -220,6 +243,7 @@ const requireRumProxyAuth = (req, res, next) => {
     }
 
     passport.authenticate(strategy, { session: false }, (err, user) => {
+      logPassportError(strategy, err);
       if (err || !user || !isOpenIdReuseUser(strategy, user, openIdReuseUserId)) {
         tryNextStrategy();
         return;

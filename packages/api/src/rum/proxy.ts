@@ -77,6 +77,7 @@ export function resolveRumProxyTarget(path: string): string | undefined {
   return targetUrl.href;
 }
 
+// Keep in sync with api/server/middleware/requireJwtAuth.js; auth drops are recorded there.
 function getRumProxyEndpoint(path: string): RumProxyEndpoint {
   if (path === '/v1/traces') {
     return 'traces';
