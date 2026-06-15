@@ -1,4 +1,4 @@
-const GetLocation = require('./GetLocation');
+const GetLocation = require('../GetLocation');
 
 const makeReq = ({ location, featureEnabled = true } = {}) => ({
   config: { location: { enabled: featureEnabled } },
