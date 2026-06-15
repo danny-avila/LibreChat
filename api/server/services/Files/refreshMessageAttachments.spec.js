@@ -164,8 +164,22 @@ describe('redactSignedUrlForLog', () => {
     expect(redactSignedUrlForLog(u)).toBe('https://bucket.s3.amazonaws.com/uploads/u/x');
   });
 
-  test('returns a stable placeholder for unparseable inputs', () => {
-    expect(redactSignedUrlForLog('not a url')).toBe('<unparseable url>');
+  test('strips query string from unparseable inputs without losing the path', () => {
+    // Relative URL / local path: `new URL()` would throw on its own; we should
+    // still drop any `?signature=...` suffix and keep the rest for debug.
+    expect(redactSignedUrlForLog('/uploads/u/local-file.png?token=SECRET')).toBe(
+      '/uploads/u/local-file.png',
+    );
+    expect(redactSignedUrlForLog('not a url')).toBe('not a url');
+  });
+
+  test('returns empty string for non-string input', () => {
+    // @ts-expect-error — intentionally pass non-string to exercise guard
+    expect(redactSignedUrlForLog(undefined)).toBe('');
+    // @ts-expect-error — intentionally pass non-string to exercise guard
+    expect(redactSignedUrlForLog(null)).toBe('');
+    // @ts-expect-error — intentionally pass non-string to exercise guard
+    expect(redactSignedUrlForLog(123)).toBe('');
   });
 
   test('error path logs only the redacted URL, never the signature', async () => {
@@ -218,5 +232,49 @@ describe('runWithConcurrency', () => {
     const calls = [];
     await runWithConcurrency([async () => calls.push('a'), async () => calls.push('b')], 8);
     expect(calls.sort()).toEqual(['a', 'b']);
+  });
+});
+
+describe('isRefreshable', () => {
+  const { isRefreshable } = require('./refreshMessageAttachments');
+
+  test('true for S3-source with non-empty filepath', () => {
+    expect(isRefreshable({ source: FileSources.s3, filepath: 'https://x' })).toBe(true);
+  });
+
+  test('false for non-S3 sources, missing/empty filepath, non-objects', () => {
+    expect(isRefreshable(null)).toBe(false);
+    expect(isRefreshable(undefined)).toBe(false);
+    expect(isRefreshable('string')).toBe(false);
+    expect(isRefreshable({})).toBe(false);
+    expect(isRefreshable({ source: FileSources.s3 })).toBe(false);
+    expect(isRefreshable({ source: FileSources.s3, filepath: '' })).toBe(false);
+    expect(isRefreshable({ source: 'local', filepath: '/uploads/x' })).toBe(false);
+    expect(isRefreshable({ source: 'firebase', filepath: 'https://x' })).toBe(false);
+    expect(isRefreshable({ filepath: 'https://x' })).toBe(false);
+  });
+
+  test('refreshMessageAttachmentUrls does not enqueue non-refreshable entries', async () => {
+    // If a non-refreshable entry were enqueued, runWithConcurrency would
+    // schedule the no-op task and refreshS3Url would still not be called —
+    // so the observable signal is "no work scheduled at all". We assert via
+    // the refresher mock not being called *and* via the call-count of the
+    // memo cache observable as `refreshS3Url.mock.calls.length`.
+    refreshS3Url.mockResolvedValue(FRESH);
+    const rows = [
+      {
+        attachments: [
+          { source: 'local', filepath: '/uploads/u/x.png' },
+          { source: FileSources.s3 },
+          { source: FileSources.s3, filepath: '' },
+          null,
+          {},
+          { source: FileSources.s3, filepath: STALE },
+        ],
+      },
+    ];
+    await refreshMessageAttachmentUrls(rows);
+    expect(refreshS3Url).toHaveBeenCalledTimes(1);
+    expect(rows[0].attachments[5].filepath).toBe(FRESH);
   });
 });

@@ -24,18 +24,23 @@ const DEFAULT_CONCURRENCY = 8;
  * Redact the query string from a signed URL before logging. Presigned URLs
  * are short-lived credentials (`X-Amz-Signature`, `X-Amz-Security-Token`,
  * etc. live in the query string); leaving them in log sinks defeats the
- * purpose of the TTL. Falls back to a fixed placeholder if the URL won't
- * parse so the log line still has shape.
+ * purpose of the TTL. For inputs that don't parse as URLs, fall back to
+ * stripping anything after `?` — keeps the path component intact for
+ * debugging without leaking credentials.
  *
  * @param {string} signedUrl
  * @returns {string}
  */
 function redactSignedUrlForLog(signedUrl) {
+  if (typeof signedUrl !== 'string') {
+    return '';
+  }
   try {
     const u = new URL(signedUrl);
     return `${u.origin}${u.pathname}`;
   } catch {
-    return '<unparseable url>';
+    const q = signedUrl.indexOf('?');
+    return q === -1 ? signedUrl : signedUrl.slice(0, q);
   }
 }
 
@@ -57,6 +62,26 @@ const refresherBySource = {
 };
 
 /**
+ * Cheap eligibility check used at enqueue time so the concurrency pool only
+ * runs tasks that can actually refresh something. Identical guards to those
+ * inside `refreshAttachment`, lifted here so we don't allocate closures or
+ * spin worker cursors over entries that will immediately no-op.
+ *
+ * @param {unknown} attachment
+ * @returns {attachment is AttachmentLike}
+ */
+function isRefreshable(attachment) {
+  if (!attachment || typeof attachment !== 'object') {
+    return false;
+  }
+  const att = /** @type {AttachmentLike} */ (attachment);
+  if (typeof att.filepath !== 'string' || att.filepath.length === 0) {
+    return false;
+  }
+  return Object.prototype.hasOwnProperty.call(refresherBySource, att.source);
+}
+
+/**
  * Refresh a single attachment's `filepath` in place if it is a near-expiry
  * signed URL the backend owns. Non-eligible entries are left untouched. On
  * error the original URL is retained — the client gets a diagnosable 403
@@ -70,17 +95,11 @@ const refresherBySource = {
  * @returns {Promise<void>}
  */
 async function refreshAttachment(attachment, bufferSeconds, cache) {
-  if (!attachment || typeof attachment !== 'object') {
+  if (!isRefreshable(attachment)) {
     return;
   }
   const filepath = attachment.filepath;
-  if (typeof filepath !== 'string' || filepath.length === 0) {
-    return;
-  }
   const refresher = refresherBySource[attachment.source];
-  if (!refresher) {
-    return;
-  }
   let pending = cache.get(filepath);
   if (!pending) {
     pending = (async () => {
@@ -170,6 +189,12 @@ async function refreshMessageAttachmentUrls(rows, options = {}) {
         continue;
       }
       for (const entry of entries) {
+        // Skip non-refreshable entries (non-S3 source, missing filepath,
+        // non-object) at enqueue time so the concurrency pool only runs
+        // tasks that can actually refresh.
+        if (!isRefreshable(entry)) {
+          continue;
+        }
         taskFactories.push(() => refreshAttachment(entry, bufferSeconds, cache));
       }
     }
@@ -181,6 +206,7 @@ async function refreshMessageAttachmentUrls(rows, options = {}) {
 module.exports = {
   refreshMessageAttachmentUrls,
   refreshAttachment,
+  isRefreshable,
   redactSignedUrlForLog,
   runWithConcurrency,
   DEFAULT_BUFFER_SECONDS,
