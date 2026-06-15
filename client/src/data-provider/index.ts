@@ -3,6 +3,8 @@ export * from './Agents';
 export * from './Endpoints';
 export * from './Skills';
 export * from './Files';
+/* Location */
+export * from './Location';
 /* Memories */
 export * from './Memories';
 export * from './Messages';

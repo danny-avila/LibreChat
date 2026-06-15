@@ -116,6 +116,7 @@ export enum MutationKeys {
   enableTwoFactor = 'enableTwoFactor',
   verifyTwoFactor = 'verifyTwoFactor',
   updateMemoryPreferences = 'updateMemoryPreferences',
+  updateUserLocation = 'updateUserLocation',
   createProject = 'createProject',
   updateProject = 'updateProject',
   deleteProject = 'deleteProject',

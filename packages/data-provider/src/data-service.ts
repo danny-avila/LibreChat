@@ -1277,6 +1277,12 @@ export const updateMemoryPreferences = (preferences: {
   return request.patch(endpoints.memoryPreferences(), preferences);
 };
 
+export const updateUserLocation = (
+  location: t.TUserLocation,
+): Promise<{ updated: boolean; location?: t.TUserLocation }> => {
+  return request.patch(endpoints.userLocation(), location);
+};
+
 export const createMemory = (data: {
   key: string;
   value: string;
