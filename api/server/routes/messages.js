@@ -9,6 +9,9 @@ const {
   traceIdForMessage,
 } = require('@librechat/api');
 const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/Artifacts/update');
+const {
+  refreshMessageAttachmentUrls,
+} = require('~/server/services/Files/refreshMessageAttachments');
 const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
 const db = require('~/models');
 
@@ -90,6 +93,8 @@ router.get('/', async (req, res) => {
     } else {
       response = { messages: [], nextCursor: null };
     }
+
+    await refreshMessageAttachmentUrls(response.messages);
 
     res.status(200).json(response);
   } catch (error) {
@@ -275,6 +280,7 @@ router.get('/:conversationId', validateMessageReq, async (req, res) => {
   try {
     const { conversationId } = req.params;
     const messages = await db.getMessages({ conversationId, user: req.user.id }, '-_id -__v -user');
+    await refreshMessageAttachmentUrls(messages);
     res.status(200).json(messages);
   } catch (error) {
     logger.error('Error fetching messages:', error);
@@ -316,6 +322,7 @@ router.get('/:conversationId/:messageId', validateMessageReq, async (req, res) =
     if (!message) {
       return res.status(404).json({ error: 'Message not found' });
     }
+    await refreshMessageAttachmentUrls(message);
     res.status(200).json(message);
   } catch (error) {
     logger.error('Error fetching message:', error);

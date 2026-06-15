@@ -1,0 +1,130 @@
+const { logger } = require('@librechat/data-schemas');
+const { refreshS3Url } = require('@librechat/api');
+const { FileSources } = require('librechat-data-provider');
+
+/**
+ * Refresh window passed to the underlying per-source refresh helper. With the
+ * default `S3_URL_EXPIRY_SECONDS=120`, any value larger than the TTL means
+ * "always re-sign on read" — which is what we want here because the snapshot
+ * in the message/toolcall document is never updated.
+ */
+const DEFAULT_BUFFER_SECONDS = 3600;
+
+/**
+ * @typedef {Object} AttachmentLike
+ * @property {string} [source]
+ * @property {string} [filepath]
+ * @property {string} [storageKey]
+ */
+
+/**
+ * Per-source refresh dispatch. Add a new entry here when another storage
+ * backend grows a refresh primitive (e.g. Azure SAS).
+ *
+ * @type {Record<string, (att: AttachmentLike, bufferSeconds: number) => Promise<string>>}
+ */
+const refresherBySource = {
+  [FileSources.s3]: (att, bufferSeconds) => refreshS3Url(att, bufferSeconds),
+};
+
+/**
+ * Refresh a single attachment's `filepath` in place if it is a near-expiry
+ * signed URL the backend owns. Non-eligible entries are left untouched. On
+ * error the original URL is retained — the client gets a diagnosable 403
+ * rather than a `null` href.
+ *
+ * @param {AttachmentLike | null | undefined} attachment
+ * @param {number} bufferSeconds
+ * @param {Map<string, Promise<string>>} cache - per-call memoization keyed on
+ *   the original `filepath`, so repeated references to the same blob within
+ *   one response only re-sign once.
+ * @returns {Promise<void>}
+ */
+async function refreshAttachment(attachment, bufferSeconds, cache) {
+  if (!attachment || typeof attachment !== 'object') {
+    return;
+  }
+  const filepath = attachment.filepath;
+  if (typeof filepath !== 'string' || filepath.length === 0) {
+    return;
+  }
+  const refresher = refresherBySource[attachment.source];
+  if (!refresher) {
+    return;
+  }
+  let pending = cache.get(filepath);
+  if (!pending) {
+    pending = (async () => {
+      try {
+        const newUrl = await refresher(attachment, bufferSeconds);
+        return newUrl || filepath;
+      } catch (error) {
+        logger.error(
+          `[refreshMessageAttachments] Error refreshing signed URL for "${filepath}":`,
+          error,
+        );
+        return filepath;
+      }
+    })();
+    cache.set(filepath, pending);
+  }
+  const resolved = await pending;
+  if (resolved && resolved !== filepath) {
+    attachment.filepath = resolved;
+  }
+}
+
+/**
+ * Walk one or more messages or tool-call rows and refresh signed URLs
+ * embedded in their `attachments[]` and `files[]` snapshots, in place.
+ * Designed to wrap the response payload of read endpoints; safe to call with
+ * `null`, `undefined`, `[]`, a single row, or an array. Returns the same
+ * shape it was given so callers can drop it in front of `res.json` without
+ * restructuring.
+ *
+ * The same function works against both message rows (which carry
+ * `attachments[]` and `files[]`) and toolcall rows (which carry only
+ * `attachments[]`) — the walker is duck-typed on the field names and skips
+ * any that aren't arrays.
+ *
+ * @template {Record<string, unknown>} TRow
+ * @param {TRow | TRow[] | null | undefined} rows
+ * @param {{ bufferSeconds?: number }} [options]
+ * @returns {Promise<TRow | TRow[] | null | undefined>}
+ */
+async function refreshMessageAttachmentUrls(rows, options = {}) {
+  if (rows == null) {
+    return rows;
+  }
+  const bufferSeconds = options.bufferSeconds ?? DEFAULT_BUFFER_SECONDS;
+  const list = Array.isArray(rows) ? rows : [rows];
+  if (list.length === 0) {
+    return rows;
+  }
+  const cache = new Map();
+  const tasks = [];
+  for (const row of list) {
+    if (!row || typeof row !== 'object') {
+      continue;
+    }
+    for (const field of ['attachments', 'files']) {
+      const entries = /** @type {unknown} */ (row[field]);
+      if (!Array.isArray(entries) || entries.length === 0) {
+        continue;
+      }
+      for (const entry of entries) {
+        tasks.push(refreshAttachment(entry, bufferSeconds, cache));
+      }
+    }
+  }
+  if (tasks.length > 0) {
+    await Promise.all(tasks);
+  }
+  return rows;
+}
+
+module.exports = {
+  refreshMessageAttachmentUrls,
+  refreshAttachment,
+  DEFAULT_BUFFER_SECONDS,
+};

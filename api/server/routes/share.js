@@ -21,6 +21,9 @@ const {
   getRoleByName,
 } = require('~/models');
 const canAccessSharedLink = require('~/server/middleware/canAccessSharedLink');
+const {
+  refreshMessageAttachmentUrls,
+} = require('~/server/services/Files/refreshMessageAttachments');
 const optionalJwtAuth = require('~/server/middleware/optionalJwtAuth');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const router = express.Router();
@@ -58,6 +61,7 @@ if (allowSharedLinks) {
     try {
       const share = await getSharedMessages(req.params.shareId, req.shareResourceId);
       if (share) {
+        await refreshMessageAttachmentUrls(share.messages);
         res.set('Cache-Control', 'private, no-store');
         res.status(200).json(share);
       } else {

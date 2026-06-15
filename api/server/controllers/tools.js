@@ -10,6 +10,9 @@ const {
 } = require('librechat-data-provider');
 const { getRoleByName, createToolCall, getToolCallsByConvo, getMessage } = require('~/models');
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
+const {
+  refreshMessageAttachmentUrls,
+} = require('~/server/services/Files/refreshMessageAttachments');
 const { getRetentionExpiry } = require('~/server/services/Files/retention');
 const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
@@ -245,6 +248,7 @@ const getToolCalls = async (req, res) => {
   try {
     const { conversationId } = req.query;
     const toolCalls = await getToolCallsByConvo(conversationId, req.user.id);
+    await refreshMessageAttachmentUrls(toolCalls);
     res.status(200).json(toolCalls);
   } catch (error) {
     logger.error('Error getting tool calls', error);
