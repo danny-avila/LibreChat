@@ -214,7 +214,7 @@ export default function usePresets(index = 0) {
         cleanInput: true,
       });
 
-      /* We don't reset the latest message, only when changing settings mid-converstion */
+      /* We don't reset the latest message, only when changing settings mid-conversion */
       newConversation({
         template: currentConvo,
         preset: currentConvo,

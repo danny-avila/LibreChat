@@ -21,7 +21,7 @@ describe('Environment Variable Extraction', () => {
       expect(extractEnvVariable('${TEST_VAR}')).toBe('test_value');
     });
 
-    test('should return the original string if the envrionment variable is not defined correctly', () => {
+    test('should return the original string if the environment variable is not defined correctly', () => {
       process.env.TEST_VAR = 'test_value';
       expect(extractEnvVariable('${ TEST_VAR }')).toBe('${ TEST_VAR }');
     });

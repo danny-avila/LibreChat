@@ -46,7 +46,7 @@ function SelectDropDownPop({
     title = localize('com_ui_model');
   }
 
-  // Detemine if we should to convert this component into a searchable select.  If we have enough elements, a search
+  // Determine if we should to convert this component into a searchable select.  If we have enough elements, a search
   // input will appear near the top of the menu, allowing correct filtering of different model menu items. This will
   // reset once the component is unmounted (as per a normal search)
   const [filteredValues, searchRender] = useMultiSearch<string[] | Option[]>({

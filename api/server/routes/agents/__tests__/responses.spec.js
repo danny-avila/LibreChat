@@ -129,7 +129,7 @@ function parseSSEEvents(text) {
             data: parsed,
           });
         } catch {
-          // Skip unparseable data
+          // Skip unparsable data
         }
       }
       currentEvent = '';

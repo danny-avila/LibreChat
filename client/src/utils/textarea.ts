@@ -29,7 +29,7 @@ export function insertTextAtCursor(element: HTMLTextAreaElement, textToInsert: s
     ensuring that the reset height takes effect before resetting back to the scrollHeight.
     This step is necessary because changes to the DOM do not instantly cause reflows.
 
- 3) Reseting back to scrollHeight reads and applies the ideal height for the current content dynamically
+ 3) Resetting back to scrollHeight reads and applies the ideal height for the current content dynamically
  */
 export const forceResize = (element: HTMLTextAreaElement | null) => {
   if (!element) {

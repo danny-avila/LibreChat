@@ -111,18 +111,18 @@ export default memo(function AudioRecorder({
 
   return (
     <TooltipAnchor
-      description={localize('com_ui_use_micrphone')}
+      description={localize('com_ui_use_microphone')}
       render={
         <button
           id="audio-recorder"
           type="button"
-          aria-label={localize('com_ui_use_micrphone')}
+          aria-label={localize('com_ui_use_microphone')}
           onClick={isListening === true ? handleStopRecording : handleStartRecording}
           disabled={disabled}
           className={cn(
             'flex size-9 items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover',
           )}
-          title={localize('com_ui_use_micrphone')}
+          title={localize('com_ui_use_microphone')}
           aria-pressed={isListening}
         >
           {renderIcon()}

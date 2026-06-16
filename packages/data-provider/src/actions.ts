@@ -261,7 +261,7 @@ class RequestExecutor {
     ) {
       this.authHeaders[custom_auth_header] = api_key;
     } else if (isOAuth) {
-      // TODO: maybe doing it in a different way later on. but we want that the user needs to folllow the oauth flow.
+      // TODO: maybe doing it in a different way later on. but we want that the user needs to follow the oauth flow.
       // If we do not have a valid token, bail or ask user to sign in
       const now = new Date();
 

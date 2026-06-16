@@ -16,7 +16,7 @@ export function getClient() {
 }
 
 /**
- * This function capitlizes on [Anthropic's function calling training](https://docs.anthropic.com/claude/docs/functions-external-tools).
+ * This function capitalizes on [Anthropic's function calling training](https://docs.anthropic.com/claude/docs/functions-external-tools).
  *
  * @param {Object} params - The parameters for the generation.
  * @param {string} params.key

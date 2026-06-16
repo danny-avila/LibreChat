@@ -35,7 +35,7 @@ function MultiSelectPop({
   const title = _title;
   const excludeIds = ['select-plugin', 'plugins-label', 'selected-plugins'];
 
-  // Detemine if we should to convert this component into a searchable select
+  // Determine if we should to convert this component into a searchable select
   const [filteredValues, searchRender] = useMultiSearch<TPlugin[]>({
     availableOptions: availableValues,
     placeholder: searchPlaceholder,

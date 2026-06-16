@@ -178,7 +178,7 @@ class BaseClient {
   /**
    * @returns {[string|undefined, string|undefined]}
    */
-  processOverideIds() {
+  processOverrideIds() {
     /** @type {Record<string, string | undefined>} */
     let { overrideConvoId, overrideUserMessageId } = this.options?.req?.body ?? {};
     if (overrideConvoId) {
@@ -204,7 +204,7 @@ class BaseClient {
       this.setOptions(opts);
     }
 
-    const [overrideConvoId, overrideUserMessageId] = this.processOverideIds();
+    const [overrideConvoId, overrideUserMessageId] = this.processOverrideIds();
     const { isEdited, isContinued } = opts;
     const user = opts.user ?? null;
     this.user = user;

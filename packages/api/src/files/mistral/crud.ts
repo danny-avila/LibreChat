@@ -439,7 +439,7 @@ export const uploadMistralOCR = async (context: OCRContext): Promise<MistralOCRU
 };
 
 /**
- * Use Azure Mistral OCR API to processe the OCR result.
+ * Use Azure Mistral OCR API to process the OCR result.
  *
  * @param params - The params object.
  * @param params.req - The request object from Express. It should have a `user` property with an `id`

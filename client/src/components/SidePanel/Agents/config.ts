@@ -79,7 +79,7 @@ export type SPPickerConfig = {
          */
         web?: string;
         /**
-         * Full URL or path segement to identity a List.
+         * Full URL or path segment to identity a List.
          * If not preceded with a `/` or a URL scheme, this is assumed to be a list in the specified web.
          * @example
          *  'Shared Documents'

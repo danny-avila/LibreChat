@@ -316,7 +316,7 @@ export const tavilySearchSchema: ExtendedJsonSchema = {
       type: 'string',
       enum: ['general', 'news', 'finance'],
       description:
-        'The category of the search. Use news ONLY if query SPECIFCALLY mentions the word "news".',
+        'The category of the search. Use news ONLY if query SPECIFICALLY mentions the word "news".',
     },
     time_range: {
       type: 'string',

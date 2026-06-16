@@ -25,7 +25,7 @@ describe('validateActionOAuthEndpoint', () => {
     );
   });
 
-  it('rejects unparseable endpoint URLs', async () => {
+  it('rejects unparsable endpoint URLs', async () => {
     await expect(validateActionOAuthEndpoint('not a url', 'authorization_url')).rejects.toThrow(
       /Invalid action OAuth authorization_url/,
     );

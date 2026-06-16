@@ -894,7 +894,7 @@ export function fileToArtifact(
 
 export const sharedFiles = {
   '/lib/utils.ts': shadcnComponents.utils,
-  '/components/ui/accordion.tsx': shadcnComponents.accordian,
+  '/components/ui/accordion.tsx': shadcnComponents.accordion,
   '/components/ui/alert-dialog.tsx': shadcnComponents.alertDialog,
   '/components/ui/alert.tsx': shadcnComponents.alert,
   '/components/ui/avatar.tsx': shadcnComponents.avatar,

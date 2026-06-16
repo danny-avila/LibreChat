@@ -1220,7 +1220,7 @@ describe('isOAuthUrlAllowed', () => {
     expect(isOAuthUrlAllowed('https://example.com/token', [])).toBe(false);
   });
 
-  it('should return false for unparseable URLs', () => {
+  it('should return false for unparsable URLs', () => {
     expect(isOAuthUrlAllowed('not-a-url', ['example.com'])).toBe(false);
   });
 
@@ -1308,7 +1308,7 @@ describe('validateEndpointURL', () => {
     jest.clearAllMocks();
   });
 
-  it('should throw for unparseable URLs', async () => {
+  it('should throw for unparsable URLs', async () => {
     await expect(validateEndpointURL('not-a-url', 'test-ep')).rejects.toThrow(
       'Invalid base URL for test-ep',
     );

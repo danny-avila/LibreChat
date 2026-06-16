@@ -34,7 +34,7 @@ function isUserProvidedEnabled(field: string): boolean {
 
 /**
  * Returns true if the URL should be blocked for SSRF risk.
- * Fail-closed: unparseable URLs and non-HTTP(S) schemes return true.
+ * Fail-closed: unparsable URLs and non-HTTP(S) schemes return true.
  */
 async function isSSRFUrl(url: string): Promise<boolean> {
   let parsed: URL;

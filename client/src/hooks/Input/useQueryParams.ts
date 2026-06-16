@@ -168,7 +168,7 @@ export default function useQueryParams({
           cleanOutput: newPreset.spec != null && newPreset.spec !== '',
         });
 
-        /* We don't reset the latest message, only when changing settings mid-converstion */
+        /* We don't reset the latest message, only when changing settings mid-conversion */
         logger.log('conversation', 'Switching conversation from query params', currentConvo);
         newConversation({
           template: currentConvo,

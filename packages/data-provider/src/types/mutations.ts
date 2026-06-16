@@ -267,7 +267,7 @@ export type MakePromptProductionOptions = MutationOptions<
 
 /* Auth mutations */
 export type VerifyEmailOptions = MutationOptions<types.VerifyEmailResponse, types.TVerifyEmail>;
-export type ResendVerifcationOptions = MutationOptions<
+export type ResendVerificationOptions = MutationOptions<
   types.VerifyEmailResponse,
   types.TResendVerificationEmail
 >;

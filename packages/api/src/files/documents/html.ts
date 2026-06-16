@@ -1263,7 +1263,7 @@ ${PPTX_SLIDE_LIST_CSS}
      * NOTE: a previous iteration tried min(width-fit, height-fit) to
      * also fill the panel vertically. That broke pptx-previews
      * rendering (slides came out as solid black rectangles). The
-     * librarys internal layout interacts unpredictably with min-height
+     * libraries internal layout interacts unpredictably with min-height
      * 100vh on the document root and viewport-derived height
      * calculations during its CSS injection step. Sticking to
      * width-only keeps rendering reliable; vertical empty space below
@@ -1276,7 +1276,7 @@ ${PPTX_SLIDE_LIST_CSS}
 
     /* Wrap each rendered slide and apply the scale. Called ONCE,
      * after pptx-preview is done — wrapping during streaming would
-     * move slides out from under the librarys references and break
+     * move slides out from under the libraries references and break
      * its internal state. */
     function wrapSlides() {
       var children = Array.prototype.slice.call(container.children);

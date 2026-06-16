@@ -93,7 +93,7 @@ describe('isValidTimestamp', () => {
     expect(isValidTimestamp('')).toBe(false);
   });
 
-  it('returns false for unparseable strings', () => {
+  it('returns false for unparsable strings', () => {
     expect(isValidTimestamp('not-a-date')).toBe(false);
   });
 

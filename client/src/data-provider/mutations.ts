@@ -1069,10 +1069,10 @@ export const useVerifyEmailMutation = (
 };
 
 /**
- * Hook for resending verficiation email
+ * Hook for resending verification email
  */
 export const useResendVerificationEmail = (
-  options?: t.ResendVerifcationOptions,
+  options?: t.ResendVerificationOptions,
 ): UseMutationResult<t.VerifyEmailResponse, unknown, t.TResendVerificationEmail, unknown> => {
   return useMutation({
     mutationFn: (variables: t.TResendVerificationEmail) =>

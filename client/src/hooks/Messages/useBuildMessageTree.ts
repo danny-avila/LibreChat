@@ -11,7 +11,7 @@ export default function useBuildMessageTree() {
   );
 
   // return an object or an array based on branches and recursive option
-  // messageId is used to get siblindIdx from recoil snapshot
+  // messageId is used to get siblingIdx from recoil snapshot
   const buildMessageTree = async ({
     messageId,
     message,

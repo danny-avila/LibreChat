@@ -406,7 +406,7 @@ const formatRelativeTime = (from: Date, to: Date, locale?: string): string => {
 
 /**
  * Formats a message timestamp into locale-aware relative and absolute strings.
- * Returns null when the value is missing or unparseable, so callers can skip
+ * Returns null when the value is missing or unparsable, so callers can skip
  * rendering the timestamp entirely.
  */
 export const getMessageTimestamp = (

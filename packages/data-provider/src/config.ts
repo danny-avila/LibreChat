@@ -1953,7 +1953,7 @@ export const defaultModels = {
   [EModelEndpoint.bedrock]: bedrockModels,
 };
 
-const fitlerAssistantModels = (str: string) => {
+const filterAssistantModels = (str: string) => {
   return /gpt-4|gpt-3\\.5/i.test(str) && !/vision|instruct/i.test(str);
 };
 
@@ -1962,7 +1962,7 @@ const openAIModels = defaultModels[EModelEndpoint.openAI];
 export const initialModelsConfig: TModelsConfig = {
   initial: [],
   [EModelEndpoint.openAI]: openAIModels,
-  [EModelEndpoint.assistants]: openAIModels.filter(fitlerAssistantModels),
+  [EModelEndpoint.assistants]: openAIModels.filter(filterAssistantModels),
   [EModelEndpoint.agents]: openAIModels, // TODO: Add agent models (agentsModels)
   [EModelEndpoint.azureOpenAI]: openAIModels,
   [EModelEndpoint.google]: defaultModels[EModelEndpoint.google],

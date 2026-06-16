@@ -413,7 +413,7 @@ export function extractMCPServerDomain(config: Record<string, unknown>): string 
  * Configs with a non-empty URL that cannot be parsed are rejected fail-closed when an
  * allowlist is active, preventing template placeholders (e.g. `{{HOST}}`) from bypassing
  * domain validation after `processMCPEnv` resolves them at connection time.
- * When no allowlist is configured, unparseable URLs fall through to connection-level
+ * When no allowlist is configured, unparsable URLs fall through to connection-level
  * SSRF protection (`createSSRFSafeUndiciConnect`).
  * @param config - MCP server configuration with optional url field
  * @param allowedDomains - List of allowed domains (with wildcard support)
@@ -533,7 +533,7 @@ function throwInvalidBaseURL(message: string): never {
 
 /**
  * Validates that a user-provided endpoint URL does not target private/internal addresses.
- * Throws if the URL is unparseable, uses a non-HTTP(S) scheme, targets a known SSRF hostname,
+ * Throws if the URL is unparsable, uses a non-HTTP(S) scheme, targets a known SSRF hostname,
  * or DNS-resolves to a private IP.
  *
  * When `allowedAddresses` is provided, hostname/IP + port pairs are matched

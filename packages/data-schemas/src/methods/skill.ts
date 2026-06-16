@@ -867,7 +867,7 @@ export async function filterExistingSkillIds(
 /**
  * Validate the `always-apply` value that would be derived from the
  * SKILL.md body's inline frontmatter. Only reports an issue when the
- * key is present with an unparseable value — absent / valid / empty
+ * key is present with an unparsable value — absent / valid / empty
  * all pass silently so mid-edit saves that haven't touched the flag
  * yet don't get rejected. Wired into both `createSkill` and
  * `updateSkill` so a body PATCH carrying `always-apply: tru` (typo)

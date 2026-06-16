@@ -8,7 +8,7 @@ replicaCount: 1
 
 global:
    # default Secret for envs/ only Passwords. Can be locally generated with: kubectl create secret generic librechat-secret-envs --from-env-file=.env.example --dry-run=client -o yaml > secret-envs.yaml
-   # For better maintainabillity, you can put all vars directly in the config Section and only overwrite Secrets with this if nessesary.
+   # For better maintainability, you can put all vars directly in the config Section and only overwrite Secrets with this if necessary.
    # Required Values:
    # - CREDS_KEY
    # - CREDS_IV
@@ -49,7 +49,7 @@ librechat:
     # ENV_NAME: env-value
 
     # existing Secret for all envs/ only Passwords. Can be locally generated with: kubectl create secret generic librechat-secret-envs --from-env-file=.env.example --dry-run=client -o yaml > secret-envs.yaml
-    # For better maintainabillity, you can put all vars directly in the config Section and only overwrite Secrets with this if nessesary.
+    # For better maintainability, you can put all vars directly in the config Section and only overwrite Secrets with this if necessary.
     # Required Values:
     # - MEILI_MASTER_KEY
   existingSecretName: "librechat-credentials-env"

@@ -106,7 +106,7 @@ export default function useSelectMention({
           cleanOutput: true,
         });
 
-        /* We don't reset the latest message, only when changing settings mid-converstion */
+        /* We don't reset the latest message, only when changing settings mid-conversion */
         logger.info('conversation', 'Switching conversation to new spec (modular)', conversation);
         newConversation({
           template: currentConvo,
@@ -200,7 +200,7 @@ export default function useSelectMention({
           preset: template,
         });
 
-        /* We don't reset the latest message, only when changing settings mid-converstion */
+        /* We don't reset the latest message, only when changing settings mid-conversion */
         logger.info(
           'conversation',
           'Switching conversation to new endpoint/model (modular)',
@@ -276,7 +276,7 @@ export default function useSelectMention({
           cleanInput: true,
         });
 
-        /* We don't reset the latest message, only when changing settings mid-converstion */
+        /* We don't reset the latest message, only when changing settings mid-conversion */
         logger.info('conversation', 'Switching conversation to new preset (modular)', currentConvo);
         newConversation({
           template: currentConvo,

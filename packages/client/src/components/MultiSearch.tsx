@@ -76,9 +76,9 @@ export default function MultiSearch({
  */
 function defaultGetStringKey(node: unknown): string {
   if (typeof node === 'string') {
-    // BUGFIX: Detect psedeo separators and make sure they don't appear in the list when filtering items
+    // BUGFIX: Detect pseudo separators and make sure they don't appear in the list when filtering items
     // it makes sure (for the most part) that the model name starts and ends with dashes
-    // The long-term fix here would be to enable seperators (model groupings) but there's no
+    // The long-term fix here would be to enable separators (model groupings) but there's no
     // feature mocks for such a thing yet
     if (node.startsWith('---') && node.endsWith('---')) {
       return '';

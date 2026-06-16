@@ -60,7 +60,7 @@ export function createHandleOAuthToken({
     metadata?: Record<string, unknown>;
     type?: string;
   }): Promise<IToken | null> {
-    const encrypedToken = await encryptV2(token);
+    const encryptedToken = await encryptV2(token);
     let expiresInNumber = 3600;
     if (typeof expiresIn === 'number') {
       expiresInNumber = expiresIn;
@@ -72,7 +72,7 @@ export function createHandleOAuthToken({
       userId,
       metadata,
       identifier,
-      token: encrypedToken,
+      token: encryptedToken,
       expiresIn: expiresInNumber,
     };
 
