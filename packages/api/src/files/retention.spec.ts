@@ -52,6 +52,16 @@ describe('retention helpers', () => {
     expect(dependencies.getConvo).not.toHaveBeenCalled();
   });
 
+  it('returns expiry when retentionMode is EPHEMERAL', async () => {
+    const result = await getRetentionExpiry(
+      request({ config: { interfaceConfig: { retentionMode: RetentionMode.EPHEMERAL } } }),
+      dependencies,
+    );
+
+    expect(result).toEqual({ expiredAt: expirationDate });
+    expect(dependencies.getConvo).not.toHaveBeenCalled();
+  });
+
   it('returns a fresh expiry when the conversation has an active expiration', async () => {
     dependencies.getConvo.mockResolvedValue({
       expiredAt: new Date(Date.now() + 60 * 60 * 1000),

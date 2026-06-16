@@ -94,8 +94,11 @@ export default function HeaderMenu({
   if (showTemporary) {
     pushGroup({
       id: 'header-temporary',
-      label: localize('com_ui_temporary'),
+      label: temporary.isEnforced
+        ? localize('com_ui_temporary_enforced')
+        : localize('com_ui_temporary'),
       ariaChecked: temporary.isTemporary,
+      disabled: temporary.isEnforced,
       className: temporary.isTemporary ? 'bg-surface-active' : undefined,
       icon: temporary.isTemporary ? (
         <Check className="size-4 text-text-primary" />
