@@ -224,9 +224,14 @@ export default function useQueryParams({
 
   const setPromptText = useCallback(
     (text: string) => {
+      const textArea = textAreaRef.current;
+      if (!textArea) {
+        return;
+      }
+
       methods.setValue('text', text, { shouldValidate: true });
-      textAreaRef.current.focus();
-      textAreaRef.current.setSelectionRange(text.length, text.length);
+      textArea.focus();
+      textArea.setSelectionRange(text.length, text.length);
     },
     [methods, textAreaRef],
   );

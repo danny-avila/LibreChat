@@ -21,6 +21,7 @@ import { renderHook, act } from '@testing-library/react';
 import { useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilValue } from 'recoil';
+import { EModelEndpoint } from 'librechat-data-provider';
 import useQueryParams from './useQueryParams';
 import { useChatContext, useChatFormContext } from '~/Providers';
 import useSubmitMessage from '~/hooks/Messages/useSubmitMessage';
