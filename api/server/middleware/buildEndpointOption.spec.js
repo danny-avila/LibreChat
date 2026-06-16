@@ -220,23 +220,26 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
     expect(req.body.endpointOption.chatProjectId).toBe('project-1');
   });
 
-  it('should rebuild enforced agent specs from the backend preset when raw spec is valid', async () => {
+  it('should rebuild enforced custom specs from the backend preset when compact parsing drops raw fields', async () => {
     mockGetEndpointsConfig.mockResolvedValue({});
 
     const modelSpec = {
-      name: 'approved-agent',
+      name: 'approved-custom',
       preset: {
-        endpoint: EModelEndpoint.agents,
-        agent_id: 'agent_approved',
-        instructions: 'Use the approved agent configuration.',
+        endpoint: 'Mock Provider A',
+        endpointType: EModelEndpoint.custom,
+        model: 'mock-model-a',
+        promptPrefix: 'Use the approved custom model spec.',
       },
     };
 
     const req = createReq(
       {
-        endpoint: EModelEndpoint.agents,
-        spec: 'approved-agent',
-        agent_id: { $gt: '' },
+        endpoint: 'Mock Provider A',
+        endpointType: EModelEndpoint.custom,
+        spec: 'approved-custom',
+        model: { stale: 'cached-client-value' },
+        agent_id: 'agent_from_cached_client_state',
         chatProjectId: 'project-1',
       },
       {
@@ -251,9 +254,9 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
     await buildEndpointOption(req, createRes(), jest.fn());
 
     expect(parseCompactConvo.mock.results[0].value).toEqual({});
-    expect(req.body.endpointOption.spec).toBe('approved-agent');
-    expect(req.body.endpointOption.agent_id).toBe('agent_approved');
-    expect(req.body.endpointOption.instructions).toBe('Use the approved agent configuration.');
+    expect(req.body.endpointOption.spec).toBe('approved-custom');
+    expect(req.body.endpointOption.model).toBe('mock-model-a');
+    expect(req.body.endpointOption.promptPrefix).toBe('Use the approved custom model spec.');
     expect(req.body.endpointOption.chatProjectId).toBe('project-1');
   });
 
