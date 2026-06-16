@@ -1,18 +1,18 @@
 # Date (as month/day/year)
 
-6/09/26
+6/16/26
 
 # Title
 
-Discover the new saved files feature
+New Chat Management Features Are Here!
 
 # Description
 
-Your uploaded files now have a home on the left sidebar (look for the clip icon). This keeps your files organized and always within reach for reuse.
+We heard you\! You can now search your conversations, organize chats into project folders, and pin your favorites to the top.
 
 # Release notes link text
 
-Read the release notes
+See more info here
 
 # Release notes link
 
