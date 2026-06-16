@@ -138,6 +138,7 @@ function getLLMConfig(
   const mergedOptions = Object.assign(defaultOptions, options.modelOptions);
 
   let enableWebSearch = mergedOptions.web_search;
+  let enableCodeExecution = mergedOptions.code_execution;
 
   let requestOptions: AnthropicClientOptions & { stream?: boolean } = {
     model: mergedOptions.model,
@@ -246,6 +247,14 @@ function getLLMConfig(
         continue;
       }
 
+      /** Handle code_execution separately - don't add to config */
+      if (key === 'code_execution') {
+        if (enableCodeExecution === undefined && typeof value === 'boolean') {
+          enableCodeExecution = value;
+        }
+        continue;
+      }
+
       if (knownAnthropicParams.has(key)) {
         /** Route known Anthropic params to requestOptions only if undefined */
         applyDefaultParams(requestOptions as Record<string, unknown>, { [key]: value });
@@ -261,6 +270,14 @@ function getLLMConfig(
       if (key === 'web_search') {
         if (typeof value === 'boolean') {
           enableWebSearch = value;
+        }
+        continue;
+      }
+
+      /** Handle code_execution separately - don't add to config */
+      if (key === 'code_execution') {
+        if (typeof value === 'boolean') {
+          enableCodeExecution = value;
         }
         continue;
       }
@@ -281,6 +298,11 @@ function getLLMConfig(
     options.dropParams.forEach((param) => {
       if (param === 'web_search') {
         enableWebSearch = false;
+        return;
+      }
+
+      if (param === 'code_execution') {
+        enableCodeExecution = false;
         return;
       }
 
@@ -311,6 +333,13 @@ function getLLMConfig(
         WEB_SEARCH_BETA,
       );
     }
+  }
+
+  if (enableCodeExecution) {
+    tools.push({
+      type: 'code_execution_20260120',
+      name: 'code_execution',
+    });
   }
 
   if (!shouldDropClientOptions) {

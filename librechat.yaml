@@ -422,6 +422,8 @@ endpoints:
 
   anthropic:
     titleModel: claude-sonnet-4-6
+    addParams:
+      code_execution: true
 
   # AWS Bedrock Example
   # Note: Bedrock endpoint is configured via environment variables
@@ -452,6 +454,23 @@ endpoints:
   #     # - "disabled": No trace information (default)
   #     # Trace output is logged to application log files for compliance auditing
   #     trace: "enabled"
+
+mcpServers:
+  filesystem:
+    type: stdio
+    command: npx
+    args:
+      - -y
+      - "@modelcontextprotocol/server-filesystem"
+      - /app/uploads
+    timeout: 90000
+  excel:
+    type: stdio
+    command: npx
+    args:
+      - -y
+      - "@guillehr2/excel-mcp-server"
+    timeout: 90000
 
 modelSpecs:
   prioritize: true

@@ -834,6 +834,8 @@ export const tConversationSchema = z.object({
   thinkingDisplay: eThinkingDisplaySchema.optional().nullable(),
   /* OpenAI Responses API / Anthropic API / Google API */
   web_search: z.boolean().optional(),
+  /* Anthropic API: native server-side code execution */
+  code_execution: z.boolean().optional(),
   /* disable streaming */
   disableStreaming: z.boolean().optional(),
   /* assistant */
@@ -943,6 +945,8 @@ export const tQueryParamsSchema = tConversationSchema
     useResponsesApi: true,
     /** @endpoints openAI, anthropic, google */
     web_search: true,
+    /** @endpoints anthropic */
+    code_execution: true,
     /** @endpoints openAI, custom, azureOpenAI */
     disableStreaming: true,
     /** @endpoints google, anthropic, bedrock */
@@ -1299,6 +1303,7 @@ export const anthropicBaseSchema = tConversationSchema.pick({
   spec: true,
   maxContextTokens: true,
   web_search: true,
+  code_execution: true,
   fileTokenLimit: true,
   stop: true,
   stream: true,
