@@ -61,6 +61,7 @@ export const fullMimeTypesList = [
   'application/vnd.coffeescript',
   'application/xml',
   'application/zip',
+  'application/x-zip-compressed',
   'application/x-parquet',
   'application/vnd.oasis.opendocument.text',
   'application/vnd.oasis.opendocument.spreadsheet',
@@ -121,6 +122,7 @@ export const codeInterpreterMimeTypesList = [
   'application/typescript',
   'application/xml',
   'application/zip',
+  'application/x-zip-compressed',
   'application/x-parquet',
   ...excelFileTypes,
 ];
@@ -185,7 +187,7 @@ export const textMimeTypes =
   /^(text\/(x-c|x-csharp|tab-separated-values|x-c\+\+|x-h|x-java|html|markdown|x-php|x-python|x-script\.python|x-ruby|x-tex|plain|css|vtt|javascript|csv|xml|calendar))$/;
 
 export const applicationMimeTypes =
-  /^(application\/(epub\+zip|csv|json|msword|pdf|x-tar|x-sh|typescript|sql|yaml|x-parquet|vnd\.apache\.parquet|vnd\.coffeescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|vnd\.oasis\.opendocument\.(text|spreadsheet|presentation|graphics)|xml|zip))$/;
+  /^(application\/(epub\+zip|csv|json|msword|pdf|x-tar|x-sh|x-zip-compressed|typescript|sql|yaml|x-parquet|vnd\.apache\.parquet|vnd\.coffeescript|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet)|vnd\.oasis\.opendocument\.(text|spreadsheet|presentation|graphics)|xml|zip))$/;
 
 export const imageMimeTypes = /^image\/(jpeg|gif|png|webp|heic|heif)$/;
 
@@ -367,6 +369,7 @@ export const imageTypeMapping: { [key: string]: string } = {
 
 /** Normalizes non-standard MIME types that browsers may report to their canonical forms */
 export const mimeTypeAliases: Readonly<Record<string, string>> = {
+  'application/x-zip-compressed': 'application/zip',
   'text/x-python-script': 'text/x-python',
   'text/x-markdown': 'text/markdown',
 };
