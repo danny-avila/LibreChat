@@ -61,6 +61,7 @@ export const useContextProjectionQuery = (
       params?.model,
       params?.agentId,
       params?.maxContextTokens,
+      params?.revision,
     ],
     () => dataService.getContextProjection(params as t.TContextProjectionRequest),
     {

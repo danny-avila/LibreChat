@@ -7,16 +7,11 @@ interface ProjectionMessage {
   messageId: string;
   parentMessageId?: string | null;
   tokenCount?: number;
-  summaryTokenCount?: number;
   isCreatedByUser?: boolean;
   text?: string;
-}
-
-interface ProjectionAgent {
-  instructions?: string;
-  provider?: string;
-  model?: string;
-  model_parameters?: { maxContextTokens?: number };
+  /** Compaction marker written by the live path (`agents/usage.ts`); its
+   *  presence means the next call sends the summary + tail, not this raw chain. */
+  metadata?: { summaryUsedTokens?: number };
 }
 
 export interface ContextProjectionDeps {
@@ -26,7 +21,6 @@ export interface ContextProjectionDeps {
     filter: { conversationId: string; user?: string },
     select?: string,
   ) => Promise<ProjectionMessage[]>;
-  getAgent: (filter: { id: string }) => Promise<ProjectionAgent | null>;
 }
 
 /**
@@ -77,21 +71,29 @@ function resolveProvider(value?: string): Providers {
 }
 
 /**
- * Server-side context-usage projection: reconstructs the viewed branch + the
- * resolved agent config and asks the agents SDK what the next call's context
- * would be, WITHOUT invoking the model. Reuses LibreChat's already-calibrated
- * per-message `tokenCount`s (no re-tokenizing). Returns null when there is no
- * resolvable context window. NOTE: this first cut targets message-windowing
- * accuracy — tool-schema tokens are not yet included; a follow-up will reuse the
- * full `initializeAgent` path for exact instruction/tool overhead.
+ * Server-side context-usage projection: reconstructs the viewed branch and asks
+ * the agents SDK what the next call's context would be, WITHOUT invoking the
+ * model. Provider/model/window come from the (client-resolved) request — no
+ * agent or model-spec config is loaded here, so there is no cross-user config
+ * exposure. Reuses LibreChat's already-calibrated per-message `tokenCount`s (no
+ * re-tokenizing). Returns null when there is no resolvable context window.
+ * NOTE: this first cut targets message-windowing accuracy — instruction and
+ * tool-schema tokens (agent instructions, `promptPrefix`, model-spec presets,
+ * tool schemas) are NOT yet included; a follow-up will reuse the full
+ * `initializeAgent`/send path for exact overhead and proper access control.
  */
 export async function resolveContextProjection(
   deps: ContextProjectionDeps,
   params: TContextProjectionRequest,
 ): Promise<TContextUsageEvent | null> {
+  const maxContextTokens = params.maxContextTokens;
+  if (maxContextTokens == null || maxContextTokens <= 0) {
+    return null;
+  }
+
   const stored = await deps.getMessages(
     { conversationId: params.conversationId, user: deps.userId },
-    'messageId parentMessageId tokenCount summaryTokenCount isCreatedByUser text',
+    'messageId parentMessageId tokenCount isCreatedByUser text metadata',
   );
   const branch = resolveBranch(stored, params.messageId);
   if (branch.length === 0) {
@@ -100,30 +102,15 @@ export async function resolveContextProjection(
 
   /** A summarized/compacted branch's next call sends the saved summary + the
    *  post-summary tail, NOT this raw parent chain — projecting from the full
-   *  history would prune/count the wrong context and omit the summary. Until the
-   *  follow-up replays the summary boundary, fall back (null) so the client's
-   *  summary-baseline-aware estimate handles these branches. */
-  if (branch.some((message) => (message.summaryTokenCount ?? 0) > 0)) {
+   *  history would prune/count the wrong context and omit the summary. Detect it
+   *  via the live path's `metadata.summaryUsedTokens` marker and fall back (null)
+   *  so the client's summary-baseline-aware estimate handles these branches until
+   *  a follow-up replays the summary boundary. */
+  if (branch.some((message) => (message.metadata?.summaryUsedTokens ?? 0) > 0)) {
     return null;
   }
 
-  let instructions: string | undefined;
-  let providerValue: string | undefined = params.endpoint;
-  let model = params.model;
-  let maxContextTokens = params.maxContextTokens;
-  if (params.agentId != null && params.agentId !== '') {
-    const agent = await deps.getAgent({ id: params.agentId });
-    if (agent != null) {
-      instructions = agent.instructions;
-      providerValue = agent.provider ?? providerValue;
-      model = agent.model ?? model;
-      maxContextTokens = maxContextTokens ?? agent.model_parameters?.maxContextTokens;
-    }
-  }
-  if (maxContextTokens == null || maxContextTokens <= 0) {
-    return null;
-  }
-
+  const model = params.model;
   const encoding = (model ?? '').toLowerCase().includes('claude') ? 'claude' : 'o200k_base';
   const tokenCounter = await createTokenCounter(encoding);
 
@@ -147,8 +134,7 @@ export async function resolveContextProjection(
   return projectAgentContextUsage({
     agent: {
       agentId: params.agentId ?? 'projection',
-      provider: resolveProvider(providerValue),
-      instructions,
+      provider: resolveProvider(params.endpoint),
       maxContextTokens,
     },
     messages,

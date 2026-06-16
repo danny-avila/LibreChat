@@ -106,6 +106,9 @@ export type TContextProjectionRequest = {
   maxContextTokens?: number;
   /** Provider-calibrated ratio from a prior snapshot, applied as a static seed. */
   calibrationRatio?: number;
+  /** Client-only cache-bust: a branch content revision so a message edit
+   *  (which keeps the same tail id) refetches. The server ignores it. */
+  revision?: number;
 };
 
 /**

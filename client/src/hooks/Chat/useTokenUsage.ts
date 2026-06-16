@@ -121,12 +121,16 @@ export default function useTokenUsage({
       ? {
           conversationId: conversation.conversationId,
           messageId: branchTotals.tailId,
-          endpoint: conversation.endpoint,
-          model: conversation.model ?? undefined,
+          /** Resolved provider/model (e.g. an agent's actual provider, not the
+           *  `agents` endpoint) so the server picks the right tokenizer. */
+          endpoint: limits.endpoint || conversation.endpoint,
+          model: limits.model || conversation.model || undefined,
           agentId: conversation.agent_id ?? undefined,
           spec: conversation.spec ?? undefined,
           maxContextTokens: resolvedMax,
           calibrationRatio: branchSnapshot?.calibrationRatio,
+          /** Content revision so an in-place message edit (same tail id) refetches. */
+          revision: branchTotals.input + branchTotals.output,
         }
       : null;
   const { data: projectionData } = useContextProjectionQuery(projectionParams);
