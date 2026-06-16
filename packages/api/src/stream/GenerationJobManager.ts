@@ -480,6 +480,9 @@ class GenerationJobManagerClass {
         iconURL: jobData.iconURL,
         model: jobData.model,
         promptTokens: jobData.promptTokens,
+        // Surface the pending review so status/resume routes built on the
+        // facade can render the prompt for a `requires_action` job.
+        pendingAction: jobData.pendingAction,
       },
       readyPromise: runtime.readyPromise,
       resolveReady: runtime.resolveReady,

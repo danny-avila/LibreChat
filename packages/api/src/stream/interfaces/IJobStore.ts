@@ -69,6 +69,22 @@ export interface SerializableJobData {
    * run is waiting on. Cleared by the resume path before the job returns to `running`.
    */
   pendingAction?: Agents.PendingAction;
+
+  /**
+   * Flat mirror of `pendingAction.actionId`, kept as a top-level field so an
+   * atomic status transition can guard on it (a nested JSON field can't be
+   * compared inside a Redis Lua CAS). Lets `resolve`/`expire` reject a stale
+   * decision that targets a different action than the one currently pending.
+   */
+  pendingActionId?: string;
+
+  /**
+   * Liveness basis for the stale-running failsafe, refreshed when a paused job
+   * is resumed. Without it, cleanup keys off `createdAt`, so an approval that
+   * sat in `requires_action` past the running window would be reaped on the
+   * next tick right after resuming. Falls back to `createdAt` when unset.
+   */
+  lastActiveAt?: number;
 }
 
 /**
@@ -83,6 +99,12 @@ export interface JobStatusTransition {
   patch?: Partial<SerializableJobData>;
   /** Field names removed in the same atomic step (e.g. `pendingAction`). */
   clear?: Array<keyof SerializableJobData & string>;
+  /**
+   * Additional guard: only fire if the job's `pendingActionId` equals this.
+   * Checked atomically alongside the `from` status so a stale decision can't
+   * resolve a job that has since paused for a different action.
+   */
+  expectActionId?: string;
 }
 
 /**
