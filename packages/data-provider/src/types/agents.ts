@@ -246,6 +246,12 @@ export namespace Agents {
     collectedUsage?: TTokenUsageEvent[];
     /** Latest context window snapshot; restores the usage gauge on resume */
     contextUsage?: TContextUsageEvent;
+    /**
+     * Live pending approval when the run is paused for human review. Carried in
+     * the resume contract (not just /chat/status) so a reloading or
+     * cross-replica client can rebuild and render the prompt from `resumeState`.
+     */
+    pendingAction?: PendingAction;
   }
   /**
    * Represents a run step delta i.e. any changed fields on a run step during
