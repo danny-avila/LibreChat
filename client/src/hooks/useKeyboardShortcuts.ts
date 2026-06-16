@@ -809,6 +809,18 @@ export function useShortcutBindings(): {
         if (!prev[id]) return prev;
         const next = { ...prev };
         delete next[id];
+
+        const restored = parseBinding(effectiveBindingString(id, next));
+        if (restored) {
+          const restoredHash = bindingHash(restored);
+          const platformKey: keyof ShortcutOverride = isMac ? 'mac' : 'other';
+          for (const otherId of Object.keys(next) as ShortcutActionId[]) {
+            const otherBinding = parseBinding(effectiveBindingString(otherId, next));
+            if (otherBinding && bindingHash(otherBinding) === restoredHash) {
+              next[otherId] = { ...next[otherId], [platformKey]: null };
+            }
+          }
+        }
         return next;
       });
     },
@@ -825,6 +837,7 @@ export function useShortcutBindings(): {
 export default function useKeyboardShortcuts() {
   const actions = useShortcutActions();
   const overrides = useRecoilValue(store.customShortcuts);
+  const shortcutsDialogOpen = useRecoilValue(store.showShortcutsDialog);
 
   const actionMap = useMemo(() => new Map(actions.map((action) => [action.id, action])), [actions]);
 
@@ -855,6 +868,10 @@ export default function useKeyboardShortcuts() {
         return;
       }
 
+      if (shortcutsDialogOpen && matchedId !== 'showShortcuts') {
+        return;
+      }
+
       const target = e.target as HTMLElement | null;
       const tagName = target?.tagName;
       const isEditing =
@@ -881,7 +898,7 @@ export default function useKeyboardShortcuts() {
       e.preventDefault();
       actionMap.get(matchedId)?.run();
     },
-    [actionMap, bindingMap],
+    [actionMap, bindingMap, shortcutsDialogOpen],
   );
 
   useEffect(() => {
