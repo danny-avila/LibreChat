@@ -31,11 +31,15 @@ const isSavedAgentRequest = (endpoint, parsedBody) =>
 
 const isObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
 
-const agentMatchesEnforcedModelSpec = (agent, list) =>
-  list.some(
-    (modelSpec) =>
-      modelSpec?.preset?.endpoint === agent?.provider && modelSpec?.preset?.model === agent?.model,
-  );
+const agentMatchesEnforcedModelSpec = ({ agent, agent_id, list }) =>
+  list.some((modelSpec) => {
+    const preset = modelSpec?.preset;
+    if (isAgentsEndpoint(preset?.endpoint) && preset?.agent_id === agent_id) {
+      return true;
+    }
+
+    return preset?.endpoint === agent?.provider && preset?.model === agent?.model;
+  });
 
 const validateSavedAgentModelSpec = async ({ agent_id, list }) => {
   if (!agent_id || isEphemeralAgentId(agent_id)) {
@@ -47,7 +51,7 @@ const validateSavedAgentModelSpec = async ({ agent_id, list }) => {
     return { isSavedAgent: true, error: 'Invalid agent' };
   }
 
-  if (!agentMatchesEnforcedModelSpec(agent, list)) {
+  if (!agentMatchesEnforcedModelSpec({ agent, agent_id, list })) {
     return { isSavedAgent: true, error: 'Model spec mismatch' };
   }
 
