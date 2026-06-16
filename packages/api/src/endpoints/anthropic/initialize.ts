@@ -84,6 +84,11 @@ export async function initializeAnthropic({
     clientOptions.addParams = anthropicConfig.addParams as Record<string, unknown>;
   }
 
+  const addParams = anthropicConfig?.addParams as Record<string, unknown> | undefined;
+  if (addParams?.code_execution === true && clientOptions.modelOptions) {
+    clientOptions.modelOptions.code_execution = true;
+  }
+
   const result = getLLMConfig(credentials, clientOptions);
 
   if (anthropicConfig?.streamRate) {
