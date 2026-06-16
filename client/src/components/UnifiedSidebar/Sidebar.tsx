@@ -1,7 +1,7 @@
 import { memo, useCallback, lazy, Suspense } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilValue } from 'recoil';
-import { SquarePen } from 'lucide-react';
+import { SquarePen, SidebarClose } from 'lucide-react';
 import { QueryKeys } from 'librechat-data-provider';
 import { Skeleton, Button, TooltipAnchor } from '@librechat/client';
 import type { NavLink } from '~/common';
@@ -19,8 +19,6 @@ const AccountSettings = lazy(() => import('~/components/Nav/AccountSettings'));
 function LibreChatLogo({ className }: { className?: string }) {
   return (
     <svg
-      width="18"
-      height="16"
       viewBox="0 0 18 16"
       fill="currentColor"
       aria-hidden="true"
@@ -115,7 +113,7 @@ const NavLabelRow = memo(function NavLabelRow({
       aria-label={localize(link.title)}
       onClick={onClick}
       className={cn(
-        'flex h-8 w-full items-center gap-2 rounded-md px-2 text-left transition-colors',
+        'flex h-8 w-full items-center gap-2 rounded-md px-4 text-left transition-colors',
         isActive
           ? 'bg-surface-active-alt text-text-primary'
           : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
@@ -140,12 +138,12 @@ function FullSidebar({
   const effectiveActive = resolveActivePanel(active, links);
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden border-r border-border-light bg-surface-primary-alt">
+    <div className="flex h-full w-full flex-col overflow-hidden border-r border-border-light bg-white">
       {/* Header: logo + name + new-chat + collapse */}
-      <div className="flex flex-shrink-0 items-center justify-between px-3 py-2">
+      <div className="flex flex-shrink-0 items-center justify-between p-4">
         <div className="flex items-center gap-2">
-          <LibreChatLogo className="text-text-primary" />
-          <span className="text-sm font-semibold text-text-primary">LibreChat</span>
+          <LibreChatLogo className="h-5 w-5 text-text-primary" />
+          <span className="text-base font-normal text-text-primary">LibreChat</span>
         </div>
         <div className="flex items-center gap-1">
           <NewChatButton setActive={setActive} collapsed={false} />
@@ -163,17 +161,17 @@ function FullSidebar({
                 className="h-8 w-8 rounded-md text-text-secondary hover:text-text-primary"
                 onClick={onCollapse}
               >
-                <LibreChatLogo className="h-4 w-4" />
+                <SidebarClose className="h-4 w-4" />
               </Button>
             }
           />
         </div>
       </div>
 
-      <div className="mx-3 flex-shrink-0 border-b border-border-light" />
+      <div className="mx-4 flex-shrink-0 border-b border-border-light" />
 
       {/* Nav items with icon + label */}
-      <div className="flex flex-shrink-0 flex-col gap-0.5 px-2 py-2">
+      <div className="flex flex-shrink-0 flex-col gap-0.5 px-4 py-2">
         {links.map((link) => (
           <NavLabelRow
             key={link.id}
