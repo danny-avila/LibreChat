@@ -82,10 +82,6 @@ export default memo(function AudioRecorder({
     onTranscriptionComplete,
   );
 
-  if (!textAreaRef.current) {
-    return null;
-  }
-
   const handleStartRecording = async () => {
     existingTextRef.current = getValues('text') || '';
     startRecording();
@@ -118,7 +114,7 @@ export default memo(function AudioRecorder({
           type="button"
           aria-label={localize('com_ui_use_micrphone')}
           onClick={isListening === true ? handleStopRecording : handleStartRecording}
-          disabled={disabled}
+          disabled={disabled || !textAreaRef.current}
           className={cn(
             'flex size-9 items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover',
           )}
