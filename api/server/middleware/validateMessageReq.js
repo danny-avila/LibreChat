@@ -20,7 +20,16 @@ async function canReadActiveJobConversation(req, conversationId) {
     return false;
   }
 
-  if (!job || job.status !== 'running') {
+  // A job paused for human review is still active (consistent with /chat/status
+  // and /chat/active), so a new-conversation run that pauses before its final
+  // save can still recover the prompt — but only while it has a live,
+  // resolvable prompt (missing/malformed or past-expiry reads as inactive).
+  const pendingAction = job?.metadata?.pendingAction;
+  const pendingLive =
+    !!pendingAction && (pendingAction.expiresAt == null || pendingAction.expiresAt > Date.now());
+  const isActive =
+    !!job && (job.status === 'running' || (job.status === 'requires_action' && pendingLive));
+  if (!isActive) {
     return false;
   }
 
