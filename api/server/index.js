@@ -280,16 +280,19 @@ const startServer = async () => {
      * initialized — passing liveness checks while serving broken requests.
      */
     try {
+      // Configure stream services before MCP init so that any request arriving
+      // during the (potentially slow) MCP startup already uses the final store.
+      // Previously this happened after initializeMCPs(), causing jobs created
+      // during that window to be lost when configure() replaced the default store.
+      const streamServices = createStreamServices();
+      GenerationJobManager.configure(streamServices);
+      GenerationJobManager.initialize();
+
       await runAsSystem(async () => {
         await initializeMCPs();
         await initializeOAuthReconnectManager();
       });
       await checkMigrations();
-
-      // Configure stream services (auto-detects Redis from USE_REDIS env var)
-      const streamServices = createStreamServices();
-      GenerationJobManager.configure(streamServices);
-      GenerationJobManager.initialize();
 
       const inspectFlags = process.execArgv.some((arg) => arg.startsWith('--inspect'));
       if (inspectFlags || isEnabled(process.env.MEM_DIAG)) {

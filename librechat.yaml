@@ -361,15 +361,9 @@ mcpServers:
       - "@guillehr2/excel-mcp-server@latest"
     timeout: 180000             # 180s — Python wrapper + first-run install is slow
 
-  # Official PDF server. READ/EXTRACT ONLY — lets the model ingest client
-  # uploaded PDFs (contracts, intake docs). It does NOT create PDFs.
-  pdf:
-    type: stdio
-    command: npx
-    args:
-      - "-y"
-      - "@modelcontextprotocol/server-pdf"
-    timeout: 90000
+  # Note: PDF reading is handled via execute_code (Python pdfplumber/pymupdf).
+  # @modelcontextprotocol/server-pdf is omitted — it requires pdfjs-dist as a
+  # peer dep that npx does not install, causing a crash on every init.
 
 # Example MCP Servers Object Structure (reference — see LibreChat docs)
 # mcpServers:
