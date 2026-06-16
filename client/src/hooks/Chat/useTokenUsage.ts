@@ -249,12 +249,18 @@ export default function useTokenUsage({
      *  slots in ahead of the estimate when no snapshot exists. Snapshot and
      *  projection share the render-relevant fields, so they render uniformly. */
     let effective: ContextSnapshot | TContextUsageEvent | null = null;
+    /** A server projection is the SDK's windowing but, in this first cut, omits
+     *  instruction/tool overhead — so it's surfaced as an ESTIMATE (a better one
+     *  than sumBranch), never a false-authoritative number. Real snapshots stay
+     *  authoritative. */
+    let projected = false;
     if (currentActive) {
       effective = snapshot;
     } else if (branchSnapshot != null) {
       effective = branchSnapshot;
     } else if (projection != null) {
       effective = projection;
+      projected = true;
     }
 
     if (effective != null) {
@@ -274,9 +280,9 @@ export default function useTokenUsage({
         usedTokens,
         maxTokens,
         percent: maxTokens > 0 ? Math.min((usedTokens / maxTokens) * 100, 100) : 0,
-        isEstimate: false,
-        snapshot: effective as ContextSnapshot,
-        snapshotActive: true,
+        isEstimate: projected,
+        snapshot: projected ? null : (effective as ContextSnapshot),
+        snapshotActive: !projected,
         branchTotals,
         branchUsage,
         totalUsage,
