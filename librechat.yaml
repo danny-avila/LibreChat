@@ -454,23 +454,6 @@ endpoints:
   #     # Trace output is logged to application log files for compliance auditing
   #     trace: "enabled"
 
-mcpServers:
-  filesystem:
-    type: stdio
-    command: npx
-    args:
-      - -y
-      - "@modelcontextprotocol/server-filesystem"
-      - /app/uploads
-    timeout: 90000
-  excel:
-    type: stdio
-    command: npx
-    args:
-      - -y
-      - "@guillehr2/excel-mcp-server"
-    timeout: 90000
-
 modelSpecs:
   prioritize: true
   list:
