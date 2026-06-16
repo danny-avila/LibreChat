@@ -675,6 +675,23 @@ export class RedisJobStore implements IJobStore {
             return 1;
           }
 
+          // Past-due approval: finalize it (aborted) so it stops occupying the
+          // slot and its stream contents are reclaimed, mirroring
+          // ApprovalLifecycle.expire(). transitionStatus runs the terminal
+          // content cleanup (sets, chunks, run-steps, userJobs, completed TTL).
+          if (isPendingActionExpired(job)) {
+            await this.transitionStatus(streamId, {
+              from: 'requires_action',
+              to: 'aborted',
+              clear: ['pendingAction', 'pendingActionId'],
+              patch: {
+                error: 'Approval expired before a decision was made',
+                completedAt: Date.now(),
+              },
+            });
+            return 1;
+          }
+
           return 0;
         }),
       );
