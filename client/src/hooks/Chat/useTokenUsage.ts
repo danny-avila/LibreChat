@@ -128,7 +128,6 @@ export default function useTokenUsage({
           agentId: conversation.agent_id ?? undefined,
           spec: conversation.spec ?? undefined,
           maxContextTokens: resolvedMax,
-          calibrationRatio: branchSnapshot?.calibrationRatio,
           /** Content revision so an in-place message edit (same tail id) refetches. */
           revision: branchTotals.input + branchTotals.output,
         }
