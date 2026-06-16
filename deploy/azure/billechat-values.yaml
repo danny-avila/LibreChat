@@ -50,7 +50,7 @@ librechat:
     # Anthropic via Azure AI Foundry (deployment names == model ids on the Foundry)
     ANTHROPIC_API_KEY: "override-via-pipeline"
     ANTHROPIC_REVERSE_PROXY: "https://micha-mm146vwy-swedencentral.services.ai.azure.com/anthropic"
-    ANTHROPIC_MODELS: "claude-opus-4-8,claude-opus-4-7,claude-opus-4-6"
+    ANTHROPIC_MODELS: "claude-fable-5,claude-opus-4-8,claude-opus-4-7,claude-opus-4-6"
 
     # RAG
     RAG_OPENAI_BASEURL: "https://micha-mm146vwy-swedencentral.services.ai.azure.com/openai"
