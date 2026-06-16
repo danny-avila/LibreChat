@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilValue } from 'recoil';
 import { SquarePen } from 'lucide-react';
 import { QueryKeys } from 'librechat-data-provider';
-import { SidebarOpen, SidebarClose } from 'lucide-react';
+import { Icon } from '@clickhouse/click-ui';
 import { Skeleton, Button, TooltipAnchor } from '@librechat/client';
 import type { NavLink } from '~/common';
 import { CLOSE_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
@@ -155,11 +155,7 @@ function ExpandedPanel({
             className="h-8 w-8 rounded-md text-text-secondary hover:text-text-primary"
             onClick={toggleClick}
           >
-            {expanded ? (
-              <SidebarClose aria-hidden="true" className="h-4 w-4" />
-            ) : (
-              <SidebarOpen aria-hidden="true" className="h-4 w-4" />
-            )}
+            <Icon name={expanded ? 'slide-out' : 'slide-in'} size="sm" />
           </Button>
         }
       />

@@ -1,8 +1,9 @@
 import { memo, useCallback, lazy, Suspense } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilValue } from 'recoil';
-import { SquarePen, SidebarClose } from 'lucide-react';
+import { SquarePen } from 'lucide-react';
 import { QueryKeys } from 'librechat-data-provider';
+import { Icon } from '@clickhouse/click-ui';
 import { Skeleton, Button, TooltipAnchor } from '@librechat/client';
 import type { NavLink } from '~/common';
 import { CLOSE_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
@@ -161,7 +162,7 @@ function FullSidebar({
                 className="h-8 w-8 rounded-md text-text-secondary hover:text-text-primary"
                 onClick={onCollapse}
               >
-                <SidebarClose className="h-4 w-4" />
+                <Icon name="slide-out" size="sm" />
               </Button>
             }
           />
