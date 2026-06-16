@@ -4,6 +4,7 @@ const {
   GenerationJobManager,
   hasPersistableAbortContent,
   buildAbortedResponseMetadata,
+  isPendingActionStale,
 } = require('@librechat/api');
 const { createSseStreamTelemetry } = require('@librechat/api/telemetry');
 const { logger } = require('@librechat/data-schemas');
@@ -207,9 +208,8 @@ router.get('/chat/status/:conversationId', async (req, res) => {
   // only while it has a live, resolvable prompt: a missing/malformed or
   // past-expiry pendingAction reads as inactive (cleanup/expiry will finalize it).
   const pendingAction = job.metadata.pendingAction;
-  const pendingLive =
-    !!pendingAction && (pendingAction.expiresAt == null || pendingAction.expiresAt > Date.now());
-  const isActive = job.status === 'running' || (job.status === 'requires_action' && pendingLive);
+  const pendingLive = job.status === 'requires_action' && !isPendingActionStale({ pendingAction });
+  const isActive = job.status === 'running' || pendingLive;
 
   res.json({
     active: isActive,

@@ -189,9 +189,10 @@ describe('RedisJobStore Integration Tests', () => {
       expect(await store.getJobCountByStatus('running')).toBe(beforeRunning + 1);
       expect(await store.getJobCountByStatus('requires_action')).toBe(beforePaused);
 
-      await store.updateJob(streamId, {
-        status: 'requires_action',
-        pendingAction: buildPendingAction(streamId),
+      await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'requires_action',
+        patch: { pendingAction: buildPendingAction(streamId) },
       });
 
       const runningMembers = await ioredisClient.smembers('stream:running');
@@ -218,12 +219,17 @@ describe('RedisJobStore Integration Tests', () => {
       const beforeRunning = await store.getJobCountByStatus('running');
       const beforePaused = await store.getJobCountByStatus('requires_action');
       await store.createJob(streamId, 'user-1', streamId);
-      await store.updateJob(streamId, {
-        status: 'requires_action',
-        pendingAction: buildPendingAction(streamId),
+      await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'requires_action',
+        patch: { pendingAction: buildPendingAction(streamId) },
       });
 
-      await store.updateJob(streamId, { status: 'running', pendingAction: undefined });
+      await store.transitionStatus(streamId, {
+        from: 'requires_action',
+        to: 'running',
+        clear: ['pendingAction'],
+      });
 
       const job = await store.getJob(streamId);
       expect(job?.status).toBe('running');
@@ -257,9 +263,10 @@ describe('RedisJobStore Integration Tests', () => {
       await ioredisClient.expire(chunkKey, 30);
       await ioredisClient.expire(runStepsKey, 30);
 
-      await store.updateJob(streamId, {
-        status: 'requires_action',
-        pendingAction: buildPendingAction(streamId),
+      await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'requires_action',
+        patch: { pendingAction: buildPendingAction(streamId) },
       });
 
       expect(await ioredisClient.ttl(chunkKey)).toBeGreaterThan(30);
@@ -268,7 +275,11 @@ describe('RedisJobStore Integration Tests', () => {
       await ioredisClient.expire(chunkKey, 30);
       await ioredisClient.expire(runStepsKey, 30);
 
-      await store.updateJob(streamId, { status: 'running', pendingAction: undefined });
+      await store.transitionStatus(streamId, {
+        from: 'requires_action',
+        to: 'running',
+        clear: ['pendingAction'],
+      });
 
       expect(await ioredisClient.ttl(chunkKey)).toBeGreaterThan(30);
       expect(await ioredisClient.ttl(runStepsKey)).toBeGreaterThan(30);
@@ -288,9 +299,10 @@ describe('RedisJobStore Integration Tests', () => {
       const userId = `requires-action-cleanup-user-${Date.now()}`;
       const streamId = `requires-action-cleanup-${Date.now()}`;
       await store.createJob(streamId, userId, streamId);
-      await store.updateJob(streamId, {
-        status: 'requires_action',
-        pendingAction: buildPendingAction(streamId),
+      await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'requires_action',
+        patch: { pendingAction: buildPendingAction(streamId) },
       });
 
       await ioredisClient.sadd('stream:running', streamId);
@@ -319,9 +331,10 @@ describe('RedisJobStore Integration Tests', () => {
       const streamId = `requires-action-expired-${Date.now()}`;
       const jobKey = `stream:{${streamId}}:job`;
       await store.createJob(streamId, 'user-1', streamId);
-      await store.updateJob(streamId, {
-        status: 'requires_action',
-        pendingAction: buildPendingAction(streamId),
+      await store.transitionStatus(streamId, {
+        from: 'running',
+        to: 'requires_action',
+        patch: { pendingAction: buildPendingAction(streamId) },
       });
 
       expect(await ioredisClient.smembers('stream:requires_action')).toContain(streamId);

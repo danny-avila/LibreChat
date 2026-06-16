@@ -136,18 +136,9 @@ export class InMemoryJobStore implements IJobStore {
     if (!job) {
       return;
     }
+    // Plain field writer. Membership-aware status transitions
+    // (running ⇄ requires_action) go solely through transitionStatus.
     Object.assign(job, updates);
-    // Mirror the guarded transitionStatus path so a pause/resume via this
-    // generic update behaves identically (parity with RedisJobStore):
-    //  - mirror the flat pendingActionId the stale-decision guard compares;
-    //  - on resume to running, refresh lastActiveAt and drop the flat id.
-    if (updates.pendingAction) {
-      job.pendingActionId = updates.pendingAction.actionId;
-    }
-    if (updates.status === 'running') {
-      job.lastActiveAt = updates.lastActiveAt ?? Date.now();
-      delete job.pendingActionId;
-    }
   }
 
   /**

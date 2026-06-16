@@ -1,6 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import type { Agents } from 'librechat-data-provider';
 import type { IJobStore } from '~/stream/interfaces/IJobStore';
+import { isPendingActionExpired, isPendingActionStale } from '~/stream/interfaces/IJobStore';
 
 /**
  * The guarded lifecycle of a run paused for human review (`requires_action`).
@@ -54,10 +55,11 @@ export class ApprovalLifecycle {
    */
   async peek(streamId: string): Promise<Agents.PendingAction | null> {
     const job = await this.store.getJob(streamId);
-    if (!job || job.status !== 'requires_action' || !job.pendingAction) {
+    if (!job || job.status !== 'requires_action') {
       return null;
     }
-    return this.isExpired(job.pendingAction) ? null : job.pendingAction;
+    // isPendingActionStale covers both a missing record and a past-expiry one.
+    return isPendingActionStale(job) ? null : (job.pendingAction ?? null);
   }
 
   /**
@@ -85,11 +87,7 @@ export class ApprovalLifecycle {
       await this.expire(streamId);
       return false;
     }
-    if (
-      job?.status === 'requires_action' &&
-      job.pendingAction &&
-      this.isExpired(job.pendingAction)
-    ) {
+    if (job?.status === 'requires_action' && job.pendingAction && isPendingActionExpired(job)) {
       // Target the exact record observed as expired. If the caller didn't pin an
       // actionId, fall back to the one just read — otherwise a concurrent
       // resume + re-pause for a new action could let this expire abort it.
@@ -127,9 +125,5 @@ export class ApprovalLifecycle {
       logger.debug(`[ApprovalLifecycle] expired pending review: ${streamId}`);
     }
     return ok;
-  }
-
-  private isExpired(pendingAction: Agents.PendingAction): boolean {
-    return pendingAction.expiresAt != null && pendingAction.expiresAt <= Date.now();
   }
 }
