@@ -47,7 +47,7 @@ function isValidBinding(binding: ShortcutBinding): { valid: boolean; reason?: 'n
     return { valid: true };
   }
   const isPrintable = binding.key.length === 1 && binding.key !== ' ';
-  if (!isPrintable) {
+  if (!isPrintable && binding.shift) {
     return { valid: true };
   }
   return { valid: false, reason: 'noModifier' };
