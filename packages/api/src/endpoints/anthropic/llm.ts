@@ -337,7 +337,7 @@ function getLLMConfig(
 
   if (enableCodeExecution) {
     tools.push({
-      type: 'code_execution_20260120',
+      type: 'code_execution_20250825',
       name: 'code_execution',
     });
   }
