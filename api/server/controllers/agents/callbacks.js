@@ -1,22 +1,38 @@
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
-const { Tools, StepTypes, FileContext, ErrorTypes } = require('librechat-data-provider');
+const {
+  Tools,
+  StepTypes,
+  FileContext,
+  ErrorTypes,
+  UsageEvents,
+} = require('librechat-data-provider');
 const {
   GraphEvents,
   GraphNodeKeys,
   ToolEndHandler,
-  CODE_EXECUTION_TOOLS,
   createContentAggregator,
 } = require('@librechat/agents');
 const {
   sendEvent,
+  computeUsageCostUSD,
   GenerationJobManager,
   writeAttachmentEvent,
   createToolExecuteHandler,
+  HOST_FILE_AUTHORING_ARTIFACT_KEY,
+  isCodeSessionToolName,
 } = require('@librechat/api');
 const { processFileCitations } = require('~/server/services/Files/Citations');
 const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
 const { saveBase64Image } = require('~/server/services/Files/process');
+
+function isHostFileAuthoringArtifact(artifact) {
+  return artifact?.[HOST_FILE_AUTHORING_ARTIFACT_KEY] === true;
+}
+
+function isCodeArtifactToolOutput(output) {
+  return isCodeSessionToolName(output.name) || isHostFileAuthoringArtifact(output.artifact);
+}
 
 class ModelEndHandler {
   /**
@@ -32,13 +48,16 @@ class ModelEndHandler {
    *   Optional; when `null`, the handler is a no-op for signatures. Non-Vertex
    *   providers don't emit `additional_kwargs.signatures`, so capture is also
    *   a no-op for them even when the map is provided.
+   * @param {(data: Record<string, unknown>) => Promise<void> | void} [emitUsage] Optional
+   *   callback to stream per-call token usage to the client.
    */
-  constructor(collectedUsage, collectedThoughtSignatures = null) {
+  constructor(collectedUsage, collectedThoughtSignatures = null, emitUsage = null) {
     if (!Array.isArray(collectedUsage)) {
       throw new Error('collectedUsage must be an array');
     }
     this.collectedUsage = collectedUsage;
     this.collectedThoughtSignatures = collectedThoughtSignatures;
+    this.emitUsage = emitUsage;
   }
 
   finalize(errorMessage) {
@@ -90,10 +109,61 @@ class ModelEndHandler {
       if (agentContext.provider) {
         usage.provider = agentContext.provider;
       }
+      /** Tag the producing agent so multi-endpoint graphs can price each call
+       *  with its own endpoint token config (recordCollectedUsage resolver). */
+      if (agentContext.agentId) {
+        usage.agentId = agentContext.agentId;
+      }
 
-      const taggedUsage = markSummarizationUsage(usage, metadata);
+      let taggedUsage = markSummarizationUsage(usage, metadata);
+      /** Hidden intermediate sequential-agent calls are billed but never shown.
+       *  Tag them non-primary on the COLLECTED usage too (not just the emit) so
+       *  recordCollectedUsage excludes their output from the parent's tokenCount
+       *  and the client folds them into cost/totals only — not the live gauge. */
+      if (
+        taggedUsage.usage_type == null &&
+        !checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node) &&
+        metadata?.hide_sequential_outputs === true
+      ) {
+        taggedUsage = { ...taggedUsage, usage_type: 'sequential' };
+      }
 
       this.collectedUsage.push(taggedUsage);
+
+      if (this.emitUsage) {
+        /** Normalize Anthropic/Bedrock-style top-level cache fields into details */
+        const cache_creation =
+          taggedUsage.input_token_details?.cache_creation ??
+          taggedUsage.cache_creation_input_tokens;
+        const cache_read =
+          taggedUsage.input_token_details?.cache_read ?? taggedUsage.cache_read_input_tokens;
+        try {
+          await this.emitUsage({
+            input_tokens: taggedUsage.input_tokens,
+            output_tokens: taggedUsage.output_tokens,
+            total_tokens: taggedUsage.total_tokens,
+            input_token_details:
+              cache_creation != null || cache_read != null
+                ? { cache_creation, cache_read }
+                : undefined,
+            model: taggedUsage.model,
+            provider: taggedUsage.provider,
+            usage_type: taggedUsage.usage_type,
+            /** Producing agent for per-endpoint pricing; consumed by the emit
+             *  cost resolver and not included in the emitted/persisted payload. */
+            agentId: taggedUsage.agentId,
+            runId: metadata?.run_id,
+            /** Per-run sequence so identical payloads from distinct calls
+             *  stay distinguishable during resume dedupe */
+            seq: this.collectedUsage.length,
+          });
+        } catch (err) {
+          /** Best-effort telemetry: a failed emit (closed SSE, Redis publish
+           *  error) must not abort the handler before the thought-signature
+           *  capture below, or resumed tool-call requests lose that metadata */
+          logger.warn('[ModelEndHandler] Failed to emit token usage', err);
+        }
+      }
 
       /**
        * `additional_kwargs.signatures` is a flat array indexed by response
@@ -211,6 +281,12 @@ function feedSubagentAggregator(aggregator, event) {
  * @param {Array<UsageMetadata>} options.collectedUsage - The list of collected usage metadata.
  * @param {string | null} [options.streamId] - The stream ID for resumable mode, or null for standard mode.
  * @param {ToolExecuteOptions} [options.toolExecuteOptions] - Options for event-driven tool execution.
+ * @param {UsageCostDeps} [options.usageCost] - Pricing context for authoritative per-event cost.
+ * @param {{ latest: TContextUsageEvent | null, count: number }} [options.contextUsageSink] - Mutable
+ *   holder for the latest visible context snapshot + a count of visible snapshots (model calls),
+ *   used to persist the breakdown only when the final call emitted usage.
+ * @param {Array<TTokenUsageEvent>} [options.usageEmitSink] - Array collecting each emitted
+ *   `on_token_usage` payload (incl. cost) so the response's usage rollup can be persisted.
  * @returns {Record<string, t.EventHandler>} The default handlers.
  * @throws {Error} If the request is not found.
  */
@@ -224,14 +300,53 @@ function getDefaultHandlers({
   toolExecuteOptions = null,
   summarizationOptions = null,
   subagentAggregatorsByToolCallId = null,
+  usageCost = null,
+  contextUsageSink = null,
+  usageEmitSink = null,
 }) {
   if (!res || !aggregateContent) {
     throw new Error(
       `[getDefaultHandlers] Missing required options: res: ${!res}, aggregateContent: ${!aggregateContent}`,
     );
   }
+  /**
+   * Emit a token-usage event, attaching the authoritative per-event USD cost
+   * when cost display is enabled. The backend is the single source of truth
+   * for pricing (premium tiers, cache rates) — the client sums these instead
+   * of re-deriving from base rates.
+   * @param {Record<string, unknown>} data
+   */
+  const emitTokenUsage = ({ agentId, ...data }) => {
+    let payload = data;
+    if (usageCost?.enabled === true && usageCost.pricing) {
+      try {
+        /** Price with the producing agent's config (multi-endpoint graphs) so
+         *  the streamed/persisted cost matches the per-agent balance transaction;
+         *  `agentId` is resolved here, not forwarded to the client or rollup. */
+        const endpointTokenConfig = usageCost.resolveEndpointTokenConfig
+          ? usageCost.resolveEndpointTokenConfig({ agentId })
+          : usageCost.endpointTokenConfig;
+        payload = {
+          ...data,
+          cost: computeUsageCostUSD(data, usageCost.pricing, endpointTokenConfig),
+        };
+      } catch (err) {
+        logger.warn('[getDefaultHandlers] Failed to compute usage cost', err);
+      }
+    }
+    /** Collect the same payload the client folds so the response's usage rollup
+     *  persisted on `metadata.usage` reproduces the live branch/total + cost. */
+    if (usageEmitSink) {
+      usageEmitSink.push(payload);
+    }
+    return emitEvent(res, streamId, { event: UsageEvents.ON_TOKEN_USAGE, data: payload });
+  };
   const handlers = {
-    [GraphEvents.CHAT_MODEL_END]: new ModelEndHandler(collectedUsage, collectedThoughtSignatures),
+    [GraphEvents.CHAT_MODEL_END]: new ModelEndHandler(
+      collectedUsage,
+      collectedThoughtSignatures,
+      emitTokenUsage,
+    ),
     [GraphEvents.TOOL_END]: new ToolEndHandler(toolEndCallback, logger),
     [GraphEvents.ON_RUN_STEP]: {
       /**
@@ -415,6 +530,43 @@ function getDefaultHandlers({
   }
 
   handlers[GraphEvents.ON_AGENT_LOG] = { handle: agentLogHandler };
+
+  /** Guarded: no-op when the installed @librechat/agents predates the event */
+  if (GraphEvents.ON_CONTEXT_USAGE) {
+    handlers[GraphEvents.ON_CONTEXT_USAGE] = {
+      /**
+       * Forward per-model-call context usage snapshots to the client,
+       * honoring the same sequential-agent visibility gate as deltas.
+       * @param {string} event - The event name.
+       * @param {StreamEventData} data - The event data.
+       * @param {GraphRunnableConfig['configurable']} [metadata] The runnable metadata.
+       */
+      handle: async (event, data, metadata) => {
+        if (
+          checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node) ||
+          !metadata?.hide_sequential_outputs
+        ) {
+          /** Capture the latest visible snapshot (last-wins) and how many usage
+           *  events preceded it BEFORE awaiting the emit. `emitEvent` can yield
+           *  (resumable SSE / Redis publish); with parallel runs active this
+           *  call's own primary usage could land in `usageEmitSink` during that
+           *  yield, pushing `latestUsageIndex` past the very event that proves the
+           *  snapshot completed — the save path would then slice it away and drop
+           *  a valid breakdown. The recorded index lets the save path persist only
+           *  when a PRIMARY usage follows this snapshot (the snapshot's call
+           *  actually invoked the model); a summarization detour emits a snapshot
+           *  whose only following usage is tagged `summarization`, which a plain
+           *  snapshot-count would over-count and wrongly drop. */
+          if (contextUsageSink) {
+            contextUsageSink.latest = data;
+            contextUsageSink.count = (contextUsageSink.count ?? 0) + 1;
+            contextUsageSink.latestUsageIndex = usageEmitSink?.length ?? 0;
+          }
+          await emitEvent(res, streamId, { event, data });
+        }
+      },
+    };
+  }
 
   return handlers;
 }
@@ -623,7 +775,7 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null }) 
       return;
     }
 
-    if (!CODE_EXECUTION_TOOLS.has(output.name)) {
+    if (!isCodeArtifactToolOutput(output)) {
       return;
     }
 
@@ -890,7 +1042,7 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
       return;
     }
 
-    if (!CODE_EXECUTION_TOOLS.has(output.name)) {
+    if (!isCodeArtifactToolOutput(output)) {
       return;
     }
 

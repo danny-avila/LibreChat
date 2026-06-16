@@ -4,7 +4,9 @@ on:
   pull_request:
     paths:
       - 'client/**'
+      - 'packages/client/**'
       - 'packages/data-provider/**'
+      - '.github/workflows/frontend-review.yml'
 
 permissions:
   contents: read
@@ -20,10 +22,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js 20.19
+      - name: Use Node.js 24.16.0
         uses: actions/setup-node@v4
         with:
-          node-version: '20.19'
+          node-version: '24.16.0'
 
       - name: Restore node_modules cache
         id: cache-node-modules
@@ -34,7 +36,7 @@ jobs:
             client/node_modules
             packages/client/node_modules
             packages/data-provider/node_modules
-          key: node-modules-frontend-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
+          key: node-modules-frontend-${{ runner.os }}-24.16.0-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
@@ -45,7 +47,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: packages/data-provider/dist
-          key: build-data-provider-${{ runner.os }}-${{ hashFiles('packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/rollup.config.js', 'packages/data-provider/package.json') }}
+          key: build-data-provider-${{ runner.os }}-${{ hashFiles('packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/tsdown.config.mjs', 'packages/data-provider/package.json') }}
 
       - name: Build data-provider
         if: steps.cache-data-provider.outputs.cache-hit != 'true'
@@ -56,7 +58,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: packages/client/dist
-          key: build-client-package-${{ runner.os }}-${{ hashFiles('packages/client/src/**', 'packages/client/tsconfig*.json', 'packages/client/rollup.config.js', 'packages/client/package.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/rollup.config.js', 'packages/data-provider/package.json') }}
+          key: build-client-package-${{ runner.os }}-${{ hashFiles('packages/client/src/**', 'packages/client/tsconfig*.json', 'packages/client/tsdown.config.mjs', 'packages/client/package.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/tsdown.config.mjs', 'packages/data-provider/package.json') }}
 
       - name: Build client-package
         if: steps.cache-client-package.outputs.cache-hit != 'true'
@@ -76,18 +78,66 @@ jobs:
           path: packages/client/dist
           retention-days: 2
 
+  typecheck:
+    name: TypeScript type checks (client)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 24.16.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.16.0'
+
+      - name: Restore node_modules cache
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            client/node_modules
+            packages/client/node_modules
+            packages/data-provider/node_modules
+          key: node-modules-frontend-${{ runner.os }}-24.16.0-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Download data-provider build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-data-provider
+          path: packages/data-provider/dist
+
+      - name: Download client-package build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-client-package
+          path: packages/client/dist
+
+      - name: Type check client
+        run: npm run typecheck
+        working-directory: client
+
   test-ubuntu:
-    name: 'Tests: Ubuntu'
+    name: 'Tests: Ubuntu (shard ${{ matrix.shard }}/4)'
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js 20.19
+      - name: Use Node.js 24.16.0
         uses: actions/setup-node@v4
         with:
-          node-version: '20.19'
+          node-version: '24.16.0'
 
       - name: Restore node_modules cache
         id: cache-node-modules
@@ -98,7 +148,7 @@ jobs:
             client/node_modules
             packages/client/node_modules
             packages/data-provider/node_modules
-          key: node-modules-frontend-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
+          key: node-modules-frontend-${{ runner.os }}-24.16.0-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
@@ -116,22 +166,26 @@ jobs:
           name: build-client-package
           path: packages/client/dist
 
-      - name: Run unit tests
-        run: npm run test:ci --verbose
+      - name: Run unit tests (shard ${{ matrix.shard }}/4)
+        run: npm run test:ci -- --shard=${{ matrix.shard }}/4
         working-directory: client
 
   test-windows:
-    name: 'Tests: Windows'
+    name: 'Tests: Windows (shard ${{ matrix.shard }}/4)'
     needs: build
     runs-on: windows-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js 20.19
+      - name: Use Node.js 24.16.0
         uses: actions/setup-node@v4
         with:
-          node-version: '20.19'
+          node-version: '24.16.0'
 
       - name: Restore node_modules cache
         id: cache-node-modules
@@ -142,7 +196,7 @@ jobs:
             client/node_modules
             packages/client/node_modules
             packages/data-provider/node_modules
-          key: node-modules-frontend-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
+          key: node-modules-frontend-${{ runner.os }}-24.16.0-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
@@ -160,8 +214,8 @@ jobs:
           name: build-client-package
           path: packages/client/dist
 
-      - name: Run unit tests
-        run: npm run test:ci --verbose
+      - name: Run unit tests (shard ${{ matrix.shard }}/4)
+        run: npm run test:ci -- --shard=${{ matrix.shard }}/4
         working-directory: client
 
   build-verify:
@@ -172,10 +226,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js 20.19
+      - name: Use Node.js 24.16.0
         uses: actions/setup-node@v4
         with:
-          node-version: '20.19'
+          node-version: '24.16.0'
 
       - name: Restore node_modules cache
         id: cache-node-modules
@@ -186,7 +240,7 @@ jobs:
             client/node_modules
             packages/client/node_modules
             packages/data-provider/node_modules
-          key: node-modules-frontend-${{ runner.os }}-20.19-${{ hashFiles('package-lock.json') }}
+          key: node-modules-frontend-${{ runner.os }}-24.16.0-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'

@@ -26,7 +26,7 @@ beforeEach(async () => {
   await mongoose.models.Config.deleteMany({});
 });
 
-describe('upsertConfig', () => {
+describe('upsertConfig tombstone preservation', () => {
   it('creates a new config document', async () => {
     const result = await methods.upsertConfig(
       PrincipalType.ROLE,
@@ -270,6 +270,137 @@ describe('patchConfigFields', () => {
     expect(result).toBeTruthy();
     expect(result!.principalId).toBe('newrole');
   });
+
+  it('clears tombstones for patched paths and their ancestors', async () => {
+    await methods.tombstoneConfigField(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      'mcpServers.github',
+      10,
+    );
+
+    const result = await methods.patchConfigFields(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      { 'mcpServers.github.url': 'https://scoped.example.com' },
+      10,
+    );
+
+    expect(result!.tombstones).not.toContain('mcpServers.github');
+  });
+
+  it('does not clear a whole-section tombstone when patching a nested path', async () => {
+    await methods.tombstoneConfigField(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      'mcpServers',
+      10,
+    );
+
+    const result = await methods.patchConfigFields(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      { 'mcpServers.github.url': 'https://scoped.example.com' },
+      10,
+    );
+
+    expect(result!.tombstones).toContain('mcpServers');
+  });
+});
+
+describe('tombstoneConfigField', () => {
+  it('adds a tombstone and removes the overridden subtree', async () => {
+    await methods.upsertConfig(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      {
+        mcpServers: {
+          github: {
+            type: 'streamable-http',
+            url: 'https://github.example.com',
+          },
+          slack: {
+            type: 'streamable-http',
+            url: 'https://slack.example.com',
+          },
+        },
+      },
+      10,
+    );
+
+    const result = await methods.tombstoneConfigField(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      'mcpServers.github',
+      10,
+    );
+    const overrides = result!.overrides as Record<string, unknown>;
+    const mcpServers = overrides.mcpServers as Record<string, unknown>;
+
+    expect(result!.tombstones).toContain('mcpServers.github');
+    expect(mcpServers.github).toBeUndefined();
+    expect(mcpServers.slack).toEqual({
+      type: 'streamable-http',
+      url: 'https://slack.example.com',
+    });
+  });
+
+  it('creates a config if none exists', async () => {
+    const result = await methods.tombstoneConfigField(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      'mcpServers.github',
+      10,
+    );
+
+    expect(result).toBeTruthy();
+    expect(result!.tombstones).toContain('mcpServers.github');
+  });
+
+  it('preserves inactive configs when adding a tombstone', async () => {
+    await methods.upsertConfig(PrincipalType.ROLE, 'admin', PrincipalModel.ROLE, {}, 10);
+    await methods.toggleConfigActive(PrincipalType.ROLE, 'admin', false);
+
+    const result = await methods.tombstoneConfigField(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      'mcpServers.github',
+      10,
+    );
+
+    expect(result!.isActive).toBe(false);
+    expect(result!.tombstones).toContain('mcpServers.github');
+  });
+});
+
+describe('upsertConfig', () => {
+  it('preserves tombstones when replacing overrides', async () => {
+    await methods.tombstoneConfigField(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      'mcpServers.github',
+      10,
+    );
+
+    const result = await methods.upsertConfig(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      { interface: { modelSelect: false } },
+      10,
+    );
+
+    expect(result!.tombstones).toContain('mcpServers.github');
+  });
 });
 
 describe('unsetConfigField', () => {
@@ -296,6 +427,20 @@ describe('unsetConfigField', () => {
   it('returns null for non-existent config', async () => {
     const result = await methods.unsetConfigField(PrincipalType.ROLE, 'ghost', 'a.b');
     expect(result).toBeNull();
+  });
+
+  it('clears tombstones for the reset path and descendants', async () => {
+    await methods.tombstoneConfigField(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      'mcpServers.github',
+      10,
+    );
+
+    const result = await methods.unsetConfigField(PrincipalType.ROLE, 'admin', 'mcpServers.github');
+
+    expect(result!.tombstones).not.toContain('mcpServers.github');
   });
 });
 

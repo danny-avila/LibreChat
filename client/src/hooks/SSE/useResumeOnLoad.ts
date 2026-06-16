@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react';
-import { useSetRecoilState, useRecoilValue } from 'recoil';
+import { useSetRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
 import { Constants, tMessageSchema, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessage, TConversation, TSubmission, Agents } from 'librechat-data-provider';
 import type { StreamStatusResponse } from '~/data-provider';
+import { getBranchSiblingIndexesForTarget } from '~/utils';
 import { useStreamStatus } from '~/data-provider';
 import store from '~/store';
 
@@ -40,6 +41,45 @@ function resumeStateMatchesSubmission(
 
   const responseMessageId = submission.initialResponse?.messageId;
   return !!responseMessageId && resumeState.responseMessageId === responseMessageId;
+}
+
+function getResumeBranchTargetMessageId(
+  resumeState: Agents.ResumeState,
+  messages: TMessage[],
+): string | null | undefined {
+  const responseMessageId = resumeState.responseMessageId;
+  if (!responseMessageId) {
+    return resumeState.userMessage?.parentMessageId;
+  }
+
+  const unpaddedResponseMessageId = responseMessageId.replace(/_+$/, '');
+  let hasResponseMessage = false;
+  let hasUnpaddedResponseMessage = false;
+
+  for (const message of messages) {
+    if (message.messageId === responseMessageId) {
+      hasResponseMessage = true;
+      break;
+    }
+
+    if (message.messageId === unpaddedResponseMessageId) {
+      hasUnpaddedResponseMessage = true;
+    }
+  }
+
+  if (hasResponseMessage) {
+    return responseMessageId;
+  }
+
+  if (hasUnpaddedResponseMessage) {
+    return unpaddedResponseMessageId;
+  }
+
+  return resumeState.userMessage?.parentMessageId;
+}
+
+function preferDefinedString(value?: string | null, fallback?: string): string | undefined {
+  return value != null && value !== '' ? value : fallback;
 }
 
 /**
@@ -100,7 +140,8 @@ function buildSubmissionFromResumeState(
     isCreatedByUser: false,
     role: 'assistant',
     sender: existingResponseMessage?.sender ?? resumeState.sender,
-    model: existingResponseMessage?.model,
+    model: preferDefinedString(existingResponseMessage?.model, resumeState.model),
+    iconURL: preferDefinedString(existingResponseMessage?.iconURL, resumeState.iconURL),
   } as TMessage;
 
   const conversation: TConversation = {
@@ -148,6 +189,22 @@ export default function useResumeOnLoad(
   const resumableEnabled = !isAssistantsEndpoint(actualEndpoint);
   // Track conversations we've already processed (either resumed or skipped)
   const processedConvoRef = useRef<string | null>(null);
+  const restoreResumeBranch = useRecoilCallback(
+    ({ set }) =>
+      (resumeState: Agents.ResumeState, messages: TMessage[], activeConversationId: string) => {
+        const targetMessageId = getResumeBranchTargetMessageId(resumeState, messages);
+        const branchIndexes = getBranchSiblingIndexesForTarget(
+          messages,
+          targetMessageId,
+          activeConversationId,
+        );
+
+        for (const { parentMessageId, siblingIdx } of branchIndexes) {
+          set(store.messagesSiblingIdxFamily(parentMessageId), siblingIdx);
+        }
+      },
+    [],
+  );
 
   // Check for active stream when conversation changes
   const submissionConvoId = currentSubmission?.conversation?.conversationId;
@@ -266,6 +323,7 @@ export default function useResumeOnLoad(
 
     // Build submission from resume state if available
     if (streamStatus.resumeState) {
+      restoreResumeBranch(streamStatus.resumeState, messages, conversationId);
       const submission = buildSubmissionFromResumeState(
         streamStatus.resumeState,
         streamStatus.streamId,
@@ -308,6 +366,7 @@ export default function useResumeOnLoad(
     streamStatus,
     getMessages,
     setSubmission,
+    restoreResumeBranch,
   ]);
 
   // Reset processedConvoRef when conversation changes to allow re-checking

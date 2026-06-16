@@ -78,7 +78,7 @@ async function buildEndpointOption(req, res, next) {
     try {
       const result = applyModelSpecPreset({
         modelSpec: currentModelSpec,
-        parsedBody: currentModelSpec.preset,
+        parsedBody,
         endpoint,
         endpointType,
         defaultParamsEndpoint,
@@ -132,7 +132,9 @@ async function buildEndpointOption(req, res, next) {
     req.body.endpointOption = await builder(endpoint, parsedBody, endpointType);
 
     if (req.body.files && !isAgents) {
-      req.body.endpointOption.attachments = updateFilesUsage(req.body.files);
+      req.body.endpointOption.attachments = updateFilesUsage(req.body.files, undefined, {
+        user: req.user.id,
+      });
     }
 
     next();

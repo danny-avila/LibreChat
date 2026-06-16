@@ -1,5 +1,4 @@
 const { CacheKeys, Time } = require('librechat-data-provider');
-const { logger } = require('@librechat/data-schemas');
 const getLogStores = require('~/cache/getLogStores');
 
 /**
@@ -82,27 +81,9 @@ async function invalidateCachedTools(options = {}) {
   await Promise.all(keysToDelete.map((key) => cache.delete(key)));
 }
 
-/**
- * Gets MCP tools for a specific server from cache
- * @function getMCPServerTools
- * @param {string} userId - The user ID
- * @param {string} serverName - The MCP server name
- * @returns {Promise<LCAvailableTools|null>} The available tools for the server
- */
-async function getMCPServerTools(userId, serverName) {
-  try {
-    const cache = getLogStores(CacheKeys.TOOL_CACHE);
-    return (await cache.get(ToolCacheKeys.MCP_SERVER(userId, serverName))) || null;
-  } catch (error) {
-    logger.error(`[getMCPServerTools] Error fetching cached tools for ${serverName}:`, error);
-    return null;
-  }
-}
-
 module.exports = {
   ToolCacheKeys,
   getCachedTools,
   setCachedTools,
-  getMCPServerTools,
   invalidateCachedTools,
 };

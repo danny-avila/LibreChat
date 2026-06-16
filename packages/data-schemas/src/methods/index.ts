@@ -1,10 +1,10 @@
+import type { RoleMethods, RoleDeps } from './role';
 import { createSessionMethods, DEFAULT_REFRESH_TOKEN_EXPIRY, type SessionMethods } from './session';
+import { createUserMethods, DEFAULT_SESSION_EXPIRY, type UserMethods } from './user';
 import { createTokenMethods, type TokenMethods } from './token';
 import { createRoleMethods, RoleConflictError } from './role';
-import type { RoleMethods, RoleDeps } from './role';
-import { createUserMethods, DEFAULT_SESSION_EXPIRY, type UserMethods } from './user';
-import { createKeyMethods, type KeyMethods } from './key';
 import { createFileMethods, type FileMethods } from './file';
+import { createKeyMethods, type KeyMethods } from './key';
 /* Memories */
 import { createMemoryMethods, type MemoryMethods } from './memory';
 /* Agent Categories */
@@ -32,6 +32,17 @@ import { createPresetMethods, type PresetMethods } from './preset';
 import { createConversationTagMethods, type ConversationTagMethods } from './conversationTag';
 import { createMessageMethods, type MessageMethods } from './message';
 import { createConversationMethods, type ConversationMethods } from './conversation';
+import { createChatProjectMethods, type ChatProjectMethods } from './chatProject';
+export type {
+  AssignConversationToProjectResult,
+  ChatProjectSortBy,
+  ChatProjectSortDirection,
+  CreateChatProjectInput,
+  DeleteChatProjectResult,
+  ListChatProjectsOptions,
+  ListChatProjectsResult,
+  UpdateChatProjectInput,
+} from './chatProject';
 /* Tier 3 — Complex (heavier injection) */
 import {
   createTxMethods,
@@ -47,6 +58,14 @@ import { createSpendTokensMethods, type SpendTokensMethods } from './spendTokens
 import { createPromptMethods, type PromptMethods, type PromptDeps } from './prompt';
 import {
   createSkillMethods,
+  partitionIssues,
+  validateSkillName,
+  validateSkillBody,
+  validateRelativePath,
+  validateSkillFrontmatter,
+  validateSkillDescription,
+  deriveStructuredFrontmatterFields,
+  inferSkillFileCategory,
   type SkillMethods,
   type SkillDeps,
   type CreateSkillInput,
@@ -58,14 +77,30 @@ import {
   type UpdateSkillResult,
   type ValidationIssue,
 } from './skill';
+import { createSkillSyncMethods, type SkillSyncMethods } from './skillSync';
+import type {
+  SkillSyncStatusInput,
+  SkillSyncCredentialSummary,
+  UpsertSkillSyncCredentialInput,
+} from './skillSync';
 /* Tier 5 — Agent */
 import { createAgentMethods, type AgentMethods, type AgentDeps } from './agent';
 /* Config */
 import { createConfigMethods, type ConfigMethods } from './config';
 
 export { RoleConflictError, DEFAULT_REFRESH_TOKEN_EXPIRY, DEFAULT_SESSION_EXPIRY };
-export { tokenValues, cacheTokenValues, premiumTokenValues, defaultRate };
+export { tokenValues, cacheTokenValues, premiumTokenValues, defaultRate, createTxMethods };
 export { permissionBitSupersets };
+export {
+  partitionIssues,
+  validateSkillName,
+  validateSkillBody,
+  validateRelativePath,
+  validateSkillFrontmatter,
+  validateSkillDescription,
+  deriveStructuredFrontmatterFields,
+  inferSkillFileCategory,
+};
 
 export type AllMethods = UserMethods &
   SessionMethods &
@@ -92,11 +127,13 @@ export type AllMethods = UserMethods &
   ConversationTagMethods &
   MessageMethods &
   ConversationMethods &
+  ChatProjectMethods &
   TxMethods &
   TransactionMethods &
   SpendTokensMethods &
   PromptMethods &
   SkillMethods &
+  SkillSyncMethods &
   AgentMethods &
   ConfigMethods;
 
@@ -218,12 +255,14 @@ export function createMethods(
     ...createConversationTagMethods(mongoose),
     ...messageMethods,
     ...conversationMethods,
+    ...createChatProjectMethods(mongoose),
     /* Tier 3 */
     ...txMethods,
     ...transactionMethods,
     ...spendTokensMethods,
     ...promptMethods,
     ...skillMethods,
+    ...createSkillSyncMethods(mongoose),
     /* Tier 5 */
     ...agentMethods,
     /* Config */
@@ -257,6 +296,7 @@ export type {
   ConversationTagMethods,
   MessageMethods,
   ConversationMethods,
+  ChatProjectMethods,
   TxMethods,
   TransactionMethods,
   SpendTokensMethods,
@@ -271,6 +311,10 @@ export type {
   ListSkillsByAccessResult,
   UpdateSkillResult,
   ValidationIssue,
+  SkillSyncStatusInput,
+  SkillSyncCredentialSummary,
+  UpsertSkillSyncCredentialInput,
+  SkillSyncMethods,
   AgentMethods,
   ConfigMethods,
 };

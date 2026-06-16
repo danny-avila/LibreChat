@@ -1,18 +1,25 @@
 const { logger } = require('@librechat/data-schemas');
-const { Constants, ViolationTypes } = require('librechat-data-provider');
+const { Constants, ViolationTypes, isEphemeralAgentId } = require('librechat-data-provider');
 const {
   sendEvent,
   getViolationInfo,
   buildMessageFiles,
+  resolveTitleTiming,
   GenerationJobManager,
+  filterPersistableAbortContent,
   decrementPendingRequest,
   sanitizeMessageForTransmit,
   checkAndIncrementPendingRequest,
+  isUnpersistedPreliminaryParent,
 } = require('@librechat/api');
 const { disposeClient, clientRegistry, requestDataMap } = require('~/server/cleanup');
+const {
+  getMCPRequestContext,
+  cleanupMCPRequestContextForReq,
+} = require('~/server/services/MCPRequestContext');
 const { handleAbortError } = require('~/server/middleware');
 const { logViolation } = require('~/cache');
-const { saveMessage, getConvo } = require('~/models');
+const { saveMessage, getMessages, getConvo } = require('~/models');
 
 function createCloseHandler(abortController) {
   return function (manual) {
@@ -74,6 +81,83 @@ async function attachConversationCreatedAt(req, { userId, conversationId, isNewC
   }
 }
 
+function getPreliminaryResponseMessageId({ messageId, responseMessageId }) {
+  if (typeof responseMessageId === 'string' && responseMessageId.length > 0) {
+    return responseMessageId;
+  }
+
+  if (typeof messageId !== 'string' || messageId.length === 0) {
+    return null;
+  }
+
+  return `${messageId.replace(/_+$/, '')}_`;
+}
+
+function getPreliminaryUserMessage({ messageId, parentMessageId, text }, conversationId) {
+  if (typeof messageId !== 'string' || messageId.length === 0) {
+    return null;
+  }
+
+  return {
+    messageId,
+    parentMessageId,
+    conversationId,
+    text,
+  };
+}
+
+function getRequestModelSpec(req, endpointOption) {
+  const spec = endpointOption?.spec ?? req.body?.spec;
+  if (typeof spec !== 'string' || spec.length === 0) {
+    return;
+  }
+
+  const list = req.config?.modelSpecs?.list;
+  if (!Array.isArray(list)) {
+    return;
+  }
+
+  return list.find((modelSpec) => modelSpec?.name === spec);
+}
+
+function getModelSpecIconURL(modelSpec) {
+  return modelSpec?.iconURL ?? modelSpec?.preset?.iconURL ?? modelSpec?.preset?.endpoint ?? '';
+}
+
+function getEndpointIconURL(req, endpointOption) {
+  const iconURL =
+    endpointOption?.iconURL ?? getModelSpecIconURL(getRequestModelSpec(req, endpointOption));
+  return iconURL || undefined;
+}
+
+function getEndpointResponseModel(endpointOption) {
+  return endpointOption?.modelOptions?.model || endpointOption?.model_parameters?.model;
+}
+
+function getAgentResponseModel(req, endpointOption) {
+  const agentId = endpointOption?.agent_id || req.body?.agent_id;
+  if (typeof agentId === 'string' && agentId.length > 0 && !isEphemeralAgentId(agentId)) {
+    return agentId;
+  }
+
+  return getEndpointResponseModel(endpointOption);
+}
+
+async function finishResumableRequest(req, userId) {
+  try {
+    await cleanupMCPRequestContextForReq(req);
+  } finally {
+    await decrementPendingRequest(userId);
+  }
+}
+
+function rejectPreliminaryParentMessageId(res) {
+  return res.status(409).json({
+    error:
+      'Cannot submit a follow-up while the selected parent response is still being saved. Please wait and try again.',
+  });
+}
+
 /**
  * Resumable Agent Controller - Generation runs independently of HTTP connection.
  * Returns streamId immediately, client subscribes separately via SSE.
@@ -92,6 +176,23 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   } = req.body;
 
   const userId = req.user.id;
+
+  if (
+    await isUnpersistedPreliminaryParent({
+      userId,
+      conversationId: reqConversationId,
+      parentMessageId,
+      getMessages,
+    })
+  ) {
+    return rejectPreliminaryParentMessageId(res);
+  }
+
+  /** When to generate the conversation title. `immediate` (default) fires title
+   *  generation in parallel with the response, from the user's first message;
+   *  `final` defers it until the full response completes (legacy behavior).
+   *  Resolved from the agent's actual endpoint once the client is initialized. */
+  let titleTiming = 'immediate';
 
   const { allowed, pendingRequests, limit } = await checkAndIncrementPendingRequest(userId);
   if (!allowed) {
@@ -120,12 +221,26 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     const job = await GenerationJobManager.createJob(streamId, userId, conversationId);
     const jobCreatedAt = job.createdAt; // Capture creation time to detect job replacement
     req._resumableStreamId = streamId;
+    getMCPRequestContext(req, undefined, { cleanupOnResponse: false });
 
     // Send JSON response IMMEDIATELY so client can connect to SSE stream
     // This is critical: tool loading (MCP OAuth) may emit events that the client needs to receive
     res.json({ streamId, conversationId, status: 'started' });
 
     await attachConversationCreatedAt(req, { userId, conversationId, isNewConvo });
+
+    const endpointIconURL = getEndpointIconURL(req, endpointOption);
+    const responseModel = getAgentResponseModel(req, endpointOption);
+    const preliminaryUserMessage = getPreliminaryUserMessage(req.body, conversationId);
+    const preliminaryResponseMessageId = getPreliminaryResponseMessageId(req.body);
+    await GenerationJobManager.updateMetadata(streamId, {
+      conversationId,
+      endpoint: endpointOption.endpoint,
+      iconURL: endpointIconURL,
+      model: responseModel,
+      responseMessageId: preliminaryResponseMessageId,
+      userMessage: preliminaryUserMessage,
+    });
 
     // Note: We no longer use res.on('close') to abort since we send JSON immediately.
     // The response closes normally after res.json(), which is not an abort condition.
@@ -148,6 +263,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         return;
       }
 
+      const persistableContent = filterPersistableAbortContent(aggregatedContent);
+      if (persistableContent.length === 0) {
+        logger.debug('[ResumableAgentController] No persistable content to save partial response');
+        return;
+      }
+
       const resumeState = await GenerationJobManager.getResumeState(streamId);
       if (!resumeState?.userMessage) {
         logger.debug('[ResumableAgentController] No user message to save partial response for');
@@ -163,13 +284,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           conversationId: responseConversationId,
           parentMessageId: resumeState.userMessage.messageId,
           sender: client?.sender ?? 'AI',
-          content: aggregatedContent,
+          content: persistableContent,
           unfinished: true,
           error: false,
           isCreatedByUser: false,
           user: userId,
           endpoint: endpointOption.endpoint,
-          model: endpointOption.modelOptions?.model || endpointOption.model_parameters?.model,
+          iconURL: resumeState.iconURL || endpointIconURL,
+          model: resumeState.model || responseModel,
         };
 
         if (req.body?.agent_id) {
@@ -187,7 +309,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         );
 
         logger.debug(
-          `[ResumableAgentController] Saved partial response for ${streamId}, content parts: ${aggregatedContent.length}`,
+          `[ResumableAgentController] Saved partial response for ${streamId}, content parts: ${persistableContent.length}`,
         );
       } catch (error) {
         logger.error('[ResumableAgentController] Error saving partial response:', error);
@@ -207,11 +329,18 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
     if (job.abortController.signal.aborted) {
       GenerationJobManager.completeJob(streamId, 'Request aborted during initialization');
-      await decrementPendingRequest(userId);
+      await finishResumableRequest(req, userId);
       return;
     }
 
     client = result.client;
+
+    // Resolve title timing from the public agents endpoint first, then fall
+    // back to the agent's actual backing provider/custom endpoint.
+    titleTiming = resolveTitleTiming({
+      appConfig: req.config,
+      endpoint: [endpointOption?.endpoint, client?.options?.agent?.endpoint],
+    });
 
     if (client?.sender) {
       GenerationJobManager.updateMetadata(streamId, { sender: client.sender });
@@ -242,6 +371,61 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           `[ResumableAgentController] Error waiting for subscriber: ${waitError.message}`,
         );
       }
+
+      /** Immediate-mode title generation runs in parallel with the response, so
+       *  the conversation row may not exist when the title resolves. `convoReady`
+       *  resolves once the response (and thus the conversation) has been saved,
+       *  gating the title's `saveConvo`. Declared here so both the success tail
+       *  and the catch block can settle it and gate `disposeClient` on the title. */
+      let immediateTitlePromise = null;
+      let titleEventPromise = null;
+      let acceptsTitleEvents = true;
+      let resolveConvoReady;
+      const convoReady = new Promise((resolve) => {
+        resolveConvoReady = resolve;
+      });
+      /** Dedicated controller so a user Stop (or a replaced stream) cancels the
+       *  in-flight title — kept separate from `job.abortController`, which
+       *  `completeJob` also aborts on *successful* completion and would otherwise
+       *  cancel a title that is merely slower than a short response. */
+      const titleAbortController = new AbortController();
+      /** Separate from `titleAbortController`: a user Stop cancels the in-flight
+       *  title model call but keeps a title that already finished generating.
+       *  Only a superseded/failed stream aborts this to discard such a title so it
+       *  cannot clobber the conversation now owned by the newer run. */
+      const titleDiscardController = new AbortController();
+      const abortTitleOnJobAbort = () => titleAbortController.abort();
+      if (job.abortController.signal.aborted) {
+        titleAbortController.abort();
+      } else {
+        job.abortController.signal.addEventListener('abort', abortTitleOnJobAbort, { once: true });
+      }
+      const titleEligible =
+        addTitle && parentMessageId === Constants.NO_PARENT && isNewConvo && !req.body?.isTemporary;
+      const emitTitleEvent = ({ conversationId: titleConversationId, title }) => {
+        titleEventPromise = (async () => {
+          if (!acceptsTitleEvents || titleAbortController.signal.aborted) {
+            return;
+          }
+          const currentJob = await GenerationJobManager.getJob(streamId);
+          if (!currentJob || currentJob.createdAt !== jobCreatedAt) {
+            return;
+          }
+          if (titleAbortController.signal.aborted) {
+            return;
+          }
+          await GenerationJobManager.emitChunk(streamId, {
+            event: 'title',
+            data: {
+              conversationId: titleConversationId,
+              title,
+            },
+          });
+        })().catch((err) => {
+          logger.error('[ResumableAgentController] Error emitting title event', err);
+        });
+        return titleEventPromise;
+      };
 
       try {
         const onStart = (userMsg, respMsgId, _isNewConvo) => {
@@ -289,7 +473,24 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           },
         };
 
-        const response = await client.sendMessage(text, messageOptions);
+        const sendPromise = client.sendMessage(text, messageOptions);
+
+        if (titleEligible && titleTiming === 'immediate') {
+          immediateTitlePromise = addTitle(req, {
+            text,
+            conversationId,
+            client,
+            immediate: true,
+            convoReady,
+            signal: titleAbortController.signal,
+            discardSignal: titleDiscardController.signal,
+            onTitleGenerated: emitTitleEvent,
+          }).catch((err) => {
+            logger.error('[ResumableAgentController] Error in immediate title generation', err);
+          });
+        }
+
+        const response = await sendPromise;
 
         const messageId = response.messageId;
         const endpoint = endpointOption.endpoint;
@@ -355,9 +556,44 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             originalCreatedAt: jobCreatedAt,
             currentCreatedAt: currentJob?.createdAt,
           });
+          // Discard the stale title from this replaced stream: cancel it and
+          // unblock its persistence wait without letting it save (the newer job
+          // owns the conversation now).
+          titleAbortController.abort();
+          titleDiscardController.abort();
+          job.abortController.signal.removeEventListener('abort', abortTitleOnJobAbort);
+          acceptsTitleEvents = false;
+          resolveConvoReady();
           // Still decrement pending request since we incremented at start
-          await decrementPendingRequest(userId);
+          await finishResumableRequest(req, userId);
+          if (immediateTitlePromise) {
+            immediateTitlePromise.finally(() => {
+              if (client) {
+                disposeClient(client);
+              }
+            });
+          } else if (client) {
+            disposeClient(client);
+          }
           return;
+        }
+
+        // If the user stopped this turn, cancel the title BEFORE unblocking its
+        // persistence wait — otherwise resolving `convoReady` lets the title task
+        // resume and save before the later abort runs.
+        if (wasAbortedBeforeComplete) {
+          titleAbortController.abort();
+        } else {
+          job.abortController.signal.removeEventListener('abort', abortTitleOnJobAbort);
+        }
+
+        // The conversation row now exists and this stream is authoritative; allow
+        // any in-flight immediate title generation to persist (saveConvo uses noUpsert).
+        resolveConvoReady();
+        acceptsTitleEvents = false;
+
+        if (titleEventPromise) {
+          await titleEventPromise;
         }
 
         if (!wasAbortedBeforeComplete) {
@@ -379,7 +615,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
           await GenerationJobManager.emitDone(streamId, finalEvent);
           GenerationJobManager.completeJob(streamId);
-          await decrementPendingRequest(userId);
+          await finishResumableRequest(req, userId);
         } else {
           const finalEvent = {
             final: true,
@@ -399,10 +635,23 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
           await GenerationJobManager.emitDone(streamId, finalEvent);
           GenerationJobManager.completeJob(streamId, 'Request aborted');
-          await decrementPendingRequest(userId);
+          await finishResumableRequest(req, userId);
         }
 
-        if (shouldGenerateTitle) {
+        if (titleTiming === 'immediate') {
+          // Title was fired in parallel above (if eligible); a stopped turn already
+          // aborted it before `resolveConvoReady`. Defer disposal until it settles
+          // so the run/req aren't torn down mid-generation.
+          if (immediateTitlePromise) {
+            immediateTitlePromise.finally(() => {
+              if (client) {
+                disposeClient(client);
+              }
+            });
+          } else if (client) {
+            disposeClient(client);
+          }
+        } else if (shouldGenerateTitle) {
           addTitle(req, {
             text,
             response: { ...response },
@@ -422,6 +671,16 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           }
         }
       } catch (error) {
+        // Any failure (user Stop, or a preflight/quota failure before the run is
+        // even created) must cancel the title and unblock its waits: the title's
+        // `_waitForRun` would otherwise never resolve, deferring client disposal
+        // until the 45s title timeout, and no title should persist for a failed turn.
+        titleAbortController.abort();
+        titleDiscardController.abort();
+        job.abortController.signal.removeEventListener('abort', abortTitleOnJobAbort);
+        acceptsTitleEvents = false;
+        resolveConvoReady();
+
         // Check if this was an abort (not a real error)
         const wasAborted = job.abortController.signal.aborted || error.message?.includes('abort');
 
@@ -434,9 +693,16 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           GenerationJobManager.completeJob(streamId, error.message);
         }
 
-        await decrementPendingRequest(userId);
+        await finishResumableRequest(req, userId);
 
-        if (client) {
+        // Defer disposal until any immediate title settles (it holds the run/req).
+        if (immediateTitlePromise) {
+          immediateTitlePromise.finally(() => {
+            if (client) {
+              disposeClient(client);
+            }
+          });
+        } else if (client) {
           disposeClient(client);
         }
 
@@ -451,7 +717,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         `[ResumableAgentController] Unhandled error in background generation: ${err.message}`,
       );
       GenerationJobManager.completeJob(streamId, err.message);
-      await decrementPendingRequest(userId);
+      await finishResumableRequest(req, userId);
     });
   } catch (error) {
     logger.error('[ResumableAgentController] Initialization error:', error);
@@ -462,7 +728,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       await GenerationJobManager.emitError(streamId, error.message || 'Failed to start generation');
     }
     GenerationJobManager.completeJob(streamId, error.message);
-    await decrementPendingRequest(userId);
+    await finishResumableRequest(req, userId);
     if (client) {
       disposeClient(client);
     }
@@ -509,6 +775,17 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
 
   // Match the same logic used for conversationId generation above
   const userId = req.user.id;
+
+  if (
+    await isUnpersistedPreliminaryParent({
+      userId,
+      conversationId: reqConversationId,
+      parentMessageId,
+      getMessages,
+    })
+  ) {
+    return rejectPreliminaryParentMessageId(res);
+  }
 
   await attachConversationCreatedAt(req, { userId, conversationId, isNewConvo });
 
@@ -616,8 +893,8 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
     // Store endpoint metadata for abort handling
     GenerationJobManager.updateMetadata(streamId, {
       endpoint: endpointOption.endpoint,
-      iconURL: endpointOption.iconURL,
-      model: endpointOption.modelOptions?.model || endpointOption.model_parameters?.model,
+      iconURL: getEndpointIconURL(req, endpointOption),
+      model: getAgentResponseModel(req, endpointOption),
       sender: client?.sender,
     });
 

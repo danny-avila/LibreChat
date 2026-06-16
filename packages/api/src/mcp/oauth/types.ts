@@ -26,6 +26,11 @@ export interface OAuthMetadata {
   revocation_endpoint_auth_methods_supported?: string[];
 }
 
+export interface OAuthStoredClientMetadata extends OAuthMetadata {
+  /** Canonical OAuth resource indicator used when the authorization code was exchanged. */
+  resource?: string;
+}
+
 export interface OAuthProtectedResourceMetadata {
   /** Resource identifier */
   resource: string;

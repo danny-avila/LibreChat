@@ -810,6 +810,66 @@ describe('AccessControlService', () => {
     });
   });
 
+  describe('hasPublicAccess', () => {
+    const publicResource = new Types.ObjectId();
+    const privateResource = new Types.ObjectId();
+
+    beforeEach(async () => {
+      await service.grantPermission({
+        principalType: PrincipalType.PUBLIC,
+        principalId: null,
+        resourceType: ResourceType.AGENT,
+        resourceId: publicResource,
+        accessRoleId: AccessRoleIds.AGENT_VIEWER,
+        grantedBy: grantedById,
+      });
+
+      await service.grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        resourceType: ResourceType.AGENT,
+        resourceId: privateResource,
+        accessRoleId: AccessRoleIds.AGENT_OWNER,
+        grantedBy: grantedById,
+      });
+    });
+
+    test('should return true for resource with PUBLIC AclEntry', async () => {
+      const findPublicResourceIdsSpy = jest.spyOn(service['_dbMethods'], 'findPublicResourceIds');
+      const result = await service.hasPublicAccess({
+        resourceType: ResourceType.AGENT,
+        resourceId: publicResource,
+      });
+      expect(result).toBe(true);
+      expect(findPublicResourceIdsSpy).not.toHaveBeenCalled();
+      findPublicResourceIdsSpy.mockRestore();
+    });
+
+    test('should return false for resource with only user AclEntry', async () => {
+      const result = await service.hasPublicAccess({
+        resourceType: ResourceType.AGENT,
+        resourceId: privateResource,
+      });
+      expect(result).toBe(false);
+    });
+
+    test('should return false for non-existent resource', async () => {
+      const result = await service.hasPublicAccess({
+        resourceType: ResourceType.AGENT,
+        resourceId: new Types.ObjectId(),
+      });
+      expect(result).toBe(false);
+    });
+
+    test('should return false for invalid resource type', async () => {
+      const result = await service.hasPublicAccess({
+        resourceType: 'invalid' as ResourceType,
+        resourceId: publicResource,
+      });
+      expect(result).toBe(false);
+    });
+  });
+
   describe('checkPermission', () => {
     const testResource = new Types.ObjectId();
     const groupResource = new Types.ObjectId();
