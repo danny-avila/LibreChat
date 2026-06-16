@@ -62,6 +62,28 @@ describe('useUsageHandler — live snapshot reconciliation', () => {
     expect(snap?.anchorMessageId).toBe('u1');
   });
 
+  it('does not reconcile a replayed (already-folded) primary usage', () => {
+    /** On resume, backfill marks the run's collected usages folded; a replayed
+     *  `on_token_usage` then arrives folded=false. Since tool-loop calls share the
+     *  run id, reconciling with such a duplicate could overwrite the latest
+     *  snapshot with an earlier call's prompt — so it must be skipped. */
+    const convo = 'convo-recon-replay';
+    const submission = {
+      userMessage: { messageId: 'ur', conversationId: convo },
+      conversation: { conversationId: convo },
+    };
+    const { result } = renderHook(() => useUsageHandler());
+    const store = getDefaultStore();
+
+    result.current.contextHandler(inflatedSnapshot(), submission);
+    /** Mark the usage folded (as resume backfill would), then replay it live. */
+    result.current.backfillUsage([primaryUsage()], submission);
+    result.current.usageHandler(primaryUsage(), submission);
+
+    /** Duplicate (folded=false) → no reconcile → snapshot stays the raw estimate. */
+    expect(store.get(contextSnapshotFamily(convo))?.breakdown.messageTokens).toBe(187471);
+  });
+
   it('does not reconcile when the usage belongs to a different run', () => {
     const convo = 'convo-recon-2';
     const submission = {

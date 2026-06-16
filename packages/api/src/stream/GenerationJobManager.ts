@@ -1178,9 +1178,17 @@ class GenerationJobManagerClass {
       return;
     }
 
-    await this.jobStore.updateJob(streamId, {
-      contextUsage: JSON.stringify((event as { data?: unknown }).data ?? null),
-    });
+    /** Share the token-usage queue so snapshot + usage writes are serialized per
+     *  stream: `persistTokenUsage` reconciles the stored snapshot (read-modify-
+     *  write), and a snapshot landing between its read and write — or a stale
+     *  reconciled write landing after a newer snapshot — would clobber the newer
+     *  run's gauge when visible calls interleave. FIFO ordering keeps each call's
+     *  pre-invoke snapshot ahead of its own usage and behind the next snapshot. */
+    await this.queueJobWrite(this.tokenUsageWriteQueues, streamId, () =>
+      this.jobStore.updateJob(streamId, {
+        contextUsage: JSON.stringify((event as { data?: unknown }).data ?? null),
+      }),
+    );
   }
 
   /**

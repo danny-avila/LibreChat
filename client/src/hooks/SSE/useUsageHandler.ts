@@ -215,19 +215,17 @@ export default function useUsageHandler(): UsageHandlers {
     const usageHandler: UsageHandlers['usageHandler'] = (data, submission) => {
       const folded = foldUsage(data, submission);
 
-      /** Primary-call usage carries the provider's real prompt size — correct the
-       *  live gauge to it before the bump below (tagged buckets never touch the
-       *  context gauge). */
-      if (data.usage_type == null) {
-        reconcileLiveSnapshot(data, submission);
-      }
-
-      /** Only primary-call usage drives the live context estimate; tagged
-       *  buckets (summarization, subagent) fold into totals/cost only. Skip
-       *  the bump for an already-counted event replayed on resume. */
+      /** Only a NEWLY folded primary call drives the live gauge. A replayed
+       *  duplicate (folded=false on resume) can be an EARLIER tool-loop call that
+       *  shares this run's id — reconciling with it would overwrite the latest
+       *  snapshot with an earlier, smaller prompt. Tagged buckets (summarization,
+       *  subagent) never touch the context gauge. */
       if (!folded || data.usage_type != null) {
         return;
       }
+      /** This primary's provider-reported prompt is the post-invoke truth for the
+       *  call the latest snapshot precedes — reconcile the gauge to it. */
+      reconcileLiveSnapshot(data, submission);
       /** Use the repaired completion count (not raw output_tokens) so the
        *  snapshot gauge keeps the full response for under-reporting providers */
       confirmedRef.current += normalizeUsageUnits(data).output;
