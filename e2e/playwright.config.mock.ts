@@ -10,6 +10,7 @@ const configTemplatePath = path.resolve(rootPath, 'e2e/config/librechat.e2e.yaml
 const configPath = path.resolve(rootPath, 'e2e/.generated/librechat.e2e.yaml');
 const reportPath = path.resolve(rootPath, 'e2e/playwright-report');
 const deploymentSkillsPath = path.resolve(rootPath, 'e2e/fixtures/deployment-skills');
+const testDir = process.env.E2E_MOCK_TEST_DIR ?? 'specs/mock/';
 
 const baseURL = getE2EBaseURL();
 const chromiumChannel = process.env.E2E_CHROMIUM_CHANNEL || undefined;
@@ -47,7 +48,14 @@ const preservedCredentialEnvKeys = new Set([
  * request is made, so no real (or mock HTTP) provider is contacted.
  */
 function writeRuntimeMockConfig() {
-  const template = fs.readFileSync(configTemplatePath, 'utf8');
+  let template = fs.readFileSync(configTemplatePath, 'utf8');
+  if (process.env.E2E_MODEL_SPECS_ENFORCE === 'true') {
+    const patchedTemplate = template.replace(/^  enforce: false$/m, '  enforce: true');
+    if (patchedTemplate === template) {
+      throw new Error('Expected e2e mock config template to contain `enforce: false`.');
+    }
+    template = patchedTemplate;
+  }
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.writeFileSync(configPath, template);
 }
@@ -89,7 +97,7 @@ neutralizeDotenvSecrets(path.resolve(rootPath, '.env'), preservedCredentialEnvKe
 export default defineConfig({
   globalSetup: require.resolve('./setup/global-setup'),
   globalTeardown: require.resolve('./setup/global-teardown.mock'),
-  testDir: 'specs/mock/',
+  testDir,
   outputDir: 'specs/.test-results',
   fullyParallel: false,
   forbidOnly: !!process.env.CI,

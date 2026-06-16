@@ -60,6 +60,7 @@
     "e2e:ci": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.ts",
     "e2e:mock": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.mock.ts",
     "e2e:mock:ci": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.mock.ts",
+    "e2e:mock:enforce": "npm run e2e:prepare && cross-env E2E_MODEL_SPECS_ENFORCE=true E2E_MOCK_TEST_DIR=specs/mock-enforce playwright test --config=e2e/playwright.config.mock.ts",
     "e2e:debug": "npm run e2e:prepare && cross-env PWDEBUG=1 playwright test --config=e2e/playwright.config.local.ts",
     "e2e:record": "npm run e2e:prepare && cross-env E2E_BASE_URL=http://localhost:3333 node e2e/setup/record.js",
     "e2e:record:local": "npm run e2e:prepare && node e2e/setup/record.js --profile=local",

@@ -10,6 +10,7 @@ const {
   EndpointURLs,
   EModelEndpoint,
   isAgentsEndpoint,
+  isEphemeralAgentId,
   parseCompactConvo,
   getDefaultParamsEndpoint,
 } = require('librechat-data-provider');
@@ -24,6 +25,9 @@ const buildFunction = {
   [EModelEndpoint.assistants]: assistants.buildOptions,
   [EModelEndpoint.azureAssistants]: azureAssistants.buildOptions,
 };
+
+const isSavedAgentRequest = (endpoint, parsedBody) =>
+  isAgentsEndpoint(endpoint) && !isEphemeralAgentId(parsedBody?.agent_id);
 
 async function buildEndpointOption(req, res, next) {
   const { endpoint, endpointType } = req.body;
@@ -50,14 +54,22 @@ async function buildEndpointOption(req, res, next) {
   } catch (error) {
     logger.error(`Error parsing compact conversation for endpoint ${endpoint}`, error);
     logger.debug({
-      'Error parsing compact conversation': { endpoint, endpointType, conversation: req.body },
+      'Error parsing compact conversation': {
+        endpoint,
+        endpointType,
+        conversation: req.body,
+      },
     });
     return handleError(res, { text: 'Error parsing conversation' });
   }
 
   const appConfig = req.config;
   let appliedModelSpecPrivateFields = new Set();
-  if (appConfig.modelSpecs?.list?.length && appConfig.modelSpecs?.enforce) {
+  if (
+    appConfig.modelSpecs?.list?.length &&
+    appConfig.modelSpecs?.enforce &&
+    !isSavedAgentRequest(endpoint, parsedBody)
+  ) {
     /** @type {{ list: TModelSpec[] }}*/
     const { list } = appConfig.modelSpecs;
     const { spec } = parsedBody;
