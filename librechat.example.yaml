@@ -606,6 +606,19 @@ endpoints:
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
 
+    # OpenPaths Example
+    - name: 'OpenPaths'
+      # For `apiKey` and `baseURL`, you can use environment variables that you define.
+      # recommended environment variables:
+      apiKey: '${OPENPATHS_API_KEY}'
+      baseURL: 'https://openpaths.io/v1'
+      models:
+        default: ['openpaths/auto']
+        fetch: true
+      titleConvo: true
+      titleModel: 'openpaths/auto'
+      modelDisplayLabel: 'OpenPaths'
+
     # Helicone Example
     - name: 'Helicone'
       # For `apiKey` and `baseURL`, you can use environment variables that you define.
