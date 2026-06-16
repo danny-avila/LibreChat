@@ -11,13 +11,11 @@ export default memo(function AudioRecorder({
   disabled,
   ask,
   methods,
-  textAreaRef,
   isSubmitting,
 }: {
   disabled: boolean;
   ask: TAskFunction;
   methods: ReturnType<typeof useChatFormContext>;
-  textAreaRef: React.RefObject<HTMLTextAreaElement>;
   isSubmitting: boolean;
 }) {
   const { setValue, reset, getValues } = methods;
@@ -114,7 +112,7 @@ export default memo(function AudioRecorder({
           type="button"
           aria-label={localize('com_ui_use_micrphone')}
           onClick={isListening === true ? handleStopRecording : handleStartRecording}
-          disabled={disabled || !textAreaRef.current}
+          disabled={disabled}
           className={cn(
             'flex size-9 items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover',
           )}
