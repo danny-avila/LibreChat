@@ -80,6 +80,19 @@ Our tests live in: ./nj/e2e/\* and they can be run on their own with the followi
 
 ## How to Work in This Repo
 
+### Spelunking LibreChat
+
+AI Assistant is a fork of LibreChat, which at times is an intimidatingly large project.
+
+Here are some tips for navigating such a large repository:
+
+- The repo is compartmentalized into different modules. Focus on just one module at a time to avoid getting lost.
+- It is often easiest to find a React component either by searching for any visible text. The second easiest way is to
+  inspect the component then look for its CSS classes; that often narrows it down to just a handful of possible
+  components.
+- Use a debugger to walk through how the code works. A debugger can be used both on the backend and frontend.
+- AI can be good at analyzing code paths. If you're curious how a feature works, ask AI to walk you through it.
+
 ### Minimize Upstream Conflicts
 
 While we want to customize the AI experience for New Jersey, we also want to leverage the work from the LibreChat OSS
@@ -119,9 +132,51 @@ We want to keep our repository up-to-date with the latest changes
 from [upstream](https://github.com/danny-avila/LibreChat/tree/main).
 
 To that end, we have a weekly
-action ([Sync Upstream LibreChat](https://github.com/newjersey/nj-ai-assistant/actions/workflows/nj-sync-upstream.yml)) which
-should fire each Wednesday. The action itself includes instructions on how to handle merge conflicts etc., but make sure
-to actually pay attention to the pull request it generates each week!
+action ([Sync Upstream LibreChat](https://github.com/newjersey/nj-ai-assistant/actions/workflows/nj-sync-upstream.yml))
+which should fire each Wednesday. The action itself includes instructions on how to handle merge conflicts etc., but
+make sure to actually pay attention to the pull request it generates each week!
+
+Here are some tips on successfully merging from upstream:
+
+- Always resolve merge conflicts first - CI is gonna fail until all those are resolved.
+- Most of our CI is based on their CI scripts, so if CI is still failing after resolving merge conflicts, look into the
+  workflow scripts to see if anything changed there.
+- Whenever upstream adds new features, check in with product to see if we want to adopt them or not. (It's okay to merge
+  them as long as we have a plan to remove them if we don't want them before the next release.)
+
+### Contributing Upstream
+
+Sometimes, we make changes that would benefit any user of LibreChat (such as fixing core bugs or adding
+general-use features). In those cases, we should strive to contribute these changes back upstream (to LibreChat itself).
+Not only is it good to give back, but it also makes our lives easier in the long run (as there's no future merge
+conflicts from code we contribute).
+
+Make sure to read `CONTRIBUTING.md` for details on how to properly format commits etc. for upstream contributions.
+
+Depending on the urgency of the change, there are two strategies you can use for contribution:
+
+1. **Contribute upstream, then later merge into our repo (preferred)**: this relies on the weekly upstream merge to
+   capture our change. It's preferred because 1. you only need to make one PR and 2. if any changes are required for
+   acceptance into upstream, they're handled before they get to our repo, minimizing merge conflicts.
+2. **Simultaneously merge into our repo while contribution upstream**: if a change is needed ASAP in our repo, then we
+   have no choice but to do it twice. Be wary of potential future merge conflicts!
+
+### Adding New Models
+
+We're using AWS Bedrock for all our model invocations.
+
+When picking a model, make sure that you use an **in region inference** to keep requests in the US (e.g., instead of
+`anthropic.claude-sonnet-4-6`, use `us.anthropic.claude-sonnet-4-6`).
+
+Because we use these special **in region inference** models, we have to explicitly allow them to be used in the app.
+That means you must update the comma-delimited env var `BEDROCK_AWS_MODELS` (in `nj.env.template` and locally for dev).
+
+We use [model specs](https://www.librechat.ai/docs/configuration/librechat_yaml/object_structure/model_specs) to
+explicitly define the list of models users are allowed to access. These are defined in `nj-librechat.yaml` and need to
+be updated every time we add a new model
+
+Warning: Any AIA conversation started with model "XYZ" is linked to model "XYZ". As such, **you should never remove old
+models from the model specs** (or else old conversations will no longer accept new prompts).
 
 ## Releasing to Prod
 

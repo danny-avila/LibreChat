@@ -308,6 +308,17 @@ export class EcsStack extends cdk.Stack {
         propagateTags: ecs.PropagatedTagSource.SERVICE,
       },
     );
+
+    // A note about scaling...
+    //
+    // On prod, we purposefully want at least 2 instances running at all times. However, by
+    // autoscaling's standards, that's too many instances most of the time. It would prefer to scale
+    // back down to 1.
+    //
+    // Since autoscaling uses Cloudwatch metrics to measure when to scale, that means we almost
+    // always have Cloudwatch metrics "in alarm" - telling us we should be scaling *down*!
+    //
+    // This is intended behavior (for the time being), so don't panic!
     const scalableTarget = librechatService.service.autoScaleTaskCount({
       minCapacity: isProd ? 2 : 1,
       maxCapacity: 20,
