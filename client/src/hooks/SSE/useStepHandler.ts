@@ -63,6 +63,54 @@ type AllContentTypes =
   | ContentTypes.SUMMARY
   | ContentTypes.ERROR;
 
+type IndexedContent = Array<Partial<TMessageContentParts> | undefined>;
+
+/**
+ * Two content types may share a slot when they are equal or one is a prefix of
+ * the other (e.g. delta types vs. their finalized counterparts). An empty type
+ * marks an unoccupied slot, which is always compatible.
+ */
+const isTypeCompatible = (existingType: string, contentType: string): boolean => {
+  if (!existingType) {
+    return true;
+  }
+  return (
+    existingType === contentType ||
+    contentType.startsWith(existingType) ||
+    existingType.startsWith(contentType)
+  );
+};
+
+/**
+ * Resolve the slot an incoming content part should occupy when the
+ * server-provided index is already held by an incompatible type.
+ *
+ * With Anthropic server-side tools (e.g. `code_execution`) active, the content
+ * block indices streamed by the agents runtime can collide with slots the
+ * frontend has already filled (thinking, prior tool calls). Rather than drop
+ * the update — which both floods logs with "Content type mismatch" and loses
+ * streamed content — relocate it: prefer an existing same-type slot (so deltas
+ * keep accumulating into one part), then the first empty slot, then append.
+ */
+const findCompatibleIndex = (
+  content: IndexedContent,
+  startIndex: number,
+  contentType: string,
+): number => {
+  for (let i = startIndex; i < content.length; i++) {
+    const existingType = (content[i]?.type as string | undefined) ?? '';
+    if (existingType && isTypeCompatible(existingType, contentType)) {
+      return i;
+    }
+  }
+  for (let i = startIndex; i < content.length; i++) {
+    if (!content[i]) {
+      return i;
+    }
+  }
+  return content.length;
+};
+
 export default function useStepHandler({
   setMessages,
   getMessages,
@@ -270,23 +318,21 @@ export default function useStepHandler({
       return message;
     }
 
-    const updatedContent = [...(message.content || [])] as Array<
-      Partial<TMessageContentParts> | undefined
-    >;
-    if (!updatedContent[index] && contentType !== ContentTypes.TOOL_CALL) {
-      updatedContent[index] = { type: contentPart.type as AllContentTypes };
+    const updatedContent = [...(message.content || [])] as IndexedContent;
+
+    /**
+     * Relocate rather than drop when the server-provided index is occupied by an
+     * incompatible type. `findCompatibleIndex` always returns a compatible or
+     * empty slot, so the recursive call cannot re-enter this branch.
+     */
+    const existingType = (updatedContent[index]?.type as string | undefined) ?? '';
+    if (existingType && !isTypeCompatible(existingType, contentType)) {
+      const resolvedIndex = findCompatibleIndex(updatedContent, index, contentType);
+      return updateContent(message, resolvedIndex, contentPart, finalUpdate, metadata);
     }
 
-    /** Prevent overwriting an existing content part with a different type */
-    const existingType = (updatedContent[index]?.type as string | undefined) ?? '';
-    if (
-      existingType &&
-      existingType !== contentType &&
-      !contentType.startsWith(existingType) &&
-      !existingType.startsWith(contentType)
-    ) {
-      console.warn('Content type mismatch', { existingType, contentType, index });
-      return message;
+    if (!updatedContent[index] && contentType !== ContentTypes.TOOL_CALL) {
+      updatedContent[index] = { type: contentPart.type as AllContentTypes };
     }
 
     if (
