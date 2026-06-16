@@ -350,6 +350,8 @@ export namespace Agents {
   /** The question itself: free-form prompt with optional curated answers. */
   export interface AskUserQuestionRequest {
     question: string;
+    /** Optional descriptive context for the prompt; mirrors the SDK field. */
+    description?: string;
     options?: AskUserQuestionOption[];
   }
 
@@ -383,6 +385,18 @@ export namespace Agents {
     createdAt: number;
     /** Optional expiry; clients should treat past `expiresAt` as stale */
     expiresAt?: number;
+    /**
+     * SDK interrupt id (`RunInterruptResult.interruptId`). Persisted so a
+     * cross-process resume can correlate the decision with the LangGraph
+     * interrupt after the original `Run` object is gone.
+     */
+    interruptId?: string;
+    /**
+     * LangGraph `thread_id` the run was bound to (`RunInterruptResult.threadId`).
+     * Required, with the checkpointer, to rebuild `Command({ resume })` on a
+     * worker that didn't originate the run.
+     */
+    threadId?: string;
   }
 
   /**

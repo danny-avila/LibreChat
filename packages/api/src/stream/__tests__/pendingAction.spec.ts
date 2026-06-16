@@ -124,6 +124,21 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
       expect(await manager.approvals.resolve(streamId)).toBe(false);
     });
 
+    test('rejects a resolve whose actionId no longer matches (stale-decision guard)', async () => {
+      const streamId = 'stream-stale-action';
+      await manager.createJob(streamId, 'user-1');
+      const action = buildAction(streamId);
+      await manager.approvals.pause(streamId, action);
+
+      // A decision targeting a different action must not resume this one.
+      expect(await manager.approvals.resolve(streamId, 'some-other-action-id')).toBe(false);
+      expect(await manager.getJobStatus(streamId)).toBe('requires_action');
+
+      // The matching actionId resolves it.
+      expect(await manager.approvals.resolve(streamId, action.actionId)).toBe(true);
+      expect(await manager.getJobStatus(streamId)).toBe('running');
+    });
+
     test('an expired pending action expires instead of resuming', async () => {
       const streamId = 'stream-resolve-expired';
       await manager.createJob(streamId, 'user-1');
@@ -155,6 +170,17 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
       const streamId = 'stream-expire-running';
       await manager.createJob(streamId, 'user-1');
       expect(await manager.approvals.expire(streamId)).toBe(false);
+    });
+
+    test('sets completedAt so terminal cleanup can reclaim the job', async () => {
+      const streamId = 'stream-expire-completed';
+      await manager.createJob(streamId, 'user-1');
+      await manager.approvals.pause(streamId, buildAction(streamId));
+
+      expect(await manager.approvals.expire(streamId)).toBe(true);
+      const job = await manager.getJob(streamId);
+      expect(job?.status).toBe('aborted');
+      expect(job?.completedAt).toBeGreaterThan(0);
     });
   });
 
