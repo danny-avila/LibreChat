@@ -88,6 +88,16 @@ export interface SerializableJobData {
 }
 
 /**
+ * Whether a job's pending review has passed its `expiresAt`. Shared by the
+ * stores so an expired approval is kept out of active-job listings (the client
+ * stops polling; cleanup/expiry finalizes it).
+ */
+export function isPendingActionExpired(job: Pick<SerializableJobData, 'pendingAction'>): boolean {
+  const exp = job.pendingAction?.expiresAt;
+  return exp != null && exp <= Date.now();
+}
+
+/**
  * Arguments for an atomic {@link IJobStore.transitionStatus} compare-and-set.
  */
 export interface JobStatusTransition {
