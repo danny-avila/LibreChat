@@ -23,6 +23,10 @@ describe('inferMimeType', () => {
     expect(inferMimeType('test.md', 'text/x-markdown')).toBe('text/markdown');
   });
 
+  it('should normalize application/x-zip-compressed to application/zip', () => {
+    expect(inferMimeType('archive.zip', 'application/x-zip-compressed')).toBe('application/zip');
+  });
+
   it('should return a type that matches textMimeTypes after normalization', () => {
     const normalized = inferMimeType('test.py', 'text/x-python-script');
     expect(textMimeTypes.test(normalized)).toBe(true);
@@ -36,6 +40,7 @@ describe('inferMimeType', () => {
   it('should infer from extension when browser type is empty', () => {
     expect(inferMimeType('test.py', '')).toBe('text/x-python');
     expect(inferMimeType('code.js', '')).toBe('text/javascript');
+    expect(inferMimeType('archive.zip', '')).toBe('application/zip');
     expect(inferMimeType('photo.heic', '')).toBe('image/heic');
     expect(inferMimeType('Main.java', '')).toBe('text/x-java');
   });
@@ -82,6 +87,7 @@ describe('applicationMimeTypes', () => {
     'application/msword',
     'application/xml',
     'application/zip',
+    'application/x-zip-compressed',
     'application/epub+zip',
     'application/x-tar',
     'application/x-sh',
