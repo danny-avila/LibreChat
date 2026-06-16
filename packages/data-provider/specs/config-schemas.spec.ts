@@ -5,6 +5,8 @@ import {
   endpointSchema,
   RetentionMode,
   configSchema,
+  ocrSchema,
+  OCRStrategy,
   interfaceSchema,
   fileStorageSchema,
   fileStrategiesSchema,
@@ -1160,6 +1162,71 @@ describe('specsConfigSchema', () => {
           subagents: { enabled: true, agent_ids: oversized },
         },
       ],
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('ocrSchema', () => {
+  const ENV_KEY = 'OCR_CUSTOM_STRATEGY_MODULE';
+
+  afterEach(() => {
+    delete process.env[ENV_KEY];
+  });
+
+  it('accepts the default strategy without a custom module', () => {
+    const result = ocrSchema.safeParse({});
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.strategy).toBe(OCRStrategy.MISTRAL_OCR);
+    }
+  });
+
+  it('accepts custom_ocr when an inline module path is provided', () => {
+    const result = ocrSchema.safeParse({
+      strategy: OCRStrategy.CUSTOM_OCR,
+      customStrategyModule: '/app/ocr/my-ocr.js',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts custom_ocr when the module path resolves from an environment variable', () => {
+    process.env[ENV_KEY] = '/app/ocr/from-env.js';
+    const result = ocrSchema.safeParse({
+      strategy: OCRStrategy.CUSTOM_OCR,
+      customStrategyModule: '${OCR_CUSTOM_STRATEGY_MODULE}',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects custom_ocr when no module path is configured (unresolved placeholder)', () => {
+    const result = ocrSchema.safeParse({ strategy: OCRStrategy.CUSTOM_OCR });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0].path).toEqual(['customStrategyModule']);
+    }
+  });
+
+  it('rejects custom_ocr when the module path is an empty string', () => {
+    const result = ocrSchema.safeParse({
+      strategy: OCRStrategy.CUSTOM_OCR,
+      customStrategyModule: '',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects custom_ocr when the module path is whitespace-only', () => {
+    const result = ocrSchema.safeParse({
+      strategy: OCRStrategy.CUSTOM_OCR,
+      customStrategyModule: '   ',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects custom_ocr when the env-referenced module path is unset', () => {
+    const result = ocrSchema.safeParse({
+      strategy: OCRStrategy.CUSTOM_OCR,
+      customStrategyModule: '${OCR_CUSTOM_STRATEGY_MODULE}',
     });
     expect(result.success).toBe(false);
   });
