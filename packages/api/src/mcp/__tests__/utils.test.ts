@@ -265,6 +265,7 @@ describe('redactServerSecrets', () => {
         client_id: 'cid',
         authorization_url: 'https://infra.internal/oauth/authorize',
         token_url: 'https://infra.internal/oauth/token',
+        revocation_endpoint: 'https://infra.internal/oauth/revoke',
         scope: 'read',
       },
     };
@@ -272,6 +273,7 @@ describe('redactServerSecrets', () => {
     expect(redacted.url).toBeUndefined();
     expect(redacted.oauth?.authorization_url).toBeUndefined();
     expect(redacted.oauth?.token_url).toBeUndefined();
+    expect(redacted.oauth?.revocation_endpoint).toBeUndefined();
     expect(redacted.oauth?.client_id).toBe('cid');
     expect(redacted.oauth?.scope).toBe('read');
   });

@@ -299,7 +299,12 @@ export function redactServerSecrets(
   if (!isUserSourced(config) && !options?.canEdit) {
     delete safe.url;
     if (safe.oauth) {
-      const { authorization_url: _au, token_url: _tu, ...restOAuth } = safe.oauth;
+      const {
+        authorization_url: _au,
+        token_url: _tu,
+        revocation_endpoint: _re,
+        ...restOAuth
+      } = safe.oauth;
       safe.oauth = restOAuth;
     }
   }
