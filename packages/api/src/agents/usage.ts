@@ -47,22 +47,23 @@ type SpendStructuredTokensFn = (
  * path emits `output_tokens = candidatesTokenCount` and drops `thoughtsTokenCount`,
  * so `total - input > output`. The gap is recovered as `total - input`.
  *
- * **Bedrock / Anthropic cache inflation:** additive providers keep cache tokens
+ * **Bedrock cache inflation:** additive providers keep cache tokens
  * separate from `input_tokens`, making
  * `total = input + output + cache_read + cache_creation`. Without adjustment
  * the Vertex recovery fires on every cached step and returns
  * `output + cache_read + cache_creation` instead of `output`, inflating
  * completion counts by orders of magnitude. The fix subtracts the cache
  * adjustment before the gap test — but only for additive providers; subset
- * providers (Google, OpenAI, …) already include cache inside `input_tokens`
- * so their `cacheAdjustment` is zero and the Vertex recovery is unaffected.
+ * providers (Anthropic, Google, OpenAI, …) already include cache inside
+ * `input_tokens` so their `cacheAdjustment` is zero and the Vertex recovery
+ * is unaffected.
  */
 function resolveCompletionTokens(usage: UsageMetadata): number {
   const output = Number(usage.output_tokens) || 0;
   const total = Number(usage.total_tokens) || 0;
   const input = Number(usage.input_tokens) || 0;
 
-  // For additive providers (Bedrock, Anthropic), cache tokens are separate
+  // For additive providers (Bedrock), cache tokens are separate
   // from input_tokens and are included in total_tokens, widening the gap
   // independently of any missing thinking tokens. Subtract them so the gap
   // check only fires when output_tokens genuinely undercounts (Vertex case).

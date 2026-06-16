@@ -2,9 +2,18 @@ import type { TContextUsageEvent, TTokenUsageEvent } from './runs';
 import { promptTokensFromUsage, reconcileContextUsage } from './runs';
 
 describe('promptTokensFromUsage', () => {
-  it('adds cache reads/writes for additive providers (Anthropic)', () => {
+  it('adds cache reads/writes for additive providers (Bedrock)', () => {
     const event: TTokenUsageEvent = {
       input_tokens: 53702,
+      input_token_details: { cache_read: 2071, cache_creation: 0 },
+      provider: 'bedrock',
+    };
+    expect(promptTokensFromUsage(event)).toBe(55773);
+  });
+
+  it('treats input_tokens as the full prompt for Anthropic (cache-inclusive)', () => {
+    const event: TTokenUsageEvent = {
+      input_tokens: 55773,
       input_token_details: { cache_read: 2071, cache_creation: 0 },
       provider: 'anthropic',
     };
@@ -101,7 +110,7 @@ describe('reconcileContextUsage', () => {
       remainingContextTokens: 202815,
     };
     const usage: TTokenUsageEvent = {
-      input_tokens: 7804,
+      input_tokens: 9875, // cache-inclusive (Anthropic): 7804 fresh + 2071 read
       input_token_details: { cache_read: 2071, cache_creation: 0 },
       provider: 'anthropic',
     };
