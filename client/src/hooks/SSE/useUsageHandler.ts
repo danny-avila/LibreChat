@@ -1,6 +1,6 @@
 import { useRef, useMemo } from 'react';
 import { getDefaultStore } from 'jotai';
-import { Constants } from 'librechat-data-provider';
+import { Constants, reconcileContextUsage, promptTokensFromUsage } from 'librechat-data-provider';
 import type {
   TMessage,
   TConversation,
@@ -191,8 +191,36 @@ export default function useUsageHandler(): UsageHandlers {
       return true;
     };
 
+    /** Reconcile the live snapshot's calibrated estimate to a primary call's
+     *  ACTUAL prompt tokens. The snapshot is pre-invoke for that call; this usage
+     *  is its post-invoke truth, so the gauge stops showing the SDK multiplier's
+     *  inflation (severe when a provider injects server-side content like web
+     *  search). Runs even on a resume replay — `reconcileContextUsage` is
+     *  idempotent for the same prompt size. */
+    const reconcileLiveSnapshot = (data: TTokenUsageEvent, submission: UsageSubmissionLike) => {
+      const convoKey = getConvoKey(submission);
+      const snapshotAtom = contextSnapshotFamily(convoKey);
+      const snapshot = jotai.get(snapshotAtom);
+      if (snapshot == null) {
+        return;
+      }
+      /** The snapshot precedes this call, so it must belong to the same run */
+      if (snapshot.runId != null && data.runId != null && snapshot.runId !== data.runId) {
+        return;
+      }
+      const reconciled = reconcileContextUsage(snapshot, promptTokensFromUsage(data));
+      jotai.set(snapshotAtom, { ...reconciled, anchorMessageId: snapshot.anchorMessageId });
+    };
+
     const usageHandler: UsageHandlers['usageHandler'] = (data, submission) => {
       const folded = foldUsage(data, submission);
+
+      /** Primary-call usage carries the provider's real prompt size — correct the
+       *  live gauge to it before the bump below (tagged buckets never touch the
+       *  context gauge). */
+      if (data.usage_type == null) {
+        reconcileLiveSnapshot(data, submission);
+      }
 
       /** Only primary-call usage drives the live context estimate; tagged
        *  buckets (summarization, subagent) fold into totals/cost only. Skip

@@ -1,5 +1,9 @@
 import { logger } from '@librechat/data-schemas';
-import { inputTokensIncludesCache } from 'librechat-data-provider';
+import {
+  inputTokensIncludesCache,
+  reconcileContextUsage,
+  promptTokensFromUsage,
+} from 'librechat-data-provider';
 import type {
   TCustomConfig,
   TResponseUsage,
@@ -247,14 +251,14 @@ function normalizeEventUnits(event: TTokenUsageEvent): {
   };
 }
 
-/** Output tokens of the final primary model call belonging to the snapshot's
- *  run — the call the latest pre-invoke snapshot precedes. Persisted as the
- *  snapshot's `completedOutputTokens` so a reloaded multi-call turn adds only
- *  this delta (matching the live finalizer) instead of the full response
- *  `tokenCount`, which the snapshot already counts for earlier steps. Filtering
- *  by `runId` prevents a parallel run's later usage from being attributed to this
- *  snapshot; untagged events (older lib / resume) match any run for back-compat. */
-function finalCallOutputTokens(events: ReadonlyArray<TTokenUsageEvent>, runId?: string): number {
+/** The final primary (non-tagged) model call belonging to the snapshot's run —
+ *  the call the latest pre-invoke snapshot precedes. Filtering by `runId` prevents
+ *  a parallel run's later usage from being attributed to this snapshot; untagged
+ *  events (older lib / resume) match any run for back-compat. */
+function finalPrimaryCall(
+  events: ReadonlyArray<TTokenUsageEvent>,
+  runId?: string,
+): TTokenUsageEvent | undefined {
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i];
     if (event.usage_type != null) {
@@ -263,24 +267,32 @@ function finalCallOutputTokens(events: ReadonlyArray<TTokenUsageEvent>, runId?: 
     if (runId != null && event.runId != null && event.runId !== runId) {
       continue;
     }
-    return normalizeEventUnits(event).output;
+    return event;
   }
-  return 0;
+  return undefined;
 }
 
 /**
  * Projects the latest live context snapshot into the blob persisted on
- * `responseMessage.metadata.contextUsage`. Trims zero-valued per-tool counts
- * (privacy/size) and records the final call's output as `completedOutputTokens`
- * so rehydration adds the same post-snapshot delta the live gauge did. The
- * client re-anchors the blob to the response message id on load.
+ * `responseMessage.metadata.contextUsage`. Reconciles the calibrated estimate to
+ * the final call's ACTUAL prompt tokens (the SDK multiplier over-inflates
+ * `messageTokens`, badly so when a provider injects server-side content like web
+ * search), so a reloaded turn shows the real context — not a several×-too-high
+ * number. Trims zero-valued per-tool counts (privacy/size) and records the final
+ * call's output as `completedOutputTokens` so rehydration adds the same
+ * post-snapshot delta the live gauge did. The client re-anchors the blob to the
+ * response message id on load.
  */
 export function buildPersistedContextUsage(
   snapshot: TContextUsageEvent,
   usageEvents: ReadonlyArray<TTokenUsageEvent> = [],
 ): TContextUsageEvent {
-  const { breakdown } = snapshot;
-  const completedOutputTokens = finalCallOutputTokens(usageEvents, snapshot.runId);
+  const finalCall = finalPrimaryCall(usageEvents, snapshot.runId);
+  const completedOutputTokens = finalCall ? normalizeEventUnits(finalCall).output : 0;
+  const reconciled = finalCall
+    ? reconcileContextUsage(snapshot, promptTokensFromUsage(finalCall))
+    : snapshot;
+  const { breakdown } = reconciled;
   let toolTokenCounts = breakdown.toolTokenCounts;
   if (toolTokenCounts != null) {
     const trimmed: Record<string, number> = {};
@@ -292,7 +304,7 @@ export function buildPersistedContextUsage(
     toolTokenCounts = Object.keys(trimmed).length > 0 ? trimmed : undefined;
   }
   return {
-    ...snapshot,
+    ...reconciled,
     breakdown: { ...breakdown, toolTokenCounts },
     ...(completedOutputTokens > 0 && { completedOutputTokens }),
   };

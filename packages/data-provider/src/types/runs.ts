@@ -1,3 +1,5 @@
+import { inputTokensIncludesCache } from '../schemas';
+
 export enum ContentTypes {
   TEXT = 'text',
   THINK = 'think',
@@ -124,6 +126,51 @@ export type TTokenUsageEvent = {
    *  rates); present only when `interface.contextCost` is enabled. Clients sum
    *  this rather than re-deriving cost from base rates. */
   cost?: number;
+};
+
+/**
+ * Full prompt token count for one completed model call — the EXACT context the
+ * model saw, provider-aware: additive providers (Anthropic/Bedrock) report
+ * `input_tokens` excluding cache, so cache reads/writes are added back; subset
+ * providers (OpenAI/…) already fold cache into `input_tokens`. This is the ground
+ * truth the gauge reconciles its calibrated estimate to.
+ */
+export const promptTokensFromUsage = (event: TTokenUsageEvent): number => {
+  const input = event.input_tokens ?? 0;
+  if (inputTokensIncludesCache(event.provider)) {
+    return input;
+  }
+  const details = event.input_token_details ?? {};
+  return input + (details.cache_read ?? 0) + (details.cache_creation ?? 0);
+};
+
+/**
+ * Reconciles a pre-invoke context snapshot's CALIBRATED estimate to a call's
+ * ACTUAL prompt tokens. The SDK's calibration multiplier scales only
+ * `messageTokens` (instructions/summary are raw tiktoken counts), and it can
+ * over-shoot badly when a provider injects server-side content the SDK never
+ * counted (e.g. Anthropic web search) — pinning the gauge several× too high and
+ * persisting it. Trust the provider's own prompt count: keep the raw
+ * instruction/summary rows, set `messageTokens` to the remainder, and recompute
+ * the free space. No-op when `promptTokens` is unusable.
+ */
+export const reconcileContextUsage = (
+  snapshot: TContextUsageEvent,
+  promptTokens: number,
+): TContextUsageEvent => {
+  if (!Number.isFinite(promptTokens) || promptTokens <= 0) {
+    return snapshot;
+  }
+  const { breakdown } = snapshot;
+  const budget = snapshot.contextBudget ?? breakdown.maxContextTokens;
+  const nonMessageTokens = (breakdown.instructionTokens ?? 0) + (breakdown.summaryTokens ?? 0);
+  const messageTokens = Math.max(0, promptTokens - nonMessageTokens);
+  return {
+    ...snapshot,
+    breakdown: { ...breakdown, messageTokens },
+    remainingContextTokens:
+      budget != null ? Math.max(0, budget - promptTokens) : snapshot.remainingContextTokens,
+  };
 };
 
 /** Lifecycle phase carried on subagent-progress envelopes (mirrors SDK SubagentUpdatePhase). */
