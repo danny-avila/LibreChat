@@ -8,7 +8,39 @@ import type {
   UsageMetadata,
   IJobStore,
   JobStatus,
+  JobStatusTransition,
 } from '~/stream/interfaces/IJobStore';
+
+/**
+ * Atomic compare-and-set status transition (single-node / sentinel Redis).
+ *
+ * Guards on the current `status` field, then — in one indivisible step —
+ * removes `clear` fields, writes the `status`+patch pairs, reconciles the
+ * membership sets, and refreshes TTLs. Returns 1 if it fired, 0 if the job
+ * was missing or no longer in the expected `from` status.
+ *
+ *   KEYS: [job, remSet | "", addSet | "", chunks, runSteps]
+ *   ARGV: [from, member, ttl, refreshLive(0|1), hdelCount, ...hdel, ...hsetPairs]
+ */
+const TRANSITION_STATUS_LUA =
+  'if redis.call("HGET", KEYS[1], "status") ~= ARGV[1] then return 0 end ' +
+  'local member = ARGV[2] ' +
+  'local ttl = tonumber(ARGV[3]) ' +
+  'local refreshLive = ARGV[4] ' +
+  'local hdelCount = tonumber(ARGV[5]) ' +
+  'local idx = 6 ' +
+  'for i = 1, hdelCount do redis.call("HDEL", KEYS[1], ARGV[idx]) idx = idx + 1 end ' +
+  'local hset = {} ' +
+  'for i = idx, #ARGV do hset[#hset + 1] = ARGV[i] end ' +
+  'if #hset > 0 then redis.call("HSET", KEYS[1], unpack(hset)) end ' +
+  'if KEYS[2] ~= "" then redis.call("SREM", KEYS[2], member) end ' +
+  'if KEYS[3] ~= "" then redis.call("SADD", KEYS[3], member) end ' +
+  'redis.call("EXPIRE", KEYS[1], ttl) ' +
+  'if refreshLive == "1" then redis.call("EXPIRE", KEYS[4], ttl) redis.call("EXPIRE", KEYS[5], ttl) end ' +
+  'return 1';
+
+/** Decision kinds the SDK can emit, used to sanity-check persisted records. */
+const KNOWN_INTERRUPT_TYPES = new Set(['tool_approval', 'ask_user_question']);
 
 /**
  * Key prefixes for Redis storage.
@@ -274,6 +306,80 @@ export class RedisJobStore implements IJobStore {
         await pipeline.exec();
       }
     }
+  }
+
+  /** The membership set a status belongs to; terminal statuses have none. */
+  private statusSetKey(status: JobStatus): string | null {
+    if (status === 'running') {
+      return KEYS.runningJobs;
+    }
+    if (status === 'requires_action') {
+      return KEYS.requiresActionJobs;
+    }
+    return null;
+  }
+
+  async transitionStatus(streamId: string, args: JobStatusTransition): Promise<boolean> {
+    const { from, to, patch, clear } = args;
+    const key = KEYS.job(streamId);
+
+    // status + patch become HSET pairs; serializeJob skips undefined, so
+    // cleared fields go through HDEL (`clear`) instead.
+    const fields = Object.entries(
+      this.serializeJob({ status: to, ...(patch ?? {}) } as SerializableJobData),
+    ).flat();
+    const clearFields = (clear ?? []).map(String);
+
+    const remSet = this.statusSetKey(from);
+    const addSet = this.statusSetKey(to);
+    const terminal = addSet === null;
+    const ttl = terminal ? this.ttl.completed : this.ttl.running;
+
+    if (this.isCluster) {
+      // Membership sets live on a different slot from the job hash, so a single
+      // cross-slot script isn't possible. Guard best-effort (read status, then
+      // apply) — matches the existing cluster posture for status writes.
+      const current = await this.redis.hget(key, 'status');
+      if (current !== from) {
+        return false;
+      }
+      if (clearFields.length > 0) {
+        await this.redis.hdel(key, ...clearFields);
+      }
+      if (fields.length > 0) {
+        await this.updateExistingJobHash(key, fields);
+      }
+      if (remSet) {
+        await this.redis.srem(remSet, streamId);
+      }
+      if (addSet) {
+        await this.redis.sadd(addSet, streamId);
+      }
+      await this.redis.expire(key, ttl);
+      if (!terminal) {
+        await this.redis.expire(KEYS.chunks(streamId), ttl);
+        await this.redis.expire(KEYS.runSteps(streamId), ttl);
+      }
+      return true;
+    }
+
+    const result = await this.redis.eval(
+      TRANSITION_STATUS_LUA,
+      5,
+      key,
+      remSet ?? '',
+      addSet ?? '',
+      KEYS.chunks(streamId),
+      KEYS.runSteps(streamId),
+      from,
+      streamId,
+      String(ttl),
+      terminal ? '0' : '1',
+      String(clearFields.length),
+      ...clearFields,
+      ...fields,
+    );
+    return result === 1;
   }
 
   private async updateExistingJobHash(key: string, fields: string[]): Promise<boolean> {
@@ -1104,7 +1210,34 @@ export class RedisJobStore implements IJobStore {
       replayEvents: data.replayEvents || undefined,
       contextUsage: data.contextUsage || undefined,
       tokenUsage: data.tokenUsage || undefined,
-      pendingAction: data.pendingAction ? JSON.parse(data.pendingAction) : undefined,
+      pendingAction: this.parsePendingAction(data.pendingAction),
     };
+  }
+
+  /**
+   * Parse a persisted `pendingAction`, defending the cold-resume path against
+   * malformed or stale records: a corrupt JSON blob or a payload whose shape
+   * predates the current SDK contract is dropped (logged) rather than crashing
+   * the resume or feeding a bad record to an approval route. Returns undefined
+   * when absent/invalid.
+   */
+  private parsePendingAction(raw: string | undefined): Agents.PendingAction | undefined {
+    if (!raw) {
+      return undefined;
+    }
+    try {
+      const parsed = JSON.parse(raw) as Agents.PendingAction;
+      const typeOk =
+        typeof parsed?.actionId === 'string' &&
+        KNOWN_INTERRUPT_TYPES.has(parsed?.payload?.type as string);
+      if (!typeOk) {
+        logger.warn('[RedisJobStore] Dropping malformed pendingAction record');
+        return undefined;
+      }
+      return parsed;
+    } catch {
+      logger.warn('[RedisJobStore] Dropping unparseable pendingAction record');
+      return undefined;
+    }
   }
 }

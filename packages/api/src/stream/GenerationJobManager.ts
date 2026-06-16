@@ -31,6 +31,7 @@ import {
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
 import { filterPersistableAbortContent } from './abortContent';
+import { ApprovalLifecycle } from './ApprovalLifecycle';
 
 /** Error surfaced to any client still attached when a stale/hung job is reaped. */
 const REAPED_JOB_ERROR = 'Generation timed out';
@@ -176,6 +177,8 @@ interface RuntimeJobState {
 class GenerationJobManagerClass {
   /** Job metadata + content state storage - swappable for Redis, etc. */
   private jobStore: IJobStore;
+  /** Guarded human-review lifecycle (pause / resolve / expire) over the store. */
+  private _approvals: ApprovalLifecycle;
   /** Event pub/sub transport - swappable for Redis Pub/Sub, etc. */
   private eventTransport: IEventTransport;
 
@@ -202,6 +205,7 @@ class GenerationJobManagerClass {
   constructor(options?: GenerationJobManagerOptions) {
     this.jobStore =
       options?.jobStore ?? new InMemoryJobStore({ ttlAfterComplete: 0, maxJobs: 1000 });
+    this._approvals = new ApprovalLifecycle(this.jobStore);
     this.eventTransport = options?.eventTransport ?? new InMemoryEventTransport();
     this._cleanupOnComplete = options?.cleanupOnComplete ?? true;
   }
@@ -260,6 +264,7 @@ class GenerationJobManagerClass {
     setGenerationJobsInFlight(previousStore, 0);
 
     this.jobStore = services.jobStore;
+    this._approvals = new ApprovalLifecycle(this.jobStore);
     this.eventTransport = services.eventTransport;
     this._isRedis = services.isRedis ?? false;
     this._cleanupOnComplete = services.cleanupOnComplete ?? true;
@@ -1428,51 +1433,18 @@ class GenerationJobManagerClass {
   }
 
   /**
-   * Transition a job to `requires_action` and persist the pending review record.
+   * The guarded human-review lifecycle for paused runs:
+   * `approvals.pause()` / `peek()` / `resolve()` / `expire()`.
    *
-   * The job is NOT cleaned up: chunks, run steps, and user-active-set membership
-   * remain so the resume path can rebuild context. The Redis job-hash TTL is
-   * refreshed by the store to give the user the full TTL window to respond.
-   *
-   * @param streamId - The stream identifier
-   * @param pendingAction - The pending review record (tool approval, etc.)
+   * This is the seam approval routes, the status endpoint, and the run wiring
+   * cross — it owns the legal `requires_action` transitions and is race-safe
+   * against concurrent resumes (a double-resolve would otherwise drive the run
+   * twice). The job's chunks, run steps, and user-active-set membership are
+   * preserved across a pause so the resume path can rebuild context; the store
+   * refreshes the job-hash TTL to give the user the full window to respond.
    */
-  async markRequiresAction(streamId: string, pendingAction: Agents.PendingAction): Promise<void> {
-    await this.jobStore.updateJob(streamId, {
-      status: 'requires_action',
-      pendingAction,
-    });
-    logger.debug(
-      `[GenerationJobManager] Job awaiting human review: ${streamId} action=${pendingAction.actionId}`,
-    );
-  }
-
-  /**
-   * Read the pending review record for a job.
-   *
-   * Returns null when the job doesn't exist, isn't in `requires_action`,
-   * or has no recorded pending action. Callers (status endpoint, approval routes)
-   * should treat null as "nothing to approve."
-   */
-  async getPendingAction(streamId: string): Promise<Agents.PendingAction | null> {
-    const jobData = await this.jobStore.getJob(streamId);
-    if (!jobData || jobData.status !== 'requires_action') {
-      return null;
-    }
-    return jobData.pendingAction ?? null;
-  }
-
-  /**
-   * Clear the pending review record and return the job to `running`.
-   * Called by the resume path after a user approval/rejection has been accepted
-   * and the run is about to be re-driven.
-   */
-  async clearPendingAction(streamId: string): Promise<void> {
-    await this.jobStore.updateJob(streamId, {
-      status: 'running',
-      pendingAction: undefined,
-    });
-    logger.debug(`[GenerationJobManager] Cleared pending action: ${streamId}`);
+  get approvals(): ApprovalLifecycle {
+    return this._approvals;
   }
 
   /**

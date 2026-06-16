@@ -72,6 +72,20 @@ export interface SerializableJobData {
 }
 
 /**
+ * Arguments for an atomic {@link IJobStore.transitionStatus} compare-and-set.
+ */
+export interface JobStatusTransition {
+  /** Only fire the transition if the job is currently in this status. */
+  from: JobStatus;
+  /** Status to move to when the `from` guard holds. */
+  to: JobStatus;
+  /** Fields written in the same atomic step as the status change. */
+  patch?: Partial<SerializableJobData>;
+  /** Field names removed in the same atomic step (e.g. `pendingAction`). */
+  clear?: Array<keyof SerializableJobData & string>;
+}
+
+/**
  * Usage metadata for token spending across different LLM providers.
  *
  * This interface supports two mutually exclusive cache token formats:
@@ -210,6 +224,28 @@ export interface IJobStore {
 
   /** Update job data */
   updateJob(streamId: string, updates: Partial<SerializableJobData>): Promise<void>;
+
+  /**
+   * Atomically transition a job's status, **only if** it is currently `from`.
+   * Returns `true` when the transition fired, `false` when the job was missing
+   * or no longer in `from` (lost a race / illegal transition).
+   *
+   * `patch` fields are written and `clear` fields removed in the same atomic
+   * step, and the running / requires_action membership sets plus live-key TTLs
+   * are reconciled to match `to`. This is the race-safe primitive behind the
+   * approval lifecycle — it prevents two concurrent resumes from both driving a
+   * paused run (a double-drive would re-execute tools / double-bill).
+   *
+   * Distinct from {@link updateJob}, which writes status unconditionally for
+   * callers that don't know the prior state. Reach for `transitionStatus`
+   * whenever the legal prior state is known.
+   *
+   * Atomicity: fully atomic on in-memory and single-node / sentinel Redis
+   * (Lua). On Redis Cluster the status guard is best-effort — the membership
+   * sets live on a different hash slot from the job hash — matching the store's
+   * existing cluster posture for status writes.
+   */
+  transitionStatus(streamId: string, args: JobStatusTransition): Promise<boolean>;
 
   /** Delete a job */
   deleteJob(streamId: string): Promise<void>;
