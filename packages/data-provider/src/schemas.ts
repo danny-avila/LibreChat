@@ -83,8 +83,11 @@ export const isOpenAILikeProvider = (provider?: string | null): boolean => {
  * Providers whose `usage_metadata.input_tokens` ALREADY INCLUDES cached tokens
  * (`input_token_details.cache_*` is a subset, not an additional charge):
  * Google/Vertex (`promptTokenCount`), OpenAI/Azure (`prompt_tokens`), and the
- * OpenAI-compatible family. Anthropic/Bedrock keep cache values separate and
- * additive. Single source of truth shared by the backend billing path
+ * OpenAI-compatible family. `@librechat/agents`' `getAnthropicUsageMetadata`
+ * folds `cache_creation` + `cache_read` into `input_tokens`, so Anthropic is a
+ * subset provider too; without this the cache portion is billed twice. Bedrock
+ * stays additive — its Converse path passes AWS `inputTokens` through unmodified.
+ * Single source of truth shared by the backend billing path
  * (`packages/api/src/agents/usage.ts`) and the client usage normalization.
  */
 export const cacheSubsetProviders = new Set<string>([
@@ -96,6 +99,7 @@ export const cacheSubsetProviders = new Set<string>([
   Providers.DEEPSEEK,
   Providers.OPENROUTER,
   Providers.MOONSHOT,
+  Providers.ANTHROPIC,
 ]);
 
 export const inputTokensIncludesCache = (provider?: string | null): boolean => {

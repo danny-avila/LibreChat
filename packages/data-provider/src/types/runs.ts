@@ -130,13 +130,13 @@ export type TTokenUsageEvent = {
 
 /**
  * Full prompt token count for one completed model call — the EXACT context the
- * model saw, provider-aware: additive providers (Anthropic/Bedrock) report
- * `input_tokens` excluding cache, so cache reads/writes are added back; subset
- * providers (OpenAI/…) already fold cache into `input_tokens`. When the provider
- * is absent (custom/OpenAI-compatible payloads), fall back to the same magnitude
- * heuristic `normalizeUsageUnits` uses — cache ≤ input means it's already
- * included — so cached events aren't re-inflated. The ground truth the gauge
- * reconciles its calibrated estimate to.
+ * model saw, provider-aware: additive providers (Bedrock) report `input_tokens`
+ * excluding cache, so cache reads/writes are added back; subset providers
+ * (Anthropic, OpenAI, …) already fold cache into `input_tokens`. When the
+ * provider is absent (custom/OpenAI-compatible payloads), fall back to the same
+ * magnitude heuristic `normalizeUsageUnits` uses — cache ≤ input means it's
+ * already included — so cached events aren't re-inflated. The ground truth the
+ * gauge reconciles its calibrated estimate to.
  */
 export const promptTokensFromUsage = (event: TTokenUsageEvent): number => {
   const input = event.input_tokens ?? 0;

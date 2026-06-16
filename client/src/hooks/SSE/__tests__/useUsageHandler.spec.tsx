@@ -28,9 +28,9 @@ const inflatedSnapshot = (over?: Partial<TContextUsageEvent>): TContextUsageEven
 });
 
 const primaryUsage = (over?: Partial<TTokenUsageEvent>): TTokenUsageEvent => ({
-  input_tokens: 53702,
+  input_tokens: 55773, // Anthropic input_tokens is cache-inclusive (53702 fresh + 2071 read)
   output_tokens: 3780,
-  total_tokens: 57482,
+  total_tokens: 59553,
   input_token_details: { cache_read: 2071, cache_creation: 0 },
   provider: 'anthropic',
   runId: 'run-1',
