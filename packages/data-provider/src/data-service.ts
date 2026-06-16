@@ -1,4 +1,5 @@
 import type { AxiosResponse } from 'axios';
+import type { TContextProjectionRequest, TContextUsageEvent } from './types/runs';
 import type { TFileConfig } from './file-config';
 import type * as t from './types';
 import * as permissions from './accessPermissions';
@@ -247,6 +248,12 @@ export const getAIEndpoints = (): Promise<t.TEndpointsConfig> => {
 
 export const getTokenConfig = (): Promise<t.TTokenConfigMap> => {
   return request.get(endpoints.tokenConfig());
+};
+
+export const getContextProjection = (
+  payload: TContextProjectionRequest,
+): Promise<TContextUsageEvent | null> => {
+  return request.post(endpoints.contextProjection(), payload);
 };
 
 export const getModels = async (): Promise<t.TModelsConfig> => {
