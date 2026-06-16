@@ -83,6 +83,14 @@ const DEFAULT_TTL = {
   runStepsAfterComplete: 0,
   /** Safety-net TTL for per-user job tracking sets (24 hours). Refreshed on each createJob. */
   userJobsSet: 86400,
+  /**
+   * Backstop TTL for a job paused for human review (24 hours). A paused job is
+   * NOT a hung generation, so it must not inherit the 20-minute running TTL —
+   * an approval with no explicit `expiresAt` is "live" per the API contract and
+   * would otherwise be evicted mid-window. A pendingAction with a longer
+   * `expiresAt` extends beyond this (see pauseTtlSeconds).
+   */
+  requiresAction: 86400,
 };
 
 /**
@@ -117,6 +125,8 @@ export interface RedisJobStoreOptions {
   runStepsAfterCompleteTtl?: number;
   /** TTL for per-user job tracking sets in seconds (default: 86400 = 24 hours). 0 = no TTL. */
   userJobsSetTtl?: number;
+  /** Backstop TTL for a paused (requires_action) job in seconds (default: 86400 = 24 hours). */
+  requiresActionTtl?: number;
 }
 
 export class RedisJobStore implements IJobStore {
@@ -152,6 +162,7 @@ export class RedisJobStore implements IJobStore {
       chunksAfterComplete: options?.chunksAfterCompleteTtl ?? DEFAULT_TTL.chunksAfterComplete,
       runStepsAfterComplete: options?.runStepsAfterCompleteTtl ?? DEFAULT_TTL.runStepsAfterComplete,
       userJobsSet: options?.userJobsSetTtl ?? DEFAULT_TTL.userJobsSet,
+      requiresAction: options?.requiresActionTtl ?? DEFAULT_TTL.requiresAction,
     };
     // Detect cluster mode using ioredis's isCluster property
     this.isCluster = (redis as Cluster).isCluster === true;
@@ -351,19 +362,21 @@ export class RedisJobStore implements IJobStore {
   }
 
   /**
-   * Live-key TTL (seconds) for a paused job. Defaults to the running TTL but
-   * extends to cover a pendingAction whose `expiresAt` is farther out, plus a
-   * grace margin so a decision arriving right at the deadline can still resume.
-   * Without this, a long approval window (e.g. 1h) on the default 20m stream
-   * TTL would let Redis evict the paused job mid-window.
+   * Live-key TTL (seconds) for a paused job. A paused job isn't a hung
+   * generation, so it uses the longer requires_action backstop rather than the
+   * running TTL — otherwise a no-expiry approval (the buildPendingAction
+   * default), which the API treats as "live", would be evicted after the 20m
+   * running window. A pendingAction with an `expiresAt` farther out than the
+   * backstop extends to cover it, plus a grace margin so a decision arriving
+   * right at the deadline can still resume.
    */
   private pauseTtlSeconds(pendingAction?: Agents.PendingAction): number {
     const exp = pendingAction?.expiresAt;
     if (exp == null) {
-      return this.ttl.running;
+      return this.ttl.requiresAction;
     }
     const secondsUntilExpiry = Math.ceil((exp - Date.now()) / 1000) + 60;
-    return Math.max(this.ttl.running, secondsUntilExpiry);
+    return Math.max(this.ttl.requiresAction, secondsUntilExpiry);
   }
 
   /** The membership set a status belongs to; terminal statuses have none. */
