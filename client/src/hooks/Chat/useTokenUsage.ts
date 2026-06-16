@@ -237,7 +237,13 @@ export default function useTokenUsage({
      *  one branch's breakdown onto its siblings. */
     const currentActive =
       snapshot != null &&
-      (isSubmitting || (snapshot.anchorMessageId != null && branchTotals.containsAnchor));
+      (isSubmitting ||
+        (snapshot.anchorMessageId != null &&
+          branchTotals.containsAnchor &&
+          /** G1: once streaming ends, a model/window switch leaves the live
+           *  snapshot's baked window stale — defer to the projection instead of
+           *  showing the old window/prune boundary on the current branch. */
+          (resolvedMax == null || snapshot.breakdown.maxContextTokens === resolvedMax)));
 
     /** Precedence: live/active snapshot → fresh persisted branch snapshot →
      *  server projection (covers G1 stale-window + G2 snapshot-less branches) →
@@ -258,8 +264,7 @@ export default function useTokenUsage({
     if (effective != null) {
       const breakdown = effective.breakdown;
       const maxTokens = effective.contextBudget ?? breakdown.maxContextTokens;
-      const instructionTokens =
-        effective.effectiveInstructionTokens ?? breakdown.instructionTokens;
+      const instructionTokens = effective.effectiveInstructionTokens ?? breakdown.instructionTokens;
       const baseUsed =
         effective.remainingContextTokens != null
           ? maxTokens - effective.remainingContextTokens
@@ -324,5 +329,6 @@ export default function useTokenUsage({
     branchSnapshot,
     branchSnapshotFresh,
     projection,
+    resolvedMax,
   ]);
 }

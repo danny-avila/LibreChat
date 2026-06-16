@@ -7,6 +7,7 @@ interface ProjectionMessage {
   messageId: string;
   parentMessageId?: string | null;
   tokenCount?: number;
+  summaryTokenCount?: number;
   isCreatedByUser?: boolean;
   text?: string;
 }
@@ -19,8 +20,10 @@ interface ProjectionAgent {
 }
 
 export interface ContextProjectionDeps {
+  /** Authenticated requester — branch lookups are scoped to this user. */
+  userId?: string;
   getMessages: (
-    filter: { conversationId: string },
+    filter: { conversationId: string; user?: string },
     select?: string,
   ) => Promise<ProjectionMessage[]>;
   getAgent: (filter: { id: string }) => Promise<ProjectionAgent | null>;
@@ -87,11 +90,20 @@ export async function resolveContextProjection(
   params: TContextProjectionRequest,
 ): Promise<TContextUsageEvent | null> {
   const stored = await deps.getMessages(
-    { conversationId: params.conversationId },
-    'messageId parentMessageId tokenCount isCreatedByUser text',
+    { conversationId: params.conversationId, user: deps.userId },
+    'messageId parentMessageId tokenCount summaryTokenCount isCreatedByUser text',
   );
   const branch = resolveBranch(stored, params.messageId);
   if (branch.length === 0) {
+    return null;
+  }
+
+  /** A summarized/compacted branch's next call sends the saved summary + the
+   *  post-summary tail, NOT this raw parent chain — projecting from the full
+   *  history would prune/count the wrong context and omit the summary. Until the
+   *  follow-up replays the summary boundary, fall back (null) so the client's
+   *  summary-baseline-aware estimate handles these branches. */
+  if (branch.some((message) => (message.summaryTokenCount ?? 0) > 0)) {
     return null;
   }
 
@@ -112,17 +124,25 @@ export async function resolveContextProjection(
     return null;
   }
 
+  const encoding = (model ?? '').toLowerCase().includes('claude') ? 'claude' : 'o200k_base';
+  const tokenCounter = await createTokenCounter(encoding);
+
   const messages: BaseMessage[] = [];
   const indexTokenCountMap: Record<string, number> = {};
   for (let i = 0; i < branch.length; i++) {
     const message = branch[i];
     const text = message.text ?? '';
-    messages.push(message.isCreatedByUser === true ? new HumanMessage(text) : new AIMessage(text));
-    indexTokenCountMap[String(i)] = message.tokenCount ?? 0;
+    const lcMessage =
+      message.isCreatedByUser === true ? new HumanMessage(text) : new AIMessage(text);
+    messages.push(lcMessage);
+    /** Recount messages with no stored count (imported / pre-feature) rather
+     *  than charging 0 — a real 0 and "unknown" must not collapse, or the
+     *  snapshot-less histories this endpoint targets would under-report. */
+    indexTokenCountMap[String(i)] =
+      message.tokenCount != null && message.tokenCount > 0
+        ? message.tokenCount
+        : tokenCounter(lcMessage);
   }
-
-  const encoding = (model ?? '').toLowerCase().includes('claude') ? 'claude' : 'o200k_base';
-  const tokenCounter = await createTokenCounter(encoding);
 
   return projectAgentContextUsage({
     agent: {

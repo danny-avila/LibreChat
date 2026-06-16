@@ -18,7 +18,7 @@ async function contextProjectionController(req, res) {
       return;
     }
     const projection = await resolveContextProjection(
-      { getMessages: db.getMessages, getAgent: db.getAgent },
+      { userId: req.user?.id, getMessages: db.getMessages, getAgent: db.getAgent },
       params,
     );
     res.json(projection ?? null);
