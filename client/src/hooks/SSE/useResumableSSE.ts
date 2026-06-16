@@ -660,6 +660,9 @@ export default function useResumableSSE(
              *  this conversation keep their usage and gap events still count */
             backfillUsage(data.resumeState?.collectedUsage ?? [], resumeSubmission);
             if (data.resumeState?.contextUsage) {
+              /** Already reconciled to the call's real prompt tokens server-side
+               *  (GenerationJobManager.persistTokenUsage) when the snapshot's call
+               *  completed, so install it as-is — no client backfill reconcile. */
               contextHandler(data.resumeState.contextUsage, resumeSubmission);
             }
             /** Output streamed before this resume is not re-delivered as deltas

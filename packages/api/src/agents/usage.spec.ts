@@ -1755,6 +1755,44 @@ describe('buildPersistedContextUsage', () => {
     expect(buildPersistedContextUsage(baseSnapshot, []).completedOutputTokens).toBeUndefined();
   });
 
+  it('reconciles the inflated estimate to the final call’s real prompt tokens', () => {
+    /** Real web-search + summarization turn: calibration pinned at 5 inflated
+     *  messageTokens to 187471 (used 213375), but the answer call's true prompt was
+     *  53702 + 2071 cache = 55773. The persisted blob must show the real context so
+     *  a reload isn't stuck several× too high. */
+    const inflated: TContextUsageEvent = {
+      runId: 'run-1',
+      breakdown: {
+        maxContextTokens: 250000,
+        instructionTokens: 4205,
+        systemMessageTokens: 384,
+        dynamicInstructionTokens: 1525,
+        toolSchemaTokens: 2296,
+        summaryTokens: 1938,
+        toolCount: 1,
+        messageCount: 2,
+        messageTokens: 187471,
+        availableForMessages: 233295,
+      },
+      contextBudget: 237500,
+      remainingContextTokens: 24125,
+      calibrationRatio: 5,
+    };
+    const events: TTokenUsageEvent[] = [
+      {
+        input_tokens: 53702,
+        output_tokens: 3780,
+        input_token_details: { cache_read: 2071, cache_creation: 0 },
+        provider: 'anthropic',
+        runId: 'run-1',
+      },
+    ];
+    const result = buildPersistedContextUsage(inflated, events);
+    expect(237500 - (result.remainingContextTokens ?? 0)).toBe(55773);
+    expect(result.breakdown.messageTokens).toBe(55773 - 4205 - 1938);
+    expect(result.completedOutputTokens).toBe(3780);
+  });
+
   it('attributes completedOutputTokens to the snapshot run, not a parallel run', () => {
     /** Parallel/direct runs interleave: this snapshot is run-1, but run-2 emits a
      *  later primary usage. The persisted delta must be run-1's own output (40),
