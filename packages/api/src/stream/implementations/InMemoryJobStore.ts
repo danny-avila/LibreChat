@@ -149,6 +149,9 @@ export class InMemoryJobStore implements IJobStore {
     if (!job || job.status !== args.from) {
       return false;
     }
+    if (args.expectActionId != null && job.pendingActionId !== args.expectActionId) {
+      return false;
+    }
     job.status = args.to;
     if (args.patch) {
       Object.assign(job, args.patch);
@@ -210,7 +213,7 @@ export class InMemoryJobStore implements IJobStore {
         // content state in memory until the process OOMs. Reaping keys off last
         // activity (not creation time) so a long but live stream is never reaped,
         // mirroring RedisJobStore refreshing the running TTL on each chunk.
-        const lastActive = this.lastActivity.get(streamId) ?? job.createdAt;
+        const lastActive = this.lastActivity.get(streamId) ?? job.lastActiveAt ?? job.createdAt;
         if (now - lastActive > this.staleJobTimeout) {
           toDelete.push(streamId);
           staleRunning++;

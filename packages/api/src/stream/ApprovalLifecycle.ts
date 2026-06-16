@@ -36,7 +36,8 @@ export class ApprovalLifecycle {
     const ok = await this.store.transitionStatus(streamId, {
       from: 'running',
       to: 'requires_action',
-      patch: { pendingAction },
+      // pendingActionId is the flat mirror the atomic resolve/expire guard on.
+      patch: { pendingAction, pendingActionId: pendingAction.actionId },
     });
     if (ok) {
       logger.debug(
@@ -62,40 +63,54 @@ export class ApprovalLifecycle {
   /**
    * `requires_action → running`, atomically. Returns `true` to the single
    * caller that won the transition; `false` if the job was not paused, was
-   * already resumed by a racing submit, or had expired — in which case it is
-   * moved to a terminal state instead of resumed.
+   * already resumed by a racing submit, no longer matches `expectedActionId`,
+   * or had expired — in which case it is moved to a terminal state instead of
+   * resumed.
+   *
+   * Pass `expectedActionId` (the id the user actually decided on, from the
+   * approval route) so a stale decision can't resume a job that has since
+   * paused for a *different* action. Omit it only for callers with no specific
+   * action in hand.
    *
    * The caller MUST treat `false` as "do not drive the run": only the `true`
    * winner may re-enter the agent.
    */
-  async resolve(streamId: string): Promise<boolean> {
+  async resolve(streamId: string, expectedActionId?: string): Promise<boolean> {
     const job = await this.store.getJob(streamId);
     if (
       job?.status === 'requires_action' &&
       job.pendingAction &&
       this.isExpired(job.pendingAction)
     ) {
-      await this.expire(streamId);
+      await this.expire(streamId, expectedActionId);
       return false;
     }
     return this.store.transitionStatus(streamId, {
       from: 'requires_action',
       to: 'running',
-      clear: ['pendingAction'],
+      clear: ['pendingAction', 'pendingActionId'],
+      // Refresh the liveness basis so a long-paused run isn't reaped as stale
+      // immediately after resuming (cleanup keys off lastActiveAt).
+      patch: { lastActiveAt: Date.now() },
+      expectActionId: expectedActionId,
     });
   }
 
   /**
    * `requires_action → aborted`: the edge that fires when no decision arrives
    * in time. Previously undefined; now an explicit, idempotent terminal
-   * transition. Returns `true` to the single caller that expired it.
+   * transition. Returns `true` to the single caller that expired it. Honors
+   * `expectedActionId` for the same stale-decision protection as `resolve`.
    */
-  async expire(streamId: string): Promise<boolean> {
+  async expire(streamId: string, expectedActionId?: string): Promise<boolean> {
     const ok = await this.store.transitionStatus(streamId, {
       from: 'requires_action',
       to: 'aborted',
-      clear: ['pendingAction'],
-      patch: { error: 'Approval expired before a decision was made' },
+      clear: ['pendingAction', 'pendingActionId'],
+      // completedAt lets the stores' terminal-cleanup reclaim the job; without
+      // it an expired approval lingers in the in-memory map indefinitely.
+      patch: { error: 'Approval expired before a decision was made', completedAt: Date.now() },
+      expectActionId: expectedActionId,
     });
     if (ok) {
       logger.debug(`[ApprovalLifecycle] expired pending review: ${streamId}`);

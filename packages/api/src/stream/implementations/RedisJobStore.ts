@@ -12,31 +12,30 @@ import type {
 } from '~/stream/interfaces/IJobStore';
 
 /**
- * Atomic compare-and-set status transition (single-node / sentinel Redis).
+ * Atomic compare-and-set on the job hash — the single-winner decision for a
+ * status transition. Touches ONLY the job key, which lives on one hash slot, so
+ * it is atomic on both single-node and Redis Cluster (cross-slot membership
+ * sets are reconciled by the caller AFTER this decides the winner).
  *
- * Guards on the current `status` field, then — in one indivisible step —
- * removes `clear` fields, writes the `status`+patch pairs, reconciles the
- * membership sets, and refreshes TTLs. Returns 1 if it fired, 0 if the job
- * was missing or no longer in the expected `from` status.
+ * Guards on the current `status` and, when ARGV[2] is non-empty, on the flat
+ * `pendingActionId` field — so a stale decision targeting a different action
+ * loses. On success: removes `clear` fields, writes `status`+patch pairs,
+ * refreshes the job-hash TTL. Returns 1 if it fired, 0 otherwise.
  *
- *   KEYS: [job, remSet | "", addSet | "", chunks, runSteps]
- *   ARGV: [from, member, ttl, refreshLive(0|1), hdelCount, ...hdel, ...hsetPairs]
+ *   KEYS: [job]
+ *   ARGV: [from, expectActionId | "", ttl, hdelCount, ...hdelFields, ...hsetPairs]
  */
-const TRANSITION_STATUS_LUA =
+const JOB_CAS_LUA =
   'if redis.call("HGET", KEYS[1], "status") ~= ARGV[1] then return 0 end ' +
-  'local member = ARGV[2] ' +
+  'if ARGV[2] ~= "" and redis.call("HGET", KEYS[1], "pendingActionId") ~= ARGV[2] then return 0 end ' +
   'local ttl = tonumber(ARGV[3]) ' +
-  'local refreshLive = ARGV[4] ' +
-  'local hdelCount = tonumber(ARGV[5]) ' +
-  'local idx = 6 ' +
+  'local hdelCount = tonumber(ARGV[4]) ' +
+  'local idx = 5 ' +
   'for i = 1, hdelCount do redis.call("HDEL", KEYS[1], ARGV[idx]) idx = idx + 1 end ' +
   'local hset = {} ' +
   'for i = idx, #ARGV do hset[#hset + 1] = ARGV[i] end ' +
   'if #hset > 0 then redis.call("HSET", KEYS[1], unpack(hset)) end ' +
-  'if KEYS[2] ~= "" then redis.call("SREM", KEYS[2], member) end ' +
-  'if KEYS[3] ~= "" then redis.call("SADD", KEYS[3], member) end ' +
   'redis.call("EXPIRE", KEYS[1], ttl) ' +
-  'if refreshLive == "1" then redis.call("EXPIRE", KEYS[4], ttl) redis.call("EXPIRE", KEYS[5], ttl) end ' +
   'return 1';
 
 /** Decision kinds the SDK can emit, used to sanity-check persisted records. */
@@ -320,7 +319,7 @@ export class RedisJobStore implements IJobStore {
   }
 
   async transitionStatus(streamId: string, args: JobStatusTransition): Promise<boolean> {
-    const { from, to, patch, clear } = args;
+    const { from, to, patch, clear, expectActionId } = args;
     const key = KEYS.job(streamId);
 
     // status + patch become HSET pairs; serializeJob skips undefined, so
@@ -335,51 +334,53 @@ export class RedisJobStore implements IJobStore {
     const terminal = addSet === null;
     const ttl = terminal ? this.ttl.completed : this.ttl.running;
 
+    // 1) Single-winner decision: an atomic CAS on the single-slot job hash.
+    //    Works identically on cluster and single-node, so two concurrent
+    //    resolves can never both win (and drive the run twice).
+    const won = await this.redis.eval(
+      JOB_CAS_LUA,
+      1,
+      key,
+      from,
+      expectActionId ?? '',
+      String(ttl),
+      String(clearFields.length),
+      ...clearFields,
+      ...fields,
+    );
+    if (won !== 1) {
+      return false;
+    }
+
+    // 2) Reconcile membership sets + live-key TTLs. Only the winner reaches
+    //    here; set membership is derived state that periodic cleanup
+    //    self-heals, so this non-atomic cross-slot step is safe.
     if (this.isCluster) {
-      // Membership sets live on a different slot from the job hash, so a single
-      // cross-slot script isn't possible. Guard best-effort (read status, then
-      // apply) — matches the existing cluster posture for status writes.
-      const current = await this.redis.hget(key, 'status');
-      if (current !== from) {
-        return false;
-      }
-      if (clearFields.length > 0) {
-        await this.redis.hdel(key, ...clearFields);
-      }
-      if (fields.length > 0) {
-        await this.updateExistingJobHash(key, fields);
-      }
       if (remSet) {
         await this.redis.srem(remSet, streamId);
       }
       if (addSet) {
         await this.redis.sadd(addSet, streamId);
       }
-      await this.redis.expire(key, ttl);
       if (!terminal) {
         await this.redis.expire(KEYS.chunks(streamId), ttl);
         await this.redis.expire(KEYS.runSteps(streamId), ttl);
       }
-      return true;
+    } else {
+      const pipeline = this.redis.pipeline();
+      if (remSet) {
+        pipeline.srem(remSet, streamId);
+      }
+      if (addSet) {
+        pipeline.sadd(addSet, streamId);
+      }
+      if (!terminal) {
+        pipeline.expire(KEYS.chunks(streamId), ttl);
+        pipeline.expire(KEYS.runSteps(streamId), ttl);
+      }
+      await pipeline.exec();
     }
-
-    const result = await this.redis.eval(
-      TRANSITION_STATUS_LUA,
-      5,
-      key,
-      remSet ?? '',
-      addSet ?? '',
-      KEYS.chunks(streamId),
-      KEYS.runSteps(streamId),
-      from,
-      streamId,
-      String(ttl),
-      terminal ? '0' : '1',
-      String(clearFields.length),
-      ...clearFields,
-      ...fields,
-    );
-    return result === 1;
+    return true;
   }
 
   private async updateExistingJobHash(key: string, fields: string[]): Promise<boolean> {
@@ -576,8 +577,11 @@ export class RedisJobStore implements IJobStore {
             return 1;
           }
 
-          // Stale running job (failsafe - running for > configured TTL)
-          if (now - job.createdAt > this.ttl.running * 1000) {
+          // Stale running job (failsafe - running for > configured TTL).
+          // Keys off `lastActiveAt` when present so a just-resumed approval
+          // isn't reaped on the basis of its original creation time.
+          const liveSince = job.lastActiveAt ?? job.createdAt;
+          if (now - liveSince > this.ttl.running * 1000) {
             logger.warn(`[RedisJobStore] Cleaning up stale job: ${streamId}`);
             const userJobsKey = job.userId ? KEYS.userJobs(job.userId, job.tenantId) : null;
             await this.deleteJobInternal(streamId, userJobsKey);
@@ -1211,6 +1215,8 @@ export class RedisJobStore implements IJobStore {
       contextUsage: data.contextUsage || undefined,
       tokenUsage: data.tokenUsage || undefined,
       pendingAction: this.parsePendingAction(data.pendingAction),
+      pendingActionId: data.pendingActionId || undefined,
+      lastActiveAt: data.lastActiveAt ? parseInt(data.lastActiveAt, 10) : undefined,
     };
   }
 

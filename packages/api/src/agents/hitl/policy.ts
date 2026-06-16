@@ -117,6 +117,10 @@ export interface PendingActionContext {
   ttlMs?: number;
   /** Override actionId; defaults to a fresh uuid. */
   actionId?: string;
+  /** SDK interrupt id (`RunInterruptResult.interruptId`) for cross-process resume. */
+  interruptId?: string;
+  /** LangGraph `thread_id` (`RunInterruptResult.threadId`) for cross-process resume. */
+  threadId?: string;
 }
 
 /**
@@ -140,5 +144,7 @@ export function buildPendingAction(
     payload,
     createdAt,
     expiresAt: typeof ctx.ttlMs === 'number' ? createdAt + ctx.ttlMs : undefined,
+    interruptId: ctx.interruptId,
+    threadId: ctx.threadId,
   };
 }
