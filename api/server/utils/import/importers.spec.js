@@ -1210,17 +1210,131 @@ describe('importChatBotUiConvo', () => {
   });
 });
 
+describe('importOpenWebUiConvo', () => {
+  it('should import conversations correctly with reasoning and tool-call preservation', async () => {
+    const jsonData = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '__data__', 'openwebui-export.json'), 'utf8'),
+    );
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+
+    jest.spyOn(importBatchBuilder, 'startConversation');
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+    jest.spyOn(importBatchBuilder, 'finishConversation');
+    jest.spyOn(importBatchBuilder, 'saveBatch');
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, requestUserId, () => importBatchBuilder);
+
+    // 3 conversations, each with a user + assistant message = 6 messages total
+    expect(importBatchBuilder.startConversation).toHaveBeenCalledTimes(3);
+    expect(importBatchBuilder.saveMessage).toHaveBeenCalledTimes(6);
+    expect(importBatchBuilder.finishConversation).toHaveBeenCalledTimes(3);
+    expect(importBatchBuilder.saveBatch).toHaveBeenCalled();
+  });
+
+  it('should preserve reasoning content as structured think blocks', async () => {
+    const jsonData = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '__data__', 'openwebui-export.json'), 'utf8'),
+    );
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+    await getImporter(jsonData)(jsonData, requestUserId, () => importBatchBuilder);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((c) => c[0]);
+    // The reasoning-chat assistant message should have a think block in its content
+    const reasoningAssistant = savedMessages.find(
+      (m) => m.sender === 'deepseek-r1' && Array.isArray(m.content),
+    );
+    expect(reasoningAssistant).toBeDefined();
+    const thinkPart = reasoningAssistant.content.find((c) => c.type === 'think');
+    expect(thinkPart).toBeDefined();
+    expect(thinkPart.think).toContain('15 * 17');
+    // The text part should also be present
+    const textPart = reasoningAssistant.content.find((c) => c.type === 'text');
+    expect(textPart).toBeDefined();
+    expect(textPart.text).toBe('255');
+  });
+
+  it('should preserve tool calls as text blocks', async () => {
+    const jsonData = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '__data__', 'openwebui-export.json'), 'utf8'),
+    );
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+    await getImporter(jsonData)(jsonData, requestUserId, () => importBatchBuilder);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((c) => c[0]);
+    const toolAssistant = savedMessages.find((m) => m.sender === 'gpt-4o');
+    expect(toolAssistant).toBeDefined();
+    expect(toolAssistant.text).toContain('[Tool: get_weather(');
+    expect(toolAssistant.text).toContain('Result: Paris: 18C, rain');
+    expect(toolAssistant.text).toContain('The weather in Paris is 18C with rain.');
+  });
+
+  it('should maintain correct parent/child relationships', async () => {
+    const jsonData = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '__data__', 'openwebui-export.json'), 'utf8'),
+    );
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+    await getImporter(jsonData)(jsonData, requestUserId, () => importBatchBuilder);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((c) => c[0]);
+    // Each conversation's assistant message should have its user message as parent
+    for (const msg of savedMessages) {
+      if (!msg.isCreatedByUser) {
+        const parentExists = savedMessages.some(
+          (m) => m.messageId === msg.parentMessageId && m.isCreatedByUser,
+        );
+        expect(parentExists).toBe(true);
+      }
+    }
+  });
+
+  it('should handle messages without output arrays (legacy content field)', async () => {
+    const jsonData = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '__data__', 'openwebui-export.json'), 'utf8'),
+    );
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+    await getImporter(jsonData)(jsonData, requestUserId, () => importBatchBuilder);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((c) => c[0]);
+    // The simple-chat (llama3.1) assistant has no output[] — should use legacy content
+    const simpleAssistant = savedMessages.find((m) => m.sender === 'llama3.1:latest');
+    expect(simpleAssistant).toBeDefined();
+    expect(simpleAssistant.text).toBe('Hi there!');
+    // No structured content (no reasoning)
+    expect(simpleAssistant.content).toBeUndefined();
+  });
+});
+
 describe('getImporter', () => {
   it('should throw an error if the import type is not supported', () => {
     const jsonData = { unsupported: 'data' };
     expect(() => getImporter(jsonData)).toThrow('Unsupported import type');
   });
 
-  it('should throw for array-based files that are not ChatGPT or Claude exports', () => {
+  it('should route OpenWebUI exports to the OpenWebUI importer without throwing', () => {
     const openWebUiExport = [
       { id: 'abc', title: 'Open WebUI Chat', chat: { history: { messages: {} } } },
     ];
-    expect(() => getImporter(openWebUiExport)).toThrow('Unsupported import type');
+    expect(() => getImporter(openWebUiExport)).not.toThrow();
+    expect(typeof getImporter(openWebUiExport)).toBe('function');
+  });
+
+  it('should still throw for unsupported array-based files', () => {
+    const unsupported = [{ id: 'abc', title: 'Unknown format', something: 'else' }];
+    expect(() => getImporter(unsupported)).toThrow('Unsupported import type');
   });
 
   it('should route empty arrays to the ChatGPT importer without throwing', () => {

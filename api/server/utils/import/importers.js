@@ -14,12 +14,22 @@ const { cloneMessagesWithTimestamps } = require('./fork');
  * @throws {Error} - If the import type is not supported.
  */
 function getImporter(jsonData) {
-  // For array-based formats (ChatGPT or Claude)
+  // For array-based formats (ChatGPT, Claude, or OpenWebUI)
   if (Array.isArray(jsonData)) {
     // Claude format has chat_messages array in each conversation
     if (jsonData.length > 0 && jsonData[0]?.chat_messages) {
       logger.info('Importing Claude conversation');
       return importClaudeConvo;
+    }
+    // OpenWebUI format: array elements have a `chat` dict with history/messages
+    if (
+      jsonData.length > 0 &&
+      jsonData[0]?.chat &&
+      typeof jsonData[0].chat === 'object' &&
+      (jsonData[0].chat.history || jsonData[0].chat.messages)
+    ) {
+      logger.info('Importing OpenWebUI conversation');
+      return importOpenWebUiConvo;
     }
     // ChatGPT format has mapping object in each conversation
     if (jsonData.length === 0 || jsonData[0]?.mapping) {
@@ -693,6 +703,282 @@ function breakParentCycles(messages) {
     for (const id of chain) {
       settled.add(id);
     }
+  }
+}
+
+/**
+ * Joins text from a list of OpenWebUI output parts ({type, text} or bare strings).
+ * @param {Array} source - The parts list.
+ * @returns {string} The joined text.
+ */
+function joinOutputParts(source) {
+  if (!Array.isArray(source)) {
+    return '';
+  }
+  const bits = [];
+  for (const p of source) {
+    if (p && typeof p === 'object') {
+      bits.push(p.text || '');
+    } else if (typeof p === 'string') {
+      bits.push(p);
+    }
+  }
+  return bits.filter(Boolean).join('\n\n');
+}
+
+/**
+ * Extracts reasoning/thinking text from an OpenWebUI `output` array
+ * (items of type "reasoning"; text in `summary` or `content` parts).
+ * @param {Array} output - The OpenWebUI output array.
+ * @returns {string} The reasoning text (empty if none).
+ */
+function extractReasoningFromOutput(output) {
+  if (!Array.isArray(output)) {
+    return '';
+  }
+  const parts = [];
+  for (const item of output) {
+    if (!item || item.type !== 'reasoning') {
+      continue;
+    }
+    const source = item.summary || item.content || [];
+    const text = joinOutputParts(source);
+    if (text) {
+      parts.push(text);
+    }
+  }
+  return parts.join('\n\n');
+}
+
+/**
+ * Extracts the assistant's visible text from an OpenWebUI `output` array
+ * (items of type "message").
+ * @param {Array} output - The OpenWebUI output array.
+ * @returns {string} The message text (empty if none).
+ */
+function extractMessageTextFromOutput(output) {
+  if (!Array.isArray(output)) {
+    return '';
+  }
+  const parts = [];
+  for (const item of output) {
+    if (!item || item.type !== 'message') {
+      continue;
+    }
+    const text = joinOutputParts(item.content || []);
+    if (text) {
+      parts.push(text);
+    }
+  }
+  return parts.join('\n\n');
+}
+
+/**
+ * Builds a readable text block from OpenWebUI function_call + function_call_output
+ * items (tool invocations and their results).
+ * @param {Array} output - The OpenWebUI output array.
+ * @returns {string} The tool block (empty if no tool calls).
+ */
+function extractToolBlockFromOutput(output) {
+  if (!Array.isArray(output)) {
+    return '';
+  }
+  /** @type {Record<string, {name: string, arguments: string}>} */
+  const calls = {};
+  const order = [];
+  /** @type {Record<string, string>} */
+  const results = {};
+  for (const item of output) {
+    if (!item) {
+      continue;
+    }
+    if (item.type === 'function_call') {
+      const callId = item.call_id || item.id || '';
+      if (!(callId in calls)) {
+        order.push(callId);
+      }
+      calls[callId] = { name: item.name || '', arguments: item.arguments || '' };
+    } else if (item.type === 'function_call_output') {
+      results[item.call_id || ''] = joinOutputParts(item.output || []);
+    }
+  }
+  if (order.length === 0) {
+    return '';
+  }
+  const lines = [];
+  for (const callId of order) {
+    const call = calls[callId];
+    lines.push(`[Tool: ${call.name}(${call.arguments})]`);
+    const result = results[callId];
+    if (result) {
+      lines.push(`Result: ${result}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Extracts text from the legacy OpenWebUI `content` field (string or list of parts).
+ * @param {*} content - The content field.
+ * @returns {string} The text.
+ */
+function extractLegacyContent(content) {
+  if (typeof content === 'string') {
+    return content;
+  }
+  return joinOutputParts(Array.isArray(content) ? content : []);
+}
+
+/**
+ * Collects the messages dict from an OpenWebUI chat blob. Prefers
+ * `history.messages` (a dict keyed by id); falls back to a flat `messages` array.
+ * @param {Object} chatBlob - The OpenWebUI `chat` object.
+ * @returns {Object|null} The messages dict, or null if none found.
+ */
+function collectOpenWebUiMessages(chatBlob) {
+  const history = chatBlob.history;
+  if (history && typeof history === 'object' && history.messages && typeof history.messages === 'object') {
+    return history.messages;
+  }
+  const msgs = chatBlob.messages;
+  if (Array.isArray(msgs)) {
+    const dict = {};
+    for (const m of msgs) {
+      if (m && m.id) {
+        dict[m.id] = m;
+      }
+    }
+    return dict;
+  }
+  if (msgs && typeof msgs === 'object') {
+    return msgs;
+  }
+  return null;
+}
+
+/**
+ * Processes a single OpenWebUI conversation, normalizing messages and adding
+ * them to the batch builder. Reasoning content is attached as structured
+ * `think` blocks; tool calls are appended to the message text.
+ *
+ * @param {Object} conv - A single OpenWebUI ChatResponse object.
+ * @param {ImportBatchBuilder} importBatchBuilder - The batch builder instance.
+ * @param {string} requestUserId - The ID of the user who initiated the import.
+ * @param {string} defaultModel - Resolved default model for the openAI endpoint.
+ */
+function processOpenWebUiConversation(conv, importBatchBuilder, requestUserId, defaultModel) {
+  const chatBlob = conv.chat || {};
+  const messagesDict = collectOpenWebUiMessages(chatBlob);
+  if (!messagesDict || Object.keys(messagesDict).length === 0) {
+    return;
+  }
+
+  const models = chatBlob.models || [];
+  const fallbackModel = models[0] || defaultModel || openAISettings.model.default;
+
+  importBatchBuilder.startConversation(EModelEndpoint.openAI);
+
+  // Map all original message IDs to new UUIDs up front so parent links resolve.
+  const idMap = new Map();
+  for (const id of Object.keys(messagesDict)) {
+    idMap.set(id, uuidv4());
+  }
+
+  const messages = [];
+  for (const [id, msg] of Object.entries(messagesDict)) {
+    const role = msg.role || 'assistant';
+    // Skip system/tool roles — they don't map to user/assistant.
+    if (role !== 'user' && role !== 'assistant') {
+      idMap.delete(id);
+      continue;
+    }
+
+    const output = msg.output || [];
+    const reasoning = extractReasoningFromOutput(output);
+    let text = extractMessageTextFromOutput(output) || extractLegacyContent(msg.content);
+    const toolBlock = extractToolBlockFromOutput(output);
+    if (toolBlock) {
+      text = text ? `${text}\n\n${toolBlock}` : toolBlock;
+    }
+
+    const isCreatedByUser = role === 'user';
+    const model = msg.model || fallbackModel;
+    const sender = isCreatedByUser ? 'user' : model;
+
+    const parentMessageId = msg.parentId
+      ? idMap.get(msg.parentId) || Constants.NO_PARENT
+      : Constants.NO_PARENT;
+
+    const timestamp = msg.timestamp || conv.created_at;
+    const createdAt = timestamp ? new Date(timestamp * 1000) : new Date();
+
+    const message = {
+      messageId: idMap.get(id),
+      parentMessageId,
+      text,
+      sender,
+      isCreatedByUser,
+      model,
+      user: requestUserId,
+      endpoint: EModelEndpoint.openAI,
+      createdAt,
+    };
+
+    // Attach reasoning as a structured think block (renders collapsible in LibreChat).
+    if (!isCreatedByUser && reasoning) {
+      message.content = [{ type: 'think', think: reasoning }, { type: 'text', text }];
+    }
+
+    messages.push(message);
+  }
+
+  const cycleDetected = adjustTimestampsForOrdering(messages);
+  if (cycleDetected) {
+    breakParentCycles(messages);
+  }
+
+  for (const message of messages) {
+    importBatchBuilder.saveMessage(message);
+  }
+
+  const convTime = conv.created_at ? new Date(conv.created_at * 1000) : new Date();
+  importBatchBuilder.finishConversation(conv.title || chatBlob.title || 'Imported Chat', convTime, {}, fallbackModel);
+}
+
+/**
+ * Imports conversations from an OpenWebUI chat export (a JSON array of
+ * ChatResponse objects). Reasoning/thinking content is preserved as structured
+ * `think` blocks; tool calls and their results are appended as a readable text
+ * block (the OpenWebUI `output[]` items of type `function_call` /
+ * `function_call_output`).
+ *
+ * @param {Array} jsonData - The OpenWebUI export data (array of ChatResponse).
+ * @param {string} requestUserId - The ID of the user making the import request.
+ * @param {Function} [builderFactory=createImportBatchBuilder] - The factory function.
+ * @param {string} [userRole] - The role of the user making the request.
+ * @returns {Promise<void>}
+ * @throws {Error} If there is an error creating conversations from the file.
+ */
+async function importOpenWebUiConvo(
+  jsonData,
+  requestUserId,
+  builderFactory = createImportBatchBuilder,
+  userRole,
+) {
+  try {
+    const importBatchBuilder = builderFactory(requestUserId);
+    const defaultModel = await resolveImportDefaultModel({
+      endpoint: EModelEndpoint.openAI,
+      requestUserId,
+      userRole,
+    });
+    for (const conv of jsonData) {
+      processOpenWebUiConversation(conv, importBatchBuilder, requestUserId, defaultModel);
+    }
+    await importBatchBuilder.saveBatch();
+  } catch (error) {
+    logger.error(`user: ${requestUserId} | Error creating conversation from imported file`, error);
+    throw error;
   }
 }
 

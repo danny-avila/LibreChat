@@ -1,0 +1,164 @@
+[
+  {
+    "id": "reasoning-chat",
+    "user_id": "u1",
+    "title": "Chat with reasoning",
+    "chat": {
+      "title": "Chat with reasoning",
+      "models": ["deepseek-r1"],
+      "history": {
+        "currentId": "ra2",
+        "messages": {
+          "ra1": {
+            "id": "ra1",
+            "parentId": null,
+            "childrenIds": ["ra2"],
+            "role": "user",
+            "content": "What is 15 * 17?",
+            "timestamp": 1700000000
+          },
+          "ra2": {
+            "id": "ra2",
+            "parentId": "ra1",
+            "childrenIds": [],
+            "role": "assistant",
+            "content": "<details type=\"reasoning\" done=\"true\" duration=\"3\"><summary>Thought for 3 seconds</summary>&gt; Let me break this down...</details>255",
+            "model": "deepseek-r1",
+            "timestamp": 1700000010,
+            "done": true,
+            "output": [
+              {
+                "type": "reasoning",
+                "id": "r-001",
+                "status": "completed",
+                "start_tag": "<think>",
+                "end_tag": "</think>",
+                "attributes": { "type": "reasoning_content" },
+                "content": [{ "type": "output_text", "text": "15 * 17 = 15 * 10 + 15 * 7 = 150 + 105 = 255" }],
+                "summary": null,
+                "started_at": 1700000007.0,
+                "ended_at": 1700000010.0,
+                "duration": 3
+              },
+              {
+                "type": "message",
+                "id": "m-001",
+                "role": "assistant",
+                "status": "completed",
+                "content": [{ "type": "output_text", "text": "255" }]
+              }
+            ]
+          }
+        }
+      }
+    },
+    "created_at": 1700000000,
+    "updated_at": 1700000010,
+    "share_id": null,
+    "archived": false,
+    "pinned": false,
+    "meta": {},
+    "folder_id": null
+  },
+  {
+    "id": "tool-chat",
+    "user_id": "u1",
+    "title": "Chat with tool call",
+    "chat": {
+      "title": "Chat with tool call",
+      "models": ["gpt-4o"],
+      "history": {
+        "currentId": "ta2",
+        "messages": {
+          "ta1": {
+            "id": "ta1",
+            "parentId": null,
+            "childrenIds": ["ta2"],
+            "role": "user",
+            "content": "What's the weather in Paris?",
+            "timestamp": 1700001000
+          },
+          "ta2": {
+            "id": "ta2",
+            "parentId": "ta1",
+            "childrenIds": [],
+            "role": "assistant",
+            "content": "<details type=\"tool_calls\"><summary>Tool Executed</summary>\"Paris: 18C, rain\"</details>The weather in Paris is 18C with rain.",
+            "model": "gpt-4o",
+            "timestamp": 1700001020,
+            "done": true,
+            "output": [
+              {
+                "type": "function_call",
+                "id": "call_1",
+                "call_id": "call_1",
+                "name": "get_weather",
+                "arguments": "{\"city\":\"Paris\"}",
+                "status": "completed"
+              },
+              {
+                "type": "function_call_output",
+                "id": "fco-001",
+                "call_id": "call_1",
+                "output": [{ "type": "input_text", "text": "Paris: 18C, rain" }],
+                "status": "completed"
+              },
+              {
+                "type": "message",
+                "id": "m-002",
+                "role": "assistant",
+                "status": "completed",
+                "content": [{ "type": "output_text", "text": "The weather in Paris is 18C with rain." }]
+              }
+            ]
+          }
+        }
+      }
+    },
+    "created_at": 1700001000,
+    "updated_at": 1700001020,
+    "share_id": null,
+    "archived": false,
+    "pinned": false,
+    "meta": {},
+    "folder_id": null
+  },
+  {
+    "id": "simple-chat",
+    "user_id": "u1",
+    "title": "Simple linear chat",
+    "chat": {
+      "title": "Simple linear chat",
+      "models": ["llama3.1:latest"],
+      "history": {
+        "currentId": "sa2",
+        "messages": {
+          "sa1": {
+            "id": "sa1",
+            "parentId": null,
+            "childrenIds": ["sa2"],
+            "role": "user",
+            "content": "Hello",
+            "timestamp": 1700002000
+          },
+          "sa2": {
+            "id": "sa2",
+            "parentId": "sa1",
+            "childrenIds": [],
+            "role": "assistant",
+            "content": "Hi there!",
+            "model": "llama3.1:latest",
+            "timestamp": 1700002005
+          }
+        }
+      }
+    },
+    "created_at": 1700002000,
+    "updated_at": 1700002005,
+    "share_id": null,
+    "archived": false,
+    "pinned": false,
+    "meta": {},
+    "folder_id": null
+  }
+]
