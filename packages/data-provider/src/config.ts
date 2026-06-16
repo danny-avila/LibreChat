@@ -710,6 +710,10 @@ export const anthropicEndpointSchema = baseEndpointSchema.merge(
     vertex: vertexAISchema.optional(),
     /** Optional: List of available models */
     models: z.array(z.string()).optional(),
+    /** Additional parameters to inject into every Anthropic API request */
+    addParams: addParamsSchema.optional(),
+    /** Parameters to drop/exclude from Anthropic API requests */
+    dropParams: z.array(z.string()).optional(),
   }),
 );
 
