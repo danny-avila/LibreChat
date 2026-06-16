@@ -31,6 +31,7 @@ import {
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
 import { filterPersistableAbortContent } from './abortContent';
+import { isPendingActionStale } from './interfaces/IJobStore';
 import { ApprovalLifecycle } from './ApprovalLifecycle';
 
 /** Error surfaced to any client still attached when a stale/hung job is reaped. */
@@ -1522,6 +1523,12 @@ class GenerationJobManagerClass {
       replayEvents,
       collectedUsage,
       contextUsage,
+      // Carry the live pending approval in the resume contract so a reloading /
+      // cross-replica client can rebuild the prompt from resumeState.
+      pendingAction:
+        jobData.status === 'requires_action' && !isPendingActionStale(jobData)
+          ? jobData.pendingAction
+          : undefined,
     };
   }
 
