@@ -23,7 +23,22 @@ jobs:
           git fetch origin main
           git reset --hard origin/main
 
-      - name: Rebuild and restart containers
+      - name: Detect change scope
+        id: scope
+        run: |
+          cd ${{ vars.GCP_VM_APP_DIR }}
+          CHANGED=$(git diff HEAD~1 --name-only 2>/dev/null || echo "unknown")
+          echo "Changed files: $CHANGED"
+          if echo "$CHANGED" | grep -qvE '^librechat\.(yaml|yml)$'; then
+            echo "type=full" >> $GITHUB_OUTPUT
+            echo "==> Full rebuild required (non-yaml files changed)."
+          else
+            echo "type=config" >> $GITHUB_OUTPUT
+            echo "==> Config-only change — skipping Docker build."
+          fi
+
+      - name: Rebuild and restart containers (full deploy)
+        if: steps.scope.outputs.type == 'full'
         run: |
           set -e
           cd ${{ vars.GCP_VM_APP_DIR }}
@@ -31,6 +46,15 @@ jobs:
           docker compose build api
           echo "==> Restarting containers..."
           docker compose up -d
+
+      - name: Restart API only (config-only deploy)
+        if: steps.scope.outputs.type == 'config'
+        run: |
+          set -e
+          cd ${{ vars.GCP_VM_APP_DIR }}
+          echo "==> Restarting API container to pick up config changes..."
+          docker compose restart api
+          echo "==> API restarted."
 
       - name: Verify containers running
         run: |
