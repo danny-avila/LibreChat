@@ -412,11 +412,21 @@ endpoints:
   agents:
     disableBuilder: true
     maxRecursionLimit: 10
+    # `execute_code` routes Python to the self-hosted Code Interpreter service
+    # (see deploy-compose.yml `code-interpreter` + LIBRECHAT_CODE_BASEURL in .env),
+    # which returns generated files (xlsx/docx/pdf/pptx) as downloadable
+    # attachments. `tools` keeps the MCP servers (excel, filesystem) available.
+    capabilities:
+      - execute_code
+      - tools
+      - actions
+      - file_search
+      - artifacts
+      - context
+      - ocr
 
   anthropic:
     titleModel: claude-sonnet-4-6
-    addParams:
-      code_execution: true
 
   # AWS Bedrock Example
   # Note: Bedrock endpoint is configured via environment variables
@@ -470,23 +480,24 @@ modelSpecs:
 
           ## Code Execution
 
-          You have a `code_execution` tool that lets you write and run Python code directly. Use it whenever a task benefits from computation, data processing, or file generation. You are NOT limited to text — you can produce real files.
+          You have a code interpreter (the `execute_code` tool) that runs Python directly. Use it whenever a task benefits from computation, data processing, or file generation. You are NOT limited to text — any file you save to disk is returned to the user as a real, downloadable attachment.
 
           ## Document and File Creation
 
           When a user asks you to create a spreadsheet, Word document, presentation, or PDF:
-          - Use the `code_execution` tool to write Python code that generates the file
+          - Use the code interpreter to write Python that generates the file and saves it to disk
           - For Excel/spreadsheets: use openpyxl or xlsxwriter
           - For Word documents: use python-docx
           - For PowerPoint: use python-pptx
           - For PDFs: use reportlab
           - Always produce a real file — never tell the user you cannot create files
           - Name files descriptively (e.g., `q2_sales_summary.xlsx`, `onboarding_checklist.docx`)
+          - If a library is missing, install it first with `pip install` inside the interpreter
 
           ## Reading Uploaded Files
 
           When a user uploads a PDF or document:
-          - Use the `code_execution` tool with pdfplumber or pymupdf to extract and read the text
+          - Use the code interpreter with pdfplumber or pymupdf to extract and read the text
           - Summarize, analyze, or answer questions about the content as requested
 
           ## Tone and Style
