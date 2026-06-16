@@ -30,9 +30,9 @@ const {
   resolveAllMcpConfigs,
 } = require('~/server/services/MCP');
 const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
-const { getMCPManager, getMCPServersRegistry } = require('~/config');
-const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { getResourcePermissionsMap } = require('~/server/services/PermissionService');
+const { hasCapability } = require('~/server/middleware/roles/capabilities');
+const { getMCPManager, getMCPServersRegistry } = require('~/config');
 const db = require('~/models');
 
 /**
