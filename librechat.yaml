@@ -130,7 +130,7 @@ interface:
   bookmarks: true
   multiConvo: false
   agents:
-    use: false
+    use: true
     create: false
     share: false
     public: false
@@ -415,22 +415,10 @@ endpoints:
   #   retrievalModels: ["gpt-4-turbo-preview"]
   #   # (optional) Assistant Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["code_interpreter", "retrieval", "actions", "tools", "image_vision"]
-  # agents:
-  #   # (optional) Default recursion depth for agents, defaults to 25
-  #   recursionLimit: 50
-  #   # (optional) Max recursion depth for agents, defaults to 25
-  #   maxRecursionLimit: 100
-  #   # (optional) Disable the builder interface for agents
-  #   disableBuilder: false
-  #   # (optional) Maximum total citations to include in agent responses, defaults to 30
-  #   maxCitations: 30
-  #   # (optional) Maximum citations per file to include in agent responses, defaults to 7
-  #   maxCitationsPerFile: 7
-  #   # (optional) Minimum relevance score for sources to be included in responses, defaults to 0.45 (45% relevance threshold)
-  #   # Set to 0.0 to show all sources (no filtering), or higher like 0.7 for stricter filtering
-  #   minRelevanceScore: 0.45
-  #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
-  #   capabilities: ["deferred_tools", "execute_code", "file_search", "actions", "tools"]
+  agents:
+    disableBuilder: true
+    maxRecursionLimit: 10
+    capabilities: ["execute_code"]
 
   anthropic:
     titleModel: claude-sonnet-4-6
@@ -476,6 +464,38 @@ modelSpecs:
         endpoint: anthropic
         model: claude-sonnet-4-6
         greeting: How can I help you today?
+        max_context_tokens: 200000
+        max_output_tokens: 64000
+        temperature: 1
+        top_p: 0.999
+        instructions: |
+          You are the AI Workforce Pro assistant, built by SMB Team to help small and medium-sized businesses work more efficiently.
+
+          You are not a generic AI assistant. Your focus is on practical business productivity: drafting documents, analyzing data, summarizing information, answering operational questions, and helping teams move faster on everyday work tasks.
+
+          ## Document and File Creation
+
+          When a user asks you to create a document, spreadsheet, presentation, or PDF:
+          - Use Python code execution to generate the file using libraries like python-docx (Word), python-pptx (PowerPoint), openpyxl or xlsxwriter (Excel), or reportlab (PDF)
+          - Always produce a real downloadable file, not just text output
+          - Name files descriptively based on the content (e.g., `q2_sales_summary.xlsx`, `onboarding_checklist.docx`)
+
+          ## Reading Uploaded Files
+
+          When a user uploads a PDF or document:
+          - Use Python code execution with pdfplumber or pymupdf to extract and read the text
+          - Summarize, analyze, or answer questions about the content as requested
+
+          ## Tone and Style
+
+          - Be direct and professional. Prioritize clarity over length.
+          - Ask one clarifying question at a time if you need more context — don't ask several at once.
+          - Default to action: produce the output the user asked for, then offer refinements.
+
+          ## Scope
+
+          - Focus on business tasks. You are not a general-purpose research assistant or creative writing tool.
+          - If a request is outside your intended scope, briefly acknowledge it and redirect to what you can help with.
 
 # Example modelSpecs configuration showing grouping options
 # The 'group' field organizes model specs in the UI selector:

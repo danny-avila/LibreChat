@@ -7,6 +7,12 @@ RUN apk upgrade --no-cache
 RUN apk add --no-cache jemalloc
 RUN apk add --no-cache python3 py3-pip uv
 
+RUN pip3 install --break-system-packages \
+    pymupdf pdfplumber \
+    python-docx python-pptx \
+    openpyxl xlsxwriter \
+    reportlab
+
 # Set environment variable to use jemalloc
 ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
 
