@@ -51,7 +51,7 @@ const Avatar: React.FC<AvatarProps> = ({
     () => (
       <div
         style={{
-          backgroundColor: 'rgb(121, 137, 255)',
+          backgroundColor: 'rgb(156, 163, 175)',
           width: `${size}px`,
           height: `${size}px`,
           boxShadow: 'rgba(240, 246, 252, 0.1) 0px 0px 0px 1px',

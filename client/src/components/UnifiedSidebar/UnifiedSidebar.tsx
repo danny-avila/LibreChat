@@ -13,7 +13,7 @@ import Sidebar from './Sidebar';
 import { cn } from '~/utils';
 import store from '~/store';
 
-const COLLAPSED_WIDTH = 52;
+const COLLAPSED_WIDTH = 60;
 const SIDEBAR_WIDTH = 260;
 const TRANSITION_MS = 300;
 const SNAP_MS = 150;

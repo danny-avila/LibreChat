@@ -219,7 +219,7 @@ function Sidebar({
   return (
     <div className="relative h-full w-full">
       {/* Icon strip — always rendered as the base layer */}
-      <div className="absolute inset-y-0 left-0 w-[52px]">
+      <div className="absolute inset-y-0 left-0 w-[60px]">
         <ExpandedPanel
           links={links}
           expanded={false}
