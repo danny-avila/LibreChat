@@ -89,6 +89,26 @@ export type TContextUsageEvent = {
 };
 
 /**
+ * Request payload for a server-side context-usage projection: "what context
+ * would the next call send for this branch under this config", computed by the
+ * agents SDK without invoking the model. Powers the gauge in states the live
+ * snapshot can't cover (page load of a snapshot-less branch, window/model
+ * switch). `messageId` is the viewed branch's tail; the server walks its parent
+ * chain.
+ */
+export type TContextProjectionRequest = {
+  conversationId: string;
+  messageId: string;
+  endpoint: string;
+  model?: string;
+  agentId?: string;
+  spec?: string;
+  maxContextTokens?: number;
+  /** Provider-calibrated ratio from a prior snapshot, applied as a static seed. */
+  calibrationRatio?: number;
+};
+
+/**
  * Per-response usage rollup persisted on `responseMessage.metadata.usage`, in
  * display units (input excludes cache; output includes repaired completion).
  * Normalized per-event on the backend before summing so a reloaded conversation
