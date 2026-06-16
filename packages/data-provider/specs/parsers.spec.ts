@@ -185,6 +185,7 @@ describe('parseCompactConvo', () => {
       const maliciousIconURL = 'https://evil-tracker.example.com/pixel.png';
       const conversation: Partial<TConversation> = {
         agent_id: 'agent_123',
+        spec: 'agent-spec',
         iconURL: maliciousIconURL,
         endpoint: EModelEndpoint.agents,
       };
@@ -197,6 +198,7 @@ describe('parseCompactConvo', () => {
       expect(result).not.toBeNull();
       expect(result?.['iconURL']).toBeUndefined();
       expect(result?.agent_id).toBe('agent_123');
+      expect(result?.spec).toBe('agent-spec');
     });
 
     test('should strip iconURL from anthropic endpoint conversation input', () => {

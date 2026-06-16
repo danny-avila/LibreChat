@@ -1291,6 +1291,7 @@ export const agentsBaseSchema = tConversationSchema.pick({
   promptPrefix: true,
   iconURL: true,
   greeting: true,
+  spec: true,
   maxContextTokens: true,
 });
 
@@ -1311,6 +1312,7 @@ export const agentsSchema = agentsBaseSchema
     promptPrefix: obj.promptPrefix ?? null,
     iconURL: obj.iconURL ?? undefined,
     greeting: obj.greeting ?? undefined,
+    spec: obj.spec ?? undefined,
     maxContextTokens: obj.maxContextTokens ?? undefined,
   }))
   .catch(() => ({
@@ -1327,6 +1329,7 @@ export const agentsSchema = agentsBaseSchema
     promptPrefix: null,
     iconURL: undefined,
     greeting: undefined,
+    spec: undefined,
     maxContextTokens: undefined,
   }));
 

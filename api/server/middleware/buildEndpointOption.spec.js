@@ -11,7 +11,7 @@ jest.mock('librechat-data-provider', () => {
   };
 });
 
-const { Constants, EModelEndpoint, parseCompactConvo } = require('librechat-data-provider');
+const { EModelEndpoint, parseCompactConvo } = require('librechat-data-provider');
 
 const mockBuildOptions = jest.fn((_endpoint, parsedBody) => ({
   ...parsedBody,
@@ -32,10 +32,8 @@ jest.mock('~/server/services/Endpoints/agents', () => ({
   buildOptions: mockAgentBuildOptions,
 }));
 
-const mockGetAgent = jest.fn();
 jest.mock('~/models', () => ({
   updateFilesUsage: jest.fn(),
-  getAgent: (...args) => mockGetAgent(...args),
 }));
 const { updateFilesUsage } = require('~/models');
 
@@ -222,9 +220,8 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
     expect(req.body.endpointOption.chatProjectId).toBe('project-1');
   });
 
-  it('should allow saved agents without a request-level spec when modelSpecs are enforced', async () => {
+  it('should require specs for agent endpoint requests when modelSpecs are enforced', async () => {
     mockGetEndpointsConfig.mockResolvedValue({});
-    mockGetAgent.mockResolvedValue({ provider: 'Mock Provider A', model: 'mock-model-a' });
 
     const req = createReq(
       {
@@ -254,65 +251,22 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
 
     await buildEndpointOption(req, res, next);
 
-    expect(handleError).not.toHaveBeenCalledWith(res, {
+    expect(handleError).toHaveBeenCalledWith(res, {
       text: 'No model spec selected',
     });
-    expect(mockAgentBuildOptions).toHaveBeenCalledWith(
-      req,
-      EModelEndpoint.agents,
-      expect.objectContaining({ agent_id: 'agent_pedro' }),
-      undefined,
-    );
-    expect(req.body.endpointOption.agent_id).toBe('agent_pedro');
-    expect(next).toHaveBeenCalledTimes(1);
-  });
-
-  it('should reject saved agents outside enforced modelSpecs', async () => {
-    mockGetEndpointsConfig.mockResolvedValue({});
-    mockGetAgent.mockResolvedValue({ provider: 'Mock Provider B', model: 'mock-model-b' });
-
-    const req = createReq(
-      {
-        endpoint: EModelEndpoint.agents,
-        agent_id: 'agent_pedro',
-        model: 'mock-model-b',
-      },
-      {
-        modelSpecs: {
-          enforce: true,
-          list: [
-            {
-              name: 'locked-provider-a',
-              preset: {
-                endpoint: 'Mock Provider A',
-                model: 'mock-model-a',
-              },
-            },
-          ],
-        },
-      },
-    );
-    req.baseUrl = '/api/agents/chat';
-    const res = createRes();
-    const next = jest.fn();
-    const { handleError } = require('@librechat/api');
-
-    await buildEndpointOption(req, res, next);
-
-    expect(handleError).toHaveBeenCalledWith(res, { text: 'Model spec mismatch' });
     expect(mockAgentBuildOptions).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('should allow saved agents directly referenced by enforced modelSpecs', async () => {
+  it('should apply enforced model specs that reference saved agents', async () => {
     mockGetEndpointsConfig.mockResolvedValue({});
-    mockGetAgent.mockResolvedValue({ provider: 'Mock Provider B', model: 'mock-model-b' });
 
     const req = createReq(
       {
         endpoint: EModelEndpoint.agents,
-        agent_id: 'agent_pedro',
-        model: 'mock-model-b',
+        spec: 'locked-agent',
+        agent_id: 'forged_agent',
+        model: 'forged-model',
       },
       {
         modelSpecs: {
@@ -340,160 +294,15 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
     expect(mockAgentBuildOptions).toHaveBeenCalledWith(
       req,
       EModelEndpoint.agents,
-      expect.objectContaining({ agent_id: 'agent_pedro' }),
+      expect.objectContaining({
+        spec: 'locked-agent',
+        agent_id: 'agent_pedro',
+      }),
       undefined,
     );
     expect(req.body.endpointOption.agent_id).toBe('agent_pedro');
+    expect(req.body.endpointOption.spec).toBe('locked-agent');
     expect(next).toHaveBeenCalledTimes(1);
-  });
-
-  it('should require a spec for ephemeral addedConvo when the primary saved agent is allowed', async () => {
-    mockGetEndpointsConfig.mockResolvedValue({});
-    mockGetAgent.mockResolvedValue({ provider: 'Mock Provider A', model: 'mock-model-a' });
-
-    const req = createReq(
-      {
-        endpoint: EModelEndpoint.agents,
-        agent_id: 'agent_pedro',
-        model: 'mock-model-a',
-        addedConvo: {
-          endpoint: 'Mock Provider B',
-          model: 'mock-model-b',
-        },
-      },
-      {
-        modelSpecs: {
-          enforce: true,
-          list: [
-            {
-              name: 'locked-provider-a',
-              preset: {
-                endpoint: 'Mock Provider A',
-                model: 'mock-model-a',
-              },
-            },
-          ],
-        },
-      },
-    );
-    req.baseUrl = '/api/agents/chat';
-    const res = createRes();
-    const next = jest.fn();
-    const { handleError } = require('@librechat/api');
-
-    await buildEndpointOption(req, res, next);
-
-    expect(handleError).toHaveBeenCalledWith(res, { text: 'No model spec selected' });
-    expect(mockAgentBuildOptions).not.toHaveBeenCalled();
-    expect(next).not.toHaveBeenCalled();
-  });
-
-  it('should apply enforced model specs to ephemeral addedConvo for saved agents', async () => {
-    mockGetEndpointsConfig.mockResolvedValue({});
-    mockGetAgent.mockResolvedValue({ provider: 'Mock Provider A', model: 'mock-model-a' });
-
-    const req = createReq(
-      {
-        endpoint: EModelEndpoint.agents,
-        agent_id: 'agent_pedro',
-        model: 'mock-model-a',
-        addedConvo: {
-          endpoint: 'Mock Provider B',
-          endpointType: EModelEndpoint.custom,
-          spec: 'locked-provider-b',
-          model: 'forged-model',
-          temperature: 0.9,
-          ephemeralAgent: {
-            execute_code: true,
-            file_search: true,
-            mcp: ['unapproved-server'],
-          },
-        },
-      },
-      {
-        modelSpecs: {
-          enforce: true,
-          list: [
-            {
-              name: 'locked-provider-a',
-              preset: {
-                endpoint: 'Mock Provider A',
-                model: 'mock-model-a',
-              },
-            },
-            {
-              name: 'locked-provider-b',
-              preset: {
-                endpoint: 'Mock Provider B',
-                endpointType: EModelEndpoint.custom,
-                model: 'mock-model-b',
-                temperature: 0.2,
-              },
-            },
-          ],
-        },
-      },
-    );
-    req.baseUrl = '/api/agents/chat';
-    const next = jest.fn();
-
-    await buildEndpointOption(req, createRes(), next);
-
-    expect(req.body.addedConvo).toEqual(
-      expect.objectContaining({
-        endpoint: 'Mock Provider B',
-        spec: 'locked-provider-b',
-        model: 'mock-model-b',
-        temperature: 0.2,
-      }),
-    );
-    expect(req.body.addedConvo.model).not.toBe('forged-model');
-    expect(req.body.addedConvo.ephemeralAgent).toBeUndefined();
-    expect(next).toHaveBeenCalledTimes(1);
-  });
-
-  it('should ignore malformed addedConvo agent ids when modelSpecs are enforced', async () => {
-    mockGetEndpointsConfig.mockResolvedValue({});
-    mockGetAgent.mockResolvedValue({ provider: 'Mock Provider A', model: 'mock-model-a' });
-
-    const req = createReq(
-      {
-        endpoint: EModelEndpoint.agents,
-        agent_id: 'agent_pedro',
-        model: 'mock-model-a',
-        addedConvo: {
-          agent_id: { $gt: '' },
-          endpoint: 'Mock Provider B',
-          model: 'mock-model-b',
-        },
-      },
-      {
-        modelSpecs: {
-          enforce: true,
-          list: [
-            {
-              name: 'locked-provider-a',
-              preset: {
-                endpoint: 'Mock Provider A',
-                model: 'mock-model-a',
-              },
-            },
-          ],
-        },
-      },
-    );
-    req.baseUrl = '/api/agents/chat';
-    const res = createRes();
-    const next = jest.fn();
-    const { handleError } = require('@librechat/api');
-
-    await buildEndpointOption(req, res, next);
-
-    expect(mockGetAgent).toHaveBeenCalledWith({ id: 'agent_pedro' });
-    expect(mockGetAgent).not.toHaveBeenCalledWith({ id: { $gt: '' } });
-    expect(handleError).toHaveBeenCalledWith(res, { text: 'No model spec selected' });
-    expect(mockAgentBuildOptions).not.toHaveBeenCalled();
-    expect(next).not.toHaveBeenCalled();
   });
 
   it('should require specs for ephemeral agent runs when modelSpecs are enforced', async () => {
@@ -503,44 +312,6 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
       {
         endpoint: EModelEndpoint.openAI,
         model: 'gpt-4o',
-      },
-      {
-        modelSpecs: {
-          enforce: true,
-          list: [
-            {
-              name: 'locked-openai',
-              preset: {
-                endpoint: EModelEndpoint.openAI,
-                model: 'gpt-4o',
-              },
-            },
-          ],
-        },
-      },
-    );
-    req.baseUrl = '/api/agents/chat';
-    const res = createRes();
-    const next = jest.fn();
-    const { handleError } = require('@librechat/api');
-
-    await buildEndpointOption(req, res, next);
-
-    expect(handleError).toHaveBeenCalledWith(res, {
-      text: 'No model spec selected',
-    });
-    expect(mockAgentBuildOptions).not.toHaveBeenCalled();
-    expect(next).not.toHaveBeenCalled();
-  });
-
-  it('should not treat the ephemeral agent id as a saved agent during enforcement', async () => {
-    mockGetEndpointsConfig.mockResolvedValue({});
-
-    const req = createReq(
-      {
-        endpoint: EModelEndpoint.agents,
-        agent_id: Constants.EPHEMERAL_AGENT_ID,
-        model: 'mock-model-a',
       },
       {
         modelSpecs: {
