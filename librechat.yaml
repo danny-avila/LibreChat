@@ -84,7 +84,7 @@ interface:
     modalContent: |
       # Terms and Conditions for AI Workforce Pro
 
-      *Effective Date: July 1, 2026*
+      *Effective Date: July 01, 2026*
 
       Welcome to AI Workforce Pro. These Terms of Service ("Terms") govern your use of this AI workforce platform and the services we offer. By accessing or using the service, you agree to be bound by these Terms and our Privacy Policy.
 
@@ -316,7 +316,62 @@ actions:
 #     - 'host.docker.internal:8080'
 #     - '127.0.0.1:8080'
 
-# Example MCP Servers Object Structure
+# =============================================================================
+# MCP Servers — document/file skills for AI Workforce Pro
+# -----------------------------------------------------------------------------
+# These run as stdio subprocesses of the LibreChat backend.
+#
+# RELIABILITY / DEPLOYMENT NOTES (read before production deploy):
+#  1. `npx -y` downloads each package on first call. For a production legal tool,
+#     PRE-INSTALL the Node servers in your Dockerfile so they are not fetched at
+#     runtime, e.g.:
+#       RUN npm install -g @modelcontextprotocol/server-filesystem \
+#                          @modelcontextprotocol/server-pdf
+#  2. The `excel` server is PYTHON-based under its npm wrapper. It will NOT launch
+#     on a stock Node image. Add Python 3.8+ (and pip/uv) to your Dockerfile, or
+#     remove this server. Verify its output-path config against its own docs.
+#  3. Cloud Run's local filesystem is EPHEMERAL — files written under the path
+#     below do not persist across instance recycles. Fine for generate-then-
+#     download; nothing is durable. For persistence, mount GCS / a volume.
+#  4. The `filesystem` server creates TEXT formats only (.md/.csv/.html/.txt).
+#     It cannot author binary Office files. The `pdf` server is READ/EXTRACT only.
+#  5. User-level MCP management stays OFF (no interface.mcpServers permissions),
+#     so end users cannot add or modify servers — appropriate for a locked client.
+# =============================================================================
+mcpServers:
+
+  # Official, Node-based. Read uploaded files; write text-based artifacts.
+  # VERIFY the path below is writable in your container and matches your fork.
+  filesystem:
+    type: stdio
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-filesystem"
+      - "/app/uploads"          # <-- VERIFY/ADJUST to a writable path in your container
+    timeout: 90000              # 90s — generous for first-run npx download
+
+  # Purpose-built .xlsx generation (charts, formatting). MIT. PYTHON-based —
+  # requires Python 3.8+ in the container (see note 2 above) or it will fail.
+  excel:
+    type: stdio
+    command: npx
+    args:
+      - "-y"
+      - "@guillehr2/excel-mcp-server@latest"
+    timeout: 180000             # 180s — Python wrapper + first-run install is slow
+
+  # Official PDF server. READ/EXTRACT ONLY — lets the model ingest client
+  # uploaded PDFs (contracts, intake docs). It does NOT create PDFs.
+  pdf:
+    type: stdio
+    command: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-pdf"
+    timeout: 90000
+
+# Example MCP Servers Object Structure (reference — see LibreChat docs)
 # mcpServers:
 #   everything:
 #     # type: sse # type can optionally be omitted
