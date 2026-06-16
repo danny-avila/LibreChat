@@ -483,7 +483,6 @@ export default function useResumableSSE(
     tapContent,
     finalizeUsage,
     backfillUsage,
-    reconcileBackfill,
     resetLive,
     seedLive,
   } = useUsageHandler();
@@ -661,11 +660,10 @@ export default function useResumableSSE(
              *  this conversation keep their usage and gap events still count */
             backfillUsage(data.resumeState?.collectedUsage ?? [], resumeSubmission);
             if (data.resumeState?.contextUsage) {
+              /** Already reconciled to the call's real prompt tokens server-side
+               *  (GenerationJobManager.persistTokenUsage) when the snapshot's call
+               *  completed, so install it as-is — no client backfill reconcile. */
               contextHandler(data.resumeState.contextUsage, resumeSubmission);
-              /** The restored snapshot is the raw pre-invoke estimate; reconcile it
-               *  to the backfilled primary call's real prompt tokens (the usage came
-               *  via backfill, not a live event that would have reconciled it). */
-              reconcileBackfill(data.resumeState?.collectedUsage ?? [], resumeSubmission);
             }
             /** Output streamed before this resume is not re-delivered as deltas
              *  — estimate it from the trailing aggregated content. This is
@@ -1098,7 +1096,6 @@ export default function useResumableSSE(
       tapContent,
       finalizeUsage,
       backfillUsage,
-      reconcileBackfill,
       resetLive,
       seedLive,
     ],

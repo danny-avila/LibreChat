@@ -60,9 +60,6 @@ export interface UsageHandlers {
   attributePending: (responseId: string | null, submission: UsageSubmissionLike) => void;
   /** Idempotently folds the resumed run's collected usage into the totals */
   backfillUsage: (entries: TTokenUsageEvent[], submission: UsageSubmissionLike) => void;
-  /** Reconciles the restored snapshot to the final primary call's real prompt
-   *  tokens on resume, where the usage arrives via backfill not a live event */
-  reconcileBackfill: (entries: TTokenUsageEvent[], submission: UsageSubmissionLike) => void;
   /** Seeds the live estimate from already-streamed output chars on resume */
   seedLive: (chars: number, submission: UsageSubmissionLike) => void;
 }
@@ -194,54 +191,25 @@ export default function useUsageHandler(): UsageHandlers {
       return true;
     };
 
-    /** Reconcile the active snapshot's calibrated estimate to a primary call's
+    /** Reconcile the live snapshot's calibrated estimate to a primary call's
      *  ACTUAL prompt tokens. The snapshot is pre-invoke for that call; this usage
      *  is its post-invoke truth, so the gauge stops showing the SDK multiplier's
      *  inflation (severe when a provider injects server-side content like web
-     *  search). Idempotent for the same prompt size, so safe on replay. */
-    const applyReconcile = (convoKey: string, event: TTokenUsageEvent) => {
+     *  search). Resume is handled server-side (the job-store snapshot is reconciled
+     *  when the call's usage is persisted), so no backfill reconcile is needed. */
+    const reconcileLiveSnapshot = (data: TTokenUsageEvent, submission: UsageSubmissionLike) => {
+      const convoKey = getConvoKey(submission);
       const snapshotAtom = contextSnapshotFamily(convoKey);
       const snapshot = jotai.get(snapshotAtom);
       if (snapshot == null) {
         return;
       }
       /** The snapshot precedes this call, so it must belong to the same run */
-      if (snapshot.runId != null && event.runId != null && snapshot.runId !== event.runId) {
+      if (snapshot.runId != null && data.runId != null && snapshot.runId !== data.runId) {
         return;
       }
-      const reconciled = reconcileContextUsage(snapshot, promptTokensFromUsage(event));
+      const reconciled = reconcileContextUsage(snapshot, promptTokensFromUsage(data));
       jotai.set(snapshotAtom, { ...reconciled, anchorMessageId: snapshot.anchorMessageId });
-    };
-
-    const reconcileLiveSnapshot = (data: TTokenUsageEvent, submission: UsageSubmissionLike) => {
-      applyReconcile(getConvoKey(submission), data);
-    };
-
-    /** Resume sync restores a primary call's usage through `backfillUsage` (Redis
-     *  mode doesn't replay it as a live `on_token_usage`), so the live
-     *  `usageHandler` reconcile never runs. Reconcile the restored snapshot to the
-     *  final primary call's real prompt tokens here so a reconnected session isn't
-     *  stuck on the inflated estimate until reload. */
-    const reconcileBackfill: UsageHandlers['reconcileBackfill'] = (entries, submission) => {
-      if (!Array.isArray(entries)) {
-        return;
-      }
-      const convoKey = getConvoKey(submission);
-      const snapshot = jotai.get(contextSnapshotFamily(convoKey));
-      if (snapshot == null) {
-        return;
-      }
-      for (let i = entries.length - 1; i >= 0; i--) {
-        const event = entries[i];
-        if (event?.usage_type != null) {
-          continue;
-        }
-        if (snapshot.runId != null && event.runId != null && event.runId !== snapshot.runId) {
-          continue;
-        }
-        applyReconcile(convoKey, event);
-        return;
-      }
     };
 
     const usageHandler: UsageHandlers['usageHandler'] = (data, submission) => {
@@ -428,7 +396,6 @@ export default function useUsageHandler(): UsageHandlers {
       resetLive,
       attributePending,
       backfillUsage,
-      reconcileBackfill,
       seedLive,
     };
   }, []);

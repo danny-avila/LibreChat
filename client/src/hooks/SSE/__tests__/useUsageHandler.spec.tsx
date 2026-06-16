@@ -91,26 +91,4 @@ describe('useUsageHandler — live snapshot reconciliation', () => {
 
     expect(store.get(contextSnapshotFamily(convo))?.breakdown.messageTokens).toBe(187471);
   });
-
-  it('reconciles the restored snapshot from backfilled usage on resume', () => {
-    /** Resume restores usage via backfill (no live on_token_usage in Redis mode);
-     *  reconcileBackfill must still correct the snapshot from the final primary. */
-    const convo = 'convo-recon-4';
-    const submission = {
-      userMessage: { messageId: 'u4', conversationId: convo },
-      conversation: { conversationId: convo },
-    };
-    const { result } = renderHook(() => useUsageHandler());
-    const store = getDefaultStore();
-
-    result.current.contextHandler(inflatedSnapshot(), submission);
-    result.current.reconcileBackfill(
-      [{ ...primaryUsage(), usage_type: 'summarization', output_tokens: 1905 }, primaryUsage()],
-      submission,
-    );
-
-    const snap = store.get(contextSnapshotFamily(convo));
-    expect(237500 - (snap?.remainingContextTokens ?? 0)).toBe(55773);
-    expect(snap?.breakdown.messageTokens).toBe(55773 - 4205 - 1938);
-  });
 });

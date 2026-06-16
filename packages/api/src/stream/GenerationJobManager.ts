@@ -1,6 +1,17 @@
 import { logger, getTenantId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
-import { Constants, UsageEvents, parseTextParts } from 'librechat-data-provider';
-import type { Agents, TMessageContentParts } from 'librechat-data-provider';
+import {
+  Constants,
+  UsageEvents,
+  parseTextParts,
+  reconcileContextUsage,
+  promptTokensFromUsage,
+} from 'librechat-data-provider';
+import type {
+  Agents,
+  TMessageContentParts,
+  TTokenUsageEvent,
+  TContextUsageEvent,
+} from 'librechat-data-provider';
 import type { StandardGraph } from '@librechat/agents';
 import type {
   SerializableJobData,
@@ -1244,9 +1255,32 @@ class GenerationJobManagerClass {
     }
     tokenUsage.push(event.data);
 
-    await this.jobStore.updateJob(streamId, {
-      tokenUsage: JSON.stringify(tokenUsage),
-    });
+    const update: Partial<SerializableJobData> = { tokenUsage: JSON.stringify(tokenUsage) };
+
+    /** Reconcile the resume snapshot to this call's ACTUAL prompt tokens. A primary
+     *  usage is the post-invoke truth for the call the latest stored snapshot
+     *  precedes (no snapshot is captured between a call's pre-invoke dispatch and
+     *  its usage), so a resuming client restores the real context instead of the
+     *  calibration-inflated estimate — and a mid-call resume (no usage yet) simply
+     *  keeps the raw snapshot rather than mis-applying an earlier call's tokens. */
+    const usage = event.data as TTokenUsageEvent;
+    if (usage.usage_type == null && jobData.contextUsage) {
+      try {
+        const snapshot = JSON.parse(jobData.contextUsage) as TContextUsageEvent | null;
+        if (
+          snapshot != null &&
+          (snapshot.runId == null || usage.runId == null || snapshot.runId === usage.runId)
+        ) {
+          update.contextUsage = JSON.stringify(
+            reconcileContextUsage(snapshot, promptTokensFromUsage(usage)),
+          );
+        }
+      } catch {
+        /* leave the stored snapshot as-is on parse failure */
+      }
+    }
+
+    await this.jobStore.updateJob(streamId, update);
   }
 
   private async persistReplayEvent(streamId: string, event: t.ServerSentEvent): Promise<void> {
