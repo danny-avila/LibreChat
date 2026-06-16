@@ -8,6 +8,7 @@ import type {
   JobStatus,
   JobStatusTransition,
 } from '~/stream/interfaces/IJobStore';
+import { isPendingActionExpired } from '~/stream/interfaces/IJobStore';
 
 /**
  * Content state for a job - volatile, in-memory only.
@@ -321,8 +322,13 @@ export class InMemoryJobStore implements IJobStore {
     for (const streamId of trackedIds) {
       const job = this.jobs.get(streamId);
       // Include running jobs and jobs paused for human review (e.g. tool approval).
-      // A pending-approval job still occupies the user's conversation slot.
+      // A pending-approval job still occupies the user's conversation slot — but
+      // only while its prompt is live: a past-`expiresAt` approval no longer
+      // counts as active (cleanup/expiry will finalize it).
       if (job && (job.status === 'running' || job.status === 'requires_action')) {
+        if (job.status === 'requires_action' && isPendingActionExpired(job)) {
+          continue;
+        }
         activeIds.push(streamId);
       } else {
         // Self-healing: job completed/deleted but mapping wasn't cleaned - fix it now

@@ -214,5 +214,17 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
       const active = await manager.getActiveJobIdsForUser('user-mix');
       expect(active.sort()).toEqual(['s-paused', 's-running']);
     });
+
+    test('excludes a pending-approval job whose prompt has expired', async () => {
+      const streamId = 'stream-expired-active';
+      await manager.createJob(streamId, 'user-exp');
+      await manager.approvals.pause(
+        streamId,
+        buildAction(streamId, { expiresAt: Date.now() - 1000 }),
+      );
+
+      // Still requires_action, but the prompt is past expiry → no longer active.
+      expect(await manager.getActiveJobIdsForUser('user-exp')).not.toContain(streamId);
+    });
   });
 });
