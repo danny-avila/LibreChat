@@ -99,6 +99,7 @@ monospace.json
 *.iml
 *.pem
 config.local.ts
+client/src/dev.local.jsx
 **/storageState.json
 junit.xml
 **/.venv/

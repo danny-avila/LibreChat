@@ -1,5 +1,6 @@
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import fs from 'fs';
 import { defineConfig } from 'vite';
 import { createRequire } from 'module';
 import { VitePWA } from 'vite-plugin-pwa';
@@ -59,6 +60,17 @@ export default defineConfig(({ command }) => ({
   envPrefix: ['VITE_', 'SCRIPT_', 'DOMAIN_', 'ALLOW_'],
   plugins: [
     react(),
+    // Injects ./src/dev.local.jsx into the app entry in dev mode when present.
+    // This file is gitignored — use it for local dev tools (e.g. agentation).
+    {
+      name: 'dev-local-inject',
+      apply: 'serve',
+      transform(code: string, id: string) {
+        if (id.endsWith('main.jsx') && fs.existsSync(path.join(__dirname, 'src/dev.local.jsx'))) {
+          return code + "\nimport './dev.local.jsx';";
+        }
+      },
+    },
     {
       name: 'node-polyfills-shims-resolver',
       resolveId(id) {
