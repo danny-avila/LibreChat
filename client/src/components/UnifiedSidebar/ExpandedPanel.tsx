@@ -1,14 +1,14 @@
 import { memo, useCallback, lazy, Suspense } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilValue } from 'recoil';
 import { SquarePen } from 'lucide-react';
 import { QueryKeys } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
 import { Skeleton, Sidebar, Button, TooltipAnchor } from '@librechat/client';
 import type { NavLink } from '~/common';
-import { CLOSE_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
-import { useActivePanel, resolveActivePanel, DEFAULT_PANEL } from '~/Providers';
-import { useLocalize, useNewConvo } from '~/hooks';
 import { useShortcutAriaKey, useShortcutHint } from '~/hooks/useKeyboardShortcuts';
+import { useActivePanel, resolveActivePanel, DEFAULT_PANEL } from '~/Providers';
+import { CLOSE_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
+import { useLocalize, useNewConvo } from '~/hooks';
 import { clearMessagesCache, cn } from '~/utils';
 import store from '~/store';
 

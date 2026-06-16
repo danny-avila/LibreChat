@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo } from 'react';
-import { useMatch, useNavigate } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
-import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import { QueryKeys } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
+import { useMatch, useNavigate } from 'react-router-dom';
+import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import type { TMessage } from 'librechat-data-provider';
-import type { ShortcutOverride } from '~/store/misc';
 import type { ShortcutBinding } from '~/utils/shortcuts';
-import { useArchiveConvoMutation, useDeleteConversationMutation } from '~/data-provider';
+import type { ShortcutOverride } from '~/store/misc';
 import {
   bindingDisplayString,
   bindingFromEvent,
@@ -15,8 +14,9 @@ import {
   isMacPlatform,
   parseBinding,
 } from '~/utils/shortcuts';
-import { mainTextareaId } from '~/common';
+import { useArchiveConvoMutation, useDeleteConversationMutation } from '~/data-provider';
 import { clearMessagesCache } from '~/utils';
+import { mainTextareaId } from '~/common';
 import useNewConvo from './useNewConvo';
 import store from '~/store';
 

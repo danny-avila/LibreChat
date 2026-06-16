@@ -1,6 +1,7 @@
 import { useState, memo, useRef } from 'react';
-import * as Menu from '@ariakit/react/menu';
 import { useSetRecoilState } from 'recoil';
+import * as Menu from '@ariakit/react/menu';
+import { GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
 import {
   ChevronRight,
   CircleHelp,
@@ -11,7 +12,6 @@ import {
   Scale,
   ShieldCheck,
 } from 'lucide-react';
-import { GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
 import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
