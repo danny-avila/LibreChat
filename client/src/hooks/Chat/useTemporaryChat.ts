@@ -1,24 +1,31 @@
 import { useCallback } from 'react';
-import { Constants } from 'librechat-data-provider';
+import { Constants, isForcedTemporaryRetention } from 'librechat-data-provider';
 import { useRecoilState, useRecoilValue } from 'recoil';
 
+import { useGetStartupConfig } from '~/data-provider';
 import store from '~/store';
 
 export type UseTemporaryChatResult = {
   /** Only offered before a conversation has any history — it cannot be toggled mid-thread. */
   show: boolean;
   isTemporary: boolean;
+  isEnforced: boolean;
   toggle: () => void;
 };
 
 export default function useTemporaryChat(): UseTemporaryChatResult {
+  const { data: startupConfig } = useGetStartupConfig();
   const [isTemporary, setIsTemporary] = useRecoilState(store.isTemporary);
   const conversation = useRecoilValue(store.conversationByIndex(0));
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(0));
+  const isEnforced = isForcedTemporaryRetention(startupConfig?.interface?.retentionMode);
 
   const toggle = useCallback(() => {
+    if (isEnforced) {
+      return;
+    }
     setIsTemporary((previous) => !previous);
-  }, [setIsTemporary]);
+  }, [isEnforced, setIsTemporary]);
 
   const conversationId = conversation?.conversationId;
   const hasStarted = conversationId != null && conversationId !== Constants.NEW_CONVO;
@@ -26,7 +33,8 @@ export default function useTemporaryChat(): UseTemporaryChatResult {
 
   return {
     show: !hasStarted && !hasMessages && !isSubmitting,
-    isTemporary,
+    isTemporary: isEnforced || isTemporary,
+    isEnforced,
     toggle,
   };
 }

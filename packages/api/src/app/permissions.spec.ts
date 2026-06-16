@@ -1,5 +1,11 @@
 import { loadDefaultInterface } from '@librechat/data-schemas';
-import { SystemRoles, Permissions, PermissionTypes, roleDefaults } from 'librechat-data-provider';
+import {
+  SystemRoles,
+  Permissions,
+  roleDefaults,
+  RetentionMode,
+  PermissionTypes,
+} from 'librechat-data-provider';
 import type { TConfigDefaults, TCustomConfig } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import { updateInterfacePermissions } from './permissions';
@@ -192,6 +198,38 @@ describe('updateInterfacePermissions - permissions', () => {
     expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
       SystemRoles.ADMIN,
       expectedPermissionsForAdmin,
+      null,
+    );
+  });
+
+  it('forces TEMPORARY_CHAT use on for all roles when retentionMode is ephemeral, even without temporaryChat config', async () => {
+    const config = {
+      interface: {
+        retentionMode: RetentionMode.EPHEMERAL,
+      },
+    };
+    const configDefaults = { interface: {} } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
+    const appConfig = { config, interfaceConfig } as unknown as AppConfig;
+
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
+      SystemRoles.USER,
+      expect.objectContaining({
+        [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
+      }),
+      null,
+    );
+    expect(mockUpdateAccessPermissions).toHaveBeenCalledWith(
+      SystemRoles.ADMIN,
+      expect.objectContaining({
+        [PermissionTypes.TEMPORARY_CHAT]: { [Permissions.USE]: true },
+      }),
       null,
     );
   });

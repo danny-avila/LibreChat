@@ -1,4 +1,4 @@
-import { RetentionMode } from 'librechat-data-provider';
+import { isAllDataRetention } from 'librechat-data-provider';
 import { createFallbackRetentionDate } from '@librechat/data-schemas';
 import type { AppConfig } from '@librechat/data-schemas';
 
@@ -103,7 +103,7 @@ async function computeRetentionExpiry(
   req: RetentionRequest | null | undefined,
   dependencies: RetentionDependencies,
 ): Promise<RetentionExpiry> {
-  if (req?.config?.interfaceConfig?.retentionMode === RetentionMode.ALL) {
+  if (isAllDataRetention(req?.config?.interfaceConfig?.retentionMode)) {
     return createRetentionExpiry(req, dependencies);
   }
 
@@ -179,7 +179,7 @@ const shouldRetainPersistentAgentFile = ({
   const interfaceConfig = req?.config?.interfaceConfig;
   return (
     isPersistentAgentResourceUpload({ messageAttachment, toolResource }) &&
-    (interfaceConfig?.retentionMode !== RetentionMode.ALL ||
+    (!isAllDataRetention(interfaceConfig?.retentionMode) ||
       interfaceConfig?.retainAgentFiles === true)
   );
 };
@@ -218,7 +218,7 @@ export async function getSharedLinkExpiration(
     return undefined;
   }
 
-  const isRetentionAll = req?.config?.interfaceConfig?.retentionMode === RetentionMode.ALL;
+  const isRetentionAll = isAllDataRetention(req?.config?.interfaceConfig?.retentionMode);
   const convo = await dependencies.getConvo(userId, conversationId);
   if (!convo) {
     return undefined;
