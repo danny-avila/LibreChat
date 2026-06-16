@@ -36,6 +36,11 @@ const loadInlinePromptsView = () =>
     Component: m.default,
   }));
 
+const loadSkillsLayout = () =>
+  import('~/components/Skills/layouts/SkillsLayout').then((m) => ({
+    Component: m.default,
+  }));
+
 const loadSkillsView = () =>
   import('~/components/Skills/layouts/SkillsView').then((m) => ({
     Component: m.default,
@@ -49,6 +54,11 @@ const loadProjectsView = () =>
 const loadProjectWorkspace = () =>
   import('~/components/Projects').then((m) => ({
     Component: m.ProjectWorkspace,
+  }));
+
+const loadAgentsView = () =>
+  import('~/components/SidePanel/Agents/layouts/AgentsView').then((m) => ({
+    Component: m.default,
   }));
 
 const loadMemoriesView = () =>
@@ -168,19 +178,13 @@ export const router = createBrowserRouter(
             },
             {
               path: 'skills',
-              lazy: loadSkillsView,
-            },
-            {
-              path: 'skills/new',
-              lazy: loadSkillsView,
-            },
-            {
-              path: 'skills/:skillId',
-              lazy: loadSkillsView,
-            },
-            {
-              path: 'skills/:skillId/edit',
-              lazy: loadSkillsView,
+              lazy: loadSkillsLayout,
+              children: [
+                { index: true, lazy: loadSkillsView },
+                { path: 'new', lazy: loadSkillsView },
+                { path: ':skillId', lazy: loadSkillsView },
+                { path: ':skillId/edit', lazy: loadSkillsView },
+              ],
             },
             {
               path: 'projects',
@@ -190,14 +194,7 @@ export const router = createBrowserRouter(
               path: 'projects/:projectId',
               lazy: loadProjectWorkspace,
             },
-            {
-              path: 'agents',
-              element: (
-                <MarketplaceProvider>
-                  <AgentMarketplace />
-                </MarketplaceProvider>
-              ),
-            },
+            { path: 'agents', lazy: loadAgentsView },
             {
               path: 'agents/:category',
               element: (

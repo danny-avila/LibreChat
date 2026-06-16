@@ -72,7 +72,7 @@ export default function useUnifiedSidebarLinks() {
         label: '',
         icon: LayoutGrid,
         id: 'marketplace',
-        onClick: () => navigate('/agents'),
+        onClick: () => navigate('/agents/explore'),
       });
     }
 

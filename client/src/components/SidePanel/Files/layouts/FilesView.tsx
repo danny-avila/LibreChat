@@ -20,8 +20,8 @@ export default function FilesView() {
 
   return (
     <main className="flex h-full min-h-0 flex-col overflow-auto bg-surface-primary text-text-primary">
-      <PageHeader title={localize('com_nav_my_files')} />
-      <div className="flex w-full flex-1 flex-col gap-6 px-6 pb-6">
+      <PageHeader title={localize('com_sidepanel_attach_files')} />
+      <div className="flex w-full flex-1 flex-col gap-6 p-6">
         <DataTable columns={columns} data={files} />
       </div>
     </main>

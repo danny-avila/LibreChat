@@ -12,7 +12,7 @@ export default function MCPView() {
   return (
     <main className="flex h-full min-h-0 flex-col overflow-auto bg-surface-primary text-text-primary">
       <PageHeader title={localize('com_nav_setting_mcp')} />
-      <div className="flex w-full flex-1 flex-col gap-6 px-6 pb-6">
+      <div className="flex w-full flex-1 flex-col gap-6 p-6">
         <MCPBuilderPanel noPadding />
       </div>
     </main>

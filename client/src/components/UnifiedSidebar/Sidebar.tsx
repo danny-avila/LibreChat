@@ -153,7 +153,7 @@ function FullSidebar({
   return (
     <div className="flex h-full w-full flex-col overflow-hidden border-r border-border-light bg-white">
       {/* Header: logo + name + collapse */}
-      <div className="flex flex-shrink-0 items-center justify-between p-4">
+      <div className="flex flex-shrink-0 items-center justify-between px-4 pb-[11px] pt-[12px]">
         <div className="flex items-center gap-2">
           <LibreChatLogo className="h-5 w-5 text-text-primary" />
           <span className="text-xl font-normal text-text-primary">LibreChat</span>
@@ -178,7 +178,7 @@ function FullSidebar({
         />
       </div>
 
-      <div className="mx-4 flex-shrink-0 border-b border-border-light" />
+      <div className="flex-shrink-0 border-b border-border-light" />
 
       {/* Nav items */}
       <div className="flex flex-shrink-0 flex-col gap-0.5 px-4 py-2">

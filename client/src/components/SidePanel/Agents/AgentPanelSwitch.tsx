@@ -7,15 +7,15 @@ import ActionsPanel from './ActionsPanel';
 import AgentPanel from './AgentPanel';
 import store from '~/store';
 
-export default function AgentPanelSwitch() {
+export default function AgentPanelSwitch({ noPadding = false }: { noPadding?: boolean }) {
   return (
     <AgentPanelProvider>
-      <AgentPanelSwitchWithContext />
+      <AgentPanelSwitchWithContext noPadding={noPadding} />
     </AgentPanelProvider>
   );
 }
 
-function AgentPanelSwitchWithContext() {
+function AgentPanelSwitchWithContext({ noPadding }: { noPadding?: boolean }) {
   const { activePanel, setCurrentAgentId } = useAgentPanelContext();
   const agentId = useRecoilValue(store.conversationAgentIdByIndex(0));
 
@@ -32,5 +32,5 @@ function AgentPanelSwitchWithContext() {
   if (activePanel === Panel.version) {
     return <VersionPanel />;
   }
-  return <AgentPanel />;
+  return <AgentPanel noPadding={noPadding} />;
 }

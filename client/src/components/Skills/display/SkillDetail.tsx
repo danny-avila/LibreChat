@@ -86,7 +86,7 @@ export default function SkillDetail({ skill, onEdit, onDelete }: SkillDetailProp
 
   return (
     <article
-      className="flex h-full min-w-0 flex-col gap-2 overflow-y-auto px-5 pb-5"
+      className="flex h-full min-w-0 flex-col gap-2 overflow-y-auto p-6"
       aria-label={skill.name}
     >
       {/* Header row */}

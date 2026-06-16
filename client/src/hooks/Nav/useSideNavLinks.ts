@@ -107,6 +107,7 @@ export default function useSideNavLinks({
         label: '',
         icon: Bot,
         id: EModelEndpoint.agents,
+        href: '/agents',
         Component: AgentPanelSwitch,
       });
     }

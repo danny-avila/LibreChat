@@ -160,7 +160,7 @@ export default function SkillForm({ skillId }: SkillFormProps) {
     <FormProvider {...methods}>
       <form
         onSubmit={handleSubmit(onSubmit)}
-        className="w-full px-4 py-2"
+        className="w-full p-6"
         aria-label={localize('com_ui_skill_edit_title')}
       >
         <h1 className="sr-only">{localize('com_ui_skill_edit_title')}</h1>
