@@ -72,6 +72,33 @@ describe('mergeQuerySettingsWithSpec', () => {
       expect(result.modelLabel).toBeNull();
       expect(result.greeting).toBeUndefined();
     });
+
+    it('preserves the active spec for model override links when model specs are enforced', () => {
+      const querySettings: TPreset = {
+        model: 'claude-sonnet-4-20250514',
+        endpoint: EModelEndpoint.anthropic,
+      };
+
+      const result = mergeQuerySettingsWithSpec(specPreset, querySettings, { enforce: true });
+
+      expect(result).toEqual(specPreset);
+    });
+
+    it('still clears spec display fields for agent share links when model specs are enforced', () => {
+      const querySettings: TPreset = {
+        agent_id: 'agent_123',
+        endpoint: EModelEndpoint.agents,
+      };
+
+      const result = mergeQuerySettingsWithSpec(specPreset, querySettings, { enforce: true });
+
+      expect(result.agent_id).toBe('agent_123');
+      expect(result.endpoint).toBe(EModelEndpoint.agents);
+      expect(result.spec).toBeNull();
+      expect(result.iconURL).toBeNull();
+      expect(result.modelLabel).toBeNull();
+      expect(result.greeting).toBeUndefined();
+    });
   });
 
   describe('when query explicitly sets a spec', () => {

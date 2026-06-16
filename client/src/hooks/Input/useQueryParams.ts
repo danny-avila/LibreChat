@@ -16,6 +16,7 @@ import {
   processValidSettings,
   getModelSpecIconURL,
   getConvoSwitchLogic,
+  shouldIgnoreQuerySettingsForModelSpecEnforce,
   logger,
 } from '~/utils';
 import { useAuthContext, useAgentsMap, useDefaultConvo, useSubmitMessage } from '~/hooks';
@@ -280,7 +281,13 @@ export default function useQueryParams({
       }
 
       const { decodedPrompt, validSettings, shouldAutoSubmit } = processQueryParams();
-      const hasSettings = Object.keys(validSettings).length > 0;
+      const effectiveSettings = shouldIgnoreQuerySettingsForModelSpecEnforce({
+        enforce: startupConfig.modelSpecs?.enforce === true,
+        querySettings: validSettings,
+      })
+        ? ({} as TPreset)
+        : validSettings;
+      const hasSettings = Object.keys(effectiveSettings).length > 0;
 
       const autoSubmitAllowed = startupConfig.interface?.autoSubmitFromUrl !== false;
       const willAutoSubmit = shouldAutoSubmit && autoSubmitAllowed;
@@ -302,7 +309,7 @@ export default function useQueryParams({
       };
 
       if (hasSettings) {
-        validSettingsRef.current = validSettings;
+        validSettingsRef.current = effectiveSettings;
       }
 
       if (decodedPrompt) {
@@ -345,7 +352,7 @@ export default function useQueryParams({
       }
 
       if (hasSettings && !areSettingsApplied()) {
-        newQueryConvo(validSettings);
+        newQueryConvo(effectiveSettings);
       }
 
       success();

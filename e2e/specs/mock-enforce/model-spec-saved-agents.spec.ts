@@ -20,6 +20,12 @@ type AgentResponse = {
   name?: string | null;
 };
 
+type ChatPayload = {
+  endpoint?: string;
+  model?: string;
+  spec?: string | null;
+};
+
 const modelTrigger = (page: Page) => page.getByRole('button', { name: 'Select a model' }).first();
 
 async function createAgent(page: Page, name: string): Promise<AgentResponse> {
@@ -67,6 +73,37 @@ async function sendMessageAndAwaitAgentResponse(page: Page, text: string): Promi
 }
 
 test.describe('model specs enforcement and saved agents', () => {
+  test('keeps the enforced model spec when URL has plain model override params', async ({ page }) => {
+    test.setTimeout(120000);
+
+    await page.goto(
+      `${NEW_CHAT_PATH}?endpoint=${encodeURIComponent('Mock Provider B')}&model=mock-model-b`,
+      { timeout: 10000 },
+    );
+
+    const token = await getAccessToken(page);
+    const startupConfig = await requestJson<StartupConfigResponse>(page, {
+      path: '/api/config',
+      token,
+    });
+    expect(startupConfig.modelSpecs?.enforce).toBe(true);
+
+    const response = await sendMessageAndAwaitAgentResponse(
+      page,
+      'hello from a stale endpoint/model URL with enforced specs',
+    );
+    expect(response.ok()).toBeTruthy();
+
+    const payload = response.request().postDataJSON() as ChatPayload;
+    expect(payload.endpoint).toBe('Mock Provider A');
+    expect(payload.model).toBe('mock-model-a');
+    expect(payload.spec).toBeTruthy();
+    expect(payload.spec).not.toBe('e2e-mock-provider-b');
+
+    await expect(mockReply(page)).toBeVisible({ timeout: 30000 });
+    await expect(messagesView(page).getByText('No model spec selected')).toHaveCount(0);
+  });
+
   test('allows saved agents to chat without a request-level model spec', async ({ page }) => {
     test.setTimeout(120000);
 

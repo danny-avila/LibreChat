@@ -179,7 +179,9 @@ export default function ChatRoute() {
       const querySettings = processValidSettings(queryParams);
 
       if (Object.keys(querySettings).length > 0) {
-        return mergeQuerySettingsWithSpec(specPreset, querySettings);
+        return mergeQuerySettingsWithSpec(specPreset, querySettings, {
+          enforce: startupConfig?.modelSpecs?.enforce === true,
+        });
       }
       return specPreset;
     };

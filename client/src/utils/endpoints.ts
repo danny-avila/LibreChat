@@ -507,6 +507,32 @@ export const specDisplayFieldReset = {
   greeting: undefined as string | undefined,
 };
 
+function hasQueryValue(value: unknown): boolean {
+  return typeof value === 'string' ? value.trim() !== '' : value != null;
+}
+
+export function shouldIgnoreQuerySettingsForModelSpecEnforce({
+  enforce,
+  querySettings,
+}: {
+  enforce?: boolean;
+  querySettings?: Partial<t.TPreset>;
+}): boolean {
+  if (!enforce || !querySettings || Object.keys(querySettings).length === 0) {
+    return false;
+  }
+
+  if (
+    hasQueryValue(querySettings.spec) ||
+    hasQueryValue(querySettings.agent_id) ||
+    hasQueryValue(querySettings.assistant_id)
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
 /**
  * Merges a spec preset base with URL query settings, clearing spec display fields
  * when the query doesn't explicitly set a spec. Prevents spec contamination on
@@ -515,7 +541,18 @@ export const specDisplayFieldReset = {
 export function mergeQuerySettingsWithSpec(
   specPreset: t.TPreset | undefined,
   querySettings: t.TPreset,
+  options: { enforce?: boolean } = {},
 ): t.TPreset {
+  if (
+    specPreset != null &&
+    shouldIgnoreQuerySettingsForModelSpecEnforce({
+      enforce: options.enforce,
+      querySettings,
+    })
+  ) {
+    return specPreset;
+  }
+
   return {
     ...specPreset,
     ...querySettings,
