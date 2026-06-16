@@ -18,7 +18,7 @@ const azureAssistants = require('~/server/services/Endpoints/azureAssistants');
 const assistants = require('~/server/services/Endpoints/assistants');
 const { getEndpointsConfig } = require('~/server/services/Config');
 const agents = require('~/server/services/Endpoints/agents');
-const { updateFilesUsage } = require('~/models');
+const { updateFilesUsage, getAgent } = require('~/models');
 
 const buildFunction = {
   [EModelEndpoint.agents]: agents.buildOptions,
@@ -28,6 +28,80 @@ const buildFunction = {
 
 const isSavedAgentRequest = (endpoint, parsedBody) =>
   isAgentsEndpoint(endpoint) && !isEphemeralAgentId(parsedBody?.agent_id);
+
+const isObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
+
+const agentMatchesEnforcedModelSpec = (agent, list) =>
+  list.some(
+    (modelSpec) =>
+      modelSpec?.preset?.endpoint === agent?.provider && modelSpec?.preset?.model === agent?.model,
+  );
+
+const validateSavedAgentModelSpec = async ({ agent_id, list }) => {
+  if (!agent_id || isEphemeralAgentId(agent_id)) {
+    return { isSavedAgent: false };
+  }
+
+  const agent = await getAgent({ id: agent_id });
+  if (!agent) {
+    return { isSavedAgent: true, error: 'Invalid agent' };
+  }
+
+  if (!agentMatchesEnforcedModelSpec(agent, list)) {
+    return { isSavedAgent: true, error: 'Model spec mismatch' };
+  }
+
+  return { isSavedAgent: true };
+};
+
+const enforceAddedConvoModelSpec = async ({ req, list, endpointsConfig }) => {
+  const addedConvo = req.body?.addedConvo;
+  if (!isObject(addedConvo)) {
+    return null;
+  }
+
+  const savedAgentResult = await validateSavedAgentModelSpec({
+    agent_id: addedConvo.agent_id,
+    list,
+  });
+  if (savedAgentResult.error) {
+    return savedAgentResult.error;
+  }
+  if (savedAgentResult.isSavedAgent) {
+    return null;
+  }
+
+  const { endpoint, endpointType, spec } = addedConvo;
+  if (!spec) {
+    return 'No model spec selected';
+  }
+
+  const modelSpec = findModelSpecByName({ list }, spec);
+  if (!modelSpec) {
+    return 'Invalid model spec';
+  }
+
+  if (!isModelSpecEndpointMatch(modelSpec, endpoint)) {
+    return 'Model spec mismatch';
+  }
+
+  try {
+    const result = applyModelSpecPreset({
+      modelSpec,
+      parsedBody: addedConvo,
+      endpoint,
+      endpointType,
+      defaultParamsEndpoint: getDefaultParamsEndpoint(endpointsConfig, endpoint),
+      includePresetDefaults: true,
+    });
+    req.body.addedConvo = { ...addedConvo, ...result.parsedBody };
+  } catch (error) {
+    logger.error(`Error parsing added model spec for endpoint ${endpoint}`, error);
+    return 'Error parsing model spec';
+  }
+
+  return null;
+};
 
 async function buildEndpointOption(req, res, next) {
   const { endpoint, endpointType } = req.body;
@@ -65,42 +139,54 @@ async function buildEndpointOption(req, res, next) {
 
   const appConfig = req.config;
   let appliedModelSpecPrivateFields = new Set();
-  if (
-    appConfig.modelSpecs?.list?.length &&
-    appConfig.modelSpecs?.enforce &&
-    !isSavedAgentRequest(endpoint, parsedBody)
-  ) {
+  if (appConfig.modelSpecs?.list?.length && appConfig.modelSpecs?.enforce) {
     /** @type {{ list: TModelSpec[] }}*/
     const { list } = appConfig.modelSpecs;
-    const { spec } = parsedBody;
+    const savedAgentResult = await validateSavedAgentModelSpec({
+      agent_id: isSavedAgentRequest(endpoint, parsedBody) ? parsedBody.agent_id : undefined,
+      list,
+    });
 
-    if (!spec) {
-      return handleError(res, { text: 'No model spec selected' });
+    if (savedAgentResult.error) {
+      return handleError(res, { text: savedAgentResult.error });
     }
 
-    const currentModelSpec = findModelSpecByName({ list }, spec);
-    if (!currentModelSpec) {
-      return handleError(res, { text: 'Invalid model spec' });
+    if (!savedAgentResult.isSavedAgent) {
+      const { spec } = parsedBody;
+
+      if (!spec) {
+        return handleError(res, { text: 'No model spec selected' });
+      }
+
+      const currentModelSpec = findModelSpecByName({ list }, spec);
+      if (!currentModelSpec) {
+        return handleError(res, { text: 'Invalid model spec' });
+      }
+
+      if (!isModelSpecEndpointMatch(currentModelSpec, endpoint)) {
+        return handleError(res, { text: 'Model spec mismatch' });
+      }
+
+      try {
+        const result = applyModelSpecPreset({
+          modelSpec: currentModelSpec,
+          parsedBody,
+          endpoint,
+          endpointType,
+          defaultParamsEndpoint,
+          includePresetDefaults: true,
+        });
+        parsedBody = result.parsedBody;
+        appliedModelSpecPrivateFields = result.appliedPrivateFields;
+      } catch (error) {
+        logger.error(`Error parsing model spec for endpoint ${endpoint}`, error);
+        return handleError(res, { text: 'Error parsing model spec' });
+      }
     }
 
-    if (!isModelSpecEndpointMatch(currentModelSpec, endpoint)) {
-      return handleError(res, { text: 'Model spec mismatch' });
-    }
-
-    try {
-      const result = applyModelSpecPreset({
-        modelSpec: currentModelSpec,
-        parsedBody,
-        endpoint,
-        endpointType,
-        defaultParamsEndpoint,
-        includePresetDefaults: true,
-      });
-      parsedBody = result.parsedBody;
-      appliedModelSpecPrivateFields = result.appliedPrivateFields;
-    } catch (error) {
-      logger.error(`Error parsing model spec for endpoint ${endpoint}`, error);
-      return handleError(res, { text: 'Error parsing model spec' });
+    const addedConvoError = await enforceAddedConvoModelSpec({ req, list, endpointsConfig });
+    if (addedConvoError) {
+      return handleError(res, { text: addedConvoError });
     }
   } else if (parsedBody.spec && appConfig.modelSpecs?.list) {
     const modelSpec = findModelSpecByName(appConfig.modelSpecs, parsedBody.spec);
