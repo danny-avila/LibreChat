@@ -102,18 +102,18 @@ export default function useTokenUsage({
   }, [conversationKey, branchTotals.tailId, snapshotsByAnchor]);
 
   const resolvedMax = limits.maxContextTokens;
-  /** A persisted snapshot is "fresh" only when its window matches the resolved
-   *  one — a model/window switch leaves its baked breakdown stale (G1). */
-  const branchSnapshotFresh =
-    branchSnapshot != null &&
-    (resolvedMax == null || branchSnapshot.breakdown.maxContextTokens === resolvedMax);
 
-  /** Ask the server to project the branch (agents SDK, no model call) when no
-   *  fresh snapshot covers it — snapshot-less branches (G2) and post window/
-   *  model switch (G1). Cached + refetched by branch/endpoint/model/window. */
+  /** Project the branch (agents SDK, no model call) ONLY when no persisted/live
+   *  snapshot covers it — snapshot-less branches (G2: pre-feature history,
+   *  imports, never-generated branches). A present snapshot stays authoritative;
+   *  reliable window-switch (G1) detection needs the snapshot to carry its
+   *  model/window (deferred to the fidelity follow-up), and the SDK window
+   *  (reserve-derived) doesn't equal the client-resolved raw window, so we must
+   *  NOT mis-flag a valid snapshot as stale here. Cached + refetched by branch/
+   *  endpoint/model/window/revision. */
   const projectionParams: TContextProjectionRequest | null =
     !isSubmitting &&
-    !branchSnapshotFresh &&
+    branchSnapshot == null &&
     conversation?.conversationId != null &&
     conversation.conversationId !== Constants.NEW_CONVO &&
     branchTotals.tailId != null &&
@@ -241,28 +241,20 @@ export default function useTokenUsage({
      *  one branch's breakdown onto its siblings. */
     const currentActive =
       snapshot != null &&
-      (isSubmitting ||
-        (snapshot.anchorMessageId != null &&
-          branchTotals.containsAnchor &&
-          /** G1: once streaming ends, a model/window switch leaves the live
-           *  snapshot's baked window stale — defer to the projection instead of
-           *  showing the old window/prune boundary on the current branch. */
-          (resolvedMax == null || snapshot.breakdown.maxContextTokens === resolvedMax)));
+      (isSubmitting || (snapshot.anchorMessageId != null && branchTotals.containsAnchor));
 
-    /** Precedence: live/active snapshot → fresh persisted branch snapshot →
-     *  server projection (covers G1 stale-window + G2 snapshot-less branches) →
-     *  a window-stale persisted snapshot (still better than the coarse estimate)
-     *  → per-message estimate. Snapshot and projection share the render-relevant
-     *  fields, so they render uniformly. */
+    /** Precedence: live/active snapshot → persisted branch snapshot → server
+     *  projection (snapshot-less branches, G2) → per-message estimate. The first
+     *  two preserve the pre-projection behavior exactly; the projection only
+     *  slots in ahead of the estimate when no snapshot exists. Snapshot and
+     *  projection share the render-relevant fields, so they render uniformly. */
     let effective: ContextSnapshot | TContextUsageEvent | null = null;
     if (currentActive) {
       effective = snapshot;
-    } else if (branchSnapshotFresh) {
+    } else if (branchSnapshot != null) {
       effective = branchSnapshot;
     } else if (projection != null) {
       effective = projection;
-    } else if (branchSnapshot != null) {
-      effective = branchSnapshot;
     }
 
     if (effective != null) {
@@ -331,8 +323,6 @@ export default function useTokenUsage({
     liveTokens,
     limits,
     branchSnapshot,
-    branchSnapshotFresh,
     projection,
-    resolvedMax,
   ]);
 }
