@@ -10,7 +10,7 @@ import type {
   JobStatus,
   JobStatusTransition,
 } from '~/stream/interfaces/IJobStore';
-import { isPendingActionExpired } from '~/stream/interfaces/IJobStore';
+import { isPendingActionStale } from '~/stream/interfaces/IJobStore';
 
 /**
  * Atomic compare-and-set on the job hash — the single-winner decision for a
@@ -266,7 +266,12 @@ export class RedisJobStore implements IJobStore {
     const fields = Object.entries(serialized).flat();
 
     if (updates.status === 'requires_action') {
-      await this.transitionToRequiresAction(key, streamId, fields);
+      await this.transitionToRequiresAction(
+        key,
+        streamId,
+        fields,
+        this.pauseTtlSeconds(updates.pendingAction),
+      );
       return;
     }
 
@@ -345,6 +350,22 @@ export class RedisJobStore implements IJobStore {
     }
   }
 
+  /**
+   * Live-key TTL (seconds) for a paused job. Defaults to the running TTL but
+   * extends to cover a pendingAction whose `expiresAt` is farther out, plus a
+   * grace margin so a decision arriving right at the deadline can still resume.
+   * Without this, a long approval window (e.g. 1h) on the default 20m stream
+   * TTL would let Redis evict the paused job mid-window.
+   */
+  private pauseTtlSeconds(pendingAction?: Agents.PendingAction): number {
+    const exp = pendingAction?.expiresAt;
+    if (exp == null) {
+      return this.ttl.running;
+    }
+    const secondsUntilExpiry = Math.ceil((exp - Date.now()) / 1000) + 60;
+    return Math.max(this.ttl.running, secondsUntilExpiry);
+  }
+
   /** The membership set a status belongs to; terminal statuses have none. */
   private statusSetKey(status: JobStatus): string | null {
     if (status === 'running') {
@@ -370,7 +391,13 @@ export class RedisJobStore implements IJobStore {
     const remSet = this.statusSetKey(from);
     const addSet = this.statusSetKey(to);
     const terminal = addSet === null;
-    const ttl = terminal ? this.ttl.completed : this.ttl.running;
+    let ttl = terminal ? this.ttl.completed : this.ttl.running;
+    if (to === 'requires_action') {
+      // A paused job must outlive its approval window, even when that window is
+      // longer than the running TTL — otherwise Redis evicts it before a
+      // decision can resume it.
+      ttl = this.pauseTtlSeconds(patch?.pendingAction);
+    }
 
     // 1) Single-winner decision: an atomic CAS on the single-slot job hash.
     //    Works identically on cluster and single-node, so two concurrent
@@ -436,9 +463,12 @@ export class RedisJobStore implements IJobStore {
     key: string,
     streamId: string,
     fields: string[],
+    ttlSeconds: number = this.ttl.running,
   ): Promise<void> {
     // Job paused for human review — non-terminal. Keep the user-active set
-    // untouched so resume can rebuild state from the persisted job.
+    // untouched so resume can rebuild state from the persisted job. The live
+    // TTL covers the approval window (see pauseTtlSeconds) so a long-pending
+    // job isn't evicted before a decision arrives.
     if (this.isCluster) {
       const exists = await this.redis.exists(key);
       if (exists !== 1) {
@@ -447,7 +477,9 @@ export class RedisJobStore implements IJobStore {
       await this.redis.srem(KEYS.runningJobs, streamId);
       await this.redis.sadd(KEYS.requiresActionJobs, streamId);
       await this.updateExistingJobHash(key, fields);
-      await this.refreshLiveJobTtls(key, streamId);
+      await this.redis.expire(key, ttlSeconds);
+      await this.redis.expire(KEYS.chunks(streamId), ttlSeconds);
+      await this.redis.expire(KEYS.runSteps(streamId), ttlSeconds);
       return;
     }
 
@@ -460,7 +492,7 @@ export class RedisJobStore implements IJobStore {
       KEYS.chunks(streamId),
       KEYS.runSteps(streamId),
       streamId,
-      String(this.ttl.running),
+      String(ttlSeconds),
       ...fields,
     );
   }
@@ -675,11 +707,12 @@ export class RedisJobStore implements IJobStore {
             return 1;
           }
 
-          // Past-due approval: finalize it (aborted) so it stops occupying the
-          // slot and its stream contents are reclaimed, mirroring
-          // ApprovalLifecycle.expire(). transitionStatus runs the terminal
-          // content cleanup (sets, chunks, run-steps, userJobs, completed TTL).
-          if (isPendingActionExpired(job)) {
+          // Stale approval (expired, or missing/malformed pendingAction):
+          // finalize it (aborted) so it stops occupying the slot and its stream
+          // contents are reclaimed, mirroring ApprovalLifecycle.expire().
+          // transitionStatus runs the terminal content cleanup (sets, chunks,
+          // run-steps, userJobs, completed TTL).
+          if (isPendingActionStale(job)) {
             await this.transitionStatus(streamId, {
               from: 'requires_action',
               to: 'aborted',
@@ -779,7 +812,7 @@ export class RedisJobStore implements IJobStore {
       // counts as active (cleanup/expiry will finalize it), so the client stops
       // polling and can complete.
       if (job && (job.status === 'running' || job.status === 'requires_action')) {
-        if (job.status === 'requires_action' && isPendingActionExpired(job)) {
+        if (job.status === 'requires_action' && isPendingActionStale(job)) {
           continue;
         }
         activeIds.push(streamId);
