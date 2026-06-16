@@ -88,6 +88,8 @@ export class EcsStack extends cdk.Stack {
       librechatService,
     );
 
+    this.CreateMeilisearchService(props, commonExecRole, vpc, cluster, librechatService);
+
     if (!isProd) {
       this.CreateDatabaseSidecars(
         props,
@@ -98,7 +100,6 @@ export class EcsStack extends cdk.Stack {
         mongoSecret,
       );
       this.CreateAdminPanelService(props, commonExecRole, vpc, cluster, librechatService);
-      this.CreateMeilisearchService(props, commonExecRole, vpc, cluster, librechatService);
     }
   }
 
