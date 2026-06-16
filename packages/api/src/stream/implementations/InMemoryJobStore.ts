@@ -207,14 +207,32 @@ export class InMemoryJobStore implements IJobStore {
         if (this.ttlAfterComplete === 0 || now - job.completedAt > this.ttlAfterComplete) {
           toDelete.push(streamId);
         }
+      } else if (job.status === 'requires_action' && isPendingActionExpired(job)) {
+        // Past-due approval: finalize it (aborted) so it stops occupying the
+        // user slot and its content state is reclaimed, mirroring
+        // ApprovalLifecycle.expire(). Skipping it (active-list filter) alone
+        // would leave the job resident indefinitely.
+        job.status = 'aborted';
+        job.completedAt = now;
+        job.error = 'Approval expired before a decision was made';
+        delete job.pendingAction;
+        delete job.pendingActionId;
+        if (this.ttlAfterComplete === 0) {
+          toDelete.push(streamId);
+        }
       } else if (this.staleJobTimeout > 0 && job.status === 'running') {
         // Failsafe: reap jobs stuck in "running" with no generation activity for
         // longer than the stale timeout. These are crashed/hung generations that
         // never reached a terminal state; without this they accumulate their
-        // content state in memory until the process OOMs. Reaping keys off last
-        // activity (not creation time) so a long but live stream is never reaped,
-        // mirroring RedisJobStore refreshing the running TTL on each chunk.
-        const lastActive = this.lastActivity.get(streamId) ?? job.lastActiveAt ?? job.createdAt;
+        // content state in memory until the process OOMs. Reaping keys off the
+        // most recent liveness signal (not creation time) so a long but live
+        // stream is never reaped, and a just-resumed approval (fresh
+        // `lastActiveAt`) wins over a stale per-chunk `lastActivity` entry.
+        const lastActive = Math.max(
+          this.lastActivity.get(streamId) ?? 0,
+          job.lastActiveAt ?? 0,
+          job.createdAt,
+        );
         if (now - lastActive > this.staleJobTimeout) {
           toDelete.push(streamId);
           staleRunning++;

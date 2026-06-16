@@ -202,7 +202,14 @@ router.get('/chat/status/:conversationId', async (req, res) => {
   // Get resume state which contains aggregatedContent
   // Avoid calling both getStreamInfo and getResumeState (both fetch content)
   const resumeState = await GenerationJobManager.getResumeState(conversationId);
-  const isActive = job.status === 'running';
+  // A job paused for human review is still active (consistent with /chat/active),
+  // so the client resumes/subscribes rather than treating it as finished — unless
+  // its prompt has already expired (cleanup/expiry will finalize it).
+  const pendingExpired =
+    job.metadata.pendingAction?.expiresAt != null &&
+    job.metadata.pendingAction.expiresAt <= Date.now();
+  const isActive =
+    job.status === 'running' || (job.status === 'requires_action' && !pendingExpired);
 
   res.json({
     active: isActive,

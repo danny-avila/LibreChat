@@ -228,3 +228,24 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
     });
   });
 });
+
+describe('InMemoryJobStore — approval expiry cleanup', () => {
+  test('cleanup() finalizes and reclaims a past-expiry pending-approval job', async () => {
+    const store = new InMemoryJobStore({ ttlAfterComplete: 0 });
+    await store.createJob('s1', 'u1');
+
+    const action = buildPendingAction(
+      buildToolApprovalPayload([{ name: 'shell', arguments: {}, tool_call_id: 'c1' }]),
+      { streamId: 's1', ttlMs: -1000 },
+    );
+    await store.transitionStatus('s1', {
+      from: 'running',
+      to: 'requires_action',
+      patch: { pendingAction: action, pendingActionId: action.actionId },
+    });
+
+    // A past-expiry approval must be finalized + reclaimed, not left resident.
+    await store.cleanup();
+    expect(await store.getJob('s1')).toBeNull();
+  });
+});
