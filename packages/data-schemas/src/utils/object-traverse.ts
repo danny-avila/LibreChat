@@ -88,25 +88,24 @@ function deleteProperty(obj: TraversableObject, key: string | number): void {
 }
 
 function forEach(obj: unknown, callback: ForEachCallback): void {
-  const visited = new WeakSet<object>();
-
   function walk(node: unknown, path: (string | number)[] = [], parent?: TraverseContext): void {
-    // Check for circular references
+    // Detect circular references by walking the ancestor chain. A node is only
+    // circular when it appears among its own ancestors; a shared (non-circular)
+    // reference that merely appears in more than one branch must still be
+    // traversed independently for each occurrence.
     let circular: TraverseContext | null = null;
     if (isObject(node)) {
-      if (visited.has(node)) {
-        // Find the circular reference in the parent chain
-        let p = parent;
-        while (p) {
-          if (p.node === node) {
-            circular = p;
-            break;
-          }
-          p = p.parent;
+      let p = parent;
+      while (p) {
+        if (p.node === node) {
+          circular = p;
+          break;
         }
-        return; // Skip circular references
+        p = p.parent;
       }
-      visited.add(node);
+      if (circular) {
+        return; // Skip true circular references to avoid infinite recursion
+      }
     }
 
     const key = path.length > 0 ? path[path.length - 1] : undefined;
