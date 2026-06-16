@@ -23,6 +23,24 @@ describe('promptTokensFromUsage', () => {
   it('handles missing fields', () => {
     expect(promptTokensFromUsage({ provider: 'anthropic' })).toBe(0);
   });
+
+  it('uses the magnitude heuristic when the provider is absent (cache ≤ input ⇒ included)', () => {
+    /** OpenAI-compatible/custom payload with no provider: cache already folded
+     *  into input_tokens, so it must NOT be re-added. */
+    const event: TTokenUsageEvent = {
+      input_tokens: 1000,
+      input_token_details: { cache_read: 400, cache_creation: 0 },
+    };
+    expect(promptTokensFromUsage(event)).toBe(1000);
+  });
+
+  it('adds cache when provider is absent and cache exceeds input (additive shape)', () => {
+    const event: TTokenUsageEvent = {
+      input_tokens: 100,
+      input_token_details: { cache_read: 900, cache_creation: 0 },
+    };
+    expect(promptTokensFromUsage(event)).toBe(1000);
+  });
 });
 
 describe('reconcileContextUsage', () => {

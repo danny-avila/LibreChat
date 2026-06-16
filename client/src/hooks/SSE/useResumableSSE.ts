@@ -483,6 +483,7 @@ export default function useResumableSSE(
     tapContent,
     finalizeUsage,
     backfillUsage,
+    reconcileBackfill,
     resetLive,
     seedLive,
   } = useUsageHandler();
@@ -661,6 +662,10 @@ export default function useResumableSSE(
             backfillUsage(data.resumeState?.collectedUsage ?? [], resumeSubmission);
             if (data.resumeState?.contextUsage) {
               contextHandler(data.resumeState.contextUsage, resumeSubmission);
+              /** The restored snapshot is the raw pre-invoke estimate; reconcile it
+               *  to the backfilled primary call's real prompt tokens (the usage came
+               *  via backfill, not a live event that would have reconciled it). */
+              reconcileBackfill(data.resumeState?.collectedUsage ?? [], resumeSubmission);
             }
             /** Output streamed before this resume is not re-delivered as deltas
              *  — estimate it from the trailing aggregated content. This is
@@ -1093,6 +1098,7 @@ export default function useResumableSSE(
       tapContent,
       finalizeUsage,
       backfillUsage,
+      reconcileBackfill,
       resetLive,
       seedLive,
     ],
