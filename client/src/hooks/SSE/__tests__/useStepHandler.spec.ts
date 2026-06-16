@@ -990,7 +990,7 @@ describe('useStepHandler', () => {
   });
 
   describe('content type mismatch handling', () => {
-    it('should warn on content type mismatch and not overwrite', () => {
+    it('should relocate to a new slot instead of dropping when the index type mismatches', () => {
       const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
 
       const responseMessage = createResponseMessage({
@@ -1023,14 +1023,66 @@ describe('useStepHandler', () => {
         );
       });
 
-      expect(consoleSpy).toHaveBeenCalledWith(
+      /** The text is relocated to the next slot rather than overwriting the
+       * existing thinking block or being silently dropped. */
+      expect(consoleSpy).not.toHaveBeenCalledWith(
         'Content type mismatch',
-        expect.objectContaining({
-          existingType: ContentTypes.THINK,
-          contentType: ContentTypes.TEXT,
-        }),
+        expect.anything(),
       );
+
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1][0];
+      const responseMsg = lastCall.find((m: TMessage) => !m.isCreatedByUser);
+      expect(responseMsg.content[0]).toEqual({
+        type: ContentTypes.THINK,
+        think: 'Existing thought',
+      });
+      expect(responseMsg.content[1]).toEqual(
+        expect.objectContaining({ type: ContentTypes.TEXT, text: 'New text' }),
+      );
+
       consoleSpy.mockRestore();
+    });
+
+    it('should accumulate subsequent text deltas into the relocated slot', () => {
+      const responseMessage = createResponseMessage({
+        content: [{ type: ContentTypes.THINK, think: 'Existing thought' }],
+      });
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      act(() => {
+        result.current.syncStepMessage(responseMessage);
+      });
+
+      const submission = createSubmission();
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_RUN_STEP, data: createRunStep({ index: 0 }) },
+          submission,
+        );
+      });
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta('step-1', 'Hello ') },
+          submission,
+        );
+      });
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta('step-1', 'world') },
+          submission,
+        );
+      });
+
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1][0];
+      const responseMsg = lastCall.find((m: TMessage) => !m.isCreatedByUser);
+      /** Both deltas land in the same relocated slot — no fragmentation. */
+      expect(responseMsg.content).toHaveLength(2);
+      expect(responseMsg.content[1]).toEqual(
+        expect.objectContaining({ type: ContentTypes.TEXT, text: 'Hello world' }),
+      );
     });
   });
 
