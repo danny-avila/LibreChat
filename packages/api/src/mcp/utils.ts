@@ -247,9 +247,12 @@ export function isUserSourced(config: Pick<ParsedServerConfig, 'source' | 'dbId'
  * Allowlist-based sanitization for API responses. Only explicitly listed fields are included;
  * new fields added to ParsedServerConfig are excluded by default until allowlisted here.
  *
- * `url` and oauth flow URLs are operator-sensitive on non-user-sourced configs (YAML or
- * config-tier); they are stripped unless the caller can edit the resource (same disclosure
- * threshold the PATCH route enforces). User-sourced configs always disclose their URL.
+ * `url` and the oauth flow URLs (`authorization_url`, `token_url`, `revocation_endpoint`) can
+ * encode internal infrastructure, so they are stripped unless `canEdit` is set: the same
+ * disclosure threshold the PATCH route enforces. Callers derive `canEdit` per server (operator
+ * YAML/config-tier servers from the MANAGE_MCP_SERVERS capability, user-sourced servers from
+ * per-resource ACL EDIT), so a user-sourced config shared view-only does not disclose its URL
+ * to the viewer.
  * DB-stored configs reject ${VAR} patterns at validation time (MCPServerUserInputSchema);
  * env variable resolution is handled at the schema/input boundary.
  */
