@@ -1,7 +1,8 @@
-import React, { forwardRef, useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import React, { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { X } from 'lucide-react';
 import debounce from 'lodash/debounce';
 import { useRecoilState } from 'recoil';
-import { Search, X } from 'lucide-react';
+import icons from '@uswds/uswds/img/sprite.svg';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -109,16 +110,25 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
   return (
     <div
       ref={ref}
-      className="group relative flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg border-2 border-transparent px-3 py-1.5 text-text-primary focus-within:border-ring-primary focus-within:bg-surface-active-alt hover:bg-surface-active-alt"
+      className="group relative flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg border border-border-light bg-white px-3 py-1.5 text-text-primary outline-2 outline-offset-2 focus-within:outline"
     >
+      {/* NJ: Replace their icon with a USWDS icon
       <Search
         aria-hidden="true"
         className="absolute left-3 h-4 w-4 text-text-secondary group-focus-within:text-text-primary group-hover:text-text-primary"
       />
+      */}
+      <svg
+        className="usa-icon--size-3 absolute start-2 top-1/2 -translate-y-1/2 text-text-primary"
+        aria-hidden="true"
+        focusable="false"
+      >
+        <use href={`${icons}#search`} />
+      </svg>
       <input
         type="text"
         ref={inputRef}
-        className="m-0 mr-0 w-full border-none bg-transparent p-0 pl-7 text-sm leading-tight placeholder-text-secondary placeholder-opacity-100 focus-visible:outline-none group-focus-within:placeholder-text-primary group-hover:placeholder-text-primary"
+        className="m-0 mr-0 w-full border-none bg-transparent p-0 pl-7 text-sm leading-tight placeholder-text-primary placeholder-opacity-100 focus-visible:outline-none"
         value={text}
         onChange={onChange}
         onKeyDown={(e) => {
