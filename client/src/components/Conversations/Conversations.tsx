@@ -4,8 +4,8 @@ import { useRecoilValue } from 'recoil';
 import { ChevronDown } from 'lucide-react';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
-import { Spinner, useMediaQuery } from '@librechat/client';
 import { AutoSizer, CellMeasurer, CellMeasurerCache, List } from 'react-virtualized';
+import { NewChatIcon, Spinner, TooltipAnchor, useMediaQuery } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
 import {
   TranslationKeys,
@@ -105,7 +105,7 @@ const ChatsHeader: FC<ChatsHeaderProps> = memo(({ isExpanded, onToggle }) => {
     <div className="flex h-8 w-full items-center gap-0.5 pr-2">
       <button
         onClick={onToggle}
-        className="group flex min-w-0 flex-1 items-center gap-1 rounded-lg px-1 py-2 text-xs font-bold text-text-secondary outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
+        className="group flex min-w-0 flex-1 items-center gap-1 rounded-lg px-1 py-2 text-sm font-bold text-text-secondary outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
         type="button"
         aria-expanded={isExpanded}
       >
@@ -141,11 +141,7 @@ ChatsHeader.displayName = 'ChatsHeader';
 
 const PinnedHeader: FC = memo(() => {
   const localize = useLocalize();
-  return (
-    <h2 className="pl-1 pt-1 text-text-secondary" style={{ fontSize: '0.7rem' }}>
-      {localize('com_ui_pinned')}
-    </h2>
-  );
+  return <h2 className="pl-1 pt-1 text-xs text-text-secondary">{localize('com_ui_pinned')}</h2>;
 });
 
 PinnedHeader.displayName = 'PinnedHeader';
@@ -157,8 +153,7 @@ const DateLabel: FC<{ groupName: string; isFirst?: boolean }> = memo(({ groupNam
       aria-label={localize('com_a11y_chats_date_section', {
         date: localize(groupName as TranslationKeys) || groupName,
       })}
-      className={cn('pl-1 pt-1 text-text-secondary', isFirst === true ? 'mt-0' : 'mt-2')}
-      style={{ fontSize: '0.7rem' }}
+      className={cn('pl-1 pt-1 text-xs text-text-secondary', isFirst === true ? 'mt-0' : 'mt-2')}
     >
       {/* eslint-disable-next-line i18next/no-literal-string */}
       <span className="sr-only">Conversations from </span> {/* NJ: Make this more header clearer */}

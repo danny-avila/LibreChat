@@ -3,7 +3,7 @@ import * as Ariakit from '@ariakit/react';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilCallback, useRecoilValue } from 'recoil';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   ChevronDown,
   ChevronRight,
@@ -16,26 +16,26 @@ import {
 } from 'lucide-react';
 import {
   Button,
+  DropdownPopup,
   Input,
-  Spinner,
+  NewChatIcon,
   OGDialog,
   OGDialogClose,
-  OGDialogTitle,
-  OGDialogHeader,
   OGDialogContent,
+  OGDialogHeader,
+  OGDialogTitle,
+  Spinner,
   TooltipAnchor,
-  DropdownPopup,
-  NewChatIcon,
   useToastContext,
 } from '@librechat/client';
 import type { TChatProject, TConversation } from 'librechat-data-provider';
 import type { MenuItemProps } from '~/common';
 import {
-  useProjectsInfiniteQuery,
   useActiveJobs,
   useConversationsInfiniteQuery,
-  useUpdateProjectMutation,
   useDeleteProjectMutation,
+  useProjectsInfiniteQuery,
+  useUpdateProjectMutation,
 } from '~/data-provider';
 import ProjectCreateDialog from '~/components/Projects/ProjectCreateDialog';
 import { useLocalize, useLocalStorage, useNewConvo } from '~/hooks';
@@ -229,7 +229,7 @@ const ProjectChatsInline = memo(function ProjectChatsInline({
 
   if (conversations.length === 0) {
     return (
-      <div className="py-1.5 pl-2 text-xs text-text-secondary">
+      <div className="py-1.5 pl-2 text-sm text-text-secondary">
         {localize('com_ui_no_project_chats')}
       </div>
     );
@@ -501,7 +501,7 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
             setStoredExpanded(!isExpanded);
             setHasToggledSection(true);
           }}
-          className="group flex min-w-0 flex-1 items-center gap-1 rounded-lg px-1 py-2 text-xs font-bold text-text-secondary outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
+          className="group flex min-w-0 flex-1 items-center gap-1 rounded-lg px-1 py-2 text-sm font-bold text-text-secondary outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
           type="button"
           aria-expanded={isExpanded}
         >
