@@ -669,6 +669,21 @@ endpoints:
   #     # - "disabled": No trace information (default)
   #     # Trace output is logged to application log files for compliance auditing
   #     trace: "enabled"
+  #
+  #     # Optional scoping (omit to apply the guardrail to every Bedrock conversation).
+  #     # When a filter is present, a request must match it for the guardrail to apply.
+  #     # If both are set, the request must match BOTH (logical AND). This lets you, e.g.,
+  #     # guard a model only when used by specific agents while leaving direct chat unguarded.
+  #     appliesTo:
+  #       agentIds:           # only these agents (matched exactly against the request's agent_id)
+  #         - "agent_abc123"
+  #       models:             # only these Bedrock model IDs
+  #         # Entries support "*" wildcards (anchored full-match). Because model IDs
+  #         # carry region prefixes (us./eu./apac.) and version suffixes (-v1:0),
+  #         # wrap with "*" on both ends to catch every variant of a model:
+  #         - "*claude-sonnet-4-6*"
+  #         # Exact IDs also work:
+  #         # - "anthropic.claude-sonnet-4-6"
 # Example modelSpecs configuration showing grouping options
 # The 'group' field organizes model specs in the UI selector:
 # - If 'group' matches an endpoint name (e.g., "openAI", "groq"), the spec appears nested under that endpoint

@@ -1,6 +1,4 @@
 import type { TEndpointsConfig } from './types';
-import { EModelEndpoint, isDocumentSupportedProvider } from './schemas';
-import { getEndpointFileConfig, mergeFileConfig } from './file-config';
 import {
   allowedAddressesSchema,
   configSchema,
@@ -8,6 +6,8 @@ import {
   resolveEndpointType,
   webSearchSchema,
 } from './config';
+import { EModelEndpoint, isDocumentSupportedProvider } from './schemas';
+import { getEndpointFileConfig, mergeFileConfig } from './file-config';
 
 const endpointsConfig: TEndpointsConfig = {
   [EModelEndpoint.openAI]: { userProvide: false, order: 0 },
@@ -55,6 +55,51 @@ describe('bedrockEndpointSchema', () => {
     }
     expect(result.data.endpoints?.bedrock?.guardrailConfig).toEqual(guardrailConfig);
   });
+
+  it('preserves guardrailConfig.appliesTo scoping from configSchema parsing', () => {
+    const guardrailConfig = {
+      guardrailIdentifier: 'gr-scoped',
+      guardrailVersion: '1',
+      appliesTo: {
+        agentIds: ['agent_abc123'],
+        models: ['anthropic.claude-sonnet-4-6'],
+      },
+    };
+
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: { bedrock: { guardrailConfig } },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
+    }
+    expect(result.data.endpoints?.bedrock?.guardrailConfig?.appliesTo).toEqual({
+      agentIds: ['agent_abc123'],
+      models: ['anthropic.claude-sonnet-4-6'],
+    });
+  });
+
+  it.each(['agentIds', 'models'])(
+    'rejects an empty appliesTo.%s array (would otherwise apply to all)',
+    (field) => {
+      const result = configSchema.safeParse({
+        version: '1.0',
+        endpoints: {
+          bedrock: {
+            guardrailConfig: {
+              guardrailIdentifier: 'gr-scoped',
+              guardrailVersion: '1',
+              appliesTo: { [field]: [] },
+            },
+          },
+        },
+      });
+
+      expect(result.success).toBe(false);
+    },
+  );
 });
 
 describe('resolveEndpointType', () => {

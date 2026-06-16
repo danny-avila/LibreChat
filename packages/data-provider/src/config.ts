@@ -620,6 +620,17 @@ export const bedrockGuardrailConfigSchema = z.object({
   guardrailVersion: z.string(),
   trace: z.enum(['enabled', 'disabled', 'enabled_full']).optional(),
   streamProcessingMode: z.enum(['sync', 'async']).optional(),
+  /**
+   * Optional scoping for the global guardrail. Each filter is optional; when
+   * present, a request must match it for the guardrail to apply. Omit to apply
+   * the guardrail to every Bedrock conversation.
+   */
+  appliesTo: z
+    .object({
+      agentIds: z.array(z.string()).min(1).optional(),
+      models: z.array(z.string()).min(1).optional(),
+    })
+    .optional(),
 });
 
 export const bedrockEndpointSchema = baseEndpointSchema.merge(
