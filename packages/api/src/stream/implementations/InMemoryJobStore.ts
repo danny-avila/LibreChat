@@ -8,7 +8,7 @@ import type {
   JobStatus,
   JobStatusTransition,
 } from '~/stream/interfaces/IJobStore';
-import { isPendingActionExpired } from '~/stream/interfaces/IJobStore';
+import { isPendingActionStale } from '~/stream/interfaces/IJobStore';
 
 /**
  * Content state for a job - volatile, in-memory only.
@@ -137,6 +137,17 @@ export class InMemoryJobStore implements IJobStore {
       return;
     }
     Object.assign(job, updates);
+    // Mirror the guarded transitionStatus path so a pause/resume via this
+    // generic update behaves identically (parity with RedisJobStore):
+    //  - mirror the flat pendingActionId the stale-decision guard compares;
+    //  - on resume to running, refresh lastActiveAt and drop the flat id.
+    if (updates.pendingAction) {
+      job.pendingActionId = updates.pendingAction.actionId;
+    }
+    if (updates.status === 'running') {
+      job.lastActiveAt = updates.lastActiveAt ?? Date.now();
+      delete job.pendingActionId;
+    }
   }
 
   /**
@@ -207,11 +218,11 @@ export class InMemoryJobStore implements IJobStore {
         if (this.ttlAfterComplete === 0 || now - job.completedAt > this.ttlAfterComplete) {
           toDelete.push(streamId);
         }
-      } else if (job.status === 'requires_action' && isPendingActionExpired(job)) {
-        // Past-due approval: finalize it (aborted) so it stops occupying the
-        // user slot and its content state is reclaimed, mirroring
-        // ApprovalLifecycle.expire(). Skipping it (active-list filter) alone
-        // would leave the job resident indefinitely.
+      } else if (job.status === 'requires_action' && isPendingActionStale(job)) {
+        // Stale approval (expired, or missing/malformed pendingAction):
+        // finalize it (aborted) so it stops occupying the user slot and its
+        // content state is reclaimed, mirroring ApprovalLifecycle.expire().
+        // Skipping it (active-list filter) alone would leave it resident.
         job.status = 'aborted';
         job.completedAt = now;
         job.error = 'Approval expired before a decision was made';
@@ -344,7 +355,7 @@ export class InMemoryJobStore implements IJobStore {
       // only while its prompt is live: a past-`expiresAt` approval no longer
       // counts as active (cleanup/expiry will finalize it).
       if (job && (job.status === 'running' || job.status === 'requires_action')) {
-        if (job.status === 'requires_action' && isPendingActionExpired(job)) {
+        if (job.status === 'requires_action' && isPendingActionStale(job)) {
           continue;
         }
         activeIds.push(streamId);

@@ -82,7 +82,10 @@ export class ApprovalLifecycle {
       job.pendingAction &&
       this.isExpired(job.pendingAction)
     ) {
-      await this.expire(streamId, expectedActionId);
+      // Target the exact record observed as expired. If the caller didn't pin an
+      // actionId, fall back to the one just read — otherwise a concurrent
+      // resume + re-pause for a new action could let this expire abort it.
+      await this.expire(streamId, expectedActionId ?? job.pendingAction.actionId);
       return false;
     }
     return this.store.transitionStatus(streamId, {

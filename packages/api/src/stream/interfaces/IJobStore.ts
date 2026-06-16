@@ -101,6 +101,16 @@ export function isPendingActionExpired(job: Pick<SerializableJobData, 'pendingAc
 }
 
 /**
+ * Whether a `requires_action` job has no live, resolvable prompt — either the
+ * pendingAction is missing/malformed (e.g. dropped on deserialize) or past its
+ * `expiresAt`. Such a job can't be rendered or resolved, so it must be kept out
+ * of active listings and finalized by cleanup rather than left stuck active.
+ */
+export function isPendingActionStale(job: Pick<SerializableJobData, 'pendingAction'>): boolean {
+  return !job.pendingAction || isPendingActionExpired(job);
+}
+
+/**
  * Arguments for an atomic {@link IJobStore.transitionStatus} compare-and-set.
  */
 export interface JobStatusTransition {
