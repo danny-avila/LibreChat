@@ -1,5 +1,5 @@
 import type { IMongoFile } from '@librechat/data-schemas';
-import type { ServerRequest } from '~/types';
+import type { ServerRequest, StrategyFunctions } from '~/types';
 import type { TokenCountFn } from '~/utils/text';
 import { countTokens } from '~/utils/tokenizer';
 import { extractFileContext } from '~/files';
@@ -80,12 +80,14 @@ export async function buildAgentScopedContext({
   sharedRunAttachmentIds,
   req,
   tokenCountFn = countTokens,
+  getStrategyFunctions,
 }: {
   agentIds: string[];
   attachmentsByAgentId: AgentContextAttachmentsByAgentId<IMongoFile>;
   sharedRunAttachmentIds?: Set<string>;
   req?: ServerRequest;
   tokenCountFn?: TokenCountFn;
+  getStrategyFunctions?: (source: string) => StrategyFunctions;
 }): Promise<Map<string, string>> {
   const uniqueAgentIds = Array.from(new Set(agentIds.filter(Boolean)));
   const entries = await Promise.all(
@@ -103,6 +105,7 @@ export async function buildAgentScopedContext({
         attachments,
         req,
         tokenCountFn,
+        getStrategyFunctions,
       });
       return [agentId, context ?? ''] as const;
     }),
