@@ -564,6 +564,106 @@ describe('useQueryParams', () => {
     expect(mockNewConversation).not.toHaveBeenCalled();
   });
 
+  it('should defer auto-submit for ignored enforced model query settings until a spec is applied', () => {
+    const mockSetValue = jest.fn();
+    const mockHandleSubmit = jest.fn((callback) => () => callback({ text: 'hello world' }));
+    const mockSubmitMessage = jest.fn();
+    const mockNewConversation = jest.fn();
+    const mockTextAreaRef = {
+      current: {
+        focus: jest.fn(),
+        setSelectionRange: jest.fn(),
+      } as unknown as HTMLTextAreaElement,
+    };
+
+    (useChatFormContext as jest.Mock).mockReturnValue({
+      setValue: mockSetValue,
+      getValues: jest.fn().mockReturnValue(''),
+      handleSubmit: mockHandleSubmit,
+    });
+
+    (useSubmitMessage as jest.Mock).mockReturnValue({
+      submitMessage: mockSubmitMessage,
+    });
+
+    (useChatContext as jest.Mock).mockReturnValue({
+      conversation: {
+        endpoint: null,
+        model: null,
+      },
+      newConversation: mockNewConversation,
+    });
+
+    (useQueryClient as jest.Mock).mockReturnValue({
+      getQueryData: jest.fn().mockImplementation((key) => {
+        const k = Array.isArray(key) ? key[0] : key;
+        if (k === 'startupConfig') {
+          return {
+            modelSpecs: {
+              enforce: true,
+              list: [
+                {
+                  name: 'e2e-mock-provider-a',
+                  preset: {
+                    endpoint: 'Mock Provider A',
+                    model: 'mock-model-a',
+                  },
+                },
+              ],
+            },
+          };
+        }
+        if (k === 'endpoints') {
+          return {
+            'Mock Provider A': { type: EModelEndpoint.custom },
+            'Mock Provider B': { type: EModelEndpoint.custom },
+          };
+        }
+        return null;
+      }),
+    });
+
+    setUrlParams({
+      q: 'hello world',
+      submit: 'true',
+      endpoint: 'Mock Provider B',
+      model: 'mock-model-b',
+    });
+
+    const { rerender } = renderHook(() => useQueryParams({ textAreaRef: mockTextAreaRef }));
+
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
+
+    expect(mockSubmitMessage).not.toHaveBeenCalled();
+
+    act(() => {
+      jest.advanceTimersByTime(4000);
+    });
+
+    expect(mockSubmitMessage).not.toHaveBeenCalled();
+
+    (useChatContext as jest.Mock).mockReturnValue({
+      conversation: {
+        endpoint: 'Mock Provider A',
+        model: 'mock-model-a',
+        spec: 'e2e-mock-provider-a',
+      },
+      newConversation: mockNewConversation,
+    });
+
+    rerender();
+
+    expect(mockSetValue).toHaveBeenCalledWith(
+      'text',
+      'hello world',
+      expect.objectContaining({ shouldValidate: true }),
+    );
+    expect(mockHandleSubmit).toHaveBeenCalled();
+    expect(mockSubmitMessage).toHaveBeenCalled();
+  });
+
   it('should handle empty query parameters', () => {
     // Setup
     const mockSetValue = jest.fn();

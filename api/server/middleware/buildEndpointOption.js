@@ -26,8 +26,11 @@ const buildFunction = {
   [EModelEndpoint.azureAssistants]: azureAssistants.buildOptions,
 };
 
+const isSavedAgentId = (agent_id) =>
+  typeof agent_id === 'string' && agent_id !== '' && !isEphemeralAgentId(agent_id);
+
 const isSavedAgentRequest = (endpoint, parsedBody) =>
-  isAgentsEndpoint(endpoint) && !isEphemeralAgentId(parsedBody?.agent_id);
+  isAgentsEndpoint(endpoint) && isSavedAgentId(parsedBody?.agent_id);
 
 const isObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
 
@@ -42,7 +45,7 @@ const agentMatchesEnforcedModelSpec = ({ agent, agent_id, list }) =>
   });
 
 const validateSavedAgentModelSpec = async ({ agent_id, list }) => {
-  if (!agent_id || isEphemeralAgentId(agent_id)) {
+  if (!isSavedAgentId(agent_id)) {
     return { isSavedAgent: false };
   }
 
@@ -90,15 +93,21 @@ const enforceAddedConvoModelSpec = async ({ req, list, endpointsConfig }) => {
   }
 
   try {
+    const presetEndpoint = modelSpec.preset?.endpoint ?? endpoint;
+    const presetEndpointType = modelSpec.preset?.endpointType ?? endpointType;
     const result = applyModelSpecPreset({
       modelSpec,
       parsedBody: addedConvo,
-      endpoint,
-      endpointType,
-      defaultParamsEndpoint: getDefaultParamsEndpoint(endpointsConfig, endpoint),
+      endpoint: presetEndpoint,
+      endpointType: presetEndpointType,
+      defaultParamsEndpoint: getDefaultParamsEndpoint(endpointsConfig, presetEndpoint),
       includePresetDefaults: true,
     });
-    req.body.addedConvo = { ...addedConvo, ...result.parsedBody };
+    req.body.addedConvo = {
+      endpoint: presetEndpoint,
+      endpointType: presetEndpointType,
+      ...result.parsedBody,
+    };
   } catch (error) {
     logger.error(`Error parsing added model spec for endpoint ${endpoint}`, error);
     return 'Error parsing model spec';

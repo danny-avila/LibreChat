@@ -403,6 +403,11 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
           spec: 'locked-provider-b',
           model: 'forged-model',
           temperature: 0.9,
+          ephemeralAgent: {
+            execute_code: true,
+            file_search: true,
+            mcp: ['unapproved-server'],
+          },
         },
       },
       {
@@ -443,7 +448,52 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
       }),
     );
     expect(req.body.addedConvo.model).not.toBe('forged-model');
+    expect(req.body.addedConvo.ephemeralAgent).toBeUndefined();
     expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it('should ignore malformed addedConvo agent ids when modelSpecs are enforced', async () => {
+    mockGetEndpointsConfig.mockResolvedValue({});
+    mockGetAgent.mockResolvedValue({ provider: 'Mock Provider A', model: 'mock-model-a' });
+
+    const req = createReq(
+      {
+        endpoint: EModelEndpoint.agents,
+        agent_id: 'agent_pedro',
+        model: 'mock-model-a',
+        addedConvo: {
+          agent_id: { $gt: '' },
+          endpoint: 'Mock Provider B',
+          model: 'mock-model-b',
+        },
+      },
+      {
+        modelSpecs: {
+          enforce: true,
+          list: [
+            {
+              name: 'locked-provider-a',
+              preset: {
+                endpoint: 'Mock Provider A',
+                model: 'mock-model-a',
+              },
+            },
+          ],
+        },
+      },
+    );
+    req.baseUrl = '/api/agents/chat';
+    const res = createRes();
+    const next = jest.fn();
+    const { handleError } = require('@librechat/api');
+
+    await buildEndpointOption(req, res, next);
+
+    expect(mockGetAgent).toHaveBeenCalledWith({ id: 'agent_pedro' });
+    expect(mockGetAgent).not.toHaveBeenCalledWith({ id: { $gt: '' } });
+    expect(handleError).toHaveBeenCalledWith(res, { text: 'No model spec selected' });
+    expect(mockAgentBuildOptions).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
   });
 
   it('should require specs for ephemeral agent runs when modelSpecs are enforced', async () => {

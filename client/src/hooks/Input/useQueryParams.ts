@@ -58,6 +58,7 @@ export default function useQueryParams({
   const pendingSubmitRef = useRef(false);
   const settingsAppliedRef = useRef(false);
   const submissionHandledRef = useRef(false);
+  const waitingForDefaultSpecRef = useRef(false);
   const promptTextRef = useRef<string | null>(null);
   const validSettingsRef = useRef<TPreset | null>(null);
   const settingsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -200,6 +201,10 @@ export default function useQueryParams({
 
   const areSettingsApplied = useCallback(() => {
     const convo = conversationRef.current;
+    if (waitingForDefaultSpecRef.current) {
+      return typeof convo?.spec === 'string' && convo.spec !== '';
+    }
+
     if (!validSettingsRef.current || !convo) {
       return false;
     }
@@ -229,6 +234,7 @@ export default function useQueryParams({
 
     submissionHandledRef.current = true;
     pendingSubmitRef.current = false;
+    waitingForDefaultSpecRef.current = false;
 
     methods.setValue('text', promptTextRef.current, { shouldValidate: true });
 
@@ -281,13 +287,16 @@ export default function useQueryParams({
       }
 
       const { decodedPrompt, validSettings, shouldAutoSubmit } = processQueryParams();
-      const effectiveSettings = shouldIgnoreQuerySettingsForModelSpecEnforce({
+      const ignoredSettingsForModelSpecEnforce = shouldIgnoreQuerySettingsForModelSpecEnforce({
         enforce: startupConfig.modelSpecs?.enforce === true,
         querySettings: validSettings,
-      })
+      });
+      const effectiveSettings = ignoredSettingsForModelSpecEnforce
         ? ({} as TPreset)
         : validSettings;
       const hasSettings = Object.keys(effectiveSettings).length > 0;
+      const shouldWaitForDefaultSpec =
+        ignoredSettingsForModelSpecEnforce && (startupConfig.modelSpecs?.list?.length ?? 0) > 0;
 
       const autoSubmitAllowed = startupConfig.interface?.autoSubmitFromUrl !== false;
       const willAutoSubmit = shouldAutoSubmit && autoSubmitAllowed;
@@ -318,20 +327,25 @@ export default function useQueryParams({
 
       // Handle auto-submission
       if (willAutoSubmit && decodedPrompt) {
-        if (hasSettings) {
+        if (hasSettings || shouldWaitForDefaultSpec) {
           // Settings are changing, defer submission
           pendingSubmitRef.current = true;
+          waitingForDefaultSpecRef.current = shouldWaitForDefaultSpec;
 
-          // Set a timeout to handle the case where settings might never fully apply
-          settingsTimeoutRef.current = setTimeout(() => {
-            if (!submissionHandledRef.current && pendingSubmitRef.current) {
-              logger.log(
-                'conversation',
-                'Settings application timeout, proceeding with submission',
-              );
-              processSubmission();
-            }
-          }, MAX_SETTINGS_WAIT_MS);
+          if (hasSettings) {
+            // Set a timeout to handle the case where settings might never fully apply
+            settingsTimeoutRef.current = setTimeout(() => {
+              if (!submissionHandledRef.current && pendingSubmitRef.current) {
+                logger.log(
+                  'conversation',
+                  'Settings application timeout, proceeding with submission',
+                );
+                processSubmission();
+              }
+            }, MAX_SETTINGS_WAIT_MS);
+          } else if (areSettingsApplied()) {
+            processSubmission();
+          }
         } else {
           methods.setValue('text', decodedPrompt, { shouldValidate: true });
           textAreaRef.current.focus();
@@ -384,7 +398,7 @@ export default function useQueryParams({
       !processedRef.current ||
       submissionHandledRef.current ||
       settingsAppliedRef.current ||
-      !validSettingsRef.current ||
+      (!validSettingsRef.current && !waitingForDefaultSpecRef.current) ||
       !conversation
     ) {
       return;
@@ -392,6 +406,7 @@ export default function useQueryParams({
 
     if (areSettingsApplied()) {
       settingsAppliedRef.current = true;
+      waitingForDefaultSpecRef.current = false;
 
       if (pendingSubmitRef.current) {
         if (settingsTimeoutRef.current) {
