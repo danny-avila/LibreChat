@@ -296,7 +296,7 @@ export function redactServerSecrets(
     safe.obo = config.obo;
   }
 
-  if (!isUserSourced(config) && !options?.canEdit) {
+  if (!options?.canEdit) {
     delete safe.url;
     if (safe.oauth) {
       const {

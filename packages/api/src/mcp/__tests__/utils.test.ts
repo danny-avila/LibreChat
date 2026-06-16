@@ -236,16 +236,6 @@ describe('redactServerSecrets', () => {
     expect(redacted.customUserVars).toEqual(config.customUserVars);
   });
 
-  it('should pass URLs through unchanged for user-sourced configs', () => {
-    const config: ParsedServerConfig = {
-      type: 'sse',
-      url: 'https://mcp.example.com/sse?param=value',
-      source: 'user',
-    };
-    const redacted = redactServerSecrets(config);
-    expect(redacted.url).toBe('https://mcp.example.com/sse?param=value');
-  });
-
   it('should pass URLs through unchanged when caller has edit authority', () => {
     const config: ParsedServerConfig = {
       type: 'sse',
@@ -276,6 +266,25 @@ describe('redactServerSecrets', () => {
     expect(redacted.oauth?.revocation_endpoint).toBeUndefined();
     expect(redacted.oauth?.client_id).toBe('cid');
     expect(redacted.oauth?.scope).toBe('read');
+  });
+
+  it('should strip url for a VIEW-shared user-sourced config when caller lacks edit', () => {
+    const config: ParsedServerConfig = {
+      type: 'sse',
+      url: 'https://owner-private.example.com/mcp',
+      source: 'user',
+      dbId: 'abc123',
+      oauth: {
+        client_id: 'cid',
+        authorization_url: 'https://owner-private.example.com/oauth/authorize',
+        token_url: 'https://owner-private.example.com/oauth/token',
+      },
+    };
+    const redacted = redactServerSecrets(config);
+    expect(redacted.url).toBeUndefined();
+    expect(redacted.oauth?.authorization_url).toBeUndefined();
+    expect(redacted.oauth?.token_url).toBeUndefined();
+    expect(redacted.oauth?.client_id).toBe('cid');
   });
 
   it('should retain non-sensitive oauth fields when stripping oauth flow URLs', () => {
@@ -378,20 +387,29 @@ describe('redactAllServerSecrets', () => {
           authorization_url: 'https://infra.internal/oauth/authorize',
         },
       },
-      'user-server': {
+      'user-server-owner': {
         type: 'sse',
-        url: 'https://user.example.com/mcp',
+        url: 'https://owner.example.com/mcp',
         source: 'user',
+        dbId: 'owner-id',
+      },
+      'user-server-shared': {
+        type: 'sse',
+        url: 'https://shared.example.com/mcp',
+        source: 'user',
+        dbId: 'shared-id',
       },
     };
     const canEditByServer = new Map<string, boolean>([
       ['config-server', false],
-      ['user-server', false],
+      ['user-server-owner', true],
+      ['user-server-shared', false],
     ]);
     const redacted = redactAllServerSecrets(configs, { canEditByServer });
     expect(redacted['config-server'].url).toBeUndefined();
     expect(redacted['config-server'].oauth?.authorization_url).toBeUndefined();
-    expect(redacted['user-server'].url).toBe('https://user.example.com/mcp');
+    expect(redacted['user-server-owner'].url).toBe('https://owner.example.com/mcp');
+    expect(redacted['user-server-shared'].url).toBeUndefined();
   });
 
   it('should expose URL for non-user-sourced configs when canEditByServer is true', () => {

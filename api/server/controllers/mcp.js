@@ -219,16 +219,12 @@ async function computeCanEditByServer(req, serverConfigs) {
   const dbIdsToCheck = [];
   const dbIdToServerName = new Map();
   for (const [name, config] of Object.entries(serverConfigs)) {
-    if (isUserSourced(config)) {
-      canEditByServer.set(name, true);
-      continue;
-    }
     if (config.dbId) {
       dbIdsToCheck.push(config.dbId);
       dbIdToServerName.set(String(config.dbId), name);
       continue;
     }
-    canEditByServer.set(name, false);
+    canEditByServer.set(name, isUserSourced(config));
   }
   if (dbIdsToCheck.length > 0) {
     try {
@@ -365,7 +361,7 @@ const createMCPServerController = async (req, res) => {
     );
     res.status(201).json({
       serverName: result.serverName,
-      ...redactServerSecrets(result.config),
+      ...redactServerSecrets(result.config, { canEdit: true }),
     });
   } catch (error) {
     logger.error('[createMCPServer]', error);
@@ -461,7 +457,7 @@ const updateMCPServerController = async (req, res) => {
       userId,
     );
 
-    res.status(200).json(redactServerSecrets(parsedConfig));
+    res.status(200).json(redactServerSecrets(parsedConfig, { canEdit: true }));
   } catch (error) {
     logger.error('[updateMCPServer]', error);
     const mcpErrorResponse = handleMCPError(error, res);
