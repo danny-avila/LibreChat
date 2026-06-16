@@ -247,14 +247,11 @@ export function isUserSourced(config: Pick<ParsedServerConfig, 'source' | 'dbId'
  * Allowlist-based sanitization for API responses. Only explicitly listed fields are included;
  * new fields added to ParsedServerConfig are excluded by default until allowlisted here.
  *
- * URLs are returned as-is for user-sourced configs (the caller's own URL) and for callers
- * with edit authority on a non-user-sourced config (same disclosure they'd get via PATCH).
- * Non-user-sourced configs (operator-defined YAML/config tiers) have `url`,
- * `oauth.authorization_url`, and `oauth.token_url` stripped when the caller lacks edit
- * authority, since those values are operator-sensitive and the caller cannot edit them.
- * DB-stored configs reject ${VAR} patterns at validation time (MCPServerUserInputSchema),
- * and YAML configs are admin-managed. Env variable resolution is handled at the
- * schema/input boundary, not the output boundary.
+ * `url` and oauth flow URLs are operator-sensitive on non-user-sourced configs (YAML or
+ * config-tier); they are stripped unless the caller can edit the resource (same disclosure
+ * threshold the PATCH route enforces). User-sourced configs always disclose their URL.
+ * DB-stored configs reject ${VAR} patterns at validation time (MCPServerUserInputSchema);
+ * env variable resolution is handled at the schema/input boundary.
  */
 export function redactServerSecrets(
   config: ParsedServerConfig,
@@ -312,11 +309,7 @@ export function redactServerSecrets(
   ) as Partial<ParsedServerConfig>;
 }
 
-/**
- * Applies allowlist-based sanitization to a map of server configs.
- * Pass `canEditByServer` to allow URL/oauth-URL disclosure on non-user-sourced configs
- * for callers with edit authority on the corresponding resource.
- */
+/** Applies allowlist-based sanitization to a map of server configs. */
 export function redactAllServerSecrets(
   configs: Record<string, ParsedServerConfig>,
   options?: { canEditByServer?: ReadonlyMap<string, boolean> },

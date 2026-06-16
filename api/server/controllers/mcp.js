@@ -18,11 +18,11 @@ const {
 const {
   Constants,
   Permissions,
-  PermissionTypes,
-  PermissionBits,
   ResourceType,
-  MCPServerUserInputSchema,
+  PermissionBits,
+  PermissionTypes,
   MCP_USER_INPUT_FIELDS,
+  MCPServerUserInputSchema,
 } = require('librechat-data-provider');
 const {
   resolveConfigServers,
@@ -32,7 +32,7 @@ const {
 const { cacheMCPServerTools, getMCPServerTools } = require('~/server/services/Config');
 const { getMCPManager, getMCPServersRegistry } = require('~/config');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
-const { getResourcePermissionsMap } = require('~/server/controllers/PermissionsController');
+const { getResourcePermissionsMap } = require('~/server/services/PermissionService');
 const db = require('~/models');
 
 /**
@@ -201,21 +201,7 @@ const getMCPTools = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
-/**
- * For each server, compute whether the caller has edit authority over it.
- * Used to gate URL/oauth-URL disclosure on non-user-sourced configs to callers
- * who could already edit the resource via PATCH, mirroring the ACL check that
- * canAccessMCPServerResource enforces on the update route.
- *
- * - User-sourced configs always resolve to true (caller's own URL, no
- *   operator-sensitive data to hide).
- * - Broad MANAGE_MCP_SERVERS capability acts as a bypass for all configs,
- *   matching the capability bypass in canAccessResource.
- * - Non-user-sourced configs with a persisted dbId get a per-resource ACL
- *   check via getResourcePermissionsMap (PermissionBits.EDIT).
- * - Non-user-sourced configs without a dbId default to false (they are
- *   YAML-defined and not part of the per-resource ACL space).
- */
+/** Mirrors canAccessResource's capability bypass plus per-resource ACL EDIT check. */
 async function computeCanEditByServer(req, serverConfigs) {
   const canEditByServer = new Map();
   let bypass = false;
