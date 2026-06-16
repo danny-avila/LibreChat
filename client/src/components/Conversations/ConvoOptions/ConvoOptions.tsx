@@ -3,6 +3,7 @@ import * as Ariakit from '@ariakit/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import { DropdownPopup, Spinner, useToastContext } from '@librechat/client';
+import { QueryKeys, PermissionTypes, Permissions } from 'librechat-data-provider';
 import {
   Ellipsis,
   Share2,
@@ -14,9 +15,8 @@ import {
   Pin,
   Trash,
 } from 'lucide-react';
-import { QueryKeys, PermissionTypes, Permissions } from 'librechat-data-provider';
-import type { MouseEvent } from 'react';
 import type { TMessage } from 'librechat-data-provider';
+import type { MouseEvent } from 'react';
 import {
   useDuplicateConversationMutation,
   useAssignConversationToProjectMutation,
@@ -28,8 +28,8 @@ import {
 import { useHasAccess, useLocalize, useNavigateToConvo, useNewConvo } from '~/hooks';
 import { NotificationSeverity } from '~/common';
 import { useChatContext } from '~/Providers';
-import DeleteButton from './DeleteButton';
 import ProjectButton from './ProjectButton';
+import DeleteButton from './DeleteButton';
 import ShareButton from './ShareButton';
 import { cn } from '~/utils';
 

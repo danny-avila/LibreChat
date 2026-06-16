@@ -2,10 +2,10 @@ import React, { createRef } from 'react';
 import { render } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { RecoilRoot } from 'recoil';
-import type { TConversation } from 'librechat-data-provider';
 import type { CellMeasurerCache, List } from 'react-virtualized';
-import store from '~/store';
+import type { TConversation } from 'librechat-data-provider';
 import Conversations from '../Conversations';
+import store from '~/store';
 
 let mockCapturedCache: CellMeasurerCache | null = null;
 
