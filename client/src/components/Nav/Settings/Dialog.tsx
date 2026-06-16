@@ -115,7 +115,17 @@ export default function SettingsDialog({ open, onOpenChange }: TDialogProps) {
                 )}
                 {showContent && (
                   <div className="flex-1 overflow-y-auto md:pr-1">
-                    <Content activeTab={effectiveTab} query={query} ctx={ctx} />
+                    {searching ? (
+                      <Content activeTab={effectiveTab} query={query} ctx={ctx} />
+                    ) : (
+                      <Tabs.Content
+                        value={effectiveTab}
+                        tabIndex={-1}
+                        className="focus:outline-none"
+                      >
+                        <Content activeTab={effectiveTab} query={query} ctx={ctx} />
+                      </Tabs.Content>
+                    )}
                   </div>
                 )}
               </Tabs.Root>
