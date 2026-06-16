@@ -77,6 +77,14 @@ export class ApprovalLifecycle {
    */
   async resolve(streamId: string, expectedActionId?: string): Promise<boolean> {
     const job = await this.store.getJob(streamId);
+    if (job?.status === 'requires_action' && !job.pendingAction) {
+      // The prompt was lost (e.g. a malformed record dropped on deserialize).
+      // It can't be reviewed, so finalize the job instead of driving a resumed
+      // run with no reviewed interrupt payload — consistent with how the active
+      // listing and cleanup treat a stale pending action.
+      await this.expire(streamId);
+      return false;
+    }
     if (
       job?.status === 'requires_action' &&
       job.pendingAction &&
