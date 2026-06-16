@@ -220,6 +220,43 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
     expect(req.body.endpointOption.chatProjectId).toBe('project-1');
   });
 
+  it('should rebuild enforced agent specs from the backend preset when raw spec is valid', async () => {
+    mockGetEndpointsConfig.mockResolvedValue({});
+
+    const modelSpec = {
+      name: 'approved-agent',
+      preset: {
+        endpoint: EModelEndpoint.agents,
+        agent_id: 'agent_approved',
+        instructions: 'Use the approved agent configuration.',
+      },
+    };
+
+    const req = createReq(
+      {
+        endpoint: EModelEndpoint.agents,
+        spec: 'approved-agent',
+        agent_id: { $gt: '' },
+        chatProjectId: 'project-1',
+      },
+      {
+        modelSpecs: {
+          enforce: true,
+          list: [modelSpec],
+        },
+      },
+    );
+    req.baseUrl = '/api/agents/chat';
+
+    await buildEndpointOption(req, createRes(), jest.fn());
+
+    expect(parseCompactConvo.mock.results[0].value).toEqual({});
+    expect(req.body.endpointOption.spec).toBe('approved-agent');
+    expect(req.body.endpointOption.agent_id).toBe('agent_approved');
+    expect(req.body.endpointOption.instructions).toBe('Use the approved agent configuration.');
+    expect(req.body.endpointOption.chatProjectId).toBe('project-1');
+  });
+
   it('should restore private model spec preset fields in non-enforced mode', async () => {
     mockGetEndpointsConfig.mockResolvedValue({});
 
