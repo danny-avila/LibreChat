@@ -1,7 +1,7 @@
 import { memo, useCallback, lazy, Suspense } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilValue } from 'recoil';
-import { SquarePen } from 'lucide-react';
+import { SquarePen, SidebarClose } from 'lucide-react';
 import { QueryKeys } from 'librechat-data-provider';
 import { Skeleton, Button, TooltipAnchor } from '@librechat/client';
 import type { NavLink } from '~/common';
@@ -14,30 +14,6 @@ import ExpandedPanel from './ExpandedPanel';
 import store from '~/store';
 
 const AccountSettings = lazy(() => import('~/components/Nav/AccountSettings'));
-
-/** Click UI "slide-out" icon (arrow left + vertical bar) — paths from @clickhouse/click-ui */
-function SlideOutIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-      className={className}
-    >
-      <path
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={1.5}
-        d="M18.703 12.015H6.836M11.576 16.509l-4.78-4.51 4.78-4.508"
-      />
-      <path stroke="currentColor" strokeLinecap="round" strokeWidth={1.5} d="M5 7v10" />
-    </svg>
-  );
-}
 
 /** LibreChat logomark — 5 vertical bars matching the design file. */
 function LibreChatLogo({ className }: { className?: string }) {
@@ -185,7 +161,7 @@ function FullSidebar({
                 className="h-8 w-8 rounded-md text-text-secondary hover:text-text-primary"
                 onClick={onCollapse}
               >
-                <SlideOutIcon />
+                <SidebarClose className="h-4 w-4" />
               </Button>
             }
           />

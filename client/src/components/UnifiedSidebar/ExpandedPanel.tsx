@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilValue } from 'recoil';
 import { SquarePen } from 'lucide-react';
 import { QueryKeys } from 'librechat-data-provider';
+import { SidebarOpen, SidebarClose } from 'lucide-react';
 import { Skeleton, Button, TooltipAnchor } from '@librechat/client';
 import type { NavLink } from '~/common';
 import { CLOSE_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
@@ -12,52 +13,6 @@ import { clearMessagesCache, cn } from '~/utils';
 import store from '~/store';
 
 const AccountSettings = lazy(() => import('~/components/Nav/AccountSettings'));
-
-function SlideInIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-      className={className}
-    >
-      <path
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={1.5}
-        d="M5.297 11.985h11.867M12.424 7.491l4.78 4.51-4.78 4.508"
-      />
-      <path stroke="currentColor" strokeLinecap="round" strokeWidth={1.5} d="M19 17V7" />
-    </svg>
-  );
-}
-
-function SlideOutIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-      className={className}
-    >
-      <path
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={1.5}
-        d="M18.703 12.015H6.836M11.576 16.509l-4.78-4.51 4.78-4.508"
-      />
-      <path stroke="currentColor" strokeLinecap="round" strokeWidth={1.5} d="M5 7v10" />
-    </svg>
-  );
-}
 
 const NewChatButton = memo(function NewChatButton({
   setActive,
@@ -200,7 +155,11 @@ function ExpandedPanel({
             className="h-8 w-8 rounded-md text-text-secondary hover:text-text-primary"
             onClick={toggleClick}
           >
-            {expanded ? <SlideOutIcon /> : <SlideInIcon />}
+            {expanded ? (
+              <SidebarClose aria-hidden="true" className="h-4 w-4" />
+            ) : (
+              <SidebarOpen aria-hidden="true" className="h-4 w-4" />
+            )}
           </Button>
         }
       />
