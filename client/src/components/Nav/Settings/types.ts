@@ -44,6 +44,7 @@ export interface SettingsContextValue {
   twoFactorEnabled: boolean;
   allowAccountDeletion: boolean;
   aboutEnabled: boolean;
+  engineTTS: string;
 }
 
 export interface SettingEntry {

@@ -37,6 +37,7 @@ import { showThinkingAtom } from '~/store/showThinking';
 import Avatar from '../SettingsTabs/Account/Avatar';
 import About from '../SettingsTabs/About/About';
 import MemoryToggle from './MemoryToggle';
+import { TTSEndpoints } from '~/common';
 import store from '~/store';
 
 const { GENERAL, CHAT, SPEECH, DATA, ACCOUNT, ABOUT } = SettingsTabValues;
@@ -421,6 +422,7 @@ export const registry: SettingEntry[] = [
     tab: SPEECH,
     section: 'tts',
     labelKey: 'com_nav_enable_cloud_browser_voice',
+    show: (ctx) => ctx.engineTTS === TTSEndpoints.browser,
     Component: CloudBrowserVoicesSwitch,
   },
   {

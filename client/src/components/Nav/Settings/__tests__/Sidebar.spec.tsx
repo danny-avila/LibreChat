@@ -16,6 +16,7 @@ const ctx: SettingsContextValue = {
   twoFactorEnabled: false,
   allowAccountDeletion: true,
   aboutEnabled: false,
+  engineTTS: 'browser',
 };
 
 function setup(extra: Partial<SettingsContextValue> = {}, query = '') {

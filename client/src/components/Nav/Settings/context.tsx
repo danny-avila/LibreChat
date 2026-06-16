@@ -1,9 +1,11 @@
 import { useMemo } from 'react';
+import { useRecoilValue } from 'recoil';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { SettingsContextValue } from './types';
 import usePersonalizationAccess from '~/hooks/usePersonalizationAccess';
 import { useHasAccess, useAuthContext } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
+import store from '~/store';
 
 export function useSettingsContext(): SettingsContextValue {
   const { user } = useAuthContext();
@@ -31,6 +33,7 @@ export function useSettingsContext(): SettingsContextValue {
   const hasRemoteAgentsBool = hasRemoteAgents === true;
   const hasMultiConvoBool = hasMultiConvo === true;
   const hasPromptsBool = hasPrompts === true;
+  const engineTTS = useRecoilValue<string>(store.engineTTS);
 
   return useMemo(
     () => ({
@@ -44,6 +47,7 @@ export function useSettingsContext(): SettingsContextValue {
       twoFactorEnabled,
       allowAccountDeletion,
       aboutEnabled,
+      engineTTS,
     }),
     [
       balanceEnabled,
@@ -56,6 +60,7 @@ export function useSettingsContext(): SettingsContextValue {
       twoFactorEnabled,
       allowAccountDeletion,
       aboutEnabled,
+      engineTTS,
     ],
   );
 }

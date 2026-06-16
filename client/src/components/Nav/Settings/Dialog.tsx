@@ -26,7 +26,11 @@ export default function SettingsDialog({ open, onOpenChange }: TDialogProps) {
   const showSidebar = !isSmallScreen || !inDetail;
   const showContent = !isSmallScreen || inDetail || searching;
   const hideTabs = isSmallScreen && searching;
-  const activeMeta = TABS.find((t) => t.id === activeTab);
+  const visibleTabs = TABS.filter((t) => !t.show || t.show(ctx));
+  const effectiveTab = visibleTabs.some((t) => t.id === activeTab)
+    ? activeTab
+    : SettingsTabValues.GENERAL;
+  const activeMeta = TABS.find((t) => t.id === effectiveTab);
 
   const selectTab = (tab: SettingsTab) => {
     setActiveTab(tab);
@@ -94,7 +98,7 @@ export default function SettingsDialog({ open, onOpenChange }: TDialogProps) {
                 </button>
               </DialogTitle>
               <Tabs.Root
-                value={activeTab}
+                value={effectiveTab}
                 onValueChange={(v) => setActiveTab(v as SettingsTab)}
                 orientation="vertical"
                 className="flex flex-1 flex-col gap-4 overflow-hidden p-5 md:flex-row md:gap-6"
@@ -111,7 +115,7 @@ export default function SettingsDialog({ open, onOpenChange }: TDialogProps) {
                 )}
                 {showContent && (
                   <div className="flex-1 overflow-y-auto md:pr-1">
-                    <Content activeTab={activeTab} query={query} ctx={ctx} />
+                    <Content activeTab={effectiveTab} query={query} ctx={ctx} />
                   </div>
                 )}
               </Tabs.Root>
