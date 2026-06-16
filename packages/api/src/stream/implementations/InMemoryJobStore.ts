@@ -6,6 +6,7 @@ import type {
   UsageMetadata,
   IJobStore,
   JobStatus,
+  JobStatusTransition,
 } from '~/stream/interfaces/IJobStore';
 
 /**
@@ -135,6 +136,27 @@ export class InMemoryJobStore implements IJobStore {
       return;
     }
     Object.assign(job, updates);
+  }
+
+  /**
+   * Atomic in-memory: the single-threaded event loop makes the
+   * read-check-write sequence indivisible, so the status guard is exact.
+   * Membership/counts derive from `job.status` directly, so there are no
+   * sets to reconcile here.
+   */
+  async transitionStatus(streamId: string, args: JobStatusTransition): Promise<boolean> {
+    const job = this.jobs.get(streamId);
+    if (!job || job.status !== args.from) {
+      return false;
+    }
+    job.status = args.to;
+    if (args.patch) {
+      Object.assign(job, args.patch);
+    }
+    for (const field of args.clear ?? []) {
+      delete job[field];
+    }
+    return true;
   }
 
   async deleteJob(streamId: string): Promise<void> {
