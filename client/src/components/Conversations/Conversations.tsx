@@ -1,20 +1,20 @@
-import { useMemo, memo, type FC, useCallback, useEffect, useRef } from 'react';
+import { type FC, memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import throttle from 'lodash/throttle';
 import { useRecoilValue } from 'recoil';
 import { ChevronDown } from 'lucide-react';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
-import { List, AutoSizer, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
-import { Spinner, TooltipAnchor, NewChatIcon, useMediaQuery } from '@librechat/client';
+import { Spinner, useMediaQuery } from '@librechat/client';
+import { AutoSizer, CellMeasurer, CellMeasurerCache, List } from 'react-virtualized';
 import type { TConversation } from 'librechat-data-provider';
 import {
-  useLocalize,
   TranslationKeys,
   useFavorites,
-  useShowMarketplace,
+  useLocalize,
   useNewConvo,
+  useShowMarketplace,
 } from '~/hooks';
-import { groupConversationsByDate, clearMessagesCache, cn } from '~/utils';
+import { clearMessagesCache, cn, groupConversationsByDate } from '~/utils';
 import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
 import { useActiveJobs } from '~/data-provider';
 import Convo from './Convo';
@@ -118,6 +118,7 @@ const ChatsHeader: FC<ChatsHeaderProps> = memo(({ isExpanded, onToggle }) => {
           aria-hidden="true"
         />
       </button>
+      {/* NJ: removed duplicative "new chat" button; it exists at all times in the sidebar already
       <TooltipAnchor
         description={localize('com_ui_new_chat')}
         render={
@@ -131,6 +132,7 @@ const ChatsHeader: FC<ChatsHeaderProps> = memo(({ isExpanded, onToggle }) => {
           </button>
         }
       />
+       */}
     </div>
   );
 });
