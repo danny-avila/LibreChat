@@ -222,6 +222,15 @@ export default function useQueryParams({
     return true;
   }, []);
 
+  const setPromptText = useCallback(
+    (text: string) => {
+      methods.setValue('text', text, { shouldValidate: true });
+      textAreaRef.current.focus();
+      textAreaRef.current.setSelectionRange(text.length, text.length);
+    },
+    [methods, textAreaRef],
+  );
+
   /**
    * Processes message submission exactly once, preventing duplicate submissions.
    * Sets the prompt text, submits the message, and cleans up URL parameters afterward.
@@ -236,7 +245,7 @@ export default function useQueryParams({
     pendingSubmitRef.current = false;
     waitingForDefaultSpecRef.current = false;
 
-    methods.setValue('text', promptTextRef.current, { shouldValidate: true });
+    setPromptText(promptTextRef.current);
 
     methods.handleSubmit((data) => {
       if (data.text?.trim()) {
@@ -246,7 +255,20 @@ export default function useQueryParams({
     })();
 
     setSearchParams(getPreservedSearchParams(), { replace: true });
-  }, [methods, submitMessage, setSearchParams, getPreservedSearchParams]);
+  }, [methods, submitMessage, setSearchParams, getPreservedSearchParams, setPromptText]);
+
+  const processPromptWithoutSubmission = useCallback(() => {
+    if (submissionHandledRef.current || !pendingSubmitRef.current || !promptTextRef.current) {
+      return;
+    }
+
+    submissionHandledRef.current = true;
+    pendingSubmitRef.current = false;
+    waitingForDefaultSpecRef.current = false;
+
+    setPromptText(promptTextRef.current);
+    setSearchParams(getPreservedSearchParams(), { replace: true });
+  }, [setPromptText, setSearchParams, getPreservedSearchParams]);
 
   useEffect(() => {
     const processQueryParams = () => {
@@ -343,13 +365,20 @@ export default function useQueryParams({
                 processSubmission();
               }
             }, MAX_SETTINGS_WAIT_MS);
-          } else if (areSettingsApplied()) {
-            processSubmission();
+          } else {
+            settingsTimeoutRef.current = setTimeout(() => {
+              if (!submissionHandledRef.current && pendingSubmitRef.current) {
+                logger.log('conversation', 'Default model spec timeout, leaving prompt in input');
+                processPromptWithoutSubmission();
+              }
+            }, MAX_SETTINGS_WAIT_MS);
+
+            if (areSettingsApplied()) {
+              processSubmission();
+            }
           }
         } else {
-          methods.setValue('text', decodedPrompt, { shouldValidate: true });
-          textAreaRef.current.focus();
-          textAreaRef.current.setSelectionRange(decodedPrompt.length, decodedPrompt.length);
+          setPromptText(decodedPrompt);
 
           methods.handleSubmit((data) => {
             if (data.text?.trim()) {
@@ -358,9 +387,7 @@ export default function useQueryParams({
           })();
         }
       } else if (decodedPrompt) {
-        methods.setValue('text', decodedPrompt, { shouldValidate: true });
-        textAreaRef.current.focus();
-        textAreaRef.current.setSelectionRange(decodedPrompt.length, decodedPrompt.length);
+        setPromptText(decodedPrompt);
       } else {
         submissionHandledRef.current = true;
       }
@@ -389,7 +416,9 @@ export default function useQueryParams({
     getPreservedSearchParams,
     queryClient,
     processSubmission,
+    processPromptWithoutSubmission,
     areSettingsApplied,
+    setPromptText,
   ]);
 
   useEffect(() => {
