@@ -418,7 +418,6 @@ endpoints:
   agents:
     disableBuilder: true
     maxRecursionLimit: 10
-    capabilities: ["execute_code"]
 
   anthropic:
     titleModel: claude-sonnet-4-6
