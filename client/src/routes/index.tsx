@@ -51,6 +51,26 @@ const loadProjectWorkspace = () =>
     Component: m.ProjectWorkspace,
   }));
 
+const loadMemoriesView = () =>
+  import('~/components/SidePanel/Memories/layouts/MemoriesView').then((m) => ({
+    Component: m.default,
+  }));
+
+const loadBookmarksView = () =>
+  import('~/components/SidePanel/Bookmarks/layouts/BookmarksView').then((m) => ({
+    Component: m.default,
+  }));
+
+const loadFilesView = () =>
+  import('~/components/SidePanel/Files/layouts/FilesView').then((m) => ({
+    Component: m.default,
+  }));
+
+const loadMCPView = () =>
+  import('~/components/SidePanel/MCPBuilder/layouts/MCPView').then((m) => ({
+    Component: m.default,
+  }));
+
 const baseEl = document.querySelector('base');
 const baseHref = baseEl?.getAttribute('href') || '/';
 
@@ -186,6 +206,10 @@ export const router = createBrowserRouter(
                 </MarketplaceProvider>
               ),
             },
+            { path: 'memories', lazy: loadMemoriesView },
+            { path: 'bookmarks', lazy: loadBookmarksView },
+            { path: 'files', lazy: loadFilesView },
+            { path: 'mcp', lazy: loadMCPView },
           ],
         },
       ],

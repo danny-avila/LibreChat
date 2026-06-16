@@ -132,6 +132,7 @@ export type NavLink = {
   onClick?: (e?: React.MouseEvent) => void;
   variant?: 'default' | 'ghost';
   id: string;
+  href?: string;
 };
 
 export interface DataColumnMeta {

@@ -136,6 +136,7 @@ export default function useSideNavLinks({
         label: '',
         icon: ScrollText,
         id: 'skills',
+        href: '/skills',
         Component: SkillsAccordion,
       });
     }
@@ -146,6 +147,7 @@ export default function useSideNavLinks({
         label: '',
         icon: NotebookPen,
         id: 'prompts',
+        href: '/prompts/new',
         Component: PromptsAccordion,
       });
     }
@@ -156,6 +158,7 @@ export default function useSideNavLinks({
         label: '',
         icon: Brain,
         id: 'memories',
+        href: '/memories',
         Component: MemoryPanel,
       });
     }
@@ -166,6 +169,7 @@ export default function useSideNavLinks({
         label: '',
         icon: Bookmark,
         id: 'bookmarks',
+        href: '/bookmarks',
         Component: BookmarkPanel,
       });
     }
@@ -175,6 +179,7 @@ export default function useSideNavLinks({
       label: '',
       icon: AttachmentIcon,
       id: 'files',
+      href: '/files',
       Component: FilesPanel,
     });
 
@@ -202,6 +207,7 @@ export default function useSideNavLinks({
         label: '',
         icon: MCPIcon,
         id: 'mcp-builder',
+        href: '/mcp',
         Component: MCPBuilderPanel,
       });
     }

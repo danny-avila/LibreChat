@@ -1,6 +1,6 @@
 import { memo, useCallback, lazy, Suspense } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useRecoilValue } from 'recoil';
 import { SquarePen, SidebarClose, SidebarOpen } from 'lucide-react';
 import { QueryKeys } from 'librechat-data-provider';
@@ -102,6 +102,8 @@ const NavIconButton = memo(function NavIconButton({
   onCollapse?: () => void;
 }) {
   const localize = useLocalize();
+  const { pathname } = useLocation();
+  const effectiveIsActive = link.href ? pathname.startsWith(link.href) : isActive;
 
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -123,25 +125,37 @@ const NavIconButton = memo(function NavIconButton({
     [link, isActive, setActive, expanded, onExpand, onCollapse],
   );
 
+  const iconClass = cn(
+    'h-[48px] w-full rounded-none flex items-center justify-center',
+    effectiveIsActive
+      ? 'bg-surface-active-alt text-text-primary'
+      : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
+  );
+
   return (
     <TooltipAnchor
       description={localize(link.title)}
       side="right"
       render={
-        <Button
-          variant="ghost"
-          aria-label={localize(link.title)}
-          aria-pressed={isActive}
-          className={cn(
-            'h-[48px] w-full rounded-none flex items-center justify-center',
-            isActive
-              ? 'bg-surface-active-alt text-text-primary'
-              : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
-          )}
-          onClick={handleClick}
-        >
-          <link.icon className="h-5 w-5" aria-hidden="true" />
-        </Button>
+        link.href ? (
+          <Link
+            to={link.href}
+            aria-label={localize(link.title)}
+            className={iconClass}
+          >
+            <link.icon className="h-5 w-5" aria-hidden="true" />
+          </Link>
+        ) : (
+          <Button
+            variant="ghost"
+            aria-label={localize(link.title)}
+            aria-pressed={effectiveIsActive}
+            className={iconClass}
+            onClick={handleClick}
+          >
+            <link.icon className="h-5 w-5" aria-hidden="true" />
+          </Button>
+        )
       }
     />
   );

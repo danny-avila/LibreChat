@@ -1,6 +1,6 @@
 import { memo, useCallback, lazy, Suspense } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { SquarePen, SidebarClose } from 'lucide-react';
 import { QueryKeys } from 'librechat-data-provider';
@@ -97,18 +97,29 @@ const NavLabelRow = memo(function NavLabelRow({
 }) {
   const localize = useLocalize();
 
+  const rowClass = cn(
+    'flex h-8 w-full items-center gap-2 rounded-md px-4 text-left transition-colors',
+    isActive
+      ? 'bg-surface-active-alt text-text-primary'
+      : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
+  );
+
+  if (link.href) {
+    return (
+      <Link to={link.href} aria-label={localize(link.title)} className={rowClass}>
+        <link.icon className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+        <span className="truncate text-sm">{localize(link.title)}</span>
+      </Link>
+    );
+  }
+
   return (
     <button
       type="button"
       aria-pressed={isActive}
       aria-label={localize(link.title)}
       onClick={onClick}
-      className={cn(
-        'flex h-8 w-full items-center gap-2 rounded-md px-4 text-left transition-colors',
-        isActive
-          ? 'bg-surface-active-alt text-text-primary'
-          : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
-      )}
+      className={rowClass}
     >
       <link.icon className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
       <span className="truncate text-sm">{localize(link.title)}</span>
@@ -125,6 +136,7 @@ function FullSidebar({
   onCollapse: () => void;
 }) {
   const localize = useLocalize();
+  const { pathname } = useLocation();
   const { active, setActive } = useActivePanel();
   const effectiveActive = resolveActivePanel(active, links);
   const { isAuthenticated } = useAuthContext();
@@ -190,7 +202,7 @@ function FullSidebar({
             <NavLabelRow
               key={link.id}
               link={link}
-              isActive={link.id === effectiveActive}
+              isActive={link.href ? pathname.startsWith(link.href) : link.id === effectiveActive}
               onClick={() => {
                 if (link.onClick) {
                   link.onClick();
