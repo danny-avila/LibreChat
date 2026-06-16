@@ -11,7 +11,6 @@ import {
   useLocalize,
   TranslationKeys,
   useFavorites,
-  useShowMarketplace,
   useNewConvo,
 } from '~/hooks';
 import { groupConversationsByDate, clearMessagesCache, cn } from '~/utils';
@@ -41,6 +40,7 @@ interface ConversationsProps {
   isChatsExpanded: boolean;
   setIsChatsExpanded: (expanded: boolean) => void;
   showFavorites?: boolean;
+  hideHeader?: boolean;
 }
 
 interface MeasuredRowProps {
@@ -180,13 +180,13 @@ const Conversations: FC<ConversationsProps> = ({
   isChatsExpanded,
   setIsChatsExpanded,
   showFavorites = true,
+  hideHeader = false,
 }) => {
   const localize = useLocalize();
   const search = useRecoilValue(store.search);
   const { favorites, isLoading: isFavoritesLoading } = useFavorites();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const convoHeight = isSmallScreen ? 40 : 32;
-  const showAgentMarketplace = useShowMarketplace();
 
   const favoritesContentKeyRef = useRef('');
 
@@ -199,11 +199,9 @@ const Conversations: FC<ConversationsProps> = ({
 
   // Determine if FavoritesList will render content
   const shouldShowFavorites =
-    showFavorites &&
-    !search.query &&
-    (isFavoritesLoading || favorites.length > 0 || showAgentMarketplace);
+    showFavorites && !search.query && (isFavoritesLoading || favorites.length > 0);
 
-  favoritesContentKeyRef.current = `${favorites.length}-${showAgentMarketplace ? 1 : 0}-${isFavoritesLoading ? 1 : 0}`;
+  favoritesContentKeyRef.current = `${favorites.length}-${isFavoritesLoading ? 1 : 0}`;
 
   const filteredConversations = useMemo(
     () => rawConversations.filter(Boolean) as TConversation[],
@@ -282,7 +280,7 @@ const Conversations: FC<ConversationsProps> = ({
       clearFavoritesCache();
     });
     return () => cancelAnimationFrame(frameId);
-  }, [favorites.length, isFavoritesLoading, showAgentMarketplace, clearFavoritesCache]);
+  }, [favorites.length, isFavoritesLoading, clearFavoritesCache]);
 
   useEffect(() => {
     const frameId = requestAnimationFrame(() => {
@@ -365,12 +363,14 @@ const Conversations: FC<ConversationsProps> = ({
 
   return (
     <div className="relative flex h-full min-h-0 flex-col pb-2 text-sm text-text-primary">
-      <div className="px-2">
-        <ChatsHeader
-          isExpanded={isChatsExpanded}
-          onToggle={() => setIsChatsExpanded(!isChatsExpanded)}
-        />
-      </div>
+      {!hideHeader && (
+        <div className="px-2">
+          <ChatsHeader
+            isExpanded={isChatsExpanded}
+            onToggle={() => setIsChatsExpanded(!isChatsExpanded)}
+          />
+        </div>
+      )}
       {isSearchLoading ? (
         <div className="flex flex-1 items-center justify-center">
           <Spinner className="text-text-primary" />
@@ -405,5 +405,5 @@ const Conversations: FC<ConversationsProps> = ({
   );
 };
 
-export { DateLabel };
+export { DateLabel, ChatsHeader };
 export default memo(Conversations);
