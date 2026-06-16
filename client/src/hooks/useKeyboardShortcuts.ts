@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useMatch, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import { QueryKeys } from 'librechat-data-provider';
@@ -373,8 +373,10 @@ export function useShortcutActions(): ShortcutAction[] {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { newConversation } = useNewConvo();
-  const { conversationId: currentConvoId } = useParams();
+  const routeMatch = useMatch('/c/:conversationId');
+  const routeConvoId = routeMatch?.params.conversationId ?? null;
   const conversation = useRecoilValue(store.conversationByIndex(0));
+  const isSubmitting = useRecoilValue(store.isSubmittingFamily(0));
   const [sidebarExpanded, setSidebarExpanded] = useRecoilState(store.sidebarExpanded);
   const setShowShortcutsDialog = useSetRecoilState(store.showShortcutsDialog);
   const setIsTemporary = useSetRecoilState(store.isTemporary);
@@ -501,8 +503,12 @@ export function useShortcutActions(): ShortcutAction[] {
   }, []);
 
   const handleToggleTemporaryChat = useCallback(() => {
+    const hasMessages = Array.isArray(conversation?.messages) && conversation.messages.length >= 1;
+    if (hasMessages || isSubmitting) {
+      return;
+    }
     setIsTemporary((prev) => !prev);
-  }, [setIsTemporary]);
+  }, [conversation?.messages, isSubmitting, setIsTemporary]);
 
   const handleUploadFile = useCallback(() => {
     const btn =
@@ -516,22 +522,26 @@ export function useShortcutActions(): ShortcutAction[] {
     if (!convoId || convoId === 'new') {
       return;
     }
+    if (routeConvoId !== convoId) {
+      return;
+    }
     archiveMutation.mutate(
       { conversationId: convoId, isArchived: true },
       {
         onSuccess: () => {
-          if (currentConvoId === convoId || currentConvoId === 'new') {
-            newConversation();
-            navigate('/c/new', { replace: true });
-          }
+          newConversation();
+          navigate('/c/new', { replace: true });
         },
       },
     );
-  }, [conversation?.conversationId, currentConvoId, archiveMutation, newConversation, navigate]);
+  }, [conversation?.conversationId, routeConvoId, archiveMutation, newConversation, navigate]);
 
   const handleDeleteConversation = useCallback(() => {
     const convoId = conversation?.conversationId;
     if (!convoId || convoId === 'new') {
+      return;
+    }
+    if (routeConvoId !== convoId) {
       return;
     }
     const messages = queryClient.getQueryData<TMessage[]>([QueryKeys.messages, convoId]);
@@ -545,16 +555,14 @@ export function useShortcutActions(): ShortcutAction[] {
       },
       {
         onSuccess: () => {
-          if (currentConvoId === convoId || currentConvoId === 'new') {
-            newConversation();
-            navigate('/c/new', { replace: true });
-          }
+          newConversation();
+          navigate('/c/new', { replace: true });
         },
       },
     );
   }, [
     conversation?.conversationId,
-    currentConvoId,
+    routeConvoId,
     queryClient,
     deleteMutation,
     newConversation,
@@ -587,10 +595,30 @@ export function useShortcutActions(): ShortcutAction[] {
     (btn as HTMLButtonElement | null)?.click();
   }, []);
 
-  const handleOpenPanel = useCallback((panelId: string) => {
-    const btn = document.querySelector<HTMLButtonElement>(`[data-testid="nav-panel-${panelId}"]`);
-    btn?.click();
-  }, []);
+  const handleOpenPanel = useCallback(
+    (panelId: string) => {
+      const activatePanel = () => {
+        const btn = document.querySelector<HTMLButtonElement>(
+          `[data-testid="nav-panel-${panelId}"]`,
+        );
+        if (!btn) {
+          return;
+        }
+        if (btn.getAttribute('aria-pressed') !== 'true') {
+          btn.click();
+        }
+      };
+
+      if (!sidebarExpanded) {
+        setSidebarExpanded(true);
+        setTimeout(activatePanel, 350);
+        return;
+      }
+
+      activatePanel();
+    },
+    [sidebarExpanded, setSidebarExpanded],
+  );
 
   const handleOpenAssistants = useCallback(() => handleOpenPanel('assistants'), [handleOpenPanel]);
   const handleOpenAgents = useCallback(() => handleOpenPanel('agents'), [handleOpenPanel]);
@@ -813,6 +841,10 @@ export default function useKeyboardShortcuts() {
 
   const handler = useCallback(
     (e: KeyboardEvent) => {
+      if (e.repeat) {
+        return;
+      }
+
       const binding = bindingFromEvent(e);
       if (!binding) {
         return;
@@ -827,6 +859,14 @@ export default function useKeyboardShortcuts() {
       const tagName = target?.tagName;
       const isEditing =
         tagName === 'INPUT' || tagName === 'TEXTAREA' || target?.isContentEditable === true;
+      const isMainTextarea = target?.id === mainTextareaId;
+
+      if (
+        matchedId === 'submitMessage' &&
+        ((isMainTextarea && e.key === 'Enter') || (isEditing && !isMainTextarea))
+      ) {
+        return;
+      }
 
       const allowedWhileEditing: ShortcutActionId[] = [
         'focusChat',

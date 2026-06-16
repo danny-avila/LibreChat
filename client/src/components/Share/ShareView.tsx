@@ -122,6 +122,7 @@ function SharedView() {
     <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-surface-secondary from-40% to-transparent">
       <Footer
         startupConfig={config ?? null}
+        showLegalLinks
         className="pointer-events-auto relative mx-auto flex max-w-[55rem] flex-wrap items-center justify-center gap-2 px-3 pb-4 pt-6 text-center text-xs text-text-secondary"
       />
     </div>

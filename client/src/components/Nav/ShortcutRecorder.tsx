@@ -22,6 +22,7 @@ type ConflictInfo = {
 
 type RecorderState = {
   containerRef: RefObject<HTMLDivElement>;
+  boundaryRef: RefObject<HTMLDivElement>;
   previewKeys: string[];
   hasConflict: boolean;
   conflict: ConflictInfo | null;
@@ -61,6 +62,7 @@ export function useShortcutRecorder({
   onCancel,
 }: Options): RecorderState {
   const containerRef = useRef<HTMLDivElement>(null);
+  const boundaryRef = useRef<HTMLDivElement>(null);
   const [pending, setPending] = useState<ShortcutBinding | null>(null);
   const [draft, setDraft] = useState<ShortcutBinding | null>(initial);
   const [error, setError] = useState<'noModifier' | null>(null);
@@ -138,7 +140,8 @@ export function useShortcutRecorder({
 
   useEffect(() => {
     function onPointerDown(e: PointerEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const root = boundaryRef.current ?? containerRef.current;
+      if (root && !root.contains(e.target as Node)) {
         onCancel();
       }
     }
@@ -148,6 +151,7 @@ export function useShortcutRecorder({
 
   return {
     containerRef,
+    boundaryRef,
     previewKeys,
     hasConflict: !!conflict,
     conflict,

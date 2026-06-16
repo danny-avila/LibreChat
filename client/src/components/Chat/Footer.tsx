@@ -9,13 +9,29 @@ import { useLocalize } from '~/hooks';
 type FooterProps = {
   className?: string;
   startupConfig?: TStartupConfig | null;
+  showLegalLinks?: boolean;
 };
 
-function Footer({ className, startupConfig }: FooterProps) {
+function Footer({ className, startupConfig, showLegalLinks = false }: FooterProps) {
   const shouldFetchConfig = startupConfig === undefined;
   const { data: fetchedConfig } = useGetStartupConfig({ enabled: shouldFetchConfig });
   const config = shouldFetchConfig ? fetchedConfig : startupConfig;
   const localize = useLocalize();
+
+  const privacyPolicy = config?.interface?.privacyPolicy;
+  const termsOfService = config?.interface?.termsOfService;
+
+  const privacyPolicyRender = showLegalLinks && privacyPolicy?.externalUrl != null && (
+    <a className="text-text-secondary underline" href={privacyPolicy.externalUrl} rel="noreferrer">
+      {localize('com_ui_privacy_policy')}
+    </a>
+  );
+
+  const termsOfServiceRender = showLegalLinks && termsOfService?.externalUrl != null && (
+    <a className="text-text-secondary underline" href={termsOfService.externalUrl} rel="noreferrer">
+      {localize('com_ui_terms_of_service')}
+    </a>
+  );
 
   const mainContentParts = (
     typeof config?.customFooter === 'string'
@@ -60,7 +76,9 @@ function Footer({ className, startupConfig }: FooterProps) {
     </React.Fragment>
   ));
 
-  const footerElements = mainContentRender.filter(Boolean);
+  const footerElements = [...mainContentRender, privacyPolicyRender, termsOfServiceRender].filter(
+    Boolean,
+  );
 
   return (
     <div className="relative w-full">
