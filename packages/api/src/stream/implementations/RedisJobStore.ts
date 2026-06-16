@@ -257,40 +257,16 @@ export class RedisJobStore implements IJobStore {
   async updateJob(streamId: string, updates: Partial<SerializableJobData>): Promise<void> {
     const key = KEYS.job(streamId);
 
-    // Keep this generic path consistent with the guarded transitionStatus path:
-    //  - mirror `pendingActionId` on any `pendingAction` write so a pause here
-    //    still carries the flat field the stale-decision guard compares;
-    //  - refresh `lastActiveAt` when resuming to `running` so a long-paused job
-    //    isn't reaped by `createdAt` on the next cleanup tick.
-    let effective: Partial<SerializableJobData> = updates;
-    if (updates.status === 'running') {
-      effective = { ...updates, lastActiveAt: updates.lastActiveAt ?? Date.now() };
-    } else if (updates.pendingAction) {
-      effective = { ...updates, pendingActionId: updates.pendingAction.actionId };
-    }
-
-    const serialized = this.serializeJob(effective as SerializableJobData);
+    // Plain field writer. The membership-aware status transitions
+    // (running ⇄ requires_action — sets, TTLs, the actionId guard) go solely
+    // through transitionStatus, the single race-safe path. updateJob still
+    // handles terminal status writes (complete/error/aborted) + their cleanup.
+    const serialized = this.serializeJob(updates as SerializableJobData);
     if (Object.keys(serialized).length === 0) {
       return;
     }
 
     const fields = Object.entries(serialized).flat();
-
-    if (updates.status === 'requires_action') {
-      await this.transitionToRequiresAction(
-        key,
-        streamId,
-        fields,
-        this.pauseTtlSeconds(updates.pendingAction),
-      );
-      return;
-    }
-
-    if (updates.status === 'running') {
-      await this.transitionToRunning(key, streamId, fields);
-      return;
-    }
-
     const updated = await this.updateExistingJobHash(key, fields);
     if (!updated) {
       return;
@@ -470,86 +446,6 @@ export class RedisJobStore implements IJobStore {
       ...fields,
     );
     return updated === 1;
-  }
-
-  private async transitionToRequiresAction(
-    key: string,
-    streamId: string,
-    fields: string[],
-    ttlSeconds: number = this.ttl.running,
-  ): Promise<void> {
-    // Job paused for human review — non-terminal. Keep the user-active set
-    // untouched so resume can rebuild state from the persisted job. The live
-    // TTL covers the approval window (see pauseTtlSeconds) so a long-pending
-    // job isn't evicted before a decision arrives.
-    if (this.isCluster) {
-      const exists = await this.redis.exists(key);
-      if (exists !== 1) {
-        return;
-      }
-      await this.redis.srem(KEYS.runningJobs, streamId);
-      await this.redis.sadd(KEYS.requiresActionJobs, streamId);
-      await this.updateExistingJobHash(key, fields);
-      await this.redis.expire(key, ttlSeconds);
-      await this.redis.expire(KEYS.chunks(streamId), ttlSeconds);
-      await this.redis.expire(KEYS.runSteps(streamId), ttlSeconds);
-      return;
-    }
-
-    await this.redis.eval(
-      'if redis.call("EXISTS", KEYS[1]) == 0 then return 0 end redis.call("SREM", KEYS[2], ARGV[1]) redis.call("SADD", KEYS[3], ARGV[1]) redis.call("HSET", KEYS[1], unpack(ARGV, 3)) redis.call("EXPIRE", KEYS[1], tonumber(ARGV[2])) redis.call("EXPIRE", KEYS[4], tonumber(ARGV[2])) redis.call("EXPIRE", KEYS[5], tonumber(ARGV[2])) return 1',
-      5,
-      key,
-      KEYS.runningJobs,
-      KEYS.requiresActionJobs,
-      KEYS.chunks(streamId),
-      KEYS.runSteps(streamId),
-      streamId,
-      String(ttlSeconds),
-      ...fields,
-    );
-  }
-
-  private async transitionToRunning(
-    key: string,
-    streamId: string,
-    fields: string[],
-  ): Promise<void> {
-    // Resume from requires_action and clear stale pendingAction + its flat
-    // pendingActionId mirror. serializeJob skips `undefined`, so the hash
-    // fields must be removed explicitly.
-    if (this.isCluster) {
-      const updated = await this.updateExistingJobHash(key, fields);
-      if (!updated) {
-        return;
-      }
-      await this.redis.hdel(key, 'pendingAction', 'pendingActionId');
-      await this.refreshLiveJobTtls(key, streamId);
-      await this.redis.srem(KEYS.requiresActionJobs, streamId);
-      await this.redis.sadd(KEYS.runningJobs, streamId);
-      return;
-    }
-
-    await this.redis.eval(
-      'if redis.call("EXISTS", KEYS[1]) == 0 then return 0 end redis.call("HSET", KEYS[1], unpack(ARGV, 3)) redis.call("HDEL", KEYS[1], "pendingAction", "pendingActionId") redis.call("EXPIRE", KEYS[1], tonumber(ARGV[2])) redis.call("EXPIRE", KEYS[4], tonumber(ARGV[2])) redis.call("EXPIRE", KEYS[5], tonumber(ARGV[2])) redis.call("SREM", KEYS[2], ARGV[1]) redis.call("SADD", KEYS[3], ARGV[1]) return 1',
-      5,
-      key,
-      KEYS.requiresActionJobs,
-      KEYS.runningJobs,
-      KEYS.chunks(streamId),
-      KEYS.runSteps(streamId),
-      streamId,
-      String(this.ttl.running),
-      ...fields,
-    );
-  }
-
-  private async refreshLiveJobTtls(key: string, streamId: string): Promise<void> {
-    const pipeline = this.redis.pipeline();
-    pipeline.expire(key, this.ttl.running);
-    pipeline.expire(KEYS.chunks(streamId), this.ttl.running);
-    pipeline.expire(KEYS.runSteps(streamId), this.ttl.running);
-    await pipeline.exec();
   }
 
   async deleteJob(streamId: string): Promise<void> {

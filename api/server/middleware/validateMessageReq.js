@@ -1,4 +1,4 @@
-const { GenerationJobManager } = require('@librechat/api');
+const { GenerationJobManager, isPendingActionStale } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { getConvo } = require('~/models');
 
@@ -24,11 +24,11 @@ async function canReadActiveJobConversation(req, conversationId) {
   // and /chat/active), so a new-conversation run that pauses before its final
   // save can still recover the prompt — but only while it has a live,
   // resolvable prompt (missing/malformed or past-expiry reads as inactive).
-  const pendingAction = job?.metadata?.pendingAction;
-  const pendingLive =
-    !!pendingAction && (pendingAction.expiresAt == null || pendingAction.expiresAt > Date.now());
   const isActive =
-    !!job && (job.status === 'running' || (job.status === 'requires_action' && pendingLive));
+    !!job &&
+    (job.status === 'running' ||
+      (job.status === 'requires_action' &&
+        !isPendingActionStale({ pendingAction: job.metadata?.pendingAction })));
   if (!isActive) {
     return false;
   }
