@@ -6,7 +6,7 @@
 
 Features Released:
 
-* **Chat Management** \- We have heard users share that people use chats for a variety of projects, and that more ways to manage chats would be incredibly helpful. We are releasing two ways to do this:
+* **Chat management** \- We have heard users share that people use chats for a variety of projects, and that more ways to manage chats would be incredibly helpful. We are releasing two ways to do this:
   * **Search your chats** — Find info in past chats quickly by searching key words.
   * **Organize chats into project folders** — Organize multiple chats into a project folder to keep everything together and easily find related chats.
   * **Pin a chat** — Keep your favorite chats at the top of the chat list by pinning them (and unpin them when you finish with them).

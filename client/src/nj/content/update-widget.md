@@ -4,7 +4,7 @@
 
 # Title
 
-New Chat Management Features Are Here!
+New chat management features are here!
 
 # Description
 
