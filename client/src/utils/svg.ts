@@ -3,11 +3,10 @@ import DOMPurify from 'dompurify';
 /**
  * Heuristics for deciding whether a custom SVG icon is a monochrome glyph that
  * should be tinted to `currentColor` (so it follows the active theme) or a
- * multi-color logo that must keep its original colors.
+ * multi-color logo / embedded raster that must keep its original colors. The SVG
+ * is parsed with `DOMParser` and its elements are inspected, rather than scraped
+ * with regexes.
  */
-
-const COLOR_REGEX =
-  /(?:fill|stroke|stop-color|flood-color|lighting-color|color)\s*[:=]\s*["']?\s*(#[0-9a-fA-F]{3,8}|rgba?\([^)]*\)|hsla?\([^)]*\)|[a-zA-Z]+)/gi;
 
 /** Color keywords that carry no chromatic information and are ignored. */
 const IGNORABLE_COLORS = new Set(['none', 'transparent', 'inherit', 'currentcolor']);
@@ -28,6 +27,12 @@ const GRAY_NAMES = new Set([
   'dimgray',
   'dimgrey',
 ]);
+
+/** Paint properties whose color values determine whether an SVG is monochrome. */
+const PAINT_PROPS = ['fill', 'stroke', 'stop-color'];
+
+/** Matches color declarations inside a `<style>` block. */
+const CSS_COLOR_REGEX = /(?:fill|stroke|stop-color|color)\s*:\s*([^;}]+)/gi;
 
 function hexToRgb(hex: string): [number, number, number] | null {
   let value = hex.slice(1);
@@ -89,35 +94,34 @@ function isGrayscaleColor(color: string): boolean {
   return GRAY_NAMES.has(color);
 }
 
-function extractColors(svg: string): string[] {
-  const colors: string[] = [];
-  COLOR_REGEX.lastIndex = 0;
-  let match: RegExpExecArray | null = COLOR_REGEX.exec(svg);
-  while (match !== null) {
-    const token = match[1].trim().toLowerCase();
-    if (token && !IGNORABLE_COLORS.has(token)) {
-      colors.push(token);
-    }
-    match = COLOR_REGEX.exec(svg);
-  }
-  return colors;
-}
-
-const VIEWBOX_REGEX = /viewBox\s*=\s*["']\s*[-\d.]+[\s,]+[-\d.]+[\s,]+([\d.]+)[\s,]+([\d.]+)/i;
-const SVG_TAG_REGEX = /<svg\b[^>]*>/i;
-const RECT_REGEX = /<rect\b[^>]*>/gi;
-
-function getAttr(tag: string, name: string): string | null {
-  const match = tag.match(new RegExp(`(?<![-\\w])${name}\\s*=\\s*["']([^"']*)["']`, 'i'));
-  return match ? match[1].trim() : null;
-}
-
-function rootDimension(svg: string, name: 'width' | 'height'): number | null {
-  const tag = svg.match(SVG_TAG_REGEX);
-  if (!tag) {
+function parseSvgRoot(svg: string): Element | null {
+  if (typeof DOMParser === 'undefined') {
     return null;
   }
-  const value = getAttr(tag[0], name);
+  const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
+  if (doc.querySelector('parsererror')) {
+    return null;
+  }
+  const root = doc.documentElement;
+  return root != null && root.nodeName.toLowerCase() === 'svg' ? root : null;
+}
+
+/** Reads a paint value (e.g. `fill`), preferring an inline `style` over the attribute. */
+function readPaint(el: Element, prop: string): string | null {
+  const style = el.getAttribute('style');
+  if (style) {
+    for (const declaration of style.split(';')) {
+      const separator = declaration.indexOf(':');
+      if (separator !== -1 && declaration.slice(0, separator).trim().toLowerCase() === prop) {
+        return declaration.slice(separator + 1).trim();
+      }
+    }
+  }
+  return el.getAttribute(prop);
+}
+
+function readDimension(el: Element, name: string): number | null {
+  const value = el.getAttribute(name);
   if (value == null) {
     return null;
   }
@@ -125,7 +129,21 @@ function rootDimension(svg: string, name: 'width' | 'height'): number | null {
   return Number.isNaN(size) ? null : size;
 }
 
-function coversCanvas(value: string | null, canvas: number | null): boolean {
+function canvasSize(root: Element): { width: number | null; height: number | null } {
+  const viewBox = root.getAttribute('viewBox');
+  if (viewBox) {
+    const parts = viewBox
+      .trim()
+      .split(/[\s,]+/)
+      .map(Number);
+    if (parts.length === 4 && parts.every((part) => !Number.isNaN(part))) {
+      return { width: parts[2], height: parts[3] };
+    }
+  }
+  return { width: readDimension(root, 'width'), height: readDimension(root, 'height') };
+}
+
+function spansCanvas(value: string | null, canvas: number | null): boolean {
   if (value == null) {
     return false;
   }
@@ -139,38 +157,39 @@ function coversCanvas(value: string | null, canvas: number | null): boolean {
   return canvas != null && size >= canvas * 0.98;
 }
 
-/**
- * Detects a full-canvas opaque background (a `<rect>` at the origin spanning the
- * canvas). Such SVGs cannot be tinted via a CSS mask, since the opaque
- * background fills the whole area with the tint color instead of the glyph.
- * Canvas dimensions come from the viewBox, falling back to the root `<svg>`
- * width and height when no viewBox is present.
- */
-function hasOpaqueBackground(svg: string): boolean {
-  const viewBox = svg.match(VIEWBOX_REGEX);
-  const width = viewBox ? parseFloat(viewBox[1]) : rootDimension(svg, 'width');
-  const height = viewBox ? parseFloat(viewBox[2]) : rootDimension(svg, 'height');
+function isOpaqueRect(rect: Element): boolean {
+  const fill = (readPaint(rect, 'fill') ?? '').trim().toLowerCase();
+  if (fill === 'none' || fill === 'transparent') {
+    return false;
+  }
+  const fillOpacity = rect.getAttribute('fill-opacity');
+  if (fillOpacity != null && parseFloat(fillOpacity) === 0) {
+    return false;
+  }
+  const opacity = rect.getAttribute('opacity');
+  if (opacity != null && parseFloat(opacity) === 0) {
+    return false;
+  }
+  return true;
+}
 
-  const rects = svg.match(RECT_REGEX) ?? [];
-  for (const rect of rects) {
-    const fill = getAttr(rect, 'fill');
-    if (fill === 'none' || fill === 'transparent') {
+/**
+ * A full-canvas opaque `<rect>` at the origin cannot be tinted via a CSS mask:
+ * the mask uses alpha, so an opaque background fills the whole area with the
+ * tint color instead of the glyph.
+ */
+function hasOpaqueBackground(root: Element): boolean {
+  const { width, height } = canvasSize(root);
+  for (const rect of Array.from(root.querySelectorAll('rect'))) {
+    if (!isOpaqueRect(rect)) {
       continue;
     }
-    const fillOpacity = getAttr(rect, 'fill-opacity');
-    const opacity = getAttr(rect, 'opacity');
-    if (fillOpacity != null && parseFloat(fillOpacity) === 0) {
-      continue;
-    }
-    if (opacity != null && parseFloat(opacity) === 0) {
-      continue;
-    }
-    if (parseFloat(getAttr(rect, 'x') ?? '0') > 0 || parseFloat(getAttr(rect, 'y') ?? '0') > 0) {
+    if ((readDimension(rect, 'x') ?? 0) > 0 || (readDimension(rect, 'y') ?? 0) > 0) {
       continue;
     }
     if (
-      coversCanvas(getAttr(rect, 'width'), width) &&
-      coversCanvas(getAttr(rect, 'height'), height)
+      spansCanvas(rect.getAttribute('width'), width) &&
+      spansCanvas(rect.getAttribute('height'), height)
     ) {
       return true;
     }
@@ -178,17 +197,59 @@ function hasOpaqueBackground(svg: string): boolean {
   return false;
 }
 
+function colorsFromStyleBlocks(root: Element): string[] {
+  const colors: string[] = [];
+  for (const style of Array.from(root.querySelectorAll('style'))) {
+    const css = style.textContent ?? '';
+    CSS_COLOR_REGEX.lastIndex = 0;
+    let match: RegExpExecArray | null = CSS_COLOR_REGEX.exec(css);
+    while (match !== null) {
+      colors.push(match[1]);
+      match = CSS_COLOR_REGEX.exec(css);
+    }
+  }
+  return colors;
+}
+
+function collectColors(root: Element): string[] {
+  const colors: string[] = [];
+  for (const el of [root, ...Array.from(root.querySelectorAll('*'))]) {
+    if (el.nodeName.toLowerCase() === 'style') {
+      continue;
+    }
+    for (const prop of PAINT_PROPS) {
+      const value = readPaint(el, prop);
+      if (value) {
+        colors.push(value);
+      }
+    }
+  }
+  colors.push(...colorsFromStyleBlocks(root));
+  return colors
+    .map((color) => color.trim().toLowerCase())
+    .filter((color) => color.length > 0 && !IGNORABLE_COLORS.has(color));
+}
+
 /**
- * Returns true when an SVG can be safely tinted to match the theme: it only
- * contains grayscale colors (or relies on the default black fill /
- * `currentColor`) and has no opaque background. Multi-color logos and icons with
- * an opaque background return false so they are rendered with their own colors.
+ * Returns true when an SVG can be safely tinted to match the theme: it embeds no
+ * raster (`<image>`) or foreign (`<foreignObject>`) content, has no opaque
+ * background, and every paint color is grayscale (or it relies on the default
+ * black fill / `currentColor`). Multi-color logos, icons with an opaque
+ * background, embedded rasters, and anything unparseable return false so they
+ * keep their own colors.
  */
 export function isMonochromeSvg(svg: string): boolean {
-  if (hasOpaqueBackground(svg)) {
+  const root = parseSvgRoot(svg);
+  if (!root) {
     return false;
   }
-  const colors = extractColors(svg);
+  if (root.querySelector('image, foreignObject') != null) {
+    return false;
+  }
+  if (hasOpaqueBackground(root)) {
+    return false;
+  }
+  const colors = collectColors(root);
   if (colors.length === 0) {
     return true;
   }
