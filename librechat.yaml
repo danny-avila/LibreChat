@@ -427,6 +427,12 @@ endpoints:
 
   anthropic:
     titleModel: claude-sonnet-4-6
+    # Enables Anthropic's native hosted web search (web_search_20250305).
+    # getLLMConfig injects it directly into the request's tools array, so it
+    # works in agent mode without a separate search provider or the
+    # agents.capabilities web_search gate. Uses the existing ANTHROPIC_API_KEY.
+    addParams:
+      web_search: true
 
   # AWS Bedrock Example
   # Note: Bedrock endpoint is configured via environment variables
@@ -466,7 +472,6 @@ modelSpecs:
       description: Your AI assistant from SMB Team — ask anything to get started.
       default: true
       executeCode: true
-      webSearch: true
       fileSearch: true
       artifacts: true
       mcpServers:
@@ -508,6 +513,12 @@ modelSpecs:
           - Use the code interpreter with pdfplumber or pymupdf to extract and read the text
           - Summarize, analyze, or answer questions about the content as requested
 
+          ## Web Search
+
+          You have a web search tool with live internet access. Use it whenever a request depends on current, real-time, or external information — recent news, prices, market data, company details, documentation, or anything you cannot answer reliably from memory.
+          - Search proactively rather than telling the user you lack internet access — you have it.
+          - Cite or reference the sources you used when it helps the user trust the answer.
+
           ## Tone and Style
 
           - Be direct and professional. Prioritize clarity over length.
@@ -516,8 +527,8 @@ modelSpecs:
 
           ## Scope
 
-          - Focus on business tasks. You are not a general-purpose research assistant or creative writing tool.
-          - If a request is outside your intended scope, briefly acknowledge it and redirect to what you can help with.
+          - Your focus is business productivity, but you can and should look up current information with web search when a task needs it (e.g. prices, news, market or company data).
+          - If a request is genuinely outside your intended scope, briefly acknowledge it and redirect to what you can help with.
 
 # Example modelSpecs configuration showing grouping options
 # The 'group' field organizes model specs in the UI selector:
