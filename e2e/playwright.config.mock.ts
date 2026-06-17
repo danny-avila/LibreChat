@@ -48,8 +48,12 @@ const preservedCredentialEnvKeys = new Set([
  */
 function writeRuntimeMockConfig() {
   const template = fs.readFileSync(configTemplatePath, 'utf8');
+  const config =
+    process.env.E2E_MODEL_SPECS_ENFORCE === 'true'
+      ? template.replace('\n  enforce: false\n', '\n  enforce: true\n')
+      : template;
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, template);
+  fs.writeFileSync(configPath, config);
 }
 
 function neutralizeCredentialEnv(env: NodeJS.ProcessEnv, keep: Set<string>) {
