@@ -70,7 +70,7 @@
   --jersey-blue: #0c5295;
   --jersey-button: #0076d6;
   --jersey-button-hover: #005ea2;
-  --jersey-button-focus: #0050D8;
+  --jersey-button-focus: #0050d8;
   --info-lighter: #e7f6f8;
   --info: #00bde3;
 }
@@ -1389,7 +1389,8 @@ button {
   --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(2px + var(--tw-ring-offset-width))
     var(--jersey-button-focus);
   --tw-ring-offset-width: 2px;
-  box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 transparent);
+  box-shadow:
+    var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 transparent);
 }
 .btn-primary.focus-visible {
   --tw-ring-opacity: 1;
@@ -1417,11 +1418,12 @@ button {
 }
 .btn-secondary:focus {
   --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width)
-  var(--tw-ring-offset-color);
+    var(--tw-ring-offset-color);
   --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(2px + var(--tw-ring-offset-width))
-  var(--jersey-button-focus);
+    var(--jersey-button-focus);
   --tw-ring-offset-width: 2px;
-  box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 transparent);
+  box-shadow:
+    var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 transparent);
 }
 .dark .btn-secondary:hover {
   --tw-bg-opacity: 1;
@@ -1431,7 +1433,7 @@ button {
 }
 .btn-neutral {
   color: var(--jersey-blue);
-  padding: .25rem .5rem;
+  padding: 0.25rem 0.5rem;
 }
 
 .btn-neutral:hover {
@@ -3128,11 +3130,11 @@ body {
 }
 
 .markdown-nj ul ul {
-  margin-top: .5rem;
+  margin-top: 0.5rem;
 }
 
 .markdown-nj li {
-  margin-bottom: .5rem;
+  margin-bottom: 0.5rem;
 }
 
 .markdown-nj li a {
@@ -3141,11 +3143,11 @@ body {
 
 .file-icon {
   color: #454540;
-  background-color: #F5F0E6;
+  background-color: #f5f0e6;
 }
 
 .tip-component-icon {
   height: 1.25rem;
   width: 1.25rem;
-  background: #E8F5FF;
+  background: #e8f5ff;
 }
