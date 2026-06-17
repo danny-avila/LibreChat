@@ -118,6 +118,24 @@ describe('isMonochromeSvg', () => {
         '<svg viewBox="0 0 24 24"><rect width="24" height="24" fill="none" /><path fill="#333" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(true);
     });
+
+    it('rejects a background rect using root width/height when no viewBox is present', () => {
+      const svg =
+        '<svg width="24" height="24"><rect width="24" height="24" fill="#fff" /><path fill="#000" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('rejects a background rect when root dimensions carry units', () => {
+      const svg =
+        '<svg width="48px" height="48px"><rect width="48" height="48" fill="black" /><path fill="white" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('does not confuse stroke-width with the canvas width', () => {
+      const svg =
+        '<svg width="24" height="24" stroke-width="2"><rect width="24" height="24" fill="#eee" /><path fill="#222" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
   });
 });
 
