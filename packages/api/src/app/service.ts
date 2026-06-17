@@ -55,6 +55,13 @@ export interface GetAppConfigOptions {
   refresh?: boolean;
   /** When true, return only the YAML-derived base config — no DB override queries. */
   baseOnly?: boolean;
+  /**
+   * When true, propagate DB override-resolution errors instead of silently falling back to
+   * the base config. Use for security-sensitive reads (e.g. MCP allowlist refresh) where a
+   * fallback could overwrite known-good values with YAML defaults. The legitimate
+   * "no overrides found" path is unaffected and still returns the base config.
+   */
+  strictOverrides?: boolean;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -157,7 +164,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
    * Use this for startup, auth strategies, and other pre-tenant code paths.
    */
   async function getAppConfig(options: GetAppConfigOptions = {}): Promise<AppConfig> {
-    const { role, userId, tenantId, refresh, baseOnly } = options;
+    const { role, userId, tenantId, refresh, baseOnly, strictOverrides } = options;
 
     const baseConfig = await ensureBaseConfig(refresh);
 
@@ -174,6 +181,9 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
     }
 
     const principals = await buildPrincipals(role, userId).catch((error: unknown) => {
+      if (strictOverrides) {
+        throw error;
+      }
       logger.error('[getAppConfig] Error building principals, falling back to base:', error);
       return null;
     });
@@ -210,6 +220,9 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
       await cache.set(cacheKey, merged, overrideCacheTtl);
       return merged;
     } catch (error) {
+      if (strictOverrides) {
+        throw error;
+      }
       logger.error('[getAppConfig] Error resolving config overrides, falling back to base:', error);
       return baseConfig;
     }

@@ -403,6 +403,37 @@ describe('createAppConfigService', () => {
       expect(config).toEqual(deps._baseConfig);
     });
 
+    it('rethrows getApplicableConfigs errors under strictOverrides instead of falling back', async () => {
+      const deps = createDeps({
+        getApplicableConfigs: jest.fn().mockRejectedValue(new Error('DB down')),
+      });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      await expect(getAppConfig({ role: 'ADMIN', strictOverrides: true })).rejects.toThrow(
+        'DB down',
+      );
+    });
+
+    it('rethrows buildPrincipals errors under strictOverrides instead of falling back', async () => {
+      const deps = createDeps({
+        getUserPrincipals: jest.fn().mockRejectedValue(new Error('principals down')),
+      });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      await expect(
+        getAppConfig({ userId: 'uid1', role: 'USER', strictOverrides: true }),
+      ).rejects.toThrow('principals down');
+    });
+
+    it('still returns base config under strictOverrides when no overrides exist (not an error)', async () => {
+      const deps = createDeps({ getApplicableConfigs: jest.fn().mockResolvedValue([]) });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      const config = await getAppConfig({ role: 'ADMIN', strictOverrides: true });
+
+      expect(config).toEqual(deps._baseConfig);
+    });
+
     it('calls getUserPrincipals when userId is provided', async () => {
       const deps = createDeps();
       const { getAppConfig } = createAppConfigService(deps);

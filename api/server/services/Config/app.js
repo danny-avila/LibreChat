@@ -34,11 +34,16 @@ const { getAppConfig, clearAppConfigCache, clearOverrideCache } = createAppConfi
  * Clears the base config, per-principal override caches, tool caches,
  * and the MCP config-source server cache.
  *
- * The MCP step also refreshes the registry's effective `allowedDomains` /
- * `allowedAddresses` from the freshly merged config, so admin-panel
- * `mcpSettings` overrides take effect for inspection and connection without a
- * restart. The merged read uses `refresh: true` to bypass any stale cached
- * value; on failure the current allowlists are preserved (fail-safe).
+ * For global (non-tenant) mutations, the MCP step also refreshes the registry's
+ * effective `allowedDomains` / `allowedAddresses` from the freshly merged config,
+ * so admin-panel `mcpSettings` overrides take effect for inspection and connection
+ * without a restart. The read uses `refresh: true` (bypass stale cache) and
+ * `strictOverrides: true` (throw rather than silently fall back to YAML on a DB
+ * error) so a transient failure preserves the current allowlists instead of
+ * overwriting them. Tenant-scoped mutations skip this refresh: the registry is a
+ * process-wide singleton read by all connection paths, so pushing one tenant's
+ * allowlist into it would leak across tenants (per-tenant allowlists are not
+ * representable at this layer); only the config-server cache is evicted.
  * @param {string} [tenantId] - Optional tenant ID to scope override cache clearing.
  */
 async function invalidateConfigCaches(tenantId) {
@@ -55,19 +60,19 @@ async function invalidateConfigCaches(tenantId) {
   }
 
   let mcpAllowlists;
-  try {
-    const appConfig = await getAppConfig(
-      tenantId ? { tenantId, refresh: true } : { refresh: true },
-    );
-    mcpAllowlists = {
-      allowedDomains: appConfig?.mcpSettings?.allowedDomains,
-      allowedAddresses: appConfig?.mcpSettings?.allowedAddresses,
-    };
-  } catch (error) {
-    logger.error(
-      '[invalidateConfigCaches] Failed to resolve merged MCP allowlists; preserving current:',
-      error,
-    );
+  if (!tenantId) {
+    try {
+      const appConfig = await getAppConfig({ refresh: true, strictOverrides: true });
+      mcpAllowlists = {
+        allowedDomains: appConfig?.mcpSettings?.allowedDomains,
+        allowedAddresses: appConfig?.mcpSettings?.allowedAddresses,
+      };
+    } catch (error) {
+      logger.error(
+        '[invalidateConfigCaches] Failed to resolve merged MCP allowlists; preserving current:',
+        error,
+      );
+    }
   }
 
   try {

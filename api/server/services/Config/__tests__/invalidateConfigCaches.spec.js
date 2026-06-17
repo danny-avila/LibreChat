@@ -59,16 +59,15 @@ describe('invalidateConfigCaches', () => {
     expect(mockClearMcpConfigCache).toHaveBeenCalledTimes(1);
   });
 
-  it('passes tenantId through to clearOverrideCache and the merged allowlist read', async () => {
+  it('passes tenantId through to clearOverrideCache', async () => {
     await invalidateConfigCaches('tenant-a');
 
     expect(mockClearOverrideCache).toHaveBeenCalledWith('tenant-a');
-    expect(mockGetAppConfig).toHaveBeenCalledWith({ tenantId: 'tenant-a', refresh: true });
     expect(mockClearAppConfigCache).toHaveBeenCalledTimes(1);
     expect(mockInvalidateCachedTools).toHaveBeenCalledWith({ invalidateGlobal: true });
   });
 
-  it('refreshes the MCP registry with the merged mcpSettings allowlists', async () => {
+  it('refreshes the MCP registry with the merged mcpSettings allowlists (global mutation)', async () => {
     mockGetAppConfig.mockResolvedValue({
       availableTools: {},
       mcpSettings: {
@@ -79,11 +78,20 @@ describe('invalidateConfigCaches', () => {
 
     await invalidateConfigCaches();
 
-    expect(mockGetAppConfig).toHaveBeenCalledWith({ refresh: true });
+    // strictOverrides so a DB error throws rather than silently overwriting with YAML.
+    expect(mockGetAppConfig).toHaveBeenCalledWith({ refresh: true, strictOverrides: true });
     expect(mockClearMcpConfigCache).toHaveBeenCalledWith({
       allowedDomains: ['admin-added.com'],
       allowedAddresses: ['10.0.0.0/8'],
     });
+  });
+
+  it('skips the allowlist refresh for tenant-scoped mutations (no cross-tenant leak)', async () => {
+    await invalidateConfigCaches('tenant-a');
+
+    // The process-global registry singleton must not be set from one tenant's view.
+    expect(mockGetAppConfig).not.toHaveBeenCalled();
+    expect(mockClearMcpConfigCache).toHaveBeenCalledWith(undefined);
   });
 
   it('preserves current allowlists (no allowlist arg) when the merged read fails', async () => {
