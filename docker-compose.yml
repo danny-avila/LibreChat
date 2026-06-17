@@ -70,5 +70,23 @@ services:
     env_file:
       - .env
 
+  # Self-hosted Code Interpreter — backs the agents `execute_code` capability.
+  # Implements LibreChat's Code Interpreter API (base path /v1/librechat), version
+  # matched to LibreChat v0.8.6. Generated files (xlsx/docx/pdf/pptx) flow back
+  # through processCodeOutput as downloadable attachments. The api reaches it at
+  # http://code-interpreter:8000/v1/librechat via LIBRECHAT_CODE_BASEURL in .env.
+  code-interpreter:
+    container_name: LibreChat-CodeInterpreter
+    image: ghcr.io/martvaha/code-interpreter:latest
+    restart: always
+    environment:
+      # Lets the interpreter bind-mount the correct host dir into the sandbox
+      # containers it spawns. Must be the compose project directory.
+      - HOST_PATH=${PWD}
+    volumes:
+      - ./uploads:/app/uploads
+      # Sandbox execution spawns sibling containers via the host Docker daemon.
+      - /var/run/docker.sock:/var/run/docker.sock
+
 volumes:
   pgdata2:
