@@ -180,10 +180,17 @@ const loadTools = async ({
     'azure-ai-search': StructuredACS,
     traversaal_search: TraversaalSearch,
     tavily_search_results_json: TavilySearchResults,
-    keenable_search: KeenableSearch,
   };
 
   const customConstructors = {
+    keenable_search: async () => {
+      /* Keyless by default: a missing KEENABLE_API_KEY must not block the tool,
+       * so load credentials without throwing and let the tool fall back to the
+       * public endpoint. An optional key lifts rate limits. */
+      const authFields = getAuthFields('keenable_search');
+      const authValues = await loadAuthValues({ userId: user, authFields, throwError: false });
+      return new KeenableSearch({ ...authValues, userId: user });
+    },
     image_gen_oai: async (_toolContextMap, dynamicToolContextMap) => {
       const authFields = getAuthFields('image_gen_oai');
       const authValues = await loadAuthValues({ userId: user, authFields });

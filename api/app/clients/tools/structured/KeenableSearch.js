@@ -3,6 +3,7 @@ const { Tool } = require('@librechat/agents/langchain/tools');
 const { getEnvironmentVariable } = require('@librechat/agents/langchain/utils/env');
 
 const KEENABLE_DEFAULT_API_URL = 'https://api.keenable.ai/v1/search';
+const KEENABLE_PUBLIC_API_URL = 'https://api.keenable.ai/v1/search/public';
 
 const keenableSearchJsonSchema = {
   type: 'object',
@@ -31,11 +32,14 @@ class KeenableSearch extends Tool {
     super(fields);
     this.envVar = 'KEENABLE_API_KEY';
     this.urlEnvVar = 'KEENABLE_API_URL';
-    /* Used to initialize the Tool without necessary variables. */
-    this.override = fields.override ?? false;
-    this.apiKey = fields[this.envVar] ?? this.getApiKey();
+    /* Keyless by default: an API key is optional and only lifts rate limits.
+     * With a key we hit the authenticated endpoint; without one we fall back to
+     * the public endpoint, so the tool works with zero signup. */
+    this.apiKey = fields[this.envVar] ?? getEnvironmentVariable(this.envVar);
     this.apiUrl =
-      fields[this.urlEnvVar] ?? getEnvironmentVariable(this.urlEnvVar) ?? KEENABLE_DEFAULT_API_URL;
+      fields[this.urlEnvVar] ??
+      getEnvironmentVariable(this.urlEnvVar) ??
+      (this.apiKey ? KEENABLE_DEFAULT_API_URL : KEENABLE_PUBLIC_API_URL);
 
     this.kwargs = fields?.kwargs ?? {};
     this.name = 'keenable_search';
@@ -49,31 +53,25 @@ class KeenableSearch extends Tool {
     return keenableSearchJsonSchema;
   }
 
-  getApiKey() {
-    const apiKey = getEnvironmentVariable(this.envVar);
-    if (!apiKey && !this.override) {
-      throw new Error(`Missing ${this.envVar} environment variable.`);
-    }
-    return apiKey;
-  }
-
   async _call(input) {
-    const { query, max_results, ...rest } = input;
+    const { query, max_results } = input;
 
-    const requestBody = {
-      query,
-      max_results: max_results ?? 10,
-      ...rest,
-      ...this.kwargs,
+    /* The API accepts the query plus operator-configured kwargs; the result
+     * count is applied client-side because the endpoint has no count param. */
+    const requestBody = { query, ...this.kwargs };
+
+    const headers = {
+      'Content-Type': 'application/json',
+      /* Required for keyless requests and used for traffic attribution. */
+      'X-Keenable-Title': 'LibreChat',
     };
+    if (this.apiKey) {
+      headers['X-API-Key'] = this.apiKey;
+    }
 
     const fetchOptions = {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': this.apiKey,
-        'X-Keenable-Title': 'LibreChat',
-      },
+      headers,
       body: JSON.stringify(requestBody),
     };
 
@@ -88,6 +86,11 @@ class KeenableSearch extends Tool {
       throw new Error(
         `Request failed with status ${response.status}: ${json?.detail?.error || json?.error || JSON.stringify(json)}`,
       );
+    }
+
+    const limit = max_results ?? 10;
+    if (Array.isArray(json.results) && json.results.length > limit) {
+      json.results = json.results.slice(0, limit);
     }
 
     return JSON.stringify(json);

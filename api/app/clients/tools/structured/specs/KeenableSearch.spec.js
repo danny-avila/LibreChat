@@ -24,18 +24,25 @@ describe('KeenableSearch', () => {
     process.env = originalEnv;
   });
 
-  it('should throw an error if KEENABLE_API_KEY is missing', () => {
+  it('should not throw when KEENABLE_API_KEY is missing (keyless by default)', () => {
     delete process.env.KEENABLE_API_KEY;
-    expect(() => new KeenableSearch()).toThrow('Missing KEENABLE_API_KEY environment variable.');
+    expect(() => new KeenableSearch()).not.toThrow();
   });
 
-  it('should use provided KEENABLE_API_KEY field when env var is unset', () => {
+  it('should target the public endpoint when no key is set', () => {
+    delete process.env.KEENABLE_API_KEY;
+    const instance = new KeenableSearch();
+    expect(instance.apiKey).toBeUndefined();
+    expect(instance.apiUrl).toBe('https://api.keenable.ai/v1/search/public');
+  });
+
+  it('should use the provided KEENABLE_API_KEY field when the env var is unset', () => {
     delete process.env.KEENABLE_API_KEY;
     const instance = new KeenableSearch({ KEENABLE_API_KEY: mockApiKey });
     expect(instance.apiKey).toBe(mockApiKey);
   });
 
-  it('should default to https://api.keenable.ai/v1/search when KEENABLE_API_URL is unset', () => {
+  it('should default to the authenticated endpoint when a key is present', () => {
     const instance = new KeenableSearch({ KEENABLE_API_KEY: mockApiKey });
     expect(instance.apiUrl).toBe('https://api.keenable.ai/v1/search');
   });
@@ -56,7 +63,7 @@ describe('KeenableSearch', () => {
       fetch.mockResolvedValue(mockResponse);
     });
 
-    it('should send a POST with X-API-Key auth and the query body', async () => {
+    it('should POST the query with X-API-Key and attribution headers when keyed', async () => {
       const instance = new KeenableSearch({ KEENABLE_API_KEY: mockApiKey });
       await instance._call({ query: 'test query', max_results: 3 });
 
@@ -69,21 +76,50 @@ describe('KeenableSearch', () => {
             'X-API-Key': mockApiKey,
             'X-Keenable-Title': 'LibreChat',
           }),
-          body: JSON.stringify({ query: 'test query', max_results: 3 }),
+          body: JSON.stringify({ query: 'test query' }),
         }),
       );
     });
 
-    it('should default max_results to 10 when not provided', async () => {
-      const instance = new KeenableSearch({ KEENABLE_API_KEY: mockApiKey });
+    it('should POST to the public endpoint with attribution and no X-API-Key when keyless', async () => {
+      delete process.env.KEENABLE_API_KEY;
+      const instance = new KeenableSearch();
       await instance._call({ query: 'test query' });
 
       expect(fetch).toHaveBeenCalledWith(
-        'https://api.keenable.ai/v1/search',
+        'https://api.keenable.ai/v1/search/public',
         expect.objectContaining({
-          body: JSON.stringify({ query: 'test query', max_results: 10 }),
+          method: 'POST',
+          headers: expect.objectContaining({
+            'Content-Type': 'application/json',
+            'X-Keenable-Title': 'LibreChat',
+          }),
+          body: JSON.stringify({ query: 'test query' }),
         }),
       );
+      const [, options] = fetch.mock.calls[0];
+      expect(options.headers['X-API-Key']).toBeUndefined();
+    });
+
+    it('should not send max_results in the request body (unsupported by the API)', async () => {
+      const instance = new KeenableSearch({ KEENABLE_API_KEY: mockApiKey });
+      await instance._call({ query: 'test query', max_results: 5 });
+
+      const [, options] = fetch.mock.calls[0];
+      expect(JSON.parse(options.body)).toEqual({ query: 'test query' });
+    });
+
+    it('should limit results to max_results client-side', async () => {
+      fetch.mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          query: 'q',
+          results: [{ url: '1' }, { url: '2' }, { url: '3' }],
+        }),
+      });
+      const instance = new KeenableSearch({ KEENABLE_API_KEY: mockApiKey });
+      const out = await instance._call({ query: 'q', max_results: 2 });
+      expect(JSON.parse(out).results).toHaveLength(2);
     });
 
     it('should use ProxyAgent when PROXY env var is set', async () => {
