@@ -279,7 +279,7 @@ const AttachFileMenu = ({
         <Ariakit.MenuButton
           disabled={isUploadDisabled}
           id="attach-file-menu-button"
-          aria-label={localize('com_sidepanel_attach_files')}
+          aria-label="Attach File Options"
           aria-keyshortcuts={uploadFileAriaKey}
           className={cn(
             'flex size-9 items-center justify-center rounded-full p-1 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-opacity-50',
