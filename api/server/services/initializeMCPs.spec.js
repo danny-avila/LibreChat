@@ -39,8 +39,6 @@ jest.mock('./Config', () => ({
 }));
 
 // Mock MCP singletons
-const mockSetAllowlists = jest.fn();
-const mockRegistryInstance = { setAllowlists: mockSetAllowlists };
 const mockCreateMCPServersRegistry = jest.fn();
 const mockCreateMCPManager = jest.fn();
 const mockMCPManagerInstance = {
@@ -64,7 +62,7 @@ describe('initializeMCPs', () => {
     jest.clearAllMocks();
 
     // Default: successful initialization
-    mockCreateMCPServersRegistry.mockReturnValue(mockRegistryInstance);
+    mockCreateMCPServersRegistry.mockReturnValue(undefined);
     mockCreateMCPManager.mockResolvedValue(mockMCPManagerInstance);
     mockMCPManagerInstance.getAppToolFunctions.mockResolvedValue({});
     mockMergeAppTools.mockResolvedValue(undefined);
@@ -84,6 +82,7 @@ describe('initializeMCPs', () => {
         expect.anything(), // mongoose
         ['localhost'],
         undefined,
+        expect.any(Function), // per-request allowlist resolver
       );
     });
 
@@ -100,6 +99,7 @@ describe('initializeMCPs', () => {
         expect.anything(),
         allowedDomains,
         undefined,
+        expect.any(Function),
       );
     });
 
@@ -115,7 +115,32 @@ describe('initializeMCPs', () => {
         expect.anything(),
         undefined,
         undefined,
+        expect.any(Function),
       );
+    });
+
+    it('wires a per-request resolver that reads the merged (non-baseOnly) config', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        mcpConfig: null,
+        mcpSettings: { allowedDomains: ['yaml.com'] },
+      });
+
+      await initializeMCPs();
+
+      const resolver = mockCreateMCPServersRegistry.mock.calls[0][3];
+      expect(typeof resolver).toBe('function');
+
+      // The resolver resolves the request's merged allowlists — not the boot YAML base.
+      mockGetAppConfig.mockResolvedValue({
+        mcpSettings: { allowedDomains: ['merged.com'], allowedAddresses: ['10.0.0.0/8'] },
+      });
+      const resolved = await resolver({ userId: 'u1', role: 'ADMIN' });
+
+      expect(mockGetAppConfig).toHaveBeenLastCalledWith({ role: 'ADMIN', userId: 'u1' });
+      expect(resolved).toEqual({
+        allowedDomains: ['merged.com'],
+        allowedAddresses: ['10.0.0.0/8'],
+      });
     });
 
     it('should throw and log error if MCPServersRegistry initialization fails', async () => {
@@ -129,55 +154,6 @@ describe('initializeMCPs', () => {
       expect(logger.error).toHaveBeenCalledWith(
         '[MCP] Failed to initialize MCPServersRegistry:',
         registryError,
-      );
-    });
-  });
-
-  describe('merged allowlist seeding', () => {
-    it('seeds the registry with the merged (admin-panel) allowlists after construction', async () => {
-      // Base (YAML) config: narrow allowlist; merged (admin-panel) config: superset.
-      mockGetAppConfig
-        .mockResolvedValueOnce({
-          mcpConfig: null,
-          mcpSettings: { allowedDomains: ['yaml-only.com'] },
-        })
-        .mockResolvedValueOnce({
-          mcpConfig: null,
-          mcpSettings: {
-            allowedDomains: ['yaml-only.com', 'admin-added.com'],
-            allowedAddresses: ['10.0.0.0/8'],
-          },
-        });
-
-      await initializeMCPs();
-
-      // Registry is constructed from YAML, then refreshed from the merged config.
-      expect(mockCreateMCPServersRegistry).toHaveBeenCalledWith(
-        expect.anything(),
-        ['yaml-only.com'],
-        undefined,
-      );
-      expect(mockSetAllowlists).toHaveBeenCalledWith(
-        ['yaml-only.com', 'admin-added.com'],
-        ['10.0.0.0/8'],
-      );
-    });
-
-    it('falls back to YAML allowlists and warns when the merged read fails', async () => {
-      const mergedError = new Error('DB unavailable');
-      mockGetAppConfig
-        .mockResolvedValueOnce({
-          mcpConfig: null,
-          mcpSettings: { allowedDomains: ['yaml-only.com'] },
-        })
-        .mockRejectedValueOnce(mergedError);
-
-      await expect(initializeMCPs()).resolves.not.toThrow();
-
-      expect(mockSetAllowlists).not.toHaveBeenCalled();
-      expect(logger.warn).toHaveBeenCalledWith(
-        '[MCP] Failed to seed merged allowlists at boot; using YAML allowlists until next config change:',
-        mergedError,
       );
     });
   });
@@ -290,7 +266,6 @@ describe('initializeMCPs', () => {
 
       mockCreateMCPServersRegistry.mockImplementation(() => {
         callOrder.push('registry');
-        return mockRegistryInstance;
       });
       mockCreateMCPManager.mockImplementation(async () => {
         callOrder.push('manager');

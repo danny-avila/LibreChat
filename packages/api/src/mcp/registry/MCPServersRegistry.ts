@@ -82,6 +82,22 @@ const CONFIG_SERVER_INIT_TIMEOUT_MS = (() => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 30_000;
 })();
 
+/** Request context for resolving the effective MCP allowlists. */
+export interface MCPAllowlistContext {
+  userId?: string;
+  role?: string;
+}
+
+/**
+ * Resolves the effective `mcpSettings` allowlists for a request. Injected from the app
+ * layer (where the merged, tenant-scoped config lives) so the registry keeps no app-config
+ * dependency. Reads the ALS tenant context internally; pass the acting user to also pick up
+ * user/role-scoped overrides.
+ */
+export type MCPAllowlistResolver = (
+  ctx?: MCPAllowlistContext,
+) => Promise<{ allowedDomains?: string[] | null; allowedAddresses?: string[] | null }>;
+
 /**
  * Central registry for managing MCP server configurations.
  * Authoritative source of truth for all MCP servers provided by LibreChat.
@@ -99,8 +115,11 @@ export class MCPServersRegistry {
   private readonly dbConfigsRepo: ServerConfigsDB;
   private readonly cacheConfigsRepo: IServerConfigsRepositoryInterface;
   private readonly configCacheRepo: IServerConfigsRepositoryInterface;
-  private allowedDomains?: string[] | null;
-  private allowedAddresses?: string[] | null;
+  /** YAML-derived base allowlists; used at boot and as the fallback when no resolver is set. */
+  private readonly allowedDomains?: string[] | null;
+  private readonly allowedAddresses?: string[] | null;
+  /** Resolves the per-request (tenant-scoped) merged allowlists; falls back to the base above. */
+  private readonly allowlistResolver?: MCPAllowlistResolver;
   private readonly readThroughCache: Keyv<t.ParsedServerConfig>;
   private readonly readThroughCacheAll: Keyv<Record<string, t.ParsedServerConfig>>;
   private readonly pendingGetAllPromises = new Map<
@@ -122,12 +141,14 @@ export class MCPServersRegistry {
     mongoose: typeof import('mongoose'),
     allowedDomains?: string[] | null,
     allowedAddresses?: string[] | null,
+    allowlistResolver?: MCPAllowlistResolver,
   ) {
     this.dbConfigsRepo = new ServerConfigsDB(mongoose);
     this.cacheConfigsRepo = ServerConfigsCacheFactory.create(APP_CACHE_NAMESPACE, false);
     this.configCacheRepo = ServerConfigsCacheFactory.create(CONFIG_CACHE_NAMESPACE, false);
     this.allowedDomains = allowedDomains;
     this.allowedAddresses = allowedAddresses;
+    this.allowlistResolver = allowlistResolver;
 
     const ttl = cacheConfig.MCP_REGISTRY_CACHE_TTL;
 
@@ -147,6 +168,7 @@ export class MCPServersRegistry {
     mongoose: typeof import('mongoose'),
     allowedDomains?: string[] | null,
     allowedAddresses?: string[] | null,
+    allowlistResolver?: MCPAllowlistResolver,
   ): MCPServersRegistry {
     if (!mongoose) {
       throw new Error(
@@ -163,6 +185,7 @@ export class MCPServersRegistry {
       mongoose,
       allowedDomains,
       allowedAddresses,
+      allowlistResolver,
     );
     return MCPServersRegistry.instance;
   }
@@ -175,30 +198,56 @@ export class MCPServersRegistry {
     return MCPServersRegistry.instance;
   }
 
+  /** YAML base allowlist (boot/fallback). For request-time decisions use {@link resolveAllowlists}. */
   public getAllowedDomains(): string[] | null | undefined {
     return this.allowedDomains;
   }
 
+  /** YAML base allowlist (boot/fallback). For request-time decisions use {@link resolveAllowlists}. */
   public getAllowedAddresses(): string[] | null | undefined {
     return this.allowedAddresses;
-  }
-
-  /**
-   * Replaces the effective domain/address allowlists consulted by every inspection
-   * and connection path. Seeded from YAML at construction, then refreshed from the
-   * merged admin-panel config at boot and on each config-override change, so
-   * admin-panel `mcpSettings.allowedDomains` / `allowedAddresses` take effect without
-   * a restart. Callers must only invoke this with values from a successful merged-config
-   * read; on read failure they should skip it to preserve the current allowlists.
-   */
-  public setAllowlists(allowedDomains?: string[] | null, allowedAddresses?: string[] | null): void {
-    this.allowedDomains = allowedDomains;
-    this.allowedAddresses = allowedAddresses;
   }
 
   /** Returns true when no explicit allowedDomains allowlist is configured, enabling SSRF TOCTOU protection */
   public shouldEnableSSRFProtection(): boolean {
     return !Array.isArray(this.allowedDomains) || this.allowedDomains.length === 0;
+  }
+
+  /**
+   * Resolves the effective domain/address allowlists for the current request.
+   *
+   * MCP allowlists live in `mcpSettings`, which is tenant/principal-scoped admin config, so
+   * they must be read per-request from the merged config — not from a process-global value
+   * that would leak across tenants. The injected resolver reads the ALS tenant context; pass
+   * the acting user so user/role-scoped overrides resolve too (config-source inspection has no
+   * user and resolves at tenant scope). Falls back to the YAML base allowlists when no resolver
+   * is injected or the resolver fails, so a transient lookup error fails to the operator's
+   * baseline rather than disabling the allowlist.
+   */
+  public async resolveAllowlists(ctx?: MCPAllowlistContext): Promise<{
+    allowedDomains?: string[] | null;
+    allowedAddresses?: string[] | null;
+    useSSRFProtection: boolean;
+  }> {
+    let allowedDomains = this.allowedDomains;
+    let allowedAddresses = this.allowedAddresses;
+    if (this.allowlistResolver) {
+      try {
+        const resolved = await this.allowlistResolver(ctx);
+        allowedDomains = resolved.allowedDomains;
+        allowedAddresses = resolved.allowedAddresses;
+      } catch (error) {
+        logger.warn(
+          '[MCPServersRegistry] Allowlist resolver failed; falling back to YAML base allowlists',
+          error,
+        );
+      }
+    }
+    return {
+      allowedDomains,
+      allowedAddresses,
+      useSSRFProtection: !Array.isArray(allowedDomains) || allowedDomains.length === 0,
+    };
   }
 
   /**
@@ -354,14 +403,15 @@ export class MCPServersRegistry {
     const configRepo = this.getConfigRepository(storageLocation);
     const source = (storageLocation === 'CACHE' ? 'yaml' : 'user') as t.MCPServerSource;
     const configForInspection = { ...config, source } as t.ParsedServerConfig;
+    const { allowedDomains, allowedAddresses } = await this.resolveAllowlists({ userId });
     let parsedConfig: t.ParsedServerConfig;
     try {
       parsedConfig = await MCPServerInspector.inspect(
         serverName,
         configForInspection,
         undefined,
-        this.allowedDomains,
-        this.allowedAddresses,
+        allowedDomains,
+        allowedAddresses,
       );
     } catch (error) {
       logger.error(`[MCPServersRegistry] Failed to inspect server "${serverName}":`, error);
@@ -411,14 +461,15 @@ export class MCPServersRegistry {
     }
 
     const { inspectionFailed: _, ...configForInspection } = existing;
+    const { allowedDomains, allowedAddresses } = await this.resolveAllowlists({ userId });
     let parsedConfig: t.ParsedServerConfig;
     try {
       parsedConfig = await MCPServerInspector.inspect(
         serverName,
         configForInspection,
         undefined,
-        this.allowedDomains,
-        this.allowedAddresses,
+        allowedDomains,
+        allowedAddresses,
       );
     } catch (error) {
       logger.error(`[MCPServersRegistry] Reinspection failed for server "${serverName}":`, error);
@@ -458,14 +509,15 @@ export class MCPServersRegistry {
       }
     }
 
+    const { allowedDomains, allowedAddresses } = await this.resolveAllowlists({ userId });
     let parsedConfig: t.ParsedServerConfig;
     try {
       parsedConfig = await MCPServerInspector.inspect(
         serverName,
         { ...configForInspection, source } as t.ParsedServerConfig,
         undefined,
-        this.allowedDomains,
-        this.allowedAddresses,
+        allowedDomains,
+        allowedAddresses,
       );
     } catch (error) {
       logger.error(`[MCPServersRegistry] Failed to inspect server "${serverName}":`, error);
@@ -598,13 +650,15 @@ export class MCPServersRegistry {
         ...rawConfig,
         source: 'config' as const,
       } as t.ParsedServerConfig;
+      // Config-source servers are admin-defined with no acting user; resolve at tenant scope.
+      const { allowedDomains, allowedAddresses } = await this.resolveAllowlists();
       const inspected = await withTimeout(
         MCPServerInspector.inspect(
           serverName,
           configForInspection,
           undefined,
-          this.allowedDomains,
-          this.allowedAddresses,
+          allowedDomains,
+          allowedAddresses,
         ),
         CONFIG_SERVER_INIT_TIMEOUT_MS,
         `${prefix} Server initialization timed out`,

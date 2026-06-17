@@ -21,12 +21,20 @@ jest.mock('../MCPConnectionFactory', () => ({
 jest.mock('../connection');
 
 // Mock the registry
+const mockShouldEnableSSRFProtection = jest.fn().mockReturnValue(false);
+const mockGetAllowedDomains = jest.fn().mockReturnValue(null);
+const mockGetAllowedAddresses = jest.fn().mockReturnValue(null);
 const mockRegistryInstance = {
   getServerConfig: jest.fn(),
   getAllServerConfigs: jest.fn(),
-  shouldEnableSSRFProtection: jest.fn().mockReturnValue(false),
-  getAllowedDomains: jest.fn().mockReturnValue(null),
-  getAllowedAddresses: jest.fn().mockReturnValue(null),
+  shouldEnableSSRFProtection: mockShouldEnableSSRFProtection,
+  getAllowedDomains: mockGetAllowedDomains,
+  getAllowedAddresses: mockGetAllowedAddresses,
+  resolveAllowlists: jest.fn(async () => ({
+    allowedDomains: mockGetAllowedDomains(),
+    allowedAddresses: mockGetAllowedAddresses(),
+    useSSRFProtection: mockShouldEnableSSRFProtection(),
+  })),
 };
 
 jest.mock('../registry/MCPServersRegistry', () => ({

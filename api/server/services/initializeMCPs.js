@@ -4,38 +4,37 @@ const { mergeAppTools, getAppConfig } = require('./Config');
 const { createMCPServersRegistry, createMCPManager } = require('~/config');
 
 /**
+ * Resolves the current request's effective MCP allowlists from the merged (tenant-scoped)
+ * config. The registry calls this per inspection/connection so admin-panel `mcpSettings`
+ * overrides are honored without a restart. Tenant comes from the ALS context inside
+ * `getAppConfig`; `userId`/`role` pick up user/role-scoped overrides when an actor exists.
+ * @param {{ userId?: string, role?: string }} [ctx]
+ */
+async function resolveMCPAllowlists(ctx) {
+  const appConfig = await getAppConfig({ role: ctx?.role, userId: ctx?.userId });
+  return {
+    allowedDomains: appConfig?.mcpSettings?.allowedDomains,
+    allowedAddresses: appConfig?.mcpSettings?.allowedAddresses,
+  };
+}
+
+/**
  * Initialize MCP servers
  */
 async function initializeMCPs() {
-  const baseConfig = await getAppConfig({ baseOnly: true });
-  const mcpServers = baseConfig.mcpConfig;
+  const appConfig = await getAppConfig({ baseOnly: true });
+  const mcpServers = appConfig.mcpConfig;
 
-  let registry;
   try {
-    registry = createMCPServersRegistry(
+    createMCPServersRegistry(
       mongoose,
-      baseConfig?.mcpSettings?.allowedDomains,
-      baseConfig?.mcpSettings?.allowedAddresses,
+      appConfig?.mcpSettings?.allowedDomains,
+      appConfig?.mcpSettings?.allowedAddresses,
+      resolveMCPAllowlists,
     );
   } catch (error) {
     logger.error('[MCP] Failed to initialize MCPServersRegistry:', error);
     throw error;
-  }
-
-  // Seed the registry's effective allowlists from the merged (admin-panel) config so a
-  // pre-existing mcpSettings override is honored from boot, not just after the next
-  // config change. Falls back to the YAML allowlists set above when the merged read fails.
-  try {
-    const mergedConfig = await getAppConfig();
-    registry.setAllowlists(
-      mergedConfig?.mcpSettings?.allowedDomains,
-      mergedConfig?.mcpSettings?.allowedAddresses,
-    );
-  } catch (error) {
-    logger.warn(
-      '[MCP] Failed to seed merged allowlists at boot; using YAML allowlists until next config change:',
-      error,
-    );
   }
 
   try {

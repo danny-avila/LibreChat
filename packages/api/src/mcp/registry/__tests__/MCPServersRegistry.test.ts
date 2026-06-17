@@ -220,33 +220,83 @@ describe('MCPServersRegistry', () => {
     });
   });
 
-  describe('setAllowlists (merged admin-panel allowlist refresh)', () => {
-    it('updates the values surfaced by the allowlist getters', () => {
-      expect(registry.getAllowedDomains()).toBeUndefined();
-      expect(registry.shouldEnableSSRFProtection()).toBe(true);
+  describe('resolveAllowlists (per-request, tenant-scoped)', () => {
+    const createWith = (
+      allowedDomains?: string[] | null,
+      allowedAddresses?: string[] | null,
+      resolver?: (ctx?: { userId?: string; role?: string }) => Promise<{
+        allowedDomains?: string[] | null;
+        allowedAddresses?: string[] | null;
+      }>,
+    ): MCPServersRegistry => {
+      (MCPServersRegistry as unknown as { instance: undefined }).instance = undefined;
+      MCPServersRegistry.createInstance(mockMongoose, allowedDomains, allowedAddresses, resolver);
+      return MCPServersRegistry.getInstance();
+    };
 
-      registry.setAllowlists(['admin-added.com'], ['10.0.0.0/8']);
-
-      expect(registry.getAllowedDomains()).toEqual(['admin-added.com']);
-      expect(registry.getAllowedAddresses()).toEqual(['10.0.0.0/8']);
-      expect(registry.shouldEnableSSRFProtection()).toBe(false);
+    it('returns the YAML base allowlists when no resolver is injected', async () => {
+      const reg = createWith(['yaml.com'], ['10.0.0.0/8']);
+      await expect(reg.resolveAllowlists()).resolves.toEqual({
+        allowedDomains: ['yaml.com'],
+        allowedAddresses: ['10.0.0.0/8'],
+        useSSRFProtection: false,
+      });
     });
 
-    it('makes inspection honor a domain permitted only by the refreshed allowlist', async () => {
+    it('enables SSRF protection when the effective allowlist is empty', async () => {
+      const reg = createWith(undefined, undefined);
+      await expect(reg.resolveAllowlists()).resolves.toEqual({
+        allowedDomains: undefined,
+        allowedAddresses: undefined,
+        useSSRFProtection: true,
+      });
+    });
+
+    it('returns the resolver-provided merged allowlists and forwards the context', async () => {
+      const resolver = jest.fn().mockResolvedValue({
+        allowedDomains: ['admin-added.com'],
+        allowedAddresses: ['172.16.0.0/12'],
+      });
+      const reg = createWith(['yaml.com'], null, resolver);
+
+      const result = await reg.resolveAllowlists({ userId: 'u1', role: 'ADMIN' });
+
+      expect(resolver).toHaveBeenCalledWith({ userId: 'u1', role: 'ADMIN' });
+      expect(result).toEqual({
+        allowedDomains: ['admin-added.com'],
+        allowedAddresses: ['172.16.0.0/12'],
+        useSSRFProtection: false,
+      });
+    });
+
+    it('falls back to the YAML base allowlists when the resolver throws', async () => {
+      const resolver = jest.fn().mockRejectedValue(new Error('DB down'));
+      const reg = createWith(['yaml.com'], null, resolver);
+
+      await expect(reg.resolveAllowlists()).resolves.toEqual({
+        allowedDomains: ['yaml.com'],
+        allowedAddresses: null,
+        useSSRFProtection: false,
+      });
+    });
+
+    it('inspects against the resolved (admin-panel) allowlist, not the YAML base', async () => {
+      const resolver = jest.fn().mockResolvedValue({
+        allowedDomains: ['admin-added.com'],
+        allowedAddresses: ['10.0.0.0/8'],
+      });
+      const reg = createWith(['yaml-only.com'], null, resolver);
       const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+      await reg.reset();
 
-      // Simulate the merged (admin-panel) override arriving after construction.
-      registry.setAllowlists(['admin-added.com'], ['10.0.0.0/8']);
-
-      await registry.addServer(
+      await reg.addServer(
         'admin_panel_server',
         { type: 'streamable-http', url: 'https://admin-added.com/mcp' },
         'DB',
         'user-1',
       );
 
-      // The refreshed allowlist — not the (empty) YAML one from construction — is
-      // what inspection validates against.
+      expect(resolver).toHaveBeenCalledWith({ userId: 'user-1' });
       expect(inspectSpy).toHaveBeenCalledWith(
         'admin_panel_server',
         expect.objectContaining({ url: 'https://admin-added.com/mcp' }),
@@ -254,16 +304,6 @@ describe('MCPServersRegistry', () => {
         ['admin-added.com'],
         ['10.0.0.0/8'],
       );
-    });
-
-    it('clears the allowlist back to no-allowlist (SSRF) mode when overrides are removed', () => {
-      registry.setAllowlists(['admin-added.com']);
-      expect(registry.shouldEnableSSRFProtection()).toBe(false);
-
-      registry.setAllowlists(undefined, undefined);
-
-      expect(registry.getAllowedDomains()).toBeUndefined();
-      expect(registry.shouldEnableSSRFProtection()).toBe(true);
     });
   });
 
