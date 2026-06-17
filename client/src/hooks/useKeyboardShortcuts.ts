@@ -416,8 +416,20 @@ export function useShortcutActions(): ShortcutAction[] {
       input?.focus();
     };
 
+    const panelButton = document.querySelector<HTMLButtonElement>(
+      '[data-testid="nav-panel-conversations"]',
+    );
+    let switchedPanel = false;
+    if (panelButton && panelButton.getAttribute('aria-pressed') !== 'true') {
+      switchedPanel = true;
+      panelButton.click();
+    }
+
     if (!sidebarExpanded) {
       setSidebarExpanded(true);
+    }
+
+    if (!sidebarExpanded || switchedPanel) {
       setTimeout(focusSearchInput, 350);
       return;
     }
@@ -592,10 +604,7 @@ export function useShortcutActions(): ShortcutAction[] {
   }, []);
 
   const handleBookmarkConversation = useCallback(() => {
-    const btn =
-      document.querySelector<HTMLButtonElement>('[data-testid="bookmark-menu"]') ??
-      document.getElementById('bookmark-menu-button');
-    (btn as HTMLButtonElement | null)?.click();
+    document.getElementById('bookmark-menu-button')?.click();
   }, []);
 
   const handleOpenPanel = useCallback(
