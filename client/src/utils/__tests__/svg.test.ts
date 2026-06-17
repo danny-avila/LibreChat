@@ -143,6 +143,43 @@ describe('isMonochromeSvg', () => {
       expect(isMonochromeSvg(svg)).toBe(false);
     });
   });
+
+  describe('embedded raster/foreign content (not tintable)', () => {
+    it('rejects an SVG wrapping an embedded raster image (href)', () => {
+      const svg = '<svg><image href="data:image/png;base64,abc" width="24" height="24" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('rejects an SVG wrapping an embedded raster image (xlink:href)', () => {
+      const svg =
+        '<svg xmlns:xlink="http://www.w3.org/1999/xlink"><image xlink:href="logo.png" width="24" height="24" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('rejects an SVG embedding foreignObject content', () => {
+      const svg = '<svg><foreignObject><div>hi</div></foreignObject></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+  });
+
+  describe('parser robustness', () => {
+    it('tints a namespaced monochrome svg', () => {
+      const svg =
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#333" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('preserves a namespaced multi-color svg', () => {
+      const svg =
+        '<svg xmlns="http://www.w3.org/2000/svg"><path fill="#4285F4" /><path fill="#34A853" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('does not tint unparseable input', () => {
+      expect(isMonochromeSvg('')).toBe(false);
+      expect(isMonochromeSvg('<svg><path fill="#000"')).toBe(false);
+    });
+  });
 });
 
 describe('sanitizeSvg', () => {
