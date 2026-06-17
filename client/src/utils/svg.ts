@@ -103,7 +103,7 @@ function extractColors(svg: string): string[] {
   return colors;
 }
 
-const VIEWBOX_REGEX = /viewBox\s*=\s*["']\s*[-\d.]+\s+[-\d.]+\s+([\d.]+)\s+([\d.]+)/i;
+const VIEWBOX_REGEX = /viewBox\s*=\s*["']\s*[-\d.]+[\s,]+[-\d.]+[\s,]+([\d.]+)[\s,]+([\d.]+)/i;
 const SVG_TAG_REGEX = /<svg\b[^>]*>/i;
 const RECT_REGEX = /<rect\b[^>]*>/gi;
 

@@ -136,6 +136,12 @@ describe('isMonochromeSvg', () => {
         '<svg width="24" height="24" stroke-width="2"><rect width="24" height="24" fill="#eee" /><path fill="#222" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(false);
     });
+
+    it('rejects a background rect when the viewBox is comma-separated', () => {
+      const svg =
+        '<svg viewBox="0,0,24,24"><rect width="24" height="24" fill="#fff" /><path fill="#000" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
   });
 });
 
