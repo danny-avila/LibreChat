@@ -465,6 +465,14 @@ modelSpecs:
       label: AI Assistant
       description: Your AI assistant from SMB Team — ask anything to get started.
       default: true
+      executeCode: true
+      webSearch: true
+      fileSearch: true
+      artifacts: true
+      mcpServers:
+        - filesystem
+        - excel
+      hideBadgeRow: true
       preset:
         endpoint: anthropic
         model: claude-sonnet-4-6

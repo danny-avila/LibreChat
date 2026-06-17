@@ -879,6 +879,10 @@ export function fileToArtifact(
   return {
     id: toolArtifactKey(attachment),
     type,
+    /* Preserve the backing file id so the panel's download button can
+     * fetch the original binary (xlsx/docx/pptx) instead of the rendered
+     * HTML preview stored in `content`. */
+    fileId: attachment.file_id,
     title: attachment.filename ?? 'Generated artifact',
     // Nullish coalesce — an empty string is a legitimate file (e.g. a
     // user wrote an empty `.md`) and should render as empty in the
