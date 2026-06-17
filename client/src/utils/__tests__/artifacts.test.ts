@@ -581,6 +581,7 @@ describe('fileToArtifact', () => {
     expect(artifact!.content).toBe('<h1>hi</h1>');
     expect(artifact!.messageId).toBe('msg-1');
     expect(artifact!.lastUpdateTime).toBe(new Date(baseFile.updatedAt).getTime());
+    expect(artifact!.fileId).toBe('fid-1');
   });
 
   it('returns null for unsupported types so callers can fall through', () => {

@@ -14,6 +14,12 @@ export interface Artifact {
   content?: string;
   title?: string;
   type?: string;
+  /**
+   * For file-backed artifacts (office previews from code execution), the
+   * real server file id. When present, downloads must fetch the original
+   * binary rather than the rendered HTML preview held in `content`.
+   */
+  fileId?: string;
 }
 
 export type ArtifactFiles =
