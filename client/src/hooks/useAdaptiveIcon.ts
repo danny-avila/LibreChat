@@ -58,21 +58,31 @@ function resolveMonochrome(src: string): Promise<boolean> {
  * fetched once and cached; any fetch failure (e.g. CORS) leaves the icon
  * untinted.
  */
+function cachedVerdict(key: string | null): boolean {
+  return key != null ? (monochromeCache.get(key) ?? false) : false;
+}
+
 export default function useAdaptiveIcon(src?: string | null): { shouldTint: boolean } {
   const key = isSvgIcon(src) ? src : null;
-  const [isMonochrome, setIsMonochrome] = useState<boolean>(() =>
-    key != null ? (monochromeCache.get(key) ?? false) : false,
-  );
+  const [state, setState] = useState<{ key: string | null; monochrome: boolean }>(() => ({
+    key,
+    monochrome: cachedVerdict(key),
+  }));
+
+  /** Reset synchronously when the source changes so a verdict resolved for a
+   *  previous icon never tints the new one; seed from cache when available. */
+  if (state.key !== key) {
+    setState({ key, monochrome: cachedVerdict(key) });
+  }
 
   useEffect(() => {
     if (key == null) {
-      setIsMonochrome(false);
       return;
     }
     let active = true;
     resolveMonochrome(key).then((monochrome) => {
       if (active) {
-        setIsMonochrome(monochrome);
+        setState((prev) => (prev.key === key ? { key, monochrome } : prev));
       }
     });
     return () => {
@@ -80,5 +90,5 @@ export default function useAdaptiveIcon(src?: string | null): { shouldTint: bool
     };
   }, [key]);
 
-  return { shouldTint: isMonochrome };
+  return { shouldTint: state.key === key && state.monochrome };
 }
