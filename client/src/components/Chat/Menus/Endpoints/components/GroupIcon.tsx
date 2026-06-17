@@ -2,6 +2,7 @@ import React, { memo, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import type { IconMapProps } from '~/common';
 import { getKnownEndpointAsset, hasKnownEndpointIcon } from '~/hooks/Endpoint/UnknownIcon';
+import CustomIcon from '~/components/ui/CustomIcon';
 import { icons } from '~/hooks/Endpoint/Icons';
 
 interface GroupIconProps {
@@ -59,10 +60,10 @@ const GroupIcon: React.FC<GroupIconProps> = ({ iconURL, groupName }) => {
 
   return (
     <div
-      className="icon-md shrink-0 overflow-hidden rounded-full"
+      className="icon-md shrink-0 overflow-hidden rounded-full text-text-primary"
       style={{ width: 20, height: 20 }}
     >
-      <img
+      <CustomIcon
         src={resolvedIconURL || iconURL}
         alt={groupName}
         className="h-full w-full object-cover"
