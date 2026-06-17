@@ -1103,41 +1103,50 @@ describe('subagentConfigs', () => {
   });
 });
 
+/**
+ * Captures the top-level `Run.create` config (not just agentInputs) so tests
+ * can assert presence/absence of run-level options.
+ */
+async function callAndCaptureRunConfig({
+  overrides,
+  user,
+  tenantId,
+}: {
+  overrides?: Record<string, unknown>;
+  user?: Record<string, unknown>;
+  tenantId?: string;
+} = {}): Promise<Record<string, unknown>> {
+  const agents = [makeAgent(overrides)];
+  const signal = new AbortController().signal;
+
+  await createRun({
+    agents: agents as never,
+    signal,
+    streaming: true,
+    streamUsage: true,
+    user: user as never,
+    tenantId,
+  });
+
+  const createMock = Run.create as jest.Mock;
+  expect(createMock).toHaveBeenCalledTimes(1);
+  return createMock.mock.calls[0][0] as Record<string, unknown>;
+}
+
 // ---------------------------------------------------------------------------
-// Suite: toolOutputReferences gating
+// Suite: Langfuse run config
 // ---------------------------------------------------------------------------
-describe('toolOutputReferences gating', () => {
-  /**
-   * Captures the top-level `Run.create` config (not just agentInputs) so the
-   * test can assert presence/absence of the `toolOutputReferences` key.
-   */
-  async function callAndCaptureRunConfig(
-    overrides?: Record<string, unknown>,
-    user?: Record<string, unknown>,
-  ): Promise<Record<string, unknown>> {
-    const agents = [makeAgent(overrides)];
-    const signal = new AbortController().signal;
-
-    await createRun({
-      agents: agents as never,
-      signal,
-      streaming: true,
-      streamUsage: true,
-      user: user as never,
-    });
-
-    const createMock = Run.create as jest.Mock;
-    expect(createMock).toHaveBeenCalledTimes(1);
-    return createMock.mock.calls[0][0] as Record<string, unknown>;
-  }
-
+describe('Langfuse run config', () => {
   it('passes deterministic Langfuse trace config without tenant metadata by default', async () => {
     const callArgs = await callAndCaptureRunConfig();
     expect(callArgs.langfuse).toEqual({ deterministicTraceId: true });
   });
 
-  it('adds the authenticated tenant id to Langfuse trace metadata and tags', async () => {
-    const callArgs = await callAndCaptureRunConfig(undefined, {
+  it('adds the explicit request tenant id to Langfuse trace metadata and tags', async () => {
+    const callArgs = await callAndCaptureRunConfig({
+      user: {
+        id: 'user-1',
+      },
       tenantId: 'tenant-1',
     });
     expect(callArgs.langfuse).toEqual({
@@ -1147,13 +1156,35 @@ describe('toolOutputReferences gating', () => {
     });
   });
 
+  it('falls back to a full user tenant id for direct createRun callers', async () => {
+    const callArgs = await callAndCaptureRunConfig({
+      user: {
+        tenantId: 'tenant-2',
+      },
+    });
+    expect(callArgs.langfuse).toEqual({
+      deterministicTraceId: true,
+      metadata: { 'librechat.tenant.id': 'tenant-2' },
+      tags: ['tenant:tenant-2'],
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suite: toolOutputReferences gating
+// ---------------------------------------------------------------------------
+describe('toolOutputReferences gating', () => {
   it('passes toolOutputReferences when agent has codeEnvAvailable=true', async () => {
-    const callArgs = await callAndCaptureRunConfig({ codeEnvAvailable: true });
+    const callArgs = await callAndCaptureRunConfig({
+      overrides: { codeEnvAvailable: true },
+    });
     expect(callArgs.toolOutputReferences).toEqual({ enabled: true });
   });
 
   it('omits toolOutputReferences when codeEnvAvailable is false', async () => {
-    const callArgs = await callAndCaptureRunConfig({ codeEnvAvailable: false });
+    const callArgs = await callAndCaptureRunConfig({
+      overrides: { codeEnvAvailable: false },
+    });
     expect(callArgs).not.toHaveProperty('toolOutputReferences');
   });
 

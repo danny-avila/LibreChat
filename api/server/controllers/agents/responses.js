@@ -750,6 +750,7 @@ const createResponse = async (req, res) => {
           conversationId,
         },
         user: { id: userId },
+        tenantId: req.user?.tenantId,
         /** Bills subagent child-run model calls (reported outside the
          *  streamEvents loop) into the same collectedUsage array. */
         subagentUsageSink: createSubagentUsageSink(collectedUsage),
@@ -927,6 +928,7 @@ const createResponse = async (req, res) => {
           conversationId,
         },
         user: { id: userId },
+        tenantId: req.user?.tenantId,
         /** Bills subagent child-run model calls (reported outside the
          *  streamEvents loop) into the same collectedUsage array. */
         subagentUsageSink: createSubagentUsageSink(collectedUsage),
