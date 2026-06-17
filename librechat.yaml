@@ -411,7 +411,7 @@ endpoints:
   #   capabilities: ["code_interpreter", "retrieval", "actions", "tools", "image_vision"]
   agents:
     disableBuilder: true
-    maxRecursionLimit: 10
+    maxRecursionLimit: 25
     # `execute_code` routes Python to the self-hosted Code Interpreter service
     # (see deploy-compose.yml `code-interpreter` + LIBRECHAT_CODE_BASEURL in .env),
     # which returns generated files (xlsx/docx/pdf/pptx) as downloadable
@@ -502,10 +502,10 @@ modelSpecs:
           - For Excel/spreadsheets: use openpyxl or xlsxwriter
           - For Word documents: use python-docx
           - For PowerPoint: use python-pptx
-          - For PDFs: use reportlab
+          - For PDFs: use fpdf2 (import as `from fpdf import FPDF`). If fpdf2 is not installed, run `pip install fpdf2` first, then generate the file. As a fallback you may also use reportlab.
           - Always produce a real file — never tell the user you cannot create files
           - Name files descriptively (e.g., `q2_sales_summary.xlsx`, `onboarding_checklist.docx`)
-          - If a library is missing, install it first with `pip install` inside the interpreter
+          - If any library is missing, install it with `pip install <library>` in a separate code block before using it
 
           ## Reading Uploaded Files
 
