@@ -17,8 +17,13 @@ export interface TraverseOptions {
   maxDepth?: number;
 }
 
-const DEFAULT_MAX_NODES = 100_000;
-const DEFAULT_MAX_DEPTH = 100;
+// Tuned for the sole consumer, the debug logger. Measured cost is ~140ns/node
+// with the formatter callback, so ~2.5k nodes keeps one log under ~1ms even on
+// slower prod hardware, while real log objects are ~25-30 nodes at depth 3-4 —
+// ample headroom. maxNodes bounds fan-out (the cost lever); maxDepth bounds
+// recursion/readability. Callers needing more override via the options argument.
+const DEFAULT_MAX_NODES = 2_500;
+const DEFAULT_MAX_DEPTH = 5;
 
 export interface TraverseContext {
   node: unknown;
