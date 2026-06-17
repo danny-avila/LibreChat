@@ -503,12 +503,15 @@ export function useShortcutActions(): ShortcutAction[] {
   }, []);
 
   const handleToggleTemporaryChat = useCallback(() => {
+    if (!routeConvoId) {
+      return;
+    }
     const hasMessages = Array.isArray(conversation?.messages) && conversation.messages.length >= 1;
     if (hasMessages || isSubmitting) {
       return;
     }
     setIsTemporary((prev) => !prev);
-  }, [conversation?.messages, isSubmitting, setIsTemporary]);
+  }, [routeConvoId, conversation?.messages, isSubmitting, setIsTemporary]);
 
   const handleUploadFile = useCallback(() => {
     const btn =
