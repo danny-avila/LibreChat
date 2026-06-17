@@ -25,6 +25,11 @@
     <img
       src="https://img.shields.io/badge/DOCS-blue.svg?style=for-the-badge&logo=read-the-docs&logoColor=white&labelColor=000000&logoWidth=20">
   </a>
+  <a href="https://www.aiflowlearn.net/en/codex/librechat">
+    <img
+      alt="Sagerbuddy Repo Guide"
+      src="https://img.shields.io/badge/Sagerbuddy-Repo%20Guide-00B8A9?style=for-the-badge&logo=readthedocs&logoColor=white&labelColor=000000&logoWidth=20">
+  </a>
   <a aria-label="Sponsors" href="https://github.com/sponsors/danny-avila">
     <img
       src="https://img.shields.io/badge/SPONSORS-brightgreen.svg?style=for-the-badge&logo=github-sponsors&logoColor=white&labelColor=000000&logoWidth=20">
