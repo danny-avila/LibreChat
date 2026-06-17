@@ -81,7 +81,8 @@ function cloneMessagesWithTimestamps(messagesToClone, importBatchBuilder) {
  * @param {boolean} [params.records=false] - Optional flag for returning actual database records or resulting conversation and messages.
  * @param {boolean} [params.splitAtTarget=false] - Optional flag for splitting the messages at the target message level.
  * @param {string} [params.latestMessageId] - latestMessageId - Required if splitAtTarget is true.
- * @param {(userId: string) => ImportBatchBuilder} [params.builderFactory] - Optional factory function for creating an ImportBatchBuilder instance.
+ * @param {(userId: string, interfaceConfig?: object) => ImportBatchBuilder} [params.builderFactory] - Optional factory function for creating an ImportBatchBuilder instance.
+ * @param {object} [params.interfaceConfig] - Runtime interface config used to apply retention to cloned records.
  * @returns {Promise<TForkConvoResponse>} The response after forking the conversation.
  */
 async function forkConversation({
@@ -94,6 +95,7 @@ async function forkConversation({
   splitAtTarget = false,
   latestMessageId,
   builderFactory = createImportBatchBuilder,
+  interfaceConfig,
 }) {
   try {
     const originalConvo = await getConvo(requestUserId, originalConvoId);
@@ -110,7 +112,7 @@ async function forkConversation({
       targetMessageId = latestMessageId;
     }
 
-    const importBatchBuilder = builderFactory(requestUserId);
+    const importBatchBuilder = builderFactory(requestUserId, interfaceConfig);
     importBatchBuilder.startConversation(originalConvo.endpoint ?? EModelEndpoint.openAI);
 
     let messagesToClone = [];
@@ -500,9 +502,10 @@ async function forkSharedConversation({
  * @param {string} params.userId - The ID of the user duplicating the conversation.
  * @param {string} params.conversationId - The ID of the conversation to duplicate.
  * @param {string} [params.title] - Optional title override for the duplicate.
+ * @param {object} [params.interfaceConfig] - Runtime interface config used to apply retention to cloned records.
  * @returns {Promise<{ conversation: TConversation, messages: TMessage[] }>} The duplicated conversation and messages.
  */
-async function duplicateConversation({ userId, conversationId, title }) {
+async function duplicateConversation({ userId, conversationId, title, interfaceConfig }) {
   const originalConvo = await getConvo(userId, conversationId);
   if (!originalConvo) {
     throw new Error('Conversation not found');
@@ -518,7 +521,7 @@ async function duplicateConversation({ userId, conversationId, title }) {
     originalMessages[originalMessages.length - 1].messageId,
   );
 
-  const importBatchBuilder = createImportBatchBuilder(userId);
+  const importBatchBuilder = createImportBatchBuilder(userId, interfaceConfig);
   importBatchBuilder.startConversation(originalConvo.endpoint ?? EModelEndpoint.openAI);
 
   cloneMessagesWithTimestamps(messagesToClone, importBatchBuilder);
