@@ -53,6 +53,14 @@
   </a>
 </p>
 
+<p align="center">
+  <a href="https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=LibreChat">
+    <img src="client/public/assets/atlas-cloud-logo.png" alt="Atlas Cloud" width="120">
+  </a>
+</p>
+
+> 🎁 **[Atlas Cloud](https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=LibreChat)** 是一个全模态、兼容 OpenAI 规范的 AI 推理平台 —— 作为[自定义端点 (Custom Endpoint)](https://www.librechat.ai/docs/quick_start/custom_endpoints) 接入 LibreChat，即可通过单一 API 调用 DeepSeek、Qwen、GLM、Kimi、MiniMax 等模型，无需逐个对接多家厂商。另有高性价比的 [coding plan](https://www.atlascloud.ai/console/coding-plan)。接入方式见 [`librechat.example.yaml`](librechat.example.yaml) 中的 `AtlasCloud` 示例。
+
 
 # ✨ 功能
 
@@ -63,7 +71,7 @@
   - [自定义端点 (Custom Endpoints)](https://www.librechat.ai/docs/quick_start/custom_endpoints)：LibreChat 支持任何兼容 OpenAI 规范的 API，无需代理。
   - 兼容[本地与远程 AI 服务商](https://www.librechat.ai/docs/configuration/librechat_yaml/ai_endpoints)：
     - Ollama, groq, Cohere, Mistral AI, Apple MLX, koboldcpp, together.ai,
-    - OpenRouter, Helicone, Perplexity, ShuttleAI, Deepseek, Qwen 等。
+    - OpenRouter, Helicone, Perplexity, ShuttleAI, Deepseek, Qwen, Atlas Cloud 等。
 
 - 🔧 **[代码解释器 (Code Interpreter) API](https://www.librechat.ai/docs/features/code_interpreter)**： 
   - 安全的沙箱执行环境，支持 Python, Node.js (JS/TS), Go, C/C++, Java, PHP, Rust 和 Fortran。

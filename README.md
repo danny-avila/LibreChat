@@ -51,6 +51,14 @@
   </a>
 </p>
 
+<p align="center">
+  <a href="https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=LibreChat">
+    <img src="client/public/assets/atlas-cloud-logo.png" alt="Atlas Cloud" width="120">
+  </a>
+</p>
+
+> 🎁 **[Atlas Cloud](https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=LibreChat)** is a full-modal, OpenAI-compatible AI inference platform — plug it into LibreChat as a [custom endpoint](https://www.librechat.ai/docs/quick_start/custom_endpoints) to reach DeepSeek, Qwen, GLM, Kimi, MiniMax and more through a single API, no multi-vendor setup needed. Budget-friendly [coding plan](https://www.atlascloud.ai/console/coding-plan) available. See the `AtlasCloud` example in [`librechat.example.yaml`](librechat.example.yaml) to get started.
+
 
 # ✨ Features
 
@@ -61,7 +69,7 @@
   - [Custom Endpoints](https://www.librechat.ai/docs/quick_start/custom_endpoints): Use any OpenAI-compatible API with LibreChat, no proxy required
   - Compatible with [Local & Remote AI Providers](https://www.librechat.ai/docs/configuration/librechat_yaml/ai_endpoints):
     - Ollama, groq, Cohere, Mistral AI, Apple MLX, koboldcpp, together.ai,
-    - OpenRouter, Helicone, Perplexity, ShuttleAI, Deepseek, Qwen, and more
+    - OpenRouter, Helicone, Perplexity, ShuttleAI, Deepseek, Qwen, Atlas Cloud, and more
 
 - 🔧 **[Code Interpreter API](https://www.librechat.ai/docs/features/code_interpreter)**: 
   - Secure, Sandboxed Execution in Python, Node.js (JS/TS), Go, C/C++, Java, PHP, Rust, and Fortran

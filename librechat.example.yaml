@@ -531,6 +531,29 @@ endpoints:
       titleModel: 'claude-sonnet-4-5'
       modelDisplayLabel: 'Claude (Compatible)'
 
+    # Atlas Cloud Example (OpenAI-compatible)
+    # Full-modal inference platform with a single OpenAI-compatible API for
+    # LLMs (DeepSeek, Qwen, GLM, Kimi, MiniMax, Claude, GPT, Gemini, ...).
+    # Docs: https://www.atlascloud.ai/docs
+    # Note: `deepseek-ai/deepseek-v4-pro` is a reasoning model — make sure the
+    # client/preset allows enough output tokens (>= 512) so the answer is not
+    # truncated by the reasoning trace.
+    - name: 'AtlasCloud'
+      apiKey: '${ATLASCLOUD_API_KEY}'
+      baseURL: 'https://api.atlascloud.ai/v1'
+      models:
+        default:
+          - 'deepseek-ai/deepseek-v4-pro'
+          - 'deepseek-ai/deepseek-v4-flash'
+          - 'Qwen/Qwen3-Coder'
+          - 'zai-org/glm-5'
+          - 'moonshotai/kimi-k2.6'
+          - 'MiniMaxAI/MiniMax-M2'
+        fetch: true
+      titleConvo: true
+      titleModel: 'deepseek-ai/deepseek-v4-flash'
+      modelDisplayLabel: 'Atlas Cloud'
+
     # Groq Example
     - name: 'groq'
       apiKey: '${GROQ_API_KEY}'
