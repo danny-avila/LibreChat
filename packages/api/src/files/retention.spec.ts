@@ -394,6 +394,22 @@ describe('retention helpers', () => {
       ).resolves.toBe(expirationDate);
     });
 
+    it('returns a fresh expiry for retentionMode EPHEMERAL conversations without an expiration', async () => {
+      dependencies.getConvo.mockResolvedValue({ expiredAt: null });
+
+      await expect(
+        getSharedLinkExpiration(
+          {
+            req: request({
+              config: { interfaceConfig: { retentionMode: RetentionMode.EPHEMERAL } },
+            }),
+            conversationId: 'convo-1',
+          },
+          dependencies,
+        ),
+      ).resolves.toBe(expirationDate);
+    });
+
     it('returns an expired source conversation date so callers can reject the share', async () => {
       const expiredAt = new Date(Date.now() - 60 * 60 * 1000);
       dependencies.getConvo.mockResolvedValue({ expiredAt });
