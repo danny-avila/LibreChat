@@ -104,11 +104,25 @@ function extractColors(svg: string): string[] {
 }
 
 const VIEWBOX_REGEX = /viewBox\s*=\s*["']\s*[-\d.]+\s+[-\d.]+\s+([\d.]+)\s+([\d.]+)/i;
+const SVG_TAG_REGEX = /<svg\b[^>]*>/i;
 const RECT_REGEX = /<rect\b[^>]*>/gi;
 
 function getAttr(tag: string, name: string): string | null {
-  const match = tag.match(new RegExp(`\\b${name}\\s*=\\s*["']([^"']*)["']`, 'i'));
+  const match = tag.match(new RegExp(`(?<![-\\w])${name}\\s*=\\s*["']([^"']*)["']`, 'i'));
   return match ? match[1].trim() : null;
+}
+
+function rootDimension(svg: string, name: 'width' | 'height'): number | null {
+  const tag = svg.match(SVG_TAG_REGEX);
+  if (!tag) {
+    return null;
+  }
+  const value = getAttr(tag[0], name);
+  if (value == null) {
+    return null;
+  }
+  const size = parseFloat(value);
+  return Number.isNaN(size) ? null : size;
 }
 
 function coversCanvas(value: string | null, canvas: number | null): boolean {
@@ -127,13 +141,15 @@ function coversCanvas(value: string | null, canvas: number | null): boolean {
 
 /**
  * Detects a full-canvas opaque background (a `<rect>` at the origin spanning the
- * viewBox). Such SVGs cannot be tinted via a CSS mask, since the opaque
+ * canvas). Such SVGs cannot be tinted via a CSS mask, since the opaque
  * background fills the whole area with the tint color instead of the glyph.
+ * Canvas dimensions come from the viewBox, falling back to the root `<svg>`
+ * width and height when no viewBox is present.
  */
 function hasOpaqueBackground(svg: string): boolean {
   const viewBox = svg.match(VIEWBOX_REGEX);
-  const width = viewBox ? parseFloat(viewBox[1]) : null;
-  const height = viewBox ? parseFloat(viewBox[2]) : null;
+  const width = viewBox ? parseFloat(viewBox[1]) : rootDimension(svg, 'width');
+  const height = viewBox ? parseFloat(viewBox[2]) : rootDimension(svg, 'height');
 
   const rects = svg.match(RECT_REGEX) ?? [];
   for (const rect of rects) {
