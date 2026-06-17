@@ -3,6 +3,23 @@
  * Simplified implementation focused on the forEach use case
  */
 
+/**
+ * Defensive bounds for traversal. Cycles are detected via the ancestor chain,
+ * but a shared (non-circular) reference reachable through many paths can still
+ * fan out super-linearly on a DAG. These caps keep traversal off the event loop
+ * floor for pathological inputs (e.g. logging a deeply shared object) without
+ * affecting normal use. Tune via the options argument to `traverse`.
+ */
+export interface TraverseOptions {
+  /** Maximum number of nodes visited before traversal stops. */
+  maxNodes?: number;
+  /** Maximum depth descended; deeper nodes are visited as leaves, not expanded. */
+  maxDepth?: number;
+}
+
+const DEFAULT_MAX_NODES = 100_000;
+const DEFAULT_MAX_DEPTH = 100;
+
 export interface TraverseContext {
   node: unknown;
   path: (string | number)[];
@@ -87,34 +104,44 @@ function deleteProperty(obj: TraversableObject, key: string | number): void {
   }
 }
 
-function forEach(obj: unknown, callback: ForEachCallback): void {
-  const visited = new WeakSet<object>();
+function forEach(obj: unknown, callback: ForEachCallback, options?: TraverseOptions): void {
+  const maxNodes = options?.maxNodes ?? DEFAULT_MAX_NODES;
+  const maxDepth = options?.maxDepth ?? DEFAULT_MAX_DEPTH;
+  let visitedCount = 0;
 
   function walk(node: unknown, path: (string | number)[] = [], parent?: TraverseContext): void {
-    // Check for circular references
+    if (visitedCount >= maxNodes) {
+      return; // Bound total work; stop once the node budget is exhausted.
+    }
+
+    // Detect circular references via the ancestor chain only. A node is circular
+    // solely when it appears among its own ancestors; a shared (non-circular)
+    // reference appearing in multiple branches is traversed independently. The
+    // node and depth caps prevent a DAG of shared references from fanning out
+    // unboundedly.
     let circular: TraverseContext | null = null;
     if (isObject(node)) {
-      if (visited.has(node)) {
-        // Find the circular reference in the parent chain
-        let p = parent;
-        while (p) {
-          if (p.node === node) {
-            circular = p;
-            break;
-          }
-          p = p.parent;
+      let p = parent;
+      while (p) {
+        if (p.node === node) {
+          circular = p;
+          break;
         }
-        return; // Skip circular references
+        p = p.parent;
       }
-      visited.add(node);
+      if (circular) {
+        return; // Skip true cycles to avoid infinite recursion.
+      }
     }
 
     const key = path.length > 0 ? path[path.length - 1] : undefined;
     const isRoot = path.length === 0;
     const level = path.length;
+    const tooDeep = level >= maxDepth;
 
     // Determine if this is a leaf node
     const isLeaf =
+      tooDeep ||
       !isObject(node) ||
       (Array.isArray(node) && node.length === 0) ||
       Object.keys(node).length === 0;
@@ -149,10 +176,11 @@ function forEach(obj: unknown, callback: ForEachCallback): void {
     };
 
     // Call the callback with the context
+    visitedCount++;
     callback.call(context, node);
 
-    // Traverse children if not circular and is an object
-    if (!circular && isObject(node) && !isLeaf) {
+    // Traverse children when the node is an expandable object within bounds
+    if (isObject(node) && !isLeaf) {
       if (Array.isArray(node)) {
         for (let i = 0; i < node.length; i++) {
           walk(node[i], [...path, i], context);
@@ -169,10 +197,10 @@ function forEach(obj: unknown, callback: ForEachCallback): void {
 }
 
 // Main traverse function that returns an object with forEach method
-export default function traverse(obj: unknown) {
+export default function traverse(obj: unknown, options?: TraverseOptions) {
   return {
     forEach(callback: ForEachCallback): void {
-      forEach(obj, callback);
+      forEach(obj, callback, options);
     },
   };
 }
