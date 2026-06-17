@@ -1,5 +1,6 @@
+const mongoose = require('mongoose');
 const { CacheKeys } = require('librechat-data-provider');
-const { AppService, logger } = require('@librechat/data-schemas');
+const { AppService, logger, resolveTenantPrincipalId } = require('@librechat/data-schemas');
 const { createAppConfigService, clearMcpConfigCache } = require('@librechat/api');
 const { setCachedTools, invalidateCachedTools } = require('./getCachedTools');
 const { loadAndFormatTools } = require('~/server/services/start/tools');
@@ -27,6 +28,7 @@ const { getAppConfig, clearAppConfigCache, clearOverrideCache } = createAppConfi
   cacheKeys: CacheKeys,
   getApplicableConfigs: db.getApplicableConfigs,
   getUserPrincipals: db.getUserPrincipals,
+  resolveTenantPrincipalId: (tenantRef) => resolveTenantPrincipalId(mongoose, tenantRef),
 });
 
 /**

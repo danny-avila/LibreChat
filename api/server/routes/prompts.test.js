@@ -36,6 +36,7 @@ jest.mock('~/models', () => {
 
 jest.mock('~/server/middleware', () => ({
   requireJwtAuth: (req, res, next) => next(),
+  configMiddleware: (req, res, next) => next(),
   promptUsageLimiter: (req, res, next) => next(),
   canAccessPromptViaGroup: jest.requireActual('~/server/middleware').canAccessPromptViaGroup,
   canAccessPromptGroupResource:

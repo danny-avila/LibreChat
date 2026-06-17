@@ -7,6 +7,8 @@ import {
   FileType2Icon,
   FileImageIcon,
   TerminalSquareIcon,
+  FileText,
+  File as FileIcon,
 } from 'lucide-react';
 import {
   Providers,
@@ -25,6 +27,7 @@ import {
 } from '~/hooks';
 import { ephemeralAgentByConvoId } from '~/store';
 import { useDragDropContext } from '~/Providers';
+import { formatFileSize, getDragDropFileIcon } from './dragDropUi';
 
 interface DragDropModalProps {
   onOptionSelect: (option: EToolResources | undefined) => void;
@@ -155,26 +158,69 @@ const DragDropModal = ({ onOptionSelect, setShowModal, files, isVisible }: DragD
     return null;
   }
 
+  const fileIconFor = (file: File) => {
+    const kind = getDragDropFileIcon(file.name, file.type);
+    if (kind === 'image') return FileImageIcon;
+    if (kind === 'document') return FileText;
+    return FileIcon;
+  };
+
   return (
     <OGDialog open={isVisible} onOpenChange={setShowModal}>
       <OGDialogTemplate
         title={localize('com_ui_upload_type')}
         className="w-11/12 sm:w-[440px] md:w-[400px] lg:w-[360px]"
         main={
-          <div className="flex flex-col gap-2">
-            {options.map(
-              (option, index) =>
-                option.condition !== false && (
-                  <button
-                    key={index}
-                    onClick={() => onOptionSelect(option.value)}
-                    className="flex items-center gap-2 rounded-lg p-2 hover:bg-surface-active-alt"
-                  >
-                    {option.icon}
-                    <span>{option.label}</span>
-                  </button>
-                ),
+          <div className="flex flex-col gap-3">
+            {files.length > 0 && (
+              <div className="rounded-lg border border-border-light bg-surface-secondary p-3">
+                <p className="mb-2 text-xs font-medium text-text-secondary">
+                  {localize(
+                    files.length === 1
+                      ? 'com_ui_drag_drop_file_count'
+                      : 'com_ui_drag_drop_file_count_plural',
+                    { count: files.length },
+                  )}
+                </p>
+                <ul className="flex max-h-32 flex-col gap-1.5 overflow-y-auto">
+                  {files.map((file) => {
+                    const Icon = fileIconFor(file);
+                    return (
+                      <li
+                        key={`${file.name}-${file.size}-${file.lastModified}`}
+                        className="flex items-center gap-2 rounded-md bg-surface-primary px-2.5 py-2"
+                      >
+                        <Icon className="h-4 w-4 shrink-0 text-text-secondary" aria-hidden="true" />
+                        <span className="min-w-0 flex-1 truncate text-sm text-text-primary">
+                          {file.name}
+                        </span>
+                        <span className="shrink-0 text-xs text-text-tertiary">
+                          {formatFileSize(file.size)}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
             )}
+            <div className="flex flex-col gap-1">
+              {options.map(
+                (option, index) =>
+                  option.condition !== false && (
+                    <button
+                      key={index}
+                      type="button"
+                      onClick={() => onOptionSelect(option.value)}
+                      className="flex items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 text-left transition-colors hover:border-border-light hover:bg-surface-active-alt"
+                    >
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-secondary">
+                        {option.icon}
+                      </span>
+                      <span className="text-sm font-medium text-text-primary">{option.label}</span>
+                    </button>
+                  ),
+              )}
+            </div>
           </div>
         }
       />

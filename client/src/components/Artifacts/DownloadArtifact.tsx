@@ -57,7 +57,15 @@ const DownloadArtifact = ({ artifact }: { artifact: Artifact }) => {
     } catch (error) {
       logger.error('[DownloadArtifact] Download failed:', error);
     }
-  }, [fileId, downloadFile, currentCode, artifact.content, artifact.title, fileName, markDownloaded]);
+  }, [
+    fileId,
+    downloadFile,
+    currentCode,
+    artifact.content,
+    artifact.title,
+    fileName,
+    markDownloaded,
+  ]);
 
   return (
     <Button

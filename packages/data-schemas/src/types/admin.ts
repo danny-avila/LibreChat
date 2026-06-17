@@ -140,6 +140,16 @@ export type AdminTenantAdmin = {
   invitedAt?: string;
 };
 
+/** Platform-level super admin returned by the platform admin API. */
+export type AdminPlatformAdmin = {
+  id: string;
+  name: string;
+  email: string;
+  status: AdminUserMembershipStatus;
+  createdAt?: string;
+  invitedAt?: string;
+};
+
 /** Tenant as returned by the admin API. */
 export type AdminTenant = {
   id: string;

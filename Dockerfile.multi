@@ -5,7 +5,7 @@
 ARG NODE_MAX_OLD_SPACE_SIZE=6144
 
 # Base for all builds
-FROM node:20-alpine AS base-min
+FROM node:22-alpine AS base-min
 ARG NPM_CI_TIMEOUT_SECONDS=1500
 ARG NPM_CI_ATTEMPTS=2
 RUN apk upgrade --no-cache
@@ -25,6 +25,7 @@ COPY packages/data-schemas/package*.json ./packages/data-schemas/
 COPY packages/client/package*.json ./packages/client/
 COPY client/package*.json ./client/
 COPY api/package*.json ./api/
+COPY config/patch-agents.js ./config/patch-agents.js
 
 # Install all dependencies for every build
 FROM base-min AS base

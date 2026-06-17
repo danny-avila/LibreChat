@@ -10,7 +10,12 @@ import {
   PermissionTypes,
   defaultAgentCapabilities,
 } from 'librechat-data-provider';
-import { useLocalize, useHasAccess, useAgentCapabilities } from '~/hooks';
+import {
+  useLocalize,
+  useHasAccess,
+  useScopeOverrideFeatureAccess,
+  useAgentCapabilities,
+} from '~/hooks';
 import ArtifactsSubMenu from '~/components/Chat/Input/ArtifactsSubMenu';
 import MCPSubMenu from '~/components/Chat/Input/MCPSubMenu';
 import { useGetStartupConfig } from '~/data-provider';
@@ -49,10 +54,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     permission: Permissions.USE,
   });
 
-  const canUseSkills = useHasAccess({
-    permissionType: PermissionTypes.SKILLS,
-    permission: Permissions.USE,
-  });
+  const canUseSkills = useScopeOverrideFeatureAccess(PermissionTypes.SKILLS);
 
   const [isPopoverActive, setIsPopoverActive] = useState(false);
   const isDisabled = disabled ?? false;

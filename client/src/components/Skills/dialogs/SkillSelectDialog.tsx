@@ -10,7 +10,7 @@ import {
   useLocalize,
   useAuthContext,
   useCategories,
-  useHasAccess,
+  useScopeOverrideFeatureAccess,
   useSkillFavorites,
 } from '~/hooks';
 import { useListSkillsQuery } from '~/data-provider';
@@ -177,10 +177,7 @@ function SkillSelectDialog({ isOpen, setIsOpen }: SkillSelectDialogProps) {
   const [activeFilter, setActiveFilter] = useState<string>(SystemCategories.ALL);
   const { isFavorite: isFavoriteSkill, toggle: toggleFavoriteSkill } = useSkillFavorites();
 
-  const hasCreateAccess = useHasAccess({
-    permissionType: PermissionTypes.SKILLS,
-    permission: Permissions.CREATE,
-  });
+  const hasCreateAccess = useScopeOverrideFeatureAccess(PermissionTypes.SKILLS, Permissions.CREATE);
 
   const { data: skillsData } = useListSkillsQuery(LIST_QUERY_OPTIONS);
   const { categories } = useCategories({ className: 'size-4', hasAccess: true });

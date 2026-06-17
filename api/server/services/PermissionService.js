@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const { isEnabled } = require('@librechat/api');
-const { getTransactionSupport, logger } = require('@librechat/data-schemas');
+const { getTransactionSupport, logger, getTenantId } = require('@librechat/data-schemas');
 const { ResourceType, PrincipalType, PrincipalModel } = require('librechat-data-provider');
 const {
   entraIdPrincipalFeatureEnabled,
@@ -81,8 +81,14 @@ const grantPermission = async ({
 
     validateResourceType(resourceType);
 
-    // Get the role to determine permission bits
-    const role = await db.findRoleByIdentifier(accessRoleId);
+    let role = await db.findRoleByIdentifier(accessRoleId);
+    if (!role) {
+      const tenantId = getTenantId();
+      if (tenantId) {
+        await db.ensureDefaultRolesForTenant(tenantId);
+        role = await db.findRoleByIdentifier(accessRoleId);
+      }
+    }
     if (!role) {
       throw new Error(`Role ${accessRoleId} not found`);
     }

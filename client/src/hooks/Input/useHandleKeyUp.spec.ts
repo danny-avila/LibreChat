@@ -77,6 +77,18 @@ jest.mock('~/hooks/Roles/useHasAccess', () =>
   }),
 );
 
+jest.mock('~/hooks/Roles/useScopeOverrideFeatureAccess', () =>
+  jest.fn((permissionType: string) => {
+    if (permissionType === 'PROMPTS') {
+      return mockHasPromptsAccess.current;
+    }
+    if (permissionType === 'SKILLS') {
+      return mockHasSkillsAccess.current;
+    }
+    return false;
+  }),
+);
+
 jest.mock('~/hooks/Agents/useGetAgentsConfig', () =>
   jest.fn(() => ({ agentsConfig: { capabilities: [] } })),
 );

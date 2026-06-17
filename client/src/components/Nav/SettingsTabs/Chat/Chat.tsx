@@ -7,7 +7,7 @@ import { ForkSettings } from './ForkSettings';
 import ChatDirection from './ChatDirection';
 import ToggleSwitch from '../ToggleSwitch';
 import { useGetStartupConfig } from '~/data-provider';
-import { useHasAccess } from '~/hooks';
+import { useScopeOverrideFeatureAccess } from '~/hooks';
 import store from '~/store';
 
 const defaultInterface = getConfigDefaults().interface;
@@ -109,10 +109,10 @@ const toggleSwitchConfigs = [
 function Chat() {
   const { data: startupConfig } = useGetStartupConfig();
   const interfaceConfig = startupConfig?.interface ?? defaultInterface;
-  const hasPromptCreateAccess = useHasAccess({
-    permissionType: PermissionTypes.PROMPTS,
-    permission: Permissions.CREATE,
-  });
+  const hasPromptCreateAccess = useScopeOverrideFeatureAccess(
+    PermissionTypes.PROMPTS,
+    Permissions.CREATE,
+  );
   const showAdvancedPrompts = interfaceConfig.parameters === true && hasPromptCreateAccess === true;
   const showForkSettings = interfaceConfig.forking !== false;
 

@@ -147,16 +147,20 @@ export default function useDragHelpers() {
     [isAssistants, queryClient, showToast, localize],
   );
 
-  const [{ canDrop, isOver }, drop] = useDrop(
+  const [{ canDrop, isOver, dragPreviewFiles }, drop] = useDrop(
     () => ({
       accept: [NativeTypes.FILE],
       drop: handleDrop,
       canDrop: () => true,
       collect: (monitor: DropTargetMonitor) => {
-        /** Optimize collect to reduce re-renders */
-        const isOver = monitor.isOver();
+        const isOver = monitor.isOver({ shallow: true });
         const canDrop = monitor.canDrop();
-        return { isOver, canDrop };
+        const item = monitor.getItem() as { files?: File[] } | null;
+        return {
+          isOver,
+          canDrop,
+          dragPreviewFiles: isOver ? (item?.files ?? []) : [],
+        };
       },
     }),
     [handleDrop],
@@ -169,6 +173,7 @@ export default function useDragHelpers() {
     showModal,
     setShowModal,
     draggedFiles,
+    dragPreviewFiles,
     handleOptionSelect,
   };
 }

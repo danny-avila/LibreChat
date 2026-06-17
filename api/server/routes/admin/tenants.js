@@ -33,6 +33,7 @@ const handlers = createAdminTenantsHandlers({
   deleteTenantByObjectId: db.deleteTenantByObjectId,
   updateTenantByObjectId: db.updateTenantByObjectId,
   seedTenantSystemGrants: db.seedTenantSystemGrants,
+  seedDefaultRolesForTenant: db.seedDefaultRolesForTenant,
   countUsersByTenantId: db.countUsersByTenantId,
   deleteGrantsForTenant: db.deleteGrantsForTenant,
   isPlatformAdmin,

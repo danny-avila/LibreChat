@@ -92,6 +92,7 @@ export interface AdminTenantsDeps {
     data: { name?: string; description?: string; status?: TenantStatus },
   ) => Promise<ITenant | null>;
   seedTenantSystemGrants: (tenantId: string) => Promise<void>;
+  seedDefaultRolesForTenant: (tenantId: string) => Promise<Record<string, unknown>>;
   countUsersByTenantId: (tenantId: string) => Promise<number>;
   deleteGrantsForTenant: (tenantId: string) => Promise<void>;
   isPlatformAdmin: IsPlatformAdminFn;
@@ -137,6 +138,7 @@ export function createAdminTenantsHandlers(deps: AdminTenantsDeps) {
     deleteTenantByObjectId,
     updateTenantByObjectId,
     seedTenantSystemGrants,
+    seedDefaultRolesForTenant,
     countUsersByTenantId,
     deleteGrantsForTenant,
     isPlatformAdmin,
@@ -205,6 +207,7 @@ export function createAdminTenantsHandlers(deps: AdminTenantsDeps) {
         });
         const tenantSlug = tenant.tenantId;
         await tenantStorage.run({ tenantId: tenantSlug }, async () => {
+          await seedDefaultRolesForTenant(tenantSlug);
           await seedTenantSystemGrants(tenantSlug);
         });
       } catch (provisionErr) {

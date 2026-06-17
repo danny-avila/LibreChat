@@ -1,3 +1,4 @@
+import { PrincipalType } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import { createAppConfigService, _resetOverrideStrictCache } from './service';
 
@@ -273,7 +274,9 @@ describe('createAppConfigService', () => {
 
         await getAppConfig({ tenantId: 'tenant-a' });
 
-        expect(deps.getApplicableConfigs).toHaveBeenCalledWith([]);
+        expect(deps.getApplicableConfigs).toHaveBeenCalledWith([
+          { principalType: PrincipalType.TENANT, principalId: 'tenant-a' },
+        ]);
       });
 
       it('warns once when non-empty principals proceed without tenantId', async () => {
@@ -305,7 +308,9 @@ describe('createAppConfigService', () => {
           getAppConfig(),
         );
 
-        expect(deps.getApplicableConfigs).toHaveBeenCalledWith([]);
+        expect(deps.getApplicableConfigs).toHaveBeenCalledWith([
+          { principalType: PrincipalType.TENANT, principalId: 'tenant-a' },
+        ]);
         expect((config as TestConfig).restricted).toBe(true);
       });
     });

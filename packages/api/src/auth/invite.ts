@@ -18,6 +18,7 @@ export interface InviteDeps {
 export interface InviteOptions {
   role?: string;
   tenantId?: string;
+  scope?: 'platform';
 }
 
 /** Creates a new user invite and returns the encoded token. */
@@ -31,8 +32,15 @@ export async function createInvite(
     const hash = await hashToken(token);
     const encodedToken = encodeURIComponent(token);
     const fakeUserId = new Types.ObjectId();
+    const metadataEntries: [string, unknown][] = [];
+    if (options?.role != null) {
+      metadataEntries.push(['role', options.role]);
+    }
+    if (options?.scope != null) {
+      metadataEntries.push(['scope', options.scope]);
+    }
     const metadata =
-      options?.role != null ? new Map<string, unknown>([['role', options.role]]) : undefined;
+      metadataEntries.length > 0 ? new Map<string, unknown>(metadataEntries) : undefined;
 
     await deps.createToken({
       userId: fakeUserId,

@@ -1,4 +1,8 @@
-import { INTERFACE_PERMISSION_FIELDS, PERMISSION_SUB_KEYS } from 'librechat-data-provider';
+import {
+  INTERFACE_PERMISSION_FIELDS,
+  PERMISSION_SUB_KEYS,
+  SCOPE_OVERRIDE_INTERFACE_FIELDS,
+} from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { AppConfig, IConfig } from '~/types';
 
@@ -156,7 +160,10 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
         ) {
           const filtered: AnyObject = {};
           for (const [field, fieldVal] of Object.entries(value as AnyObject)) {
-            if (!INTERFACE_PERMISSION_FIELDS.has(field)) {
+            if (
+              !INTERFACE_PERMISSION_FIELDS.has(field) ||
+              SCOPE_OVERRIDE_INTERFACE_FIELDS.has(field)
+            ) {
               filtered[field] = fieldVal;
             } else if (
               fieldVal != null &&

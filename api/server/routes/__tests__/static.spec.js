@@ -13,8 +13,9 @@ jest.mock('~/config/paths', () => ({
 }));
 
 describe('Static Route Integration', () => {
+  jest.setTimeout(60_000);
+
   let app;
-  let staticRoute;
   let testDir;
   let testImagePath;
 
@@ -41,7 +42,10 @@ describe('Static Route Integration', () => {
     }
   });
 
-  // Helper function to set up static route with specific config
+  // Helper function to set up static route with specific config.
+  // Uses jest.isolateModules so each call gets a fresh require without
+  // polluting the global module registry (avoids 800+ MB heap from repeated
+  // jest.resetModules() calls that caused GC-pause timeouts on Windows).
   const setupStaticRoute = (skipGzipScan = false) => {
     if (skipGzipScan) {
       delete process.env.ENABLE_IMAGE_OUTPUT_GZIP_SCAN;
@@ -49,14 +53,14 @@ describe('Static Route Integration', () => {
       process.env.ENABLE_IMAGE_OUTPUT_GZIP_SCAN = 'true';
     }
 
-    staticRoute = require('../static');
+    let staticRoute;
+    jest.isolateModules(() => {
+      staticRoute = require('../static');
+    });
     app.use('/images', staticRoute);
   };
 
   beforeEach(() => {
-    // Clear the module cache to get fresh imports
-    jest.resetModules();
-
     app = express();
 
     // Clear environment variables

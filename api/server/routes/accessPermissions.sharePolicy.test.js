@@ -8,6 +8,7 @@ jest.mock('~/server/middleware', () => ({
   requireJwtAuth: (req, _res, next) => next(),
   checkBan: (_req, _res, next) => next(),
   uaParser: (_req, _res, next) => next(),
+  configMiddleware: (req, _res, next) => next(),
   canAccessResource: jest.fn(() => (_req, _res, next) => next()),
 }));
 
@@ -207,5 +208,37 @@ describe('Access permissions share policy', () => {
       message: `You do not have permission to share ${ResourceType.SKILL} resources publicly`,
     });
     expect(updateResourcePermissions).not.toHaveBeenCalled();
+  });
+
+  it('allows public skill sharing when tenant config enables public despite role denial', async () => {
+    getRoleByName.mockResolvedValue({
+      permissions: {
+        [PermissionTypes.SKILLS]: {
+          [Permissions.SHARE]: true,
+          [Permissions.SHARE_PUBLIC]: false,
+        },
+      },
+    });
+
+    const configApp = express();
+    configApp.use(express.json());
+    configApp.use((req, _res, next) => {
+      req.user = { id: 'skill-owner', role: SystemRoles.USER };
+      req.config = {
+        interfaceConfig: {
+          skills: { use: true, create: true, share: true, public: true },
+        },
+      };
+      next();
+    });
+    configApp.use('/api/permissions', accessPermissionsRouter);
+
+    const response = await request(configApp)
+      .put(`/api/permissions/${ResourceType.SKILL}/${resourceId}`)
+      .send({ public: true, publicAccessRoleId: AccessRoleIds.SKILL_VIEWER });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ success: true });
+    expect(updateResourcePermissions).toHaveBeenCalledTimes(1);
   });
 });

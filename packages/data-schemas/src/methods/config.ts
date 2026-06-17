@@ -1,6 +1,7 @@
 import { Types } from 'mongoose';
 import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
+import { runAsSystem } from '~/config/tenantContext';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { Model, ClientSession } from 'mongoose';
 import type { IConfig } from '~/types';
@@ -64,13 +65,15 @@ export function createConfigMethods(mongoose: typeof import('mongoose')) {
       }
     }
 
-    return await Config.find({
-      $or: principalsQuery,
-      isActive: true,
-    })
-      .sort({ priority: 1 })
-      .session(session ?? null)
-      .lean<IConfig[]>();
+    return await runAsSystem(async () =>
+      Config.find({
+        $or: principalsQuery,
+        isActive: true,
+      })
+        .sort({ priority: 1 })
+        .session(session ?? null)
+        .lean<IConfig[]>(),
+    );
   }
 
   async function upsertConfig(

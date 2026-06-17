@@ -1,5 +1,10 @@
 import { logger, ResourceCapabilityMap } from '@librechat/data-schemas';
-import { Permissions, PermissionTypes, ResourceType } from 'librechat-data-provider';
+import {
+  Permissions,
+  PermissionTypes,
+  ResourceType,
+  resolveScopeOverridePermission,
+} from 'librechat-data-provider';
 import type { NextFunction, Response } from 'express';
 import type { IRole } from '@librechat/data-schemas';
 import type { CapabilityUser, HasCapabilityFn } from './capabilities';
@@ -178,7 +183,14 @@ export function createSharePolicyMiddleware({ getRoleByName, hasCapability }: Sh
       }
 
       const { user, resourceType, resourcePerms } = result;
-      const canShare = resourcePerms[Permissions.SHARE] === true;
+      const permissionType = resourceToPermissionType[resourceType];
+      const interfaceConfig = req.config?.interfaceConfig;
+      const canShare = resolveScopeOverridePermission(
+        resourcePerms[Permissions.SHARE] === true,
+        permissionType,
+        Permissions.SHARE,
+        interfaceConfig,
+      );
 
       if (!canShare) {
         logger.warn(`[checkShareAccess][${user.id}] User denied SHARE for ${resourceType}`);
@@ -216,7 +228,14 @@ export function createSharePolicyMiddleware({ getRoleByName, hasCapability }: Sh
       }
 
       const { user, resourceType, resourcePerms } = result;
-      const canSharePublic = resourcePerms[Permissions.SHARE_PUBLIC] === true;
+      const permissionType = resourceToPermissionType[resourceType];
+      const interfaceConfig = req.config?.interfaceConfig;
+      const canSharePublic = resolveScopeOverridePermission(
+        resourcePerms[Permissions.SHARE_PUBLIC] === true,
+        permissionType,
+        Permissions.SHARE_PUBLIC,
+        interfaceConfig,
+      );
 
       if (!canSharePublic) {
         logger.warn(

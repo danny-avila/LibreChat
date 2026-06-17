@@ -10,16 +10,23 @@ interface DragDropWrapperProps {
 }
 
 export default function DragDropWrapper({ children, className }: DragDropWrapperProps) {
-  const { isOver, canDrop, drop, showModal, setShowModal, draggedFiles, handleOptionSelect } =
-    useDragHelpers();
+  const {
+    isOver,
+    canDrop,
+    drop,
+    showModal,
+    setShowModal,
+    draggedFiles,
+    dragPreviewFiles,
+    handleOptionSelect,
+  } = useDragHelpers();
 
   const isActive = canDrop && isOver;
 
   return (
     <div ref={drop} className={cn('relative flex h-full w-full', className)}>
       {children}
-      {/** Always render overlay to avoid mount/unmount overhead */}
-      <DragDropOverlay isActive={isActive} />
+      <DragDropOverlay isActive={isActive} previewFiles={dragPreviewFiles} />
       <DragDropProvider>
         <DragDropModal
           files={draggedFiles}

@@ -3,23 +3,21 @@ import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import EmptyPromptPreview from '../display/EmptyPromptPreview';
 import CreatePromptForm from '../forms/CreatePromptForm';
-import { useHasAccess } from '~/hooks';
+import { useScopeOverrideFeatureAccess } from '~/hooks';
 import PromptForm from '../forms/PromptForm';
+import { useGetStartupConfig } from '~/data-provider';
 
 export default function InlinePromptsView() {
   const { promptId } = useParams();
   const navigate = useNavigate();
   const isNew = promptId === undefined;
+  const { isLoading: startupLoading } = useGetStartupConfig();
 
-  const hasAccess = useHasAccess({
-    permissionType: PermissionTypes.PROMPTS,
-    permission: Permissions.USE,
-  });
-
-  const hasCreateAccess = useHasAccess({
-    permissionType: PermissionTypes.PROMPTS,
-    permission: Permissions.CREATE,
-  });
+  const hasAccess = useScopeOverrideFeatureAccess(PermissionTypes.PROMPTS);
+  const hasCreateAccess = useScopeOverrideFeatureAccess(
+    PermissionTypes.PROMPTS,
+    Permissions.CREATE,
+  );
 
   const handleCreateSuccess = useCallback(
     (groupId: string) => {
@@ -27,6 +25,10 @@ export default function InlinePromptsView() {
     },
     [navigate],
   );
+
+  if (startupLoading) {
+    return null;
+  }
 
   if (!hasAccess) {
     return <Navigate to="/c/new" replace />;

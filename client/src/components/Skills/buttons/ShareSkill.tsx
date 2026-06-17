@@ -3,7 +3,7 @@ import { Share2Icon } from 'lucide-react';
 import { Button, TooltipAnchor } from '@librechat/client';
 import { Permissions, ResourceType, PermissionTypes } from 'librechat-data-provider';
 import type { TSkill } from 'librechat-data-provider';
-import { useHasAccess, useLocalize, useSkillPermissions } from '~/hooks';
+import { useLocalize, useSkillPermissions, useScopeOverrideFeatureAccess } from '~/hooks';
 import { GenericGrantAccessDialog } from '~/components/Sharing';
 
 // Memoed because it renders inside `SkillForm`'s header, which re-renders on
@@ -20,10 +20,10 @@ function ShareSkill({ skill, disabled }: ShareSkillProps) {
   const localize = useLocalize();
   const permissions = useSkillPermissions(skill);
 
-  const hasAccessToShareSkills = useHasAccess({
-    permissionType: PermissionTypes.SKILLS,
-    permission: Permissions.SHARE,
-  });
+  const hasAccessToShareSkills = useScopeOverrideFeatureAccess(
+    PermissionTypes.SKILLS,
+    Permissions.SHARE,
+  );
 
   if (permissions.isLoading || !hasAccessToShareSkills || !permissions.canShare) {
     return null;

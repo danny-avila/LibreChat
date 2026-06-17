@@ -1,8 +1,8 @@
 import { Navigate, useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom';
 import { Spinner } from '@librechat/client';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
-import { useGetSkillByIdQuery } from '~/data-provider';
-import { useHasAccess, useAuthContext, useLocalize } from '~/hooks';
+import { PermissionTypes } from 'librechat-data-provider';
+import { useGetSkillByIdQuery, useGetStartupConfig } from '~/data-provider';
+import { useScopeOverrideFeatureAccess, useAuthContext, useLocalize } from '~/hooks';
 import SkillFileViewer from '~/components/Skills/display/SkillFileViewer';
 import SkillDetail from '~/components/Skills/display/SkillDetail';
 import SkillState from '~/components/Skills/display/SkillState';
@@ -22,15 +22,13 @@ export default function SkillsView() {
   const localize = useLocalize();
   const { user, roles } = useAuthContext();
 
-  const hasAccess = useHasAccess({
-    permissionType: PermissionTypes.SKILLS,
-    permission: Permissions.USE,
-  });
+  const { isLoading: startupLoading } = useGetStartupConfig();
+  const hasAccess = useScopeOverrideFeatureAccess(PermissionTypes.SKILLS);
 
   const isEdit = location.pathname.endsWith('/edit');
 
   const rolesLoaded = user?.role != null && roles?.[user.role] != null;
-  if (!rolesLoaded) {
+  if (!rolesLoaded || startupLoading) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-presentation">
         <Spinner className="text-text-secondary" aria-label={localize('com_ui_loading')} />

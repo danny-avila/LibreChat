@@ -12,7 +12,13 @@ const {
   checkShareAccess,
   checkSharePublicAccess,
 } = require('~/server/middleware/checkSharePublicAccess');
-const { requireJwtAuth, checkBan, uaParser, canAccessResource } = require('~/server/middleware');
+const {
+  requireJwtAuth,
+  checkBan,
+  uaParser,
+  canAccessResource,
+  configMiddleware,
+} = require('~/server/middleware');
 const { checkPeoplePickerAccess } = require('~/server/middleware/checkPeoplePickerAccess');
 const { findMCPServerByObjectId, getSkillById } = require('~/models');
 
@@ -22,6 +28,7 @@ const router = express.Router();
 router.use(requireJwtAuth);
 router.use(checkBan);
 router.use(uaParser);
+router.use(configMiddleware);
 
 /**
  * Generic routes for resource permissions

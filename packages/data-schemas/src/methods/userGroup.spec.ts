@@ -6,6 +6,7 @@ import { createUserGroupMethods } from './userGroup';
 import groupSchema from '~/schema/group';
 import userSchema from '~/schema/user';
 import roleSchema from '~/schema/role';
+import tenantSchema from '~/schema/tenant';
 
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),
@@ -17,6 +18,7 @@ let mongoServer: MongoMemoryServer;
 let Group: mongoose.Model<t.IGroup>;
 let User: mongoose.Model<t.IUser>;
 let Role: mongoose.Model<t.IRole>;
+let Tenant: mongoose.Model<t.ITenant>;
 let methods: ReturnType<typeof createUserGroupMethods>;
 
 beforeAll(async () => {
@@ -24,6 +26,7 @@ beforeAll(async () => {
   Group = mongoose.models.Group || mongoose.model<t.IGroup>('Group', groupSchema);
   User = mongoose.models.User || mongoose.model<t.IUser>('User', userSchema);
   Role = mongoose.models.Role || mongoose.model<t.IRole>('Role', roleSchema);
+  Tenant = mongoose.models.Tenant || mongoose.model<t.ITenant>('Tenant', tenantSchema);
   methods = createUserGroupMethods(mongoose);
   await mongoose.connect(mongoServer.getUri());
 });
@@ -37,6 +40,7 @@ beforeEach(async () => {
   await Group.deleteMany({});
   await User.deleteMany({});
   await Role.deleteMany({});
+  await Tenant.deleteMany({});
 });
 
 async function createTestUser(overrides: Partial<t.IUser> = {}) {
@@ -381,6 +385,48 @@ describe('userGroup methods', () => {
 
       const rolePrincipal = principals.find((p) => p.principalType === PrincipalType.ROLE);
       expect(rolePrincipal).toBeUndefined();
+    });
+
+    it('includes TENANT principal when tenantId is provided', async () => {
+      const user = await createTestUser({ role: SystemRoles.USER });
+      const principals = await methods.getUserPrincipals({
+        userId: user._id.toString(),
+        role: SystemRoles.USER,
+        tenantId: 'tenant-abc',
+      });
+
+      const tenantPrincipal = principals.find((p) => p.principalType === PrincipalType.TENANT);
+      expect(tenantPrincipal).toBeTruthy();
+      expect(tenantPrincipal!.principalId).toBe('tenant-abc');
+    });
+
+    it('loads tenantId from user document when not provided', async () => {
+      const user = await createTestUser({ role: SystemRoles.USER, tenantId: 'tenant-from-db' });
+      const principals = await methods.getUserPrincipals({
+        userId: user._id.toString(),
+      });
+
+      const tenantPrincipal = principals.find((p) => p.principalType === PrincipalType.TENANT);
+      expect(tenantPrincipal?.principalId).toBe('tenant-from-db');
+    });
+
+    it('resolves legacy users.tenantId to tenants._id for TENANT principal', async () => {
+      const legacyTenantId = new Types.ObjectId().toString();
+      const tenant = await Tenant.create({
+        tenantId: legacyTenantId,
+        name: 'Apple',
+      });
+      const user = await createTestUser({
+        role: SystemRoles.USER,
+        tenantId: legacyTenantId,
+      });
+
+      const principals = await methods.getUserPrincipals({
+        userId: user._id.toString(),
+      });
+
+      const tenantPrincipal = principals.find((p) => p.principalType === PrincipalType.TENANT);
+      expect(tenantPrincipal?.principalId).toBe(tenant._id.toString());
     });
   });
 

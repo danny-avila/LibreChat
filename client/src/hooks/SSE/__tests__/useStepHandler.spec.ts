@@ -1025,10 +1025,7 @@ describe('useStepHandler', () => {
 
       /** The text is relocated to the next slot rather than overwriting the
        * existing thinking block or being silently dropped. */
-      expect(consoleSpy).not.toHaveBeenCalledWith(
-        'Content type mismatch',
-        expect.anything(),
-      );
+      expect(consoleSpy).not.toHaveBeenCalledWith('Content type mismatch', expect.anything());
 
       const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1][0];
       const responseMsg = lastCall.find((m: TMessage) => !m.isCreatedByUser);

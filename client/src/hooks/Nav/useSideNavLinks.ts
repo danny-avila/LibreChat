@@ -25,6 +25,7 @@ import {
   useMCPServerManager,
   useGetAgentsConfig,
   useHasAccess,
+  useScopeOverrideFeatureAccess,
 } from '~/hooks';
 import MCPBuilderPanel from '~/components/SidePanel/MCPBuilder/MCPBuilderPanel';
 import AgentPanelSwitch from '~/components/SidePanel/Agents/AgentPanelSwitch';
@@ -53,14 +54,8 @@ export default function useSideNavLinks({
   endpointsConfig: TEndpointsConfig;
   includeHidePanel?: boolean;
 }) {
-  const hasAccessToPrompts = useHasAccess({
-    permissionType: PermissionTypes.PROMPTS,
-    permission: Permissions.USE,
-  });
-  const hasAccessToSkills = useHasAccess({
-    permissionType: PermissionTypes.SKILLS,
-    permission: Permissions.USE,
-  });
+  const hasAccessToPrompts = useScopeOverrideFeatureAccess(PermissionTypes.PROMPTS);
+  const hasAccessToSkills = useScopeOverrideFeatureAccess(PermissionTypes.SKILLS);
   const hasAccessToBookmarks = useHasAccess({
     permissionType: PermissionTypes.BOOKMARKS,
     permission: Permissions.USE,

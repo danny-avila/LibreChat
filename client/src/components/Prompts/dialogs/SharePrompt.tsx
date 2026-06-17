@@ -9,7 +9,12 @@ import {
   PermissionTypes,
 } from 'librechat-data-provider';
 import type { TPromptGroup } from 'librechat-data-provider';
-import { useAuthContext, useHasAccess, useLocalize, useResourcePermissions } from '~/hooks';
+import {
+  useAuthContext,
+  useLocalize,
+  useResourcePermissions,
+  useScopeOverrideFeatureAccess,
+} from '~/hooks';
 import { GenericGrantAccessDialog } from '~/components/Sharing';
 
 const SharePrompt = React.memo(
@@ -17,11 +22,10 @@ const SharePrompt = React.memo(
     const { user } = useAuthContext();
     const localize = useLocalize();
 
-    // Check if user has permission to share prompts
-    const hasAccessToSharePrompts = useHasAccess({
-      permissionType: PermissionTypes.PROMPTS,
-      permission: Permissions.SHARE,
-    });
+    const hasAccessToSharePrompts = useScopeOverrideFeatureAccess(
+      PermissionTypes.PROMPTS,
+      Permissions.SHARE,
+    );
 
     // Check user's permissions on this specific promptGroup
     // The query will be disabled if groupId is empty

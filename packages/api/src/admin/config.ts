@@ -1,9 +1,10 @@
-import { logger } from '@librechat/data-schemas';
+import { logger, BASE_CONFIG_PRINCIPAL_ID } from '@librechat/data-schemas';
 import {
   PrincipalType,
   PrincipalModel,
   INTERFACE_PERMISSION_FIELDS,
   PERMISSION_SUB_KEYS,
+  SCOPE_OVERRIDE_INTERFACE_FIELDS,
 } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { AppConfig, ConfigSection, IConfig } from '@librechat/data-schemas';
@@ -15,6 +16,60 @@ import type { ServerRequest } from '~/types/http';
 const UNSAFE_SEGMENTS = /(?:^|\.)(__[\w]*|constructor|prototype)(?:\.|$)/;
 const MAX_PATCH_ENTRIES = 100;
 const DEFAULT_PRIORITY = 10;
+export const TENANT_CONFIG_PRIORITY = 5;
+
+export const OVERRIDABLE_CONFIG_PREFIXES = ['interface.skills', 'interface.prompts'] as const;
+export const APP_WIDE_ONLY_CONFIG_PREFIXES = ['modelSpecs', 'interface.parameters'] as const;
+
+export function isBaseConfigPrincipal(principalType: PrincipalType, principalId: string): boolean {
+  return principalType === PrincipalType.ROLE && principalId === BASE_CONFIG_PRINCIPAL_ID;
+}
+
+function pathMatchesPrefix(fieldPath: string, prefix: string): boolean {
+  return fieldPath === prefix || fieldPath.startsWith(`${prefix}.`);
+}
+
+export function assertOverridePathsAllowed(
+  principalType: PrincipalType,
+  principalId: string,
+  fieldPaths: string[],
+): { ok: true } | { ok: false; error: string; code: string } {
+  if (isBaseConfigPrincipal(principalType, principalId)) {
+    return { ok: true };
+  }
+
+  for (const path of fieldPaths) {
+    if (APP_WIDE_ONLY_CONFIG_PREFIXES.some((prefix) => pathMatchesPrefix(path, prefix))) {
+      return {
+        ok: false,
+        error: 'Settings and Model Access are app-wide only',
+        code: 'CONFIG_SCOPE_FORBIDDEN',
+      };
+    }
+    if (!OVERRIDABLE_CONFIG_PREFIXES.some((prefix) => pathMatchesPrefix(path, prefix))) {
+      return {
+        ok: false,
+        error: 'Only interface.skills and interface.prompts can be overridden at this scope',
+        code: 'CONFIG_SCOPE_FORBIDDEN',
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+function collectOverridePaths(obj: Record<string, unknown>, prefix = ''): string[] {
+  const paths: string[] = [];
+  for (const [key, value] of Object.entries(obj)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (value != null && typeof value === 'object' && !Array.isArray(value)) {
+      paths.push(...collectOverridePaths(value as Record<string, unknown>, path));
+    } else {
+      paths.push(path);
+    }
+  }
+  return paths;
+}
 
 export function isValidFieldPath(path: string): boolean {
   return (
@@ -48,6 +103,9 @@ function isInterfacePermissionPath(fieldPath: string): boolean {
     return false;
   }
   if (!INTERFACE_PERMISSION_FIELDS.has(parts[1])) {
+    return false;
+  }
+  if (SCOPE_OVERRIDE_INTERFACE_FIELDS.has(parts[1])) {
     return false;
   }
   // "interface.<permField>" with no sub-key → permission (blocks the whole field)
@@ -119,6 +177,7 @@ const CONFIG_PRINCIPAL_TYPES = new Set([
   PrincipalType.USER,
   PrincipalType.GROUP,
   PrincipalType.ROLE,
+  PrincipalType.TENANT,
 ]);
 
 function validatePrincipalType(value: string): value is PrincipalType {
@@ -133,6 +192,8 @@ function principalModel(type: PrincipalType): PrincipalModel {
       return PrincipalModel.GROUP;
     case PrincipalType.ROLE:
       return PrincipalModel.ROLE;
+    case PrincipalType.TENANT:
+      return PrincipalModel.TENANT;
     case PrincipalType.PUBLIC:
       return PrincipalModel.ROLE;
     default: {
@@ -299,7 +360,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
       if (iface != null && typeof iface === 'object' && !Array.isArray(iface)) {
         const filteredIface: Record<string, unknown> = {};
         for (const [field, val] of Object.entries(iface as Record<string, unknown>)) {
-          if (!INTERFACE_PERMISSION_FIELDS.has(field)) {
+          if (SCOPE_OVERRIDE_INTERFACE_FIELDS.has(field)) {
+            filteredIface[field] = val;
+          } else if (!INTERFACE_PERMISSION_FIELDS.has(field)) {
             filteredIface[field] = val;
           } else if (val != null && typeof val === 'object' && !Array.isArray(val)) {
             // Composite permission field (e.g. mcpServers): strip permission
@@ -338,6 +401,15 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
       }
 
       if (overrideSections.length > 0) {
+        const pathCheck = assertOverridePathsAllowed(
+          principalType,
+          principalId,
+          collectOverridePaths(filteredOverrides as Record<string, unknown>),
+        );
+        if (!pathCheck.ok) {
+          return res.status(403).json({ error: pathCheck.error, code: pathCheck.code });
+        }
+
         const allowed = await Promise.all(
           overrideSections.map((s) => hasConfigCapability(user, s as ConfigSection, 'manage')),
         );
@@ -430,6 +502,15 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         return res.status(200).json({ message: 'No actionable field entries provided' });
       }
 
+      const pathCheck = assertOverridePathsAllowed(
+        principalType,
+        principalId,
+        validEntries.map((e) => e.fieldPath),
+      );
+      if (!pathCheck.ok) {
+        return res.status(403).json({ error: pathCheck.error, code: pathCheck.code });
+      }
+
       if (!(await hasConfigCapability(user, null, 'manage'))) {
         const sections = [...new Set(validEntries.map((e) => getTopLevelSection(e.fieldPath)))];
         const allowed = await Promise.all(
@@ -517,6 +598,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
           `[adminConfig] Ignoring delete for interface permission field "${fieldPath}" — use role permissions instead`,
         );
         return res.status(200).json({ message: 'No actionable field path provided' });
+      }
+
+      const pathCheck = assertOverridePathsAllowed(principalType, principalId, [fieldPath]);
+      if (!pathCheck.ok) {
+        return res.status(403).json({ error: pathCheck.error, code: pathCheck.code });
       }
 
       const config = await unsetConfigField(principalType, principalId, fieldPath);

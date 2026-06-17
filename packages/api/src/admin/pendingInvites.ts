@@ -15,6 +15,25 @@ export function getInviteRoleFromMetadata(
   return role === SystemRoles.ADMIN ? SystemRoles.ADMIN : SystemRoles.USER;
 }
 
+export function isPlatformAdminInviteMetadata(
+  metadata: Map<string, unknown> | Record<string, unknown> | undefined,
+): boolean {
+  let scope: unknown;
+  if (metadata instanceof Map) {
+    scope = metadata.get('scope');
+  } else if (metadata && typeof metadata === 'object') {
+    scope = metadata.scope;
+  }
+  return scope === 'platform';
+}
+
+export function isPlatformAdminInvite(invite: IToken): boolean {
+  if (invite.tenantId?.trim()) {
+    return false;
+  }
+  return isPlatformAdminInviteMetadata(invite.metadata);
+}
+
 export function inviteDisplayName(email: string): string {
   const local = email.split('@')[0]?.trim();
   return local || email;

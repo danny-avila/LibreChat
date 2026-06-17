@@ -39,6 +39,40 @@ describe('mergeConfigOverrides', () => {
     expect(iface.parameters).toBe(true);
   });
 
+  it('merges tenant boolean skills:false over base object config', () => {
+    const base = {
+      interfaceConfig: {
+        skills: { use: true, create: true },
+      },
+    } as unknown as AppConfig;
+
+    const configs = [fakeConfig({ interface: { skills: false } }, 5)];
+
+    const result = mergeConfigOverrides(base, configs) as unknown as Record<string, unknown>;
+    const iface = result.interfaceConfig as Record<string, unknown>;
+    expect(iface.skills).toBe(false);
+  });
+
+  it('merges tenant skills override over base interface config', () => {
+    const base = {
+      interfaceConfig: {
+        skills: { use: true, create: true },
+        prompts: { use: true },
+      },
+    } as unknown as AppConfig;
+
+    const configs = [
+      fakeConfig({ interface: { skills: { use: false } } }, 5),
+      fakeConfig({ interface: { skills: { create: false } } }, 20),
+    ];
+
+    const result = mergeConfigOverrides(base, configs) as unknown as Record<string, unknown>;
+    const iface = result.interfaceConfig as Record<string, unknown>;
+    const skills = iface.skills as Record<string, unknown>;
+    expect(skills.use).toBe(false);
+    expect(skills.create).toBe(false);
+  });
+
   it('sorts by priority — higher priority wins', () => {
     const configs = [
       fakeConfig({ registration: { enabled: false } }, 100),
@@ -333,8 +367,8 @@ describe('mergeConfigOverrides', () => {
 
     // UI field should be merged
     expect(iface.modelSelect).toBe(false);
-    // Boolean permission fields should be stripped
-    expect(iface.prompts).toBeUndefined();
+    // Scope-override permission fields merge through the hierarchy
+    expect(iface.prompts).toBe(false);
     // Object permission fields with only permission sub-keys should be stripped
     expect(iface.agents).toBeUndefined();
     expect(iface.marketplace).toBeUndefined();
@@ -393,7 +427,7 @@ describe('mergeConfigOverrides', () => {
     expect(iface.peoplePicker).toBeUndefined();
   });
 
-  it('drops interface entirely when only permission fields are present', () => {
+  it('merges scope-override interface fields but strips other permission fields', () => {
     const base = {
       interfaceConfig: { modelSelect: true },
     } as unknown as AppConfig;
@@ -402,9 +436,8 @@ describe('mergeConfigOverrides', () => {
     const result = mergeConfigOverrides(base, configs) as unknown as Record<string, unknown>;
     const iface = result.interfaceConfig as Record<string, unknown>;
 
-    // Base should be unchanged
     expect(iface.modelSelect).toBe(true);
-    expect(iface.prompts).toBeUndefined();
+    expect(iface.prompts).toBe(false);
     expect(iface.agents).toBeUndefined();
   });
 

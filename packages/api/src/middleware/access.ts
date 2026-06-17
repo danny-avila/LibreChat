@@ -5,9 +5,10 @@ import {
   EModelEndpoint,
   PermissionTypes,
   isAgentsEndpoint,
+  resolveScopeOverridePermission,
 } from 'librechat-data-provider';
 import type { NextFunction, Request as ServerRequest, Response as ServerResponse } from 'express';
-import type { IRole, IUser } from '@librechat/data-schemas';
+import type { AppConfig, IRole, IUser } from '@librechat/data-schemas';
 
 export function skipAgentCheck(req?: ServerRequest): boolean {
   if (!req || !req?.body?.endpoint) {
@@ -64,25 +65,19 @@ export const checkAccess = async ({
 
   const role = await getRoleByName(user.role);
   const permissionValue = role?.permissions?.[permissionType as keyof typeof role.permissions];
-  if (role && role.permissions && permissionValue) {
-    const hasAnyPermission = permissions.every((permission) => {
-      if (permissionValue[permission as keyof typeof permissionValue]) {
-        return true;
-      }
+  const interfaceConfig = (req as ServerRequest & { config?: AppConfig })?.config?.interfaceConfig;
 
-      if (bodyProps[permission] && checkObject) {
-        return bodyProps[permission].every((prop) =>
+  return permissions.every((permission) => {
+    const roleAllowed =
+      !!permissionValue?.[permission as keyof typeof permissionValue] ||
+      (bodyProps[permission] &&
+        checkObject &&
+        bodyProps[permission].every((prop) =>
           Object.prototype.hasOwnProperty.call(checkObject, prop),
-        );
-      }
+        ));
 
-      return false;
-    });
-
-    return hasAnyPermission;
-  }
-
-  return false;
+    return resolveScopeOverridePermission(roleAllowed, permissionType, permission, interfaceConfig);
+  });
 };
 
 /**

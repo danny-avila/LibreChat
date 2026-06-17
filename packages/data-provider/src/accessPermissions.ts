@@ -18,6 +18,7 @@ export enum PrincipalType {
   GROUP = 'group',
   PUBLIC = 'public',
   ROLE = 'role',
+  TENANT = 'tenant',
 }
 
 /**
@@ -27,6 +28,7 @@ export enum PrincipalModel {
   USER = 'User',
   GROUP = 'Group',
   ROLE = 'Role',
+  TENANT = 'Tenant',
 }
 
 /**

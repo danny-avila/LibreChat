@@ -10,7 +10,7 @@ import VariablesDropdown from '../editor/VariablesDropdown';
 import PromptVariables from '../display/PromptVariables';
 import Description from '../fields/Description';
 import { usePromptGroupsContext } from '~/Providers';
-import { useLocalize, useHasAccess } from '~/hooks';
+import { useLocalize, useScopeOverrideFeatureAccess } from '~/hooks';
 import Command from '../fields/Command';
 import { useCreatePrompt } from '~/data-provider';
 import { cn } from '~/utils';
@@ -43,10 +43,10 @@ const CreatePromptForm = ({
   const localize = useLocalize();
   const navigate = useNavigate();
   const { hasAccess: hasUseAccess } = usePromptGroupsContext() ?? {};
-  const hasCreateAccess = useHasAccess({
-    permissionType: PermissionTypes.PROMPTS,
-    permission: Permissions.CREATE,
-  });
+  const hasCreateAccess = useScopeOverrideFeatureAccess(
+    PermissionTypes.PROMPTS,
+    Permissions.CREATE,
+  );
   const hasAccess = hasUseAccess && hasCreateAccess;
 
   useEffect(() => {

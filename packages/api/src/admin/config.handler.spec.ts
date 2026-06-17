@@ -132,7 +132,7 @@ describe('createAdminConfigHandlers', () => {
         upsertConfig: jest.fn().mockResolvedValue({ _id: 'c1', configVersion: 1 }),
       });
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: { overrides: { interface: { modelSelect: false } } },
       });
       const res = mockRes();
@@ -147,7 +147,7 @@ describe('createAdminConfigHandlers', () => {
         upsertConfig: jest.fn().mockResolvedValue({ _id: 'c1', configVersion: 5 }),
       });
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: { overrides: { interface: { modelSelect: false } } },
       });
       const res = mockRes();
@@ -160,7 +160,7 @@ describe('createAdminConfigHandlers', () => {
     it('returns 400 when overrides is missing', async () => {
       const { handlers } = createHandlers();
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: {},
       });
       const res = mockRes();
@@ -175,7 +175,7 @@ describe('createAdminConfigHandlers', () => {
         upsertConfig: jest.fn().mockResolvedValue({ _id: 'c1', configVersion: 1 }),
       });
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: {
           overrides: {
             interface: { modelSelect: false, prompts: false, agents: { use: false } },
@@ -188,7 +188,7 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(201);
       const savedOverrides = deps.upsertConfig.mock.calls[0][3];
-      expect(savedOverrides.interface).toEqual({ modelSelect: false });
+      expect(savedOverrides.interface).toEqual({ modelSelect: false, prompts: false });
     });
 
     it('preserves UI sub-keys in composite permission fields like mcpServers', async () => {
@@ -196,7 +196,7 @@ describe('createAdminConfigHandlers', () => {
         upsertConfig: jest.fn().mockResolvedValue({ _id: 'c1', configVersion: 1 }),
       });
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: {
           overrides: {
             interface: {
@@ -226,7 +226,7 @@ describe('createAdminConfigHandlers', () => {
     it('strips peoplePicker permission sub-keys in upsert', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: {
           overrides: {
             interface: { peoplePicker: { users: false, groups: true, roles: true } },
@@ -245,8 +245,8 @@ describe('createAdminConfigHandlers', () => {
     it('returns 200 with message when only permission fields in interface', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
-        body: { overrides: { interface: { prompts: false, agents: false } } },
+        params: { principalType: 'role', principalId: '__base__' },
+        body: { overrides: { interface: { agents: false } } },
       });
       const res = mockRes();
 
@@ -262,20 +262,24 @@ describe('createAdminConfigHandlers', () => {
     it('reads fieldPath from query parameter', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         query: { fieldPath: 'interface.modelSelect' },
       });
       const res = mockRes();
 
       await handlers.deleteConfigField(req, res);
 
-      expect(deps.unsetConfigField).toHaveBeenCalledWith('role', 'admin', 'interface.modelSelect');
+      expect(deps.unsetConfigField).toHaveBeenCalledWith(
+        'role',
+        '__base__',
+        'interface.modelSelect',
+      );
     });
 
     it('allows deleting mcpServers UI sub-key paths', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         query: { fieldPath: 'interface.mcpServers.placeholder' },
       });
       const res = mockRes();
@@ -285,7 +289,7 @@ describe('createAdminConfigHandlers', () => {
       expect(res.statusCode).toBe(200);
       expect(deps.unsetConfigField).toHaveBeenCalledWith(
         'role',
-        'admin',
+        '__base__',
         'interface.mcpServers.placeholder',
       );
     });
@@ -293,7 +297,7 @@ describe('createAdminConfigHandlers', () => {
     it('blocks deleting mcpServers permission sub-key paths', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         query: { fieldPath: 'interface.mcpServers.use' },
       });
       const res = mockRes();
@@ -308,7 +312,7 @@ describe('createAdminConfigHandlers', () => {
     it('blocks deleting peoplePicker permission sub-key paths', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         query: { fieldPath: 'interface.peoplePicker.users' },
       });
       const res = mockRes();
@@ -323,8 +327,8 @@ describe('createAdminConfigHandlers', () => {
     it('returns 200 no-op for interface permission field path', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
-        query: { fieldPath: 'interface.prompts' },
+        params: { principalType: 'role', principalId: '__base__' },
+        query: { fieldPath: 'interface.agents' },
       });
       const res = mockRes();
 
@@ -335,10 +339,28 @@ describe('createAdminConfigHandlers', () => {
       expect(deps.unsetConfigField).not.toHaveBeenCalled();
     });
 
+    it('allows deleting scope-override interface fields', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'tenant', principalId: 'tenant-1' },
+        query: { fieldPath: 'interface.prompts.use' },
+      });
+      const res = mockRes();
+
+      await handlers.deleteConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(deps.unsetConfigField).toHaveBeenCalledWith(
+        'tenant',
+        'tenant-1',
+        'interface.prompts.use',
+      );
+    });
+
     it('allows deleting interface UI field paths', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         query: { fieldPath: 'interface.modelSelect' },
       });
       const res = mockRes();
@@ -346,13 +368,17 @@ describe('createAdminConfigHandlers', () => {
       await handlers.deleteConfigField(req, res);
 
       expect(res.statusCode).toBe(200);
-      expect(deps.unsetConfigField).toHaveBeenCalledWith('role', 'admin', 'interface.modelSelect');
+      expect(deps.unsetConfigField).toHaveBeenCalledWith(
+        'role',
+        '__base__',
+        'interface.modelSelect',
+      );
     });
 
     it('returns 400 when fieldPath query param is missing', async () => {
       const { handlers } = createHandlers();
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         query: {},
       });
       const res = mockRes();
@@ -366,7 +392,7 @@ describe('createAdminConfigHandlers', () => {
     it('rejects unsafe field paths', async () => {
       const { handlers } = createHandlers();
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         query: { fieldPath: '__proto__.polluted' },
       });
       const res = mockRes();
@@ -383,7 +409,7 @@ describe('createAdminConfigHandlers', () => {
         hasConfigCapability: jest.fn().mockResolvedValue(false),
       });
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: { entries: [{ fieldPath: 'registration.enabled', value: false }] },
       });
       const res = mockRes();
@@ -396,11 +422,11 @@ describe('createAdminConfigHandlers', () => {
     it('strips interface permission field entries but keeps UI field entries', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: {
           entries: [
             { fieldPath: 'interface.modelSelect', value: false },
-            { fieldPath: 'interface.prompts', value: false },
+            { fieldPath: 'interface.agents', value: false },
           ],
         },
       });
@@ -411,13 +437,13 @@ describe('createAdminConfigHandlers', () => {
       expect(res.statusCode).toBe(200);
       const patchedFields = deps.patchConfigFields.mock.calls[0][3];
       expect(patchedFields['interface.modelSelect']).toBe(false);
-      expect(patchedFields['interface.prompts']).toBeUndefined();
+      expect(patchedFields['interface.agents']).toBeUndefined();
     });
 
     it('blocks peoplePicker permission sub-key paths', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: {
           entries: [{ fieldPath: 'interface.peoplePicker.users', value: false }],
         },
@@ -434,7 +460,7 @@ describe('createAdminConfigHandlers', () => {
     it('allows mcpServers UI sub-key paths but blocks permission sub-key paths', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: {
           entries: [
             { fieldPath: 'interface.mcpServers.placeholder', value: 'Search...' },
@@ -452,11 +478,44 @@ describe('createAdminConfigHandlers', () => {
       expect(patchedFields['interface.mcpServers.use']).toBeUndefined();
     });
 
+    it('rejects modelSpecs on tenant scope', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'tenant', principalId: 'tenant-1' },
+        body: {
+          entries: [{ fieldPath: 'modelSpecs.enforce', value: true }],
+        },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(403);
+      expect(res.body!.code).toBe('CONFIG_SCOPE_FORBIDDEN');
+      expect(deps.patchConfigFields).not.toHaveBeenCalled();
+    });
+
+    it('allows interface.skills on tenant scope', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'tenant', principalId: 'tenant-1' },
+        body: {
+          entries: [{ fieldPath: 'interface.skills.use', value: false }],
+        },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(deps.patchConfigFields).toHaveBeenCalled();
+    });
+
     it('returns 200 with message when all entries are permission fields', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
-        body: { entries: [{ fieldPath: 'interface.prompts', value: false }] },
+        params: { principalType: 'role', principalId: '__base__' },
+        body: { entries: [{ fieldPath: 'interface.agents', value: false }] },
       });
       const res = mockRes();
 
@@ -470,8 +529,8 @@ describe('createAdminConfigHandlers', () => {
     it('returns 401 when unauthenticated even if all entries are permission fields', async () => {
       const { handlers } = createHandlers();
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
-        body: { entries: [{ fieldPath: 'interface.prompts', value: false }] },
+        params: { principalType: 'role', principalId: '__base__' },
+        body: { entries: [{ fieldPath: 'interface.agents', value: false }] },
         user: undefined,
       });
       const res = mockRes();
@@ -486,8 +545,8 @@ describe('createAdminConfigHandlers', () => {
         hasConfigCapability: jest.fn().mockResolvedValue(false),
       });
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
-        body: { entries: [{ fieldPath: 'interface.prompts', value: false }] },
+        params: { principalType: 'role', principalId: '__base__' },
+        body: { entries: [{ fieldPath: 'interface.agents', value: false }] },
       });
       const res = mockRes();
 
@@ -499,7 +558,7 @@ describe('createAdminConfigHandlers', () => {
     it('rejects entries with unsafe field paths (prototype pollution)', async () => {
       const { handlers } = createHandlers();
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: { entries: [{ fieldPath: '__proto__.polluted', value: true }] },
       });
       const res = mockRes();
@@ -516,7 +575,7 @@ describe('createAdminConfigHandlers', () => {
         hasConfigCapability: jest.fn().mockResolvedValue(false),
       });
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: { overrides: {} },
       });
       const res = mockRes();
@@ -538,7 +597,7 @@ describe('createAdminConfigHandlers', () => {
       });
       const { handlers } = createHandlers({ upsertConfig });
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: { overrides: {}, priority: 5 },
       });
       const res = mockRes();
@@ -548,14 +607,14 @@ describe('createAdminConfigHandlers', () => {
       expect(res.statusCode).toBe(201);
       expect(res.body).toHaveProperty('config');
       expect(res.body?.config).toHaveProperty('_id', 'c1');
-      expect(upsertConfig).toHaveBeenCalledWith('role', 'admin', expect.anything(), {}, 5);
+      expect(upsertConfig).toHaveBeenCalledWith('role', '__base__', expect.anything(), {}, 5);
     });
 
     it('returns no-op message when overrides is empty and no priority is provided', async () => {
       const upsertConfig = jest.fn().mockResolvedValue(null);
       const { handlers } = createHandlers({ upsertConfig });
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: { overrides: {} },
       });
       const res = mockRes();
@@ -571,7 +630,7 @@ describe('createAdminConfigHandlers', () => {
       const hasConfigCapability = jest.fn().mockResolvedValue(true);
       const { handlers } = createHandlers({ hasConfigCapability });
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: { overrides: {}, priority: 3 },
       });
       const res = mockRes();
@@ -589,7 +648,7 @@ describe('createAdminConfigHandlers', () => {
         hasConfigCapability: jest.fn().mockResolvedValue(false),
       });
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: { overrides: {}, priority: 5 },
       });
       const res = mockRes();
@@ -602,7 +661,7 @@ describe('createAdminConfigHandlers', () => {
     it('returns 401 for empty overrides with priority when unauthenticated', async () => {
       const { handlers } = createHandlers();
       const req = mockReq({
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: { overrides: {}, priority: 5 },
         user: undefined,
       });
@@ -623,34 +682,34 @@ describe('createAdminConfigHandlers', () => {
     {
       name: 'upsertConfigOverrides',
       reqOverrides: {
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: { overrides: { interface: { modelSelect: false } } },
       },
     },
     {
       name: 'patchConfigField',
       reqOverrides: {
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: { entries: [{ fieldPath: 'interface.modelSelect', value: false }] },
       },
     },
     {
       name: 'deleteConfigField',
       reqOverrides: {
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         query: { fieldPath: 'interface.modelSelect' },
       },
     },
     {
       name: 'deleteConfigOverrides',
       reqOverrides: {
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
       },
     },
     {
       name: 'toggleConfig',
       reqOverrides: {
-        params: { principalType: 'role', principalId: 'admin' },
+        params: { principalType: 'role', principalId: '__base__' },
         body: { isActive: false },
       },
     },

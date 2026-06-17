@@ -19,7 +19,12 @@ import {
   useUpdatePromptGroup,
   useMakePromptProduction,
 } from '~/data-provider';
-import { useResourcePermissions, useHasAccess, useLocalize, useFocusTrap } from '~/hooks';
+import {
+  useResourcePermissions,
+  useLocalize,
+  useFocusTrap,
+  useScopeOverrideFeatureAccess,
+} from '~/hooks';
 import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
 import CategorySelector from '../fields/CategorySelector';
 import PromptVariables from '../display/PromptVariables';
@@ -147,10 +152,10 @@ interface HeaderActionsProps {
 
 const HeaderActions = React.memo(
   ({ group, canEdit, canDelete, selectedPromptId, onCategoryChange }: HeaderActionsProps) => {
-    const hasShareAccess = useHasAccess({
-      permissionType: PermissionTypes.PROMPTS,
-      permission: Permissions.SHARE,
-    });
+    const hasShareAccess = useScopeOverrideFeatureAccess(
+      PermissionTypes.PROMPTS,
+      Permissions.SHARE,
+    );
 
     const groupId = group?._id || '';
     const groupCategory = group?.category || '';

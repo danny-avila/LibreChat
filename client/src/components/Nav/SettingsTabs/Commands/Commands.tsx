@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { InfoHoverCard, ESide } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
-import { useLocalize, useHasAccess } from '~/hooks';
+import { useLocalize, useHasAccess, useScopeOverrideFeatureAccess } from '~/hooks';
 import ToggleSwitch from '../ToggleSwitch';
 import store from '~/store';
 
@@ -32,10 +32,7 @@ const commandSwitchConfigs = [
 function Commands() {
   const localize = useLocalize();
 
-  const hasAccessToPrompts = useHasAccess({
-    permissionType: PermissionTypes.PROMPTS,
-    permission: Permissions.USE,
-  });
+  const hasAccessToPrompts = useScopeOverrideFeatureAccess(PermissionTypes.PROMPTS);
 
   const hasAccessToMultiConvo = useHasAccess({
     permissionType: PermissionTypes.MULTI_CONVO,

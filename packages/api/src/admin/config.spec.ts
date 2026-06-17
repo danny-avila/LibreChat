@@ -1,4 +1,5 @@
-import { isValidFieldPath, getTopLevelSection } from './config';
+import { isValidFieldPath, getTopLevelSection, assertOverridePathsAllowed } from './config';
+import { PrincipalType } from 'librechat-data-provider';
 
 describe('isValidFieldPath', () => {
   it('accepts simple dot paths', () => {
@@ -53,5 +54,43 @@ describe('getTopLevelSection', () => {
 
   it('returns the whole string when no dots', () => {
     expect(getTopLevelSection('interface')).toBe('interface');
+  });
+});
+
+describe('assertOverridePathsAllowed', () => {
+  it('allows any path on base config principal', () => {
+    const result = assertOverridePathsAllowed(PrincipalType.ROLE, '__base__', [
+      'modelSpecs.enforce',
+      'interface.parameters',
+    ]);
+    expect(result).toEqual({ ok: true });
+  });
+
+  it('allows skills and prompts on tenant scope', () => {
+    expect(
+      assertOverridePathsAllowed(PrincipalType.TENANT, 'tenant-1', ['interface.skills.use']),
+    ).toEqual({ ok: true });
+    expect(
+      assertOverridePathsAllowed(PrincipalType.TENANT, 'tenant-1', ['interface.prompts.create']),
+    ).toEqual({ ok: true });
+  });
+
+  it('rejects modelSpecs and parameters on non-base scopes', () => {
+    expect(assertOverridePathsAllowed(PrincipalType.GROUP, 'g1', ['modelSpecs.enforce']).ok).toBe(
+      false,
+    );
+    expect(assertOverridePathsAllowed(PrincipalType.USER, 'u1', ['interface.parameters']).ok).toBe(
+      false,
+    );
+  });
+
+  it('rejects paths outside skills and prompts on non-base scopes', () => {
+    const result = assertOverridePathsAllowed(PrincipalType.TENANT, 't1', [
+      'interface.modelSelect',
+    ]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('CONFIG_SCOPE_FORBIDDEN');
+    }
   });
 });

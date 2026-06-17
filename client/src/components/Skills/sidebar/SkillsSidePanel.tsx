@@ -3,7 +3,7 @@ import { Search, X } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import { useListSkillsQuery } from '~/data-provider';
-import { useDebounce, useHasAccess, useLocalize } from '~/hooks';
+import { useDebounce, useLocalize, useScopeOverrideFeatureAccess } from '~/hooks';
 import { CreateSkillMenu } from '../buttons';
 import SkillListPanel from '../lists/SkillList';
 import { cn } from '~/utils';
@@ -24,10 +24,7 @@ export default function SkillsSidePanel({ className }: SkillsSidePanelProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const debouncedSearch = useDebounce(searchTerm, 250);
 
-  const hasCreateAccess = useHasAccess({
-    permissionType: PermissionTypes.SKILLS,
-    permission: Permissions.CREATE,
-  });
+  const hasCreateAccess = useScopeOverrideFeatureAccess(PermissionTypes.SKILLS, Permissions.CREATE);
 
   const listQuery = useListSkillsQuery({ search: debouncedSearch || undefined, limit: 50 });
   const skills = useMemo(() => listQuery.data?.skills ?? [], [listQuery.data]);

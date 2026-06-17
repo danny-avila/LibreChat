@@ -64,7 +64,9 @@ for (const { file, prefix } of TOOL_NODE_TARGETS) {
     if (content.includes(NEW)) {
       console.log(`[patch-agents] ${path.basename(file)} (Fix 1) already patched`);
     } else {
-      console.warn(`[patch-agents] WARNING: ${path.basename(file)} (Fix 1) — expected snippet not found, skipping`);
+      console.warn(
+        `[patch-agents] WARNING: ${path.basename(file)} (Fix 1) — expected snippet not found, skipping`,
+      );
     }
     continue;
   }
@@ -145,7 +147,9 @@ for (const file of HANDLER_TARGETS) {
     if (content.includes(HANDLERS_NEW)) {
       console.log(`[patch-agents] ${path.basename(file)} (Fix 2) already patched`);
     } else {
-      console.warn(`[patch-agents] WARNING: ${path.basename(file)} (Fix 2) — expected snippet not found, skipping`);
+      console.warn(
+        `[patch-agents] WARNING: ${path.basename(file)} (Fix 2) — expected snippet not found, skipping`,
+      );
     }
     continue;
   }

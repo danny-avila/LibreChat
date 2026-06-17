@@ -23,7 +23,7 @@ import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
 import { useFileMapContext, useAgentPanelContext } from '~/Providers';
 import AgentCategorySelector from './AgentCategorySelector';
 import Action from '~/components/SidePanel/Builder/Action';
-import { useLocalize, useVisibleTools, useHasAccess } from '~/hooks';
+import { useLocalize, useVisibleTools, useScopeOverrideFeatureAccess } from '~/hooks';
 import { Panel, isEphemeralAgent } from '~/common';
 import { useListSkillsQuery, useGetAgentFiles } from '~/data-provider';
 import { icons } from '~/hooks/Endpoint/Icons';
@@ -97,10 +97,7 @@ export default function AgentConfig() {
     fileSearchEnabled,
   } = useAgentCapabilities(agentsConfig?.capabilities);
 
-  const hasSkillsAccess = useHasAccess({
-    permissionType: PermissionTypes.SKILLS,
-    permission: Permissions.USE,
-  });
+  const hasSkillsAccess = useScopeOverrideFeatureAccess(PermissionTypes.SKILLS);
   const showSkills = hasSkillsAccess && skillsEnabled;
   const { data: skillsData } = useListSkillsQuery({ limit: 100 }, { enabled: showSkills });
   const skillsMap = useMemo(() => {

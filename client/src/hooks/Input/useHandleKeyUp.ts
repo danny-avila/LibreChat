@@ -9,6 +9,7 @@ import {
 import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
 import useGetAgentsConfig from '~/hooks/Agents/useGetAgentsConfig';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
+import useScopeOverrideFeatureAccess from '~/hooks/Roles/useScopeOverrideFeatureAccess';
 import store from '~/store';
 
 /** Event keys that shouldn't trigger a command */
@@ -60,18 +61,12 @@ const useHandleKeyUp = ({
   index: number;
   textAreaRef: React.RefObject<HTMLTextAreaElement>;
 }) => {
-  const hasPromptsAccess = useHasAccess({
-    permissionType: PermissionTypes.PROMPTS,
-    permission: Permissions.USE,
-  });
+  const hasPromptsAccess = useScopeOverrideFeatureAccess(PermissionTypes.PROMPTS);
   const hasMultiConvoAccess = useHasAccess({
     permissionType: PermissionTypes.MULTI_CONVO,
     permission: Permissions.USE,
   });
-  const hasSkillsAccess = useHasAccess({
-    permissionType: PermissionTypes.SKILLS,
-    permission: Permissions.USE,
-  });
+  const hasSkillsAccess = useScopeOverrideFeatureAccess(PermissionTypes.SKILLS);
   const { agentsConfig } = useGetAgentsConfig();
   const { skillsEnabled } = useAgentCapabilities(
     agentsConfig?.capabilities ?? defaultAgentCapabilities,

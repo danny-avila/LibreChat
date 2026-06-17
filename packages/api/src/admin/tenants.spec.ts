@@ -20,6 +20,7 @@ describe('createAdminTenantsHandlers', () => {
   const deleteTenantByObjectId = jest.fn();
   const updateTenantByObjectId = jest.fn();
   const seedTenantSystemGrants = jest.fn();
+  const seedDefaultRolesForTenant = jest.fn();
   const countUsersByTenantId = jest.fn();
   const deleteGrantsForTenant = jest.fn();
   const isPlatformAdmin = jest.fn();
@@ -43,6 +44,7 @@ describe('createAdminTenantsHandlers', () => {
     deleteTenantByObjectId,
     updateTenantByObjectId,
     seedTenantSystemGrants,
+    seedDefaultRolesForTenant,
     countUsersByTenantId,
     deleteGrantsForTenant,
     isPlatformAdmin,
@@ -66,6 +68,7 @@ describe('createAdminTenantsHandlers', () => {
       status: 'active',
     });
     seedTenantSystemGrants.mockResolvedValue(undefined);
+    seedDefaultRolesForTenant.mockResolvedValue({});
 
     const req = {
       body: { name: 'Acme' },
@@ -82,6 +85,7 @@ describe('createAdminTenantsHandlers', () => {
       name: 'Acme',
       createdBy: 'admin-id',
     });
+    expect(seedDefaultRolesForTenant).toHaveBeenCalledWith('acme');
     expect(seedTenantSystemGrants).toHaveBeenCalledWith('acme');
     expect(res.status).toHaveBeenCalledWith(201);
   });

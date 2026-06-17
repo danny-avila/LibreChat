@@ -43,7 +43,10 @@ export interface AppConfigServiceDeps {
   getUserPrincipals: (params: {
     userId: string | Types.ObjectId;
     role?: string | null;
+    tenantId?: string | null;
   }) => Promise<Array<{ principalType: string; principalId?: string | Types.ObjectId }>>;
+  /** Map legacy tenantId / users.tenantId to Config principalId (tenants._id). */
+  resolveTenantPrincipalId?: (tenantRef: string) => Promise<string>;
   /** TTL in ms for per-user/role merged config caches. Defaults to 60 000. */
   overrideCacheTtl?: number;
 }
@@ -96,19 +99,29 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
     cacheKeys,
     getApplicableConfigs,
     getUserPrincipals,
+    resolveTenantPrincipalId: resolveTenantPrincipalIdDep,
     overrideCacheTtl = DEFAULT_OVERRIDE_CACHE_TTL,
   } = deps;
+
+  const resolveTenantPrincipalId =
+    resolveTenantPrincipalIdDep ?? (async (tenantRef: string) => tenantRef);
 
   const cache = getCache(cacheKeys.APP_CONFIG);
 
   async function buildPrincipals(
     role?: string,
     userId?: string,
+    tenantId?: string,
   ): Promise<Array<{ principalType: string; principalId?: string | Types.ObjectId }>> {
     if (userId) {
-      return getUserPrincipals({ userId, role });
+      return getUserPrincipals({ userId, role, tenantId });
     }
     const principals: Array<{ principalType: string; principalId?: string | Types.ObjectId }> = [];
+    const effectiveTenantId = tenantId ?? getTenantId();
+    if (effectiveTenantId) {
+      const tenantPrincipalId = await resolveTenantPrincipalId(effectiveTenantId);
+      principals.push({ principalType: PrincipalType.TENANT, principalId: tenantPrincipalId });
+    }
     if (role) {
       principals.push({ principalType: PrincipalType.ROLE, principalId: role });
     }
@@ -166,7 +179,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps) {
       }
     }
 
-    const principals = await buildPrincipals(role, userId).catch((error: unknown) => {
+    const principals = await buildPrincipals(role, userId, tenantId).catch((error: unknown) => {
       logger.error('[getAppConfig] Error building principals, falling back to base:', error);
       return null;
     });

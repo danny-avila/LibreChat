@@ -14,7 +14,7 @@ const plugins = [
   }),
   commonjs(),
   typescript({
-    tsconfig: './tsconfig.json',
+    tsconfig: './tsconfig.build.json',
     useTsconfigDeclarationDir: true,
   }),
   terser(),

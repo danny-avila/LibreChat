@@ -168,6 +168,63 @@ describe('createSharePolicyMiddleware', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it('allows public skill sharing when tenant config enables public despite role denial', async () => {
+    const { checkSharePublicAccess } = createSharePolicyMiddleware({
+      getRoleByName,
+      hasCapability,
+    });
+    getRoleByName.mockResolvedValue(
+      createRole({
+        [PermissionTypes.SKILLS]: {
+          [Permissions.SHARE]: true,
+          [Permissions.SHARE_PUBLIC]: false,
+        },
+      }),
+    );
+    const req = createRequest({
+      body: { public: true },
+      config: {
+        interfaceConfig: {
+          skills: { use: true, create: true, share: true, public: true },
+        },
+      },
+    } as ShareTestRequest);
+    const res = createResponse();
+
+    await checkSharePublicAccess(req, res, next);
+
+    expect(next).toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it('allows skill sharing when tenant config enables share despite role denial', async () => {
+    const { checkShareAccess } = createSharePolicyMiddleware({
+      getRoleByName,
+      hasCapability,
+    });
+    getRoleByName.mockResolvedValue(
+      createRole({
+        [PermissionTypes.SKILLS]: {
+          [Permissions.SHARE]: false,
+          [Permissions.SHARE_PUBLIC]: false,
+        },
+      }),
+    );
+    const req = createRequest({
+      config: {
+        interfaceConfig: {
+          skills: { use: true, create: true, share: true, public: true },
+        },
+      },
+    } as ShareTestRequest);
+    const res = createResponse();
+
+    await checkShareAccess(req, res, next);
+
+    expect(next).toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
   it('reuses the role permission lookup for public sharing checks', async () => {
     const { checkShareAccess, checkSharePublicAccess } = createSharePolicyMiddleware({
       getRoleByName,

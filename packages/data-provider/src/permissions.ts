@@ -93,6 +93,24 @@ export const PERMISSION_TYPE_INTERFACE_FIELDS: Record<PermissionTypes, string> =
 export const INTERFACE_PERMISSION_FIELDS = new Set(Object.values(PERMISSION_TYPE_INTERFACE_FIELDS));
 
 /**
+ * Interface fields that may be overridden via tenant / group / user config profiles.
+ * Unlike other permission fields, these are resolved through the config hierarchy
+ * rather than the role permissions editor.
+ */
+export const SCOPE_OVERRIDE_INTERFACE_FIELDS = new Set(['skills', 'prompts']);
+
+export type InterfacePermissionConfig =
+  | boolean
+  | {
+      use?: boolean;
+      create?: boolean;
+      share?: boolean;
+      public?: boolean;
+      defaultActiveOnShare?: boolean;
+    }
+  | undefined;
+
+/**
  * YAML sub-keys within composite interface permission fields that map to permission bits.
  * When an interface permission field is an object, only these sub-keys are stripped from
  * DB overrides — other sub-keys (like `placeholder`, `trustCheckbox`) are UI-only and pass through.
@@ -133,6 +151,103 @@ export enum Permissions {
   VIEW_ROLES = 'VIEW_ROLES',
   /** Can share resources publicly (with everyone) */
   SHARE_PUBLIC = 'SHARE_PUBLIC',
+}
+
+const INTERFACE_PERMISSION_SUB_KEYS: Partial<
+  Record<Permissions, 'use' | 'create' | 'share' | 'public'>
+> = {
+  [Permissions.USE]: 'use',
+  [Permissions.CREATE]: 'create',
+  [Permissions.SHARE]: 'share',
+  [Permissions.SHARE_PUBLIC]: 'public',
+};
+
+/** Permissions on `skills` / `prompts` that may be overridden via config hierarchy. */
+export const SCOPE_OVERRIDE_PERMISSION_BITS = new Set<Permissions>([
+  Permissions.USE,
+  Permissions.CREATE,
+  Permissions.SHARE,
+  Permissions.SHARE_PUBLIC,
+]);
+
+/** Mirrors backend `getConfigUse` — extracts the USE bit from an interface permission field. */
+export function getInterfacePermissionUse(config: InterfacePermissionConfig): boolean | undefined {
+  return getInterfacePermissionBit(config, Permissions.USE);
+}
+
+/**
+ * Extracts a permission bit from a merged `interface.skills` / `interface.prompts` value.
+ * Boolean `false` blocks every bit; boolean `true` only sets USE and defers other bits to role.
+ */
+export function getInterfacePermissionBit(
+  config: InterfacePermissionConfig,
+  permission: Permissions,
+): boolean | undefined {
+  if (config === undefined) {
+    return undefined;
+  }
+  if (typeof config === 'boolean') {
+    if (permission === Permissions.USE) {
+      return config;
+    }
+    return config ? undefined : false;
+  }
+  const subKey = INTERFACE_PERMISSION_SUB_KEYS[permission];
+  if (!subKey) {
+    return undefined;
+  }
+  return config[subKey];
+}
+
+/**
+ * Resolves a single permission bit using merged interface config for skills/prompts,
+ * matching client `useScopeOverrideFeatureAccess`: explicit false blocks, explicit true
+ * allows, absent bits defer to role permissions.
+ */
+export function resolveScopeOverridePermission(
+  roleAllowed: boolean,
+  permissionType: PermissionTypes,
+  permission: Permissions,
+  interfaceConfig?: Partial<Pick<Record<string, InterfacePermissionConfig>, 'skills' | 'prompts'>>,
+): boolean {
+  const field = PERMISSION_TYPE_INTERFACE_FIELDS[permissionType];
+  if (!SCOPE_OVERRIDE_INTERFACE_FIELDS.has(field)) {
+    return roleAllowed;
+  }
+  if (!SCOPE_OVERRIDE_PERMISSION_BITS.has(permission)) {
+    return roleAllowed;
+  }
+  if (!interfaceConfig) {
+    return roleAllowed;
+  }
+  const value = interfaceConfig[field as 'skills' | 'prompts'];
+  const configBit = getInterfacePermissionBit(value, permission);
+  if (configBit === false) {
+    return false;
+  }
+  if (configBit === true) {
+    return true;
+  }
+  return roleAllowed;
+}
+
+/**
+ * Whether a permission bit is enabled for a scope-override field in the merged startup config.
+ * Explicit `false` blocks; absent bits defer to role permissions (`true` here).
+ */
+export function isInterfacePermissionEnabled(
+  config: InterfacePermissionConfig,
+  permission: Permissions = Permissions.USE,
+): boolean {
+  return getInterfacePermissionBit(config, permission) !== false;
+}
+
+/**
+ * Whether USE is enabled for a scope-override field (`skills`, `prompts`) in the merged
+ * startup interface config. Absent fields defer to role permissions (`true` here).
+ */
+export function isInterfacePermissionUseEnabled(config: InterfacePermissionConfig): boolean {
+  return isInterfacePermissionEnabled(config, Permissions.USE);
 }
 
 export const promptPermissionsSchema = z.object({

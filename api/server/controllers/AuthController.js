@@ -2,12 +2,13 @@ const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
 const openIdClient = require('openid-client');
 const { SystemRoles } = require('librechat-data-provider');
-const { logger } = require('@librechat/data-schemas');
+const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
   isEnabled,
   findOpenIDUser,
   getOpenIdIssuer,
   buildOpenIDRefreshParams,
+  isPlatformAdminInvite,
 } = require('@librechat/api');
 const {
   requestPasswordReset,
@@ -23,6 +24,7 @@ const {
   findSession,
   updateUser,
   findUser,
+  seedSuperAdminGrants,
 } = require('~/models');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
@@ -61,6 +63,17 @@ const registrationController = async (req, res) => {
     const additionalData = getInviteRegistrationData(req.invite);
     const response = await registerUser(req.body, additionalData);
     const { status, message } = response;
+    if (status === 200 && req.invite && isPlatformAdminInvite(req.invite)) {
+      const email = req.body.email?.trim().toLowerCase();
+      if (email) {
+        await runAsSystem(async () => {
+          const user = await findUser({ email }, '_id tenantId');
+          if (user && !user.tenantId?.trim()) {
+            await seedSuperAdminGrants(user._id);
+          }
+        });
+      }
+    }
     res.status(status).send({ message });
   } catch (err) {
     logger.error('[registrationController]', err);

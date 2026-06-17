@@ -2,7 +2,7 @@ import React, { createContext, useContext, ReactNode, useMemo } from 'react';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { TPromptGroup } from 'librechat-data-provider';
 import type { PromptOption } from '~/common';
-import { usePromptGroupsNav, useHasAccess } from '~/hooks';
+import { usePromptGroupsNav, useScopeOverrideFeatureAccess } from '~/hooks';
 import { useGetAllPromptGroups } from '~/data-provider';
 import { CategoryIcon } from '~/components/Prompts';
 import { mapPromptGroups } from '~/utils';
@@ -27,10 +27,7 @@ type PromptGroupsContextType =
 const PromptGroupsContext = createContext<PromptGroupsContextType>(null);
 
 export const PromptGroupsProvider = ({ children }: { children: ReactNode }) => {
-  const hasAccess = useHasAccess({
-    permissionType: PermissionTypes.PROMPTS,
-    permission: Permissions.USE,
-  });
+  const hasAccess = useScopeOverrideFeatureAccess(PermissionTypes.PROMPTS);
 
   const promptGroupsNav = usePromptGroupsNav(hasAccess);
   const { data: allGroupsData, isLoading: isLoadingAll } = useGetAllPromptGroups(undefined, {

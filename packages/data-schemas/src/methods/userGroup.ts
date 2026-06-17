@@ -4,6 +4,7 @@ import type { TUser, TPrincipalSearchResult } from 'librechat-data-provider';
 import type { Model, ClientSession, FilterQuery } from 'mongoose';
 import type { IGroup, IRole, IUser } from '~/types';
 import { escapeRegExp } from '~/utils/string';
+import { resolveTenantPrincipalId } from '~/utils/tenantPrincipal';
 
 export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
   /**
@@ -106,26 +107,31 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
    * Find all groups a user is a member of by their ID or idOnTheSource
    * @param userId - The user ID
    * @param session - Optional MongoDB session for transactions
+   * @param prefetchedIdOnTheSource - Pre-fetched idOnTheSource to skip the DB lookup
    * @returns Array of groups the user is a member of
    */
   async function findGroupsByMemberId(
     userId: string | Types.ObjectId,
     session?: ClientSession,
+    prefetchedIdOnTheSource?: string | null,
   ): Promise<IGroup[]> {
-    const User = mongoose.models.User as Model<IUser>;
     const Group = mongoose.models.Group as Model<IGroup>;
 
-    const userQuery = User.findById(userId, 'idOnTheSource');
-    if (session) {
-      userQuery.session(session);
+    let userIdOnTheSource: string;
+    if (prefetchedIdOnTheSource !== undefined) {
+      userIdOnTheSource = prefetchedIdOnTheSource ?? userId.toString();
+    } else {
+      const User = mongoose.models.User as Model<IUser>;
+      const userQuery = User.findById(userId, 'idOnTheSource');
+      if (session) {
+        userQuery.session(session);
+      }
+      const user = await userQuery.lean<{ idOnTheSource?: string }>();
+      if (!user) {
+        return [];
+      }
+      userIdOnTheSource = user.idOnTheSource || userId.toString();
     }
-    const user = await userQuery.lean<{ idOnTheSource?: string }>();
-
-    if (!user) {
-      return [];
-    }
-
-    const userIdOnTheSource = user.idOnTheSource || userId.toString();
 
     const query = Group.find({ memberIds: userIdOnTheSource });
     if (session) {
@@ -255,8 +261,9 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
   async function getUserGroups(
     userId: string | Types.ObjectId,
     session?: ClientSession,
+    idOnTheSource?: string | null,
   ): Promise<IGroup[]> {
-    return await findGroupsByMemberId(userId, session);
+    return await findGroupsByMemberId(userId, session, idOnTheSource);
   }
 
   /**
@@ -286,10 +293,11 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     params: {
       userId: string | Types.ObjectId;
       role?: string | null;
+      tenantId?: string | null;
     },
     session?: ClientSession,
   ): Promise<Array<{ principalType: PrincipalType; principalId?: string | Types.ObjectId }>> {
-    const { userId, role } = params;
+    const { userId, role, tenantId: tenantIdParam } = params;
     /** `userId` must be an `ObjectId` for USER principal since ACL entries store `ObjectId`s */
     const userObjectId = typeof userId === 'string' ? new Types.ObjectId(userId) : userId;
     const principals: Array<{
@@ -297,24 +305,37 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
       principalId?: string | Types.ObjectId;
     }> = [{ principalType: PrincipalType.USER, principalId: userObjectId }];
 
-    // If role is not provided, query user to get it
     let userRole = role;
-    if (userRole === undefined) {
+    let userTenantId = tenantIdParam;
+    let idOnTheSource: string | null | undefined;
+    if (userRole === undefined || userTenantId === undefined) {
       const User = mongoose.models.User as Model<IUser>;
-      const query = User.findById(userId).select('role');
+      const query = User.findById(userId).select('role tenantId idOnTheSource');
       if (session) {
         query.session(session);
       }
       const user = await query.lean<IUser>();
-      userRole = user?.role;
+      if (userRole === undefined) {
+        userRole = user?.role;
+      }
+      if (userTenantId === undefined) {
+        userTenantId = user?.tenantId;
+      }
+      idOnTheSource = user != null ? (user.idOnTheSource ?? null) : null;
     }
 
-    // Add role as a principal if user has one
+    if (userTenantId && userTenantId.trim()) {
+      const tenantPrincipalId = await resolveTenantPrincipalId(mongoose, userTenantId, session);
+      if (tenantPrincipalId) {
+        principals.push({ principalType: PrincipalType.TENANT, principalId: tenantPrincipalId });
+      }
+    }
+
     if (userRole && userRole.trim()) {
       principals.push({ principalType: PrincipalType.ROLE, principalId: userRole });
     }
 
-    const userGroups = await getUserGroups(userId, session);
+    const userGroups = await getUserGroups(userId, session, idOnTheSource);
     if (userGroups && userGroups.length > 0) {
       userGroups.forEach((group) => {
         principals.push({ principalType: PrincipalType.GROUP, principalId: group._id });

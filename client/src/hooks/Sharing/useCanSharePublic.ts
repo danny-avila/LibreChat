@@ -1,5 +1,5 @@
 import { ResourceType, PermissionTypes, Permissions } from 'librechat-data-provider';
-import { useHasAccess } from '~/hooks';
+import { useHasAccess, useScopeOverrideFeatureAccess } from '~/hooks';
 
 const resourceToPermissionMap: Partial<Record<ResourceType, PermissionTypes>> = {
   [ResourceType.AGENT]: PermissionTypes.AGENTS,
@@ -16,9 +16,44 @@ const resourceToPermissionMap: Partial<Record<ResourceType, PermissionTypes>> = 
  */
 export const useCanSharePublic = (resourceType: ResourceType): boolean => {
   const permissionType = resourceToPermissionMap[resourceType];
-  const hasAccess = useHasAccess({
-    permissionType,
+
+  const hasPromptsSharePublic = useScopeOverrideFeatureAccess(
+    PermissionTypes.PROMPTS,
+    Permissions.SHARE_PUBLIC,
+  );
+  const hasSkillsSharePublic = useScopeOverrideFeatureAccess(
+    PermissionTypes.SKILLS,
+    Permissions.SHARE_PUBLIC,
+  );
+  const hasAgentsSharePublic = useHasAccess({
+    permissionType: PermissionTypes.AGENTS,
     permission: Permissions.SHARE_PUBLIC,
   });
-  return hasAccess;
+  const hasMcpSharePublic = useHasAccess({
+    permissionType: PermissionTypes.MCP_SERVERS,
+    permission: Permissions.SHARE_PUBLIC,
+  });
+  const hasRemoteAgentsSharePublic = useHasAccess({
+    permissionType: PermissionTypes.REMOTE_AGENTS,
+    permission: Permissions.SHARE_PUBLIC,
+  });
+
+  if (!permissionType) {
+    return false;
+  }
+
+  switch (permissionType) {
+    case PermissionTypes.PROMPTS:
+      return hasPromptsSharePublic;
+    case PermissionTypes.SKILLS:
+      return hasSkillsSharePublic;
+    case PermissionTypes.AGENTS:
+      return hasAgentsSharePublic;
+    case PermissionTypes.MCP_SERVERS:
+      return hasMcpSharePublic;
+    case PermissionTypes.REMOTE_AGENTS:
+      return hasRemoteAgentsSharePublic;
+    default:
+      return false;
+  }
 };

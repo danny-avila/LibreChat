@@ -267,6 +267,66 @@ describe('access middleware', () => {
       const result = await checkAccess(defaultParams);
       expect(result).toBe(false);
     });
+
+    it('should allow prompt create from merged config when role lacks CREATE', async () => {
+      const mockRole = {
+        name: 'user',
+        permissions: {
+          [PermissionTypes.PROMPTS]: {
+            [Permissions.USE]: true,
+            [Permissions.CREATE]: false,
+          },
+        },
+      } as unknown as IRole;
+
+      defaultParams.getRoleByName.mockResolvedValue(mockRole);
+
+      const result = await checkAccess({
+        ...defaultParams,
+        req: {
+          ...mockReq,
+          config: {
+            interfaceConfig: {
+              prompts: { use: true, create: true },
+            },
+          },
+        } as unknown as Request,
+        permissionType: PermissionTypes.PROMPTS,
+        permissions: [Permissions.USE, Permissions.CREATE],
+      });
+
+      expect(result).toBe(true);
+    });
+
+    it('should block prompt create when merged config sets create false', async () => {
+      const mockRole = {
+        name: 'user',
+        permissions: {
+          [PermissionTypes.PROMPTS]: {
+            [Permissions.USE]: true,
+            [Permissions.CREATE]: true,
+          },
+        },
+      } as unknown as IRole;
+
+      defaultParams.getRoleByName.mockResolvedValue(mockRole);
+
+      const result = await checkAccess({
+        ...defaultParams,
+        req: {
+          ...mockReq,
+          config: {
+            interfaceConfig: {
+              prompts: { use: true, create: false },
+            },
+          },
+        } as unknown as Request,
+        permissionType: PermissionTypes.PROMPTS,
+        permissions: [Permissions.USE, Permissions.CREATE],
+      });
+
+      expect(result).toBe(false);
+    });
   });
 
   describe('generateCheckAccess', () => {
