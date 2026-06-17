@@ -66,7 +66,6 @@ export const excludedKeys = new Set([
   'files',
   'spec',
   'disableParams',
-  'chatProjectId',
 ]);
 
 export enum SettingsViews {
@@ -206,6 +205,20 @@ export const fileStrategiesSchema = z
     skills: fileStorageSchema.optional(),
   })
   .optional();
+
+export const stripePaymentsSchema = z.object({
+  enabled: z.boolean().optional().default(false),
+  allowCustomAmount: z.boolean().optional().default(false),
+  minUsd: z.number().positive().optional().default(1),
+  maxUsd: z.number().positive().optional().default(100),
+  creditsPerUsd: z.number().positive().optional().default(1000000),
+  successUrl: z.string().url().optional(),
+  cancelUrl: z.string().url().optional(),
+});
+
+export const paymentsSchema = z.object({
+  stripe: stripePaymentsSchema.optional(),
+});
 
 const cloudfrontSigningSchema = z.enum(['none', 'cookies', 'url']);
 
@@ -1314,6 +1327,8 @@ export const interfaceSchema = z
 
 export type TInterfaceConfig = z.infer<typeof interfaceSchema>;
 export type TBalanceConfig = z.infer<typeof balanceSchema>;
+export type TStripePaymentsConfig = z.infer<typeof stripePaymentsSchema>;
+export type TPaymentsConfig = z.infer<typeof paymentsSchema>;
 export type TTransactionsConfig = z.infer<typeof transactionsSchema>;
 
 export const turnstileOptionsSchema = z
@@ -1356,6 +1371,7 @@ export type TStartupConfig = {
   interface?: TInterfaceConfig;
   turnstile?: TTurnstileConfig;
   balance?: TBalanceConfig;
+  payments?: TPaymentsConfig;
   transactions?: TTransactionsConfig;
   discordLoginEnabled: boolean;
   facebookLoginEnabled: boolean;
@@ -1719,6 +1735,7 @@ export const configSchema = z.object({
     })
     .default({ socialLogins: defaultSocialLogins }),
   balance: balanceSchema.optional(),
+  payments: paymentsSchema.optional(),
   transactions: transactionsSchema.optional(),
   speech: z
     .object({

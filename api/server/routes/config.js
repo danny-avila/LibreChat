@@ -2,6 +2,7 @@ const express = require('express');
 const {
   isEnabled,
   getBalanceConfig,
+  getPaymentsConfig,
   getCloudFrontConfig,
   resolveBuildInfo,
   resolveTitleTiming,
@@ -250,6 +251,7 @@ router.get('/', async function (req, res) {
     });
 
     const balanceConfig = getBalanceConfig(appConfig);
+    const paymentsConfig = getPaymentsConfig(appConfig);
     const cloudFront = buildCloudFrontStartupConfig();
 
     /** @type {TStartupConfig} */
@@ -266,6 +268,7 @@ router.get('/', async function (req, res) {
       turnstile: appConfig?.turnstileConfig,
       modelSpecs: sanitizeModelSpecs(appConfig?.modelSpecs),
       balance: balanceConfig,
+      ...(paymentsConfig ? { payments: paymentsConfig } : {}),
       bundlerURL: process.env.SANDPACK_BUNDLER_URL,
       staticBundlerURL: process.env.SANDPACK_STATIC_BUNDLER_URL,
       sharePointFilePickerEnabled,

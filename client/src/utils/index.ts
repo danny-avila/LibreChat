@@ -12,6 +12,7 @@ export * from './files';
 export * from './latex';
 export * from './tilde';
 export * from './forms';
+export * from './stripe';
 export * from './roles';
 export * from './errors';
 export * from './agents';

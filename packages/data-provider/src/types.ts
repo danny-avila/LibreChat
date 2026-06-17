@@ -754,6 +754,18 @@ export type TBalanceResponse = {
   refillAmount?: number;
 };
 
+export type TCreateStripeCheckoutSessionRequest = {
+  amountUsd: number;
+};
+
+export type TCreateStripeCheckoutSessionResponse = {
+  sessionId?: string;
+  url?: string;
+  amountUsd: number;
+  credits: number;
+  currency: 'usd';
+};
+
 /* -------------------------------------------------------------------------- */
 /* Skill UI extensions (not yet persisted — phase 2 backend will fill these)  */
 /* -------------------------------------------------------------------------- */

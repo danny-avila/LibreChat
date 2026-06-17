@@ -104,6 +104,11 @@ afterEach(() => {
   delete process.env.ANALYTICS_GTM_ID;
   delete process.env.CUSTOM_FOOTER;
   delete process.env.HELP_AND_FAQ_URL;
+  delete process.env.STRIPE_ENABLED;
+  delete process.env.STRIPE_MIN_USD;
+  delete process.env.STRIPE_MAX_USD;
+  delete process.env.STRIPE_CREDITS_PER_USD;
+  delete process.env.STRIPE_ALLOW_CUSTOM_AMOUNT;
 });
 
 describe('GET /api/config', () => {
@@ -315,6 +320,38 @@ describe('GET /api/config', () => {
       expect(response.body.modelSpecs).toEqual({ list: [{ name: 'test-spec' }] });
       expect(response.body.balance).toEqual({ enabled: true, startBalance: 10000 });
       expect(response.body.webSearch).toEqual({ searchProvider: 'tavily' });
+    });
+
+    it('should include sanitized Stripe payments config for authenticated users', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        payments: {
+          stripe: {
+            enabled: true,
+            allowCustomAmount: true,
+            minUsd: 2,
+            maxUsd: 25,
+            creditsPerUsd: 1000000,
+            successUrl: 'https://example.com/success',
+            cancelUrl: 'https://example.com/cancel',
+          },
+        },
+      });
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.payments).toEqual({
+        stripe: {
+          enabled: true,
+          allowCustomAmount: true,
+          minUsd: 2,
+          maxUsd: 25,
+          creditsPerUsd: 1000000,
+        },
+      });
+      expect(response.body.payments.stripe).not.toHaveProperty('successUrl');
+      expect(response.body.payments.stripe).not.toHaveProperty('cancelUrl');
     });
 
     it('should strip private prompt fields from model spec presets', async () => {

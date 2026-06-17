@@ -15,6 +15,7 @@ import {
   isTemporaryConversation,
   logger,
   clearMessagesCache,
+  consumeStripeReturnParam,
 } from '~/utils';
 import {
   useGetConvoIdQuery,
@@ -113,6 +114,19 @@ export default function ChatRoute() {
       { replace: true },
     );
   }, [projectScopeMissing, setSearchParams]);
+
+  useEffect(() => {
+    const { nextParams, toast } = consumeStripeReturnParam(searchParams);
+    if (toast == null) {
+      return;
+    }
+
+    showToast({
+      message: localize(toast.messageKey),
+      severity: toast.status,
+    });
+    setSearchParams(nextParams, { replace: true });
+  }, [localize, searchParams, setSearchParams, showToast]);
 
   const modelsQuery = useGetModelsQuery({
     enabled: isAuthenticated,

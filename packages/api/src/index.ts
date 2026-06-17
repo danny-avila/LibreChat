@@ -49,6 +49,8 @@ export * from './actions';
 export * from './prompts';
 /* Projects */
 export * from './projects';
+/* Payments */
+export * from './payments';
 /* Skills */
 export * from './skills';
 /* Endpoints */

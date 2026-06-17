@@ -1,4 +1,9 @@
-import { getTransactionsConfig, getBalanceConfig, getCustomEndpointConfig } from './config';
+import {
+  getTransactionsConfig,
+  getBalanceConfig,
+  getPaymentsConfig,
+  getCustomEndpointConfig,
+} from './config';
 import { logger } from '@librechat/data-schemas';
 import { FileSources, EModelEndpoint } from 'librechat-data-provider';
 import type { TCustomConfig, TEndpoint } from 'librechat-data-provider';
@@ -38,7 +43,7 @@ jest.mock('@librechat/data-schemas', () => ({
   },
 }));
 
-jest.mock('~/utils', () => ({
+jest.mock('~/utils/common', () => ({
   isEnabled: jest.fn((value) => value === 'true'),
 }));
 
@@ -279,6 +284,71 @@ describe('getBalanceConfig', () => {
       expect(result).toEqual({
         enabled: true,
       });
+    });
+  });
+});
+
+describe('getPaymentsConfig', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    delete process.env.STRIPE_ENABLED;
+    delete process.env.STRIPE_MIN_USD;
+    delete process.env.STRIPE_MAX_USD;
+    delete process.env.STRIPE_CREDITS_PER_USD;
+    delete process.env.STRIPE_ALLOW_CUSTOM_AMOUNT;
+  });
+
+  describe('when appConfig is not provided', () => {
+    it('should return env-backed public Stripe settings', () => {
+      process.env.STRIPE_ENABLED = 'true';
+      process.env.STRIPE_MIN_USD = '2';
+      process.env.STRIPE_MAX_USD = '25';
+      process.env.STRIPE_CREDITS_PER_USD = '1000000';
+      process.env.STRIPE_ALLOW_CUSTOM_AMOUNT = 'true';
+
+      const result = getPaymentsConfig();
+
+      expect(result).toEqual({
+        stripe: {
+          enabled: true,
+          minUsd: 2,
+          maxUsd: 25,
+          creditsPerUsd: 1000000,
+          allowCustomAmount: true,
+        },
+      });
+    });
+  });
+
+  describe('when appConfig is provided', () => {
+    it('should expose only public Stripe fields and omit redirect URLs', () => {
+      const appConfig = createTestAppConfig({
+        payments: {
+          stripe: {
+            enabled: true,
+            minUsd: 3,
+            maxUsd: 30,
+            creditsPerUsd: 1000000,
+            allowCustomAmount: false,
+            successUrl: 'https://example.com/success',
+            cancelUrl: 'https://example.com/cancel',
+          },
+        },
+      });
+
+      const result = getPaymentsConfig(appConfig);
+
+      expect(result).toEqual({
+        stripe: {
+          enabled: true,
+          minUsd: 3,
+          maxUsd: 30,
+          creditsPerUsd: 1000000,
+          allowCustomAmount: false,
+        },
+      });
+      expect(result?.stripe).not.toHaveProperty('successUrl');
+      expect(result?.stripe).not.toHaveProperty('cancelUrl');
     });
   });
 });

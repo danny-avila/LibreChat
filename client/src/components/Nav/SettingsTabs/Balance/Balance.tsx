@@ -2,12 +2,14 @@ import React from 'react';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext, useLocalize } from '~/hooks';
 import AutoRefillSettings from './AutoRefillSettings';
+import TopUpCard from './TopUpCard';
 import TokenCreditsItem from './TokenCreditsItem';
 
 function Balance() {
   const localize = useLocalize();
   const { isAuthenticated } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
+  const stripePaymentsConfig = startupConfig?.payments?.stripe;
 
   const balanceQuery = useGetUserBalance({
     enabled: !!isAuthenticated && !!startupConfig?.balance?.enabled,
@@ -58,6 +60,8 @@ function Balance() {
     <div className="flex flex-col gap-4 p-4 text-sm text-text-primary">
       {/* Token credits display */}
       <TokenCreditsItem tokenCredits={tokenCredits} />
+
+      <TopUpCard config={stripePaymentsConfig} />
 
       {/* Auto-refill display */}
       {renderAutoRefill()}

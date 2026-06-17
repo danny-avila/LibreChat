@@ -124,6 +124,7 @@
     "rate-limit-redis": "^4.2.0",
     "sanitize-html": "^2.13.0",
     "sharp": "^0.33.5",
+    "stripe": "^18.5.0",
     "traverse": "^0.6.7",
     "ua-parser-js": "^1.0.36",
     "undici": "^7.24.1",
