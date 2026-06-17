@@ -99,8 +99,8 @@ export class MCPServersRegistry {
   private readonly dbConfigsRepo: ServerConfigsDB;
   private readonly cacheConfigsRepo: IServerConfigsRepositoryInterface;
   private readonly configCacheRepo: IServerConfigsRepositoryInterface;
-  private readonly allowedDomains?: string[] | null;
-  private readonly allowedAddresses?: string[] | null;
+  private allowedDomains?: string[] | null;
+  private allowedAddresses?: string[] | null;
   private readonly readThroughCache: Keyv<t.ParsedServerConfig>;
   private readonly readThroughCacheAll: Keyv<Record<string, t.ParsedServerConfig>>;
   private readonly pendingGetAllPromises = new Map<
@@ -181,6 +181,19 @@ export class MCPServersRegistry {
 
   public getAllowedAddresses(): string[] | null | undefined {
     return this.allowedAddresses;
+  }
+
+  /**
+   * Replaces the effective domain/address allowlists consulted by every inspection
+   * and connection path. Seeded from YAML at construction, then refreshed from the
+   * merged admin-panel config at boot and on each config-override change, so
+   * admin-panel `mcpSettings.allowedDomains` / `allowedAddresses` take effect without
+   * a restart. Callers must only invoke this with values from a successful merged-config
+   * read; on read failure they should skip it to preserve the current allowlists.
+   */
+  public setAllowlists(allowedDomains?: string[] | null, allowedAddresses?: string[] | null): void {
+    this.allowedDomains = allowedDomains;
+    this.allowedAddresses = allowedAddresses;
   }
 
   /** Returns true when no explicit allowedDomains allowlist is configured, enabling SSRF TOCTOU protection */

@@ -7,18 +7,35 @@ const { createMCPServersRegistry, createMCPManager } = require('~/config');
  * Initialize MCP servers
  */
 async function initializeMCPs() {
-  const appConfig = await getAppConfig({ baseOnly: true });
-  const mcpServers = appConfig.mcpConfig;
+  const baseConfig = await getAppConfig({ baseOnly: true });
+  const mcpServers = baseConfig.mcpConfig;
 
+  let registry;
   try {
-    createMCPServersRegistry(
+    registry = createMCPServersRegistry(
       mongoose,
-      appConfig?.mcpSettings?.allowedDomains,
-      appConfig?.mcpSettings?.allowedAddresses,
+      baseConfig?.mcpSettings?.allowedDomains,
+      baseConfig?.mcpSettings?.allowedAddresses,
     );
   } catch (error) {
     logger.error('[MCP] Failed to initialize MCPServersRegistry:', error);
     throw error;
+  }
+
+  // Seed the registry's effective allowlists from the merged (admin-panel) config so a
+  // pre-existing mcpSettings override is honored from boot, not just after the next
+  // config change. Falls back to the YAML allowlists set above when the merged read fails.
+  try {
+    const mergedConfig = await getAppConfig();
+    registry.setAllowlists(
+      mergedConfig?.mcpSettings?.allowedDomains,
+      mergedConfig?.mcpSettings?.allowedAddresses,
+    );
+  } catch (error) {
+    logger.warn(
+      '[MCP] Failed to seed merged allowlists at boot; using YAML allowlists until next config change:',
+      error,
+    );
   }
 
   try {

@@ -2,6 +2,7 @@
 
 const mockClearAppConfigCache = jest.fn().mockResolvedValue(undefined);
 const mockClearOverrideCache = jest.fn().mockResolvedValue(undefined);
+const mockGetAppConfig = jest.fn().mockResolvedValue({ availableTools: {} });
 
 jest.mock('~/cache/getLogStores', () => {
   return jest.fn(() => ({}));
@@ -32,7 +33,7 @@ jest.mock('../getCachedTools', () => ({
 const mockClearMcpConfigCache = jest.fn().mockResolvedValue(undefined);
 jest.mock('@librechat/api', () => ({
   createAppConfigService: jest.fn(() => ({
-    getAppConfig: jest.fn().mockResolvedValue({ availableTools: {} }),
+    getAppConfig: mockGetAppConfig,
     clearAppConfigCache: mockClearAppConfigCache,
     clearOverrideCache: mockClearOverrideCache,
   })),
@@ -46,6 +47,7 @@ const { invalidateConfigCaches } = require('../app');
 describe('invalidateConfigCaches', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetAppConfig.mockResolvedValue({ availableTools: {} });
   });
 
   it('clears all caches', async () => {
@@ -57,58 +59,65 @@ describe('invalidateConfigCaches', () => {
     expect(mockClearMcpConfigCache).toHaveBeenCalledTimes(1);
   });
 
-  it('passes tenantId through to clearOverrideCache', async () => {
+  it('passes tenantId through to clearOverrideCache and the merged allowlist read', async () => {
     await invalidateConfigCaches('tenant-a');
 
     expect(mockClearOverrideCache).toHaveBeenCalledWith('tenant-a');
+    expect(mockGetAppConfig).toHaveBeenCalledWith({ tenantId: 'tenant-a', refresh: true });
     expect(mockClearAppConfigCache).toHaveBeenCalledTimes(1);
     expect(mockInvalidateCachedTools).toHaveBeenCalledWith({ invalidateGlobal: true });
   });
 
-  it('all operations run in parallel (not sequentially)', async () => {
-    const order = [];
-
-    mockClearAppConfigCache.mockImplementation(
-      () =>
-        new Promise((r) =>
-          setTimeout(() => {
-            order.push('base');
-            r();
-          }, 10),
-        ),
-    );
-    mockClearOverrideCache.mockImplementation(
-      () =>
-        new Promise((r) =>
-          setTimeout(() => {
-            order.push('override');
-            r();
-          }, 10),
-        ),
-    );
-    mockInvalidateCachedTools.mockImplementation(
-      () =>
-        new Promise((r) =>
-          setTimeout(() => {
-            order.push('tools');
-            r();
-          }, 10),
-        ),
-    );
-    mockClearMcpConfigCache.mockImplementation(
-      () =>
-        new Promise((r) =>
-          setTimeout(() => {
-            order.push('mcp');
-            r();
-          }, 10),
-        ),
-    );
+  it('refreshes the MCP registry with the merged mcpSettings allowlists', async () => {
+    mockGetAppConfig.mockResolvedValue({
+      availableTools: {},
+      mcpSettings: {
+        allowedDomains: ['admin-added.com'],
+        allowedAddresses: ['10.0.0.0/8'],
+      },
+    });
 
     await invalidateConfigCaches();
 
+    expect(mockGetAppConfig).toHaveBeenCalledWith({ refresh: true });
+    expect(mockClearMcpConfigCache).toHaveBeenCalledWith({
+      allowedDomains: ['admin-added.com'],
+      allowedAddresses: ['10.0.0.0/8'],
+    });
+  });
+
+  it('preserves current allowlists (no allowlist arg) when the merged read fails', async () => {
+    mockGetAppConfig.mockRejectedValue(new Error('DB unavailable'));
+
+    await expect(invalidateConfigCaches()).resolves.not.toThrow();
+
+    expect(mockClearMcpConfigCache).toHaveBeenCalledTimes(1);
+    expect(mockClearMcpConfigCache).toHaveBeenCalledWith(undefined);
+  });
+
+  it('clears the MCP config cache after the app/override caches are cleared', async () => {
+    const order = [];
+
+    mockClearAppConfigCache.mockImplementation(async () => {
+      order.push('base');
+    });
+    mockClearOverrideCache.mockImplementation(async () => {
+      order.push('override');
+    });
+    mockInvalidateCachedTools.mockImplementation(async () => {
+      order.push('tools');
+    });
+    mockClearMcpConfigCache.mockImplementation(async () => {
+      order.push('mcp');
+    });
+
+    await invalidateConfigCaches();
+
+    // The three base clears happen before the MCP cache eviction so the merged
+    // allowlist read reflects the freshly-invalidated config.
     expect(order).toHaveLength(4);
-    expect(new Set(order)).toEqual(new Set(['base', 'override', 'tools', 'mcp']));
+    expect(order.slice(0, 3).sort()).toEqual(['base', 'override', 'tools']);
+    expect(order[3]).toBe('mcp');
   });
 
   it('resolves even when clearAppConfigCache throws (partial failure)', async () => {

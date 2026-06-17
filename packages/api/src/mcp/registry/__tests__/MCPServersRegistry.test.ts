@@ -220,6 +220,53 @@ describe('MCPServersRegistry', () => {
     });
   });
 
+  describe('setAllowlists (merged admin-panel allowlist refresh)', () => {
+    it('updates the values surfaced by the allowlist getters', () => {
+      expect(registry.getAllowedDomains()).toBeUndefined();
+      expect(registry.shouldEnableSSRFProtection()).toBe(true);
+
+      registry.setAllowlists(['admin-added.com'], ['10.0.0.0/8']);
+
+      expect(registry.getAllowedDomains()).toEqual(['admin-added.com']);
+      expect(registry.getAllowedAddresses()).toEqual(['10.0.0.0/8']);
+      expect(registry.shouldEnableSSRFProtection()).toBe(false);
+    });
+
+    it('makes inspection honor a domain permitted only by the refreshed allowlist', async () => {
+      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+
+      // Simulate the merged (admin-panel) override arriving after construction.
+      registry.setAllowlists(['admin-added.com'], ['10.0.0.0/8']);
+
+      await registry.addServer(
+        'admin_panel_server',
+        { type: 'streamable-http', url: 'https://admin-added.com/mcp' },
+        'DB',
+        'user-1',
+      );
+
+      // The refreshed allowlist — not the (empty) YAML one from construction — is
+      // what inspection validates against.
+      expect(inspectSpy).toHaveBeenCalledWith(
+        'admin_panel_server',
+        expect.objectContaining({ url: 'https://admin-added.com/mcp' }),
+        undefined,
+        ['admin-added.com'],
+        ['10.0.0.0/8'],
+      );
+    });
+
+    it('clears the allowlist back to no-allowlist (SSRF) mode when overrides are removed', () => {
+      registry.setAllowlists(['admin-added.com']);
+      expect(registry.shouldEnableSSRFProtection()).toBe(false);
+
+      registry.setAllowlists(undefined, undefined);
+
+      expect(registry.getAllowedDomains()).toBeUndefined();
+      expect(registry.shouldEnableSSRFProtection()).toBe(true);
+    });
+  });
+
   describe('reset', () => {
     it('should clear all servers from cache repository', async () => {
       // Add servers to cache using the new API
