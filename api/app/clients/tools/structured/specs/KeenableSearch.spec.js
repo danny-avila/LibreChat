@@ -67,6 +67,7 @@ describe('KeenableSearch', () => {
           headers: expect.objectContaining({
             'Content-Type': 'application/json',
             'X-API-Key': mockApiKey,
+            'X-Keenable-Title': 'LibreChat',
           }),
           body: JSON.stringify({ query: 'test query', max_results: 3 }),
         }),

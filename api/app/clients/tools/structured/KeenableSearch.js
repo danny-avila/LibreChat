@@ -72,6 +72,7 @@ class KeenableSearch extends Tool {
       headers: {
         'Content-Type': 'application/json',
         'X-API-Key': this.apiKey,
+        'X-Keenable-Title': 'LibreChat',
       },
       body: JSON.stringify(requestBody),
     };
