@@ -103,12 +103,75 @@ function extractColors(svg: string): string[] {
   return colors;
 }
 
+const VIEWBOX_REGEX = /viewBox\s*=\s*["']\s*[-\d.]+\s+[-\d.]+\s+([\d.]+)\s+([\d.]+)/i;
+const RECT_REGEX = /<rect\b[^>]*>/gi;
+
+function getAttr(tag: string, name: string): string | null {
+  const match = tag.match(new RegExp(`\\b${name}\\s*=\\s*["']([^"']*)["']`, 'i'));
+  return match ? match[1].trim() : null;
+}
+
+function coversCanvas(value: string | null, canvas: number | null): boolean {
+  if (value == null) {
+    return false;
+  }
+  if (value.trim() === '100%') {
+    return true;
+  }
+  const size = parseFloat(value);
+  if (Number.isNaN(size)) {
+    return false;
+  }
+  return canvas != null && size >= canvas * 0.98;
+}
+
 /**
- * Returns true when an SVG only contains grayscale colors (or relies on the
- * default black fill / `currentColor`), meaning it can be safely tinted to match
- * the theme. Multi-color logos return false so their colors are preserved.
+ * Detects a full-canvas opaque background (a `<rect>` at the origin spanning the
+ * viewBox). Such SVGs cannot be tinted via a CSS mask, since the opaque
+ * background fills the whole area with the tint color instead of the glyph.
+ */
+function hasOpaqueBackground(svg: string): boolean {
+  const viewBox = svg.match(VIEWBOX_REGEX);
+  const width = viewBox ? parseFloat(viewBox[1]) : null;
+  const height = viewBox ? parseFloat(viewBox[2]) : null;
+
+  const rects = svg.match(RECT_REGEX) ?? [];
+  for (const rect of rects) {
+    const fill = getAttr(rect, 'fill');
+    if (fill === 'none' || fill === 'transparent') {
+      continue;
+    }
+    const fillOpacity = getAttr(rect, 'fill-opacity');
+    const opacity = getAttr(rect, 'opacity');
+    if (fillOpacity != null && parseFloat(fillOpacity) === 0) {
+      continue;
+    }
+    if (opacity != null && parseFloat(opacity) === 0) {
+      continue;
+    }
+    if (parseFloat(getAttr(rect, 'x') ?? '0') > 0 || parseFloat(getAttr(rect, 'y') ?? '0') > 0) {
+      continue;
+    }
+    if (
+      coversCanvas(getAttr(rect, 'width'), width) &&
+      coversCanvas(getAttr(rect, 'height'), height)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Returns true when an SVG can be safely tinted to match the theme: it only
+ * contains grayscale colors (or relies on the default black fill /
+ * `currentColor`) and has no opaque background. Multi-color logos and icons with
+ * an opaque background return false so they are rendered with their own colors.
  */
 export function isMonochromeSvg(svg: string): boolean {
+  if (hasOpaqueBackground(svg)) {
+    return false;
+  }
   const colors = extractColors(svg);
   if (colors.length === 0) {
     return true;
