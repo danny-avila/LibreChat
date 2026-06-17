@@ -81,6 +81,44 @@ describe('isMonochromeSvg', () => {
       expect(isMonochromeSvg(svg)).toBe(false);
     });
   });
+
+  describe('opaque background (not tintable as a mask)', () => {
+    it('rejects a white background rect with a black glyph', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><rect width="24" height="24" fill="#ffffff" /><path fill="#000" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('rejects a black background rect with a white glyph', () => {
+      const svg =
+        '<svg viewBox="0 0 48 48"><rect width="48" height="48" fill="black" /><path fill="white" d="M0 0h10v10H0z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('rejects a full-size percentage background rect', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><rect x="0" y="0" width="100%" height="100%" fill="#eee" /><path fill="#222" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('rejects a default-fill (opaque black) background rect', () => {
+      const svg =
+        '<svg viewBox="0 0 16 16"><rect width="16" height="16" /><path fill="#fff" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('still tints a glyph drawn with small rects on a transparent background', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" fill="#333" /><rect x="14" y="14" width="6" height="6" fill="#333" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('ignores a transparent background rect', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><rect width="24" height="24" fill="none" /><path fill="#333" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+  });
 });
 
 describe('sanitizeSvg', () => {
