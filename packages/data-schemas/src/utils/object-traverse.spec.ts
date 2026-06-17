@@ -114,5 +114,45 @@ describe('object-traverse', () => {
       // root, a, b, b.c, b.d, and the three array elements.
       expect(countVisits({ a: 1, b: { c: 2, d: [3, 4, 5] } })).toBe(8);
     });
+
+    it('stops iterating array children once the node budget is exhausted', () => {
+      let indexReads = 0;
+      const big = Array.from({ length: 1000 }, (_, i) => ({ i }));
+      const probed = new Proxy(big, {
+        get(target, prop, receiver) {
+          if (typeof prop === 'string' && /^\d+$/.test(prop)) {
+            indexReads++;
+          }
+          return Reflect.get(target, prop, receiver);
+        },
+      });
+
+      // The budget is spent on the root alone, so the child loop must break
+      // before touching all 1000 elements (no O(n) work after the cap).
+      countVisits(probed, { maxNodes: 1 });
+
+      expect(indexReads).toBeLessThan(10);
+    });
+  });
+
+  describe('mutation safety', () => {
+    it('detects an ancestor cycle even when a callback replaces the node via update()', () => {
+      const arr: unknown[] = [];
+      arr.push(arr);
+
+      let selfVisits = 0;
+      traverse(arr, { maxDepth: 50 }).forEach(function (this: TraverseContext, value: unknown) {
+        if (value === arr) {
+          selfVisits++;
+        }
+        // Mimic the debug formatter, which rewrites array nodes in place.
+        if (this.notLeaf && Array.isArray(value)) {
+          this.update('[summary]');
+        }
+      });
+
+      // The self-reference is skipped as a true cycle, not re-expanded per level.
+      expect(selfVisits).toBe(1);
+    });
   });
 });

@@ -104,31 +104,45 @@ function deleteProperty(obj: TraversableObject, key: string | number): void {
   }
 }
 
+function hasOwnEnumerable(node: TraversableObject): boolean {
+  for (const key in node) {
+    if (Object.prototype.hasOwnProperty.call(node, key)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function forEach(obj: unknown, callback: ForEachCallback, options?: TraverseOptions): void {
   const maxNodes = options?.maxNodes ?? DEFAULT_MAX_NODES;
   const maxDepth = options?.maxDepth ?? DEFAULT_MAX_DEPTH;
   let visitedCount = 0;
+  // Original (never-mutated) node references for the current DFS path, paired
+  // with their contexts. Cycle detection compares against these rather than
+  // context.node, which a callback's update() can reassign.
+  const ancestors: { node: TraversableObject; context: TraverseContext }[] = [];
+
+  function findAncestorCycle(node: TraversableObject): TraverseContext | null {
+    for (let i = ancestors.length - 1; i >= 0; i--) {
+      if (ancestors[i].node === node) {
+        return ancestors[i].context;
+      }
+    }
+    return null;
+  }
 
   function walk(node: unknown, path: (string | number)[] = [], parent?: TraverseContext): void {
     if (visitedCount >= maxNodes) {
       return; // Bound total work; stop once the node budget is exhausted.
     }
 
-    // Detect circular references via the ancestor chain only. A node is circular
-    // solely when it appears among its own ancestors; a shared (non-circular)
-    // reference appearing in multiple branches is traversed independently. The
-    // node and depth caps prevent a DAG of shared references from fanning out
-    // unboundedly.
+    // Detect cycles via the current DFS path's original node refs. A shared
+    // (non-circular) reference appearing in multiple branches is traversed
+    // independently; the node/depth caps keep a DAG of shared references from
+    // fanning out unboundedly.
     let circular: TraverseContext | null = null;
     if (isObject(node)) {
-      let p = parent;
-      while (p) {
-        if (p.node === node) {
-          circular = p;
-          break;
-        }
-        p = p.parent;
-      }
+      circular = findAncestorCycle(node);
       if (circular) {
         return; // Skip true cycles to avoid infinite recursion.
       }
@@ -143,8 +157,7 @@ function forEach(obj: unknown, callback: ForEachCallback, options?: TraverseOpti
     const isLeaf =
       tooDeep ||
       !isObject(node) ||
-      (Array.isArray(node) && node.length === 0) ||
-      Object.keys(node).length === 0;
+      (Array.isArray(node) ? node.length === 0 : !hasOwnEnumerable(node));
 
     // Create context
     const context: TraverseContext = {
@@ -179,17 +192,29 @@ function forEach(obj: unknown, callback: ForEachCallback, options?: TraverseOpti
     visitedCount++;
     callback.call(context, node);
 
-    // Traverse children when the node is an expandable object within bounds
+    // Traverse children within bounds, breaking as soon as the budget is spent
+    // so a wide array/object can't incur O(n) work after the cap is reached.
     if (isObject(node) && !isLeaf) {
+      ancestors.push({ node, context });
       if (Array.isArray(node)) {
         for (let i = 0; i < node.length; i++) {
+          if (visitedCount >= maxNodes) {
+            break;
+          }
           walk(node[i], [...path, i], context);
         }
       } else {
-        for (const [childKey, childValue] of Object.entries(node)) {
-          walk(childValue, [...path, childKey], context);
+        for (const childKey in node) {
+          if (!Object.prototype.hasOwnProperty.call(node, childKey)) {
+            continue;
+          }
+          if (visitedCount >= maxNodes) {
+            break;
+          }
+          walk(node[childKey], [...path, childKey], context);
         }
       }
+      ancestors.pop();
     }
   }
 
