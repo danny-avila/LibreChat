@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useRef } from 'react';
 import { SquirclePlusIcon } from '@librechat/client';
+import CustomIcon from '~/components/ui/CustomIcon';
 import { useLocalize } from '~/hooks';
 
 interface MCPIconProps {
@@ -8,17 +9,8 @@ interface MCPIconProps {
 }
 
 export default function MCPIcon({ icon, onIconChange }: MCPIconProps) {
-  const [previewUrl, setPreviewUrl] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const localize = useLocalize();
-
-  useEffect(() => {
-    if (icon) {
-      setPreviewUrl(icon);
-    } else {
-      setPreviewUrl('');
-    }
-  }, [icon]);
 
   const handleClick = () => {
     if (fileInputRef.current) {
@@ -44,13 +36,11 @@ export default function MCPIcon({ icon, onIconChange }: MCPIconProps) {
         aria-label={localize('com_ui_upload_icon')}
         className="bg-token-surface-secondary dark:bg-token-surface-tertiary border-token-border-medium flex h-16 w-16 shrink-0 cursor-pointer items-center justify-center rounded-xl border-2 border-dashed focus:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
       >
-        {previewUrl ? (
-          <img
-            src={previewUrl}
-            className="h-full w-full rounded-xl object-cover"
-            alt="MCP Icon"
-            width="64"
-            height="64"
+        {icon ? (
+          <CustomIcon
+            src={icon}
+            alt={localize('com_ui_icon')}
+            className="h-full w-full rounded-xl object-cover text-text-primary"
           />
         ) : (
           <SquirclePlusIcon />
@@ -63,7 +53,7 @@ export default function MCPIcon({ icon, onIconChange }: MCPIconProps) {
         <span className="text-xs text-text-secondary">{localize('com_agents_mcp_icon_size')}</span>
       </div>
       <input
-        accept="image/png,.png,image/jpeg,.jpg,.jpeg,image/gif,.gif,image/webp,.webp"
+        accept="image/png,.png,image/jpeg,.jpg,.jpeg,image/gif,.gif,image/webp,.webp,image/svg+xml,.svg"
         multiple={false}
         type="file"
         style={{ display: 'none' }}
