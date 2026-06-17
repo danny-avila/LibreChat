@@ -1,12 +1,12 @@
 import { logger } from '@librechat/data-schemas';
-import type { AppConfig } from '@librechat/data-schemas';
-import type { SummarizationConfig, TEndpoint } from 'librechat-data-provider';
 import {
   EModelEndpoint,
   FileSources,
   MAX_SUBAGENT_DEPTH,
   MAX_SUBAGENT_RUN_CONFIGS,
 } from 'librechat-data-provider';
+import type { SummarizationConfig, TEndpoint } from 'librechat-data-provider';
+import type { AppConfig } from '@librechat/data-schemas';
 import { createRun } from '~/agents/run';
 
 // Mock winston logger — `format` must be callable so @librechat/data-schemas
@@ -1113,6 +1113,7 @@ describe('toolOutputReferences gating', () => {
    */
   async function callAndCaptureRunConfig(
     overrides?: Record<string, unknown>,
+    user?: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
     const agents = [makeAgent(overrides)];
     const signal = new AbortController().signal;
@@ -1122,12 +1123,29 @@ describe('toolOutputReferences gating', () => {
       signal,
       streaming: true,
       streamUsage: true,
+      user: user as never,
     });
 
     const createMock = Run.create as jest.Mock;
     expect(createMock).toHaveBeenCalledTimes(1);
     return createMock.mock.calls[0][0] as Record<string, unknown>;
   }
+
+  it('passes deterministic Langfuse trace config without tenant metadata by default', async () => {
+    const callArgs = await callAndCaptureRunConfig();
+    expect(callArgs.langfuse).toEqual({ deterministicTraceId: true });
+  });
+
+  it('adds the authenticated tenant id to Langfuse trace metadata and tags', async () => {
+    const callArgs = await callAndCaptureRunConfig(undefined, {
+      tenantId: 'tenant-1',
+    });
+    expect(callArgs.langfuse).toEqual({
+      deterministicTraceId: true,
+      metadata: { 'librechat.tenant.id': 'tenant-1' },
+      tags: ['tenant:tenant-1'],
+    });
+  });
 
   it('passes toolOutputReferences when agent has codeEnvAvailable=true', async () => {
     const callArgs = await callAndCaptureRunConfig({ codeEnvAvailable: true });

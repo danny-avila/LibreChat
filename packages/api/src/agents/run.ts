@@ -794,6 +794,17 @@ function buildSubagentConfigs(
   return configs;
 }
 
+function buildLangfuseConfig(user?: IUser) {
+  const tenantId = typeof user?.tenantId === 'string' ? user.tenantId.trim() : '';
+  return {
+    deterministicTraceId: true,
+    ...(tenantId !== '' && {
+      metadata: { 'librechat.tenant.id': tenantId },
+      tags: [`tenant:${tenantId}`],
+    }),
+  };
+}
+
 /**
  * Creates a new Run instance with custom handlers and configuration.
  *
@@ -1097,7 +1108,7 @@ export async function createRun({
     // feedback can be scored against the trace without a lookup (see the
     // feedback route in api/server/routes/messages.js). No-op unless Langfuse
     // tracing is enabled. Requires @librechat/agents >= 3.2.21.
-    langfuse: { deterministicTraceId: true },
+    langfuse: buildLangfuseConfig(user),
     ...(enableToolOutputReferences && {
       toolOutputReferences: { enabled: true },
     }),
