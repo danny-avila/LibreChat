@@ -71,7 +71,7 @@ jobs:
 
           export INTERFACE_AGENTS=$([[ "${{ inputs.environment }}" == "dev" ]] && echo true || echo false)
 
-          export SEARCH=true
+          export SEARCH=$([[ "${{ inputs.environment }}" == "prod" ]] && echo false || echo true)
           export MEILI_NO_ANALYTICS=true
           export MEILI_HOST=$([[ "${{ inputs.deploy_kitchensink }}" == "true" ]] && echo "http://meilisearch.kitchensink:7700" || echo "http://meilisearch.internal:7700")
           export MEILI_MASTER_KEY="${{ secrets.MEILI_MASTER_KEY }}" 
