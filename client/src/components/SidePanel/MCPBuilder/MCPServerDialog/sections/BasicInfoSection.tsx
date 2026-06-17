@@ -2,8 +2,8 @@ import { useFormContext } from 'react-hook-form';
 import { Input, Label, Textarea } from '@librechat/client';
 import type { MCPServerFormData } from '../hooks/useMCPServerForm';
 import MCPIcon from '~/components/SidePanel/Agents/MCPIcon';
+import { cn, sanitizeSvg, svgToDataUri } from '~/utils';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
 
 export default function BasicInfoSection() {
   const localize = useLocalize();
@@ -18,14 +18,25 @@ export default function BasicInfoSection() {
 
   const handleIconChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64String = reader.result as string;
-        setValue('icon', base64String);
-      };
-      reader.readAsDataURL(file);
+    if (!file) {
+      return;
     }
+
+    const reader = new FileReader();
+    const isSvg = file.type === 'image/svg+xml' || /\.svg$/i.test(file.name);
+    if (isSvg) {
+      reader.onloadend = () => {
+        const sanitized = sanitizeSvg(reader.result as string);
+        setValue('icon', svgToDataUri(sanitized));
+      };
+      reader.readAsText(file);
+      return;
+    }
+
+    reader.onloadend = () => {
+      setValue('icon', reader.result as string);
+    };
+    reader.readAsDataURL(file);
   };
 
   return (
