@@ -305,6 +305,27 @@ describe('MCPServersRegistry', () => {
         ['10.0.0.0/8'],
       );
     });
+
+    it('scopes the config-source cache key by the resolved allowlist (no cross-tenant poison)', async () => {
+      const resolver = jest
+        .fn()
+        .mockResolvedValueOnce({ allowedDomains: ['a.com'], allowedAddresses: null })
+        .mockResolvedValueOnce({ allowedDomains: ['b.com'], allowedAddresses: null });
+      const reg = createWith(null, null, resolver);
+      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+      await reg.reset();
+      inspectSpy.mockClear();
+
+      const cfg = {
+        srv: { type: 'streamable-http' as const, url: 'https://srv.example.com/mcp' },
+      };
+      await reg.ensureConfigServers(cfg); // resolver call 1 → allowlist A
+      await reg.ensureConfigServers(cfg); // resolver call 2 → allowlist B (distinct key)
+
+      // Different resolved allowlists ⇒ different cache keys ⇒ the second pass re-inspects
+      // instead of reusing the first allowlist's cached entry.
+      expect(inspectSpy).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe('reset', () => {

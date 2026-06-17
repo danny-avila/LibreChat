@@ -98,6 +98,12 @@ export type MCPAllowlistResolver = (
   ctx?: MCPAllowlistContext,
 ) => Promise<{ allowedDomains?: string[] | null; allowedAddresses?: string[] | null }>;
 
+/** Effective allowlists resolved for a request. */
+interface ResolvedMCPAllowlists {
+  allowedDomains?: string[] | null;
+  allowedAddresses?: string[] | null;
+}
+
 /**
  * Central registry for managing MCP server configurations.
  * Authoritative source of truth for all MCP servers provided by LibreChat.
@@ -548,6 +554,12 @@ export class MCPServersRegistry {
 
     const result: Record<string, t.ParsedServerConfig> = {};
 
+    // Config-source servers are admin-defined with no acting user; resolve the effective
+    // allowlists once at tenant scope and fold them into each config-cache key so a tenant
+    // whose allowlist rejects a URL cannot poison the shared key for a tenant that allows it.
+    const { allowedDomains, allowedAddresses } = await this.resolveAllowlists();
+    const allowlists: ResolvedMCPAllowlists = { allowedDomains, allowedAddresses };
+
     /** Single snapshot of the YAML cache for the whole pass: in the Redis aggregate-key backend, every per-name get() reads and deserializes the full map, so N concurrent per-server lookups would issue N full-map reads. The snapshot also keeps the unchanged-YAML comparison consistent against one view of YAML across all entries. */
     const yamlSnapshot = await this.cacheConfigsRepo.getAll();
 
@@ -556,7 +568,7 @@ export class MCPServersRegistry {
         if (this.isUnmodifiedYamlServer(yamlSnapshot, serverName, rawConfig)) {
           return;
         }
-        const parsed = await this.ensureSingleConfigServer(serverName, rawConfig);
+        const parsed = await this.ensureSingleConfigServer(serverName, rawConfig, allowlists);
         if (parsed) {
           result[serverName] = parsed;
         }
@@ -605,8 +617,9 @@ export class MCPServersRegistry {
   private async ensureSingleConfigServer(
     serverName: string,
     rawConfig: t.MCPOptions,
+    allowlists: ResolvedMCPAllowlists,
   ): Promise<t.ParsedServerConfig | undefined> {
-    const cacheKey = this.configCacheKey(serverName, rawConfig);
+    const cacheKey = this.configCacheKey(serverName, rawConfig, allowlists);
 
     const cached = await this.configCacheRepo.get(cacheKey);
     if (cached) {
@@ -623,7 +636,7 @@ export class MCPServersRegistry {
       return pending;
     }
 
-    const initPromise = this.lazyInitConfigServer(cacheKey, serverName, rawConfig);
+    const initPromise = this.lazyInitConfigServer(cacheKey, serverName, rawConfig, allowlists);
     this.pendingConfigInits.set(cacheKey, initPromise);
 
     try {
@@ -641,6 +654,7 @@ export class MCPServersRegistry {
     cacheKey: string,
     serverName: string,
     rawConfig: t.MCPOptions,
+    allowlists: ResolvedMCPAllowlists,
   ): Promise<t.ParsedServerConfig | undefined> {
     const prefix = `[MCP][config][${serverName}]`;
     logger.info(`${prefix} Lazy-initializing config-source server`);
@@ -650,8 +664,7 @@ export class MCPServersRegistry {
         ...rawConfig,
         source: 'config' as const,
       } as t.ParsedServerConfig;
-      // Config-source servers are admin-defined with no acting user; resolve at tenant scope.
-      const { allowedDomains, allowedAddresses } = await this.resolveAllowlists();
+      const { allowedDomains, allowedAddresses } = allowlists;
       const inspected = await withTimeout(
         MCPServerInspector.inspect(
           serverName,
@@ -854,12 +867,24 @@ export class MCPServersRegistry {
   }
 
   /**
-   * Produces a config-cache key scoped by server name AND a hash of the raw config.
-   * Prevents cross-tenant cache poisoning when two tenants define the same server name
-   * with different configurations.
+   * Produces a config-cache key scoped by server name AND a hash of the raw config plus the
+   * effective allowlists. Hashing the raw config prevents cross-tenant poisoning when two
+   * tenants define the same server name with different configurations; hashing the allowlists
+   * prevents poisoning when the same config resolves differently because tenants have different
+   * `mcpSettings.allowedDomains` / `allowedAddresses` (so one tenant's inspection result — e.g.
+   * an `inspectionFailed` stub from a rejected domain — never satisfies another tenant's lookup).
    */
-  private configCacheKey(serverName: string, rawConfig: t.MCPOptions): string {
-    const sorted = JSON.stringify(rawConfig, (_key, value: unknown) => {
+  private configCacheKey(
+    serverName: string,
+    rawConfig: t.MCPOptions,
+    allowlists?: ResolvedMCPAllowlists,
+  ): string {
+    const payload = {
+      rawConfig,
+      allowedDomains: allowlists?.allowedDomains ?? null,
+      allowedAddresses: allowlists?.allowedAddresses ?? null,
+    };
+    const sorted = JSON.stringify(payload, (_key, value: unknown) => {
       if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
         return Object.fromEntries(
           Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)),
