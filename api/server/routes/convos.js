@@ -335,7 +335,7 @@ router.post(
  * @param {express.Response<TForkConvoResponse>} res - Express response object.
  * @returns {Promise<void>} - The response after forking the conversation.
  */
-router.post('/fork', forkIpLimiter, forkUserLimiter, async (req, res) => {
+router.post('/fork', forkIpLimiter, forkUserLimiter, configMiddleware, async (req, res) => {
   try {
     /** @type {TForkConvoRequest} */
     const { conversationId, messageId, option, splitAtTarget, latestMessageId } = req.body;
@@ -357,7 +357,7 @@ router.post('/fork', forkIpLimiter, forkUserLimiter, async (req, res) => {
   }
 });
 
-router.post('/duplicate', forkIpLimiter, forkUserLimiter, async (req, res) => {
+router.post('/duplicate', forkIpLimiter, forkUserLimiter, configMiddleware, async (req, res) => {
   const { conversationId, title } = req.body;
 
   try {
