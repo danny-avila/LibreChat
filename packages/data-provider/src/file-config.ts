@@ -436,6 +436,7 @@ export const fileConfig = {
   serverFileSizeLimit: defaultSizeLimit,
   avatarSizeLimit: mbToBytes(2),
   fileTokenLimit: defaultTokenLimit,
+  errorOnFileTokenLimit: false,
   clientImageResize: {
     enabled: false,
     maxWidth: 1900,
@@ -476,6 +477,7 @@ export const fileConfigSchema = z.object({
   serverFileSizeLimit: z.number().min(0).optional(),
   avatarSizeLimit: z.number().min(0).optional(),
   fileTokenLimit: z.number().min(0).optional(),
+  errorOnFileTokenLimit: z.boolean().optional(),
   imageGeneration: z
     .object({
       percentage: z.number().min(0).max(100).optional(),
@@ -694,6 +696,10 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
 
   if (dynamic.fileTokenLimit !== undefined) {
     mergedConfig.fileTokenLimit = dynamic.fileTokenLimit;
+  }
+
+  if (dynamic.errorOnFileTokenLimit !== undefined) {
+    mergedConfig.errorOnFileTokenLimit = dynamic.errorOnFileTokenLimit;
   }
 
   if (dynamic.skills?.fileSizeLimit !== undefined) {

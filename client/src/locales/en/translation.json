@@ -372,6 +372,7 @@
   "com_error_google_tool_conflict": "Usage of built-in Google tools are not supported with external tools. Please disable either the built-in tools or the external tools.",
   "com_error_heic_conversion": "Failed to convert HEIC image to JPEG. Please try converting the image manually or use a different format.",
   "com_error_illegal_model_request": "The model \"{{0}}\" is not available for {{1}}. Please select a different model.",
+  "com_error_file_token_limit": "The attached file \"{{0}}\" is too large and exceeds the configured token limit. Please attach a smaller file or remove it, then try again.",
   "com_error_input_length": "The latest message token count is too long, exceeding the token limit, or your token limit parameters are misconfigured, adversely affecting the context window. More info: {{0}}. Please shorten your message, adjust the max context size from the conversation parameters, or fork the conversation to continue.",
   "com_error_invalid_agent_provider": "The \"{{0}}\" provider is not available for use with Agents. Please go to your agent's settings and select a currently available provider.",
   "com_error_invalid_base_url": "The base URL you provided targets a restricted address. Please use a valid external URL and try again.",

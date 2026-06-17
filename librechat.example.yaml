@@ -769,6 +769,8 @@ endpoints:
 #       fileSizeLimit: 5
 #   serverFileSizeLimit: 100  # Global server file size limit in MB
 #   avatarSizeLimit: 2  # Limit for user avatar image size in MB
+#   fileTokenLimit: 100000  # Max tokens of extracted file text included in the prompt
+#   errorOnFileTokenLimit: false  # When true, error the message if a file exceeds fileTokenLimit instead of truncating it
 #   imageGeneration: # Image Gen settings, either percentage or px
 #     percentage: 100
 #     px: 1024

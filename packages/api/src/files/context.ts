@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import { FileSources, mergeFileConfig } from 'librechat-data-provider';
+import { ErrorTypes, FileSources, mergeFileConfig } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { ServerRequest } from '~/types';
 import { processTextWithTokenLimit } from '~/utils/text';
@@ -29,6 +29,7 @@ export async function extractFileContext({
 
   const fileConfig = mergeFileConfig(req?.config?.fileConfig);
   const fileTokenLimit = req?.body?.fileTokenLimit ?? fileConfig.fileTokenLimit;
+  const errorOnFileTokenLimit = fileConfig.errorOnFileTokenLimit === true;
 
   if (!fileTokenLimit) {
     // If no token limit, return undefined (no processing)
@@ -47,6 +48,11 @@ export async function extractFileContext({
       });
 
       if (wasTruncated) {
+        if (errorOnFileTokenLimit) {
+          throw new Error(
+            JSON.stringify({ type: ErrorTypes.FILE_TOKEN_LIMIT, info: file.filename }),
+          );
+        }
         logger.debug(
           `[extractFileContext] Text content truncated for file: ${file.filename} due to token limits`,
         );
