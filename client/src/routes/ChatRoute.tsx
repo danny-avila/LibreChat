@@ -121,11 +121,17 @@ export default function ChatRoute() {
       return;
     }
 
-    showToast({
-      message: localize(toast.messageKey),
-      severity: toast.status,
-    });
+    const timer = window.setTimeout(() => {
+      showToast({
+        message: localize(toast.messageKey),
+        severity: toast.status,
+      });
+    }, 250);
     setSearchParams(nextParams, { replace: true });
+
+    return () => {
+      window.clearTimeout(timer);
+    };
   }, [localize, searchParams, setSearchParams, showToast]);
 
   const modelsQuery = useGetModelsQuery({

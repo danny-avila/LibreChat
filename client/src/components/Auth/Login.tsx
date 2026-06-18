@@ -3,7 +3,7 @@ import { ErrorTypes, registerPage } from 'librechat-data-provider';
 import { OpenIDIcon, useToastContext } from '@librechat/client';
 import { useOutletContext, useSearchParams, useLocation } from 'react-router-dom';
 import type { TLoginLayoutContext } from '~/common';
-import { getLoginError, persistRedirectToSession } from '~/utils';
+import { getLoginError, persistRedirectToSession, persistStripeReturnToSession } from '~/utils';
 import { ErrorMessage } from '~/components/Auth/ErrorMessage';
 import SocialButton from '~/components/Auth/SocialButton';
 import { useAuthContext } from '~/hooks/AuthContext';
@@ -30,10 +30,12 @@ function Login() {
     const redirectTo = searchParams.get('redirect_to');
     if (redirectTo) {
       persistRedirectToSession(redirectTo);
+      persistStripeReturnToSession(redirectTo);
     } else {
       const state = location.state as LoginLocationState | null;
       if (state?.redirect_to) {
         persistRedirectToSession(state.redirect_to);
+        persistStripeReturnToSession(state.redirect_to);
       }
     }
 
