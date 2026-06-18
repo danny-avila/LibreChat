@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useRef, useEffect } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { AgentCapabilities } from 'librechat-data-provider';
 import { useFormContext, Controller } from 'react-hook-form';
@@ -18,6 +18,12 @@ export default function AdvancedPanel() {
   const currentAgentId = watch('id');
 
   const { agentsConfig, setActivePanel } = useAgentPanelContext();
+
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    panelRef.current?.focus();
+  }, []);
   const chainEnabled = useMemo(
     () => agentsConfig?.capabilities.includes(AgentCapabilities.chain) ?? false,
     [agentsConfig],
@@ -28,7 +34,7 @@ export default function AdvancedPanel() {
   );
 
   return (
-    <div className="mb-1 flex w-full flex-col gap-2 text-sm">
+    <div ref={panelRef} tabIndex={-1} className="mb-1 flex w-full flex-col gap-2 text-sm">
       <div className="advanced-panel relative flex flex-col items-center px-16 pt-2 text-center">
         <div className="absolute left-0 top-4">
           <button

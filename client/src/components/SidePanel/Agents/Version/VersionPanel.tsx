@@ -1,8 +1,8 @@
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { ChevronLeft } from 'lucide-react';
-import { useCallback, useMemo } from 'react';
 import { useToastContext } from '@librechat/client';
-import { useGetAgentByIdQuery, useRevertAgentVersionMutation } from '~/data-provider';
 import type { AgentWithVersions, VersionContext } from './types';
+import { useGetAgentByIdQuery, useRevertAgentVersionMutation } from '~/data-provider';
 import { isActiveVersion } from './isActiveVersion';
 import { useAgentPanelContext } from '~/Providers';
 import VersionContent from './VersionContent';
@@ -100,6 +100,12 @@ export default function VersionPanel() {
     [versions, versionIds, currentAgent, selectedAgentId, activeVersion],
   );
 
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    panelRef.current?.focus();
+  }, []);
+
   const handleRestore = useCallback(
     (displayIndex: number) => {
       const versionWithId = versionIds.find((v) => v.id === displayIndex);
@@ -117,7 +123,11 @@ export default function VersionPanel() {
   );
 
   return (
-    <div className="scrollbar-gutter-stable h-full min-h-[40vh] overflow-auto pb-12 text-sm">
+    <div
+      ref={panelRef}
+      tabIndex={-1}
+      className="scrollbar-gutter-stable h-full min-h-[40vh] overflow-auto pb-12 text-sm"
+    >
       <div className="version-panel relative flex flex-col items-center px-16 py-4 text-center">
         <div className="absolute left-0 top-4">
           <button
