@@ -1,26 +1,43 @@
+import { createHash } from 'node:crypto';
 import type { FilterQuery, Model } from 'mongoose';
 import type {
   AdminAuditLogEntry,
+  AuditChainVerification,
+  AuditContext,
   AuditLogFilters,
   AuditLogPage,
+  AuditMetadata,
   IAuditLog,
+  PurgeAuditLogOptions,
+  PurgeAuditLogResult,
   RecordAuditEntryInput,
+  RecordAuditEntryOptions,
 } from '~/types';
+import { GENESIS_HASH, PLATFORM_CHAIN_KEY } from '~/schema/auditLog';
+import { AUDIT_ACTION_CATEGORY } from '~/types/admin';
 import logger from '~/config/winston';
 
 const DEFAULT_LIMIT = 100;
 export const MAX_AUDIT_LOG_LIMIT = 500;
 /**
- * Upper bound on rows emitted by the CSV export stream. At 100k rows per
- * tenant per export request, a careless admin script (or a hostile auditor)
- * can keep a cursor and a Node worker busy without saturating either; beyond
- * that, exports should be sliced by `from`/`to`.
+ * Upper bound on rows emitted by the CSV export stream. At 100k rows per tenant
+ * per export request, a careless admin script (or a hostile auditor) can keep a
+ * cursor and a Node worker busy without saturating either; beyond that, exports
+ * should be sliced by `from`/`to`.
  */
 export const MAX_AUDIT_EXPORT_ROWS = 100_000;
+/** Record-format version stamped on every new entry. */
+export const AUDIT_SCHEMA_VERSION = 1;
 const MAX_SEARCH_LENGTH = 200;
+/** Bounded retries when concurrent appends race for the same `seq`. */
+const MAX_APPEND_RETRIES = 5;
+const OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
 
 export interface AuditLogMethods {
-  recordAuditEntry: (input: RecordAuditEntryInput) => Promise<IAuditLog | null>;
+  recordAuditEntry: (
+    input: RecordAuditEntryInput,
+    options?: RecordAuditEntryOptions,
+  ) => Promise<IAuditLog | null>;
   listAuditLogPage: (
     tenantId: string | undefined,
     filters: AuditLogFilters,
@@ -31,67 +48,201 @@ export interface AuditLogMethods {
   ) => Promise<AdminAuditLogEntry | null>;
   streamAuditLogEntries: (
     tenantId: string | undefined,
-    filters: Omit<AuditLogFilters, 'offset' | 'limit'>,
+    filters: Omit<AuditLogFilters, 'offset' | 'limit' | 'cursor'>,
     onEntry: (entry: AdminAuditLogEntry) => void | Promise<void>,
     options?: { isCancelled?: () => boolean; maxRows?: number },
   ) => Promise<number>;
+  verifyAuditChain: (tenantId: string | undefined) => Promise<AuditChainVerification>;
+  purgeAuditLogEntries: (
+    tenantId: string | undefined,
+    options: PurgeAuditLogOptions,
+  ) => Promise<PurgeAuditLogResult>;
 }
 
 function escapeRegex(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function toWire(doc: IAuditLog): AdminAuditLogEntry {
-  return {
-    id: doc._id.toString(),
-    action: doc.action,
-    actorId: doc.actorId.toString(),
-    actorName: doc.actorName,
-    targetPrincipalType: doc.targetPrincipalType,
-    targetPrincipalId: doc.targetPrincipalId.toString(),
-    targetName: doc.targetName,
-    capability: doc.capability,
-    timestamp: doc.createdAt.toISOString(),
-  };
+function regexFilter(value: string): { $regex: string; $options: string } {
+  return { $regex: escapeRegex(value), $options: 'i' };
 }
 
-function tenantFilter(tenantId?: string): FilterQuery<IAuditLog> {
-  return typeof tenantId === 'string' && tenantId.trim().length > 0
-    ? { tenantId }
-    : { tenantId: { $exists: false } };
+function oneOrIn<T>(values: T[]): T | { $in: T[] } {
+  return values.length === 1 ? values[0] : { $in: values };
+}
+
+function idToString(id: string | { toString(): string }): string {
+  return typeof id === 'string' ? id : id.toString();
+}
+
+function isDuplicateKeyError(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: number }).code === 11000;
+}
+
+/** Tenant scope → chain key. Blank/whitespace tenant is the platform chain. */
+function resolveChainKey(tenantId?: string): string {
+  return typeof tenantId === 'string' && tenantId.trim().length > 0 ? tenantId : PLATFORM_CHAIN_KEY;
+}
+
+function normalizeTenantId(tenantId?: string): string | undefined {
+  return typeof tenantId === 'string' && tenantId.trim().length > 0 ? tenantId : undefined;
+}
+
+/** Drop undefined values; collapse an empty map to `undefined` so the field is
+ * omitted entirely (and hashes identically on read-back). */
+function normalizeMetadata(metadata?: AuditMetadata): AuditMetadata | undefined {
+  if (!metadata) return undefined;
+  const out: AuditMetadata = {};
+  for (const [key, value] of Object.entries(metadata)) {
+    if (value !== undefined) out[key] = value;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function normalizeContext(context?: AuditContext): AuditContext | undefined {
+  if (!context) return undefined;
+  const out: AuditContext = {};
+  if (context.requestId) out.requestId = context.requestId;
+  if (context.ip) out.ip = context.ip;
+  if (context.userAgent) out.userAgent = context.userAgent;
+  if (context.sessionId) out.sessionId = context.sessionId;
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/** Deterministic JSON: object keys sorted recursively so two semantically equal
+ * entries always serialize to the same string. */
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  const record = value as Record<string, unknown>;
+  const keys = Object.keys(record).sort();
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(record[k])}`).join(',')}}`;
+}
+
+/** Fields covered by the per-entry hash. Mirrors the stored shape so write-time
+ * and verify-time recomputation agree exactly. */
+interface HashableEntry {
+  schemaVersion: number;
+  category: IAuditLog['category'];
+  action: IAuditLog['action'];
+  outcome: IAuditLog['outcome'];
+  severity: IAuditLog['severity'];
+  actor: IAuditLog['actor'];
+  target: IAuditLog['target'];
+  metadata?: AuditMetadata;
+  context?: AuditContext;
+  tenantId?: string;
+  chainKey: string;
+  seq: number;
+  prevHash: string;
+  createdAt: Date;
+}
+
+function computeEntryHash(entry: HashableEntry): string {
+  const canonical = {
+    v: entry.schemaVersion,
+    category: entry.category,
+    action: entry.action,
+    outcome: entry.outcome,
+    severity: entry.severity,
+    actor: {
+      type: entry.actor.type,
+      id: entry.actor.id ?? null,
+      name: entry.actor.name,
+    },
+    target: {
+      type: entry.target.type,
+      id: entry.target.id ?? null,
+      name: entry.target.name ?? null,
+    },
+    metadata: entry.metadata ?? null,
+    context: entry.context
+      ? {
+          requestId: entry.context.requestId ?? null,
+          ip: entry.context.ip ?? null,
+          userAgent: entry.context.userAgent ?? null,
+          sessionId: entry.context.sessionId ?? null,
+        }
+      : null,
+    tenantId: entry.tenantId ?? null,
+    chainKey: entry.chainKey,
+    seq: entry.seq,
+    prevHash: entry.prevHash,
+    createdAt: entry.createdAt.toISOString(),
+  };
+  return createHash('sha256').update(stableStringify(canonical)).digest('hex');
+}
+
+function toWire(doc: IAuditLog): AdminAuditLogEntry {
+  const entry: AdminAuditLogEntry = {
+    id: doc._id.toString(),
+    schemaVersion: doc.schemaVersion,
+    category: doc.category,
+    action: doc.action,
+    outcome: doc.outcome,
+    severity: doc.severity,
+    actor: {
+      type: doc.actor.type,
+      name: doc.actor.name,
+      ...(doc.actor.id != null ? { id: doc.actor.id } : {}),
+    },
+    target: {
+      type: doc.target.type,
+      ...(doc.target.id != null ? { id: doc.target.id } : {}),
+      ...(doc.target.name != null ? { name: doc.target.name } : {}),
+    },
+    integrity: { seq: doc.seq, hash: doc.hash, prevHash: doc.prevHash },
+    timestamp: doc.createdAt.toISOString(),
+  };
+  if (doc.metadata != null) entry.metadata = doc.metadata;
+  const context = normalizeContext(doc.context);
+  if (context) entry.context = context;
+  if (doc.tenantId != null) entry.tenantId = doc.tenantId;
+  return entry;
+}
+
+function clampLimit(limit?: number): number {
+  if (!limit || Number.isNaN(limit) || limit < 1) return DEFAULT_LIMIT;
+  return Math.min(Math.floor(limit), MAX_AUDIT_LOG_LIMIT);
 }
 
 /**
- * Builds the Mongo `find` filter for audit-log queries. Tenant scoping is
- * always applied first and uses the compound `{ tenantId, createdAt, _id }`
- * index. The substring regex filters below (`actorName`, `targetName`,
- * `capability`, `search`) are case-insensitive and therefore cannot use a
- * standard B-tree index: within the tenant slice they degrade to a partition
- * scan. For deployments where the audit log grows past hundreds of thousands
- * of entries per tenant, consider a text index or storing lowercased shadow
- * fields. Today's primary listing combines `tenantId` with `createdAt`
- * pagination, so the scan stays bounded by the user-chosen date window.
+ * Builds the Mongo `find` filter for audit-log queries. Chain scoping is always
+ * applied first and uses the compound `{ chainKey, ... }` indexes. The substring
+ * regex filters (`actor.name`, `target.name`, `metadata.capability`, `search`)
+ * are case-insensitive and cannot use a B-tree index: within the chain slice
+ * they degrade to a partition scan. The primary listing combines `chainKey` with
+ * `seq`/`createdAt` pagination, so the scan stays bounded by the date window.
  */
-function buildFilter(
-  tenantId: string | undefined,
-  filters: AuditLogFilters,
-): FilterQuery<IAuditLog> {
-  const query: FilterQuery<IAuditLog> = { ...tenantFilter(tenantId) };
+function buildFilter(chainKey: string, filters: AuditLogFilters): FilterQuery<IAuditLog> {
+  const query: FilterQuery<IAuditLog> = { chainKey };
 
+  if (filters.category && filters.category.length > 0) {
+    query.category = oneOrIn(filters.category);
+  }
   if (filters.action && filters.action.length > 0) {
-    query.action = filters.action.length === 1 ? filters.action[0] : { $in: filters.action };
+    query.action = oneOrIn(filters.action);
+  }
+  if (filters.outcome && filters.outcome.length > 0) {
+    query.outcome = oneOrIn(filters.outcome);
+  }
+  if (filters.severity && filters.severity.length > 0) {
+    query.severity = oneOrIn(filters.severity);
+  }
+  if (filters.actorType) {
+    query['actor.type'] = filters.actorType;
   }
   if (filters.actorQuery) {
-    query.actorName = { $regex: escapeRegex(filters.actorQuery), $options: 'i' };
+    query['actor.name'] = regexFilter(filters.actorQuery);
   }
-  if (filters.targetPrincipalType) {
-    query.targetPrincipalType = filters.targetPrincipalType;
+  if (filters.targetType) {
+    query['target.type'] = filters.targetType;
   }
   if (filters.targetQuery) {
-    query.targetName = { $regex: escapeRegex(filters.targetQuery), $options: 'i' };
+    query['target.name'] = regexFilter(filters.targetQuery);
   }
   if (filters.capability) {
-    query.capability = { $regex: escapeRegex(filters.capability), $options: 'i' };
+    query['metadata.capability'] = regexFilter(filters.capability);
   }
   if (filters.from || filters.to) {
     const createdAt: { $gte?: Date; $lte?: Date } = {};
@@ -100,117 +251,180 @@ function buildFilter(
     query.createdAt = createdAt;
   }
   if (filters.search && filters.search.length > 0) {
-    const trimmed = filters.search.slice(0, MAX_SEARCH_LENGTH);
-    const safe = escapeRegex(trimmed);
+    const safe = regexFilter(filters.search.slice(0, MAX_SEARCH_LENGTH));
     query.$or = [
-      { actorName: { $regex: safe, $options: 'i' } },
-      { targetName: { $regex: safe, $options: 'i' } },
-      { capability: { $regex: safe, $options: 'i' } },
+      { 'actor.name': safe },
+      { 'target.name': safe },
+      { action: safe },
+      { 'metadata.capability': safe },
     ];
   }
 
   return query;
 }
 
-function clampLimit(limit?: number): number {
-  if (!limit || Number.isNaN(limit) || limit < 1) return DEFAULT_LIMIT;
-  return Math.min(Math.floor(limit), MAX_AUDIT_LOG_LIMIT);
-}
-
 export function createAuditLogMethods(mongoose: typeof import('mongoose')): AuditLogMethods {
-  async function recordAuditEntry(input: RecordAuditEntryInput): Promise<IAuditLog | null> {
-    const AuditLog = mongoose.models.AuditLog as Model<IAuditLog>;
-    /**
-     * Match the read-side `tenantFilter` convention: blank or whitespace-only
-     * tenant IDs are platform-level scope and the field must be omitted
-     * entirely (so the row matches `{ tenantId: { $exists: false } }` queries
-     * and satisfies the non-empty-string validator on the schema).
-     */
-    const normalizedTenantId =
-      typeof input.tenantId === 'string' && input.tenantId.trim().length > 0
-        ? input.tenantId
-        : undefined;
-    try {
-      const doc = await AuditLog.create({
-        action: input.action,
-        actorId: input.actorId,
-        actorName: input.actorName,
-        targetPrincipalType: input.targetPrincipalType,
-        targetPrincipalId: input.targetPrincipalId,
-        targetName: input.targetName,
-        capability: input.capability,
-        ...(normalizedTenantId !== undefined && { tenantId: normalizedTenantId }),
-      });
-      return doc;
-    } catch (err) {
-      /**
-       * Audit emission must never block a privileged operation, so a failed
-       * write returns null instead of throwing. The structured payload below
-       * is the only forensic trail when downstream alerting flags the
-       * `failed to record audit entry` message.
-       */
-      logger.error('[auditLog] failed to record audit entry', {
-        action: input.action,
-        capability: input.capability,
-        tenantId: input.tenantId,
-        actorId:
-          typeof input.actorId === 'string' ? input.actorId : (input.actorId?.toString?.() ?? null),
-        targetPrincipalType: input.targetPrincipalType,
-        targetPrincipalId:
-          typeof input.targetPrincipalId === 'string'
-            ? input.targetPrincipalId
-            : (input.targetPrincipalId?.toString?.() ?? null),
-        err,
-      });
-      return null;
+  function model(): Model<IAuditLog> {
+    return mongoose.models.AuditLog as Model<IAuditLog>;
+  }
+
+  async function recordAuditEntry(
+    input: RecordAuditEntryInput,
+    options?: RecordAuditEntryOptions,
+  ): Promise<IAuditLog | null> {
+    const AuditLog = model();
+    const tenantId = normalizeTenantId(input.tenantId);
+    const chainKey = resolveChainKey(input.tenantId);
+    const category = input.category ?? AUDIT_ACTION_CATEGORY[input.action];
+    const outcome = input.outcome ?? 'success';
+    const severity =
+      input.severity ?? (outcome === 'failure' || outcome === 'denied' ? 'warning' : 'info');
+    const actor = {
+      type: input.actor.type,
+      name: input.actor.name,
+      ...(input.actor.id != null ? { id: idToString(input.actor.id) } : {}),
+    };
+    const target = {
+      type: input.target.type,
+      ...(input.target.id != null ? { id: idToString(input.target.id) } : {}),
+      ...(input.target.name != null ? { name: input.target.name } : {}),
+    };
+    const metadata = normalizeMetadata(input.metadata);
+    const context = normalizeContext(input.context);
+
+    for (let attempt = 0; attempt < MAX_APPEND_RETRIES; attempt++) {
+      try {
+        const last = await AuditLog.findOne({ chainKey })
+          .sort({ seq: -1 })
+          .select('seq hash')
+          .lean<{ seq: number; hash: string }>();
+        const prevSeq = last?.seq ?? 0;
+        const prevHash = last?.hash ?? GENESIS_HASH;
+        const seq = prevSeq + 1;
+        const createdAt = new Date();
+        const hash = computeEntryHash({
+          schemaVersion: AUDIT_SCHEMA_VERSION,
+          category,
+          action: input.action,
+          outcome,
+          severity,
+          actor,
+          target,
+          metadata,
+          context,
+          tenantId,
+          chainKey,
+          seq,
+          prevHash,
+          createdAt,
+        });
+        const doc = await AuditLog.create({
+          schemaVersion: AUDIT_SCHEMA_VERSION,
+          category,
+          action: input.action,
+          outcome,
+          severity,
+          actor,
+          target,
+          ...(metadata !== undefined && { metadata }),
+          ...(context !== undefined && { context }),
+          ...(tenantId !== undefined && { tenantId }),
+          chainKey,
+          seq,
+          prevHash,
+          hash,
+          createdAt,
+        });
+        return doc;
+      } catch (err) {
+        if (isDuplicateKeyError(err) && attempt < MAX_APPEND_RETRIES - 1) {
+          continue;
+        }
+        /**
+         * Fail-open by default: a failed write must never block the privileged
+         * operation, so it returns null and leaves a structured forensic trail.
+         * Callers that require a durable record pass `failClosed` to surface the
+         * failure instead.
+         */
+        logger.error('[auditLog] failed to record audit entry', {
+          action: input.action,
+          category,
+          outcome,
+          chainKey,
+          tenantId,
+          actorId: actor.id ?? null,
+          actorType: actor.type,
+          targetType: target.type,
+          targetId: target.id ?? null,
+          err,
+        });
+        if (options?.failClosed) {
+          throw err instanceof Error ? err : new Error('Failed to record audit entry');
+        }
+        return null;
+      }
     }
+    return null;
   }
 
   async function listAuditLogPage(
     tenantId: string | undefined,
     filters: AuditLogFilters,
   ): Promise<AuditLogPage> {
-    const AuditLog = mongoose.models.AuditLog as Model<IAuditLog>;
+    const AuditLog = model();
+    const chainKey = resolveChainKey(tenantId);
     const limit = clampLimit(filters.limit);
-    const offset = filters.offset && filters.offset > 0 ? Math.floor(filters.offset) : 0;
-    const query = buildFilter(tenantId, filters);
+    const base = buildFilter(chainKey, filters);
 
-    const [rows, total] = await Promise.all([
-      AuditLog.find(query)
-        .sort({ createdAt: -1, _id: -1 })
-        .skip(offset)
-        .limit(limit)
-        .lean<IAuditLog[]>(),
-      AuditLog.countDocuments(query),
+    const cursorSeq =
+      typeof filters.cursor === 'number' && Number.isFinite(filters.cursor)
+        ? filters.cursor
+        : undefined;
+    const paged: FilterQuery<IAuditLog> =
+      cursorSeq !== undefined ? { ...base, seq: { $lt: cursorSeq } } : base;
+    const offset =
+      cursorSeq === undefined && filters.offset && filters.offset > 0
+        ? Math.floor(filters.offset)
+        : 0;
+
+    let pageQuery = AuditLog.find(paged)
+      .sort({ seq: -1 })
+      .limit(limit + 1);
+    if (offset > 0) pageQuery = pageQuery.skip(offset);
+
+    const [rowsPlusOne, total] = await Promise.all([
+      pageQuery.lean<IAuditLog[]>(),
+      AuditLog.countDocuments(base),
     ]);
 
-    return {
-      entries: rows.map(toWire),
-      total,
-    };
+    const hasMore = rowsPlusOne.length > limit;
+    const rows = hasMore ? rowsPlusOne.slice(0, limit) : rowsPlusOne;
+    const nextCursor = hasMore && rows.length > 0 ? rows[rows.length - 1].seq : null;
+
+    return { entries: rows.map(toWire), total, nextCursor };
   }
 
   async function findAuditLogEntry(
     tenantId: string | undefined,
     id: string,
   ): Promise<AdminAuditLogEntry | null> {
-    if (!/^[a-fA-F0-9]{24}$/.test(id)) return null;
-    const AuditLog = mongoose.models.AuditLog as Model<IAuditLog>;
-    const query: FilterQuery<IAuditLog> = { _id: id, ...tenantFilter(tenantId) };
+    if (!OBJECT_ID_RE.test(id)) return null;
+    const AuditLog = model();
+    const query: FilterQuery<IAuditLog> = { _id: id, chainKey: resolveChainKey(tenantId) };
     const doc = await AuditLog.findOne(query).lean<IAuditLog>();
     return doc ? toWire(doc) : null;
   }
 
   async function streamAuditLogEntries(
     tenantId: string | undefined,
-    filters: Omit<AuditLogFilters, 'offset' | 'limit'>,
+    filters: Omit<AuditLogFilters, 'offset' | 'limit' | 'cursor'>,
     onEntry: (entry: AdminAuditLogEntry) => void | Promise<void>,
     options?: { isCancelled?: () => boolean; maxRows?: number },
   ): Promise<number> {
-    const AuditLog = mongoose.models.AuditLog as Model<IAuditLog>;
-    const query = buildFilter(tenantId, filters);
+    const AuditLog = model();
+    const query = buildFilter(resolveChainKey(tenantId), filters);
     const cursor = AuditLog.find(query)
-      .sort({ createdAt: -1, _id: -1 })
+      .sort({ seq: -1 })
       .lean<IAuditLog[]>()
       .cursor({ batchSize: 500 });
 
@@ -236,10 +450,122 @@ export function createAuditLogMethods(mongoose: typeof import('mongoose')): Audi
     return count;
   }
 
+  async function verifyAuditChain(tenantId: string | undefined): Promise<AuditChainVerification> {
+    const AuditLog = model();
+    const chainKey = resolveChainKey(tenantId);
+    const cursor = AuditLog.find({ chainKey })
+      .sort({ seq: 1 })
+      .lean<IAuditLog[]>()
+      .cursor({ batchSize: 500 });
+
+    let prevHash = GENESIS_HASH;
+    let expectedSeq: number | null = null;
+    let firstSeq: number | null = null;
+    let lastSeq = 0;
+    let checked = 0;
+
+    try {
+      for await (const doc of cursor) {
+        if (firstSeq === null) {
+          firstSeq = doc.seq;
+          expectedSeq = doc.seq;
+          /** Genesis must link to GENESIS_HASH; a purged prefix (firstSeq > 1)
+           * makes the earliest remaining entry's prevHash a trusted checkpoint. */
+          prevHash = doc.seq === 1 ? GENESIS_HASH : doc.prevHash;
+        }
+        if (doc.seq !== expectedSeq) {
+          return {
+            ok: false,
+            chainKey,
+            checked,
+            brokenAt: expectedSeq ?? doc.seq,
+            reason: `sequence gap: expected ${expectedSeq}, found ${doc.seq}`,
+            range: { firstSeq, lastSeq },
+          };
+        }
+        if (doc.prevHash !== prevHash) {
+          return {
+            ok: false,
+            chainKey,
+            checked,
+            brokenAt: doc.seq,
+            reason: 'broken hash link',
+            range: { firstSeq, lastSeq },
+          };
+        }
+        if (computeEntryHash(doc) !== doc.hash) {
+          return {
+            ok: false,
+            chainKey,
+            checked,
+            brokenAt: doc.seq,
+            reason: 'hash mismatch',
+            range: { firstSeq, lastSeq },
+          };
+        }
+        prevHash = doc.hash;
+        lastSeq = doc.seq;
+        expectedSeq = doc.seq + 1;
+        checked++;
+      }
+    } finally {
+      await cursor.close().catch(() => undefined);
+    }
+
+    return {
+      ok: true,
+      chainKey,
+      checked,
+      range: firstSeq !== null ? { firstSeq, lastSeq } : undefined,
+    };
+  }
+
+  async function purgeAuditLogEntries(
+    tenantId: string | undefined,
+    options: PurgeAuditLogOptions,
+  ): Promise<PurgeAuditLogResult> {
+    if (!options.confirm) return { deletedCount: 0 };
+    if (!(options.before instanceof Date) || Number.isNaN(options.before.getTime())) {
+      throw new Error('purgeAuditLogEntries: `before` must be a valid Date');
+    }
+    const AuditLog = model();
+    const chainKey = resolveChainKey(tenantId);
+    /**
+     * Retention purge is the one privileged path that removes audit rows. It
+     * intentionally uses the raw driver to bypass the append-only Mongoose hooks
+     * (the model blocks every delete). Tenant isolation is applied manually via
+     * `chainKey`. `createdAt` is monotonic with `seq`, so a date-bounded delete
+     * removes a contiguous prefix and leaves the chain verifiable from the new
+     * earliest entry's prevHash checkpoint.
+     */
+    // eslint-disable-next-line no-restricted-syntax -- privileged retention purge; append-only hooks block deleteMany, tenant scoped via chainKey
+    const result = await AuditLog.collection.deleteMany({
+      chainKey,
+      createdAt: { $lt: options.before },
+    });
+    const newFirst = await AuditLog.findOne({ chainKey })
+      .sort({ seq: 1 })
+      .select('seq prevHash')
+      .lean<{ seq: number; prevHash: string }>();
+
+    logger.warn('[auditLog] retention purge executed', {
+      chainKey,
+      before: options.before.toISOString(),
+      deletedCount: result.deletedCount ?? 0,
+    });
+
+    return {
+      deletedCount: result.deletedCount ?? 0,
+      checkpoint: newFirst ? { seq: newFirst.seq, prevHash: newFirst.prevHash } : undefined,
+    };
+  }
+
   return {
     recordAuditEntry,
     listAuditLogPage,
     findAuditLogEntry,
     streamAuditLogEntries,
+    verifyAuditChain,
+    purgeAuditLogEntries,
   };
 }

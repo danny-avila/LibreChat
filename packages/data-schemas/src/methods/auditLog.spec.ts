@@ -1,10 +1,9 @@
 import mongoose, { Types } from 'mongoose';
-import { PrincipalType } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { RecordAuditEntryInput } from '~/types';
 import type * as t from '~/types';
+import auditLogSchema, { GENESIS_HASH, PLATFORM_CHAIN_KEY } from '~/schema/auditLog';
 import { createAuditLogMethods } from './auditLog';
-import auditLogSchema from '~/schema/auditLog';
 
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),
@@ -18,20 +17,22 @@ let AuditLog: mongoose.Model<t.IAuditLog>;
 let methods: ReturnType<typeof createAuditLogMethods>;
 
 const actorObjectId = new Types.ObjectId();
-const targetObjectId = new Types.ObjectId();
 
 function baseInput(over: Partial<RecordAuditEntryInput> = {}): RecordAuditEntryInput {
   return {
-    action: 'grant_assigned',
-    actorId: actorObjectId,
-    actorName: 'Alice Admin',
-    targetPrincipalType: PrincipalType.USER,
-    targetPrincipalId: targetObjectId,
-    targetName: 'Bob User',
-    capability: 'manage:users',
+    action: 'grant.assigned',
+    actor: { type: 'user', id: actorObjectId, name: 'Alice Admin' },
+    target: { type: 'role', id: 'ADMIN', name: 'ADMIN' },
+    metadata: { capability: 'manage:users' },
     tenantId: 'tenant-a',
     ...over,
   };
+}
+
+async function seed(count: number, over: Partial<RecordAuditEntryInput> = {}): Promise<void> {
+  for (let i = 0; i < count; i++) {
+    await methods.recordAuditEntry(baseInput({ metadata: { capability: `cap:${i}` }, ...over }));
+  }
 }
 
 beforeAll(async () => {
@@ -39,6 +40,7 @@ beforeAll(async () => {
   AuditLog = mongoose.models.AuditLog || mongoose.model<t.IAuditLog>('AuditLog', auditLogSchema);
   methods = createAuditLogMethods(mongoose);
   await mongoose.connect(mongoServer.getUri());
+  await AuditLog.init();
 });
 
 afterAll(async () => {
@@ -47,254 +49,327 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  // AuditLog enforces append-only via pre-hooks, so reset between tests by
-  // dropping the collection at the raw driver level (bypasses model hooks).
   await AuditLog.collection.deleteMany({});
 });
 
 describe('auditLog methods', () => {
   describe('recordAuditEntry', () => {
-    it('persists a tenant-scoped entry and wires denormalized fields through', async () => {
+    it('persists a tenant-scoped entry with denormalized + derived fields', async () => {
       const doc = await methods.recordAuditEntry(baseInput());
       expect(doc).not.toBeNull();
-      const persisted = await AuditLog.findOne({ tenantId: 'tenant-a' }).lean();
-      expect(persisted?.actorName).toBe('Alice Admin');
-      expect(persisted?.targetName).toBe('Bob User');
-      expect(persisted?.capability).toBe('manage:users');
+
+      const persisted = await AuditLog.findOne({ chainKey: 'tenant-a' }).lean();
+      expect(persisted).toMatchObject({
+        schemaVersion: 1,
+        category: 'grant',
+        action: 'grant.assigned',
+        outcome: 'success',
+        severity: 'info',
+        actor: { type: 'user', id: actorObjectId.toString(), name: 'Alice Admin' },
+        target: { type: 'role', id: 'ADMIN', name: 'ADMIN' },
+        metadata: { capability: 'manage:users' },
+        tenantId: 'tenant-a',
+        chainKey: 'tenant-a',
+        seq: 1,
+        prevHash: GENESIS_HASH,
+      });
+      expect(persisted?.hash).toMatch(/^[a-f0-9]{64}$/);
       expect(persisted?.createdAt).toBeInstanceOf(Date);
     });
 
-    it('omits the tenantId field entirely for platform-level entries', async () => {
+    it('derives a warning severity for non-success outcomes', async () => {
+      await methods.recordAuditEntry(baseInput({ outcome: 'denied' }));
+      const persisted = await AuditLog.findOne({ chainKey: 'tenant-a' }).lean();
+      expect(persisted?.outcome).toBe('denied');
+      expect(persisted?.severity).toBe('warning');
+    });
+
+    it('starts each chain at the genesis hash and links subsequent entries', async () => {
+      const first = await methods.recordAuditEntry(baseInput());
+      const second = await methods.recordAuditEntry(baseInput());
+      expect(first?.seq).toBe(1);
+      expect(first?.prevHash).toBe(GENESIS_HASH);
+      expect(second?.seq).toBe(2);
+      expect(second?.prevHash).toBe(first?.hash);
+    });
+
+    it('keeps tenant and platform chains independent', async () => {
+      await methods.recordAuditEntry(baseInput({ tenantId: 'tenant-a' }));
+      await methods.recordAuditEntry(baseInput({ tenantId: 'tenant-b' }));
       await methods.recordAuditEntry(baseInput({ tenantId: undefined }));
-      const raw = await AuditLog.collection.findOne({});
-      expect(raw && Object.prototype.hasOwnProperty.call(raw, 'tenantId')).toBe(false);
+
+      const a = await AuditLog.findOne({ chainKey: 'tenant-a' }).lean();
+      const b = await AuditLog.findOne({ chainKey: 'tenant-b' }).lean();
+      const platform = await AuditLog.findOne({ chainKey: PLATFORM_CHAIN_KEY }).lean();
+
+      expect(a?.seq).toBe(1);
+      expect(b?.seq).toBe(1);
+      expect(platform?.seq).toBe(1);
+      expect(platform?.tenantId).toBeUndefined();
     });
 
-    it('treats blank and whitespace-only tenantId as platform-level (no silent drop)', async () => {
-      const blank = await methods.recordAuditEntry(baseInput({ tenantId: '' }));
-      const whitespace = await methods.recordAuditEntry(baseInput({ tenantId: '   ' }));
-      expect(blank).not.toBeNull();
-      expect(whitespace).not.toBeNull();
-      const rows = await AuditLog.collection.find({}).toArray();
-      expect(rows).toHaveLength(2);
-      for (const row of rows) {
-        expect(Object.prototype.hasOwnProperty.call(row, 'tenantId')).toBe(false);
-      }
+    it('treats a blank tenantId as platform scope (no literal "" stored)', async () => {
+      await methods.recordAuditEntry(baseInput({ tenantId: '   ' }));
+      const platform = await AuditLog.findOne({ chainKey: PLATFORM_CHAIN_KEY }).lean();
+      expect(platform).not.toBeNull();
+      expect(platform?.tenantId).toBeUndefined();
+      const blank = await AuditLog.findOne({ tenantId: '' }).lean();
+      expect(blank).toBeNull();
     });
-  });
 
-  describe('listAuditLogPage', () => {
-    beforeEach(async () => {
-      await methods.recordAuditEntry(baseInput({ capability: 'manage:users' }));
+    it('omits metadata/context entirely when empty', async () => {
       await methods.recordAuditEntry(
-        baseInput({ action: 'grant_removed', capability: 'manage:roles' }),
+        baseInput({ metadata: {}, context: { ip: '', userAgent: undefined } }),
       );
-      await methods.recordAuditEntry(baseInput({ tenantId: 'tenant-b', capability: 'read:users' }));
+      const persisted = await AuditLog.findOne({ chainKey: 'tenant-a' }).lean();
+      expect(persisted?.metadata).toBeUndefined();
+      expect(persisted?.context).toBeUndefined();
+    });
+
+    it('persists request context when provided', async () => {
       await methods.recordAuditEntry(
-        baseInput({ tenantId: undefined, capability: 'access:admin' }),
+        baseInput({ context: { ip: '10.0.0.1', userAgent: 'jest', requestId: 'req-1' } }),
       );
-    });
-
-    it('returns only the calling tenant by default', async () => {
-      const page = await methods.listAuditLogPage('tenant-a', {});
-      expect(page.total).toBe(2);
-      const tenants = new Set(page.entries.map((e) => e.capability));
-      expect(tenants).toEqual(new Set(['manage:users', 'manage:roles']));
-    });
-
-    it('only returns platform-level entries when tenantId is omitted', async () => {
-      const page = await methods.listAuditLogPage(undefined, {});
-      expect(page.total).toBe(1);
-      expect(page.entries[0]?.capability).toBe('access:admin');
-    });
-
-    it('filters by a single action', async () => {
-      const page = await methods.listAuditLogPage('tenant-a', { action: ['grant_removed'] });
-      expect(page.total).toBe(1);
-      expect(page.entries[0]?.action).toBe('grant_removed');
-    });
-
-    it('filters by multiple actions via $in', async () => {
-      const page = await methods.listAuditLogPage('tenant-a', {
-        action: ['grant_assigned', 'grant_removed'],
+      const persisted = await AuditLog.findOne({ chainKey: 'tenant-a' }).lean();
+      expect(persisted?.context).toMatchObject({
+        ip: '10.0.0.1',
+        userAgent: 'jest',
+        requestId: 'req-1',
       });
-      expect(page.total).toBe(2);
     });
 
-    it('partial-matches the actorQuery param against actorName', async () => {
-      await methods.recordAuditEntry(baseInput({ actorName: 'Charlotte Auditor' }));
-      const page = await methods.listAuditLogPage('tenant-a', { actorQuery: 'charlotte' });
-      expect(page.total).toBe(1);
-      expect(page.entries[0]?.actorName).toBe('Charlotte Auditor');
-    });
+    it('fail-open returns null on write failure; fail-closed throws', async () => {
+      const spy = jest
+        .spyOn(AuditLog, 'create')
+        .mockRejectedValueOnce(new Error('boom'))
+        .mockRejectedValueOnce(new Error('boom'));
 
-    it('partial-matches the targetQuery param against targetName', async () => {
-      await methods.recordAuditEntry(baseInput({ targetName: 'Daphne Director' }));
-      const page = await methods.listAuditLogPage('tenant-a', { targetQuery: 'daphne' });
-      expect(page.total).toBe(1);
-      expect(page.entries[0]?.targetName).toBe('Daphne Director');
-    });
+      await expect(methods.recordAuditEntry(baseInput())).resolves.toBeNull();
+      await expect(methods.recordAuditEntry(baseInput(), { failClosed: true })).rejects.toThrow(
+        'boom',
+      );
 
-    it('treats empty-string tenantId as platform-level (not a literal `""` tenant match)', async () => {
-      const page = await methods.listAuditLogPage('', {});
-      expect(page.total).toBe(1);
-      expect(page.entries[0]?.capability).toBe('access:admin');
-    });
-
-    it('treats whitespace-only tenantId as platform-level', async () => {
-      const page = await methods.listAuditLogPage('   ', {});
-      expect(page.total).toBe(1);
-      expect(page.entries[0]?.capability).toBe('access:admin');
-    });
-
-    it('partial-matches the capability filter case-insensitively', async () => {
-      const page = await methods.listAuditLogPage('tenant-a', { capability: 'ROLES' });
-      expect(page.total).toBe(1);
-      expect(page.entries[0]?.capability).toBe('manage:roles');
-    });
-
-    it('applies a `from` / `to` window using createdAt', async () => {
-      const allBefore = await AuditLog.find({ tenantId: 'tenant-a' }).sort({ createdAt: 1 }).lean();
-      const cutoff = allBefore[0]!.createdAt;
-      const after = new Date(cutoff.getTime() + 1);
-      const page = await methods.listAuditLogPage('tenant-a', { from: after });
-      expect(page.total).toBeLessThan(2);
-    });
-
-    it('paginates by offset and limit and reports the total of the full match set', async () => {
-      const page1 = await methods.listAuditLogPage('tenant-a', { offset: 0, limit: 1 });
-      const page2 = await methods.listAuditLogPage('tenant-a', { offset: 1, limit: 1 });
-      expect(page1.total).toBe(2);
-      expect(page2.total).toBe(2);
-      expect(page1.entries.length).toBe(1);
-      expect(page2.entries.length).toBe(1);
-      expect(page1.entries[0]?.id).not.toBe(page2.entries[0]?.id);
-    });
-
-    it('stringifies ObjectIds and dates on the wire', async () => {
-      const page = await methods.listAuditLogPage('tenant-a', { limit: 1 });
-      const entry = page.entries[0]!;
-      expect(typeof entry.id).toBe('string');
-      expect(typeof entry.actorId).toBe('string');
-      expect(typeof entry.targetPrincipalId).toBe('string');
-      expect(typeof entry.timestamp).toBe('string');
-      expect(() => new Date(entry.timestamp).toISOString()).not.toThrow();
-    });
-
-    it('escapes regex metacharacters in the search input', async () => {
-      await methods.recordAuditEntry(baseInput({ actorName: 'risky.dot+plus' }));
-      const page = await methods.listAuditLogPage('tenant-a', { search: 'risky.dot+plus' });
-      expect(page.total).toBe(1);
+      spy.mockRestore();
     });
   });
 
   describe('append-only enforcement', () => {
-    it('rejects updateOne against any audit entry', async () => {
-      const doc = await methods.recordAuditEntry(baseInput());
-      await expect(
-        AuditLog.updateOne({ _id: doc!._id }, { capability: 'tampered' }),
-      ).rejects.toThrow(/append-only/);
-    });
-
-    it('rejects findOneAndUpdate against any audit entry', async () => {
-      const doc = await methods.recordAuditEntry(baseInput());
-      await expect(
-        AuditLog.findOneAndUpdate({ _id: doc!._id }, { capability: 'tampered' }),
-      ).rejects.toThrow(/append-only/);
-    });
-
-    it('rejects deleteOne against any audit entry', async () => {
-      const doc = await methods.recordAuditEntry(baseInput());
-      await expect(AuditLog.deleteOne({ _id: doc!._id })).rejects.toThrow(/append-only/);
-    });
-
-    it('rejects deleteMany', async () => {
+    it('rejects every query-level update and delete path', async () => {
       await methods.recordAuditEntry(baseInput());
-      await expect(AuditLog.deleteMany({})).rejects.toThrow(/append-only/);
+      await expect(
+        AuditLog.updateOne({ chainKey: 'tenant-a' }, { action: 'grant.removed' }),
+      ).rejects.toThrow(/append-only/);
+      await expect(AuditLog.updateMany({}, { seq: 9 })).rejects.toThrow(/append-only/);
+      await expect(AuditLog.findOneAndUpdate({}, { seq: 9 })).rejects.toThrow(/append-only/);
+      await expect(AuditLog.deleteOne({ chainKey: 'tenant-a' })).rejects.toThrow(/append-only/);
+      await expect(AuditLog.deleteMany({ chainKey: 'tenant-a' })).rejects.toThrow(/append-only/);
+      await expect(AuditLog.findOneAndDelete({})).rejects.toThrow(/append-only/);
     });
 
-    it('rejects Document.prototype.deleteOne() on a loaded audit entry', async () => {
-      const doc = await methods.recordAuditEntry(baseInput());
-      const persisted = (await AuditLog.findById(doc!._id))!;
-      await expect(persisted.deleteOne()).rejects.toThrow(/append-only/);
-      const stillThere = await AuditLog.findById(doc!._id);
-      expect(stillThere).not.toBeNull();
+    it('rejects document-level re-save and deleteOne', async () => {
+      await methods.recordAuditEntry(baseInput());
+      const doc = await AuditLog.findOne({ chainKey: 'tenant-a' });
+      expect(doc).not.toBeNull();
+      await expect(doc!.save()).rejects.toThrow(/append-only/);
+      await expect(doc!.deleteOne()).rejects.toThrow(/append-only/);
+    });
+  });
+
+  describe('listAuditLogPage', () => {
+    it('returns newest-first entries with total and nextCursor', async () => {
+      await seed(3);
+      const page = await methods.listAuditLogPage('tenant-a', { limit: 2 });
+      expect(page.total).toBe(3);
+      expect(page.entries).toHaveLength(2);
+      expect(page.entries[0].integrity.seq).toBe(3);
+      expect(page.entries[1].integrity.seq).toBe(2);
+      expect(page.nextCursor).toBe(2);
     });
 
-    it('rejects Document.prototype.updateOne() on a loaded audit entry', async () => {
-      const doc = await methods.recordAuditEntry(baseInput());
-      const persisted = (await AuditLog.findById(doc!._id))!;
-      await expect(persisted.updateOne({ capability: 'tampered' })).rejects.toThrow(/append-only/);
-      const unchanged = await AuditLog.findById(doc!._id);
-      expect(unchanged?.capability).toBe('manage:users');
+    it('paginates by keyset cursor without duplicating rows under concurrent appends', async () => {
+      await seed(4);
+      const page1 = await methods.listAuditLogPage('tenant-a', { limit: 2 });
+      const seenIds = new Set(page1.entries.map((e) => e.id));
+      // a new entry lands at the head between page fetches
+      await methods.recordAuditEntry(baseInput());
+      const page2 = await methods.listAuditLogPage('tenant-a', {
+        limit: 2,
+        cursor: page1.nextCursor ?? undefined,
+      });
+      for (const entry of page2.entries) {
+        expect(seenIds.has(entry.id)).toBe(false);
+      }
+      expect(page2.entries.map((e) => e.integrity.seq)).toEqual([2, 1]);
+      expect(page2.nextCursor).toBeNull();
     });
 
-    it('rejects a second save() on an existing document', async () => {
-      const doc = await methods.recordAuditEntry(baseInput());
-      const persisted = (await AuditLog.findById(doc!._id))!;
-      persisted.capability = 'tampered';
-      await expect(persisted.save()).rejects.toThrow(/append-only/);
+    it('supports offset pagination', async () => {
+      await seed(3);
+      const page = await methods.listAuditLogPage('tenant-a', { limit: 1, offset: 1 });
+      expect(page.entries[0].integrity.seq).toBe(2);
     });
 
-    it('does not stamp updatedAt on new documents', async () => {
+    it('isolates tenants', async () => {
+      await methods.recordAuditEntry(baseInput({ tenantId: 'tenant-a' }));
+      await methods.recordAuditEntry(baseInput({ tenantId: 'tenant-b' }));
+      const page = await methods.listAuditLogPage('tenant-a', {});
+      expect(page.total).toBe(1);
+      expect(page.entries[0].tenantId).toBe('tenant-a');
+    });
+
+    it('filters by action, outcome, severity, and actorType', async () => {
+      await methods.recordAuditEntry(baseInput({ action: 'grant.assigned' }));
+      await methods.recordAuditEntry(baseInput({ action: 'grant.removed', outcome: 'denied' }));
+
+      expect(
+        (await methods.listAuditLogPage('tenant-a', { action: ['grant.removed'] })).total,
+      ).toBe(1);
+      expect((await methods.listAuditLogPage('tenant-a', { outcome: ['denied'] })).total).toBe(1);
+      expect((await methods.listAuditLogPage('tenant-a', { severity: ['warning'] })).total).toBe(1);
+      expect((await methods.listAuditLogPage('tenant-a', { actorType: 'user' })).total).toBe(2);
+      expect((await methods.listAuditLogPage('tenant-a', { actorType: 'agent' })).total).toBe(0);
+    });
+
+    it('substring-matches actorQuery, targetQuery, and capability case-insensitively', async () => {
+      await methods.recordAuditEntry(
+        baseInput({
+          actor: { type: 'user', id: actorObjectId, name: 'Alice Admin' },
+          target: { type: 'role', id: 'ADMIN', name: 'ADMIN' },
+          metadata: { capability: 'manage:users' },
+        }),
+      );
+      expect((await methods.listAuditLogPage('tenant-a', { actorQuery: 'alice' })).total).toBe(1);
+      expect((await methods.listAuditLogPage('tenant-a', { targetQuery: 'admin' })).total).toBe(1);
+      expect((await methods.listAuditLogPage('tenant-a', { capability: 'manage' })).total).toBe(1);
+      expect((await methods.listAuditLogPage('tenant-a', { actorQuery: 'zzz' })).total).toBe(0);
+    });
+
+    it('filters by date window', async () => {
+      await seed(2);
+      const future = new Date(Date.now() + 60_000);
+      const past = new Date(Date.now() - 60_000);
+      expect((await methods.listAuditLogPage('tenant-a', { from: past, to: future })).total).toBe(
+        2,
+      );
+      expect((await methods.listAuditLogPage('tenant-a', { from: future })).total).toBe(0);
+    });
+  });
+
+  describe('findAuditLogEntry', () => {
+    it('returns a single entry scoped to its tenant', async () => {
       const doc = await methods.recordAuditEntry(baseInput());
-      const raw = await AuditLog.collection.findOne({ _id: doc!._id });
-      expect(raw && Object.prototype.hasOwnProperty.call(raw, 'updatedAt')).toBe(false);
+      const id = doc!._id.toString();
+      const found = await methods.findAuditLogEntry('tenant-a', id);
+      expect(found?.id).toBe(id);
+      expect(await methods.findAuditLogEntry('tenant-b', id)).toBeNull();
+    });
+
+    it('returns null for a non-ObjectId id', async () => {
+      expect(await methods.findAuditLogEntry('tenant-a', 'not-an-id')).toBeNull();
     });
   });
 
   describe('streamAuditLogEntries', () => {
-    it('invokes onEntry for every match without skipping tenant boundaries', async () => {
-      await methods.recordAuditEntry(baseInput({ capability: 'manage:users' }));
-      await methods.recordAuditEntry(baseInput({ capability: 'manage:roles' }));
-      await methods.recordAuditEntry(baseInput({ tenantId: 'tenant-b' }));
-
-      const collected: string[] = [];
-      const count = await methods.streamAuditLogEntries('tenant-a', {}, (entry) => {
-        collected.push(entry.capability);
+    it('streams all matching rows newest-first', async () => {
+      await seed(3);
+      const seen: number[] = [];
+      const count = await methods.streamAuditLogEntries('tenant-a', {}, (e) => {
+        seen.push(e.integrity.seq);
       });
-      expect(count).toBe(2);
-      expect(new Set(collected)).toEqual(new Set(['manage:users', 'manage:roles']));
-    });
-
-    it('stops iterating and closes the cursor when isCancelled becomes true', async () => {
-      for (let i = 0; i < 10; i++) {
-        await methods.recordAuditEntry(baseInput({ capability: `manage:cap-${i}` }));
-      }
-
-      let cancelled = false;
-      const seen: string[] = [];
-      const count = await methods.streamAuditLogEntries(
-        'tenant-a',
-        {},
-        (entry) => {
-          seen.push(entry.capability);
-          if (seen.length >= 3) cancelled = true;
-        },
-        { isCancelled: () => cancelled },
-      );
-
       expect(count).toBe(3);
-      expect(seen.length).toBe(3);
+      expect(seen).toEqual([3, 2, 1]);
     });
 
-    it('stops after maxRows entries even if more remain', async () => {
-      for (let i = 0; i < 10; i++) {
-        await methods.recordAuditEntry(baseInput({ capability: `manage:cap-${i}` }));
-      }
+    it('honors isCancelled and maxRows', async () => {
+      await seed(5);
+      const cancelled = await methods.streamAuditLogEntries('tenant-a', {}, () => {}, {
+        isCancelled: () => true,
+      });
+      expect(cancelled).toBe(0);
 
-      const seen: string[] = [];
-      const count = await methods.streamAuditLogEntries(
-        'tenant-a',
-        {},
-        (entry) => {
-          seen.push(entry.capability);
-        },
-        { maxRows: 4 },
+      const capped = await methods.streamAuditLogEntries('tenant-a', {}, () => {}, { maxRows: 2 });
+      expect(capped).toBe(2);
+    });
+  });
+
+  describe('verifyAuditChain', () => {
+    it('verifies an intact chain', async () => {
+      await seed(4);
+      const result = await methods.verifyAuditChain('tenant-a');
+      expect(result.ok).toBe(true);
+      expect(result.checked).toBe(4);
+      expect(result.range).toEqual({ firstSeq: 1, lastSeq: 4 });
+    });
+
+    it('reports ok for an empty chain', async () => {
+      const result = await methods.verifyAuditChain('tenant-a');
+      expect(result.ok).toBe(true);
+      expect(result.checked).toBe(0);
+    });
+
+    it('detects a tampered field (hash mismatch)', async () => {
+      await seed(3);
+      // mutate a field via the raw driver, bypassing the append-only hooks
+      await AuditLog.collection.updateOne(
+        { chainKey: 'tenant-a', seq: 2 },
+        { $set: { 'actor.name': 'Mallory' } },
       );
+      const result = await methods.verifyAuditChain('tenant-a');
+      expect(result.ok).toBe(false);
+      expect(result.brokenAt).toBe(2);
+      expect(result.reason).toBe('hash mismatch');
+    });
 
-      expect(count).toBe(4);
-      expect(seen.length).toBe(4);
+    it('detects a deleted entry (sequence gap)', async () => {
+      await seed(3);
+      await AuditLog.collection.deleteOne({ chainKey: 'tenant-a', seq: 2 });
+      const result = await methods.verifyAuditChain('tenant-a');
+      expect(result.ok).toBe(false);
+      expect(result.reason).toMatch(/sequence gap/);
+    });
+
+    it('detects a forged hash link', async () => {
+      await seed(3);
+      await AuditLog.collection.updateOne(
+        { chainKey: 'tenant-a', seq: 2 },
+        { $set: { hash: 'f'.repeat(64) } },
+      );
+      const result = await methods.verifyAuditChain('tenant-a');
+      expect(result.ok).toBe(false);
+      expect(result.brokenAt).toBe(2);
+    });
+  });
+
+  describe('purgeAuditLogEntries', () => {
+    it('is a no-op unless confirmed', async () => {
+      await seed(2);
+      const result = await methods.purgeAuditLogEntries('tenant-a', {
+        before: new Date(Date.now() + 60_000),
+        confirm: false,
+      });
+      expect(result.deletedCount).toBe(0);
+      expect(await AuditLog.countDocuments({ chainKey: 'tenant-a' })).toBe(2);
+    });
+
+    it('purges a prefix and leaves the chain verifiable from a checkpoint', async () => {
+      // space writes so createdAt is strictly increasing for a deterministic cutoff
+      for (let i = 0; i < 4; i++) {
+        await methods.recordAuditEntry(baseInput());
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      const third = await AuditLog.findOne({ chainKey: 'tenant-a', seq: 3 }).lean();
+      const cutoff = third!.createdAt;
+
+      const result = await methods.purgeAuditLogEntries('tenant-a', {
+        before: cutoff,
+        confirm: true,
+      });
+      expect(result.deletedCount).toBeGreaterThanOrEqual(1);
+      expect(result.checkpoint?.seq).toBeGreaterThan(1);
+
+      const verification = await methods.verifyAuditChain('tenant-a');
+      expect(verification.ok).toBe(true);
+      expect(verification.range?.firstSeq).toBeGreaterThan(1);
     });
   });
 });

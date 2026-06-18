@@ -1187,7 +1187,7 @@ describe('createAdminGrantsHandlers', () => {
       } as { _id: Types.ObjectId; role: string; tenantId?: string };
     }
 
-    it('emits a grant_assigned entry after a successful assignment', async () => {
+    it('emits a grant.assigned entry after a successful assignment', async () => {
       const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
       const deps = createDeps({ recordAuditEntry });
       const handlers = createAdminGrantsHandlers(deps);
@@ -1199,21 +1199,19 @@ describe('createAdminGrantsHandlers', () => {
       expect(recordAuditEntry).toHaveBeenCalledTimes(1);
       expect(recordAuditEntry).toHaveBeenCalledWith(
         expect.objectContaining({
-          action: 'grant_assigned',
-          actorId: user._id.toString(),
-          actorName: 'Alice Admin',
-          targetPrincipalType: PrincipalType.ROLE,
-          targetPrincipalId: 'editor',
-          /** ROLE targets carry the human-readable name in `principalId`, so the audit
-           * row stores it directly. */
-          targetName: 'editor',
-          capability: SystemCapabilities.READ_USERS,
+          action: 'grant.assigned',
+          outcome: 'success',
+          actor: { type: 'user', id: user._id.toString(), name: 'Alice Admin' },
+          /** ROLE targets carry the human-readable name in `principalId`, so the
+           * audit target id and name are both that role name. */
+          target: { type: PrincipalType.ROLE, id: 'editor', name: 'editor' },
+          metadata: { capability: SystemCapabilities.READ_USERS },
           tenantId: 'tenant-1',
         }),
       );
     });
 
-    it('emits a grant_removed entry when deletedCount > 0', async () => {
+    it('emits a grant.removed entry when deletedCount > 0', async () => {
       const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
       const deps = createDeps({
         revokeCapability: jest.fn().mockResolvedValue({ deletedCount: 1 }),
@@ -1228,11 +1226,9 @@ describe('createAdminGrantsHandlers', () => {
       expect(recordAuditEntry).toHaveBeenCalledTimes(1);
       expect(recordAuditEntry).toHaveBeenCalledWith(
         expect.objectContaining({
-          action: 'grant_removed',
-          actorName: 'alice',
-          targetPrincipalType: PrincipalType.ROLE,
-          targetPrincipalId: 'editor',
-          targetName: 'editor',
+          action: 'grant.removed',
+          actor: expect.objectContaining({ type: 'user', name: 'alice' }),
+          target: { type: PrincipalType.ROLE, id: 'editor', name: 'editor' },
         }),
       );
     });
@@ -1245,6 +1241,32 @@ describe('createAdminGrantsHandlers', () => {
       await handlers.assignGrant(req, res);
 
       expect(status).toHaveBeenCalledWith(201);
+    });
+
+    it('fail-open: a failed audit write does not fail the grant', async () => {
+      const recordAuditEntry = jest.fn().mockRejectedValue(new Error('audit down'));
+      const deps = createDeps({ recordAuditEntry });
+      const handlers = createAdminGrantsHandlers(deps);
+      const { req, res, status } = createReqRes({ body: assignBody, user: reqUser() });
+
+      await handlers.assignGrant(req, res);
+
+      expect(status).toHaveBeenCalledWith(201);
+    });
+
+    it('fail-closed: a failed audit write surfaces as a 500', async () => {
+      const recordAuditEntry = jest.fn().mockRejectedValue(new Error('audit down'));
+      const deps = createDeps({ recordAuditEntry, auditFailClosed: true });
+      const handlers = createAdminGrantsHandlers(deps);
+      const { req, res, status } = createReqRes({ body: assignBody, user: reqUser() });
+
+      await handlers.assignGrant(req, res);
+
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ failClosed: true }),
+      );
+      expect(status).toHaveBeenCalledWith(500);
     });
   });
 });

@@ -22,6 +22,7 @@ import { createAclEntryMethods, permissionBitSupersets, type AclEntryMethods } f
 import { createSystemGrantMethods, type SystemGrantMethods } from './systemGrant';
 import {
   createAuditLogMethods,
+  AUDIT_SCHEMA_VERSION,
   MAX_AUDIT_EXPORT_ROWS,
   MAX_AUDIT_LOG_LIMIT,
   type AuditLogMethods,
@@ -107,7 +108,7 @@ export {
   deriveStructuredFrontmatterFields,
   inferSkillFileCategory,
 };
-export { MAX_AUDIT_EXPORT_ROWS, MAX_AUDIT_LOG_LIMIT };
+export { AUDIT_SCHEMA_VERSION, MAX_AUDIT_EXPORT_ROWS, MAX_AUDIT_LOG_LIMIT };
 
 export type AllMethods = UserMethods &
   SessionMethods &

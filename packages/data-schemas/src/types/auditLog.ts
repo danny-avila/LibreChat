@@ -1,28 +1,50 @@
-import type { PrincipalType } from 'librechat-data-provider';
 import type { Document, Types } from 'mongoose';
-import type { AdminAuditLogEntry, AuditAction } from './admin';
+import type {
+  AdminAuditLogEntry,
+  AuditAction,
+  AuditActor,
+  AuditActorType,
+  AuditCategory,
+  AuditContext,
+  AuditIntegrity,
+  AuditMetadata,
+  AuditOutcome,
+  AuditSeverity,
+  AuditTarget,
+} from './admin';
 
 /**
- * AuditLog is an append-only collection: no `updatedAt`, no mutations.
- * See `~/schema/auditLog` for the enforcement (immutable fields plus
- * pre-update / pre-delete / pre-save hooks).
- *
- * `createdAt` is always set by Mongoose at insert time, so this type
- * intentionally declares it required. The `IAuditLog` intersection adds
- * the document identity (`_id`).
+ * AuditLog is an append-only, hash-chained compliance record. Enforcement lives
+ * in `~/schema/auditLog` (immutable fields, pre-update/delete/save hooks) and in
+ * `~/methods/auditLog` (per-chain hash linking + a unique `{ chainKey, seq }`
+ * index that serializes concurrent appends). `createdAt` is set explicitly by
+ * the writer so it is covered by the entry hash.
  */
 export type AuditLog = {
+  /** Record-format version, so future migrations can interpret older rows. */
+  schemaVersion: number;
+  category: AuditCategory;
   action: AuditAction;
-  actorId: Types.ObjectId;
-  actorName: string;
-  targetPrincipalType: PrincipalType;
-  /** ObjectId for USER/GROUP, role name string for ROLE */
-  targetPrincipalId: string | Types.ObjectId;
-  targetName: string;
-  capability: string;
-  /** Absent = platform-operator audit; present = tenant-scoped audit */
+  outcome: AuditOutcome;
+  severity: AuditSeverity;
+  actor: AuditActor;
+  target: AuditTarget;
+  metadata?: AuditMetadata;
+  context?: AuditContext;
+  /** Absent = platform-level entry; present = tenant-scoped entry. */
   tenantId?: string;
-  /** Mongoose auto-managed via `timestamps: { createdAt: true, updatedAt: false }` */
+  /**
+   * Always present; equals `tenantId` or the platform sentinel. The hash chain
+   * and keyset pagination are scoped to this key, and `{ chainKey, seq }` is the
+   * unique index that serializes appends.
+   */
+  chainKey: string;
+  /** Monotonic per-chain sequence number (1-based). */
+  seq: number;
+  /** Hash of the previous entry in the chain; genesis links to the zero hash. */
+  prevHash: string;
+  /** SHA-256 over this entry's canonical content (including `seq` and `prevHash`). */
+  hash: string;
   createdAt: Date;
 };
 
@@ -31,33 +53,120 @@ export type IAuditLog = AuditLog &
     _id: Types.ObjectId;
   };
 
+/** Actor as accepted by writers; `id` may be an ObjectId for convenience. */
+export interface AuditActorInput {
+  type: AuditActorType;
+  id?: string | Types.ObjectId;
+  name: string;
+}
+
+/** Target as accepted by writers; `id` may be an ObjectId for convenience. */
+export interface AuditTargetInput {
+  type: string;
+  id?: string | Types.ObjectId;
+  name?: string;
+}
+
 export interface RecordAuditEntryInput {
   action: AuditAction;
-  actorId: string | Types.ObjectId;
-  actorName: string;
-  targetPrincipalType: PrincipalType;
-  targetPrincipalId: string | Types.ObjectId;
-  targetName: string;
-  capability: string;
+  /** Derived from `action` when omitted. */
+  category?: AuditCategory;
+  /** Defaults to `'success'`. */
+  outcome?: AuditOutcome;
+  /** Defaults to `'warning'` for `failure`/`denied`, else `'info'`. */
+  severity?: AuditSeverity;
+  actor: AuditActorInput;
+  target: AuditTargetInput;
+  metadata?: AuditMetadata;
+  context?: AuditContext;
   tenantId?: string;
+}
+
+/** Options that shape a single audit write. */
+export interface RecordAuditEntryOptions {
+  /**
+   * When true, a failed write throws instead of resolving to `null`. Callers
+   * that must not proceed without a durable audit record opt in here; the
+   * default is fail-open so audit emission never blocks a privileged operation.
+   */
+  failClosed?: boolean;
 }
 
 export interface AuditLogFilters {
   search?: string;
+  category?: AuditCategory[];
   action?: AuditAction[];
+  outcome?: AuditOutcome[];
+  severity?: AuditSeverity[];
+  /** Exact match on `actor.type`. */
+  actorType?: AuditActorType;
+  /** Case-insensitive substring match against the denormalized `actor.name`. */
+  actorQuery?: string;
+  /** Exact match on `target.type`. */
+  targetType?: string;
+  /** Case-insensitive substring match against the denormalized `target.name`. */
+  targetQuery?: string;
+  /** Case-insensitive substring match against `metadata.capability`. */
+  capability?: string;
   from?: Date;
   to?: Date;
-  /** Case-insensitive substring match against the denormalized `actorName`. */
-  actorQuery?: string;
-  targetPrincipalType?: PrincipalType;
-  /** Case-insensitive substring match against the denormalized `targetName`. */
-  targetQuery?: string;
-  capability?: string;
+  /** Offset pagination (legacy / random-access). Prefer `cursor`. */
   offset?: number;
   limit?: number;
+  /**
+   * Keyset cursor: the `seq` of the last entry from the previous page. Results
+   * are newest-first, so the next page is `seq < cursor`. Stable under
+   * concurrent appends, unlike `offset`.
+   */
+  cursor?: number;
 }
 
 export interface AuditLogPage {
   entries: AdminAuditLogEntry[];
   total: number;
+  /** Pass as `cursor` to fetch the next page; `null` when the page is the last. */
+  nextCursor: number | null;
 }
+
+/** Outcome of verifying a chain's tamper-evidence. */
+export interface AuditChainVerification {
+  ok: boolean;
+  chainKey: string;
+  /** Number of entries inspected. */
+  checked: number;
+  /** First `seq` where the chain broke (gap, broken link, or hash mismatch). */
+  brokenAt?: number;
+  reason?: string;
+  /** Earliest/latest `seq` present. `firstSeq > 1` indicates a purged prefix. */
+  range?: { firstSeq: number; lastSeq: number };
+}
+
+export interface PurgeAuditLogOptions {
+  /** Delete entries strictly older than this instant (a contiguous prefix). */
+  before: Date;
+  /** Required safety latch; the purge is a no-op unless explicitly confirmed. */
+  confirm: boolean;
+}
+
+export interface PurgeAuditLogResult {
+  deletedCount: number;
+  /** The new earliest remaining entry, which becomes the trusted checkpoint the
+   * verifier chains forward from. Absent when the chain is now empty. */
+  checkpoint?: { seq: number; prevHash: string };
+}
+
+/** Re-exported so consumers can import the entry shape and its supporting types
+ * from one module. */
+export type {
+  AdminAuditLogEntry,
+  AuditAction,
+  AuditActor,
+  AuditActorType,
+  AuditCategory,
+  AuditContext,
+  AuditIntegrity,
+  AuditMetadata,
+  AuditOutcome,
+  AuditSeverity,
+  AuditTarget,
+};

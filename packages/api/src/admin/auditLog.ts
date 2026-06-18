@@ -1,35 +1,47 @@
-import { PrincipalType } from 'librechat-data-provider';
 import {
-  AUDIT_ACTIONS,
   logger,
+  AUDIT_ACTIONS,
+  AUDIT_CATEGORIES,
+  AUDIT_OUTCOMES,
+  AUDIT_SEVERITIES,
+  AUDIT_ACTOR_TYPES,
   MAX_AUDIT_EXPORT_ROWS,
   MAX_AUDIT_LOG_LIMIT,
 } from '@librechat/data-schemas';
 import type {
   AdminAuditLogEntry,
   AuditAction,
+  AuditActorType,
+  AuditCategory,
+  AuditChainVerification,
   AuditLogFilters,
   AuditLogPage,
+  AuditOutcome,
+  AuditSeverity,
 } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 
 const FORMULA_PREFIX = /^[=+\-@\t\r]/;
 /** UTF-8 BOM, written first so Excel recognizes the encoding on import. Spelled
- * as a Unicode escape so readers can see the constant in editors that hide
- * the zero-width glyph. */
-const CSV_BOM = '\uFEFF';
+ * as a Unicode escape so readers can see the constant in editors that hide the
+ * zero-width glyph. */
+const CSV_BOM = '﻿';
 
-const VALID_ACTIONS = new Set<AuditAction>(AUDIT_ACTIONS);
-const VALID_PRINCIPAL_TYPES = new Set<string>(Object.values(PrincipalType));
+const VALID_ACTIONS = new Set<string>(AUDIT_ACTIONS);
+const VALID_CATEGORIES = new Set<string>(AUDIT_CATEGORIES);
+const VALID_OUTCOMES = new Set<string>(AUDIT_OUTCOMES);
+const VALID_SEVERITIES = new Set<string>(AUDIT_SEVERITIES);
+const VALID_ACTOR_TYPES = new Set<string>(AUDIT_ACTOR_TYPES);
 
 /**
  * Accepts `YYYY-MM-DD` (interpreted as UTC by the downstream Date parse) or a
  * full ISO 8601 / RFC 3339 timestamp that includes either `Z` or a `±HH:MM`
- * offset. Local-time strings without a zone are rejected so every input maps
- * to an unambiguous instant.
+ * offset. Local-time strings without a zone are rejected so every input maps to
+ * an unambiguous instant.
  */
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2}))?$/;
+const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
 
 export interface AdminAuditLogDeps {
@@ -43,10 +55,11 @@ export interface AdminAuditLogDeps {
   ) => Promise<AdminAuditLogEntry | null>;
   streamAuditLogEntries: (
     tenantId: string | undefined,
-    filters: Omit<AuditLogFilters, 'offset' | 'limit'>,
+    filters: Omit<AuditLogFilters, 'offset' | 'limit' | 'cursor'>,
     onEntry: (entry: AdminAuditLogEntry) => void | Promise<void>,
     options?: { isCancelled?: () => boolean; maxRows?: number },
   ) => Promise<number>;
+  verifyAuditChain: (tenantId: string | undefined) => Promise<AuditChainVerification>;
 }
 
 interface CallerContext {
@@ -70,34 +83,42 @@ function asStringArray(v: unknown): string[] | undefined {
   return undefined;
 }
 
-function parseActionFilter(raw: unknown):
-  | {
-      ok: true;
-      value: AuditAction[] | undefined;
-    }
-  | { ok: false; error: string } {
+type ParseResult<T> = { ok: true; value: T } | { ok: false; error: string };
+
+/** Parses a repeatable enum filter (`?action=a&action=b`) against a whitelist. */
+function parseEnumArray<T extends string>(
+  raw: unknown,
+  valid: Set<string>,
+  label: string,
+): ParseResult<T[] | undefined> {
   const arr = asStringArray(raw);
   if (!arr || arr.length === 0) return { ok: true, value: undefined };
-  const invalid = arr.find((a) => !VALID_ACTIONS.has(a as AuditAction));
-  if (invalid != null) {
-    return { ok: false, error: `Unknown action: ${invalid}` };
-  }
-  return { ok: true, value: arr as AuditAction[] };
+  const invalid = arr.find((a) => !valid.has(a));
+  if (invalid != null) return { ok: false, error: `Unknown ${label}: ${invalid}` };
+  return { ok: true, value: arr as T[] };
 }
 
-const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
+function parseEnum<T extends string>(
+  raw: unknown,
+  valid: Set<string>,
+  label: string,
+): ParseResult<T | undefined> {
+  if (raw == null || raw === '') return { ok: true, value: undefined };
+  if (typeof raw !== 'string') return { ok: false, error: `${label} must be a string` };
+  if (!valid.has(raw)) return { ok: false, error: `Unknown ${label}: ${raw}` };
+  return { ok: true, value: raw as T };
+}
 
 /**
  * Parses a filter date. `boundary` controls how a bare `YYYY-MM-DD` is widened:
- * `start` leaves it at the beginning of the day (00:00:00.000Z, the default for
- * `from`), `end` snaps it to 23:59:59.999Z so that a `to=2025-01-15` filter
- * actually includes everything that occurred on January 15 instead of cutting
- * off at midnight. Full ISO timestamps are honored exactly regardless.
+ * `start` leaves it at 00:00:00.000Z (default for `from`), `end` snaps it to
+ * 23:59:59.999Z so `to=2025-01-15` includes everything on January 15 instead of
+ * cutting off at midnight. Full ISO timestamps are honored exactly.
  */
 function parseIsoDate(
   raw: unknown,
   boundary: 'start' | 'end' = 'start',
-): { ok: true; value?: Date } | { ok: false; error: string } {
+): ParseResult<Date | undefined> {
   if (raw == null || raw === '') return { ok: true, value: undefined };
   if (typeof raw !== 'string') return { ok: false, error: 'Date must be a string' };
   if (!ISO_DATE_RE.test(raw)) return { ok: false, error: 'Date must be ISO 8601' };
@@ -109,37 +130,18 @@ function parseIsoDate(
   return { ok: true, value: d };
 }
 
-function parseLimit(
+function parseIntInRange(
   raw: unknown,
-): { ok: true; value: number | undefined } | { ok: false; error: string } {
+  label: string,
+  min: number,
+  max?: number,
+): ParseResult<number | undefined> {
   if (raw == null || raw === '') return { ok: true, value: undefined };
   const n = typeof raw === 'number' ? raw : Number.parseInt(String(raw), 10);
-  if (!Number.isFinite(n)) return { ok: false, error: 'limit must be a number' };
-  if (n < 1) return { ok: false, error: 'limit must be >= 1' };
-  if (n > MAX_AUDIT_LOG_LIMIT)
-    return { ok: false, error: `limit must be <= ${MAX_AUDIT_LOG_LIMIT}` };
+  if (!Number.isFinite(n)) return { ok: false, error: `${label} must be a number` };
+  if (n < min) return { ok: false, error: `${label} must be >= ${min}` };
+  if (max != null && n > max) return { ok: false, error: `${label} must be <= ${max}` };
   return { ok: true, value: Math.floor(n) };
-}
-
-function parseOffset(
-  raw: unknown,
-): { ok: true; value: number | undefined } | { ok: false; error: string } {
-  if (raw == null || raw === '') return { ok: true, value: undefined };
-  const n = typeof raw === 'number' ? raw : Number.parseInt(String(raw), 10);
-  if (!Number.isFinite(n)) return { ok: false, error: 'offset must be a number' };
-  if (n < 0) return { ok: false, error: 'offset must be >= 0' };
-  return { ok: true, value: Math.floor(n) };
-}
-
-function parsePrincipalType(
-  raw: unknown,
-): { ok: true; value: PrincipalType | undefined } | { ok: false; error: string } {
-  if (raw == null || raw === '') return { ok: true, value: undefined };
-  if (typeof raw !== 'string') return { ok: false, error: 'targetPrincipalType must be a string' };
-  if (!VALID_PRINCIPAL_TYPES.has(raw)) {
-    return { ok: false, error: `Unknown targetPrincipalType: ${raw}` };
-  }
-  return { ok: true, value: raw as PrincipalType };
 }
 
 function pickString(raw: unknown, maxLen = 256): string | undefined {
@@ -158,15 +160,31 @@ function escapeCsvCell(value: string): string {
   return guarded;
 }
 
-const CSV_COLUMNS: ReadonlyArray<{ key: keyof AdminAuditLogEntry; label: string }> = [
-  { key: 'timestamp', label: 'Timestamp' },
-  { key: 'action', label: 'Action' },
-  { key: 'actorName', label: 'Actor' },
-  { key: 'actorId', label: 'Actor ID' },
-  { key: 'targetPrincipalType', label: 'Target type' },
-  { key: 'targetPrincipalId', label: 'Target ID' },
-  { key: 'targetName', label: 'Target' },
-  { key: 'capability', label: 'Capability' },
+function stringifyMetaValue(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return '';
+}
+
+const CSV_COLUMNS: ReadonlyArray<{ label: string; value: (e: AdminAuditLogEntry) => string }> = [
+  { label: 'Timestamp', value: (e) => e.timestamp },
+  { label: 'Category', value: (e) => e.category },
+  { label: 'Action', value: (e) => e.action },
+  { label: 'Outcome', value: (e) => e.outcome },
+  { label: 'Severity', value: (e) => e.severity },
+  { label: 'Actor type', value: (e) => e.actor.type },
+  { label: 'Actor', value: (e) => e.actor.name },
+  { label: 'Actor ID', value: (e) => e.actor.id ?? '' },
+  { label: 'Target type', value: (e) => e.target.type },
+  { label: 'Target', value: (e) => e.target.name ?? '' },
+  { label: 'Target ID', value: (e) => e.target.id ?? '' },
+  { label: 'Capability', value: (e) => stringifyMetaValue(e.metadata?.capability) },
+  { label: 'Details', value: (e) => (e.metadata ? JSON.stringify(e.metadata) : '') },
+  { label: 'IP', value: (e) => e.context?.ip ?? '' },
+  { label: 'Request ID', value: (e) => e.context?.requestId ?? '' },
+  { label: 'Seq', value: (e) => String(e.integrity.seq) },
+  { label: 'Hash', value: (e) => e.integrity.hash },
 ];
 
 function formatCsvHeader(): string {
@@ -174,63 +192,30 @@ function formatCsvHeader(): string {
 }
 
 function formatCsvRow(entry: AdminAuditLogEntry): string {
-  return CSV_COLUMNS.map((c) => escapeCsvCell(String(entry[c.key] ?? ''))).join(',');
+  return CSV_COLUMNS.map((c) => escapeCsvCell(c.value(entry))).join(',');
 }
 
-type ParsedFilters = Omit<AuditLogFilters, 'offset' | 'limit'>;
+type ParsedFilters = Omit<AuditLogFilters, 'offset' | 'limit' | 'cursor'>;
 
 interface AuditLogQuery {
   search?: string;
+  category?: string | string[];
   action?: string | string[];
+  outcome?: string | string[];
+  severity?: string | string[];
+  actorType?: string;
+  actorQuery?: string;
+  targetType?: string;
+  targetQuery?: string;
+  capability?: string;
   from?: string;
   to?: string;
-  /** Substring match against the denormalized actor display name. */
-  actorQuery?: string;
-  /** @deprecated Use `actorQuery`. Still accepted as an alias. */
-  actorId?: string;
-  targetPrincipalType?: string;
-  /** Substring match against the denormalized target display name. */
-  targetQuery?: string;
-  /** @deprecated Use `targetQuery`. Still accepted as an alias. */
-  targetPrincipalId?: string;
-  capability?: string;
   limit?: string;
   offset?: string;
+  cursor?: string;
 }
 
-/**
- * The HTTP filter keys `actorId`/`targetPrincipalId` were misnomers — they
- * never matched ObjectIds, they did case-insensitive substring matches on
- * the denormalized display names. The new keys `actorQuery`/`targetQuery`
- * describe what actually happens. The legacy names are accepted for one
- * release as deprecated aliases so the sibling admin-panel PR keeps working
- * while it migrates; each use emits a deprecation log.
- */
-function readActorQuery(query: AuditLogQuery): string | undefined {
-  if (query.actorQuery != null) return pickString(query.actorQuery, 128);
-  if (query.actorId != null) {
-    logger.warn(
-      '[adminAuditLog] deprecated filter param `actorId` — rename to `actorQuery` (substring match on actorName)',
-    );
-    return pickString(query.actorId, 128);
-  }
-  return undefined;
-}
-
-function readTargetQuery(query: AuditLogQuery): string | undefined {
-  if (query.targetQuery != null) return pickString(query.targetQuery, 128);
-  if (query.targetPrincipalId != null) {
-    logger.warn(
-      '[adminAuditLog] deprecated filter param `targetPrincipalId` — rename to `targetQuery` (substring match on targetName)',
-    );
-    return pickString(query.targetPrincipalId, 128);
-  }
-  return undefined;
-}
-
-function parseFilters(
-  query: AuditLogQuery,
-): { ok: true; value: ParsedFilters } | { ok: false; error: string } {
+function parseFilters(query: AuditLogQuery): ParseResult<ParsedFilters> {
   const from = parseIsoDate(query.from, 'start');
   if (!from.ok) return { ok: false, error: `from: ${from.error}` };
   const to = parseIsoDate(query.to, 'end');
@@ -238,21 +223,33 @@ function parseFilters(
   if (from.value && to.value && from.value > to.value) {
     return { ok: false, error: '`from` must be earlier than `to`' };
   }
-  const action = parseActionFilter(query.action);
+
+  const category = parseEnumArray<AuditCategory>(query.category, VALID_CATEGORIES, 'category');
+  if (!category.ok) return { ok: false, error: category.error };
+  const action = parseEnumArray<AuditAction>(query.action, VALID_ACTIONS, 'action');
   if (!action.ok) return { ok: false, error: action.error };
-  const targetPrincipalType = parsePrincipalType(query.targetPrincipalType);
-  if (!targetPrincipalType.ok) return { ok: false, error: targetPrincipalType.error };
+  const outcome = parseEnumArray<AuditOutcome>(query.outcome, VALID_OUTCOMES, 'outcome');
+  if (!outcome.ok) return { ok: false, error: outcome.error };
+  const severity = parseEnumArray<AuditSeverity>(query.severity, VALID_SEVERITIES, 'severity');
+  if (!severity.ok) return { ok: false, error: severity.error };
+  const actorType = parseEnum<AuditActorType>(query.actorType, VALID_ACTOR_TYPES, 'actorType');
+  if (!actorType.ok) return { ok: false, error: actorType.error };
+
   return {
     ok: true,
     value: {
       search: pickString(query.search, 200),
+      category: category.value,
       action: action.value,
+      outcome: outcome.value,
+      severity: severity.value,
+      actorType: actorType.value,
+      actorQuery: pickString(query.actorQuery, 128),
+      targetType: pickString(query.targetType, 128),
+      targetQuery: pickString(query.targetQuery, 128),
+      capability: pickString(query.capability, 256),
       from: from.value,
       to: to.value,
-      actorQuery: readActorQuery(query),
-      targetPrincipalType: targetPrincipalType.value,
-      targetQuery: readTargetQuery(query),
-      capability: pickString(query.capability, 256),
     },
   };
 }
@@ -260,9 +257,10 @@ function parseFilters(
 export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps): {
   listAuditLog: (req: ServerRequest, res: Response) => Promise<Response>;
   getAuditLogEntry: (req: ServerRequest, res: Response) => Promise<Response>;
+  verifyAuditLog: (req: ServerRequest, res: Response) => Promise<Response>;
   exportAuditLogCsv: (req: ServerRequest, res: Response) => Promise<Response | void>;
 } {
-  const { listAuditLogPage, findAuditLogEntry, streamAuditLogEntries } = deps;
+  const { listAuditLogPage, findAuditLogEntry, streamAuditLogEntries, verifyAuditChain } = deps;
 
   async function listAuditLogHandler(req: ServerRequest, res: Response) {
     try {
@@ -273,15 +271,18 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps): {
       const filters = parseFilters(query);
       if (!filters.ok) return res.status(400).json({ error: filters.error });
 
-      const limitResult = parseLimit(query.limit);
-      if (!limitResult.ok) return res.status(400).json({ error: limitResult.error });
-      const offsetResult = parseOffset(query.offset);
-      if (!offsetResult.ok) return res.status(400).json({ error: offsetResult.error });
+      const limit = parseIntInRange(query.limit, 'limit', 1, MAX_AUDIT_LOG_LIMIT);
+      if (!limit.ok) return res.status(400).json({ error: limit.error });
+      const offset = parseIntInRange(query.offset, 'offset', 0);
+      if (!offset.ok) return res.status(400).json({ error: offset.error });
+      const cursor = parseIntInRange(query.cursor, 'cursor', 1);
+      if (!cursor.ok) return res.status(400).json({ error: cursor.error });
 
       const page = await listAuditLogPage(caller.tenantId, {
         ...filters.value,
-        offset: offsetResult.value,
-        limit: limitResult.value,
+        offset: offset.value,
+        limit: limit.value,
+        cursor: cursor.value,
       });
 
       return res.status(200).json(page);
@@ -310,6 +311,19 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps): {
     }
   }
 
+  async function verifyAuditLogHandler(req: ServerRequest, res: Response) {
+    try {
+      const caller = resolveCaller(req);
+      if (!caller) return res.status(401).json({ error: 'Authentication required' });
+
+      const result = await verifyAuditChain(caller.tenantId);
+      return res.status(200).json(result);
+    } catch (err) {
+      logger.error('[adminAuditLog] verify error:', err);
+      return res.status(500).json({ error: 'Failed to verify audit log integrity' });
+    }
+  }
+
   async function exportAuditLogCsvHandler(req: ServerRequest, res: Response) {
     try {
       const caller = resolveCaller(req);
@@ -324,10 +338,10 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps): {
       res.setHeader('Cache-Control', 'no-store');
 
       /**
-       * The socket-`close` listener is the canonical signal — it fires on
-       * client TCP RST as well as on graceful end. `req.aborted` (deprecated)
-       * is kept as a belt-and-braces fallback for Node versions that emit it
-       * before the response sees `close`.
+       * The socket-`close` listener is the canonical signal — it fires on client
+       * TCP RST as well as on graceful end. `req.aborted` (deprecated) is kept as
+       * a belt-and-braces fallback for Node versions that emit it before the
+       * response sees `close`.
        */
       let clientAborted = false;
       const markAborted = () => {
@@ -338,10 +352,10 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps): {
       const isCancelled = () => clientAborted;
 
       /**
-       * Wait for `drain` when the kernel/socket buffer is full so we never
-       * queue an unbounded amount of CSV in Node memory for slow consumers.
-       * Race against `close` so a destroyed socket can't strand the handler
-       * on a `drain` that will never fire.
+       * Wait for `drain` when the socket buffer is full so we never queue an
+       * unbounded amount of CSV in Node memory for slow consumers. Race against
+       * `close` so a destroyed socket can't strand the handler on a `drain` that
+       * will never fire.
        */
       const writeChunk = (chunk: string): Promise<void> => {
         if (clientAborted) return Promise.resolve();
@@ -390,6 +404,7 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps): {
   return {
     listAuditLog: listAuditLogHandler,
     getAuditLogEntry: getAuditLogEntryHandler,
+    verifyAuditLog: verifyAuditLogHandler,
     exportAuditLogCsv: exportAuditLogCsvHandler,
   };
 }

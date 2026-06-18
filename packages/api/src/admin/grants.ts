@@ -7,8 +7,10 @@ import {
 } from '@librechat/data-schemas';
 import type {
   AuditAction,
+  AuditContext,
   ISystemGrant,
   RecordAuditEntryInput,
+  RecordAuditEntryOptions,
   SystemCapability,
 } from '@librechat/data-schemas';
 import type { Response } from 'express';
@@ -77,8 +79,38 @@ export interface AdminGrantsDeps {
     tenantId?: string;
   }) => ResolvedPrincipal[] | undefined;
   checkRoleExists?: (roleId: string) => Promise<boolean>;
-  /** Optional audit emission. Failure is logged but does not roll back the grant. */
-  recordAuditEntry?: (input: RecordAuditEntryInput) => Promise<void>;
+  /** Optional audit emission. Failure is logged but does not roll back the grant
+   * unless `auditFailClosed` is set. */
+  recordAuditEntry?: (
+    input: RecordAuditEntryInput,
+    options?: RecordAuditEntryOptions,
+  ) => Promise<void>;
+  /**
+   * When true, a failed audit write surfaces as a 5xx instead of being
+   * swallowed. The grant itself is already persisted (and grant writes are
+   * idempotent upserts), so a client retry is safe; an operator must reconcile
+   * the missing audit row. Defaults to fail-open.
+   */
+  auditFailClosed?: boolean;
+}
+
+/** Normalizes a possibly-repeated header to its first string value. */
+function firstHeaderValue(value: string | string[] | undefined): string | undefined {
+  if (Array.isArray(value)) return value[0];
+  return typeof value === 'string' ? value : undefined;
+}
+
+/** Extracts forensic request context (IP, user agent, correlation id) for the
+ * audit record. Fields are undefined when the data isn't available. */
+function buildAuditContext(req: ServerRequest): AuditContext {
+  const headers = req.headers ?? {};
+  const forwarded = firstHeaderValue(headers['x-forwarded-for']);
+  const forwardedIp = forwarded ? forwarded.split(',')[0]?.trim() : undefined;
+  return {
+    ip: req.ip || forwardedIp || req.socket?.remoteAddress || undefined,
+    userAgent: firstHeaderValue(headers['user-agent']),
+    requestId: firstHeaderValue(headers['x-request-id'] ?? headers['x-correlation-id']),
+  };
 }
 
 /** Currently ROLE-only; Record/Set structure preserved for future principal-type expansion. */
@@ -105,6 +137,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
     getCachedPrincipals,
     checkRoleExists,
     recordAuditEntry,
+    auditFailClosed,
   } = deps;
 
   async function emitAudit(args: {
@@ -113,27 +146,32 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
     principalType: PrincipalType;
     principalId: string;
     capability: SystemCapability;
+    context?: AuditContext;
   }): Promise<void> {
     if (!recordAuditEntry) return;
+    /** The grants surface is ROLE-only today (see `MANAGE_CAPABILITY_BY_TYPE`),
+     * and SystemGrant stores the human-readable role name in `principalId` for
+     * ROLE principals, so the audit target's id and name are both `principalId`.
+     * When USER and GROUP grants are enabled, resolve the display name here. */
+    const input: RecordAuditEntryInput = {
+      action: args.action,
+      outcome: 'success',
+      severity: 'warning',
+      actor: { type: 'user', id: args.caller.userId, name: args.caller.actorName },
+      target: { type: args.principalType, id: args.principalId, name: args.principalId },
+      metadata: { capability: args.capability },
+      context: args.context,
+      tenantId: args.caller.tenantId,
+    };
+    if (auditFailClosed) {
+      /** Let the failure propagate to the handler (→ 5xx); see `auditFailClosed`. */
+      await recordAuditEntry(input, { failClosed: true });
+      return;
+    }
     try {
-      /** The grants surface is ROLE-only today (see `MANAGE_CAPABILITY_BY_TYPE`),
-       * and SystemGrant stores the human-readable role name in `principalId` for
-       * ROLE principals, so the audit row's `targetName` is just `principalId`.
-       * When USER and GROUP grants are enabled, a `resolveTargetName` dep should
-       * be added here to look up the display name; until then it would be dead
-       * code. */
-      await recordAuditEntry({
-        action: args.action,
-        actorId: args.caller.userId,
-        actorName: args.caller.actorName,
-        targetPrincipalType: args.principalType,
-        targetPrincipalId: args.principalId,
-        targetName: args.principalId,
-        capability: args.capability,
-        tenantId: args.caller.tenantId,
-      });
+      await recordAuditEntry(input);
     } catch (err) {
-      /** Audit failure must not roll back the grant: log and move on. */
+      /** Fail-open: audit failure must not roll back the grant. */
       logger.error('[adminGrants] audit write failed', err);
     }
   }
@@ -395,11 +433,12 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
         return res.status(500).json({ error: 'Grant operation returned no result' });
       }
       await emitAudit({
-        action: 'grant_assigned',
+        action: 'grant.assigned',
         caller,
         principalType,
         principalId,
         capability,
+        context: buildAuditContext(req),
       });
       return res.status(201).json({ grant });
     } catch (error) {
@@ -452,11 +491,12 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
       // trail or the forensic record becomes misleading.
       if (revokeResult.deletedCount > 0) {
         await emitAudit({
-          action: 'grant_removed',
+          action: 'grant.removed',
           caller,
           principalType: principalType as PrincipalType,
           principalId,
           capability: capability as SystemCapability,
+          context: buildAuditContext(req),
         });
       }
       return res.status(200).json({ success: true });

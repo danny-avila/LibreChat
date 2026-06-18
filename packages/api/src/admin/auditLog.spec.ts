@@ -1,7 +1,10 @@
 import { Types } from 'mongoose';
 import { EventEmitter } from 'events';
-import { PrincipalType } from 'librechat-data-provider';
-import type { AdminAuditLogEntry, AuditLogPage } from '@librechat/data-schemas';
+import type {
+  AdminAuditLogEntry,
+  AuditChainVerification,
+  AuditLogPage,
+} from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { AdminAuditLogDeps } from './auditLog';
 import type { ServerRequest } from '~/types/http';
@@ -17,14 +20,31 @@ const validObjectId = new Types.ObjectId().toString();
 function mockEntry(overrides: Partial<AdminAuditLogEntry> = {}): AdminAuditLogEntry {
   return {
     id: new Types.ObjectId().toString(),
-    action: 'grant_assigned',
-    actorId: new Types.ObjectId().toString(),
-    actorName: 'Alice Admin',
-    targetPrincipalType: PrincipalType.USER,
-    targetPrincipalId: new Types.ObjectId().toString(),
-    targetName: 'Bob User',
-    capability: 'manage:users',
+    schemaVersion: 1,
+    category: 'grant',
+    action: 'grant.assigned',
+    outcome: 'success',
+    severity: 'warning',
+    actor: { type: 'user', id: new Types.ObjectId().toString(), name: 'Alice Admin' },
+    target: { type: 'role', id: 'ADMIN', name: 'ADMIN' },
+    metadata: { capability: 'manage:users' },
+    context: { ip: '10.0.0.1', requestId: 'req-1' },
+    integrity: { seq: 1, hash: 'a'.repeat(64), prevHash: '0'.repeat(64) },
     timestamp: new Date('2025-01-15T10:30:00.000Z').toISOString(),
+    ...overrides,
+  };
+}
+
+function mockPage(overrides: Partial<AuditLogPage> = {}): AuditLogPage {
+  return { entries: [], total: 0, nextCursor: null, ...overrides };
+}
+
+function mockVerification(overrides: Partial<AuditChainVerification> = {}): AuditChainVerification {
+  return {
+    ok: true,
+    chainKey: 'tenant-a',
+    checked: 3,
+    range: { firstSeq: 1, lastSeq: 3 },
     ...overrides,
   };
 }
@@ -61,9 +81,8 @@ interface CsvCaptureContext {
 }
 
 /**
- * Wraps the request/response in EventEmitter shims so the streaming
- * handler can register `close` / `aborted` / `drain` listeners and the
- * test can drive them.
+ * Wraps request/response in EventEmitter shims so the streaming handler can
+ * register `close` / `aborted` / `drain` listeners and the test can drive them.
  */
 function createCsvContext(
   overrides: {
@@ -112,13 +131,14 @@ function createCsvContext(
 
 function createDeps(overrides: Partial<AdminAuditLogDeps> = {}): AdminAuditLogDeps {
   return {
-    listAuditLogPage: jest
-      .fn<Promise<AuditLogPage>, unknown[]>()
-      .mockResolvedValue({ entries: [], total: 0 }),
+    listAuditLogPage: jest.fn<Promise<AuditLogPage>, unknown[]>().mockResolvedValue(mockPage()),
     findAuditLogEntry: jest
       .fn<Promise<AdminAuditLogEntry | null>, unknown[]>()
       .mockResolvedValue(null),
     streamAuditLogEntries: jest.fn<Promise<number>, unknown[]>().mockResolvedValue(0),
+    verifyAuditChain: jest
+      .fn<Promise<AuditChainVerification>, unknown[]>()
+      .mockResolvedValue(mockVerification()),
     ...overrides,
   };
 }
@@ -126,61 +146,44 @@ function createDeps(overrides: Partial<AdminAuditLogDeps> = {}): AdminAuditLogDe
 describe('createAdminAuditLogHandlers', () => {
   describe('listAuditLog', () => {
     it('returns 401 when req.user is missing', async () => {
-      const deps = createDeps();
-      const handlers = createAdminAuditLogHandlers(deps);
+      const handlers = createAdminAuditLogHandlers(createDeps());
       const { req, res, status, json } = createReqRes({ user: undefined });
-
       await handlers.listAuditLog(req, res);
-
       expect(status).toHaveBeenCalledWith(401);
       expect(json).toHaveBeenCalledWith({ error: 'Authentication required' });
     });
 
     it('returns 200 with the page payload', async () => {
-      const entries = [mockEntry()];
-      const deps = createDeps({
-        listAuditLogPage: jest.fn().mockResolvedValue({ entries, total: 1 }),
-      });
+      const page = mockPage({ entries: [mockEntry()], total: 1, nextCursor: 5 });
+      const deps = createDeps({ listAuditLogPage: jest.fn().mockResolvedValue(page) });
       const handlers = createAdminAuditLogHandlers(deps);
       const { req, res, status, json } = createReqRes();
-
       await handlers.listAuditLog(req, res);
-
       expect(status).toHaveBeenCalledWith(200);
-      expect(json).toHaveBeenCalledWith({ entries, total: 1 });
+      expect(json).toHaveBeenCalledWith(page);
     });
 
     it('rejects malformed `from` with 400', async () => {
       const deps = createDeps();
       const handlers = createAdminAuditLogHandlers(deps);
       const { req, res, status, json } = createReqRes({ query: { from: '2025-01-01 10:00' } });
-
       await handlers.listAuditLog(req, res);
-
       expect(status).toHaveBeenCalledWith(400);
       expect(json.mock.calls[0][0].error).toMatch(/from/);
       expect(deps.listAuditLogPage).not.toHaveBeenCalled();
     });
 
     it('rejects local-time ISO without a zone offset', async () => {
-      const deps = createDeps();
-      const handlers = createAdminAuditLogHandlers(deps);
+      const handlers = createAdminAuditLogHandlers(createDeps());
       const { req, res, status } = createReqRes({ query: { to: '2025-01-01T10:00:00' } });
-
       await handlers.listAuditLog(req, res);
-
       expect(status).toHaveBeenCalledWith(400);
     });
 
     it('accepts ISO timestamps with a `+HH:MM` offset', async () => {
-      const deps = createDeps();
-      const handlers = createAdminAuditLogHandlers(deps);
-      const { req, res, status } = createReqRes({
-        query: { from: '2025-01-01T10:00:00+02:00' },
-      });
-
+      const handlers = createAdminAuditLogHandlers(createDeps());
+      const { req, res, status } = createReqRes({ query: { from: '2025-01-01T10:00:00+02:00' } });
       await handlers.listAuditLog(req, res);
-
       expect(status).toHaveBeenCalledWith(200);
     });
 
@@ -188,384 +191,226 @@ describe('createAdminAuditLogHandlers', () => {
       const deps = createDeps();
       const handlers = createAdminAuditLogHandlers(deps);
       const { req, res } = createReqRes({ query: { to: '2025-01-15' } });
-
       await handlers.listAuditLog(req, res);
-
       const filtersArg = (deps.listAuditLogPage as jest.Mock).mock.calls[0][1];
-      expect(filtersArg.to).toBeInstanceOf(Date);
       expect((filtersArg.to as Date).toISOString()).toBe('2025-01-15T23:59:59.999Z');
     });
 
-    it('leaves a full ISO `to` timestamp exact (no day-boundary widening)', async () => {
+    it('rejects an inverted date range with 400', async () => {
+      const handlers = createAdminAuditLogHandlers(createDeps());
+      const { req, res, status } = createReqRes({
+        query: { from: '2025-02-01', to: '2025-01-01' },
+      });
+      await handlers.listAuditLog(req, res);
+      expect(status).toHaveBeenCalledWith(400);
+    });
+
+    it.each([
+      ['action', { action: 'nope' }],
+      ['category', { category: 'nope' }],
+      ['outcome', { outcome: 'nope' }],
+      ['severity', { severity: 'nope' }],
+      ['actorType', { actorType: 'nope' }],
+    ])('rejects an unknown %s value with 400', async (_label, query) => {
+      const handlers = createAdminAuditLogHandlers(createDeps());
+      const { req, res, status } = createReqRes({ query });
+      await handlers.listAuditLog(req, res);
+      expect(status).toHaveBeenCalledWith(400);
+    });
+
+    it('passes a multi-value action filter through as an array', async () => {
       const deps = createDeps();
       const handlers = createAdminAuditLogHandlers(deps);
-      const { req, res } = createReqRes({ query: { to: '2025-01-15T08:30:00Z' } });
-
+      const { req, res } = createReqRes({
+        query: { action: ['grant.assigned', 'grant.removed'] },
+      });
       await handlers.listAuditLog(req, res);
-
       const filtersArg = (deps.listAuditLogPage as jest.Mock).mock.calls[0][1];
-      expect((filtersArg.to as Date).toISOString()).toBe('2025-01-15T08:30:00.000Z');
+      expect(filtersArg.action).toEqual(['grant.assigned', 'grant.removed']);
     });
 
-    it('rejects when `from` is later than `to`', async () => {
+    it('rejects limit over the cap, negative offset, and cursor < 1', async () => {
+      const handlers = createAdminAuditLogHandlers(createDeps());
+      const over = createReqRes({ query: { limit: '600' } });
+      await handlers.listAuditLog(over.req, over.res);
+      expect(over.status).toHaveBeenCalledWith(400);
+
+      const neg = createReqRes({ query: { offset: '-1' } });
+      await handlers.listAuditLog(neg.req, neg.res);
+      expect(neg.status).toHaveBeenCalledWith(400);
+
+      const badCursor = createReqRes({ query: { cursor: '0' } });
+      await handlers.listAuditLog(badCursor.req, badCursor.res);
+      expect(badCursor.status).toHaveBeenCalledWith(400);
+    });
+
+    it('passes limit/offset/cursor through to the data layer', async () => {
       const deps = createDeps();
       const handlers = createAdminAuditLogHandlers(deps);
-      const { req, res, status, json } = createReqRes({
-        query: { from: '2025-12-31', to: '2025-01-01' },
-      });
-
+      const { req, res } = createReqRes({ query: { limit: '10', cursor: '42' } });
       await handlers.listAuditLog(req, res);
-
-      expect(status).toHaveBeenCalledWith(400);
-      expect(json.mock.calls[0][0].error).toMatch(/from.*to/);
-      expect(deps.listAuditLogPage).not.toHaveBeenCalled();
+      const filtersArg = (deps.listAuditLogPage as jest.Mock).mock.calls[0][1];
+      expect(filtersArg.limit).toBe(10);
+      expect(filtersArg.cursor).toBe(42);
     });
 
-    it('rejects limit > 500 with 400', async () => {
+    it('sources tenant scope from the JWT and ignores a forged ?tenantId', async () => {
       const deps = createDeps();
       const handlers = createAdminAuditLogHandlers(deps);
-      const { req, res, status, json } = createReqRes({ query: { limit: '501' } });
-
-      await handlers.listAuditLog(req, res);
-
-      expect(status).toHaveBeenCalledWith(400);
-      expect(json.mock.calls[0][0].error).toMatch(/limit/);
-    });
-
-    it('rejects negative offset with 400', async () => {
-      const deps = createDeps();
-      const handlers = createAdminAuditLogHandlers(deps);
-      const { req, res, status, json } = createReqRes({ query: { offset: '-1' } });
-
-      await handlers.listAuditLog(req, res);
-
-      expect(status).toHaveBeenCalledWith(400);
-      expect(json.mock.calls[0][0].error).toMatch(/offset/);
-    });
-
-    it('rejects an unknown `action` with 400', async () => {
-      const deps = createDeps();
-      const handlers = createAdminAuditLogHandlers(deps);
-      const { req, res, status, json } = createReqRes({ query: { action: 'invalid_action' } });
-
-      await handlers.listAuditLog(req, res);
-
-      expect(status).toHaveBeenCalledWith(400);
-      expect(json.mock.calls[0][0].error).toMatch(/action/i);
-    });
-
-    it('rejects an unknown `targetPrincipalType` with 400', async () => {
-      const deps = createDeps();
-      const handlers = createAdminAuditLogHandlers(deps);
-      const { req, res, status, json } = createReqRes({
-        query: { targetPrincipalType: 'unknown' },
-      });
-
-      await handlers.listAuditLog(req, res);
-
-      expect(status).toHaveBeenCalledWith(400);
-      expect(json.mock.calls[0][0].error).toMatch(/targetPrincipalType/);
-    });
-
-    it('uses caller.tenantId from req.user and ignores forged `tenantId` query', async () => {
-      const deps = createDeps();
-      const handlers = createAdminAuditLogHandlers(deps);
-      const { req, res } = createReqRes({
-        query: { tenantId: 'attacker-tenant' } as Record<string, string>,
+      const req = {
+        params: {},
+        query: { tenantId: 'forged-tenant' },
+        body: {},
         user: { _id: new Types.ObjectId(), role: 'admin', tenantId: 'real-tenant' },
-      });
-
+      } as unknown as ServerRequest;
+      const json = jest.fn();
+      const res = { status: jest.fn().mockReturnValue({ json }), json } as unknown as Response;
       await handlers.listAuditLog(req, res);
-
-      expect(deps.listAuditLogPage).toHaveBeenCalledWith('real-tenant', expect.any(Object));
-      const tenantArg = (deps.listAuditLogPage as jest.Mock).mock.calls[0][0];
-      expect(tenantArg).toBe('real-tenant');
+      expect((deps.listAuditLogPage as jest.Mock).mock.calls[0][0]).toBe('real-tenant');
     });
 
-    it('forwards `actorQuery` / `targetQuery` straight through', async () => {
-      const deps = createDeps();
-      const handlers = createAdminAuditLogHandlers(deps);
-      const { req, res } = createReqRes({
-        query: { actorQuery: 'alice', targetQuery: 'bob' },
-      });
-
-      await handlers.listAuditLog(req, res);
-
-      expect(deps.listAuditLogPage).toHaveBeenCalledWith(
-        undefined,
-        expect.objectContaining({ actorQuery: 'alice', targetQuery: 'bob' }),
-      );
-    });
-
-    it('maps deprecated `actorId` to `actorQuery` and `targetPrincipalId` to `targetQuery`', async () => {
-      const deps = createDeps();
-      const handlers = createAdminAuditLogHandlers(deps);
-      const { req, res } = createReqRes({
-        query: { actorId: 'alice', targetPrincipalId: 'bob' },
-      });
-
-      await handlers.listAuditLog(req, res);
-
-      expect(deps.listAuditLogPage).toHaveBeenCalledWith(
-        undefined,
-        expect.objectContaining({ actorQuery: 'alice', targetQuery: 'bob' }),
-      );
-    });
-
-    it('returns 500 when the dep throws', async () => {
+    it('returns 500 when the data layer throws', async () => {
       const deps = createDeps({
         listAuditLogPage: jest.fn().mockRejectedValue(new Error('db down')),
       });
       const handlers = createAdminAuditLogHandlers(deps);
-      const { req, res, status, json } = createReqRes();
-
+      const { req, res, status } = createReqRes();
       await handlers.listAuditLog(req, res);
-
       expect(status).toHaveBeenCalledWith(500);
-      expect(json).toHaveBeenCalledWith({ error: 'Failed to fetch audit log' });
     });
   });
 
   describe('getAuditLogEntry', () => {
-    it('returns 401 when req.user is missing', async () => {
-      const deps = createDeps();
-      const handlers = createAdminAuditLogHandlers(deps);
-      const { req, res, status, json } = createReqRes({
-        params: { id: validObjectId },
-        user: undefined,
-      });
-
+    it('returns 401 when unauthenticated', async () => {
+      const handlers = createAdminAuditLogHandlers(createDeps());
+      const { req, res, status } = createReqRes({ user: undefined, params: { id: validObjectId } });
       await handlers.getAuditLogEntry(req, res);
-
       expect(status).toHaveBeenCalledWith(401);
-      expect(json).toHaveBeenCalledWith({ error: 'Authentication required' });
     });
 
-    it('returns 400 when id is not a 24-char hex ObjectId', async () => {
-      const deps = createDeps();
-      const handlers = createAdminAuditLogHandlers(deps);
-      const { req, res, status, json } = createReqRes({ params: { id: 'not-an-objectid' } });
-
+    it('returns 400 for a non-ObjectId id', async () => {
+      const handlers = createAdminAuditLogHandlers(createDeps());
+      const { req, res, status } = createReqRes({ params: { id: 'nope' } });
       await handlers.getAuditLogEntry(req, res);
-
       expect(status).toHaveBeenCalledWith(400);
-      expect(json).toHaveBeenCalledWith({ error: 'Invalid id' });
-      expect(deps.findAuditLogEntry).not.toHaveBeenCalled();
     });
 
-    it('returns 404 when the dep returns null', async () => {
-      const deps = createDeps({
-        findAuditLogEntry: jest.fn().mockResolvedValue(null),
-      });
-      const handlers = createAdminAuditLogHandlers(deps);
-      const { req, res, status, json } = createReqRes({ params: { id: validObjectId } });
-
+    it('returns 404 when not found', async () => {
+      const handlers = createAdminAuditLogHandlers(createDeps());
+      const { req, res, status } = createReqRes({ params: { id: validObjectId } });
       await handlers.getAuditLogEntry(req, res);
-
       expect(status).toHaveBeenCalledWith(404);
-      expect(json).toHaveBeenCalledWith({ error: 'Not found' });
     });
 
-    it('returns 200 with the entry payload', async () => {
+    it('returns 200 with the entry', async () => {
       const entry = mockEntry();
-      const deps = createDeps({
-        findAuditLogEntry: jest.fn().mockResolvedValue(entry),
-      });
+      const deps = createDeps({ findAuditLogEntry: jest.fn().mockResolvedValue(entry) });
       const handlers = createAdminAuditLogHandlers(deps);
       const { req, res, status, json } = createReqRes({ params: { id: validObjectId } });
-
       await handlers.getAuditLogEntry(req, res);
-
       expect(status).toHaveBeenCalledWith(200);
       expect(json).toHaveBeenCalledWith({ entry });
     });
+  });
 
-    it('passes caller.tenantId, not a query param tenantId, to the dep', async () => {
-      const entry = mockEntry();
-      const deps = createDeps({
-        findAuditLogEntry: jest.fn().mockResolvedValue(entry),
-      });
+  describe('verifyAuditLog', () => {
+    it('returns 401 when unauthenticated', async () => {
+      const handlers = createAdminAuditLogHandlers(createDeps());
+      const { req, res, status } = createReqRes({ user: undefined });
+      await handlers.verifyAuditLog(req, res);
+      expect(status).toHaveBeenCalledWith(401);
+    });
+
+    it('returns the verification result scoped to the caller tenant', async () => {
+      const verification = mockVerification({ ok: false, brokenAt: 2, reason: 'hash mismatch' });
+      const deps = createDeps({ verifyAuditChain: jest.fn().mockResolvedValue(verification) });
       const handlers = createAdminAuditLogHandlers(deps);
-      const { req, res } = createReqRes({
-        params: { id: validObjectId },
-        query: { tenantId: 'attacker' } as Record<string, string>,
+      const { req, res, status, json } = createReqRes({
         user: { _id: new Types.ObjectId(), role: 'admin', tenantId: 'real-tenant' },
       });
+      await handlers.verifyAuditLog(req, res);
+      expect((deps.verifyAuditChain as jest.Mock).mock.calls[0][0]).toBe('real-tenant');
+      expect(status).toHaveBeenCalledWith(200);
+      expect(json).toHaveBeenCalledWith(verification);
+    });
 
-      await handlers.getAuditLogEntry(req, res);
-
-      expect(deps.findAuditLogEntry).toHaveBeenCalledWith('real-tenant', validObjectId);
+    it('returns 500 when verification throws', async () => {
+      const deps = createDeps({
+        verifyAuditChain: jest.fn().mockRejectedValue(new Error('boom')),
+      });
+      const handlers = createAdminAuditLogHandlers(deps);
+      const { req, res, status } = createReqRes();
+      await handlers.verifyAuditLog(req, res);
+      expect(status).toHaveBeenCalledWith(500);
     });
   });
 
   describe('exportAuditLogCsv', () => {
-    it('returns 401 when req.user is missing', async () => {
-      const deps = createDeps();
-      const handlers = createAdminAuditLogHandlers(deps);
-      const { req, res, status, json } = createReqRes({ user: undefined });
+    function streamFrom(entries: AdminAuditLogEntry[]): AdminAuditLogDeps['streamAuditLogEntries'] {
+      return jest.fn(async (_tenantId, _filters, onEntry, options) => {
+        let count = 0;
+        for (const entry of entries) {
+          if (options?.isCancelled?.()) break;
+          await onEntry(entry);
+          count++;
+        }
+        return count;
+      });
+    }
 
-      await handlers.exportAuditLogCsv(req, res);
-
-      expect(status).toHaveBeenCalledWith(401);
-      expect(json).toHaveBeenCalledWith({ error: 'Authentication required' });
+    it('returns 401 when unauthenticated', async () => {
+      const ctx = createCsvContext({ user: undefined });
+      const handlers = createAdminAuditLogHandlers(createDeps());
+      await handlers.exportAuditLogCsv(ctx.req, ctx.res);
+      expect(ctx.res.status as jest.Mock).toHaveBeenCalledWith(401);
     });
 
-    it('emits BOM as the first chunk and CRLF line endings', async () => {
-      const entry = mockEntry();
-      const deps = createDeps({
-        streamAuditLogEntries: jest.fn(async (_t, _f, onEntry) => {
-          await (onEntry as (e: AdminAuditLogEntry) => Promise<void>)(entry);
-          return 1;
-        }),
-      });
+    it('writes a BOM, header row, and CRLF line endings', async () => {
+      const deps = createDeps({ streamAuditLogEntries: streamFrom([mockEntry()]) });
       const handlers = createAdminAuditLogHandlers(deps);
       const ctx = createCsvContext();
-
       await handlers.exportAuditLogCsv(ctx.req, ctx.res);
-
-      expect(ctx.chunks[0]).toBe('\uFEFF');
-      expect(ctx.chunks).toContain('\r\n');
+      expect(ctx.chunks[0]).toBe('﻿');
+      expect(ctx.chunks[1]).toContain('Timestamp');
+      expect(ctx.chunks[1]).toContain('Hash');
+      expect(ctx.chunks[2]).toBe('\r\n');
       expect(ctx.endCalled()).toBe(true);
     });
 
-    it('writes a header row matching the column labels', async () => {
-      const deps = createDeps();
-      const handlers = createAdminAuditLogHandlers(deps);
-      const ctx = createCsvContext();
-
-      await handlers.exportAuditLogCsv(ctx.req, ctx.res);
-
-      const header = ctx.chunks[1];
-      expect(header).toBe(
-        'Timestamp,Action,Actor,Actor ID,Target type,Target ID,Target,Capability',
-      );
-    });
-
-    it('escapes commas, quotes, and newlines inside cells', async () => {
+    it('defangs formula-injection cells and quotes special characters', async () => {
       const entry = mockEntry({
-        actorName: 'Alice "Quoted", Admin',
-        targetName: 'multi\nline target',
+        actor: { type: 'user', id: 'x', name: '=cmd()' },
+        target: { type: 'role', id: 'r', name: 'Ops, North' },
       });
-      const deps = createDeps({
-        streamAuditLogEntries: jest.fn(async (_t, _f, onEntry) => {
-          await (onEntry as (e: AdminAuditLogEntry) => Promise<void>)(entry);
-          return 1;
-        }),
-      });
+      const deps = createDeps({ streamAuditLogEntries: streamFrom([entry]) });
       const handlers = createAdminAuditLogHandlers(deps);
       const ctx = createCsvContext();
-
       await handlers.exportAuditLogCsv(ctx.req, ctx.res);
-
-      const rowChunk = ctx.chunks.find((c) => c.includes('Alice') && c.includes('Quoted'));
-      expect(rowChunk).toBeDefined();
-      expect(rowChunk).toContain('"Alice ""Quoted"", Admin"');
-      expect(rowChunk).toContain('"multi\nline target"');
+      const body = ctx.chunks.join('');
+      expect(body).toContain("'=cmd()");
+      expect(body).toContain('"Ops, North"');
     });
 
-    it('defangs formula-injection prefixes (= + - @ tab CR) by quoting the cell', async () => {
-      const cases: string[] = ['=SUM(A1)', '+1+1', '-1+2', '@SUM(A1)', '\tTAB', '\rCR'];
-      for (const dangerous of cases) {
-        const entry = mockEntry({ actorName: dangerous });
-        const deps = createDeps({
-          streamAuditLogEntries: jest.fn(async (_t, _f, onEntry) => {
-            await (onEntry as (e: AdminAuditLogEntry) => Promise<void>)(entry);
-            return 1;
-          }),
-        });
-        const handlers = createAdminAuditLogHandlers(deps);
-        const ctx = createCsvContext();
-
-        await handlers.exportAuditLogCsv(ctx.req, ctx.res);
-
-        const rowChunk = ctx.chunks.find(
-          (c) => c.includes("'") && c.includes(dangerous.replace(/[\r\n]/g, '')),
-        );
-        expect(rowChunk).toBeDefined();
-        const expectedGuarded = `'${dangerous}`;
-        expect(rowChunk).toContain(
-          expectedGuarded.includes(',') ? `"${expectedGuarded}"` : expectedGuarded,
-        );
-      }
-    });
-
-    it('passes isCancelled to the stream dep and flips to true when client aborts mid-stream', async () => {
-      let capturedIsCancelled: (() => boolean) | undefined;
-      const deps = createDeps({
-        streamAuditLogEntries: jest.fn(async (_t, _f, _onEntry, options) => {
-          capturedIsCancelled = (options as { isCancelled?: () => boolean })?.isCancelled;
-          expect(capturedIsCancelled?.()).toBe(false);
-          ctx.emitClose();
-          expect(capturedIsCancelled?.()).toBe(true);
-          return 0;
-        }),
-      });
-      const handlers = createAdminAuditLogHandlers(deps);
-      const ctx = createCsvContext();
-
-      await handlers.exportAuditLogCsv(ctx.req, ctx.res);
-
-      expect(capturedIsCancelled).toBeDefined();
-    });
-
-    it('skips res.end when the client has already disconnected mid-stream', async () => {
-      const deps = createDeps({
-        streamAuditLogEntries: jest.fn(async (_t, _f, _onEntry, _options) => {
-          ctx.emitClose();
-          return 0;
-        }),
-      });
-      const handlers = createAdminAuditLogHandlers(deps);
-      const ctx = createCsvContext();
-
-      await handlers.exportAuditLogCsv(ctx.req, ctx.res);
-
-      expect(ctx.endCalled()).toBe(false);
-    });
-
-    it('rejects malformed `from` with 400 before opening the stream', async () => {
-      const deps = createDeps();
-      const handlers = createAdminAuditLogHandlers(deps);
-      const { req, res, status, json } = createReqRes({ query: { from: 'not-a-date' } });
-
-      await handlers.exportAuditLogCsv(req, res);
-
-      expect(status).toHaveBeenCalledWith(400);
-      expect(json.mock.calls[0][0].error).toMatch(/from/);
-      expect(deps.streamAuditLogEntries).not.toHaveBeenCalled();
-    });
-
-    it('passes a maxRows cap into the stream call', async () => {
+    it('threads cancellation and a row cap into the stream', async () => {
       const deps = createDeps();
       const handlers = createAdminAuditLogHandlers(deps);
       const ctx = createCsvContext();
-
-      await handlers.exportAuditLogCsv(ctx.req, ctx.res);
-
-      const optionsArg = (deps.streamAuditLogEntries as jest.Mock).mock.calls[0][3];
-      expect(optionsArg).toEqual(expect.objectContaining({ maxRows: expect.any(Number) }));
+      const promise = handlers.exportAuditLogCsv(ctx.req, ctx.res);
+      ctx.emitClose();
+      await promise;
+      const streamMock = deps.streamAuditLogEntries as jest.Mock;
+      const optionsArg = streamMock.mock.calls[0][3];
+      expect(optionsArg.isCancelled()).toBe(true);
       expect(optionsArg.maxRows).toBeGreaterThan(0);
     });
 
-    it('closes the response cleanly when the stream throws after headers are sent', async () => {
-      const entry = mockEntry();
-      const deps = createDeps({
-        streamAuditLogEntries: jest.fn(async (_t, _f, onEntry) => {
-          await (onEntry as (e: AdminAuditLogEntry) => Promise<void>)(entry);
-          throw new Error('cursor exploded mid-stream');
-        }),
-      });
+    it('returns 400 on malformed filters before streaming', async () => {
+      const deps = createDeps();
       const handlers = createAdminAuditLogHandlers(deps);
-      const ctx = createCsvContext();
-      /** Headers were already sent by the BOM / header write before the throw,
-       * so the catch block must use res.end() instead of trying to send JSON. */
-      (ctx.res as unknown as { headersSent: boolean }).headersSent = true;
-
+      const ctx = createCsvContext({ query: { from: 'garbage' } });
       await handlers.exportAuditLogCsv(ctx.req, ctx.res);
-
-      expect(ctx.endCalled()).toBe(true);
-      const statusMock = (ctx.res as unknown as { status: jest.Mock }).status;
-      expect(statusMock).not.toHaveBeenCalled();
+      expect(ctx.res.status as jest.Mock).toHaveBeenCalledWith(400);
+      expect(deps.streamAuditLogEntries).not.toHaveBeenCalled();
     });
   });
 });

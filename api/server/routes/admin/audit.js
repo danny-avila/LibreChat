@@ -14,6 +14,7 @@ const handlers = createAdminAuditLogHandlers({
   listAuditLogPage: db.listAuditLogPage,
   findAuditLogEntry: db.findAuditLogEntry,
   streamAuditLogEntries: db.streamAuditLogEntries,
+  verifyAuditChain: db.verifyAuditChain,
 });
 
 /**
@@ -26,8 +27,9 @@ const handlers = createAdminAuditLogHandlers({
 router.use(requireJwtAuth, requireAdminAccess, requireAuditLogRead);
 
 router.get('/', handlers.listAuditLog);
-/** `/export.csv` MUST precede `/:id` so it isn't matched as `{ id: 'export.csv' }`. */
+/** Literal sub-paths MUST precede `/:id` so they aren't matched as `{ id }`. */
 router.get('/export.csv', handlers.exportAuditLogCsv);
+router.get('/verify', handlers.verifyAuditLog);
 router.get('/:id', handlers.getAuditLogEntry);
 
 module.exports = router;
