@@ -54,6 +54,20 @@ jest.mock('@librechat/api', () => {
       }
       return params;
     }),
+    serializeUserForExchange: jest.fn((user) => {
+      const userId = String(user._id);
+      return {
+        _id: userId,
+        id: userId,
+        email: user.email,
+        name: user.name ?? '',
+        username: user.username ?? '',
+        role: user.role ?? 'USER',
+        avatar: user.avatar,
+        provider: user.provider,
+        openidId: user.openidId,
+      };
+    }),
   };
 });
 
@@ -291,11 +305,13 @@ describe('admin auth Google refresh route', () => {
 
     findUsers.mockResolvedValue([
       {
-        _id: { toString: () => 'user-id' },
+        _id: 'user-id',
         id: 'user-id',
         email: 'admin@example.com',
         name: 'Admin',
+        username: 'admin',
         role: 'ADMIN',
+        provider: 'google',
         googleId: 'google-admin-id',
       },
     ]);
@@ -331,10 +347,13 @@ describe('admin auth Google refresh route', () => {
       token: 'admin-jwt',
       refreshToken: 'incoming-google-refresh',
       user: {
+        _id: 'user-id',
         id: 'user-id',
         email: 'admin@example.com',
         name: 'Admin',
+        username: 'admin',
         role: 'ADMIN',
+        provider: 'google',
       },
       expiresAt: expect.any(Number),
     });
@@ -388,12 +407,12 @@ describe('admin auth Google refresh route', () => {
     expect(response.body.error_code).toBe('REFRESH_FAILED');
   });
 
-  it('returns IDP_INCOMPLETE when Google omits access_token or id_token', async () => {
+  it('returns IDP_INCOMPLETE when Google omits access_token', async () => {
     global.fetch = jest.fn(() =>
       Promise.resolve({
         ok: true,
         status: 200,
-        json: () => Promise.resolve({ access_token: 'only-access' }),
+        json: () => Promise.resolve({ id_token: validIdToken() }),
       }),
     );
 
@@ -403,6 +422,71 @@ describe('admin auth Google refresh route', () => {
 
     expect(response.status).toBe(502);
     expect(response.body.error_code).toBe('IDP_INCOMPLETE');
+  });
+
+  it('returns IDP_INCOMPLETE when Google returns a non-JSON token body', async () => {
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.reject(new SyntaxError('Unexpected token < in JSON at position 0')),
+      }),
+    );
+
+    const response = await request(app)
+      .post('/api/admin/oauth/refresh')
+      .send({ refresh_token: 'incoming-google-refresh', provider: 'google' });
+
+    expect(response.status).toBe(502);
+    expect(response.body.error_code).toBe('IDP_INCOMPLETE');
+  });
+
+  it('falls back to Google userinfo when the refresh response omits id_token', async () => {
+    const tokenCall = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ access_token: 'google-new-access' }),
+      }),
+    );
+    const userinfoCall = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ sub: 'google-admin-id' }),
+      }),
+    );
+    global.fetch = jest.fn((url) =>
+      url === 'https://openidconnect.googleapis.com/v1/userinfo' ? userinfoCall() : tokenCall(),
+    );
+
+    const response = await request(app)
+      .post('/api/admin/oauth/refresh')
+      .send({ refresh_token: 'incoming-google-refresh', provider: 'google' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.user._id).toBe('user-id');
+    expect(userinfoCall).toHaveBeenCalled();
+  });
+
+  it('returns CLAIMS_INCOMPLETE when id_token is absent and userinfo also fails', async () => {
+    global.fetch = jest.fn((url) => {
+      if (url === 'https://openidconnect.googleapis.com/v1/userinfo') {
+        return Promise.resolve({ ok: false, status: 401, json: () => Promise.resolve({}) });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ access_token: 'google-new-access' }),
+      });
+    });
+
+    const response = await request(app)
+      .post('/api/admin/oauth/refresh')
+      .send({ refresh_token: 'incoming-google-refresh', provider: 'google' });
+
+    expect(response.status).toBe(502);
+    expect(response.body.error_code).toBe('CLAIMS_INCOMPLETE');
   });
 
   it('returns CLAIMS_INCOMPLETE when Google id_token has no sub', async () => {

@@ -191,4 +191,26 @@ describe('createOAuthHandler', () => {
       expect.any(Number),
     );
   });
+
+  it('does not forward refresh tokens for admin providers other than google or openid', async () => {
+    const handler = createOAuthHandler('http://admin.example.com/auth/discord/callback');
+    const req = buildReq({
+      user: { _id: 'user-9', email: 'd@example.com', provider: 'discord' },
+      authInfo: { refreshToken: 'discord-refresh-token' },
+    });
+    const res = buildRes();
+    const next = jest.fn();
+
+    await handler(req, res, next);
+
+    expect(mockGenerateAdminExchangeCode).toHaveBeenCalledWith(
+      {},
+      req.user,
+      'jwt-token',
+      undefined,
+      'http://admin.example.com',
+      'pkce-challenge',
+      expect.any(Number),
+    );
+  });
 });

@@ -35,6 +35,7 @@ jest.mock('@librechat/api', () => ({
 
 jest.mock('~/models', () => ({
   findUser: jest.fn(),
+  updateUser: jest.fn(),
 }));
 
 jest.mock('~/server/services/Config', () => ({
@@ -138,7 +139,8 @@ describe('socialLogin', () => {
       expect(callback).toHaveBeenCalledWith(null, existingUser);
     });
 
-    it('should fallback to finding user by email if not found by provider ID', async () => {
+    it('migrates the missing provider id when finding by email fallback', async () => {
+      const { updateUser } = require('~/models');
       const provider = 'google';
       const googleId = 'google-user-789';
       const email = 'user@example.com';
@@ -147,7 +149,6 @@ describe('socialLogin', () => {
         _id: 'user789',
         email: email,
         provider: 'google',
-        googleId: 'old-google-id',
       };
 
       findUser.mockResolvedValueOnce(null).mockResolvedValueOnce(existingUser);
@@ -172,8 +173,45 @@ describe('socialLogin', () => {
         `[${provider}Login] User found by email: ${email} but not by ${provider}Id`,
       );
 
+      expect(updateUser).toHaveBeenCalledWith('user789', { googleId });
+      expect(existingUser.googleId).toBe(googleId);
       expect(handleExistingUser).toHaveBeenCalled();
       expect(callback).toHaveBeenCalledWith(null, existingUser);
+    });
+
+    it('rejects the email fallback when the stored provider id differs from the current sub', async () => {
+      const provider = 'google';
+      const googleId = 'google-user-new';
+      const email = 'user@example.com';
+
+      const existingUser = {
+        _id: 'user789',
+        email: email,
+        provider: 'google',
+        googleId: 'google-user-old',
+      };
+
+      findUser.mockResolvedValueOnce(null).mockResolvedValueOnce(existingUser);
+
+      const mockProfile = {
+        id: googleId,
+        emails: [{ value: email, verified: true }],
+        photos: [{ value: 'https://example.com/avatar.png' }],
+        name: { givenName: 'Bob', familyName: 'Johnson' },
+      };
+
+      const loginFn = socialLogin(provider, mockGetProfileDetails);
+      const callback = jest.fn();
+
+      await loginFn(null, null, null, mockProfile, callback);
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        `[${provider}Login] Rejected email fallback for ${email}: stored ${provider}Id does not match`,
+      );
+      expect(handleExistingUser).not.toHaveBeenCalled();
+      expect(callback).toHaveBeenCalledWith(
+        expect.objectContaining({ code: ErrorTypes.AUTH_FAILED }),
+      );
     });
 
     it('should create new user if not found by provider ID or email', async () => {

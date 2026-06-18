@@ -20,6 +20,7 @@ const {
   applyAdminRefresh,
   AdminRefreshError,
   buildOpenIDRefreshParams,
+  serializeUserForExchange,
 } = require('@librechat/api');
 const { loginController } = require('~/server/controllers/auth/LoginController');
 const { hasCapability, requireCapability } = require('~/server/middleware/roles/capabilities');
@@ -37,6 +38,7 @@ const { getOpenIdConfig } = require('~/strategies');
 const middleware = require('~/server/middleware');
 
 const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
+const GOOGLE_USERINFO_ENDPOINT = 'https://openidconnect.googleapis.com/v1/userinfo';
 
 const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
 
@@ -47,6 +49,28 @@ function decodeJwtPayload(token) {
     const payload = Buffer.from(segments[1], 'base64url').toString('utf8');
     return JSON.parse(payload);
   } catch {
+    return undefined;
+  }
+}
+
+async function resolveGoogleSubFromUserinfo(accessToken) {
+  try {
+    const response = await fetch(GOOGLE_USERINFO_ENDPOINT, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!response.ok) {
+      logger.warn('[admin/oauth/refresh] Google userinfo fallback returned non-OK', {
+        status: response.status,
+      });
+      return undefined;
+    }
+    const body = await response.json().catch(() => undefined);
+    return typeof body?.sub === 'string' ? body.sub : undefined;
+  } catch (err) {
+    logger.warn('[admin/oauth/refresh] Google userinfo fallback failed', {
+      name: err?.name,
+      message: err?.message,
+    });
     return undefined;
   }
 }
@@ -87,25 +111,42 @@ async function refreshGoogleAdminSession({ refreshToken, userId, tenantId, sessi
     throw new AdminRefreshError('REFRESH_FAILED', 401, 'Refresh failed');
   }
 
-  const tokenset = await tokenResponse.json();
-  if (!tokenset.access_token || !tokenset.id_token) {
+  let tokenset;
+  try {
+    tokenset = await tokenResponse.json();
+  } catch (err) {
+    logger.warn('[admin/oauth/refresh] Google returned non-JSON body', {
+      name: err?.name,
+      message: err?.message,
+    });
+    throw new AdminRefreshError('IDP_INCOMPLETE', 502, 'Google returned a non-JSON token response');
+  }
+  if (typeof tokenset?.access_token !== 'string') {
     throw new AdminRefreshError(
       'IDP_INCOMPLETE',
       502,
-      'Google returned a tokenset missing access_token or id_token',
+      'Google returned a tokenset missing access_token',
     );
   }
 
-  const claims = decodeJwtPayload(tokenset.id_token);
-  if (!claims?.sub) {
+  let googleId;
+  if (typeof tokenset.id_token === 'string') {
+    const claims = decodeJwtPayload(tokenset.id_token);
+    if (typeof claims?.sub === 'string') {
+      googleId = claims.sub;
+    }
+  }
+  if (!googleId) {
+    googleId = await resolveGoogleSubFromUserinfo(tokenset.access_token);
+  }
+  if (!googleId) {
     throw new AdminRefreshError(
       'CLAIMS_INCOMPLETE',
       502,
-      'Google id_token has no readable claims or no sub',
+      'Could not resolve google sub from refresh response',
     );
   }
 
-  const googleId = claims.sub;
   const SAFE_USER_PROJECTION = '-password -__v -totpSecret -backupCodes';
 
   let user;
@@ -162,17 +203,11 @@ async function refreshGoogleAdminSession({ refreshToken, userId, tenantId, sessi
 
   const token = await generateToken(user, sessionExpiry);
   const expiresAt = Date.now() + sessionExpiry;
-  const responseUser = {
-    id: user.id ?? user._id?.toString(),
-    email: user.email,
-    name: user.name,
-    role: user.role,
-  };
 
   return {
     token,
     refreshToken: tokenset.refresh_token ?? refreshToken,
-    user: responseUser,
+    user: serializeUserForExchange(user),
     expiresAt,
   };
 }

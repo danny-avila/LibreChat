@@ -49,7 +49,7 @@ function createOAuthHandler(redirectUri = domains.client) {
             refreshToken =
               req.user.tokenset?.refresh_token || req.user.federatedTokens?.refresh_token;
           }
-        } else {
+        } else if (req.user.provider === 'google') {
           refreshToken = req.authInfo?.refreshToken;
         }
         const expiresAt = Date.now() + sessionExpiry;
