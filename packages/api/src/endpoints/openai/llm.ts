@@ -454,10 +454,13 @@ export function getOpenAILLMConfig({
     verbosity,
     web_search,
     promptCache,
+    promptCacheTtl,
     frequency_penalty,
     presence_penalty,
     ...modelOptions
-  } = cleanedModelOptions as Partial<t.OpenAIParameters & { promptCache?: boolean }>;
+  } = cleanedModelOptions as Partial<
+    t.OpenAIParameters & { promptCache?: boolean; promptCacheTtl?: '5m' | '1h' }
+  >;
 
   const llmConfig = Object.assign(
     {
@@ -629,6 +632,10 @@ export function getOpenAILLMConfig({
   }
   if (useOpenRouter && enablePromptCache === true) {
     llmConfig.promptCache = true;
+    /** Pass an explicit TTL when configured; otherwise the agents SDK defaults to 1h */
+    if (promptCacheTtl != null) {
+      llmConfig.promptCacheTtl = promptCacheTtl;
+    }
   }
 
   if (!useOpenRouter) {
