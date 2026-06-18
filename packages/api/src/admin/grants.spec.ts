@@ -1243,6 +1243,23 @@ describe('createAdminGrantsHandlers', () => {
       expect(status).toHaveBeenCalledWith(201);
     });
 
+    it('does not audit re-assigning a capability the role already holds', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = createDeps({
+        recordAuditEntry,
+        getCapabilitiesForPrincipal: jest
+          .fn()
+          .mockResolvedValue([{ capability: SystemCapabilities.READ_USERS }]),
+      });
+      const handlers = createAdminGrantsHandlers(deps);
+      const { req, res, status } = createReqRes({ body: assignBody, user: reqUser() });
+
+      await handlers.assignGrant(req, res);
+
+      expect(status).toHaveBeenCalledWith(201);
+      expect(recordAuditEntry).not.toHaveBeenCalled();
+    });
+
     it('fail-open: a failed audit write does not fail the grant', async () => {
       const recordAuditEntry = jest.fn().mockRejectedValue(new Error('audit down'));
       const deps = createDeps({ recordAuditEntry });
@@ -1254,7 +1271,7 @@ describe('createAdminGrantsHandlers', () => {
       expect(status).toHaveBeenCalledWith(201);
     });
 
-    it('fail-closed: a failed audit write surfaces as a 500', async () => {
+    it('fail-closed: a failed assign audit rolls back the grant and 500s', async () => {
       const recordAuditEntry = jest.fn().mockRejectedValue(new Error('audit down'));
       const deps = createDeps({ recordAuditEntry, auditFailClosed: true });
       const handlers = createAdminGrantsHandlers(deps);
@@ -1265,6 +1282,39 @@ describe('createAdminGrantsHandlers', () => {
       expect(recordAuditEntry).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ failClosed: true }),
+      );
+      // compensating rollback removes the grant we just created
+      expect(deps.revokeCapability).toHaveBeenCalledWith(
+        expect.objectContaining({
+          principalType: PrincipalType.ROLE,
+          principalId: 'editor',
+          capability: SystemCapabilities.READ_USERS,
+        }),
+      );
+      expect(status).toHaveBeenCalledWith(500);
+    });
+
+    it('fail-closed: a failed revoke audit restores the grant and 500s', async () => {
+      const recordAuditEntry = jest.fn().mockRejectedValue(new Error('audit down'));
+      const grantCapability = jest.fn().mockResolvedValue({ id: 'g1' });
+      const deps = createDeps({
+        recordAuditEntry,
+        auditFailClosed: true,
+        grantCapability,
+        revokeCapability: jest.fn().mockResolvedValue({ deletedCount: 1 }),
+      });
+      const handlers = createAdminGrantsHandlers(deps);
+      const { req, res, status } = createReqRes({ params: assignBody, user: reqUser() });
+
+      await handlers.revokeGrant(req, res);
+
+      // compensating re-grant restores access removed before the audit failed
+      expect(grantCapability).toHaveBeenCalledWith(
+        expect.objectContaining({
+          principalType: PrincipalType.ROLE,
+          principalId: 'editor',
+          capability: SystemCapabilities.READ_USERS,
+        }),
       );
       expect(status).toHaveBeenCalledWith(500);
     });

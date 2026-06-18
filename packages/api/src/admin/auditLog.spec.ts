@@ -1,5 +1,6 @@
 import { Types } from 'mongoose';
 import { EventEmitter } from 'events';
+import { MAX_AUDIT_EXPORT_ROWS } from '@librechat/data-schemas';
 import type {
   AdminAuditLogEntry,
   AuditChainVerification,
@@ -203,6 +204,15 @@ describe('createAdminAuditLogHandlers', () => {
       });
       await handlers.listAuditLog(req, res);
       expect(status).toHaveBeenCalledWith(400);
+    });
+
+    it('rejects an out-of-range date-only value instead of normalizing it', async () => {
+      const deps = createDeps();
+      const handlers = createAdminAuditLogHandlers(deps);
+      const { req, res, status } = createReqRes({ query: { from: '2025-02-31' } });
+      await handlers.listAuditLog(req, res);
+      expect(status).toHaveBeenCalledWith(400);
+      expect(deps.listAuditLogPage).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -411,6 +421,18 @@ describe('createAdminAuditLogHandlers', () => {
       await handlers.exportAuditLogCsv(ctx.req, ctx.res);
       expect(ctx.res.status as jest.Mock).toHaveBeenCalledWith(400);
       expect(deps.streamAuditLogEntries).not.toHaveBeenCalled();
+    });
+
+    it('appends an explicit marker when the export hits the row cap', async () => {
+      const deps = createDeps({
+        streamAuditLogEntries: jest.fn().mockResolvedValue(MAX_AUDIT_EXPORT_ROWS),
+      });
+      const handlers = createAdminAuditLogHandlers(deps);
+      const ctx = createCsvContext();
+      await handlers.exportAuditLogCsv(ctx.req, ctx.res);
+      const body = ctx.chunks.join('');
+      expect(body).toContain('TRUNCATED');
+      expect(ctx.endCalled()).toBe(true);
     });
   });
 });

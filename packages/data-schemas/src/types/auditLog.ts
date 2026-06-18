@@ -148,11 +148,29 @@ export interface PurgeAuditLogOptions {
   confirm: boolean;
 }
 
+/** A trusted boundary marker proving a prefix was purged by an authorized
+ * retention run rather than deleted by an attacker. Persisted by the caller
+ * (e.g. alongside retention-job records) and passed back to `verifyAuditChain`. */
+export interface AuditCheckpoint {
+  /** Highest `seq` that was purged; the chain resumes at `throughSeq + 1`. */
+  throughSeq: number;
+  /** Hash of the last purged entry === `prevHash` of the new earliest entry. */
+  prevHash: string;
+}
+
 export interface PurgeAuditLogResult {
   deletedCount: number;
-  /** The new earliest remaining entry, which becomes the trusted checkpoint the
-   * verifier chains forward from. Absent when the chain is now empty. */
-  checkpoint?: { seq: number; prevHash: string };
+  /** The boundary the verifier must be given to accept the now-shorter chain.
+   * Absent when the chain is now empty or nothing was purged. */
+  checkpoint?: AuditCheckpoint;
+}
+
+export interface VerifyAuditChainOptions {
+  /** When the chain no longer starts at `seq: 1` (a prefix was purged), the
+   * verifier requires this boundary to distinguish an authorized retention purge
+   * from an attacker deleting the oldest rows. Without it, a non-genesis start
+   * fails verification rather than being silently trusted. */
+  trustedCheckpoint?: AuditCheckpoint;
 }
 
 /** Re-exported so consumers can import the entry shape and its supporting types

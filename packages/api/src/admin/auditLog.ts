@@ -124,6 +124,17 @@ function parseIsoDate(
   if (!ISO_DATE_RE.test(raw)) return { ok: false, error: 'Date must be ISO 8601' };
   const d = new Date(raw);
   if (Number.isNaN(d.getTime())) return { ok: false, error: 'Invalid date' };
+  if (DATE_ONLY_RE.test(raw)) {
+    /**
+     * `new Date('2025-02-31')` silently normalizes to March 3 rather than
+     * throwing. Round-trip the parsed Y/M/D so an out-of-range day is rejected
+     * instead of quietly shifting the queried window.
+     */
+    const [year, month, day] = raw.split('-').map(Number);
+    if (d.getUTCFullYear() !== year || d.getUTCMonth() + 1 !== month || d.getUTCDate() !== day) {
+      return { ok: false, error: 'Invalid date' };
+    }
+  }
   if (boundary === 'end' && DATE_ONLY_RE.test(raw)) {
     d.setUTCHours(23, 59, 59, 999);
   }
@@ -378,7 +389,7 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps): {
       await writeChunk(formatCsvHeader());
       await writeChunk('\r\n');
 
-      await streamAuditLogEntries(
+      const written = await streamAuditLogEntries(
         caller.tenantId,
         filters.value,
         async (entry) => {
@@ -391,7 +402,23 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps): {
 
       res.removeListener('close', markAborted);
       req.removeListener('aborted', markAborted);
-      if (!clientAborted) res.end();
+      if (!clientAborted) {
+        /**
+         * Hitting the row cap means the export is incomplete. Surfacing this is a
+         * compliance requirement — a silently truncated export reads as a
+         * complete record. Emit an explicit trailing marker and log it; callers
+         * should narrow the date range for the full set.
+         */
+        if (written >= MAX_AUDIT_EXPORT_ROWS) {
+          logger.warn('[adminAuditLog] CSV export truncated at row cap', {
+            maxRows: MAX_AUDIT_EXPORT_ROWS,
+          });
+          await writeChunk(
+            `# TRUNCATED: export capped at ${MAX_AUDIT_EXPORT_ROWS} rows — narrow the from/to range to export the complete set\r\n`,
+          );
+        }
+        res.end();
+      }
     } catch (err) {
       logger.error('[adminAuditLog] export error:', err);
       if (!res.headersSent) {

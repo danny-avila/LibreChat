@@ -173,6 +173,20 @@ describe('auditLog methods', () => {
       await expect(doc!.save()).rejects.toThrow(/append-only/);
       await expect(doc!.deleteOne()).rejects.toThrow(/append-only/);
     });
+
+    it('rejects bulkWrite (which would bypass query/document middleware)', async () => {
+      await methods.recordAuditEntry(baseInput());
+      await expect(
+        AuditLog.bulkWrite([
+          {
+            updateOne: {
+              filter: { chainKey: 'tenant-a' },
+              update: { $set: { 'actor.name': 'x' } },
+            },
+          },
+        ]),
+      ).rejects.toThrow(/append-only/);
+    });
   });
 
   describe('listAuditLogPage', () => {
@@ -338,6 +352,26 @@ describe('auditLog methods', () => {
       expect(result.ok).toBe(false);
       expect(result.brokenAt).toBe(2);
     });
+
+    it('does not silently trust a deleted prefix without a checkpoint', async () => {
+      await seed(3);
+      // attacker deletes the oldest row through the raw driver
+      await AuditLog.collection.deleteOne({ chainKey: 'tenant-a', seq: 1 });
+      const result = await methods.verifyAuditChain('tenant-a');
+      expect(result.ok).toBe(false);
+      expect(result.brokenAt).toBe(2);
+      expect(result.reason).toMatch(/non-genesis|prefix/);
+    });
+
+    it('rejects a checkpoint that does not match the remaining chain', async () => {
+      await seed(3);
+      await AuditLog.collection.deleteOne({ chainKey: 'tenant-a', seq: 1 });
+      const result = await methods.verifyAuditChain('tenant-a', {
+        trustedCheckpoint: { throughSeq: 1, prevHash: 'f'.repeat(64) },
+      });
+      expect(result.ok).toBe(false);
+      expect(result.reason).toMatch(/checkpoint mismatch/);
+    });
   });
 
   describe('purgeAuditLogEntries', () => {
@@ -365,11 +399,18 @@ describe('auditLog methods', () => {
         confirm: true,
       });
       expect(result.deletedCount).toBeGreaterThanOrEqual(1);
-      expect(result.checkpoint?.seq).toBeGreaterThan(1);
+      expect(result.checkpoint?.throughSeq).toBeGreaterThanOrEqual(1);
 
-      const verification = await methods.verifyAuditChain('tenant-a');
-      expect(verification.ok).toBe(true);
-      expect(verification.range?.firstSeq).toBeGreaterThan(1);
+      // Without the checkpoint, the now non-genesis start is flagged, not trusted.
+      const unverified = await methods.verifyAuditChain('tenant-a');
+      expect(unverified.ok).toBe(false);
+
+      // With the checkpoint the purge returned, the shorter chain verifies.
+      const verified = await methods.verifyAuditChain('tenant-a', {
+        trustedCheckpoint: result.checkpoint,
+      });
+      expect(verified.ok).toBe(true);
+      expect(verified.range?.firstSeq).toBeGreaterThan(1);
     });
   });
 });

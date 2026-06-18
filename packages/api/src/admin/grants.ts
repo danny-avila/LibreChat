@@ -422,6 +422,15 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
         }
       }
 
+      /** Capture prior state before the idempotent upsert so a re-assignment of
+       * a capability the role already holds is not audited as a new change. */
+      const priorGrants = await getCapabilitiesForPrincipal({
+        principalType,
+        principalId,
+        tenantId,
+      });
+      const alreadyHeld = priorGrants.some((g) => g.capability === capability);
+
       const grant = await grantCapability({
         principalType,
         principalId,
@@ -432,14 +441,29 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
       if (!grant) {
         return res.status(500).json({ error: 'Grant operation returned no result' });
       }
-      await emitAudit({
-        action: 'grant.assigned',
-        caller,
-        principalType,
-        principalId,
-        capability,
-        context: buildAuditContext(req),
-      });
+      if (!alreadyHeld) {
+        try {
+          await emitAudit({
+            action: 'grant.assigned',
+            caller,
+            principalType,
+            principalId,
+            capability,
+            context: buildAuditContext(req),
+          });
+        } catch (auditErr) {
+          /** Fail-closed only (emitAudit rethrows here): roll back the grant we
+           * just created so a 5xx never leaves an unaudited grant in place. */
+          await revokeCapability({ principalType, principalId, capability, tenantId }).catch((e) =>
+            logger.error('[adminGrants] compensating revoke after audit failure failed', e),
+          );
+          logger.error(
+            '[adminGrants] assignGrant audit failed (fail-closed) — rolled back grant',
+            auditErr,
+          );
+          return res.status(500).json({ error: 'Failed to record audit entry' });
+        }
+      }
       return res.status(201).json({ grant });
     } catch (error) {
       logger.error('[adminGrants] assignGrant error:', error);
@@ -490,14 +514,35 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
       // a no-op revoke (the grant never existed) must not appear in the audit
       // trail or the forensic record becomes misleading.
       if (revokeResult.deletedCount > 0) {
-        await emitAudit({
-          action: 'grant.removed',
-          caller,
-          principalType: principalType as PrincipalType,
-          principalId,
-          capability: capability as SystemCapability,
-          context: buildAuditContext(req),
-        });
+        try {
+          await emitAudit({
+            action: 'grant.removed',
+            caller,
+            principalType: principalType as PrincipalType,
+            principalId,
+            capability: capability as SystemCapability,
+            context: buildAuditContext(req),
+          });
+        } catch (auditErr) {
+          /** Fail-closed only (emitAudit rethrows here): restore the grant we
+           * just removed so a 5xx never leaves an unaudited revoke. The original
+           * `grantedBy`/`grantedAt` are not recoverable here; restoring access is
+           * the priority on this rare error path. */
+          await grantCapability({
+            principalType: principalType as PrincipalType,
+            principalId,
+            capability: capability as SystemCapability,
+            tenantId,
+            grantedBy: caller.userId,
+          }).catch((e) =>
+            logger.error('[adminGrants] compensating re-grant after audit failure failed', e),
+          );
+          logger.error(
+            '[adminGrants] revokeGrant audit failed (fail-closed) — restored grant',
+            auditErr,
+          );
+          return res.status(500).json({ error: 'Failed to record audit entry' });
+        }
       }
       return res.status(200).json({ success: true });
     } catch (error) {

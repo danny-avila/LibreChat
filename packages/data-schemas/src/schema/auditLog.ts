@@ -144,6 +144,18 @@ auditLogSchema.pre('save', function (next) {
 });
 
 /**
+ * `Model.bulkWrite()` dispatches update/delete operations through the raw driver
+ * and skips the query/document middleware above. Block it wholesale: audit rows
+ * are only ever written via `recordAuditEntry` (`Model.create`), and a bulk
+ * insert would also break the sequential hash chain, so there is no legitimate
+ * bulkWrite path. The privileged retention purge uses `Model.collection` and is
+ * unaffected by this hook.
+ */
+auditLogSchema.pre('bulkWrite', function (next) {
+  next(new Error(APPEND_ONLY_MESSAGE));
+});
+
+/**
  * Unique per-chain sequence. This is both the keyset-pagination key and the
  * integrity backstop: concurrent appends race to claim the next `seq`, one wins,
  * and the losers retry — so the chain can never fork.

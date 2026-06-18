@@ -12,6 +12,7 @@ import type {
   PurgeAuditLogResult,
   RecordAuditEntryInput,
   RecordAuditEntryOptions,
+  VerifyAuditChainOptions,
 } from '~/types';
 import { GENESIS_HASH, PLATFORM_CHAIN_KEY } from '~/schema/auditLog';
 import { AUDIT_ACTION_CATEGORY } from '~/types/admin';
@@ -52,7 +53,10 @@ export interface AuditLogMethods {
     onEntry: (entry: AdminAuditLogEntry) => void | Promise<void>,
     options?: { isCancelled?: () => boolean; maxRows?: number },
   ) => Promise<number>;
-  verifyAuditChain: (tenantId: string | undefined) => Promise<AuditChainVerification>;
+  verifyAuditChain: (
+    tenantId: string | undefined,
+    options?: VerifyAuditChainOptions,
+  ) => Promise<AuditChainVerification>;
   purgeAuditLogEntries: (
     tenantId: string | undefined,
     options: PurgeAuditLogOptions,
@@ -450,7 +454,10 @@ export function createAuditLogMethods(mongoose: typeof import('mongoose')): Audi
     return count;
   }
 
-  async function verifyAuditChain(tenantId: string | undefined): Promise<AuditChainVerification> {
+  async function verifyAuditChain(
+    tenantId: string | undefined,
+    options?: VerifyAuditChainOptions,
+  ): Promise<AuditChainVerification> {
     const AuditLog = model();
     const chainKey = resolveChainKey(tenantId);
     const cursor = AuditLog.find({ chainKey })
@@ -458,6 +465,7 @@ export function createAuditLogMethods(mongoose: typeof import('mongoose')): Audi
       .lean<IAuditLog[]>()
       .cursor({ batchSize: 500 });
 
+    const trustedCheckpoint = options?.trustedCheckpoint;
     let prevHash = GENESIS_HASH;
     let expectedSeq: number | null = null;
     let firstSeq: number | null = null;
@@ -469,9 +477,33 @@ export function createAuditLogMethods(mongoose: typeof import('mongoose')): Audi
         if (firstSeq === null) {
           firstSeq = doc.seq;
           expectedSeq = doc.seq;
-          /** Genesis must link to GENESIS_HASH; a purged prefix (firstSeq > 1)
-           * makes the earliest remaining entry's prevHash a trusted checkpoint. */
-          prevHash = doc.seq === 1 ? GENESIS_HASH : doc.prevHash;
+          /**
+           * A non-genesis start (firstSeq > 1) means a prefix is gone. Only a
+           * matching trusted checkpoint proves it was an authorized retention
+           * purge; otherwise this is an attacker deleting the oldest rows, so we
+           * must NOT silently trust the first row's prevHash.
+           */
+          if (doc.seq === 1) {
+            prevHash = GENESIS_HASH;
+          } else if (
+            trustedCheckpoint &&
+            trustedCheckpoint.throughSeq === doc.seq - 1 &&
+            trustedCheckpoint.prevHash === doc.prevHash
+          ) {
+            prevHash = doc.prevHash;
+          } else {
+            await cursor.close();
+            return {
+              ok: false,
+              chainKey,
+              checked,
+              brokenAt: doc.seq,
+              reason: trustedCheckpoint
+                ? 'checkpoint mismatch: purged prefix does not match the trusted checkpoint'
+                : `non-genesis start at seq ${doc.seq}: prefix purged or deleted (supply a trusted checkpoint to verify)`,
+              range: { firstSeq, lastSeq: doc.seq },
+            };
+          }
         }
         if (doc.seq !== expectedSeq) {
           return {
@@ -556,7 +588,13 @@ export function createAuditLogMethods(mongoose: typeof import('mongoose')): Audi
 
     return {
       deletedCount: result.deletedCount ?? 0,
-      checkpoint: newFirst ? { seq: newFirst.seq, prevHash: newFirst.prevHash } : undefined,
+      /** Boundary for `verifyAuditChain`: the new earliest entry resumes the
+       * chain at `seq`, so the purged prefix ran through `seq - 1` and its last
+       * hash is this entry's `prevHash`. Callers persist this to later prove the
+       * purge was authorized. */
+      checkpoint: newFirst
+        ? { throughSeq: newFirst.seq - 1, prevHash: newFirst.prevHash }
+        : undefined,
     };
   }
 
