@@ -267,35 +267,27 @@ jobs:
       pull-requests: write # post completion comments for /gitnexus command runs
     steps:
       # GitHub suppresses workflow_run events for workflow runs triggered
-      # by GITHUB_TOKEN (to prevent recursive chaining). Command-triggered
-      # index runs opt into a deploy by setting deploy_after=true.
-      - name: Trigger deploy workflow after command-triggered runs
-        if: inputs.deploy_after && needs.index.result == 'success'
+      # by GITHUB_TOKEN (to prevent recursive chaining). Dispatches without
+      # a PR number can still opt into a deploy by setting deploy_after=true.
+      - name: Trigger deploy workflow after non-PR dispatches
+        if: inputs.deploy_after && inputs.pr_number == '' && needs.index.result == 'success'
         uses: actions/github-script@v7
-        env:
-          PR_NUMBER: ${{ inputs.pr_number }}
         with:
           script: |
             core.info('deploy_after=true; dispatching gitnexus-deploy.yml manually.');
-            // Pass pr_number through so the deploy workflow knows which
-            // PR to post its completion comment on (for /gitnexus
-            // command runs this will be set; for other bot dispatches
-            // it's empty and the deploy step falls back to matrix match).
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
               repo: context.repo.repo,
               workflow_id: 'gitnexus-deploy.yml',
               ref: 'main',
               inputs: {
-                pr_number: process.env.PR_NUMBER || '',
+                pr_number: '',
               },
             });
 
       # Reply on the PR when the /gitnexus command path runs so the
       # requester knows the index step finished. This fires when
-      # inputs.pr_number is set and reports the index job result. A
-      # separate comment posts from the deploy workflow when the live
-      # server has the fresh index.
+      # inputs.pr_number is set and reports the index job result.
       - name: Comment on PR — index complete
         if: inputs.pr_number != ''
         uses: actions/github-script@v7
@@ -321,7 +313,7 @@ jobs:
               `[Index run](${runUrl})`,
               '',
               indexSucceeded
-                ? '⏳ Waiting for deploy to serve the fresh index…'
+                ? 'PR-specific deploys are paused; only `LibreChat` and `LibreChat-dev` are currently served.'
                 : '_Index run failed — the previous index (if any) continues to be served._',
             ].join('\n');
             await github.rest.issues.createComment({

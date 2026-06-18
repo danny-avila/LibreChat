@@ -195,6 +195,11 @@ export type ArchiveConversationOptions = MutationOptions<
   types.TArchiveConversationRequest
 >;
 
+export type PinConversationOptions = MutationOptions<
+  types.TPinConversationResponse,
+  types.TPinConversationRequest
+>;
+
 export type DuplicateConvoOptions = MutationOptions<
   types.TDuplicateConvoResponse,
   types.TDuplicateConvoRequest

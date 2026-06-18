@@ -510,7 +510,13 @@ export function createTxMethods(
     endpointTokenConfig?: Record<string, Record<string, number>>;
   }): number {
     if (endpointTokenConfig && model) {
-      return endpointTokenConfig?.[model]?.[tokenType as string] ?? defaultRate;
+      const modelConfig = endpointTokenConfig[model];
+      /** A partial override only prices the models it lists; others fall
+       *  through to the standard tables so billing matches the advertised
+       *  token config instead of charging defaultRate */
+      if (modelConfig) {
+        return modelConfig[tokenType as string] ?? defaultRate;
+      }
     }
 
     if (valueKey && tokenType) {
@@ -555,7 +561,12 @@ export function createTxMethods(
     endpointTokenConfig?: Record<string, Record<string, number>>;
   }): number | null {
     if (endpointTokenConfig && model) {
-      return endpointTokenConfig?.[model]?.[cacheType as string] ?? null;
+      const modelConfig = endpointTokenConfig[model];
+      /** Models absent from a partial override fall through to standard
+       *  cache rates rather than reporting no cache pricing */
+      if (modelConfig) {
+        return modelConfig[cacheType as string] ?? null;
+      }
     }
 
     if (valueKey && cacheType) {

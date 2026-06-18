@@ -35,17 +35,31 @@ export function loadCustomEndpointsConfig(
         iconURL,
         modelDisplayLabel,
         customParams,
+        provider,
       } = endpoint;
       const name = normalizeEndpointName(configName);
 
       const resolvedApiKey = extractEnvVariable(apiKey ?? '');
       const resolvedBaseURL = extractEnvVariable(baseURL ?? '');
 
+      /**
+       * A native `provider` (e.g. anthropic) implies its parameter set. Surface it
+       * as `defaultParamsEndpoint` so the client param panel shows the right fields
+       * (e.g. `maxOutputTokens`/`thinking` for Anthropic, not OpenAI `max_tokens`),
+       * unless an admin explicitly chose a non-default `defaultParamsEndpoint`.
+       */
+      const resolvedCustomParams =
+        provider != null &&
+        (customParams?.defaultParamsEndpoint == null ||
+          customParams.defaultParamsEndpoint === EModelEndpoint.custom)
+          ? { ...customParams, defaultParamsEndpoint: provider }
+          : customParams;
+
       customEndpointsConfig[name] = {
         type: EModelEndpoint.custom,
         userProvide: isUserProvided(resolvedApiKey),
         userProvideURL: isUserProvided(resolvedBaseURL),
-        customParams,
+        customParams: resolvedCustomParams,
         modelDisplayLabel,
         iconURL,
       };

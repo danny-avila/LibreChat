@@ -9,6 +9,7 @@ import {
 } from 'librechat-data-provider';
 import type { Agent, TConversation, TModelSpec } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
+import { requiresEphemeralUserConnection } from '~/mcp/utils';
 import { getCustomEndpointConfig } from '~/app/config';
 
 const { mcp_all, mcp_delimiter } = Constants;
@@ -184,7 +185,13 @@ export async function loadAddedAgent(
     if (addedServers.has(mcpServer)) {
       continue;
     }
-    const serverTools = await deps.getMCPServerTools(userId, mcpServer);
+    /** Request-tier overlays are invisible to the cache service's registry
+     *  resolver — overlay-scoped servers expand fresh via `mcp_all` instead */
+    const overlayConfig = appConfig?.mcpConfig?.[mcpServer];
+    const serverTools =
+      overlayConfig && requiresEphemeralUserConnection(overlayConfig)
+        ? null
+        : await deps.getMCPServerTools(userId, mcpServer);
     if (!serverTools) {
       tools.push(`${mcp_all}${mcp_delimiter}${mcpServer}`);
       addedServers.add(mcpServer);

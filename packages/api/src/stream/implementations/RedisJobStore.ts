@@ -923,6 +923,8 @@ export class RedisJobStore implements IJobStore {
       promptTokens: data.promptTokens ? parseInt(data.promptTokens, 10) : undefined,
       titleEvent: data.titleEvent || undefined,
       replayEvents: data.replayEvents || undefined,
+      contextUsage: data.contextUsage || undefined,
+      tokenUsage: data.tokenUsage || undefined,
     };
   }
 }
