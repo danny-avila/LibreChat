@@ -1,10 +1,10 @@
 import { Types } from 'mongoose';
 import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
-import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
-import { escapeRegExp } from '~/utils/string';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { Model, ClientSession } from 'mongoose';
 import type { IConfig } from '~/types';
+import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
+import { escapeRegExp } from '~/utils/string';
 
 function getTombstonePathsToClear(fieldPath: string): string[] {
   const parts = fieldPath.split('.');
@@ -18,7 +18,60 @@ function getPathAndDescendantsRegex(fieldPath: string): RegExp {
   return new RegExp(`^${escapeRegExp(fieldPath)}(?:\\.|$)`);
 }
 
-export function createConfigMethods(mongoose: typeof import('mongoose')) {
+export function createConfigMethods(mongoose: typeof import('mongoose')): {
+  listAllConfigs: (filter?: { isActive?: boolean }, session?: ClientSession) => Promise<IConfig[]>;
+  findConfigByPrincipal: (
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+    options?: { includeInactive?: boolean },
+    session?: ClientSession,
+  ) => Promise<IConfig | null>;
+  getApplicableConfigs: (
+    principals?: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
+    session?: ClientSession,
+  ) => Promise<IConfig[]>;
+  upsertConfig: (
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+    principalModel: PrincipalModel,
+    overrides: Partial<TCustomConfig>,
+    priority: number,
+    session?: ClientSession,
+  ) => Promise<IConfig | null>;
+  patchConfigFields: (
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+    principalModel: PrincipalModel,
+    fields: Record<string, unknown>,
+    priority: number,
+    session?: ClientSession,
+  ) => Promise<IConfig | null>;
+  tombstoneConfigField: (
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+    principalModel: PrincipalModel,
+    fieldPath: string,
+    priority: number,
+    session?: ClientSession,
+  ) => Promise<IConfig | null>;
+  unsetConfigField: (
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+    fieldPath: string,
+    session?: ClientSession,
+  ) => Promise<IConfig | null>;
+  deleteConfig: (
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+    session?: ClientSession,
+  ) => Promise<IConfig | null>;
+  toggleConfigActive: (
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+    isActive: boolean,
+    session?: ClientSession,
+  ) => Promise<IConfig | null>;
+} {
   async function findConfigByPrincipal(
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,

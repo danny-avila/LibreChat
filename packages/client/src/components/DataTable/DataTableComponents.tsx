@@ -1,4 +1,5 @@
 import React, { memo, forwardRef } from 'react';
+import { JSX } from 'react/jsx-runtime';
 import { flexRender } from '@tanstack/react-table';
 import type { Row } from '@tanstack/react-table';
 import type { TableColumn } from './DataTable.types';
@@ -7,7 +8,7 @@ import { Checkbox } from '../Checkbox';
 import { Skeleton } from '../Skeleton';
 import { cn } from '~/utils';
 
-export const SelectionCheckbox = memo(
+export const SelectionCheckbox: React.MemoExoticComponent<
   ({
     checked,
     onChange,
@@ -16,7 +17,17 @@ export const SelectionCheckbox = memo(
     checked: boolean;
     onChange: (value: boolean) => void;
     ariaLabel: string;
-  }) => (
+  }) => JSX.Element
+> = memo(
+  ({
+    checked,
+    onChange,
+    ariaLabel,
+  }: {
+    checked: boolean;
+    onChange: (value: boolean) => void;
+    ariaLabel: string;
+  }): JSX.Element => (
     <div
       role="button"
       tabIndex={0}
@@ -124,20 +135,29 @@ interface GenericRowProps {
   selected: boolean;
 }
 
-export const MemoizedTableRow = memo(
-  ForwardTableRowComponent as (props: GenericRowProps) => JSX.Element,
-  (prev: GenericRowProps, next: GenericRowProps) =>
-    prev.row.original === next.row.original && prev.selected === next.selected,
-);
+export const MemoizedTableRow: React.MemoExoticComponent<(props: GenericRowProps) => JSX.Element> =
+  memo(
+    ForwardTableRowComponent as (props: GenericRowProps) => JSX.Element,
+    (prev: GenericRowProps, next: GenericRowProps) =>
+      prev.row.original === next.row.original && prev.selected === next.selected,
+  );
 
-export const SkeletonRows = memo(
+export const SkeletonRows: React.MemoExoticComponent<
+  <TData extends Record<string, unknown>, TValue>({
+    count,
+    columns,
+  }: {
+    count?: number;
+    columns: TableColumn<TData, TValue>[];
+  }) => JSX.Element
+> = memo(
   <TData extends Record<string, unknown>, TValue>({
     count = 10,
     columns,
   }: {
     count?: number;
     columns: TableColumn<TData, TValue>[];
-  }) => (
+  }): JSX.Element => (
     <>
       {Array.from({ length: count }, (_, index) => (
         <TableRow key={`skeleton-${index}`} className="h-[56px] border-b border-border-light">

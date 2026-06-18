@@ -23,7 +23,13 @@ import type {
 import type { GenericTool, LCToolRegistry, ToolMap, LCTool } from '@librechat/agents';
 import type { Response as ServerResponse } from 'express';
 import type { IMongoFile } from '@librechat/data-schemas';
-import type { InitializeResultBase, ServerRequest, EndpointDbMethods } from '~/types';
+import type {
+  ServerRequest,
+  EndpointDbMethods,
+  EndpointTokenConfig,
+  InitializeResultBase,
+} from '~/types';
+import type { LCAvailableTools, RequestScopedMCPConnectionStore } from '../mcp/types';
 import type { ResolvedManualSkill, ResolvedAlwaysApplySkill } from './skills';
 import type { TFilterFilesByAgentAccess } from './resources';
 import {
@@ -241,6 +247,10 @@ export type InitializedAgent = Agent & {
   toolMap?: ToolMap;
   /** Tool registry for PTC and tool search (only present when MCP tools with env classification exist) */
   toolRegistry?: LCToolRegistry;
+  /** Run-scoped MCP tool definitions for request-scoped servers. */
+  mcpAvailableTools?: Record<string, LCAvailableTools>;
+  /** Run-scoped MCP connections for request-scoped servers. */
+  requestScopedConnections?: RequestScopedMCPConnectionStore;
   /** Serializable tool definitions for event-driven execution */
   toolDefinitions?: LCTool[];
   /** Precomputed flag indicating if any tools have defer_loading enabled (for efficient runtime checks) */
@@ -306,6 +316,13 @@ export type InitializedAgent = Agent & {
    * call #1 the sandbox can't see the files at all.
    */
   primedCodeFiles?: import('@librechat/agents').CodeEnvFile[];
+  /**
+   * Resolved token/pricing config for this agent's endpoint (admin static
+   * `tokenConfig` and/or fetched custom-endpoint config). Surfaced from the
+   * provider `getOptions` result so the AgentClient bills, prices, and resolves
+   * context limits with the same numbers the UI shows — not default rates.
+   */
+  endpointTokenConfig?: EndpointTokenConfig;
 };
 
 export const DEFAULT_MAX_CONTEXT_TOKENS = 32000;
@@ -344,6 +361,8 @@ export interface InitializeAgentParams {
     dynamicToolContextMap?: Record<string, unknown>;
     userMCPAuthMap?: Record<string, Record<string, string>>;
     toolRegistry?: LCToolRegistry;
+    mcpAvailableTools?: Record<string, LCAvailableTools>;
+    requestScopedConnections?: RequestScopedMCPConnectionStore;
     /** Serializable tool definitions for event-driven mode */
     toolDefinitions?: LCTool[];
     hasDeferredTools?: boolean;
@@ -389,7 +408,11 @@ export interface InitializeAgentParams {
  */
 export interface InitializeAgentDbMethods extends EndpointDbMethods {
   /** Update usage tracking for multiple files */
-  updateFilesUsage: (files: Array<{ file_id: string }>, fileIds?: string[]) => Promise<unknown[]>;
+  updateFilesUsage: (
+    files: Array<{ file_id: string }>,
+    fileIds?: string[],
+    options?: { user?: string },
+  ) => Promise<unknown[]>;
   /** Get files from database */
   getFiles: (filter: unknown, sort: unknown, select: unknown) => Promise<unknown[]>;
   /** Filter files by agent access permissions (ownership or agent attachment) */
@@ -539,6 +562,7 @@ export async function initializeAgent(
     allowedProviders,
     isInitialAgent = false,
   } = params;
+  const requestFileOwnerId = req.user?.id;
 
   if (!db) {
     throw new Error('initializeAgent requires db methods to be passed');
@@ -640,10 +664,27 @@ export async function initializeAgent(
 
     const allToolFiles = toolFiles.concat(codeGeneratedFiles, userCodeFiles);
     if (requestFiles.length || allToolFiles.length) {
-      currentFiles = (await db.updateFilesUsage(requestFiles.concat(allToolFiles))) as IMongoFile[];
+      const requestUsageFiles =
+        requestFiles.length && requestFileOwnerId
+          ? ((await db.updateFilesUsage(requestFiles, undefined, {
+              user: requestFileOwnerId,
+            })) as IMongoFile[])
+          : [];
+      const requestUsageFileIds = new Set(requestUsageFiles.map((file) => file.file_id));
+      const trustedToolFiles = allToolFiles.filter(
+        (file) => !requestUsageFileIds.has(file.file_id),
+      );
+      const toolUsageFiles = trustedToolFiles.length
+        ? ((await db.updateFilesUsage(trustedToolFiles)) as IMongoFile[])
+        : [];
+      currentFiles = requestUsageFiles.concat(toolUsageFiles);
     }
   } else if (requestFiles.length) {
-    currentFiles = (await db.updateFilesUsage(requestFiles)) as IMongoFile[];
+    currentFiles = requestFileOwnerId
+      ? ((await db.updateFilesUsage(requestFiles, undefined, {
+          user: requestFileOwnerId,
+        })) as IMongoFile[])
+      : [];
   }
 
   if (currentFiles && currentFiles.length) {
@@ -853,6 +894,8 @@ export async function initializeAgent(
     dynamicToolContextMap,
     userMCPAuthMap,
     toolDefinitions: loadedToolDefinitions,
+    mcpAvailableTools,
+    requestScopedConnections,
     hasDeferredTools,
     actionsEnabled,
     tools: structuredTools,
@@ -863,6 +906,8 @@ export async function initializeAgent(
     dynamicToolContextMap: {},
     userMCPAuthMap: undefined,
     toolRegistry: undefined,
+    mcpAvailableTools: undefined,
+    requestScopedConnections: undefined,
     toolDefinitions: [],
     hasDeferredTools: false,
     actionsEnabled: undefined,
@@ -1067,6 +1112,7 @@ export async function initializeAgent(
       text: agent.instructions,
       user: req.user ? (req.user as unknown as TUser) : null,
       now: req.conversationCreatedAt,
+      timezone: req.body?.timezone,
     });
     if (hasTemporalSpecialVars(agent.instructions)) {
       agent.instructions = undefined;
@@ -1167,6 +1213,8 @@ export async function initializeAgent(
     ...agent,
     resendFiles,
     toolRegistry,
+    mcpAvailableTools,
+    requestScopedConnections,
     tool_resources,
     userMCPAuthMap,
     toolDefinitions,
@@ -1195,6 +1243,7 @@ export async function initializeAgent(
         ? maxContextTokens
         : Math.max(1024, Math.round(baseContextTokens * (1 - DEFAULT_RESERVE_RATIO))),
     primedCodeFiles,
+    endpointTokenConfig: options.endpointTokenConfig,
   };
 
   return initializedAgent;

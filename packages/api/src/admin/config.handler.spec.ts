@@ -194,6 +194,29 @@ describe('createAdminConfigHandlers', () => {
       expect(savedOverrides.interface).toEqual({ modelSelect: false });
     });
 
+    it('preserves skillSync sections in admin overrides', async () => {
+      const { handlers, deps } = createHandlers({
+        upsertConfig: jest.fn().mockResolvedValue({ _id: 'c1', configVersion: 1 }),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          overrides: {
+            skillSync: { github: { enabled: true } },
+            interface: { modelSelect: false },
+          },
+        },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(201);
+      const savedOverrides = deps.upsertConfig.mock.calls[0][3];
+      expect(savedOverrides.skillSync).toEqual({ github: { enabled: true } });
+      expect(savedOverrides.interface).toEqual({ modelSelect: false });
+    });
+
     it('preserves UI sub-keys in composite permission fields like mcpServers', async () => {
       const { handlers, deps } = createHandlers({
         upsertConfig: jest.fn().mockResolvedValue({ _id: 'c1', configVersion: 1 }),
@@ -336,6 +359,24 @@ describe('createAdminConfigHandlers', () => {
       expect(res.statusCode).toBe(200);
       expect(res.body!.message).toBeDefined();
       expect(deps.unsetConfigField).not.toHaveBeenCalled();
+    });
+
+    it('allows deleting skillSync field paths', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        query: { fieldPath: 'skillSync.github.enabled' },
+      });
+      const res = mockRes();
+
+      await handlers.deleteConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(deps.unsetConfigField).toHaveBeenCalledWith(
+        'role',
+        'admin',
+        'skillSync.github.enabled',
+      );
     });
 
     it('allows deleting interface UI field paths', async () => {
@@ -487,6 +528,27 @@ describe('createAdminConfigHandlers', () => {
       const patchedFields = deps.patchConfigFields.mock.calls[0][3];
       expect(patchedFields['interface.modelSelect']).toBe(false);
       expect(patchedFields['interface.prompts']).toBeUndefined();
+    });
+
+    it('preserves skillSync field entries in patches', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          entries: [
+            { fieldPath: 'skillSync.github.enabled', value: true },
+            { fieldPath: 'interface.modelSelect', value: false },
+          ],
+        },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      const patchedFields = deps.patchConfigFields.mock.calls[0][3];
+      expect(patchedFields['skillSync.github.enabled']).toBe(true);
+      expect(patchedFields['interface.modelSelect']).toBe(false);
     });
 
     it('blocks peoplePicker permission sub-key paths', async () => {

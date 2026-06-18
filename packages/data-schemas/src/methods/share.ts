@@ -3,8 +3,8 @@ import { Constants } from 'librechat-data-provider';
 import type { FilterQuery, Model } from 'mongoose';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
-import logger from '~/config/winston';
 import { activeExpirationFilter } from '~/utils/retention';
+import logger from '~/config/winston';
 
 class ShareServiceError extends Error {
   code: string;
@@ -239,7 +239,41 @@ function getMessagesUpToTarget(messages: t.IMessage[], targetMessageId: string):
 }
 
 /** Factory function that takes mongoose instance and returns the methods */
-export function createShareMethods(mongoose: typeof import('mongoose')) {
+export function createShareMethods(mongoose: typeof import('mongoose')): {
+  getSharedLink: (user: string, conversationId: string) => Promise<t.GetShareLinkResult>;
+  getSharedLinks: (
+    user: string,
+    pageParam?: Date,
+    pageSize?: number,
+    sortBy?: string,
+    sortDirection?: string,
+    search?: string,
+  ) => Promise<t.SharedLinksResult>;
+  createSharedLink: (
+    user: string,
+    conversationId: string,
+    targetMessageId?: string,
+    expiredAt?: Date,
+  ) => Promise<t.CreateShareResult>;
+  updateSharedLink: (
+    user: string,
+    shareId: string,
+    targetMessageId?: string,
+    expiredAt?: Date | null,
+  ) => Promise<t.UpdateShareResult>;
+  deleteSharedLink: (user: string, shareId: string) => Promise<t.DeleteShareResult | null>;
+  getSharedMessages: (
+    shareId: string,
+    shareObjectId?: string,
+  ) => Promise<t.SharedMessagesResult | null>;
+  deleteAllSharedLinks: (
+    user: string,
+  ) => Promise<t.DeleteAllSharesResult & { deletedIds: string[] }>;
+  deleteConvoSharedLink: (
+    user: string,
+    conversationId: string,
+  ) => Promise<t.DeleteAllSharesResult & { deletedIds: string[] }>;
+} {
   /**
    * Get shared messages for a share link
    */

@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
+import { JSX } from 'react/jsx-runtime';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ArrowUp, ArrowDown, ArrowDownUp } from 'lucide-react';
 import {
@@ -37,7 +38,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
   sorting,
   onSortingChange,
   customActionsRenderer,
-}: DataTableProps<TData, TValue>) {
+}: DataTableProps<TData, TValue>): JSX.Element {
   const localize = useLocalize();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
 

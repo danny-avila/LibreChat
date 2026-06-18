@@ -348,6 +348,7 @@ describe('MCPTokenStorage', () => {
       expect(refreshTokens).toHaveBeenCalledWith(
         'rt',
         expect.objectContaining({ userId: 'u1', serverName: 'srv1' }),
+        undefined,
       );
     });
 
@@ -475,6 +476,7 @@ describe('MCPTokenStorage', () => {
         expect.objectContaining({
           clientInfo: expect.objectContaining({ client_id: 'cid' }),
         }),
+        undefined,
       );
     });
 
@@ -713,6 +715,153 @@ describe('MCPTokenStorage', () => {
           refreshTokens,
         }),
       ).rejects.toThrow(ReauthenticationRequiredError);
+    });
+  });
+
+  describe('forceRefreshTokens', () => {
+    it('should refresh and store tokens even when access token is not locally expired', async () => {
+      // Access token still has time on the clock (1 hour), but the server has
+      // invalidated it (we simulate a mid-session 401 by calling forceRefreshTokens
+      // directly). The local `expires_at` must be ignored — the 401 is the signal.
+      await store.createToken({
+        userId: 'u1',
+        type: 'mcp_oauth',
+        identifier: 'mcp:srv1',
+        token: 'enc:stale-access-token',
+        expiresIn: 3600,
+      });
+      await store.createToken({
+        userId: 'u1',
+        type: 'mcp_oauth_refresh',
+        identifier: 'mcp:srv1:refresh',
+        token: 'enc:rt',
+        expiresIn: 86400,
+      });
+
+      const refreshTokens = jest.fn().mockResolvedValue({
+        access_token: 'new-access-token',
+        refresh_token: 'new-rt',
+        token_type: 'Bearer',
+        expires_in: 3600,
+        obtained_at: Date.now(),
+      });
+
+      const result = await MCPTokenStorage.forceRefreshTokens({
+        userId: 'u1',
+        serverName: 'srv1',
+        findToken: store.findToken,
+        createToken: store.createToken,
+        updateToken: store.updateToken,
+        deleteTokens: store.deleteTokens,
+        refreshTokens,
+      });
+
+      expect(result).not.toBeNull();
+      expect(result!.access_token).toBe('new-access-token');
+      expect(refreshTokens).toHaveBeenCalledWith(
+        'rt',
+        expect.objectContaining({
+          userId: 'u1',
+          serverName: 'srv1',
+          identifier: 'mcp:srv1',
+        }),
+        undefined,
+      );
+
+      // The new access token is persisted, replacing the stale one.
+      const saved = await store.findToken({
+        userId: 'u1',
+        type: 'mcp_oauth',
+        identifier: 'mcp:srv1',
+      });
+      expect(saved!.token).toBe('enc:new-access-token');
+    });
+
+    it('should return null when no refresh token is stored', async () => {
+      // Access token exists locally, but no refresh token. Silent refresh is
+      // not possible — the caller must fall back to interactive OAuth.
+      await store.createToken({
+        userId: 'u1',
+        type: 'mcp_oauth',
+        identifier: 'mcp:srv1',
+        token: 'enc:any',
+        expiresIn: 3600,
+      });
+
+      const refreshTokens = jest.fn();
+
+      const result = await MCPTokenStorage.forceRefreshTokens({
+        userId: 'u1',
+        serverName: 'srv1',
+        findToken: store.findToken,
+        createToken: store.createToken,
+        refreshTokens,
+      });
+
+      expect(result).toBeNull();
+      expect(refreshTokens).not.toHaveBeenCalled();
+    });
+
+    it('should return null when refresh callback throws non-client-rejection error', async () => {
+      await store.createToken({
+        userId: 'u1',
+        type: 'mcp_oauth_refresh',
+        identifier: 'mcp:srv1:refresh',
+        token: 'enc:rt',
+        expiresIn: 86400,
+      });
+
+      const refreshTokens = jest.fn().mockRejectedValue(new Error('network blew up'));
+
+      const result = await MCPTokenStorage.forceRefreshTokens({
+        userId: 'u1',
+        serverName: 'srv1',
+        findToken: store.findToken,
+        createToken: store.createToken,
+        refreshTokens,
+      });
+
+      expect(result).toBeNull();
+    });
+
+    it('should throw ReauthenticationRequiredError when refresh fails with invalid_client', async () => {
+      // Mirrors the contract that getTokens has on stale client registration —
+      // forceRefreshTokens cleans up the stale state and signals re-auth.
+      await store.createToken({
+        userId: 'u1',
+        type: 'mcp_oauth_refresh',
+        identifier: 'mcp:srv1:refresh',
+        token: 'enc:rt',
+        expiresIn: 86400,
+      });
+      await store.createToken({
+        userId: 'u1',
+        type: 'mcp_oauth_client',
+        identifier: 'mcp:srv1:client',
+        token: 'enc:{"client_id":"cid"}',
+        expiresIn: 86400,
+      });
+
+      const refreshTokens = jest.fn().mockRejectedValue(new Error('invalid_client'));
+
+      await expect(
+        MCPTokenStorage.forceRefreshTokens({
+          userId: 'u1',
+          serverName: 'srv1',
+          findToken: store.findToken,
+          createToken: store.createToken,
+          deleteTokens: store.deleteTokens,
+          refreshTokens,
+        }),
+      ).rejects.toThrow(ReauthenticationRequiredError);
+
+      expect(
+        await store.findToken({
+          userId: 'u1',
+          type: 'mcp_oauth_refresh',
+          identifier: 'mcp:srv1:refresh',
+        }),
+      ).toBeNull();
     });
   });
 

@@ -3,7 +3,12 @@ const fetch = require('node-fetch');
 const jwtDecode = require('jsonwebtoken/decode');
 const { ErrorTypes, FileSources } = require('librechat-data-provider');
 const { findUser, createUser, updateUser, findRolesByNames } = require('~/models');
-const { getOpenIdIssuer, resolveAppConfigForUser, isEnabled } = require('@librechat/api');
+const {
+  getOpenIdProxyDispatcher,
+  resolveAppConfigForUser,
+  getOpenIdIssuer,
+  isEnabled,
+} = require('@librechat/api');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
 const { getAppConfig } = require('~/server/services/Config');
 const { setupOpenId } = require('./openidStrategy');
@@ -15,7 +20,6 @@ jest.mock('node-fetch');
 jest.mock('jsonwebtoken/decode');
 jest.mock('undici', () => ({
   fetch: jest.fn(),
-  ProxyAgent: jest.fn(),
 }));
 jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: jest.fn(() => ({
@@ -74,6 +78,7 @@ jest.mock('@librechat/api', () => {
       enabled: false,
     })),
     getOpenIdIssuer: jest.fn(() => 'https://fake-issuer.com'),
+    getOpenIdProxyDispatcher: jest.fn(() => undefined),
     getAvatarFileStrategy: jest.fn((config, fallbackStrategy) => {
       const { FileSources } = jest.requireActual('librechat-data-provider');
       if (config?.fileStrategies) {
@@ -140,20 +145,28 @@ jest.mock('openid-client', () => {
 jest.mock('openid-client/passport', () => {
   /** Store callbacks by strategy name - 'openid' and 'openidAdmin' */
   const verifyCallbacks = {};
+  const strategies = {};
   let lastVerifyCallback;
 
-  const mockStrategy = jest.fn((options, verify) => {
+  const mockStrategy = jest.fn(function (options, verify) {
     lastVerifyCallback = verify;
-    return { name: 'openid', options, verify };
+    this.name = 'openid';
+    this.options = options;
+    this.verify = verify;
   });
+  mockStrategy.prototype.authorizationRequestParams = jest.fn(() => new URLSearchParams());
 
   return {
     Strategy: mockStrategy,
     /** Get the last registered callback (for backward compatibility) */
     __getVerifyCallback: () => lastVerifyCallback,
+    __getStrategyByName: (name) => strategies[name],
     /** Store callback by name when passport.use is called */
-    __setVerifyCallback: (name, callback) => {
-      verifyCallbacks[name] = callback;
+    __setStrategy: (name, strategy) => {
+      strategies[name] = strategy;
+      if (strategy?.verify) {
+        verifyCallbacks[name] = strategy.verify;
+      }
     },
     /** Get callback by strategy name */
     __getVerifyCallbackByName: (name) => verifyCallbacks[name],
@@ -164,9 +177,7 @@ jest.mock('openid-client/passport', () => {
 jest.mock('passport', () => ({
   use: jest.fn((name, strategy) => {
     const passportMock = require('openid-client/passport');
-    if (strategy && strategy.verify) {
-      passportMock.__setVerifyCallback(name, strategy.verify);
-    }
+    passportMock.__setStrategy(name, strategy);
   }),
 }));
 
@@ -210,6 +221,7 @@ describe('setupOpenId', () => {
       get: jest.fn(),
       set: jest.fn(),
     }));
+    getOpenIdProxyDispatcher.mockReturnValue(undefined);
     require('openid-client').genericGrantRequest.mockReset();
     require('openid-client').genericGrantRequest.mockResolvedValue({
       access_token: 'exchanged_graph_token',
@@ -232,6 +244,7 @@ describe('setupOpenId', () => {
     delete process.env.OPENID_USERNAME_CLAIM;
     delete process.env.OPENID_NAME_CLAIM;
     delete process.env.OPENID_EMAIL_CLAIM;
+    delete process.env.OPENID_AUDIENCE;
     delete process.env.OPENID_AVATAR_AUTHORIZED_ORIGINS;
     delete process.env.PROXY;
     delete process.env.OPENID_USE_PKCE;
@@ -334,6 +347,61 @@ describe('setupOpenId', () => {
       const [, , metadata] = openidClient.discovery.mock.calls.at(-1);
       expect(metadata.client_secret).toBe('my-secret');
       expect(metadata.token_endpoint_auth_method).toBeUndefined();
+    });
+
+    it('uses the shared OpenID proxy dispatcher for custom fetch requests', async () => {
+      const dispatcher = { dispatch: jest.fn() };
+      const response = { status: 204, statusText: 'No Content', headers: new Headers() };
+      getOpenIdProxyDispatcher.mockReturnValue(dispatcher);
+      undici.fetch.mockResolvedValue(response);
+
+      await setupOpenId();
+
+      const [, , , , options] = openidClient.discovery.mock.calls.at(-1);
+      const openIdFetch = options[openidClient.customFetch];
+      await expect(
+        openIdFetch('https://issuer.example.com/.well-known/openid-configuration', {
+          method: 'GET',
+        }),
+      ).resolves.toBe(response);
+
+      expect(getOpenIdProxyDispatcher).toHaveBeenCalled();
+      expect(undici.fetch).toHaveBeenCalledWith(
+        'https://issuer.example.com/.well-known/openid-configuration',
+        {
+          method: 'GET',
+          dispatcher,
+        },
+      );
+    });
+  });
+
+  describe('authorizationRequestParams', () => {
+    const getLoginStrategy = () => require('openid-client/passport').__getStrategyByName('openid');
+
+    it('adds a single OpenID audience to authorization requests', () => {
+      process.env.OPENID_AUDIENCE = 'librechat';
+
+      const params = getLoginStrategy().authorizationRequestParams({}, { state: 'login-state' });
+
+      expect(params.get('audience')).toBe('librechat');
+      expect(params.get('state')).toBe('login-state');
+    });
+
+    it('uses the first non-empty audience when OPENID_AUDIENCE accepts multiple JWT audiences', () => {
+      process.env.OPENID_AUDIENCE = ' librechat , control-plane-web ';
+
+      const params = getLoginStrategy().authorizationRequestParams({}, {});
+
+      expect(params.get('audience')).toBe('librechat');
+    });
+
+    it('does not add an authorization audience when OPENID_AUDIENCE is empty', () => {
+      process.env.OPENID_AUDIENCE = ' , ';
+
+      const params = getLoginStrategy().authorizationRequestParams({}, {});
+
+      expect(params.has('audience')).toBe(false);
     });
   });
 

@@ -1,18 +1,20 @@
 import type { AxiosResponse } from 'axios';
+import type { TContextProjectionRequest, TContextUsageEvent } from './types/runs';
+import type { TFileConfig } from './file-config';
 import type * as t from './types';
+import * as permissions from './accessPermissions';
 import * as endpoints from './api-endpoints';
-import * as a from './types/assistants';
-import * as ag from './types/agents';
-import * as m from './types/mutations';
-import * as q from './types/queries';
-import * as f from './types/files';
-import * as sk from './types/skills';
 import * as mcp from './types/mcpServers';
+import * as a from './types/assistants';
+import * as m from './types/mutations';
+import * as ag from './types/agents';
+import * as q from './types/queries';
+import * as sk from './types/skills';
+import * as f from './types/files';
 import * as config from './config';
 import request from './request';
 import * as s from './schemas';
 import * as r from './roles';
-import * as permissions from './accessPermissions';
 
 export function revokeUserKey(name: string): Promise<unknown> {
   return request.delete(endpoints.revokeUserKey(name));
@@ -244,6 +246,16 @@ export const getAIEndpoints = (): Promise<t.TEndpointsConfig> => {
   return request.get(endpoints.aiEndpoints());
 };
 
+export const getTokenConfig = (): Promise<t.TTokenConfigMap> => {
+  return request.get(endpoints.tokenConfig());
+};
+
+export const getContextProjection = (
+  payload: TContextProjectionRequest,
+): Promise<TContextUsageEvent | null> => {
+  return request.post(endpoints.contextProjection(), payload);
+};
+
 export const getModels = async (): Promise<t.TModelsConfig> => {
   return request.get(endpoints.models());
 };
@@ -429,7 +441,7 @@ export const getAgentFiles = (agentId: string): Promise<f.TFile[]> => {
   return request.get(endpoints.agentFiles(agentId));
 };
 
-export const getFileConfig = (): Promise<f.FileConfig> => {
+export const getFileConfig = (): Promise<TFileConfig> => {
   return request.get(`${endpoints.files()}/config`);
 };
 
@@ -822,6 +834,12 @@ export function assignConversationToProject(
   return request.put(endpoints.projectConversation(conversationId), { projectId });
 }
 
+export function pinConversation(
+  payload: t.TPinConversationRequest,
+): Promise<t.TPinConversationResponse> {
+  return request.post(endpoints.pinConversation(), { arg: payload });
+}
+
 export function genTitle(payload: m.TGenTitleRequest): Promise<m.TGenTitleResponse> {
   return request.get(endpoints.genTitle(payload.conversationId));
 }
@@ -1078,6 +1096,29 @@ export const updateSkillNodeContent = (variables: {
     updatedAt: now,
   });
 };
+
+export function getGitHubSkillSyncStatus(): Promise<sk.TGitHubSkillSyncStatusResponse> {
+  return request.get(endpoints.adminSkillsSyncStatus());
+}
+
+export function runGitHubSkillSync(): Promise<sk.TGitHubSkillSyncManualRunResponse> {
+  return request.post(endpoints.adminSkillsSyncRun());
+}
+
+export function setGitHubSkillSyncCredential(variables: {
+  credentialKey: string;
+  token: string;
+}): Promise<sk.TGitHubSkillSyncCredentialSummary> {
+  return request.put(endpoints.adminSkillsSyncCredential(variables.credentialKey), {
+    token: variables.token,
+  } satisfies sk.TGitHubSkillSyncCredentialUpdateRequest);
+}
+
+export function deleteGitHubSkillSyncCredential(
+  credentialKey: string,
+): Promise<{ credentialKey: string; deleted: boolean }> {
+  return request.delete(endpoints.adminSkillsSyncCredential(credentialKey));
+}
 
 /* Roles */
 export function listRoles(): Promise<q.ListRolesResponse> {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
-import { useRecoilCallback, useRecoilValue } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
+import { useRecoilCallback, useRecoilValue } from 'recoil';
 import { Spinner, useToastContext } from '@librechat/client';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
@@ -17,18 +17,18 @@ import {
   clearMessagesCache,
 } from '~/utils';
 import {
+  useGetConvoIdQuery,
+  useGetStartupConfig,
+  useGetEndpointsQuery,
+  useProjectQuery,
+} from '~/data-provider';
+import {
   useAssistantListMap,
   useIdChangeEffect,
   useAppStartup,
   useNewConvo,
   useLocalize,
 } from '~/hooks';
-import {
-  useGetConvoIdQuery,
-  useGetStartupConfig,
-  useGetEndpointsQuery,
-  useProjectQuery,
-} from '~/data-provider';
 import { ToolCallsMapProvider } from '~/Providers';
 import ChatView from '~/components/Chat/ChatView';
 import { NotificationSeverity } from '~/common';
@@ -166,8 +166,8 @@ export default function ChatRoute() {
     }
 
     const getNewConvoPreset = () => {
-      const result = getDefaultModelSpec(startupConfig);
-      const spec = result?.default ?? result?.last;
+      const result = getDefaultModelSpec(startupConfig, endpointsQuery.data);
+      const spec = result?.default ?? result?.last ?? result?.softDefault;
       const specPreset = spec ? getModelSpecPreset(spec) : undefined;
 
       const queryParams: Record<string, string> = {};
@@ -212,8 +212,8 @@ export default function ChatRoute() {
       initialConvoQuery.isError &&
       isNotFoundError(initialConvoQuery.error)
     ) {
-      const result = getDefaultModelSpec(startupConfig);
-      const spec = result?.default ?? result?.last;
+      const result = getDefaultModelSpec(startupConfig, endpointsQuery.data);
+      const spec = result?.default ?? result?.last ?? result?.softDefault;
       showToast({
         message: localize('com_ui_conversation_not_found'),
         severity: NotificationSeverity.WARNING,

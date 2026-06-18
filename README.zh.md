@@ -1,4 +1,4 @@
-<!-- Last synced with README.md: 2026-03-28 (cae3888) -->
+<!-- Last synced with README.md: 2026-05-12 (947bfa4c40) -->
 
 <p align="center">
   <a href="https://librechat.ai">
@@ -76,6 +76,8 @@
     - 智能体市场：发现并部署社区构建的智能体。
     - 协作共享：与特定用户和群组共享智能体。
     - 灵活且可扩展：支持 MCP 服务器、工具、文件搜索、代码执行等。
+    - [Skills](https://www.librechat.ai/docs/features/skills)：创建可复用的 `SKILL.md` 指令包，用于手动、自动或始终启用的智能体工作流。
+    - [Subagents](https://www.librechat.ai/docs/features/subagents)：将专门任务委派给拥有独立上下文窗口的隔离子智能体运行。
     - 兼容自定义端点、OpenAI, Azure, Anthropic, AWS Bedrock, Google, Vertex AI, Responses API 等。
     - [支持模型上下文协议 (MCP)](https://modelcontextprotocol.io/clients#librechat) 用于工具调用。
 
@@ -139,6 +141,7 @@
 
 - ⚙️ **配置与部署**：  
   - 支持代理、反向代理、Docker 及多种部署选项。  
+  - 使用 [S3 与 CloudFront](https://www.librechat.ai/docs/configuration/cdn/cloudfront) 获得稳定的媒体链接、边缘分发、签名 Cookie 和安全下载。
   - 可完全本地运行或部署在云端。
 
 - 📖 **开源与社区**：  

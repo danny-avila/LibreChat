@@ -1,12 +1,13 @@
 import { logger } from '@librechat/data-schemas';
 import {
+  BASE_ONLY_CONFIG_SECTIONS,
   PrincipalType,
   PrincipalModel,
   INTERFACE_PERMISSION_FIELDS,
   PERMISSION_SUB_KEYS,
 } from 'librechat-data-provider';
-import type { TCustomConfig } from 'librechat-data-provider';
 import type { AppConfig, ConfigSection, IConfig } from '@librechat/data-schemas';
+import type { TCustomConfig } from 'librechat-data-provider';
 import type { Types, ClientSession } from 'mongoose';
 import type { Response } from 'express';
 import type { CapabilityUser } from '~/middleware/capabilities';
@@ -15,6 +16,7 @@ import type { ServerRequest } from '~/types/http';
 const UNSAFE_SEGMENTS = /(?:^|\.)(__[\w]*|constructor|prototype)(?:\.|$)/;
 const MAX_PATCH_ENTRIES = 100;
 const DEFAULT_PRIORITY = 10;
+const BASE_ONLY_OVERRIDE_SECTIONS = new Set<string>(BASE_ONLY_CONFIG_SECTIONS);
 
 export function isValidFieldPath(path: string): boolean {
   return (
@@ -29,6 +31,10 @@ export function isValidFieldPath(path: string): boolean {
 
 export function getTopLevelSection(fieldPath: string): string {
   return fieldPath.split('.')[0];
+}
+
+function isBaseOnlyFieldPath(fieldPath: string): boolean {
+  return BASE_ONLY_OVERRIDE_SECTIONS.has(getTopLevelSection(fieldPath));
 }
 
 /**
@@ -165,7 +171,17 @@ function getCapabilityUser(req: ServerRequest): CapabilityUser | null {
 
 // ── Handler factory ──────────────────────────────────────────────────
 
-export function createAdminConfigHandlers(deps: AdminConfigDeps) {
+export function createAdminConfigHandlers(deps: AdminConfigDeps): {
+  listConfigs: (req: ServerRequest, res: Response) => Promise<Response>;
+  getBaseConfig: (req: ServerRequest, res: Response) => Promise<Response>;
+  getConfig: (req: ServerRequest, res: Response) => Promise<Response>;
+  upsertConfigOverrides: (req: ServerRequest, res: Response) => Promise<Response>;
+  patchConfigField: (req: ServerRequest, res: Response) => Promise<Response>;
+  tombstoneConfigField: (req: ServerRequest, res: Response) => Promise<Response>;
+  deleteConfigField: (req: ServerRequest, res: Response) => Promise<Response>;
+  deleteConfigOverrides: (req: ServerRequest, res: Response) => Promise<Response>;
+  toggleConfig: (req: ServerRequest, res: Response) => Promise<Response>;
+} {
   const {
     listAllConfigs,
     findConfigByPrincipal,
@@ -183,7 +199,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
   /**
    * GET / — List all active config overrides.
    */
-  async function listConfigs(req: ServerRequest, res: Response) {
+  async function listConfigs(req: ServerRequest, res: Response): Promise<Response> {
     try {
       const user = getCapabilityUser(req);
       if (!user) {
@@ -206,7 +222,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
    * GET /base — Return the raw AppConfig (YAML + DB base merged).
    * This is the full config structure admins can edit, NOT the startup payload.
    */
-  async function getBaseConfig(req: ServerRequest, res: Response) {
+  async function getBaseConfig(req: ServerRequest, res: Response): Promise<Response> {
     try {
       const user = getCapabilityUser(req);
       if (!user) {
@@ -236,7 +252,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
   /**
    * GET /:principalType/:principalId — Get config for a specific principal.
    */
-  async function getConfig(req: ServerRequest, res: Response) {
+  async function getConfig(req: ServerRequest, res: Response): Promise<Response> {
     try {
       const { principalType, principalId } = req.params as {
         principalType: string;
@@ -273,7 +289,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
   /**
    * PUT /:principalType/:principalId — Replace entire overrides for a principal.
    */
-  async function upsertConfigOverrides(req: ServerRequest, res: Response) {
+  async function upsertConfigOverrides(req: ServerRequest, res: Response): Promise<Response> {
     try {
       const { principalType, principalId } = req.params as {
         principalType: string;
@@ -306,7 +322,17 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
-      let filteredOverrides = overrides;
+      const filteredOverrides = {
+        ...(overrides as Record<string, unknown>),
+      } as Partial<TCustomConfig>;
+      for (const section of BASE_ONLY_OVERRIDE_SECTIONS) {
+        if (section in filteredOverrides) {
+          delete (filteredOverrides as Record<string, unknown>)[section];
+          logger.warn(
+            `[adminConfig] Stripping base-only config section "${section}" - configure it in librechat.yaml instead`,
+          );
+        }
+      }
       const iface = (overrides as Record<string, unknown>).interface;
       if (iface != null && typeof iface === 'object' && !Array.isArray(iface)) {
         const filteredIface: Record<string, unknown> = {};
@@ -335,7 +361,6 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
             );
           }
         }
-        filteredOverrides = { ...(overrides as Record<string, unknown>) } as Partial<TCustomConfig>;
         if (Object.keys(filteredIface).length > 0) {
           (filteredOverrides as Record<string, unknown>).interface = filteredIface;
         } else {
@@ -382,7 +407,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
   /**
    * PATCH /:principalType/:principalId/fields — Set individual fields via dot-paths.
    */
-  async function patchConfigField(req: ServerRequest, res: Response) {
+  async function patchConfigField(req: ServerRequest, res: Response): Promise<Response> {
     try {
       const { principalType, principalId } = req.params as {
         principalType: string;
@@ -426,6 +451,12 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
       }
 
       const validEntries = entries.filter((entry) => {
+        if (isBaseOnlyFieldPath(entry.fieldPath)) {
+          logger.warn(
+            `[adminConfig] Stripping base-only config field "${entry.fieldPath}" - configure it in librechat.yaml instead`,
+          );
+          return false;
+        }
         if (isInterfacePermissionPath(entry.fieldPath)) {
           logger.warn(
             `[adminConfig] Stripping interface permission field "${entry.fieldPath}" — use role permissions instead`,
@@ -491,7 +522,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
   /**
    * POST /:principalType/:principalId/fields/tombstone — Suppress an inherited config path.
    */
-  async function tombstoneConfigField(req: ServerRequest, res: Response) {
+  async function tombstoneConfigField(req: ServerRequest, res: Response): Promise<Response> {
     try {
       const { principalType, principalId } = req.params as {
         principalType: string;
@@ -565,7 +596,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
   /**
    * DELETE /:principalType/:principalId/fields?fieldPath=dotted.path
    */
-  async function deleteConfigField(req: ServerRequest, res: Response) {
+  async function deleteConfigField(req: ServerRequest, res: Response): Promise<Response> {
     try {
       const { principalType, principalId } = req.params as {
         principalType: string;
@@ -598,6 +629,13 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
         });
       }
 
+      if (isBaseOnlyFieldPath(fieldPath)) {
+        logger.warn(
+          `[adminConfig] Ignoring delete for base-only config field "${fieldPath}" - configure it in librechat.yaml instead`,
+        );
+        return res.status(200).json({ message: 'No actionable field path provided' });
+      }
+
       if (isInterfacePermissionPath(fieldPath)) {
         logger.warn(
           `[adminConfig] Ignoring delete for interface permission field "${fieldPath}" — use role permissions instead`,
@@ -623,7 +661,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
   /**
    * DELETE /:principalType/:principalId — Delete an entire config override.
    */
-  async function deleteConfigOverrides(req: ServerRequest, res: Response) {
+  async function deleteConfigOverrides(req: ServerRequest, res: Response): Promise<Response> {
     try {
       const { principalType, principalId } = req.params as {
         principalType: string;
@@ -661,7 +699,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps) {
   /**
    * PATCH /:principalType/:principalId/active — Toggle isActive.
    */
-  async function toggleConfig(req: ServerRequest, res: Response) {
+  async function toggleConfig(req: ServerRequest, res: Response): Promise<Response> {
     try {
       const { principalType, principalId } = req.params as {
         principalType: string;

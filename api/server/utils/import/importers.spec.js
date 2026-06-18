@@ -764,6 +764,86 @@ describe('importChatGptConvo', () => {
     expect(userMsg.createdAt).toEqual(new Date(1000 * 1000));
     expect(assistantMsg.createdAt).toEqual(new Date(2000 * 1000));
   });
+
+  it('should import messages missing metadata without failing (newer ChatGPT exports)', async () => {
+    const testData = [
+      {
+        title: 'Missing Metadata Test',
+        create_time: 1714585031.148505,
+        update_time: 1714585060.879308,
+        mapping: {
+          'root-node': {
+            id: 'root-node',
+            message: null,
+            parent: null,
+            children: ['user-msg-1'],
+          },
+          'user-msg-1': {
+            id: 'user-msg-1',
+            message: {
+              id: 'user-msg-1',
+              author: { role: 'user' },
+              create_time: 1714585031.150442,
+              content: { content_type: 'text', parts: ['User message without metadata'] },
+            },
+            parent: 'root-node',
+            children: ['assistant-msg-1'],
+          },
+          'assistant-msg-1': {
+            id: 'assistant-msg-1',
+            message: {
+              id: 'assistant-msg-1',
+              author: { role: 'assistant' },
+              create_time: 1714585032.150442,
+              content: { content_type: 'text', parts: ['Assistant response without metadata'] },
+            },
+            parent: 'user-msg-1',
+            children: ['no-content-msg'],
+          },
+          'no-content-msg': {
+            id: 'no-content-msg',
+            message: {
+              id: 'no-content-msg',
+              author: { role: 'tool' },
+              create_time: 1714585033.150442,
+            },
+            parent: 'assistant-msg-1',
+            children: [],
+          },
+        },
+      },
+    ];
+
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+
+    const importer = getImporter(testData);
+    await importer(testData, requestUserId, () => importBatchBuilder);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
+    expect(savedMessages).toHaveLength(2);
+
+    const userMessage = savedMessages.find((msg) => msg.isCreatedByUser);
+    const assistantMessage = savedMessages.find((msg) => !msg.isCreatedByUser);
+    expect(userMessage.model).toBe(openAISettings.model.default);
+    expect(assistantMessage.model).toBe(openAISettings.model.default);
+    expect(assistantMessage.parentMessageId).toBe(userMessage.messageId);
+  });
+
+  it('should rethrow errors so failed imports are not reported as successful', async () => {
+    const jsonData = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '__data__', 'chatgpt-export.json'), 'utf8'),
+    );
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveBatch').mockRejectedValue(new Error('db unavailable'));
+
+    const importer = getImporter(jsonData);
+    await expect(importer(jsonData, requestUserId, () => importBatchBuilder)).rejects.toThrow(
+      'db unavailable',
+    );
+  });
 });
 
 describe('importLibreChatConvo', () => {
@@ -1134,6 +1214,17 @@ describe('getImporter', () => {
   it('should throw an error if the import type is not supported', () => {
     const jsonData = { unsupported: 'data' };
     expect(() => getImporter(jsonData)).toThrow('Unsupported import type');
+  });
+
+  it('should throw for array-based files that are not ChatGPT or Claude exports', () => {
+    const openWebUiExport = [
+      { id: 'abc', title: 'Open WebUI Chat', chat: { history: { messages: {} } } },
+    ];
+    expect(() => getImporter(openWebUiExport)).toThrow('Unsupported import type');
+  });
+
+  it('should route empty arrays to the ChatGPT importer without throwing', () => {
+    expect(() => getImporter([])).not.toThrow();
   });
 });
 

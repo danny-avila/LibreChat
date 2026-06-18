@@ -78,7 +78,13 @@ export interface AdminGrantsDeps {
 export type GrantPrincipalType = PrincipalType.ROLE;
 
 /** Creates admin grant handlers with dependency injection for the /api/admin/grants routes. */
-export function createAdminGrantsHandlers(deps: AdminGrantsDeps) {
+export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
+  listGrants: (req: ServerRequest, res: Response) => Promise<Response>;
+  getEffectiveCapabilities: (req: ServerRequest, res: Response) => Promise<Response>;
+  getPrincipalGrants: (req: ServerRequest, res: Response) => Promise<Response>;
+  assignGrant: (req: ServerRequest, res: Response) => Promise<Response>;
+  revokeGrant: (req: ServerRequest, res: Response) => Promise<Response>;
+} {
   const {
     listGrants,
     countGrants,

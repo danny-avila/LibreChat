@@ -105,6 +105,7 @@ jest.mock('@librechat/api', () => ({
   createErrorResponse: jest.fn(),
   getTransactionsConfig: mockGetTransactionsConfig,
   recordCollectedUsage: mockRecordCollectedUsage,
+  createSubagentUsageSink: jest.fn().mockReturnValue(jest.fn()),
   extractManualSkills: jest.fn().mockReturnValue(undefined),
   injectSkillPrimes: jest.fn().mockReturnValue({
     initialMessages: [],
@@ -132,6 +133,7 @@ jest.mock('@librechat/api', () => ({
   resolveRecursionLimit: jest.fn().mockReturnValue(50),
   createToolExecuteHandler: jest.fn().mockReturnValue({ handle: jest.fn() }),
   isChatCompletionValidationFailure: jest.fn().mockReturnValue(false),
+  findPiiMatchInMessages: jest.fn().mockReturnValue(null),
   discoverConnectedAgents: jest.fn().mockResolvedValue({
     agentConfigs: new Map(),
     edges: [],

@@ -3,6 +3,7 @@ import { googleSettings, AuthKeys, removeNullishValues } from 'librechat-data-pr
 import type { GoogleClientOptions, VertexAIClientOptions } from '@librechat/agents';
 import type { GoogleAIToolType } from '@librechat/agents/langchain/google-common';
 import type * as t from '~/types';
+import { mergeHeaders } from '~/utils/headers';
 import { isEnabled } from '~/utils';
 
 type GoogleThinkingLevel = 'THINKING_LEVEL_UNSPECIFIED' | 'MINIMAL' | 'LOW' | 'MEDIUM' | 'HIGH';
@@ -52,7 +53,7 @@ type GoogleModelOptions = Partial<t.GoogleParameters> &
   Partial<Record<BlockedModelOptionParam, unknown>>;
 
 /** Known Google/Vertex AI parameters that map directly to the client config */
-export const knownGoogleParams = new Set([
+export const knownGoogleParams: Set<string> = new Set([
   'model',
   'modelName',
   'temperature',
@@ -320,7 +321,14 @@ export function getGoogleConfig(
   credentials: string | t.GoogleCredentials | undefined,
   options: t.GoogleConfigOptions = {},
   acceptRawApiKey = false,
-) {
+): {
+  /** @type {GoogleAIToolType[]} */
+  tools: GoogleAIToolType[];
+  /** @type {Providers.GOOGLE | Providers.VERTEXAI} */
+  provider: Providers.VERTEXAI | Providers.GOOGLE;
+  /** @type {GoogleClientOptions | VertexAIClientOptions} */
+  llmConfig: VertexAIClientOptions | GoogleClientOptions;
+} {
   let creds: t.GoogleCredentials = {};
   if (acceptRawApiKey && typeof credentials === 'string') {
     creds[AuthKeys.GOOGLE_API_KEY] = credentials;
@@ -480,6 +488,19 @@ export function getGoogleConfig(
     (llmConfig as GoogleClientOptions).customHeaders = {
       Authorization: `Bearer ${apiKey}`,
     };
+  }
+
+  /**
+   * Attach admin-configured custom headers (e.g. AI-gateway metadata) beneath
+   * the provider-managed `Authorization` header above, so auth always wins.
+   * `options.headers` are already resolved by `initializeGoogle`, keeping the
+   * key-derived `Authorization` out of placeholder/env expansion.
+   */
+  if (options.headers && Object.keys(options.headers).length > 0) {
+    (llmConfig as GoogleClientOptions).customHeaders = mergeHeaders(
+      options.headers,
+      (llmConfig as GoogleClientOptions).customHeaders as Record<string, string> | undefined,
+    );
   }
 
   /** Handle defaultParams first - only process Google-native params if undefined */

@@ -16,8 +16,9 @@ import type {
   ISkillFileDocument,
   ISkillSummary,
 } from '~/types/skill';
-import { isValidObjectIdString } from '~/utils/objectId';
+import type { IAgent } from '~/types/agent';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import { isValidObjectIdString } from '~/utils/objectId';
 import { stripYamlTrailingComment } from '~/utils/yaml';
 import { escapeRegExp } from '~/utils/string';
 import logger from '~/config/winston';
@@ -498,6 +499,8 @@ export type UpdateSkillInput = {
   frontmatter?: Record<string, unknown>;
   category?: string;
   alwaysApply?: boolean;
+  source?: 'inline' | 'github' | 'notion';
+  sourceMetadata?: Record<string, unknown>;
 };
 
 export type GetAuthorSkillByNameParams = {
@@ -622,6 +625,7 @@ export type UpsertSkillFileInput = {
   storageKey?: string;
   storageRegion?: string;
   source: string;
+  sourceMetadata?: Record<string, unknown>;
   mimeType: string;
   bytes: number;
   isExecutable?: boolean;
@@ -832,6 +836,35 @@ function resolveAlwaysApplyFromInput(
 }
 
 /**
+ * Narrows candidate skill ids to those backed by an existing Skill doc.
+ * Existence-only check (no ACL) so pruning an agent allowlist never drops
+ * skills the saving user merely can't view. Preserves input order, dedupes,
+ * and drops malformed ids — they can't reference anything. Candidates are
+ * lowercased before comparison: `isValidObjectIdString` accepts uppercase
+ * hex, but `_id.toString()` is always lowercase, and a casing mismatch
+ * would silently drop a valid id (and an emptied allowlist means the full
+ * catalog — the opposite of the configured scope).
+ */
+export async function filterExistingSkillIds(
+  mongoose: typeof import('mongoose'),
+  skillIds: string[],
+): Promise<string[]> {
+  const candidates = [
+    ...new Set(skillIds.filter(isValidObjectIdString).map((id) => id.toLowerCase())),
+  ];
+  if (candidates.length === 0) {
+    return [];
+  }
+  const Skill = mongoose.models.Skill as Model<ISkillDocument>;
+  const docs = await Skill.find(
+    { _id: { $in: candidates.map((id) => new mongoose.Types.ObjectId(id)) } },
+    { _id: 1 },
+  ).lean<Array<{ _id: Types.ObjectId }>>();
+  const existing = new Set(docs.map((doc) => doc._id.toString()));
+  return candidates.filter((id) => existing.has(id));
+}
+
+/**
  * Validate the `always-apply` value that would be derived from the
  * SKILL.md body's inline frontmatter. Only reports an issue when the
  * key is present with an unparseable value — absent / valid / empty
@@ -855,7 +888,87 @@ export function validateAlwaysApplyInBody(body: string | undefined): ValidationI
   return [];
 }
 
-export function createSkillMethods(mongoose: typeof import('mongoose'), deps: SkillDeps) {
+export function createSkillMethods(
+  mongoose: typeof import('mongoose'),
+  deps: SkillDeps,
+): {
+  createSkill: (data: CreateSkillInput) => Promise<CreateSkillResult>;
+  getSkillById: (id: string | Types.ObjectId) => Promise<(ISkill & { _id: Types.ObjectId }) | null>;
+  getSkillByName: (
+    name: string,
+    accessibleIds: Types.ObjectId[],
+    options?: {
+      /**
+       * Manual paths (`$` popover, always-apply once Phase 5 lands) set
+       * this so a same-name newer `userInvocable: false` duplicate can't
+       * shadow the older user-invocable doc the popover surfaced.
+       * Disable-model-invocation status is irrelevant here — manually-
+       * primed disabled skills are explicitly supported (iter 4).
+       */
+      preferUserInvocable?: boolean;
+      /**
+       * Model paths (`skill` / `read_file` tool handlers) set this so a
+       * same-name newer `disable-model-invocation: true` duplicate can't
+       * shadow the cataloged model-invocable doc. User-invocability is
+       * irrelevant here — `userInvocable: false` skills are model-only
+       * and remain valid model-invocation targets.
+       *
+       * Both flags fall back to the newest match when no preferred doc
+       * exists, so handlers can still fire their explicit-rejection
+       * error paths (e.g. "cannot be invoked by the model" in the
+       * disabled-only case).
+       */
+      preferModelInvocable?: boolean;
+    },
+  ) => Promise<(ISkill & { _id: Types.ObjectId }) | null>;
+  getAuthorSkillByName: (
+    params: GetAuthorSkillByNameParams,
+  ) => Promise<(ISkill & { _id: Types.ObjectId }) | null>;
+  listSkillsByAccess: (params: ListSkillsByAccessParams) => Promise<ListSkillsByAccessResult>;
+  listAlwaysApplySkills: (
+    params: ListAlwaysApplySkillsParams,
+  ) => Promise<ListAlwaysApplySkillsResult>;
+  updateSkill: (params: {
+    id: string;
+    expectedVersion: number;
+    update: UpdateSkillInput;
+  }) => Promise<UpdateSkillResult>;
+  deleteSkill: (id: string) => Promise<{ deleted: boolean }>;
+  deleteUserSkills: (userId: Types.ObjectId | string) => Promise<number>;
+  findSkillBySourceIdentity: (params: {
+    source: 'github' | 'notion';
+    upstreamId: string;
+    tenantId?: string;
+  }) => Promise<(ISkill & { _id: Types.ObjectId }) | null>;
+  listSkillsBySource: (params: {
+    source: 'github' | 'notion';
+    sourceId: string;
+  }) => Promise<Array<ISkill & { _id: Types.ObjectId }>>;
+  listSkillFiles: (
+    skillId: Types.ObjectId | string,
+  ) => Promise<Array<ISkillFile & { _id: Types.ObjectId }>>;
+  upsertSkillFile: (row: UpsertSkillFileInput) => Promise<ISkillFile & { _id: Types.ObjectId }>;
+  deleteSkillFile: (
+    skillId: Types.ObjectId | string,
+    relativePath: string,
+  ) => Promise<{ deleted: boolean }>;
+  getSkillFileByPath: (
+    skillId: Types.ObjectId | string,
+    relativePath: string,
+  ) => Promise<(ISkillFile & { _id: Types.ObjectId }) | null>;
+  updateSkillFileContent: (
+    skillId: Types.ObjectId | string,
+    relativePath: string,
+    update: { content?: string; isBinary?: boolean },
+  ) => Promise<void>;
+  updateSkillFileCodeEnvIds: (
+    updates: Array<{
+      skillId: Types.ObjectId | string;
+      relativePath: string;
+      codeEnvRef: CodeEnvRef;
+    }>,
+  ) => Promise<{ matchedCount: number; modifiedCount: number }>;
+} {
   const { ObjectId } = mongoose.Types;
 
   function buildSkillFilter(
@@ -1278,6 +1391,8 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     if (update.displayTitle !== undefined) setPayload.displayTitle = update.displayTitle;
     if (update.description !== undefined) setPayload.description = update.description;
     if (update.body !== undefined) setPayload.body = update.body;
+    if (update.source !== undefined) setPayload.source = update.source;
+    if (update.sourceMetadata !== undefined) setPayload.sourceMetadata = update.sourceMetadata;
     if (update.frontmatter !== undefined) {
       setPayload.frontmatter = update.frontmatter;
       /**
@@ -1384,6 +1499,48 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     };
   }
 
+  /**
+   * Removes deleted skill ids from every agent's `skills` allowlist. A dangling
+   * id is invisible in the builder yet keeps the allowlist non-empty, so the
+   * runtime scopes the catalog to an empty intersection and the agent silently
+   * loses all skills. Direct `updateMany` on purpose: hygiene, not an authored
+   * edit — no version entry, timestamps untouched.
+   *
+   * Ids are lowercased first: allowlists store canonical `_id.toString()`
+   * values, and an uppercase-but-valid id would delete the Skill doc yet
+   * leave the dangling entry behind.
+   *
+   * Agents whose ENTIRE allowlist is being deleted fail closed instead:
+   * an emptied allowlist with `skills_enabled: true` means the full
+   * accessible catalog at runtime, so a plain `$pull` would silently widen
+   * a deliberately restricted agent. Disabling skills preserves the
+   * restriction until an author makes a new explicit choice.
+   */
+  async function removeSkillsFromAgentAllowlists(skillIds: string[]): Promise<void> {
+    if (skillIds.length === 0) {
+      return;
+    }
+    const ids = skillIds.map((id) => id.toLowerCase());
+    const Agent = mongoose.models.Agent as Model<IAgent>;
+    try {
+      await Agent.updateMany(
+        { skills: { $in: ids, $not: { $elemMatch: { $nin: ids } } } },
+        { $set: { skills: [], skills_enabled: false } },
+        { timestamps: false },
+      );
+      await Agent.updateMany(
+        { skills: { $in: ids } },
+        { $pull: { skills: { $in: ids } } },
+        { timestamps: false },
+      );
+    } catch (error) {
+      logger.error(
+        '[removeSkillsFromAgentAllowlists] Error pruning agent skill allowlists:',
+        error,
+      );
+    }
+  }
+
   async function deleteSkill(id: string): Promise<{ deleted: boolean }> {
     if (!isValidObjectIdString(id)) {
       return { deleted: false };
@@ -1395,6 +1552,10 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     if (!res.deletedCount) {
       return { deleted: false };
     }
+    /** Prune allowlists immediately after the Skill row is gone: if the
+     *  SkillFile cleanup below throws, a retry exits early on
+     *  `deletedCount === 0` and would never reach a later prune. */
+    await removeSkillsFromAgentAllowlists([id]);
     await SkillFile.deleteMany({ skillId: objectId });
     try {
       await deps.removeAllPermissions({ resourceType: ResourceType.SKILL, resourceId: id });
@@ -1414,6 +1575,7 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
     await SkillFile.deleteMany({ skillId: { $in: soleOwned } });
     const res = await Skill.deleteMany({ _id: { $in: soleOwned } });
+    await removeSkillsFromAgentAllowlists(soleOwned.map((rid) => rid.toString()));
     await Promise.allSettled(
       soleOwned.map((rid) =>
         deps
@@ -1427,6 +1589,35 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
       ),
     );
     return res.deletedCount ?? 0;
+  }
+
+  async function findSkillBySourceIdentity(params: {
+    source: 'github' | 'notion';
+    upstreamId: string;
+    tenantId?: string;
+  }): Promise<(ISkill & { _id: Types.ObjectId }) | null> {
+    const Skill = mongoose.models.Skill as Model<ISkillDocument>;
+    const tenantFilter: FilterQuery<ISkillDocument> = params.tenantId
+      ? { tenantId: params.tenantId }
+      : { $or: [{ tenantId: { $exists: false } }, { tenantId: null }] };
+    const doc = await Skill.findOne({
+      source: params.source,
+      'sourceMetadata.upstreamId': params.upstreamId,
+      ...tenantFilter,
+    }).lean();
+    return (doc as unknown as (ISkill & { _id: Types.ObjectId }) | null) ?? null;
+  }
+
+  async function listSkillsBySource(params: {
+    source: 'github' | 'notion';
+    sourceId: string;
+  }): Promise<Array<ISkill & { _id: Types.ObjectId }>> {
+    const Skill = mongoose.models.Skill as Model<ISkillDocument>;
+    const rows = await Skill.find({
+      source: params.source,
+      'sourceMetadata.sourceId': params.sourceId,
+    }).lean();
+    return rows as unknown as Array<ISkill & { _id: Types.ObjectId }>;
   }
 
   /**
@@ -1497,6 +1688,7 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
           storageKey: row.storageKey,
           storageRegion: row.storageRegion,
           source: row.source,
+          sourceMetadata: row.sourceMetadata,
           mimeType: row.mimeType,
           bytes: row.bytes,
           category,
@@ -1593,6 +1785,8 @@ export function createSkillMethods(mongoose: typeof import('mongoose'), deps: Sk
     updateSkill,
     deleteSkill,
     deleteUserSkills,
+    findSkillBySourceIdentity,
+    listSkillsBySource,
     listSkillFiles,
     upsertSkillFile,
     deleteSkillFile,

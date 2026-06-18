@@ -33,7 +33,8 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 import { Providers } from '@librechat/agents';
-import { EModelEndpoint, Tools } from 'librechat-data-provider';
+import { EModelEndpoint, EToolResources, Tools } from 'librechat-data-provider';
+import type { IMongoFile } from '@librechat/data-schemas';
 import type { Agent } from 'librechat-data-provider';
 import type { ServerRequest, InitializeResultBase, EndpointTokenConfig } from '~/types';
 import type { InitializeAgentDbMethods } from '../initialize';
@@ -663,6 +664,31 @@ describe('initializeAgent — stable and dynamic instruction fields', () => {
     expect(result.additional_instructions).toBe('Conversation opened at 2023-12-31T23:59:58.000Z');
   });
 
+  it('resolves temporal special vars in the request timezone', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.instructions = 'It is currently {{current_datetime}}.';
+    req.conversationCreatedAt = '2024-01-15T18:30:00.000Z';
+    req.body = { timezone: 'America/New_York' };
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.instructions).toBeUndefined();
+    expect(result.additional_instructions).toBe(
+      'It is currently 2024-01-15 13:30:00 -05:00 (Monday).',
+    );
+  });
+
   it('keeps non-temporal special vars in stable instructions', async () => {
     const { agent, req, res, loadTools, db } = createMocks();
     agent.instructions = 'You are helping {{current_user}}.';
@@ -749,6 +775,44 @@ describe('initializeAgent — attachment scoping', () => {
     expect(result.attachments).toEqual([agentContextFile, requestFile]);
     expect(result.requestAttachments).toEqual([requestFile]);
     expect(result.agentContextAttachments).toEqual([agentContextFile]);
+  });
+
+  it('owner-scopes request file usage updates while preserving trusted tool files', async () => {
+    const requestFile = { file_id: 'request-file', filename: 'request.txt' } as IMongoFile;
+    const toolFile = { file_id: 'tool-file', filename: 'tool.txt' } as IMongoFile;
+    const { agent, req, res, loadTools, db } = createMocks();
+
+    agent.tools = [EToolResources.file_search];
+    mockExtractLibreChatParams.mockReturnValueOnce({
+      resendFiles: true,
+      maxContextTokens: undefined,
+      modelOptions: { model: agent.model },
+    });
+    (db.getConvoFiles as jest.Mock).mockResolvedValueOnce([toolFile.file_id]);
+    (db.getToolFilesByIds as jest.Mock).mockResolvedValueOnce([toolFile]);
+    (db.updateFilesUsage as jest.Mock)
+      .mockResolvedValueOnce([requestFile])
+      .mockResolvedValueOnce([toolFile]);
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        requestFiles: [requestFile],
+        conversationId: 'conversation-1',
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(db.updateFilesUsage).toHaveBeenNthCalledWith(1, [requestFile], undefined, {
+      user: 'user-1',
+    });
+    expect(db.updateFilesUsage).toHaveBeenNthCalledWith(2, [toolFile]);
   });
 });
 
@@ -2027,5 +2091,56 @@ describe('initializeAgent — code-generated file thread filter (regression)', (
      * so it shouldn't be invoked at all. `getCodeGeneratedFiles`'s own
      * empty-guard is exercised by data-schemas tests. */
     expect(getUserCodeFiles).not.toHaveBeenCalled();
+  });
+});
+
+describe('initializeAgent — run-scoped MCP tool definitions', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('carries mcpAvailableTools from the loadTools result onto the initialized agent', async () => {
+    /** Regression guard for the request-scoped MCP/PTC handoff: dropping this
+     *  field at the destructure boundary forces per-call reinitialization
+     *  downstream and can storm the MCP circuit breaker. */
+    const { agent, req, res, loadTools, db } = createMocks();
+    const mcpTool = 'list_tables_mcp_ClickHouse';
+    const mcpAvailableTools = {
+      ClickHouse: {
+        [mcpTool]: {
+          type: 'function' as const,
+          function: {
+            name: mcpTool,
+            description: 'List tables',
+            parameters: { type: 'object' as const, properties: {} },
+          },
+        },
+      },
+    };
+    loadTools.mockResolvedValue({
+      tools: [],
+      toolContextMap: {},
+      dynamicToolContextMap: {},
+      userMCPAuthMap: undefined,
+      toolRegistry: undefined,
+      toolDefinitions: [],
+      hasDeferredTools: false,
+      mcpAvailableTools,
+    });
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.mcpAvailableTools).toEqual(mcpAvailableTools);
   });
 });

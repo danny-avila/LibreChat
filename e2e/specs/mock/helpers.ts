@@ -10,7 +10,7 @@ export const MOCK_ENDPOINTS = [
   { label: 'Mock Provider B', model: 'mock-model-b' },
 ] as const;
 
-export type MockEndpoint = (typeof MOCK_ENDPOINTS)[number];
+export type MockEndpoint = { label: string; model: string };
 
 export const NEW_CHAT_PATH = '/c/new';
 
@@ -19,13 +19,24 @@ type RefreshTokenBody = {
 };
 
 export function isAgentsStream(response: Response) {
-  return response.url().includes('/api/agents') && response.status() === 200;
+  return isAgentGenerationStart(response);
+}
+
+export function isAgentGenerationStart(response: Response) {
+  const { pathname } = new URL(response.url());
+  const isAgentsChat = pathname === '/api/agents/chat' || pathname.startsWith('/api/agents/chat/');
+  return (
+    response.request().method() === 'POST' &&
+    isAgentsChat &&
+    !pathname.endsWith('/abort') &&
+    response.status() === 200
+  );
 }
 
 const modelSelectorTrigger = (page: Page) =>
   page.getByRole('button', { name: 'Select a model' }).first();
 
-const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+export const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** Open the model selector, choose an endpoint, then its model (committed on the model click). */
 export async function selectMockEndpoint(page: Page, endpoint: MockEndpoint) {
@@ -47,7 +58,7 @@ export async function selectModelSpec(page: Page, label: string) {
     return;
   }
   await trigger.click();
-  await page.getByRole('option', { name: new RegExp(`^${escapeRegExp(label)}\\b`) }).click();
+  await page.getByRole('option', { name: new RegExp(`(^|\\s)${escapeRegExp(label)}\\b`) }).click();
   await expect(trigger).toContainText(label);
 }
 
@@ -59,9 +70,16 @@ export async function enableSkills(page: Page) {
   await expect(page.getByRole('button', { name: 'Skills' })).toBeVisible();
 }
 
+/** The conversation messages container. */
+export const messagesView = (page: Page) => page.getByTestId('messages-view');
+
+/** Build the mock-model reply trigger and its expected rendered text for a label. */
+export const replyPrompt = (label: string) => `E2E_REPLY:${label}`;
+export const replyText = (label: string) => `E2E reply ${label}`;
+
 /** The mock reply as rendered in the conversation, scoped to the messages view. */
 export function mockReply(page: Page) {
-  return page.getByTestId('messages-view').getByText(new RegExp(MOCK_REPLY_TEXT, 'i'));
+  return messagesView(page).getByText(new RegExp(MOCK_REPLY_TEXT, 'i'));
 }
 
 /** Type a message, send it, and wait for the streamed `/api/agents` response. */

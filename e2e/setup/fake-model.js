@@ -9,6 +9,10 @@
  * without a live provider or a standalone HTTP mock server: responses are decided
  * from the conversation and the agents' advertised tools.
  */
+const { FakeChatModel } = require('@librechat/agents');
+const { ChatGenerationChunk } = require('@langchain/core/outputs');
+const { AIMessageChunk } = require('@langchain/core/messages');
+
 const MOCK_REPLY = process.env.MOCK_LLM_REPLY || 'E2E mock reply: pong';
 const CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_CHUNK_DELAY_MS) || 10;
 
@@ -16,10 +20,21 @@ const CREATE_SKILL_MARKER = 'E2E_CREATE_SKILL:';
 const EDIT_SKILL_MARKER = 'E2E_EDIT_SKILL:';
 const ASSERT_MODEL_SPEC_SKILLS_MARKER = 'E2E_ASSERT_MODEL_SPEC_SKILLS';
 const ASSERT_PROVIDER_FILE_MARKER = 'E2E_ASSERT_PROVIDER_FILE:';
+const REPLY_MARKER = 'E2E_REPLY:';
+const COUNTED_REPLY_MARKER = 'E2E_COUNTED_REPLY:';
+const SLOW_REPLY_MARKER = 'E2E_SLOW_REPLY:';
+const SLOW_COUNTED_REPLY_MARKER = 'E2E_SLOW_COUNTED_REPLY:';
+const RESUME_ICON_REPLY_MARKER = 'E2E_RESUME_ICON_REPLY:';
+const FORCED_ERROR_MARKER = 'E2E_FORCED_ERROR:';
+const MARKDOWN_REPLY_MARKER = 'E2E_MARKDOWN_REPLY';
 const CREATE_FILE_AUTHORING_FINAL_TEXT = 'E2E file authoring complete';
 const EDIT_FILE_AUTHORING_FINAL_TEXT = 'E2E file edit complete';
 const MODEL_SPEC_SKILL_ASSERTION_FINAL_TEXT = 'E2E model spec skill assertion passed';
 const PROVIDER_FILE_ASSERTION_FINAL_TEXT = 'E2E provider file assertion passed';
+const SLOW_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_SLOW_CHUNK_DELAY_MS) || 35;
+const SLOW_REPLY_CHUNKS = 160;
+const RESUME_ICON_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_RESUME_ICON_CHUNK_DELAY_MS) || 60;
+const RESUME_ICON_REPLY_CHUNKS = 240;
 const CREATE_FILE_TOOL_NAME = 'create_file';
 const EDIT_FILE_TOOL_NAME = 'edit_file';
 const BASH_TOOL_NAME = 'bash_tool';
@@ -34,6 +49,8 @@ const SKILL_DESCRIPTION =
   'Use this skill to verify LibreChat skill file authoring in mock end-to-end tests.';
 const EDITED_SKILL_DESCRIPTION =
   'Use this edited skill to verify LibreChat skill file authoring in mock end-to-end tests.';
+const countedReplies = new Map();
+const slowCountedReplies = new Map();
 
 function messageType(message) {
   if (typeof message.getType === 'function') {
@@ -101,7 +118,12 @@ function getMarkerValue(text, marker) {
   if (markerIndex === -1) {
     return '';
   }
-  return text.slice(markerIndex + marker.length).trim().split(/\s+/, 1)[0] ?? '';
+  return (
+    text
+      .slice(markerIndex + marker.length)
+      .trim()
+      .split(/\s+/, 1)[0] ?? ''
+  );
 }
 
 function collectToolNames(agents) {
@@ -210,6 +232,146 @@ function providerFileAssertionResponses({ messages, text }) {
   };
 }
 
+function replyResponses(text) {
+  if (text.includes(MARKDOWN_REPLY_MARKER)) {
+    return {
+      responses: [
+        [
+          '## E2E markdown heading',
+          '',
+          '**E2E bold text**',
+          '',
+          '- E2E list item',
+          '',
+          '```javascript',
+          'const e2eSyntaxHighlight = "ok";',
+          '```',
+        ].join('\n'),
+      ],
+    };
+  }
+
+  const errorName = getMarkerValue(text, FORCED_ERROR_MARKER);
+  if (errorName) {
+    return {
+      responses: [`E2E forced error prelude ${errorName}`],
+      thrownError: `E2E forced stream error ${errorName}`,
+    };
+  }
+
+  const replyName = getMarkerValue(text, REPLY_MARKER);
+  if (replyName) {
+    return {
+      responses: [`E2E reply ${replyName}`],
+    };
+  }
+
+  const countedName = getMarkerValue(text, COUNTED_REPLY_MARKER);
+  if (countedName) {
+    const count = (countedReplies.get(countedName) ?? 0) + 1;
+    countedReplies.set(countedName, count);
+    return {
+      responses: [`E2E counted reply ${countedName} #${count}`],
+    };
+  }
+
+  const slowName = getMarkerValue(text, SLOW_REPLY_MARKER);
+  if (slowName) {
+    const chunks = Array.from(
+      { length: SLOW_REPLY_CHUNKS },
+      (_, index) => `chunk-${String(index).padStart(3, '0')}`,
+    ).join(' ');
+    return {
+      responses: [`E2E slow reply ${slowName} ${chunks}`],
+      sleep: SLOW_CHUNK_DELAY_MS,
+    };
+  }
+
+  const slowCountedName = getMarkerValue(text, SLOW_COUNTED_REPLY_MARKER);
+  if (slowCountedName) {
+    const count = (slowCountedReplies.get(slowCountedName) ?? 0) + 1;
+    slowCountedReplies.set(slowCountedName, count);
+    const chunks = Array.from(
+      { length: SLOW_REPLY_CHUNKS },
+      (_, index) => `chunk-${String(index).padStart(3, '0')}`,
+    ).join(' ');
+    return {
+      responses: [`E2E slow counted reply ${slowCountedName} #${count} ${chunks}`],
+      sleep: SLOW_CHUNK_DELAY_MS,
+    };
+  }
+
+  const resumeIconName = getMarkerValue(text, RESUME_ICON_REPLY_MARKER);
+  if (resumeIconName) {
+    const chunks = Array.from(
+      { length: RESUME_ICON_REPLY_CHUNKS },
+      (_, index) => `chunk-${String(index).padStart(3, '0')}`,
+    ).join(' ');
+    return {
+      responses: [`E2E resume icon reply ${resumeIconName} ${chunks}`],
+      sleep: RESUME_ICON_CHUNK_DELAY_MS,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Attaches synthetic usage_metadata on a final empty chunk (the OpenAI
+ * streaming pattern) so token-usage SSE events flow end to end in mock runs.
+ */
+class UsageEmittingFakeChatModel extends FakeChatModel {
+  async *_streamResponseChunks(messages, options, runManager) {
+    let outputChars = 0;
+    for await (const chunk of super._streamResponseChunks(messages, options, runManager)) {
+      outputChars += typeof chunk.text === 'string' ? chunk.text.length : 0;
+      yield chunk;
+    }
+    const inputChars = (messages ?? []).reduce(
+      (sum, message) => sum + getContentText(message?.content).length,
+      0,
+    );
+    const input_tokens = Math.max(1, Math.ceil(inputChars / 4));
+    const output_tokens = Math.max(1, Math.ceil(outputChars / 4));
+    yield new ChatGenerationChunk({
+      text: '',
+      message: new AIMessageChunk({
+        content: '',
+        usage_metadata: { input_tokens, output_tokens, total_tokens: input_tokens + output_tokens },
+      }),
+    });
+  }
+}
+
+function overrideModel({ graph, responses, sleep, toolCalls, thrownError }) {
+  if (!thrownError) {
+    graph.overrideModel = new UsageEmittingFakeChatModel({
+      responses,
+      sleep: sleep ?? CHUNK_DELAY_MS,
+      emitCustomEvent: true,
+      toolCalls,
+    });
+    return;
+  }
+
+  class ThrowingFakeChatModel extends FakeChatModel {
+    async *_streamResponseChunks(messages, options, runManager) {
+      yield* super._streamResponseChunks(
+        messages,
+        { ...options, thrownErrorString: thrownError },
+        runManager,
+      );
+    }
+  }
+
+  graph.overrideModel = new ThrowingFakeChatModel({
+    responses,
+    sleep: sleep ?? CHUNK_DELAY_MS,
+    emitCustomEvent: true,
+    toolCalls,
+  });
+}
+
 function modelSpecSkillAssertionResponses({ agents, messages, toolNames }) {
   const failures = [];
   const additionalInstructions = collectAdditionalInstructions(agents);
@@ -311,6 +473,11 @@ function fileAuthoringResponses(operation, toolNames) {
 }
 
 function resolveResponses({ agents, messages, text, toolNames }) {
+  const reply = replyResponses(text);
+  if (reply) {
+    return reply;
+  }
+
   const providerFileAssertion = providerFileAssertionResponses({ messages, text });
   if (providerFileAssertion) {
     return providerFileAssertion;
@@ -361,11 +528,11 @@ module.exports = function fakeModelHook(run, context) {
 
   const text = getLatestUserText(context?.messages);
   const toolNames = collectToolNames(context?.agents);
-  const { responses, toolCalls } = resolveResponses({
+  const { responses, sleep, toolCalls, thrownError } = resolveResponses({
     agents: context?.agents,
     messages: context?.messages,
     text,
     toolNames,
   });
-  graph.overrideTestModel(responses, CHUNK_DELAY_MS, toolCalls);
+  overrideModel({ graph, responses, sleep, toolCalls, thrownError });
 };

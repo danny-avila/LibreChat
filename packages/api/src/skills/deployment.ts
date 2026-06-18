@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import crypto from 'crypto';
 import yaml from 'js-yaml';
+import crypto from 'crypto';
 import { Types } from 'mongoose';
 import {
   logger,
@@ -182,6 +182,9 @@ export type DeploymentSkillBaseMethods = {
 };
 
 type Cursor = { updatedAt: Date; _id: Types.ObjectId };
+type CollisionFilterResult<T> = {
+  rows: T[];
+};
 
 type LoadDeploymentSkillsOptions = {
   projectRoot?: string;
@@ -251,6 +254,17 @@ export class DeploymentSkillRegistry {
     return skill;
   }
 
+  namesByAccess(accessibleIds: Types.ObjectId[]): Set<string> {
+    const accessibleSet = new Set(accessibleIds.map((id) => id.toString()));
+    const names = new Set<string>();
+    for (const skill of this.list()) {
+      if (accessibleSet.has(skill._id.toString())) {
+        names.add(skill.name);
+      }
+    }
+    return names;
+  }
+
   listByAccess(params: ListSkillsByAccessParams): DeploymentSkill[] {
     const accessibleSet = new Set(params.accessibleIds.map((id) => id.toString()));
     const cursor = decodeCursor(params.cursor);
@@ -316,6 +330,7 @@ export class DeploymentSkillRegistry {
 }
 
 let registry = new DeploymentSkillRegistry(null, []);
+const warnedDeploymentNameCollisions = new Set<string>();
 
 export function getDeploymentSkillRegistry(): DeploymentSkillRegistry {
   return registry;
@@ -451,14 +466,14 @@ export function createDeploymentSkillMethods<T extends DeploymentSkillBaseMethod
       accessibleIds: Types.ObjectId[],
       options?: SkillLookupOptions,
     ): Promise<SkillDetailRow | null> => {
+      const deployment = registry.getByName(name, accessibleIds, options);
+      if (deployment) {
+        return toSkillDetailRow(deployment);
+      }
       const dbSkill = base.getSkillByName
         ? await base.getSkillByName(name, stripDeploymentIds(accessibleIds), options)
         : null;
-      const deployment = registry.getByName(name, accessibleIds, options);
-      return pickPreferredSkill(
-        [dbSkill, deployment ? toSkillDetailRow(deployment) : null],
-        options,
-      );
+      return dbSkill;
     },
     listSkillsByAccess: async (
       params: ListSkillsByAccessParams,
@@ -469,9 +484,20 @@ export function createDeploymentSkillMethods<T extends DeploymentSkillBaseMethod
             accessibleIds: stripDeploymentIds(params.accessibleIds),
           })
         : { skills: [], has_more: false, after: null };
+      const deploymentNames = registry.namesByAccess(params.accessibleIds);
+      const filteredDb = filterDeploymentNameCollisions(dbResult.skills, deploymentNames, 'list');
+      const dbPageBoundary = getDbPageBoundary(dbResult);
+      const deploymentRows = limitRowsToDbPageBoundary(
+        registry.listByAccess(params).map(toSkillSummaryRow),
+        dbPageBoundary,
+      );
       return mergeSkillPage({
-        dbResult,
-        deploymentRows: registry.listByAccess(params).map(toSkillSummaryRow),
+        dbResult: {
+          ...dbResult,
+          skills: filteredDb.rows,
+        },
+        dbPageBoundary,
+        deploymentRows,
         limit: params.limit,
       });
     },
@@ -484,9 +510,23 @@ export function createDeploymentSkillMethods<T extends DeploymentSkillBaseMethod
             accessibleIds: stripDeploymentIds(params.accessibleIds),
           })
         : { skills: [], has_more: false, after: null };
+      const deploymentNames = registry.namesByAccess(params.accessibleIds);
+      const filteredDb = filterDeploymentNameCollisions(
+        dbResult.skills,
+        deploymentNames,
+        'always-apply',
+      );
+      const dbPageBoundary = getDbPageBoundary(dbResult);
       return mergeAlwaysApplyPage({
-        dbResult,
-        deploymentRows: registry.listAlwaysApply(params).map(toAlwaysApplyRow),
+        dbResult: {
+          ...dbResult,
+          skills: filteredDb.rows,
+        },
+        dbPageBoundary,
+        deploymentRows: limitRowsToDbPageBoundary(
+          registry.listAlwaysApply(params).map(toAlwaysApplyRow),
+          dbPageBoundary,
+        ),
         limit: params.limit,
       });
     },
@@ -794,10 +834,12 @@ function validateUniqueNames(skills: DeploymentSkill[]): void {
 
 function mergeSkillPage({
   dbResult,
+  dbPageBoundary,
   deploymentRows,
   limit,
 }: {
   dbResult: ListSkillsByAccessResult;
+  dbPageBoundary?: Cursor | null;
   deploymentRows: SkillSummaryRow[];
   limit: number;
 }): ListSkillsByAccessResult {
@@ -805,19 +847,22 @@ function mergeSkillPage({
   const merged = [...deploymentRows, ...dbResult.skills].sort(compareBySkillCursor);
   const sliced = merged.slice(0, boundedLimit);
   const hasMore = merged.length > boundedLimit || dbResult.has_more === true;
+  const cursorRow = getMergedPageCursor(sliced, boundedLimit, dbPageBoundary);
   return {
     skills: sliced,
     has_more: hasMore,
-    after: hasMore && sliced.length > 0 ? encodeCursor(sliced[sliced.length - 1]) : null,
+    after: hasMore && cursorRow ? encodeCursor(cursorRow) : null,
   };
 }
 
 function mergeAlwaysApplyPage({
   dbResult,
+  dbPageBoundary,
   deploymentRows,
   limit,
 }: {
   dbResult: ListAlwaysApplyResult;
+  dbPageBoundary?: Cursor | null;
   deploymentRows: AlwaysApplySkillRow[];
   limit: number;
 }): ListAlwaysApplyResult {
@@ -825,36 +870,49 @@ function mergeAlwaysApplyPage({
   const merged = [...deploymentRows, ...dbResult.skills].sort(compareBySkillCursor);
   const sliced = merged.slice(0, boundedLimit);
   const hasMore = merged.length > boundedLimit || dbResult.has_more === true;
+  const cursorRow = getMergedPageCursor(sliced, boundedLimit, dbPageBoundary);
   return {
     skills: sliced,
     has_more: hasMore,
-    after: hasMore && sliced.length > 0 ? encodeCursor(sliced[sliced.length - 1]) : null,
+    after: hasMore && cursorRow ? encodeCursor(cursorRow) : null,
   };
 }
 
-function pickPreferredSkill(
-  rows: Array<SkillDetailRow | null>,
-  options?: SkillLookupOptions,
-): SkillDetailRow | null {
-  const candidates = rows.filter((row): row is SkillDetailRow => row != null);
-  if (candidates.length === 0) {
-    return null;
+function getMergedPageCursor<T extends Pick<SkillSummaryRow, '_id' | 'updatedAt'>>(
+  sliced: T[],
+  boundedLimit: number,
+  dbPageBoundary?: Cursor | null,
+): Pick<SkillSummaryRow, '_id' | 'updatedAt'> | null {
+  const lastReturned = sliced.length > 0 ? sliced[sliced.length - 1] : null;
+  if (sliced.length < boundedLimit && dbPageBoundary) {
+    return dbPageBoundary;
   }
-  const preferred = candidates.filter((row) => matchesLookupPreference(row, options));
-  return (preferred.length > 0 ? preferred : candidates).sort(compareBySkillCursor)[0];
+  return lastReturned;
 }
 
-function matchesLookupPreference(
-  row: Pick<SkillSummaryRow, 'disableModelInvocation' | 'userInvocable'>,
-  options?: SkillLookupOptions,
-): boolean {
-  if (options?.preferUserInvocable === true && row.userInvocable === false) {
-    return false;
+function getDbPageBoundary<T extends Pick<SkillSummaryRow, '_id' | 'updatedAt'>>(dbResult: {
+  skills: T[];
+  has_more?: boolean;
+  after?: string | null;
+}): Cursor | null {
+  if (dbResult.has_more !== true) {
+    return null;
   }
-  if (options?.preferModelInvocable === true && row.disableModelInvocation === true) {
-    return false;
+  const last = dbResult.skills.length > 0 ? dbResult.skills[dbResult.skills.length - 1] : null;
+  if (last?.updatedAt) {
+    return { _id: last._id, updatedAt: last.updatedAt };
   }
-  return true;
+  return decodeCursor(dbResult.after);
+}
+
+function limitRowsToDbPageBoundary<T extends Pick<SkillSummaryRow, '_id' | 'updatedAt'>>(
+  rows: T[],
+  dbPageBoundary: Cursor | null,
+): T[] {
+  if (!dbPageBoundary) {
+    return rows;
+  }
+  return rows.filter((row) => compareBySkillCursor(row, dbPageBoundary) <= 0);
 }
 
 function toSkillSummaryRow(skill: DeploymentSkill): SkillSummaryRow {
@@ -900,6 +958,38 @@ function stripDeploymentIds(ids: Types.ObjectId[]): Types.ObjectId[] {
 function hasAccessibleId(ids: Types.ObjectId[], skillId: Types.ObjectId): boolean {
   const key = skillId.toString();
   return ids.some((id) => id.toString() === key);
+}
+
+function filterDeploymentNameCollisions<
+  T extends { name: string } & Pick<SkillSummaryRow, '_id' | 'updatedAt'>,
+>(rows: T[], deploymentNames: Set<string>, context: string): CollisionFilterResult<T> {
+  if (rows.length === 0 || deploymentNames.size === 0) {
+    return { rows };
+  }
+  const hiddenNames = new Set<string>();
+  const filtered = rows.filter((row) => {
+    if (!deploymentNames.has(row.name)) {
+      return true;
+    }
+    hiddenNames.add(row.name);
+    return false;
+  });
+  if (hiddenNames.size > 0) {
+    const unwarnedNames = Array.from(hiddenNames).filter((name) => {
+      const key = `${context}:${name}`;
+      if (warnedDeploymentNameCollisions.has(key)) {
+        return false;
+      }
+      warnedDeploymentNameCollisions.add(key);
+      return true;
+    });
+    if (unwarnedNames.length > 0) {
+      logger.warn(
+        `[deploymentSkills] Hid persisted ${context} skill row(s) shadowed by deployment skill name(s): ${unwarnedNames.join(', ')}`,
+      );
+    }
+  }
+  return { rows: filtered };
 }
 
 function compareBySkillCursor(
