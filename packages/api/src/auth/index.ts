@@ -3,6 +3,7 @@ export * from './openid';
 export * from './proxy';
 export * from './exchange';
 export * from './refresh';
+export * from './googleRefresh';
 export * from './agent';
 export * from './password';
 export * from './invite';

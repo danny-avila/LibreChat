@@ -18,9 +18,9 @@ const {
   tenantContextMiddleware,
   preAuthTenantMiddleware,
   applyAdminRefresh,
+  applyGoogleAdminRefresh,
   AdminRefreshError,
   buildOpenIDRefreshParams,
-  serializeUserForExchange,
 } = require('@librechat/api');
 const { loginController } = require('~/server/controllers/auth/LoginController');
 const { hasCapability, requireCapability } = require('~/server/middleware/roles/capabilities');
@@ -37,178 +37,31 @@ const getLogStores = require('~/cache/getLogStores');
 const { getOpenIdConfig } = require('~/strategies');
 const middleware = require('~/server/middleware');
 
-const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
-const GOOGLE_USERINFO_ENDPOINT = 'https://openidconnect.googleapis.com/v1/userinfo';
-
 const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
 
-function decodeJwtPayload(token) {
-  const segments = token.split('.');
-  if (segments.length !== 3) return undefined;
-  try {
-    const payload = Buffer.from(segments[1], 'base64url').toString('utf8');
-    return JSON.parse(payload);
-  } catch {
-    return undefined;
-  }
-}
-
-async function resolveGoogleSubFromUserinfo(accessToken) {
-  try {
-    const response = await fetch(GOOGLE_USERINFO_ENDPOINT, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    if (!response.ok) {
-      logger.warn('[admin/oauth/refresh] Google userinfo fallback returned non-OK', {
-        status: response.status,
-      });
-      return undefined;
-    }
-    const body = await response.json().catch(() => undefined);
-    return typeof body?.sub === 'string' ? body.sub : undefined;
-  } catch (err) {
-    logger.warn('[admin/oauth/refresh] Google userinfo fallback failed', {
-      name: err?.name,
-      message: err?.message,
-    });
-    return undefined;
-  }
-}
-
-async function refreshGoogleAdminSession({ refreshToken, userId, tenantId, sessionExpiry }) {
-  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
-    throw new AdminRefreshError(
-      'GOOGLE_NOT_CONFIGURED',
-      503,
-      'Google admin OAuth is not configured',
-    );
-  }
-
-  let tokenResponse;
-  try {
-    tokenResponse = await fetch(GOOGLE_TOKEN_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: process.env.GOOGLE_CLIENT_ID,
-        client_secret: process.env.GOOGLE_CLIENT_SECRET,
-        refresh_token: refreshToken,
-        grant_type: 'refresh_token',
-      }),
-    });
-  } catch (err) {
-    logger.warn('[admin/oauth/refresh] Google token endpoint request failed', {
-      name: err?.name,
-      message: err?.message,
-    });
-    throw new AdminRefreshError('REFRESH_FAILED', 401, 'Refresh failed');
-  }
-
-  if (!tokenResponse.ok) {
-    logger.warn('[admin/oauth/refresh] Google rejected refresh grant', {
-      status: tokenResponse.status,
-    });
-    throw new AdminRefreshError('REFRESH_FAILED', 401, 'Refresh failed');
-  }
-
-  let tokenset;
-  try {
-    tokenset = await tokenResponse.json();
-  } catch (err) {
-    logger.warn('[admin/oauth/refresh] Google returned non-JSON body', {
-      name: err?.name,
-      message: err?.message,
-    });
-    throw new AdminRefreshError('IDP_INCOMPLETE', 502, 'Google returned a non-JSON token response');
-  }
-  if (typeof tokenset?.access_token !== 'string') {
-    throw new AdminRefreshError(
-      'IDP_INCOMPLETE',
-      502,
-      'Google returned a tokenset missing access_token',
-    );
-  }
-
-  let googleId;
-  if (typeof tokenset.id_token === 'string') {
-    const claims = decodeJwtPayload(tokenset.id_token);
-    if (typeof claims?.sub === 'string') {
-      googleId = claims.sub;
-    }
-  }
-  if (!googleId) {
-    googleId = await resolveGoogleSubFromUserinfo(tokenset.access_token);
-  }
-  if (!googleId) {
-    throw new AdminRefreshError(
-      'CLAIMS_INCOMPLETE',
-      502,
-      'Could not resolve google sub from refresh response',
-    );
-  }
-
-  const SAFE_USER_PROJECTION = '-password -__v -totpSecret -backupCodes';
-
-  let user;
-  if (typeof userId === 'string' && userId.length > 0) {
-    const direct = await getUserById(userId, SAFE_USER_PROJECTION);
-    if (direct) {
-      if (direct.googleId !== googleId) {
-        throw new AdminRefreshError(
-          'USER_ID_MISMATCH',
-          401,
-          'Provided user_id does not match the refreshed identity',
-        );
-      }
-      if (tenantId && direct.tenantId !== tenantId) {
-        throw new AdminRefreshError(
-          'TENANT_MISMATCH',
-          401,
-          'Provided user_id resolves outside the request tenant',
-        );
-      }
-      user = direct;
-    }
-  }
-
-  if (!user) {
-    const filter = tenantId ? { googleId, tenantId } : { googleId };
-    const [found] = await findUsers(filter, SAFE_USER_PROJECTION, {
-      sort: { updatedAt: -1 },
-      limit: 1,
-    });
-    user = found;
-  }
-
-  if (!user) {
-    throw new AdminRefreshError('USER_NOT_FOUND', 401, 'No user found for the refreshed identity');
-  }
-
-  let canAccess = false;
-  try {
-    canAccess = await hasCapability(
-      {
-        id: user.id ?? user._id?.toString(),
-        role: user.role ?? '',
-        tenantId: user.tenantId,
-      },
-      SystemCapabilities.ACCESS_ADMIN,
-    );
-  } catch (err) {
-    logger.warn(`[admin/oauth/refresh] capability check failed, denying: ${err?.message}`);
-  }
-  if (!canAccess) {
-    throw new AdminRefreshError('FORBIDDEN', 403, 'User does not have admin access');
-  }
-
-  const token = await generateToken(user, sessionExpiry);
-  const expiresAt = Date.now() + sessionExpiry;
-
+function buildGoogleAdminRefreshDeps(sessionExpiry) {
   return {
-    token,
-    refreshToken: tokenset.refresh_token ?? refreshToken,
-    user: serializeUserForExchange(user),
-    expiresAt,
+    findUsers,
+    getUserById,
+    canAccessAdmin: async (user) => {
+      try {
+        return await hasCapability(
+          {
+            id: user.id ?? user._id?.toString(),
+            role: user.role ?? '',
+            tenantId: user.tenantId,
+          },
+          SystemCapabilities.ACCESS_ADMIN,
+        );
+      } catch (err) {
+        logger.warn(`[admin/oauth/refresh] capability check failed, denying: ${err?.message}`);
+        return false;
+      }
+    },
+    mintToken: async (user) => ({
+      token: await generateToken(user, sessionExpiry),
+      expiresAt: Date.now() + sessionExpiry,
+    }),
   };
 }
 
@@ -719,11 +572,12 @@ router.post(
 
       if (provider === 'google') {
         try {
-          const result = await refreshGoogleAdminSession({
+          const result = await applyGoogleAdminRefresh(buildGoogleAdminRefreshDeps(sessionExpiry), {
             refreshToken,
             userId: normalizedUserId,
             tenantId,
-            sessionExpiry,
+            clientId: process.env.GOOGLE_CLIENT_ID,
+            clientSecret: process.env.GOOGLE_CLIENT_SECRET,
           });
           return res.json(result);
         } catch (err) {
