@@ -14,6 +14,14 @@ describe('web search context', () => {
     expect(context).not.toContain('{{iso_datetime}}');
   });
 
+  it('defaults the model away from searching unless a trigger applies', () => {
+    const context = buildWebSearchContext();
+
+    expect(context).toContain('Default: answer from your own knowledge.');
+    expect(context).toContain('A search is justified ONLY if you can name a concrete reason');
+    expect(context).toContain('is NOT a reason to search');
+  });
+
   it('builds dynamic context from the supplied conversation anchor', () => {
     const context = buildWebSearchDynamicContext('2024-01-02T03:04:05.000Z');
     const secondContext = buildWebSearchDynamicContext('2024-01-02T03:04:05.000Z');
