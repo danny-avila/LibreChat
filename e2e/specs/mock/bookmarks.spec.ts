@@ -1,12 +1,12 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import {
+  selectMockEndpoint,
+  getAccessToken,
   MOCK_ENDPOINTS,
   NEW_CHAT_PATH,
-  fetchJson,
-  getAccessToken,
-  selectMockEndpoint,
   sendMessage,
+  fetchJson,
 } from './helpers';
 
 type TagCount = { tag: string; count: number };
