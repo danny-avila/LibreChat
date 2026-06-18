@@ -518,7 +518,7 @@ export default function AgentPanel() {
         <div className="flex-1">
           {activePanel === Panel.builder && (
             <AgentBuilderHeader
-              agent_id={agent_id}
+              agent_id={agentQuery.isInitialLoading ? undefined : current_agent_id}
               onClickCreateNew={() => {
                 reset(getDefaultAgentFormValues());
                 setCurrentAgentId(undefined);
