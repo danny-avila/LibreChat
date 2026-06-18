@@ -18,7 +18,6 @@ jest.mock('~/data-provider', () => ({
   useGetFileConfig: ({ select }: { select?: (d: unknown) => unknown }) => ({
     data: select != null ? select(mockFileConfig) : mockFileConfig,
   }),
-  useGetStartupConfig: () => ({ data: { sharePointFilePickerEnabled: false } }),
 }));
 
 jest.mock('~/hooks', () => ({
@@ -35,18 +34,6 @@ jest.mock('~/hooks/Files/useFileHandling', () => ({
   useFileHandlingNoChatContext: (...args: unknown[]) => mockUseFileHandlingNoChatContext(...args),
 }));
 
-jest.mock('~/hooks/Files/useSharePointFileHandling', () => ({
-  useSharePointFileHandlingNoChatContext: () => ({
-    handleSharePointFiles: jest.fn(),
-    isProcessing: false,
-    downloadProgress: 0,
-  }),
-}));
-
-jest.mock('~/components/SharePoint', () => ({
-  SharePointPickerDialog: () => null,
-}));
-
 jest.mock('~/components/Chat/Input/Files/FileRow', () => () => null);
 
 jest.mock('@ariakit/react', () => ({
@@ -57,10 +44,8 @@ jest.mock('@ariakit/react', () => ({
 
 jest.mock('@librechat/client', () => ({
   HoverCard: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  DropdownPopup: () => null,
   AttachmentIcon: () => <span />,
   CircleHelpIcon: () => <span />,
-  SharePointIcon: () => <span />,
   HoverCardPortal: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   HoverCardContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   HoverCardTrigger: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,

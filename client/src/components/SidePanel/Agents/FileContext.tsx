@@ -1,24 +1,18 @@
 import { memo, useMemo, useRef, useState } from 'react';
 import { Folder } from 'lucide-react';
-import * as Ariakit from '@ariakit/react';
-import { EModelEndpoint, EToolResources } from 'librechat-data-provider';
 import {
   HoverCard,
-  DropdownPopup,
   AttachmentIcon,
   CircleHelpIcon,
-  SharePointIcon,
   HoverCardPortal,
   HoverCardContent,
   HoverCardTrigger,
 } from '@librechat/client';
+import { EModelEndpoint, EToolResources } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
-import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
 import { useFileHandlingNoChatContext } from '~/hooks/Files/useFileHandling';
 import { useAgentFileConfig, useLocalize, useLazyEffect } from '~/hooks';
-import { SharePointPickerDialog } from '~/components/SharePoint';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
-import { useGetStartupConfig } from '~/data-provider';
 import { ESide, isEphemeralAgent } from '~/common';
 
 function FileContext({
@@ -32,10 +26,6 @@ function FileContext({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<Map<string, ExtendedFile>>(new Map());
   const fileHandlingState = useMemo(() => ({ files, setFiles, conversation: null }), [files]);
-  const [isPopoverActive, setIsPopoverActive] = useState(false);
-  const [isSharePointDialogOpen, setIsSharePointDialogOpen] = useState(false);
-  const { data: startupConfig } = useGetStartupConfig();
-  const sharePointEnabled = startupConfig?.sharePointFilePickerEnabled;
   const { endpointFileConfig, providerValue, endpointType } = useAgentFileConfig();
   const endpointOverride = providerValue || EModelEndpoint.agents;
 
@@ -48,16 +38,6 @@ function FileContext({
     },
     fileHandlingState,
   );
-  const { handleSharePointFiles, isProcessing, downloadProgress } =
-    useSharePointFileHandlingNoChatContext(
-      {
-        additionalMetadata: { agent_id, tool_resource: EToolResources.file_search },
-        endpointOverride,
-        endpointTypeOverride: endpointType,
-        fileSetter: setFiles,
-      },
-      fileHandlingState,
-    );
   useLazyEffect(
     () => {
       if (_files) {
@@ -68,45 +48,17 @@ function FileContext({
     750,
   );
   const isUploadDisabled = endpointFileConfig?.disabled ?? false;
-  const handleSharePointFilesSelected = async (sharePointFiles: any[]) => {
-    try {
-      await handleSharePointFiles(sharePointFiles);
-      setIsSharePointDialogOpen(false);
-    } catch (error) {
-      console.error('SharePoint file processing error:', error);
-    }
-  };
   if (isUploadDisabled) {
     return null;
   }
 
   const handleLocalFileClick = () => {
-    // necessary to reset the input
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
     fileInputRef.current?.click();
   };
-  const dropdownItems = [
-    {
-      label: localize('com_files_upload_local_machine'),
-      onClick: handleLocalFileClick,
-      icon: <Folder className="icon-md" />,
-    },
-    {
-      label: localize('com_files_upload_sharepoint'),
-      onClick: () => setIsSharePointDialogOpen(true),
-      icon: <SharePointIcon className="icon-md" />,
-    },
-  ];
-  const menuTrigger = (
-    <Ariakit.MenuButton className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg text-sm font-medium">
-      <div className="flex w-full items-center justify-center gap-1">
-        <AttachmentIcon className="text-token-text-primary h-4 w-4" />
-        {localize('com_ui_upload_file_context')}
-      </div>
-    </Ariakit.MenuButton>
-  );
+
   return (
     <div className="w-full">
       <HoverCard openDelay={50}>
@@ -140,33 +92,18 @@ function FileContext({
           Wrapper={({ children }) => <div className="flex flex-wrap gap-2">{children}</div>}
         />
         <div>
-          {sharePointEnabled ? (
-            <>
-              <DropdownPopup
-                gutter={2}
-                menuId="file-search-upload-menu"
-                isOpen={isPopoverActive}
-                setIsOpen={setIsPopoverActive}
-                trigger={menuTrigger}
-                items={dropdownItems}
-                modal={true}
-                unmountOnHide={true}
-              />
-            </>
-          ) : (
-            <button
-              type="button"
-              disabled={isEphemeralAgent(agent_id)}
-              className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg text-sm font-medium"
-              onClick={handleLocalFileClick}
-            >
-              <div className="flex w-full items-center justify-center gap-1">
-                <AttachmentIcon className="text-token-text-primary h-4 w-4" />
-
-                {localize('com_ui_upload_file_context')}
-              </div>
-            </button>
-          )}
+          <button
+            type="button"
+            disabled={isEphemeralAgent(agent_id)}
+            className="btn btn-neutral border-token-border-light relative h-9 w-full rounded-lg text-sm font-medium"
+            onClick={handleLocalFileClick}
+          >
+            <div className="flex w-full items-center justify-center gap-1">
+              <AttachmentIcon className="text-token-text-primary h-4 w-4" />
+              <Folder className="icon-md" />
+              {localize('com_ui_upload_file_context')}
+            </div>
+          </button>
           <input
             multiple={true}
             type="file"
@@ -184,14 +121,6 @@ function FileContext({
           </div>
         )}
       </div>
-      <SharePointPickerDialog
-        isOpen={isSharePointDialogOpen}
-        onOpenChange={setIsSharePointDialogOpen}
-        onFilesSelected={handleSharePointFilesSelected}
-        isDownloading={isProcessing}
-        downloadProgress={downloadProgress}
-        maxSelectionCount={endpointFileConfig?.fileLimit}
-      />
     </div>
   );
 }

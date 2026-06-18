@@ -13,20 +13,6 @@ jest.mock('~/hooks', () => ({
   useLocalize: jest.fn(),
 }));
 
-jest.mock('~/hooks/Files/useSharePointFileHandling', () => ({
-  __esModule: true,
-  default: jest.fn(),
-  useSharePointFileHandlingNoChatContext: jest.fn(),
-}));
-
-jest.mock('~/data-provider', () => ({
-  useGetStartupConfig: jest.fn(),
-}));
-
-jest.mock('~/components/SharePoint', () => ({
-  SharePointPickerDialog: () => null,
-}));
-
 jest.mock('@librechat/client', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const R = require('react');
@@ -65,7 +51,6 @@ jest.mock('@librechat/client', () => {
           ),
       ),
     AttachmentIcon: () => R.createElement('span', { 'data-testid': 'attachment-icon' }),
-    SharePointIcon: () => R.createElement('span', { 'data-testid': 'sharepoint-icon' }),
     useToastContext: () => ({ showToast: jest.fn() }),
   };
 });
@@ -83,19 +68,11 @@ const mockUseAgentCapabilities = jest.requireMock('~/hooks').useAgentCapabilitie
 const mockUseGetAgentsConfig = jest.requireMock('~/hooks').useGetAgentsConfig;
 const mockUseFileHandlingNoChatContext = jest.requireMock('~/hooks').useFileHandlingNoChatContext;
 const mockUseLocalize = jest.requireMock('~/hooks').useLocalize;
-const mockUseSharePointFileHandling = jest.requireMock(
-  '~/hooks/Files/useSharePointFileHandling',
-).default;
-const mockUseSharePointFileHandlingNoChatContext = jest.requireMock(
-  '~/hooks/Files/useSharePointFileHandling',
-).useSharePointFileHandlingNoChatContext;
-const mockUseGetStartupConfig = jest.requireMock('~/data-provider').useGetStartupConfig;
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
 function setupMocks(overrides: { provider?: string } = {}) {
   const translations: Record<string, string> = {
-    com_files_upload_sharepoint: 'Upload from SharePoint',
     com_sidepanel_attach_files: 'Attach Files',
     com_ui_upload_code_environment: 'Upload to Code Environment',
     com_ui_upload_file_search: 'Upload for File Search',
@@ -111,15 +88,6 @@ function setupMocks(overrides: { provider?: string } = {}) {
   });
   mockUseGetAgentsConfig.mockReturnValue({ agentsConfig: {} });
   mockUseFileHandlingNoChatContext.mockReturnValue({ handleFileChange: jest.fn() });
-  const sharePointReturnValue = {
-    handleSharePointFiles: jest.fn(),
-    isProcessing: false,
-    downloadProgress: 0,
-    error: null,
-  };
-  mockUseSharePointFileHandling.mockReturnValue(sharePointReturnValue);
-  mockUseSharePointFileHandlingNoChatContext.mockReturnValue(sharePointReturnValue);
-  mockUseGetStartupConfig.mockReturnValue({ data: { sharePointFilePickerEnabled: false } });
   mockUseAgentToolPermissions.mockReturnValue({
     fileSearchAllowedByAgent: false,
     codeAllowedByAgent: false,
@@ -385,25 +353,6 @@ describe('AttachFileMenu', () => {
         expect.any(Object),
         EToolResources.file_search,
       );
-    });
-  });
-
-  describe('SharePoint Integration', () => {
-    it('shows SharePoint option when enabled', () => {
-      setupMocks();
-      mockUseGetStartupConfig.mockReturnValue({
-        data: { sharePointFilePickerEnabled: true },
-      });
-      renderMenu({ endpointType: EModelEndpoint.openAI });
-      openMenu();
-      expect(screen.getByText('Upload from SharePoint')).toBeInTheDocument();
-    });
-
-    it('does NOT show SharePoint option when disabled', () => {
-      setupMocks();
-      renderMenu({ endpointType: EModelEndpoint.openAI });
-      openMenu();
-      expect(screen.queryByText('Upload from SharePoint')).not.toBeInTheDocument();
     });
   });
 

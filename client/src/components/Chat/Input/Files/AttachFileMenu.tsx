@@ -8,13 +8,7 @@ import {
   FileImageIcon,
   TerminalSquareIcon,
 } from 'lucide-react';
-import {
-  FileUpload,
-  TooltipAnchor,
-  DropdownPopup,
-  AttachmentIcon,
-  SharePointIcon,
-} from '@librechat/client';
+import { FileUpload, TooltipAnchor, DropdownPopup, AttachmentIcon } from '@librechat/client';
 import {
   Providers,
   EToolResources,
@@ -33,9 +27,6 @@ import {
   useFileHandlingNoChatContext,
   useLocalize,
 } from '~/hooks';
-import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
-import { SharePointPickerDialog } from '~/components/SharePoint';
-import { useGetStartupConfig } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
 import { MenuItemProps } from '~/common';
 import { cn } from '~/utils';
@@ -88,17 +79,8 @@ const AttachFileMenu = ({
     setFilesLoading,
     conversation,
   });
-  const { handleSharePointFiles, isProcessing, downloadProgress } =
-    useSharePointFileHandlingNoChatContext(
-      { toolResource: toolResourceRef.current },
-      { files, setFiles, setFilesLoading, conversation },
-    );
 
   const { agentsConfig } = useGetAgentsConfig();
-  const { data: startupConfig } = useGetStartupConfig();
-  const sharePointEnabled = startupConfig?.sharePointFilePickerEnabled;
-
-  const [isSharePointDialogOpen, setIsSharePointDialogOpen] = useState(false);
 
   /** TODO: Ephemeral Agent Capabilities
    * Allow defining agent capabilities on a per-endpoint basis
@@ -146,115 +128,95 @@ const AttachFileMenu = ({
       toolResourceRef.current = value;
     };
 
-    const createMenuItems = (onAction: (fileType?: FileUploadType) => void) => {
-      const items: MenuItemProps[] = [];
+    const items: MenuItemProps[] = [];
 
-      let currentProvider = provider || endpoint;
+    let currentProvider = provider || endpoint;
 
-      // This will be removed in a future PR to formally normalize Providers comparisons to be case insensitive
-      if (currentProvider?.toLowerCase() === Providers.OPENROUTER) {
-        currentProvider = Providers.OPENROUTER;
-      }
-
-      const isAzureWithResponsesApi =
-        (currentProvider === EModelEndpoint.azureOpenAI ||
-          endpointType === EModelEndpoint.azureOpenAI) &&
-        useResponsesApi === true;
-
-      if (
-        isDocumentSupportedProvider(endpointType) ||
-        isDocumentSupportedProvider(currentProvider) ||
-        isAzureWithResponsesApi
-      ) {
-        items.push({
-          label: localize('com_ui_upload_provider'),
-          onClick: () => {
-            setToolResource(undefined);
-            let fileType: Exclude<FileUploadType, 'image' | 'document'> = 'image_document';
-            if (currentProvider === Providers.GOOGLE || currentProvider === Providers.OPENROUTER) {
-              fileType = 'image_document_video_audio';
-            } else if (
-              currentProvider === Providers.BEDROCK ||
-              endpointType === EModelEndpoint.bedrock
-            ) {
-              fileType = 'image_document_extended';
-            }
-            onAction(fileType);
-          },
-          icon: <FileImageIcon className="icon-md" />,
-        });
-      } else {
-        items.push({
-          label: localize('com_ui_upload_image_input'),
-          onClick: () => {
-            setToolResource(undefined);
-            onAction('image');
-          },
-          icon: <ImageUpIcon className="icon-md" />,
-        });
-      }
-
-      if (capabilities.contextEnabled) {
-        items.push({
-          label: localize('com_ui_upload_ocr_text'),
-          onClick: () => {
-            setToolResource(EToolResources.context);
-            onAction();
-          },
-          icon: <FileType2Icon className="icon-md" />,
-        });
-      }
-
-      if (capabilities.fileSearchEnabled && fileSearchAllowedByAgent) {
-        items.push({
-          label: localize('com_ui_upload_file_search'),
-          onClick: () => {
-            setToolResource(EToolResources.file_search);
-            setEphemeralAgent((prev) => ({
-              ...prev,
-              [EToolResources.file_search]: true,
-            }));
-            onAction();
-          },
-          icon: <FileSearch className="icon-md" />,
-        });
-      }
-
-      if (capabilities.codeEnabled && codeAllowedByAgent) {
-        items.push({
-          label: localize('com_ui_upload_code_environment'),
-          onClick: () => {
-            setToolResource(EToolResources.execute_code);
-            setEphemeralAgent((prev) => ({
-              ...prev,
-              [EToolResources.execute_code]: true,
-            }));
-            onAction();
-          },
-          icon: <TerminalSquareIcon className="icon-md" />,
-        });
-      }
-
-      return items;
-    };
-
-    const localItems = createMenuItems(handleUploadClick);
-
-    if (sharePointEnabled) {
-      const sharePointItems = createMenuItems(() => {
-        setIsSharePointDialogOpen(true);
-        // Note: toolResource will be set by the specific item clicked
-      });
-      localItems.push({
-        label: localize('com_files_upload_sharepoint'),
-        onClick: () => {},
-        icon: <SharePointIcon className="icon-md" />,
-        subItems: sharePointItems,
-      });
-      return localItems;
+    // This will be removed in a future PR to formally normalize Providers comparisons to be case insensitive
+    if (currentProvider?.toLowerCase() === Providers.OPENROUTER) {
+      currentProvider = Providers.OPENROUTER;
     }
 
-    return localItems;
+    const isAzureWithResponsesApi =
+      (currentProvider === EModelEndpoint.azureOpenAI ||
+        endpointType === EModelEndpoint.azureOpenAI) &&
+      useResponsesApi === true;
+
+    if (
+      isDocumentSupportedProvider(endpointType) ||
+      isDocumentSupportedProvider(currentProvider) ||
+      isAzureWithResponsesApi
+    ) {
+      items.push({
+        label: localize('com_ui_upload_provider'),
+        onClick: () => {
+          setToolResource(undefined);
+          let fileType: Exclude<FileUploadType, 'image' | 'document'> = 'image_document';
+          if (currentProvider === Providers.GOOGLE || currentProvider === Providers.OPENROUTER) {
+            fileType = 'image_document_video_audio';
+          } else if (
+            currentProvider === Providers.BEDROCK ||
+            endpointType === EModelEndpoint.bedrock
+          ) {
+            fileType = 'image_document_extended';
+          }
+          handleUploadClick(fileType);
+        },
+        icon: <FileImageIcon className="icon-md" />,
+      });
+    } else {
+      items.push({
+        label: localize('com_ui_upload_image_input'),
+        onClick: () => {
+          setToolResource(undefined);
+          handleUploadClick('image');
+        },
+        icon: <ImageUpIcon className="icon-md" />,
+      });
+    }
+
+    if (capabilities.contextEnabled) {
+      items.push({
+        label: localize('com_ui_upload_ocr_text'),
+        onClick: () => {
+          setToolResource(EToolResources.context);
+          handleUploadClick();
+        },
+        icon: <FileType2Icon className="icon-md" />,
+      });
+    }
+
+    if (capabilities.fileSearchEnabled && fileSearchAllowedByAgent) {
+      items.push({
+        label: localize('com_ui_upload_file_search'),
+        onClick: () => {
+          setToolResource(EToolResources.file_search);
+          setEphemeralAgent((prev) => ({
+            ...prev,
+            [EToolResources.file_search]: true,
+          }));
+          handleUploadClick();
+        },
+        icon: <FileSearch className="icon-md" />,
+      });
+    }
+
+    if (capabilities.codeEnabled && codeAllowedByAgent) {
+      items.push({
+        label: localize('com_ui_upload_code_environment'),
+        onClick: () => {
+          setToolResource(EToolResources.execute_code);
+          setEphemeralAgent((prev) => ({
+            ...prev,
+            [EToolResources.execute_code]: true,
+          }));
+          handleUploadClick();
+        },
+        icon: <TerminalSquareIcon className="icon-md" />,
+      });
+    }
+
+    return items;
   }, [
     localize,
     endpoint,
@@ -264,10 +226,8 @@ const AttachFileMenu = ({
     useResponsesApi,
     handleUploadClick,
     setEphemeralAgent,
-    sharePointEnabled,
     codeAllowedByAgent,
     fileSearchAllowedByAgent,
-    setIsSharePointDialogOpen,
   ]);
 
   const menuTrigger = (
@@ -292,45 +252,27 @@ const AttachFileMenu = ({
       disabled={isUploadDisabled}
     />
   );
-  const handleSharePointFilesSelected = async (sharePointFiles: any[]) => {
-    try {
-      await handleSharePointFiles(sharePointFiles);
-      setIsSharePointDialogOpen(false);
-    } catch (error) {
-      console.error('SharePoint file processing error:', error);
-    }
-  };
 
   return (
-    <>
-      <FileUpload
-        ref={inputRef}
-        handleFileChange={(e) => {
-          handleFileChange(e, toolResourceRef.current);
-          toolResourceRef.current = undefined;
-        }}
-      >
-        <DropdownPopup
-          menuId="attach-file-menu"
-          className="overflow-visible"
-          isOpen={isPopoverActive}
-          setIsOpen={setIsPopoverActive}
-          modal={true}
-          unmountOnHide={true}
-          trigger={menuTrigger}
-          items={dropdownItems}
-          iconClassName="mr-0"
-        />
-      </FileUpload>
-      <SharePointPickerDialog
-        isOpen={isSharePointDialogOpen}
-        onOpenChange={setIsSharePointDialogOpen}
-        onFilesSelected={handleSharePointFilesSelected}
-        isDownloading={isProcessing}
-        downloadProgress={downloadProgress}
-        maxSelectionCount={endpointFileConfig?.fileLimit}
+    <FileUpload
+      ref={inputRef}
+      handleFileChange={(e) => {
+        handleFileChange(e, toolResourceRef.current);
+        toolResourceRef.current = undefined;
+      }}
+    >
+      <DropdownPopup
+        menuId="attach-file-menu"
+        className="overflow-visible"
+        isOpen={isPopoverActive}
+        setIsOpen={setIsPopoverActive}
+        modal={true}
+        unmountOnHide={true}
+        trigger={menuTrigger}
+        items={dropdownItems}
+        iconClassName="mr-0"
       />
-    </>
+    </FileUpload>
   );
 };
 
