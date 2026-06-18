@@ -778,28 +778,38 @@ export function createConversationMethods(
       }
 
       const deleteConvoResult = await Conversation.deleteMany(userFilter);
+      const deleted = deleteConvoResult.deletedCount > 0;
 
       /**
-       * Adjust bookmark counts and project stats from the conversation deletion
-       * before message cleanup: if `deleteMessages` later throws, the conversation
-       * is already gone and a retry finds nothing, so the count must be reconciled
-       * here or it would stay permanently stale. The `deletedCount` guard skips a
-       * losing concurrent delete whose pre-delete snapshot would otherwise
-       * decrement counts for a conversation it did not actually remove.
+       * Reconcile bookmark counts from the deletion before message cleanup: if
+       * `deleteMessages` later throws, the conversation is already gone and a retry
+       * finds nothing, so the count must be reconciled here or it would stay stale.
+       * The decrement is best-effort and never throws, so it cannot block message
+       * cleanup. The `deletedCount` guard skips a losing concurrent delete whose
+       * pre-delete snapshot would otherwise decrement a conversation it did not
+       * actually remove.
        */
-      if (deleteConvoResult.deletedCount > 0) {
-        await Promise.all([
-          decrementTagCounts(mongoose, user, tagDecrements),
-          ...[...projectIds].map((projectId) =>
-            refreshChatProjectStatsForUser(mongoose, user, projectId),
-          ),
-        ]);
+      if (deleted) {
+        await decrementTagCounts(mongoose, user, tagDecrements);
       }
 
       const deleteMessagesResult = await deleteMessages({
         conversationId: { $in: conversationIds },
         user,
       });
+
+      /**
+       * Refresh project stats after message cleanup so a stats-refresh error cannot
+       * prevent `deleteMessages` from running, which would orphan the deleted
+       * conversations' messages.
+       */
+      if (deleted && projectIds.size > 0) {
+        await Promise.all(
+          [...projectIds].map((projectId) =>
+            refreshChatProjectStatsForUser(mongoose, user, projectId),
+          ),
+        );
+      }
 
       return { ...deleteConvoResult, messages: deleteMessagesResult };
     } catch (error) {
