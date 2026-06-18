@@ -5,10 +5,6 @@ jest.mock('~/server/services/Config/app', () => ({
   getAppConfig: (...args) => mockGetAppConfig(...args),
 }));
 
-jest.mock('~/server/services/Config/ldap', () => ({
-  getLdapConfig: jest.fn(() => null),
-}));
-
 const mockHasCapability = jest.fn();
 jest.mock('~/server/middleware/roles/capabilities', () => ({
   hasCapability: (...args) => mockHasCapability(...args),

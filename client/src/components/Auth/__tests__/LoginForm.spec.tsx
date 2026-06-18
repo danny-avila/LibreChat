@@ -1,7 +1,6 @@
 import { render, getByTestId } from 'test/layout-test-utils';
 import userEvent from '@testing-library/user-event';
 import type { TStartupConfig } from 'librechat-data-provider';
-import * as endpointQueries from '~/data-provider/Endpoints/queries';
 import * as miscDataProvider from '~/data-provider/Misc/queries';
 import * as authMutations from '~/data-provider/Auth/mutations';
 import * as authQueries from '~/data-provider/Auth/queries';
@@ -12,26 +11,15 @@ jest.mock('librechat-data-provider/react-query');
 const mockLogin = jest.fn();
 
 const mockStartupConfig: TStartupConfig = {
-  socialLogins: ['google', 'facebook', 'openid', 'github', 'discord', 'saml'],
-  discordLoginEnabled: true,
-  facebookLoginEnabled: true,
+  socialLogins: ['google', 'github'],
   githubLoginEnabled: true,
   googleLoginEnabled: true,
-  openidLoginEnabled: true,
-  openidLabel: 'Test OpenID',
-  openidImageUrl: 'http://test-server.com',
-  samlLoginEnabled: true,
-  samlLabel: 'Test SAML',
-  samlImageUrl: 'http://test-server.com',
   registrationEnabled: true,
   emailLoginEnabled: true,
   socialLoginEnabled: true,
   passwordResetEnabled: true,
   serverDomain: 'mock-server',
   appTitle: '',
-  ldap: {
-    enabled: false,
-  },
   emailEnabled: false,
   checkBalance: false,
   showBirthdayIcon: false,
@@ -60,11 +48,6 @@ const setup = ({
       user: {},
     },
   },
-  useGetStartupConfigReturnValue = {
-    isLoading: false,
-    isError: false,
-    data: mockStartupConfig,
-  },
   useGetBannerQueryReturnValue = {
     isLoading: false,
     isError: false,
@@ -79,10 +62,6 @@ const setup = ({
     .spyOn(authQueries, 'useGetUserQuery')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
     .mockReturnValue(useGetUserQueryReturnValue);
-  const mockUseGetStartupConfig = jest
-    .spyOn(endpointQueries, 'useGetStartupConfig')
-    //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
-    .mockReturnValue(useGetStartupConfigReturnValue);
   const mockUseRefreshTokenMutation = jest
     .spyOn(authMutations, 'useRefreshTokenMutation')
     //@ts-ignore - we don't need all parameters of the QueryObserverSuccessResult
@@ -94,7 +73,6 @@ const setup = ({
   return {
     mockUseLoginUser,
     mockUseGetUserQuery,
-    mockUseGetStartupConfig,
     mockUseRefreshTokenMutation,
     mockUseGetBannerQuery,
   };

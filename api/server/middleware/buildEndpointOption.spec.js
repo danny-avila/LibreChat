@@ -13,21 +13,11 @@ jest.mock('librechat-data-provider', () => {
 
 const { EModelEndpoint, parseCompactConvo } = require('librechat-data-provider');
 
-const mockBuildOptions = jest.fn((_endpoint, parsedBody) => ({
-  ...parsedBody,
-  endpoint: _endpoint,
-}));
 const mockAgentBuildOptions = jest.fn((_req, endpoint, parsedBody) => ({
   ...parsedBody,
   endpoint,
 }));
 
-jest.mock('~/server/services/Endpoints/azureAssistants', () => ({
-  buildOptions: mockBuildOptions,
-}));
-jest.mock('~/server/services/Endpoints/assistants', () => ({
-  buildOptions: mockBuildOptions,
-}));
 jest.mock('~/server/services/Endpoints/agents', () => ({
   buildOptions: mockAgentBuildOptions,
 }));

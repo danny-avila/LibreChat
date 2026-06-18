@@ -1,7 +1,6 @@
 // file deepcode ignore NoRateLimitingForLogin: Rate limiting is handled by the `loginLimiter` middleware
 const express = require('express');
 const passport = require('passport');
-const { randomState } = require('openid-client');
 const { logger } = require('@librechat/data-schemas');
 const { ErrorTypes } = require('librechat-data-provider');
 const { createSetBalanceConfig } = require('@librechat/api');
@@ -63,54 +62,6 @@ router.get(
 );
 
 /**
- * Facebook Routes
- */
-router.get(
-  '/facebook',
-  passport.authenticate('facebook', {
-    scope: ['public_profile'],
-    profileFields: ['id', 'email', 'name'],
-    session: false,
-  }),
-);
-
-router.get(
-  '/facebook/callback',
-  passport.authenticate('facebook', {
-    failureRedirect: `${domains.client}/oauth/error`,
-    failureMessage: true,
-    session: false,
-    scope: ['public_profile'],
-    profileFields: ['id', 'email', 'name'],
-  }),
-  setBalanceConfig,
-  checkDomainAllowed,
-  oauthHandler,
-);
-
-/**
- * OpenID Routes
- */
-router.get('/openid', (req, res, next) => {
-  return passport.authenticate('openid', {
-    session: false,
-    state: randomState(),
-  })(req, res, next);
-});
-
-router.get(
-  '/openid/callback',
-  passport.authenticate('openid', {
-    failureRedirect: `${domains.client}/oauth/error`,
-    failureMessage: true,
-    session: false,
-  }),
-  setBalanceConfig,
-  checkDomainAllowed,
-  oauthHandler,
-);
-
-/**
  * GitHub Routes
  */
 router.get(
@@ -131,72 +82,6 @@ router.get(
   }),
   setBalanceConfig,
   checkDomainAllowed,
-  oauthHandler,
-);
-
-/**
- * Discord Routes
- */
-router.get(
-  '/discord',
-  passport.authenticate('discord', {
-    scope: ['identify', 'email'],
-    session: false,
-  }),
-);
-
-router.get(
-  '/discord/callback',
-  passport.authenticate('discord', {
-    failureRedirect: `${domains.client}/oauth/error`,
-    failureMessage: true,
-    session: false,
-    scope: ['identify', 'email'],
-  }),
-  setBalanceConfig,
-  checkDomainAllowed,
-  oauthHandler,
-);
-
-/**
- * Apple Routes
- */
-router.get(
-  '/apple',
-  passport.authenticate('apple', {
-    session: false,
-  }),
-);
-
-router.post(
-  '/apple/callback',
-  passport.authenticate('apple', {
-    failureRedirect: `${domains.client}/oauth/error`,
-    failureMessage: true,
-    session: false,
-  }),
-  setBalanceConfig,
-  checkDomainAllowed,
-  oauthHandler,
-);
-
-/**
- * SAML Routes
- */
-router.get(
-  '/saml',
-  passport.authenticate('saml', {
-    session: false,
-  }),
-);
-
-router.post(
-  '/saml/callback',
-  passport.authenticate('saml', {
-    failureRedirect: `${domains.client}/oauth/error`,
-    failureMessage: true,
-    session: false,
-  }),
   oauthHandler,
 );
 

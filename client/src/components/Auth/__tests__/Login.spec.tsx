@@ -16,20 +16,9 @@ const mockStartupConfig = {
   isLoading: false,
   isError: false,
   data: {
-    socialLogins: ['google', 'facebook', 'openid', 'github', 'discord', 'saml'],
-    discordLoginEnabled: true,
-    facebookLoginEnabled: true,
+    socialLogins: ['google', 'github'],
     githubLoginEnabled: true,
     googleLoginEnabled: true,
-    openidLoginEnabled: true,
-    openidLabel: 'Test OpenID',
-    openidImageUrl: 'http://test-server.com',
-    samlLoginEnabled: true,
-    samlLabel: 'Test SAML',
-    samlImageUrl: 'http://test-server.com',
-    ldap: {
-      enabled: false,
-    },
     registrationEnabled: true,
     emailLoginEnabled: true,
     socialLoginEnabled: true,
@@ -131,25 +120,10 @@ test('renders login form', () => {
     'href',
     'mock-server/oauth/google',
   );
-  expect(getByRole('link', { name: /Continue with Facebook/i })).toBeInTheDocument();
-  expect(getByRole('link', { name: /Continue with Facebook/i })).toHaveAttribute(
-    'href',
-    'mock-server/oauth/facebook',
-  );
   expect(getByRole('link', { name: /Continue with Github/i })).toBeInTheDocument();
   expect(getByRole('link', { name: /Continue with Github/i })).toHaveAttribute(
     'href',
     'mock-server/oauth/github',
-  );
-  expect(getByRole('link', { name: /Continue with Discord/i })).toBeInTheDocument();
-  expect(getByRole('link', { name: /Continue with Discord/i })).toHaveAttribute(
-    'href',
-    'mock-server/oauth/discord',
-  );
-  expect(getByRole('link', { name: /Test SAML/i })).toBeInTheDocument();
-  expect(getByRole('link', { name: /Test SAML/i })).toHaveAttribute(
-    'href',
-    'mock-server/oauth/saml',
   );
 });
 

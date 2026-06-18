@@ -6,7 +6,6 @@ const checkDomainAllowed = require('./checkDomainAllowed');
 const requireLocalAuth = require('./requireLocalAuth');
 const canDeleteAccount = require('./canDeleteAccount');
 const accessResources = require('./accessResources');
-const requireLdapAuth = require('./requireLdapAuth');
 const abortMiddleware = require('./abortMiddleware');
 const checkInviteUser = require('./checkInviteUser');
 const requireJwtAuth = require('./requireJwtAuth');
@@ -37,7 +36,6 @@ module.exports = {
   validateModel,
   requireJwtAuth,
   checkInviteUser,
-  requireLdapAuth,
   requireLocalAuth,
   canDeleteAccount,
   configMiddleware,

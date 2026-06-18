@@ -85,7 +85,7 @@ module.exports = {
           800: '#06373e',
           900: '#031f29',
         },
-        'brand-purple': 'var(--brand-purple)',
+        'brand-blue': 'var(--brand-blue)',
         presentation: 'var(--presentation)',
         'text-primary': 'var(--text-primary)',
         'text-secondary': 'var(--text-secondary)',

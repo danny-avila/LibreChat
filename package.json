@@ -1,5 +1,5 @@
 {
-  "name": "LibreChat",
+  "name": "graupel-chat",
   "version": "v0.8.6-rc1",
   "description": "",
   "packageManager": "npm@11.10.0",
@@ -101,14 +101,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/danny-avila/LibreChat.git"
+    "url": "git+https://github.com/lidongyu/graupel-chat.git"
   },
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/danny-avila/LibreChat/issues"
+    "url": "https://github.com/lidongyu/graupel-chat/issues"
   },
-  "homepage": "https://librechat.ai/",
+  "homepage": "https://graupel.chat",
   "devDependencies": {
     "@axe-core/playwright": "^4.10.1",
     "@eslint/compat": "^1.2.6",

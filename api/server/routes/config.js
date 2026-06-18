@@ -9,7 +9,6 @@ const {
 const { defaultSocialLogins } = require('librechat-data-provider');
 const { logger, getTenantId, SystemCapabilities } = require('@librechat/data-schemas');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
-const { getLdapConfig } = require('~/server/services/Config/ldap');
 const { getAppConfig } = require('~/server/services/Config/app');
 
 const router = express.Router();
@@ -51,11 +50,9 @@ function buildSharedPayload() {
     !!process.env.SAML_CERT &&
     !!process.env.SAML_SESSION_SECRET;
 
-  const ldap = getLdapConfig();
-
   /** @type {Partial<TStartupConfig>} */
   const payload = {
-    appTitle: process.env.APP_TITLE || 'LibreChat',
+    appTitle: process.env.APP_TITLE || 'Graupel',
     discordLoginEnabled: !!process.env.DISCORD_CLIENT_ID && !!process.env.DISCORD_CLIENT_SECRET,
     facebookLoginEnabled: !!process.env.FACEBOOK_CLIENT_ID && !!process.env.FACEBOOK_CLIENT_SECRET,
     githubLoginEnabled: !!process.env.GITHUB_CLIENT_ID && !!process.env.GITHUB_CLIENT_SECRET,
@@ -74,7 +71,7 @@ function buildSharedPayload() {
     samlImageUrl: process.env.SAML_IMAGE_URL,
     serverDomain: process.env.DOMAIN_SERVER || 'http://localhost:3080',
     emailLoginEnabled,
-    registrationEnabled: !ldap?.enabled && isEnabled(process.env.ALLOW_REGISTRATION),
+    registrationEnabled: isEnabled(process.env.ALLOW_REGISTRATION),
     socialLoginEnabled: isEnabled(process.env.ALLOW_SOCIAL_LOGIN),
     emailEnabled:
       (!!process.env.EMAIL_SERVICE || !!process.env.EMAIL_HOST) &&
@@ -86,7 +83,7 @@ function buildSharedPayload() {
       isBirthday() ||
       isEnabled(process.env.SHOW_BIRTHDAY_ICON) ||
       process.env.SHOW_BIRTHDAY_ICON === '',
-    helpAndFaqURL: process.env.HELP_AND_FAQ_URL || 'https://librechat.ai',
+    helpAndFaqURL: process.env.HELP_AND_FAQ_URL || 'https://graupel.chat',
     sharedLinksEnabled,
     publicSharedLinksEnabled,
     analyticsGtmId: process.env.ANALYTICS_GTM_ID,
@@ -100,10 +97,6 @@ function buildSharedPayload() {
   const minPasswordLength = parseInt(process.env.MIN_PASSWORD_LENGTH, 10);
   if (minPasswordLength && !isNaN(minPasswordLength)) {
     payload.minPasswordLength = minPasswordLength;
-  }
-
-  if (ldap) {
-    payload.ldap = ldap;
   }
 
   if (typeof process.env.CUSTOM_FOOTER === 'string') {

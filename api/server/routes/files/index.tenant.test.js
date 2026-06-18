@@ -93,13 +93,6 @@ jest.mock('~/server/routes/agents/v1', () => {
   return { avatar };
 });
 
-jest.mock('~/server/routes/assistants/v1', () => {
-  const express = require('express');
-  const avatar = express.Router();
-  avatar.post('/:assistant_id/avatar/', mockTenantResponse('assistant-avatar'));
-  return { avatar };
-});
-
 describe('file upload routes restore strict isolation context after multer', () => {
   let app;
 
@@ -127,7 +120,6 @@ describe('file upload routes restore strict isolation context after multer', () 
     ['images', '/api/files/images'],
     ['avatar', '/api/files/images/avatar'],
     ['agent-avatar', '/api/files/images/agents/agent-1/avatar'],
-    ['assistant-avatar', '/api/files/images/assistants/asst-1/avatar'],
     ['speech-stt', '/api/files/speech/stt'],
   ])('restores context for %s upload', async (route, url) => {
     const res = await request(app).post(url);

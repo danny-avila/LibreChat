@@ -36,7 +36,7 @@ const initializeOAuthReconnectManager = require('./services/initializeOAuthRecon
 const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { startExpiredFileSweep } = require('./services/Files/process');
-const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
+const { jwtLogin, passportLogin } = require('~/strategies');
 const { checkMigrations } = require('./services/start/migration');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const initializeMCPs = require('./services/initializeMCPs');
@@ -170,11 +170,6 @@ const startServer = async () => {
   passport.use(jwtLogin());
   passport.use(passportLogin());
 
-  /* LDAP Auth */
-  if (process.env.LDAP_URL && process.env.LDAP_USER_SEARCH_BASE) {
-    passport.use(ldapLogin);
-  }
-
   if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
     await configureSocialLogins(app);
   }
@@ -208,7 +203,6 @@ const startServer = async () => {
   app.use('/api/balance', routes.balance);
   app.use('/api/models', routes.models);
   app.use('/api/config', preAuthTenantMiddleware, optionalJwtAuth, routes.config);
-  app.use('/api/assistants', routes.assistants);
   app.use('/api/files', await routes.files.initialize());
   app.use('/images/', createValidateImageRequest(appConfig.secureImageLinks), routes.staticRoute);
   app.use('/api/share', preAuthTenantMiddleware, routes.share);

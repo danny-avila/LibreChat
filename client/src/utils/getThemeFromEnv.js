@@ -45,7 +45,7 @@ export function getThemeFromEnv() {
   if (getEnv('BORDER_XHEAVY')) theme['rgb-border-xheavy'] = getEnv('BORDER_XHEAVY');
 
   // Brand colors
-  if (getEnv('BRAND_PURPLE')) theme['rgb-brand-purple'] = getEnv('BRAND_PURPLE');
+  if (getEnv('BRAND_BLUE')) theme['rgb-brand-blue'] = getEnv('BRAND_BLUE');
 
   // Header colors
   if (getEnv('HEADER_PRIMARY')) theme['rgb-header-primary'] = getEnv('HEADER_PRIMARY');

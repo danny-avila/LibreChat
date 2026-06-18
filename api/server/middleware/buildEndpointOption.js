@@ -13,16 +13,12 @@ const {
   parseCompactConvo,
   getDefaultParamsEndpoint,
 } = require('librechat-data-provider');
-const azureAssistants = require('~/server/services/Endpoints/azureAssistants');
-const assistants = require('~/server/services/Endpoints/assistants');
 const { getEndpointsConfig } = require('~/server/services/Config');
 const agents = require('~/server/services/Endpoints/agents');
 const { updateFilesUsage } = require('~/models');
 
 const buildFunction = {
   [EModelEndpoint.agents]: agents.buildOptions,
-  [EModelEndpoint.assistants]: assistants.buildOptions,
-  [EModelEndpoint.azureAssistants]: azureAssistants.buildOptions,
 };
 
 async function buildEndpointOption(req, res, next) {

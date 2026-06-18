@@ -32,10 +32,7 @@ module.exports = {
 
   dataProvider: (overrides = {}) => ({
     CacheKeys: { GEN_TITLE: 'GEN_TITLE' },
-    EModelEndpoint: {
-      azureAssistants: 'azureAssistants',
-      assistants: 'assistants',
-    },
+    EModelEndpoint: {},
     ...overrides,
   }),
 
@@ -94,6 +91,4 @@ module.exports = {
         next();
       }),
     })),
-
-  assistantEndpoint: () => ({ initializeClient: jest.fn() }),
 };

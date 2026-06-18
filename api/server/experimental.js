@@ -25,7 +25,7 @@ const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { startExpiredFileSweep } = require('./services/Files/process');
-const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
+const { jwtLogin, passportLogin } = require('~/strategies');
 const { updateInterfacePermissions: updateInterfacePerms } = require('@librechat/api');
 const {
   getRoleByName,
@@ -360,11 +360,6 @@ if (cluster.isMaster) {
     app.use(passport.initialize());
     passport.use(jwtLogin());
     passport.use(passportLogin());
-
-    /** LDAP Auth */
-    if (process.env.LDAP_URL && process.env.LDAP_USER_SEARCH_BASE) {
-      passport.use(ldapLogin);
-    }
 
     if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
       await configureSocialLogins(app);
