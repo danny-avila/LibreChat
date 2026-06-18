@@ -506,6 +506,15 @@ export const bedrockInputParser = s.tConversationSchema
       typedData.promptCache = undefined;
     }
 
+    /**
+     * A cache TTL is meaningless without caching — tie it to promptCache. When
+     * caching is off or unsupported for the model (cleared above), drop the TTL
+     * so an unsupported `1h` is never sent on a non-caching Bedrock request.
+     */
+    if (typedData.promptCache !== true) {
+      typedData.promptCacheTtl = undefined;
+    }
+
     if (Object.keys(additionalFields).length > 0) {
       typedData.additionalModelRequestFields = {
         ...((typedData.additionalModelRequestFields as Record<string, unknown> | undefined) || {}),
