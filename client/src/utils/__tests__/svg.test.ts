@@ -17,13 +17,14 @@ describe('isMonochromeSvg', () => {
       expect(isMonochromeSvg(svg)).toBe(true);
     });
 
-    it('treats grayscale shades as monochrome', () => {
-      const svg = '<svg><path fill="#333" /><path stroke="#666666" /><rect fill="#ccc" /></svg>';
+    it('treats one grayscale tone written several ways as monochrome', () => {
+      const svg =
+        '<svg><path fill="#333" /><path stroke="#333333" /><path style="fill: rgb(51, 51, 51)" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(true);
     });
 
-    it('treats named grayscale colors as monochrome', () => {
-      const svg = '<svg><path fill="black" /><path stroke="gray" /></svg>';
+    it('treats a single named grayscale color as monochrome', () => {
+      const svg = '<svg><path fill="black" /><path stroke="black" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(true);
     });
 
@@ -43,9 +44,27 @@ describe('isMonochromeSvg', () => {
       expect(isMonochromeSvg(svg)).toBe(true);
     });
 
-    it('handles colors defined inside a style block', () => {
-      const svg = '<svg><style>.a{fill:#222}.b{stroke:#888}</style><path class="a" /></svg>';
+    it('handles a single color defined inside a style block', () => {
+      const svg = '<svg><style>.a{fill:#222}.b{stroke:#222}</style><path class="a" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(true);
+    });
+  });
+
+  describe('multiple grayscale tones (conservatively preserved)', () => {
+    it('preserves an SVG with two grayscale shades', () => {
+      const svg = '<svg><path fill="#333" /><path fill="#999" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('preserves a black-and-white two-tone glyph', () => {
+      const svg = '<svg><path fill="black" /><path fill="white" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('rejects a full-canvas path background with a glyph', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><path d="M0 0h24v24H0z" fill="#fff" /><path fill="#000" d="M6 6h12v12H6z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
     });
   });
 
