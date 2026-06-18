@@ -16,6 +16,7 @@ import { createSkillFileModel } from './skillFile';
 import { createConversationModel } from './convo';
 import { createToolCallModel } from './toolCall';
 import { createAclEntryModel } from './aclEntry';
+import { createAuditLogModel } from './auditLog';
 import { createSessionModel } from './session';
 import { createBalanceModel } from './balance';
 import { createMessageModel } from './message';
@@ -71,6 +72,7 @@ export function createModels(mongoose: typeof import('mongoose')): {
   AccessRole: ReturnType<typeof createAccessRoleModel>;
   AclEntry: ReturnType<typeof createAclEntryModel>;
   SystemGrant: ReturnType<typeof createSystemGrantModel>;
+  AuditLog: ReturnType<typeof createAuditLogModel>;
   Group: ReturnType<typeof createGroupModel>;
   Config: ReturnType<typeof createConfigModel>;
 } {
@@ -108,6 +110,7 @@ export function createModels(mongoose: typeof import('mongoose')): {
     AccessRole: createAccessRoleModel(mongoose),
     AclEntry: createAclEntryModel(mongoose),
     SystemGrant: createSystemGrantModel(mongoose),
+    AuditLog: createAuditLogModel(mongoose),
     Group: createGroupModel(mongoose),
     Config: createConfigModel(mongoose),
   };
