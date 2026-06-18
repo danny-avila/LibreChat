@@ -215,6 +215,15 @@ describe('createAdminAuditLogHandlers', () => {
       expect(deps.listAuditLogPage).not.toHaveBeenCalled();
     });
 
+    it('rejects an out-of-range day in a full ISO timestamp', async () => {
+      const deps = createDeps();
+      const handlers = createAdminAuditLogHandlers(deps);
+      const { req, res, status } = createReqRes({ query: { to: '2025-02-31T00:00:00Z' } });
+      await handlers.listAuditLog(req, res);
+      expect(status).toHaveBeenCalledWith(400);
+      expect(deps.listAuditLogPage).not.toHaveBeenCalled();
+    });
+
     it.each([
       ['action', { action: 'nope' }],
       ['category', { category: 'nope' }],

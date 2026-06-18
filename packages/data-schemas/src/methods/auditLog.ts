@@ -83,9 +83,16 @@ function isDuplicateKeyError(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as { code?: number }).code === 11000;
 }
 
-/** Tenant scope → chain key. Blank/whitespace tenant is the platform chain. */
-function resolveChainKey(tenantId?: string): string {
-  return typeof tenantId === 'string' && tenantId.trim().length > 0 ? tenantId : PLATFORM_CHAIN_KEY;
+/** Distinguishes tenant chains from the platform chain so a tenant whose id is
+ * literally the platform sentinel cannot share the platform's audit chain. */
+const TENANT_CHAIN_PREFIX = 'tenant:';
+
+/** Tenant scope → chain key. Blank/whitespace tenant is the platform chain;
+ * tenant ids are namespaced so they can never collide with `PLATFORM_CHAIN_KEY`. */
+export function auditChainKey(tenantId?: string): string {
+  return typeof tenantId === 'string' && tenantId.trim().length > 0
+    ? `${TENANT_CHAIN_PREFIX}${tenantId}`
+    : PLATFORM_CHAIN_KEY;
 }
 
 function normalizeTenantId(tenantId?: string): string | undefined {
@@ -278,7 +285,7 @@ export function createAuditLogMethods(mongoose: typeof import('mongoose')): Audi
   ): Promise<IAuditLog | null> {
     const AuditLog = model();
     const tenantId = normalizeTenantId(input.tenantId);
-    const chainKey = resolveChainKey(input.tenantId);
+    const chainKey = auditChainKey(input.tenantId);
     const category = input.category ?? AUDIT_ACTION_CATEGORY[input.action];
     const outcome = input.outcome ?? 'success';
     const severity =
@@ -376,7 +383,7 @@ export function createAuditLogMethods(mongoose: typeof import('mongoose')): Audi
     filters: AuditLogFilters,
   ): Promise<AuditLogPage> {
     const AuditLog = model();
-    const chainKey = resolveChainKey(tenantId);
+    const chainKey = auditChainKey(tenantId);
     const limit = clampLimit(filters.limit);
     const base = buildFilter(chainKey, filters);
 
@@ -414,7 +421,7 @@ export function createAuditLogMethods(mongoose: typeof import('mongoose')): Audi
   ): Promise<AdminAuditLogEntry | null> {
     if (!OBJECT_ID_RE.test(id)) return null;
     const AuditLog = model();
-    const query: FilterQuery<IAuditLog> = { _id: id, chainKey: resolveChainKey(tenantId) };
+    const query: FilterQuery<IAuditLog> = { _id: id, chainKey: auditChainKey(tenantId) };
     const doc = await AuditLog.findOne(query).lean<IAuditLog>();
     return doc ? toWire(doc) : null;
   }
@@ -426,7 +433,7 @@ export function createAuditLogMethods(mongoose: typeof import('mongoose')): Audi
     options?: { isCancelled?: () => boolean; maxRows?: number },
   ): Promise<number> {
     const AuditLog = model();
-    const query = buildFilter(resolveChainKey(tenantId), filters);
+    const query = buildFilter(auditChainKey(tenantId), filters);
     const cursor = AuditLog.find(query)
       .sort({ seq: -1 })
       .lean<IAuditLog[]>()
@@ -459,7 +466,7 @@ export function createAuditLogMethods(mongoose: typeof import('mongoose')): Audi
     options?: VerifyAuditChainOptions,
   ): Promise<AuditChainVerification> {
     const AuditLog = model();
-    const chainKey = resolveChainKey(tenantId);
+    const chainKey = auditChainKey(tenantId);
     const cursor = AuditLog.find({ chainKey })
       .sort({ seq: 1 })
       .lean<IAuditLog[]>()
@@ -561,7 +568,7 @@ export function createAuditLogMethods(mongoose: typeof import('mongoose')): Audi
       throw new Error('purgeAuditLogEntries: `before` must be a valid Date');
     }
     const AuditLog = model();
-    const chainKey = resolveChainKey(tenantId);
+    const chainKey = auditChainKey(tenantId);
     /**
      * Retention purge is the one privileged path that removes audit rows. It
      * intentionally uses the raw driver to bypass the append-only Mongoose hooks

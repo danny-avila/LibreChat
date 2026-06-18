@@ -51,7 +51,7 @@ export interface AdminGrantsDeps {
     capability: SystemCapability;
     tenantId?: string;
     grantedBy?: string | Types.ObjectId;
-  }) => Promise<ISystemGrant | null>;
+  }) => Promise<{ grant: ISystemGrant | null; created: boolean }>;
   revokeCapability: (params: {
     principalType: PrincipalType;
     principalId: string | Types.ObjectId;
@@ -422,16 +422,11 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
         }
       }
 
-      /** Capture prior state before the idempotent upsert so a re-assignment of
-       * a capability the role already holds is not audited as a new change. */
-      const priorGrants = await getCapabilitiesForPrincipal({
-        principalType,
-        principalId,
-        tenantId,
-      });
-      const alreadyHeld = priorGrants.some((g) => g.capability === capability);
-
-      const grant = await grantCapability({
+      /** `created` comes from the atomic upsert result, so a re-assert of a
+       * capability the role already holds (or a concurrent double-assign) is not
+       * audited as a new change — and a new tenant-scoped grant is correctly
+       * distinguished from an inherited platform-level one. */
+      const { grant, created } = await grantCapability({
         principalType,
         principalId,
         capability,
@@ -441,7 +436,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
       if (!grant) {
         return res.status(500).json({ error: 'Grant operation returned no result' });
       }
-      if (!alreadyHeld) {
+      if (created) {
         try {
           await emitAudit({
             action: 'grant.assigned',

@@ -62,7 +62,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')): {
       grantedBy?: string | Types.ObjectId;
     },
     session?: ClientSession,
-  ) => Promise<ISystemGrant | null>;
+  ) => Promise<{ grant: ISystemGrant | null; created: boolean }>;
   seedSystemGrants: () => Promise<void>;
   revokeCapability: (
     {
@@ -265,7 +265,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')): {
       grantedBy?: string | Types.ObjectId;
     },
     session?: ClientSession,
-  ): Promise<ISystemGrant | null> {
+  ): Promise<{ grant: ISystemGrant | null; created: boolean }> {
     const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
 
     const normalizedPrincipalId = normalizePrincipalId(principalId, principalType);
@@ -290,17 +290,24 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')): {
       },
     };
 
-    const options = {
-      upsert: true,
-      new: true,
-      ...(session ? { session } : {}),
-    };
-
     try {
-      return await SystemGrant.findOneAndUpdate(filter, update, options);
+      /** `includeResultMetadata` surfaces `lastErrorObject.upserted` so callers
+       * (audit emission) can tell a brand-new grant from an idempotent re-assert
+       * atomically, without a racy pre-read. Passed inline so the metadata
+       * overload is selected. */
+      const result = await SystemGrant.findOneAndUpdate(filter, update, {
+        upsert: true,
+        new: true,
+        includeResultMetadata: true,
+        session,
+      });
+      return { grant: result.value, created: result.lastErrorObject?.upserted != null };
     } catch (err) {
       if ((err as { code?: number }).code === 11000) {
-        return (await SystemGrant.findOne(filter).lean()) as ISystemGrant | null;
+        /** A concurrent insert won the race: the row exists and we did not create
+         * it, so this is not an auditable change. */
+        const grant = (await SystemGrant.findOne(filter).lean()) as ISystemGrant | null;
+        return { grant, created: false };
       }
       throw err;
     }

@@ -53,7 +53,7 @@ function createDeps(overrides: Partial<AdminGrantsDeps> = {}): AdminGrantsDeps {
     countGrants: jest.fn().mockResolvedValue(0),
     getCapabilitiesForPrincipal: jest.fn().mockResolvedValue([]),
     getCapabilitiesForPrincipals: jest.fn().mockResolvedValue([]),
-    grantCapability: jest.fn().mockResolvedValue(mockGrant()),
+    grantCapability: jest.fn().mockResolvedValue({ grant: mockGrant(), created: true }),
     revokeCapability: jest.fn().mockResolvedValue({ deletedCount: 1 }),
     getUserPrincipals: jest.fn().mockResolvedValue([
       { principalType: PrincipalType.USER, principalId: new Types.ObjectId() },
@@ -599,7 +599,9 @@ describe('createAdminGrantsHandlers', () => {
 
     it('assigns a grant and returns 201', async () => {
       const grant = mockGrant();
-      const deps = createDeps({ grantCapability: jest.fn().mockResolvedValue(grant) });
+      const deps = createDeps({
+        grantCapability: jest.fn().mockResolvedValue({ grant, created: true }),
+      });
       const handlers = createAdminGrantsHandlers(deps);
       const { req, res, status, json } = createReqRes({ body: validBody });
 
@@ -652,7 +654,7 @@ describe('createAdminGrantsHandlers', () => {
         capability: 'manage:configs:endpoints' as ISystemGrant['capability'],
       });
       const deps = createDeps({
-        grantCapability: jest.fn().mockResolvedValue(grant),
+        grantCapability: jest.fn().mockResolvedValue({ grant, created: true }),
         getHeldCapabilities: jest
           .fn()
           .mockResolvedValue(
@@ -672,7 +674,7 @@ describe('createAdminGrantsHandlers', () => {
     it('accepts config assignment capabilities', async () => {
       const grant = mockGrant({ capability: 'assign:configs:group' as ISystemGrant['capability'] });
       const deps = createDeps({
-        grantCapability: jest.fn().mockResolvedValue(grant),
+        grantCapability: jest.fn().mockResolvedValue({ grant, created: true }),
         getHeldCapabilities: jest
           .fn()
           .mockResolvedValue(new Set([SystemCapabilities.MANAGE_ROLES, 'assign:configs:group'])),
@@ -935,7 +937,7 @@ describe('createAdminGrantsHandlers', () => {
 
     it('returns 500 when grantCapability returns null', async () => {
       const deps = createDeps({
-        grantCapability: jest.fn().mockResolvedValue(null),
+        grantCapability: jest.fn().mockResolvedValue({ grant: null, created: false }),
       });
       const handlers = createAdminGrantsHandlers(deps);
       const { req, res, status, json } = createReqRes({ body: validBody });
@@ -1247,9 +1249,8 @@ describe('createAdminGrantsHandlers', () => {
       const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
       const deps = createDeps({
         recordAuditEntry,
-        getCapabilitiesForPrincipal: jest
-          .fn()
-          .mockResolvedValue([{ capability: SystemCapabilities.READ_USERS }]),
+        // the upsert reports created:false → idempotent re-assert, no change
+        grantCapability: jest.fn().mockResolvedValue({ grant: mockGrant(), created: false }),
       });
       const handlers = createAdminGrantsHandlers(deps);
       const { req, res, status } = createReqRes({ body: assignBody, user: reqUser() });
@@ -1296,7 +1297,7 @@ describe('createAdminGrantsHandlers', () => {
 
     it('fail-closed: a failed revoke audit restores the grant and 500s', async () => {
       const recordAuditEntry = jest.fn().mockRejectedValue(new Error('audit down'));
-      const grantCapability = jest.fn().mockResolvedValue({ id: 'g1' });
+      const grantCapability = jest.fn().mockResolvedValue({ grant: { id: 'g1' }, created: true });
       const deps = createDeps({
         recordAuditEntry,
         auditFailClosed: true,

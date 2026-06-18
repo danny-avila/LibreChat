@@ -3,7 +3,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { RecordAuditEntryInput } from '~/types';
 import type * as t from '~/types';
 import auditLogSchema, { GENESIS_HASH, PLATFORM_CHAIN_KEY } from '~/schema/auditLog';
-import { createAuditLogMethods } from './auditLog';
+import { auditChainKey, createAuditLogMethods } from './auditLog';
 
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),
@@ -17,6 +17,8 @@ let AuditLog: mongoose.Model<t.IAuditLog>;
 let methods: ReturnType<typeof createAuditLogMethods>;
 
 const actorObjectId = new Types.ObjectId();
+const CK_A = auditChainKey('tenant-a');
+const CK_B = auditChainKey('tenant-b');
 
 function baseInput(over: Partial<RecordAuditEntryInput> = {}): RecordAuditEntryInput {
   return {
@@ -58,7 +60,7 @@ describe('auditLog methods', () => {
       const doc = await methods.recordAuditEntry(baseInput());
       expect(doc).not.toBeNull();
 
-      const persisted = await AuditLog.findOne({ chainKey: 'tenant-a' }).lean();
+      const persisted = await AuditLog.findOne({ chainKey: CK_A }).lean();
       expect(persisted).toMatchObject({
         schemaVersion: 1,
         category: 'grant',
@@ -69,7 +71,7 @@ describe('auditLog methods', () => {
         target: { type: 'role', id: 'ADMIN', name: 'ADMIN' },
         metadata: { capability: 'manage:users' },
         tenantId: 'tenant-a',
-        chainKey: 'tenant-a',
+        chainKey: CK_A,
         seq: 1,
         prevHash: GENESIS_HASH,
       });
@@ -79,7 +81,7 @@ describe('auditLog methods', () => {
 
     it('derives a warning severity for non-success outcomes', async () => {
       await methods.recordAuditEntry(baseInput({ outcome: 'denied' }));
-      const persisted = await AuditLog.findOne({ chainKey: 'tenant-a' }).lean();
+      const persisted = await AuditLog.findOne({ chainKey: CK_A }).lean();
       expect(persisted?.outcome).toBe('denied');
       expect(persisted?.severity).toBe('warning');
     });
@@ -98,8 +100,8 @@ describe('auditLog methods', () => {
       await methods.recordAuditEntry(baseInput({ tenantId: 'tenant-b' }));
       await methods.recordAuditEntry(baseInput({ tenantId: undefined }));
 
-      const a = await AuditLog.findOne({ chainKey: 'tenant-a' }).lean();
-      const b = await AuditLog.findOne({ chainKey: 'tenant-b' }).lean();
+      const a = await AuditLog.findOne({ chainKey: CK_A }).lean();
+      const b = await AuditLog.findOne({ chainKey: CK_B }).lean();
       const platform = await AuditLog.findOne({ chainKey: PLATFORM_CHAIN_KEY }).lean();
 
       expect(a?.seq).toBe(1);
@@ -121,7 +123,7 @@ describe('auditLog methods', () => {
       await methods.recordAuditEntry(
         baseInput({ metadata: {}, context: { ip: '', userAgent: undefined } }),
       );
-      const persisted = await AuditLog.findOne({ chainKey: 'tenant-a' }).lean();
+      const persisted = await AuditLog.findOne({ chainKey: CK_A }).lean();
       expect(persisted?.metadata).toBeUndefined();
       expect(persisted?.context).toBeUndefined();
     });
@@ -130,7 +132,7 @@ describe('auditLog methods', () => {
       await methods.recordAuditEntry(
         baseInput({ context: { ip: '10.0.0.1', userAgent: 'jest', requestId: 'req-1' } }),
       );
-      const persisted = await AuditLog.findOne({ chainKey: 'tenant-a' }).lean();
+      const persisted = await AuditLog.findOne({ chainKey: CK_A }).lean();
       expect(persisted?.context).toMatchObject({
         ip: '10.0.0.1',
         userAgent: 'jest',
@@ -157,18 +159,18 @@ describe('auditLog methods', () => {
     it('rejects every query-level update and delete path', async () => {
       await methods.recordAuditEntry(baseInput());
       await expect(
-        AuditLog.updateOne({ chainKey: 'tenant-a' }, { action: 'grant.removed' }),
+        AuditLog.updateOne({ chainKey: CK_A }, { action: 'grant.removed' }),
       ).rejects.toThrow(/append-only/);
       await expect(AuditLog.updateMany({}, { seq: 9 })).rejects.toThrow(/append-only/);
       await expect(AuditLog.findOneAndUpdate({}, { seq: 9 })).rejects.toThrow(/append-only/);
-      await expect(AuditLog.deleteOne({ chainKey: 'tenant-a' })).rejects.toThrow(/append-only/);
-      await expect(AuditLog.deleteMany({ chainKey: 'tenant-a' })).rejects.toThrow(/append-only/);
+      await expect(AuditLog.deleteOne({ chainKey: CK_A })).rejects.toThrow(/append-only/);
+      await expect(AuditLog.deleteMany({ chainKey: CK_A })).rejects.toThrow(/append-only/);
       await expect(AuditLog.findOneAndDelete({})).rejects.toThrow(/append-only/);
     });
 
     it('rejects document-level re-save and deleteOne', async () => {
       await methods.recordAuditEntry(baseInput());
-      const doc = await AuditLog.findOne({ chainKey: 'tenant-a' });
+      const doc = await AuditLog.findOne({ chainKey: CK_A });
       expect(doc).not.toBeNull();
       await expect(doc!.save()).rejects.toThrow(/append-only/);
       await expect(doc!.deleteOne()).rejects.toThrow(/append-only/);
@@ -180,7 +182,7 @@ describe('auditLog methods', () => {
         AuditLog.bulkWrite([
           {
             updateOne: {
-              filter: { chainKey: 'tenant-a' },
+              filter: { chainKey: CK_A },
               update: { $set: { 'actor.name': 'x' } },
             },
           },
@@ -325,7 +327,7 @@ describe('auditLog methods', () => {
       await seed(3);
       // mutate a field via the raw driver, bypassing the append-only hooks
       await AuditLog.collection.updateOne(
-        { chainKey: 'tenant-a', seq: 2 },
+        { chainKey: CK_A, seq: 2 },
         { $set: { 'actor.name': 'Mallory' } },
       );
       const result = await methods.verifyAuditChain('tenant-a');
@@ -336,7 +338,7 @@ describe('auditLog methods', () => {
 
     it('detects a deleted entry (sequence gap)', async () => {
       await seed(3);
-      await AuditLog.collection.deleteOne({ chainKey: 'tenant-a', seq: 2 });
+      await AuditLog.collection.deleteOne({ chainKey: CK_A, seq: 2 });
       const result = await methods.verifyAuditChain('tenant-a');
       expect(result.ok).toBe(false);
       expect(result.reason).toMatch(/sequence gap/);
@@ -345,7 +347,7 @@ describe('auditLog methods', () => {
     it('detects a forged hash link', async () => {
       await seed(3);
       await AuditLog.collection.updateOne(
-        { chainKey: 'tenant-a', seq: 2 },
+        { chainKey: CK_A, seq: 2 },
         { $set: { hash: 'f'.repeat(64) } },
       );
       const result = await methods.verifyAuditChain('tenant-a');
@@ -356,7 +358,7 @@ describe('auditLog methods', () => {
     it('does not silently trust a deleted prefix without a checkpoint', async () => {
       await seed(3);
       // attacker deletes the oldest row through the raw driver
-      await AuditLog.collection.deleteOne({ chainKey: 'tenant-a', seq: 1 });
+      await AuditLog.collection.deleteOne({ chainKey: CK_A, seq: 1 });
       const result = await methods.verifyAuditChain('tenant-a');
       expect(result.ok).toBe(false);
       expect(result.brokenAt).toBe(2);
@@ -365,7 +367,7 @@ describe('auditLog methods', () => {
 
     it('rejects a checkpoint that does not match the remaining chain', async () => {
       await seed(3);
-      await AuditLog.collection.deleteOne({ chainKey: 'tenant-a', seq: 1 });
+      await AuditLog.collection.deleteOne({ chainKey: CK_A, seq: 1 });
       const result = await methods.verifyAuditChain('tenant-a', {
         trustedCheckpoint: { throughSeq: 1, prevHash: 'f'.repeat(64) },
       });
@@ -382,7 +384,7 @@ describe('auditLog methods', () => {
         confirm: false,
       });
       expect(result.deletedCount).toBe(0);
-      expect(await AuditLog.countDocuments({ chainKey: 'tenant-a' })).toBe(2);
+      expect(await AuditLog.countDocuments({ chainKey: CK_A })).toBe(2);
     });
 
     it('purges a prefix and leaves the chain verifiable from a checkpoint', async () => {
@@ -391,7 +393,7 @@ describe('auditLog methods', () => {
         await methods.recordAuditEntry(baseInput());
         await new Promise((resolve) => setTimeout(resolve, 5));
       }
-      const third = await AuditLog.findOne({ chainKey: 'tenant-a', seq: 3 }).lean();
+      const third = await AuditLog.findOne({ chainKey: CK_A, seq: 3 }).lean();
       const cutoff = third!.createdAt;
 
       const result = await methods.purgeAuditLogEntries('tenant-a', {

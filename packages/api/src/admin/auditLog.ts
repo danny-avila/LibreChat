@@ -124,16 +124,17 @@ function parseIsoDate(
   if (!ISO_DATE_RE.test(raw)) return { ok: false, error: 'Date must be ISO 8601' };
   const d = new Date(raw);
   if (Number.isNaN(d.getTime())) return { ok: false, error: 'Invalid date' };
-  if (DATE_ONLY_RE.test(raw)) {
-    /**
-     * `new Date('2025-02-31')` silently normalizes to March 3 rather than
-     * throwing. Round-trip the parsed Y/M/D so an out-of-range day is rejected
-     * instead of quietly shifting the queried window.
-     */
-    const [year, month, day] = raw.split('-').map(Number);
-    if (d.getUTCFullYear() !== year || d.getUTCMonth() + 1 !== month || d.getUTCDate() !== day) {
-      return { ok: false, error: 'Invalid date' };
-    }
+  /**
+   * `new Date('2025-02-31')` (and the timestamp form `2025-02-31T00:00:00Z`)
+   * silently normalizes to March 3 rather than throwing. Validate the literal
+   * calendar tokens — independent of any time/zone, so legitimate offset shifts
+   * are unaffected — so an out-of-range day is rejected instead of quietly
+   * shifting the queried window.
+   */
+  const [year, month, day] = raw.slice(0, 10).split('-').map(Number);
+  const lastDayOfMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  if (month < 1 || month > 12 || day < 1 || day > lastDayOfMonth) {
+    return { ok: false, error: 'Invalid date' };
   }
   if (boundary === 'end' && DATE_ONLY_RE.test(raw)) {
     d.setUTCHours(23, 59, 59, 999);
