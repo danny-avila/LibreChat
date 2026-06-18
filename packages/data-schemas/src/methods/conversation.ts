@@ -11,6 +11,7 @@ import { buildRetentionVisibilityFilter, createFallbackRetentionDate } from '~/u
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { isValidObjectIdString } from '~/utils/objectId';
+import { decrementTagCounts } from './conversationTag';
 import logger from '~/config/winston';
 
 export interface ConversationMethods {
@@ -748,7 +749,7 @@ export function createConversationMethods(
       const { deleteMessages } = getMessageMethods();
       const userFilter = { ...filter, user };
       const conversations = await Conversation.find(userFilter).select(
-        'conversationId chatProjectId',
+        'conversationId chatProjectId tags',
       );
       const conversationIds = conversations.map((c) => c.conversationId);
       const projectIds = new Set(
@@ -756,6 +757,21 @@ export function createConversationMethods(
           .map((conversation) => conversation.chatProjectId)
           .filter((projectId): projectId is string => Boolean(projectId)),
       );
+
+      /**
+       * One entry per (conversation, tag) association: each conversation's tags are
+       * deduped so a duplicate tag entry within a single conversation only decrements
+       * the bookmark count once.
+       */
+      const tagDecrements: string[] = [];
+      for (const conversation of conversations) {
+        if (!conversation.tags?.length) {
+          continue;
+        }
+        for (const tag of new Set(conversation.tags)) {
+          tagDecrements.push(tag);
+        }
+      }
 
       if (!conversationIds.length) {
         throw new Error('Conversation not found or already deleted.');
@@ -768,11 +784,12 @@ export function createConversationMethods(
         user,
       });
 
-      await Promise.all(
-        [...projectIds].map((projectId) =>
+      await Promise.all([
+        decrementTagCounts(mongoose, user, tagDecrements),
+        ...[...projectIds].map((projectId) =>
           refreshChatProjectStatsForUser(mongoose, user, projectId),
         ),
-      );
+      ]);
 
       return { ...deleteConvoResult, messages: deleteMessagesResult };
     } catch (error) {
