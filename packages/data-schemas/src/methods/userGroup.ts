@@ -36,7 +36,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
    */
   async function findGroupByExternalId(
     idOnTheSource: string,
-    source: 'entra' | 'local' = 'entra',
+    source: 'local' = 'local',
     projection: Record<string, 0 | 1> = {},
     session?: ClientSession,
   ): Promise<IGroup | null> {
@@ -57,7 +57,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
    */
   async function findGroupsByExternalIds(
     idsOnTheSource: string[],
-    source: 'entra' | 'local' = 'entra',
+    source: 'local' = 'local',
     session?: ClientSession,
   ): Promise<IGroup[]> {
     const Group = mongoose.models.Group as Model<IGroup>;
@@ -81,7 +81,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
    */
   async function findGroupsByNamePattern(
     namePattern: string,
-    source: 'entra' | 'local' | null = null,
+    source: 'local' | null = null,
     limit: number = 20,
     session?: ClientSession,
   ): Promise<IGroup[]> {
@@ -156,7 +156,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
    */
   async function upsertGroupByExternalId(
     idOnTheSource: string,
-    source: 'entra' | 'local',
+    source: 'local',
     updateData: Partial<IGroup>,
     session?: ClientSession,
   ): Promise<IGroup | null> {
@@ -365,7 +365,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     for (const entraGroup of entraGroups) {
       entraIdMap.set(entraGroup.id, true);
 
-      let group = await findGroupByExternalId(entraGroup.id, 'entra', {}, session);
+      let group = await findGroupByExternalId(entraGroup.id, 'local', {}, session);
 
       if (!group) {
         group = await createGroup(
@@ -374,7 +374,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
             description: entraGroup.description,
             email: entraGroup.email,
             idOnTheSource: entraGroup.id,
-            source: 'entra',
+            source: 'local',
             memberIds: [userIdOnTheSource],
           },
           session,
@@ -390,7 +390,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
     }
 
     const groupsQuery = Group.find(
-      { source: 'entra', memberIds: userIdOnTheSource },
+      { source: 'local', memberIds: userIdOnTheSource },
       { _id: 1, idOnTheSource: 1 },
     );
     if (session) {
@@ -686,7 +686,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
   }
 
   function buildGroupQuery(filter: {
-    source?: 'local' | 'entra';
+    source?: 'local';
     search?: string;
   }): FilterQuery<IGroup> {
     const query: FilterQuery<IGroup> = {};
@@ -708,7 +708,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
    */
   async function listGroups(
     filter: {
-      source?: 'local' | 'entra';
+      source?: 'local';
       search?: string;
       limit?: number;
       offset?: number;
@@ -733,7 +733,7 @@ export function createUserGroupMethods(mongoose: typeof import('mongoose')) {
    * @param session - Optional MongoDB session for transactions
    */
   async function countGroups(
-    filter: { source?: 'local' | 'entra'; search?: string } = {},
+    filter: { source?: 'local'; search?: string } = {},
     session?: ClientSession,
   ): Promise<number> {
     const Group = mongoose.models.Group as Model<IGroup>;

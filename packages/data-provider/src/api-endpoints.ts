@@ -487,7 +487,3 @@ export const getEffectivePermissions = (resourceType: ResourceType, resourceId: 
 
 export const getAllEffectivePermissions = (resourceType: ResourceType) =>
   `${BASE_URL}/api/permissions/${resourceType}/effective/all`;
-
-// SharePoint Graph API Token
-export const graphToken = (scopes: string) =>
-  `${BASE_URL}/api/auth/graph-token?scopes=${encodeURIComponent(scopes)}`;

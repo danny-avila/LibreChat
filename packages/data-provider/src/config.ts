@@ -1100,10 +1100,6 @@ export type TStartupConfig = {
   analyticsGtmId?: string;
   bundlerURL?: string;
   staticBundlerURL?: string;
-  sharePointFilePickerEnabled?: boolean;
-  sharePointBaseUrl?: string;
-  sharePointPickerGraphScope?: string;
-  sharePointPickerSharePointScope?: string;
   openidReuseTokens?: boolean;
   allowAccountDeletion: boolean;
   minPasswordLength?: number;

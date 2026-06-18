@@ -80,16 +80,16 @@ describe('userGroup methods', () => {
     it('finds a group by its external Entra ID', async () => {
       await Group.create({
         name: 'Entra Group',
-        source: 'entra',
+        source: 'local',
         idOnTheSource: 'entra-abc-123',
       });
-      const found = await methods.findGroupByExternalId('entra-abc-123', 'entra');
+      const found = await methods.findGroupByExternalId('entra-abc-123', 'local');
       expect(found).toBeTruthy();
       expect(found!.name).toBe('Entra Group');
     });
 
     it('returns null when no match', async () => {
-      const found = await methods.findGroupByExternalId('nonexistent', 'entra');
+      const found = await methods.findGroupByExternalId('nonexistent', 'local');
       expect(found).toBeNull();
     });
   });
@@ -99,7 +99,7 @@ describe('userGroup methods', () => {
       await Group.create([
         { name: 'Engineering', source: 'local', description: 'Eng team' },
         { name: 'Design', source: 'local', email: 'design@co.com' },
-        { name: 'Entra Eng', source: 'entra', idOnTheSource: 'ext-1' },
+        { name: 'Entra Eng', source: 'local', idOnTheSource: 'ext-1' },
         { name: 'Literal .* Group', source: 'local' },
       ]);
     });
@@ -128,9 +128,9 @@ describe('userGroup methods', () => {
     });
 
     it('filters by source when provided', async () => {
-      const results = await methods.findGroupsByNamePattern('eng', 'entra');
+      const results = await methods.findGroupsByNamePattern('eng', 'local');
       expect(results).toHaveLength(1);
-      expect(results[0].source).toBe('entra');
+      expect(results[0].source).toBe('local');
     });
 
     it('respects limit parameter', async () => {
@@ -186,7 +186,7 @@ describe('userGroup methods', () => {
 
   describe('upsertGroupByExternalId', () => {
     it('creates a new group when none exists', async () => {
-      const group = await methods.upsertGroupByExternalId('ext-new', 'entra', {
+      const group = await methods.upsertGroupByExternalId('ext-new', 'local', {
         name: 'New Entra Group',
       });
       expect(group).toBeTruthy();
@@ -195,8 +195,8 @@ describe('userGroup methods', () => {
     });
 
     it('updates existing group when found', async () => {
-      await Group.create({ name: 'Old Name', source: 'entra', idOnTheSource: 'ext-1' });
-      const group = await methods.upsertGroupByExternalId('ext-1', 'entra', {
+      await Group.create({ name: 'Old Name', source: 'local', idOnTheSource: 'ext-1' });
+      const group = await methods.upsertGroupByExternalId('ext-1', 'local', {
         name: 'Updated Name',
       });
       expect(group!.name).toBe('Updated Name');
@@ -396,7 +396,7 @@ describe('userGroup methods', () => {
       expect(addedGroups).toHaveLength(2);
       expect(removedGroups).toHaveLength(0);
 
-      const groups = await Group.find({ source: 'entra' });
+      const groups = await Group.find({ source: 'local' });
       expect(groups).toHaveLength(2);
       expect(groups.every((g) => g.memberIds!.includes('user-ext-1'))).toBe(true);
     });
@@ -405,7 +405,7 @@ describe('userGroup methods', () => {
       const user = await createTestUser({ idOnTheSource: 'user-ext-1' });
       await Group.create({
         name: 'Existing Entra Group',
-        source: 'entra',
+        source: 'local',
         idOnTheSource: 'entra-g1',
         memberIds: ['other-user'],
       });
@@ -424,7 +424,7 @@ describe('userGroup methods', () => {
       const user = await createTestUser({ idOnTheSource: 'user-ext-1' });
       await Group.create({
         name: 'Already Member',
-        source: 'entra',
+        source: 'local',
         idOnTheSource: 'entra-g1',
         memberIds: ['user-ext-1'],
       });
@@ -440,7 +440,7 @@ describe('userGroup methods', () => {
       const user = await createTestUser({ idOnTheSource: 'user-ext-1' });
       await Group.create({
         name: 'Stale Group',
-        source: 'entra',
+        source: 'local',
         idOnTheSource: 'entra-stale',
         memberIds: ['user-ext-1'],
       });
@@ -458,13 +458,13 @@ describe('userGroup methods', () => {
 
       await Group.create({
         name: 'Keep Group',
-        source: 'entra',
+        source: 'local',
         idOnTheSource: 'entra-keep',
         memberIds: ['user-ext-1'],
       });
       await Group.create({
         name: 'Remove Group',
-        source: 'entra',
+        source: 'local',
         idOnTheSource: 'entra-remove',
         memberIds: ['user-ext-1'],
       });
@@ -819,13 +819,13 @@ describe('userGroup methods', () => {
   describe('bulkUpdateGroups', () => {
     it('updates all groups matching the filter', async () => {
       await Group.create([
-        { name: 'Group A', source: 'entra', idOnTheSource: 'ext-a' },
-        { name: 'Group B', source: 'entra', idOnTheSource: 'ext-b' },
+        { name: 'Group A', source: 'local', idOnTheSource: 'ext-a' },
+        { name: 'Group B', source: 'local', idOnTheSource: 'ext-b' },
         { name: 'Group C', source: 'local' },
       ]);
 
       const result = await methods.bulkUpdateGroups(
-        { source: 'entra' },
+        { source: 'local' },
         { $set: { description: 'synced' } },
       );
 
@@ -836,7 +836,7 @@ describe('userGroup methods', () => {
 
     it('returns zero when no groups match', async () => {
       const result = await methods.bulkUpdateGroups(
-        { source: 'entra' },
+        { source: 'local' },
         { $set: { description: 'x' } },
       );
       expect(result.modifiedCount).toBe(0);

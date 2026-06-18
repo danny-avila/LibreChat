@@ -300,8 +300,6 @@
   "com_file_pages": "Pagina's: {{pages}}",
   "com_file_source": "Bestand",
   "com_file_unknown": "Onbekend bestand",
-  "com_files_download_failed": "{{0}} bestanden mislukt",
-  "com_files_download_progress": "{{0}} van {{1}} bestanden",
   "com_files_filter_by": "Filter bestanden op...",
   "com_files_no_results": "Geen resultaten.",
   "com_files_result_found": "{{count}} resultaat gevonden",

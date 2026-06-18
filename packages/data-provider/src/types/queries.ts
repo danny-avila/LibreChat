@@ -159,7 +159,6 @@ export type PrincipalSearchResponse = {
   count: number;
   sources: {
     local: number;
-    entra: number;
   };
 };
 
@@ -214,16 +213,4 @@ export type TUserFavorite = {
   spec?: string;
   /** Phase 2 — skill favoriting isn't persisted yet, but the shape is reserved. */
   skillId?: string;
-};
-
-/* SharePoint Graph API Token */
-export type GraphTokenParams = {
-  scopes: string;
-};
-
-export type GraphTokenResponse = {
-  access_token: string;
-  token_type: string;
-  expires_in: number;
-  scope: string;
 };

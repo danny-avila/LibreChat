@@ -1264,11 +1264,6 @@ export function getAllEffectivePermissions(
   return request.get(endpoints.getAllEffectivePermissions(resourceType));
 }
 
-// SharePoint Graph API Token
-export function getGraphApiToken(params: q.GraphTokenParams): Promise<q.GraphTokenResponse> {
-  return request.get(endpoints.graphToken(params.scopes));
-}
-
 export function getDomainServerBaseUrl(): string {
   return `${endpoints.apiBaseUrl()}/api`;
 }
