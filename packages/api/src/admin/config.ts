@@ -466,14 +466,16 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return true;
       });
 
+      const hasBroadManage = await hasConfigCapability(user, null, 'manage');
+
       if (validEntries.length === 0) {
-        if (!(await hasConfigCapability(user, null, 'manage'))) {
+        if (!hasBroadManage) {
           return res.status(403).json({ error: 'Insufficient permissions' });
         }
         return res.status(200).json({ message: 'No actionable field entries provided' });
       }
 
-      if (!(await hasConfigCapability(user, null, 'manage'))) {
+      if (!hasBroadManage) {
         const sections = [...new Set(validEntries.map((e) => getTopLevelSection(e.fieldPath)))];
         const allowed = await Promise.all(
           sections.map((s) => hasConfigCapability(user, s as ConfigSection, 'manage')),
@@ -496,8 +498,15 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         fields[entry.fieldPath] = entry.value;
       }
 
+      if (priority != null && !hasBroadManage) {
+        logger.warn(
+          `[adminConfig] Ignoring caller-supplied priority on section-scoped patch to ${principalType}/${principalId}: only broad manage:configs may modify document priority`,
+        );
+      }
+      const requestedPriority = hasBroadManage ? priority : undefined;
+
       const existing =
-        priority == null
+        requestedPriority == null
           ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
           : null;
 
@@ -506,7 +515,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         principalId,
         principalModel(principalType),
         fields,
-        priority ?? existing?.priority ?? DEFAULT_PRIORITY,
+        requestedPriority ?? existing?.priority ?? DEFAULT_PRIORITY,
       );
 
       invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
@@ -557,7 +566,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       const section = getTopLevelSection(fieldPath);
 
-      if (!(await hasConfigCapability(user, section as ConfigSection, 'manage'))) {
+      const hasBroadManage = await hasConfigCapability(user, null, 'manage');
+      if (
+        !hasBroadManage &&
+        !(await hasConfigCapability(user, section as ConfigSection, 'manage'))
+      ) {
         return res.status(403).json({
           error: `Insufficient permissions for config section: ${section}`,
         });
@@ -570,8 +583,15 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(200).json({ message: 'No actionable field path provided' });
       }
 
+      if (priority != null && !hasBroadManage) {
+        logger.warn(
+          `[adminConfig] Ignoring caller-supplied priority on section-scoped tombstone for ${principalType}/${principalId}: only broad manage:configs may modify document priority`,
+        );
+      }
+      const requestedPriority = hasBroadManage ? priority : undefined;
+
       const existing =
-        priority == null
+        requestedPriority == null
           ? await findConfigByPrincipal(principalType, principalId, { includeInactive: true })
           : null;
 
@@ -580,7 +600,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         principalId,
         principalModel(principalType),
         fieldPath,
-        priority ?? existing?.priority ?? DEFAULT_PRIORITY,
+        requestedPriority ?? existing?.priority ?? DEFAULT_PRIORITY,
       );
 
       invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
