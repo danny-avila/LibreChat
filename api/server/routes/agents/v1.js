@@ -108,7 +108,7 @@ router.post(
   '/:id/duplicate',
   checkAgentCreate,
   canAccessAgentResource({
-    requiredPermission: PermissionBits.EDIT,
+    requiredPermission: PermissionBits.VIEW, // NJ: Allow duplicating agents users can view, so they can customize them
     resourceIdParam: 'id',
   }),
   v1.duplicateAgent,
