@@ -1,13 +1,51 @@
 import { logger } from '@librechat/data-schemas';
+import type {
+  IBalanceUpdate,
+  BalanceConfig,
+  AppConfig,
+  ObjectId,
+  IBalance,
+  IUser,
+} from '@librechat/data-schemas';
 import type { NextFunction, Request as ServerRequest, Response as ServerResponse } from 'express';
-import type { IBalance, IUser, BalanceConfig, ObjectId, AppConfig } from '@librechat/data-schemas';
-import type { Model } from 'mongoose';
 import type { BalanceUpdateFields } from '~/types';
 import { getBalanceConfig } from '~/app/config';
 
 export interface BalanceMiddlewareOptions {
-  getAppConfig: (options?: { role?: string; refresh?: boolean }) => Promise<AppConfig>;
-  Balance: Model<IBalance>;
+  getAppConfig: (options?: {
+    role?: string;
+    userId?: string;
+    tenantId?: string;
+    refresh?: boolean;
+  }) => Promise<AppConfig>;
+  findBalanceByUser: (userId: string) => Promise<IBalance | null>;
+  upsertBalanceFields: (userId: string, fields: IBalanceUpdate) => Promise<IBalance | null>;
+}
+
+type BalanceLocals = {
+  balanceData?: IBalance | null;
+  balanceConfigEnabled?: boolean;
+};
+
+const balanceUpdateLocks = new Map<string, Promise<void>>();
+
+async function runBalanceUpdate(userId: string, task: () => Promise<void>): Promise<void> {
+  const previous = balanceUpdateLocks.get(userId) ?? Promise.resolve();
+  const current = previous.catch(() => undefined).then(task);
+  const tail = current.then(
+    () => undefined,
+    () => undefined,
+  );
+
+  balanceUpdateLocks.set(userId, tail);
+
+  try {
+    await current;
+  } finally {
+    if (balanceUpdateLocks.get(userId) === tail) {
+      balanceUpdateLocks.delete(userId);
+    }
+  }
 }
 
 /**
@@ -75,7 +113,8 @@ function buildUpdateFields(
  */
 export function createSetBalanceConfig({
   getAppConfig,
-  Balance,
+  findBalanceByUser,
+  upsertBalanceFields,
 }: BalanceMiddlewareOptions): (
   req: ServerRequest,
   res: ServerResponse,
@@ -83,9 +122,15 @@ export function createSetBalanceConfig({
 ) => Promise<void> {
   return async (req: ServerRequest, res: ServerResponse, next: NextFunction): Promise<void> => {
     try {
+      const balanceLocals = res.locals as BalanceLocals;
       const user = req.user as IUser & { _id: string | ObjectId };
-      const appConfig = await getAppConfig({ role: user?.role });
+      const appConfig = await getAppConfig({
+        role: user?.role,
+        userId: user?.id,
+        tenantId: user?.tenantId,
+      });
       const balanceConfig = getBalanceConfig(appConfig);
+      balanceLocals.balanceConfigEnabled = balanceConfig?.enabled === true;
       if (!balanceConfig?.enabled) {
         return next();
       }
@@ -97,18 +142,17 @@ export function createSetBalanceConfig({
         return next();
       }
       const userId = typeof user._id === 'string' ? user._id : user._id.toString();
-      const userBalanceRecord = await Balance.findOne({ user: userId }).lean();
-      const updateFields = buildUpdateFields(balanceConfig, userBalanceRecord, userId);
+      await runBalanceUpdate(userId, async () => {
+        const userBalanceRecord = await findBalanceByUser(userId);
+        const updateFields = buildUpdateFields(balanceConfig, userBalanceRecord, userId);
 
-      if (Object.keys(updateFields).length === 0) {
-        return next();
-      }
+        if (Object.keys(updateFields).length === 0) {
+          balanceLocals.balanceData = userBalanceRecord;
+          return;
+        }
 
-      await Balance.findOneAndUpdate(
-        { user: userId },
-        { $set: updateFields },
-        { upsert: true, new: true },
-      );
+        balanceLocals.balanceData = await upsertBalanceFields(userId, updateFields);
+      });
 
       next();
     } catch (error) {

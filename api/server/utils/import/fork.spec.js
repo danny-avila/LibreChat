@@ -1,16 +1,10 @@
 const { Constants, ForkOptions } = require('librechat-data-provider');
 
-jest.mock('~/models/Conversation', () => ({
+jest.mock('~/models', () => ({
   getConvo: jest.fn(),
   bulkSaveConvos: jest.fn(),
-}));
-
-jest.mock('~/models/Message', () => ({
   getMessages: jest.fn(),
   bulkSaveMessages: jest.fn(),
-}));
-
-jest.mock('~/models/ConversationTag', () => ({
   bulkIncrementTagCounts: jest.fn(),
 }));
 
@@ -32,9 +26,13 @@ const {
   getMessagesUpToTargetLevel,
   cloneMessagesWithTimestamps,
 } = require('./fork');
-const { bulkIncrementTagCounts } = require('~/models/ConversationTag');
-const { getConvo, bulkSaveConvos } = require('~/models/Conversation');
-const { getMessages, bulkSaveMessages } = require('~/models/Message');
+const {
+  bulkIncrementTagCounts,
+  getConvo,
+  bulkSaveConvos,
+  getMessages,
+  bulkSaveMessages,
+} = require('~/models');
 const { createImportBatchBuilder } = require('./importBatchBuilder');
 const BaseClient = require('~/app/clients/BaseClient');
 

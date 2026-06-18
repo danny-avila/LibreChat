@@ -1,9 +1,9 @@
-import bannerSchema from '~/schema/banner';
+import { Model } from 'mongoose';
 import type { IBanner } from '~/types';
+import { applyTenantIsolation } from '~/models/plugins/tenantIsolation';
+import bannerSchema from '~/schema/banner';
 
-/**
- * Creates or returns the Banner model using the provided mongoose instance and schema
- */
-export function createBannerModel(mongoose: typeof import('mongoose')) {
+export function createBannerModel(mongoose: typeof import('mongoose')): Model<IBanner> {
+  applyTenantIsolation(bannerSchema);
   return mongoose.models.Banner || mongoose.model<IBanner>('Banner', bannerSchema);
 }

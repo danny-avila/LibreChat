@@ -3,8 +3,8 @@
  *
  * These tests verify that MCPServersRegistry and MCPManager are ALWAYS initialized,
  * even when no explicitly configured MCP servers exist. This is critical for the
- * "Dynamic MCP Server Management" feature (v0.8.2-rc1) which allows users to
- * add MCP servers via the UI without requiring explicit configuration.
+ * "Dynamic MCP Server Management" feature (introduced in `0.8.2-rc1` release) which
+ * allows users to add MCP servers via the UI without requiring explicit configuration.
  *
  * Bug fixed: Previously, MCPManager was only initialized when mcpServers existed
  * in librechat.yaml, causing "MCPManager has not been initialized" errors when
@@ -81,6 +81,8 @@ describe('initializeMCPs', () => {
       expect(mockCreateMCPServersRegistry).toHaveBeenCalledWith(
         expect.anything(), // mongoose
         ['localhost'],
+        undefined,
+        expect.any(Function), // per-request allowlist resolver
       );
     });
 
@@ -93,7 +95,12 @@ describe('initializeMCPs', () => {
 
       await initializeMCPs();
 
-      expect(mockCreateMCPServersRegistry).toHaveBeenCalledWith(expect.anything(), allowedDomains);
+      expect(mockCreateMCPServersRegistry).toHaveBeenCalledWith(
+        expect.anything(),
+        allowedDomains,
+        undefined,
+        expect.any(Function),
+      );
     });
 
     it('should handle undefined mcpSettings gracefully', async () => {
@@ -104,7 +111,36 @@ describe('initializeMCPs', () => {
 
       await initializeMCPs();
 
-      expect(mockCreateMCPServersRegistry).toHaveBeenCalledWith(expect.anything(), undefined);
+      expect(mockCreateMCPServersRegistry).toHaveBeenCalledWith(
+        expect.anything(),
+        undefined,
+        undefined,
+        expect.any(Function),
+      );
+    });
+
+    it('wires a per-request resolver that reads the merged (non-baseOnly) config', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        mcpConfig: null,
+        mcpSettings: { allowedDomains: ['yaml.com'] },
+      });
+
+      await initializeMCPs();
+
+      const resolver = mockCreateMCPServersRegistry.mock.calls[0][3];
+      expect(typeof resolver).toBe('function');
+
+      // The resolver resolves the request's merged allowlists — not the boot YAML base.
+      mockGetAppConfig.mockResolvedValue({
+        mcpSettings: { allowedDomains: ['merged.com'], allowedAddresses: ['10.0.0.0/8'] },
+      });
+      const resolved = await resolver({ userId: 'u1', role: 'ADMIN' });
+
+      expect(mockGetAppConfig).toHaveBeenLastCalledWith({ role: 'ADMIN', userId: 'u1' });
+      expect(resolved).toEqual({
+        allowedDomains: ['merged.com'],
+        allowedAddresses: ['10.0.0.0/8'],
+      });
     });
 
     it('should throw and log error if MCPServersRegistry initialization fails', async () => {

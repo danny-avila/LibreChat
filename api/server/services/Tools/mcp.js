@@ -1,8 +1,12 @@
 const { logger } = require('@librechat/data-schemas');
+const { getMissingCustomUserVars, requiresEphemeralUserConnection } = require('@librechat/api');
 const { CacheKeys, Constants } = require('librechat-data-provider');
+const { getMCPManager, getMCPServersRegistry, getFlowStateManager } = require('~/config');
 const { findToken, createToken, updateToken, deleteTokens } = require('~/models');
+const { getGraphApiToken } = require('~/server/services/GraphTokenService');
+const { exchangeOboToken } = require('~/server/services/OboTokenService');
+const { createOboTrustChecker } = require('~/server/services/OboPolicyService');
 const { updateMCPServerTools } = require('~/server/services/Config');
-const { getMCPManager, getFlowStateManager } = require('~/config');
 const { getLogStores } = require('~/cache');
 
 /**
@@ -17,7 +21,10 @@ const { getLogStores } = require('~/cache');
  * @param {boolean} [params.forceNew]
  * @param {number} [params.connectionTimeout]
  * @param {FlowStateManager<any>} [params.flowManager]
- * @param {(authURL: string) => Promise<void>} [params.oauthStart]
+ * @param {(authURL: string, options?: { expiresAt?: number }) => Promise<void>} [params.oauthStart]
+ * @param {() => Promise<void>} [params.oauthEnd]
+ * @param {import('@librechat/api').RequestBody} [params.requestBody]
+ * @param {import('@librechat/api').RequestScopedMCPConnectionStore} [params.requestScopedConnections]
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  */
 async function reinitMCPServer({
@@ -25,23 +32,95 @@ async function reinitMCPServer({
   signal,
   forceNew,
   serverName,
+  configServers,
   userMCPAuthMap,
   connectionTimeout,
   returnOnOAuth = true,
   oauthStart: _oauthStart,
   flowManager: _flowManager,
+  serverConfig: providedConfig,
+  requestBody,
+  requestScopedConnections,
+  oauthEnd,
 }) {
   /** @type {MCPConnection | null} */
   let connection = null;
+  let serverConfig = providedConfig;
   /** @type {LCAvailableTools | null} */
   let availableTools = null;
   /** @type {ReturnType<MCPConnection['fetchTools']> | null} */
   let tools = null;
   let oauthRequired = false;
   let oauthUrl = null;
+  let ephemeralServer = false;
 
   try {
+    const registry = getMCPServersRegistry();
+    serverConfig =
+      serverConfig ?? (await registry.getServerConfig(serverName, user?.id, configServers));
+    ephemeralServer = serverConfig ? requiresEphemeralUserConnection(serverConfig) : false;
+    if (serverConfig?.inspectionFailed) {
+      if (serverConfig.source === 'config') {
+        logger.info(
+          `[MCP Reinitialize] Config-source server ${serverName} has inspectionFailed — retry handled by config cache`,
+        );
+        return {
+          availableTools: null,
+          success: false,
+          message: `MCP server '${serverName}' is still unreachable`,
+          oauthRequired: false,
+          serverName,
+          oauthUrl: null,
+          tools: null,
+        };
+      } else {
+        logger.info(
+          `[MCP Reinitialize] Server ${serverName} had failed inspection, attempting reinspection`,
+        );
+        try {
+          const storageLocation = serverConfig.source === 'user' ? 'DB' : 'CACHE';
+          await registry.reinspectServer(serverName, storageLocation, user?.id);
+          logger.info(`[MCP Reinitialize] Reinspection succeeded for server: ${serverName}`);
+        } catch (reinspectError) {
+          logger.error(
+            `[MCP Reinitialize] Reinspection failed for server ${serverName}:`,
+            reinspectError,
+          );
+          return {
+            availableTools: null,
+            success: false,
+            message: `MCP server '${serverName}' is still unreachable`,
+            oauthRequired: false,
+            serverName,
+            oauthUrl: null,
+            tools: null,
+          };
+        }
+      }
+    }
+
     const customUserVars = userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
+
+    const missingUserVars = getMissingCustomUserVars(serverConfig ?? {}, customUserVars);
+    if (missingUserVars.length > 0) {
+      logger.warn(
+        `[MCP Reinitialize] Skipping server '${serverName}': required user-provided variable(s) not set: ${missingUserVars.join(
+          ', ',
+        )}. Tools will not be exposed until the user configures them.`,
+      );
+      return {
+        availableTools: null,
+        success: false,
+        message: `MCP server '${serverName}' requires user-provided variable(s) [${missingUserVars.join(
+          ', ',
+        )}] which are not set`,
+        oauthRequired: false,
+        serverName,
+        oauthUrl: null,
+        tools: null,
+      };
+    }
+
     const flowManager = _flowManager ?? getFlowStateManager(getLogStores(CacheKeys.FLOWS));
     const mcpManager = getMCPManager();
     const tokenMethods = { findToken, updateToken, createToken, deleteTokens };
@@ -64,8 +143,15 @@ async function reinitMCPServer({
         flowManager,
         tokenMethods,
         returnOnOAuth,
+        oauthEnd,
         customUserVars,
+        requestBody,
+        requestScopedConnections,
         connectionTimeout,
+        serverConfig,
+        graphTokenResolver: getGraphApiToken,
+        oboTokenResolver: exchangeOboToken,
+        oboTrustChecker: createOboTrustChecker(),
       });
 
       logger.info(`[MCP Reinitialize] Successfully established connection for ${serverName}`);
@@ -97,7 +183,12 @@ async function reinitMCPServer({
             tokenMethods,
             oauthStart,
             customUserVars,
+            requestBody,
             connectionTimeout,
+            configServers,
+            graphTokenResolver: getGraphApiToken,
+            oboTokenResolver: exchangeOboToken,
+            oboTrustChecker: createOboTrustChecker(),
           });
 
           if (discoveryResult.tools && discoveryResult.tools.length > 0) {
@@ -128,6 +219,7 @@ async function reinitMCPServer({
         userId: user.id,
         serverName,
         tools,
+        serverConfig,
       });
     }
 
@@ -175,6 +267,17 @@ async function reinitMCPServer({
       '[MCP Reinitialize] Error loading MCP Tools, servers may still be initializing:',
       error,
     );
+  } finally {
+    if (connection && ephemeralServer && !requestScopedConnections) {
+      try {
+        await connection.disconnect();
+      } catch (error) {
+        logger.warn(
+          `[MCP Reinitialize] Failed to disconnect ephemeral server ${serverName}`,
+          error,
+        );
+      }
+    }
   }
 }
 

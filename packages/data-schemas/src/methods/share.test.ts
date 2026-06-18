@@ -26,7 +26,8 @@ describe('Share Methods', () => {
         user: { type: String, index: true },
         messages: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Message' }],
         shareId: { type: String, index: true },
-        isPublic: { type: Boolean, default: true },
+        targetMessageId: { type: String, required: false, index: true },
+        expiredAt: { type: Date },
       },
       { timestamps: true },
     );
@@ -39,8 +40,18 @@ describe('Share Methods', () => {
         text: String,
         isCreatedByUser: Boolean,
         model: String,
+        iconURL: String,
+        endpoint: String,
+        conversationSignature: String,
+        clientId: String,
+        plugin: mongoose.Schema.Types.Mixed,
+        metadata: mongoose.Schema.Types.Mixed,
+        feedback: mongoose.Schema.Types.Mixed,
+        manualSkills: [String],
+        alwaysAppliedSkills: [String],
         parentMessageId: String,
         attachments: [mongoose.Schema.Types.Mixed],
+        files: [mongoose.Schema.Types.Mixed],
         content: [mongoose.Schema.Types.Mixed],
       },
       { timestamps: true },
@@ -114,6 +125,7 @@ describe('Share Methods', () => {
       const result = await shareMethods.createSharedLink(userId, conversationId);
 
       expect(result).toBeDefined();
+      expect(result._id).toBeDefined();
       expect(result.shareId).toBeDefined();
       expect(result.conversationId).toBe(conversationId);
 
@@ -151,6 +163,40 @@ describe('Share Methods', () => {
       await expect(shareMethods.createSharedLink(userId, conversationId)).rejects.toThrow(
         'Share already exists',
       );
+    });
+
+    test('should ignore expired shares when checking for duplicates', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const expiredShareId = `share_${nanoid()}`;
+
+      await Conversation.create({
+        conversationId,
+        title: 'Test Conversation',
+        user: userId,
+      });
+
+      const message = await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'Test message',
+        isCreatedByUser: true,
+      });
+
+      await SharedLink.create({
+        shareId: expiredShareId,
+        conversationId,
+        user: userId,
+        messages: [message._id],
+        expiredAt: new Date(Date.now() - 60 * 60 * 1000),
+      });
+
+      const result = await shareMethods.createSharedLink(userId, conversationId);
+
+      expect(result.shareId).toBeDefined();
+      expect(result.shareId).not.toBe(expiredShareId);
+      expect(result.conversationId).toBe(conversationId);
     });
 
     test('should throw error with missing parameters', async () => {
@@ -290,7 +336,6 @@ describe('Share Methods', () => {
         user: userId,
         title: 'Test Share',
         messages: messages.map((m) => m._id),
-        isPublic: true,
       });
 
       const result = await shareMethods.getSharedMessages(shareId);
@@ -305,26 +350,26 @@ describe('Share Methods', () => {
         expect(msg.messageId).toMatch(/^msg_/); // Should be anonymized with msg_ prefix
         expect(msg.messageId).not.toBe(messages[0].messageId); // Should be different from original
         expect(msg.conversationId).toBe(result.conversationId);
-        expect(msg.user).toBeUndefined(); // User should be removed
+        expect((msg as Record<string, unknown>).user).toBeUndefined(); // User should be removed
       });
     });
 
-    test('should return null for non-public share', async () => {
+    test('should return null for non-existent share', async () => {
+      const result = await shareMethods.getSharedMessages('non_existent_share');
+      expect(result).toBeNull();
+    });
+
+    test('should return null for expired share', async () => {
       const shareId = `share_${nanoid()}`;
 
       await SharedLink.create({
         shareId,
         conversationId: 'conv123',
         user: 'user123',
-        isPublic: false,
+        expiredAt: new Date(Date.now() - 60 * 60 * 1000),
       });
 
       const result = await shareMethods.getSharedMessages(shareId);
-      expect(result).toBeNull();
-    });
-
-    test('should return null for non-existent share', async () => {
-      const result = await shareMethods.getSharedMessages('non_existent_share');
       expect(result).toBeNull();
     });
 
@@ -353,7 +398,6 @@ describe('Share Methods', () => {
         conversationId,
         user: userId,
         messages: [message._id],
-        isPublic: true,
       });
 
       const result = await shareMethods.getSharedMessages(shareId);
@@ -365,6 +409,106 @@ describe('Share Methods', () => {
       expect(
         (result?.messages[0].attachments?.[0] as unknown as t.IMessage | undefined)?.conversationId,
       ).toBe(result?.conversationId);
+    });
+
+    test('strips storage-internal fields while preserving shared render data', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+
+      const message = await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'safe text',
+        isCreatedByUser: false,
+        model: 'gpt-4',
+        iconURL: 'https://cdn.example.com/icon.png',
+        endpoint: 'openAI',
+        conversationSignature: 'signature',
+        clientId: 'client-id',
+        plugin: { latest: 'internal' },
+        metadata: { codeEnvRef: 'internal-ref' },
+        feedback: { rating: 'thumbsDown', tag: { key: 'inaccurate' }, text: 'private note' },
+        manualSkills: ['research'],
+        alwaysAppliedSkills: ['brand-voice'],
+        files: [
+          {
+            file_id: 'file123',
+            filename: 'upload.png',
+            type: 'image/png',
+            width: 100,
+            height: 100,
+            filepath: '/images/upload.png',
+            conversationId,
+            user: userId,
+            tenantId: 'tenant-a',
+            storageKey: 'private/upload.png',
+            source: 's3',
+          },
+        ],
+        attachments: [
+          {
+            toolCallId: 'call_abc',
+            type: 'web_search',
+            web_search: { results: [{ title: 'Cited source', link: 'https://example.com' }] },
+            filename: 'result.json',
+            filepath: '/images/result.json',
+            storageKey: 'private/result.json',
+            metadata: { codeEnvRef: 'internal-ref' },
+          },
+        ],
+      });
+
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: [message._id],
+      });
+
+      const result = await shareMethods.getSharedMessages(shareId);
+      const shared = result?.messages[0];
+
+      expect(shared?.text).toBe('safe text');
+      // Custom message icon is render metadata and should be preserved.
+      expect(shared?.iconURL).toBe('https://cdn.example.com/icon.png');
+      // Non-assistant model and internal message fields must not be disclosed.
+      expect(shared?.model).toBeUndefined();
+      expect(shared).not.toHaveProperty('endpoint');
+      expect(shared).not.toHaveProperty('conversationSignature');
+      expect(shared).not.toHaveProperty('clientId');
+      expect(shared).not.toHaveProperty('plugin');
+      expect(shared).not.toHaveProperty('metadata');
+      // Private owner feedback is not render data and must not leak publicly.
+      expect(shared).not.toHaveProperty('feedback');
+      // Skill badges are non-sensitive UI metadata and should still render.
+      expect(shared?.manualSkills).toEqual(['research']);
+      expect(shared?.alwaysAppliedSkills).toEqual(['brand-voice']);
+
+      // User-uploaded files keep their render URL (filepath/preview) but drop storage internals.
+      const file = shared?.files?.[0];
+      expect(file).toMatchObject({ filename: 'upload.png', type: 'image/png' });
+      expect(file?.filepath).toBe('/images/upload.png');
+      expect(file).not.toHaveProperty('storageKey');
+      expect(file).not.toHaveProperty('user');
+      expect(file).not.toHaveProperty('tenantId');
+      expect(file).not.toHaveProperty('source');
+      // The file's conversation id is rewritten to the anonymized id, not the original.
+      expect(file?.conversationId).toBe(shared?.conversationId);
+      expect(file?.conversationId).not.toBe(conversationId);
+
+      // Tool-call attachments keep their correlation id, payload, and render URL so
+      // citations still render, while storage-only fields are removed.
+      const attachment = shared?.attachments?.[0];
+      expect(attachment).toMatchObject({
+        toolCallId: 'call_abc',
+        type: 'web_search',
+        web_search: { results: [{ title: 'Cited source', link: 'https://example.com' }] },
+        filepath: '/images/result.json',
+      });
+      expect(attachment).not.toHaveProperty('storageKey');
+      expect(attachment).not.toHaveProperty('metadata');
     });
   });
 
@@ -379,7 +523,6 @@ describe('Share Methods', () => {
           conversationId: `conv_${i}`,
           user: userId,
           title: `Share ${i}`,
-          isPublic: true,
           createdAt: new Date(Date.now() - i * 1000 * 60), // Different timestamps
         }),
       );
@@ -397,34 +540,30 @@ describe('Share Methods', () => {
       expect(result.links[9].title).toBe('Share 9');
     });
 
-    test('should filter by isPublic parameter', async () => {
+    test('should exclude expired shares', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
 
       await SharedLink.create([
         {
-          shareId: 'public_share',
+          shareId: 'active_share',
           conversationId: 'conv1',
           user: userId,
-          title: 'Public Share',
-          isPublic: true,
+          title: 'Active Share',
+          expiredAt: new Date(Date.now() + 60 * 60 * 1000),
         },
         {
-          shareId: 'private_share',
+          shareId: 'expired_share',
           conversationId: 'conv2',
           user: userId,
-          title: 'Private Share',
-          isPublic: false,
+          title: 'Expired Share',
+          expiredAt: new Date(Date.now() - 60 * 60 * 1000),
         },
       ]);
 
-      const publicResults = await shareMethods.getSharedLinks(userId, undefined, 10, true);
-      const privateResults = await shareMethods.getSharedLinks(userId, undefined, 10, false);
+      const result = await shareMethods.getSharedLinks(userId, undefined, 10);
 
-      expect(publicResults.links).toHaveLength(1);
-      expect(publicResults.links[0].title).toBe('Public Share');
-
-      expect(privateResults.links).toHaveLength(1);
-      expect(privateResults.links[0].title).toBe('Private Share');
+      expect(result.links).toHaveLength(1);
+      expect(result.links[0].shareId).toBe('active_share');
     });
 
     test('should handle search with mocked meiliSearch and user filter', async () => {
@@ -442,14 +581,12 @@ describe('Share Methods', () => {
           conversationId: 'conv1',
           user: userId,
           title: 'Matching Share',
-          isPublic: true,
         },
         {
           shareId: 'share2',
           conversationId: 'conv2',
           user: userId,
           title: 'Non-matching Share',
-          isPublic: true,
         },
       ]);
 
@@ -457,7 +594,6 @@ describe('Share Methods', () => {
         userId,
         undefined,
         10,
-        true,
         'createdAt',
         'desc',
         'search term',
@@ -512,21 +648,18 @@ describe('Share Methods', () => {
           conversationId: 'conv1',
           user: userId1,
           title: 'User 1 Share',
-          isPublic: true,
         },
         {
           shareId: 'share2',
           conversationId: 'conv2',
           user: userId2,
           title: 'User 2 Share',
-          isPublic: true,
         },
         {
           shareId: 'share3',
           conversationId: 'conv3',
           user: userId1,
           title: 'Another User 1 Share',
-          isPublic: true,
         },
       ]);
 
@@ -535,7 +668,6 @@ describe('Share Methods', () => {
         userId1,
         undefined,
         10,
-        true,
         'createdAt',
         'desc',
         'search term',
@@ -555,7 +687,6 @@ describe('Share Methods', () => {
         userId2,
         undefined,
         10,
-        true,
         'createdAt',
         'desc',
         'search term',
@@ -582,21 +713,18 @@ describe('Share Methods', () => {
           conversationId: 'conv1',
           user: userId1,
           title: 'User 1 Share',
-          isPublic: true,
         },
         {
           shareId: 'share2',
           conversationId: 'conv2',
           user: userId2,
           title: 'User 2 Share',
-          isPublic: true,
         },
         {
           shareId: 'share3',
           conversationId: 'conv3',
           user: userId1,
           title: 'Another User 1 Share',
-          isPublic: true,
         },
       ]);
 
@@ -634,7 +762,6 @@ describe('Share Methods', () => {
         conversationId,
         user: userId,
         messages: initialMessages.map((m) => m._id),
-        isPublic: true,
       });
 
       // Add new message
@@ -648,6 +775,7 @@ describe('Share Methods', () => {
 
       const result = await shareMethods.updateSharedLink(userId, oldShareId);
 
+      expect(result._id).toBeDefined();
       expect(result.shareId).not.toBe(oldShareId); // Should generate new shareId
       expect(result.conversationId).toBe(conversationId);
 
@@ -656,6 +784,60 @@ describe('Share Methods', () => {
         'messages',
       );
       expect(updatedShare?.messages).toHaveLength(2);
+    });
+
+    test('should preserve stale expiration when updating without an expiration decision', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+      const expiresAt = new Date('2030-01-01T00:00:00.000Z');
+
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: [],
+        expiredAt: expiresAt,
+      });
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'Retained no longer applies',
+        isCreatedByUser: true,
+      });
+
+      const result = await shareMethods.updateSharedLink(userId, shareId);
+      const updatedShare = await SharedLink.findOne({ shareId: result.shareId }).lean();
+
+      expect(updatedShare?.expiredAt?.toISOString()).toBe(expiresAt.toISOString());
+    });
+
+    test('should clear stale expiration when updating with null expiration', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+      const expiresAt = new Date('2030-01-01T00:00:00.000Z');
+
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: [],
+        expiredAt: expiresAt,
+      });
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'Retained no longer applies',
+        isCreatedByUser: true,
+      });
+
+      const result = await shareMethods.updateSharedLink(userId, shareId, undefined, null);
+      const updatedShare = await SharedLink.findOne({ shareId: result.shareId }).lean();
+
+      expect(updatedShare?.expiredAt).toBeUndefined();
     });
 
     test('should throw error if share not found', async () => {
@@ -682,7 +864,6 @@ describe('Share Methods', () => {
         conversationId,
         user: userId,
         messages: [],
-        isPublic: true,
       });
 
       // Add messages from different users
@@ -714,6 +895,106 @@ describe('Share Methods', () => {
       );
     });
 
+    test('should update branch target to the latest refreshed message', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+      const rootMessageId = `msg_${nanoid()}`;
+      const oldAnswerId = `msg_${nanoid()}`;
+      const rerunPromptId = `msg_${nanoid()}`;
+      const rerunAnswerId = `msg_${nanoid()}`;
+
+      await Conversation.create({
+        conversationId,
+        title: 'Analysis Conversation',
+        user: userId,
+      });
+
+      const initialMessages = await Message.create([
+        {
+          messageId: rootMessageId,
+          conversationId,
+          user: userId,
+          text: 'Analyze February 2023 to October 2025',
+          isCreatedByUser: true,
+          parentMessageId: Constants.NO_PARENT,
+        },
+        {
+          messageId: oldAnswerId,
+          conversationId,
+          user: userId,
+          text: 'Old analysis result',
+          isCreatedByUser: false,
+          parentMessageId: rootMessageId,
+        },
+      ]);
+
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: initialMessages.map((message) => message._id),
+        targetMessageId: oldAnswerId,
+      });
+
+      await Message.create([
+        {
+          messageId: rerunPromptId,
+          conversationId,
+          user: userId,
+          text: 'Rerun for March 2023 to January 2026',
+          isCreatedByUser: true,
+          parentMessageId: oldAnswerId,
+        },
+        {
+          messageId: rerunAnswerId,
+          conversationId,
+          user: userId,
+          text: 'Updated analysis result',
+          isCreatedByUser: false,
+          parentMessageId: rerunPromptId,
+        },
+      ]);
+
+      const result = await shareMethods.updateSharedLink(userId, shareId, rerunAnswerId);
+      const updatedShare = await SharedLink.findOne({ shareId: result.shareId }).populate(
+        'messages',
+      );
+      const sharedMessages = await shareMethods.getSharedMessages(result.shareId);
+
+      expect(result.shareId).not.toBe(shareId);
+      expect(result.targetMessageId).toBe(rerunAnswerId);
+      expect(updatedShare?.targetMessageId).toBe(rerunAnswerId);
+      expect(updatedShare?.messages).toHaveLength(4);
+      expect(sharedMessages?.messages.map((message) => message.text)).toEqual([
+        'Analyze February 2023 to October 2025',
+        'Old analysis result',
+        'Rerun for March 2023 to January 2026',
+        'Updated analysis result',
+      ]);
+    });
+
+    test('should preserve existing branch target when refresh has no target override', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+      const targetMessageId = `msg_${nanoid()}`;
+
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: [],
+        targetMessageId,
+      });
+
+      const result = await shareMethods.updateSharedLink(userId, shareId);
+      const updatedShare = await SharedLink.findOne({ shareId: result.shareId });
+
+      expect(result.targetMessageId).toBe(targetMessageId);
+      expect(updatedShare?.targetMessageId).toBe(targetMessageId);
+    });
+
     test('should not allow user to update shared link they do not own', async () => {
       const ownerUserId = new mongoose.Types.ObjectId().toString();
       const otherUserId = new mongoose.Types.ObjectId().toString();
@@ -726,7 +1007,6 @@ describe('Share Methods', () => {
         conversationId,
         user: ownerUserId,
         messages: [],
-        isPublic: true,
       });
 
       // Try to update as a different user
@@ -750,7 +1030,6 @@ describe('Share Methods', () => {
         shareId,
         conversationId: 'conv123',
         user: userId,
-        isPublic: true,
       });
 
       const result = await shareMethods.deleteSharedLink(userId, shareId);
@@ -778,7 +1057,6 @@ describe('Share Methods', () => {
         shareId,
         conversationId: 'conv123',
         user: userId1,
-        isPublic: true,
       });
 
       const result = await shareMethods.deleteSharedLink(userId2, shareId);
@@ -810,17 +1088,34 @@ describe('Share Methods', () => {
         shareId,
         conversationId,
         user: userId,
-        isPublic: true,
       });
 
       const result = await shareMethods.getSharedLink(userId, conversationId);
 
+      expect(result._id).toBeDefined();
       expect(result.success).toBe(true);
       expect(result.shareId).toBe(shareId);
     });
 
     test('should return null shareId if not found', async () => {
       const result = await shareMethods.getSharedLink('user123', 'conv123');
+
+      expect(result.success).toBe(false);
+      expect(result.shareId).toBeNull();
+    });
+
+    test('should return null shareId for expired shares', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+
+      await SharedLink.create({
+        shareId: 'share123',
+        conversationId,
+        user: userId,
+        expiredAt: new Date(Date.now() - 60 * 60 * 1000),
+      });
+
+      const result = await shareMethods.getSharedLink(userId, conversationId);
 
       expect(result.success).toBe(false);
       expect(result.shareId).toBeNull();
@@ -835,7 +1130,6 @@ describe('Share Methods', () => {
         shareId: 'share123',
         conversationId,
         user: userId1,
-        isPublic: true,
       });
 
       const result = await shareMethods.getSharedLink(userId2, conversationId);
@@ -852,25 +1146,6 @@ describe('Share Methods', () => {
       await expect(shareMethods.getSharedLink('user123', '')).rejects.toThrow(
         'Missing required parameters',
       );
-    });
-
-    test('should only return public shares', async () => {
-      const userId = new mongoose.Types.ObjectId().toString();
-      const conversationId = `conv_${nanoid()}`;
-      const shareId = `share_${nanoid()}`;
-
-      // Create a non-public share
-      await SharedLink.create({
-        shareId,
-        conversationId,
-        user: userId,
-        isPublic: false,
-      });
-
-      const result = await shareMethods.getSharedLink(userId, conversationId);
-
-      expect(result.success).toBe(false);
-      expect(result.shareId).toBeNull();
     });
   });
 
@@ -911,11 +1186,11 @@ describe('Share Methods', () => {
 
       // Create multiple shares for different users
       await SharedLink.create([
-        { shareId: 'share1', conversationId: 'conv1', user: userId1, isPublic: true },
-        { shareId: 'share2', conversationId: 'conv2', user: userId1, isPublic: false },
-        { shareId: 'share3', conversationId: 'conv3', user: userId2, isPublic: true },
-        { shareId: 'share4', conversationId: 'conv4', user: userId2, isPublic: true },
-        { shareId: 'share5', conversationId: 'conv5', user: userId3, isPublic: true },
+        { shareId: 'share1', conversationId: 'conv1', user: userId1 },
+        { shareId: 'share2', conversationId: 'conv2', user: userId1 },
+        { shareId: 'share3', conversationId: 'conv3', user: userId2 },
+        { shareId: 'share4', conversationId: 'conv4', user: userId2 },
+        { shareId: 'share5', conversationId: 'conv5', user: userId3 },
       ]);
 
       // Delete all shares for userId1
@@ -943,9 +1218,9 @@ describe('Share Methods', () => {
       const conversationId2 = 'conv-to-keep';
 
       await SharedLink.create([
-        { shareId: 'share1', conversationId: conversationId1, user: userId, isPublic: true },
-        { shareId: 'share2', conversationId: conversationId1, user: userId, isPublic: false },
-        { shareId: 'share3', conversationId: conversationId2, user: userId, isPublic: true },
+        { shareId: 'share1', conversationId: conversationId1, user: userId },
+        { shareId: 'share2', conversationId: conversationId1, user: userId },
+        { shareId: 'share3', conversationId: conversationId2, user: userId },
       ]);
 
       const result = await shareMethods.deleteConvoSharedLink(userId, conversationId1);
@@ -964,9 +1239,9 @@ describe('Share Methods', () => {
       const conversationId = 'shared-conv';
 
       await SharedLink.create([
-        { shareId: 'share1', conversationId, user: userId1, isPublic: true },
-        { shareId: 'share2', conversationId, user: userId2, isPublic: true },
-        { shareId: 'share3', conversationId: 'other-conv', user: userId1, isPublic: true },
+        { shareId: 'share1', conversationId, user: userId1 },
+        { shareId: 'share2', conversationId, user: userId2 },
+        { shareId: 'share3', conversationId: 'other-conv', user: userId1 },
       ]);
 
       const result = await shareMethods.deleteConvoSharedLink(userId1, conversationId);
@@ -1010,22 +1285,20 @@ describe('Share Methods', () => {
       const conversationId = 'conv-with-many-shares';
 
       await SharedLink.create([
-        { shareId: 'share1', conversationId, user: userId, isPublic: true },
+        { shareId: 'share1', conversationId, user: userId },
         {
           shareId: 'share2',
           conversationId,
           user: userId,
-          isPublic: true,
           targetMessageId: 'msg1',
         },
         {
           shareId: 'share3',
           conversationId,
           user: userId,
-          isPublic: true,
           targetMessageId: 'msg2',
         },
-        { shareId: 'share4', conversationId, user: userId, isPublic: false },
+        { shareId: 'share4', conversationId, user: userId },
       ]);
 
       const result = await shareMethods.deleteConvoSharedLink(userId, conversationId);
@@ -1082,7 +1355,6 @@ describe('Share Methods', () => {
         conversationId,
         user: userId,
         messages: [message._id],
-        isPublic: true,
       });
 
       const result = await shareMethods.getSharedMessages(shareId);
@@ -1193,7 +1465,6 @@ describe('Share Methods', () => {
         conversationId,
         user: userId,
         messages: messages.map((m) => m._id),
-        isPublic: true,
       });
 
       const result = await shareMethods.getSharedMessages(shareId);
@@ -1229,7 +1500,6 @@ describe('Share Methods', () => {
         conversationId,
         user: userId,
         messages: [message._id],
-        isPublic: true,
       });
 
       const result = await shareMethods.getSharedMessages(shareId);

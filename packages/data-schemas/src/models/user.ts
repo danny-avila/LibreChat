@@ -1,9 +1,9 @@
-import userSchema from '~/schema/user';
+import { Model } from 'mongoose';
 import type * as t from '~/types';
+import { applyTenantIsolation } from '~/models/plugins/tenantIsolation';
+import userSchema from '~/schema/user';
 
-/**
- * Creates or returns the User model using the provided mongoose instance and schema
- */
-export function createUserModel(mongoose: typeof import('mongoose')) {
+export function createUserModel(mongoose: typeof import('mongoose')): Model<t.IUser> {
+  applyTenantIsolation(userSchema);
   return mongoose.models.User || mongoose.model<t.IUser>('User', userSchema);
 }

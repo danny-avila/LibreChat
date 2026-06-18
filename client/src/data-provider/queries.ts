@@ -31,7 +31,7 @@ import type {
   SharedLinksResponse,
 } from 'librechat-data-provider';
 import type { ConversationCursorData } from '~/utils/convos';
-import { findConversationInInfinite } from '~/utils';
+import { findConversationInInfinite, isNotFoundError } from '~/utils';
 
 export const useGetPresetsQuery = (
   config?: UseQueryOptions<TPreset[]>,
@@ -71,6 +71,12 @@ export const useGetConvoIdQuery = (
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
       refetchOnMount: false,
+      retry: (failureCount, error) => {
+        if (isNotFoundError(error)) {
+          return false;
+        }
+        return failureCount < 3;
+      },
       ...config,
     },
   );
@@ -80,12 +86,12 @@ export const useConversationsInfiniteQuery = (
   params: ConversationListParams,
   config?: UseInfiniteQueryOptions<ConversationListResponse, unknown>,
 ) => {
-  const { isArchived, sortBy, sortDirection, tags, search } = params;
+  const { isArchived, sortBy, sortDirection, tags, search, projectId } = params;
 
   return useInfiniteQuery<ConversationListResponse>({
     queryKey: [
       isArchived ? QueryKeys.archivedConversations : QueryKeys.allConversations,
-      { isArchived, sortBy, sortDirection, tags, search },
+      { isArchived, sortBy, sortDirection, tags, search, projectId },
     ],
     queryFn: ({ pageParam }) =>
       dataService.listConversations({
@@ -94,6 +100,7 @@ export const useConversationsInfiniteQuery = (
         sortDirection,
         tags,
         search,
+        projectId,
         cursor: pageParam?.toString(),
       }),
     getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
@@ -137,15 +144,14 @@ export const useSharedLinksQuery = (
   params: SharedLinksListParams,
   config?: UseInfiniteQueryOptions<SharedLinksResponse, unknown>,
 ) => {
-  const { pageSize, isPublic, search, sortBy, sortDirection } = params;
+  const { pageSize, search, sortBy, sortDirection } = params;
 
   return useInfiniteQuery<SharedLinksResponse>({
-    queryKey: [QueryKeys.sharedLinks, { pageSize, isPublic, search, sortBy, sortDirection }],
+    queryKey: [QueryKeys.sharedLinks, { pageSize, search, sortBy, sortDirection }],
     queryFn: ({ pageParam }) =>
       dataService.listSharedLinks({
         cursor: pageParam?.toString(),
         pageSize,
-        isPublic,
         search,
         sortBy,
         sortDirection,

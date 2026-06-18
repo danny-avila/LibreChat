@@ -218,6 +218,10 @@ export interface ModelEndData {
       input_tokens?: number;
       output_tokens?: number;
       model?: string;
+      output_token_details?: {
+        reasoning?: number;
+        reasoning_tokens?: number;
+      };
     };
   };
 }
@@ -354,6 +358,8 @@ export class OpenAIModelEndHandler implements EventHandler {
 
     this.config.tracker.usage.promptTokens += usage.input_tokens ?? 0;
     this.config.tracker.usage.completionTokens += usage.output_tokens ?? 0;
+    this.config.tracker.usage.reasoningTokens +=
+      usage.output_token_details?.reasoning ?? usage.output_token_details?.reasoning_tokens ?? 0;
   }
 }
 

@@ -1,7 +1,7 @@
 import React, { useState, useMemo, memo } from 'react';
 import { useRecoilState } from 'recoil';
-import type { TConversation, TMessage, TFeedback } from 'librechat-data-provider';
 import { EditIcon, Clipboard, CheckMark, ContinueIcon, RegenerateIcon } from '@librechat/client';
+import type { TConversation, TMessage, TFeedback } from 'librechat-data-provider';
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
 import { Fork } from '~/components/Conversations';
 import MessageAudio from './MessageAudio';
@@ -18,7 +18,7 @@ type THoverButtons = {
   message: TMessage;
   regenerate: () => void;
   handleContinue: (e: React.MouseEvent<HTMLButtonElement>) => void;
-  latestMessage: TMessage | null;
+  latestMessageId?: string;
   isLast: boolean;
   index: number;
   handleFeedback?: ({ feedback }: { feedback: TFeedback | undefined }) => void;
@@ -84,8 +84,9 @@ const HoverButton = memo(
     const buttonStyle = cn(
       'hover-button rounded-lg p-1.5 text-text-secondary-alt',
       'hover:text-text-primary hover:bg-surface-hover',
-      'md:group-hover:visible md:group-focus-within:visible md:group-[.final-completion]:visible',
-      !isLast && 'md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100',
+      'group-hover:visible group-focus-within:visible group-[.final-completion]:visible',
+      !isLast &&
+        'group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:hover)]:opacity-0',
       !isVisible && 'opacity-0',
       'focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white focus-visible:outline-none',
       isActive && isVisible && 'active text-text-primary bg-surface-hover',
@@ -119,7 +120,7 @@ const HoverButtons = ({
   message,
   regenerate,
   handleContinue,
-  latestMessage,
+  latestMessageId,
   isLast,
   handleFeedback,
 }: THoverButtons) => {
@@ -143,7 +144,7 @@ const HoverButtons = ({
     searchResult: message.searchResult,
     finish_reason: message.finish_reason,
     isCreatedByUser: message.isCreatedByUser,
-    latestMessageId: latestMessage?.messageId,
+    latestMessageId: latestMessageId,
   });
 
   const {
@@ -215,7 +216,9 @@ const HoverButtons = ({
         isLast={isLast}
         className={cn(
           'ml-0 flex items-center gap-1.5 text-xs',
-          isSubmitting && isCreatedByUser ? 'md:opacity-0 md:group-hover:opacity-100' : '',
+          isSubmitting && isCreatedByUser
+            ? 'group-hover:opacity-100 [@media(hover:hover)]:opacity-0'
+            : '',
         )}
       />
 
@@ -239,7 +242,7 @@ const HoverButtons = ({
         messageId={message.messageId}
         conversationId={conversation.conversationId}
         forkingSupported={forkingSupported}
-        latestMessageId={latestMessage?.messageId}
+        latestMessageId={latestMessageId}
         isLast={isLast}
       />
 

@@ -1,9 +1,9 @@
-import aclEntrySchema from '~/schema/aclEntry';
+import { Model } from 'mongoose';
 import type * as t from '~/types';
+import { applyTenantIsolation } from '~/models/plugins/tenantIsolation';
+import aclEntrySchema from '~/schema/aclEntry';
 
-/**
- * Creates or returns the AclEntry model using the provided mongoose instance and schema
- */
-export function createAclEntryModel(mongoose: typeof import('mongoose')) {
+export function createAclEntryModel(mongoose: typeof import('mongoose')): Model<t.IAclEntry> {
+  applyTenantIsolation(aclEntrySchema);
   return mongoose.models.AclEntry || mongoose.model<t.IAclEntry>('AclEntry', aclEntrySchema);
 }

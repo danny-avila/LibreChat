@@ -2,7 +2,7 @@ import { v4 } from 'uuid';
 import { cloneDeep } from 'lodash';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { useSetRecoilState, useResetRecoilState, useRecoilValue } from 'recoil';
+import { useSetRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
 import {
   Constants,
   QueryKeys,
@@ -26,10 +26,17 @@ import type {
 } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import type { TAskFunction, ExtendedFile } from '~/common';
+import {
+  logger,
+  hasStreamStartFailed,
+  createDualMessageContent,
+  getRouteChatProjectId,
+} from '~/utils';
+import useFocusRegeneratedResponse from '~/hooks/Chat/useFocusRegeneratedResponse';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
-import { logger, createDualMessageContent } from '~/utils';
 import store, { useGetEphemeralAgent } from '~/store';
+import { startupConfigKey } from '~/data-provider';
 import useUserKey from '~/hooks/Input/useUserKey';
 import { useAuthContext } from '~/hooks';
 
@@ -38,6 +45,141 @@ const logChatRequest = (request: Record<string, unknown>) => {
   logger.dir(request);
   logger.log('=====================================');
 };
+
+const getAppendParentMessageId = ({
+  latestMessage,
+  currentMessages,
+}: {
+  latestMessage: TMessage | null;
+  currentMessages: TMessage[];
+}) => {
+  if (!latestMessage) {
+    return Constants.NO_PARENT;
+  }
+
+  if (!hasStreamStartFailed(latestMessage)) {
+    return latestMessage.messageId;
+  }
+
+  const failedUserMessage = currentMessages.find(
+    (message) => message.messageId === latestMessage.parentMessageId,
+  );
+  if (failedUserMessage?.isCreatedByUser !== true) {
+    return latestMessage.messageId;
+  }
+
+  return failedUserMessage.parentMessageId ?? Constants.NO_PARENT;
+};
+
+const hasPendingAssistantParent = (message: TMessage | null) =>
+  !!message?.messageId &&
+  message.isCreatedByUser !== true &&
+  message.messageId.endsWith('_') &&
+  message.createdAt == null &&
+  message.updatedAt == null &&
+  !hasStreamStartFailed(message);
+
+type RegenerateTargetResponseArgs = {
+  messages: TMessage[];
+  parentMessageId?: string | null;
+  targetResponseMessageId?: string | null;
+  latestMessage?: TMessage | null;
+};
+
+const isAssistantResponseForParent = (
+  message: TMessage | null | undefined,
+  parentMessageId?: string | null,
+): message is TMessage =>
+  !!message &&
+  !message.isCreatedByUser &&
+  !!parentMessageId &&
+  message.parentMessageId === parentMessageId;
+
+export function getPreliminaryRegenerateResponseMessageId(
+  responseMessageId?: string | null,
+): string | null {
+  if (typeof responseMessageId !== 'string' || responseMessageId.length === 0) {
+    return null;
+  }
+
+  return `${responseMessageId.replace(/_+$/, '')}_`;
+}
+
+export function getRegenerateTargetResponseMessage({
+  messages,
+  parentMessageId,
+  targetResponseMessageId,
+  latestMessage,
+}: RegenerateTargetResponseArgs): TMessage | null {
+  if (!parentMessageId) {
+    return null;
+  }
+
+  if (targetResponseMessageId) {
+    const targetResponse = messages.find(
+      (message) =>
+        message.messageId === targetResponseMessageId &&
+        isAssistantResponseForParent(message, parentMessageId),
+    );
+    if (targetResponse) {
+      return targetResponse;
+    }
+  }
+
+  if (isAssistantResponseForParent(latestMessage, parentMessageId)) {
+    return latestMessage;
+  }
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (isAssistantResponseForParent(message, parentMessageId)) {
+      return message;
+    }
+  }
+
+  return null;
+}
+
+export function getRegenerateSubmissionMessages({
+  messages,
+  targetResponseMessage,
+  initialResponseId,
+}: {
+  messages: TMessage[];
+  targetResponseMessage?: TMessage | null;
+  initialResponseId?: string | null;
+}): TMessage[] {
+  if (targetResponseMessage?.messageId) {
+    /**
+     * Remove the response being regenerated and its descendants only — NOT a
+     * flat `slice(0, targetIndex)`, which also drops unrelated sibling branches
+     * that merely sit later in the array. That collapse made the optimistic
+     * render briefly lose other branches mid-regenerate (visible flash, and the
+     * scroll jumping to the shrunken content). Keeping them holds the thread —
+     * and scroll — steady. This array is render-only; the server regenerates
+     * from `parentMessageId`, so removing by subtree never affects the payload.
+     */
+    const removed = new Set<string>([targetResponseMessage.messageId]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const message of messages) {
+        const parentMessageId = message.parentMessageId;
+        if (
+          parentMessageId != null &&
+          removed.has(parentMessageId) &&
+          !removed.has(message.messageId)
+        ) {
+          removed.add(message.messageId);
+          grew = true;
+        }
+      }
+    }
+    return messages.filter((message) => !removed.has(message.messageId));
+  }
+
+  return messages.filter((msg) => msg.messageId !== initialResponseId);
+}
 
 export default function useChatFunctions({
   index = 0,
@@ -48,7 +190,6 @@ export default function useChatFunctions({
   isSubmitting,
   latestMessage,
   setSubmission,
-  setLatestMessage,
   conversation: immutableConversation,
 }: {
   index?: number;
@@ -61,7 +202,6 @@ export default function useChatFunctions({
   files?: Map<string, ExtendedFile>;
   setFiles?: SetterOrUpdater<Map<string, ExtendedFile>>;
   setSubmission: SetterOrUpdater<TSubmission | null>;
-  setLatestMessage?: SetterOrUpdater<TMessage | null>;
 }) {
   const navigate = useNavigate();
   const getSender = useGetSender();
@@ -73,7 +213,31 @@ export default function useChatFunctions({
   const { getExpiry } = useUserKey(immutableConversation?.endpoint ?? '');
   const setIsSubmitting = useSetRecoilState(store.isSubmittingFamily(index));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
-  const resetLatestMultiMessage = useResetRecoilState(store.latestMessageFamily(index + 1));
+  const focusRegeneratedResponse = useFocusRegeneratedResponse();
+
+  /**
+   * Atomically read + reset the per-conversation queue of manually-invoked
+   * skills from the `$` popover. Reading and resetting in a single Recoil
+   * snapshot guarantees that if the user selects more skills between here and
+   * the next submission, their picks are never silently lost into a reset atom.
+   *
+   * The `hasValue` guard is defensive: this atom has a synchronous default of
+   * `[]` so `.contents` is always the resolved value in practice, but reading
+   * `.contents` on a loading/errored loadable yields a Promise/Error, which
+   * would make the `string[]` cast unsound.
+   */
+  const drainPendingManualSkills = useRecoilCallback(
+    ({ snapshot, reset }) =>
+      (convoId: string): string[] => {
+        const loadable = snapshot.getLoadable(store.pendingManualSkillsByConvoId(convoId));
+        const skills = loadable.state === 'hasValue' ? (loadable.contents as string[]) : [];
+        if (skills.length > 0) {
+          reset(store.pendingManualSkillsByConvoId(convoId));
+        }
+        return skills;
+      },
+    [],
+  );
 
   const ask: TAskFunction = (
     {
@@ -92,11 +256,12 @@ export default function useChatFunctions({
       isEdited = false,
       overrideMessages,
       overrideFiles,
+      targetResponseMessageId,
+      overrideManualSkills,
       addedConvo,
     } = {},
   ) => {
     setShowStopButton(false);
-    resetLatestMultiMessage();
 
     text = text.trim();
     if (!!isSubmitting || text === '') {
@@ -122,10 +287,36 @@ export default function useChatFunctions({
       return;
     }
 
+    if (parentMessageId == null && hasPendingAssistantParent(latestMessage)) {
+      logger.warn(
+        '[useChatFunctions] Refusing to append to a preliminary assistant message',
+        latestMessage,
+      );
+      return false;
+    }
+
     const ephemeralAgent = getEphemeralAgent(conversationId ?? Constants.NEW_CONVO);
+    /**
+     * Manual skill selection resolution:
+     *  - Explicit `overrideManualSkills` wins (regenerate / save-and-submit
+     *    pass the original user message's persisted `manualSkills` so the
+     *    resubmitted turn primes the same skills — the pills are still
+     *    visible to the user, it would be strange to quietly drop them).
+     *  - Regenerate / continue / edit without an override → empty, and the
+     *    compose-time atom is deliberately NOT drained (those flows replay
+     *    a prior turn, not compose a new one).
+     *  - Fresh submit → drain the per-convo atom into the message.
+     */
+    let manualSkills = overrideManualSkills;
+    if (manualSkills == null) {
+      manualSkills =
+        isRegenerate || isContinued || isEdited
+          ? []
+          : drainPendingManualSkills(conversationId ?? Constants.NEW_CONVO);
+    }
     const isEditOrContinue = isEdited || isContinued;
 
-    let currentMessages: TMessage[] | null = overrideMessages ?? getMessages() ?? [];
+    let currentMessages: TMessage[] = overrideMessages ?? getMessages() ?? [];
 
     if (conversation?.promptPrefix) {
       conversation.promptPrefix = replaceSpecialVars({
@@ -134,10 +325,19 @@ export default function useChatFunctions({
       });
     }
 
+    const chatProjectId =
+      conversationId === Constants.NEW_CONVO
+        ? getRouteChatProjectId()
+        : (conversation?.chatProjectId ?? null);
+    const conversationForPayload =
+      chatProjectId != null ? { ...(conversation ?? {}), chatProjectId } : (conversation ?? {});
+
     // construct the query message
     // this is not a real messageId, it is used as placeholder before real messageId returned
     const intermediateId = overrideUserMessageId ?? v4();
-    parentMessageId = parentMessageId ?? latestMessage?.messageId ?? Constants.NO_PARENT;
+    if (parentMessageId == null) {
+      parentMessageId = getAppendParentMessageId({ latestMessage, currentMessages });
+    }
 
     logChatRequest({
       index,
@@ -153,7 +353,8 @@ export default function useChatFunctions({
       parentMessageId = Constants.NO_PARENT;
       currentMessages = [];
       conversationId = null;
-      navigate('/c/new', { state: { focusChat: true } });
+      const projectSearch = chatProjectId ? `?projectId=${encodeURIComponent(chatProjectId)}` : '';
+      navigate(`/c/new${projectSearch}`, { state: { focusChat: true } });
     }
 
     const targetParentMessageId = isRegenerate ? messageId : latestMessage?.parentMessageId;
@@ -165,6 +366,14 @@ export default function useChatFunctions({
     const targetParentMessage = currentMessages.find(
       (msg) => msg.messageId === targetParentMessageId,
     );
+    const targetResponseMessage = isRegenerate
+      ? getRegenerateTargetResponseMessage({
+          messages: currentMessages,
+          parentMessageId: messageId,
+          targetResponseMessageId,
+          latestMessage,
+        })
+      : null;
 
     let thread_id = targetParentMessage?.thread_id ?? latestMessage?.thread_id;
     if (thread_id == null) {
@@ -172,7 +381,7 @@ export default function useChatFunctions({
     }
 
     const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
-    const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
+    const startupConfig = queryClient.getQueryData<TStartupConfig>(startupConfigKey(true));
     const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
     const iconURL = conversation?.iconURL;
     const defaultParamsEndpoint = getDefaultParamsEndpoint(endpointsConfig, endpoint);
@@ -181,7 +390,7 @@ export default function useChatFunctions({
     const convo = parseCompactConvo({
       endpoint: endpoint as EndpointSchemaKey,
       endpointType: endpointType as EndpointSchemaKey,
-      conversation: conversation ?? {},
+      conversation: conversationForPayload,
       defaultParamsEndpoint,
     });
 
@@ -194,6 +403,7 @@ export default function useChatFunctions({
         overrideUserMessageId,
       },
       convo,
+      chatProjectId ? { chatProjectId } : {},
     ) as TEndpointOption;
     if (endpoint !== EModelEndpoint.agents) {
       endpointOption.key = getExpiry();
@@ -214,6 +424,13 @@ export default function useChatFunctions({
       messageId: isContinued && messageId != null && messageId ? messageId : intermediateId,
       thread_id,
       error: false,
+      /**
+       * UI-only metadata. Survives reload because the backend persists the
+       * field on the message schema, and `SkillPills` reads straight
+       * off the message so there's no Recoil state to clean up. Runtime
+       * skill resolution reads the top-level `manualSkills` payload field.
+       */
+      manualSkills: manualSkills.length > 0 ? manualSkills : undefined,
     };
 
     const submissionFiles = overrideFiles ?? targetParentMessage?.files;
@@ -240,8 +457,10 @@ export default function useChatFunctions({
 
     const responseMessageId =
       editedMessageId ??
-      (latestMessage?.messageId && isRegenerate
-        ? latestMessage.messageId.replace(/_+$/, '') + '_'
+      (isRegenerate
+        ? getPreliminaryRegenerateResponseMessageId(
+            targetResponseMessage?.messageId ?? targetResponseMessageId,
+          )
         : null) ??
       null;
     const initialResponseId =
@@ -260,6 +479,16 @@ export default function useChatFunctions({
       model: convo?.model,
       error: false,
       iconURL,
+      /**
+       * Seed the assistant placeholder with the turn's manually-invoked
+       * skill names so `ContentParts` can render interim `SkillCall` cards
+       * from the very first render — no round-trip through the `created`
+       * SSE event required. Rides along with every subsequent spread
+       * (`useStepHandler` response construction, `updateContent` result
+       * spreads) and drops out naturally at `finalHandler` when the
+       * server-backed `responseMessage` replacement takes over.
+       */
+      manualSkills: manualSkills.length > 0 ? manualSkills : undefined,
     };
 
     if (isAssistantsEndpoint(endpoint)) {
@@ -310,10 +539,20 @@ export default function useChatFunctions({
       currentMessages = currentMessages.filter((msg) => msg.messageId !== responseMessageId);
     }
 
+    const submissionMessages = isRegenerate
+      ? getRegenerateSubmissionMessages({
+          messages: currentMessages,
+          targetResponseMessage,
+          initialResponseId: initialResponse.messageId,
+        })
+      : currentMessages;
+    const regenerateMessages = isRegenerate ? [...currentMessages] : undefined;
+
     logger.log('message_state', initialResponse);
     const submission: TSubmission = {
       conversation: {
         ...conversation,
+        ...(chatProjectId ? { chatProjectId } : {}),
         conversationId,
       },
       endpointOption,
@@ -322,7 +561,8 @@ export default function useChatFunctions({
         responseMessageId,
         overrideParentMessageId: isRegenerate ? messageId : null,
       },
-      messages: currentMessages,
+      messages: submissionMessages,
+      regenerateMessages,
       isEdited: isEditOrContinue,
       isContinued,
       isRegenerate,
@@ -331,29 +571,45 @@ export default function useChatFunctions({
       ephemeralAgent,
       editedContent,
       addedConvo,
+      manualSkills: manualSkills.length > 0 ? manualSkills : undefined,
     };
 
     if (isRegenerate) {
-      setMessages([...submission.messages, initialResponse]);
+      setMessages([...submissionMessages, initialResponse]);
+      focusRegeneratedResponse(initialResponse.parentMessageId);
     } else {
-      setMessages([...submission.messages, currentMsg, initialResponse]);
-    }
-    if (index === 0 && setLatestMessage) {
-      setLatestMessage(initialResponse);
+      setMessages([...submissionMessages, currentMsg, initialResponse]);
     }
 
     setSubmission(submission);
     logger.dir('message_stream', submission, { depth: null });
   };
 
-  const regenerate = ({ parentMessageId }, options?: { addedConvo?: TConversation | null }) => {
+  const regenerate = (
+    message: Partial<Pick<TMessage, 'messageId' | 'parentMessageId' | 'isCreatedByUser'>>,
+    options?: { addedConvo?: TConversation | null },
+  ) => {
     const messages = getMessages();
+    const parentMessageId =
+      message.isCreatedByUser === true ? message.messageId : message.parentMessageId;
+    const targetResponseMessageId =
+      message.isCreatedByUser === true ? undefined : message.messageId;
     const parentMessage = messages?.find((element) => element.messageId == parentMessageId);
 
     if (parentMessage && parentMessage.isCreatedByUser) {
       ask(
         { ...parentMessage },
-        { isRegenerate: true, addedConvo: options?.addedConvo ?? undefined },
+        {
+          isRegenerate: true,
+          addedConvo: options?.addedConvo ?? undefined,
+          targetResponseMessageId,
+          /** Carry the original user message's manual skill picks forward
+           *  so the regenerated response is primed with the same skills.
+           *  The compose-time atom was drained on the first submit; without
+           *  this the model sees an unprimed turn even though the pills
+           *  still show on the user bubble. */
+          overrideManualSkills: parentMessage.manualSkills,
+        },
       );
     } else {
       console.error(

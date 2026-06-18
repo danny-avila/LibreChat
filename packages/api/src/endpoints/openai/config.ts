@@ -1,15 +1,55 @@
-import { ProxyAgent } from 'undici';
 import { Providers } from '@librechat/agents';
-import { KnownEndpoints, EModelEndpoint } from 'librechat-data-provider';
+import { KnownEndpoints, EModelEndpoint, ReasoningParameterFormat } from 'librechat-data-provider';
 import type * as t from '~/types';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { getOpenAILLMConfig, extractDefaultParams } from './llm';
 import { getGoogleConfig } from '~/endpoints/google/llm';
 import { transformToOpenAIConfig } from './transform';
+import { getProxyDispatcher } from '~/utils/proxy';
 import { constructAzureURL } from '~/utils/azure';
 import { createFetch } from '~/utils/generators';
+import { mergeHeaders } from '~/utils/headers';
 
 type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+
+const OPENROUTER_DEFAULT_PARAMS = { promptCache: true };
+
+function includesOpenRouter(value?: string | null): boolean {
+  return typeof value === 'string' && value.toLowerCase().includes(KnownEndpoints.openrouter);
+}
+
+function getDefaultParams({
+  customDefaultParams,
+  useOpenRouter,
+}: {
+  customDefaultParams?: Record<string, unknown>;
+  useOpenRouter: boolean;
+}): Record<string, unknown> | undefined {
+  if (!useOpenRouter) {
+    return customDefaultParams;
+  }
+
+  return {
+    ...OPENROUTER_DEFAULT_PARAMS,
+    ...customDefaultParams,
+  };
+}
+
+function getReasoningFormat({
+  customFormat,
+  isVercel,
+}: {
+  customFormat?: ReasoningParameterFormat;
+  isVercel: boolean;
+}): ReasoningParameterFormat | undefined {
+  if (customFormat) {
+    return customFormat;
+  }
+  if (isVercel) {
+    return ReasoningParameterFormat.reasoningObject;
+  }
+  return undefined;
+}
 
 /**
  * Generates configuration options for creating a language model (LLM) instance.
@@ -34,24 +74,25 @@ export function getOpenAIConfig(
     reverseProxyUrl: baseURL,
   } = options;
 
-  /** Extract default params from customParams.paramDefinitions */
-  const defaultParams = extractDefaultParams(options.customParams?.paramDefinitions);
-
   let llmConfig: t.OAIClientOptions;
   let tools: t.LLMConfigResult['tools'];
   const isAnthropic = options.customParams?.defaultParamsEndpoint === EModelEndpoint.anthropic;
   const isGoogle = options.customParams?.defaultParamsEndpoint === EModelEndpoint.google;
+  const isOpenRouter = options.customParams?.defaultParamsEndpoint === KnownEndpoints.openrouter;
 
   const useOpenRouter =
     !isAnthropic &&
     !isGoogle &&
-    ((baseURL && baseURL.includes(KnownEndpoints.openrouter)) ||
-      (endpoint != null && endpoint.toLowerCase().includes(KnownEndpoints.openrouter)));
+    (isOpenRouter || includesOpenRouter(baseURL) || includesOpenRouter(endpoint));
   const isVercel =
     !isAnthropic &&
     !isGoogle &&
     ((baseURL && baseURL.includes('ai-gateway.vercel.sh')) ||
       (endpoint != null && endpoint.toLowerCase().includes(KnownEndpoints.vercel)));
+  const defaultParams = getDefaultParams({
+    customDefaultParams: extractDefaultParams(options.customParams?.paramDefinitions),
+    useOpenRouter: Boolean(useOpenRouter),
+  });
 
   let azure = options.azure;
   let headers = options.headers;
@@ -74,7 +115,10 @@ export function getOpenAIConfig(
     llmConfig = transformed.llmConfig;
     tools = anthropicResult.tools;
     if (transformed.configOptions?.defaultHeaders) {
-      headers = Object.assign(headers ?? {}, transformed.configOptions?.defaultHeaders);
+      headers = mergeHeaders(
+        headers,
+        transformed.configOptions.defaultHeaders as Record<string, string>,
+      );
     }
   } else if (isGoogle) {
     const googleResult = getGoogleConfig(
@@ -112,6 +156,10 @@ export function getOpenAIConfig(
       defaultParams,
       modelOptions,
       useOpenRouter,
+      reasoningFormat: getReasoningFormat({
+        customFormat: options.customParams?.reasoningFormat,
+        isVercel: Boolean(isVercel),
+      }),
     });
     llmConfig = openaiResult.llmConfig;
     azure = openaiResult.azure;
@@ -127,6 +175,8 @@ export function getOpenAIConfig(
       {
         'HTTP-Referer': 'https://librechat.ai',
         'X-Title': 'LibreChat',
+        'X-OpenRouter-Title': 'LibreChat',
+        'X-OpenRouter-Categories': 'general-chat,personal-agent',
       },
       headers,
     );
@@ -138,10 +188,10 @@ export function getOpenAIConfig(
     configOptions.defaultQuery = defaultQuery;
   }
 
-  if (proxy) {
-    const proxyAgent = new ProxyAgent(proxy);
+  const proxyDispatcher = getProxyDispatcher(proxy);
+  if (proxyDispatcher) {
     configOptions.fetchOptions = {
-      dispatcher: proxyAgent,
+      dispatcher: proxyDispatcher,
     };
   }
 

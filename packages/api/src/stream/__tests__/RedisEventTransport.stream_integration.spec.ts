@@ -1,4 +1,8 @@
 import type { Redis, Cluster } from 'ioredis';
+import { logger } from '@librechat/data-schemas';
+import { createMockPublisher } from './helpers/publisher';
+
+logger.silent = true;
 
 /**
  * Integration tests for RedisEventTransport.
@@ -318,9 +322,7 @@ describe('RedisEventTransport Integration Tests', () => {
     test('should reorder out-of-sequence messages', async () => {
       const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
 
-      const mockPublisher = {
-        publish: jest.fn().mockResolvedValue(1),
-      };
+      const mockPublisher = createMockPublisher();
       const mockSubscriber = {
         on: jest.fn(),
         subscribe: jest.fn().mockResolvedValue(undefined),
@@ -359,9 +361,7 @@ describe('RedisEventTransport Integration Tests', () => {
     test('should buffer early messages and deliver when gaps are filled', async () => {
       const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
 
-      const mockPublisher = {
-        publish: jest.fn().mockResolvedValue(1),
-      };
+      const mockPublisher = createMockPublisher();
       const mockSubscriber = {
         on: jest.fn(),
         subscribe: jest.fn().mockResolvedValue(undefined),
@@ -407,9 +407,7 @@ describe('RedisEventTransport Integration Tests', () => {
 
       const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
 
-      const mockPublisher = {
-        publish: jest.fn().mockResolvedValue(1),
-      };
+      const mockPublisher = createMockPublisher();
       const mockSubscriber = {
         on: jest.fn(),
         subscribe: jest.fn().mockResolvedValue(undefined),
@@ -450,9 +448,7 @@ describe('RedisEventTransport Integration Tests', () => {
     test('should handle messages without sequence numbers (backward compatibility)', async () => {
       const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
 
-      const mockPublisher = {
-        publish: jest.fn().mockResolvedValue(1),
-      };
+      const mockPublisher = createMockPublisher();
       const mockSubscriber = {
         on: jest.fn(),
         subscribe: jest.fn().mockResolvedValue(undefined),
@@ -492,9 +488,7 @@ describe('RedisEventTransport Integration Tests', () => {
     test('should deliver done event after all pending chunks (terminal event ordering)', async () => {
       const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
 
-      const mockPublisher = {
-        publish: jest.fn().mockResolvedValue(1),
-      };
+      const mockPublisher = createMockPublisher();
       const mockSubscriber = {
         subscribe: jest.fn().mockResolvedValue(undefined),
         unsubscribe: jest.fn().mockResolvedValue(undefined),
@@ -547,9 +541,7 @@ describe('RedisEventTransport Integration Tests', () => {
     test('should deliver error event after all pending chunks (terminal event ordering)', async () => {
       const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
 
-      const mockPublisher = {
-        publish: jest.fn().mockResolvedValue(1),
-      };
+      const mockPublisher = createMockPublisher();
       const mockSubscriber = {
         subscribe: jest.fn().mockResolvedValue(undefined),
         unsubscribe: jest.fn().mockResolvedValue(undefined),
@@ -864,6 +856,62 @@ describe('RedisEventTransport Integration Tests', () => {
     });
   });
 
+  /**
+   * Cross-Replica Sequence Synchronization (#12575)
+   *
+   * The core cross-replica sync logic (Redis INCR counter, async GET in
+   * syncReorderBuffer, pruneStaleEntries flag) is verified by:
+   * - Unit tests with mock publishers (deterministic, no cluster timing)
+   * - GenerationJobManager integration tests (end-to-end with earlyEventBuffer)
+   * - The race-condition unit test (paused GET with injected message)
+   *
+   * Transport-level integration tests with two real Redis transports are
+   * inherently flaky in Redis Cluster: cluster pub/sub fan-out is async
+   * across nodes, so a PUBLISH acknowledged on node A can arrive at the
+   * subscriber on node B after a subsequent SUBSCRIBE takes effect,
+   * causing non-deterministic message counts.
+   */
+  describe('Cross-Replica Sequence Synchronization (#12575)', () => {
+    test('shared counter is cleaned up on stream cleanup', async () => {
+      if (!ioredisClient) {
+        console.warn('Redis not available, skipping test');
+        return;
+      }
+
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const subscriber = (ioredisClient as Redis).duplicate();
+      const transport = new RedisEventTransport(ioredisClient, subscriber);
+
+      const streamId = `cross-replica-cleanup-${Date.now()}`;
+
+      // Publish chunks to create the Redis counter key
+      for (let i = 0; i < 5; i++) {
+        await transport.emitChunk(streamId, { index: i });
+      }
+
+      // Verify the key exists
+      const key = `stream:{${streamId}}:seq`;
+      const valBefore = await ioredisClient.get(key);
+      expect(valBefore).toBe('5');
+
+      // Cleanup the stream
+      transport.cleanup(streamId);
+
+      // Poll for the fire-and-forget DEL to complete (robust under CI load)
+      const start = Date.now();
+      let valAfter: string | null = 'pending';
+      while (valAfter !== null && Date.now() - start < 2000) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        valAfter = await ioredisClient.get(key);
+      }
+      expect(valAfter).toBeNull();
+
+      transport.destroy();
+      subscriber.disconnect();
+    });
+  });
+
   describe('Cleanup', () => {
     test('should clean up stream resources', async () => {
       if (!ioredisClient) {
@@ -898,9 +946,8 @@ describe('RedisEventTransport Integration Tests', () => {
     test('should swallow emitChunk publish errors (callers fire-and-forget)', async () => {
       const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
 
-      const mockPublisher = {
-        publish: jest.fn().mockRejectedValue(new Error('Redis connection lost')),
-      };
+      const mockPublisher = createMockPublisher();
+      mockPublisher.publish.mockRejectedValue(new Error('Redis connection lost'));
       const mockSubscriber = {
         on: jest.fn(),
         subscribe: jest.fn().mockResolvedValue(undefined),
@@ -921,12 +968,35 @@ describe('RedisEventTransport Integration Tests', () => {
       transport.destroy();
     });
 
+    test('should swallow emitChunk incr errors (sequence allocation failure)', async () => {
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const mockPublisher = createMockPublisher();
+      mockPublisher.incr.mockRejectedValue(new Error('INCR failed'));
+      const mockSubscriber = {
+        on: jest.fn(),
+        subscribe: jest.fn().mockResolvedValue(undefined),
+        unsubscribe: jest.fn().mockResolvedValue(undefined),
+      };
+
+      const transport = new RedisEventTransport(
+        mockPublisher as unknown as Redis,
+        mockSubscriber as unknown as Redis,
+      );
+
+      const streamId = `error-prop-incr-${Date.now()}`;
+
+      await expect(transport.emitChunk(streamId, { data: 'test' })).resolves.toBeUndefined();
+      expect(mockPublisher.publish).not.toHaveBeenCalled();
+
+      transport.destroy();
+    });
+
     test('should throw when emitDone publish fails', async () => {
       const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
 
-      const mockPublisher = {
-        publish: jest.fn().mockRejectedValue(new Error('Redis connection lost')),
-      };
+      const mockPublisher = createMockPublisher();
+      mockPublisher.publish.mockRejectedValue(new Error('Redis connection lost'));
       const mockSubscriber = {
         on: jest.fn(),
         subscribe: jest.fn().mockResolvedValue(undefined),
@@ -950,9 +1020,8 @@ describe('RedisEventTransport Integration Tests', () => {
     test('should throw when emitError publish fails', async () => {
       const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
 
-      const mockPublisher = {
-        publish: jest.fn().mockRejectedValue(new Error('Redis connection lost')),
-      };
+      const mockPublisher = createMockPublisher();
+      mockPublisher.publish.mockRejectedValue(new Error('Redis connection lost'));
       const mockSubscriber = {
         on: jest.fn(),
         subscribe: jest.fn().mockResolvedValue(undefined),
@@ -969,6 +1038,52 @@ describe('RedisEventTransport Integration Tests', () => {
       await expect(transport.emitError(streamId, 'some error')).rejects.toThrow(
         'Redis connection lost',
       );
+
+      transport.destroy();
+    });
+
+    test('should propagate when emitDone incr fails', async () => {
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const mockPublisher = createMockPublisher();
+      mockPublisher.incr.mockRejectedValue(new Error('INCR failed'));
+      const mockSubscriber = {
+        on: jest.fn(),
+        subscribe: jest.fn().mockResolvedValue(undefined),
+        unsubscribe: jest.fn().mockResolvedValue(undefined),
+      };
+
+      const transport = new RedisEventTransport(
+        mockPublisher as unknown as Redis,
+        mockSubscriber as unknown as Redis,
+      );
+
+      const streamId = `error-prop-done-incr-${Date.now()}`;
+
+      await expect(transport.emitDone(streamId, { finished: true })).rejects.toThrow('INCR failed');
+
+      transport.destroy();
+    });
+
+    test('should propagate when emitError incr fails', async () => {
+      const { RedisEventTransport } = await import('../implementations/RedisEventTransport');
+
+      const mockPublisher = createMockPublisher();
+      mockPublisher.incr.mockRejectedValue(new Error('INCR failed'));
+      const mockSubscriber = {
+        on: jest.fn(),
+        subscribe: jest.fn().mockResolvedValue(undefined),
+        unsubscribe: jest.fn().mockResolvedValue(undefined),
+      };
+
+      const transport = new RedisEventTransport(
+        mockPublisher as unknown as Redis,
+        mockSubscriber as unknown as Redis,
+      );
+
+      const streamId = `error-prop-error-incr-${Date.now()}`;
+
+      await expect(transport.emitError(streamId, 'some error')).rejects.toThrow('INCR failed');
 
       transport.destroy();
     });

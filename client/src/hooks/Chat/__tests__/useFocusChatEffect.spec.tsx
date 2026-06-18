@@ -39,14 +39,12 @@ describe('useFocusChatEffect', () => {
       state: { focusChat: true },
     });
 
-    // Mock window.location
-    Object.defineProperty(window, 'location', {
-      value: {
-        pathname: '/c/new',
-        search: '',
-      },
-      writable: true,
-    });
+    // Set default window.location
+    window.history.replaceState({}, '', '/c/new');
+  });
+
+  afterEach(() => {
+    window.history.replaceState({}, '', '/');
   });
 
   describe('Basic functionality', () => {
@@ -115,14 +113,7 @@ describe('useFocusChatEffect', () => {
       testDescription: string;
     }) => {
       test(`${testDescription}`, () => {
-        // Mock window.location
-        Object.defineProperty(window, 'location', {
-          value: {
-            pathname: '/c/new',
-            search: windowLocationSearch,
-          },
-          writable: true,
-        });
+        window.history.replaceState({}, '', `/c/new${windowLocationSearch}`);
 
         // Mock React Router's location
         (useLocation as jest.Mock).mockReturnValue({
@@ -144,13 +135,7 @@ describe('useFocusChatEffect', () => {
     };
 
     test('should use window.location.search instead of location.search', () => {
-      Object.defineProperty(window, 'location', {
-        value: {
-          pathname: '/c/new',
-          search: '?agent_id=test_agent_id',
-        },
-        writable: true,
-      });
+      window.history.replaceState({}, '', '/c/new?agent_id=test_agent_id');
 
       (useLocation as jest.Mock).mockReturnValue({
         pathname: '/c/new',
@@ -223,13 +208,7 @@ describe('useFocusChatEffect', () => {
     });
 
     test('should handle navigation immediately after URL parameter changes', () => {
-      Object.defineProperty(window, 'location', {
-        value: {
-          pathname: '/c/new',
-          search: '?endpoint=openAI&model=gpt-4',
-        },
-        writable: true,
-      });
+      window.history.replaceState({}, '', '/c/new?endpoint=openAI&model=gpt-4');
 
       (useLocation as jest.Mock).mockReturnValue({
         pathname: '/c/new',
@@ -249,13 +228,7 @@ describe('useFocusChatEffect', () => {
 
       jest.clearAllMocks();
 
-      Object.defineProperty(window, 'location', {
-        value: {
-          pathname: '/c/new',
-          search: '?agent_id=agent123',
-        },
-        writable: true,
-      });
+      window.history.replaceState({}, '', '/c/new?agent_id=agent123');
 
       (useLocation as jest.Mock).mockReturnValue({
         pathname: '/c/new_changed',
@@ -275,13 +248,7 @@ describe('useFocusChatEffect', () => {
     });
 
     test('should handle undefined or null search params gracefully', () => {
-      Object.defineProperty(window, 'location', {
-        value: {
-          pathname: '/c/new',
-          search: undefined,
-        },
-        writable: true,
-      });
+      window.history.replaceState({}, '', '/c/new');
 
       (useLocation as jest.Mock).mockReturnValue({
         pathname: '/c/new',
@@ -301,14 +268,6 @@ describe('useFocusChatEffect', () => {
 
       jest.clearAllMocks();
 
-      Object.defineProperty(window, 'location', {
-        value: {
-          pathname: '/c/new',
-          search: null,
-        },
-        writable: true,
-      });
-
       (useLocation as jest.Mock).mockReturnValue({
         pathname: '/c/new',
         search: null,
@@ -327,13 +286,7 @@ describe('useFocusChatEffect', () => {
     });
 
     test('should handle navigation when location.state is null', () => {
-      Object.defineProperty(window, 'location', {
-        value: {
-          pathname: '/c/new',
-          search: '?agent_id=agent123',
-        },
-        writable: true,
-      });
+      window.history.replaceState({}, '', '/c/new?agent_id=agent123');
 
       (useLocation as jest.Mock).mockReturnValue({
         pathname: '/c/new',
@@ -348,13 +301,7 @@ describe('useFocusChatEffect', () => {
     });
 
     test('should handle navigation when location.state.focusChat is undefined', () => {
-      Object.defineProperty(window, 'location', {
-        value: {
-          pathname: '/c/new',
-          search: '?agent_id=agent123',
-        },
-        writable: true,
-      });
+      window.history.replaceState({}, '', '/c/new?agent_id=agent123');
 
       (useLocation as jest.Mock).mockReturnValue({
         pathname: '/c/new',
@@ -369,13 +316,7 @@ describe('useFocusChatEffect', () => {
     });
 
     test('should handle navigation when both search params are empty', () => {
-      Object.defineProperty(window, 'location', {
-        value: {
-          pathname: '/c/new',
-          search: '',
-        },
-        writable: true,
-      });
+      window.history.replaceState({}, '', '/c/new');
 
       (useLocation as jest.Mock).mockReturnValue({
         pathname: '/c/new',

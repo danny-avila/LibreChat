@@ -1,4 +1,71 @@
-import { buildToolSet, BuildToolSetConfig } from './tools';
+/**
+ * `@librechat/agents` may ship without the skill-flavored tool definitions on
+ * older installed versions. Stub them so `registerCodeExecutionTools` (which
+ * consumes only the three exports below) can be exercised deterministically.
+ * Mirrors the same pattern used in `__tests__/skills.test.ts`.
+ */
+jest.mock('@librechat/agents', () => ({
+  CODE_EXECUTION_TOOLS: new Set(['execute_code', 'bash_tool']),
+  ReadFileToolDefinition: {
+    name: 'read_file',
+    description: 'read skill files using {skillName}/{filePath} and SKILL.md',
+    parameters: {
+      type: 'object',
+      properties: {
+        file_path: {
+          type: 'string',
+          description: 'For skill files: "{skillName}/{path}".',
+        },
+      },
+    },
+    responseFormat: 'content',
+  },
+  BashExecutionToolDefinition: {
+    name: 'bash_tool',
+    description: 'bash',
+    schema: { type: 'object', properties: {} },
+  },
+  /**
+   * Deterministic stub mirroring the SDK's `buildBashExecutionToolDescription`:
+   * appends an LLM-facing reference-syntax marker only when
+   * `enableToolOutputReferences` is true.
+   */
+  buildBashExecutionToolDescription: ({
+    enableToolOutputReferences,
+  }: {
+    enableToolOutputReferences?: boolean;
+  } = {}): string =>
+    enableToolOutputReferences === true ? 'bash {{tool<idx>turn<turn>}}' : 'bash',
+}));
+
+import { CODE_EXECUTION_TOOLS } from '@librechat/agents';
+import type { LCTool, LCToolRegistry } from '@librechat/agents';
+import {
+  buildToolSet,
+  BuildToolSetConfig,
+  registerCodeExecutionTools,
+  registerFileAuthoringTools,
+  FILE_AUTHORING_TOOL_NAMES,
+  isFileAuthoringToolDefinition,
+  isCodeSessionToolName,
+} from './tools';
+
+/** Portable ceiling for OpenAI-compatible tool description validators. */
+const TOOL_DESCRIPTION_ADVISORY_MAX_LENGTH = 1024;
+
+function filePathDescription(tool?: LCTool): string {
+  const parameters = tool?.parameters as
+    | { properties?: { file_path?: { description?: string } } }
+    | undefined;
+  return parameters?.properties?.file_path?.description ?? '';
+}
+
+function maxToolDescriptionLength(definitions: LCTool[]): number {
+  return definitions.reduce((max, definition) => {
+    const length = definition.description?.length ?? Number.POSITIVE_INFINITY;
+    return Math.max(max, length);
+  }, 0);
+}
 
 describe('buildToolSet', () => {
   describe('event-driven mode (toolDefinitions)', () => {
@@ -122,5 +189,434 @@ describe('buildToolSet', () => {
       expect(toolSet.has('also_valid')).toBe(true);
       expect(toolSet.has('')).toBe(false);
     });
+  });
+});
+
+describe('registerCodeExecutionTools', () => {
+  const makeRegistry = (): LCToolRegistry => new Map() as unknown as LCToolRegistry;
+
+  describe('fresh run (no pre-existing defs or registry entries)', () => {
+    it('registers read_file + bash_tool when includeBash=true', () => {
+      const toolRegistry = makeRegistry();
+      const result = registerCodeExecutionTools({
+        toolRegistry,
+        toolDefinitions: [],
+        includeBash: true,
+      });
+
+      const names = result.toolDefinitions.map((d) => d.name).sort();
+      expect(names).toEqual(['bash_tool', 'read_file']);
+      expect(result.registered.sort()).toEqual(['bash_tool', 'read_file']);
+      expect(toolRegistry.has('read_file')).toBe(true);
+      expect(toolRegistry.has('bash_tool')).toBe(true);
+    });
+
+    it('registers read_file only when includeBash=false', () => {
+      const toolRegistry = makeRegistry();
+      const result = registerCodeExecutionTools({
+        toolRegistry,
+        toolDefinitions: [],
+        includeBash: false,
+      });
+
+      expect(result.toolDefinitions.map((d) => d.name)).toEqual(['read_file']);
+      expect(result.registered).toEqual(['read_file']);
+      expect(toolRegistry.has('read_file')).toBe(true);
+      expect(toolRegistry.has('bash_tool')).toBe(false);
+    });
+
+    it('uses a code-only read_file description when skill instructions are disabled', () => {
+      const toolRegistry = makeRegistry();
+      const result = registerCodeExecutionTools({
+        toolRegistry,
+        toolDefinitions: [],
+        includeBash: true,
+        includeSkillFileInstructions: false,
+      });
+
+      const readFile = result.toolDefinitions.find((d) => d.name === 'read_file');
+      expect(readFile?.description).toContain('code-execution sandbox');
+      expect(readFile?.description).toContain('/mnt/data/');
+      expect(readFile?.description).toContain('Do not run ls/find');
+      expect(readFile?.description).toContain('/tmp is per-call scratch');
+      expect(readFile?.description).toContain('truncated around 256KB');
+      expect(readFile?.description).toContain('true filesystem discovery');
+      expect(readFile?.description).not.toContain('{skillName}');
+      expect(readFile?.description).not.toContain('SKILL.md');
+      expect(JSON.stringify(readFile?.parameters)).not.toContain('{skillName}');
+    });
+
+    it('upgrades a code-only read_file definition when skills are enabled later in the run', () => {
+      const toolRegistry = makeRegistry();
+      const codeOnly = registerCodeExecutionTools({
+        toolRegistry,
+        toolDefinitions: [],
+        includeBash: true,
+        includeSkillFileInstructions: false,
+      });
+      const upgraded = registerCodeExecutionTools({
+        toolRegistry,
+        toolDefinitions: codeOnly.toolDefinitions,
+        includeBash: false,
+        includeSkillFileInstructions: true,
+      });
+
+      const readFile = upgraded.toolDefinitions.find((d) => d.name === 'read_file');
+      expect(upgraded.registered).toEqual([]);
+      expect(readFile?.description).toContain('{skillName}/{filePath}');
+      expect(readFile?.description).toContain('skills/{skillName}/');
+      expect(readFile?.description).toContain('SKILL.md');
+      expect(toolRegistry.get('read_file')?.description).toBe(readFile?.description);
+    });
+
+    it('preserves pre-existing unrelated tool definitions', () => {
+      const toolRegistry = makeRegistry();
+      const existing: LCTool[] = [
+        { name: 'calculator', description: 'calc', parameters: undefined } as LCTool,
+      ];
+      const result = registerCodeExecutionTools({
+        toolRegistry,
+        toolDefinitions: existing,
+        includeBash: true,
+      });
+
+      const names = result.toolDefinitions.map((d) => d.name);
+      expect(names).toEqual(['calculator', 'read_file', 'bash_tool']);
+    });
+
+    it('keeps code-execution tool descriptions within provider advisory limits', () => {
+      const skillAwareWithRefs = registerCodeExecutionTools({
+        toolRegistry: makeRegistry(),
+        toolDefinitions: [],
+        includeBash: true,
+        includeSkillFileInstructions: true,
+        enableToolOutputReferences: true,
+      });
+      const codeOnlyWithoutRefs = registerCodeExecutionTools({
+        toolRegistry: makeRegistry(),
+        toolDefinitions: [],
+        includeBash: true,
+        includeSkillFileInstructions: false,
+        enableToolOutputReferences: false,
+      });
+
+      expect(
+        maxToolDescriptionLength([
+          ...skillAwareWithRefs.toolDefinitions,
+          ...codeOnlyWithoutRefs.toolDefinitions,
+        ]),
+      ).toBeLessThanOrEqual(TOOL_DESCRIPTION_ADVISORY_MAX_LENGTH);
+    });
+  });
+
+  describe('idempotence (second call in same run)', () => {
+    it('is a no-op when both tools already live in the registry', () => {
+      const toolRegistry = makeRegistry();
+      const first = registerCodeExecutionTools({
+        toolRegistry,
+        toolDefinitions: [],
+        includeBash: true,
+      });
+      /* Second call simulates skills-path + execute_code-path overlap. */
+      const second = registerCodeExecutionTools({
+        toolRegistry,
+        toolDefinitions: first.toolDefinitions,
+        includeBash: true,
+      });
+
+      expect(second.registered).toEqual([]);
+      expect(second.toolDefinitions).toHaveLength(2);
+      const names = second.toolDefinitions.map((d) => d.name).sort();
+      expect(names).toEqual(['bash_tool', 'read_file']);
+    });
+
+    it('is a no-op when tools already live in toolDefinitions (no registry available)', () => {
+      const existing: LCTool[] = [
+        { name: 'read_file', description: 'pre', parameters: undefined } as LCTool,
+        { name: 'bash_tool', description: 'pre', parameters: undefined } as LCTool,
+      ];
+      const result = registerCodeExecutionTools({
+        toolRegistry: undefined,
+        toolDefinitions: existing,
+        includeBash: true,
+      });
+
+      expect(result.registered).toEqual([]);
+      expect(result.toolDefinitions).toEqual(existing);
+    });
+
+    it('only adds the missing half when one is already registered', () => {
+      const toolRegistry = makeRegistry();
+      toolRegistry.set('read_file', {
+        name: 'read_file',
+        description: 'prev',
+        parameters: undefined,
+      } as LCTool);
+      const result = registerCodeExecutionTools({
+        toolRegistry,
+        toolDefinitions: [],
+        includeBash: true,
+      });
+
+      expect(result.registered).toEqual(['bash_tool']);
+      const names = result.toolDefinitions.map((d) => d.name);
+      expect(names).toEqual(['bash_tool']);
+      expect(toolRegistry.has('read_file')).toBe(true);
+      expect(toolRegistry.has('bash_tool')).toBe(true);
+    });
+  });
+
+  describe('no-registry variant', () => {
+    it('still returns merged toolDefinitions when toolRegistry is undefined', () => {
+      const result = registerCodeExecutionTools({
+        toolRegistry: undefined,
+        toolDefinitions: [],
+        includeBash: true,
+      });
+
+      const names = result.toolDefinitions.map((d) => d.name).sort();
+      expect(names).toEqual(['bash_tool', 'read_file']);
+      expect(result.registered.sort()).toEqual(['bash_tool', 'read_file']);
+    });
+  });
+
+  describe('enableToolOutputReferences', () => {
+    const findBashDef = (defs: LCTool[]): LCTool | undefined =>
+      defs.find((d) => d.name === 'bash_tool');
+
+    it('appends the {{tool<idx>turn<turn>}} guide when flag is true', () => {
+      const result = registerCodeExecutionTools({
+        toolRegistry: makeRegistry(),
+        toolDefinitions: [],
+        includeBash: true,
+        enableToolOutputReferences: true,
+      });
+
+      const bash = findBashDef(result.toolDefinitions);
+      expect(bash?.description).toContain('{{tool<idx>turn<turn>}}');
+    });
+
+    it('omits the {{tool<idx>turn<turn>}} guide when flag is false', () => {
+      const result = registerCodeExecutionTools({
+        toolRegistry: makeRegistry(),
+        toolDefinitions: [],
+        includeBash: true,
+        enableToolOutputReferences: false,
+      });
+
+      const bash = findBashDef(result.toolDefinitions);
+      expect(bash?.description).not.toContain('{{tool<idx>turn<turn>}}');
+    });
+
+    it('omits the guide by default when flag is unspecified', () => {
+      const result = registerCodeExecutionTools({
+        toolRegistry: makeRegistry(),
+        toolDefinitions: [],
+        includeBash: true,
+      });
+
+      const bash = findBashDef(result.toolDefinitions);
+      expect(bash?.description).not.toContain('{{tool<idx>turn<turn>}}');
+    });
+
+    it('returns the same frozen bash_tool reference across calls with the same flag', () => {
+      /**
+       * The two `bash_tool` variants are cached at module scope so
+       * repeated agent inits in the same process don't re-allocate
+       * + re-freeze + re-build the description on every call.
+       * Asserting reference equality across two fresh registries
+       * pins that contract — a regression that switches back to a
+       * per-call `Object.freeze` would fail this test.
+       */
+      const a = registerCodeExecutionTools({
+        toolRegistry: makeRegistry(),
+        toolDefinitions: [],
+        includeBash: true,
+        enableToolOutputReferences: true,
+      });
+      const b = registerCodeExecutionTools({
+        toolRegistry: makeRegistry(),
+        toolDefinitions: [],
+        includeBash: true,
+        enableToolOutputReferences: true,
+      });
+
+      expect(findBashDef(a.toolDefinitions)).toBe(findBashDef(b.toolDefinitions));
+    });
+
+    it('returns distinct frozen references for the two flag variants', () => {
+      /**
+       * Sanity check on the two-singleton cache: the with-refs and
+       * without-refs definitions are distinct objects so toggling
+       * the flag in `registerCodeExecutionTools` actually picks up
+       * the alternate description, not the same cached reference.
+       */
+      const withRefs = registerCodeExecutionTools({
+        toolRegistry: makeRegistry(),
+        toolDefinitions: [],
+        includeBash: true,
+        enableToolOutputReferences: true,
+      });
+      const withoutRefs = registerCodeExecutionTools({
+        toolRegistry: makeRegistry(),
+        toolDefinitions: [],
+        includeBash: true,
+        enableToolOutputReferences: false,
+      });
+
+      const a = findBashDef(withRefs.toolDefinitions);
+      const b = findBashDef(withoutRefs.toolDefinitions);
+      expect(a).not.toBe(b);
+      expect(a?.description).toContain('{{tool<idx>turn<turn>}}');
+      expect(b?.description).not.toContain('{{tool<idx>turn<turn>}}');
+    });
+  });
+});
+
+describe('registerFileAuthoringTools', () => {
+  const makeRegistry = (): LCToolRegistry => new Map() as unknown as LCToolRegistry;
+
+  it('recognizes host-side file authoring tools as code-session-aware without mutating the shared set', () => {
+    expect(isCodeSessionToolName('bash_tool')).toBe(true);
+    expect(isCodeSessionToolName('create_file')).toBe(false);
+    expect(isCodeSessionToolName('edit_file')).toBe(false);
+    expect(isCodeSessionToolName('create_file', FILE_AUTHORING_TOOL_NAMES)).toBe(true);
+    expect(isCodeSessionToolName('edit_file', FILE_AUTHORING_TOOL_NAMES)).toBe(true);
+    expect(CODE_EXECUTION_TOOLS.has('create_file')).toBe(false);
+    expect(CODE_EXECUTION_TOOLS.has('edit_file')).toBe(false);
+  });
+
+  it('registers create_file and edit_file with skill-aware descriptions', () => {
+    const toolRegistry = makeRegistry();
+    const result = registerFileAuthoringTools({
+      toolRegistry,
+      toolDefinitions: [],
+      includeSkillFileInstructions: true,
+    });
+
+    const names = result.toolDefinitions.map((d) => d.name).sort();
+    expect(names).toEqual(['create_file', 'edit_file']);
+    expect(result.registered.sort()).toEqual(['create_file', 'edit_file']);
+    expect(toolRegistry.has('create_file')).toBe(true);
+    expect(toolRegistry.has('edit_file')).toBe(true);
+    expect(result.toolDefinitions[0].responseFormat).toBe('content_and_artifact');
+    expect(result.toolDefinitions.map((d) => d.description).join('\n')).toContain('skills/');
+    expect(toolRegistry.get('create_file')?.description).toContain('frontmatter name must match');
+    expect(toolRegistry.get('create_file')?.description).toContain('trigger-friendly');
+    expect(toolRegistry.get('create_file')?.description).toContain('references/template.html');
+    expect(toolRegistry.get('create_file')?.description).toContain('templates/{file}');
+    expect(toolRegistry.get('edit_file')?.description).toContain('edit_file cannot rename skills');
+    expect(toolRegistry.get('edit_file')?.description).toContain('Keep SKILL.md concise');
+    expect(toolRegistry.get('edit_file')?.description).toContain('templates/');
+    expect(filePathDescription(toolRegistry.get('create_file'))).toContain(
+      'frontmatter name must match',
+    );
+    expect(filePathDescription(toolRegistry.get('edit_file'))).toContain(
+      'edit_file cannot rename skills',
+    );
+  });
+
+  it('registers code-only descriptions for code-exec-only agents', () => {
+    const toolRegistry = makeRegistry();
+    const result = registerFileAuthoringTools({
+      toolRegistry,
+      toolDefinitions: [],
+      includeSkillFileInstructions: false,
+    });
+
+    const createFile = result.toolDefinitions.find((d) => d.name === 'create_file');
+    const editFile = result.toolDefinitions.find((d) => d.name === 'edit_file');
+    expect(createFile?.description).toContain('code-execution sandbox');
+    expect(createFile?.description).toContain('/mnt/data/');
+    expect(createFile?.description).not.toContain('skills/');
+    expect(editFile?.description).toContain('code-execution sandbox');
+    expect(editFile?.description).toContain('/mnt/data/');
+    expect(editFile?.description).not.toContain('skills/');
+    expect(filePathDescription(createFile)).toContain('code-execution sandbox');
+    expect(filePathDescription(createFile)).not.toContain('skills/');
+    expect(filePathDescription(createFile)).not.toContain('SKILL.md');
+    expect(filePathDescription(editFile)).toContain('code-execution sandbox');
+    expect(filePathDescription(editFile)).not.toContain('skills/');
+    expect(filePathDescription(editFile)).not.toContain('rename skills');
+  });
+
+  it('is idempotent across repeated registration calls', () => {
+    const toolRegistry = makeRegistry();
+    const first = registerFileAuthoringTools({
+      toolRegistry,
+      toolDefinitions: [],
+    });
+    const second = registerFileAuthoringTools({
+      toolRegistry,
+      toolDefinitions: first.toolDefinitions,
+    });
+
+    expect(second.registered).toEqual([]);
+    expect(second.toolDefinitions).toHaveLength(2);
+  });
+
+  it('upgrades code-only definitions to skill-aware definitions', () => {
+    const toolRegistry = makeRegistry();
+    const codeOnly = registerFileAuthoringTools({
+      toolRegistry,
+      toolDefinitions: [],
+      includeSkillFileInstructions: false,
+    });
+    const upgraded = registerFileAuthoringTools({
+      toolRegistry,
+      toolDefinitions: codeOnly.toolDefinitions,
+      includeSkillFileInstructions: true,
+    });
+
+    expect(upgraded.registered).toEqual([]);
+    expect(upgraded.toolDefinitions.find((d) => d.name === 'create_file')?.description).toContain(
+      'skills/',
+    );
+    expect(toolRegistry.get('edit_file')?.description).toContain('skills/');
+  });
+
+  it('keeps file-authoring tool descriptions within provider advisory limits', () => {
+    const skillAware = registerFileAuthoringTools({
+      toolRegistry: makeRegistry(),
+      toolDefinitions: [],
+      includeSkillFileInstructions: true,
+    });
+    const codeOnlyRegistry = makeRegistry();
+    const codeOnly = registerFileAuthoringTools({
+      toolRegistry: codeOnlyRegistry,
+      toolDefinitions: [],
+      includeSkillFileInstructions: false,
+    });
+    const upgraded = registerFileAuthoringTools({
+      toolRegistry: codeOnlyRegistry,
+      toolDefinitions: codeOnly.toolDefinitions,
+      includeSkillFileInstructions: true,
+    });
+
+    expect(
+      maxToolDescriptionLength([
+        ...skillAware.toolDefinitions,
+        ...codeOnly.toolDefinitions,
+        ...upgraded.toolDefinitions,
+      ]),
+    ).toBeLessThanOrEqual(TOOL_DESCRIPTION_ADVISORY_MAX_LENGTH);
+  });
+
+  it('distinguishes host file authoring definitions from user tools with matching names', () => {
+    const result = registerFileAuthoringTools({
+      toolRegistry: makeRegistry(),
+      toolDefinitions: [],
+      includeSkillFileInstructions: true,
+    });
+    const createFile = result.toolDefinitions.find((d) => d.name === 'create_file');
+
+    expect(isFileAuthoringToolDefinition(createFile)).toBe(true);
+    expect(
+      isFileAuthoringToolDefinition({
+        name: 'create_file',
+        description: 'A user-defined create_file action',
+        parameters: { type: 'object', properties: {} } as LCTool['parameters'],
+      }),
+    ).toBe(false);
   });
 });

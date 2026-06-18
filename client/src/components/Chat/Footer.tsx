@@ -1,12 +1,20 @@
-import React, { useEffect } from 'react';
-import ReactMarkdown from 'react-markdown';
+import React, { useEffect, memo } from 'react';
 import TagManager from 'react-gtm-module';
+import ReactMarkdown from 'react-markdown';
 import { Constants } from 'librechat-data-provider';
+import type { TStartupConfig } from 'librechat-data-provider';
 import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
-export default function Footer({ className }: { className?: string }) {
-  const { data: config } = useGetStartupConfig();
+type FooterProps = {
+  className?: string;
+  startupConfig?: TStartupConfig | null;
+};
+
+function Footer({ className, startupConfig }: FooterProps) {
+  const shouldFetchConfig = startupConfig === undefined;
+  const { data: fetchedConfig } = useGetStartupConfig({ enabled: shouldFetchConfig });
+  const config = shouldFetchConfig ? fetchedConfig : startupConfig;
   const localize = useLocalize();
 
   const privacyPolicy = config?.interface?.privacyPolicy;
@@ -98,3 +106,8 @@ export default function Footer({ className }: { className?: string }) {
     </div>
   );
 }
+
+const MemoizedFooter = memo(Footer);
+MemoizedFooter.displayName = 'Footer';
+
+export default MemoizedFooter;

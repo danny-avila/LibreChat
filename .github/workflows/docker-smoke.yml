@@ -1,0 +1,128 @@
+name: Docker Build Smoke Tests
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/docker-smoke.yml'
+      - '.dockerignore'
+      - 'Dockerfile.multi'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'api/**'
+      - 'client/**'
+      - 'config/**'
+      - 'skill/**'
+      - 'packages/api/**'
+      - 'packages/client/**'
+      - 'packages/data-provider/**'
+      - 'packages/data-schemas/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  client-package-target:
+    name: Build Docker client package target
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build client package target
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.multi
+          platforms: linux/amd64
+          push: false
+          target: client-package-build
+
+  api-runtime-smoke:
+    name: API runtime smoke (production image boots)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build the real production image (final `api-build` stage), which installs
+      # with `npm ci --omit=dev` — the same prune that, in prod, exposed runtime
+      # dependencies the tsdown bundle externalizes but were never declared.
+      - name: Build production image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.multi
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: librechat-api-smoke:ci
+          cache-from: type=gha,scope=docker-smoke-api
+          cache-to: type=gha,mode=max,scope=docker-smoke-api
+
+      # Loads the entire externalized require graph of the built @librechat/api
+      # bundle inside the pruned production image. A missing or ESM-incompatible
+      # runtime dependency (e.g. the `get-stream` regression) fails here with a
+      # non-zero exit — deterministically, with no database required.
+      - name: Verify production image resolves all runtime modules
+        run: |
+          docker run --rm librechat-api-smoke:ci \
+            node -e "require('@librechat/api'); require('@librechat/api/telemetry'); console.log('module resolution OK')"
+
+      # Boot the real entrypoint against a real MongoDB so the *entire* server
+      # require graph loads (api/db throws at module scope without MONGO_URI, and
+      # is imported before models/services/routes), then gate on /readyz AND the
+      # container staying alive. /readyz only returns 200 after the post-listen
+      # startup (initializeMCPs + checkMigrations) sets serverReady, and those
+      # steps process.exit(1) on failure — so ANY startup crash (missing module,
+      # ReferenceError, bad config, post-listen failure) fails the smoke.
+      - name: Boot production image against MongoDB and poll /readyz
+        run: |
+          set -u
+          docker network create lc-smoke
+          docker run -d --name lc-mongo --network lc-smoke mongo:8.0.20
+          docker run -d --name lc-api --network lc-smoke -p 3080:3080 \
+            -e HOST=0.0.0.0 -e PORT=3080 \
+            -e NODE_ENV=production \
+            -e MONGO_URI=mongodb://lc-mongo:27017/LibreChat \
+            -e CREDS_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+            -e CREDS_IV=0123456789abcdef0123456789abcdef \
+            -e JWT_SECRET=docker-smoke-jwt-secret \
+            -e JWT_REFRESH_SECRET=docker-smoke-jwt-refresh-secret \
+            -e SEARCH=false \
+            librechat-api-smoke:ci
+
+          healthy=""
+          for i in $(seq 1 60); do
+            if [ "$(docker inspect -f '{{.State.Running}}' lc-api 2>/dev/null)" != "true" ]; then
+              echo "::error::API container exited during startup (exit code $(docker inspect -f '{{.State.ExitCode}}' lc-api 2>/dev/null))"
+              break
+            fi
+            if [ "$(curl -sS -o /dev/null -w '%{http_code}' http://localhost:3080/readyz 2>/dev/null || true)" = "200" ]; then
+              healthy="yes"
+              echo "/readyz returned 200 — server fully booted (post-listen startup complete)."
+              break
+            fi
+            sleep 2
+          done
+
+          echo "----- last 100 lines of api container logs -----"
+          docker logs lc-api 2>&1 | tail -100 || true
+          echo "------------------------------------------------"
+          docker rm -f lc-api lc-mongo >/dev/null 2>&1 || true
+          docker network rm lc-smoke >/dev/null 2>&1 || true
+
+          if [ -z "$healthy" ]; then
+            echo "::error::Production image failed to reach a ready /readyz within timeout"
+            exit 1
+          fi

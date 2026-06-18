@@ -1,11 +1,30 @@
-import { useEffect, useRef, useMemo } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useRecoilState } from 'recoil';
 import { useToastContext } from '@librechat/client';
-import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
 import { useGetCustomConfigSpeechQuery } from 'librechat-data-provider/react-query';
+import SpeechRecognitionImport, { useSpeechRecognition } from 'react-speech-recognition';
 import useGetAudioSettings from './useGetAudioSettings';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
+
+type SpeechRecognitionController = Pick<
+  typeof SpeechRecognitionImport,
+  'startListening' | 'stopListening'
+>;
+type SpeechRecognitionModule = Partial<SpeechRecognitionController> & {
+  default?: Partial<SpeechRecognitionController>;
+};
+
+const hasSpeechRecognitionController = (
+  controller?: Partial<SpeechRecognitionController>,
+): controller is SpeechRecognitionController =>
+  typeof controller?.startListening === 'function' &&
+  typeof controller.stopListening === 'function';
+
+const speechRecognitionModule = SpeechRecognitionImport as SpeechRecognitionModule;
+const SpeechRecognition = hasSpeechRecognitionController(speechRecognitionModule)
+  ? speechRecognitionModule
+  : speechRecognitionModule.default;
 
 const useSpeechToTextBrowser = (
   setText: (text: string) => void,
@@ -33,7 +52,7 @@ const useSpeechToTextBrowser = (
     isMicrophoneAvailable,
     browserSupportsSpeechRecognition,
   } = useSpeechRecognition();
-  const isListening = useMemo(() => listening, [listening]);
+  const isListening = listening;
 
   useEffect(() => {
     if (interimTranscript == null || interimTranscript === '') {
@@ -73,7 +92,7 @@ const useSpeechToTextBrowser = (
     };
   }, [setText, onTranscriptionComplete, resetTranscript, finalTranscript, autoSendText]);
 
-  const toggleListening = () => {
+  const toggleListening = useCallback(() => {
     if (!browserSupportsSpeechRecognition) {
       showToast({
         message: sttExternal
@@ -92,6 +111,16 @@ const useSpeechToTextBrowser = (
       return;
     }
 
+    if (!hasSpeechRecognitionController(SpeechRecognition)) {
+      showToast({
+        message: sttExternal
+          ? localize('com_ui_speech_not_supported_use_external')
+          : localize('com_ui_speech_not_supported'),
+        status: 'error',
+      });
+      return;
+    }
+
     if (isListening === true) {
       SpeechRecognition.stopListening();
     } else {
@@ -100,7 +129,16 @@ const useSpeechToTextBrowser = (
         continuous: autoTranscribeAudio,
       });
     }
-  };
+  }, [
+    autoTranscribeAudio,
+    browserSupportsSpeechRecognition,
+    isListening,
+    isMicrophoneAvailable,
+    languageSTT,
+    localize,
+    showToast,
+    sttExternal,
+  ]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -111,7 +149,7 @@ const useSpeechToTextBrowser = (
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [isBrowserSTTEnabled, toggleListening]);
 
   return {
     isListening,

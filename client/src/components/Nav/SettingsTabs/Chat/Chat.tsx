@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import { showThinkingAtom } from '~/store/showThinking';
+import AdvancedPrompts from './AdvancedPrompts';
 import FontSizeSelector from './FontSizeSelector';
 import { ForkSettings } from './ForkSettings';
 import ChatDirection from './ChatDirection';
@@ -7,6 +8,20 @@ import ToggleSwitch from '../ToggleSwitch';
 import store from '~/store';
 
 const toggleSwitchConfigs = [
+  {
+    stateAtom: store.alwaysMakeProd,
+    localizationKey: 'com_nav_always_make_prod' as const,
+    switchId: 'alwaysMakeProd',
+    hoverCardText: undefined,
+    key: 'alwaysMakeProd',
+  },
+  {
+    stateAtom: store.autoSendPrompts,
+    localizationKey: 'com_nav_auto_send_prompts' as const,
+    switchId: 'autoSendPrompts',
+    hoverCardText: 'com_nav_auto_send_prompts_desc' as const,
+    key: 'autoSendPrompts',
+  },
   {
     stateAtom: store.enterToSend,
     localizationKey: 'com_nav_enter_to_send' as const,
@@ -36,11 +51,11 @@ const toggleSwitchConfigs = [
     key: 'showThinking',
   },
   {
-    stateAtom: store.showCode,
-    localizationKey: 'com_nav_show_code' as const,
-    switchId: 'showCode',
+    stateAtom: store.autoExpandTools,
+    localizationKey: 'com_nav_auto_expand_tools' as const,
+    switchId: 'autoExpandTools',
     hoverCardText: undefined,
-    key: 'showCode',
+    key: 'autoExpandTools',
   },
   {
     stateAtom: store.LaTeXParsing,
@@ -105,6 +120,9 @@ function Chat() {
           />
         </div>
       ))}
+      <div className="pb-3">
+        <AdvancedPrompts />
+      </div>
       <ForkSettings />
     </div>
   );

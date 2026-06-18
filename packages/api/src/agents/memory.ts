@@ -1,25 +1,27 @@
 /** Memories */
 import { z } from 'zod';
-import { tool } from '@langchain/core/tools';
 import { Tools } from 'librechat-data-provider';
 import { logger } from '@librechat/data-schemas';
-import { HumanMessage } from '@langchain/core/messages';
+import { tool } from '@librechat/agents/langchain/tools';
 import { Run, Providers, GraphEvents } from '@librechat/agents';
+import { HumanMessage } from '@librechat/agents/langchain/messages';
 import type {
   OpenAIClientOptions,
   StreamEventData,
   ToolEndCallback,
-  ClientOptions,
   EventHandler,
   ToolEndData,
   LLMConfig,
 } from '@librechat/agents';
+import type { BaseMessage, ToolMessage } from '@librechat/agents/langchain/messages';
+import type { DynamicStructuredTool } from '@librechat/agents/langchain/tools';
 import type { ObjectId, MemoryMethods, IUser } from '@librechat/data-schemas';
 import type { TAttachment, MemoryArtifact } from 'librechat-data-provider';
-import type { BaseMessage, ToolMessage } from '@langchain/core/messages';
 import type { Response as ServerResponse } from 'express';
+import type { RunLLMConfig } from '~/types';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
-import { Tokenizer, resolveHeaders, createSafeUser } from '~/utils';
+import { resolveConfigHeaders, createSafeUser } from '~/utils';
+import Tokenizer from '~/utils/tokenizer';
 
 type RequiredMemoryMethods = Pick<
   MemoryMethods,
@@ -31,11 +33,21 @@ type ToolEndMetadata = Record<string, unknown> & {
   thread_id?: string;
 };
 
+type SanitizedMemoryLLMConfig = Omit<Partial<LLMConfig>, 'apiKey'> & { apiKey?: string };
+
 export interface MemoryConfig {
   validKeys?: string[];
   instructions?: string;
   llmConfig?: Partial<LLMConfig>;
   tokenLimit?: number;
+}
+
+function normalizeMemoryLLMConfig(llmConfig?: Partial<LLMConfig>): SanitizedMemoryLLMConfig {
+  const config = { ...(llmConfig ?? {}) } as Record<string, unknown>;
+  if (typeof config.apiKey !== 'string') {
+    delete config.apiKey;
+  }
+  return config as SanitizedMemoryLLMConfig;
 }
 
 export const memoryInstructions =
@@ -87,7 +99,7 @@ export const createMemoryTool = ({
   validKeys?: string[];
   tokenLimit?: number;
   totalTokens?: number;
-}) => {
+}): DynamicStructuredTool => {
   const remainingTokens = tokenLimit ? tokenLimit - totalTokens : Infinity;
   const isOverflowing = tokenLimit ? remainingTokens <= 0 : false;
 
@@ -341,15 +353,16 @@ ${memory ?? 'No existing memories'}`;
       disableStreaming: true,
     };
 
-    const finalLLMConfig: ClientOptions = {
+    const finalLLMConfig = {
       ...defaultLLMConfig,
-      ...llmConfig,
+      ...normalizeMemoryLLMConfig(llmConfig),
+      maxRetries: 0,
       /**
        * Ensure streaming is always disabled for memory processing
        */
       streaming: false,
       disableStreaming: true,
-    };
+    } as LLMConfig;
 
     // Handle GPT-5+ models
     if ('model' in finalLLMConfig && /\bgpt-[5-9](?:\.\d+)?\b/i.test(finalLLMConfig.model ?? '')) {
@@ -393,13 +406,17 @@ ${memory ?? 'No existing memories'}`;
       delete (finalLLMConfig as Record<string, unknown>).temperature;
     }
 
-    const llmConfigWithHeaders = finalLLMConfig as OpenAIClientOptions;
-    if (llmConfigWithHeaders?.configuration?.defaultHeaders != null) {
-      llmConfigWithHeaders.configuration.defaultHeaders = resolveHeaders({
-        headers: llmConfigWithHeaders.configuration.defaultHeaders as Record<string, string>,
-        user: user ? createSafeUser(user) : undefined,
-      });
-    }
+    /**
+     * Resolve request-based headers across provider-specific carriers (OpenAI
+     * `configuration.defaultHeaders`, native Anthropic `clientOptions.defaultHeaders`)
+     * so gateway-fronted built-in providers receive resolved metadata/auth headers
+     * on memory extraction too. Native Google headers are resolved at init.
+     */
+    resolveConfigHeaders({
+      llmConfig: finalLLMConfig as unknown as RunLLMConfig,
+      user: user ? createSafeUser(user) : undefined,
+      body: { conversationId, messageId },
+    });
 
     const artifactPromises: Promise<TAttachment | null>[] = [];
     const memoryCallback = createMemoryCallback({ res, artifactPromises, streamId });
@@ -475,13 +492,21 @@ ${memory ?? 'No existing memories'}`;
     };
     const content = await run.processStream(inputs, config);
     if (content) {
-      logger.debug('Memory Agent processed memory successfully', content);
+      logger.debug('[MemoryAgent] Processed successfully', {
+        userId,
+        conversationId,
+        messageId,
+        provider: llmConfig?.provider,
+      });
     } else {
-      logger.warn('Memory Agent processed memory but returned no content');
+      logger.debug('[MemoryAgent] Returned no content', { userId, conversationId, messageId });
     }
     return await Promise.all(artifactPromises);
   } catch (error) {
-    logger.error('Memory Agent failed to process memory', error);
+    logger.error(
+      `[MemoryAgent] Failed to process memory | userId: ${userId} | conversationId: ${conversationId} | messageId: ${messageId}`,
+      { error },
+    );
   }
 }
 

@@ -10,7 +10,6 @@ const {
   ToolCacheKeys,
   getCachedTools,
   setCachedTools,
-  getMCPServerTools,
   invalidateCachedTools,
 } = require('../getCachedTools');
 
@@ -68,17 +67,10 @@ describe('getCachedTools', () => {
       expect(mockCache.delete).toHaveBeenCalledWith(ToolCacheKeys.GLOBAL);
     });
 
-    it('getMCPServerTools should use TOOL_CACHE namespace', async () => {
-      mockCache.get.mockResolvedValue(null);
-      await getMCPServerTools('user1', 'github');
-      expect(getLogStores).toHaveBeenCalledWith(CacheKeys.TOOL_CACHE);
-      expect(mockCache.get).toHaveBeenCalledWith(ToolCacheKeys.MCP_SERVER('user1', 'github'));
-    });
-
     it('should NOT use CONFIG_STORE namespace', async () => {
       mockCache.get.mockResolvedValue(null);
       await getCachedTools();
-      await getMCPServerTools('user1', 'github');
+      await getCachedTools({ userId: 'user1', serverName: 'github' });
       mockCache.set.mockResolvedValue(true);
       await setCachedTools({ tool1: {} });
       mockCache.delete.mockResolvedValue(true);

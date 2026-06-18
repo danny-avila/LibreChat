@@ -1,23 +1,21 @@
-import { useCallback, useRef } from 'react';
+import { memo, useCallback, useRef } from 'react';
 import { MicOff } from 'lucide-react';
 import { useToastContext, TooltipAnchor, ListeningIcon, Spinner } from '@librechat/client';
 import { useLocalize, useSpeechToText, useGetAudioSettings } from '~/hooks';
+import { globalAudioId, type TAskFunction } from '~/common';
 import { useChatFormContext } from '~/Providers';
-import { globalAudioId } from '~/common';
 import { cn } from '~/utils';
 
 const isExternalSTT = (speechToTextEndpoint: string) => speechToTextEndpoint === 'external';
-export default function AudioRecorder({
+export default memo(function AudioRecorder({
   disabled,
   ask,
   methods,
-  textAreaRef,
   isSubmitting,
 }: {
   disabled: boolean;
-  ask: (data: { text: string }) => void;
+  ask: TAskFunction;
   methods: ReturnType<typeof useChatFormContext>;
-  textAreaRef: React.RefObject<HTMLTextAreaElement>;
   isSubmitting: boolean;
 }) {
   const { setValue, reset, getValues } = methods;
@@ -26,10 +24,12 @@ export default function AudioRecorder({
   const { speechToTextEndpoint } = useGetAudioSettings();
 
   const existingTextRef = useRef<string>('');
+  const isSubmittingRef = useRef(isSubmitting);
+  isSubmittingRef.current = isSubmitting;
 
   const onTranscriptionComplete = useCallback(
     (text: string) => {
-      if (isSubmitting) {
+      if (isSubmittingRef.current) {
         showToast({
           message: localize('com_ui_speech_while_submitting'),
           status: 'error',
@@ -47,12 +47,15 @@ export default function AudioRecorder({
           isExternalSTT(speechToTextEndpoint) && existingTextRef.current
             ? `${existingTextRef.current} ${text}`
             : text;
-        ask({ text: finalText });
+        const submitted = ask({ text: finalText });
+        if (submitted === false) {
+          return;
+        }
         reset({ text: '' });
         existingTextRef.current = '';
       }
     },
-    [ask, reset, showToast, localize, isSubmitting, speechToTextEndpoint],
+    [ask, reset, showToast, localize, speechToTextEndpoint],
   );
 
   const setText = useCallback(
@@ -76,10 +79,6 @@ export default function AudioRecorder({
     setText,
     onTranscriptionComplete,
   );
-
-  if (!textAreaRef.current) {
-    return null;
-  }
 
   const handleStartRecording = async () => {
     existingTextRef.current = getValues('text') || '';
@@ -125,4 +124,4 @@ export default function AudioRecorder({
       }
     />
   );
-}
+});

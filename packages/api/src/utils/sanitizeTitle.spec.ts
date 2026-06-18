@@ -1,4 +1,4 @@
-import { sanitizeTitle } from './sanitizeTitle';
+import { sanitizeTitle, MAX_TITLE_LENGTH, DEFAULT_TITLE_FALLBACK } from './sanitizeTitle';
 
 describe('sanitizeTitle', () => {
   describe('Happy Path', () => {
@@ -123,21 +123,21 @@ describe('sanitizeTitle', () => {
 
   describe('Empty and Fallback Cases', () => {
     it('should return fallback for empty string', () => {
-      expect(sanitizeTitle('')).toBe('Untitled Conversation');
+      expect(sanitizeTitle('')).toBe(DEFAULT_TITLE_FALLBACK);
     });
 
     it('should return fallback when only whitespace remains', () => {
       const input = '<think>thinking</think>     \n\t\r\n    ';
-      expect(sanitizeTitle(input)).toBe('Untitled Conversation');
+      expect(sanitizeTitle(input)).toBe(DEFAULT_TITLE_FALLBACK);
     });
 
     it('should return fallback when only think blocks exist', () => {
       const input = '<think>just thinking</think><think>more thinking</think>';
-      expect(sanitizeTitle(input)).toBe('Untitled Conversation');
+      expect(sanitizeTitle(input)).toBe(DEFAULT_TITLE_FALLBACK);
     });
 
     it('should return fallback for non-string whitespace', () => {
-      expect(sanitizeTitle('   ')).toBe('Untitled Conversation');
+      expect(sanitizeTitle('   ')).toBe(DEFAULT_TITLE_FALLBACK);
     });
   });
 
@@ -174,6 +174,53 @@ describe('sanitizeTitle', () => {
     });
   });
 
+  describe('Max Length Truncation', () => {
+    const ellipsis = '...';
+    const maxContent = MAX_TITLE_LENGTH - ellipsis.length;
+
+    it('should pass through a title exactly at max length unchanged', () => {
+      const input = 'A'.repeat(MAX_TITLE_LENGTH);
+      expect(sanitizeTitle(input)).toBe(input);
+    });
+
+    it('should truncate a title over max length with ellipsis', () => {
+      const input = 'A'.repeat(MAX_TITLE_LENGTH + 50);
+      const result = sanitizeTitle(input);
+      expect(result).toBe('A'.repeat(maxContent) + ellipsis);
+      expect(result.length).toBeLessThanOrEqual(MAX_TITLE_LENGTH);
+    });
+
+    it('should truncate after think-block removal', () => {
+      const input = '<think>reasoning</think> ' + 'B'.repeat(MAX_TITLE_LENGTH + 50);
+      const result = sanitizeTitle(input);
+      expect(result).toBe('B'.repeat(maxContent) + ellipsis);
+      expect(result.length).toBeLessThanOrEqual(MAX_TITLE_LENGTH);
+    });
+
+    it('should trimEnd before appending ellipsis when slice ends with whitespace', () => {
+      const input = 'A'.repeat(maxContent - 1) + ' B' + 'C'.repeat(MAX_TITLE_LENGTH);
+      const result = sanitizeTitle(input);
+      expect(result).toBe('A'.repeat(maxContent - 1) + ellipsis);
+      expect(result).not.toMatch(/ \.\.\./);
+    });
+
+    it('should not produce lone surrogates when truncating emoji titles', () => {
+      const input = 'A'.repeat(MAX_TITLE_LENGTH - 2) + '\u{1F389}rest';
+      const result = sanitizeTitle(input);
+      expect(result.isWellFormed()).toBe(true);
+      expect([...result].length).toBeLessThanOrEqual(MAX_TITLE_LENGTH);
+    });
+
+    it('should handle a title composed entirely of emoji', () => {
+      const emoji = '\u{1F680}';
+      const input = emoji.repeat(MAX_TITLE_LENGTH + 10);
+      const result = sanitizeTitle(input);
+      expect(result.isWellFormed()).toBe(true);
+      expect(result.endsWith(ellipsis)).toBe(true);
+      expect([...result].length).toBeLessThanOrEqual(MAX_TITLE_LENGTH);
+    });
+  });
+
   describe('Idempotency', () => {
     it('should be idempotent', () => {
       const input = '<think>reasoning</think> My Title';
@@ -188,7 +235,7 @@ describe('sanitizeTitle', () => {
       const once = sanitizeTitle(input);
       const twice = sanitizeTitle(once);
       expect(once).toBe(twice);
-      expect(once).toBe('Untitled Conversation');
+      expect(once).toBe(DEFAULT_TITLE_FALLBACK);
     });
   });
 

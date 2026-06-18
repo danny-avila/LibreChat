@@ -1,9 +1,10 @@
 import { z } from 'zod';
 import { Dispatcher } from 'undici';
 import { AuthKeys, anthropicSchema, TVertexAISchema } from 'librechat-data-provider';
+import type { ThinkingDisplayWireValue } from 'librechat-data-provider';
 import type { AnthropicClientOptions } from '@librechat/agents';
-import type { LLMConfigResult } from './openai';
 import type { GoogleServiceKey } from '../utils/key';
+import type { LLMConfigResult } from './openai';
 
 export type AnthropicParameters = z.infer<typeof anthropicSchema>;
 
@@ -46,6 +47,7 @@ export interface ThinkingConfigEnabled {
 
 export interface ThinkingConfigAdaptive {
   type: 'adaptive';
+  display?: ThinkingDisplayWireValue;
 }
 
 /**
@@ -84,6 +86,11 @@ export interface AnthropicConfigOptions {
   addParams?: Record<string, unknown>;
   /** Parameters to drop/exclude from the configuration */
   dropParams?: string[];
+  /**
+   * Admin-configured custom request headers (with unresolved placeholders).
+   * Merged beneath provider-managed headers and resolved at request time.
+   */
+  headers?: Record<string, string>;
   /** Vertex AI specific options for Google Cloud configuration */
   vertexOptions?: VertexAIClientOptions;
   /** Full Vertex AI configuration including model mappings from YAML config */

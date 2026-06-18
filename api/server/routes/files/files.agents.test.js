@@ -2,20 +2,19 @@ const express = require('express');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
-const { createMethods } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+const { createMethods, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   SystemRoles,
   AccessRoleIds,
   ResourceType,
   PrincipalType,
 } = require('librechat-data-provider');
-const { createAgent } = require('~/models/Agent');
-const { createFile } = require('~/models');
+const { createAgent, createFile } = require('~/models');
 
 // Only mock the external dependencies that we don't want to test
 jest.mock('~/server/services/Files/process', () => ({
-  processDeleteRequest: jest.fn().mockResolvedValue({}),
+  processDeleteRequest: jest.fn().mockResolvedValue({ deletedFileIds: [], failedFileIds: [] }),
   filterFile: jest.fn(),
   processFileUpload: jest.fn(),
   processAgentFileUpload: jest.fn().mockImplementation(async ({ res }) => {
@@ -39,7 +38,16 @@ jest.mock('~/server/services/Tools/credentials', () => ({
   loadAuthValues: jest.fn(),
 }));
 
-jest.mock('~/server/services/Files/S3/crud', () => ({
+jest.mock('sharp', () =>
+  jest.fn(() => ({
+    metadata: jest.fn().mockResolvedValue({}),
+    toFormat: jest.fn().mockReturnThis(),
+    toBuffer: jest.fn().mockResolvedValue(Buffer.alloc(0)),
+  })),
+);
+
+jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
   refreshS3FileUrls: jest.fn(),
 }));
 
@@ -83,6 +91,7 @@ describe('File Routes - Agent Files Endpoint', () => {
   let AclEntry;
   // eslint-disable-next-line no-unused-vars
   let AccessRole;
+  let SystemGrant;
   let modelsToCleanup = [];
 
   beforeAll(async () => {
@@ -109,6 +118,7 @@ describe('File Routes - Agent Files Endpoint', () => {
     AclEntry = models.AclEntry;
     User = models.User;
     AccessRole = models.AccessRole;
+    SystemGrant = models.SystemGrant;
 
     // Seed default roles using our methods
     await methods.seedDefaultRoles();
@@ -323,7 +333,7 @@ describe('File Routes - Agent Files Endpoint', () => {
       expect(response.body).toHaveLength(2);
     });
 
-    it('should return files uploaded by other users to shared agent for author', async () => {
+    it('should not return files owned by other users through agent file references', async () => {
       const anotherUserId = new mongoose.Types.ObjectId();
       const otherUserFileId = uuidv4();
 
@@ -370,9 +380,9 @@ describe('File Routes - Agent Files Endpoint', () => {
 
       expect(response.status).toBe(200);
       expect(Array.isArray(response.body)).toBe(true);
-      expect(response.body).toHaveLength(2);
+      expect(response.body).toHaveLength(1);
       expect(response.body.map((f) => f.file_id)).toContain(fileId1);
-      expect(response.body.map((f) => f.file_id)).toContain(otherUserFileId);
+      expect(response.body.map((f) => f.file_id)).not.toContain(otherUserFileId);
     });
   });
 
@@ -533,7 +543,7 @@ describe('File Routes - Agent Files Endpoint', () => {
       expect(processAgentFileUpload).not.toHaveBeenCalled();
     });
 
-    it('should allow file upload for admin user regardless of agent ownership', async () => {
+    it('should allow file upload for user with MANAGE_AGENTS capability regardless of agent ownership', async () => {
       // Create an agent owned by authorId
       await createAgent({
         id: agentCustomId,
@@ -541,6 +551,14 @@ describe('File Routes - Agent Files Endpoint', () => {
         provider: 'openai',
         model: 'gpt-4',
         author: authorId,
+      });
+
+      // Seed MANAGE_AGENTS capability for the ADMIN role
+      await SystemGrant.create({
+        principalType: PrincipalType.ROLE,
+        principalId: SystemRoles.ADMIN,
+        capability: SystemCapabilities.MANAGE_AGENTS,
+        grantedAt: new Date(),
       });
 
       // Create app with admin user (otherUserId as admin)

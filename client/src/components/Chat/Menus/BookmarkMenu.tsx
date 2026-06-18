@@ -14,7 +14,7 @@ import { BookmarkContext } from '~/Providers/BookmarkContext';
 import { BookmarkEditDialog } from '~/components/Bookmarks';
 import { useBookmarkSuccess, useLocalize } from '~/hooks';
 import { NotificationSeverity } from '~/common';
-import { cn, logger } from '~/utils';
+import { cn, isTemporaryConversation, logger } from '~/utils';
 import store from '~/store';
 
 const BookmarkMenu: FC = () => {
@@ -26,8 +26,7 @@ const BookmarkMenu: FC = () => {
   const conversationId = conversation?.conversationId ?? '';
   const updateConvoTags = useBookmarkSuccess(conversationId);
   const tags = conversation?.tags;
-  const isTemporary = conversation?.expiredAt != null;
-
+  const isTemporary = isTemporaryConversation(conversation);
   const menuId = useId();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -157,9 +156,9 @@ const BookmarkMenu: FC = () => {
       return <Spinner aria-label="Spinner" />;
     }
     if (hasBookmarks) {
-      return <BookmarkFilledIcon className="icon-lg" aria-hidden="true" />;
+      return <BookmarkFilledIcon className="icon-md" aria-hidden="true" />;
     }
-    return <BookmarkIcon className="icon-lg" aria-hidden="true" />;
+    return <BookmarkIcon className="icon-md" aria-hidden="true" />;
   };
 
   return (
@@ -181,7 +180,7 @@ const BookmarkMenu: FC = () => {
                 aria-label={buttonAriaLabel}
                 aria-pressed={hasBookmarks}
                 className={cn(
-                  'mt-text-sm flex size-10 flex-shrink-0 items-center justify-center gap-2 rounded-xl border border-border-light bg-presentation text-sm transition-colors duration-200 hover:bg-surface-hover',
+                  'mt-text-sm flex size-9 flex-shrink-0 items-center justify-center gap-2 rounded-xl border border-border-light bg-presentation text-sm transition-colors duration-200 hover:bg-surface-hover',
                   isMenuOpen ? 'bg-surface-hover' : '',
                 )}
                 data-testid="bookmark-menu"

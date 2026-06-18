@@ -29,7 +29,12 @@ router.post('/', async (req, res) => {
     });
 
     const { processAvatar } = getStrategyFunctions(fileStrategy);
-    const url = await processAvatar({ buffer: resizedBuffer, userId, manual });
+    const url = await processAvatar({
+      buffer: resizedBuffer,
+      userId,
+      manual,
+      tenantId: req.user.tenantId,
+    });
 
     res.json({ url });
   } catch (error) {

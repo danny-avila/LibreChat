@@ -1,9 +1,9 @@
-import roleSchema from '~/schema/role';
+import { Model } from 'mongoose';
 import type { IRole } from '~/types';
+import { applyTenantIsolation } from '~/models/plugins/tenantIsolation';
+import roleSchema from '~/schema/role';
 
-/**
- * Creates or returns the Role model using the provided mongoose instance and schema
- */
-export function createRoleModel(mongoose: typeof import('mongoose')) {
+export function createRoleModel(mongoose: typeof import('mongoose')): Model<IRole> {
+  applyTenantIsolation(roleSchema);
   return mongoose.models.Role || mongoose.model<IRole>('Role', roleSchema);
 }

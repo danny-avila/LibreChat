@@ -1,11 +1,51 @@
 const cookies = require('cookie');
 const jwksRsa = require('jwks-rsa');
 const { logger } = require('@librechat/data-schemas');
-const { HttpsProxyAgent } = require('https-proxy-agent');
 const { SystemRoles } = require('librechat-data-provider');
-const { isEnabled, findOpenIDUser, math } = require('@librechat/api');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
+const {
+  isEnabled,
+  findOpenIDUser,
+  getOpenIdEmail,
+  getOpenIdIssuer,
+  normalizeOpenIdIssuer,
+  getHttpsProxyAgent,
+  math,
+} = require('@librechat/api');
 const { updateUser, findUser } = require('~/models');
+
+const getOpenIdJwtAudience = () => {
+  const parsedAudience = (process.env.OPENID_AUDIENCE ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const audiences = [process.env.OPENID_CLIENT_ID, ...parsedAudience].filter(Boolean);
+  const uniqueAudiences = [...new Set(audiences)];
+
+  return uniqueAudiences.length > 1 ? uniqueAudiences : uniqueAudiences[0];
+};
+
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const issuerMatchesTemplate = (expectedIssuer, actualIssuer) => {
+  if (!expectedIssuer.includes('{tenantid}')) {
+    return false;
+  }
+
+  const escapedTemplate = expectedIssuer.split('{tenantid}').map(escapeRegExp).join('[^/]+');
+  return new RegExp(`^${escapedTemplate}$`).test(actualIssuer);
+};
+
+const isOpenIdIssuerAllowed = (payload, openIdConfig) => {
+  const actualIssuer = normalizeOpenIdIssuer(payload?.iss);
+  const expectedIssuer = normalizeOpenIdIssuer(openIdConfig.serverMetadata().issuer);
+
+  if (!actualIssuer || !expectedIssuer) {
+    return false;
+  }
+
+  return actualIssuer === expectedIssuer || issuerMatchesTemplate(expectedIssuer, actualIssuer);
+};
 
 /**
  * @function openIdJwtLogin
@@ -26,19 +66,23 @@ const { updateUser, findUser } = require('~/models');
  */
 const openIdJwtLogin = (openIdConfig) => {
   let jwksRsaOptions = {
-    cache: isEnabled(process.env.OPENID_JWKS_URL_CACHE_ENABLED) || true,
+    cache: process.env.OPENID_JWKS_URL_CACHE_ENABLED
+      ? isEnabled(process.env.OPENID_JWKS_URL_CACHE_ENABLED)
+      : true,
     cacheMaxAge: math(process.env.OPENID_JWKS_URL_CACHE_TIME, 60000),
     jwksUri: openIdConfig.serverMetadata().jwks_uri,
   };
 
-  if (process.env.PROXY) {
-    jwksRsaOptions.requestAgent = new HttpsProxyAgent(process.env.PROXY);
+  const requestAgent = getHttpsProxyAgent(jwksRsaOptions.jwksUri);
+  if (requestAgent) {
+    jwksRsaOptions.requestAgent = requestAgent;
   }
 
   return new JwtStrategy(
     {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       secretOrKeyProvider: jwksRsa.passportJwtSecret(jwksRsaOptions),
+      audience: getOpenIdJwtAudience(),
       passReqToCallback: true,
     },
     /**
@@ -48,13 +92,20 @@ const openIdJwtLogin = (openIdConfig) => {
      */
     async (req, payload, done) => {
       try {
+        if (!isOpenIdIssuerAllowed(payload, openIdConfig)) {
+          done(null, false, { message: 'Invalid issuer' });
+          return;
+        }
+
         const authHeader = req.headers.authorization;
         const rawToken = authHeader?.replace('Bearer ', '');
+        const openidIssuer = getOpenIdIssuer(payload, openIdConfig);
 
         const { user, error, migration } = await findOpenIDUser({
           findUser,
-          email: payload?.email,
+          email: payload ? getOpenIdEmail(payload) : undefined,
           openidId: payload?.sub,
+          openidIssuer,
           idOnTheSource: payload?.oid,
           strategyName: 'openIdJwtLogin',
         });
@@ -71,6 +122,9 @@ const openIdJwtLogin = (openIdConfig) => {
           if (migration) {
             updateData.provider = 'openid';
             updateData.openidId = payload?.sub;
+            if (openidIssuer) {
+              updateData.openidIssuer = openidIssuer;
+            }
           }
           if (!user.role) {
             user.role = SystemRoles.USER;

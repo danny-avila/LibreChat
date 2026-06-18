@@ -1,12 +1,13 @@
-import { useState, useRef, useEffect } from 'react';
-import { useCombobox } from '@librechat/client';
+import { memo, useState, useRef, useEffect } from 'react';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { AutoSizer, List } from 'react-virtualized';
+import { Spinner, useCombobox } from '@librechat/client';
 import { EModelEndpoint } from 'librechat-data-provider';
-import type { TConversation } from 'librechat-data-provider';
+import type { RecoilState } from 'recoil';
 import type { MentionOption, ConvoGenerator } from '~/common';
-import type { SetterOrUpdater } from 'recoil';
+import { useGetConversation, useLocalize, TranslationKeys } from '~/hooks';
+import useInitPopoverInput from '~/hooks/Input/useInitPopoverInput';
 import useSelectMention from '~/hooks/Input/useSelectMention';
-import { useLocalize, TranslationKeys } from '~/hooks';
 import { useAssistantsMapContext } from '~/Providers';
 import useMentions from '~/hooks/Input/useMentions';
 import { removeCharIfLast } from '~/utils';
@@ -14,28 +15,32 @@ import MentionItem from './MentionItem';
 
 const ROW_HEIGHT = 44;
 
-export default function Mention({
-  conversation,
-  setShowMentionPopover,
-  newConversation,
-  textAreaRef,
-  commandChar = '@',
-  placeholder = 'com_ui_mention',
-  includeAssistants = true,
-}: {
-  conversation: TConversation | null;
-  setShowMentionPopover: SetterOrUpdater<boolean>;
+type MentionProps = {
+  index: number;
+  popoverAtom: RecoilState<boolean>;
   newConversation: ConvoGenerator;
   textAreaRef: React.MutableRefObject<HTMLTextAreaElement | null>;
   commandChar?: string;
   placeholder?: TranslationKeys;
   includeAssistants?: boolean;
-}) {
+};
+
+function MentionContent({
+  popoverAtom,
+  newConversation,
+  textAreaRef,
+  commandChar = '@',
+  placeholder = 'com_ui_mention',
+  includeAssistants = true,
+}: Omit<MentionProps, 'index'>) {
   const localize = useLocalize();
+  const getConversation = useGetConversation(0);
   const assistantsMap = useAssistantsMapContext();
+  const setShowPopover = useSetRecoilState(popoverAtom);
   const {
     options,
     presets,
+    isLoading,
     modelSpecs,
     agentsList,
     modelsConfig,
@@ -45,9 +50,9 @@ export default function Mention({
   const { onSelectMention } = useSelectMention({
     presets,
     modelSpecs,
-    conversation,
     assistantsMap,
     endpointsConfig,
+    getConversation,
     newConversation,
   });
 
@@ -61,6 +66,14 @@ export default function Mention({
     options: inputOptions,
   });
 
+  const initInputRef = useInitPopoverInput({
+    inputRef,
+    textAreaRef,
+    commandChar,
+    setSearchValue,
+    setOpen,
+  });
+
   const handleSelect = (mention?: MentionOption) => {
     if (!mention) {
       return;
@@ -69,7 +82,7 @@ export default function Mention({
     const defaultSelect = () => {
       setSearchValue('');
       setOpen(false);
-      setShowMentionPopover(false);
+      setShowPopover(false);
       onSelectMention?.(mention);
 
       if (textAreaRef.current) {
@@ -166,10 +179,7 @@ export default function Mention({
     <div className="absolute bottom-28 z-10 w-full space-y-2">
       <div className="popover border-token-border-light rounded-2xl border bg-white p-2 shadow-lg dark:bg-gray-700">
         <input
-          // The user expects focus to transition to the input field when the popover is opened
-          // eslint-disable-next-line jsx-a11y/no-autofocus
-          autoFocus
-          ref={inputRef}
+          ref={initInputRef}
           placeholder={localize(placeholder)}
           className="mb-1 w-full border-0 bg-white p-2 text-sm focus:outline-none dark:bg-gray-700 dark:text-gray-200"
           autoComplete="off"
@@ -177,7 +187,7 @@ export default function Mention({
           onKeyDown={(e) => {
             if (e.key === 'Escape') {
               setOpen(false);
-              setShowMentionPopover(false);
+              setShowPopover(false);
               textAreaRef.current?.focus();
             }
             if (e.key === 'ArrowDown') {
@@ -194,7 +204,7 @@ export default function Mention({
               handleSelect(matches[activeIndex] as MentionOption);
             } else if (e.key === 'Backspace' && searchValue === '') {
               setOpen(false);
-              setShowMentionPopover(false);
+              setShowPopover(false);
               textAreaRef.current?.focus();
             }
           }}
@@ -203,11 +213,16 @@ export default function Mention({
           onBlur={() => {
             timeoutRef.current = setTimeout(() => {
               setOpen(false);
-              setShowMentionPopover(false);
+              setShowPopover(false);
             }, 150);
           }}
         />
-        {open && (
+        {open && isLoading && matches.length === 0 && (
+          <div className="flex h-32 items-center justify-center text-text-primary">
+            <Spinner />
+          </div>
+        )}
+        {open && matches.length > 0 && (
           <div className="max-h-40">
             <AutoSizer disableHeight>
               {({ width }) => (
@@ -228,3 +243,17 @@ export default function Mention({
     </div>
   );
 }
+
+const MentionPopoverContainer = memo(function MentionPopoverContainer({
+  index: _index,
+  popoverAtom,
+  ...rest
+}: MentionProps) {
+  const show = useRecoilValue(popoverAtom);
+  if (!show) {
+    return null;
+  }
+  return <MentionContent popoverAtom={popoverAtom} {...rest} />;
+});
+
+export default MentionPopoverContainer;

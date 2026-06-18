@@ -1,12 +1,11 @@
 import { Schema } from 'mongoose';
 import type { MCPServerDocument } from '~/types';
 
-const mcpServerSchema = new Schema<MCPServerDocument>(
+const mcpServerSchema: Schema<MCPServerDocument> = new Schema<MCPServerDocument>(
   {
     serverName: {
       type: String,
       index: true,
-      unique: true,
       required: true,
     },
     config: {
@@ -20,12 +19,17 @@ const mcpServerSchema = new Schema<MCPServerDocument>(
       required: true,
       index: true,
     },
+    tenantId: {
+      type: String,
+      index: true,
+    },
   },
   {
     timestamps: true,
   },
 );
 
+mcpServerSchema.index({ serverName: 1, tenantId: 1 }, { unique: true });
 mcpServerSchema.index({ updatedAt: -1, _id: 1 });
 
 export default mcpServerSchema;

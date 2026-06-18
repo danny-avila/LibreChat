@@ -1,15 +1,14 @@
 const fs = require('fs').promises;
 const { logger } = require('@librechat/data-schemas');
 const { FileContext } = require('librechat-data-provider');
+const { deleteFileByFilter, updateAssistantDoc, getAssistants } = require('~/models');
 const { uploadImageBuffer, filterFile } = require('~/server/services/Files/process');
 const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { deleteAssistantActions } = require('~/server/services/ActionService');
-const { updateAssistantDoc, getAssistants } = require('~/models/Assistant');
 const { getOpenAIClient, fetchAssistants } = require('./helpers');
 const { getCachedTools } = require('~/server/services/Config');
 const { manifestToolMap } = require('~/app/clients/tools');
-const { deleteFileByFilter } = require('~/models');
 
 /**
  * Create an assistant.
@@ -329,7 +328,11 @@ const uploadAssistantAvatar = async (req, res) => {
     if (_metadata.avatar && _metadata.avatar_source) {
       const { deleteFile } = getStrategyFunctions(_metadata.avatar_source);
       try {
-        await deleteFile(req, { filepath: _metadata.avatar });
+        await deleteFile(req, {
+          filepath: _metadata.avatar,
+          user: req.user.id,
+          tenantId: req.user.tenantId,
+        });
         await deleteFileByFilter({ user: req.user.id, filepath: _metadata.avatar });
       } catch (error) {
         logger.error('[/:assistant_id/avatar] Error deleting old avatar', error);

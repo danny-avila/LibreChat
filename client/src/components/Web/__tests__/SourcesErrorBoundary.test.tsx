@@ -1,3 +1,6 @@
+/**
+ * @jest-environment @happy-dom/jest-environment
+ */
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
@@ -10,15 +13,6 @@ const ThrowError = ({ shouldThrow }: { shouldThrow: boolean }) => {
   }
   return <div data-testid="normal-component">{'Normal component'}</div>;
 };
-
-// Mock window.location.reload
-const mockReload = jest.fn();
-Object.defineProperty(window, 'location', {
-  value: {
-    reload: mockReload,
-  },
-  writable: true,
-});
 
 describe('SourcesErrorBoundary - NEW COMPONENT test', () => {
   beforeEach(() => {
@@ -53,6 +47,8 @@ describe('SourcesErrorBoundary - NEW COMPONENT test', () => {
   });
 
   it('should reload page when refresh button is clicked', () => {
+    const reloadSpy = jest.spyOn(window.location, 'reload').mockImplementation(() => {});
+
     render(
       <SourcesErrorBoundary>
         <ThrowError shouldThrow={true} />
@@ -62,6 +58,6 @@ describe('SourcesErrorBoundary - NEW COMPONENT test', () => {
     const refreshButton = screen.getByRole('button', { name: 'Reload the page' });
     fireEvent.click(refreshButton);
 
-    expect(mockReload).toHaveBeenCalled();
+    expect(reloadSpy).toHaveBeenCalled();
   });
 });

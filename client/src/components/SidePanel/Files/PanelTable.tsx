@@ -24,14 +24,14 @@ import {
   type ColumnFiltersState,
 } from '@tanstack/react-table';
 import {
-  fileConfig as defaultFileConfig,
-  checkOpenAIStorage,
-  mergeFileConfig,
   megabyte,
+  mergeFileConfig,
+  checkOpenAIStorage,
   isAssistantsEndpoint,
   getEndpointFileConfig,
-  type TFile,
+  fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
+import type { TFile } from 'librechat-data-provider';
 import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
 import { useFileMapContext, useChatContext } from '~/Providers';
 import { useLocalize, useUpdateFiles } from '~/hooks';
@@ -86,7 +86,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
 
   const fileMap = useFileMapContext();
   const { showToast } = useToastContext();
-  const { setFiles, conversation } = useChatContext();
+  const { files, setFiles, conversation } = useChatContext();
   const { data: fileConfig = null } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
@@ -142,7 +142,15 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         return;
       }
 
-      if (fileData.bytes > (endpointFileConfig.fileSizeLimit ?? Number.MAX_SAFE_INTEGER)) {
+      if (endpointFileConfig.fileLimit && files.size >= endpointFileConfig.fileLimit) {
+        showToast({
+          message: `${localize('com_ui_attach_error_limit')} ${endpointFileConfig.fileLimit} files (${endpoint})`,
+          status: 'error',
+        });
+        return;
+      }
+
+      if (fileData.bytes >= (endpointFileConfig.fileSizeLimit ?? Number.MAX_SAFE_INTEGER)) {
         showToast({
           message: `${localize('com_ui_attach_error_size')} ${
             (endpointFileConfig.fileSizeLimit ?? 0) / megabyte
@@ -160,6 +168,22 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         return;
       }
 
+      if (endpointFileConfig.totalSizeLimit) {
+        const existing = files.get(fileData.file_id);
+        let currentTotalSize = 0;
+        for (const f of files.values()) {
+          currentTotalSize += f.size;
+        }
+        currentTotalSize -= existing?.size ?? 0;
+        if (currentTotalSize + fileData.bytes > endpointFileConfig.totalSizeLimit) {
+          showToast({
+            message: `${localize('com_ui_attach_error_total_size')} ${endpointFileConfig.totalSizeLimit / megabyte} MB (${endpoint})`,
+            status: 'error',
+          });
+          return;
+        }
+      }
+
       addFile({
         progress: 1,
         attached: true,
@@ -175,13 +199,13 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         metadata: fileData.metadata,
       });
     },
-    [addFile, fileMap, conversation, localize, showToast, fileConfig],
+    [addFile, files, fileMap, conversation, localize, showToast, fileConfig],
   );
 
   const filenameFilter = table.getColumn('filename')?.getFilterValue() as string;
 
   return (
-    <div role="region" aria-label={localize('com_files_table')} className="mt-2 space-y-2">
+    <div role="region" aria-label={localize('com_files_table')} className="space-y-2">
       <FilterInput
         inputId="filename-filter"
         label={localize('com_files_filter')}
@@ -190,8 +214,8 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
       />
 
       <div className="rounded-lg border border-border-light bg-transparent shadow-sm transition-colors">
-        <div className="overflow-x-auto">
-          <Table>
+        <div className="overflow-hidden">
+          <Table className="table-fixed">
             <TableHeader>
               {table.getHeaderGroups().map((headerGroup) => (
                 <TableRow key={headerGroup.id} className="border-b border-border-light">
@@ -199,9 +223,9 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                     <TableHead
                       key={header.id}
                       style={{ width: index === 0 ? '75%' : '25%' }}
-                      className="bg-surface-secondary py-3 text-left text-sm font-medium text-text-secondary"
+                      className="bg-surface-secondary py-2 text-sm font-medium text-text-secondary"
                     >
-                      <div className="px-4">
+                      <div className={index === 0 ? 'px-2' : 'flex justify-end px-1'}>
                         {header.isPlaceholder
                           ? null
                           : flexRender(header.column.columnDef.header, header.getContext())}
@@ -225,8 +249,8 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                       return (
                         <TableCell
                           style={{
-                            width: '150px',
-                            maxWidth: '150px',
+                            width: isFilenameCell ? '75%' : '25%',
+                            maxWidth: 0,
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap',
@@ -289,11 +313,12 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         </div>
       </div>
 
-      <div className="flex items-center justify-between">
+      <div className="space-y-2">
         <Button
           ref={manageFilesRef}
           variant="outline"
           size="sm"
+          className="w-full"
           onClick={() => setShowFilesModal(true)}
           aria-label={localize('com_sidepanel_manage_files')}
         >
@@ -301,7 +326,11 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           <span className="ml-2">{localize('com_sidepanel_manage_files')}</span>
         </Button>
 
-        <div className="flex items-center gap-2" role="navigation" aria-label="Pagination">
+        <div
+          className="flex items-center justify-between"
+          role="navigation"
+          aria-label="Pagination"
+        >
           <Button
             variant="outline"
             size="sm"

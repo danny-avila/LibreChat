@@ -162,25 +162,25 @@
 
 /**
  * @exports BaseMessage
- * @typedef {import('@langchain/core/messages').BaseMessage} BaseMessage
+ * @typedef {import('@librechat/agents/langchain/messages').BaseMessage} BaseMessage
  * @memberof typedefs
  */
 
 /**
  * @exports UsageMetadata
- * @typedef {import('@langchain/core/messages').UsageMetadata} UsageMetadata
+ * @typedef {import('@librechat/agents/langchain/messages').UsageMetadata} UsageMetadata
  * @memberof typedefs
  */
 
 /**
  * @exports LangChainToolCall
- * @typedef {import('@langchain/core/messages/tool').ToolCall} LangChainToolCall
+ * @typedef {import('@librechat/agents/langchain/messages/tool').ToolCall} LangChainToolCall
  * @memberof typedefs
  */
 
 /**
  * @exports GraphRunnableConfig
- * @typedef {import('@langchain/core/runnables').RunnableConfig<{
+ * @typedef {import('@librechat/agents/langchain/runnables').RunnableConfig<{
  *  req: ServerRequest;
  * thread_id: string;
  * run_id: string;

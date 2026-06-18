@@ -3,7 +3,12 @@ import { IToken, TokenCreateData, TokenQuery, TokenUpdateData, TokenDeleteResult
 import logger from '~/config/winston';
 
 // Factory function that takes mongoose instance and returns the methods
-export function createTokenMethods(mongoose: typeof import('mongoose')) {
+export function createTokenMethods(mongoose: typeof import('mongoose')): {
+  findToken: (query: TokenQuery, options?: QueryOptions) => Promise<IToken | null>;
+  createToken: (tokenData: TokenCreateData) => Promise<IToken>;
+  updateToken: (query: TokenQuery, updateData: TokenUpdateData) => Promise<IToken | null>;
+  deleteTokens: (query: TokenQuery) => Promise<TokenDeleteResult>;
+} {
   /**
    * Creates a new Token instance.
    */
@@ -48,10 +53,7 @@ export function createTokenMethods(mongoose: typeof import('mongoose')) {
     }
   }
 
-  /**
-   * Deletes all Token documents that match the provided token, user ID, or email.
-   * Email is automatically normalized to lowercase for case-insensitive matching.
-   */
+  /** Deletes all Token documents matching every provided field (AND semantics). */
   async function deleteTokens(query: TokenQuery): Promise<TokenDeleteResult> {
     try {
       const Token = mongoose.models.Token;
@@ -64,21 +66,22 @@ export function createTokenMethods(mongoose: typeof import('mongoose')) {
         conditions.push({ token: query.token });
       }
       if (query.email !== undefined) {
-        conditions.push({ email: query.email.trim().toLowerCase() });
+        const email = query.email === null ? null : query.email.trim().toLowerCase();
+        conditions.push({ email });
+      }
+      if (query.type !== undefined) {
+        conditions.push({ type: query.type });
       }
       if (query.identifier !== undefined) {
         conditions.push({ identifier: query.identifier });
       }
 
-      /**
-       * If no conditions are specified, throw an error to prevent accidental deletion of all tokens
-       */
       if (conditions.length === 0) {
         throw new Error('At least one query parameter must be provided');
       }
 
       return await Token.deleteMany({
-        $or: conditions,
+        $and: conditions,
       });
     } catch (error) {
       logger.debug('An error occurred while deleting tokens:', error);
@@ -101,10 +104,14 @@ export function createTokenMethods(mongoose: typeof import('mongoose')) {
       if (query.token) {
         conditions.push({ token: query.token });
       }
-      if (query.email) {
-        conditions.push({ email: query.email.trim().toLowerCase() });
+      if (query.email !== undefined) {
+        const email = query.email === null ? null : query.email.trim().toLowerCase();
+        conditions.push({ email });
       }
-      if (query.identifier) {
+      if (query.type !== undefined) {
+        conditions.push({ type: query.type });
+      }
+      if (query.identifier !== undefined) {
         conditions.push({ identifier: query.identifier });
       }
 
