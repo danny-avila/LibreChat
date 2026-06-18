@@ -1,10 +1,10 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
 import {
   Constants,
   defaultAssistantsVersion,
   ConversationListResponse,
 } from 'librechat-data-provider';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { dataService, MutationKeys, QueryKeys, defaultOrderQuery } from 'librechat-data-provider';
 import type { InfiniteData, UseMutationResult } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 import {
@@ -144,6 +144,26 @@ export const useArchiveConvoMutation = (
         queryClient.invalidateQueries([QueryKeys.projectConversations]);
         queryClient.invalidateQueries([QueryKeys.projects]);
       },
+      ..._options,
+    },
+  );
+};
+
+export const usePinConversationMutation = (
+  options?: t.PinConversationOptions,
+): UseMutationResult<t.TPinConversationResponse, unknown, t.TPinConversationRequest, unknown> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, onError, ..._options } = options || {};
+
+  return useMutation(
+    [MutationKeys.convoPin],
+    (payload: t.TPinConversationRequest) => dataService.pinConversation(payload),
+    {
+      onSuccess: (data, vars, context) => {
+        updateConvoInAllQueries(queryClient, vars.conversationId, () => data);
+        onSuccess?.(data, vars, context);
+      },
+      onError,
       ..._options,
     },
   );
