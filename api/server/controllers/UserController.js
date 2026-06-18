@@ -530,9 +530,10 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
     serverConfig.oauth?.revocation_endpoint_auth_methods_supported ??
     clientMetadata.revocation_endpoint_auth_methods_supported;
   const oauthHeaders = serverConfig.oauth_headers ?? {};
-  const registry = getMCPServersRegistry();
-  const allowedDomains = registry.getAllowedDomains();
-  const allowedAddresses = registry.getAllowedAddresses();
+  // Use the request's merged (tenant/principal-scoped) allowlists so admin-panel mcpSettings
+  // overrides are honored for OAuth revocation, consistent with inspection/connection.
+  const allowedDomains = appConfig?.mcpSettings?.allowedDomains;
+  const allowedAddresses = appConfig?.mcpSettings?.allowedAddresses;
 
   if (tokens?.access_token) {
     try {

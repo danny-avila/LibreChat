@@ -24,6 +24,11 @@ const mockRegistryInstance = {
   removeServer: jest.fn(),
   getAllowedDomains: jest.fn().mockReturnValue(null),
   getAllowedAddresses: jest.fn().mockReturnValue(null),
+  resolveAllowlists: jest.fn().mockResolvedValue({
+    allowedDomains: null,
+    allowedAddresses: null,
+    useSSRFProtection: true,
+  }),
 };
 let mockMCPUseAllowed = true;
 
