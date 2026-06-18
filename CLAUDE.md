@@ -17,6 +17,18 @@ The source code for `@librechat/agents` (major backend dependency, same team) is
 
 ---
 
+## Integration with pwc_tars
+
+This LibreChat instance serves as the **product shell (UI/UX layer)** for the `pwc_tars` platform at `/Users/liaopoyu/Downloads/pwc_tars`. pwc_tars already provides the heavy backend capabilities — LLM services, knowledge base, SQL agent — and LibreChat is the polished frontend wrapped around them.
+
+- **pwc_tars is the source of truth** for authentication and user/account data. LibreChat integrates with it rather than reimplementing those capabilities.
+- **pwc_tars tech stack**: Flask (Python) + PostgreSQL (SQLAlchemy) + JWT. Its auth entrypoint is `POST /api/auth/login`, which logs in by **`username`** (not email).
+- **Integration target**: all future integrations connect to pwc_tars. Before building one, read the corresponding pwc_tars Flask route (`/Users/liaopoyu/Downloads/pwc_tars/backend/apps/routers/...`) and model (`.../apps/models/...`).
+- **Integration pattern**: keep the LibreChat-side surface a thin JS wrapper in `/api` that calls into TypeScript logic in `/packages/api`. Do **not** swap LibreChat's MongoDB user store for PostgreSQL — every downstream feature (conversations, files, agents, balances, permissions) keys off the MongoDB `User._id`. Instead, verify against pwc_tars and provision a linked local "shadow" user.
+- **Reference implementation — login** (the first integration): credentials are verified against pwc_tars (`packages/api/src/auth/tars.ts` → Flask `POST /api/auth/login`); on success a local MongoDB user is provisioned/synced (`provider: 'tars'`, linked via `tarsId`), then LibreChat issues its own JWT + refresh tokens. Mirrors the existing LDAP flow. Gated by the `TARS_AUTH_URL` env var. Key files: `api/strategies/tarsStrategy.js`, `api/server/middleware/requireTarsAuth.js`.
+
+---
+
 ## Workspace Boundaries
 
 - **All new backend code must be TypeScript** in `/packages/api`.
@@ -146,6 +158,23 @@ Multi-line imports count total character length across all lines. Consolidate va
 - Node.js: v24.16.0
 - Database: MongoDB
 - Backend runs on `http://localhost:3080/`; frontend dev server on `http://localhost:3090/`
+
+### Rebuild / Restart After Changing Code
+
+**The `packages/*` workspaces compile to `dist/` and are consumed by `/api` and `/client`. `nodemon` (`backend:dev`) only watches `/api` — it does NOT rebuild packages.** So a change only takes effect after the right rebuild:
+
+| Changed area | What to run | Notes |
+|---|---|---|
+| `/api` (backend JS) | nothing if on `npm run backend:dev` (auto-restart); else Ctrl+C + `npm run backend` | |
+| `/client` (React) | nothing if on `npm run frontend:dev` (HMR, port 3090); for 3080 prod build re-run `cd client && npm run build` | |
+| `packages/data-provider` | `npm run build:data-provider`, then restart backend | shared types/endpoints |
+| `packages/data-schemas` | `npm run build:data-schemas`, then restart backend | DB schema/types |
+| `packages/api` | `npm run build:api`, then restart backend | TS backend logic |
+| Multiple / unsure | `npm run frontend` (builds all packages + client), then `npm run backend` | full rebuild |
+
+Recommended dev setup: two terminals — `npm run backend:dev` (terminal A) and `npm run frontend:dev` (terminal B). Manually run the matching `build:*` only when touching `packages/*`. After changes, also run the relevant Jest tests and `npx eslint <changed files>` (zero warnings required).
+
+> **Working agreement:** whenever code is changed, clearly explain to the user how to rebuild/restart and launch it — which `build:*`/restart command applies to the area touched, plus any env vars or services needed to see the change.
 
 ---
 

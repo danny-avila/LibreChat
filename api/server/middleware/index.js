@@ -7,6 +7,7 @@ const checkDomainAllowed = require('./checkDomainAllowed');
 const requireLocalAuth = require('./requireLocalAuth');
 const canDeleteAccount = require('./canDeleteAccount');
 const accessResources = require('./accessResources');
+const requireTarsAuth = require('./requireTarsAuth');
 const requireLdapAuth = require('./requireLdapAuth');
 const abortMiddleware = require('./abortMiddleware');
 const checkInviteUser = require('./checkInviteUser');
@@ -41,6 +42,7 @@ module.exports = {
   requireRumProxyAuth,
   setTwoFactorTempUser,
   checkInviteUser,
+  requireTarsAuth,
   requireLdapAuth,
   requireLocalAuth,
   canDeleteAccount,

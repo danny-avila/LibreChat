@@ -28,7 +28,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
 
   const { data: config } = useGetStartupConfig();
-  const useUsernameLogin = config?.ldap?.username;
+  const useUsernameLogin = config?.ldap?.username || config?.tarsAuth;
   const validTheme = isDark(theme) ? 'dark' : 'light';
   const requireCaptcha = Boolean(startupConfig.turnstile?.siteKey);
   const authInputClassName =

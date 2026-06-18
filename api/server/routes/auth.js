@@ -37,7 +37,18 @@ const getCloudFrontAuthCookieRefreshResult = (req, res) => {
   return forceRefreshCloudFrontAuthCookies(req, res, req.user);
 };
 
+const tarsAuth = !!process.env.TARS_AUTH_URL;
 const ldapAuth = !!process.env.LDAP_URL && !!process.env.LDAP_USER_SEARCH_BASE;
+const resolveLoginAuthMiddleware = () => {
+  if (tarsAuth) {
+    return middleware.requireTarsAuth;
+  }
+  if (ldapAuth) {
+    return middleware.requireLdapAuth;
+  }
+  return middleware.requireLocalAuth;
+};
+const loginAuthMiddleware = resolveLoginAuthMiddleware();
 //Local
 router.post('/logout', middleware.requireJwtAuth, logoutController);
 router.post(
@@ -45,7 +56,7 @@ router.post(
   middleware.logHeaders,
   middleware.loginLimiter,
   middleware.checkBan,
-  ldapAuth ? middleware.requireLdapAuth : middleware.requireLocalAuth,
+  loginAuthMiddleware,
   setBalanceConfig,
   loginController,
 );
