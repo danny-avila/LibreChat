@@ -136,7 +136,9 @@ function createDeps(overrides: Partial<AdminAuditLogDeps> = {}): AdminAuditLogDe
     findAuditLogEntry: jest
       .fn<Promise<AdminAuditLogEntry | null>, unknown[]>()
       .mockResolvedValue(null),
-    streamAuditLogEntries: jest.fn<Promise<number>, unknown[]>().mockResolvedValue(0),
+    streamAuditLogEntries: jest
+      .fn<Promise<{ count: number; truncated: boolean }>, unknown[]>()
+      .mockResolvedValue({ count: 0, truncated: false }),
     verifyAuditChain: jest
       .fn<Promise<AuditChainVerification>, unknown[]>()
       .mockResolvedValue(mockVerification()),
@@ -373,7 +375,7 @@ describe('createAdminAuditLogHandlers', () => {
           await onEntry(entry);
           count++;
         }
-        return count;
+        return { count, truncated: false };
       });
     }
 
@@ -432,15 +434,29 @@ describe('createAdminAuditLogHandlers', () => {
       expect(deps.streamAuditLogEntries).not.toHaveBeenCalled();
     });
 
-    it('appends an explicit marker when the export hits the row cap', async () => {
+    it('appends an explicit marker when the export is truncated', async () => {
       const deps = createDeps({
-        streamAuditLogEntries: jest.fn().mockResolvedValue(MAX_AUDIT_EXPORT_ROWS),
+        streamAuditLogEntries: jest
+          .fn()
+          .mockResolvedValue({ count: MAX_AUDIT_EXPORT_ROWS, truncated: true }),
       });
       const handlers = createAdminAuditLogHandlers(deps);
       const ctx = createCsvContext();
       await handlers.exportAuditLogCsv(ctx.req, ctx.res);
-      const body = ctx.chunks.join('');
-      expect(body).toContain('TRUNCATED');
+      expect(ctx.chunks.join('')).toContain('TRUNCATED');
+      expect(ctx.endCalled()).toBe(true);
+    });
+
+    it('does not mark an exact-cap export as truncated', async () => {
+      const deps = createDeps({
+        streamAuditLogEntries: jest
+          .fn()
+          .mockResolvedValue({ count: MAX_AUDIT_EXPORT_ROWS, truncated: false }),
+      });
+      const handlers = createAdminAuditLogHandlers(deps);
+      const ctx = createCsvContext();
+      await handlers.exportAuditLogCsv(ctx.req, ctx.res);
+      expect(ctx.chunks.join('')).not.toContain('TRUNCATED');
       expect(ctx.endCalled()).toBe(true);
     });
   });

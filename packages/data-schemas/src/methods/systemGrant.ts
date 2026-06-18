@@ -277,15 +277,19 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')): {
       tenantId: tenantId != null ? tenantId : { $exists: false },
     };
 
+    /**
+     * Insert-only: re-asserting an existing grant is a true no-op (no field is
+     * mutated), so `created === false` reliably means "nothing changed" and the
+     * caller can safely skip audit emission. `grantedAt`/`grantedBy` therefore
+     * record the original grant, not the last re-assert.
+     */
     const update = {
-      $set: {
-        grantedAt: new Date(),
-        ...(grantedBy != null && { grantedBy }),
-      },
       $setOnInsert: {
         principalType,
         principalId: normalizedPrincipalId,
         capability,
+        grantedAt: new Date(),
+        ...(grantedBy != null && { grantedBy }),
         ...(tenantId != null && { tenantId }),
       },
     };

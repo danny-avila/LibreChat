@@ -156,6 +156,16 @@ auditLogSchema.pre('bulkWrite', function (next) {
 });
 
 /**
+ * `Model.insertMany()` is another bulk path that skips the document `save`
+ * hook, so it could insert rows with attacker-chosen `seq`/`prevHash`/`hash`
+ * and poison the chain. Entries are only ever written one-at-a-time via
+ * `recordAuditEntry` (`Model.create`), so block bulk inserts outright.
+ */
+auditLogSchema.pre('insertMany', function (next) {
+  next(new Error(APPEND_ONLY_MESSAGE));
+});
+
+/**
  * Unique per-chain sequence. This is both the keyset-pagination key and the
  * integrity backstop: concurrent appends race to claim the next `seq`, one wins,
  * and the losers retry — so the chain can never fork.

@@ -52,7 +52,7 @@ export interface AuditLogMethods {
     filters: Omit<AuditLogFilters, 'offset' | 'limit' | 'cursor'>,
     onEntry: (entry: AdminAuditLogEntry) => void | Promise<void>,
     options?: { isCancelled?: () => boolean; maxRows?: number },
-  ) => Promise<number>;
+  ) => Promise<{ count: number; truncated: boolean }>;
   verifyAuditChain: (
     tenantId: string | undefined,
     options?: VerifyAuditChainOptions,
@@ -431,7 +431,7 @@ export function createAuditLogMethods(mongoose: typeof import('mongoose')): Audi
     filters: Omit<AuditLogFilters, 'offset' | 'limit' | 'cursor'>,
     onEntry: (entry: AdminAuditLogEntry) => void | Promise<void>,
     options?: { isCancelled?: () => boolean; maxRows?: number },
-  ): Promise<number> {
+  ): Promise<{ count: number; truncated: boolean }> {
     const AuditLog = model();
     const query = buildFilter(auditChainKey(tenantId), filters);
     const cursor = AuditLog.find(query)
@@ -442,6 +442,7 @@ export function createAuditLogMethods(mongoose: typeof import('mongoose')): Audi
     const isCancelled = options?.isCancelled;
     const maxRows = options?.maxRows;
     let count = 0;
+    let truncated = false;
     try {
       for await (const doc of cursor) {
         if (isCancelled?.()) {
@@ -449,6 +450,10 @@ export function createAuditLogMethods(mongoose: typeof import('mongoose')): Audi
           break;
         }
         if (maxRows != null && count >= maxRows) {
+          /** The cap fired only because at least one more row exists beyond it,
+           * so this is a genuine truncation — an exact-cap match exhausts the
+           * cursor naturally and never reaches here. */
+          truncated = true;
           await cursor.close();
           break;
         }
@@ -458,7 +463,7 @@ export function createAuditLogMethods(mongoose: typeof import('mongoose')): Audi
     } finally {
       await cursor.close().catch(() => undefined);
     }
-    return count;
+    return { count, truncated };
   }
 
   async function verifyAuditChain(

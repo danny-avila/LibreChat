@@ -58,7 +58,7 @@ export interface AdminAuditLogDeps {
     filters: Omit<AuditLogFilters, 'offset' | 'limit' | 'cursor'>,
     onEntry: (entry: AdminAuditLogEntry) => void | Promise<void>,
     options?: { isCancelled?: () => boolean; maxRows?: number },
-  ) => Promise<number>;
+  ) => Promise<{ count: number; truncated: boolean }>;
   verifyAuditChain: (tenantId: string | undefined) => Promise<AuditChainVerification>;
 }
 
@@ -390,7 +390,7 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps): {
       await writeChunk(formatCsvHeader());
       await writeChunk('\r\n');
 
-      const written = await streamAuditLogEntries(
+      const { truncated } = await streamAuditLogEntries(
         caller.tenantId,
         filters.value,
         async (entry) => {
@@ -405,12 +405,13 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps): {
       req.removeListener('aborted', markAborted);
       if (!clientAborted) {
         /**
-         * Hitting the row cap means the export is incomplete. Surfacing this is a
-         * compliance requirement — a silently truncated export reads as a
-         * complete record. Emit an explicit trailing marker and log it; callers
-         * should narrow the date range for the full set.
+         * `truncated` is true only when rows existed beyond the cap (an exact-cap
+         * match is reported as complete). Surfacing this is a compliance
+         * requirement — a silently truncated export reads as a complete record.
+         * Emit an explicit trailing marker and log it; callers should narrow the
+         * date range for the full set.
          */
-        if (written >= MAX_AUDIT_EXPORT_ROWS) {
+        if (truncated) {
           logger.warn('[adminAuditLog] CSV export truncated at row cap', {
             maxRows: MAX_AUDIT_EXPORT_ROWS,
           });

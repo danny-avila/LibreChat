@@ -189,6 +189,27 @@ describe('auditLog methods', () => {
         ]),
       ).rejects.toThrow(/append-only/);
     });
+
+    it('rejects insertMany (which would let callers poison the chain)', async () => {
+      await expect(
+        AuditLog.insertMany([
+          {
+            schemaVersion: 1,
+            category: 'grant',
+            action: 'grant.assigned',
+            outcome: 'success',
+            severity: 'info',
+            actor: { type: 'user', name: 'Mallory' },
+            target: { type: 'role', id: 'ADMIN', name: 'ADMIN' },
+            chainKey: CK_A,
+            seq: 999,
+            prevHash: GENESIS_HASH,
+            hash: 'f'.repeat(64),
+            createdAt: new Date(),
+          },
+        ]),
+      ).rejects.toThrow(/append-only/);
+    });
   });
 
   describe('listAuditLogPage', () => {
@@ -289,22 +310,29 @@ describe('auditLog methods', () => {
     it('streams all matching rows newest-first', async () => {
       await seed(3);
       const seen: number[] = [];
-      const count = await methods.streamAuditLogEntries('tenant-a', {}, (e) => {
+      const { count, truncated } = await methods.streamAuditLogEntries('tenant-a', {}, (e) => {
         seen.push(e.integrity.seq);
       });
       expect(count).toBe(3);
+      expect(truncated).toBe(false);
       expect(seen).toEqual([3, 2, 1]);
     });
 
-    it('honors isCancelled and maxRows', async () => {
+    it('honors isCancelled and reports truncation only when the cap cuts rows off', async () => {
       await seed(5);
       const cancelled = await methods.streamAuditLogEntries('tenant-a', {}, () => {}, {
         isCancelled: () => true,
       });
-      expect(cancelled).toBe(0);
+      expect(cancelled.count).toBe(0);
 
       const capped = await methods.streamAuditLogEntries('tenant-a', {}, () => {}, { maxRows: 2 });
-      expect(capped).toBe(2);
+      expect(capped.count).toBe(2);
+      expect(capped.truncated).toBe(true);
+
+      // exact-cap match exhausts naturally and is NOT truncated
+      const exact = await methods.streamAuditLogEntries('tenant-a', {}, () => {}, { maxRows: 5 });
+      expect(exact.count).toBe(5);
+      expect(exact.truncated).toBe(false);
     });
   });
 
