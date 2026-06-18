@@ -4,6 +4,7 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
+import { Link } from 'react-router-dom';
 import { Switch, useToastContext } from '@librechat/client';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
 import {
@@ -320,14 +321,12 @@ export default function AgentConfig() {
       </div>
 
       <div className="mb-3 mt-1 flex w-full justify-end pr-4">
-        <a
-          href="https://innovation.nj.gov/skills/ai-how-tos/prompts-and-context"
+        <Link
+          to="nj/agent-guide"
           className="text-sm font-semibold text-blue-500 underline hover:text-blue-600"
-          target="_blank"
-          rel="noreferrer"
         >
-          View the prompting guide
-        </a>
+          View agent guide
+        </Link>
       </div>
 
       <TipComponent

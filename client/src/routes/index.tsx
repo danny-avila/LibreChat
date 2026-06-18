@@ -8,23 +8,24 @@ import {
   TwoFactorScreen,
   RequestPasswordReset,
 } from '~/components/Auth';
+import NewJerseyInfoTemplate from '~/nj/components/info/NewJerseyInfoTemplate';
+import NewJerseyReleaseNotes from '~/nj/components/info/NewJerseyReleaseNotes';
 import { MarketplaceProvider } from '~/components/Agents/MarketplaceContext';
+import NewJerseyAgentGuide from '~/nj/components/info/NewJerseyAgentGuide';
+import NewJerseyAboutPage from '~/nj/components/info/NewJerseyAboutPage';
+import NewJerseyGuidePage from '~/nj/components/info/NewJerseyGuidePage';
 import AgentMarketplace from '~/components/Agents/Marketplace';
 import { OAuthSuccess, OAuthError } from '~/components/OAuth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
-import WithRum from '~/lib/rum/WithRum';
 import RouteErrorBoundary from './RouteErrorBoundary';
 import StartupLayout from './Layouts/Startup';
 import LoginLayout from './Layouts/Login';
 import dashboardRoutes from './Dashboard';
+import WithRum from '~/lib/rum/WithRum';
 import ShareRoute from './ShareRoute';
 import ChatRoute from './ChatRoute';
 import Search from './Search';
 import Root from './Root';
-import NewJerseyInfoTemplate from '~/nj/components/info/NewJerseyInfoTemplate';
-import NewJerseyAboutPage from '~/nj/components/info/NewJerseyAboutPage';
-import NewJerseyGuidePage from '~/nj/components/info/NewJerseyGuidePage';
-import NewJerseyReleaseNotes from '~/nj/components/info/NewJerseyReleaseNotes';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -210,6 +211,10 @@ export const router = createBrowserRouter(
                 {
                   path: 'release-notes',
                   Component: NewJerseyReleaseNotes,
+                },
+                {
+                  path: 'agent-guide',
+                  Component: NewJerseyAgentGuide,
                 },
               ],
             },

@@ -3133,6 +3133,14 @@ body {
   margin-top: 0.5rem;
 }
 
+/* ordered list: used for agent guide */
+.markdown-nj ol {
+  list-style-position: outside;
+  list-style-type: decimal;
+  padding-left: 2rem;
+  margin-bottom: 2rem;
+}
+
 .markdown-nj li {
   margin-bottom: 0.5rem;
 }
