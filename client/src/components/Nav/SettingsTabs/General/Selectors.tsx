@@ -1,42 +1,7 @@
-import React, { useContext, useCallback } from 'react';
-import Cookies from 'js-cookie';
-import { useRecoilState, useRecoilValue } from 'recoil';
-import { Dropdown, Spinner, ThemeContext } from '@librechat/client';
-import ArchivedChats from './ArchivedChats';
-import ToggleSwitch from '../ToggleSwitch';
+import { useRecoilValue } from 'recoil';
+import { Dropdown, Spinner } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
-
-const toggleSwitchConfigs = [
-  {
-    stateAtom: store.enableUserMsgMarkdown,
-    localizationKey: 'com_nav_user_msg_markdown' as const,
-    switchId: 'enableUserMsgMarkdown',
-    hoverCardText: undefined,
-    key: 'enableUserMsgMarkdown',
-  },
-  {
-    stateAtom: store.autoScroll,
-    localizationKey: 'com_nav_auto_scroll' as const,
-    switchId: 'autoScroll',
-    hoverCardText: undefined,
-    key: 'autoScroll',
-  },
-  {
-    stateAtom: store.keepScreenAwake,
-    localizationKey: 'com_nav_keep_screen_awake' as const,
-    switchId: 'keepScreenAwake',
-    hoverCardText: undefined,
-    key: 'keepScreenAwake',
-  },
-  {
-    stateAtom: store.newChatSwitchToHistory,
-    localizationKey: 'com_nav_new_chat_switch_to_history' as const,
-    switchId: 'newChatSwitchToHistory',
-    hoverCardText: undefined,
-    key: 'newChatSwitchToHistory',
-  },
-];
 
 export const ThemeSelector = ({
   theme,
@@ -151,65 +116,16 @@ export const LangSelector = ({
         <Dropdown
           value={langcode}
           onChange={onChange}
-          sizeClasses="[--anchor-max-height:256px] max-h-[60vh]"
+          sizeClasses="[--anchor-max-height:256px] max-h-[60vh] w-[220px]"
           options={languageOptions}
           className="z-50"
           aria-labelledby={labelId}
           portal={portal}
+          searchable
+          searchPlaceholder={localize('com_ui_search_language')}
+          searchEmptyText={localize('com_ui_no_results_found')}
         />
       </div>
     </div>
   );
 };
-
-function General() {
-  const { theme, setTheme } = useContext(ThemeContext);
-
-  const [langcode, setLangcode] = useRecoilState(store.lang);
-
-  const changeTheme = useCallback(
-    (value: string) => {
-      setTheme(value);
-    },
-    [setTheme],
-  );
-
-  const changeLang = useCallback(
-    (value: string) => {
-      let userLang = value;
-      if (value === 'auto') {
-        userLang = navigator.language || navigator.languages[0];
-      }
-
-      setLangcode(userLang);
-      Cookies.set('lang', userLang, { expires: 365 });
-    },
-    [setLangcode],
-  );
-
-  return (
-    <div className="flex flex-col gap-3 p-1 text-sm text-text-primary">
-      <div className="pb-3">
-        <ThemeSelector theme={theme} onChange={changeTheme} />
-      </div>
-      <div className="pb-3">
-        <LangSelector langcode={langcode} onChange={changeLang} />
-      </div>
-      {toggleSwitchConfigs.map((config) => (
-        <div key={config.key} className="pb-3">
-          <ToggleSwitch
-            stateAtom={config.stateAtom}
-            localizationKey={config.localizationKey}
-            hoverCardText={config.hoverCardText}
-            switchId={config.switchId}
-          />
-        </div>
-      ))}
-      <div className="pb-3">
-        <ArchivedChats />
-      </div>
-    </div>
-  );
-}
-
-export default React.memo(General);

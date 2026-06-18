@@ -16,7 +16,7 @@ import {
   OGDialogContent,
   OGDialogTrigger,
 } from '@librechat/client';
-import { ThemeSelector, LangSelector } from '~/components/Nav/SettingsTabs/General/General';
+import { ThemeSelector, LangSelector } from '~/components/Nav/SettingsTabs/General/Selectors';
 import { ShareMessagesProvider } from './ShareMessagesProvider';
 import { ShareArtifactsContainer } from './ShareArtifacts';
 import { useLocalize, useDocumentTitle } from '~/hooks';
