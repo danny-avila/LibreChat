@@ -572,6 +572,7 @@ export const useDeleteConversationMutation = (
         });
         queryClient.invalidateQueries([QueryKeys.projectConversations]);
         queryClient.invalidateQueries([QueryKeys.projects]);
+        queryClient.invalidateQueries([QueryKeys.conversationTags]);
         if (deletedProjectId) {
           queryClient.invalidateQueries([QueryKeys.project, deletedProjectId]);
         }
