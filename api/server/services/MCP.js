@@ -685,7 +685,6 @@ function createToolInstance({
         },
         oauthStart,
         oauthEnd,
-        graphTokenResolver: undefined,
       });
 
       if (isAssistantsEndpoint(provider) && Array.isArray(result)) {

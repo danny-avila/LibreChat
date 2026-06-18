@@ -6,7 +6,7 @@ const {
   isAdminPanelRedirect,
   generateAdminExchangeCode,
 } = require('@librechat/api');
-const { setAuthTokens, setOpenIDAuthTokens } = require('~/server/services/AuthService');
+const { setAuthTokens } = require('~/server/services/AuthService');
 const getLogStores = require('~/cache/getLogStores');
 const { checkBan } = require('~/server/middleware');
 const { generateToken } = require('~/models');
@@ -42,7 +42,7 @@ function createOAuthHandler(redirectUri = domains.client) {
         const sessionExpiry = Number(process.env.SESSION_EXPIRY) || DEFAULT_SESSION_EXPIRY;
         const token = await generateToken(req.user, sessionExpiry);
 
-        /** Get refresh token from tokenset for OpenID users */
+        /** Get refresh token from tokenset for OpenID users (preserved for admin exchange) */
         const refreshToken =
           req.user.provider === 'openid' && isEnabled(process.env.OPENID_REUSE_TOKENS) === true
             ? req.user.tokenset?.refresh_token || req.user.federatedTokens?.refresh_token
@@ -65,18 +65,7 @@ function createOAuthHandler(redirectUri = domains.client) {
       }
 
       /** Standard OAuth flow - set cookies and redirect */
-      if (
-        req.user &&
-        req.user.provider == 'openid' &&
-        isEnabled(process.env.OPENID_REUSE_TOKENS) === true
-      ) {
-        setOpenIDAuthTokens(req.user.tokenset, req, res, {
-          userId: req.user._id.toString(),
-          tenantId: req.user.tenantId,
-        });
-      } else {
-        await setAuthTokens(req.user._id, res, null, req);
-      }
+      await setAuthTokens(req.user._id, res, null, req);
       res.redirect(redirectUri);
     } catch (err) {
       logger.error('Error in setting authentication tokens:', err);

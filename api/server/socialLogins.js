@@ -1,17 +1,12 @@
 const passport = require('passport');
 const { logger } = require('@librechat/data-schemas');
-const {
-  googleLogin,
-  googleAdminLogin,
-  githubLogin,
-  githubAdminLogin,
-} = require('~/strategies');
+const { googleLogin, googleAdminLogin, githubLogin, githubAdminLogin } = require('~/strategies');
 
 /**
  *
- * @param {Express.Application} app
+ * @param {Express.Application} _app
  */
-const configureSocialLogins = async (app) => {
+const configureSocialLogins = async (_app) => {
   logger.info('Configuring social logins...');
 
   if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {

@@ -40,9 +40,6 @@ jest.mock('~/models', () => ({
   createToken: jest.fn(),
   updateToken: jest.fn(),
 }));
-jest.mock('~/server/services/GraphTokenService', () => ({
-  getGraphApiToken: jest.fn(),
-}));
 jest.mock('~/server/services/Tools/mcp', () => ({
   reinitMCPServer: jest.fn(),
 }));
