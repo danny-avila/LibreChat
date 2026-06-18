@@ -11,7 +11,7 @@ jest.mock('@librechat/agents', () => ({
     parameters: {
       type: 'object',
       properties: {
-        file_path: {
+        path: {
           type: 'string',
           description: 'For skill files: "{skillName}/{path}".',
         },
