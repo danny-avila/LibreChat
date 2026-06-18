@@ -779,17 +779,27 @@ export function createConversationMethods(
 
       const deleteConvoResult = await Conversation.deleteMany(userFilter);
 
+      /**
+       * Adjust bookmark counts and project stats from the conversation deletion
+       * before message cleanup: if `deleteMessages` later throws, the conversation
+       * is already gone and a retry finds nothing, so the count must be reconciled
+       * here or it would stay permanently stale. The `deletedCount` guard skips a
+       * losing concurrent delete whose pre-delete snapshot would otherwise
+       * decrement counts for a conversation it did not actually remove.
+       */
+      if (deleteConvoResult.deletedCount > 0) {
+        await Promise.all([
+          decrementTagCounts(mongoose, user, tagDecrements),
+          ...[...projectIds].map((projectId) =>
+            refreshChatProjectStatsForUser(mongoose, user, projectId),
+          ),
+        ]);
+      }
+
       const deleteMessagesResult = await deleteMessages({
         conversationId: { $in: conversationIds },
         user,
       });
-
-      await Promise.all([
-        decrementTagCounts(mongoose, user, tagDecrements),
-        ...[...projectIds].map((projectId) =>
-          refreshChatProjectStatsForUser(mongoose, user, projectId),
-        ),
-      ]);
 
       return { ...deleteConvoResult, messages: deleteMessagesResult };
     } catch (error) {

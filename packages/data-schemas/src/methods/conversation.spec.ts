@@ -1088,6 +1088,49 @@ describe('Conversation Operations', () => {
       const tag = await ConversationTag.findOne({ user: 'other', tag: 'work' }).lean();
       expect(tag?.count).toBe(5);
     });
+
+    it('should not decrement tag counts when the delete removed nothing (lost race)', async () => {
+      await ConversationTag.create({ user: 'user123', tag: 'work', count: 2, position: 1 });
+      const convoId = uuidv4();
+      await Conversation.create({
+        conversationId: convoId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        tags: ['work'],
+      });
+
+      const deleteSpy = jest
+        .spyOn(Conversation, 'deleteMany')
+        .mockResolvedValueOnce({ acknowledged: true, deletedCount: 0 } as never);
+
+      await deleteConvos('user123', { conversationId: convoId });
+
+      deleteSpy.mockRestore();
+      const tag = await ConversationTag.findOne({ user: 'user123', tag: 'work' }).lean();
+      expect(tag?.count).toBe(2);
+    });
+
+    it('should still decrement tag counts when message deletion fails after the delete', async () => {
+      await ConversationTag.create({ user: 'user123', tag: 'work', count: 2, position: 1 });
+      const convoId = uuidv4();
+      await Conversation.create({
+        conversationId: convoId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        tags: ['work'],
+      });
+
+      deleteMessages.mockRejectedValueOnce(new Error('message cleanup failed'));
+
+      await expect(deleteConvos('user123', { conversationId: convoId })).rejects.toThrow(
+        'message cleanup failed',
+      );
+
+      const tag = await ConversationTag.findOne({ user: 'user123', tag: 'work' }).lean();
+      expect(tag?.count).toBe(1);
+      const convo = await Conversation.findOne({ conversationId: convoId });
+      expect(convo).toBeNull();
+    });
   });
 
   describe('deleteNullOrEmptyConversations', () => {
