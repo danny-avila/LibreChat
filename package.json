@@ -185,7 +185,10 @@
     "monaco-editor": {
       "dompurify": "3.4.0"
     },
-    "svgo": "^2.8.2"
+    "svgo": "^2.8.2",
+    "js-yaml": "^4.2.0",
+    "ws": "^8.21.0",
+    "@babel/core": "^7.29.7"
   },
   "nodemonConfig": {
     "ignore": [

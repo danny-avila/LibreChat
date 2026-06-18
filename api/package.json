@@ -86,7 +86,7 @@
     "handlebars": "^4.7.9",
     "https-proxy-agent": "^7.0.6",
     "ioredis": "^5.3.2",
-    "js-yaml": "^4.1.1",
+    "js-yaml": "^4.2.0",
     "jsonwebtoken": "^9.0.0",
     "jszip": "^3.10.1",
     "jwks-rsa": "^3.2.0",
