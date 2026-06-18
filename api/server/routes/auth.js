@@ -4,7 +4,6 @@ const {
   resetPasswordRequestController,
   resetPasswordController,
   registrationController,
-  graphTokenController,
   refreshController,
 } = require('~/server/controllers/AuthController');
 const {
@@ -90,7 +89,5 @@ router.post('/2fa/verify-temp', middleware.checkBan, verify2FAWithTempToken);
 router.post('/2fa/confirm', middleware.requireJwtAuth, confirm2FA);
 router.post('/2fa/disable', middleware.requireJwtAuth, disable2FA);
 router.post('/2fa/backup/regenerate', middleware.requireJwtAuth, regenerateBackupCodes);
-
-router.get('/graph-token', middleware.requireJwtAuth, graphTokenController);
 
 module.exports = router;

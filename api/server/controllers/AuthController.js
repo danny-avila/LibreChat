@@ -23,7 +23,6 @@ const {
   updateUser,
   findUser,
 } = require('~/models');
-const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
 
 const AUTH_REFRESH_USER_PROJECTION = '-password -__v -totpSecret -backupCodes -federatedTokens';
@@ -291,51 +290,9 @@ const refreshController = async (req, res) => {
   }
 };
 
-const graphTokenController = async (req, res) => {
-  try {
-    // Validate user is authenticated via Entra ID
-    if (!req.user.openidId || req.user.provider !== 'openid') {
-      return res.status(403).json({
-        message: 'Microsoft Graph access requires Entra ID authentication',
-      });
-    }
-
-    // Check if OpenID token reuse is active (required for on-behalf-of flow)
-    if (!isEnabled(process.env.OPENID_REUSE_TOKENS)) {
-      return res.status(403).json({
-        message: 'SharePoint integration requires OpenID token reuse to be enabled',
-      });
-    }
-
-    const scopes = req.query.scopes;
-    if (!scopes) {
-      return res.status(400).json({
-        message: 'Graph API scopes are required as query parameter',
-      });
-    }
-
-    const accessToken = req.user.federatedTokens?.access_token;
-    if (!accessToken) {
-      return res.status(401).json({
-        message: 'No federated access token available for token exchange',
-      });
-    }
-
-    const tokenResponse = await getGraphApiToken(req.user, accessToken, scopes);
-
-    res.json(tokenResponse);
-  } catch (error) {
-    logger.error('[graphTokenController] Failed to obtain Graph API token:', error);
-    res.status(500).json({
-      message: 'Failed to obtain Microsoft Graph token',
-    });
-  }
-};
-
 module.exports = {
   refreshController,
   registrationController,
   resetPasswordController,
   resetPasswordRequestController,
-  graphTokenController,
 };

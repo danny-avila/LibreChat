@@ -6,7 +6,6 @@ const {
   isAdminPanelRedirect,
   generateAdminExchangeCode,
 } = require('@librechat/api');
-const { syncUserEntraGroupMemberships } = require('~/server/services/PermissionService');
 const { setAuthTokens, setOpenIDAuthTokens } = require('~/server/services/AuthService');
 const getLogStores = require('~/cache/getLogStores');
 const { checkBan } = require('~/server/middleware');
@@ -71,7 +70,6 @@ function createOAuthHandler(redirectUri = domains.client) {
         req.user.provider == 'openid' &&
         isEnabled(process.env.OPENID_REUSE_TOKENS) === true
       ) {
-        await syncUserEntraGroupMemberships(req.user, req.user.tokenset.access_token);
         setOpenIDAuthTokens(req.user.tokenset, req, res, {
           userId: req.user._id.toString(),
           tenantId: req.user.tenantId,

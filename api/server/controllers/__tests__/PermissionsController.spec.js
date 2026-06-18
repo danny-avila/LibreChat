@@ -38,11 +38,6 @@ jest.mock('~/models', () => ({
   removeAgentFromUserFavorites: (...args) => mockRemoveAgentFromUserFavorites(...args),
 }));
 
-jest.mock('~/server/services/GraphApiService', () => ({
-  entraIdPrincipalFeatureEnabled: jest.fn(() => false),
-  searchEntraIdPrincipals: jest.fn(),
-}));
-
 const db = require('~/models');
 const { updateResourcePermissions, searchPrincipals } = require('../PermissionsController');
 

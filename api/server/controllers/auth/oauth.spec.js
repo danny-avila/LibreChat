@@ -2,7 +2,6 @@ const mockIsEnabled = jest.fn();
 const mockGetAdminPanelUrl = jest.fn();
 const mockIsAdminPanelRedirect = jest.fn();
 const mockGenerateAdminExchangeCode = jest.fn();
-const mockSyncUserEntraGroupMemberships = jest.fn();
 const mockSetAuthTokens = jest.fn();
 const mockSetOpenIDAuthTokens = jest.fn();
 const mockGetLogStores = jest.fn();
@@ -26,9 +25,7 @@ jest.mock('@librechat/api', () => ({
   generateAdminExchangeCode: (...args) => mockGenerateAdminExchangeCode(...args),
 }));
 
-jest.mock('~/server/services/PermissionService', () => ({
-  syncUserEntraGroupMemberships: (...args) => mockSyncUserEntraGroupMemberships(...args),
-}));
+jest.mock('~/server/services/PermissionService', () => ({}));
 
 jest.mock('~/server/services/AuthService', () => ({
   setAuthTokens: (...args) => mockSetAuthTokens(...args),

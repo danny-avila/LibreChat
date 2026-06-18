@@ -22,7 +22,6 @@ const sharedLinksEnabled =
 const publicSharedLinksEnabled =
   sharedLinksEnabled && isEnabled(process.env.ALLOW_SHARED_LINKS_PUBLIC);
 
-const sharePointFilePickerEnabled = isEnabled(process.env.ENABLE_SHAREPOINT_FILEPICKER);
 const openidReuseTokens = isEnabled(process.env.OPENID_REUSE_TOKENS);
 
 /**
@@ -216,10 +215,6 @@ router.get('/', async function (req, res) {
       balance: balanceConfig,
       bundlerURL: process.env.SANDPACK_BUNDLER_URL,
       staticBundlerURL: process.env.SANDPACK_STATIC_BUNDLER_URL,
-      sharePointFilePickerEnabled,
-      sharePointBaseUrl: process.env.SHAREPOINT_BASE_URL,
-      sharePointPickerGraphScope: process.env.SHAREPOINT_PICKER_GRAPH_SCOPE,
-      sharePointPickerSharePointScope: process.env.SHAREPOINT_PICKER_SHAREPOINT_SCOPE,
       conversationImportMaxFileSize: process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES
         ? parseInt(process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES, 10)
         : 0,

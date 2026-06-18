@@ -1,15 +1,6 @@
 const mongoose = require('mongoose');
-const { isEnabled } = require('@librechat/api');
 const { getTransactionSupport, logger } = require('@librechat/data-schemas');
 const { ResourceType, PrincipalType, PrincipalModel } = require('librechat-data-provider');
-const {
-  entraIdPrincipalFeatureEnabled,
-  getUserOwnedEntraGroups,
-  getUserEntraGroups,
-  getEntraGroupDetailsBatch,
-  getGroupMembers,
-  getGroupOwners,
-} = require('~/server/services/GraphApiService');
 const db = require('~/models');
 
 /** @type {boolean|null} */
@@ -285,14 +276,9 @@ const getAvailableRoles = async ({ resourceType }) => {
 
 /**
  * Ensures a principal exists in the database based on TPrincipal data
- * Creates user if it doesn't exist locally (for Entra ID users)
  * @param {Object} principal - TPrincipal object from frontend
  * @param {string} principal.type - PrincipalType.USER, PrincipalType.GROUP, or PrincipalType.PUBLIC
- * @param {string} [principal.id] - Local database ID (null for Entra ID principals not yet synced)
- * @param {string} principal.name - Display name
- * @param {string} [principal.email] - Email address
- * @param {string} [principal.source] - 'local' or 'entra'
- * @param {string} [principal.idOnTheSource] - Entra ID object ID for external principals
+ * @param {string} [principal.id] - Local database ID
  * @returns {Promise<string|null>} Returns the principalId for database operations, null for public
  */
 const ensurePrincipalExists = async function (principal) {
@@ -304,39 +290,6 @@ const ensurePrincipalExists = async function (principal) {
     return principal.id;
   }
 
-  if (principal.type === PrincipalType.USER && principal.source === 'entra') {
-    if (!principal.email || !principal.idOnTheSource) {
-      throw new Error('Entra ID user principals must have email and idOnTheSource');
-    }
-
-    let existingUser = await db.findUser({ idOnTheSource: principal.idOnTheSource });
-
-    if (!existingUser) {
-      existingUser = await db.findUser({ email: principal.email });
-    }
-
-    if (existingUser) {
-      if (!existingUser.idOnTheSource && principal.idOnTheSource) {
-        await db.updateUser(existingUser._id, {
-          idOnTheSource: principal.idOnTheSource,
-          provider: 'openid',
-        });
-      }
-      return existingUser._id.toString();
-    }
-
-    const userData = {
-      name: principal.name,
-      email: principal.email.toLowerCase(),
-      emailVerified: false,
-      provider: 'openid',
-      idOnTheSource: principal.idOnTheSource,
-    };
-
-    const userId = await db.createUser(userData, true, true);
-    return userId.toString();
-  }
-
   if (principal.type === PrincipalType.GROUP) {
     throw new Error('Group principals should be handled by group-specific methods');
   }
@@ -346,277 +299,21 @@ const ensurePrincipalExists = async function (principal) {
 
 /**
  * Ensures a group principal exists in the database based on TPrincipal data
- * Creates group if it doesn't exist locally (for Entra ID groups)
- * For Entra ID groups, always synchronizes member IDs when authentication context is provided
  * @param {Object} principal - TPrincipal object from frontend
  * @param {string} principal.type - Must be PrincipalType.GROUP
- * @param {string} [principal.id] - Local database ID (null for Entra ID principals not yet synced)
- * @param {string} principal.name - Display name
- * @param {string} [principal.email] - Email address
- * @param {string} [principal.description] - Group description
- * @param {string} [principal.source] - 'local' or 'entra'
- * @param {string} [principal.idOnTheSource] - Entra ID object ID for external principals
- * @param {Object} [authContext] - Optional authentication context for fetching member data
- * @param {string} [authContext.accessToken] - Access token for Graph API calls
- * @param {string} [authContext.sub] - Subject identifier
+ * @param {string} [principal.id] - Local database ID
  * @returns {Promise<string>} Returns the groupId for database operations
  */
-const ensureGroupPrincipalExists = async function (principal, authContext = null) {
+const ensureGroupPrincipalExists = async function (principal) {
   if (principal.type !== PrincipalType.GROUP) {
     throw new Error(`Invalid principal type: ${principal.type}. Expected '${PrincipalType.GROUP}'`);
   }
 
-  if (principal.source === 'entra') {
-    if (!principal.name || !principal.idOnTheSource) {
-      throw new Error('Entra ID group principals must have name and idOnTheSource');
-    }
-
-    let memberIds = [];
-    if (authContext && authContext.accessToken && authContext.sub) {
-      try {
-        memberIds = await getGroupMembers(
-          authContext.accessToken,
-          authContext.sub,
-          principal.idOnTheSource,
-        );
-
-        // Include group owners as members if feature is enabled
-        if (isEnabled(process.env.ENTRA_ID_INCLUDE_OWNERS_AS_MEMBERS)) {
-          const ownerIds = await getGroupOwners(
-            authContext.accessToken,
-            authContext.sub,
-            principal.idOnTheSource,
-          );
-          if (ownerIds && ownerIds.length > 0) {
-            memberIds.push(...ownerIds);
-            // Remove duplicates
-            memberIds = [...new Set(memberIds)];
-          }
-        }
-      } catch (error) {
-        logger.error('Failed to fetch group members from Graph API:', error);
-      }
-    }
-
-    let existingGroup = await db.findGroupByExternalId(principal.idOnTheSource, 'entra');
-
-    if (!existingGroup && principal.email) {
-      existingGroup = await db.findGroupByQuery({ email: principal.email.toLowerCase() });
-    }
-
-    if (existingGroup) {
-      const updateData = {};
-      let needsUpdate = false;
-
-      if (!existingGroup.idOnTheSource && principal.idOnTheSource) {
-        updateData.idOnTheSource = principal.idOnTheSource;
-        updateData.source = 'entra';
-        needsUpdate = true;
-      }
-
-      if (principal.description && existingGroup.description !== principal.description) {
-        updateData.description = principal.description;
-        needsUpdate = true;
-      }
-
-      if (principal.email && existingGroup.email !== principal.email.toLowerCase()) {
-        updateData.email = principal.email.toLowerCase();
-        needsUpdate = true;
-      }
-
-      if (authContext && authContext.accessToken && authContext.sub) {
-        updateData.memberIds = memberIds;
-        needsUpdate = true;
-      }
-
-      if (needsUpdate) {
-        await db.updateGroupById(existingGroup._id, updateData);
-      }
-
-      return existingGroup._id.toString();
-    }
-
-    const groupData = {
-      name: principal.name,
-      source: 'entra',
-      idOnTheSource: principal.idOnTheSource,
-      memberIds: memberIds, // Store idOnTheSource values of group members (empty if no auth context)
-    };
-
-    if (principal.email) {
-      groupData.email = principal.email.toLowerCase();
-    }
-
-    if (principal.description) {
-      groupData.description = principal.description;
-    }
-
-    const newGroup = await db.createGroup(groupData);
-    return newGroup._id.toString();
-  }
-  if (principal.id && authContext == null) {
+  if (principal.id) {
     return principal.id;
   }
 
   throw new Error(`Unsupported group principal source: ${principal.source}`);
-};
-
-/**
- * Sync user's Entra ID group memberships with auto-creation of missing groups
- * Optimized approach:
- * 1. Get all group IDs user should be member of from Entra
- * 2. Try to add user to existing groups (fast, no Graph API calls)
- * 3. Query DB to identify which groups don't exist (indexed query, fast)
- * 4. For missing groups only, fetch details from Graph API in batches
- * 5. Upsert missing groups using upsertGroupByExternalId (race-safe)
- * 6. Add user to newly created/upserted groups via bulkUpdate
- * 7. Remove user from groups they're no longer member of
- *
- * @param {Object} user - User object with authentication context
- * @param {string} user.openidId - User's OpenID subject identifier
- * @param {string} user.idOnTheSource - User's Entra ID (oid from token claims)
- * @param {string} user.provider - Authentication provider ('openid')
- * @param {string} accessToken - Access token for Graph API calls
- * @param {mongoose.ClientSession} [session] - Optional MongoDB session for transactions
- * @returns {Promise<void>}
- */
-const syncUserEntraGroupMemberships = async (user, accessToken, session = null) => {
-  try {
-    if (!entraIdPrincipalFeatureEnabled(user) || !accessToken || !user.idOnTheSource) {
-      return;
-    }
-
-    // Step 1: Get all group IDs user should be member of
-    const memberGroupIds = await getUserEntraGroups(accessToken, user.openidId);
-    let allGroupIds = [...(memberGroupIds || [])];
-
-    // Include owned groups if feature is enabled
-    if (isEnabled(process.env.ENTRA_ID_INCLUDE_OWNERS_AS_MEMBERS)) {
-      const ownedGroupIds = await getUserOwnedEntraGroups(accessToken, user.openidId);
-      if (ownedGroupIds && ownedGroupIds.length > 0) {
-        allGroupIds.push(...ownedGroupIds);
-        // Remove duplicates
-        allGroupIds = [...new Set(allGroupIds)];
-      }
-    }
-
-    const sessionOptions = session ? { session } : {};
-
-    // Early return if no groups found (protects against temporary API failures)
-    if (allGroupIds.length === 0) {
-      logger.debug(
-        `[PermissionService.syncUserEntraGroupMemberships] No groups found for user ${user._id}`,
-      );
-      return;
-    }
-
-    logger.info(
-      `[PermissionService.syncUserEntraGroupMemberships] Syncing ${allGroupIds.length} groups for user ${user._id}`,
-    );
-
-    // Step 2: Try to add user to existing groups (fast operation)
-    const addResult = await db.bulkUpdateGroups(
-      {
-        idOnTheSource: { $in: allGroupIds },
-        source: 'entra',
-        memberIds: { $ne: user.idOnTheSource },
-      },
-      { $addToSet: { memberIds: user.idOnTheSource } },
-      sessionOptions,
-    );
-
-    logger.debug(
-      `[PermissionService.syncUserEntraGroupMemberships] Added user to ${addResult.modifiedCount || 0} existing groups`,
-    );
-
-    // Step 3: Find which groups don't exist in DB using db layer
-    const existingGroups = await db.findGroupsByExternalIds(allGroupIds, 'entra', session);
-    const existingGroupIds = new Set(existingGroups.map((g) => g.idOnTheSource));
-
-    const missingGroupIds = allGroupIds.filter((id) => !existingGroupIds.has(id));
-
-    if (missingGroupIds.length > 0) {
-      logger.info(
-        `[PermissionService.syncUserEntraGroupMemberships] Found ${missingGroupIds.length} groups that don't exist, fetching details...`,
-      );
-
-      // Step 4: Fetch details only for missing groups (optimized batch request)
-      const groupDetails = await getEntraGroupDetailsBatch(
-        accessToken,
-        user.openidId,
-        missingGroupIds,
-      );
-
-      if (groupDetails.length > 0) {
-        logger.info(
-          `[PermissionService.syncUserEntraGroupMemberships] Creating ${groupDetails.length} new groups`,
-        );
-
-        // Step 5: Upsert missing groups (race-safe by design)
-        // Use upsertGroupByExternalId for each group to handle concurrent creates gracefully
-        const upsertPromises = groupDetails.map((group) =>
-          db.upsertGroupByExternalId(
-            group.id,
-            'entra',
-            {
-              name: group.name,
-              email: group.email,
-              description: group.description,
-            },
-            session,
-          ),
-        );
-
-        await Promise.all(upsertPromises);
-
-        // Step 6: Add user to all newly created/upserted groups
-        await db.bulkUpdateGroups(
-          {
-            idOnTheSource: { $in: missingGroupIds },
-            source: 'entra',
-            memberIds: { $ne: user.idOnTheSource },
-          },
-          { $addToSet: { memberIds: user.idOnTheSource } },
-          sessionOptions,
-        );
-
-        logger.info(
-          `[PermissionService.syncUserEntraGroupMemberships] Successfully created/updated ${groupDetails.length} groups`,
-        );
-      } else {
-        logger.warn(
-          `[PermissionService.syncUserEntraGroupMemberships] Could not fetch details for ${missingGroupIds.length} missing groups`,
-        );
-      }
-    } else {
-      logger.debug(
-        `[PermissionService.syncUserEntraGroupMemberships] All ${allGroupIds.length} groups already exist in database`,
-      );
-    }
-
-    // Step 7: Remove user from Entra groups they're no longer member of
-    const removeResult = await db.bulkUpdateGroups(
-      {
-        source: 'entra',
-        memberIds: user.idOnTheSource,
-        idOnTheSource: { $nin: allGroupIds },
-      },
-      { $pullAll: { memberIds: [user.idOnTheSource] } },
-      sessionOptions,
-    );
-
-    logger.debug(
-      `[PermissionService.syncUserEntraGroupMemberships] Removed user from ${removeResult.modifiedCount || 0} groups`,
-    );
-
-    logger.info(
-      `[PermissionService.syncUserEntraGroupMemberships] Successfully synced groups for user ${user._id}`,
-    );
-  } catch (error) {
-    // Log error but don't re-throw: group sync is best-effort operation
-    // and should not block authentication even if temporary API/DB issues occur
-    logger.error(`[PermissionService.syncUserEntraGroupMemberships] Error syncing groups:`, error);
-  }
 };
 
 /**
@@ -916,6 +613,5 @@ module.exports = {
   bulkUpdateResourcePermissions,
   ensurePrincipalExists,
   ensureGroupPrincipalExists,
-  syncUserEntraGroupMemberships,
   removeAllPermissions,
 };

@@ -15,10 +15,6 @@ const {
   ensurePrincipalExists,
   getAvailableRoles,
 } = require('~/server/services/PermissionService');
-const {
-  entraIdPrincipalFeatureEnabled,
-  searchEntraIdPrincipals,
-} = require('~/server/services/GraphApiService');
 const db = require('~/models');
 
 /**
@@ -76,19 +72,6 @@ const updateResourcePermissions = async (req, res) => {
       });
     }
 
-    // Prepare authentication context for enhanced group member fetching
-    const useEntraId = entraIdPrincipalFeatureEnabled(req.user);
-    const authHeader = req.headers.authorization;
-    const accessToken =
-      authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null;
-    const authContext =
-      useEntraId && accessToken
-        ? {
-            accessToken,
-            sub: req.user.openidId,
-          }
-        : null;
-
     // Ensure updated principals exist in the database before processing permissions
     const validatedPrincipals = [];
     for (const principal of updatedPrincipals) {
@@ -102,8 +85,7 @@ const updateResourcePermissions = async (req, res) => {
         } else if (principal.type === PrincipalType.USER) {
           principalId = await ensurePrincipalExists(principal);
         } else if (principal.type === PrincipalType.GROUP) {
-          // Pass authContext to enable member fetching for Entra ID groups when available
-          principalId = await ensureGroupPrincipalExists(principal, authContext);
+          principalId = await ensureGroupPrincipalExists(principal);
         } else {
           logger.error(`Unsupported principal type: ${principal.type}`);
           continue; // Skip invalid principal types
@@ -413,60 +395,8 @@ const searchPrincipals = async (req, res) => {
     }
 
     const localResults = await db.searchPrincipals(query, searchLimit, typeFilters);
-    let allPrincipals = [...localResults];
 
-    const useEntraId = entraIdPrincipalFeatureEnabled(req.user);
-
-    if (useEntraId && localResults.length < searchLimit) {
-      try {
-        let graphType = 'all';
-        if (typeFilters && typeFilters.length === 1) {
-          const graphTypeMap = {
-            [PrincipalType.USER]: 'users',
-            [PrincipalType.GROUP]: 'groups',
-          };
-          const mappedType = graphTypeMap[typeFilters[0]];
-          if (mappedType) {
-            graphType = mappedType;
-          }
-        }
-
-        const authHeader = req.headers.authorization;
-        const accessToken =
-          authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null;
-
-        if (accessToken) {
-          const graphResults = await searchEntraIdPrincipals(
-            accessToken,
-            req.user.openidId,
-            query,
-            graphType,
-            searchLimit - localResults.length,
-          );
-
-          const localEmails = new Set(
-            localResults.map((p) => p.email?.toLowerCase()).filter(Boolean),
-          );
-          const localGroupSourceIds = new Set(
-            localResults.map((p) => p.idOnTheSource).filter(Boolean),
-          );
-
-          for (const principal of graphResults) {
-            const isDuplicateByEmail =
-              principal.email && localEmails.has(principal.email.toLowerCase());
-            const isDuplicateBySourceId =
-              principal.idOnTheSource && localGroupSourceIds.has(principal.idOnTheSource);
-
-            if (!isDuplicateByEmail && !isDuplicateBySourceId) {
-              allPrincipals.push(principal);
-            }
-          }
-        }
-      } catch (graphError) {
-        logger.warn('Graph API search failed, falling back to local results:', graphError.message);
-      }
-    }
-    const scoredResults = allPrincipals.map((item) => ({
+    const scoredResults = localResults.map((item) => ({
       ...item,
       _searchScore: db.calculateRelevanceScore(item, query),
     }));
@@ -486,8 +416,7 @@ const searchPrincipals = async (req, res) => {
       results: finalResults,
       count: finalResults.length,
       sources: {
-        local: finalResults.filter((r) => r.source === 'local').length,
-        entra: finalResults.filter((r) => r.source === 'entra').length,
+        local: finalResults.length,
       },
     });
   } catch (error) {
