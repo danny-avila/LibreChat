@@ -126,7 +126,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')): {
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
     options?: { tenantId?: string; session?: ClientSession },
-  ) => Promise<void>;
+  ) => Promise<ISystemGrant[]>;
 } {
   function tenantCondition(tenantId?: string): FilterQuery<ISystemGrant> {
     return tenantId != null
@@ -512,7 +512,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')): {
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
     options?: { tenantId?: string; session?: ClientSession },
-  ): Promise<void> {
+  ): Promise<ISystemGrant[]> {
     const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
     const normalizedPrincipalId = normalizePrincipalId(principalId, principalType);
 
@@ -522,7 +522,11 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')): {
       ...(options?.tenantId != null && { tenantId: options.tenantId }),
     };
     const queryOptions = options?.session ? { session: options.session } : {};
+    /** Read the matching grants before deleting so cascade callers (e.g. role
+     * deletion) can emit a `grant.removed` audit entry for each one. */
+    const removed = await SystemGrant.find(filter, null, queryOptions).lean<ISystemGrant[]>();
     await SystemGrant.deleteMany(filter, queryOptions);
+    return removed;
   }
 
   return {

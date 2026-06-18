@@ -18,6 +18,7 @@ import type { Types } from 'mongoose';
 import type { ResolvedPrincipal } from '~/types/principal';
 import type { ServerRequest } from '~/types/http';
 import { parsePagination } from './pagination';
+import { buildAuditContext } from './context';
 
 interface GrantRequestBody {
   principalType?: string;
@@ -92,25 +93,6 @@ export interface AdminGrantsDeps {
    * the missing audit row. Defaults to fail-open.
    */
   auditFailClosed?: boolean;
-}
-
-/** Normalizes a possibly-repeated header to its first string value. */
-function firstHeaderValue(value: string | string[] | undefined): string | undefined {
-  if (Array.isArray(value)) return value[0];
-  return typeof value === 'string' ? value : undefined;
-}
-
-/** Extracts forensic request context (IP, user agent, correlation id) for the
- * audit record. Fields are undefined when the data isn't available. */
-function buildAuditContext(req: ServerRequest): AuditContext {
-  const headers = req.headers ?? {};
-  const forwarded = firstHeaderValue(headers['x-forwarded-for']);
-  const forwardedIp = forwarded ? forwarded.split(',')[0]?.trim() : undefined;
-  return {
-    ip: req.ip || forwardedIp || req.socket?.remoteAddress || undefined,
-    userAgent: firstHeaderValue(headers['user-agent']),
-    requestId: firstHeaderValue(headers['x-request-id'] ?? headers['x-correlation-id']),
-  };
 }
 
 /** Currently ROLE-only; Record/Set structure preserved for future principal-type expansion. */
