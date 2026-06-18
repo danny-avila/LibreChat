@@ -304,6 +304,11 @@ function getLLMConfig(
         delete (requestOptions.invocationKwargs as Record<string, unknown>)[param];
       }
     });
+
+    /** A TTL is meaningless without caching — drop it alongside promptCache. */
+    if (options.dropParams.includes('promptCache')) {
+      delete (requestOptions as Record<string, unknown>).promptCacheTtl;
+    }
   }
 
   if (shouldOmitSamplingParameters) {
