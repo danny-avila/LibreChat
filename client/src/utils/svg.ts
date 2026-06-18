@@ -11,21 +11,21 @@ import DOMPurify from 'dompurify';
 /** Color keywords that carry no chromatic information and are ignored. */
 const IGNORABLE_COLORS = new Set(['none', 'transparent', 'inherit', 'currentcolor']);
 
-/** Named CSS colors that are pure grayscale. Unknown names are treated as chromatic. */
-const GRAY_NAMES = new Set([
-  'black',
-  'white',
-  'gray',
-  'grey',
-  'silver',
-  'gainsboro',
-  'whitesmoke',
-  'lightgray',
-  'lightgrey',
-  'darkgray',
-  'darkgrey',
-  'dimgray',
-  'dimgrey',
+/** Named CSS grayscale colors mapped to their 0-255 level. Unknown names are chromatic. */
+const GRAY_LEVELS = new Map<string, number>([
+  ['black', 0],
+  ['white', 255],
+  ['gray', 128],
+  ['grey', 128],
+  ['silver', 192],
+  ['gainsboro', 220],
+  ['whitesmoke', 245],
+  ['lightgray', 211],
+  ['lightgrey', 211],
+  ['darkgray', 169],
+  ['darkgrey', 169],
+  ['dimgray', 105],
+  ['dimgrey', 105],
 ]);
 
 /** Paint properties whose color values determine whether an SVG is monochrome. */
@@ -74,24 +74,29 @@ function functionalToValues(color: string): number[] | null {
   return values.some(Number.isNaN) ? null : values;
 }
 
-function isGrayscaleColor(color: string): boolean {
+/** Returns the 0-255 gray level of a grayscale color, or null when it is chromatic. */
+function grayLevel(color: string): number | null {
   if (color.startsWith('#')) {
     const rgb = hexToRgb(color);
-    return rgb ? rgb[0] === rgb[1] && rgb[1] === rgb[2] : false;
+    return rgb && rgb[0] === rgb[1] && rgb[1] === rgb[2] ? rgb[0] : null;
   }
   if (color.startsWith('rgb')) {
     const rgb = functionalToValues(color);
     if (!rgb) {
-      return false;
+      return null;
     }
     const [r, g, b] = rgb.map(Math.round);
-    return r === g && g === b;
+    return r === g && g === b ? r : null;
   }
   if (color.startsWith('hsl')) {
     const hsl = functionalToValues(color);
-    return hsl ? hsl[1] === 0 : false;
+    if (!hsl) {
+      return null;
+    }
+    return hsl[1] === 0 ? Math.round(hsl[2]) : null;
   }
-  return GRAY_NAMES.has(color);
+  const named = GRAY_LEVELS.get(color);
+  return named === undefined ? null : named;
 }
 
 function parseSvgRoot(svg: string): Element | null {
@@ -233,10 +238,10 @@ function collectColors(root: Element): string[] {
 /**
  * Returns true when an SVG can be safely tinted to match the theme: it embeds no
  * raster (`<image>`) or foreign (`<foreignObject>`) content, has no opaque
- * background, and every paint color is grayscale (or it relies on the default
- * black fill / `currentColor`). Multi-color logos, icons with an opaque
- * background, embedded rasters, and anything unparseable return false so they
- * keep their own colors.
+ * background, and resolves to a single grayscale tone (or relies on the default
+ * black fill / `currentColor`). Anything with a second tone (a background shape,
+ * an accent, or a second shade), a chromatic color, or that is unparseable
+ * returns false, since a CSS mask would flatten it to a solid block.
  */
 export function isMonochromeSvg(svg: string): boolean {
   const root = parseSvgRoot(svg);
@@ -253,7 +258,15 @@ export function isMonochromeSvg(svg: string): boolean {
   if (colors.length === 0) {
     return true;
   }
-  return colors.every(isGrayscaleColor);
+  const levels = new Set<number>();
+  for (const color of colors) {
+    const level = grayLevel(color);
+    if (level === null) {
+      return false;
+    }
+    levels.add(level);
+  }
+  return levels.size <= 1;
 }
 
 /**
