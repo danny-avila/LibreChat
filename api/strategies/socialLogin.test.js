@@ -358,5 +358,37 @@ describe('socialLogin', () => {
         expect.objectContaining({ message: 'Email domain not allowed' }),
       );
     });
+
+    it('passes the IdP refresh token through as authInfo when present', async () => {
+      const provider = 'google';
+      const googleId = 'google-with-refresh';
+      const email = 'admin@example.com';
+
+      const existingUser = {
+        _id: 'userRefresh',
+        email,
+        provider: 'google',
+        googleId,
+        role: 'ADMIN',
+      };
+
+      findUser.mockResolvedValue(existingUser);
+
+      const mockProfile = {
+        id: googleId,
+        emails: [{ value: email, verified: true }],
+        photos: [{ value: 'https://example.com/avatar.png' }],
+        name: { givenName: 'Admin', familyName: 'User' },
+      };
+
+      const loginFn = socialLogin(provider, mockGetProfileDetails);
+      const callback = jest.fn();
+
+      await loginFn(null, 'idp-refresh-token', null, mockProfile, callback);
+
+      expect(callback).toHaveBeenCalledWith(null, existingUser, {
+        refreshToken: 'idp-refresh-token',
+      });
+    });
   });
 });

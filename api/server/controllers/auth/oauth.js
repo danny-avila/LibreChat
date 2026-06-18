@@ -43,11 +43,15 @@ function createOAuthHandler(redirectUri = domains.client) {
         const sessionExpiry = Number(process.env.SESSION_EXPIRY) || DEFAULT_SESSION_EXPIRY;
         const token = await generateToken(req.user, sessionExpiry);
 
-        /** Get refresh token from tokenset for OpenID users */
-        const refreshToken =
-          req.user.provider === 'openid' && isEnabled(process.env.OPENID_REUSE_TOKENS) === true
-            ? req.user.tokenset?.refresh_token || req.user.federatedTokens?.refresh_token
-            : undefined;
+        let refreshToken;
+        if (req.user.provider === 'openid') {
+          if (isEnabled(process.env.OPENID_REUSE_TOKENS) === true) {
+            refreshToken =
+              req.user.tokenset?.refresh_token || req.user.federatedTokens?.refresh_token;
+          }
+        } else {
+          refreshToken = req.authInfo?.refreshToken;
+        }
         const expiresAt = Date.now() + sessionExpiry;
 
         const callbackUrl = new URL(redirectUri);

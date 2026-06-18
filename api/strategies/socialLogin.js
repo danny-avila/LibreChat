@@ -55,9 +55,12 @@ const socialLogin =
         return cb(error);
       }
 
+      const passResult = (user) =>
+        refreshToken ? cb(null, user, { refreshToken }) : cb(null, user);
+
       if (existingUser?.provider === provider) {
         await handleExistingUser(existingUser, avatarUrl, appConfig, email);
-        return cb(null, existingUser);
+        return passResult(existingUser);
       } else if (existingUser) {
         logger.info(
           `[${provider}Login] User ${email} already exists with provider ${existingUser.provider}`,
@@ -97,7 +100,7 @@ const socialLogin =
         emailVerified,
         appConfig,
       });
-      return cb(null, newUser);
+      return passResult(newUser);
     } catch (err) {
       logger.error(`[${provider}Login]`, err);
       return cb(err);

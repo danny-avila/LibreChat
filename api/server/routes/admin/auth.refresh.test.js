@@ -248,3 +248,254 @@ describe('admin auth OpenID refresh route', () => {
     expect(debugOutput).not.toContain('https://api.example.com');
   });
 });
+
+describe('admin auth Google refresh route', () => {
+  const ORIGINAL_GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+  const ORIGINAL_GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+
+  const { findUsers, getUserById, generateToken } = require('~/models');
+  const { hasCapability } = require('~/server/middleware/roles/capabilities');
+
+  const validIdToken = () => {
+    const header = Buffer.from(JSON.stringify({ alg: 'RS256' })).toString('base64url');
+    const payload = Buffer.from(JSON.stringify({ sub: 'google-admin-id' })).toString('base64url');
+    return `${header}.${payload}.signature`;
+  };
+
+  let app;
+  let originalFetch;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    process.env.GOOGLE_CLIENT_ID = 'google-client-id';
+    process.env.GOOGLE_CLIENT_SECRET = 'google-client-secret';
+    delete process.env.SESSION_EXPIRY;
+
+    app = express();
+    app.use(express.json());
+    app.use('/api/admin', adminAuthRouter);
+
+    originalFetch = global.fetch;
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            access_token: 'google-new-access',
+            id_token: validIdToken(),
+            expires_in: 3600,
+          }),
+      }),
+    );
+
+    findUsers.mockResolvedValue([
+      {
+        _id: { toString: () => 'user-id' },
+        id: 'user-id',
+        email: 'admin@example.com',
+        name: 'Admin',
+        role: 'ADMIN',
+        googleId: 'google-admin-id',
+      },
+    ]);
+    getUserById.mockResolvedValue(null);
+    generateToken.mockResolvedValue('admin-jwt');
+    hasCapability.mockResolvedValue(true);
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  afterAll(() => {
+    if (ORIGINAL_GOOGLE_CLIENT_ID === undefined) {
+      delete process.env.GOOGLE_CLIENT_ID;
+    } else {
+      process.env.GOOGLE_CLIENT_ID = ORIGINAL_GOOGLE_CLIENT_ID;
+    }
+    if (ORIGINAL_GOOGLE_CLIENT_SECRET === undefined) {
+      delete process.env.GOOGLE_CLIENT_SECRET;
+    } else {
+      process.env.GOOGLE_CLIENT_SECRET = ORIGINAL_GOOGLE_CLIENT_SECRET;
+    }
+  });
+
+  it('refreshes a google admin session by calling Google with grant_type=refresh_token', async () => {
+    const response = await request(app)
+      .post('/api/admin/oauth/refresh')
+      .send({ refresh_token: 'incoming-google-refresh', provider: 'google' });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      token: 'admin-jwt',
+      refreshToken: 'incoming-google-refresh',
+      user: {
+        id: 'user-id',
+        email: 'admin@example.com',
+        name: 'Admin',
+        role: 'ADMIN',
+      },
+      expiresAt: expect.any(Number),
+    });
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://oauth2.googleapis.com/token',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      }),
+    );
+    const body = global.fetch.mock.calls[0][1].body.toString();
+    expect(body).toContain('client_id=google-client-id');
+    expect(body).toContain('client_secret=google-client-secret');
+    expect(body).toContain('refresh_token=incoming-google-refresh');
+    expect(body).toContain('grant_type=refresh_token');
+  });
+
+  it('does not require OPENID_REUSE_TOKENS for the google provider', async () => {
+    isEnabled.mockReturnValue(false);
+
+    const response = await request(app)
+      .post('/api/admin/oauth/refresh')
+      .send({ refresh_token: 'incoming-google-refresh', provider: 'google' });
+
+    expect(response.status).toBe(200);
+  });
+
+  it('rejects google refresh when GOOGLE_CLIENT_ID/SECRET are not configured', async () => {
+    delete process.env.GOOGLE_CLIENT_ID;
+    delete process.env.GOOGLE_CLIENT_SECRET;
+
+    const response = await request(app)
+      .post('/api/admin/oauth/refresh')
+      .send({ refresh_token: 'incoming-google-refresh', provider: 'google' });
+
+    expect(response.status).toBe(503);
+    expect(response.body.error_code).toBe('GOOGLE_NOT_CONFIGURED');
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('maps a 401 from Google to REFRESH_FAILED', async () => {
+    global.fetch = jest.fn(() =>
+      Promise.resolve({ ok: false, status: 401, json: () => Promise.resolve({}) }),
+    );
+
+    const response = await request(app)
+      .post('/api/admin/oauth/refresh')
+      .send({ refresh_token: 'incoming-google-refresh', provider: 'google' });
+
+    expect(response.status).toBe(401);
+    expect(response.body.error_code).toBe('REFRESH_FAILED');
+  });
+
+  it('returns IDP_INCOMPLETE when Google omits access_token or id_token', async () => {
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ access_token: 'only-access' }),
+      }),
+    );
+
+    const response = await request(app)
+      .post('/api/admin/oauth/refresh')
+      .send({ refresh_token: 'incoming-google-refresh', provider: 'google' });
+
+    expect(response.status).toBe(502);
+    expect(response.body.error_code).toBe('IDP_INCOMPLETE');
+  });
+
+  it('returns CLAIMS_INCOMPLETE when Google id_token has no sub', async () => {
+    const header = Buffer.from(JSON.stringify({ alg: 'RS256' })).toString('base64url');
+    const payload = Buffer.from(JSON.stringify({})).toString('base64url');
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            access_token: 'google-new-access',
+            id_token: `${header}.${payload}.signature`,
+          }),
+      }),
+    );
+
+    const response = await request(app)
+      .post('/api/admin/oauth/refresh')
+      .send({ refresh_token: 'incoming-google-refresh', provider: 'google' });
+
+    expect(response.status).toBe(502);
+    expect(response.body.error_code).toBe('CLAIMS_INCOMPLETE');
+  });
+
+  it('returns USER_NOT_FOUND when no admin user matches the refreshed googleId', async () => {
+    findUsers.mockResolvedValue([]);
+
+    const response = await request(app)
+      .post('/api/admin/oauth/refresh')
+      .send({ refresh_token: 'incoming-google-refresh', provider: 'google' });
+
+    expect(response.status).toBe(401);
+    expect(response.body.error_code).toBe('USER_NOT_FOUND');
+  });
+
+  it('returns USER_ID_MISMATCH when user_id resolves to a user with a different googleId', async () => {
+    getUserById.mockResolvedValue({
+      _id: { toString: () => 'other-user' },
+      googleId: 'different-google-id',
+      tenantId: undefined,
+    });
+
+    const response = await request(app).post('/api/admin/oauth/refresh').send({
+      refresh_token: 'incoming-google-refresh',
+      user_id: 'other-user',
+      provider: 'google',
+    });
+
+    expect(response.status).toBe(401);
+    expect(response.body.error_code).toBe('USER_ID_MISMATCH');
+  });
+
+  it('returns FORBIDDEN when the resolved user no longer holds ACCESS_ADMIN', async () => {
+    hasCapability.mockResolvedValue(false);
+
+    const response = await request(app)
+      .post('/api/admin/oauth/refresh')
+      .send({ refresh_token: 'incoming-google-refresh', provider: 'google' });
+
+    expect(response.status).toBe(403);
+    expect(response.body.error_code).toBe('FORBIDDEN');
+  });
+
+  it('forwards a rotated refresh_token from Google when present', async () => {
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            access_token: 'google-new-access',
+            id_token: validIdToken(),
+            refresh_token: 'rotated-google-refresh',
+          }),
+      }),
+    );
+
+    const response = await request(app)
+      .post('/api/admin/oauth/refresh')
+      .send({ refresh_token: 'incoming-google-refresh', provider: 'google' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.refreshToken).toBe('rotated-google-refresh');
+  });
+
+  it('rejects unknown provider values with INVALID_PROVIDER', async () => {
+    const response = await request(app)
+      .post('/api/admin/oauth/refresh')
+      .send({ refresh_token: 'incoming-refresh', provider: 'github' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error_code).toBe('INVALID_PROVIDER');
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+});

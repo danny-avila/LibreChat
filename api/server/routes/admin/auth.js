@@ -36,7 +36,146 @@ const getLogStores = require('~/cache/getLogStores');
 const { getOpenIdConfig } = require('~/strategies');
 const middleware = require('~/server/middleware');
 
+const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
+
 const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
+
+function decodeJwtPayload(token) {
+  const segments = token.split('.');
+  if (segments.length !== 3) return undefined;
+  try {
+    const payload = Buffer.from(segments[1], 'base64url').toString('utf8');
+    return JSON.parse(payload);
+  } catch {
+    return undefined;
+  }
+}
+
+async function refreshGoogleAdminSession({ refreshToken, userId, tenantId, sessionExpiry }) {
+  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+    throw new AdminRefreshError(
+      'GOOGLE_NOT_CONFIGURED',
+      503,
+      'Google admin OAuth is not configured',
+    );
+  }
+
+  let tokenResponse;
+  try {
+    tokenResponse = await fetch(GOOGLE_TOKEN_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: process.env.GOOGLE_CLIENT_ID,
+        client_secret: process.env.GOOGLE_CLIENT_SECRET,
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token',
+      }),
+    });
+  } catch (err) {
+    logger.warn('[admin/oauth/refresh] Google token endpoint request failed', {
+      name: err?.name,
+      message: err?.message,
+    });
+    throw new AdminRefreshError('REFRESH_FAILED', 401, 'Refresh failed');
+  }
+
+  if (!tokenResponse.ok) {
+    logger.warn('[admin/oauth/refresh] Google rejected refresh grant', {
+      status: tokenResponse.status,
+    });
+    throw new AdminRefreshError('REFRESH_FAILED', 401, 'Refresh failed');
+  }
+
+  const tokenset = await tokenResponse.json();
+  if (!tokenset.access_token || !tokenset.id_token) {
+    throw new AdminRefreshError(
+      'IDP_INCOMPLETE',
+      502,
+      'Google returned a tokenset missing access_token or id_token',
+    );
+  }
+
+  const claims = decodeJwtPayload(tokenset.id_token);
+  if (!claims?.sub) {
+    throw new AdminRefreshError(
+      'CLAIMS_INCOMPLETE',
+      502,
+      'Google id_token has no readable claims or no sub',
+    );
+  }
+
+  const googleId = claims.sub;
+  const SAFE_USER_PROJECTION = '-password -__v -totpSecret -backupCodes';
+
+  let user;
+  if (typeof userId === 'string' && userId.length > 0) {
+    const direct = await getUserById(userId, SAFE_USER_PROJECTION);
+    if (direct) {
+      if (direct.googleId !== googleId) {
+        throw new AdminRefreshError(
+          'USER_ID_MISMATCH',
+          401,
+          'Provided user_id does not match the refreshed identity',
+        );
+      }
+      if (tenantId && direct.tenantId !== tenantId) {
+        throw new AdminRefreshError(
+          'TENANT_MISMATCH',
+          401,
+          'Provided user_id resolves outside the request tenant',
+        );
+      }
+      user = direct;
+    }
+  }
+
+  if (!user) {
+    const filter = tenantId ? { googleId, tenantId } : { googleId };
+    const [found] = await findUsers(filter, SAFE_USER_PROJECTION, {
+      sort: { updatedAt: -1 },
+      limit: 1,
+    });
+    user = found;
+  }
+
+  if (!user) {
+    throw new AdminRefreshError('USER_NOT_FOUND', 401, 'No user found for the refreshed identity');
+  }
+
+  let canAccess = false;
+  try {
+    canAccess = await hasCapability(
+      {
+        id: user.id ?? user._id?.toString(),
+        role: user.role ?? '',
+        tenantId: user.tenantId,
+      },
+      SystemCapabilities.ACCESS_ADMIN,
+    );
+  } catch (err) {
+    logger.warn(`[admin/oauth/refresh] capability check failed, denying: ${err?.message}`);
+  }
+  if (!canAccess) {
+    throw new AdminRefreshError('FORBIDDEN', 403, 'User does not have admin access');
+  }
+
+  const token = await generateToken(user, sessionExpiry);
+  const expiresAt = Date.now() + sessionExpiry;
+  const responseUser = {
+    id: user.id ?? user._id?.toString(),
+    email: user.email,
+    name: user.name,
+    role: user.role,
+  };
+
+  return {
+    token,
+    refreshToken: tokenset.refresh_token ?? refreshToken,
+    user: responseUser,
+    expiresAt,
+  };
+}
 
 const setBalanceConfig = createSetBalanceConfig({
   getAppConfig,
@@ -236,6 +375,8 @@ router.get('/oauth/google', async (req, res, next) => {
     scope: ['openid', 'profile', 'email'],
     session: false,
     state,
+    accessType: 'offline',
+    prompt: 'consent',
   })(req, res, next);
 });
 
@@ -491,21 +632,23 @@ router.post('/oauth/exchange', middleware.loginLimiter, async (req, res) => {
  * `/api/admin/oauth/exchange`.
  *
  * POST /api/admin/oauth/refresh
- * Body:     { refresh_token: string, user_id?: string }
+ * Body:     { refresh_token: string, user_id?: string, provider?: 'openid' | 'google' }
  * Response: { token: string, refreshToken?: string, user: object, expiresAt: number }
  *
  * Errors (all responses are `{ error: string, error_code: string }`):
  *   400 MISSING_REFRESH_TOKEN  — refresh_token absent or empty
+ *   400 INVALID_PROVIDER       — provider value not one of 'openid' | 'google'
  *   401 REFRESH_FAILED         — IdP rejected the refresh grant
  *   401 USER_NOT_FOUND         — no LibreChat user matches the refreshed sub
- *   401 USER_ID_MISMATCH       — supplied user_id resolves to a user with a different openidId
+ *   401 USER_ID_MISMATCH       — supplied user_id resolves to a different provider id
  *   401 ISSUER_MISMATCH        — refreshed tokenset was issued by an unexpected issuer
  *   401 TENANT_MISMATCH        — resolved user belongs to a different tenant than the request
  *   403 FORBIDDEN              — resolved user no longer holds ACCESS_ADMIN
- *   403 TOKEN_REUSE_DISABLED   — OPENID_REUSE_TOKENS is not enabled on the server
- *   502 IDP_INCOMPLETE         — IdP returned a tokenset missing access_token
+ *   403 TOKEN_REUSE_DISABLED   — OPENID_REUSE_TOKENS is not enabled (openid provider only)
+ *   502 IDP_INCOMPLETE         — IdP returned a tokenset missing access_token / id_token
  *   502 CLAIMS_INCOMPLETE      — IdP tokenset has no readable claims or no sub
  *   503 OPENID_NOT_CONFIGURED  — OpenID is not configured on this server
+ *   503 GOOGLE_NOT_CONFIGURED  — Google admin OAuth is not configured on this server
  *   500 INTERNAL_ERROR         — anything else (logged server-side)
  */
 router.post(
@@ -514,12 +657,46 @@ router.post(
   preAuthTenantMiddleware,
   async (req, res) => {
     try {
-      const { refresh_token: refreshToken, user_id: userId } = req.body ?? {};
+      const {
+        refresh_token: refreshToken,
+        user_id: userId,
+        provider: rawProvider,
+      } = req.body ?? {};
       if (typeof refreshToken !== 'string' || refreshToken.length === 0) {
         return res.status(400).json({
           error: 'Missing refresh_token',
           error_code: 'MISSING_REFRESH_TOKEN',
         });
+      }
+
+      const provider =
+        typeof rawProvider === 'string' && rawProvider.length > 0 ? rawProvider : 'openid';
+      if (provider !== 'openid' && provider !== 'google') {
+        return res.status(400).json({
+          error: 'Unsupported provider',
+          error_code: 'INVALID_PROVIDER',
+        });
+      }
+
+      const sessionExpiry = Number(process.env.SESSION_EXPIRY) || DEFAULT_SESSION_EXPIRY;
+      const normalizedUserId = typeof userId === 'string' && userId.length > 0 ? userId : undefined;
+      const tenantId = getTenantId();
+
+      if (provider === 'google') {
+        try {
+          const result = await refreshGoogleAdminSession({
+            refreshToken,
+            userId: normalizedUserId,
+            tenantId,
+            sessionExpiry,
+          });
+          return res.json(result);
+        } catch (err) {
+          if (err instanceof AdminRefreshError) {
+            return res.status(err.status).json({ error: err.message, error_code: err.code });
+          }
+          throw err;
+        }
       }
 
       if (!isEnabled(process.env.OPENID_REUSE_TOKENS)) {
@@ -564,7 +741,6 @@ router.post(
         });
       }
 
-      const sessionExpiry = Number(process.env.SESSION_EXPIRY) || DEFAULT_SESSION_EXPIRY;
       const expectedIssuer = openIdConfig.serverMetadata?.()?.issuer;
 
       try {
@@ -596,10 +772,10 @@ router.post(
             }),
           },
           {
-            userId: typeof userId === 'string' && userId.length > 0 ? userId : undefined,
+            userId: normalizedUserId,
             previousRefreshToken: refreshToken,
             expectedIssuer,
-            tenantId: getTenantId(),
+            tenantId,
           },
         );
         return res.json(result);
