@@ -993,9 +993,10 @@ describe('createAdminRolesHandlers', () => {
     it('emits a grant.removed audit entry for each grant removed by the cascade', async () => {
       const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
       const deps = createDeps({
-        deleteGrantsForPrincipal: jest
-          .fn()
-          .mockResolvedValue([{ capability: 'manage:users' }, { capability: 'read:users' }]),
+        deleteGrantsForPrincipal: jest.fn().mockResolvedValue([
+          { capability: 'manage:users', tenantId: 'tenant-1' },
+          { capability: 'read:users', tenantId: 'tenant-1' },
+        ]),
         recordAuditEntry,
       });
       const handlers = createAdminRolesHandlers(deps);
@@ -1017,6 +1018,38 @@ describe('createAdminRolesHandlers', () => {
           metadata: { capability: 'manage:users' },
           tenantId: 'tenant-1',
         }),
+      );
+    });
+
+    it('scopes each cascade audit entry to the removed grant’s own tenant', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = createDeps({
+        // a platform admin (no tenantId) deletes a role holding both a
+        // platform-level grant and a tenant-scoped one
+        deleteGrantsForPrincipal: jest
+          .fn()
+          .mockResolvedValue([
+            { capability: 'read:users' },
+            { capability: 'manage:users', tenantId: 'tenant-x' },
+          ]),
+        recordAuditEntry,
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status } = createReqRes({
+        params: { name: 'editor' },
+        user: { _id: new Types.ObjectId(), role: 'admin' },
+      });
+
+      await handlers.deleteRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      // platform grant → platform chain (tenantId undefined)
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({ metadata: { capability: 'read:users' }, tenantId: undefined }),
+      );
+      // tenant grant → that tenant's chain, not the caller's (undefined) scope
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({ metadata: { capability: 'manage:users' }, tenantId: 'tenant-x' }),
       );
     });
 

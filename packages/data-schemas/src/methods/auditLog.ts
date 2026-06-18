@@ -290,6 +290,28 @@ export function createAuditLogMethods(mongoose: typeof import('mongoose')): Audi
     return mongoose.models.AuditLog as Model<IAuditLog>;
   }
 
+  /**
+   * The read-then-create append only serializes concurrent writers when the
+   * unique `{ chainKey, seq }` index exists. With `MONGO_AUTO_INDEX=false`, or
+   * during the startup window before a background build finishes, two writers
+   * could insert the same `seq` with no duplicate-key error and silently fork
+   * the chain. Build the indexes once before the first append so serialization
+   * never depends on a background build. Memoized; reset on failure so a later
+   * write retries.
+   */
+  let indexPromise: Promise<unknown> | null = null;
+  function ensureIndexes(): Promise<unknown> {
+    if (!indexPromise) {
+      indexPromise = model()
+        .createIndexes()
+        .catch((err) => {
+          indexPromise = null;
+          throw err;
+        });
+    }
+    return indexPromise;
+  }
+
   async function recordAuditEntry(
     input: RecordAuditEntryInput,
     options?: RecordAuditEntryOptions,
@@ -316,6 +338,8 @@ export function createAuditLogMethods(mongoose: typeof import('mongoose')): Audi
 
     for (let attempt = 0; attempt < MAX_APPEND_RETRIES; attempt++) {
       try {
+        /** Guarantee the unique seq index exists before serializing on it. */
+        await ensureIndexes();
         const last = await AuditLog.findOne({ chainKey })
           .sort({ seq: -1 })
           .select('seq hash')
@@ -615,19 +639,31 @@ export function createAuditLogMethods(mongoose: typeof import('mongoose')): Audi
      */
     // eslint-disable-next-line no-restricted-syntax -- privileged retention purge; append-only hooks block deleteMany, tenant scoped via chainKey
     const result = await AuditLog.collection.deleteMany(deleteFilter);
+    const deletedCount = result.deletedCount ?? 0;
+
+    logger.warn('[auditLog] retention purge executed', {
+      chainKey,
+      before: options.before.toISOString(),
+      deletedCount,
+    });
+
+    /**
+     * Only a purge that actually removed rows may mint a trust boundary. A no-op
+     * purge returning a checkpoint for the current first entry would let a caller
+     * legitimize a prefix this purge never authorized (e.g. one an attacker
+     * deleted), so `verifyAuditChain` could be tricked into accepting it.
+     */
+    if (deletedCount === 0) {
+      return { deletedCount: 0 };
+    }
+
     const newFirst = await AuditLog.findOne({ chainKey })
       .sort({ seq: 1 })
       .select('seq prevHash')
       .lean<{ seq: number; prevHash: string }>();
 
-    logger.warn('[auditLog] retention purge executed', {
-      chainKey,
-      before: options.before.toISOString(),
-      deletedCount: result.deletedCount ?? 0,
-    });
-
     return {
-      deletedCount: result.deletedCount ?? 0,
+      deletedCount,
       /** Boundary for `verifyAuditChain`: the new earliest entry resumes the
        * chain at `seq`, so the purged prefix ran through `seq - 1` and its last
        * hash is this entry's `prevHash`. Callers persist this to later prove the

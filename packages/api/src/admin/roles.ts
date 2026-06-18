@@ -196,7 +196,10 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
           target: { type: PrincipalType.ROLE, id: roleName, name: roleName },
           metadata: { capability: grant.capability },
           context,
-          tenantId: user.tenantId,
+          /** Scope each entry to the removed grant's own tenant — a platform
+           * admin's role deletion can remove tenant-scoped grants, and those
+           * removals must land in the affected tenant's chain, not the caller's. */
+          tenantId: grant.tenantId,
         });
       } catch (err) {
         logger.error('[adminRoles] grant.removed audit failed during role deletion', err);

@@ -468,5 +468,27 @@ describe('auditLog methods', () => {
         .lean<{ seq: number }[]>();
       expect(remaining.map((r) => r.seq)).toEqual([1, 2, 3, 4]);
     });
+
+    it('does not mint a checkpoint when a confirmed purge removed nothing', async () => {
+      await seed(2);
+      const result = await methods.purgeAuditLogEntries('tenant-a', {
+        // cutoff before every entry → nothing matches → no authorized prefix
+        before: new Date(Date.now() - 60_000),
+        confirm: true,
+      });
+      expect(result.deletedCount).toBe(0);
+      expect(result.checkpoint).toBeUndefined();
+    });
+  });
+
+  describe('append index safety', () => {
+    it('builds the unique seq index before appending (independent of autoIndex)', async () => {
+      const spy = jest.spyOn(AuditLog, 'createIndexes');
+      // a fresh methods instance has not yet memoized the index build
+      const freshMethods = createAuditLogMethods(mongoose);
+      await freshMethods.recordAuditEntry(baseInput());
+      expect(spy).toHaveBeenCalled();
+      spy.mockRestore();
+    });
   });
 });
