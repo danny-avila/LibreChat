@@ -1297,6 +1297,31 @@ export const createMemory = (data: {
   return request.post(endpoints.memories(), data);
 };
 
+/* Notifications */
+export const getNotifications = (
+  params?: q.NotificationsListParams,
+): Promise<q.NotificationsListResponse> => {
+  return request.get(endpoints.notifications(params));
+};
+
+export const createNotification = (
+  data: q.CreateNotificationBody,
+): Promise<{ created: boolean; notification: q.TNotification }> => {
+  return request.post(endpoints.notifications(), data);
+};
+
+export const markNotificationRead = (id: string): Promise<{ updated: boolean }> => {
+  return request.patch(endpoints.notificationMarkRead(id), {});
+};
+
+export const markAllNotificationsRead = (): Promise<{ updated: boolean; count: number }> => {
+  return request.post(endpoints.notificationsReadAll(), {});
+};
+
+export const deleteNotification = (id: string): Promise<void> => {
+  return request.delete(endpoints.notification(id));
+};
+
 export function searchPrincipals(
   params: q.PrincipalSearchParams,
 ): Promise<q.PrincipalSearchResponse> {

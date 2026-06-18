@@ -22,6 +22,7 @@ jest.mock('~/models', () => {
     deleteAllAgentApiKeys: jest.fn().mockResolvedValue(undefined),
     deleteConversationTags: jest.fn().mockResolvedValue(undefined),
     deleteAllUserMemories: jest.fn().mockResolvedValue(undefined),
+    deleteAllUserNotifications: jest.fn().mockResolvedValue(0),
     deleteTransactions: jest.fn().mockResolvedValue(undefined),
     deleteAclEntries: jest.fn().mockResolvedValue(undefined),
     updateUserPlugins: jest.fn(),
@@ -270,11 +271,13 @@ describe('deleteUserController', () => {
   it('should return 200 on successful deletion', async () => {
     const userId = new mongoose.Types.ObjectId();
     const req = { user: { id: userId.toString(), _id: userId, email: 'test@test.com' } };
+    const { deleteAllUserNotifications } = require('~/models');
 
     await deleteUserController(req, mockRes);
 
     expect(mockRes.status).toHaveBeenCalledWith(200);
     expect(mockRes.send).toHaveBeenCalledWith({ message: 'User deleted' });
+    expect(deleteAllUserNotifications).toHaveBeenCalledWith(userId.toString());
   });
 
   it('should remove the user from all groups via $pullAll', async () => {

@@ -5,6 +5,7 @@ const adminAuth = require('./admin/auth');
 const adminConfig = require('./admin/config');
 const adminGrants = require('./admin/grants');
 const adminGroups = require('./admin/groups');
+const adminNotifications = require('./admin/notifications');
 const adminRoles = require('./admin/roles');
 const adminSkills = require('./admin/skills');
 const adminUsers = require('./admin/users');
@@ -12,6 +13,7 @@ const endpoints = require('./endpoints');
 const staticRoute = require('./static');
 const messages = require('./messages');
 const memories = require('./memories');
+const notifications = require('./notifications');
 const presets = require('./presets');
 const projects = require('./projects');
 const prompts = require('./prompts');
@@ -44,6 +46,7 @@ module.exports = {
   adminConfig,
   adminGrants,
   adminGroups,
+  adminNotifications,
   adminRoles,
   adminSkills,
   adminUsers,
@@ -69,6 +72,7 @@ module.exports = {
   balance,
   messages,
   memories,
+  notifications,
   endpoints,
   assistants,
   categories,

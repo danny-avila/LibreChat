@@ -7,6 +7,7 @@ export default {
   moduleNameMapper: {
     '^@src/(.*)$': '<rootDir>/src/$1',
     '^~/(.*)$': '<rootDir>/src/$1',
+    '^librechat-data-provider$': '<rootDir>/../data-provider/src/index.ts',
   },
   // coverageThreshold: {
   //   global: {

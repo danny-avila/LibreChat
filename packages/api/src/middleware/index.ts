@@ -4,6 +4,7 @@ export * from './error';
 export * from './notFound';
 export * from './balance';
 export * from './json';
+export * from './bodySize';
 export * from './capabilities';
 export * from './auth';
 export {

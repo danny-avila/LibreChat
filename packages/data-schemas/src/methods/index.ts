@@ -7,6 +7,11 @@ import { createFileMethods, type FileMethods } from './file';
 import { createKeyMethods, type KeyMethods } from './key';
 /* Memories */
 import { createMemoryMethods, type MemoryMethods } from './memory';
+import {
+  createNotificationMethods,
+  InvalidNotificationCursorError,
+  type NotificationMethods,
+} from './notification';
 /* Agent Categories */
 import { createAgentCategoryMethods, type AgentCategoryMethods } from './agentCategory';
 /* Agent API Keys */
@@ -88,7 +93,12 @@ import { createAgentMethods, type AgentMethods, type AgentDeps } from './agent';
 /* Config */
 import { createConfigMethods, type ConfigMethods } from './config';
 
-export { RoleConflictError, DEFAULT_REFRESH_TOKEN_EXPIRY, DEFAULT_SESSION_EXPIRY };
+export {
+  RoleConflictError,
+  InvalidNotificationCursorError,
+  DEFAULT_REFRESH_TOKEN_EXPIRY,
+  DEFAULT_SESSION_EXPIRY,
+};
 export { tokenValues, cacheTokenValues, premiumTokenValues, defaultRate, createTxMethods };
 export { permissionBitSupersets };
 export {
@@ -109,6 +119,7 @@ export type AllMethods = UserMethods &
   KeyMethods &
   FileMethods &
   MemoryMethods &
+  NotificationMethods &
   AgentCategoryMethods &
   AgentApiKeyMethods &
   MCPServerMethods &
@@ -235,6 +246,7 @@ export function createMethods(
     ...createKeyMethods(mongoose),
     ...createFileMethods(mongoose),
     ...createMemoryMethods(mongoose),
+    ...createNotificationMethods(mongoose),
     ...createAgentCategoryMethods(mongoose),
     ...createAgentApiKeyMethods(mongoose),
     ...createMCPServerMethods(mongoose),
@@ -278,6 +290,7 @@ export type {
   KeyMethods,
   FileMethods,
   MemoryMethods,
+  NotificationMethods,
   AgentCategoryMethods,
   AgentApiKeyMethods,
   MCPServerMethods,

@@ -5,6 +5,7 @@ import {
   endpointSchema,
   RetentionMode,
   configSchema,
+  getConfigDefaults,
   interfaceSchema,
   fileStorageSchema,
   fileStrategiesSchema,
@@ -990,6 +991,11 @@ describe('interfaceSchema', () => {
 
     expect(result.retentionMode).toBe(RetentionMode.ALL);
     expect(result.retainAgentFiles).toBe(true);
+  });
+
+  it('defaults notifications to false and accepts explicit true', () => {
+    expect(getConfigDefaults().interface.notifications).toBe(false);
+    expect(interfaceSchema.parse({ notifications: true }).notifications).toBe(true);
   });
 });
 

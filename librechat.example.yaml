@@ -169,6 +169,14 @@ interface:
   marketplace:
     use: false
   fileCitations: true
+  # User notifications inbox (sidebar bell). Default: false (UI off; APIs still available).
+  # Set notifications: true and restart to show the bell. Polls every 30s (no push/WebSocket).
+  # User API (JWT): GET list, PATCH read, POST read-all, DELETE — all authenticated users.
+  # Admin broadcast: POST /api/admin/notifications/broadcast with type "announcement" (admin capability).
+  # POST /api/notifications creates a notification for the authenticated admin only (testing);
+  # fan-out to all users uses broadcast or server-side createNotification / createBroadcastNotification.
+  # Broadcast inserts one document per user — use carefully on large deployments. Badge shows 99+ if unread > 100.
+  notifications: false
   # Remote Agents configuration
   # Controls user permissions for remote agents with external API support
   # remoteAgents:
