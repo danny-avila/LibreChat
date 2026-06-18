@@ -30,9 +30,20 @@ export const MAX_AUDIT_EXPORT_ROWS = 100_000;
 /** Record-format version stamped on every new entry. */
 export const AUDIT_SCHEMA_VERSION = 1;
 const MAX_SEARCH_LENGTH = 200;
-/** Bounded retries when concurrent appends race for the same `seq`. */
-const MAX_APPEND_RETRIES = 5;
+/**
+ * Retries when concurrent appends race for the same `seq`. Generous because a
+ * lost append on the default fail-open path means a silently missing audit row;
+ * with jittered backoff this resolves contention well beyond any realistic burst
+ * of parallel admin writes.
+ */
+const MAX_APPEND_RETRIES = 12;
+/** Base unit (ms) for jittered backoff between duplicate-key retries. */
+const APPEND_BACKOFF_MS = 5;
 const OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export interface AuditLogMethods {
   recordAuditEntry: (
@@ -349,6 +360,9 @@ export function createAuditLogMethods(mongoose: typeof import('mongoose')): Audi
         return doc;
       } catch (err) {
         if (isDuplicateKeyError(err) && attempt < MAX_APPEND_RETRIES - 1) {
+          /** Jittered backoff de-correlates racing writers before they recompute
+           * the tail `seq`, so the next attempt is very unlikely to collide. */
+          await sleep(Math.floor(Math.random() * APPEND_BACKOFF_MS * (attempt + 1)));
           continue;
         }
         /**
@@ -574,19 +588,33 @@ export function createAuditLogMethods(mongoose: typeof import('mongoose')): Audi
     }
     const AuditLog = model();
     const chainKey = auditChainKey(tenantId);
+
+    /**
+     * Translate the date intent into a contiguous `seq` boundary before deleting.
+     * `createdAt` is app-generated, so under multi-instance clock skew a later
+     * `seq` can carry an earlier timestamp; a raw date delete could then remove
+     * an interior row and permanently break verification. Instead, find the
+     * earliest entry that must be retained (the first by `seq` whose `createdAt`
+     * is on/after `before`) and delete only the strictly-lower `seq` prefix. This
+     * never deletes past a retained entry, so the remaining chain stays
+     * contiguous even with skew (it may retain a few old rows, which is safe).
+     */
+    const firstRetained = await AuditLog.findOne({ chainKey, createdAt: { $gte: options.before } })
+      .sort({ seq: 1 })
+      .select('seq')
+      .lean<{ seq: number }>();
+
+    const deleteFilter: FilterQuery<IAuditLog> = firstRetained
+      ? { chainKey, seq: { $lt: firstRetained.seq } }
+      : { chainKey };
+
     /**
      * Retention purge is the one privileged path that removes audit rows. It
      * intentionally uses the raw driver to bypass the append-only Mongoose hooks
-     * (the model blocks every delete). Tenant isolation is applied manually via
-     * `chainKey`. `createdAt` is monotonic with `seq`, so a date-bounded delete
-     * removes a contiguous prefix and leaves the chain verifiable from the new
-     * earliest entry's prevHash checkpoint.
+     * (the model blocks every delete). Tenant isolation is applied via `chainKey`.
      */
     // eslint-disable-next-line no-restricted-syntax -- privileged retention purge; append-only hooks block deleteMany, tenant scoped via chainKey
-    const result = await AuditLog.collection.deleteMany({
-      chainKey,
-      createdAt: { $lt: options.before },
-    });
+    const result = await AuditLog.collection.deleteMany(deleteFilter);
     const newFirst = await AuditLog.findOne({ chainKey })
       .sort({ seq: 1 })
       .select('seq prevHash')

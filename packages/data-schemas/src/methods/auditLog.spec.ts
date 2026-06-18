@@ -442,5 +442,31 @@ describe('auditLog methods', () => {
       expect(verified.ok).toBe(true);
       expect(verified.range?.firstSeq).toBeGreaterThan(1);
     });
+
+    it('purges only a contiguous seq prefix under createdAt clock skew', async () => {
+      for (let i = 0; i < 4; i++) {
+        await methods.recordAuditEntry(baseInput());
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      const fourth = await AuditLog.findOne({ chainKey: CK_A, seq: 4 }).lean();
+      // simulate multi-instance clock skew: the earliest seq carries a late timestamp
+      await AuditLog.collection.updateOne(
+        { chainKey: CK_A, seq: 1 },
+        { $set: { createdAt: new Date(fourth!.createdAt.getTime() + 60_000) } },
+      );
+      // a naive `createdAt < before` delete would drop interior rows (seq 2 & 3)
+      // while keeping seq 1, creating a gap — the seq-boundary purge must refuse,
+      // since seq 1 (the lowest seq) is now within the retention window.
+      const result = await methods.purgeAuditLogEntries('tenant-a', {
+        before: fourth!.createdAt,
+        confirm: true,
+      });
+      expect(result.deletedCount).toBe(0);
+      const remaining = await AuditLog.find({ chainKey: CK_A })
+        .sort({ seq: 1 })
+        .select('seq')
+        .lean<{ seq: number }[]>();
+      expect(remaining.map((r) => r.seq)).toEqual([1, 2, 3, 4]);
+    });
   });
 });
