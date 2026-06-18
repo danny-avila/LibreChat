@@ -71,7 +71,7 @@ jest.mock('~/auth', () => ({
 }));
 
 jest.mock('~/mcp/mcpConfig', () => ({
-  mcpConfig: { CONNECTION_CHECK_TTL: 0 },
+  mcpConfig: { CONNECTION_CHECK_TTL: 0, TOOLS_LIST_MAX_PAGES: 50 },
 }));
 
 const mockedResolveHostnameSSRF = resolveHostnameSSRF as jest.MockedFunction<
