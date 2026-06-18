@@ -63,7 +63,6 @@ function createDeps(overrides: Partial<StripePaymentDeps> = {}): StripePaymentDe
     getAppConfig: jest.fn().mockResolvedValue(createAppConfig()),
     createTransaction: jest.fn().mockResolvedValue({ balance: 1234 }),
     createPayment: jest.fn().mockResolvedValue({ status: 'pending', checkoutSessionId: 'cs_123' }),
-    getPaymentByCheckoutSessionId: jest.fn().mockResolvedValue(null),
     getPaymentByProviderEventId: jest.fn().mockResolvedValue(null),
     claimPayment: jest.fn().mockResolvedValue({ status: 'processing', checkoutSessionId: 'cs_123' }),
     updatePaymentByCheckoutSessionId: jest.fn().mockResolvedValue({
@@ -219,6 +218,100 @@ describe('createStripePaymentHandlers', () => {
     );
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ received: true });
+  });
+
+  test('retries a previously failed provider event instead of treating it as a duplicate', async () => {
+    const constructEvent = jest.fn().mockReturnValue({
+      id: 'evt_retry',
+      type: 'checkout.session.completed',
+      data: {
+        object: {
+          id: 'cs_123',
+          mode: 'payment',
+          payment_status: 'paid',
+          payment_intent: 'pi_123',
+          currency: 'usd',
+          amount_total: 500,
+          metadata: {
+            userId: 'user-123',
+            requestedUsd: '5.00',
+            credits: '5000000',
+          },
+        },
+      },
+    });
+    const deps = createDeps({
+      getPaymentByProviderEventId: jest.fn().mockResolvedValue({
+        status: 'failed',
+        providerEventId: 'evt_retry',
+      }),
+      createStripeClient: jest.fn(
+        () =>
+          ({
+            checkout: { sessions: { create: jest.fn() } },
+            webhooks: { constructEvent },
+          }) as unknown as Stripe,
+      ),
+    });
+    const handlers = createStripePaymentHandlers(deps);
+    const req = {
+      headers: { 'stripe-signature': 'sig_123' },
+      rawBody: Buffer.from('body'),
+      body: {},
+    } as unknown as ServerRequest;
+    const res = createResponse();
+
+    await handlers.handleWebhook(req as never, res);
+
+    expect(deps.claimPayment).toHaveBeenCalledWith({
+      checkoutSessionId: 'cs_123',
+      providerEventId: 'evt_retry',
+      paymentIntentId: 'pi_123',
+    });
+    expect(deps.createTransaction).toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ received: true });
+  });
+
+  test('rejects non-fixed checkout amounts when custom amounts are disabled', async () => {
+    const checkoutCreate = jest.fn();
+    const deps = createDeps({
+      getAppConfig: jest.fn().mockResolvedValue(
+        createAppConfig({
+          payments: {
+            stripe: {
+              enabled: true,
+              allowCustomAmount: false,
+              minUsd: 2,
+              maxUsd: 25,
+              creditsPerUsd: 1000000,
+              successUrl: 'https://example.com/success',
+              cancelUrl: 'https://example.com/cancel',
+            },
+          },
+        }),
+      ),
+      createStripeClient: jest.fn(
+        () =>
+          ({
+            checkout: { sessions: { create: checkoutCreate } },
+            webhooks: { constructEvent: jest.fn() },
+          }) as unknown as Stripe,
+      ),
+    });
+    const handlers = createStripePaymentHandlers(deps);
+    const req = {
+      user: createUser(),
+      body: { amountUsd: 5 },
+    } as unknown as ServerRequest;
+    const res = createResponse();
+
+    await handlers.createCheckoutSession(req, res);
+
+    expect(checkoutCreate).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      message: 'amountUsd must equal the configured fixed amount of 2.',
+    });
   });
 
   test('returns duplicate when the webhook event was already processed', async () => {

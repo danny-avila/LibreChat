@@ -69,7 +69,6 @@ export interface StripePaymentDeps {
     transactions?: { enabled?: boolean };
   }) => Promise<{ balance: number } | undefined>;
   createPayment: (fields: PaymentCreateFields) => Promise<PaymentRecord | null>;
-  getPaymentByCheckoutSessionId: (checkoutSessionId: string) => Promise<PaymentRecord | null>;
   getPaymentByProviderEventId: (providerEventId: string) => Promise<PaymentRecord | null>;
   claimPayment: (params: {
     checkoutSessionId: string;
@@ -106,6 +105,10 @@ function parseAmountUsd(body: unknown): number | null {
   }
 
   return normalizeUsdAmount(amountUsd);
+}
+
+function isConfiguredFixedAmount(amountUsd: number, configuredAmountUsd: number): boolean {
+  return normalizeUsdAmount(amountUsd) === normalizeUsdAmount(configuredAmountUsd);
 }
 
 function resolveStripeConfigError(appConfig?: AppConfig): string {
@@ -175,6 +178,12 @@ export function createStripePaymentHandlers(deps: StripePaymentDeps): {
       if (amountUsd < stripeConfig.minUsd || amountUsd > stripeConfig.maxUsd) {
         return res.status(400).json({
           message: `amountUsd must be between ${stripeConfig.minUsd} and ${stripeConfig.maxUsd}.`,
+        });
+      }
+
+      if (!stripeConfig.allowCustomAmount && !isConfiguredFixedAmount(amountUsd, stripeConfig.minUsd)) {
+        return res.status(400).json({
+          message: `amountUsd must equal the configured fixed amount of ${stripeConfig.minUsd}.`,
         });
       }
 
@@ -263,7 +272,7 @@ export function createStripePaymentHandlers(deps: StripePaymentDeps): {
       }
 
       const processedEvent = await deps.getPaymentByProviderEventId(event.id);
-      if (processedEvent) {
+      if (processedEvent?.status === 'credited') {
         return res.status(200).json({ received: true, duplicate: true });
       }
 

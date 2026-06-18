@@ -20,10 +20,6 @@ const handlers = createStripePaymentHandlers({
       { upsert: true, new: true },
     ).lean();
   },
-  getPaymentByCheckoutSessionId: async (checkoutSessionId) => {
-    const Payment = getPaymentModel();
-    return Payment.findOne({ checkoutSessionId }).lean();
-  },
   getPaymentByProviderEventId: async (providerEventId) => {
     const Payment = getPaymentModel();
     return Payment.findOne({ providerEventId }).lean();

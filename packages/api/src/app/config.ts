@@ -13,6 +13,15 @@ import type {
 import type { AppConfig } from '@librechat/data-schemas';
 import { isEnabled } from '~/utils/common';
 
+function parseFiniteNumber(value?: string): number | undefined {
+  if (value == null || value.trim() === '') {
+    return undefined;
+  }
+
+  const parsedValue = Number.parseFloat(value);
+  return Number.isFinite(parsedValue) ? parsedValue : undefined;
+}
+
 /**
  * Retrieves the balance configuration object
  * */
@@ -73,10 +82,9 @@ export function getPaymentsConfig(appConfig?: AppConfig): Partial<TPaymentsConfi
           enabled: true,
           allowCustomAmount:
             allowCustomAmount == null ? undefined : isEnabled(process.env.STRIPE_ALLOW_CUSTOM_AMOUNT),
-          minUsd: minUsd != null && minUsd ? parseFloat(minUsd) : undefined,
-          maxUsd: maxUsd != null && maxUsd ? parseFloat(maxUsd) : undefined,
-          creditsPerUsd:
-            creditsPerUsd != null && creditsPerUsd ? parseFloat(creditsPerUsd) : undefined,
+          minUsd: parseFiniteNumber(minUsd),
+          maxUsd: parseFiniteNumber(maxUsd),
+          creditsPerUsd: parseFiniteNumber(creditsPerUsd),
         })
       : undefined,
   });

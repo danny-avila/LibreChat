@@ -91,7 +91,6 @@
     "rollup": "^4.34.9",
     "rollup-plugin-peer-deps-external": "^2.2.4",
     "sanitize-html": "^2.13.0",
-    "stripe": "^18.5.0",
     "ts-node": "^10.9.2",
     "tsdown": "^0.22.2",
     "typescript": "^5.9.3",
@@ -161,7 +160,6 @@
     "rate-limit-redis": "^4.2.0",
     "sanitize-html": "^2.13.0",
     "sharp": "^0.33.5",
-    "stripe": "^18.5.0",
     "undici": "^7.24.1",
     "yauzl": "^3.2.1",
     "zod": "^3.22.4"

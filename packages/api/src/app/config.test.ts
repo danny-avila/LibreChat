@@ -318,6 +318,22 @@ describe('getPaymentsConfig', () => {
         },
       });
     });
+
+    it('omits invalid numeric env values instead of returning NaN', () => {
+      process.env.STRIPE_ENABLED = 'true';
+      process.env.STRIPE_MIN_USD = 'not-a-number';
+      process.env.STRIPE_MAX_USD = '25';
+      process.env.STRIPE_CREDITS_PER_USD = 'broken';
+
+      const result = getPaymentsConfig();
+
+      expect(result).toEqual({
+        stripe: {
+          enabled: true,
+          maxUsd: 25,
+        },
+      });
+    });
   });
 
   describe('when appConfig is provided', () => {
