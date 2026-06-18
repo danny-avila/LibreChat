@@ -187,8 +187,7 @@
     },
     "svgo": "^2.8.2",
     "js-yaml": "^4.2.0",
-    "ws": "^8.21.0",
-    "@babel/core": "^7.29.7"
+    "ws": "^8.21.0"
   },
   "nodemonConfig": {
     "ignore": [
