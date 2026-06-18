@@ -1,4 +1,4 @@
-import { logger } from '@librechat/data-schemas';
+import { logger, BASE_CONFIG_PRINCIPAL_ID } from '@librechat/data-schemas';
 import {
   BASE_ONLY_CONFIG_SECTIONS,
   PrincipalType,
@@ -6,7 +6,7 @@ import {
   INTERFACE_PERMISSION_FIELDS,
   PERMISSION_SUB_KEYS,
 } from 'librechat-data-provider';
-import type { AppConfig, ConfigSection, IConfig } from '@librechat/data-schemas';
+import type { AppConfig, ConfigSection, IConfig, SystemCapability } from '@librechat/data-schemas';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { Types, ClientSession } from 'mongoose';
 import type { Response } from 'express';
@@ -79,6 +79,7 @@ export interface AdminConfigDeps {
     overrides: Partial<TCustomConfig>,
     priority: number,
     session?: ClientSession,
+    options?: { expectEmpty?: boolean },
   ) => Promise<IConfig | null>;
   patchConfigFields: (
     principalType: PrincipalType,
@@ -106,18 +107,21 @@ export interface AdminConfigDeps {
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
     session?: ClientSession,
+    options?: { expectEmpty?: boolean },
   ) => Promise<IConfig | null>;
   toggleConfigActive: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
     isActive: boolean,
     session?: ClientSession,
+    options?: { expectEmpty?: boolean },
   ) => Promise<IConfig | null>;
   hasConfigCapability: (
     user: CapabilityUser,
     section: ConfigSection | null,
     verb?: 'manage' | 'read',
   ) => Promise<boolean>;
+  hasCapability?: (user: CapabilityUser, capability: SystemCapability) => Promise<boolean>;
   getAppConfig?: (options?: {
     role?: string;
     userId?: string;
@@ -192,6 +196,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     deleteConfig,
     toggleConfigActive,
     hasConfigCapability,
+    hasCapability = async () => false,
     getAppConfig,
     invalidateConfigCaches,
   } = deps;
@@ -318,7 +323,17 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
-      if (!(await hasConfigCapability(user, null, 'manage'))) {
+      const hasBroadManage = await hasConfigCapability(user, null, 'manage');
+
+      if (principalId === BASE_CONFIG_PRINCIPAL_ID && !hasBroadManage) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
+      }
+
+      const hasAssignConfigs =
+        hasBroadManage ||
+        (await hasCapability(user, `assign:configs:${principalType}` as SystemCapability));
+
+      if (!hasAssignConfigs) {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
@@ -374,16 +389,8 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(200).json({ message: 'No actionable override sections provided' });
       }
 
-      if (overrideSections.length > 0) {
-        const allowed = await Promise.all(
-          overrideSections.map((s) => hasConfigCapability(user, s as ConfigSection, 'manage')),
-        );
-        const denied = overrideSections.find((_, i) => !allowed[i]);
-        if (denied) {
-          return res.status(403).json({
-            error: `Insufficient permissions for config section: ${denied}`,
-          });
-        }
+      if (overrideSections.length > 0 && !hasBroadManage) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
       const config = await upsertConfig(
@@ -392,7 +399,12 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         principalModel(principalType),
         filteredOverrides,
         priority ?? DEFAULT_PRIORITY,
+        undefined,
+        { expectEmpty: !hasBroadManage },
       );
+      if (!config && !hasBroadManage) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
+      }
 
       invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
         logger.error('[adminConfig] Cache invalidation failed after upsert:', err),
@@ -697,12 +709,31 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
-      if (!(await hasConfigCapability(user, null, 'manage'))) {
+      const hasBroadManage = await hasConfigCapability(user, null, 'manage');
+
+      if (principalId === BASE_CONFIG_PRINCIPAL_ID && !hasBroadManage) {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
-      const config = await deleteConfig(principalType, principalId);
+      const allowed =
+        hasBroadManage ||
+        (await hasCapability(user, `assign:configs:${principalType}` as SystemCapability));
+      if (!allowed) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
+      }
+
+      const config = await deleteConfig(principalType, principalId, undefined, {
+        expectEmpty: !hasBroadManage,
+      });
       if (!config) {
+        if (!hasBroadManage) {
+          const exists = await findConfigByPrincipal(principalType, principalId, {
+            includeInactive: true,
+          });
+          if (exists) {
+            return res.status(403).json({ error: 'Insufficient permissions' });
+          }
+        }
         return res.status(404).json({ error: 'Config not found' });
       }
 
@@ -740,12 +771,31 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
-      if (!(await hasConfigCapability(user, null, 'manage'))) {
+      const hasBroadManage = await hasConfigCapability(user, null, 'manage');
+
+      if (principalId === BASE_CONFIG_PRINCIPAL_ID && !hasBroadManage) {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
-      const config = await toggleConfigActive(principalType, principalId, isActive);
+      const allowed =
+        hasBroadManage ||
+        (await hasCapability(user, `assign:configs:${principalType}` as SystemCapability));
+      if (!allowed) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
+      }
+
+      const config = await toggleConfigActive(principalType, principalId, isActive, undefined, {
+        expectEmpty: !hasBroadManage,
+      });
       if (!config) {
+        if (!hasBroadManage) {
+          const exists = await findConfigByPrincipal(principalType, principalId, {
+            includeInactive: true,
+          });
+          if (exists) {
+            return res.status(403).json({ error: 'Insufficient permissions' });
+          }
+        }
         return res.status(404).json({ error: 'Config not found' });
       }
 

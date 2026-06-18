@@ -2,6 +2,7 @@ const express = require('express');
 const { createAdminConfigHandlers } = require('@librechat/api');
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const {
+  hasCapability,
   hasConfigCapability,
   requireCapability,
 } = require('~/server/middleware/roles/capabilities');
@@ -23,6 +24,7 @@ const handlers = createAdminConfigHandlers({
   deleteConfig: db.deleteConfig,
   toggleConfigActive: db.toggleConfigActive,
   hasConfigCapability,
+  hasCapability,
   getAppConfig,
   invalidateConfigCaches,
 });
