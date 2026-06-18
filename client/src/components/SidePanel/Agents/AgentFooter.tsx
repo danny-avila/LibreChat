@@ -1,7 +1,7 @@
 /* eslint-disable i18next/no-literal-string */
 /* ^ We're not worried about i18n for this app ^ */
 
-import { useCallback } from 'react';
+import { useCallback, useRef, useEffect } from 'react';
 import { Globe } from 'lucide-react';
 import { Spinner } from '@librechat/client';
 import { useWatch, useFormContext } from 'react-hook-form';
@@ -21,6 +21,7 @@ import {
 } from '~/hooks';
 import { AgentForm, AgentPanelProps, isEphemeralAgent } from '~/common';
 import NewJerseyPanelButton from '~/nj/components/NewJerseyPanelButton';
+import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import { GenericGrantAccessDialog } from '~/components/Sharing';
 import { useUpdateAgentMutation } from '~/data-provider';
 import AdvancedButton from './Advanced/AdvancedButton';
@@ -67,6 +68,25 @@ export default function AgentFooter({
   const { hasPermission: hasRemoteAgentPermission, isLoading: remotePermissionsLoading } =
     useResourcePermissions(ResourceType.REMOTE_AGENT, agent?._id || '');
 
+  // NJ: Used to set focus to correct button after returning from its subpanel
+  // (E.g., click "version history", then go back, refocuses the "version history" button again)
+  const { returnFocusRef } = useAgentPanelContext();
+  const advancedButtonRef = useRef<HTMLButtonElement>(null);
+  const versionButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (activePanel !== Panel.builder) {
+      return;
+    }
+    const target = returnFocusRef.current;
+    if (target === Panel.advanced && advancedButtonRef.current) {
+      advancedButtonRef.current.focus();
+      returnFocusRef.current = null;
+    } else if (target === Panel.version && versionButtonRef.current) {
+      versionButtonRef.current.focus();
+      returnFocusRef.current = null;
+    }
+  }, [activePanel, agent_id, returnFocusRef]);
+
   const { onSelect: onSelectAgent } = useSelectAgent();
   const handleSelectAgent = useCallback(() => {
     if (agent_id) {
@@ -106,8 +126,12 @@ export default function AgentFooter({
       {showButtons && (
         <div data-testid="advanced-button">
           <NewJerseyPanelButton
+            ref={advancedButtonRef}
             label="Advanced settings"
-            onClick={() => setActivePanel(Panel.advanced)}
+            onClick={() => {
+              returnFocusRef.current = Panel.advanced;
+              setActivePanel(Panel.advanced);
+            }}
           />
           <hr />
         </div>
@@ -117,8 +141,12 @@ export default function AgentFooter({
       {showButtons && agent_id && (
         <div data-testid="version-button">
           <NewJerseyPanelButton
+            ref={versionButtonRef}
             label="Version history"
-            onClick={() => setActivePanel(Panel.version)}
+            onClick={() => {
+              returnFocusRef.current = Panel.version;
+              setActivePanel(Panel.version);
+            }}
           />
           <hr />
         </div>

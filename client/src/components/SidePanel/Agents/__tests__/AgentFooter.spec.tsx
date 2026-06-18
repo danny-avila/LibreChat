@@ -1,9 +1,9 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { SystemRoles } from 'librechat-data-provider';
 import { render, screen } from '@testing-library/react';
+import type { Agent, AgentCreateParams, ResourceType, TUser } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import '@testing-library/jest-dom/extend-expect';
-import type { Agent, AgentCreateParams, TUser, ResourceType } from 'librechat-data-provider';
 import AgentFooter from '../AgentFooter';
 import { Panel } from '~/common';
 
@@ -180,6 +180,10 @@ jest.mock('~/components/Sharing', () => ({
       data-resource-type={resourceType}
     />
   ),
+}));
+
+jest.mock('~/Providers/AgentPanelContext', () => ({
+  useAgentPanelContext: () => ({ returnFocusRef: { current: null } }),
 }));
 
 describe('AgentFooter', () => {

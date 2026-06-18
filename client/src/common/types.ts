@@ -235,6 +235,8 @@ export type AgentPanelContextType = {
   mcpServersMap: Map<string, MCPServerInfo>;
   availableMCPServers: MCPServerDefinition[];
   availableMCPServersMap: t.MCPServersListResponse | undefined;
+  /** NJ: Identifies which trigger button opened current subpanel for returning focus on back */
+  returnFocusRef: React.MutableRefObject<Panel | null>;
 };
 
 export type AgentModelPanelProps = {

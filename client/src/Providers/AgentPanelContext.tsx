@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useMemo } from 'react';
+import React, { createContext, useContext, useState, useMemo, useRef } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { MCP, Action, TPlugin } from 'librechat-data-provider';
 import type { AgentPanelContextType, MCPServerInfo } from '~/common';
@@ -33,6 +33,7 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
   const [mcps, setMcps] = useState<MCP[] | undefined>(undefined);
   const [action, setAction] = useState<Action | undefined>(undefined);
   const [activePanel, setActivePanel] = useState<Panel>(Panel.builder);
+  const returnFocusRef = useRef<Panel | null>(null);
   const [agent_id, setCurrentAgentId] = useState<string | undefined>(undefined);
   const { availableMCPServers, isLoading, availableMCPServersMap } = useMCPServerManager();
   const { data: startupConfig } = useGetStartupConfig();
@@ -150,6 +151,7 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
     mcpServersMap,
     setActivePanel,
     endpointsConfig,
+    returnFocusRef,
     setCurrentAgentId,
     availableMCPServers,
     availableMCPServersMap,
