@@ -26,7 +26,6 @@ import FontSizeSelector from '../SettingsTabs/Chat/FontSizeSelector';
 import AdvancedPrompts from '../SettingsTabs/Chat/AdvancedPrompts';
 import DeleteAccount from '../SettingsTabs/Account/DeleteAccount';
 import { ForkSettings } from '../SettingsTabs/Chat/ForkSettings';
-import { AgentApiKeys } from '../SettingsTabs/Data/AgentApiKeys';
 import ChatDirection from '../SettingsTabs/Chat/ChatDirection';
 import { DeleteCache } from '../SettingsTabs/Data/DeleteCache';
 import { RevokeKeys } from '../SettingsTabs/Data/RevokeKeys';
@@ -36,6 +35,7 @@ import SharedLinks from '../SettingsTabs/Data/SharedLinks';
 import { showThinkingAtom } from '~/store/showThinking';
 import Avatar from '../SettingsTabs/Account/Avatar';
 import About from '../SettingsTabs/About/About';
+import ApiKeys from '../SettingsTabs/ApiKeys';
 import MemoryToggle from './MemoryToggle';
 import { TTSEndpoints } from '~/common';
 import store from '~/store';
@@ -472,7 +472,7 @@ export const registry: SettingEntry[] = [
     section: 'apiKeys',
     labelKey: 'com_ui_settings_label_agent_api_keys',
     show: (ctx) => ctx.hasRemoteAgents,
-    Component: AgentApiKeys,
+    Component: ApiKeys,
   },
   {
     id: 'revokeKeys',
