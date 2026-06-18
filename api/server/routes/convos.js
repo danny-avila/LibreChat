@@ -174,7 +174,7 @@ router.delete('/all', async (req, res) => {
  * @param {boolean} req.body.arg.isArchived - Whether to archive (true) or unarchive (false).
  * @returns {object} 200 - The updated conversation object.
  */
-router.post('/archive', validateConvoAccess, async (req, res) => {
+router.post('/archive', validateConvoAccess, configMiddleware, async (req, res) => {
   const { conversationId, isArchived } = req.body?.arg ?? {};
 
   if (!conversationId) {
@@ -240,7 +240,7 @@ const MAX_CONVO_TITLE_LENGTH = 1024;
  * @param {string} req.body.arg.title - The new title for the conversation.
  * @returns {object} 201 - The updated conversation object.
  */
-router.post('/update', validateConvoAccess, async (req, res) => {
+router.post('/update', validateConvoAccess, configMiddleware, async (req, res) => {
   const { conversationId, title } = req.body?.arg ?? {};
 
   if (!conversationId) {
