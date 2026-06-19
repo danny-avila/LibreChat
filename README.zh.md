@@ -14,6 +14,9 @@
   <strong>中文</strong>
 </p>
 
+> [!NOTE]
+> **pwc_tars 整合版** — 此 fork 將 LibreChat 作為 `pwc_tars` 平台的產品外殼:登入、使用者與角色/權限以 pwc_tars 為真相來源。設定(`TARS_AUTH_URL`、docker / `.env`、驗證步驟)請見 **[docs/TARS_INTEGRATION.md](docs/TARS_INTEGRATION.md)**。下方為 LibreChat 上游原始說明。
+
 <p align="center">
   <a href="https://discord.librechat.ai"> 
     <img
