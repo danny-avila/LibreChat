@@ -694,7 +694,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
       idOnTheSource: userinfo.oid,
       openidIssuer,
       department: userinfo.department || undefined,
-      jobTitle: userinfo.job_title || undefined,
+      jobTitle: (userinfo.jobTitle ?? userinfo.job_title) || undefined,
     };
 
     const balanceConfig = getBalanceConfig(appConfig);
