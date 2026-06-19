@@ -2,6 +2,7 @@ const { Strategy: PassportLocalStrategy } = require('passport-local');
 const { logger } = require('@librechat/data-schemas');
 const { SystemRoles, ErrorTypes } = require('librechat-data-provider');
 const {
+  isEnabled,
   authenticateTars,
   getBalanceConfig,
   isTarsAdminRole,
@@ -23,19 +24,35 @@ const tarsLogin = new PassportLocalStrategy(
     usernameField: 'email',
     passwordField: 'password',
     session: false,
-    passReqToCallback: false,
+    passReqToCallback: true,
   },
-  async (username, password, done) => {
+  async (req, username, password, done) => {
     try {
-      const tarsUser = await authenticateTars(username, password);
+      const useSso = isEnabled(req.body?.use_sso);
+      const tarsUser = await authenticateTars(username, password, useSso);
       if (!tarsUser) {
         return done(null, false, { message: ErrorTypes.AUTH_FAILED });
       }
 
-      const { id: tarsId, email, name, status, roleId, groupIds, menuItems } = tarsUser;
+      const {
+        id: tarsId,
+        email,
+        name,
+        status,
+        licenseStatus,
+        roleId,
+        groupIds,
+        menuItems,
+      } = tarsUser;
       if (status !== 'active') {
         logger.warn(`[tarsStrategy] Blocked non-active tars user [tarsId: ${tarsId}]`);
         return done(null, false, { message: ErrorTypes.AUTH_FAILED });
+      }
+      if (licenseStatus !== 'activate') {
+        logger.warn(
+          `[tarsStrategy] Blocked login - pwc_tars license not active [tarsId: ${tarsId}]`,
+        );
+        return done(null, false, { message: 'pwc_tars license is not active' });
       }
 
       const mail = email || `${tarsUser.username}@tars.local`;

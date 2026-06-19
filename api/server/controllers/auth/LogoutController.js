@@ -1,5 +1,5 @@
 const cookies = require('cookie');
-const { isEnabled, clearCloudFrontCookies } = require('@librechat/api');
+const { isEnabled, clearCloudFrontCookies, notifyTarsLogout } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { logoutUser } = require('~/server/services/AuthService');
 const { getOpenIdConfig } = require('~/strategies');
@@ -38,6 +38,12 @@ const logoutController = async (req, res) => {
   try {
     const logout = await logoutUser(req, refreshToken);
     const { status, message } = logout;
+
+    if (req.user?.provider === 'tars' && req.user?.tarsId && process.env.TARS_AUTH_URL) {
+      notifyTarsLogout(req.user.tarsId).catch((err) =>
+        logger.warn('[logoutController] pwc_tars logout notification failed:', err?.message),
+      );
+    }
 
     res.clearCookie('refreshToken');
     res.clearCookie('openid_access_token');

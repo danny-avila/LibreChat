@@ -1378,6 +1378,11 @@ export type TStartupConfig = {
   };
   /** Whether login is delegated to the pwc_tars backend (username-based) */
   tarsAuth?: boolean;
+  /** pwc_tars SSO status, used to offer the LDAP login option on the login page */
+  tarsSso?: {
+    enabled: boolean;
+    type: 'ldap' | 'oidc' | 'saml' | null;
+  };
   serverDomain: string;
   emailLoginEnabled: boolean;
   registrationEnabled: boolean;

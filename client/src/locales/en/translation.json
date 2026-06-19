@@ -210,6 +210,7 @@
   "com_auth_to_reset_your_password": "to reset your password.",
   "com_auth_to_try_again": "to try again.",
   "com_auth_two_factor": "Check your preferred one-time password application for a code",
+  "com_auth_use_ldap_sso": "Sign in with SSO (LDAP)",
   "com_auth_username": "Username (optional)",
   "com_auth_username_max_length": "Username must be less than 20 characters",
   "com_auth_username_min_length": "Username must be at least 2 characters",

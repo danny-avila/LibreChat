@@ -521,6 +521,8 @@ export type TLoginUser = {
   password: string;
   token?: string;
   backupCode?: string;
+  /** When true, pwc_tars verifies the credentials via SSO (LDAP) instead of local */
+  use_sso?: boolean;
 };
 
 export type TLoginResponse = {

@@ -10,6 +10,7 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('@librechat/api', () => ({
   authenticateTars: jest.fn(),
+  isEnabled: jest.fn((value) => value === true || value === 'true'),
   isEmailDomainAllowed: jest.fn(() => true),
   getBalanceConfig: jest.fn(() => ({ enabled: false })),
   resolveAppConfigForUser: jest.fn(async () => ({})),
@@ -47,9 +48,10 @@ const { findUser, createUser, updateUser } = require('~/models');
 // Load once so the verify callback is captured against our persistent mocks
 require('./tarsStrategy');
 
-const callVerify = (username, password) =>
+const callVerify = (username, password, useSso = false) =>
   new Promise((resolve, reject) => {
-    verifyCallback(username, password, (err, user, info) => {
+    const req = { body: { use_sso: useSso } };
+    verifyCallback(req, username, password, (err, user, info) => {
       if (err) return reject(err);
       resolve({ user, info });
     });
@@ -61,6 +63,7 @@ const adminTarsUser = {
   email: 'jdoe@example.com',
   name: 'John Doe',
   status: 'active',
+  licenseStatus: 'activate',
   roleId: 1,
   groupIds: 'g1,g2',
   menuItems: [{ id: 100, dom_id: 'chat-application', url: '/dashboard' }],
@@ -176,5 +179,31 @@ describe('tarsStrategy', () => {
     expect(user).toBe(false);
     expect(info.message).toBe(ErrorTypes.AUTH_FAILED);
     expect(createUser).not.toHaveBeenCalled();
+  });
+
+  it('blocks login when the pwc_tars license is not active', async () => {
+    authenticateTars.mockResolvedValue({ ...adminTarsUser, licenseStatus: 'deactivate' });
+
+    const { user, info } = await callVerify('jdoe', 'secret');
+
+    expect(user).toBe(false);
+    expect(info.message).toBe('pwc_tars license is not active');
+    expect(createUser).not.toHaveBeenCalled();
+  });
+
+  it('forwards use_sso to authenticateTars when the LDAP option is checked', async () => {
+    authenticateTars.mockResolvedValue(adminTarsUser);
+
+    await callVerify('jdoe', 'secret', true);
+
+    expect(authenticateTars).toHaveBeenCalledWith('jdoe', 'secret', true);
+  });
+
+  it('defaults to local (use_sso false) when the option is not set', async () => {
+    authenticateTars.mockResolvedValue(adminTarsUser);
+
+    await callVerify('jdoe', 'secret');
+
+    expect(authenticateTars).toHaveBeenCalledWith('jdoe', 'secret', false);
   });
 });

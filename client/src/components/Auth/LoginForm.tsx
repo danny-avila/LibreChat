@@ -29,6 +29,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
 
   const { data: config } = useGetStartupConfig();
   const useUsernameLogin = config?.ldap?.username || config?.tarsAuth;
+  const tarsLdapEnabled = config?.tarsSso?.enabled === true && config?.tarsSso?.type === 'ldap';
   const validTheme = isDark(theme) ? 'dark' : 'light';
   const requireCaptcha = Boolean(startupConfig.turnstile?.siteKey);
   const authInputClassName =
@@ -152,6 +153,22 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
           >
             {localize('com_auth_password_forgot')}
           </a>
+        )}
+
+        {tarsLdapEnabled && (
+          <div className="mt-2 flex items-center">
+            <input
+              type="checkbox"
+              id="use_sso"
+              defaultChecked
+              aria-label={localize('com_auth_use_ldap_sso')}
+              {...register('use_sso')}
+              className="h-4 w-4 rounded border-border-light text-green-600 focus:ring-green-500"
+            />
+            <label htmlFor="use_sso" className="ml-2 text-sm text-text-secondary-alt">
+              {localize('com_auth_use_ldap_sso')}
+            </label>
+          </div>
         )}
 
         {requireCaptcha && (
