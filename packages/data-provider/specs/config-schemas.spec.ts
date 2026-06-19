@@ -354,6 +354,25 @@ describe('agentsEndpointSchema', () => {
     }
   });
 
+  it('defaults adminListAllAgents to false when omitted', () => {
+    const result = agentsEndpointSchema.safeParse({});
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.adminListAllAgents).toBe(false);
+    }
+  });
+
+  it('accepts adminListAllAgents true and false', () => {
+    const enabled = agentsEndpointSchema.safeParse({ adminListAllAgents: true });
+    const disabled = agentsEndpointSchema.safeParse({ adminListAllAgents: false });
+    expect(enabled.success).toBe(true);
+    expect(disabled.success).toBe(true);
+    if (enabled.success && disabled.success) {
+      expect(enabled.data.adminListAllAgents).toBe(true);
+      expect(disabled.data.adminListAllAgents).toBe(false);
+    }
+  });
+
   it('allows explicitly disabled remote OIDC auth without issuer', () => {
     const result = agentsEndpointSchema.safeParse({
       remoteApi: {

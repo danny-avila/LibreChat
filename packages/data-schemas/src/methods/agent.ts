@@ -700,12 +700,15 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
     limit = 100,
     after = null,
     includeSkillConfig = false,
+    bypassAccessFilter = false,
   }: {
     accessibleIds?: Types.ObjectId[];
     otherParams?: Record<string, unknown>;
     limit?: number | null;
     after?: string | null;
     includeSkillConfig?: boolean;
+    /** When true, skip ACL id filter so admins with read:agents see every agent. */
+    bypassAccessFilter?: boolean;
   }): Promise<{
     object: string;
     data: Array<Record<string, unknown>>;
@@ -720,10 +723,11 @@ export function createAgentMethods(mongoose: typeof import('mongoose'), deps: Ag
       ? Math.min(Math.max(1, parseInt(String(limit)) || 20), 1000)
       : null;
 
-    const baseQuery: Record<string, unknown> = {
-      ...otherParams,
-      _id: { $in: accessibleIds },
-    };
+    const baseQuery: Record<string, unknown> = { ...otherParams };
+    // Default: restrict to ACL-accessible agents; admins bypass via bypassAccessFilter.
+    if (!bypassAccessFilter) {
+      baseQuery._id = { $in: accessibleIds };
+    }
 
     if (after) {
       try {

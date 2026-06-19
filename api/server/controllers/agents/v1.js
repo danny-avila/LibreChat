@@ -1,7 +1,7 @@
 const { z } = require('zod');
 const fs = require('fs').promises;
 const { nanoid } = require('nanoid');
-const { logger } = require('@librechat/data-schemas');
+const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   refreshS3Url,
   agentCreateSchema,
@@ -50,6 +50,7 @@ const {
 } = require('~/server/services/MCP');
 const { getMCPServersRegistry } = require('~/config');
 const { getLogStores } = require('~/cache');
+const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const db = require('~/models');
 
 const systemTools = {
@@ -970,13 +971,31 @@ const getListAgentsHandler = async (req, res) => {
       filter.$or = [{ name: regex }, { description: regex }];
     }
 
-    // Get agent IDs the user has VIEW access to via ACL
-    const accessibleIds = await findAccessibleResources({
-      userId,
-      role: req.user.role,
-      resourceType: ResourceType.AGENT,
-      requiredPermissions: requiredPermission,
-    });
+    // When enabled in librechat.yaml, admins with read:agents list all agents (not just ACL shares).
+    const adminListAllAgents =
+      req.config?.endpoints?.[EModelEndpoint.agents]?.adminListAllAgents === true;
+
+    let bypassAccessFilter = false;
+    if (adminListAllAgents) {
+      try {
+        bypassAccessFilter = await hasCapability(req.user, SystemCapabilities.READ_AGENTS);
+      } catch (err) {
+        logger.warn(`[/Agents] capability check failed, denying list bypass: ${err.message}`);
+      }
+    }
+
+    if (bypassAccessFilter) {
+      logger.debug(`[/Agents] READ_AGENTS bypass for user ${userId}`);
+    }
+
+    const accessibleIds = bypassAccessFilter
+      ? []
+      : await findAccessibleResources({
+          userId,
+          role: req.user.role,
+          resourceType: ResourceType.AGENT,
+          requiredPermissions: requiredPermission,
+        });
 
     const publiclyAccessibleIds = await findPubliclyAccessibleResources({
       resourceType: ResourceType.AGENT,
@@ -999,6 +1018,7 @@ const getListAgentsHandler = async (req, res) => {
           otherParams: {},
           limit: MAX_AVATAR_REFRESH_AGENTS,
           after: null,
+          bypassAccessFilter,
         });
         const { urlCache } = await refreshListAvatars({
           agents: fullList?.data ?? [],
@@ -1022,6 +1042,7 @@ const getListAgentsHandler = async (req, res) => {
       limit,
       after: cursor,
       includeSkillConfig: true,
+      bypassAccessFilter,
     });
 
     const agents = data?.data ?? [];

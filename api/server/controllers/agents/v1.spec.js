@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const { nanoid } = require('nanoid');
 const { v4: uuidv4 } = require('uuid');
 const { agentSchema, fileSchema } = require('@librechat/data-schemas');
-const { FileSources, PermissionBits, ResourceType } = require('librechat-data-provider');
+const { FileSources, PermissionBits, ResourceType, EModelEndpoint } = require('librechat-data-provider');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
 // Only mock the dependencies that are not database-related
@@ -47,6 +47,10 @@ jest.mock('~/server/services/PermissionService', () => ({
   hasPublicPermission: jest.fn().mockResolvedValue(false),
 }));
 
+jest.mock('~/server/middleware/roles/capabilities', () => ({
+  hasCapability: jest.fn().mockResolvedValue(false),
+}));
+
 jest.mock('~/models', () => {
   const mongoose = require('mongoose');
   const { createMethods } = require('@librechat/data-schemas');
@@ -84,6 +88,8 @@ const {
   findPubliclyAccessibleResources,
   getResourcePermissionsMap,
 } = require('~/server/services/PermissionService');
+
+const { hasCapability } = require('~/server/middleware/roles/capabilities');
 
 const { refreshS3Url } = require('@librechat/api');
 
@@ -1160,6 +1166,8 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
     beforeEach(async () => {
       await Agent.deleteMany({});
       jest.clearAllMocks();
+      hasCapability.mockResolvedValue(false);
+      mockReq.config = undefined;
 
       // Create two test users
       userA = new mongoose.Types.ObjectId();
@@ -1666,6 +1674,66 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(response.data[0].id).toBe(productivityPromoted.id);
       expect(response.data[0].category).toBe('productivity');
       expect(response.data[0].is_promoted).toBe(true);
+    });
+
+    describe('adminListAllAgents yaml toggle', () => {
+      const setAdminListConfig = (enabled) => {
+        mockReq.config = {
+          endpoints: {
+            [EModelEndpoint.agents]: {
+              adminListAllAgents: enabled,
+            },
+          },
+        };
+      };
+
+      test('does not bypass ACL when adminListAllAgents is false even with read:agents', async () => {
+        setAdminListConfig(false);
+        hasCapability.mockResolvedValue(true);
+        mockReq.user.id = userB.toString();
+        findAccessibleResources.mockResolvedValue([]);
+        findPubliclyAccessibleResources.mockResolvedValue([]);
+
+        await getListAgentsHandler(mockReq, mockRes);
+
+        expect(hasCapability).not.toHaveBeenCalled();
+        expect(findAccessibleResources).toHaveBeenCalled();
+        expect(mockRes.json.mock.calls[0][0].data).toHaveLength(0);
+      });
+
+      test('lists all agents when adminListAllAgents is true and user has read:agents', async () => {
+        setAdminListConfig(true);
+        hasCapability.mockResolvedValue(true);
+        mockReq.user.id = userB.toString();
+        findPubliclyAccessibleResources.mockResolvedValue([]);
+
+        await getListAgentsHandler(mockReq, mockRes);
+
+        expect(hasCapability).toHaveBeenCalled();
+        expect(findAccessibleResources).not.toHaveBeenCalledWith(
+          expect.objectContaining({ resourceType: ResourceType.AGENT }),
+        );
+
+        const agentIds = mockRes.json.mock.calls[0][0].data.map((agent) => agent.id);
+        expect(agentIds).toEqual(
+          expect.arrayContaining([agentA1.id, agentA2.id, agentA3.id, agentB1.id]),
+        );
+        expect(agentIds).toHaveLength(4);
+      });
+
+      test('does not bypass ACL when adminListAllAgents is true but user lacks read:agents', async () => {
+        setAdminListConfig(true);
+        hasCapability.mockResolvedValue(false);
+        mockReq.user.id = userB.toString();
+        findAccessibleResources.mockResolvedValue([]);
+        findPubliclyAccessibleResources.mockResolvedValue([]);
+
+        await getListAgentsHandler(mockReq, mockRes);
+
+        expect(hasCapability).toHaveBeenCalled();
+        expect(findAccessibleResources).toHaveBeenCalled();
+        expect(mockRes.json.mock.calls[0][0].data).toHaveLength(0);
+      });
     });
   });
 

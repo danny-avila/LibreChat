@@ -359,6 +359,8 @@ endpoints:
   #   maxRecursionLimit: 100
   #   # (optional) Disable the builder interface for agents
   #   disableBuilder: false
+  #   # (optional) When true, users with read:agents list all agents (ACL bypass for listing only)
+  #   adminListAllAgents: false
   #   # (optional) Maximum total citations to include in agent responses, defaults to 30
   #   maxCitations: 30
   #   # (optional) Maximum citations per file to include in agent responses, defaults to 7
