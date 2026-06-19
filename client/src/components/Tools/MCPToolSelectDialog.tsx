@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Search, X } from 'lucide-react';
+import { Alert } from '@librechat/client';
 import { useFormContext } from 'react-hook-form';
 import { useQueryClient } from '@tanstack/react-query';
 import { Constants, EModelEndpoint, QueryKeys } from 'librechat-data-provider';
@@ -282,12 +283,9 @@ function MCPToolSelectDialog({
           </div>
 
           {error && (
-            <div
-              className="relative m-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700"
-              role="alert"
-            >
+            <Alert variant="error" icon={false} className="m-4">
               {localize('com_nav_plugin_auth_error')} {errorMessage}
-            </div>
+            </Alert>
           )}
 
           {configuringServer && (
