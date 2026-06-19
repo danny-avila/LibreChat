@@ -1,9 +1,16 @@
 import * as React from 'react';
 import { Info, AlertCircle, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { ClassProp } from 'class-variance-authority/types';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '~/utils';
 
-const alertVariants = cva('relative flex gap-3 rounded-xl border px-4 py-3 text-sm', {
+const alertVariants: (
+  props?:
+    | ({
+        variant?: 'info' | 'success' | 'warning' | 'error' | 'neutral' | null | undefined;
+      } & ClassProp)
+    | undefined,
+) => string = cva('relative flex gap-3 rounded-xl border px-4 py-3 text-sm', {
   variants: {
     variant: {
       info: 'border-status-info bg-status-info-subtle text-status-info',
@@ -35,7 +42,9 @@ export interface AlertProps
   icon?: React.ReactNode | false;
 }
 
-const Alert = React.forwardRef<HTMLDivElement, AlertProps>(
+const Alert: React.ForwardRefExoticComponent<
+  AlertProps & React.RefAttributes<HTMLDivElement>
+> = React.forwardRef<HTMLDivElement, AlertProps>(
   ({ className, variant = 'info', icon, role = 'alert', children, ...props }, ref) => {
     const resolvedVariant = (variant ?? 'info') as AlertVariant;
     const DefaultIcon = defaultIcons[resolvedVariant];
