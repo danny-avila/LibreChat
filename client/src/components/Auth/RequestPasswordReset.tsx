@@ -1,6 +1,6 @@
 import { useForm } from 'react-hook-form';
 import { useState, ReactNode } from 'react';
-import { Spinner, Button } from '@librechat/client';
+import { Spinner, Button, Alert } from '@librechat/client';
 import { useOutletContext } from 'react-router-dom';
 import { useRequestPasswordResetMutation } from 'librechat-data-provider/react-query';
 import { loginPage } from 'librechat-data-provider';
@@ -11,12 +11,9 @@ import { useLocalize } from '~/hooks';
 
 const BodyTextWrapper: FC<{ children: ReactNode }> = ({ children }) => {
   return (
-    <div
-      className="relative mt-6 rounded-xl border border-green-500/20 bg-green-50/50 px-6 py-4 text-green-700 shadow-sm transition-all dark:bg-green-950/30 dark:text-green-100"
-      role="alert"
-    >
+    <Alert variant="success" icon={false} className="mt-6 px-6 py-4 shadow-sm transition-all">
       {children}
-    </div>
+    </Alert>
   );
 };
 
