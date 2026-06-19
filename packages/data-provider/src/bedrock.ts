@@ -494,11 +494,16 @@ export const bedrockInputParser = s.tConversationSchema
       delete additionalFields.top_k;
     }
 
-    /** Default promptCache for claude and nova models, if not defined */
-    if (
-      typeof typedData.model === 'string' &&
-      (typedData.model.includes('claude') || typedData.model.includes('nova'))
-    ) {
+    /**
+     * Default promptCache for Claude models only, if not defined. Explicit
+     * Bedrock cache checkpoints (`cachePoint`) are supported solely on Claude;
+     * Amazon Nova and other families reject the key — Nova returns
+     * `extraneous key [cachePoint] is not permitted` for toolConfig.tools (see
+     * danny-avila/LibreChat#13838) — and rely on automatic caching instead. So
+     * Nova is treated like any other non-Claude model: never defaulted on, and a
+     * stray promptCache is cleared so the request never carries a checkpoint.
+     */
+    if (typeof typedData.model === 'string' && typedData.model.includes('claude')) {
       if (typedData.promptCache === undefined) {
         typedData.promptCache = true;
       }

@@ -1066,13 +1066,22 @@ describe('bedrockInputParser', () => {
       expect(result.promptCache).toBe(true);
     });
 
-    test('should preserve promptCache for Nova models', () => {
+    test('should strip promptCache for Nova models (explicit caching unsupported)', () => {
+      // Nova rejects Bedrock cache checkpoints (danny-avila/LibreChat#13838), so
+      // it is treated like any other non-Claude model and never carries
+      // promptCache, even when explicitly set.
       const input = {
         model: 'amazon.nova-pro-v1:0',
         promptCache: true,
       };
       const result = bedrockInputParser.parse(input) as Record<string, unknown>;
-      expect(result.promptCache).toBe(true);
+      expect(result.promptCache).toBeUndefined();
+    });
+
+    test('should not default promptCache on for Nova models', () => {
+      const input = { model: 'amazon.nova-pro-v1:0' };
+      const result = bedrockInputParser.parse(input) as Record<string, unknown>;
+      expect(result.promptCache).toBeUndefined();
     });
 
     test('should strip stale thinking config from additionalModelRequestFields for non-Anthropic models', () => {
