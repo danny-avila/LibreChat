@@ -673,7 +673,7 @@ describe('createToolExecuteHandler', () => {
         {
           id: 'call_read_5',
           name: Constants.READ_FILE,
-          args: { file_path: 'maybe-disabled-read/SKILL.md' },
+          args: { path: 'maybe-disabled-read/SKILL.md' },
         },
       ]);
 
@@ -717,7 +717,7 @@ describe('createToolExecuteHandler', () => {
         {
           id: 'call_read_6',
           name: Constants.READ_FILE,
-          args: { file_path: 'manually-primed/references/foo.md' },
+          args: { path: 'manually-primed/references/foo.md' },
         },
       ]);
 
@@ -766,7 +766,7 @@ describe('createToolExecuteHandler', () => {
         {
           id: 'call_read_1',
           name: Constants.READ_FILE,
-          args: { file_path: 'pii-redactor/SKILL.md' },
+          args: { path: 'pii-redactor/SKILL.md' },
         },
       ]);
 
@@ -795,7 +795,7 @@ describe('createToolExecuteHandler', () => {
         {
           id: 'call_read_2',
           name: Constants.READ_FILE,
-          args: { file_path: 'normal-skill/SKILL.md' },
+          args: { path: 'normal-skill/SKILL.md' },
         },
       ]);
 
@@ -833,7 +833,7 @@ describe('createToolExecuteHandler', () => {
         {
           id: 'call_read_3',
           name: Constants.READ_FILE,
-          args: { file_path: 'manual-only-skill/SKILL.md' },
+          args: { path: 'manual-only-skill/SKILL.md' },
         },
       ]);
 
@@ -869,7 +869,7 @@ describe('createToolExecuteHandler', () => {
         {
           id: 'call_read_4',
           name: Constants.READ_FILE,
-          args: { file_path: 'other-disabled-skill/SKILL.md' },
+          args: { path: 'other-disabled-skill/SKILL.md' },
         },
       ]);
 
@@ -911,7 +911,7 @@ describe('createToolExecuteHandler', () => {
         {
           id: 'call_read_always',
           name: Constants.READ_FILE,
-          args: { file_path: 'always-applied-legal/SKILL.md' },
+          args: { path: 'always-applied-legal/SKILL.md' },
         },
       ]);
 
@@ -947,7 +947,7 @@ describe('createToolExecuteHandler', () => {
         {
           id: 'call_read_pin',
           name: Constants.READ_FILE,
-          args: { file_path: 'collides/SKILL.md' },
+          args: { path: 'collides/SKILL.md' },
         },
       ]);
 
@@ -1093,7 +1093,7 @@ describe('createToolExecuteHandler', () => {
           id: 'call_create_skill',
           name: 'create_file',
           args: {
-            file_path: 'skills/new-skill/SKILL.md',
+            path: 'skills/new-skill/SKILL.md',
             content:
               '---\nname: new-skill\ndescription: Use for tests\ndisable-model-invocation: true\nallowed-tools:\n  - execute_code\n---\n# New skill\n',
           },
@@ -1140,7 +1140,7 @@ describe('createToolExecuteHandler', () => {
           id: 'call_create_auto_frontmatter',
           name: 'create_file',
           args: {
-            file_path: 'skills/auto-skill/SKILL.md',
+            path: 'skills/auto-skill/SKILL.md',
             content: '# Auto skill\nUse this skill when testing generated frontmatter.\n',
           },
         },
@@ -1179,7 +1179,7 @@ describe('createToolExecuteHandler', () => {
           id: 'call_create_block_description',
           name: 'create_file',
           args: {
-            file_path: 'skills/block-description-skill/SKILL.md',
+            path: 'skills/block-description-skill/SKILL.md',
             content:
               '---\nname: block-description-skill\ndescription: |-\n  Use this skill for long descriptions.\n  Keep both lines searchable.\n---\n# Block description skill\n',
           },
@@ -1233,7 +1233,7 @@ describe('createToolExecuteHandler', () => {
           id: 'call_create_skill',
           name: 'create_file',
           args: {
-            file_path: 'skills/new-skill/SKILL.md',
+            path: 'skills/new-skill/SKILL.md',
             content: '---\nname: new-skill\ndescription: Use for tests\n---\n# New skill\n',
           },
         },
@@ -1241,7 +1241,7 @@ describe('createToolExecuteHandler', () => {
           id: 'call_create_reference',
           name: 'create_file',
           args: {
-            file_path: 'skills/new-skill/references/a.md',
+            path: 'skills/new-skill/references/a.md',
             content: 'reference text',
           },
         },
@@ -1307,7 +1307,7 @@ describe('createToolExecuteHandler', () => {
             id: 'call_create_round_skill',
             name: 'create_file',
             args: {
-              file_path: 'skills/round-skill/SKILL.md',
+              path: 'skills/round-skill/SKILL.md',
               content: createdSkill.body,
             },
           },
@@ -1320,7 +1320,7 @@ describe('createToolExecuteHandler', () => {
           {
             id: 'call_read_round_skill',
             name: Constants.READ_FILE,
-            args: { file_path: 'skills/round-skill/SKILL.md' },
+            args: { path: 'skills/round-skill/SKILL.md' },
           },
         ],
         runtimeConfigurable,
@@ -1357,7 +1357,7 @@ describe('createToolExecuteHandler', () => {
           id: 'call_create_existing',
           name: 'create_file',
           args: {
-            file_path: 'skills/existing-skill/SKILL.md',
+            path: 'skills/existing-skill/SKILL.md',
             content: '---\nname: existing-skill\ndescription: Use for tests\n---\n# Updated\n',
           },
         },
@@ -1396,7 +1396,7 @@ describe('createToolExecuteHandler', () => {
           id: 'call_duplicate_stale_skill',
           name: 'create_file',
           args: {
-            file_path: 'skills/stale-skill/SKILL.md',
+            path: 'skills/stale-skill/SKILL.md',
             content: '---\nname: stale-skill\ndescription: Replacement\n---\n# Replacement\n',
           },
         },
@@ -1437,7 +1437,7 @@ describe('createToolExecuteHandler', () => {
           id: 'call_edit_excluded_skill',
           name: 'edit_file',
           args: {
-            file_path: 'skills/excluded-skill/SKILL.md',
+            path: 'skills/excluded-skill/SKILL.md',
             old_text: '# Excluded',
             new_text: '# Changed',
           },
@@ -1477,7 +1477,7 @@ describe('createToolExecuteHandler', () => {
           id: 'call_recovered_hidden_skill',
           name: 'edit_file',
           args: {
-            file_path: 'skills/hidden-recovered-skill/SKILL.md',
+            path: 'skills/hidden-recovered-skill/SKILL.md',
             old_text: '# Hidden',
             new_text: '# Changed',
           },
@@ -1519,7 +1519,7 @@ describe('createToolExecuteHandler', () => {
           id: 'call_edit_file',
           name: 'edit_file',
           args: {
-            file_path: 'skills/edit-skill/references/a.md',
+            path: 'skills/edit-skill/references/a.md',
             old_text: 'hello old',
             new_text: 'hello new',
           },
@@ -1581,7 +1581,7 @@ describe('createToolExecuteHandler', () => {
           id: 'call_edit_stale_bundled_file',
           name: 'edit_file',
           args: {
-            file_path: 'skills/edit-skill/references/a.md',
+            path: 'skills/edit-skill/references/a.md',
             old_text: 'hello old',
             new_text: 'hello new',
           },
@@ -1624,7 +1624,7 @@ describe('createToolExecuteHandler', () => {
           id: 'call_edit_skill_md_frontmatter',
           name: 'edit_file',
           args: {
-            file_path: 'skills/runtime-skill/SKILL.md',
+            path: 'skills/runtime-skill/SKILL.md',
             old_text: 'description: Use before\naction: ignored',
             new_text:
               'description: Use before\nuser-invocable: false\ndisable-model-invocation: true\nallowed-tools:\n  - execute_code\nalways-apply: true',
@@ -1677,7 +1677,7 @@ describe('createToolExecuteHandler', () => {
           id: 'call_edit_skill_md_block_description',
           name: 'edit_file',
           args: {
-            file_path: 'skills/runtime-skill/SKILL.md',
+            path: 'skills/runtime-skill/SKILL.md',
             old_text: 'description: Use before',
             new_text:
               'description: |-\n  Use this skill for long descriptions.\n  Keep both lines searchable.',
@@ -1717,7 +1717,7 @@ describe('createToolExecuteHandler', () => {
           id: 'call_edit_skill_md_name',
           name: 'edit_file',
           args: {
-            file_path: 'skills/runtime-skill/SKILL.md',
+            path: 'skills/runtime-skill/SKILL.md',
             old_text: 'name: runtime-skill',
             new_text: 'name: dev-toolkit',
           },
@@ -1759,7 +1759,7 @@ describe('createToolExecuteHandler', () => {
           id: 'call_edit_ambiguous',
           name: 'edit_file',
           args: {
-            file_path: 'skills/ambiguous-skill/references/a.md',
+            path: 'skills/ambiguous-skill/references/a.md',
             old_text: 'same',
             new_text: 'different',
           },
@@ -1796,7 +1796,7 @@ describe('createToolExecuteHandler', () => {
           id: 'call_edit_hidden_skill',
           name: 'edit_file',
           args: {
-            file_path: 'skills/hidden-skill/SKILL.md',
+            path: 'skills/hidden-skill/SKILL.md',
             old_text: '# Hidden',
             new_text: '# Changed',
           },
@@ -1841,7 +1841,7 @@ describe('createToolExecuteHandler', () => {
           id: 'call_edit_primed_hidden_skill',
           name: 'edit_file',
           args: {
-            file_path: 'skills/primed-hidden-skill/SKILL.md',
+            path: 'skills/primed-hidden-skill/SKILL.md',
             old_text: '# Hidden',
             new_text: '# Changed',
           },
@@ -1883,7 +1883,7 @@ describe('createToolExecuteHandler', () => {
           id: 'call_overwrite_large',
           name: 'create_file',
           args: {
-            file_path: 'skills/large-skill/references/large.md',
+            path: 'skills/large-skill/references/large.md',
             content: 'replacement',
             overwrite: true,
           },
@@ -1935,7 +1935,7 @@ describe('createToolExecuteHandler', () => {
           id: 'call_edit_one',
           name: 'edit_file',
           args: {
-            file_path: 'skills/serial-skill/references/a.md',
+            path: 'skills/serial-skill/references/a.md',
             old_text: 'one',
             new_text: 'two',
           },
@@ -1944,7 +1944,7 @@ describe('createToolExecuteHandler', () => {
           id: 'call_edit_two',
           name: 'edit_file',
           args: {
-            file_path: 'skills/serial-skill/references/a.md',
+            path: 'skills/serial-skill/references/a.md',
             old_text: 'two',
             new_text: 'three',
           },
@@ -1999,7 +1999,7 @@ describe('createToolExecuteHandler', () => {
           id: 'call_create_sandbox',
           name: 'create_file',
           args: {
-            file_path: '/mnt/data/new.txt',
+            path: '/mnt/data/new.txt',
             content: 'hello world',
           },
           codeSessionContext: {
@@ -2038,7 +2038,7 @@ describe('createToolExecuteHandler', () => {
           id: 'call_create_existing_sandbox',
           name: 'create_file',
           args: {
-            file_path: '/mnt/data/existing.txt',
+            path: '/mnt/data/existing.txt',
             content: 'new text\n',
           },
         },
@@ -2065,7 +2065,7 @@ describe('createToolExecuteHandler', () => {
           id: 'call_edit_sandbox',
           name: 'edit_file',
           args: {
-            file_path: '/mnt/data/edit.txt',
+            path: '/mnt/data/edit.txt',
             old_text: 'alpha old',
             new_text: 'alpha new',
           },
@@ -2151,7 +2151,7 @@ describe('createToolExecuteHandler', () => {
           id: 'call_create_queued_sandbox',
           name: 'create_file',
           args: {
-            file_path: '/mnt/data/queued.txt',
+            path: '/mnt/data/queued.txt',
             content: 'hello world\n',
           },
         },
@@ -2159,7 +2159,7 @@ describe('createToolExecuteHandler', () => {
           id: 'call_edit_queued_sandbox',
           name: 'edit_file',
           args: {
-            file_path: '/mnt/data/queued.txt',
+            path: '/mnt/data/queued.txt',
             old_text: 'hello world',
             new_text: 'goodbye world',
           },
@@ -2193,7 +2193,7 @@ describe('createToolExecuteHandler', () => {
           id: 'call_no_code_env_authoring',
           name: 'create_file',
           args: {
-            file_path: '/mnt/data/nope.txt',
+            path: '/mnt/data/nope.txt',
             content: 'nope',
           },
         },
@@ -2218,7 +2218,7 @@ describe('createToolExecuteHandler', () => {
           id: 'call_code_only_skill_path',
           name: 'create_file',
           args: {
-            file_path: 'skills/nope/SKILL.md',
+            path: 'skills/nope/SKILL.md',
             content: '---\nname: nope\ndescription: Nope\n---\n# Nope\n',
           },
         },
@@ -2274,7 +2274,7 @@ describe('createToolExecuteHandler', () => {
         {
           id: 'call_mnt_1',
           name: Constants.READ_FILE,
-          args: { file_path: '/mnt/data/sentinel.txt' },
+          args: { path: '/mnt/data/sentinel.txt' },
           codeSessionContext: {
             session_id: 'sess-X',
             files: [{ id: 'f1', name: 'sentinel.txt', session_id: 'sess-X' }],
@@ -2303,7 +2303,7 @@ describe('createToolExecuteHandler', () => {
         {
           id: 'call_mnt_2',
           name: Constants.READ_FILE,
-          args: { file_path: '/mnt/data/sentinel.txt' },
+          args: { path: '/mnt/data/sentinel.txt' },
         },
       ]);
 
@@ -2325,7 +2325,7 @@ describe('createToolExecuteHandler', () => {
         {
           id: 'call_unknown_skill',
           name: Constants.READ_FILE,
-          args: { file_path: 'not-a-skill/foo.md' },
+          args: { path: 'not-a-skill/foo.md' },
           codeSessionContext: { session_id: 'sess-Y' },
         } as unknown as ToolCallRequest,
       ]);
@@ -2391,7 +2391,7 @@ describe('createToolExecuteHandler', () => {
         {
           id: 'call_primed_outside_catalog',
           name: Constants.READ_FILE,
-          args: { file_path: 'primed-only-skill/references/foo.md' },
+          args: { path: 'primed-only-skill/references/foo.md' },
         },
       ]);
 
@@ -2440,7 +2440,7 @@ describe('createToolExecuteHandler', () => {
         {
           id: 'call_stale_catalog_skill',
           name: Constants.READ_FILE,
-          args: { file_path: 'stale-catalog-skill/SKILL.md' },
+          args: { path: 'stale-catalog-skill/SKILL.md' },
         },
       ]);
 
@@ -2475,7 +2475,7 @@ describe('createToolExecuteHandler', () => {
         {
           id: 'call_skills_off',
           name: Constants.READ_FILE,
-          args: { file_path: 'whatever/path.md' },
+          args: { path: 'whatever/path.md' },
         },
       ]);
 
@@ -2495,7 +2495,7 @@ describe('createToolExecuteHandler', () => {
         {
           id: 'call_no_route',
           name: Constants.READ_FILE,
-          args: { file_path: 'whatever/path.md' },
+          args: { path: 'whatever/path.md' },
         },
       ]);
 
@@ -2524,7 +2524,7 @@ describe('createToolExecuteHandler', () => {
         {
           id: 'call_real_skill',
           name: Constants.READ_FILE,
-          args: { file_path: 'real-skill/SKILL.md' },
+          args: { path: 'real-skill/SKILL.md' },
         },
       ]);
 
@@ -2555,7 +2555,7 @@ describe('createToolExecuteHandler', () => {
         {
           id: 'call_real_skill_namespace',
           name: Constants.READ_FILE,
-          args: { file_path: 'skills/real-skill/SKILL.md' },
+          args: { path: 'skills/real-skill/SKILL.md' },
         },
       ]);
 
@@ -2584,7 +2584,7 @@ describe('createToolExecuteHandler', () => {
         {
           id: 'call_explicit_skill_namespace_off',
           name: Constants.READ_FILE,
-          args: { file_path: 'skills/whatever/SKILL.md' },
+          args: { path: 'skills/whatever/SKILL.md' },
         },
       ]);
 
@@ -2613,7 +2613,7 @@ describe('createToolExecuteHandler', () => {
         {
           id: 'call_trailing_slash',
           name: Constants.READ_FILE,
-          args: { file_path: 'output/' },
+          args: { path: 'output/' },
         },
       ]);
 
@@ -2635,7 +2635,7 @@ describe('createToolExecuteHandler', () => {
         {
           id: 'call_trailing_slash_no_env',
           name: Constants.READ_FILE,
-          args: { file_path: 'output/' },
+          args: { path: 'output/' },
         },
       ]);
 
@@ -2655,7 +2655,7 @@ describe('createToolExecuteHandler', () => {
         {
           id: 'call_no_callback',
           name: Constants.READ_FILE,
-          args: { file_path: '/mnt/data/x.txt' },
+          args: { path: '/mnt/data/x.txt' },
         },
       ]);
 
@@ -2684,7 +2684,7 @@ describe('createToolExecuteHandler', () => {
         {
           id: 'call_huge_file',
           name: Constants.READ_FILE,
-          args: { file_path: '/mnt/data/huge.log' },
+          args: { path: '/mnt/data/huge.log' },
         },
       ]);
 
@@ -2712,7 +2712,7 @@ describe('createToolExecuteHandler', () => {
         {
           id: 'call_small_file',
           name: Constants.READ_FILE,
-          args: { file_path: '/mnt/data/sentinel.txt' },
+          args: { path: '/mnt/data/sentinel.txt' },
         },
       ]);
 
@@ -2733,7 +2733,7 @@ describe('createToolExecuteHandler', () => {
         {
           id: 'call_null_result',
           name: Constants.READ_FILE,
-          args: { file_path: '/mnt/data/missing.txt' },
+          args: { path: '/mnt/data/missing.txt' },
         },
       ]);
 
@@ -2764,7 +2764,7 @@ describe('createToolExecuteHandler', () => {
           {
             id: 'call_png',
             name: Constants.READ_FILE,
-            args: { file_path: '/mnt/data/simple_graph.png' },
+            args: { path: '/mnt/data/simple_graph.png' },
             codeSessionContext: { session_id: 'sess-Z' },
           } as unknown as ToolCallRequest,
         ]);
@@ -2789,7 +2789,7 @@ describe('createToolExecuteHandler', () => {
           {
             id: 'call_zip',
             name: Constants.READ_FILE,
-            args: { file_path: '/mnt/data/archive.zip' },
+            args: { path: '/mnt/data/archive.zip' },
           },
         ]);
 
@@ -2813,7 +2813,7 @@ describe('createToolExecuteHandler', () => {
           {
             id: 'call_uppercase',
             name: Constants.READ_FILE,
-            args: { file_path: '/mnt/data/CHART.PNG' },
+            args: { path: '/mnt/data/CHART.PNG' },
           },
         ]);
 
@@ -2840,7 +2840,7 @@ describe('createToolExecuteHandler', () => {
           {
             id: 'call_nul_sniff',
             name: Constants.READ_FILE,
-            args: { file_path: '/mnt/data/mystery_file' },
+            args: { path: '/mnt/data/mystery_file' },
           },
         ]);
 
@@ -2864,7 +2864,7 @@ describe('createToolExecuteHandler', () => {
           {
             id: 'call_text',
             name: Constants.READ_FILE,
-            args: { file_path: '/mnt/data/notes.txt' },
+            args: { path: '/mnt/data/notes.txt' },
           },
         ]);
 
@@ -2888,7 +2888,7 @@ describe('createToolExecuteHandler', () => {
           {
             id: 'call_dotted_dir',
             name: Constants.READ_FILE,
-            args: { file_path: '/mnt/data/proj.v1/notes' },
+            args: { path: '/mnt/data/proj.v1/notes' },
           },
         ]);
 
@@ -2916,7 +2916,7 @@ describe('createToolExecuteHandler', () => {
           {
             id: 'call_svg',
             name: Constants.READ_FILE,
-            args: { file_path: '/mnt/data/icon.svg' },
+            args: { path: '/mnt/data/icon.svg' },
           },
         ]);
 

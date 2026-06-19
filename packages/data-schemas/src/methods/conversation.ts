@@ -1,17 +1,18 @@
-import type { FilterQuery, Model, SortOrder } from 'mongoose';
 import { RetentionMode } from 'librechat-data-provider';
-import { isValidObjectIdString } from '~/utils/objectId';
-import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
-import { buildRetentionVisibilityFilter, createFallbackRetentionDate } from '~/utils/retention';
-import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
-import logger from '~/config/winston';
+import type { FilterQuery, Model, SortOrder } from 'mongoose';
+import type { DeleteResult } from 'mongoose';
 import type { AppConfig, IChatProjectDocument, IConversation } from '~/types';
+import type { MessageMethods } from './message';
 import {
   refreshChatProjectStatsForUser,
   updateChatProjectLastConversationForUser,
 } from './chatProject';
-import type { MessageMethods } from './message';
-import type { DeleteResult } from 'mongoose';
+import { buildRetentionVisibilityFilter, createFallbackRetentionDate } from '~/utils/retention';
+import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
+import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import { isValidObjectIdString } from '~/utils/objectId';
+import { decrementTagCounts } from './conversationTag';
+import logger from '~/config/winston';
 
 export interface ConversationMethods {
   getConvoFiles(conversationId: string): Promise<string[]>;
@@ -640,7 +641,7 @@ export function createConversationMethods(
 
       const convos = await Conversation.find(query)
         .select(
-          'conversationId endpoint title createdAt updatedAt user model agent_id assistant_id spec iconURL chatProjectId',
+          'conversationId endpoint title createdAt updatedAt user model agent_id assistant_id spec iconURL chatProjectId pinned',
         )
         .sort(sortObj)
         .limit(limit + 1)
@@ -748,7 +749,7 @@ export function createConversationMethods(
       const { deleteMessages } = getMessageMethods();
       const userFilter = { ...filter, user };
       const conversations = await Conversation.find(userFilter).select(
-        'conversationId chatProjectId',
+        'conversationId chatProjectId tags',
       );
       const conversationIds = conversations.map((c) => c.conversationId);
       const projectIds = new Set(
@@ -757,22 +758,58 @@ export function createConversationMethods(
           .filter((projectId): projectId is string => Boolean(projectId)),
       );
 
+      /**
+       * One entry per (conversation, tag) association: each conversation's tags are
+       * deduped so a duplicate tag entry within a single conversation only decrements
+       * the bookmark count once.
+       */
+      const tagDecrements: string[] = [];
+      for (const conversation of conversations) {
+        if (!conversation.tags?.length) {
+          continue;
+        }
+        for (const tag of new Set(conversation.tags)) {
+          tagDecrements.push(tag);
+        }
+      }
+
       if (!conversationIds.length) {
         throw new Error('Conversation not found or already deleted.');
       }
 
       const deleteConvoResult = await Conversation.deleteMany(userFilter);
+      const deleted = deleteConvoResult.deletedCount > 0;
+
+      /**
+       * Reconcile bookmark counts from the deletion before message cleanup: if
+       * `deleteMessages` later throws, the conversation is already gone and a retry
+       * finds nothing, so the count must be reconciled here or it would stay stale.
+       * The decrement is best-effort and never throws, so it cannot block message
+       * cleanup. The `deletedCount` guard skips a losing concurrent delete whose
+       * pre-delete snapshot would otherwise decrement a conversation it did not
+       * actually remove.
+       */
+      if (deleted) {
+        await decrementTagCounts(mongoose, user, tagDecrements);
+      }
 
       const deleteMessagesResult = await deleteMessages({
         conversationId: { $in: conversationIds },
         user,
       });
 
-      await Promise.all(
-        [...projectIds].map((projectId) =>
-          refreshChatProjectStatsForUser(mongoose, user, projectId),
-        ),
-      );
+      /**
+       * Refresh project stats after message cleanup so a stats-refresh error cannot
+       * prevent `deleteMessages` from running, which would orphan the deleted
+       * conversations' messages.
+       */
+      if (deleted && projectIds.size > 0) {
+        await Promise.all(
+          [...projectIds].map((projectId) =>
+            refreshChatProjectStatsForUser(mongoose, user, projectId),
+          ),
+        );
+      }
 
       return { ...deleteConvoResult, messages: deleteMessagesResult };
     } catch (error) {

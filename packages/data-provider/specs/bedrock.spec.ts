@@ -1271,4 +1271,34 @@ describe('bedrockInputParser', () => {
       expect(amrf.reasoning_config).toBeUndefined();
     });
   });
+
+  describe('promptCacheTtl tied to promptCache', () => {
+    test('preserves promptCacheTtl when caching is enabled (claude default)', () => {
+      const result = bedrockInputParser.parse({
+        model: 'anthropic.claude-opus-4-6-v1',
+        promptCacheTtl: '1h',
+      }) as Record<string, unknown>;
+      expect(result.promptCache).toBe(true);
+      expect(result.promptCacheTtl).toBe('1h');
+    });
+
+    test('clears promptCacheTtl when promptCache is explicitly disabled', () => {
+      const result = bedrockInputParser.parse({
+        model: 'anthropic.claude-opus-4-6-v1',
+        promptCache: false,
+        promptCacheTtl: '1h',
+      }) as Record<string, unknown>;
+      expect(result.promptCacheTtl).toBeUndefined();
+    });
+
+    test('clears promptCache and promptCacheTtl for non-caching models', () => {
+      const result = bedrockInputParser.parse({
+        model: 'meta.llama3-1-70b-instruct-v1:0',
+        promptCache: true,
+        promptCacheTtl: '1h',
+      }) as Record<string, unknown>;
+      expect(result.promptCache).toBeUndefined();
+      expect(result.promptCacheTtl).toBeUndefined();
+    });
+  });
 });

@@ -427,7 +427,7 @@ Created by the Playwright mock e2e suite to verify host file authoring without c
 
 function buildCreateSkillArgs(skillName) {
   return {
-    file_path: `skills/${skillName}/SKILL.md`,
+    path: `skills/${skillName}/SKILL.md`,
     content: buildSkillBody(skillName),
     overwrite: false,
   };
@@ -435,7 +435,7 @@ function buildCreateSkillArgs(skillName) {
 
 function buildEditSkillArgs(skillName) {
   return {
-    file_path: `skills/${skillName}/SKILL.md`,
+    path: `skills/${skillName}/SKILL.md`,
     old_text: `description: ${SKILL_DESCRIPTION}`,
     new_text: `description: ${EDITED_SKILL_DESCRIPTION}`,
   };

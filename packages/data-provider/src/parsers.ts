@@ -1,9 +1,10 @@
 import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import timezonePlugin from 'dayjs/plugin/timezone';
 import type { ZodIssue } from 'zod';
 import type * as a from './types/assistants';
 import type * as s from './schemas';
 import type * as t from './types';
-import { ContentTypes } from './types/runs';
 import {
   openAISchema,
   openRouterSchema,
@@ -18,7 +19,11 @@ import {
   compactAssistantSchema,
 } from './schemas';
 import { bedrockInputSchema } from './bedrock';
+import { ContentTypes } from './types/runs';
 import { alternateName } from './config';
+
+dayjs.extend(utc);
+dayjs.extend(timezonePlugin);
 
 type EndpointSchema =
   | typeof openAISchema
@@ -424,21 +429,40 @@ export function findLastSeparatorIndex(text: string, separators = SEPARATORS): n
   return lastIndex;
 }
 
+/**
+ * Anchors a dayjs instant to the user's IANA timezone when one is supplied,
+ * so local-time special vars reflect the user's wall clock rather than the
+ * server's. Falls back to the original instant for missing or invalid zones.
+ */
+function applyTimezone(value: dayjs.Dayjs, timezone?: string): dayjs.Dayjs {
+  if (!timezone) {
+    return value;
+  }
+  try {
+    const zoned = value.tz(timezone);
+    return zoned.isValid() ? zoned : value;
+  } catch {
+    return value;
+  }
+}
+
 export function replaceSpecialVars({
   text,
   user,
   now: inputNow,
+  timezone,
 }: {
   text: string;
   user?: t.TUser | null;
   now?: string | number | Date;
+  timezone?: string;
 }) {
   let result = text;
   if (!result) {
     return result;
   }
 
-  const now = inputNow != null ? dayjs(inputNow) : dayjs();
+  const now = applyTimezone(inputNow != null ? dayjs(inputNow) : dayjs(), timezone);
   const weekdayName = now.format('dddd');
 
   const currentDate = now.format('YYYY-MM-DD');
