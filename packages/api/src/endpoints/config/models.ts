@@ -12,6 +12,7 @@ import type { ServerRequest, GetUserKeyValuesFunction, UserKeyValues } from '~/t
 import type { FetchModelsParams } from '~/endpoints/models';
 import { fetchModels as defaultFetchModels } from '~/endpoints/models';
 import { getTokenConfigKey } from '~/endpoints/custom/initialize';
+import { validateEndpointURL } from '~/auth';
 import { tokenConfigCache } from '~/cache';
 import { isUserProvided } from '~/utils';
 
@@ -206,6 +207,20 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
         const userKeyValues = userKeyMap.get(name);
         const resolvedApiKey = apiKeyIsUserProvided ? userKeyValues?.apiKey : API_KEY;
         const resolvedBaseURL = baseURLIsUserProvided ? userKeyValues?.baseURL : BASE_URL;
+
+        // SSRF guard: a user-supplied baseURL must be validated before the
+        // server fetches /models from it (mirrors custom/openai initialize).
+        if (baseURLIsUserProvided && resolvedBaseURL) {
+          try {
+            await validateEndpointURL(resolvedBaseURL, name, appConfig?.endpoints?.allowedAddresses);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            logger.warn(
+              `[loadConfigModels] Skipping model fetch for "${name}": user-provided base URL rejected (${msg})`,
+            );
+            continue;
+          }
+        }
 
         if (resolvedApiKey && resolvedBaseURL) {
           const userFetchKey = `user:${req.user?.id}:${name}`;
