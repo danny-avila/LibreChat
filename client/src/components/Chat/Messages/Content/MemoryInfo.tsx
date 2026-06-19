@@ -1,5 +1,6 @@
 import type { MemoryArtifact } from 'librechat-data-provider';
 import { useMemo } from 'react';
+import { Alert } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 
 export default function MemoryInfo({ memoryArtifacts }: { memoryArtifacts: MemoryArtifact[] }) {
@@ -89,17 +90,14 @@ export default function MemoryInfo({ memoryArtifacts }: { memoryArtifacts: Memor
 
       {errorMessages.length > 0 && (
         <div>
-          <h4 className="mb-2 text-sm font-semibold text-red-500">
+          <h4 className="mb-2 text-sm font-semibold text-text-destructive">
             {localize('com_ui_memory_storage_full')}
           </h4>
           <div className="space-y-2">
             {errorMessages.map((errorMessage) => (
-              <div
-                key={errorMessage}
-                className="rounded-md bg-red-50 p-3 text-sm text-red-800 dark:bg-red-900/20 dark:text-red-400"
-              >
+              <Alert key={errorMessage} variant="error" icon={false} className="rounded-md p-3">
                 {errorMessage}
-              </div>
+              </Alert>
             ))}
           </div>
         </div>

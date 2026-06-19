@@ -1,5 +1,5 @@
 import { useForm } from 'react-hook-form';
-import { Spinner, Button, SecretInput } from '@librechat/client';
+import { Spinner, Button, SecretInput, Alert } from '@librechat/client';
 import { useOutletContext } from 'react-router-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useResetPasswordMutation } from 'librechat-data-provider/react-query';
@@ -41,10 +41,7 @@ function ResetPassword() {
   if (resetPassword.isSuccess) {
     return (
       <>
-        <div
-          className="relative mt-6 rounded-xl border border-green-500/20 bg-green-50/50 px-6 py-4 text-green-700 shadow-sm transition-all dark:bg-green-950/30 dark:text-green-100"
-          role="alert"
-        >
+        <Alert variant="success" icon={false} className="mt-6 px-6 py-4 shadow-sm transition-all">
           <div className="flex flex-col space-y-4">
             <p>{localize('com_auth_login_with_new_password')}</p>
             <Button
@@ -55,7 +52,7 @@ function ResetPassword() {
               {localize('com_auth_continue')}
             </Button>
           </div>
-        </div>
+        </Alert>
       </>
     );
   }
@@ -107,7 +104,7 @@ function ResetPassword() {
         </div>
 
         {errors.password && (
-          <span role="alert" className="mt-1 text-sm text-red-500 dark:text-red-900">
+          <span role="alert" className="mt-1 text-sm text-text-destructive">
             {errors.password.message}
           </span>
         )}
@@ -130,17 +127,17 @@ function ResetPassword() {
           />
         </div>
         {errors.confirm_password && (
-          <span role="alert" className="mt-1 text-sm text-red-500 dark:text-red-900">
+          <span role="alert" className="mt-1 text-sm text-text-destructive">
             {errors.confirm_password.message}
           </span>
         )}
         {errors.token && (
-          <span role="alert" className="mt-1 text-sm text-red-500 dark:text-red-900">
+          <span role="alert" className="mt-1 text-sm text-text-destructive">
             {errors.token.message}
           </span>
         )}
         {errors.userId && (
-          <span role="alert" className="mt-1 text-sm text-red-500 dark:text-red-900">
+          <span role="alert" className="mt-1 text-sm text-text-destructive">
             {errors.userId.message}
           </span>
         )}
