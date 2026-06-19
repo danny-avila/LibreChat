@@ -18,11 +18,16 @@ const {
   createSafeUser,
   validateRequest,
   initializeAgent,
+  encodeAndFormatDocuments,
+  filterFilesByEndpointConfig,
+  getEndpointFileLimit,
   getBalanceConfig,
   injectSkillPrimes,
   extractManualSkills,
   createErrorResponse,
+  extractRemoteAgentChatFiles,
   recordCollectedUsage,
+  attachDocumentsToMessageContent,
   createSubagentUsageSink,
   getTransactionsConfig,
   resolveRecursionLimit,
@@ -56,6 +61,7 @@ const {
   enrichLoadedToolsWithAgentContext,
 } = require('~/server/services/Endpoints/agents/skillDeps');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
 
@@ -216,6 +222,22 @@ const OpenAIChatCompletionController = async (req, res) => {
   });
 
   try {
+    /**
+     * Pull request-scoped `file` content parts into transient LibreChat-style
+     * file records. The returned messages keep private placeholders so the
+     * existing message conversion pipeline can preserve file positions.
+     */
+    const { value: remoteMessages, files: inlineProviderFiles } = extractRemoteAgentChatFiles(
+      request.messages,
+      req.user?.id,
+    );
+
+    if (inlineProviderFiles.length > 0) {
+      logger.debug(
+        `[OpenAI API] Detected ${inlineProviderFiles.length} remote inline provider file(s) for agent ${agentId}: ${inlineProviderFiles.map((file) => file.filename).join(', ')}`,
+      );
+    }
+
     if (request.conversation_id != null) {
       if (typeof request.conversation_id !== 'string') {
         return sendErrorResponse(
@@ -449,28 +471,6 @@ const OpenAIChatCompletionController = async (req, res) => {
     const tracker = isStreaming ? createOpenAIStreamTracker() : null;
     const aggregator = isStreaming ? null : createOpenAIContentAggregator();
 
-    // Set up response for streaming
-    if (isStreaming) {
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('Connection', 'keep-alive');
-      res.setHeader('X-Accel-Buffering', 'no');
-      res.flushHeaders();
-
-      // Send initial chunk with role
-      const initialChunk = createChunk(context, { role: 'assistant' });
-      writeSSE(res, initialChunk);
-    }
-
-    // Create handler config for OpenAI streaming (only used when streaming)
-    const handlerConfig = isStreaming
-      ? {
-          res,
-          context,
-          tracker,
-        }
-      : null;
-
     const collectedUsage = [];
     /** @type {Promise<import('librechat-data-provider').TAttachment | null>[]} */
     const artifactPromises = [];
@@ -512,7 +512,103 @@ const OpenAIChatCompletionController = async (req, res) => {
 
     const summarizationConfig = appConfig?.summarization;
 
-    const openaiMessages = convertMessages(request.messages);
+    const openaiMessages = convertMessages(remoteMessages);
+
+    if (inlineProviderFiles.length > 0) {
+      const endpoint = primaryConfig.endpoint ?? agent.provider;
+      const endpointType = primaryConfig.provider ?? agent.provider;
+      const provider = primaryConfig.provider ?? agent.provider;
+      const modelUsesResponsesApi = primaryConfig.model_parameters?.useResponsesApi === true;
+
+      /** Enforce the UI-facing count limit here because the shared file filter does not. */
+      const fileLimit = getEndpointFileLimit(req, { endpoint, endpointType });
+      if (Number.isFinite(fileLimit) && inlineProviderFiles.length > fileLimit) {
+        return sendErrorResponse(
+          res,
+          400,
+          'Too many file inputs were provided for the configured file upload settings.',
+          'invalid_request_error',
+          'too_many_files',
+        );
+      }
+
+      /**
+       * Reuse LibreChat's endpoint file policy for disabled, MIME, per-file size,
+       * and total-size checks. Remote inline files are rejected as a whole instead
+       * of silently dropping any requested file.
+       */
+      const filteredInlineProviderFiles = filterFilesByEndpointConfig(req, {
+        files: inlineProviderFiles,
+        endpoint,
+        endpointType,
+      });
+      if (filteredInlineProviderFiles.length !== inlineProviderFiles.length) {
+        return sendErrorResponse(
+          res,
+          400,
+          'One or more file inputs are not allowed by the configured file upload settings.',
+          'invalid_request_error',
+          'unsupported_file',
+        );
+      }
+
+      if (
+        (provider === EModelEndpoint.openAI || provider === EModelEndpoint.azureOpenAI) &&
+        !modelUsesResponsesApi
+      ) {
+        return sendErrorResponse(
+          res,
+          400,
+          'File inputs with OpenAI or Azure OpenAI agent backends require the agent configuration to have Use Responses API enabled.',
+          'invalid_request_error',
+          'responses_api_required',
+        );
+      }
+
+      /** Attach provider document blocks to the same latest user message that carried the file parts. */
+      let latestUserMessage;
+      for (let i = openaiMessages.length - 1; i >= 0; i--) {
+        if (openaiMessages[i]?.role === 'user') {
+          latestUserMessage = openaiMessages[i];
+          break;
+        }
+      }
+
+      /** Format before stream setup so validation failures can still return a JSON 400. */
+      const documentResult = await encodeAndFormatDocuments(
+        req,
+        inlineProviderFiles,
+        {
+          provider,
+          endpoint,
+          useResponsesApi: modelUsesResponsesApi,
+          model: primaryConfig.model || agent.model_parameters?.model,
+        },
+        getStrategyFunctions,
+      );
+
+      if (documentResult.documents.length !== inlineProviderFiles.length) {
+        return sendErrorResponse(
+          res,
+          400,
+          'One or more file inputs are not supported by the configured provider.',
+          'invalid_request_error',
+          'unsupported_file',
+        );
+      }
+
+      if (latestUserMessage && documentResult.documents.length > 0) {
+        attachDocumentsToMessageContent(
+          latestUserMessage,
+          documentResult.documents,
+          `Attached file(s): ${inlineProviderFiles.map((file) => file.filename).join(', ')}`,
+        );
+      }
+
+      logger.debug(
+        `[OpenAI API] Attached ${documentResult.documents.length} provider document block(s) for ${inlineProviderFiles.length} remote inline file(s) on agent ${agentId}`,
+      );
+    }
 
     const toolSet = buildToolSet(primaryConfig);
     const formatted = formatAgentMessages(openaiMessages, {}, toolSet);
@@ -551,6 +647,27 @@ const OpenAIChatCompletionController = async (req, res) => {
         );
       }
     }
+
+    // Set up response for streaming only after request-scoped file validation succeeds.
+    if (isStreaming) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no');
+      res.flushHeaders();
+
+      const initialChunk = createChunk(context, { role: 'assistant' });
+      writeSSE(res, initialChunk);
+    }
+
+    // Create handler config for OpenAI streaming (only used when streaming)
+    const handlerConfig = isStreaming
+      ? {
+          res,
+          context,
+          tracker,
+        }
+      : null;
 
     /**
      * Create a simple handler that processes data
@@ -864,9 +981,10 @@ const OpenAIChatCompletionController = async (req, res) => {
       res.end();
     } else {
       // Forward upstream provider status codes (e.g., Anthropic 400s) instead of masking as 500
+      const errorStatus = error?.status ?? error?.statusCode;
       const statusCode =
-        typeof error?.status === 'number' && error.status >= 400 && error.status < 600
-          ? error.status
+        typeof errorStatus === 'number' && errorStatus >= 400 && errorStatus < 600
+          ? errorStatus
           : 500;
       const errorType =
         statusCode >= 400 && statusCode < 500 ? 'invalid_request_error' : 'server_error';

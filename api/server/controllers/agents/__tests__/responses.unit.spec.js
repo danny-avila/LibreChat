@@ -10,6 +10,51 @@ const mockRecordCollectedUsage = jest
   .mockResolvedValue({ input_tokens: 100, output_tokens: 50 });
 const mockGetBalanceConfig = jest.fn().mockReturnValue({ enabled: true });
 const mockGetTransactionsConfig = jest.fn().mockReturnValue({ enabled: true });
+const mockExtractRemoteAgentResponseFiles = jest
+  .fn()
+  .mockImplementation((input) => ({ value: input, files: [] }));
+const mockEncodeAndFormatDocuments = jest.fn().mockResolvedValue({ documents: [], files: [] });
+const mockFilterFilesByEndpointConfig = jest.fn((_, { files }) => files ?? []);
+const mockGetEndpointFileLimit = jest.fn().mockReturnValue(10);
+const remoteInlineFileMarkerPrefix = '__LIBRECHAT_REMOTE_INLINE_FILE__:';
+const mockAttachDocumentsToMessageContent = jest.fn((message, documents, fallbackText) => {
+  const content = [];
+  let documentIndex = 0;
+  let hasText = false;
+
+  if (Array.isArray(message?.content)) {
+    for (const part of message.content) {
+      if (part?.type === 'text') {
+        const text = part.text ?? '';
+        if (!text.trim()) {
+          continue;
+        }
+        if (
+          text.trim().startsWith(remoteInlineFileMarkerPrefix) &&
+          documentIndex < documents.length
+        ) {
+          content.push(documents[documentIndex]);
+          documentIndex += 1;
+          continue;
+        }
+        hasText = true;
+        content.push(part);
+      } else if (part?.type === 'image_url') {
+        content.push(part);
+      }
+    }
+  } else if (typeof message?.content === 'string' && message.content.trim()) {
+    hasText = true;
+    content.push({ type: 'text', text: message.content });
+  }
+
+  content.push(...documents.slice(documentIndex));
+  if (!hasText) {
+    content.unshift({ type: 'text', text: fallbackText });
+  }
+
+  message.content = content;
+});
 const mockBuildSkillPrimedIdsByName = jest.fn((manualSkillPrimes, alwaysApplySkillPrimes) => {
   const primed = {};
   for (const skill of alwaysApplySkillPrimes ?? []) {
@@ -94,10 +139,14 @@ jest.mock('@librechat/api', () => ({
   initializeAgent: jest.fn().mockResolvedValue({
     id: 'agent-123',
     model: 'claude-3',
+    provider: 'anthropic',
     model_parameters: {},
     toolRegistry: {},
     edges: [],
   }),
+  encodeAndFormatDocuments: mockEncodeAndFormatDocuments,
+  filterFilesByEndpointConfig: mockFilterFilesByEndpointConfig,
+  getEndpointFileLimit: mockGetEndpointFileLimit,
   discoverConnectedAgents: jest.fn().mockResolvedValue({
     agentConfigs: new Map(),
     edges: [],
@@ -107,6 +156,9 @@ jest.mock('@librechat/api', () => ({
   getBalanceConfig: mockGetBalanceConfig,
   getTransactionsConfig: mockGetTransactionsConfig,
   recordCollectedUsage: mockRecordCollectedUsage,
+  extractRemoteAgentResponseFiles: mockExtractRemoteAgentResponseFiles,
+  attachDocumentsToMessageContent: mockAttachDocumentsToMessageContent,
+  remoteInlineFileMarkerPrefix,
   createSubagentUsageSink: jest.fn().mockReturnValue(jest.fn()),
   extractManualSkills: jest.fn().mockReturnValue(undefined),
   injectSkillPrimes: jest.fn().mockReturnValue({
@@ -232,7 +284,9 @@ const mockUpdateBalance = jest.fn().mockResolvedValue({});
 const mockBulkInsertTransactions = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('~/models', () => ({
-  getAgent: jest.fn().mockResolvedValue({ id: 'agent-123', name: 'Test Agent' }),
+  getAgent: jest
+    .fn()
+    .mockResolvedValue({ id: 'agent-123', name: 'Test Agent', provider: 'anthropic' }),
   getFiles: jest.fn(),
   getUserKey: jest.fn(),
   getMessages: jest.fn().mockResolvedValue([]),
@@ -512,6 +566,449 @@ describe('createResponse controller', () => {
             }),
           ]),
         }),
+      );
+    });
+  });
+
+  describe('remote inline provider files', () => {
+    const inlineFile = {
+      file_id: 'remote-file-1',
+      temp_file_id: 'remote-file-1',
+      filename: 'document.pdf',
+      filepath: '',
+      source: 'remote_inline',
+      type: 'application/pdf',
+      bytes: 8,
+      object: 'file',
+      usage: 1,
+      user: 'user-123',
+      metadata: { inlineBase64: 'JVBERi0x' },
+    };
+
+    it('should attach encoded documents before formatting non-streaming messages', async () => {
+      const { formatAgentMessages } = require('@librechat/agents');
+      const {
+        convertInputToMessages,
+        encodeAndFormatDocuments,
+        initializeAgent,
+      } = require('@librechat/api');
+      const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+      const cleanedInput = [
+        {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: `${remoteInlineFileMarkerPrefix}remote-file-1` }],
+        },
+      ];
+      const convertedMessages = [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: `${remoteInlineFileMarkerPrefix}remote-file-1` }],
+        },
+      ];
+      mockExtractRemoteAgentResponseFiles.mockReturnValueOnce({
+        value: cleanedInput,
+        files: [inlineFile],
+      });
+      convertInputToMessages.mockReturnValueOnce(convertedMessages);
+      mockEncodeAndFormatDocuments.mockResolvedValueOnce({
+        documents: [{ type: 'document', source: { type: 'base64', data: 'JVBERi0x' } }],
+        files: [],
+      });
+
+      await createResponse(req, res);
+
+      expect(convertInputToMessages).toHaveBeenCalledWith(cleanedInput);
+      expect(encodeAndFormatDocuments).toHaveBeenCalledWith(
+        req,
+        [inlineFile],
+        expect.objectContaining({
+          provider: 'anthropic',
+          endpoint: 'anthropic',
+          model: 'claude-3',
+        }),
+        getStrategyFunctions,
+      );
+      expect(formatAgentMessages).toHaveBeenCalledWith(
+        [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Attached file(s): document.pdf' },
+              { type: 'document', source: { type: 'base64', data: 'JVBERi0x' } },
+            ],
+          },
+        ],
+        {},
+        expect.any(Set),
+      );
+      expect(initializeAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ requestFiles: [] }),
+        expect.any(Object),
+      );
+    });
+
+    it('should attach encoded documents before formatting streaming messages', async () => {
+      const { formatAgentMessages } = require('@librechat/agents');
+      const { convertInputToMessages, validateResponseRequest } = require('@librechat/api');
+      const convertedMessages = [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: `${remoteInlineFileMarkerPrefix}remote-file-1` }],
+        },
+      ];
+      validateResponseRequest.mockReturnValueOnce({
+        request: { model: 'agent-123', input: req.body.input, stream: true },
+      });
+      mockExtractRemoteAgentResponseFiles.mockReturnValueOnce({
+        value: [{ type: 'message', role: 'user', content: [] }],
+        files: [inlineFile],
+      });
+      convertInputToMessages.mockReturnValueOnce(convertedMessages);
+      mockEncodeAndFormatDocuments.mockResolvedValueOnce({
+        documents: [{ type: 'document', source: { type: 'base64', data: 'JVBERi0x' } }],
+        files: [],
+      });
+
+      await createResponse(req, res);
+
+      expect(formatAgentMessages).toHaveBeenCalledWith(
+        [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Attached file(s): document.pdf' },
+              { type: 'document', source: { type: 'base64', data: 'JVBERi0x' } },
+            ],
+          },
+        ],
+        {},
+        expect.any(Set),
+      );
+    });
+
+    it('should support multiple inline files without passing them to agent requestFiles', async () => {
+      const { discoverConnectedAgents, initializeAgent } = require('@librechat/api');
+      const secondFile = { ...inlineFile, file_id: 'remote-file-2', filename: 'notes.txt' };
+      mockExtractRemoteAgentResponseFiles.mockReturnValueOnce({
+        value: [{ role: 'user', content: [{ type: 'input_text', text: 'Files attached' }] }],
+        files: [inlineFile, secondFile],
+      });
+      mockEncodeAndFormatDocuments.mockResolvedValueOnce({
+        documents: [
+          { type: 'document', source: { type: 'base64', data: 'JVBERi0x' } },
+          { type: 'document', source: { type: 'base64', data: 'SGVsbG8=' } },
+        ],
+        files: [],
+      });
+      const convertedMessages = [{ role: 'user', content: 'Files attached' }];
+      const { convertInputToMessages } = require('@librechat/api');
+      convertInputToMessages.mockReturnValueOnce(convertedMessages);
+
+      await createResponse(req, res);
+
+      expect(mockEncodeAndFormatDocuments).toHaveBeenCalledWith(
+        req,
+        [inlineFile, secondFile],
+        expect.any(Object),
+        expect.any(Function),
+      );
+      expect(initializeAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ requestFiles: [] }),
+        expect.any(Object),
+      );
+      expect(discoverConnectedAgents).not.toHaveBeenCalled();
+    });
+
+    it('should attach files from Responses message-like input items without type', async () => {
+      const { formatAgentMessages } = require('@librechat/agents');
+      const { convertInputToMessages, validateResponseRequest } = require('@librechat/api');
+      const input = [
+        {
+          role: 'user',
+          content: [
+            { type: 'input_text', text: 'Extract this PDF.' },
+            { type: 'input_file', filename: 'document.pdf', file_data: 'data' },
+          ],
+        },
+      ];
+      const cleanedInput = [
+        {
+          type: 'message',
+          role: 'user',
+          content: [
+            { type: 'input_text', text: 'Extract this PDF.' },
+            { type: 'input_text', text: `${remoteInlineFileMarkerPrefix}remote-file-1` },
+          ],
+        },
+      ];
+      validateResponseRequest.mockReturnValueOnce({
+        request: { model: 'agent-123', input, stream: false },
+      });
+      mockExtractRemoteAgentResponseFiles.mockReturnValueOnce({
+        value: cleanedInput,
+        files: [inlineFile],
+      });
+      convertInputToMessages.mockReturnValueOnce([
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Extract this PDF.' },
+            { type: 'text', text: `${remoteInlineFileMarkerPrefix}remote-file-1` },
+          ],
+        },
+      ]);
+      mockEncodeAndFormatDocuments.mockResolvedValueOnce({
+        documents: [{ type: 'document', source: { type: 'base64', data: 'JVBERi0x' } }],
+        files: [],
+      });
+
+      await createResponse(req, res);
+
+      expect(mockExtractRemoteAgentResponseFiles).toHaveBeenCalledWith(input, 'user-123');
+      expect(convertInputToMessages).toHaveBeenCalledWith(cleanedInput);
+      expect(formatAgentMessages).toHaveBeenCalledWith(
+        [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Extract this PDF.' },
+              { type: 'document', source: { type: 'base64', data: 'JVBERi0x' } },
+            ],
+          },
+        ],
+        {},
+        expect.any(Set),
+      );
+    });
+
+    it('should return a Responses-compatible 400 for malformed inline file input', async () => {
+      const { sendResponsesErrorResponse } = require('@librechat/api');
+      mockExtractRemoteAgentResponseFiles.mockImplementationOnce(() => {
+        const error = new Error('File "document.pdf" must use a base64 data URL.');
+        error.statusCode = 400;
+        throw error;
+      });
+
+      await createResponse(req, res);
+
+      expect(sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        'File "document.pdf" must use a base64 data URL.',
+        'invalid_request',
+      );
+      expect(mockEncodeAndFormatDocuments).not.toHaveBeenCalled();
+    });
+
+    it('should return a clear 400 when an OpenAI agent backend has Use Responses API disabled', async () => {
+      const {
+        createRun,
+        convertInputToMessages,
+        initializeAgent,
+        sendResponsesErrorResponse,
+      } = require('@librechat/api');
+      initializeAgent.mockResolvedValueOnce({
+        id: 'agent-123',
+        model: 'gpt-4',
+        provider: 'openAI',
+        model_parameters: {},
+        toolRegistry: {},
+        edges: [],
+      });
+      mockExtractRemoteAgentResponseFiles.mockReturnValueOnce({
+        value: [{ role: 'user', content: [{ type: 'input_text', text: 'Files attached' }] }],
+        files: [inlineFile],
+      });
+      convertInputToMessages.mockReturnValueOnce([{ role: 'user', content: 'Files attached' }]);
+
+      await createResponse(req, res);
+
+      expect(sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        'File inputs with OpenAI or Azure OpenAI agent backends require the agent configuration to have Use Responses API enabled.',
+        'invalid_request',
+        'responses_api_required',
+      );
+      expect(mockEncodeAndFormatDocuments).not.toHaveBeenCalled();
+      expect(createRun).not.toHaveBeenCalled();
+    });
+
+    it('should use a nonblank fallback text block when document message text is empty', async () => {
+      const { formatAgentMessages } = require('@librechat/agents');
+      const { convertInputToMessages } = require('@librechat/api');
+      mockExtractRemoteAgentResponseFiles.mockReturnValueOnce({
+        value: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: '' }] }],
+        files: [inlineFile],
+      });
+      convertInputToMessages.mockReturnValueOnce([
+        { role: 'user', content: [{ type: 'text', text: '' }] },
+      ]);
+      mockEncodeAndFormatDocuments.mockResolvedValueOnce({
+        documents: [{ type: 'document', document: { name: 'document', source: { bytes: [] } } }],
+        files: [],
+      });
+
+      await createResponse(req, res);
+
+      expect(formatAgentMessages).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Attached file(s): document.pdf' },
+              { type: 'document', document: { name: 'document', source: { bytes: [] } } },
+            ],
+          }),
+        ],
+        {},
+        expect.any(Set),
+      );
+    });
+
+    it('should return 400 when provider formatting skips an inline file', async () => {
+      const {
+        createRun,
+        convertInputToMessages,
+        sendResponsesErrorResponse,
+      } = require('@librechat/api');
+      mockExtractRemoteAgentResponseFiles.mockReturnValueOnce({
+        value: [{ role: 'user', content: [{ type: 'input_text', text: 'Files attached' }] }],
+        files: [inlineFile],
+      });
+      convertInputToMessages.mockReturnValueOnce([{ role: 'user', content: 'Files attached' }]);
+      mockEncodeAndFormatDocuments.mockResolvedValueOnce({ documents: [], files: [] });
+
+      await createResponse(req, res);
+
+      expect(sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        'One or more file inputs are not supported by the configured provider.',
+        'invalid_request',
+        'unsupported_file',
+      );
+      expect(createRun).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when file upload settings reject an inline file', async () => {
+      const {
+        createRun,
+        convertInputToMessages,
+        filterFilesByEndpointConfig,
+        sendResponsesErrorResponse,
+      } = require('@librechat/api');
+      mockExtractRemoteAgentResponseFiles.mockReturnValueOnce({
+        value: [{ role: 'user', content: [{ type: 'input_text', text: 'Files attached' }] }],
+        files: [inlineFile],
+      });
+      convertInputToMessages.mockReturnValueOnce([{ role: 'user', content: 'Files attached' }]);
+      mockFilterFilesByEndpointConfig.mockReturnValueOnce([]);
+
+      await createResponse(req, res);
+
+      expect(filterFilesByEndpointConfig).toHaveBeenCalledWith(req, {
+        files: [inlineFile],
+        endpoint: 'anthropic',
+        endpointType: 'anthropic',
+      });
+      expect(sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        'One or more file inputs are not allowed by the configured file upload settings.',
+        'invalid_request',
+        'unsupported_file',
+      );
+      expect(mockEncodeAndFormatDocuments).not.toHaveBeenCalled();
+      expect(createRun).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 when inline files exceed the configured file limit', async () => {
+      const {
+        createRun,
+        convertInputToMessages,
+        sendResponsesErrorResponse,
+      } = require('@librechat/api');
+      const secondFile = { ...inlineFile, file_id: 'remote-file-2', filename: 'notes.txt' };
+      mockExtractRemoteAgentResponseFiles.mockReturnValueOnce({
+        value: [{ role: 'user', content: [{ type: 'input_text', text: 'Files attached' }] }],
+        files: [inlineFile, secondFile],
+      });
+      convertInputToMessages.mockReturnValueOnce([{ role: 'user', content: 'Files attached' }]);
+      mockGetEndpointFileLimit.mockReturnValueOnce(1);
+
+      await createResponse(req, res);
+
+      expect(mockGetEndpointFileLimit).toHaveBeenCalledWith(req, {
+        endpoint: 'anthropic',
+        endpointType: 'anthropic',
+      });
+      expect(sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        400,
+        'Too many file inputs were provided for the configured file upload settings.',
+        'invalid_request',
+        'too_many_files',
+      );
+      expect(mockFilterFilesByEndpointConfig).not.toHaveBeenCalled();
+      expect(mockEncodeAndFormatDocuments).not.toHaveBeenCalled();
+      expect(createRun).not.toHaveBeenCalled();
+    });
+
+    it('should not persist transient inline document payloads when store is true', async () => {
+      const { convertInputToMessages, validateResponseRequest } = require('@librechat/api');
+      const { saveMessage } = require('~/models');
+      validateResponseRequest.mockReturnValueOnce({
+        request: { model: 'agent-123', input: req.body.input, stream: false, store: true },
+      });
+      mockExtractRemoteAgentResponseFiles.mockReturnValueOnce({
+        value: [{ type: 'message', role: 'user', content: [] }],
+        files: [inlineFile],
+      });
+      convertInputToMessages.mockReturnValueOnce([
+        {
+          role: 'user',
+          content: [{ type: 'text', text: `${remoteInlineFileMarkerPrefix}remote-file-1` }],
+        },
+      ]);
+      mockEncodeAndFormatDocuments.mockResolvedValueOnce({
+        documents: [
+          {
+            type: 'document',
+            source: {
+              type: 'base64',
+              media_type: 'application/pdf',
+              data: 'JVBERi0x',
+            },
+          },
+        ],
+        files: [],
+      });
+
+      await createResponse(req, res);
+
+      expect(saveMessage).toHaveBeenCalledWith(
+        req,
+        expect.objectContaining({
+          isCreatedByUser: true,
+          text: JSON.stringify([{ type: 'text', text: '[File: document.pdf]' }]),
+        }),
+        expect.any(Object),
+      );
+      expect(saveMessage).not.toHaveBeenCalledWith(
+        req,
+        expect.objectContaining({
+          text: expect.stringContaining(remoteInlineFileMarkerPrefix),
+        }),
+        expect.any(Object),
+      );
+      expect(saveMessage).not.toHaveBeenCalledWith(
+        req,
+        expect.objectContaining({
+          text: expect.stringContaining('JVBERi0x'),
+        }),
+        expect.any(Object),
       );
     });
   });

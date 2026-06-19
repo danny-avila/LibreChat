@@ -94,3 +94,20 @@ export function filterFilesByEndpointConfig(
 
   return filteredFiles;
 }
+
+export function getEndpointFileLimit(
+  req: ServerRequest,
+  params: {
+    endpoint?: string | null;
+    endpointType?: string | null;
+  },
+): number | undefined {
+  const mergedFileConfig = mergeFileConfig(req.config?.fileConfig);
+  const endpointFileConfig = getEndpointFileConfig({
+    fileConfig: mergedFileConfig,
+    endpoint: params.endpoint,
+    endpointType: params.endpointType,
+  });
+
+  return endpointFileConfig.fileLimit;
+}

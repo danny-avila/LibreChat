@@ -12,7 +12,9 @@ import type {
   StrategyFunctions,
   DocumentResult,
   ServerRequest,
+  ProcessedFile,
 } from '~/types';
+import { RemoteAgentFileError, remoteInlineFileSource } from '~/agents/files';
 import { validatePdf, validateBedrockDocument } from '~/files/validation';
 import { getFileStream, getConfiguredFileSizeLimit } from './utils';
 
@@ -22,6 +24,12 @@ const ANTHROPIC_CITATION_TYPES = new Set([
   'text/html',
   'text/markdown',
 ]);
+
+type InlineMongoFile = IMongoFile & {
+  metadata?: IMongoFile['metadata'] & {
+    inlineBase64?: string;
+  };
+};
 
 /**
  * Formats a base64-encoded document into the appropriate provider-specific block.
@@ -98,6 +106,13 @@ function getBase64DecodedByteCount(content: string): number {
   return Math.floor((content.length * 3) / 4) - paddingChars;
 }
 
+function throwDocumentValidationError(file: IMongoFile, message: string): never {
+  if (file.source === remoteInlineFileSource) {
+    throw new RemoteAgentFileError(message);
+  }
+  throw new Error(message);
+}
+
 /**
  * Encodes and formats document files for various providers.
  *
@@ -141,6 +156,23 @@ export async function encodeAndFormatDocuments(
 
   const results = await Promise.allSettled(
     processableFiles.map((file) => {
+      const inlineFile = file as InlineMongoFile;
+      const inlineBase64 = inlineFile.metadata?.inlineBase64;
+      if (file.source === remoteInlineFileSource && inlineBase64) {
+        return {
+          file,
+          content: inlineBase64,
+          metadata: {
+            file_id: file.file_id,
+            temp_file_id: file.temp_file_id,
+            filepath: file.filepath ?? '',
+            source: file.source ?? remoteInlineFileSource,
+            filename: file.filename,
+            type: file.type,
+          },
+        } satisfies ProcessedFile;
+      }
+
       return getFileStream(req, file, encodingMethods, getStrategyFunctions);
     }),
   );
@@ -176,7 +208,7 @@ export async function encodeAndFormatDocuments(
       );
 
       if (!validation.isValid) {
-        throw new Error(`Document validation failed: ${validation.error}`);
+        throwDocumentValidationError(file, `Document validation failed: ${validation.error}`);
       }
 
       const sanitizedName = (file.filename || 'document')
@@ -205,7 +237,7 @@ export async function encodeAndFormatDocuments(
       );
 
       if (!validation.isValid) {
-        throw new Error(`PDF validation failed: ${validation.error}`);
+        throwDocumentValidationError(file, `PDF validation failed: ${validation.error}`);
       }
 
       const block = formatDocumentBlock(
@@ -222,7 +254,8 @@ export async function encodeAndFormatDocuments(
     } else if (isDocSupported && !isBedrock) {
       const decodedByteCount = getBase64DecodedByteCount(content);
       if (configuredFileSizeLimit && decodedByteCount > configuredFileSizeLimit) {
-        throw new Error(
+        throwDocumentValidationError(
+          file,
           `File size (~${(decodedByteCount / 1024 / 1024).toFixed(1)}MB) exceeds the configured limit for ${provider}`,
         );
       }

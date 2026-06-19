@@ -2,6 +2,7 @@ import { Providers } from '@librechat/agents';
 import { mbToBytes } from 'librechat-data-provider';
 import type { AppConfig, IMongoFile } from '@librechat/data-schemas';
 import type { ServerRequest } from '~/types';
+import { RemoteAgentFileError, remoteInlineFileSource } from '~/agents/files';
 import { encodeAndFormatDocuments } from './document';
 
 /** Mock the validation module */
@@ -28,6 +29,12 @@ const mockedGetFileStream = getFileStream as jest.MockedFunction<typeof getFileS
 const mockedGetConfiguredFileSizeLimit = getConfiguredFileSizeLimit as jest.MockedFunction<
   typeof getConfiguredFileSizeLimit
 >;
+
+type InlineTestFile = IMongoFile & {
+  metadata: NonNullable<IMongoFile['metadata']> & {
+    inlineBase64: string;
+  };
+};
 
 describe('encodeAndFormatDocuments - fileConfig integration', () => {
   const mockStrategyFunctions = jest.fn();
@@ -106,6 +113,26 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     }) as unknown as IMongoFile;
+
+  const createInlineFile = (mimeType: string, filename: string, content: string): InlineTestFile =>
+    ({
+      _id: new Types.ObjectId(),
+      user: new Types.ObjectId(),
+      file_id: new Types.ObjectId().toString(),
+      temp_file_id: new Types.ObjectId().toString(),
+      filename,
+      filepath: '',
+      source: remoteInlineFileSource,
+      type: mimeType,
+      bytes: Buffer.from(content).length,
+      object: 'file',
+      usage: 1,
+      metadata: {
+        inlineBase64: Buffer.from(content).toString('base64'),
+      },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }) as unknown as InlineTestFile;
 
   describe('Configuration extraction and validation', () => {
     it('should pass configured file size limit to validatePdf for OpenAI', async () => {
@@ -348,6 +375,44 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
           mockStrategyFunctions,
         ),
       ).rejects.toThrow('PDF validation failed: PDF file size (12MB) exceeds the 10MB limit');
+    });
+
+    it('should throw a 400 error when inline PDF validation fails', async () => {
+      const req = createMockRequest(10) as ServerRequest;
+      const file = createInlineFile('application/pdf', 'bad.pdf', 'not-a-pdf');
+
+      mockedValidatePdf.mockResolvedValue({
+        isValid: false,
+        error: 'Invalid PDF file: missing PDF header',
+      });
+
+      await expect(
+        encodeAndFormatDocuments(
+          req,
+          [file],
+          { provider: Providers.ANTHROPIC },
+          mockStrategyFunctions,
+        ),
+      ).rejects.toMatchObject({
+        name: 'RemoteAgentFileError',
+        statusCode: 400,
+        code: 'invalid_file_input',
+        message: 'PDF validation failed: Invalid PDF file: missing PDF header',
+      });
+    });
+
+    it('should throw a 400 error when inline generic document validation fails', async () => {
+      const req = createMockRequest(1, Providers.ANTHROPIC) as ServerRequest;
+      const file = createInlineFile('text/plain', 'large.txt', 'x'.repeat(2 * 1024 * 1024));
+
+      await expect(
+        encodeAndFormatDocuments(
+          req,
+          [file],
+          { provider: Providers.ANTHROPIC },
+          mockStrategyFunctions,
+        ),
+      ).rejects.toBeInstanceOf(RemoteAgentFileError);
     });
 
     it('should not call validatePdf for non-PDF files', async () => {
@@ -1011,6 +1076,183 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
 
       expect(result.documents).toHaveLength(0);
       expect(result.files).toHaveLength(0);
+    });
+  });
+
+  describe('Inline remote provider-upload files', () => {
+    it('should format inline Anthropic document without storage lookup', async () => {
+      const req = createMockRequest(30) as ServerRequest;
+      const file = createInlineFile('text/plain', 'notes.txt', 'inline notes');
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        [file],
+        { provider: Providers.ANTHROPIC },
+        mockStrategyFunctions,
+      );
+
+      expect(mockedGetFileStream).not.toHaveBeenCalled();
+      expect(mockStrategyFunctions).not.toHaveBeenCalled();
+      expect(result.documents).toHaveLength(1);
+      expect(result.documents[0]).toMatchObject({
+        type: 'document',
+        source: {
+          type: 'base64',
+          media_type: 'text/plain',
+          data: file.metadata?.inlineBase64,
+        },
+        citations: { enabled: true },
+        context: 'File: "notes.txt"',
+      });
+      expect(result.files).toEqual([
+        {
+          file_id: file.file_id,
+          temp_file_id: file.temp_file_id,
+          filepath: '',
+          source: remoteInlineFileSource,
+          filename: 'notes.txt',
+          type: 'text/plain',
+        },
+      ]);
+    });
+
+    it('should use storage lookup when inline metadata is present on a non-remote file', async () => {
+      const req = createMockRequest(30) as ServerRequest;
+      const file = {
+        ...createMockDocFile(1, 'text/plain', 'stored.txt'),
+        metadata: {
+          inlineBase64: Buffer.from('metadata content').toString('base64'),
+        },
+      } as unknown as InlineTestFile;
+      const storedContent = Buffer.from('stored content').toString('base64');
+
+      mockedGetFileStream.mockResolvedValue({
+        file,
+        content: storedContent,
+        metadata: file,
+      });
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        [file],
+        { provider: Providers.ANTHROPIC },
+        mockStrategyFunctions,
+      );
+
+      expect(mockedGetFileStream).toHaveBeenCalledTimes(1);
+      expect(result.documents[0]).toMatchObject({
+        type: 'document',
+        source: {
+          data: storedContent,
+        },
+      });
+    });
+
+    it('should format inline Bedrock document as bytes without storage lookup', async () => {
+      const req = createMockRequest() as ServerRequest;
+      const file = createInlineFile('text/csv', 'data.csv', 'a,b\n1,2');
+
+      mockedValidateBedrockDocument.mockResolvedValue({ isValid: true });
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        [file],
+        { provider: Providers.BEDROCK },
+        mockStrategyFunctions,
+      );
+
+      expect(mockedGetFileStream).not.toHaveBeenCalled();
+      expect(mockStrategyFunctions).not.toHaveBeenCalled();
+      expect(mockedValidateBedrockDocument).toHaveBeenCalledWith(
+        Buffer.from(file.metadata?.inlineBase64 ?? '', 'base64').length,
+        'text/csv',
+        Buffer.from(file.metadata?.inlineBase64 ?? '', 'base64'),
+        undefined,
+        undefined,
+      );
+      expect(result.documents).toHaveLength(1);
+      expect(result.documents[0]).toMatchObject({
+        type: 'document',
+        document: {
+          name: 'data_csv',
+          format: 'csv',
+          source: {
+            bytes: Buffer.from('a,b\n1,2'),
+          },
+        },
+      });
+    });
+
+    it('should format inline OpenAI chat document as file block', async () => {
+      const req = createMockRequest(15) as ServerRequest;
+      const file = createInlineFile('text/plain', 'readme.txt', 'readme content');
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        [file],
+        { provider: Providers.OPENAI },
+        mockStrategyFunctions,
+      );
+
+      expect(mockedGetFileStream).not.toHaveBeenCalled();
+      expect(result.documents).toEqual([
+        {
+          type: 'file',
+          file: {
+            filename: 'readme.txt',
+            file_data: `data:text/plain;base64,${file.metadata?.inlineBase64}`,
+          },
+        },
+      ]);
+    });
+
+    it('should format inline OpenAI responses document as input_file block', async () => {
+      const req = createMockRequest(15) as ServerRequest;
+      const file = createInlineFile('text/csv', 'data.csv', 'a,b\n1,2');
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        [file],
+        { provider: Providers.OPENAI, useResponsesApi: true },
+        mockStrategyFunctions,
+      );
+
+      expect(mockedGetFileStream).not.toHaveBeenCalled();
+      expect(result.documents).toEqual([
+        {
+          type: 'input_file',
+          filename: 'data.csv',
+          file_data: `data:text/csv;base64,${file.metadata?.inlineBase64}`,
+        },
+      ]);
+    });
+
+    it('should format multiple inline Google documents as media blocks', async () => {
+      const req = createMockRequest(25, Providers.GOOGLE) as ServerRequest;
+      const first = createInlineFile('text/plain', 'first.txt', 'first');
+      const second = createInlineFile('text/csv', 'second.csv', 'a,b\n1,2');
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        [first, second],
+        { provider: Providers.GOOGLE },
+        mockStrategyFunctions,
+      );
+
+      expect(mockedGetFileStream).not.toHaveBeenCalled();
+      expect(result.documents).toEqual([
+        {
+          type: 'media',
+          mimeType: 'text/plain',
+          data: first.metadata?.inlineBase64,
+        },
+        {
+          type: 'media',
+          mimeType: 'text/csv',
+          data: second.metadata?.inlineBase64,
+        },
+      ]);
+      expect(result.files).toHaveLength(2);
     });
   });
 });

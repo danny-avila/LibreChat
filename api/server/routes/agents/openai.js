@@ -17,12 +17,13 @@
  *   }
  */
 const express = require('express');
+const { handleJsonParseError } = require('@librechat/api');
 const {
   OpenAIChatCompletionController,
   ListModelsController,
   GetModelController,
 } = require('~/server/controllers/agents/openai');
-const { configMiddleware } = require('~/server/middleware');
+const { configMiddleware, remoteAgentJsonParser } = require('~/server/middleware');
 const {
   checkAgentPermission,
   preAuthTenantMiddleware,
@@ -35,6 +36,8 @@ const router = express.Router();
 router.use(preAuthTenantMiddleware);
 router.use(requireRemoteAgentAuth);
 router.use(configMiddleware);
+router.use(remoteAgentJsonParser);
+router.use(handleJsonParseError);
 router.use(checkRemoteAgentsFeature);
 
 /**
