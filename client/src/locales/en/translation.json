@@ -411,7 +411,7 @@
   "com_nav_about_branch": "Branch",
   "com_nav_about_build_date": "Built",
   "com_nav_about_commit": "Commit",
-  "com_nav_about_diagnostics_copied": "Copied",
+  "com_nav_about_diagnostics_copied": "Copied to clipboard",
   "com_nav_about_diagnostics_copy": "Copy diagnostics",
   "com_nav_about_diagnostics_description": "Copy this block when opening a support issue so maintainers can identify the exact build you're running.",
   "com_nav_about_version": "Version",
