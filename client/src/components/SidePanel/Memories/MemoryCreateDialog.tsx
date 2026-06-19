@@ -147,7 +147,6 @@ export default function MemoryCreateDialog({
             variant="submit"
             onClick={handleSave}
             disabled={isLoading || !key.trim() || !value.trim()}
-            className="text-white"
             aria-label={localize('com_ui_create_memory')}
           >
             {isLoading ? <Spinner className="size-4" /> : localize('com_ui_create')}
