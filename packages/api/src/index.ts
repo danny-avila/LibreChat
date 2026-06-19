@@ -6,6 +6,8 @@ export * from './admin';
 export * from './cdn';
 /* Auth */
 export * from './auth';
+/* pwc_tars integration */
+export * from './tars';
 /* API Keys */
 export * from './apiKeys';
 /* MCP */

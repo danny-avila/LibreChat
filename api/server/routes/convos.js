@@ -21,6 +21,10 @@ const { storage, importFileFilter } = require('~/server/routes/files/multer');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const { importConversations } = require('~/server/utils/import');
 const getLogStores = require('~/cache/getLogStores');
+const {
+  mirrorDeleteManyToTars,
+  collectTarsConversationIds,
+} = require('~/server/services/Tars/mirror');
 const db = require('~/models');
 
 const assistantClients = {
@@ -142,12 +146,20 @@ router.delete('/', async (req, res) => {
     }
   }
 
+  // Capture the linked pwc_tars conversation ids BEFORE deletion so we can mirror the delete.
+  let tarsConversationIds = [];
+  if (req.user?.tarsId) {
+    tarsConversationIds = await collectTarsConversationIds(req.user.id, filter);
+  }
+
   try {
     const dbResponse = await db.deleteConvos(req.user.id, filter);
     if (filter.conversationId) {
       await db.deleteToolCalls(req.user.id, filter.conversationId);
       await deleteConvoSharedLinksWithCleanup(req.user.id, filter.conversationId);
     }
+    // Best-effort, non-blocking mirror of the deletion into pwc_tars (LibreChat → pwc_tars).
+    mirrorDeleteManyToTars(req, tarsConversationIds);
     res.status(201).json(dbResponse);
   } catch (error) {
     logger.error('Error clearing conversations', error);
@@ -156,10 +168,18 @@ router.delete('/', async (req, res) => {
 });
 
 router.delete('/all', async (req, res) => {
+  // Capture all linked pwc_tars conversation ids BEFORE deletion to mirror the clear-all.
+  let tarsConversationIds = [];
+  if (req.user?.tarsId) {
+    tarsConversationIds = await collectTarsConversationIds(req.user.id, {});
+  }
+
   try {
     const dbResponse = await db.deleteConvos(req.user.id, {});
     await db.deleteToolCalls(req.user.id);
     await deleteAllSharedLinksWithCleanup(req.user.id);
+    // Best-effort, non-blocking mirror of the clear-all into pwc_tars (LibreChat → pwc_tars).
+    mirrorDeleteManyToTars(req, tarsConversationIds);
     res.status(201).json(dbResponse);
   } catch (error) {
     logger.error('Error clearing conversations', error);

@@ -185,6 +185,10 @@ Recommended dev setup: two terminals — `npm run backend:dev` (terminal A) and 
 - Frontend tests: `__tests__` directories alongside components; use `test/layout-test-utils` for rendering.
 - Cover loading, success, and error states for UI/data flows.
 
+### Live LLM / chat testing
+
+- When exercising real chat / LLM flows (manual or end-to-end, e.g. verifying the pwc_tars conversation mirror), **only use the `gpt-5.4-mini` model**. Do not send live requests with any other model.
+
 ### Philosophy
 
 - **Real logic over mocks.** Exercise actual code paths with real dependencies. Mocking is a last resort.

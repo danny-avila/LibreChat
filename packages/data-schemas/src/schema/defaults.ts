@@ -116,6 +116,10 @@ export const conversationPreset: {
   agent_id: {
     type: StringConstructor;
   };
+  /* pwc_tars specialized brain */
+  domain_id: {
+    type: StringConstructor;
+  };
   /* assistants */
   assistant_id: {
     type: StringConstructor;
@@ -286,6 +290,10 @@ export const conversationPreset: {
   },
   /* agents */
   agent_id: {
+    type: String,
+  },
+  /* pwc_tars specialized brain */
+  domain_id: {
     type: String,
   },
   /* assistants */

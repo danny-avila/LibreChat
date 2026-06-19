@@ -19,7 +19,8 @@ const {
 } = require('~/server/services/MCPRequestContext');
 const { handleAbortError } = require('~/server/middleware');
 const { logViolation } = require('~/cache');
-const { saveMessage, getMessages, getConvo } = require('~/models');
+const { saveMessage, getMessages, getConvo, saveConvo } = require('~/models');
+const { mirrorChatToTars } = require('~/server/services/Tars/mirror');
 
 function createCloseHandler(abortController) {
   return function (manual) {
@@ -207,6 +208,19 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   const conversationId = isNewConvo ? crypto.randomUUID() : reqConversationId;
   const streamId = conversationId;
   req.body.conversationId = conversationId;
+
+  // Capture any existing pwc_tars conversation mapping BEFORE generation: the agent's
+  // per-turn conversation save overwrites custom fields like tarsConversationId, so the
+  // mirror can't read it reliably afterwards.
+  let existingTarsConversationId;
+  if (!isNewConvo && req.user?.tarsId) {
+    try {
+      const priorConvo = await getConvo(userId, conversationId);
+      existingTarsConversationId = priorConvo?.tarsConversationId ?? undefined;
+    } catch {
+      existingTarsConversationId = undefined;
+    }
+  }
 
   let client = null;
 
@@ -543,6 +557,40 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             { ...response, user: userId, unfinished: wasAbortedBeforeComplete },
             { context: 'api/server/controllers/agents/request.js - resumable response end' },
           );
+        }
+
+        // Persist the selected pwc_tars domain on the conversation itself. The agent
+        // client's own convo save (already awaited above) doesn't carry domain_id, so
+        // merge it in here. Best-effort; skip temporary chats.
+        const selectedDomainId = req.body?.domain_id;
+        if (selectedDomainId && !req.body?.isTemporary) {
+          saveConvo(
+            reqCtx,
+            { conversationId, domain_id: selectedDomainId },
+            { context: 'api/server/controllers/agents/request.js - persist domain_id' },
+          ).catch((err) => logger.error('[AgentController] Failed to persist domain_id', err));
+        }
+
+        // Best-effort, non-blocking mirror of this turn into pwc_tars (LibreChat → pwc_tars).
+        // Agent responses live in `content` (array of parts); `text` is usually empty.
+        if (!wasAbortedBeforeComplete && !req.body?.isTemporary) {
+          const responseText =
+            response?.text ||
+            (Array.isArray(response?.content)
+              ? response.content
+                  .filter((part) => part?.type === 'text' && part.text)
+                  .map((part) => part.text)
+                  .join('\n')
+              : '');
+          mirrorChatToTars(req, {
+            conversationId,
+            existingTarsConversationId,
+            title: conversation?.title,
+            model: conversation?.model ?? req.body?.model,
+            domainId: selectedDomainId ?? conversation?.domain_id,
+            query: text,
+            response: responseText,
+          });
         }
 
         // Check if our job was replaced by a new request before emitting
@@ -1004,6 +1052,25 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
           { context: 'api/server/controllers/agents/request.js - response end' },
         );
       }
+
+      // Best-effort, non-blocking mirror of this turn into pwc_tars (LibreChat → pwc_tars).
+      // Agent responses live in `content` (array of parts); `text` is usually empty.
+      const responseText =
+        finalResponse?.text ||
+        (Array.isArray(finalResponse?.content)
+          ? finalResponse.content
+              .filter((part) => part?.type === 'text' && part.text)
+              .map((part) => part.text)
+              .join('\n')
+          : '');
+      mirrorChatToTars(req, {
+        conversationId,
+        title: conversation?.title,
+        model: conversation?.model ?? req.body?.model,
+        domainId: req.body?.domain_id ?? conversation?.domain_id,
+        query: text,
+        response: responseText,
+      });
     }
     // Edge case: sendMessage completed but abort happened during sendCompletion
     // We need to ensure a final event is sent

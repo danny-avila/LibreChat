@@ -1,10 +1,12 @@
 import { useState, memo, useRef } from 'react';
 import * as Menu from '@ariakit/react/menu';
-import { FileText, Archive, LogOut } from 'lucide-react';
+import { SystemRoles } from 'librechat-data-provider';
+import { FileText, Archive, LogOut, BrainCircuit } from 'lucide-react';
 import { LinkIcon, GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
 import { ArchivedChatsModal } from '~/components/Nav/SettingsTabs/General/ArchivedChatsModal';
 import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
+import TarsAdminDialog from '~/components/Admin/Tars/TarsAdminDialog';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
 import Settings from './Settings';
@@ -19,7 +21,9 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
   const [showSettings, setShowSettings] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [showTarsAdmin, setShowTarsAdmin] = useState(false);
   const accountSettingsButtonRef = useRef<HTMLButtonElement>(null);
+  const isTarsAdmin = user?.role === SystemRoles.ADMIN && user?.provider === 'tars';
 
   return (
     <Menu.MenuProvider placement={collapsed ? 'right-end' : undefined}>
@@ -87,6 +91,12 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
             {localize('com_nav_help_faq')}
           </Menu.MenuItem>
         )}
+        {isTarsAdmin && (
+          <Menu.MenuItem onClick={() => setShowTarsAdmin(true)} className="select-item text-sm">
+            <BrainCircuit className="icon-md" aria-hidden="true" />
+            {localize('com_nav_tars_admin')}
+          </Menu.MenuItem>
+        )}
         <Menu.MenuItem onClick={() => setShowSettings(true)} className="select-item text-sm">
           <GearIcon className="icon-md" aria-hidden="true" />
           {localize('com_nav_settings')}
@@ -112,6 +122,13 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
         />
       )}
       {showSettings && <Settings open={showSettings} onOpenChange={setShowSettings} />}
+      {showTarsAdmin && (
+        <TarsAdminDialog
+          open={showTarsAdmin}
+          onOpenChange={setShowTarsAdmin}
+          triggerRef={accountSettingsButtonRef}
+        />
+      )}
     </Menu.MenuProvider>
   );
 }

@@ -576,6 +576,60 @@ export const getAgentCategories = (): Promise<t.TMarketplaceCategory[]> => {
   return request.get(endpoints.agents({ path: 'categories' }));
 };
 
+export const getTarsDomains = (): Promise<t.TTarsDomainsResponse> => {
+  return request.get(endpoints.tarsDomains());
+};
+
+export const getTarsDomainPrepareData = (): Promise<t.TTarsDomainPrepareData> => {
+  return request.get(endpoints.tarsDomainPrepareData());
+};
+
+export const createTarsDomain = (
+  data: t.TTarsDomainInput,
+): Promise<{ domain: t.TTarsDomain }> => {
+  return request.post(endpoints.tarsDomains(), data);
+};
+
+export const updateTarsDomain = (
+  id: string | number,
+  data: t.TTarsDomainInput,
+): Promise<{ domain: t.TTarsDomain }> => {
+  return request.put(endpoints.tarsDomain(id), data);
+};
+
+export const deleteTarsDomain = (id: string | number): Promise<{ success: boolean }> => {
+  return request.delete(endpoints.tarsDomain(id));
+};
+
+export const getTarsKnowledgeBases = (): Promise<t.TTarsKnowledgeBasesResponse> => {
+  return request.get(endpoints.tarsKnowledgeBases());
+};
+
+export const getTarsKnowledgeBaseModels = (): Promise<t.TTarsModelOptions> => {
+  return request.get(endpoints.tarsKnowledgeBaseModels());
+};
+
+export const createTarsKnowledgeBase = (
+  data: t.TTarsKnowledgeBaseInput,
+): Promise<{ knowledgeBase: t.TTarsKnowledgeBase }> => {
+  return request.post(endpoints.tarsKnowledgeBases(), data);
+};
+
+export const updateTarsKnowledgeBase = (
+  id: string,
+  data: t.TTarsKnowledgeBaseUpdate,
+): Promise<{ knowledgeBase: t.TTarsKnowledgeBase }> => {
+  return request.put(endpoints.tarsKnowledgeBase(id), data);
+};
+
+export const deleteTarsKnowledgeBase = (id: string): Promise<{ success: boolean }> => {
+  return request.delete(endpoints.tarsKnowledgeBase(id));
+};
+
+export const uploadTarsKnowledgeBase = (data: FormData): Promise<Record<string, unknown>> => {
+  return request.postMultiPart(endpoints.tarsKnowledgeBaseUpload(), data);
+};
+
 /**
  * Unified marketplace agents endpoint with query string controls
  */
