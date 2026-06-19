@@ -352,9 +352,36 @@ function mergeRequired(a: unknown, b: unknown): string[] | undefined {
 
 /**
  * JSON Schema keywords absent from Gemini's function-calling Schema subset
- * (https://ai.google.dev/api/caching#Schema); they trigger 400s and are stripped.
+ * (https://ai.google.dev/api/caching#Schema); they trigger `Unknown name "<key>"`
+ * 400s and are stripped. The list below was verified against the live Gemini API
+ * (`gemini-2.5-flash`/`gemini-3.5-flash`): each entry is rejected when sent through
+ * `FunctionDeclaration.parameters`. `@langchain/google-genai` only removes
+ * `additionalProperties`/`$schema`, so the rest must be stripped here.
  */
-const GEMINI_UNSUPPORTED_KEYS = new Set(['additionalProperties', 'default', '$schema', '$id']);
+const GEMINI_UNSUPPORTED_KEYS = new Set([
+  'additionalProperties',
+  'default',
+  '$schema',
+  '$id',
+  'id',
+  '$comment',
+  'examples',
+  'readOnly',
+  'writeOnly',
+  'deprecated',
+  'multipleOf',
+  'uniqueItems',
+  'prefixItems',
+  'additionalItems',
+  'propertyNames',
+  'patternProperties',
+  'dependencies',
+  'dependentRequired',
+  'dependentSchemas',
+  'contentEncoding',
+  'contentMediaType',
+  'contentSchema',
+]);
 
 /**
  * Merges the members of an `allOf` (schema intersection) into the parent: combines
@@ -470,7 +497,9 @@ function collapseTypeArray(types: unknown[]): { type?: string; nullable: boolean
  *   drops the keyword entirely for non-string types (e.g. a boolean `const`
  *   normalized to `enum: [true]`).
  * - Folds `exclusiveMinimum`/`exclusiveMaximum` into `minimum`/`maximum`.
- * - Strips unsupported keywords (`additionalProperties`, `default`, `const`, `$schema`, `$id`).
+ * - Strips `const` (after enum conversion) and every keyword in `GEMINI_UNSUPPORTED_KEYS`
+ *   (`additionalProperties`, `examples`, `readOnly`, `multipleOf`, `uniqueItems`,
+ *   `patternProperties`, `prefixItems`, etc.) that the Gemini schema validator rejects.
  *
  * @param schema - The JSON schema to sanitize
  * @returns The Gemini-compatible schema
