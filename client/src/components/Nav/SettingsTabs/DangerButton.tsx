@@ -45,7 +45,7 @@ const DangerButton = (props: TDangerButtonProps, ref: ForwardedRef<HTMLButtonEle
         disabled={disabled}
         onClick={onClick}
         className={cn(
-          'btn relative border-none bg-red-500 text-white hover:bg-red-700 dark:hover:bg-red-700',
+          'btn relative border-none bg-surface-destructive text-white hover:bg-surface-destructive-hover',
           className,
         )}
       >
