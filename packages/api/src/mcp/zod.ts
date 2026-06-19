@@ -353,14 +353,18 @@ function mergeRequired(a: unknown, b: unknown): string[] | undefined {
 /**
  * JSON Schema keywords absent from Gemini's function-calling Schema subset
  * (https://ai.google.dev/api/caching#Schema); they trigger `Unknown name "<key>"`
- * 400s and are stripped. The list below was verified against the live Gemini API
- * (`gemini-2.5-flash`/`gemini-3.5-flash`): each entry is rejected when sent through
- * `FunctionDeclaration.parameters`. `@langchain/google-genai` only removes
+ * 400s and are stripped. Every entry below was verified to be rejected through
+ * `FunctionDeclaration.parameters` against the live Gemini API (`gemini-2.5-flash`,
+ * `gemini-3.5-flash`) and/or Vertex AI — some keywords (`additionalProperties`,
+ * `prefixItems`) are rejected only by the Gemini API but accepted by Vertex, so the
+ * union is stripped for both. `@langchain/google-genai` only removes
  * `additionalProperties`/`$schema`, so the rest must be stripped here.
+ *
+ * `default` is intentionally NOT listed: it is part of Gemini's Schema and is
+ * accepted by both the Gemini API and Vertex (verified live), so it is preserved.
  */
 const GEMINI_UNSUPPORTED_KEYS = new Set([
   'additionalProperties',
-  'default',
   '$schema',
   '$id',
   'id',

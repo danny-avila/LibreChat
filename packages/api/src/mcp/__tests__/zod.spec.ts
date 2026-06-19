@@ -2636,7 +2636,7 @@ describe('sanitizeGeminiSchema', () => {
     expect(sanitizeGeminiSchema(schema)).toEqual({ type: 'string', enum: ['a', 'b'] });
   });
 
-  it('strips unsupported keywords (additionalProperties, default, $schema)', () => {
+  it('strips unsupported keywords (additionalProperties, $schema) but keeps Gemini-supported default', () => {
     const schema = {
       $schema: 'http://json-schema.org/draft-07/schema#',
       type: 'object',
@@ -2649,7 +2649,7 @@ describe('sanitizeGeminiSchema', () => {
     const result = sanitizeGeminiSchema(schema);
     expect(result).not.toHaveProperty('$schema');
     expect(result).not.toHaveProperty('additionalProperties');
-    expect(result.properties.name).toEqual({ type: 'string' });
+    expect(result.properties.name).toEqual({ type: 'string', default: 'anon' });
   });
 
   it('folds exclusive bounds into inclusive minimum/maximum', () => {
