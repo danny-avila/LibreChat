@@ -30,7 +30,7 @@ import ChatDirection from '../SettingsTabs/Chat/ChatDirection';
 import { DeleteCache } from '../SettingsTabs/Data/DeleteCache';
 import { RevokeKeys } from '../SettingsTabs/Data/RevokeKeys';
 import { ClearChats } from '../SettingsTabs/Data/ClearChats';
-import { TokenCredits, AutoRefill } from './BillingControls';
+import { TopUp, TokenCredits, AutoRefill } from './BillingControls';
 import SharedLinks from '../SettingsTabs/Data/SharedLinks';
 import { showThinkingAtom } from '~/store/showThinking';
 import Avatar from '../SettingsTabs/Account/Avatar';
@@ -523,6 +523,14 @@ export const registry: SettingEntry[] = [
     Component: BackupCodesItem,
   },
   // Account · Billing
+  {
+    id: 'topUp',
+    tab: ACCOUNT,
+    section: 'billing',
+    labelKey: 'com_nav_balance_top_up',
+    show: (ctx) => ctx.balanceEnabled,
+    Component: TopUp,
+  },
   {
     id: 'tokenCredits',
     tab: ACCOUNT,
