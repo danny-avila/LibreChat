@@ -125,6 +125,8 @@ describe('createStripePaymentHandlers', () => {
     expect(checkoutCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         mode: 'payment',
+        success_url: 'https://example.com/success?stripe=success',
+        cancel_url: 'https://example.com/cancel?stripe=cancel',
         metadata: expect.objectContaining({
           userId: 'user-123',
           credits: '5000000',

@@ -148,6 +148,20 @@ function getStripeSignature(req: StripeWebhookRequest): string | null {
   return signature ?? null;
 }
 
+function withStripeStatus(url: string, status: 'success' | 'cancel'): string {
+  try {
+    const parsed = new URL(url);
+    parsed.searchParams.set('stripe', status);
+    return parsed.toString();
+  } catch {
+    const hashIndex = url.indexOf('#');
+    const base = hashIndex >= 0 ? url.slice(0, hashIndex) : url;
+    const hash = hashIndex >= 0 ? url.slice(hashIndex) : '';
+    const separator = base.includes('?') ? '&' : '?';
+    return `${base}${separator}stripe=${status}${hash}`;
+  }
+}
+
 export function createStripePaymentHandlers(deps: StripePaymentDeps): {
   createCheckoutSession: (req: ServerRequest, res: Response) => Promise<Response>;
   handleWebhook: (req: StripeWebhookRequest, res: Response) => Promise<Response>;
@@ -194,8 +208,8 @@ export function createStripePaymentHandlers(deps: StripePaymentDeps): {
       try {
         const session = await stripe.checkout.sessions.create({
           mode: 'payment',
-          success_url: stripeConfig.successUrl,
-          cancel_url: stripeConfig.cancelUrl,
+          success_url: withStripeStatus(stripeConfig.successUrl, 'success'),
+          cancel_url: withStripeStatus(stripeConfig.cancelUrl, 'cancel'),
           client_reference_id: userId,
           customer_email: req.user?.email,
           line_items: [
