@@ -2,22 +2,22 @@ import { DotsIcon, TrashIcon } from '@librechat/client';
 
 export default function Template() {
   return (
-    <div className="max-h-[28rem] overflow-y-auto rounded-md border border-black/10 dark:border-white/10">
+    <div className="max-h-[28rem] overflow-y-auto rounded-md border border-border-light">
       <table className="w-full border-separate border-spacing-0">
         <thead>
           <tr>
-            <th className="sticky top-0 rounded-t border-b border-black/10 bg-white px-4 py-2 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-900 dark:text-gray-100">
+            <th className="sticky top-0 rounded-t border-b border-border-light bg-surface-primary px-4 py-2 text-left font-medium text-text-primary">
               Name
             </th>
-            <th className="sticky top-0 rounded-t border-b border-black/10 bg-white px-4 py-2 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-900 dark:text-gray-100">
+            <th className="sticky top-0 rounded-t border-b border-border-light bg-surface-primary px-4 py-2 text-left font-medium text-text-primary">
               Date
             </th>
-            <th className="sticky top-0 rounded-t border-b border-black/10 bg-white px-4 py-2 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-900 dark:text-gray-100">
+            <th className="sticky top-0 rounded-t border-b border-border-light bg-surface-primary px-4 py-2 text-left font-medium text-text-primary">
               Size
             </th>
-            <th className="sticky top-0 rounded-t border-b border-black/10 bg-white px-4 py-2 text-right font-medium text-gray-700 dark:border-white/10 dark:bg-gray-900 dark:text-gray-100">
+            <th className="sticky top-0 rounded-t border-b border-border-light bg-surface-primary px-4 py-2 text-right font-medium text-text-primary">
               <button
-                className="text-gray-500 hover:text-gray-600 radix-state-open:text-gray-600 dark:hover:text-gray-400 dark:radix-state-open:text-gray-400"
+                className="text-text-secondary hover:text-text-primary radix-state-open:text-text-primary"
                 type="button"
                 id="radix-:r67:"
                 aria-haspopup="menu"
@@ -31,18 +31,18 @@ export default function Template() {
         </thead>
         <tbody>
           <tr className="">
-            <td className="border-b border-black/10 text-left text-gray-600 dark:border-white/10 dark:text-gray-300 [tr:last-child_&]:border-b-0">
+            <td className="border-b border-border-light text-left text-text-secondary [tr:last-child_&]:border-b-0">
               <div className="px-4 py-2 [tr[data-disabled=true]_&]:opacity-50">
                 File Transfer: Node to FastAPI
               </div>
             </td>
-            <td className="border-b border-black/10 text-left text-gray-600 dark:border-white/10 dark:text-gray-300 [tr:last-child_&]:border-b-0">
+            <td className="border-b border-border-light text-left text-text-secondary [tr:last-child_&]:border-b-0">
               <div className="px-4 py-2 [tr[data-disabled=true]_&]:opacity-50">June 11, 2023</div>
             </td>
-            <td className="border-b border-black/10 text-left text-gray-600 dark:border-white/10 dark:text-gray-300 [tr:last-child_&]:border-b-0">
+            <td className="border-b border-border-light text-left text-text-secondary [tr:last-child_&]:border-b-0">
               <div className="px-4 py-2 [tr[data-disabled=true]_&]:opacity-50">11 mb</div>
             </td>
-            <td className="border-b border-black/10 text-left text-gray-600 dark:border-white/10 dark:text-gray-300 [tr:last-child_&]:border-b-0">
+            <td className="border-b border-border-light text-left text-text-secondary [tr:last-child_&]:border-b-0">
               <div className="px-4 py-2 [tr[data-disabled=true]_&]:opacity-50">
                 <div className="flex items-center justify-end gap-2">
                   <span className="" data-state="closed">
@@ -51,7 +51,7 @@ export default function Template() {
                       target="_blank"
                       rel="noreferrer"
                       aria-label="View source chat"
-                      className="text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
+                      className="text-text-secondary hover:text-text-primary"
                     >
                       <svg
                         stroke="currentColor"
@@ -72,7 +72,7 @@ export default function Template() {
                   <span className="" data-state="closed">
                     <button
                       aria-label="Delete shared link"
-                      className="text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
+                      className="text-text-secondary hover:text-text-primary"
                     >
                       <TrashIcon />
                     </button>
