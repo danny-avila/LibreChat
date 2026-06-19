@@ -1,4 +1,4 @@
-import type { RefillIntervalUnit, TUserFavorite } from 'librechat-data-provider';
+import type { RefillIntervalUnit, TUserFavorite, TTarsMenuItem } from 'librechat-data-provider';
 import type { Document, Types } from 'mongoose';
 import { CursorPaginationParams } from '~/common';
 
@@ -26,6 +26,11 @@ export interface IUser extends Document {
   samlId?: string;
   ldapId?: string;
   tarsId?: string;
+  tarsStatus?: string;
+  tarsRoleId?: number;
+  tarsGroupIds?: string;
+  tarsMenuKeys?: string[];
+  tarsMenuItems?: TTarsMenuItem[];
   githubId?: string;
   discordId?: string;
   appleId?: string;

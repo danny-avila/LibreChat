@@ -4,10 +4,12 @@ const { SystemRoles, ErrorTypes } = require('librechat-data-provider');
 const {
   authenticateTars,
   getBalanceConfig,
+  isTarsAdminRole,
   isEmailDomainAllowed,
+  flattenTarsMenuKeys,
   resolveAppConfigForUser,
 } = require('@librechat/api');
-const { createUser, findUser, updateUser, countUsers } = require('~/models');
+const { createUser, findUser, updateUser } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 
 const { TARS_AUTH_URL } = process.env;
@@ -30,8 +32,21 @@ const tarsLogin = new PassportLocalStrategy(
         return done(null, false, { message: ErrorTypes.AUTH_FAILED });
       }
 
-      const { id: tarsId, email, name } = tarsUser;
+      const { id: tarsId, email, name, status, roleId, groupIds, menuItems } = tarsUser;
+      if (status !== 'active') {
+        logger.warn(`[tarsStrategy] Blocked non-active tars user [tarsId: ${tarsId}]`);
+        return done(null, false, { message: ErrorTypes.AUTH_FAILED });
+      }
+
       const mail = email || `${tarsUser.username}@tars.local`;
+      const role = isTarsAdminRole(roleId) ? SystemRoles.ADMIN : SystemRoles.USER;
+      const tarsContext = {
+        tarsStatus: status,
+        tarsRoleId: roleId,
+        tarsGroupIds: groupIds,
+        tarsMenuItems: menuItems,
+        tarsMenuKeys: flattenTarsMenuKeys(menuItems),
+      };
 
       const baseConfig = await getAppConfig({ baseOnly: true });
       if (!isEmailDomainAllowed(mail, baseConfig?.registration?.allowedDomains)) {
@@ -61,7 +76,6 @@ const tarsLogin = new PassportLocalStrategy(
       }
 
       if (!user) {
-        const isFirstRegisteredUser = (await countUsers()) === 0;
         user = {
           provider: 'tars',
           tarsId,
@@ -69,7 +83,8 @@ const tarsLogin = new PassportLocalStrategy(
           email: mail,
           emailVerified: true,
           name,
-          role: isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER,
+          role,
+          ...tarsContext,
         };
         const balanceConfig = getBalanceConfig(appConfig);
         const userId = await createUser(user, balanceConfig);
@@ -80,6 +95,8 @@ const tarsLogin = new PassportLocalStrategy(
         user.email = mail;
         user.username = tarsUser.username;
         user.name = name;
+        user.role = role;
+        Object.assign(user, tarsContext);
       }
 
       user = await updateUser(user._id, user);

@@ -15,6 +15,10 @@ const jwtLogin = () =>
         const user = await getUserById(payload?.id, '-password -__v -totpSecret -backupCodes');
         if (user) {
           user.id = user._id.toString();
+          if (user.tarsStatus && user.tarsStatus !== 'active') {
+            logger.warn(`[jwtLogin] Access denied for non-active tars user: ${user.id}`);
+            return done(null, false);
+          }
           if (!user.role) {
             user.role = SystemRoles.USER;
             await updateUser(user.id, { role: user.role });

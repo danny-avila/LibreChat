@@ -86,6 +86,21 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
     tarsId: {
       type: String,
     },
+    tarsStatus: {
+      type: String,
+    },
+    tarsRoleId: {
+      type: Number,
+    },
+    tarsGroupIds: {
+      type: String,
+    },
+    tarsMenuKeys: {
+      type: [String],
+    },
+    tarsMenuItems: {
+      type: Array,
+    },
     githubId: {
       type: String,
     },

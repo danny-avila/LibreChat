@@ -213,6 +213,19 @@ export type TBackupCode = {
   usedAt: Date | null;
 };
 
+/** A pwc_tars menu node (UI feature) carried verbatim from the pwc_tars login response. */
+export type TTarsMenuItem = {
+  id: number;
+  title?: string;
+  parent?: string | null;
+  type?: string;
+  url?: string | null;
+  dom_id?: string;
+  icon?: string;
+  status?: number;
+  children?: TTarsMenuItem[];
+};
+
 export type TUser = {
   id: string;
   username: string;
@@ -228,6 +241,10 @@ export type TUser = {
   personalization?: {
     memories?: boolean;
   };
+  /** pwc_tars role id (when authenticated via the tars provider) */
+  tarsRoleId?: number;
+  /** pwc_tars accessible menu tree (union across the user's effective roles) */
+  tarsMenuItems?: TTarsMenuItem[];
   createdAt: string;
   updatedAt: string;
 };
