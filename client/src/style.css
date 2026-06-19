@@ -55,6 +55,11 @@
   --amber-800: #92400e;
   --amber-900: #78350f;
   --amber-950: #451a03;
+  --blue-50: #eff6ff;
+  --blue-400: #60a5fa;
+  --blue-500: #3b82f6;
+  --blue-600: #2563eb;
+  --blue-950: #172554;
   --brand-purple: #ab68ff;
   --gizmo-gray-500: #999;
   --gizmo-gray-600: #666;
@@ -169,6 +174,16 @@ html {
   --border-heavy: var(--gray-400);
   --border-xheavy: var(--gray-500);
   --border-destructive: var(--red-600);
+  --status-success: var(--green-600);
+  --status-success-subtle: var(--green-50);
+  --status-info: var(--blue-600);
+  --status-info-subtle: var(--blue-50);
+  --status-warning: var(--amber-600);
+  --status-warning-subtle: var(--amber-50);
+  --status-error: var(--red-600);
+  --status-error-subtle: var(--red-50);
+  --status-neutral: var(--gray-600);
+  --status-neutral-subtle: var(--gray-100);
   /* These are test styles */
 
   --background: 0 0% 100%;
@@ -231,6 +246,16 @@ html {
   --border-heavy: var(--gray-500);
   --border-xheavy: var(--gray-400);
   --border-destructive: var(--red-500);
+  --status-success: var(--green-400);
+  --status-success-subtle: var(--green-950);
+  --status-info: var(--blue-400);
+  --status-info-subtle: var(--blue-950);
+  --status-warning: var(--amber-400);
+  --status-warning-subtle: var(--amber-950);
+  --status-error: var(--red-400);
+  --status-error-subtle: var(--red-950);
+  --status-neutral: var(--gray-400);
+  --status-neutral-subtle: var(--gray-800);
   /* These are test styles */
 
   --background: 0 0% 7%;

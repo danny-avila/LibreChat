@@ -100,6 +100,17 @@ function createTailwindColors() {
     'border-xheavy': cssVar('--border-xheavy'),
     'border-destructive': cssVar('--border-destructive'),
 
+    'status-success': cssVar('--status-success'),
+    'status-success-subtle': cssVar('--status-success-subtle'),
+    'status-info': cssVar('--status-info'),
+    'status-info-subtle': cssVar('--status-info-subtle'),
+    'status-warning': cssVar('--status-warning'),
+    'status-warning-subtle': cssVar('--status-warning-subtle'),
+    'status-error': cssVar('--status-error'),
+    'status-error-subtle': cssVar('--status-error-subtle'),
+    'status-neutral': cssVar('--status-neutral'),
+    'status-neutral-subtle': cssVar('--status-neutral-subtle'),
+
     border: hslVar('--border'),
     input: hslVar('--input'),
     'switch-unchecked': hslVar('--switch-unchecked'),
