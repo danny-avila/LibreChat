@@ -2775,6 +2775,63 @@ describe('sanitizeGeminiSchema', () => {
     });
   });
 
+  it('synthesizes `items` from `prefixItems` when a tuple array has none (Gemini requires items)', () => {
+    const schema = {
+      type: 'array',
+      prefixItems: [{ type: 'string', readOnly: true }, { type: 'number' }],
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'array',
+      items: { type: 'string' },
+    });
+  });
+
+  it('preserves an existing `items` over a `prefixItems`-derived one', () => {
+    const schema = {
+      type: 'array',
+      items: { type: 'boolean' },
+      prefixItems: [{ type: 'string' }],
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'array',
+      items: { type: 'boolean' },
+    });
+  });
+
+  it('preserves an object `default` verbatim without sanitizing its data keys', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        cfg: {
+          type: 'object',
+          default: { id: 'abc', readOnly: true, deprecated: false, nested: { id: 'x' } },
+          properties: { id: { type: 'string' } },
+        },
+      },
+    } as any;
+    const result = sanitizeGeminiSchema(schema);
+    expect(result.properties.cfg.default).toEqual({
+      id: 'abc',
+      readOnly: true,
+      deprecated: false,
+      nested: { id: 'x' },
+    });
+    expect(result.properties.cfg.properties).toEqual({ id: { type: 'string' } });
+  });
+
+  it('preserves an array `default` verbatim', () => {
+    const schema = {
+      type: 'array',
+      items: { type: 'string' },
+      default: ['id', 'readOnly'],
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'array',
+      items: { type: 'string' },
+      default: ['id', 'readOnly'],
+    });
+  });
+
   it('strips content keywords and the bare `id` alias Gemini rejects', () => {
     const schema = {
       id: 'urn:example',

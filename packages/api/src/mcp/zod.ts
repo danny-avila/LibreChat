@@ -355,13 +355,14 @@ function mergeRequired(a: unknown, b: unknown): string[] | undefined {
  * (https://ai.google.dev/api/caching#Schema); they trigger `Unknown name "<key>"`
  * 400s and are stripped. Every entry below was verified to be rejected through
  * `FunctionDeclaration.parameters` against the live Gemini API (`gemini-2.5-flash`,
- * `gemini-3.5-flash`) and/or Vertex AI — some keywords (`additionalProperties`,
- * `prefixItems`) are rejected only by the Gemini API but accepted by Vertex, so the
- * union is stripped for both. `@langchain/google-genai` only removes
- * `additionalProperties`/`$schema`, so the rest must be stripped here.
+ * `gemini-3.5-flash`) and/or Vertex AI — e.g. `additionalProperties` is rejected
+ * only by the Gemini API but accepted by Vertex, so the union is stripped for both.
+ * `@langchain/google-genai` only removes `additionalProperties`/`$schema`, so the
+ * rest must be stripped here.
  *
- * `default` is intentionally NOT listed: it is part of Gemini's Schema and is
- * accepted by both the Gemini API and Vertex (verified live), so it is preserved.
+ * Not listed (handled elsewhere in `sanitizeGeminiSchema`): `default` is preserved
+ * (part of Gemini's Schema, accepted live by both endpoints); `prefixItems` is
+ * dropped but synthesized into `items` so the array keeps a required element schema.
  */
 const GEMINI_UNSUPPORTED_KEYS = new Set([
   'additionalProperties',
@@ -375,7 +376,6 @@ const GEMINI_UNSUPPORTED_KEYS = new Set([
   'deprecated',
   'multipleOf',
   'uniqueItems',
-  'prefixItems',
   'additionalItems',
   'propertyNames',
   'patternProperties',
@@ -547,6 +547,27 @@ export function sanitizeGeminiSchema<T extends Record<string, unknown>>(schema: 
 
     // Re-emitted once below so type-array and union sources don't double up.
     if (key === 'nullable') {
+      continue;
+    }
+
+    // `default` holds a literal data value (Gemini-supported), not a subschema —
+    // copy it verbatim so object/array defaults aren't recursively sanitized
+    // (which would strip ordinary data keys like `id`/`readOnly`).
+    if (key === 'default') {
+      result['default'] = value;
+      continue;
+    }
+
+    // Gemini has no tuple validation, so drop `prefixItems`; but Gemini requires
+    // `items` on every array, so synthesize one from the first tuple member when
+    // the array lacks an explicit `items`.
+    if (key === 'prefixItems') {
+      if (!('items' in collapsed) && Array.isArray(value)) {
+        const first = value.find((member) => member && typeof member === 'object');
+        if (first) {
+          result['items'] = sanitizeGeminiSchema(first as Record<string, unknown>);
+        }
+      }
       continue;
     }
 
