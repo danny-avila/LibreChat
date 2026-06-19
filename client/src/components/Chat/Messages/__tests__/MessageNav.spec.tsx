@@ -1098,4 +1098,147 @@ describe('MessageNav', () => {
       expect(container.querySelector('[data-msg-id="d"]')).not.toBeNull();
     });
   });
+
+  describe('end-of-conversation indicator', () => {
+    function buildDomWithEnd(
+      messages: TestMessage[],
+      opts: { endOffsetTop?: number; scrollTop?: number } = {},
+    ) {
+      const scrollable = document.createElement('div');
+      scrollable.className = 'scrollbar-gutter-stable';
+      Object.defineProperty(scrollable, 'clientHeight', { value: 600, configurable: true });
+      Object.defineProperty(scrollable, 'scrollHeight', { value: 3000, configurable: true });
+      Object.defineProperty(scrollable, 'scrollTop', {
+        value: opts.scrollTop ?? 0,
+        writable: true,
+        configurable: true,
+      });
+
+      const content = document.createElement('div');
+      content.className = 'flex flex-col';
+      scrollable.appendChild(content);
+
+      for (let i = 0; i < messages.length; i++) {
+        const m = messages[i];
+        const div = document.createElement('div');
+        div.id = m.messageId;
+        div.className = 'message-render';
+        div.textContent = m.text ?? '';
+        Object.defineProperty(div, 'offsetTop', { value: 100 + i * 200, configurable: true });
+        Object.defineProperty(div, 'offsetHeight', { value: 150, configurable: true });
+        content.appendChild(div);
+      }
+
+      const end = document.createElement('div');
+      end.id = 'messages-end';
+      Object.defineProperty(end, 'offsetTop', {
+        value: opts.endOffsetTop ?? 100 + messages.length * 200,
+        configurable: true,
+      });
+      Object.defineProperty(end, 'offsetHeight', { value: 0, configurable: true });
+      content.appendChild(end);
+
+      document.body.appendChild(scrollable);
+      return { scrollable, content, end };
+    }
+
+    function renderNavWithEnd(
+      messages: TestMessage[],
+      opts?: { endOffsetTop?: number; scrollTop?: number },
+    ) {
+      mockUseGetMessagesByConvoId.mockReturnValue({ data: messages });
+      const dom = buildDomWithEnd(messages, opts);
+      const scrollableRef = { current: dom.scrollable } as RefObject<HTMLDivElement>;
+      const result = render(<MessageNav scrollableRef={scrollableRef} />);
+      act(() => {
+        jest.advanceTimersByTime(250);
+      });
+      return { ...result, ...dom, scrollableRef };
+    }
+
+    const threeMessages = (): TestMessage[] => [
+      buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
+      buildMessage({ messageId: 'b', text: 'bravo' }),
+      buildMessage({ messageId: 'c', text: 'charlie', isCreatedByUser: true }),
+    ];
+
+    it('appends a terminus indicator as the last rib when #messages-end exists', () => {
+      const { container } = renderNavWithEnd(threeMessages());
+      const ribs = container.querySelectorAll('[data-msg-id]');
+      expect(ribs).toHaveLength(4);
+      expect(ribs[3].getAttribute('data-msg-id')).toBe('messages-end');
+      expect(ribs[3].getAttribute('aria-label')).toBe('com_ui_scroll_to_bottom');
+    });
+
+    it('omits the terminus indicator and the nav when there are fewer than 3 messages', () => {
+      const messages = [
+        buildMessage({ messageId: 'a', text: 'alpha', isCreatedByUser: true }),
+        buildMessage({ messageId: 'b', text: 'bravo' }),
+      ];
+      const { container } = renderNavWithEnd(messages);
+      expect(container.querySelector('nav')).toBeNull();
+    });
+
+    it('scrolls toward the bottom without moving focus when the terminus is clicked', () => {
+      const { container } = renderNavWithEnd(threeMessages());
+      const rafSpy = jest.spyOn(window, 'requestAnimationFrame');
+      const endRib = container.querySelector('[data-msg-id="messages-end"]') as HTMLButtonElement;
+
+      act(() => {
+        fireEvent.click(endRib);
+      });
+
+      expect(rafSpy).toHaveBeenCalled();
+      const end = document.getElementById('messages-end');
+      expect(document.activeElement).not.toBe(end);
+      expect(end?.hasAttribute('tabindex')).toBe(false);
+      rafSpy.mockRestore();
+    });
+
+    it('keeps the next chevron disabled at the bottom even when the terminus sits below max scroll', () => {
+      const { container, scrollable } = renderNavWithEnd(threeMessages(), { endOffsetTop: 2900 });
+
+      Object.defineProperty(scrollable, 'scrollTop', {
+        value: 2400,
+        writable: true,
+        configurable: true,
+      });
+      act(() => {
+        fireEvent.scroll(scrollable);
+        jest.advanceTimersByTime(32);
+      });
+
+      const prev = container.querySelector(
+        'button[aria-label="com_ui_message_nav_previous"]',
+      ) as HTMLButtonElement;
+      const next = container.querySelector(
+        'button[aria-label="com_ui_message_nav_next"]',
+      ) as HTMLButtonElement;
+
+      expect(next.disabled).toBe(true);
+      expect(prev.disabled).toBe(false);
+    });
+
+    it('scrubs to the terminus when dragging to the bottom of the column', () => {
+      const messages = Array.from({ length: 5 }, (_, i) =>
+        buildMessage({
+          messageId: `m-${i}`,
+          text: `message ${i}`,
+          isCreatedByUser: i % 2 === 0,
+        }),
+      );
+      const { container } = renderNavWithEnd(messages);
+      const column = container.querySelector('nav > div') as HTMLDivElement;
+      column.getBoundingClientRect = () => ({ top: 0, bottom: 50, height: 50 }) as DOMRect;
+      const getById = jest.spyOn(document, 'getElementById');
+
+      act(() => {
+        fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
+        fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 50 });
+      });
+
+      expect(getById.mock.calls.map((c) => c[0])).toContain('messages-end');
+      getById.mockRestore();
+    });
+  });
 });

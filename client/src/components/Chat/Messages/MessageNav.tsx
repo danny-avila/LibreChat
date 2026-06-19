@@ -12,7 +12,10 @@ type MessageEntry = {
   id: string;
   isUser: boolean;
   preview: string;
+  isEnd?: boolean;
 };
+
+const MESSAGES_END_ID = 'messages-end';
 
 function extractPreviewFromContent(content?: TMessageContentParts[]): string {
   if (!content) {
@@ -67,6 +70,9 @@ function getMessageEntries(root: ParentNode, messagesById: Map<string, TMessage>
     const msg = messagesById.get(id);
     entries.push(msg ? buildEntry(id, msg) : buildFallbackEntry(node, id));
   }
+  if (entries.length > 0 && root.querySelector('#' + MESSAGES_END_ID)) {
+    entries.push({ id: MESSAGES_END_ID, isUser: false, preview: '', isEnd: true });
+  }
   return entries;
 }
 
@@ -109,12 +115,14 @@ const MessageIndicator = memo(function MessageIndicator({
   isActive,
   isCurrent,
   label,
+  hoverText,
   onSelect,
 }: {
   entry: MessageEntry;
   isActive: boolean;
   isCurrent: boolean;
   label: string;
+  hoverText: string;
   onSelect: (id: string) => void;
 }) {
   return (
@@ -123,24 +131,35 @@ const MessageIndicator = memo(function MessageIndicator({
         <button
           type="button"
           onClick={() => onSelect(entry.id)}
-          className={cn(indicatorButtonClasses, entry.isUser ? 'w-4' : 'w-6')}
+          className={cn(indicatorButtonClasses, entry.isEnd || !entry.isUser ? 'w-6' : 'w-4')}
           aria-label={label}
           aria-current={isCurrent ? 'true' : undefined}
           data-msg-id={entry.id}
         >
-          <span
-            className={cn(
-              'block w-full rounded-full transition-all duration-200',
-              isActive
-                ? 'h-[5px] bg-gray-800 dark:bg-gray-100'
-                : 'h-[3px] bg-gray-400 dark:bg-gray-500',
-            )}
-          />
+          {entry.isEnd ? (
+            <span
+              className={cn(
+                'block rounded-full transition-all duration-200',
+                isActive
+                  ? 'h-1.5 w-1.5 bg-gray-800 dark:bg-gray-100'
+                  : 'h-1 w-1 bg-gray-400 dark:bg-gray-500',
+              )}
+            />
+          ) : (
+            <span
+              className={cn(
+                'block w-full rounded-full transition-all duration-200',
+                isActive
+                  ? 'h-[5px] bg-gray-800 dark:bg-gray-100'
+                  : 'h-[3px] bg-gray-400 dark:bg-gray-500',
+              )}
+            />
+          )}
         </button>
       </HoverCardTrigger>
       <HoverCardPortal>
         <HoverCardContent side="left" sideOffset={12} className="z-[999] max-w-[280px] px-3 py-2">
-          <p className="line-clamp-3 text-xs text-text-secondary">{entry.preview}</p>
+          <p className="line-clamp-3 text-xs text-text-secondary">{hoverText}</p>
         </HoverCardContent>
       </HoverCardPortal>
     </HoverCard>
@@ -304,7 +323,9 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         return;
       }
       scrollToStart(id);
-      focusMessage(id);
+      if (id !== MESSAGES_END_ID) {
+        focusMessage(id);
+      }
     },
     [scrollToStart, focusMessage],
   );
@@ -535,10 +556,11 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       }
 
       const scrollTop = container.scrollTop;
+      const containerMaxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
       let nextCanUp = false;
       let nextCanDown = false;
       for (let i = 0; i < offsetsTop.length; i++) {
-        const snap = offsetsTop[i] - scrollMargin;
+        const snap = Math.min(offsetsTop[i] - scrollMargin, containerMaxScrollTop);
         if (snap < scrollTop - JUMP_EPS) {
           nextCanUp = true;
         } else if (snap > scrollTop + JUMP_EPS) {
@@ -553,7 +575,6 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       if (!col) {
         return;
       }
-      const containerMaxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
       if (containerMaxScrollTop > 0 && scrollTop >= containerMaxScrollTop - JUMP_EPS) {
         scheduleColumnBottomScroll();
         return;
@@ -788,7 +809,9 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [focusNav]);
 
-  if (entries.length < 3) {
+  const hasEnd = entries.length > 0 && entries[entries.length - 1].isEnd === true;
+  const messageCount = hasEnd ? entries.length - 1 : entries.length;
+  if (messageCount < 3) {
     return null;
   }
 
@@ -821,19 +844,27 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         className="flex min-h-0 cursor-grab touch-none select-none flex-col items-center gap-1.5 overflow-y-auto active:cursor-grabbing [&::-webkit-scrollbar]:hidden"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
-        {entries.map((entry) => (
-          <MessageIndicator
-            key={entry.id}
-            entry={entry}
-            isActive={visibleIds.has(entry.id)}
-            isCurrent={currentId === entry.id}
-            onSelect={handleSelect}
-            label={localize(
-              entry.isUser ? 'com_ui_message_nav_go_to_user' : 'com_ui_message_nav_go_to_assistant',
-              { 0: entry.preview.slice(0, 30) },
-            )}
-          />
-        ))}
+        {entries.map((entry) => {
+          const label = entry.isEnd
+            ? localize('com_ui_scroll_to_bottom')
+            : localize(
+                entry.isUser
+                  ? 'com_ui_message_nav_go_to_user'
+                  : 'com_ui_message_nav_go_to_assistant',
+                { 0: entry.preview.slice(0, 30) },
+              );
+          return (
+            <MessageIndicator
+              key={entry.id}
+              entry={entry}
+              isActive={visibleIds.has(entry.id)}
+              isCurrent={currentId === entry.id}
+              onSelect={handleSelect}
+              label={label}
+              hoverText={entry.isEnd ? label : entry.preview}
+            />
+          );
+        })}
       </div>
 
       <button
