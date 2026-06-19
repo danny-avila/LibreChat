@@ -1,6 +1,6 @@
 import { memo, Suspense, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import { DelayedRender } from '@librechat/client';
+import { Alert, DelayedRender } from '@librechat/client';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageContentProps, TDisplayProps } from '~/common';
 import Error from '~/components/Messages/Content/Error';
@@ -64,9 +64,9 @@ const ConnectionError = ({ message }: { message?: TMessage }) => {
     <Suspense fallback={<LoadingFallback />}>
       <DelayedRender delay={DELAYED_ERROR_TIMEOUT}>
         <Container message={message}>
-          <div className="mt-2 rounded-xl border border-red-500/20 bg-red-50/50 px-4 py-3 text-sm text-red-700 shadow-sm transition-all dark:bg-red-950/30 dark:text-red-100">
+          <Alert variant="error" icon={false} className="mt-2 shadow-sm transition-all">
             {localize('com_ui_error_connection')}
-          </div>
+          </Alert>
         </Container>
       </DelayedRender>
     </Suspense>
