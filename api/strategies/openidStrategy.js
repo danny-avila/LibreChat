@@ -715,8 +715,8 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     if (userinfo.department !== undefined) {
       user.department = userinfo.department || undefined;
     }
-    if (userinfo.job_title !== undefined) {
-      user.jobTitle = userinfo.job_title || undefined;
+    if (userinfo.jobTitle !== undefined || userinfo.job_title !== undefined) {
+      user.jobTitle = (userinfo.jobTitle ?? userinfo.job_title) || undefined;
     }
   }
 

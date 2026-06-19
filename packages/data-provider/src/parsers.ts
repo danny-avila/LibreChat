@@ -479,11 +479,11 @@ export function replaceSpecialVars({
   }
 
   if (user && user.department) {
-    result = result.replace(/{{user_department}}/gi, user.department);
+    result = result.replace(/{{\s*user_department\s*}}/gi, user.department);
   }
 
   if (user && user.jobTitle) {
-    result = result.replace(/{{user_job_title}}/gi, user.jobTitle);
+    result = result.replace(/{{\s*user_job_title\s*}}/gi, user.jobTitle);
   }
 
   return result;
