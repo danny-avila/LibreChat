@@ -693,6 +693,8 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
       name: fullName,
       idOnTheSource: userinfo.oid,
       openidIssuer,
+      department: userinfo.department || undefined,
+      jobTitle: userinfo.job_title || undefined,
     };
 
     const balanceConfig = getBalanceConfig(appConfig);
@@ -709,6 +711,12 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     if (email && email !== user.email) {
       user.email = email;
       user.emailVerified = userinfo.email_verified || false;
+    }
+    if (userinfo.department !== undefined) {
+      user.department = userinfo.department || undefined;
+    }
+    if (userinfo.job_title !== undefined) {
+      user.jobTitle = userinfo.job_title || undefined;
     }
   }
 

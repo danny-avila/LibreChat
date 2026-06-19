@@ -56,6 +56,8 @@ export interface IUser extends Document {
   skillStates?: Record<string, boolean>;
   createdAt?: Date;
   updatedAt?: Date;
+  department?: string;
+  jobTitle?: string;
   /** Field for external source identification (for consistency with TPrincipal schema) */
   idOnTheSource?: string;
   tenantId?: string;

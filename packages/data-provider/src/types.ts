@@ -228,6 +228,8 @@ export type TUser = {
   personalization?: {
     memories?: boolean;
   };
+  department?: string;
+  jobTitle?: string;
   createdAt: string;
   updatedAt: string;
 };

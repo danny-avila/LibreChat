@@ -153,6 +153,12 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
       of: Boolean,
       default: () => new Map(),
     },
+    department: {
+      type: String,
+    },
+    jobTitle: {
+      type: String,
+    },
     /** Field for external source identification (for consistency with TPrincipal schema) */
     idOnTheSource: {
       type: String,
