@@ -72,6 +72,7 @@ function createDeps(overrides: Partial<AdminUsersDeps> = {}): AdminUsersDeps {
     deleteConfig: jest.fn().mockResolvedValue(null),
     deleteAclEntries: jest.fn().mockResolvedValue(undefined),
     findPendingUserInvites: jest.fn().mockResolvedValue([]),
+    updateUser: jest.fn().mockResolvedValue(null),
     ...overrides,
   };
 }
@@ -686,6 +687,114 @@ describe('createAdminUsersHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(500);
       expect(json).toHaveBeenCalledWith({ error: 'Failed to delete user' });
+    });
+  });
+
+  describe('promoteTenantAdmin', () => {
+    const withTargetUser = (
+      overrides: Partial<AdminUsersDeps> = {},
+      userOverrides: Partial<IUser> = {},
+    ) =>
+      createDeps({
+        findUsers: jest
+          .fn()
+          .mockResolvedValue([
+            mockUser({ role: SystemRoles.USER, tenantId: 'tenant-a', ...userOverrides }),
+          ]),
+        updateUser: jest.fn().mockResolvedValue(mockUser({ role: SystemRoles.ADMIN })),
+        ...overrides,
+      });
+
+    it('promotes an active tenant user to admin', async () => {
+      const updateUser = jest.fn().mockResolvedValue(mockUser({ role: SystemRoles.ADMIN }));
+      const deps = withTargetUser({ updateUser });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { id: validUserId } });
+
+      await handlers.promoteTenantAdmin(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(json).toHaveBeenCalledWith({ success: true, promoted: true });
+      expect(updateUser).toHaveBeenCalledWith(validUserId, { role: SystemRoles.ADMIN });
+    });
+
+    it('returns 403 when promoting own account', async () => {
+      const callerId = new Types.ObjectId(validUserId);
+      const deps = withTargetUser();
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: validUserId },
+        user: { _id: callerId, role: 'ADMIN', tenantId: 'tenant-a' },
+      });
+
+      await handlers.promoteTenantAdmin(req, res);
+
+      expect(status).toHaveBeenCalledWith(403);
+      expect(json).toHaveBeenCalledWith({ error: 'Cannot promote your own account' });
+      expect(deps.updateUser).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when user is outside caller tenant', async () => {
+      const deps = createDeps({ findUsers: jest.fn().mockResolvedValue([]) });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status, json } = createReqRes({
+        params: { id: validUserId },
+        user: { _id: new Types.ObjectId(), role: 'ADMIN', tenantId: 'tenant-a' },
+      });
+
+      await handlers.promoteTenantAdmin(req, res);
+
+      expect(status).toHaveBeenCalledWith(404);
+      expect(json).toHaveBeenCalledWith({ error: 'User not found' });
+      expect(deps.updateUser).not.toHaveBeenCalled();
+    });
+
+    it('returns 409 when user is already a tenant admin', async () => {
+      const deps = withTargetUser({}, { role: SystemRoles.ADMIN, tenantId: 'tenant-a' });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { id: validUserId } });
+
+      await handlers.promoteTenantAdmin(req, res);
+
+      expect(status).toHaveBeenCalledWith(409);
+      expect(json).toHaveBeenCalledWith({ error: 'User is already a tenant admin' });
+      expect(deps.updateUser).not.toHaveBeenCalled();
+    });
+
+    it('returns 409 when user has no tenant', async () => {
+      const deps = withTargetUser({}, { tenantId: undefined });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { id: validUserId } });
+
+      await handlers.promoteTenantAdmin(req, res);
+
+      expect(status).toHaveBeenCalledWith(409);
+      expect(json).toHaveBeenCalledWith({ error: 'User is not a tenant member' });
+      expect(deps.updateUser).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 for invalid ObjectId', async () => {
+      const deps = createDeps();
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { id: 'not-valid' } });
+
+      await handlers.promoteTenantAdmin(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(json).toHaveBeenCalledWith({ error: 'Invalid user ID format' });
+    });
+
+    it('returns 500 on error', async () => {
+      const deps = withTargetUser({
+        updateUser: jest.fn().mockRejectedValue(new Error('db crash')),
+      });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { id: validUserId } });
+
+      await handlers.promoteTenantAdmin(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(json).toHaveBeenCalledWith({ error: 'Failed to promote user to tenant admin' });
     });
   });
 });

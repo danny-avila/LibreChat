@@ -29,6 +29,7 @@ const handlers = createAdminUsersHandlers({
   deleteConfig: db.deleteConfig,
   deleteAclEntries: db.deleteAclEntries,
   findPendingUserInvites: db.findPendingUserInvites,
+  updateUser: db.updateUser,
 });
 
 router.use(requireJwtAuth, requireAdminAccess, superAdminContextMiddleware);
@@ -36,6 +37,7 @@ router.use(requireJwtAuth, requireAdminAccess, superAdminContextMiddleware);
 router.get('/', requireReadUsers, handlers.listUsers);
 router.get('/search', requireReadUsers, handlers.searchUsers);
 router.post('/invite', requireManageUsers, handlers.inviteUser);
+router.post('/:id/promote-tenant-admin', requireManageUsers, handlers.promoteTenantAdmin);
 router.delete('/:id', requireManageUsers, handlers.deleteUser);
 
 module.exports = router;

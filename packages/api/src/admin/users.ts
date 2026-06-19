@@ -90,6 +90,7 @@ export interface AdminUsersDeps {
     tenantId?: string;
     role?: 'ADMIN' | 'USER';
   }) => Promise<IToken[]>;
+  updateUser: (userId: string, data: Partial<IUser>) => Promise<IUser | null>;
 }
 
 export function createAdminUsersHandlers(deps: AdminUsersDeps) {
@@ -107,6 +108,7 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
     deleteConfig,
     deleteAclEntries,
     findPendingUserInvites,
+    updateUser,
   } = deps;
 
   async function listUsersHandler(req: ServerRequest, res: Response) {
@@ -302,6 +304,49 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
     }
   }
 
+  async function promoteTenantAdminHandler(req: ServerRequest, res: Response) {
+    try {
+      const { id } = req.params as { id: string };
+
+      if (!isValidObjectIdString(id)) {
+        return res.status(400).json({ error: 'Invalid user ID format' });
+      }
+
+      const callerId = req.user?._id?.toString() ?? req.user?.id;
+      if (callerId === id) {
+        return res.status(403).json({ error: 'Cannot promote your own account' });
+      }
+
+      const tenantFilter = getTenantScopedUserFilter(req);
+      const [targetUser] = await findUsers({ _id: id, ...tenantFilter }, 'role tenantId', {
+        limit: 1,
+      });
+      if (!targetUser) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      const targetTenantId = targetUser.tenantId?.trim();
+      if (!targetTenantId) {
+        return res.status(409).json({ error: 'User is not a tenant member' });
+      }
+
+      if (targetUser.role === SystemRoles.ADMIN) {
+        return res.status(409).json({ error: 'User is already a tenant admin' });
+      }
+
+      if (targetUser.role !== SystemRoles.USER) {
+        return res.status(400).json({ error: 'Only users with the USER role can be promoted' });
+      }
+
+      await runAsSystem(() => updateUser(id, { role: SystemRoles.ADMIN }));
+
+      return res.status(200).json({ success: true, promoted: true });
+    } catch (error) {
+      logger.error('[adminUsers] promoteTenantAdmin error:', error);
+      return res.status(500).json({ error: 'Failed to promote user to tenant admin' });
+    }
+  }
+
   async function inviteUserHandler(req: ServerRequest, res: Response) {
     try {
       const callerTenantId = getCallerTenantId(req);
@@ -363,5 +408,6 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps) {
     searchUsers: searchUsersHandler,
     deleteUser: deleteUserHandler,
     inviteUser: inviteUserHandler,
+    promoteTenantAdmin: promoteTenantAdminHandler,
   };
 }
