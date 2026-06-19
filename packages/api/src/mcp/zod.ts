@@ -472,6 +472,11 @@ function collapseSchemaUnion(schema: Record<string, unknown>): Record<string, un
   return current;
 }
 
+/** True when the value is a usable JSON Schema object (not a boolean or array). */
+function isObjectSchema(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
 /**
  * Collapses a multi-entry `type` array (e.g. `['string', 'null']`) into a single
  * type, reporting whether a `null` entry made the field nullable.
@@ -559,14 +564,25 @@ export function sanitizeGeminiSchema<T extends Record<string, unknown>>(schema: 
     }
 
     // Gemini has no tuple validation, so drop `prefixItems`; but Gemini requires
-    // `items` on every array, so synthesize one from the first tuple member when
-    // the array lacks an explicit `items`.
+    // `items` to be a schema object on every array, so synthesize one from the
+    // first tuple member unless a real object `items` is already present (a
+    // boolean `items: false` does not count).
     if (key === 'prefixItems') {
-      if (!('items' in collapsed) && Array.isArray(value)) {
+      if (!isObjectSchema(collapsed.items) && Array.isArray(value)) {
         const first = value.find((member) => member && typeof member === 'object');
         if (first) {
           result['items'] = sanitizeGeminiSchema(first as Record<string, unknown>);
         }
+      }
+      continue;
+    }
+
+    // Gemini requires `items` to be a schema object; drop the boolean
+    // (`items: false`) and tuple-array (`items: [...]`) forms — a
+    // `prefixItems`-derived or empty fallback is emitted instead.
+    if (key === 'items') {
+      if (isObjectSchema(value)) {
+        result['items'] = sanitizeGeminiSchema(value as Record<string, unknown>);
       }
       continue;
     }
@@ -629,6 +645,13 @@ export function sanitizeGeminiSchema<T extends Record<string, unknown>>(schema: 
   // A surviving enum implies a string field; Gemini's enum requires Type.STRING.
   if ('enum' in result && !('type' in result)) {
     result['type'] = 'string';
+  }
+
+  // Gemini rejects an array whose `items` is missing or not a schema object; fall
+  // back to a permissive empty schema (verified accepted by the API) so tuple/
+  // itemless arrays don't 400 after their unsupported item forms are dropped.
+  if (result['type'] === 'array' && !isObjectSchema(result['items'])) {
+    result['items'] = {};
   }
 
   if (nullable) {

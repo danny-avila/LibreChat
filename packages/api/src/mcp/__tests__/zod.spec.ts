@@ -2798,6 +2798,41 @@ describe('sanitizeGeminiSchema', () => {
     });
   });
 
+  it('synthesizes `items` from `prefixItems` when `items` is boolean false (Draft 2020 tuple)', () => {
+    const schema = {
+      type: 'array',
+      prefixItems: [{ type: 'number' }],
+      items: false,
+    } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({
+      type: 'array',
+      items: { type: 'number' },
+    });
+  });
+
+  it('falls back to an empty `items` schema for a boolean `items` with no prefixItems', () => {
+    expect(sanitizeGeminiSchema({ type: 'array', items: false } as any)).toEqual({
+      type: 'array',
+      items: {},
+    });
+    expect(sanitizeGeminiSchema({ type: 'array', items: true } as any)).toEqual({
+      type: 'array',
+      items: {},
+    });
+  });
+
+  it('falls back to an empty `items` schema for an array missing items entirely', () => {
+    expect(sanitizeGeminiSchema({ type: 'array' } as any)).toEqual({
+      type: 'array',
+      items: {},
+    });
+  });
+
+  it('drops a tuple-array `items: [...]` form and falls back rather than emit an array items', () => {
+    const schema = { type: 'array', items: [{ type: 'string' }, { type: 'number' }] } as any;
+    expect(sanitizeGeminiSchema(schema)).toEqual({ type: 'array', items: {} });
+  });
+
   it('preserves an object `default` verbatim without sanitizing its data keys', () => {
     const schema = {
       type: 'object',
