@@ -257,53 +257,69 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     refreshEntries();
   }, [messagesById, refreshEntries]);
 
-  const scrollToStart = useCallback((id: string) => {
-    const el = document.getElementById(id);
-    if (!el) {
-      return;
-    }
-    const container = el.closest<HTMLElement>('.scrollbar-gutter-stable');
-    if (!container) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      return;
-    }
-    const token = ++scrollTokenRef.current;
-    const scrollMargin = scrollMarginRef.current || readScrollMargin(el);
-    const startScroll = container.scrollTop;
-    const start = performance.now();
+  const resolveEntryEl = useCallback(
+    (id: string): HTMLElement | null => {
+      if (id === MESSAGES_END_ID) {
+        return scrollableRef.current?.querySelector<HTMLElement>('#' + MESSAGES_END_ID) ?? null;
+      }
+      return document.getElementById(id);
+    },
+    [scrollableRef],
+  );
 
-    const step = (now: number) => {
-      if (token !== scrollTokenRef.current) {
+  const scrollToStart = useCallback(
+    (id: string) => {
+      const el = resolveEntryEl(id);
+      if (!el) {
         return;
       }
-      const progress = Math.min(1, (now - start) / SCROLL_DURATION);
-      const current = document.getElementById(id);
-      if (!current) {
+      const container = el.closest<HTMLElement>('.scrollbar-gutter-stable');
+      if (!container) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
         return;
       }
-      const clamped = computeTargetScroll(container, current, scrollMargin);
-      container.scrollTop = startScroll + (clamped - startScroll) * easeOutCubic(progress);
-      if (progress < 1) {
-        requestAnimationFrame(step);
+      const token = ++scrollTokenRef.current;
+      const scrollMargin = scrollMarginRef.current || readScrollMargin(el);
+      const startScroll = container.scrollTop;
+      const start = performance.now();
+
+      const step = (now: number) => {
+        if (token !== scrollTokenRef.current) {
+          return;
+        }
+        const progress = Math.min(1, (now - start) / SCROLL_DURATION);
+        const current = resolveEntryEl(id);
+        if (!current) {
+          return;
+        }
+        const clamped = computeTargetScroll(container, current, scrollMargin);
+        container.scrollTop = startScroll + (clamped - startScroll) * easeOutCubic(progress);
+        if (progress < 1) {
+          requestAnimationFrame(step);
+        }
+      };
+
+      requestAnimationFrame(step);
+    },
+    [resolveEntryEl],
+  );
+
+  const scrollToImmediate = useCallback(
+    (id: string) => {
+      const el = resolveEntryEl(id);
+      if (!el) {
+        return;
       }
-    };
-
-    requestAnimationFrame(step);
-  }, []);
-
-  const scrollToImmediate = useCallback((id: string) => {
-    const el = document.getElementById(id);
-    if (!el) {
-      return;
-    }
-    const container = el.closest<HTMLElement>('.scrollbar-gutter-stable');
-    if (!container) {
-      return;
-    }
-    scrollTokenRef.current++;
-    const scrollMargin = scrollMarginRef.current || readScrollMargin(el);
-    container.scrollTop = computeTargetScroll(container, el, scrollMargin);
-  }, []);
+      const container = el.closest<HTMLElement>('.scrollbar-gutter-stable');
+      if (!container) {
+        return;
+      }
+      scrollTokenRef.current++;
+      const scrollMargin = scrollMarginRef.current || readScrollMargin(el);
+      container.scrollTop = computeTargetScroll(container, el, scrollMargin);
+    },
+    [resolveEntryEl],
+  );
 
   const focusMessage = useCallback((id: string) => {
     const el = document.getElementById(id);
@@ -500,7 +516,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     const offsetsBottom: number[] = new Array(entries.length);
     const recomputeOffsets = () => {
       for (let i = 0; i < entries.length; i++) {
-        const el = document.getElementById(entries[i].id);
+        const el = resolveEntryEl(entries[i].id);
         offsetsTop[i] = el ? el.offsetTop : Number.POSITIVE_INFINITY;
         offsetsBottom[i] = el ? el.offsetTop + el.offsetHeight : Number.POSITIVE_INFINITY;
       }
@@ -639,7 +655,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       cancelColumnBottomScroll();
       resizeObserver.disconnect();
     };
-  }, [entries, scrollableRef]);
+  }, [entries, scrollableRef, resolveEntryEl]);
 
   useEffect(() => {
     const root = scrollableRef.current;
@@ -712,7 +728,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     const elementByNewId = new Map<HTMLElement, string>();
     for (let i = 0; i < entries.length; i++) {
       const id = entries[i].id;
-      const el = document.getElementById(id);
+      const el = resolveEntryEl(id);
       if (el) {
         elementByNewId.set(el, id);
       }
@@ -750,7 +766,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       setCurrentId(getCurrentVisibleId());
       setVisibleIds(new Set(visibleSet));
     }
-  }, [entries, getCurrentVisibleId]);
+  }, [entries, getCurrentVisibleId, resolveEntryEl]);
 
   const jumpToPrevious = useCallback(() => {
     const container = scrollableRef.current;
@@ -763,7 +779,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         ? scrollMarginRef.current
         : readScrollMargin(document.getElementById(entries[0].id));
     for (let i = entries.length - 1; i >= 0; i--) {
-      const el = document.getElementById(entries[i].id);
+      const el = resolveEntryEl(entries[i].id);
       if (!el) {
         continue;
       }
@@ -773,7 +789,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       }
     }
     container.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [entries, scrollableRef, scrollToStart]);
+  }, [entries, scrollableRef, scrollToStart, resolveEntryEl]);
 
   const jumpToNext = useCallback(() => {
     const container = scrollableRef.current;
@@ -786,7 +802,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         ? scrollMarginRef.current
         : readScrollMargin(document.getElementById(entries[0].id));
     for (let i = 0; i < entries.length; i++) {
-      const el = document.getElementById(entries[i].id);
+      const el = resolveEntryEl(entries[i].id);
       if (!el) {
         continue;
       }
@@ -795,7 +811,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
         return;
       }
     }
-  }, [entries, scrollableRef, scrollToStart]);
+  }, [entries, scrollableRef, scrollToStart, resolveEntryEl]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {

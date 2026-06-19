@@ -1227,18 +1227,62 @@ describe('MessageNav', () => {
           isCreatedByUser: i % 2 === 0,
         }),
       );
-      const { container } = renderNavWithEnd(messages);
+      const { container, scrollable } = renderNavWithEnd(messages);
       const column = container.querySelector('nav > div') as HTMLDivElement;
       column.getBoundingClientRect = () => ({ top: 0, bottom: 50, height: 50 }) as DOMRect;
-      const getById = jest.spyOn(document, 'getElementById');
+      const qs = jest.spyOn(scrollable, 'querySelector');
 
       act(() => {
         fireEvent.pointerDown(column, { pointerId: 1, button: 0, buttons: 1, clientY: 0 });
         fireEvent.pointerMove(document, { pointerId: 1, buttons: 1, clientY: 50 });
       });
 
-      expect(getById.mock.calls.map((c) => c[0])).toContain('messages-end');
-      getById.mockRestore();
+      expect(qs.mock.calls.some((c) => String(c[0]).includes('messages-end'))).toBe(true);
+      qs.mockRestore();
+    });
+
+    it('resolves the terminus within its own container across multiple mounted navs', () => {
+      const messagesA = [
+        buildMessage({ messageId: 'a1', text: 'one', isCreatedByUser: true }),
+        buildMessage({ messageId: 'a2', text: 'two' }),
+        buildMessage({ messageId: 'a3', text: 'three', isCreatedByUser: true }),
+      ];
+      const messagesB = [
+        buildMessage({ messageId: 'b1', text: 'alpha', isCreatedByUser: true }),
+        buildMessage({ messageId: 'b2', text: 'beta' }),
+        buildMessage({ messageId: 'b3', text: 'gamma', isCreatedByUser: true }),
+      ];
+
+      mockUseGetMessagesByConvoId.mockReturnValue({ data: messagesA });
+      const domA = buildDomWithEnd(messagesA);
+      render(
+        <MessageNav scrollableRef={{ current: domA.scrollable } as RefObject<HTMLDivElement>} />,
+      );
+      act(() => {
+        jest.advanceTimersByTime(250);
+      });
+
+      mockUseGetMessagesByConvoId.mockReturnValue({ data: messagesB });
+      const domB = buildDomWithEnd(messagesB);
+      const { container: navB } = render(
+        <MessageNav scrollableRef={{ current: domB.scrollable } as RefObject<HTMLDivElement>} />,
+      );
+      act(() => {
+        jest.advanceTimersByTime(250);
+      });
+
+      const qsA = jest.spyOn(domA.scrollable, 'querySelector');
+      const qsB = jest.spyOn(domB.scrollable, 'querySelector');
+
+      const endRibB = navB.querySelector('[data-msg-id="messages-end"]') as HTMLButtonElement;
+      act(() => {
+        fireEvent.click(endRibB);
+      });
+
+      expect(qsB.mock.calls.some((c) => String(c[0]).includes('messages-end'))).toBe(true);
+      expect(qsA.mock.calls.some((c) => String(c[0]).includes('messages-end'))).toBe(false);
+      qsA.mockRestore();
+      qsB.mockRestore();
     });
   });
 });
