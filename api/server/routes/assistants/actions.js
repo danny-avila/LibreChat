@@ -9,6 +9,7 @@ const {
   domainParser,
 } = require('~/server/services/ActionService');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
+const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const db = require('~/models');
 
 const router = express.Router();
@@ -55,6 +56,7 @@ router.post('/:assistant_id', async (req, res) => {
     const initialPromises = [];
 
     const { openai } = await getOpenAIClient({ req, res });
+    await validateAuthor({ req, openai, overrideAssistantId: assistant_id });
 
     initialPromises.push(db.getAssistant({ assistant_id }));
     initialPromises.push(openai.beta.assistants.retrieve(assistant_id));
@@ -175,6 +177,7 @@ router.delete('/:assistant_id/:action_id/:model', async (req, res) => {
     req.body = req.body || {}; // Express 5: ensure req.body exists
     req.body.model = model;
     const { openai } = await getOpenAIClient({ req, res });
+    await validateAuthor({ req, openai, overrideAssistantId: assistant_id });
 
     const initialPromises = [];
     initialPromises.push(db.getAssistant({ assistant_id }));
