@@ -240,7 +240,7 @@ export default function SkillForm({ skillId }: SkillFormProps) {
         {readOnly && (
           <div
             role="note"
-            className="mt-4 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm text-amber-600 dark:text-amber-400"
+            className="mt-4 flex items-start gap-2 rounded-md border border-status-warning-border bg-status-warning-subtle p-3 text-sm text-status-warning"
           >
             <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
             <span>{localize('com_ui_skill_no_edit_permission')}</span>
@@ -250,7 +250,7 @@ export default function SkillForm({ skillId }: SkillFormProps) {
         {warnings && warnings.length > 0 && (
           <div
             role="alert"
-            className="mt-4 flex flex-col gap-1 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm text-amber-600 dark:text-amber-400"
+            className="mt-4 flex flex-col gap-1 rounded-md border border-status-warning-border bg-status-warning-subtle p-3 text-sm text-status-warning"
           >
             <div className="flex items-center gap-2 font-semibold">
               <AlertTriangle className="size-4" aria-hidden="true" />
