@@ -73,6 +73,9 @@ function createTailwindColors() {
     'link-hover': cssVar('--link-hover'),
     'link-visited': cssVar('--link-visited'),
 
+    'accent-primary': cssVar('--accent-primary'),
+    'accent-primary-hover': cssVar('--accent-primary-hover'),
+
     'ring-primary': cssVar('--ring-primary'),
 
     'header-primary': cssVar('--header-primary'),

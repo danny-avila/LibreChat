@@ -156,6 +156,8 @@ html {
   --link: var(--blue-600);
   --link-hover: var(--blue-700);
   --link-visited: #9333ea;
+  --accent-primary: #126e6b;
+  --accent-primary-hover: #0a4f53;
   --ring-primary: var(--gray-500);
   --header-primary: var(--white);
   --header-hover: var(--gray-50);
@@ -237,6 +239,8 @@ html {
   --link: var(--blue-400);
   --link-hover: var(--blue-300);
   --link-visited: #c084fc;
+  --accent-primary: #41a79d;
+  --accent-primary-hover: #6dc8b9;
   --header-primary: var(--gray-700);
   --header-hover: var(--gray-600);
   --header-button-hover: var(--gray-700);
