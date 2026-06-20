@@ -202,6 +202,11 @@ export async function getAgentFileRetentionExpiry(
  * - `undefined`: no decision can be made because the conversation id or row is missing.
  * - `null`: the share should be stored without an expiration.
  * - `Date`: the share should expire at that date; callers reject already-expired dates.
+ *
+ * A share embeds a snapshot of the source conversation's messages, so it must never
+ * outlive the conversation it was created from. When the source conversation still has an
+ * active expiration, the share is capped at the earlier of that deadline and a freshly
+ * created retention window rather than starting a brand-new window.
  */
 export async function getSharedLinkExpiration(
   {
@@ -234,10 +239,14 @@ export async function getSharedLinkExpiration(
   }
 
   try {
-    return dependencies.createExpirationDate(req?.config?.interfaceConfig);
+    const createdExpiration = dependencies.createExpirationDate(req?.config?.interfaceConfig);
+    if (conversationExpiredAt != null && conversationExpiredAt < createdExpiration) {
+      return conversationExpiredAt;
+    }
+    return createdExpiration;
   } catch (err) {
     dependencies.logger?.error('[getSharedLinkExpiration] Error creating expiration date:', err);
-    return null;
+    return conversationExpiredAt ?? null;
   }
 }
 

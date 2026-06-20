@@ -419,5 +419,59 @@ describe('retention helpers', () => {
       ).resolves.toBe(expiredAt);
       expect(dependencies.createExpirationDate).not.toHaveBeenCalled();
     });
+
+    it('caps the share at an active source conversation expiration', async () => {
+      const conversationExpiredAt = new Date(Date.now() + 60 * 60 * 1000);
+      dependencies.getConvo.mockResolvedValue({ expiredAt: conversationExpiredAt });
+
+      await expect(
+        getSharedLinkExpiration(
+          {
+            req: request({
+              config: { interfaceConfig: { retentionMode: RetentionMode.EPHEMERAL } },
+            }),
+            conversationId: 'convo-1',
+          },
+          dependencies,
+        ),
+      ).resolves.toBe(conversationExpiredAt);
+    });
+
+    it('uses the fresh window when it expires before the source conversation', async () => {
+      const conversationExpiredAt = new Date('2031-01-01T00:00:00.000Z');
+      dependencies.getConvo.mockResolvedValue({ expiredAt: conversationExpiredAt });
+
+      await expect(
+        getSharedLinkExpiration(
+          {
+            req: request({
+              config: { interfaceConfig: { retentionMode: RetentionMode.EPHEMERAL } },
+            }),
+            conversationId: 'convo-1',
+          },
+          dependencies,
+        ),
+      ).resolves.toBe(expirationDate);
+    });
+
+    it('falls back to the active source expiration when creating a window throws', async () => {
+      const conversationExpiredAt = new Date(Date.now() + 60 * 60 * 1000);
+      dependencies.getConvo.mockResolvedValue({ expiredAt: conversationExpiredAt });
+      dependencies.createExpirationDate.mockImplementation(() => {
+        throw new Error('boom');
+      });
+
+      await expect(
+        getSharedLinkExpiration(
+          {
+            req: request({
+              config: { interfaceConfig: { retentionMode: RetentionMode.EPHEMERAL } },
+            }),
+            conversationId: 'convo-1',
+          },
+          dependencies,
+        ),
+      ).resolves.toBe(conversationExpiredAt);
+    });
   });
 });
