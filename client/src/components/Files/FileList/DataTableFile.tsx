@@ -117,7 +117,7 @@ export default function DataTableFile<TData, TValue>({
               {isDeleting ? (
                 <Spinner className="h-4 w-4" />
               ) : (
-                <TrashIcon className="h-4 w-4 text-red-400" />
+                <TrashIcon className="h-4 w-4 text-text-destructive" />
               )}
               {localize('com_ui_delete')}
             </Button>
@@ -132,7 +132,7 @@ export default function DataTableFile<TData, TValue>({
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 align="end"
-                className="z-[1001] dark:border-gray-700 dark:bg-gray-850"
+                className="z-[1001] border-border-light bg-surface-dialog"
               >
                 {table
                   .getAllColumns()
@@ -141,7 +141,7 @@ export default function DataTableFile<TData, TValue>({
                     return (
                       <DropdownMenuCheckboxItem
                         key={column.id}
-                        className="cursor-pointer capitalize dark:text-white dark:hover:bg-gray-800"
+                        className="cursor-pointer capitalize text-text-primary hover:bg-surface-hover"
                         checked={column.getIsVisible()}
                         onCheckedChange={(value) => column.toggleVisibility(Boolean(value))}
                       >
@@ -192,7 +192,7 @@ export default function DataTableFile<TData, TValue>({
                   return (
                     <TableHead
                       key={header.id}
-                      className="align-start sticky top-0 rounded-t border-b border-black/10 bg-white px-2 py-1 text-left font-medium text-gray-700 dark:border-white/10 dark:bg-gray-700 dark:text-gray-100 sm:px-4 sm:py-2"
+                      className="align-start sticky top-0 rounded-t border-b border-black/10 bg-surface-secondary px-2 py-1 text-left font-medium text-text-secondary dark:border-white/10 sm:px-4 sm:py-2"
                       style={style}
                     >
                       {header.isPlaceholder
@@ -210,7 +210,7 @@ export default function DataTableFile<TData, TValue>({
                 <TableRow
                   key={row.id}
                   data-state={row.getIsSelected() && 'selected'}
-                  className="border-b border-black/10 text-left text-gray-600 dark:border-white/10 dark:text-gray-300 [tr:last-child_&]:border-b-0"
+                  className="border-b border-black/10 text-left text-text-secondary dark:border-white/10 [tr:last-child_&]:border-b-0"
                 >
                   {row.getVisibleCells().map((cell, index) => {
                     const maxWidth =
@@ -254,7 +254,7 @@ export default function DataTableFile<TData, TValue>({
           })}
         </div>
         <Button
-          className="dark:border-gray-500 dark:hover:bg-gray-600"
+          className="border-border-medium hover:bg-surface-hover"
           variant="outline"
           size="sm"
           onClick={() => table.previousPage()}
@@ -263,7 +263,7 @@ export default function DataTableFile<TData, TValue>({
           {localize('com_ui_prev')}
         </Button>
         <Button
-          className="dark:border-gray-500 dark:hover:bg-gray-600"
+          className="border-border-medium hover:bg-surface-hover"
           variant="outline"
           size="sm"
           onClick={() => table.nextPage()}

@@ -116,7 +116,7 @@ const Registration: React.FC = () => {
           )}
         </div>
         {errors[id] && (
-          <span role="alert" className="mt-1 text-sm text-red-500">
+          <span role="alert" className="mt-1 text-sm text-text-destructive">
             {String(errors[id]?.message) ?? ''}
           </span>
         )}
@@ -133,7 +133,7 @@ const Registration: React.FC = () => {
       )}
       {registerUser.isSuccess && countdown > 0 && (
         <div
-          className="rounded-md border border-green-500 bg-green-500/10 px-3 py-2 text-sm text-gray-600 dark:text-gray-200"
+          className="rounded-md border border-green-500 bg-green-500/10 px-3 py-2 text-sm text-text-secondary"
           role="alert"
         >
           {localize(
@@ -239,7 +239,7 @@ const Registration: React.FC = () => {
             </div>
           </form>
 
-          <p className="my-4 text-center text-sm font-light text-gray-700 dark:text-white">
+          <p className="my-4 text-center text-sm font-light text-text-secondary">
             {localize('com_auth_already_have_account')}{' '}
             <a
               href={loginPage()}

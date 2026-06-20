@@ -7,7 +7,7 @@ const FileDashboardView = () => {
   const params = useParams();
   const navigate = useNavigate();
   return (
-    <div className="bg-[#f9f9f9] p-0 lg:p-7">
+    <div className="bg-surface-primary p-0 lg:p-7">
       <div className="ml-3 mt-3 flex flex-row justify-between">
         {params.vectorStoreId && (
           <Button
@@ -22,7 +22,7 @@ const FileDashboardView = () => {
           </Button>
         )}
       </div>
-      <div className="flex h-screen max-w-full flex-row divide-x bg-[#f9f9f9]">
+      <div className="flex h-screen max-w-full flex-row divide-x bg-surface-primary">
         <div className={`w-full lg:w-1/3 ${params.vectorStoreId ? 'hidden lg:block' : ''}`}>
           <VectorStoreSidePanel />
         </div>

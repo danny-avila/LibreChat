@@ -18,7 +18,7 @@ export default function FilesSectionSelector() {
   const lightButton = { backgroundColor: '#f9f9f9', color: 'black' };
 
   return (
-    <div className="flex h-12 w-52 flex-row justify-center rounded border bg-white p-1">
+    <div className="flex h-12 w-52 flex-row justify-center rounded border bg-surface-secondary p-1">
       <div className="flex w-2/3 items-center pr-1">
         <Button
           className="w-full rounded rounded-lg border"
