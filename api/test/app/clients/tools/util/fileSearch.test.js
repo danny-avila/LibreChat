@@ -230,3 +230,63 @@ describe('fileSearch.js - tuple return validation', () => {
     });
   });
 });
+
+describe('entity_id scoping by file origin', () => {
+  const ORIGINAL_RAG_API_URL = process.env.RAG_API_URL;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    process.env.RAG_API_URL = 'http://localhost:8000';
+    generateShortLivedToken.mockReturnValue('mock-jwt-token');
+    axios.post.mockResolvedValue({ data: [] });
+  });
+
+  afterEach(() => {
+    if (ORIGINAL_RAG_API_URL === undefined) {
+      delete process.env.RAG_API_URL;
+    } else {
+      process.env.RAG_API_URL = ORIGINAL_RAG_API_URL;
+    }
+  });
+
+  function bodiesSent() {
+    return axios.post.mock.calls
+      .filter(([url]) => String(url).endsWith('/query'))
+      .map(([, body]) => body);
+  }
+
+  it('sends entity_id only for agent knowledge-base files', async () => {
+    const tool = await createFileSearchTool({
+      userId: 'user1',
+      entity_id: 'agent_123',
+      files: [
+        { file_id: 'kb-1', filename: 'kb.pdf', fromAgent: true },
+        { file_id: 'user-1', filename: 'attachment.txt', fromAgent: false },
+      ],
+    });
+    await tool.func({ query: 'q' });
+
+    const bodies = bodiesSent();
+    expect(bodies.find((b) => b.file_id === 'kb-1').entity_id).toBe('agent_123');
+    expect(bodies.find((b) => b.file_id === 'user-1').entity_id).toBeUndefined();
+  });
+
+  it('omits entity_id when fromAgent is not set (safe default)', async () => {
+    const tool = await createFileSearchTool({
+      userId: 'user1',
+      entity_id: 'agent_123',
+      files: [{ file_id: 'legacy-1', filename: 'legacy.pdf' }],
+    });
+    await tool.func({ query: 'q' });
+    expect(bodiesSent()[0].entity_id).toBeUndefined();
+  });
+
+  it('sends no entity_id when none is provided', async () => {
+    const tool = await createFileSearchTool({
+      userId: 'user1',
+      files: [{ file_id: 'f1', filename: 'a.txt', fromAgent: true }],
+    });
+    await tool.func({ query: 'q' });
+    expect(bodiesSent()[0].entity_id).toBeUndefined();
+  });
+});
