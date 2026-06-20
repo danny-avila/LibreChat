@@ -297,11 +297,18 @@ function getMainScrollContainer(): Element | null {
 }
 
 function anyModalOpen(): boolean {
-  return (
-    document.querySelector(
-      '[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]',
-    ) !== null
-  );
+  const dialogs = document.querySelectorAll('[role="dialog"], [role="alertdialog"]');
+  for (let i = 0; i < dialogs.length; i++) {
+    const dialog = dialogs[i];
+    if (dialog.hasAttribute('inert')) {
+      continue;
+    }
+    if (dialog.getAttribute('data-state') === 'closed') {
+      continue;
+    }
+    return true;
+  }
+  return false;
 }
 
 function defaultAria(actionId: ShortcutActionId): string {
