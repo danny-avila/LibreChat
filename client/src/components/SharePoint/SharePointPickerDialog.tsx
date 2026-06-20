@@ -112,7 +112,7 @@ export default function SharePointPickerDialog({
                           })}
                         </p>
                         {downloadProgress.failed.length > 0 && (
-                          <p className="text-xs text-red-500">
+                          <p className="text-xs text-text-destructive">
                             {localize('com_files_download_failed', {
                               0: downloadProgress.failed.length,
                             })}
