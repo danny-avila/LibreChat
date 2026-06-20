@@ -28,7 +28,7 @@ const parseThinkingContent = (text: string) => {
 
 const LoadingFallback = () => (
   <div className="text-message mb-[0.625rem] flex min-h-[20px] flex-col items-start gap-3 overflow-visible">
-    <div className="markdown prose dark:prose-invert light w-full break-words dark:text-gray-100">
+    <div className="markdown prose dark:prose-invert light w-full break-words dark:text-text-primary">
       <div className="absolute">
         <p className="submitting relative">
           <span className="result-thinking" />
@@ -49,7 +49,7 @@ const ErrorBox = ({
     role="alert"
     aria-live="assertive"
     className={cn(
-      'rounded-xl border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-gray-600 dark:text-gray-200',
+      'rounded-xl border border-status-error-border bg-status-error-subtle px-3 py-2 text-sm text-text-secondary',
       className,
     )}
   >

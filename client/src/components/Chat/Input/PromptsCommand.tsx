@@ -209,7 +209,7 @@ function PromptsCommand({
           <input
             ref={initInputRef}
             placeholder={localize('com_ui_command_usage_placeholder')}
-            className="mb-1 w-full border-0 bg-surface-tertiary-alt p-2 text-sm focus:outline-none dark:text-gray-200"
+            className="mb-1 w-full border-0 bg-surface-tertiary-alt p-2 text-sm text-text-primary focus:outline-none"
             autoComplete="off"
             value={searchValue}
             onKeyDown={(e) => {
