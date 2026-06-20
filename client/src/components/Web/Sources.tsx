@@ -319,7 +319,7 @@ const FileItem = React.memo(function FileItem({
             </span>
           )}
         </div>
-        {error && <div className="mt-1 text-xs text-red-500">{getErrorMessage(error)}</div>}
+        {error && <div className="mt-1 text-xs text-text-destructive">{getErrorMessage(error)}</div>}
       </button>
     );
   }
@@ -353,7 +353,7 @@ const FileItem = React.memo(function FileItem({
           </span>
         )}
       </div>
-      {error && <div className="mt-1 text-xs text-red-500">{getErrorMessage(error)}</div>}
+      {error && <div className="mt-1 text-xs text-text-destructive">{getErrorMessage(error)}</div>}
     </button>
   );
 });
