@@ -187,7 +187,7 @@ export default function CreateSkillForm({
                   <div
                     id="skill-name-error"
                     className={cn(
-                      'mt-1 w-56 text-sm text-red-500',
+                      'mt-1 w-56 text-sm text-text-destructive',
                       errors.name ? 'visible h-auto' : 'invisible h-0',
                     )}
                     role={errors.name ? 'alert' : undefined}
@@ -223,7 +223,7 @@ export default function CreateSkillForm({
                   className="mb-1 text-sm font-medium text-text-secondary"
                 >
                   {localize('com_ui_description')}
-                  <span className="ml-0.5 text-red-500">*</span>
+                  <span className="ml-0.5 text-text-destructive">*</span>
                 </label>
                 <TextareaAutosize
                   {...field}
@@ -242,7 +242,7 @@ export default function CreateSkillForm({
                 {errors.description && (
                   <p
                     id="skill-description-error"
-                    className="mt-1 text-sm text-red-500"
+                    className="mt-1 text-sm text-text-destructive"
                     role="alert"
                   >
                     {errors.description.message}

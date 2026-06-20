@@ -58,7 +58,7 @@ function AuthField({ name, config, hasValue, control, errors, autoFocus }: AuthF
         <div aria-hidden="true">
           {hasValue ? (
             <div className="flex min-w-fit items-center gap-2 whitespace-nowrap rounded-full border border-border-light px-2 py-0.5 text-xs font-medium text-text-secondary">
-              <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
+              <div className="h-1.5 w-1.5 rounded-full bg-status-success" />
               <span>{localize('com_ui_set')}</span>
             </div>
           ) : (
@@ -104,7 +104,7 @@ function AuthField({ name, config, hasValue, control, errors, autoFocus }: AuthF
           dangerouslySetInnerHTML={{ __html: sanitizedDescription }}
         />
       )}
-      {errors[name] && <p className="text-xs text-red-500">{errors[name]?.message}</p>}
+      {errors[name] && <p className="text-xs text-text-destructive">{errors[name]?.message}</p>}
     </div>
   );
 }

@@ -256,7 +256,7 @@ export default function GenericGrantAccessDialog({
             aria-label={localize('com_ui_permissions_failed_load')}
             className={cn('h-9', buttonClassName)}
           >
-            <div className="flex min-w-[32px] items-center justify-center text-red-500">
+            <div className="flex min-w-[32px] items-center justify-center text-text-destructive">
               <span className="flex h-6 w-6 items-center justify-center">
                 {isFetchingPermissions ? (
                   <Spinner className="h-4 w-4" />
@@ -357,7 +357,7 @@ export default function GenericGrantAccessDialog({
                     <div className="space-y-2">
                       {!hasAtLeastOneOwner && hasChanges && (
                         <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-center">
-                          <div className="flex items-center justify-center gap-2 text-sm text-red-600 dark:text-red-400">
+                          <div className="flex items-center justify-center gap-2 text-sm text-text-destructive">
                             <UserX className="h-4 w-4" aria-hidden="true" />
                             {localize('com_ui_at_least_one_owner_required')}
                           </div>

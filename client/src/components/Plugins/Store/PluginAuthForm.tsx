@@ -41,7 +41,7 @@ function PluginAuthForm({ plugin, onSubmit, isEntityTool }: TPluginAuthFormProps
             const authField = config.authField.split('||')[0];
             const isOptional = config.optional === true;
             const inputClassName =
-              'flex h-10 max-h-10 w-full resize-none rounded-md border border-gray-200 bg-transparent px-3 py-2 text-sm text-gray-700 shadow-[0_0_10px_rgba(0,0,0,0.05)] outline-none placeholder:text-gray-400 focus:border-gray-400 focus:bg-gray-50 focus:outline-none focus:ring-0 focus:ring-gray-400 focus:ring-opacity-0 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-500 dark:bg-gray-700 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-400 focus:dark:bg-gray-600 dark:focus:outline-none dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0';
+              'flex h-10 max-h-10 w-full resize-none rounded-md border border-border-light bg-transparent px-3 py-2 text-sm text-text-secondary shadow-[0_0_10px_rgba(0,0,0,0.05)] outline-none placeholder:text-text-tertiary focus:border-border-medium focus:bg-surface-secondary focus:outline-none focus:ring-0 focus:ring-gray-400 focus:ring-opacity-0 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-700 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:ring-0 dark:focus:ring-gray-400 dark:focus:ring-offset-0';
             const sharedProps = {
               id: authField,
               'aria-invalid': !!errors[authField],
@@ -90,7 +90,7 @@ function PluginAuthForm({ plugin, onSubmit, isEntityTool }: TPluginAuthFormProps
                   <PluginTooltip content={config.description} position="right" />
                 </HoverCard>
                 {errors[authField] && (
-                  <span role="alert" className="mt-1 text-sm text-red-400">
+                  <span role="alert" className="mt-1 text-sm text-text-destructive">
                     {String(errors?.[authField]?.message ?? '')}
                   </span>
                 )}
