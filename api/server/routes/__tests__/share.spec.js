@@ -610,6 +610,41 @@ describe('share-scoped file routes', () => {
     expect(mockGetStrategyFunctions).not.toHaveBeenCalled();
   });
 
+  it('404s when the snapshotted file was overwritten (size/bytes mismatch)', async () => {
+    getSharedLinkFile.mockResolvedValue({
+      file: { file_id: 'file-1', source: 'local', filepath: '/uploads/owner/x', bytes: 100 },
+      hasSnapshots: true,
+    });
+    getFiles.mockResolvedValue([{ status: 'ready', bytes: 200 }]);
+
+    const response = await request(buildApp()).get('/api/share/share-123/files/file-1');
+
+    expect(response.status).toBe(404);
+    expect(mockGetStrategyFunctions).not.toHaveBeenCalled();
+  });
+
+  it('strips a cache-busting query string before local streaming', async () => {
+    const getDownloadStream = jest.fn(async () => Readable.from(['bytes']));
+    mockGetStrategyFunctions.mockReturnValue({ getDownloadStream });
+    getSharedLinkFile.mockResolvedValue({
+      file: {
+        file_id: 'file-1',
+        source: 'local',
+        filepath: '/images/owner/pic.png?v=2',
+        type: 'image/png',
+        filename: 'pic.png',
+        bytes: 100,
+      },
+      hasSnapshots: true,
+    });
+    getFiles.mockResolvedValue([{ status: 'ready', bytes: 100 }]);
+
+    const response = await request(buildApp()).get('/api/share/share-123/files/file-1');
+
+    expect(response.status).toBe(200);
+    expect(getDownloadStream).toHaveBeenCalledWith(expect.anything(), '/images/owner/pic.png');
+  });
+
   it('sweeps an orphaned pending preview to failed', async () => {
     getSharedLinkFile.mockResolvedValue({
       file: { file_id: 'file-1', source: 'local' },

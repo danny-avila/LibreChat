@@ -134,12 +134,19 @@ const resolveShareFile = async (req, res, next) => {
       return res.status(404).json({ message: 'File no longer available' });
     }
 
-    // Pin to the snapshotted version: if the file_id was reused/overwritten by a
-    // later turn (new previewRevision), the shared version is gone — refuse to
-    // serve so an old link can't surface post-share content.
-    if ((snapshot.previewRevision ?? null) !== (liveFile.previewRevision ?? null)) {
+    // Pin to the snapshotted version so an old link can't surface post-share content
+    // after a reused file_id (e.g. code-exec same-filename outputs) is overwritten.
+    // previewRevision changes for deferred/office files; `bytes` catches other
+    // overwrites that change size, and is stable across S3 URL refresh and the
+    // pending->ready transition (which don't alter file size). Same-size content
+    // swaps remain a best-effort gap inherent to the no-byte-copy design.
+    const revisionChanged =
+      (snapshot.previewRevision ?? null) !== (liveFile.previewRevision ?? null);
+    const bytesChanged =
+      snapshot.bytes != null && liveFile.bytes != null && snapshot.bytes !== liveFile.bytes;
+    if (revisionChanged || bytesChanged) {
       logger.warn(
-        `[shareFileAccess] Snapshot revision mismatch for file ${file_id} (share ${shareId})`,
+        `[shareFileAccess] Snapshot version mismatch for file ${file_id} (share ${shareId})`,
       );
       return res.status(404).json({ message: 'File no longer available' });
     }
@@ -186,7 +193,10 @@ const streamSharedFile = async (req, res, file, requestedDisposition) => {
     return res.status(501).send('Not Implemented');
   }
 
-  const fileStream = await getDownloadStream(req, file.storageKey || file.filepath);
+  // Strip any cache-busting query string (e.g. code-output images add `?v=...`) so
+  // the local stream resolves the real filename, not a literal `*.png?v=...` path.
+  const streamPath = (file.storageKey || file.filepath || '').split('?')[0];
+  const fileStream = await getDownloadStream(req, streamPath);
   fileStream.on('error', (error) => {
     logger.error('[shareFileAccess] Stream error:', error);
   });
