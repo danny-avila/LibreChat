@@ -4,9 +4,9 @@ import { useRecoilState } from 'recoil';
 import { Constants, LocalStorageKeys } from 'librechat-data-provider';
 import type { VerifyToolAuthResponse } from 'librechat-data-provider';
 import type { UseQueryOptions } from '@tanstack/react-query';
-import { useVerifyAgentToolAuth } from '~/data-provider';
-import { setTimestamp } from '~/utils/timestamps';
+import { useVerifyAgentToolAuth, useGetStartupConfig } from '~/data-provider';
 import useLocalStorage from '~/hooks/useLocalStorageAlt';
+import { setTimestamp } from '~/utils/timestamps';
 import { ephemeralAgentByConvoId } from '~/store';
 
 type ToolValue = boolean | string;
@@ -36,6 +36,7 @@ export function useToolToggle({
 }: UseToolToggleOptions) {
   const key = conversationId ?? Constants.NEW_CONVO;
   const [ephemeralAgent, setEphemeralAgent] = useRecoilState(ephemeralAgentByConvoId(key));
+  const { data: startupConfig } = useGetStartupConfig();
 
   const authQuery = useVerifyAgentToolAuth(
     { toolId: authConfig?.toolId || '' },
@@ -76,7 +77,17 @@ export function useToolToggle({
     }
   }, [ephemeralAgent, toolKey, storageKey]);
 
-  const [isPinned, setIsPinned] = useLocalStorage<boolean>(`${localStorageKey}pinned`, false);
+  /** Admin-configured default: pin this tool when its key is listed in `defaultPinnedTools`.
+   *  Only seeds the initial state — a user's stored pin preference always takes precedence. */
+  const defaultPinned = useMemo(() => {
+    const defaultPinnedTools = startupConfig?.interface?.defaultPinnedTools;
+    return Array.isArray(defaultPinnedTools) && defaultPinnedTools.includes(toolKey);
+  }, [startupConfig?.interface?.defaultPinnedTools, toolKey]);
+
+  const [isPinned, setIsPinned] = useLocalStorage<boolean>(
+    `${localStorageKey}pinned`,
+    defaultPinned,
+  );
 
   const handleChange = useCallback(
     ({ e, value }: { e?: React.ChangeEvent<HTMLInputElement>; value: ToolValue }) => {
