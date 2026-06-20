@@ -268,41 +268,63 @@ export const createDeleteMemoryTool = ({
   );
 };
 /**
+ * Strict usage guard appended to the agent's instructions when the inline
+ * memory tools are registered, preserving the memory-agent's explicit-request
+ * behavior so the model never stores facts it merely observed.
+ */
+export const memoryToolUsageGuard = `Only use the \`set_memory\` and \`delete_memory\` tools when the user explicitly asks you to remember, update, or forget something (e.g. "remember that...", "don't forget...", "forget..."). Never store information merely because the user mentioned it in conversation.`;
+
+/**
  * LLM-facing definitions for the inline memory tool pair, used by the
  * event-driven (definitions-only) loader. The `memory` capability string on
  * an agent's `tools` array expands into this pair at initialize time via
  * {@link registerMemoryTools}; the runtime instances created in the tool
  * service enforce `validKeys`/`tokenLimit` and emit memory artifacts.
+ * `validKeys` is surfaced in the key descriptions so the model is told the
+ * allowed keys up front, matching the runtime `createMemoryTool` schema.
  */
-export const memoryToolDefinitions: LCTool[] = [
-  {
-    name: SET_MEMORY_TOOL_NAME,
-    description: SET_MEMORY_DESCRIPTION,
-    parameters: {
-      type: 'object',
-      properties: {
-        key: { type: 'string', description: 'The key identifier for this memory' },
-        value: {
-          type: 'string',
-          description:
-            'Value MUST be a complete sentence that fully describes relevant user information.',
+export function getMemoryToolDefinitions(validKeys?: string[]): LCTool[] {
+  const hasValidKeys = Array.isArray(validKeys) && validKeys.length > 0;
+  return [
+    {
+      name: SET_MEMORY_TOOL_NAME,
+      description: SET_MEMORY_DESCRIPTION,
+      parameters: {
+        type: 'object',
+        properties: {
+          key: {
+            type: 'string',
+            description: hasValidKeys
+              ? `The key of the memory value. Must be one of: ${validKeys!.join(', ')}`
+              : 'The key identifier for this memory',
+          },
+          value: {
+            type: 'string',
+            description:
+              'Value MUST be a complete sentence that fully describes relevant user information.',
+          },
         },
+        required: ['key', 'value'],
       },
-      required: ['key', 'value'],
     },
-  },
-  {
-    name: DELETE_MEMORY_TOOL_NAME,
-    description: DELETE_MEMORY_DESCRIPTION,
-    parameters: {
-      type: 'object',
-      properties: {
-        key: { type: 'string', description: 'The key identifier of the memory to delete' },
+    {
+      name: DELETE_MEMORY_TOOL_NAME,
+      description: DELETE_MEMORY_DESCRIPTION,
+      parameters: {
+        type: 'object',
+        properties: {
+          key: {
+            type: 'string',
+            description: hasValidKeys
+              ? `The key of the memory to delete. Must be one of: ${validKeys!.join(', ')}`
+              : 'The key identifier of the memory to delete',
+          },
+        },
+        required: ['key'],
       },
-      required: ['key'],
     },
-  },
-] as LCTool[];
+  ] as LCTool[];
+}
 
 /**
  * Idempotently registers the inline memory tool pair (`set_memory` +
@@ -314,10 +336,13 @@ export const memoryToolDefinitions: LCTool[] = [
 export function registerMemoryTools({
   toolRegistry,
   toolDefinitions,
+  validKeys,
 }: {
   toolRegistry?: LCToolRegistry;
   toolDefinitions?: LCTool[];
+  validKeys?: string[];
 }): { toolDefinitions: LCTool[]; registered: string[] } {
+  const memoryToolDefinitions = getMemoryToolDefinitions(validKeys);
   const inputDefinitions = toolDefinitions ?? [];
   const newDefs: LCTool[] = [];
   const registered: string[] = [];

@@ -50,10 +50,10 @@ import {
   registerFileAuthoringTools,
   isFileAuthoringToolDefinition,
 } from './tools';
+import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
-import { registerMemoryTools } from './memory';
 import { primeResources } from './resources';
 
 /**
@@ -1059,8 +1059,13 @@ export async function initializeAgent(
    */
   const agentRequestsMemory = (agent.tools ?? []).includes(Tools.memory);
   if (params.memoryAvailable === true && agentRequestsMemory) {
-    const memoryResult = registerMemoryTools({ toolRegistry, toolDefinitions });
+    const memoryResult = registerMemoryTools({
+      toolRegistry,
+      toolDefinitions,
+      validKeys: req.config?.memory?.validKeys,
+    });
     toolDefinitions = memoryResult.toolDefinitions;
+    appendAdditionalInstructions(agent, memoryToolUsageGuard);
   } else if (agentRequestsMemory) {
     logger.debug(
       `[initializeAgent] Agent "${agent.id}" requests memory but memoryAvailable=${String(params.memoryAvailable)}; skipping set_memory + delete_memory registration.`,
