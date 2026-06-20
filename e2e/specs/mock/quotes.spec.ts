@@ -51,38 +51,46 @@ const addToChat = (page: Page) => page.getByTestId('add-to-chat-button');
 const pendingChips = (page: Page) => page.getByTestId('pending-quote-chips');
 const messageQuotes = (page: Page) => messagesView(page).getByTestId('message-quotes');
 
+/** The mock model echoes this when a blockquote containing the token reached the prompt. */
+const QUOTE_ASSERTION_PASSED = 'E2E quote assertion passed: reply';
+
+/** Select the seeded assistant reply (contains "...reply...") as a quote. */
+async function quoteSeededReply(page: Page) {
+  await selectMessageText(page, MOCK_REPLY_TEXT);
+  await expect(addToChat(page)).toBeVisible({ timeout: 10000 });
+  await addToChat(page).click();
+}
+
 test.describe('quote references', () => {
-  test('quotes a message excerpt, pins it to the sent message, and persists across reload', async ({
+  test('merges a quoted excerpt into the model turn, pins it to the message, and persists across reload', async ({
     page,
   }) => {
     test.setTimeout(120000);
-    const followUp = 'what did you mean by that?';
-
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
     await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
 
-    // Seed an assistant reply we can quote.
-    let response = await sendMessage(page, 'quote target one');
+    // Seed an assistant reply to quote.
+    let response = await sendMessage(page, 'seed for quote');
     expect(response.ok()).toBeTruthy();
     await expect(mockReply(page)).toBeVisible({ timeout: 20000 });
 
-    // Select the reply text -> popup -> add a quote chip above the composer.
-    await selectMessageText(page, MOCK_REPLY_TEXT);
-    await expect(addToChat(page)).toBeVisible({ timeout: 10000 });
-    await addToChat(page).click();
+    // Select the reply text -> popup -> chip above the composer.
+    await quoteSeededReply(page);
     await expect(pendingChips(page)).toContainText(MOCK_REPLY_TEXT);
 
-    // Send a follow-up; the quote rides along and the pending chips drain.
-    response = await sendMessage(page, followUp);
+    // Send a turn that asks the mock model to confirm the quote reached the prompt.
+    response = await sendMessage(page, 'E2E_ASSERT_QUOTE:reply');
     expect(response.ok()).toBeTruthy();
-    await expect(page.getByText(followUp)).toBeVisible();
-    await expect(pendingChips(page)).toHaveCount(0);
 
-    // The reference renders persistently on the sent user message.
-    await expect(messageQuotes(page)).toBeVisible();
+    // The model received the merged blockquote (verified server-side by the mock).
+    await expect(messagesView(page).getByText(QUOTE_ASSERTION_PASSED)).toBeVisible({
+      timeout: 20000,
+    });
+    // Pending chips drained; the reference is pinned to the sent user message.
+    await expect(pendingChips(page)).toHaveCount(0);
     await expect(messageQuotes(page)).toContainText(MOCK_REPLY_TEXT);
 
-    // Round-trips through the DB: still there after reload.
+    // Round-trips through the DB: still pinned after reload.
     await expect(page).toHaveURL(/\/c\/(?!new)/, { timeout: 15000 });
     const conversationUrl = page.url();
     await page.reload({ timeout: 10000 });
@@ -101,16 +109,11 @@ test.describe('quote references', () => {
     expect(response.ok()).toBeTruthy();
     await expect(mockReply(page)).toBeVisible({ timeout: 20000 });
 
-    // First selection: the assistant reply.
-    await selectMessageText(page, MOCK_REPLY_TEXT);
-    await expect(addToChat(page)).toBeVisible({ timeout: 10000 });
-    await addToChat(page).click();
-
-    // Second selection: the user's own earlier message.
+    // First selection: the assistant reply. Second: the user's own message.
+    await quoteSeededReply(page);
     await selectMessageText(page, firstMessage);
     await expect(addToChat(page)).toBeVisible({ timeout: 10000 });
     await addToChat(page).click();
-
     await expect(pendingChips(page).getByRole('listitem')).toHaveCount(2);
 
     // Remove the reply chip; the user-message chip remains.
@@ -128,5 +131,33 @@ test.describe('quote references', () => {
     expect(followUp.ok()).toBeTruthy();
     await expect(messageQuotes(page)).toContainText(firstMessage);
     await expect(messageQuotes(page)).not.toContainText(MOCK_REPLY_TEXT);
+  });
+
+  test('re-merges a persisted quote into later-turn history (durable)', async ({ page }) => {
+    test.setTimeout(120000);
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+
+    // Turn 1: quote the assistant reply and send a (labeled) message carrying it.
+    let response = await sendMessage(page, 'seed for durable');
+    expect(response.ok()).toBeTruthy();
+    await expect(mockReply(page)).toBeVisible({ timeout: 20000 });
+    await quoteSeededReply(page);
+    response = await sendMessage(page, 'E2E_REPLY:carryquote');
+    expect(response.ok()).toBeTruthy();
+    // Wait for turn 1's generation to fully finish before sending again — a new
+    // submit is blocked while the prior turn is still streaming.
+    await expect(messagesView(page).getByText('E2E reply carryquote')).toBeVisible({
+      timeout: 20000,
+    });
+    await expect(messageQuotes(page)).toContainText(MOCK_REPLY_TEXT);
+
+    // Turn 2: no new quote. The prior quoted turn must be re-merged into history,
+    // so the model still receives the blockquote on this later turn.
+    response = await sendMessage(page, 'E2E_ASSERT_QUOTE:reply');
+    expect(response.ok()).toBeTruthy();
+    await expect(messagesView(page).getByText(QUOTE_ASSERTION_PASSED)).toBeVisible({
+      timeout: 20000,
+    });
   });
 });

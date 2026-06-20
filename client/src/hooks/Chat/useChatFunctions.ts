@@ -335,19 +335,25 @@ export default function useChatFunctions({
           : drainPendingManualSkills(conversationId ?? Constants.NEW_CONVO);
     }
     /**
-     * Quoted-excerpt resolution mirrors manual skills:
+     * Quoted-excerpt resolution mirrors manual skills, but is skipped entirely
+     * for Assistants endpoints: those bypass the `BaseClient` merge, so the
+     * quote UI is hidden there and a selection queued on another endpoint must
+     * not silently ride along on a fresh submit. The pending atom is left
+     * untouched so the queue survives if the user switches back.
      *  - Explicit `overrideQuotes` wins (regenerate / resubmit replay the
      *    original user message's persisted quotes so the same context is sent).
      *  - Regenerate / continue / edit without an override → empty (those flows
      *    replay a prior turn; the compose-time atom is left untouched).
      *  - Fresh submit → drain the per-convo atom into the message.
      */
-    let quotes = overrideQuotes;
-    if (quotes == null) {
-      quotes =
-        isRegenerate || isContinued || isEdited
-          ? []
-          : drainPendingQuotes(conversationId ?? Constants.NEW_CONVO);
+    const quotesSupported = !isAssistantsEndpoint(endpoint);
+    let quotes: string[] = [];
+    if (quotesSupported) {
+      if (overrideQuotes != null) {
+        quotes = overrideQuotes;
+      } else if (!isRegenerate && !isContinued && !isEdited) {
+        quotes = drainPendingQuotes(conversationId ?? Constants.NEW_CONVO);
+      }
     }
     const isEditOrContinue = isEdited || isContinued;
 

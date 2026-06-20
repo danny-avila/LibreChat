@@ -6,6 +6,7 @@ import type {
   Response as ServerResponse,
 } from 'express';
 import type { MessageFilterPiiConfig } from 'librechat-data-provider';
+import { getReferencedQuotes } from '../utils/quotes';
 
 type CompiledPattern = { id: string; label: string; pattern: RegExp };
 
@@ -125,20 +126,18 @@ export function createMessageFilterPii(options: CreateMessageFilterPiiOptions): 
     /**
      * Scan the typed text plus any quoted excerpts. Quotes are merged into the
      * model-facing user message downstream, so they must clear the same filter
-     * (a crafted `quotes` payload would otherwise bypass it).
+     * (a crafted `quotes` payload would otherwise bypass it). Normalize via
+     * `getReferencedQuotes` first so we only scan the trimmed/truncated/capped
+     * excerpts the model will actually receive, matching `BaseClient`.
      */
     const candidates: string[] = [];
     const text = req.body?.text;
     if (typeof text === 'string' && text.length > 0) {
       candidates.push(text);
     }
-    const quotes = req.body?.quotes;
-    if (Array.isArray(quotes)) {
-      for (const quote of quotes) {
-        if (typeof quote === 'string' && quote.length > 0) {
-          candidates.push(quote);
-        }
-      }
+    const quotes = getReferencedQuotes(req.body?.quotes);
+    if (quotes != null) {
+      candidates.push(...quotes);
     }
     if (candidates.length === 0) {
       next();

@@ -39,6 +39,7 @@ const {
   filterMalformedContentParts,
   countFormattedMessageTokens,
   prependFileContext,
+  prependQuotes,
   hydrateMissingIndexTokenCounts,
   injectSkillPrimes,
   collectFreshSkillPrimeNames,
@@ -375,6 +376,17 @@ class AgentClient extends BaseClient {
       if (message.fileContext) {
         hasFileContext = true;
         prependFileContext(formattedMessage, message.fileContext);
+      }
+
+      /**
+       * Durably re-merge quoted excerpts into every user turn that carries them
+       * (current and historical) so the model receives the referenced context on
+       * every prompt and the token count matches what was persisted. Applied to
+       * the memory copy too so the canonical per-message count includes them.
+       */
+      if (Array.isArray(message.quotes) && message.quotes.length > 0) {
+        prependQuotes(formattedMessage, message.quotes);
+        prependQuotes(memoryFormattedMessage, message.quotes);
       }
 
       memoryPayload.push(memoryFormattedMessage);

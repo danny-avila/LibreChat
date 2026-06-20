@@ -1318,23 +1318,35 @@ describe('BaseClient', () => {
   });
 
   describe('sendMessage quote references', () => {
-    const getLastUserContent = async () => {
-      const buildResult = await TestClient.buildMessages.mock.results[0].value;
-      const userMessages = buildResult.prompt.filter((m) => m.role === 'user');
-      return userMessages[userMessages.length - 1]?.content;
-    };
-
-    test('merges quoted excerpts into the user text sent to buildMessages', async () => {
-      TestClient.options.req = { body: { quotes: ['the selected text'] } };
+    // The blockquote merge itself lives in AgentClient.buildMessages / prependQuotes
+    // (covered by packages/api specs). BaseClient's job is to attach the normalized
+    // quotes onto the user message early and keep the stored text clean.
+    test('attaches normalized quotes before getReqData fires and keeps stored text clean', async () => {
+      TestClient.options.req = { body: { quotes: ['  the selected text  ', '', 42] } };
       TestClient.saveMessageToDatabase = jest.fn().mockResolvedValue({ message: {} });
+      let captured;
+      await TestClient.sendMessage('What does this mean?', {
+        getReqData: (data) => {
+          if (data.userMessage) {
+            captured = { text: data.userMessage.text, quotes: data.userMessage.quotes };
+          }
+        },
+      });
 
-      await TestClient.sendMessage('What does this mean?');
+      // Quotes are present (trimmed, non-strings dropped) at getReqData time, and
+      // the user text is never mutated by the merge.
+      expect(captured).toBeDefined();
+      expect(captured.quotes).toEqual(['the selected text']);
+      expect(captured.text).toBe('What does this mean?');
 
-      const content = await getLastUserContent();
-      expect(content).toBe('> the selected text\n\nWhat does this mean?');
+      const userSave = TestClient.saveMessageToDatabase.mock.calls.find(
+        ([msg]) => msg.isCreatedByUser,
+      );
+      expect(userSave[0].text).toBe('What does this mean?');
+      expect(userSave[0].quotes).toEqual(['the selected text']);
     });
 
-    test('restores the clean user text and persists quotes on the saved message', async () => {
+    test('persists multiple quotes in order on the saved message', async () => {
       TestClient.options.req = { body: { quotes: ['first excerpt', 'second excerpt'] } };
       TestClient.saveMessageToDatabase = jest.fn().mockResolvedValue({ message: {} });
 
@@ -1343,7 +1355,6 @@ describe('BaseClient', () => {
       const userSave = TestClient.saveMessageToDatabase.mock.calls.find(
         ([msg]) => msg.isCreatedByUser,
       );
-      expect(userSave).toBeDefined();
       expect(userSave[0].text).toBe('Compare these');
       expect(userSave[0].quotes).toEqual(['first excerpt', 'second excerpt']);
     });
@@ -1353,9 +1364,6 @@ describe('BaseClient', () => {
       TestClient.saveMessageToDatabase = jest.fn().mockResolvedValue({ message: {} });
 
       await TestClient.sendMessage('Just a question');
-
-      const content = await getLastUserContent();
-      expect(content).toBe('Just a question');
 
       const userSave = TestClient.saveMessageToDatabase.mock.calls.find(
         ([msg]) => msg.isCreatedByUser,

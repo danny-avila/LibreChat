@@ -4,7 +4,6 @@ const { logger } = require('@librechat/data-schemas');
 const {
   countTokens,
   checkBalance,
-  mergeQuotedText,
   getBalanceConfig,
   buildMessageFiles,
   extractFileContext,
@@ -279,6 +278,21 @@ class BaseClient {
           text: message,
         });
 
+    /**
+     * Attach quoted excerpts (the "Add to chat" selections from `req.body.quotes`)
+     * before `getReqData`/`onStart` fire, so the optimistic bubble, resumable job
+     * metadata, and the saved row all carry them. Only on fresh turns — edits
+     * replay an existing message that already has its quotes. The excerpts are
+     * merged into the model-facing text later, per message, in `buildMessages`,
+     * keeping the stored `text` clean while the count stays consistent.
+     */
+    if (!opts.isEdited) {
+      const referencedQuotes = getReferencedQuotes(this.options.req?.body?.quotes);
+      if (referencedQuotes != null) {
+        userMessage.quotes = referencedQuotes;
+      }
+    }
+
     if (typeof opts?.getReqData === 'function') {
       opts.getReqData({
         userMessage,
@@ -415,21 +429,6 @@ class BaseClient {
     const { user, head, isEdited, conversationId, responseMessageId, saveOptions, userMessage } =
       await this.handleStartMethods(message, opts);
 
-    /**
-     * Quote/reference handling: excerpts the user selected from the chat
-     * ("Add to chat" popup) arrive on `req.body.quotes`. Temporarily merge
-     * them into the user message text as Markdown blockquotes so the model
-     * sees them as part of the user turn (not a system message) and they're
-     * counted in the user message token count. The clean text is restored
-     * before persistence — the excerpts are stored on `userMessage.quotes`
-     * for the `MessageQuotes` UI instead of being baked into the text.
-     */
-    const referencedQuotes = getReferencedQuotes(this.options.req?.body?.quotes);
-    const originalUserText = userMessage.text;
-    if (referencedQuotes != null) {
-      userMessage.text = mergeQuotedText(originalUserText, referencedQuotes);
-    }
-
     if (opts.progressCallback) {
       opts.onProgress = opts.progressCallback.call(null, {
         ...(opts.progressOptions ?? {}),
@@ -500,11 +499,6 @@ class BaseClient {
       });
     }
 
-    /** Restore the clean text now that the merged quotes are counted + queued. */
-    if (referencedQuotes != null) {
-      userMessage.text = originalUserText;
-    }
-
     if (!isEdited && !this.skipSaveUserMessage) {
       const reqFiles = this.options.req?.body?.files;
       if (reqFiles && Array.isArray(this.options.attachments)) {
@@ -546,15 +540,6 @@ class BaseClient {
         if (names.length > 0) {
           userMessage.alwaysAppliedSkills = names;
         }
-      }
-      /**
-       * Persist the quoted excerpts onto the user message so `MessageQuotes`
-       * can render them on the user bubble in history and after reload. The
-       * model already saw them merged into the text above; here they ride
-       * alongside the (clean) stored text as structured metadata.
-       */
-      if (referencedQuotes != null) {
-        userMessage.quotes = referencedQuotes;
       }
       userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user).catch(
         (err) => {

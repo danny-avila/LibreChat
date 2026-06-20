@@ -42,17 +42,28 @@ function toBlockquote(quote: string): string {
 }
 
 /**
- * Merges quoted excerpts into the user message text as Markdown blockquotes,
- * prepended before the user's own text. Provider-agnostic format (no bespoke
- * tags, no separate system message) so the excerpts read as part of the user
- * turn. Returns the original text unchanged when there are no quotes.
+ * Renders quoted excerpts as Markdown blockquote blocks, one block per excerpt
+ * separated by a blank line. Provider-agnostic (no bespoke tags). Returns an
+ * empty string when there are no quotes.
+ */
+export function formatQuotesAsMarkdown(quotes: string[]): string {
+  return quotes.map(toBlockquote).join('\n\n');
+}
+
+/**
+ * Merges quoted excerpts into a body of text as Markdown blockquotes, prepended
+ * before the text so the excerpts read as part of the user turn. Returns the
+ * original text unchanged when there are no quotes.
  */
 export function mergeQuotedText(text: string, quotes: string[]): string {
   if (quotes.length === 0) {
     return text;
   }
 
-  const block = quotes.map(toBlockquote).join('\n\n');
+  const block = formatQuotesAsMarkdown(quotes);
+  if (block.length === 0) {
+    return text;
+  }
   const body = text ?? '';
   return body.length > 0 ? `${block}\n\n${body}` : block;
 }
