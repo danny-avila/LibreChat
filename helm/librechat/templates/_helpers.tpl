@@ -44,6 +44,12 @@ app.kubernetes.io/name: {{ include "librechat.fullname" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
+{{/*
+Langfuse fanout collector service name.
+*/}}
+{{- define "librechat.langfuseFanout.fullname" -}}
+{{- printf "%s-langfuse-fanout" (include "librechat.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
 
 {{/*
 RAG Selector labels

@@ -1684,11 +1684,27 @@ export const messageFilterSchema = z.object({
 
 export type MessageFilterConfig = z.infer<typeof messageFilterSchema>;
 
+export const langfuseConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  publicKey: z.string().optional(),
+  secretKey: z.string().optional(),
+  baseUrl: z.string().optional(),
+  fanout: z
+    .object({
+      enabled: z.boolean().optional(),
+      baseUrl: z.string().optional(),
+    })
+    .optional(),
+});
+
+export type LangfuseConfig = z.infer<typeof langfuseConfigSchema>;
+
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean().default(true),
   ocr: ocrSchema.optional(),
   webSearch: webSearchSchema.optional(),
+  langfuse: langfuseConfigSchema.optional(),
   memory: memorySchema.optional(),
   summarization: summarizationConfigSchema.optional(),
   skillSync: skillSyncConfigSchema,

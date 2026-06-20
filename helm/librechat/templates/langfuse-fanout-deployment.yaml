@@ -1,0 +1,65 @@
+{{- if .Values.langfuseFanout.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "librechat.langfuseFanout.fullname" . }}
+  labels:
+    {{- include "librechat.labels" . | nindent 4 }}
+    app.kubernetes.io/component: langfuse-fanout
+spec:
+  replicas: {{ .Values.langfuseFanout.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "librechat.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: langfuse-fanout
+  template:
+    metadata:
+      annotations:
+        checksum/langfuse-fanout-config: {{ include (print $.Template.BasePath "/langfuse-fanout-configmap.yaml") . | sha256sum }}
+        {{- with .Values.langfuseFanout.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "librechat.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: langfuse-fanout
+        {{- with .Values.langfuseFanout.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      containers:
+        - name: otelcol
+          image: "{{ .Values.langfuseFanout.image.repository }}:{{ .Values.langfuseFanout.image.tag }}"
+          imagePullPolicy: {{ .Values.langfuseFanout.image.pullPolicy }}
+          args: ["--config=/etc/otelcol/otelcol.yaml"]
+          ports:
+            - name: otlp-http
+              containerPort: 4318
+              protocol: TCP
+          env:
+            - name: LANGFUSE_FANOUT_CENTRAL_BASE_URL
+              value: {{ .Values.langfuseFanout.central.baseUrl | quote }}
+            - name: LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "langfuseFanout.central.authHeaderSecret.name is required when langfuseFanout.enabled=true" .Values.langfuseFanout.central.authHeaderSecret.name | quote }}
+                  key: {{ .Values.langfuseFanout.central.authHeaderSecret.key | quote }}
+            - name: LANGFUSE_FANOUT_TENANT_BASE_URL
+              value: {{ .Values.langfuseFanout.tenant.baseUrl | quote }}
+            - name: LANGFUSE_FANOUT_MEMORY_LIMIT_MIB
+              value: {{ .Values.langfuseFanout.memoryLimitMiB | quote }}
+            - name: LANGFUSE_FANOUT_MEMORY_SPIKE_LIMIT_MIB
+              value: {{ .Values.langfuseFanout.memorySpikeLimitMiB | quote }}
+            - name: LANGFUSE_FANOUT_METADATA_CARDINALITY_LIMIT
+              value: {{ .Values.langfuseFanout.metadataCardinalityLimit | quote }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otelcol/otelcol.yaml
+              subPath: otelcol.yaml
+              readOnly: true
+          resources:
+            {{- toYaml .Values.langfuseFanout.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "librechat.langfuseFanout.fullname" . }}-config
+{{- end }}

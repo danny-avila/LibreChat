@@ -1,0 +1,33 @@
+services:
+  api:
+    depends_on:
+      - langfuse-fanout-collector
+    environment:
+      - LANGFUSE_FANOUT_ENABLED=true
+      - LANGFUSE_FANOUT_BASE_URL=http://langfuse-fanout-collector:4318
+    networks:
+      - default
+      - langfuse-fanout
+
+  langfuse-fanout-collector:
+    image: otel/opentelemetry-collector-contrib:0.143.0
+    restart: always
+    command: ['--config=/etc/otelcol/otelcol.yaml']
+    env_file:
+      - .env
+    environment:
+      - LANGFUSE_FANOUT_CENTRAL_BASE_URL=${LANGFUSE_FANOUT_CENTRAL_BASE_URL:-https://cloud.langfuse.com}
+      - LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER=${LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER:?Set LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER to central Langfuse Basic auth header}
+      - LANGFUSE_FANOUT_TENANT_BASE_URL=${LANGFUSE_FANOUT_TENANT_BASE_URL:-https://cloud.langfuse.com}
+      - LANGFUSE_FANOUT_MEMORY_LIMIT_MIB=${LANGFUSE_FANOUT_MEMORY_LIMIT_MIB:-256}
+      - LANGFUSE_FANOUT_MEMORY_SPIKE_LIMIT_MIB=${LANGFUSE_FANOUT_MEMORY_SPIKE_LIMIT_MIB:-64}
+      - LANGFUSE_FANOUT_METADATA_CARDINALITY_LIMIT=${LANGFUSE_FANOUT_METADATA_CARDINALITY_LIMIT:-1000}
+    expose:
+      - '4318'
+    volumes:
+      - ./otel/langfuse-fanout/otelcol.yaml:/etc/otelcol/otelcol.yaml:ro
+    networks:
+      - langfuse-fanout
+
+networks:
+  langfuse-fanout:

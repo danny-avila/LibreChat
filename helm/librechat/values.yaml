@@ -284,6 +284,30 @@ dnsConfig: {}
 updateStrategy:
   type: RollingUpdate
 
+langfuseFanout:
+  enabled: false
+  replicaCount: 1
+  image:
+    repository: otel/opentelemetry-collector-contrib
+    tag: "0.143.0"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 4318
+  central:
+    baseUrl: https://cloud.langfuse.com
+    authHeaderSecret:
+      name: ""
+      key: LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER
+  tenant:
+    baseUrl: https://cloud.langfuse.com
+  memoryLimitMiB: 256
+  memorySpikeLimitMiB: 64
+  metadataCardinalityLimit: 1000
+  resources: {}
+  podAnnotations: {}
+  podLabels: {}
+
 # Extra ConfigMaps to be created alongside the main ones
 additionalConfigMaps: {}
 #   custom: # suffix of the ConfigMap name

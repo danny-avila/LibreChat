@@ -203,6 +203,8 @@ function makeAppConfig(customEndpoints: TestCustomEndpoint[]): AppConfig {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  delete process.env.LANGFUSE_FANOUT_ENABLED;
+  delete process.env.LANGFUSE_FANOUT_BASE_URL;
 });
 
 // ---------------------------------------------------------------------------
@@ -1111,10 +1113,12 @@ async function callAndCaptureRunConfig({
   overrides,
   user,
   tenantId,
+  appConfig,
 }: {
   overrides?: Record<string, unknown>;
   user?: Record<string, unknown>;
   tenantId?: string;
+  appConfig?: AppConfig;
 } = {}): Promise<Record<string, unknown>> {
   const agents = [makeAgent(overrides)];
   const signal = new AbortController().signal;
@@ -1126,6 +1130,7 @@ async function callAndCaptureRunConfig({
     streamUsage: true,
     user: user as never,
     tenantId,
+    appConfig,
   });
 
   const createMock = Run.create as jest.Mock;
@@ -1166,6 +1171,115 @@ describe('Langfuse run config', () => {
       deterministicTraceId: true,
       metadata: { 'librechat.tenant.id': 'tenant-2' },
       tags: ['tenant:tenant-2'],
+    });
+  });
+
+  it('adds tenant Langfuse credentials from tenant-scoped app config', async () => {
+    const callArgs = await callAndCaptureRunConfig({
+      tenantId: 'tenant-1',
+      appConfig: {
+        langfuse: {
+          publicKey: 'pk-tenant-1',
+          secretKey: 'sk-tenant-1',
+          fanout: {
+            enabled: true,
+            baseUrl: 'http://langfuse-fanout-collector:4318',
+          },
+        },
+      } as AppConfig,
+    });
+
+    expect(callArgs.langfuse).toEqual({
+      deterministicTraceId: true,
+      publicKey: 'pk-tenant-1',
+      secretKey: 'sk-tenant-1',
+      baseUrl: 'http://langfuse-fanout-collector:4318',
+      metadata: { 'librechat.tenant.id': 'tenant-1' },
+      tags: ['tenant:tenant-1'],
+    });
+  });
+
+  it('uses deployment fanout base URL when tenant app config only contains keys', async () => {
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_BASE_URL = 'http://collector-from-env:4318';
+
+    const callArgs = await callAndCaptureRunConfig({
+      tenantId: 'tenant-1',
+      appConfig: {
+        langfuse: {
+          publicKey: 'pk-tenant-1',
+          secretKey: 'sk-tenant-1',
+        },
+      } as AppConfig,
+    });
+
+    expect(callArgs.langfuse).toMatchObject({
+      publicKey: 'pk-tenant-1',
+      secretKey: 'sk-tenant-1',
+      baseUrl: 'http://collector-from-env:4318',
+    });
+  });
+
+  it('does not route to fanout when deployment fanout is enabled without tenant keys', async () => {
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_BASE_URL = 'http://collector-from-env:4318';
+
+    const callArgs = await callAndCaptureRunConfig({
+      tenantId: 'tenant-1',
+      appConfig: {
+        langfuse: {},
+      } as AppConfig,
+    });
+
+    expect(callArgs.langfuse).toEqual({
+      deterministicTraceId: true,
+      metadata: { 'librechat.tenant.id': 'tenant-1' },
+      tags: ['tenant:tenant-1'],
+    });
+  });
+
+  it('lets tenant fanout.enabled=false override deployment fanout env', async () => {
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_BASE_URL = 'http://collector-from-env:4318';
+
+    const callArgs = await callAndCaptureRunConfig({
+      tenantId: 'tenant-1',
+      appConfig: {
+        langfuse: {
+          publicKey: 'pk-tenant-1',
+          secretKey: 'sk-tenant-1',
+          baseUrl: 'https://cloud.langfuse.com',
+          fanout: {
+            enabled: false,
+          },
+        },
+      } as AppConfig,
+    });
+
+    expect(callArgs.langfuse).toMatchObject({
+      publicKey: 'pk-tenant-1',
+      secretKey: 'sk-tenant-1',
+      baseUrl: 'https://cloud.langfuse.com',
+    });
+  });
+
+  it('honors tenant Langfuse enabled=false as a tracing opt-out', async () => {
+    const callArgs = await callAndCaptureRunConfig({
+      tenantId: 'tenant-1',
+      appConfig: {
+        langfuse: {
+          enabled: false,
+          publicKey: 'pk-tenant-1',
+          secretKey: 'sk-tenant-1',
+        },
+      } as AppConfig,
+    });
+
+    expect(callArgs.langfuse).toEqual({
+      deterministicTraceId: true,
+      enabled: false,
+      metadata: { 'librechat.tenant.id': 'tenant-1' },
+      tags: ['tenant:tenant-1'],
     });
   });
 });
