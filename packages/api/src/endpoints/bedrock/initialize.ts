@@ -6,6 +6,7 @@ import {
   EModelEndpoint,
   extractEnvVariable,
   bedrockInputParser,
+  stripAgentIdSuffix,
   bedrockOutputParser,
   removeNullishValues,
 } from 'librechat-data-provider';
@@ -286,7 +287,9 @@ export async function initializeBedrock({
 
   const model = model_parameters?.model as string | undefined;
   const guardrailConfig = bedrockConfig?.guardrailConfig;
-  const scopedAgentId = agentId ?? (req.body as { agent_id?: string } | undefined)?.agent_id;
+  const rawAgentId = agentId ?? (req.body as { agent_id?: string } | undefined)?.agent_id;
+  /** Strip the parallel/added-run suffix (`____N`) so the base id matches admin-configured `appliesTo.agentIds`. */
+  const scopedAgentId = rawAgentId != null ? stripAgentIdSuffix(rawAgentId) : undefined;
   if (guardrailConfig && guardrailConfigApplies(guardrailConfig.appliesTo, scopedAgentId, model)) {
     llmConfig.guardrailConfig = {
       guardrailIdentifier: extractEnvVariable(guardrailConfig.guardrailIdentifier),

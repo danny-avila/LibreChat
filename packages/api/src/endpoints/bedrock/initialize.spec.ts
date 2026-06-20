@@ -532,6 +532,22 @@ describe('initializeBedrock', () => {
       const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
       expect(result.llmConfig).not.toHaveProperty('guardrailConfig');
     });
+
+    it('matches the base agent id when the runtime id carries a parallel-run suffix', async () => {
+      const params = createMockParams({
+        config: {
+          endpoints: {
+            [EModelEndpoint.bedrock]: {
+              guardrailConfig: { ...guardrail, appliesTo: { agentIds: ['agent_guarded'] } },
+            },
+          },
+        },
+        agentId: 'agent_guarded____1',
+        model_parameters: { model: 'anthropic.claude-sonnet-4-6' },
+      });
+      const result = (await initializeBedrock(params)) as BedrockLLMConfigResult;
+      expect(result.llmConfig.guardrailConfig).toEqual(guardrail);
+    });
   });
 
   describe('Proxy Configuration', () => {
