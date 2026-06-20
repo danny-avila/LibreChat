@@ -42,6 +42,7 @@ function normalizeTenantConfigs(value) {
       publicKey,
       secretKey,
       baseUrl: normalizeString(config.baseUrl ?? config.base_url),
+      fanoutBaseUrl: normalizeString(config.fanoutBaseUrl ?? config.fanout_base_url),
     };
   });
 }
@@ -70,6 +71,7 @@ async function patchTenantLangfuseConfig({ tenantId, langfuse, patchConfigFields
   }
 
   mongoose = require('mongoose');
+  require('@librechat/data-schemas').createModels(mongoose);
   const connect = require('./connect');
   const { patchConfigFields } = require('~/models');
 
@@ -80,14 +82,14 @@ async function patchTenantLangfuseConfig({ tenantId, langfuse, patchConfigFields
   await connect();
 
   for (const config of tenantConfigs) {
-    const fanoutBaseUrl = config.baseUrl ?? defaultFanoutBaseUrl;
     const langfuse = {
       ...(config.enabled === false ? { enabled: false } : {}),
       ...(config.publicKey ? { publicKey: config.publicKey } : {}),
       ...(config.secretKey ? { secretKey: config.secretKey } : {}),
+      ...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
       fanout: {
         enabled: config.enabled !== false,
-        baseUrl: fanoutBaseUrl,
+        baseUrl: config.fanoutBaseUrl ?? defaultFanoutBaseUrl,
       },
     };
     await patchTenantLangfuseConfig({ tenantId: config.tenantId, langfuse, patchConfigFields });
@@ -95,6 +97,7 @@ async function patchTenantLangfuseConfig({ tenantId, langfuse, patchConfigFields
   }
 
   await mongoose.disconnect();
+  process.exit(0);
 })().catch(async (error) => {
   console.error(error);
   if (mongoose?.connection?.readyState) {

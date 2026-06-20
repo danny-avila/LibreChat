@@ -1,11 +1,8 @@
 import type { AppConfig } from '@librechat/data-schemas';
 import type { RunConfig } from '@librechat/agents';
+import { normalizeString } from './utils';
 
 type LangfuseRunConfig = NonNullable<RunConfig['langfuse']>;
-
-function normalizeString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
-}
 
 function mergeTraceMetadata(
   base: LangfuseRunConfig['metadata'],
