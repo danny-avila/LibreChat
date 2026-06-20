@@ -794,6 +794,17 @@ function buildSubagentConfigs(
   return configs;
 }
 
+function buildLangfuseConfig(tenantIdInput?: unknown) {
+  const tenantId = typeof tenantIdInput === 'string' ? tenantIdInput.trim() : '';
+  return {
+    deterministicTraceId: true,
+    ...(tenantId !== '' && {
+      metadata: { 'librechat.tenant.id': tenantId },
+      tags: [`tenant:${tenantId}`],
+    }),
+  };
+}
+
 /**
  * Creates a new Run instance with custom handlers and configuration.
  *
@@ -816,6 +827,7 @@ export async function createRun({
   messages,
   requestBody,
   user,
+  tenantId,
   tokenCounter,
   customHandlers,
   indexTokenCountMap,
@@ -835,6 +847,7 @@ export async function createRun({
   streamUsage?: boolean;
   requestBody?: t.RequestBody;
   user?: IUser;
+  tenantId?: string;
   /** Message history for extracting previously discovered tools */
   messages?: BaseMessage[];
   summarizationConfig?: SummarizationConfig;
@@ -1097,7 +1110,7 @@ export async function createRun({
     // feedback can be scored against the trace without a lookup (see the
     // feedback route in api/server/routes/messages.js). No-op unless Langfuse
     // tracing is enabled. Requires @librechat/agents >= 3.2.21.
-    langfuse: { deterministicTraceId: true },
+    langfuse: buildLangfuseConfig(tenantId ?? user?.tenantId),
     ...(enableToolOutputReferences && {
       toolOutputReferences: { enabled: true },
     }),

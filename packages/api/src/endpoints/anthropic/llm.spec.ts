@@ -356,6 +356,46 @@ describe('getLLMConfig', () => {
       expect(result.llmConfig.promptCache).toBe(true);
     });
 
+    it('should pass promptCacheTtl to llmConfig when configured', () => {
+      const result = getLLMConfig('test-api-key', {
+        modelOptions: {
+          model: 'claude-3-5-sonnet',
+          promptCache: true,
+          promptCacheTtl: '1h',
+        },
+      });
+
+      expect(result.llmConfig.promptCache).toBe(true);
+      expect((result.llmConfig as Record<string, unknown>).promptCacheTtl).toBe('1h');
+    });
+
+    it('should omit promptCacheTtl when unset so the agents SDK applies its default', () => {
+      const result = getLLMConfig('test-api-key', {
+        modelOptions: {
+          model: 'claude-3-5-sonnet',
+          promptCache: true,
+        },
+      });
+
+      expect(result.llmConfig.promptCache).toBe(true);
+      expect((result.llmConfig as Record<string, unknown>).promptCacheTtl).toBeUndefined();
+    });
+
+    it('should drop promptCacheTtl when promptCache is dropped via dropParams', () => {
+      const result = getLLMConfig('test-api-key', {
+        modelOptions: {
+          model: 'claude-3-5-sonnet',
+          promptCache: true,
+          promptCacheTtl: '1h',
+        },
+        dropParams: ['promptCache'],
+      });
+
+      /** A dropped cache must not leave an orphaned TTL on the request. */
+      expect(result.llmConfig.promptCache).toBeUndefined();
+      expect((result.llmConfig as Record<string, unknown>).promptCacheTtl).toBeUndefined();
+    });
+
     it('should handle thinking and thinkingBudget options', () => {
       const result = getLLMConfig('test-api-key', {
         modelOptions: {

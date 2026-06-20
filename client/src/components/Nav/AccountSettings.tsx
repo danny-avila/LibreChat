@@ -3,6 +3,7 @@ import { useSetRecoilState } from 'recoil';
 import * as Menu from '@ariakit/react/menu';
 import { GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
 import {
+  Archive,
   ChevronRight,
   CircleHelp,
   FileText,
@@ -12,6 +13,7 @@ import {
   Scale,
   ShieldCheck,
 } from 'lucide-react';
+import { ArchivedChatsModal } from '~/components/Nav/SettingsTabs/General/ArchivedChatsModal';
 import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
@@ -100,6 +102,7 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
   const [showSettings, setShowSettings] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
   const setShowShortcutsDialog = useSetRecoilState(store.showShortcutsDialog);
+  const [showArchived, setShowArchived] = useState(false);
   const accountSettingsButtonRef = useRef<HTMLButtonElement>(null);
 
   return (
@@ -161,6 +164,10 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
           <FileText className="icon-md" aria-hidden="true" />
           {localize('com_nav_my_files')}
         </Menu.MenuItem>
+        <Menu.MenuItem onClick={() => setShowArchived(true)} className="select-item text-sm">
+          <Archive className="icon-md" aria-hidden="true" />
+          {localize('com_nav_archived_chats')}
+        </Menu.MenuItem>
         <Menu.MenuItem
           onClick={() => setShowSettings(true)}
           className="select-item text-sm"
@@ -179,6 +186,13 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
         <MyFilesModal
           open={showFiles}
           onOpenChange={setShowFiles}
+          triggerRef={accountSettingsButtonRef}
+        />
+      )}
+      {showArchived && (
+        <ArchivedChatsModal
+          open={showArchived}
+          onOpenChange={setShowArchived}
           triggerRef={accountSettingsButtonRef}
         />
       )}

@@ -1,4 +1,5 @@
 import type { AxiosResponse } from 'axios';
+import type { TContextProjectionRequest, TContextUsageEvent } from './types/runs';
 import type { TFileConfig } from './file-config';
 import type * as t from './types';
 import * as permissions from './accessPermissions';
@@ -247,6 +248,12 @@ export const getAIEndpoints = (): Promise<t.TEndpointsConfig> => {
 
 export const getTokenConfig = (): Promise<t.TTokenConfigMap> => {
   return request.get(endpoints.tokenConfig());
+};
+
+export const getContextProjection = (
+  payload: TContextProjectionRequest,
+): Promise<TContextUsageEvent | null> => {
+  return request.post(endpoints.contextProjection(), payload);
 };
 
 export const getModels = async (): Promise<t.TModelsConfig> => {
@@ -825,6 +832,12 @@ export function assignConversationToProject(
 ): Promise<t.TAssignConversationToProjectResponse> {
   const { conversationId, projectId } = payload;
   return request.put(endpoints.projectConversation(conversationId), { projectId });
+}
+
+export function pinConversation(
+  payload: t.TPinConversationRequest,
+): Promise<t.TPinConversationResponse> {
+  return request.post(endpoints.pinConversation(), { arg: payload });
 }
 
 export function genTitle(payload: m.TGenTitleRequest): Promise<m.TGenTitleResponse> {
