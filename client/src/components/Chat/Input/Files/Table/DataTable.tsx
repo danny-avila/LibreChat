@@ -110,7 +110,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           {isDeleting ? (
             <Spinner className="size-3.5 sm:size-4" />
           ) : (
-            <TrashIcon className="size-3.5 text-red-400 sm:size-4" />
+            <TrashIcon className="size-3.5 text-text-destructive sm:size-4" />
           )}
           {!isSmallScreen && <span className="ml-2">{localize('com_ui_delete')}</span>}
         </Button>

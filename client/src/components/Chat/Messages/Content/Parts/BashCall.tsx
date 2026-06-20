@@ -106,7 +106,7 @@ export default function BashCall({
                 <pre
                   className={cn(
                     'max-h-[300px] overflow-auto whitespace-pre-wrap break-words px-3 py-2.5 font-mono text-xs',
-                    outputHasError ? 'text-red-600 dark:text-red-400' : 'text-text-primary',
+                    outputHasError ? 'text-status-error' : 'text-text-primary',
                   )}
                 >
                   {output}

@@ -657,7 +657,7 @@ function SubagentPrompt({
           expanded ? 'overflow-visible' : 'max-h-32 overflow-hidden',
         )}
       >
-        <div className="markdown prose prose-sm message-content light dark:prose-invert w-full max-w-none break-words text-text-primary dark:text-gray-100">
+        <div className="markdown prose prose-sm message-content light dark:prose-invert w-full max-w-none break-words text-text-primary">
           <MarkdownLite content={prompt} codeExecution={false} />
         </div>
         {!expanded && (

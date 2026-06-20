@@ -101,7 +101,7 @@ export default function ProgressText({
         <span className={cn(showShimmer ? 'shimmer' : '', 'font-medium')}>{text}</span>
         {subtitle && <span className="font-normal text-text-secondary">{subtitle}</span>}
         {errorSuffix && (
-          <span className="font-normal text-red-600 dark:text-red-400">— {errorSuffix}</span>
+          <span className="font-normal text-status-error">— {errorSuffix}</span>
         )}
         {hasInput && (
           <ChevronDown

@@ -124,7 +124,7 @@ export default function OutputRenderer({ text }: OutputRendererProps) {
         <pre
           className={cn(
             'max-h-[300px] overflow-auto whitespace-pre-wrap break-words text-xs',
-            error && 'font-mono text-red-600 dark:text-red-400',
+            error && 'font-mono text-status-error',
             !error && structured && 'font-mono text-text-secondary',
             !error && !structured && 'font-sans text-sm text-text-primary',
           )}
@@ -159,7 +159,7 @@ export default function OutputRenderer({ text }: OutputRendererProps) {
         </button>
       )}
       {showErrorDetails && rawError && (
-        <pre className="mt-2 max-h-[200px] overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-red-600 dark:text-red-400">
+        <pre className="mt-2 max-h-[200px] overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-status-error">
           {rawError}
         </pre>
       )}
