@@ -261,7 +261,7 @@ export default function CreateSkillForm({
           {createSkill.error != null && (
             <div
               role="alert"
-              className="flex items-start gap-2 rounded-md border border-red-500/40 bg-red-500/5 p-3 text-sm text-red-500"
+              className="flex items-start gap-2 rounded-md border border-red-500/40 bg-red-500/5 p-3 text-sm text-text-destructive"
             >
               <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
               <span>{localize('com_ui_skill_create_error')}</span>

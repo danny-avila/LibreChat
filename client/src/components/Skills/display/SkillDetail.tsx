@@ -107,7 +107,7 @@ export default function SkillDetail({ skill, onEdit, onDelete }: SkillDetailProp
                     side="top"
                     render={
                       <EarthIcon
-                        className="size-5 shrink-0 text-green-400"
+                        className="size-5 shrink-0 text-accent-primary"
                         aria-label={localize('com_ui_skill_sr_public')}
                       />
                     }
