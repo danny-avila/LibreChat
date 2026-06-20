@@ -187,7 +187,7 @@ function ChatGroupItem({
                       aria-label={localize('com_ui_sr_global_prompt')}
                       className="flex shrink-0 items-center"
                     >
-                      <EarthIcon className="size-3.5 text-green-400" aria-hidden="true" />
+                      <EarthIcon className="size-3.5 text-accent-primary" aria-hidden="true" />
                     </span>
                   }
                 />

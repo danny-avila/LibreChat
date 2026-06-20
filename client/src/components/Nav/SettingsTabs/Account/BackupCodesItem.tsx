@@ -165,8 +165,8 @@ const BackupCodesItem: React.FC = () => {
                               <span
                                 className={`rounded-full px-3 py-1 text-sm font-medium ${
                                   isUsed
-                                    ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
-                                    : 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                                    ? 'bg-status-error-subtle text-status-error'
+                                    : 'bg-status-success-subtle text-status-success'
                                 }`}
                               >
                                 {isUsed ? localize('com_ui_used') : localize('com_ui_not_used')}

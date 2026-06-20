@@ -129,7 +129,7 @@ export default function ExportModal({
                     <label
                       id="includeOptions-label"
                       htmlFor="includeOptions"
-                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
+                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                     >
                       {exportOptionsSupport
                         ? localize('com_nav_export_include_endpoint_options')
@@ -153,7 +153,7 @@ export default function ExportModal({
                   <label
                     id="exportBranches-label"
                     htmlFor="exportBranches"
-                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                   >
                     {exportBranchesSupport
                       ? localize('com_nav_export_all_message_branches')
@@ -176,7 +176,7 @@ export default function ExportModal({
                     <label
                       id="recursive-label"
                       htmlFor="recursive"
-                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
+                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                     >
                       {localize('com_nav_export_recursive')}
                     </label>

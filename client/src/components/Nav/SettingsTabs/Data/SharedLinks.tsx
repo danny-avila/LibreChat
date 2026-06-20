@@ -371,7 +371,7 @@ export default function SharedLinks() {
           }
           selection={{
             selectHandler: confirmDelete,
-            selectClasses: `bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 text-white ${
+            selectClasses: `bg-surface-destructive hover:bg-surface-destructive-hover text-white ${
               deleteMutation.isLoading ? 'cursor-not-allowed opacity-80' : ''
             }`,
             selectText: deleteMutation.isLoading ? <Spinner /> : localize('com_ui_delete'),

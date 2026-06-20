@@ -373,7 +373,7 @@ const SetKeyDialog = ({
           </OGDialogTitle>
         </OGDialogHeader>
         <div className="grid w-full items-center gap-2 py-4">
-          <small className="text-red-600">
+          <small className="text-text-destructive">
             {expiryTime === 'never'
               ? localize('com_endpoint_config_key_never_expires')
               : `${localize('com_endpoint_config_key_encryption')} ${new Date(

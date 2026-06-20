@@ -81,7 +81,7 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
     ) : (
       <div className="h-6 w-6">
         <div className="shadow-stroke flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-          <AssistantIcon className="h-2/3 w-2/3 text-gray-400" />
+          <AssistantIcon className="h-2/3 w-2/3 text-text-tertiary" />
         </div>
       </div>
     ),
@@ -110,7 +110,7 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
     ) : (
       <div className="h-6 w-6">
         <div className="shadow-stroke flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-          <Feather className="h-2/3 w-2/3 text-gray-400" aria-hidden="true" />
+          <Feather className="h-2/3 w-2/3 text-text-tertiary" aria-hidden="true" />
         </div>
       </div>
     ),
@@ -197,7 +197,7 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
     >
       {icon}
       {error === true && (
-        <span className="absolute right-0 top-[20px] -mr-2 flex h-3 w-3 items-center justify-center rounded-full border border-white bg-red-500 text-[10px] text-white">
+        <span className="absolute right-0 top-[20px] -mr-2 flex h-3 w-3 items-center justify-center rounded-full border border-white bg-status-error text-[10px] text-white">
           !
         </span>
       )}

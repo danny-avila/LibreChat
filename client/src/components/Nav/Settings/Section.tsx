@@ -14,7 +14,7 @@ export default function Section({ heading, icon, danger, children }: SectionProp
       <h3
         className={cn(
           'mb-2 flex items-center gap-1.5 px-1 text-xs font-semibold uppercase tracking-wide',
-          danger ? 'text-red-500' : 'text-text-secondary',
+          danger ? 'text-text-destructive' : 'text-text-secondary',
         )}
       >
         {icon}

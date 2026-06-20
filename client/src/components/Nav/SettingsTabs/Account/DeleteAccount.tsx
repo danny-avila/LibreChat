@@ -83,8 +83,8 @@ const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolea
               {localize('com_nav_delete_account_confirm')}
             </OGDialogTitle>
           </OGDialogHeader>
-          <div className="mb-8 text-sm text-black dark:text-white">
-            <ul className="font-semibold text-amber-600">
+          <div className="mb-8 text-sm text-text-primary">
+            <ul className="font-semibold text-text-warning">
               <li>{localize('com_nav_delete_warning')}</li>
               <li>{localize('com_nav_delete_data_info')}</li>
             </ul>
@@ -166,7 +166,7 @@ const renderInput = (
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void,
 ) => (
   <div className="mb-4">
-    <label className="mb-1 block text-sm font-medium text-black dark:text-white" htmlFor={id}>
+    <label className="mb-1 block text-sm font-medium text-text-primary" htmlFor={id}>
       {label}
     </label>
     <Input id={id} onChange={onChange} placeholder={value} />
