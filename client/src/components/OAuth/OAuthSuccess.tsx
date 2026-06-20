@@ -32,7 +32,7 @@ export default function OAuthSuccess() {
         <p className="mb-2 text-sm text-text-secondary">
           {localize('com_ui_oauth_success_description') ||
             'Your authentication was successful. This window will close in'}{' '}
-          <span className="font-medium text-indigo-500">{secondsLeft}</span>{' '}
+          <span className="font-medium text-accent-primary">{secondsLeft}</span>{' '}
           {localize('com_ui_seconds') || 'seconds'}.
         </p>
         {serverName && (
