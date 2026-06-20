@@ -6,6 +6,7 @@ const {
   grantCreationPermissions,
   ensureLinkPermissions,
   isFileSnapshotEnabled,
+  isFileSnapshotKillSwitchActive,
   deleteSharedLinkWithCleanup,
   updateSharedLinkPermissionsExpiration,
   isActiveExpirationDate,
@@ -102,14 +103,19 @@ const SAFE_INLINE_TYPES = new Set([
  */
 const resolveShareFile = async (req, res, next) => {
   try {
-    // Honor the toggle as a real kill switch: when disabled, stop serving
-    // share-scoped files even for shares that already have a snapshot.
-    if (!isFileSnapshotEnabled(req.config)) {
+    // Global kill switch only (env-based, viewer-independent): disabling stops
+    // serving for every link. The viewer's own config must NOT affect serving.
+    if (isFileSnapshotKillSwitchActive()) {
       return res.status(404).json({ message: 'Shared file access is disabled' });
     }
 
     const { shareId, file_id } = req.params;
-    let { file: snapshot, hasSnapshots } = await getSharedLinkFile(shareId, file_id);
+    const { file, hasSnapshots, optedOut } = await getSharedLinkFile(shareId, file_id);
+    // Per-link opt-out: never serve and never backfill an opted-out link.
+    if (optedOut) {
+      return res.status(404).json({ message: 'File not found in shared link' });
+    }
+    let snapshot = file;
     if (!snapshot && !hasSnapshots) {
       snapshot = await backfillSharedLinkFiles(shareId, file_id);
     }
@@ -204,7 +210,9 @@ if (allowSharedLinks) {
     async (req, res) => {
       try {
         const share = await getSharedMessages(req.params.shareId, req.shareResourceId, {
-          snapshotFiles: isFileSnapshotEnabled(req.config),
+          // Viewer-independent: the per-link choice (stored on the share) decides
+          // file inclusion; only a global env kill switch can force it off here.
+          snapshotFiles: !isFileSnapshotKillSwitchActive(),
         });
         if (share) {
           res.set('Cache-Control', 'private, no-store');

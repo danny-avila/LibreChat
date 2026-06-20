@@ -15,6 +15,7 @@ jest.mock('@librechat/api', () => ({
     mockUpdateSharedLinkPermissionsExpiration(...args),
   ensureLinkPermissions: jest.fn(),
   isFileSnapshotEnabled: jest.fn(() => true),
+  isFileSnapshotKillSwitchActive: jest.fn(() => false),
   deleteSharedLinkWithCleanup: jest.fn(),
   getSharedLinkExpiration: (...args) => mockGetSharedLinkExpiration(...args),
   isActiveExpirationDate: jest.fn((expiredAt) => expiredAt > new Date()),
@@ -92,7 +93,11 @@ jest.mock('~/server/middleware/config/app', () => (_req, _res, next) => next());
 const { Readable } = require('stream');
 const { RetentionMode } = require('librechat-data-provider');
 const { createTempChatExpirationDate, logger } = require('@librechat/data-schemas');
-const { deleteSharedLinkWithCleanup, isFileSnapshotEnabled } = require('@librechat/api');
+const {
+  deleteSharedLinkWithCleanup,
+  isFileSnapshotEnabled,
+  isFileSnapshotKillSwitchActive,
+} = require('@librechat/api');
 const {
   getFiles,
   updateFile,
@@ -567,13 +572,23 @@ describe('share-scoped file routes', () => {
     expect(mockGetStrategyFunctions).not.toHaveBeenCalled();
   });
 
-  it('404s (no serving) when the snapshot feature is disabled', async () => {
-    isFileSnapshotEnabled.mockReturnValueOnce(false);
+  it('404s (no serving) when the global kill switch is active', async () => {
+    isFileSnapshotKillSwitchActive.mockReturnValueOnce(true);
 
     const response = await request(buildApp()).get('/api/share/share-123/files/file-1');
 
     expect(response.status).toBe(404);
     expect(getSharedLinkFile).not.toHaveBeenCalled();
+    expect(mockGetStrategyFunctions).not.toHaveBeenCalled();
+  });
+
+  it('404s (no serving, no backfill) for a link that opted out of file sharing', async () => {
+    getSharedLinkFile.mockResolvedValue({ file: null, hasSnapshots: false, optedOut: true });
+
+    const response = await request(buildApp()).get('/api/share/share-123/files/file-1');
+
+    expect(response.status).toBe(404);
+    expect(backfillSharedLinkFiles).not.toHaveBeenCalled();
     expect(mockGetStrategyFunctions).not.toHaveBeenCalled();
   });
 

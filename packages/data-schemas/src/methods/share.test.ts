@@ -512,10 +512,13 @@ describe('Share Methods', () => {
       expect(shared?.manualSkills).toEqual(['research']);
       expect(shared?.alwaysAppliedSkills).toEqual(['brand-voice']);
 
-      // User-uploaded files keep their render URL (filepath/preview) but drop storage internals.
+      // Render metadata (filename/type/dims) is kept, storage internals dropped. The
+      // file isn't snapshotted (no backing File record), so its original render URL is
+      // neutralized — viewers can only load files through the authorized share route.
       const file = shared?.files?.[0];
       expect(file).toMatchObject({ filename: 'upload.png', type: 'image/png' });
-      expect(file?.filepath).toBe('/images/upload.png');
+      expect(file).not.toHaveProperty('filepath');
+      expect(file).not.toHaveProperty('preview');
       expect(file).not.toHaveProperty('storageKey');
       expect(file).not.toHaveProperty('user');
       expect(file).not.toHaveProperty('tenantId');
@@ -524,15 +527,15 @@ describe('Share Methods', () => {
       expect(file?.conversationId).toBe(shared?.conversationId);
       expect(file?.conversationId).not.toBe(conversationId);
 
-      // Tool-call attachments keep their correlation id, payload, and render URL so
-      // citations still render, while storage-only fields are removed.
+      // Tool-call attachments keep their correlation id and payload so citations still
+      // render, while storage-only fields AND the original render URL are removed.
       const attachment = shared?.attachments?.[0];
       expect(attachment).toMatchObject({
         toolCallId: 'call_abc',
         type: 'web_search',
         web_search: { results: [{ title: 'Cited source', link: 'https://example.com' }] },
-        filepath: '/images/result.json',
       });
+      expect(attachment).not.toHaveProperty('filepath');
       expect(attachment).not.toHaveProperty('storageKey');
       expect(attachment).not.toHaveProperty('metadata');
     });
@@ -1674,7 +1677,7 @@ describe('Share Methods', () => {
       expect(String(file.filepath)).not.toContain(userId);
     });
 
-    test('getSharedMessages leaves non-snapshotted files untouched', async () => {
+    test('getSharedMessages neutralizes URLs for non-snapshotted files', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
       const conversationId = `conv_${nanoid()}`;
       await seedConversation(userId, conversationId);
@@ -1693,7 +1696,9 @@ describe('Share Methods', () => {
       const { shareId } = await shareMethods.createSharedLink(userId, conversationId);
       const result = await shareMethods.getSharedMessages(shareId);
       const file = (result?.messages[0].files?.[0] ?? {}) as Record<string, unknown>;
-      expect(file.filepath).toBe(originalPath);
+      // Non-snapshotted (non-streamable source): original URL must not leak.
+      expect(file.filepath).toBeUndefined();
+      expect(file.preview).toBeUndefined();
     });
 
     test('updateSharedLink recomputes snapshots from current messages', async () => {

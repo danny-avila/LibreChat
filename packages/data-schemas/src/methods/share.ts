@@ -198,14 +198,19 @@ function applyShareFileRoute(
   snapshotIds: Set<string>,
 ): t.SharedFile {
   const fileId = file.file_id;
-  if (typeof fileId !== 'string' || !snapshotIds.has(fileId)) {
-    return file;
+  if (typeof fileId === 'string' && snapshotIds.has(fileId)) {
+    const route = shareFileRoute(shareId, fileId);
+    const next: t.SharedFile = { ...file, filepath: route };
+    if (file.preview !== undefined) {
+      next.preview = route;
+    }
+    return next;
   }
-  const route = shareFileRoute(shareId, fileId);
-  const next: t.SharedFile = { ...file, filepath: route };
-  if (file.preview !== undefined) {
-    next.preview = route;
-  }
+  // Not snapshotted (e.g. a non-streamable source on an included link): neutralize
+  // the render URLs so the owner's original path can't be loaded through the share.
+  const next: t.SharedFile = { ...file };
+  delete next.filepath;
+  delete next.preview;
   return next;
 }
 
@@ -407,7 +412,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
   getSharedLinkFile: (
     shareId: string,
     fileId: string,
-  ) => Promise<{ file: t.SharedFileSnapshot | null; hasSnapshots: boolean }>;
+  ) => Promise<{ file: t.SharedFileSnapshot | null; hasSnapshots: boolean; optedOut: boolean }>;
   backfillSharedLinkFiles: (
     shareId: string,
     fileId?: string,
@@ -922,27 +927,29 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
    * share-scoped file routes to authorize a file without the owner's ACL.
    * `hasSnapshots` distinguishes a legacy share (field absent → caller may
    * backfill) from an ordinary miss (field present but file not in it → 404,
-   * no rebuild).
+   * no rebuild). `optedOut` is the per-link "share files" choice — when true the
+   * route must 404 and never backfill, so an opted-out link can't expose files.
    */
   async function getSharedLinkFile(
     shareId: string,
     fileId: string,
-  ): Promise<{ file: t.SharedFileSnapshot | null; hasSnapshots: boolean }> {
+  ): Promise<{ file: t.SharedFileSnapshot | null; hasSnapshots: boolean; optedOut: boolean }> {
     const SharedLink = mongoose.models.SharedLink as Model<t.ISharedLink>;
     const share = (await SharedLink.findOne({
       shareId,
       ...activeExpirationFilter<t.ISharedLink>(),
     })
-      .select('fileSnapshots')
-      .lean()) as Pick<t.ISharedLink, 'fileSnapshots'> | null;
+      .select('fileSnapshots snapshotFiles')
+      .lean()) as Pick<t.ISharedLink, 'fileSnapshots' | 'snapshotFiles'> | null;
 
     if (!share) {
-      return { file: null, hasSnapshots: false };
+      return { file: null, hasSnapshots: false, optedOut: false };
     }
 
     const hasSnapshots = share.fileSnapshots !== undefined;
+    const optedOut = share.snapshotFiles === false;
     const file = share.fileSnapshots?.find((snapshot) => snapshot.file_id === fileId) ?? null;
-    return { file, hasSnapshots };
+    return { file, hasSnapshots, optedOut };
   }
 
   /**

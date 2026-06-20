@@ -19,3 +19,15 @@ export function isFileSnapshotEnabled(appConfig?: AppConfig): boolean {
 
   return true;
 }
+
+/**
+ * Viewer-independent global kill switch for serving shared-link files. Reading
+ * and serving must NOT depend on the viewer's resolved config (per-role/user
+ * overrides) — only on the link's own stored choice plus this global env switch.
+ * Active only when `SHARED_LINKS_SNAPSHOT_FILES` is explicitly set to a disabled
+ * value; the creator's yaml choice is already captured per-link at share time.
+ */
+export function isFileSnapshotKillSwitchActive(): boolean {
+  const envValue = process.env.SHARED_LINKS_SNAPSHOT_FILES;
+  return envValue !== undefined && !isEnabled(envValue);
+}
