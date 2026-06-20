@@ -90,7 +90,7 @@ const HoverButton = memo(
       !isLast &&
         'group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:hover)]:opacity-0',
       !isVisible && 'opacity-0',
-      'focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white focus-visible:outline-none',
+      'focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:outline-none',
       isActive && isVisible && 'active text-text-primary bg-surface-hover',
       className,
     );

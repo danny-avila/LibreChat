@@ -359,7 +359,7 @@ describe('AgentGrid Integration with useGetMarketplaceAgentsQuery', () => {
       );
 
       // Should show loading spinner
-      const spinner = document.querySelector('.text-primary');
+      const spinner = document.querySelector('.text-text-primary');
       expect(spinner).toBeInTheDocument();
     });
 

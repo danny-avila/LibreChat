@@ -101,7 +101,7 @@ export default function MCPServerMenuItem({
         className={cn(
           'flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-sm border',
           isSelected
-            ? 'border-primary bg-primary text-primary-foreground'
+            ? 'border-border-xheavy bg-surface-inverted text-text-inverted'
             : 'border-border-xheavy bg-transparent',
         )}
       >

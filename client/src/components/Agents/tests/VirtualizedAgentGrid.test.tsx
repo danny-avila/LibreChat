@@ -263,7 +263,7 @@ describe('VirtualizedAgentGrid', () => {
     // Should show loading spinner
     const spinner = document.querySelector('.spinner');
     expect(spinner).toBeInTheDocument();
-    expect(spinner).toHaveClass('h-8 w-8 text-primary');
+    expect(spinner).toHaveClass('h-8 w-8 text-text-primary');
   });
 
   it('has proper accessibility attributes', () => {

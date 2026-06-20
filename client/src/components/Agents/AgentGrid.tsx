@@ -129,7 +129,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({
   // Simple loading spinner
   const loadingSpinner = (
     <div className="flex justify-center py-12">
-      <Spinner className="h-8 w-8 text-primary" />
+      <Spinner className="h-8 w-8 text-text-primary" />
     </div>
   );
 
@@ -207,7 +207,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({
               aria-live="polite"
               aria-label={localize('com_agents_loading')}
             >
-              <Spinner className="h-6 w-6 text-primary" />
+              <Spinner className="h-6 w-6 text-text-primary" />
               <span className="sr-only">{localize('com_agents_loading')}</span>
             </div>
           )}

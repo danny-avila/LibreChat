@@ -196,7 +196,7 @@ function SharedView() {
   );
 
   const mainContent = (
-    <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden pt-0 dark:bg-surface-secondary">
+    <div className="transition-width relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden bg-surface-secondary pt-0">
       <div className="relative flex h-full min-h-0 flex-col text-text-primary" role="presentation">
         {content}
         {footer}

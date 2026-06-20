@@ -68,7 +68,7 @@ function SelectDropDownPop({
             <button
               data-testid="select-dropdown-button"
               className={cn(
-                'pointer-cursor relative flex flex-col rounded-lg border border-black/10 bg-surface-secondary py-2 pl-3 pr-10 text-left focus:ring-0 focus:ring-offset-0 dark:border-gray-700 sm:text-sm',
+                'pointer-cursor relative flex flex-col rounded-lg border border-border-light bg-surface-secondary py-2 pl-3 pr-10 text-left focus:ring-0 focus:ring-offset-0 sm:text-sm',
                 'hover:bg-surface-hover radix-state-open:bg-surface-hover',
                 'min-w-[200px] max-w-[215px] sm:min-w-full sm:max-w-full',
               )}
@@ -76,9 +76,7 @@ function SelectDropDownPop({
               aria-haspopup="false"
             >
               {' '}
-              {showLabel && (
-                <label className="block text-xs text-text-secondary">{title}</label>
-              )}
+              {showLabel && <label className="block text-xs text-text-secondary">{title}</label>}
               <span className="inline-flex w-full">
                 <span
                   className={cn(

@@ -12,6 +12,7 @@ const buttonVariants: (
           | 'link'
           | 'submit'
           | 'outline'
+          | 'subtle'
           | 'destructive'
           | 'secondary'
           | 'ghost'
@@ -21,20 +22,19 @@ const buttonVariants: (
       } & ClassProp)
     | undefined,
 ) => string = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium ring-offset-surface-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
   {
     variants: {
       variant: {
-        default: 'bg-primary text-primary-foreground hover:bg-primary/90',
-        destructive:
-          'bg-surface-destructive text-destructive-foreground hover:bg-surface-destructive-hover',
+        default: 'bg-surface-inverted text-text-inverted hover:bg-surface-inverted-hover',
+        destructive: 'bg-surface-destructive text-white hover:bg-surface-destructive-hover',
         outline:
-          'text-text-primary border border-border-light bg-transparent hover:bg-accent hover:text-accent-foreground',
+          'text-text-primary border border-border-light bg-transparent hover:bg-surface-hover hover:text-text-primary',
         subtle:
-          'rounded-xl border border-border-light bg-transparent text-text-primary hover:bg-surface-secondary focus-visible:ring-ring-primary focus-visible:ring-offset-0',
-        secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
-        ghost: 'hover:bg-surface-hover hover:text-accent-foreground',
-        link: 'text-primary underline-offset-4 hover:underline',
+          'rounded-xl border border-border-light bg-transparent text-text-primary hover:bg-surface-secondary focus-visible:ring-text-primary focus-visible:ring-offset-0',
+        secondary: 'bg-surface-secondary text-text-primary hover:bg-surface-hover',
+        ghost: 'hover:bg-surface-hover hover:text-text-primary',
+        link: 'text-text-primary underline-offset-4 hover:underline',
         // hardcoded text color because of WCAG contrast issues (text-white)
         submit: 'bg-surface-submit text-white hover:bg-surface-submit-hover',
       },

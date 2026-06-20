@@ -117,7 +117,7 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
 
     if (name && email) {
       return (
-        <a href={`mailto:${email}`} className="text-primary hover:underline">
+        <a href={`mailto:${email}`} className="text-text-primary hover:underline">
           {name}
         </a>
       );
@@ -125,7 +125,7 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
 
     if (email) {
       return (
-        <a href={`mailto:${email}`} className="text-primary hover:underline">
+        <a href={`mailto:${email}`} className="text-text-primary hover:underline">
           {email}
         </a>
       );

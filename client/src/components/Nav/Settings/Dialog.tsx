@@ -63,7 +63,7 @@ export default function SettingsDialog({ open, onOpenChange }: TDialogProps) {
           <div className="fixed inset-0 flex w-screen items-center justify-center p-4">
             <DialogPanel
               className={cn(
-                'flex max-h-[85vh] w-full flex-col overflow-hidden rounded-2xl bg-background shadow-2xl',
+                'flex max-h-[85vh] w-full flex-col overflow-hidden rounded-2xl bg-surface-primary shadow-2xl',
                 'md:h-[85vh] md:w-[900px]',
               )}
             >

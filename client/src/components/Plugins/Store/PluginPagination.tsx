@@ -23,7 +23,7 @@ const PluginPagination: React.FC<TPluginPaginationProps> = ({
   };
 
   return (
-    <div className="flex gap-2 text-sm text-black/60 dark:text-white/70">
+    <div className="flex gap-2 text-sm text-text-secondary">
       <div
         role="button"
         tabIndex={0}
@@ -36,8 +36,8 @@ const PluginPagination: React.FC<TPluginPaginationProps> = ({
         }}
         className={`flex cursor-default items-center text-sm ${
           currentPage === 1
-            ? 'text-black/70 opacity-50 dark:text-white/70'
-            : 'text-black/70 hover:text-black/50 dark:text-white/70 dark:hover:text-white/50'
+            ? 'text-text-secondary opacity-50'
+            : 'text-text-secondary hover:text-text-primary'
         }`}
         style={{ userSelect: 'none' }}
       >
@@ -90,8 +90,8 @@ const PluginPagination: React.FC<TPluginPaginationProps> = ({
         }}
         className={`flex cursor-default items-center text-sm ${
           currentPage === maxPage
-            ? 'text-black/70 opacity-50 dark:text-white/70'
-            : 'text-black/70 hover:text-black/50 dark:text-white/70 dark:hover:text-white/50'
+            ? 'text-text-secondary opacity-50'
+            : 'text-text-secondary hover:text-text-primary'
         }`}
         style={{ userSelect: 'none' }}
       >

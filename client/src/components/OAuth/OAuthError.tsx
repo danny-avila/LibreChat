@@ -61,7 +61,7 @@ export default function OAuthError() {
         <p className="mb-6 text-sm text-text-secondary">{getErrorMessage(error)}</p>
         <button
           onClick={() => window.close()}
-          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-ring-primary focus:ring-offset-2"
+          className="rounded-md bg-surface-inverted px-4 py-2 text-sm font-medium text-text-inverted hover:bg-surface-inverted-hover focus:outline-none focus:ring-2 focus:ring-ring-primary focus:ring-offset-2"
           aria-label={localize('com_ui_close_window') || 'Close Window'}
         >
           {localize('com_ui_close_window') || 'Close Window'}

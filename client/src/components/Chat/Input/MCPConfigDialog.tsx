@@ -87,7 +87,7 @@ export default function MCPConfigDialog({
                   render={({ field }) => {
                     const placeholder = localize('com_ui_mcp_enter_var', { 0: details.title });
                     const className =
-                      'w-full rounded-md border-border-medium shadow-sm focus:border-border-heavy focus:ring-ring-primary dark:bg-surface-tertiary dark:text-text-primary sm:text-sm';
+                      'w-full rounded-md border-border-medium shadow-sm focus:border-border-heavy focus:ring-ring-primary sm:text-sm';
                     if (details.sensitive === false) {
                       return (
                         <Input

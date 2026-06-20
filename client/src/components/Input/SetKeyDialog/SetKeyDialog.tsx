@@ -136,7 +136,7 @@ const RevokeKeysButton = ({
               variant="destructive"
               onClick={onClick}
               disabled={isLoading}
-              className="bg-destructive text-white transition-all duration-200 hover:bg-destructive/80"
+              className="bg-surface-destructive text-white transition-all duration-200 hover:bg-surface-destructive-hover"
             >
               {isLoading ? <Spinner /> : localize('com_ui_revoke')}
             </Button>

@@ -52,15 +52,13 @@ function MultiSelectPop({
             <button
               data-testid="select-dropdown-button"
               className={cn(
-                'relative flex flex-col rounded-md border border-black/10 bg-surface-secondary py-2 pl-3 pr-10 text-left focus:outline-none focus:ring-0 focus:ring-offset-0 dark:border-gray-700 sm:text-sm',
+                'relative flex flex-col rounded-md border border-border-light bg-surface-secondary py-2 pl-3 pr-10 text-left focus:outline-none focus:ring-0 focus:ring-offset-0 sm:text-sm',
                 'pointer-cursor font-normal',
                 'hover:bg-surface-hover radix-state-open:bg-surface-hover',
               )}
             >
               {' '}
-              {showLabel && (
-                <label className="block text-xs text-text-secondary">{title}</label>
-              )}
+              {showLabel && <label className="block text-xs text-text-secondary">{title}</label>}
               <span className="inline-flex" id={excludeIds[2]}>
                 <span
                   className={cn(
@@ -69,7 +67,7 @@ function MultiSelectPop({
                   )}
                 >
                   {/* {!showLabel && title.length > 0 && (
-                    <span className="text-xs text-gray-700 dark:text-gray-500">{title}:</span>
+                    <span className="text-xs text-text-secondary">{title}:</span>
                   )} */}
                   <span className="flex items-center gap-1">
                     <div className="flex gap-1">
@@ -79,9 +77,9 @@ function MultiSelectPop({
                           {v.icon ? (
                             <img src={v.icon} alt={`${v} logo`} className="icon-lg rounded-sm" />
                           ) : (
-                            <Wrench className="icon-lg rounded-sm bg-white" />
+                            <Wrench className="icon-lg rounded-sm bg-surface-fixed" />
                           )}
-                          <div className="absolute inset-0 rounded-sm ring-1 ring-inset ring-black/10" />
+                          <div className="absolute inset-0 rounded-sm ring-1 ring-inset ring-border-light" />
                         </div>
                       ))}
                     </div>
@@ -137,7 +135,7 @@ function MultiSelectPop({
                           className="icon-sm mr-1 rounded-sm bg-cover"
                         />
                       ) : (
-                        <Wrench className="icon-sm mr-1 rounded-sm bg-white bg-cover dark:bg-gray-800" />
+                        <Wrench className="icon-sm mr-1 rounded-sm bg-surface-secondary bg-cover" />
                       )
                     }
                   />
