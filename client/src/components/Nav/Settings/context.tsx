@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { SettingsContextValue } from './types';
+import useProviderKeys from '../SettingsTabs/ProviderKeys/useProviderKeys';
 import usePersonalizationAccess from '~/hooks/usePersonalizationAccess';
 import { useHasAccess, useAuthContext } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
@@ -34,6 +35,7 @@ export function useSettingsContext(): SettingsContextValue {
   const hasMultiConvoBool = hasMultiConvo === true;
   const hasPromptsBool = hasPrompts === true;
   const engineTTS = useRecoilValue<string>(store.engineTTS);
+  const hasUserProvidedEndpoints = useProviderKeys().length > 0;
 
   return useMemo(
     () => ({
@@ -41,6 +43,7 @@ export function useSettingsContext(): SettingsContextValue {
       hasAnyPersonalizationFeature,
       hasMemoryOptOut,
       hasRemoteAgents: hasRemoteAgentsBool,
+      hasUserProvidedEndpoints,
       hasMultiConvo: hasMultiConvoBool,
       hasPrompts: hasPromptsBool,
       isLocalProvider,
@@ -54,6 +57,7 @@ export function useSettingsContext(): SettingsContextValue {
       hasAnyPersonalizationFeature,
       hasMemoryOptOut,
       hasRemoteAgentsBool,
+      hasUserProvidedEndpoints,
       hasMultiConvoBool,
       hasPromptsBool,
       isLocalProvider,
