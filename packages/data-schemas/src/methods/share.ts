@@ -301,6 +301,7 @@ function anonymizeMessages(
       finish_reason: message.finish_reason,
       ...(message.manualSkills && { manualSkills: message.manualSkills }),
       ...(message.alwaysAppliedSkills && { alwaysAppliedSkills: message.alwaysAppliedSkills }),
+      ...(message.quotes && { quotes: message.quotes }),
       ...(files && { files }),
       ...(attachments && { attachments }),
     };

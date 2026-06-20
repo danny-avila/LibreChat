@@ -153,6 +153,15 @@ describe('messageFilterPii middleware', () => {
     expect(capturedRes.status).toBe(400);
   });
 
+  it('rejects a secret split across a quote and the typed text (merged scan)', () => {
+    // Neither piece matches the api-key pattern alone, but the merged
+    // `> api-key:\n\nsecret` the model receives does (the pattern allows whitespace).
+    const { capturedRes, nextCalls } = runMiddleware({}, { text: 'secret', quotes: ['api-key:'] });
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+    expect(capturedRes.body).toMatchObject({ error: 'message_filter_pii_block' });
+  });
+
   it('passes through when neither text nor quotes match', () => {
     const { capturedRes, nextCalls } = runMiddleware(
       {},

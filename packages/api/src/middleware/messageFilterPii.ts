@@ -6,7 +6,7 @@ import type {
   Response as ServerResponse,
 } from 'express';
 import type { MessageFilterPiiConfig } from 'librechat-data-provider';
-import { getReferencedQuotes } from '../utils/quotes';
+import { getReferencedQuotes, mergeQuotedText } from '../utils/quotes';
 
 type CompiledPattern = { id: string; label: string; pattern: RegExp };
 
@@ -124,20 +124,22 @@ export function createMessageFilterPii(options: CreateMessageFilterPiiOptions): 
       return;
     }
     /**
-     * Scan the typed text plus any quoted excerpts. Quotes are merged into the
-     * model-facing user message downstream, so they must clear the same filter
-     * (a crafted `quotes` payload would otherwise bypass it). Normalize via
-     * `getReferencedQuotes` first so we only scan the trimmed/truncated/capped
-     * excerpts the model will actually receive, matching `BaseClient`.
+     * Scan the typed text, each quoted excerpt, and — crucially — the merged
+     * blockquote+text exactly as `AgentClient` sends it to the model. Quotes are
+     * normalized via `getReferencedQuotes` first (matching `BaseClient`). Scanning
+     * the merged string catches a secret split across a quote and the typed text
+     * (each clean alone) that only matches once concatenated; scanning the raw
+     * pieces keeps anchored patterns working against un-prefixed excerpts.
      */
     const candidates: string[] = [];
-    const text = req.body?.text;
-    if (typeof text === 'string' && text.length > 0) {
+    const text = typeof req.body?.text === 'string' ? req.body.text : '';
+    if (text.length > 0) {
       candidates.push(text);
     }
     const quotes = getReferencedQuotes(req.body?.quotes);
     if (quotes != null) {
       candidates.push(...quotes);
+      candidates.push(mergeQuotedText(text, quotes));
     }
     if (candidates.length === 0) {
       next();

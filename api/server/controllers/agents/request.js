@@ -439,6 +439,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               parentMessageId: userMsg.parentMessageId,
               conversationId: userMsg.conversationId,
               text: userMsg.text,
+              quotes: userMsg.quotes,
             },
           });
 
@@ -930,6 +931,7 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
           parentMessageId: userMsg.parentMessageId,
           conversationId,
           text: userMsg.text,
+          quotes: userMsg.quotes,
         },
       });
     };

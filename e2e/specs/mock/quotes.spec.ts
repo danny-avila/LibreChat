@@ -54,11 +54,21 @@ const messageQuotes = (page: Page) => messagesView(page).getByTestId('message-qu
 /** The mock model echoes this when a blockquote containing the token reached the prompt. */
 const QUOTE_ASSERTION_PASSED = 'E2E quote assertion passed: reply';
 
-/** Select the seeded assistant reply (contains "...reply...") as a quote. */
-async function quoteSeededReply(page: Page) {
-  await selectMessageText(page, MOCK_REPLY_TEXT);
-  await expect(addToChat(page)).toBeVisible({ timeout: 10000 });
-  await addToChat(page).click();
+/**
+ * Select `needle` inside a message and add it as a quote, asserting the pending
+ * chip count reaches `expectedCount`. Retried as a unit: a pending selection is
+ * dismissed on any scroll/layout shift (e.g. auto-scroll after a new message),
+ * which is correct UX but races with a scripted select+click — `toPass` re-runs
+ * the select+click until the chip commits. Dedup keeps re-runs idempotent.
+ */
+async function addQuote(page: Page, needle: string, expectedCount: number) {
+  await expect(async () => {
+    await selectMessageText(page, needle);
+    const button = addToChat(page);
+    await expect(button).toBeVisible({ timeout: 3000 });
+    await button.click();
+    await expect(pendingChips(page).getByRole('listitem')).toHaveCount(expectedCount);
+  }).toPass({ timeout: 30000 });
 }
 
 test.describe('quote references', () => {
@@ -75,7 +85,7 @@ test.describe('quote references', () => {
     await expect(mockReply(page)).toBeVisible({ timeout: 20000 });
 
     // Select the reply text -> popup -> chip above the composer.
-    await quoteSeededReply(page);
+    await addQuote(page, MOCK_REPLY_TEXT, 1);
     await expect(pendingChips(page)).toContainText(MOCK_REPLY_TEXT);
 
     // Send a turn that asks the mock model to confirm the quote reached the prompt.
@@ -109,12 +119,9 @@ test.describe('quote references', () => {
     expect(response.ok()).toBeTruthy();
     await expect(mockReply(page)).toBeVisible({ timeout: 20000 });
 
-    // First selection: the assistant reply. Second: the user's own message.
-    await quoteSeededReply(page);
-    await selectMessageText(page, firstMessage);
-    await expect(addToChat(page)).toBeVisible({ timeout: 10000 });
-    await addToChat(page).click();
-    await expect(pendingChips(page).getByRole('listitem')).toHaveCount(2);
+    // First the assistant reply, then the user's own message.
+    await addQuote(page, MOCK_REPLY_TEXT, 1);
+    await addQuote(page, firstMessage, 2);
 
     // Remove the reply chip; the user-message chip remains.
     await pendingChips(page)
@@ -142,7 +149,7 @@ test.describe('quote references', () => {
     let response = await sendMessage(page, 'seed for durable');
     expect(response.ok()).toBeTruthy();
     await expect(mockReply(page)).toBeVisible({ timeout: 20000 });
-    await quoteSeededReply(page);
+    await addQuote(page, MOCK_REPLY_TEXT, 1);
     response = await sendMessage(page, 'E2E_REPLY:carryquote');
     expect(response.ok()).toBeTruthy();
     // Wait for turn 1's generation to fully finish before sending again — a new
