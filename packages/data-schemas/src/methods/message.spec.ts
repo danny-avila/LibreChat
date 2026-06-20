@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { RetentionMode } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import type { IMessage } from '..';
+import type { IConversation, IMessage } from '..';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import { createMessageMethods } from './message';
 import { createModels } from '../models';
@@ -749,6 +749,69 @@ describe('Message Operations', () => {
 
       expect(bulk1?.expiredAt).toBeDefined();
       expect(bulk2?.expiredAt).toBeNull();
+    });
+  });
+
+  describe('forced retention conversation cascade', () => {
+    const Conversation = () => mongoose.models.Conversation as mongoose.Model<IConversation>;
+
+    beforeEach(async () => {
+      await Conversation().deleteMany({});
+    });
+
+    it('converts a permanent parent conversation and backfills its messages', async () => {
+      const conversationId = uuidv4();
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'Existing permanent chat',
+      });
+      const olderMessage = await saveMessage(
+        { userId: 'user123' },
+        { messageId: uuidv4(), conversationId, text: 'older', user: 'user123' },
+      );
+      expect(olderMessage?.expiredAt ?? null).toBeNull();
+
+      await saveMessage(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { messageId: uuidv4(), conversationId, text: 'branch', user: 'user123' },
+      );
+
+      const convo = await Conversation().findOne({ conversationId }).lean();
+      expect(convo?.isTemporary).toBe(true);
+      expect(convo?.expiredAt).toBeInstanceOf(Date);
+
+      const messages = await getMessages({ conversationId, user: 'user123' });
+      expect(messages).toHaveLength(2);
+      for (const message of messages) {
+        expect(message.isTemporary).toBe(true);
+        expect(message.expiredAt).toBeInstanceOf(Date);
+      }
+    });
+
+    it('does not touch the parent conversation outside forced retention', async () => {
+      const conversationId = uuidv4();
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'Existing permanent chat',
+      });
+
+      await saveMessage(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.TEMPORARY },
+        },
+        { messageId: uuidv4(), conversationId, text: 'edit', user: 'user123' },
+      );
+
+      const convo = await Conversation().findOne({ conversationId }).lean();
+      expect(convo?.expiredAt ?? null).toBeNull();
     });
   });
 

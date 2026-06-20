@@ -1,13 +1,17 @@
-import { RetentionMode } from 'librechat-data-provider';
+import { RetentionMode, isForcedTemporaryRetention } from 'librechat-data-provider';
 import type { FilterQuery, Model, SortOrder } from 'mongoose';
 import type { DeleteResult } from 'mongoose';
-import type { AppConfig, IChatProjectDocument, IConversation } from '~/types';
+import type { AppConfig, IChatProjectDocument, IConversation, IMessage } from '~/types';
 import type { MessageMethods } from './message';
+import {
+  buildRetentionVisibilityFilter,
+  createFallbackRetentionDate,
+  forceConversationMessagesTemporary,
+} from '~/utils/retention';
 import {
   refreshChatProjectStatsForUser,
   updateChatProjectLastConversationForUser,
 } from './chatProject';
-import { buildRetentionVisibilityFilter, createFallbackRetentionDate } from '~/utils/retention';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { isValidObjectIdString } from '~/utils/objectId';
@@ -236,16 +240,19 @@ export function createConversationMethods(
         }
       }
 
+      const isForcedRetention = isForcedTemporaryRetention(interfaceConfig?.retentionMode);
       const mayChangeProjectMembership =
         Object.prototype.hasOwnProperty.call(update, 'chatProjectId') ||
         Object.prototype.hasOwnProperty.call(unsetFields, 'chatProjectId');
       let previousChatProjectId: string | null = null;
-      if (mayChangeProjectMembership) {
+      let wasConversationPermanent = false;
+      if (mayChangeProjectMembership || isForcedRetention) {
         const existing = await Conversation.findOne(
           { conversationId, user: userId },
-          'chatProjectId',
-        ).lean<{ chatProjectId?: string | null } | null>();
+          'chatProjectId expiredAt',
+        ).lean<{ chatProjectId?: string | null; expiredAt?: Date | null } | null>();
         previousChatProjectId = existing?.chatProjectId ?? null;
+        wasConversationPermanent = existing != null && existing.expiredAt == null;
       }
 
       if (newConversationId) {
@@ -329,6 +336,12 @@ export function createConversationMethods(
       if (!conversation) {
         logger.debug('[saveConvo] Conversation not found, skipping update');
         return null;
+      }
+
+      const forcedExpiredAt = update.expiredAt;
+      if (isForcedRetention && wasConversationPermanent && forcedExpiredAt instanceof Date) {
+        const Message = mongoose.models.Message as Model<IMessage>;
+        await forceConversationMessagesTemporary(Message, userId, conversationId, forcedExpiredAt);
       }
 
       if (
