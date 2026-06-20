@@ -48,6 +48,14 @@ export default function ShareButton({
     }
   }, [shareId]);
 
+  // Reflect an existing link's stored "share files" choice so the checkbox isn't
+  // misleading (legacy links have no stored choice → keep the default of enabled).
+  useEffect(() => {
+    if (share?.success === true && typeof share.snapshotFiles === 'boolean') {
+      setSnapshotFiles(share.snapshotFiles);
+    }
+  }, [share?.success, share?.snapshotFiles]);
+
   const button =
     isLoading === true ? null : (
       <SharedLinkButton

@@ -40,6 +40,13 @@ export interface ISharedLink {
   updatedAt?: Date;
   /** Owning tenant for multi-tenant deployments (read by the shared-link access middleware). */
   tenantId?: string;
+  /**
+   * Per-link choice of whether the conversation's files are included in the share
+   * (the "share files" checkbox). `false` means the viewer sees no files; absent
+   * means a legacy link (treated as included). Distinct from `fileSnapshots` so an
+   * opt-out is never mistaken for a not-yet-backfilled legacy link.
+   */
+  snapshotFiles?: boolean;
   /** Per-share file snapshot referenced by the share-scoped file routes. */
   fileSnapshots?: SharedFileSnapshot[];
 }
@@ -129,6 +136,7 @@ export interface GetShareLinkResult {
   _id?: string;
   shareId: string | null;
   targetMessageId?: string;
+  snapshotFiles?: boolean;
   success: boolean;
 }
 

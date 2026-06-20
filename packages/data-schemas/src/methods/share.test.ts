@@ -29,6 +29,7 @@ describe('Share Methods', () => {
         shareId: { type: String, index: true },
         targetMessageId: { type: String, required: false, index: true },
         expiredAt: { type: Date },
+        snapshotFiles: { type: Boolean },
         fileSnapshots: { type: [mongoose.Schema.Types.Mixed], default: undefined },
       },
       { timestamps: true },
@@ -1808,7 +1809,7 @@ describe('Share Methods', () => {
       expect(saved?.fileSnapshots ?? []).toHaveLength(0);
     });
 
-    test('getSharedMessages does not rewrite URLs when snapshotFiles is disabled', async () => {
+    test('getSharedMessages strips files when the admin feature is disabled', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
       const conversationId = `conv_${nanoid()}`;
       await seedConversation(userId, conversationId);
@@ -1827,8 +1828,64 @@ describe('Share Methods', () => {
       const result = await shareMethods.getSharedMessages(shareId, undefined, {
         snapshotFiles: false,
       });
-      const file = (result?.messages[0].files?.[0] ?? {}) as Record<string, unknown>;
-      expect(file.filepath).toBe(originalPath);
+      // Files are stripped entirely, not just left unrewritten — no owner path leaks.
+      expect(result?.messages[0].files).toBeUndefined();
+    });
+
+    test('createSharedLink with snapshotFiles=false strips files and skips snapshots', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const docId = await createFile(userId);
+      const originalPath = `/uploads/${userId}/${docId}`;
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'doc with file',
+        isCreatedByUser: true,
+        files: [{ file_id: docId, type: 'image/png', filepath: originalPath }],
+      });
+
+      // User opts out of sharing files for this link.
+      const { shareId } = await shareMethods.createSharedLink(
+        userId,
+        conversationId,
+        undefined,
+        undefined,
+        false,
+      );
+
+      const saved = await SharedLink.findOne({ shareId }).lean();
+      expect(saved?.snapshotFiles).toBe(false);
+      expect(saved?.fileSnapshots).toBeUndefined();
+
+      // Even with the admin feature on, an opted-out link shows no files and is not
+      // backfilled on read (the prior bug: original paths leaked / snapshots re-created).
+      const result = await shareMethods.getSharedMessages(shareId, undefined, {
+        snapshotFiles: true,
+      });
+      expect(result?.messages[0].files).toBeUndefined();
+
+      const after = await SharedLink.findOne({ shareId }).lean();
+      expect(after?.fileSnapshots).toBeUndefined();
+    });
+
+    test('getSharedLink surfaces the per-link snapshotFiles choice', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'hi',
+        isCreatedByUser: true,
+      });
+
+      await shareMethods.createSharedLink(userId, conversationId, undefined, undefined, false);
+      const link = await shareMethods.getSharedLink(userId, conversationId);
+      expect(link.snapshotFiles).toBe(false);
     });
 
     test('getSharedMessages backfills and rewrites a legacy share on read', async () => {

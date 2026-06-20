@@ -233,6 +233,7 @@ function anonymizeMessages(
   newConvoId: string,
   shareId: string,
   snapshotIds: Set<string>,
+  includeFiles: boolean,
 ): t.SharedMessage[] {
   if (!Array.isArray(messages)) {
     return [];
@@ -243,30 +244,36 @@ function anonymizeMessages(
     const newMessageId = anonymizeMessageId(message.messageId);
     idMap.set(message.messageId, newMessageId);
 
-    const attachments = sanitizeSharedFiles(message.attachments)?.map((attachment) =>
-      applyShareFileRoute(
-        {
-          ...attachment,
-          messageId: newMessageId,
-          conversationId: newConvoId,
-        },
-        shareId,
-        snapshotIds,
-      ),
-    );
+    // When files are not shared for this link, omit files/attachments entirely so
+    // viewers can't load them through the owner's original (e.g. static) paths.
+    const attachments = includeFiles
+      ? sanitizeSharedFiles(message.attachments)?.map((attachment) =>
+          applyShareFileRoute(
+            {
+              ...attachment,
+              messageId: newMessageId,
+              conversationId: newConvoId,
+            },
+            shareId,
+            snapshotIds,
+          ),
+        )
+      : undefined;
     // Persisted file records can carry the original conversation/message ids;
     // rewrite them to the anonymized ids so shared files don't expose them.
-    const files = sanitizeSharedFiles(message.files)?.map((file) =>
-      applyShareFileRoute(
-        {
-          ...file,
-          ...(file.conversationId !== undefined && { conversationId: newConvoId }),
-          ...(file.messageId !== undefined && { messageId: newMessageId }),
-        },
-        shareId,
-        snapshotIds,
-      ),
-    );
+    const files = includeFiles
+      ? sanitizeSharedFiles(message.files)?.map((file) =>
+          applyShareFileRoute(
+            {
+              ...file,
+              ...(file.conversationId !== undefined && { conversationId: newConvoId }),
+              ...(file.messageId !== undefined && { messageId: newMessageId }),
+            },
+            shareId,
+            snapshotIds,
+          ),
+        )
+      : undefined;
     const model = anonymizeSharedModel(message.model);
 
     return {
@@ -449,19 +456,21 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       const resolvedShareId = share.shareId || shareId;
 
       /**
-       * Rewrite render URLs to the share route so viewers load files through the
-       * authorized share path (the route accepts the bearer token or the
-       * `refreshToken` cookie for header-less `<img>`/anchor requests, so this
-       * works for public and non-public shares alike). Legacy shares are
-       * backfilled here so their first view rewrites correctly.
+       * Files are included only when the admin feature is enabled (options) AND the
+       * link's own choice wasn't opted out (`snapshotFiles === false`). When
+       * excluded, files/attachments are stripped from the payload so nothing leaks
+       * through the owner's original paths. Legacy links (no per-link choice and no
+       * snapshot yet) are backfilled here so their first view rewrites correctly.
        */
-      const shouldRewrite = options?.snapshotFiles !== false;
+      const adminEnabled = options?.snapshotFiles !== false;
+      const perLinkEnabled = share.snapshotFiles !== false;
+      const includeFiles = adminEnabled && perLinkEnabled;
       let fileSnapshots = share.fileSnapshots;
-      if (shouldRewrite && fileSnapshots === undefined && share._id) {
+      if (includeFiles && fileSnapshots === undefined && share._id) {
         fileSnapshots = await buildFileSnapshots(mongoose, messagesToShare, share.user);
         await SharedLink.updateOne({ _id: share._id }, { $set: { fileSnapshots } });
       }
-      const snapshotIds = shouldRewrite
+      const snapshotIds = includeFiles
         ? new Set<string>((fileSnapshots ?? []).map((snapshot) => snapshot.file_id))
         : new Set<string>();
       const result: t.SharedMessagesResult = {
@@ -470,7 +479,13 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         createdAt: share.createdAt,
         updatedAt: share.updatedAt,
         conversationId: newConvoId,
-        messages: anonymizeMessages(messagesToShare, newConvoId, resolvedShareId, snapshotIds),
+        messages: anonymizeMessages(
+          messagesToShare,
+          newConvoId,
+          resolvedShareId,
+          snapshotIds,
+          includeFiles,
+        ),
       };
 
       return result;
@@ -706,6 +721,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         messages: conversationMessages,
         title,
         user,
+        snapshotFiles,
         ...(targetMessageId && { targetMessageId }),
         ...(expiredAt && { expiredAt }),
         ...(snapshotFiles && { fileSnapshots }),
@@ -744,11 +760,12 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         user,
         ...activeExpirationFilter<t.ISharedLink>(),
       })
-        .select('shareId targetMessageId _id')
+        .select('shareId targetMessageId snapshotFiles _id')
         .sort({ updatedAt: -1 })
         .lean()) as {
         shareId?: string;
         targetMessageId?: string;
+        snapshotFiles?: boolean;
         _id?: import('mongoose').Types.ObjectId;
       } | null;
 
@@ -760,6 +777,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         _id: share._id?.toString(),
         shareId: share.shareId || null,
         targetMessageId: share.targetMessageId,
+        snapshotFiles: share.snapshotFiles,
         success: true,
       };
     } catch (error) {
@@ -825,6 +843,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
           messages: updatedMessages,
           user,
           shareId: newShareId,
+          snapshotFiles,
           ...(resolvedTargetMessageId && { targetMessageId: resolvedTargetMessageId }),
           ...(hasNewExpiration && { expiredAt }),
           ...(snapshotFiles && { fileSnapshots }),

@@ -362,6 +362,7 @@ router.get('/link/:conversationId', requireJwtAuth, async (req, res) => {
       success: share.success,
       shareId: share.shareId,
       targetMessageId: share.targetMessageId,
+      snapshotFiles: share.snapshotFiles,
       conversationId: req.params.conversationId,
     });
   } catch (error) {
