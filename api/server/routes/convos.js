@@ -202,7 +202,7 @@ router.post('/archive', validateConvoAccess, configMiddleware, async (req, res) 
   }
 });
 
-router.post('/pin', validateConvoAccess, async (req, res) => {
+router.post('/pin', validateConvoAccess, configMiddleware, async (req, res) => {
   const { conversationId, pinned } = req.body?.arg ?? {};
 
   if (!conversationId) {
@@ -219,7 +219,11 @@ router.post('/pin', validateConvoAccess, async (req, res) => {
 
   try {
     const dbResponse = await db.saveConvo(
-      { userId: req.user.id },
+      {
+        userId: req.user.id,
+        isTemporary: req?.body?.isTemporary,
+        interfaceConfig: req?.config?.interfaceConfig,
+      },
       { conversationId, pinned },
       { context: `POST /api/convos/pin ${conversationId}` },
     );
