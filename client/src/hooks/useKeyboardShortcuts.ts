@@ -157,10 +157,10 @@ export const shortcutDefinitions = {
   toggleTemporaryChat: {
     labelKey: 'com_ui_temporary',
     groupKey: 'com_shortcut_group_chat',
-    displayMac: '⌘ ⇧ T',
-    displayOther: 'Ctrl+Shift+T',
-    ariaMac: 'Meta+Shift+T',
-    ariaOther: 'Control+Shift+T',
+    displayMac: '⌘ ⇧ Y',
+    displayOther: 'Ctrl+Shift+Y',
+    ariaMac: 'Meta+Shift+Y',
+    ariaOther: 'Control+Shift+Y',
   },
   archiveConversation: {
     labelKey: 'com_shortcut_archive_conversation',
@@ -313,6 +313,15 @@ function anyModalOpen(): boolean {
   return false;
 }
 
+function clickElement(selector: string): boolean {
+  const el = document.querySelector<HTMLElement>(selector);
+  if (!el) {
+    return false;
+  }
+  el.click();
+  return true;
+}
+
 function defaultAria(actionId: ShortcutActionId): string {
   const def = shortcutDefinitions[actionId];
   return isMac ? def.ariaMac : def.ariaOther;
@@ -417,17 +426,21 @@ export function useShortcutActions(): ShortcutAction[] {
 
   const handleFocusChatInput = useCallback(() => {
     const textarea = document.getElementById(mainTextareaId) as HTMLTextAreaElement | null;
-    textarea?.focus();
+    if (!textarea) {
+      return false;
+    }
+    textarea.focus();
+    return true;
   }, []);
 
   const handleToggleSidebar = useCallback(() => {
     setSidebarExpanded((prev) => !prev);
   }, [setSidebarExpanded]);
 
-  const handleOpenModelSelector = useCallback(() => {
-    const btn = document.querySelector<HTMLButtonElement>('[data-testid="model-selector-button"]');
-    btn?.click();
-  }, []);
+  const handleOpenModelSelector = useCallback(
+    () => clickElement('[data-testid="model-selector-button"]'),
+    [],
+  );
 
   const handleFocusSearch = useCallback(() => {
     const focusSearchInput = () => {
@@ -461,48 +474,54 @@ export function useShortcutActions(): ShortcutAction[] {
   const handleCopyLastResponse = useCallback(() => {
     const turns = document.querySelectorAll('.agent-turn');
     if (turns.length === 0) {
-      return;
+      return false;
     }
     const last = turns[turns.length - 1];
     const markdown = last.querySelector('.markdown');
     const text = (markdown ?? last).textContent ?? '';
-    if (text.trim()) {
-      navigator.clipboard.writeText(text.trim());
+    if (!text.trim()) {
+      return false;
     }
+    navigator.clipboard.writeText(text.trim());
+    return true;
   }, []);
 
   const handleCopyLastCode = useCallback(() => {
     const blocks = document.querySelectorAll('.agent-turn pre code');
     if (blocks.length === 0) {
-      return;
+      return false;
     }
     const last = blocks[blocks.length - 1];
     const text = last.textContent ?? '';
-    if (text.trim()) {
-      navigator.clipboard.writeText(text.trim());
+    if (!text.trim()) {
+      return false;
     }
+    navigator.clipboard.writeText(text.trim());
+    return true;
   }, []);
 
-  const handleStopGenerating = useCallback(() => {
-    const btn = document.querySelector<HTMLButtonElement>('[data-testid="stop-generation-button"]');
-    btn?.click();
-  }, []);
+  const handleStopGenerating = useCallback(
+    () => clickElement('[data-testid="stop-generation-button"]'),
+    [],
+  );
 
-  const handleRegenerateResponse = useCallback(() => {
-    const btn = document.querySelector<HTMLButtonElement>(
-      '[data-testid="regenerate-generation-button"]',
-    );
-    btn?.click();
-  }, []);
+  const handleRegenerateResponse = useCallback(
+    () => clickElement('[data-testid="regenerate-generation-button"]'),
+    [],
+  );
 
   const handleEditLastMessage = useCallback(() => {
     const userTurns = document.querySelectorAll('.user-turn');
     if (userTurns.length === 0) {
-      return;
+      return false;
     }
     const last = userTurns[userTurns.length - 1];
     const editBtn = last.querySelector<HTMLButtonElement>('button[id^="edit-"]');
-    editBtn?.click();
+    if (!editBtn) {
+      return false;
+    }
+    editBtn.click();
+    return true;
   }, []);
 
   const handleScrollToTop = useCallback(() => {
@@ -526,13 +545,19 @@ export function useShortcutActions(): ShortcutAction[] {
   const handleOpenSettings = useCallback(() => {
     const btn = document.querySelector<HTMLElement>('[data-testid="nav-user"]');
     if (!btn) {
-      return;
+      return false;
     }
-    btn.click();
-    setTimeout(() => {
+    const openSettingsItem = () => {
       const settingsItem = document.querySelector<HTMLElement>('[data-testid="nav-settings"]');
       settingsItem?.click();
-    }, 150);
+    };
+    if (btn.getAttribute('aria-expanded') === 'true') {
+      openSettingsItem();
+      return true;
+    }
+    btn.click();
+    setTimeout(openSettingsItem, 150);
+    return true;
   }, []);
 
   const handleToggleTemporaryChat = useCallback(() => {
@@ -560,16 +585,20 @@ export function useShortcutActions(): ShortcutAction[] {
     const btn =
       document.querySelector<HTMLButtonElement>('#attach-file-menu-button') ??
       document.querySelector<HTMLButtonElement>('#attach-file');
-    btn?.click();
+    if (!btn) {
+      return false;
+    }
+    btn.click();
+    return true;
   }, []);
 
   const handleArchiveConversation = useCallback(() => {
     const convoId = conversation?.conversationId;
     if (!convoId || convoId === 'new') {
-      return;
+      return false;
     }
     if (routeConvoId !== convoId) {
-      return;
+      return false;
     }
     archiveMutation.mutate(
       { conversationId: convoId, isArchived: true },
@@ -580,15 +609,16 @@ export function useShortcutActions(): ShortcutAction[] {
         },
       },
     );
+    return true;
   }, [conversation?.conversationId, routeConvoId, archiveMutation, newConversation, navigate]);
 
   const handleDeleteConversation = useCallback(() => {
     const convoId = conversation?.conversationId;
     if (!convoId || convoId === 'new') {
-      return;
+      return false;
     }
     if (routeConvoId !== convoId) {
-      return;
+      return false;
     }
     const messages = queryClient.getQueryData<TMessage[]>([QueryKeys.messages, convoId]);
     const lastMessage = messages?.[messages.length - 1];
@@ -606,6 +636,7 @@ export function useShortcutActions(): ShortcutAction[] {
         },
       },
     );
+    return true;
   }, [
     conversation?.conversationId,
     routeConvoId,
@@ -622,21 +653,17 @@ export function useShortcutActions(): ShortcutAction[] {
     }
   }, []);
 
-  const handleContinueResponse = useCallback(() => {
-    const btn = document.querySelector<HTMLButtonElement>(
-      '[data-testid="continue-generation-button"]',
-    );
-    btn?.click();
-  }, []);
+  const handleContinueResponse = useCallback(
+    () => clickElement('[data-testid="continue-generation-button"]'),
+    [],
+  );
 
-  const handleReadAloudLastResponse = useCallback(() => {
-    const btn = document.querySelector<HTMLButtonElement>('[data-testid="read-aloud-button"]');
-    btn?.click();
-  }, []);
+  const handleReadAloudLastResponse = useCallback(
+    () => clickElement('[data-testid="read-aloud-button"]'),
+    [],
+  );
 
-  const handleBookmarkConversation = useCallback(() => {
-    document.getElementById('bookmark-menu-button')?.click();
-  }, []);
+  const handleBookmarkConversation = useCallback(() => clickElement('#bookmark-menu-button'), []);
 
   const handleOpenPanel = useCallback(
     (panelId: string) => {
