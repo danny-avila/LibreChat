@@ -189,6 +189,72 @@ describe('share routes retention', () => {
     expect(mockSharedLinksAccess).toHaveBeenCalled();
   });
 
+  it('snapshots files by default when the user does not opt out', async () => {
+    mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
+    createSharedLink.mockResolvedValue({ _id: 'link-123', shareId: 'share-123' });
+
+    await request(buildApp()).post('/api/share/convo-123').send({ targetMessageId: 'msg-123' });
+
+    expect(createSharedLink).toHaveBeenCalledWith(
+      'user-123',
+      'convo-123',
+      'msg-123',
+      expect.anything(),
+      true,
+    );
+  });
+
+  it('does not snapshot files when the user opts out (snapshotFiles=false)', async () => {
+    mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
+    createSharedLink.mockResolvedValue({ _id: 'link-123', shareId: 'share-123' });
+
+    await request(buildApp())
+      .post('/api/share/convo-123')
+      .send({ targetMessageId: 'msg-123', snapshotFiles: false });
+
+    expect(createSharedLink).toHaveBeenCalledWith(
+      'user-123',
+      'convo-123',
+      'msg-123',
+      expect.anything(),
+      false,
+    );
+  });
+
+  it('forces snapshotFiles=false when the feature is disabled, ignoring the body flag', async () => {
+    isFileSnapshotEnabled.mockReturnValueOnce(false);
+    mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
+    createSharedLink.mockResolvedValue({ _id: 'link-123', shareId: 'share-123' });
+
+    await request(buildApp())
+      .post('/api/share/convo-123')
+      .send({ targetMessageId: 'msg-123', snapshotFiles: true });
+
+    expect(createSharedLink).toHaveBeenCalledWith(
+      'user-123',
+      'convo-123',
+      'msg-123',
+      expect.anything(),
+      false,
+    );
+  });
+
+  it('passes the snapshotFiles opt-out through on update', async () => {
+    mongoose.models.SharedLink.findOne.mockReturnValue(lean({ conversationId: 'convo-123' }));
+    mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
+    updateSharedLink.mockResolvedValue({ _id: 'link-456', shareId: 'share-456' });
+
+    await request(buildApp()).patch('/api/share/share-123').send({ snapshotFiles: false });
+
+    expect(updateSharedLink).toHaveBeenCalledWith(
+      'user-123',
+      'share-123',
+      undefined,
+      expect.anything(),
+      false,
+    );
+  });
+
   it('rejects new shares when the retained conversation expired', async () => {
     mockGetSharedLinkExpiration.mockResolvedValue(expiredExpiration);
     createSharedLink.mockResolvedValue({ _id: 'link-123', shareId: 'share-123' });

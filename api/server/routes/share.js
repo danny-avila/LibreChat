@@ -386,7 +386,9 @@ router.post(
       const role = await getRoleByName(req.user.role);
       const sharedLinksPerms = role?.permissions?.[PermissionTypes.SHARED_LINKS] || {};
       const grantPublic = sharedLinksPerms[Permissions.SHARE_PUBLIC] === true;
-      const snapshotFiles = isFileSnapshotEnabled(req.config);
+      // Per-link opt-out: snapshot only when the feature is enabled AND the user
+      // did not uncheck "share files" (body flag absent defaults to enabled).
+      const snapshotFiles = isFileSnapshotEnabled(req.config) && req.body?.snapshotFiles !== false;
 
       const created = await createSharedLink(
         req.user.id,
@@ -433,7 +435,7 @@ router.patch('/:shareId', requireJwtAuth, configMiddleware, async (req, res) => 
       req.params.shareId,
       targetMessageId,
       expiredAt,
-      isFileSnapshotEnabled(req.config),
+      isFileSnapshotEnabled(req.config) && req.body?.snapshotFiles !== false,
     );
     if (updatedShare) {
       if (updatedShare._id && expiredAt !== undefined) {

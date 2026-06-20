@@ -79,15 +79,20 @@ export function getSharedLink(conversationId: string): Promise<t.TSharedLinkGetR
 export function createSharedLink(
   conversationId: string,
   targetMessageId?: string,
+  snapshotFiles?: boolean,
 ): Promise<t.TSharedLinkResponse> {
-  return request.post(endpoints.createSharedLink(conversationId), { targetMessageId });
+  return request.post(endpoints.createSharedLink(conversationId), {
+    targetMessageId,
+    snapshotFiles,
+  });
 }
 
 export function updateSharedLink(
   shareId: string,
   targetMessageId?: string,
+  snapshotFiles?: boolean,
 ): Promise<t.TSharedLinkResponse> {
-  return request.patch(endpoints.updateSharedLink(shareId), { targetMessageId });
+  return request.patch(endpoints.updateSharedLink(shareId), { targetMessageId, snapshotFiles });
 }
 
 export function deleteSharedLink(shareId: string): Promise<m.TDeleteSharedLinkResponse> {
