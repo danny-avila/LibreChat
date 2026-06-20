@@ -133,7 +133,7 @@ const Registration: React.FC = () => {
       )}
       {registerUser.isSuccess && countdown > 0 && (
         <div
-          className="rounded-md border border-green-500 bg-green-500/10 px-3 py-2 text-sm text-text-secondary"
+          className="rounded-md border border-status-success-border bg-status-success-subtle px-3 py-2 text-sm text-text-secondary"
           role="alert"
         >
           {localize(
