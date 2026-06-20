@@ -70,8 +70,7 @@ const getDistricts = async (stateCode) => {
   if (!url) throw new Error('LGD_DISTRICTS_API_URL is not defined in environment variables');
 
   const params = {
-    'filters[state_code]': stateCode,
-    stateCode // Add direct parameter as fallback
+    'filters[state_code]': stateCode
   };
   const records = await fetchLgdData(url, params);
   return records.map(record => ({
@@ -85,8 +84,7 @@ const getSubdistricts = async (districtCode) => {
   if (!url) throw new Error('LGD_SUBDISTRICTS_API_URL is not defined in environment variables');
 
   const params = {
-    'filters[district_code]': districtCode,
-    districtCode // Add direct parameter as fallback
+    'filters[district_code]': districtCode
   };
   const records = await fetchLgdData(url, params);
   return records.map(record => ({
@@ -100,9 +98,7 @@ const getVillages = async (subdistrictCode) => {
   if (!url) throw new Error('LGD_VILLAGES_API_URL is not defined in environment variables');
 
   const params = {
-    'filters[subdistrict_code]': subdistrictCode,
-    'filters[subdistrictCode]': subdistrictCode,
-    subdistrictCode // Add direct parameter as fallback
+    'filters[subdistrictCode]': subdistrictCode
   };
   const records = await fetchLgdData(url, params);
   return records.map(record => ({
