@@ -8,7 +8,7 @@ const {
   AnnotationTypes,
   defaultOrderQuery,
 } = require('librechat-data-provider');
-const { recordMessage, getMessages, spendTokens, saveConvo } = require('~/models');
+const { saveMessage, getMessages, spendTokens, saveConvo } = require('~/models');
 const { retrieveAndProcessFile } = require('~/server/services/Files/process');
 
 /**
@@ -90,16 +90,17 @@ async function saveUserMessage(req, params) {
     convo.file_ids = params.file_ids;
   }
 
-  const message = await recordMessage(userMessage);
-  await saveConvo(
-    {
-      userId: req?.user?.id,
-      isTemporary: req?.body?.isTemporary,
-      interfaceConfig: req?.config?.interfaceConfig,
-    },
-    convo,
-    { context: 'api/server/services/Threads/manage.js #saveUserMessage' },
-  );
+  const retentionContext = {
+    userId: req?.user?.id,
+    isTemporary: req?.body?.isTemporary,
+    interfaceConfig: req?.config?.interfaceConfig,
+  };
+  const message = await saveMessage(retentionContext, userMessage, {
+    context: 'api/server/services/Threads/manage.js #saveUserMessage',
+  });
+  await saveConvo(retentionContext, convo, {
+    context: 'api/server/services/Threads/manage.js #saveUserMessage',
+  });
   return message;
 }
 
@@ -128,31 +129,36 @@ async function saveUserMessage(req, params) {
 async function saveAssistantMessage(req, params) {
   // const tokenCount = // TODO: need to count each content part
 
-  const message = await recordMessage({
-    user: params.user,
-    endpoint: params.endpoint,
-    messageId: params.messageId,
-    conversationId: params.conversationId,
-    parentMessageId: params.parentMessageId,
-    thread_id: params.thread_id,
-    /* For messages, use the assistant_id instead of model */
-    model: params.assistant_id,
-    content: params.content,
-    sender: 'Assistant',
-    isCreatedByUser: false,
-    text: params.text,
-    unfinished: false,
-    // tokenCount,
-    iconURL: params.iconURL,
-    spec: params.spec,
-  });
+  const retentionContext = {
+    userId: req?.user?.id,
+    isTemporary: req?.body?.isTemporary,
+    interfaceConfig: req?.config?.interfaceConfig,
+  };
+  const message = await saveMessage(
+    retentionContext,
+    {
+      user: params.user,
+      endpoint: params.endpoint,
+      messageId: params.messageId,
+      conversationId: params.conversationId,
+      parentMessageId: params.parentMessageId,
+      thread_id: params.thread_id,
+      /* For messages, use the assistant_id instead of model */
+      model: params.assistant_id,
+      content: params.content,
+      sender: 'Assistant',
+      isCreatedByUser: false,
+      text: params.text,
+      unfinished: false,
+      // tokenCount,
+      iconURL: params.iconURL,
+      spec: params.spec,
+    },
+    { context: 'api/server/services/Threads/manage.js #saveAssistantMessage' },
+  );
 
   await saveConvo(
-    {
-      userId: req?.user?.id,
-      isTemporary: req?.body?.isTemporary,
-      interfaceConfig: req?.config?.interfaceConfig,
-    },
+    retentionContext,
     {
       endpoint: params.endpoint,
       conversationId: params.conversationId,
@@ -236,7 +242,17 @@ async function syncMessages({
    * @param {dbMessage} params.apiMessage
    */
   const processNewMessage = async ({ dbMessage, apiMessage }) => {
-    recordPromises.push(recordMessage({ ...dbMessage, user: openai.req.user.id }));
+    recordPromises.push(
+      saveMessage(
+        {
+          userId: openai.req?.user?.id,
+          isTemporary: openai.req?.body?.isTemporary,
+          interfaceConfig: openai.req?.config?.interfaceConfig,
+        },
+        { ...dbMessage, user: openai.req.user.id },
+        { context: 'api/server/services/Threads/manage.js #syncMessages' },
+      ),
+    );
 
     if (!apiMessage.id.includes('msg_')) {
       return;
