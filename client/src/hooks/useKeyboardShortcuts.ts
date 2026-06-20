@@ -296,6 +296,14 @@ function getMainScrollContainer(): Element | null {
   return document.querySelector('main[role="main"]');
 }
 
+function anyModalOpen(): boolean {
+  return (
+    document.querySelector(
+      '[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]',
+    ) !== null
+  );
+}
+
 function defaultAria(actionId: ShortcutActionId): string {
   const def = shortcutDefinitions[actionId];
   return isMac ? def.ariaMac : def.ariaOther;
@@ -790,19 +798,13 @@ export function useShortcutBindings(): {
     (id: ShortcutActionId, binding: ShortcutBinding | null) => {
       setOverrides((prev) => {
         const next = { ...prev };
-        const platformKey: keyof ShortcutOverride = isMac ? 'mac' : 'other';
-        const existing = next[id] ?? { mac: null, other: null };
-        const updated: ShortcutOverride = { ...existing };
-        const value = binding ? bindingToString(binding) : null;
-        updated[platformKey] = value;
-
         const def = shortcutDefinitions[id];
-        const matchesDefault = updated.mac === def.ariaMac && updated.other === def.ariaOther;
+        const platformKey: keyof ShortcutOverride = isMac ? 'mac' : 'other';
+        const existing = next[id] ?? { mac: def.ariaMac, other: def.ariaOther };
+        const updated: ShortcutOverride = { ...existing };
+        updated[platformKey] = binding ? bindingToString(binding) : null;
 
-        const otherKey: keyof ShortcutOverride = isMac ? 'other' : 'mac';
-        if (updated[otherKey] === undefined) {
-          updated[otherKey] = isMac ? def.ariaOther : def.ariaMac;
-        }
+        const matchesDefault = updated.mac === def.ariaMac && updated.other === def.ariaOther;
 
         if (matchesDefault) {
           delete next[id];
@@ -880,7 +882,11 @@ export default function useKeyboardShortcuts() {
         return;
       }
 
-      if (shortcutsDialogOpen && matchedId !== 'showShortcuts') {
+      if (shortcutsDialogOpen) {
+        if (matchedId !== 'showShortcuts') {
+          return;
+        }
+      } else if (anyModalOpen()) {
         return;
       }
 

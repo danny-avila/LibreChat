@@ -79,15 +79,19 @@ export function bindingFromEvent(e: KeyboardEvent): ShortcutBinding | null {
   };
 }
 
+const MODIFIER_TOKENS: Record<string, 'meta' | 'ctrl' | 'alt' | 'shift'> = {
+  Meta: 'meta',
+  Cmd: 'meta',
+  Command: 'meta',
+  Control: 'ctrl',
+  Ctrl: 'ctrl',
+  Alt: 'alt',
+  Option: 'alt',
+  Shift: 'shift',
+};
+
 export function parseBinding(value: string | null | undefined): ShortcutBinding | null {
   if (!value) {
-    return null;
-  }
-  const parts = value
-    .split('+')
-    .map((p) => p.trim())
-    .filter(Boolean);
-  if (parts.length === 0) {
     return null;
   }
   const binding: ShortcutBinding = {
@@ -97,19 +101,21 @@ export function parseBinding(value: string | null | undefined): ShortcutBinding 
     shift: false,
     key: '',
   };
-  for (const part of parts) {
-    if (part === 'Meta' || part === 'Cmd' || part === 'Command') {
-      binding.meta = true;
-    } else if (part === 'Control' || part === 'Ctrl') {
-      binding.ctrl = true;
-    } else if (part === 'Alt' || part === 'Option') {
-      binding.alt = true;
-    } else if (part === 'Shift') {
-      binding.shift = true;
-    } else {
-      binding.key = normalizeKey(part);
+  let remaining = value;
+  let separatorIndex = remaining.indexOf('+');
+  while (separatorIndex > 0) {
+    const flag = MODIFIER_TOKENS[remaining.slice(0, separatorIndex)];
+    if (!flag) {
+      break;
     }
+    binding[flag] = true;
+    remaining = remaining.slice(separatorIndex + 1);
+    separatorIndex = remaining.indexOf('+');
   }
+  if (MODIFIER_TOKENS[remaining]) {
+    return null;
+  }
+  binding.key = normalizeKey(remaining);
   if (!binding.key) {
     return null;
   }

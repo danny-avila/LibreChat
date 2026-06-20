@@ -205,7 +205,7 @@ const HoverButtons = ({
               icon={props.icon}
               isActive={props.isActive}
               isLast={isLast}
-              dataTestId={isLast ? 'read-aloud-button' : undefined}
+              dataTestId={isLast && !isCreatedByUser ? 'read-aloud-button' : undefined}
             />
           )}
         />
