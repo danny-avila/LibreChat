@@ -17,7 +17,7 @@ import ConvoIcon from '~/components/Endpoints/ConvoIcon';
 import { useLocalize, useAuthContext } from '~/hooks';
 
 const containerClassName =
-  'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white dark:bg-presentation dark:text-white text-black dark:after:shadow-none ';
+  'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-surface-primary dark:bg-presentation text-text-primary dark:after:shadow-none ';
 
 /** Stable references: fresh literals re-initialized SplitText's springs and
  * re-rendered every grapheme span on each Landing render. */
@@ -186,7 +186,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
               endpointsConfig={endpointsConfig}
               containerClassName={containerClassName}
               context="landing"
-              className="h-2/3 w-2/3 text-black dark:text-white"
+              className="h-2/3 w-2/3 text-text-primary"
               size={41}
             />
             {startupConfig?.showBirthdayIcon && (
