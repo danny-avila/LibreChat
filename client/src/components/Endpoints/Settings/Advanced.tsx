@@ -285,13 +285,13 @@ export default function Settings({
           <div className="mb-2 flex w-full justify-between gap-2">
             <label
               htmlFor="resend-files"
-              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
+              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
             >
               <small>{localize('com_endpoint_plug_resend_files')}</small>
             </label>
             <label
               htmlFor="image-detail-value"
-              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
+              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
             >
               <small>{localize('com_endpoint_plug_image_detail')}</small>
             </label>
@@ -302,7 +302,7 @@ export default function Settings({
               className={cn(
                 defaultTextProps,
                 optionText,
-                'flex rounded-md bg-transparent py-2 text-xs focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 dark:border-gray-700',
+                'flex rounded-md bg-transparent py-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring-primary focus:ring-offset-2 border-border-light',
                 'pointer-events-none max-h-5 w-12 border-0 group-hover/temp:border-border-light',
               )}
             />

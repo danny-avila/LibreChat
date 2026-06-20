@@ -151,7 +151,7 @@ function LoadingStatusIcon({ serverName, onCancel, canCancel }: InitializingStat
       >
         <div className="relative size-4">
           <Spinner className="size-4 text-text-primary group-hover:opacity-0" />
-          <X className="absolute inset-0 size-4 text-red-500 opacity-0 group-hover:opacity-100" />
+          <X className="absolute inset-0 size-4 text-text-destructive opacity-0 group-hover:opacity-100" />
         </div>
       </button>
     );

@@ -23,7 +23,7 @@ function SkillToggle({ enabled, onChange, ariaLabel }: SkillToggleProps) {
       <span
         className={cn(
           'relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors duration-200',
-          enabled ? 'bg-green-500' : 'bg-border-medium',
+          enabled ? 'bg-surface-submit' : 'bg-border-medium',
         )}
       >
         <span
