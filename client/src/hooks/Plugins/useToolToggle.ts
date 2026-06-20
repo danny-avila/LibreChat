@@ -85,30 +85,42 @@ export function useToolToggle({
   }, [startupConfig?.interface?.defaultPinnedTools, toolKey]);
 
   /** Captured before mount (pre-seed): did the user already have a stored pin preference?
-   *  Distinguishes a real choice from `useLocalStorage`'s eager default-seed below. */
+   *  Distinguishes a real choice from `useLocalStorage`'s eager default-seed below. Legacy
+   *  auto-seeded values count as a preference, so existing users keep their state. */
   const [hadStoredPin] = useState(() => localStorage.getItem(`${localStorageKey}pinned`) != null);
 
-  const [isPinned, setIsPinned] = useLocalStorage<boolean>(
+  const [isPinned, setIsPinnedRaw] = useLocalStorage<boolean>(
     `${localStorageKey}pinned`,
     defaultPinned,
   );
 
+  /** Mark explicit pin toggles so a click made before `startupConfig` resolves is never
+   *  clobbered by the admin-default effect below. */
+  const userSetPin = useRef(false);
+  const setIsPinned = useCallback(
+    (value: boolean) => {
+      userSetPin.current = true;
+      setIsPinnedRaw(value);
+    },
+    [setIsPinnedRaw],
+  );
+
   /** Cold load: `startupConfig` can resolve after mount, so `defaultPinned` starts `false`
-   *  and gets eagerly persisted. Once config arrives, apply the real default for users with
-   *  no prior preference — runs once and never overrides an existing stored pin. */
+   *  and gets eagerly persisted. Once config arrives, apply the real default for users who
+   *  have neither a stored preference nor an in-session pin click — runs once. */
   const appliedDefaultPin = useRef(false);
   useEffect(() => {
     if (appliedDefaultPin.current || startupConfig == null) {
       return;
     }
     appliedDefaultPin.current = true;
-    if (hadStoredPin) {
+    if (hadStoredPin || userSetPin.current) {
       return;
     }
     if (defaultPinned !== isPinned) {
-      setIsPinned(defaultPinned);
+      setIsPinnedRaw(defaultPinned);
     }
-  }, [startupConfig, hadStoredPin, defaultPinned, isPinned, setIsPinned]);
+  }, [startupConfig, hadStoredPin, defaultPinned, isPinned, setIsPinnedRaw]);
 
   const handleChange = useCallback(
     ({ e, value }: { e?: React.ChangeEvent<HTMLInputElement>; value: ToolValue }) => {

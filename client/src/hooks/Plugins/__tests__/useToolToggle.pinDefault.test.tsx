@@ -1,6 +1,6 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
-import { renderHook, waitFor } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import { LocalStorageKeys, Tools } from 'librechat-data-provider';
 import { useToolToggle } from '../useToolToggle';
 
@@ -85,5 +85,24 @@ describe('useToolToggle — defaultPinnedTools seeding (real localStorage)', () 
     const { result } = renderCodeToggle();
 
     await waitFor(() => expect(result.current.isPinned).toBe(false));
+  });
+
+  it('preserves a pin toggled before startupConfig resolves', async () => {
+    // Cold load: user pins the tool before the config query resolves.
+    mockStartupConfig = undefined;
+    const { result, rerender } = renderCodeToggle();
+    await waitFor(() => expect(result.current.isPinned).toBe(false));
+
+    act(() => {
+      result.current.setIsPinned(true);
+    });
+    await waitFor(() => expect(result.current.isPinned).toBe(true));
+
+    // Config arrives WITHOUT this tool listed — the user's click must not be overwritten.
+    mockStartupConfig = { interface: { defaultPinnedTools: ['artifacts'] } };
+    rerender();
+
+    await waitFor(() => expect(result.current.isPinned).toBe(true));
+    expect(localStorage.getItem(pinKey)).toBe(JSON.stringify(true));
   });
 });
