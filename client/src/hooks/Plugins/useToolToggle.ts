@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useEffect } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import debounce from 'lodash/debounce';
 import { useRecoilState } from 'recoil';
 import { Constants, LocalStorageKeys } from 'librechat-data-provider';
@@ -84,10 +84,31 @@ export function useToolToggle({
     return Array.isArray(defaultPinnedTools) && defaultPinnedTools.includes(toolKey);
   }, [startupConfig?.interface?.defaultPinnedTools, toolKey]);
 
+  /** Captured before mount (pre-seed): did the user already have a stored pin preference?
+   *  Distinguishes a real choice from `useLocalStorage`'s eager default-seed below. */
+  const [hadStoredPin] = useState(() => localStorage.getItem(`${localStorageKey}pinned`) != null);
+
   const [isPinned, setIsPinned] = useLocalStorage<boolean>(
     `${localStorageKey}pinned`,
     defaultPinned,
   );
+
+  /** Cold load: `startupConfig` can resolve after mount, so `defaultPinned` starts `false`
+   *  and gets eagerly persisted. Once config arrives, apply the real default for users with
+   *  no prior preference — runs once and never overrides an existing stored pin. */
+  const appliedDefaultPin = useRef(false);
+  useEffect(() => {
+    if (appliedDefaultPin.current || startupConfig == null) {
+      return;
+    }
+    appliedDefaultPin.current = true;
+    if (hadStoredPin) {
+      return;
+    }
+    if (defaultPinned !== isPinned) {
+      setIsPinned(defaultPinned);
+    }
+  }, [startupConfig, hadStoredPin, defaultPinned, isPinned, setIsPinned]);
 
   const handleChange = useCallback(
     ({ e, value }: { e?: React.ChangeEvent<HTMLInputElement>; value: ToolValue }) => {
