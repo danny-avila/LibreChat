@@ -69,6 +69,10 @@ function createTailwindColors() {
     'text-warning': cssVar('--text-warning'),
     'text-destructive': cssVar('--text-destructive'),
 
+    link: cssVar('--link'),
+    'link-hover': cssVar('--link-hover'),
+    'link-visited': cssVar('--link-visited'),
+
     'ring-primary': cssVar('--ring-primary'),
 
     'header-primary': cssVar('--header-primary'),

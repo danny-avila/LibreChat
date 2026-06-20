@@ -62,7 +62,7 @@ export const Banner = ({ onHeightChange }: { onHeightChange?: (height: number) =
     >
       <div
         className={cn(
-          'text-md w-full truncate text-center [&_a]:text-blue-700 [&_a]:underline dark:[&_a]:text-blue-400',
+          'text-md w-full truncate text-center [&_a]:text-link [&_a]:underline',
           !banner.persistable && 'px-4',
         )}
         dangerouslySetInnerHTML={{ __html: sanitizedMessage }}

@@ -90,7 +90,7 @@ function RequestPasswordReset() {
         <p className="text-center text-lg text-gray-600 dark:text-gray-400">
           {localize('com_auth_email_verification_resend_prompt')}
           <button
-            className="ml-2 text-blue-600 hover:underline"
+            className="ml-2 text-link hover:underline"
             onClick={handleResendEmail}
             disabled={resendEmailMutation.isLoading}
           >
