@@ -56,9 +56,15 @@
   --amber-900: #78350f;
   --amber-950: #451a03;
   --blue-50: #eff6ff;
+  --blue-100: #dbeafe;
+  --blue-200: #bfdbfe;
+  --blue-300: #93c5fd;
   --blue-400: #60a5fa;
   --blue-500: #3b82f6;
   --blue-600: #2563eb;
+  --blue-700: #1d4ed8;
+  --blue-800: #1e40af;
+  --blue-900: #1e3a8a;
   --blue-950: #172554;
   --brand-purple: #ab68ff;
   --gizmo-gray-500: #999;
@@ -176,14 +182,19 @@ html {
   --border-destructive: var(--red-600);
   --status-success: var(--green-600);
   --status-success-subtle: var(--green-50);
+  --status-success-border: var(--green-300);
   --status-info: var(--blue-600);
   --status-info-subtle: var(--blue-50);
+  --status-info-border: var(--blue-300);
   --status-warning: var(--amber-600);
   --status-warning-subtle: var(--amber-50);
+  --status-warning-border: var(--amber-300);
   --status-error: var(--red-600);
   --status-error-subtle: var(--red-50);
+  --status-error-border: var(--red-300);
   --status-neutral: var(--gray-600);
   --status-neutral-subtle: var(--gray-100);
+  --status-neutral-border: var(--gray-300);
   /* These are test styles */
 
   --background: 0 0% 100%;
@@ -246,16 +257,21 @@ html {
   --border-heavy: var(--gray-500);
   --border-xheavy: var(--gray-400);
   --border-destructive: var(--red-500);
-  --status-success: var(--green-400);
+  --status-success: var(--green-300);
   --status-success-subtle: var(--green-950);
-  --status-info: var(--blue-400);
+  --status-success-border: var(--green-800);
+  --status-info: var(--blue-300);
   --status-info-subtle: var(--blue-950);
-  --status-warning: var(--amber-400);
+  --status-info-border: var(--blue-800);
+  --status-warning: var(--amber-300);
   --status-warning-subtle: var(--amber-950);
-  --status-error: var(--red-400);
+  --status-warning-border: var(--amber-800);
+  --status-error: var(--red-300);
   --status-error-subtle: var(--red-950);
-  --status-neutral: var(--gray-400);
+  --status-error-border: var(--red-800);
+  --status-neutral: var(--gray-300);
   --status-neutral-subtle: var(--gray-800);
+  --status-neutral-border: var(--gray-700);
   /* These are test styles */
 
   --background: 0 0% 7%;

@@ -13,11 +13,11 @@ const alertVariants: (
 ) => string = cva('relative flex gap-3 rounded-xl border px-4 py-3 text-sm', {
   variants: {
     variant: {
-      info: 'border-status-info bg-status-info-subtle text-status-info',
-      success: 'border-status-success bg-status-success-subtle text-status-success',
-      warning: 'border-status-warning bg-status-warning-subtle text-status-warning',
-      error: 'border-status-error bg-status-error-subtle text-status-error',
-      neutral: 'border-status-neutral bg-status-neutral-subtle text-status-neutral',
+      info: 'border-status-info-border bg-status-info-subtle text-status-info',
+      success: 'border-status-success-border bg-status-success-subtle text-status-success',
+      warning: 'border-status-warning-border bg-status-warning-subtle text-status-warning',
+      error: 'border-status-error-border bg-status-error-subtle text-status-error',
+      neutral: 'border-status-neutral-border bg-status-neutral-subtle text-status-neutral',
     },
   },
   defaultVariants: {
