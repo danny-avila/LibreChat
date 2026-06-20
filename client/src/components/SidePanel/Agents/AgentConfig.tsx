@@ -39,6 +39,7 @@ import Artifacts from './Artifacts';
 import AgentTool from './AgentTool';
 import CodeForm from './Code/Form';
 import MCPTools from './MCPTools';
+import Memory from './Memory';
 
 /** A skill lookup only counts as a confirmed miss on 404/403 — deleted or no
  *  longer shared. Transient/network/server errors must not present a valid
@@ -100,6 +101,7 @@ export default function AgentConfig() {
   const {
     codeEnabled,
     toolsEnabled,
+    memoryEnabled,
     contextEnabled,
     actionsEnabled,
     skillsEnabled,
@@ -112,6 +114,11 @@ export default function AgentConfig() {
     permissionType: PermissionTypes.SKILLS,
     permission: Permissions.USE,
   });
+  const hasMemoryAccess = useHasAccess({
+    permissionType: PermissionTypes.MEMORIES,
+    permission: Permissions.USE,
+  });
+  const showMemory = hasMemoryAccess && memoryEnabled;
   const showSkills = hasSkillsAccess && skillsEnabled;
   const { data: skillsData } = useListSkillsQuery({ limit: 100 }, { enabled: showSkills });
   const skillsMap = useMemo(() => {
@@ -365,6 +372,7 @@ export default function AgentConfig() {
           fileSearchEnabled ||
           artifactsEnabled ||
           contextEnabled ||
+          showMemory ||
           webSearchEnabled) && (
           <div className="mb-4 flex w-full flex-col items-start gap-3">
             <label className="text-token-text-primary block text-sm font-medium">
@@ -380,6 +388,8 @@ export default function AgentConfig() {
             {artifactsEnabled && <Artifacts />}
             {/* File Search */}
             {fileSearchEnabled && <FileSearch agent_id={agent_id} files={knowledge_files} />}
+            {/* Memory */}
+            {showMemory && <Memory />}
           </div>
         )}
         {/* MCP Section */}

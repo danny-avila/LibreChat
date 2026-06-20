@@ -53,6 +53,7 @@ import {
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
+import { registerMemoryTools } from './memory';
 import { primeResources } from './resources';
 
 /**
@@ -388,6 +389,10 @@ export interface InitializeAgentParams {
   skillAuthoringAvailable?: boolean;
   /** Whether the code execution environment is available (execute_code capability enabled) */
   codeEnvAvailable?: boolean;
+  /** Whether inline memory tools are available (memory capability enabled, memory
+   *  configured, and the user permitted). When true and the agent lists the `memory`
+   *  capability, `set_memory` + `delete_memory` are registered for the LLM. */
+  memoryAvailable?: boolean;
   /** Per-user skill active/inactive overrides for filtering the skill catalog. */
   skillStates?: Record<string, boolean>;
   /** Admin-configured default for shared skills (`true` = shared skills auto-activate). */
@@ -1042,6 +1047,23 @@ export async function initializeAgent(
      */
     logger.debug(
       `[initializeAgent] Agent "${agent.id}" requests execute_code but codeEnvAvailable=${String(params.codeEnvAvailable)}; skipping bash_tool + read_file registration.`,
+    );
+  }
+
+  /**
+   * Expand the `memory` capability marker into the inline `set_memory` +
+   * `delete_memory` tool pair, mirroring the `execute_code` expansion above.
+   * `params.memoryAvailable` is the full run-level gate (capability enabled,
+   * memory configured, user permitted); the marker on `agent.tools` is the
+   * per-agent opt-in. The runtime instances are created in the tool service.
+   */
+  const agentRequestsMemory = (agent.tools ?? []).includes(Tools.memory);
+  if (params.memoryAvailable === true && agentRequestsMemory) {
+    const memoryResult = registerMemoryTools({ toolRegistry, toolDefinitions });
+    toolDefinitions = memoryResult.toolDefinitions;
+  } else if (agentRequestsMemory) {
+    logger.debug(
+      `[initializeAgent] Agent "${agent.id}" requests memory but memoryAvailable=${String(params.memoryAvailable)}; skipping set_memory + delete_memory registration.`,
     );
   }
 

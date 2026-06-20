@@ -108,6 +108,7 @@ export type TEphemeralAgent = {
   execute_code?: boolean;
   artifacts?: string;
   skills?: boolean;
+  memory?: boolean;
 };
 
 export type TPayload = Partial<TMessage> &

@@ -9,9 +9,11 @@ import type {
   OpenAIClientOptions,
   StreamEventData,
   ToolEndCallback,
+  LCToolRegistry,
   EventHandler,
   ToolEndData,
   LLMConfig,
+  LCTool,
 } from '@librechat/agents';
 import type { BaseMessage, ToolMessage } from '@librechat/agents/langchain/messages';
 import type { DynamicStructuredTool } from '@librechat/agents/langchain/tools';
@@ -52,6 +54,13 @@ function normalizeMemoryLLMConfig(llmConfig?: Partial<LLMConfig>): SanitizedMemo
 
 export const memoryInstructions =
   'The system automatically stores important user information and can update or delete memories based on user requests, enabling dynamic memory management.';
+
+export const SET_MEMORY_TOOL_NAME = 'set_memory';
+export const DELETE_MEMORY_TOOL_NAME = 'delete_memory';
+
+const SET_MEMORY_DESCRIPTION = 'Saves important information about the user into memory.';
+const DELETE_MEMORY_DESCRIPTION =
+  'Deletes specific memory data about the user using the provided key. For updating existing memories, use the `set_memory` tool instead';
 
 const getDefaultInstructions = (
   validKeys?: string[],
@@ -178,8 +187,8 @@ export const createMemoryTool = ({
       }
     },
     {
-      name: 'set_memory',
-      description: 'Saves important information about the user into memory.',
+      name: SET_MEMORY_TOOL_NAME,
+      description: SET_MEMORY_DESCRIPTION,
       responseFormat: 'content_and_artifact',
       schema: z.object({
         key: z
@@ -202,7 +211,7 @@ export const createMemoryTool = ({
 /**
  * Creates a delete memory tool instance with user context
  */
-const createDeleteMemoryTool = ({
+export const createDeleteMemoryTool = ({
   userId,
   deleteMemory,
   validKeys,
@@ -210,7 +219,7 @@ const createDeleteMemoryTool = ({
   userId: string | ObjectId;
   deleteMemory: MemoryMethods['deleteMemory'];
   validKeys?: string[];
-}) => {
+}): DynamicStructuredTool => {
   return tool(
     async ({ key }) => {
       try {
@@ -243,9 +252,8 @@ const createDeleteMemoryTool = ({
       }
     },
     {
-      name: 'delete_memory',
-      description:
-        'Deletes specific memory data about the user using the provided key. For updating existing memories, use the `set_memory` tool instead',
+      name: DELETE_MEMORY_TOOL_NAME,
+      description: DELETE_MEMORY_DESCRIPTION,
       responseFormat: 'content_and_artifact',
       schema: z.object({
         key: z
@@ -259,6 +267,78 @@ const createDeleteMemoryTool = ({
     },
   );
 };
+/**
+ * LLM-facing definitions for the inline memory tool pair, used by the
+ * event-driven (definitions-only) loader. The `memory` capability string on
+ * an agent's `tools` array expands into this pair at initialize time via
+ * {@link registerMemoryTools}; the runtime instances created in the tool
+ * service enforce `validKeys`/`tokenLimit` and emit memory artifacts.
+ */
+export const memoryToolDefinitions: LCTool[] = [
+  {
+    name: SET_MEMORY_TOOL_NAME,
+    description: SET_MEMORY_DESCRIPTION,
+    parameters: {
+      type: 'object',
+      properties: {
+        key: { type: 'string', description: 'The key identifier for this memory' },
+        value: {
+          type: 'string',
+          description:
+            'Value MUST be a complete sentence that fully describes relevant user information.',
+        },
+      },
+      required: ['key', 'value'],
+    },
+  },
+  {
+    name: DELETE_MEMORY_TOOL_NAME,
+    description: DELETE_MEMORY_DESCRIPTION,
+    parameters: {
+      type: 'object',
+      properties: {
+        key: { type: 'string', description: 'The key identifier of the memory to delete' },
+      },
+      required: ['key'],
+    },
+  },
+] as LCTool[];
+
+/**
+ * Idempotently registers the inline memory tool pair (`set_memory` +
+ * `delete_memory`) into the run's tool registry and tool-definition list.
+ * Mirrors `registerCodeExecutionTools`: the `memory` capability string stays
+ * as the `agent.tools` trigger marker and expands into this pair here so the
+ * definitions-only loader surfaces both tools to the LLM.
+ */
+export function registerMemoryTools({
+  toolRegistry,
+  toolDefinitions,
+}: {
+  toolRegistry?: LCToolRegistry;
+  toolDefinitions?: LCTool[];
+}): { toolDefinitions: LCTool[]; registered: string[] } {
+  const inputDefinitions = toolDefinitions ?? [];
+  const newDefs: LCTool[] = [];
+  const registered: string[] = [];
+
+  for (const def of memoryToolDefinitions) {
+    const inRegistry = toolRegistry?.has(def.name) === true;
+    const inDefs = inputDefinitions.some((d) => d.name === def.name);
+    if (inRegistry || inDefs) {
+      continue;
+    }
+    toolRegistry?.set(def.name, def);
+    newDefs.push(def);
+    registered.push(def.name);
+  }
+
+  if (newDefs.length === 0) {
+    return { toolDefinitions: inputDefinitions, registered };
+  }
+  return { toolDefinitions: [...inputDefinitions, ...newDefs], registered };
+}
+
 export class BasicToolEndHandler implements EventHandler {
   private callback?: ToolEndCallback;
   constructor(callback?: ToolEndCallback) {

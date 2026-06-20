@@ -5,10 +5,14 @@ const {
   toolkitParent,
   createSafeUser,
   mcpToolPattern,
+  createMemoryTool,
   loadWebSearchAuth,
   getCodeApiAuthHeaders,
   buildImageToolContext,
+  SET_MEMORY_TOOL_NAME,
   buildWebSearchContext,
+  createDeleteMemoryTool,
+  DELETE_MEMORY_TOOL_NAME,
   buildWebSearchDynamicContext,
 } = require('@librechat/api');
 const {
@@ -48,7 +52,7 @@ const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getMCPServerTools } = require('~/server/services/Config');
 const { getMCPServersRegistry } = require('~/config');
-const { getRoleByName } = require('~/models');
+const { getRoleByName, setMemory, deleteMemory, getFormattedMemories } = require('~/models');
 
 /**
  * Validates the availability and authentication of tools for a user based on environment variables or user-specific plugin authentication values.
@@ -354,6 +358,33 @@ const loadTools = async ({
           onSearchResults,
           onGetHighlights,
           logger,
+        });
+      };
+      continue;
+    } else if (tool === SET_MEMORY_TOOL_NAME) {
+      const memoryConfig = options.req?.config?.memory;
+      const validKeys = memoryConfig?.validKeys;
+      const tokenLimit = memoryConfig?.tokenLimit;
+      requestedTools[tool] = async () => {
+        let totalTokens = 0;
+        if (tokenLimit) {
+          try {
+            const formatted = await getFormattedMemories({ userId: user });
+            totalTokens = formatted?.totalTokens ?? 0;
+          } catch (error) {
+            logger.error('[handleTools] Failed to load memory token count for set_memory', error);
+          }
+        }
+        return createMemoryTool({ userId: user, setMemory, validKeys, tokenLimit, totalTokens });
+      };
+      continue;
+    } else if (tool === DELETE_MEMORY_TOOL_NAME) {
+      const memoryConfig = options.req?.config?.memory;
+      requestedTools[tool] = async () => {
+        return createDeleteMemoryTool({
+          userId: user,
+          deleteMemory,
+          validKeys: memoryConfig?.validKeys,
         });
       };
       continue;
