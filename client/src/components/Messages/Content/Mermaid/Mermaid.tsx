@@ -175,7 +175,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
         <MermaidHeader codeContent={children} showCode={showCode} onToggleCode={handleToggleCode} />
         <div className="border-t border-border-light bg-surface-tertiary p-4">
           <div className="mb-2 flex items-center justify-between">
-            <span className="font-semibold text-red-600 dark:text-red-400">
+            <span className="font-semibold text-text-destructive">
               {localize('com_ui_mermaid_failed')}
             </span>
             <button
@@ -187,7 +187,7 @@ const Mermaid: React.FC<MermaidProps> = memo(({ children, id, theme }) => {
               {localize('com_ui_retry')}
             </button>
           </div>
-          <pre className="overflow-auto text-xs text-red-600 dark:text-red-300">
+          <pre className="overflow-auto text-xs text-text-destructive">
             {error.message}
           </pre>
           {showCode && (
