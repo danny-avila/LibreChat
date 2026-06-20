@@ -1,8 +1,8 @@
-import { RetentionMode } from 'librechat-data-provider';
+import { RetentionMode, isForcedTemporaryRetention } from 'librechat-data-provider';
 import type { DeleteResult, FilterQuery, Model } from 'mongoose';
-import type { AppConfig, IMessage } from '~/types';
+import type { AppConfig, IConversation, IMessage } from '~/types';
+import { createFallbackRetentionDate, forceConversationMessagesTemporary } from '~/utils/retention';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
-import { createFallbackRetentionDate } from '~/utils/retention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '~/config/winston';
 
@@ -169,6 +169,26 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           { $set: { isTemporary: false } },
         );
         message.isTemporary = false;
+      }
+
+      const forcedExpiredAt = update.expiredAt;
+      if (
+        isForcedTemporaryRetention(interfaceConfig?.retentionMode) &&
+        forcedExpiredAt instanceof Date
+      ) {
+        const Conversation = mongoose.models.Conversation as Model<IConversation>;
+        const convoResult = await Conversation.updateOne(
+          { conversationId, user: userId, expiredAt: null },
+          { $set: { isTemporary: true, expiredAt: forcedExpiredAt } },
+        );
+        if (convoResult.modifiedCount > 0) {
+          await forceConversationMessagesTemporary(
+            Message,
+            userId,
+            conversationId,
+            forcedExpiredAt,
+          );
+        }
       }
 
       return message.toObject();
