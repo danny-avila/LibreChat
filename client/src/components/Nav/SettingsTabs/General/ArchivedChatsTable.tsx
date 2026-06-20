@@ -178,7 +178,7 @@ export default function ArchivedChatsTable({
                 to={`/c/${conversationId}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group flex items-center gap-1 truncate rounded-sm text-blue-600 underline decoration-1 underline-offset-2 hover:decoration-2 focus:outline-none focus:ring-2 focus:ring-ring"
+                className="group flex items-center gap-1 truncate rounded-sm text-link underline decoration-1 underline-offset-2 hover:decoration-2 focus:outline-none focus:ring-2 focus:ring-ring"
                 title={title}
                 aria-label={localize('com_ui_open_archived_chat_new_tab_title', { title })}
               >
