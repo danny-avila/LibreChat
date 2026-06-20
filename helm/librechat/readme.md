@@ -53,3 +53,16 @@ also register this LibreChat callback URL with your identity provider:
 ```text
 https://<librechat-domain>/api/admin/oauth/openid/callback
 ```
+
+## Langfuse Fanout
+
+The chart can optionally deploy an OpenTelemetry Collector that forwards
+tenant-scoped Langfuse traces to both a central Langfuse project and the tenant
+Langfuse project. It is disabled by default.
+
+When enabled, the chart also sets `LANGFUSE_FANOUT_ENABLED` and
+`LANGFUSE_FANOUT_BASE_URL` for the LibreChat app unless those values are already
+provided in `librechat.configEnv`.
+
+See [`otel/langfuse-fanout/README.md`](../../otel/langfuse-fanout/README.md)
+for the central Langfuse secret and values example.
