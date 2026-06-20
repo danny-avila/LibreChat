@@ -279,7 +279,8 @@ export const shortcutDefinitions = {
 export type ShortcutActionId = keyof typeof shortcutDefinitions;
 export type ShortcutAction = ShortcutDefinition & {
   id: ShortcutActionId;
-  run: () => void;
+  /** Returns `false` when the action was a no-op so the native key event is not prevented. */
+  run: () => boolean | void;
 };
 
 const shortcutActionIds = Object.keys(shortcutDefinitions) as ShortcutActionId[];
@@ -536,16 +537,17 @@ export function useShortcutActions(): ShortcutAction[] {
 
   const handleToggleTemporaryChat = useCallback(() => {
     if (hasAccessToTemporaryChat !== true) {
-      return;
+      return false;
     }
     if (!routeConvoId) {
-      return;
+      return false;
     }
     const hasMessages = Array.isArray(conversation?.messages) && conversation.messages.length >= 1;
     if (hasMessages || isSubmitting) {
-      return;
+      return false;
     }
     setIsTemporary((prev) => !prev);
+    return true;
   }, [
     hasAccessToTemporaryChat,
     routeConvoId,
@@ -670,7 +672,7 @@ export function useShortcutActions(): ShortcutAction[] {
   const handleOpenBookmarks = useCallback(() => handleOpenPanel('bookmarks'), [handleOpenPanel]);
   const handleOpenMCP = useCallback(() => handleOpenPanel('mcp-builder'), [handleOpenPanel]);
 
-  const handlers = useMemo<Record<ShortcutActionId, () => void>>(
+  const handlers = useMemo<Record<ShortcutActionId, () => boolean | void>>(
     () => ({
       showShortcuts: handleShowShortcuts,
       newChat: handleNewChat,
@@ -934,8 +936,10 @@ export default function useKeyboardShortcuts() {
         return;
       }
 
-      e.preventDefault();
-      actionMap.get(matchedId)?.run();
+      const handled = actionMap.get(matchedId)?.run();
+      if (handled !== false) {
+        e.preventDefault();
+      }
     },
     [actionMap, bindingMap, shortcutsDialogOpen],
   );
