@@ -23,8 +23,8 @@ import type {
   Response as UndiciResponse,
 } from 'undici';
 import type { Socket } from 'net';
-import { MCPConnection } from '~/mcp/connection';
 import { createSSRFSafeUndiciConnect, resolveHostnameSSRF } from '~/auth';
+import { MCPConnection } from '~/mcp/connection';
 
 type CustomFetch = (input: UndiciRequestInfo, init?: UndiciRequestInit) => Promise<UndiciResponse>;
 type LookupAddress = string | Array<{ address: string; family: number }>;
@@ -71,7 +71,7 @@ jest.mock('~/auth', () => ({
 }));
 
 jest.mock('~/mcp/mcpConfig', () => ({
-  mcpConfig: { CONNECTION_CHECK_TTL: 0 },
+  mcpConfig: { CONNECTION_CHECK_TTL: 0, TOOLS_LIST_MAX_PAGES: 50 },
 }));
 
 const mockedResolveHostnameSSRF = resolveHostnameSSRF as jest.MockedFunction<
