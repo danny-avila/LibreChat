@@ -3,6 +3,7 @@ const { Calculator, createSearchTool, createCodeExecutionTool } = require('@libr
 const {
   checkAccess,
   toolkitParent,
+  isMemoryEnabled,
   createSafeUser,
   mcpToolPattern,
   createMemoryTool,
@@ -53,6 +54,34 @@ const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getMCPServerTools } = require('~/server/services/Config');
 const { getMCPServersRegistry } = require('~/config');
 const { getRoleByName, setMemory, deleteMemory, getFormattedMemories } = require('~/models');
+
+/**
+ * Re-checks the full memory gate before constructing inline memory tools.
+ * The event-driven executor loads tools by name, so an unsolicited
+ * `set_memory`/`delete_memory` call must not bypass the config, opt-out, and
+ * permission checks enforced when the tools were registered.
+ * @param {ServerRequest} [req]
+ * @returns {Promise<boolean>}
+ */
+async function isMemoryToolUsable(req) {
+  if (!isMemoryEnabled(req?.config?.memory)) {
+    return false;
+  }
+  if (req?.user?.personalization?.memories === false) {
+    return false;
+  }
+  try {
+    return await checkAccess({
+      user: req.user,
+      permissionType: PermissionTypes.MEMORIES,
+      permissions: [Permissions.USE],
+      getRoleByName,
+    });
+  } catch (error) {
+    logger.error('[handleTools] Memory permission check failed:', error);
+    return false;
+  }
+}
 
 /**
  * Validates the availability and authentication of tools for a user based on environment variables or user-specific plugin authentication values.
@@ -366,6 +395,9 @@ const loadTools = async ({
       const validKeys = memoryConfig?.validKeys;
       const tokenLimit = memoryConfig?.tokenLimit;
       requestedTools[tool] = async () => {
+        if (!(await isMemoryToolUsable(options.req))) {
+          return null;
+        }
         let totalTokens = 0;
         if (tokenLimit) {
           try {
@@ -381,6 +413,9 @@ const loadTools = async ({
     } else if (tool === DELETE_MEMORY_TOOL_NAME) {
       const memoryConfig = options.req?.config?.memory;
       requestedTools[tool] = async () => {
+        if (!(await isMemoryToolUsable(options.req))) {
+          return null;
+        }
         return createDeleteMemoryTool({
           userId: user,
           deleteMemory,

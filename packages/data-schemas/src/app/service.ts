@@ -5,7 +5,12 @@ import {
   skillSyncConfigSchema,
   summarizationConfigSchema,
 } from 'librechat-data-provider';
-import type { TCustomConfig, FileSources, DeepPartial } from 'librechat-data-provider';
+import type {
+  FileSources,
+  DeepPartial,
+  TCustomConfig,
+  TAgentsEndpoint,
+} from 'librechat-data-provider';
 import type { AppConfig, FunctionTool } from '~/types/app';
 import { loadMemoryConfig, isMemoryEnabled } from './memory';
 import { loadDefaultInterface } from './interface';
@@ -162,12 +167,20 @@ export const AppService = async (params?: {
   /** The `memory` capability only functions when memory is configured and
    *  enabled. Drop it from the served capability set otherwise so the agent
    *  builder toggle, ephemeral badge, and backend capability gate stay
-   *  consistent instead of exposing an inert memory toggle. */
-  if (!isMemoryEnabled(memory) && Array.isArray(agentsDefaults.capabilities)) {
-    agentsDefaults.capabilities = agentsDefaults.capabilities.filter(
+   *  consistent instead of exposing an inert memory toggle. Applied to the
+   *  final served agents config — `loadEndpoints` reparses any
+   *  `endpoints.agents` block and would otherwise restore the default
+   *  capability. */
+  const memoryDisabled = !isMemoryEnabled(memory);
+  const stripInertMemoryCapability = (agentsEndpoint?: Partial<TAgentsEndpoint>): void => {
+    if (!memoryDisabled || !agentsEndpoint || !Array.isArray(agentsEndpoint.capabilities)) {
+      return;
+    }
+    agentsEndpoint.capabilities = agentsEndpoint.capabilities.filter(
       (capability) => capability !== AgentCapabilities.memory,
     );
-  }
+  };
+  stripInertMemoryCapability(agentsDefaults);
 
   if (!Object.keys(config).length) {
     const appConfig = {
@@ -180,6 +193,7 @@ export const AppService = async (params?: {
   }
 
   const loadedEndpoints = loadEndpoints(config, agentsDefaults);
+  stripInertMemoryCapability(loadedEndpoints[EModelEndpoint.agents]);
 
   const appConfig: AppConfig = {
     ...defaultConfig,

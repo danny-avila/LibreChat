@@ -174,4 +174,14 @@ describe('AppService memory capability', () => {
       AgentCapabilities.memory,
     );
   });
+
+  it('strips the memory capability even when an agents endpoint block is configured', async () => {
+    const config = {
+      endpoints: { [EModelEndpoint.agents]: { disableBuilder: true } },
+    } as DeepPartial<TCustomConfig>;
+    const result = await AppService({ config });
+    expect(result.endpoints?.[EModelEndpoint.agents]?.capabilities).not.toContain(
+      AgentCapabilities.memory,
+    );
+  });
 });
