@@ -157,7 +157,7 @@ function SkillCard({
         <span
           className={cn(
             'ml-auto flex size-5 shrink-0 items-center justify-center rounded-full transition-all duration-200',
-            selected ? 'scale-100 bg-green-500 text-white opacity-100' : 'scale-75 opacity-0',
+            selected ? 'scale-100 bg-surface-submit text-white opacity-100' : 'scale-75 opacity-0',
           )}
           aria-hidden="true"
         >
