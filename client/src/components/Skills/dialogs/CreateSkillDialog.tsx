@@ -136,7 +136,7 @@ export default function CreateSkillDialog({
                 },
               })}
             />
-            {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
+            {errors.name && <p className="text-xs text-text-destructive">{errors.name.message}</p>}
           </div>
 
           {/* Description */}
