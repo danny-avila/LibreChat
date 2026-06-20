@@ -220,7 +220,6 @@ export const tokenValues: Record<string, { prompt: number; completion: number }>
     devstral: { prompt: 0.4, completion: 2.0 },
     'mistral-medium': { prompt: 1.5, completion: 7.5 },
     voxtral: { prompt: 0.1, completion: 0.4 },
-    'voxtral-small': { prompt: 0.1, completion: 0.4 },
     holo2: { prompt: 0.3, completion: 0.7 },
     'ministral-3b': { prompt: 0.04, completion: 0.04 },
     'ministral-8b': { prompt: 0.1, completion: 0.1 },
