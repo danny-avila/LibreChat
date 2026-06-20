@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo } from 'react';
-import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { useMatch, useNavigate } from 'react-router-dom';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
+import { PermissionTypes, Permissions, QueryKeys } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { ShortcutBinding } from '~/utils/shortcuts';
 import type { ShortcutOverride } from '~/store/misc';
@@ -18,6 +18,7 @@ import { useArchiveConvoMutation, useDeleteConversationMutation } from '~/data-p
 import { clearMessagesCache } from '~/utils';
 import { mainTextareaId } from '~/common';
 import useNewConvo from './useNewConvo';
+import { useHasAccess } from '~/hooks';
 import store from '~/store';
 
 const isMac = isMacPlatform;
@@ -395,6 +396,10 @@ export function useShortcutActions(): ShortcutAction[] {
   const [sidebarExpanded, setSidebarExpanded] = useRecoilState(store.sidebarExpanded);
   const setShowShortcutsDialog = useSetRecoilState(store.showShortcutsDialog);
   const setIsTemporary = useSetRecoilState(store.isTemporary);
+  const hasAccessToTemporaryChat = useHasAccess({
+    permissionType: PermissionTypes.TEMPORARY_CHAT,
+    permission: Permissions.USE,
+  });
 
   const archiveMutation = useArchiveConvoMutation();
   const deleteMutation = useDeleteConversationMutation();
@@ -530,6 +535,9 @@ export function useShortcutActions(): ShortcutAction[] {
   }, []);
 
   const handleToggleTemporaryChat = useCallback(() => {
+    if (hasAccessToTemporaryChat !== true) {
+      return;
+    }
     if (!routeConvoId) {
       return;
     }
@@ -538,7 +546,13 @@ export function useShortcutActions(): ShortcutAction[] {
       return;
     }
     setIsTemporary((prev) => !prev);
-  }, [routeConvoId, conversation?.messages, isSubmitting, setIsTemporary]);
+  }, [
+    hasAccessToTemporaryChat,
+    routeConvoId,
+    conversation?.messages,
+    isSubmitting,
+    setIsTemporary,
+  ]);
 
   const handleUploadFile = useCallback(() => {
     const btn =
