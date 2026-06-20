@@ -113,6 +113,7 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
       onMouseDown={(e) => e.preventDefault()}
       onClick={addQuote}
       aria-label={localize('com_ui_add_to_chat')}
+      data-testid="add-to-chat-button"
       style={{
         top: selection.top,
         left: selection.left,

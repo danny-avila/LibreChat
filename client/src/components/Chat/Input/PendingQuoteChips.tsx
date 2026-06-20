@@ -34,6 +34,7 @@ function PendingQuoteChips({ conversationId }: { conversationId: string }) {
       className="flex flex-wrap gap-1.5 px-2 pt-2"
       role="list"
       aria-label={localize('com_ui_quotes_queued')}
+      data-testid="pending-quote-chips"
     >
       {quotes.map((text) => (
         <span

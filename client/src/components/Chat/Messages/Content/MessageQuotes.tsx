@@ -24,6 +24,7 @@ function MessageQuotes({ quotes }: { quotes?: string[] }) {
       className="flex w-full flex-col gap-1.5"
       role="list"
       aria-label={localize('com_ui_referenced_quotes')}
+      data-testid="message-quotes"
     >
       {quotes.map((text, index) => (
         <div
