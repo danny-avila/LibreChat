@@ -33,6 +33,7 @@ import { ClearChats } from '../SettingsTabs/Data/ClearChats';
 import { TokenCredits, AutoRefill } from './BillingControls';
 import SharedLinks from '../SettingsTabs/Data/SharedLinks';
 import { showThinkingAtom } from '~/store/showThinking';
+import ProviderKeys from '../SettingsTabs/ProviderKeys';
 import Avatar from '../SettingsTabs/Account/Avatar';
 import About from '../SettingsTabs/About/About';
 import ApiKeys from '../SettingsTabs/ApiKeys';
@@ -466,6 +467,15 @@ export const registry: SettingEntry[] = [
     Component: SharedLinks,
   },
   // Data controls · API keys
+  {
+    id: 'providerApiKeys',
+    tab: DATA,
+    section: 'apiKeys',
+    labelKey: 'com_ui_settings_label_provider_api_keys',
+    keywords: ['api', 'key', 'keys', 'provider', 'endpoint', 'credentials'],
+    show: (ctx) => ctx.hasUserProvidedEndpoints,
+    Component: ProviderKeys,
+  },
   {
     id: 'agentApiKeys',
     tab: DATA,

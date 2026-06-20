@@ -10,6 +10,7 @@ const ctx: SettingsContextValue = {
   hasAnyPersonalizationFeature: false,
   hasMemoryOptOut: false,
   hasRemoteAgents: false,
+  hasUserProvidedEndpoints: false,
   hasMultiConvo: false,
   hasPrompts: false,
   isLocalProvider: true,
