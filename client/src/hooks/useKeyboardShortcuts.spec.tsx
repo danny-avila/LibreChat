@@ -89,6 +89,13 @@ function appendCodeBlock(code: string) {
   document.body.appendChild(turn);
 }
 
+function appendResponseCopyButton(onClick: () => void) {
+  const button = document.createElement('button');
+  button.dataset.testid = 'copy-response-button';
+  button.addEventListener('click', onClick);
+  document.body.appendChild(button);
+}
+
 describe('binding resolution helpers', () => {
   it('falls back to the default binding when there is no override', () => {
     const binding = effectiveBinding('newChat');
@@ -178,6 +185,21 @@ describe('global shortcut dispatch', () => {
 });
 
 describe('clipboard shortcuts', () => {
+  it('copies the last response through the existing message copy button', () => {
+    const firstCopy = jest.fn();
+    const secondCopy = jest.fn();
+    renderHarness();
+    appendResponseCopyButton(firstCopy);
+    appendResponseCopyButton(secondCopy);
+
+    const event = dispatchKey({ key: ';', ctrlKey: true, shiftKey: true });
+
+    expect(firstCopy).not.toHaveBeenCalled();
+    expect(secondCopy).toHaveBeenCalledTimes(1);
+    expect(copyMock).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(true);
+  });
+
   it('copies the last code block through the clipboard fallback helper', () => {
     renderHarness();
     appendCodeBlock('const x = 1;');
@@ -194,6 +216,28 @@ describe('clipboard shortcuts', () => {
     const event = dispatchKey({ key: 'k', ctrlKey: true, shiftKey: true });
 
     expect(copyMock).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+  });
+});
+
+describe('no-op shortcuts', () => {
+  it('does not prevent submit shortcut when the send button is unavailable', () => {
+    renderHarness();
+
+    const event = dispatchKey({ key: 'Enter', ctrlKey: true });
+
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('does not prevent submit shortcut when the send button is disabled', () => {
+    renderHarness();
+    const button = document.createElement('button');
+    button.dataset.testid = 'send-button';
+    button.disabled = true;
+    document.body.appendChild(button);
+
+    const event = dispatchKey({ key: 'Enter', ctrlKey: true });
+
     expect(event.defaultPrevented).toBe(false);
   });
 });

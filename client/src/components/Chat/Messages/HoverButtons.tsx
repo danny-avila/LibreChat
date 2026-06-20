@@ -225,6 +225,7 @@ const HoverButtons = ({
             ? 'group-hover:opacity-100 [@media(hover:hover)]:opacity-0'
             : '',
         )}
+        dataTestId={!isCreatedByUser ? 'copy-response-button' : undefined}
       />
 
       {/* Edit Button */}

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import copy from 'copy-to-clipboard';
+import { useToastContext } from '@librechat/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { useMatch, useNavigate } from 'react-router-dom';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
@@ -14,11 +15,11 @@ import {
   isMacPlatform,
   parseBinding,
 } from '~/utils/shortcuts';
+import { mainTextareaId, NotificationSeverity } from '~/common';
 import { useArchiveConvoMutation } from '~/data-provider';
+import { useHasAccess, useLocalize } from '~/hooks';
 import { clearMessagesCache } from '~/utils';
-import { mainTextareaId } from '~/common';
 import useNewConvo from './useNewConvo';
-import { useHasAccess } from '~/hooks';
 import store from '~/store';
 
 const isMac = isMacPlatform;
@@ -313,13 +314,29 @@ function anyModalOpen(): boolean {
   return false;
 }
 
-function clickElement(selector: string): boolean {
-  const el = document.querySelector<HTMLElement>(selector);
-  if (!el) {
+function isUnavailableElement(el: HTMLElement): boolean {
+  return (
+    el.getAttribute('aria-disabled') === 'true' ||
+    (el instanceof HTMLButtonElement && el.disabled) ||
+    (el instanceof HTMLInputElement && el.disabled)
+  );
+}
+
+function clickTarget(el: HTMLElement | null | undefined): boolean {
+  if (!el || isUnavailableElement(el)) {
     return false;
   }
   el.click();
   return true;
+}
+
+function clickElement(selector: string): boolean {
+  return clickTarget(document.querySelector<HTMLElement>(selector));
+}
+
+function clickLastElement(selector: string): boolean {
+  const elements = document.querySelectorAll<HTMLElement>(selector);
+  return clickTarget(elements[elements.length - 1]);
 }
 
 function defaultAria(actionId: ShortcutActionId): string {
@@ -397,8 +414,10 @@ export function isOverridden(actionId: ShortcutActionId, override?: ShortcutOver
 
 export function useShortcutActions(): ShortcutAction[] {
   const navigate = useNavigate();
+  const localize = useLocalize();
   const queryClient = useQueryClient();
   const { newConversation } = useNewConvo();
+  const { showToast } = useToastContext();
   const routeMatch = useMatch('/c/:conversationId');
   const routeConvoId = routeMatch?.params.conversationId ?? null;
   const conversation = useRecoilValue(store.conversationByIndex(0));
@@ -416,12 +435,14 @@ export function useShortcutActions(): ShortcutAction[] {
 
   const handleShowShortcuts = useCallback(() => {
     setShowShortcutsDialog((prev) => !prev);
+    return true;
   }, [setShowShortcutsDialog]);
 
   const handleNewChat = useCallback(() => {
     clearMessagesCache(queryClient, conversation?.conversationId);
     queryClient.invalidateQueries([QueryKeys.messages]);
     newConversation();
+    return true;
   }, [queryClient, conversation?.conversationId, newConversation]);
 
   const handleFocusChatInput = useCallback(() => {
@@ -435,6 +456,7 @@ export function useShortcutActions(): ShortcutAction[] {
 
   const handleToggleSidebar = useCallback(() => {
     setSidebarExpanded((prev) => !prev);
+    return true;
   }, [setSidebarExpanded]);
 
   const handleOpenModelSelector = useCallback(
@@ -447,14 +469,22 @@ export function useShortcutActions(): ShortcutAction[] {
       const input = document.querySelector<HTMLInputElement>(
         'input[data-testid="nav-search-input"]',
       );
-      input?.focus();
+      if (!input) {
+        return false;
+      }
+      input.focus();
+      return true;
     };
 
     const panelButton = document.querySelector<HTMLButtonElement>(
       '[data-testid="nav-panel-conversations"]',
     );
     let switchedPanel = false;
-    if (panelButton && panelButton.getAttribute('aria-pressed') !== 'true') {
+    if (
+      panelButton &&
+      !isUnavailableElement(panelButton) &&
+      panelButton.getAttribute('aria-pressed') !== 'true'
+    ) {
       switchedPanel = true;
       panelButton.click();
     }
@@ -465,24 +495,14 @@ export function useShortcutActions(): ShortcutAction[] {
 
     if (!sidebarExpanded || switchedPanel) {
       setTimeout(focusSearchInput, 350);
-      return;
+      return true;
     }
 
-    focusSearchInput();
+    return focusSearchInput();
   }, [sidebarExpanded, setSidebarExpanded]);
 
   const handleCopyLastResponse = useCallback(() => {
-    const turns = document.querySelectorAll('.agent-turn');
-    if (turns.length === 0) {
-      return false;
-    }
-    const last = turns[turns.length - 1];
-    const markdown = last.querySelector('.markdown');
-    const text = (markdown ?? last).textContent ?? '';
-    if (!text.trim()) {
-      return false;
-    }
-    return copy(text.trim(), { format: 'text/plain' });
+    return clickLastElement('[data-testid="copy-response-button"]');
   }, []);
 
   const handleCopyLastCode = useCallback(() => {
@@ -526,32 +546,33 @@ export function useShortcutActions(): ShortcutAction[] {
     const container = getMainScrollContainer();
     if (container) {
       container.scrollTo({ top: 0, behavior: 'smooth' });
-      return;
+      return true;
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    return true;
   }, []);
 
   const handleScrollToBottom = useCallback(() => {
     const container = getMainScrollContainer();
     if (container) {
       container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
-      return;
+      return true;
     }
     window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    return true;
   }, []);
 
   const handleOpenSettings = useCallback(() => {
     const btn = document.querySelector<HTMLElement>('[data-testid="nav-user"]');
-    if (!btn) {
+    if (!btn || isUnavailableElement(btn)) {
       return false;
     }
     const openSettingsItem = () => {
       const settingsItem = document.querySelector<HTMLElement>('[data-testid="nav-settings"]');
-      settingsItem?.click();
+      return clickTarget(settingsItem);
     };
     if (btn.getAttribute('aria-expanded') === 'true') {
-      openSettingsItem();
-      return true;
+      return openSettingsItem();
     }
     btn.click();
     setTimeout(openSettingsItem, 150);
@@ -583,11 +604,7 @@ export function useShortcutActions(): ShortcutAction[] {
     const btn =
       document.querySelector<HTMLButtonElement>('#attach-file-menu-button') ??
       document.querySelector<HTMLButtonElement>('#attach-file');
-    if (!btn) {
-      return false;
-    }
-    btn.click();
-    return true;
+    return clickTarget(btn);
   }, []);
 
   const handleArchiveConversation = useCallback(() => {
@@ -598,6 +615,9 @@ export function useShortcutActions(): ShortcutAction[] {
     if (routeConvoId !== convoId) {
       return false;
     }
+    if (archiveMutation.isLoading) {
+      return false;
+    }
     archiveMutation.mutate(
       { conversationId: convoId, isArchived: true },
       {
@@ -605,10 +625,25 @@ export function useShortcutActions(): ShortcutAction[] {
           newConversation();
           navigate('/c/new', { replace: true });
         },
+        onError: () => {
+          showToast({
+            message: localize('com_ui_archive_error'),
+            severity: NotificationSeverity.ERROR,
+            showIcon: true,
+          });
+        },
       },
     );
     return true;
-  }, [conversation?.conversationId, routeConvoId, archiveMutation, newConversation, navigate]);
+  }, [
+    localize,
+    showToast,
+    routeConvoId,
+    archiveMutation,
+    newConversation,
+    navigate,
+    conversation?.conversationId,
+  ]);
 
   const handleDeleteConversation = useCallback(() => {
     const convoId = conversation?.conversationId;
@@ -624,9 +659,7 @@ export function useShortcutActions(): ShortcutAction[] {
 
   const handleSubmitMessage = useCallback(() => {
     const btn = document.querySelector<HTMLButtonElement>('[data-testid="send-button"]');
-    if (btn && !btn.disabled) {
-      btn.click();
-    }
+    return clickTarget(btn);
   }, []);
 
   const handleContinueResponse = useCallback(
@@ -647,21 +680,28 @@ export function useShortcutActions(): ShortcutAction[] {
         const btn = document.querySelector<HTMLButtonElement>(
           `[data-testid="nav-panel-${panelId}"]`,
         );
-        if (!btn) {
-          return;
+        if (!btn || isUnavailableElement(btn)) {
+          return false;
         }
         if (btn.getAttribute('aria-pressed') !== 'true') {
           btn.click();
+          return true;
         }
+        return false;
       };
+
+      const btn = document.querySelector<HTMLButtonElement>(`[data-testid="nav-panel-${panelId}"]`);
+      if (!btn || isUnavailableElement(btn)) {
+        return false;
+      }
 
       if (!sidebarExpanded) {
         setSidebarExpanded(true);
         setTimeout(activatePanel, 350);
-        return;
+        return true;
       }
 
-      activatePanel();
+      return activatePanel();
     },
     [sidebarExpanded, setSidebarExpanded],
   );
