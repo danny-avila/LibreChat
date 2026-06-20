@@ -35,7 +35,7 @@ export const URLIcon = memo(
           </div>
           {imageError && iconURL && (
             <div
-              className="absolute flex items-center justify-center rounded-full bg-red-500"
+              className="absolute flex items-center justify-center rounded-full bg-status-error"
               style={{ width: '14px', height: '14px', top: 0, right: 0 }}
             >
               <AlertCircle size={10} className="text-white" aria-hidden="true" />

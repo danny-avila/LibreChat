@@ -68,8 +68,8 @@ function SelectDropDownPop({
             <button
               data-testid="select-dropdown-button"
               className={cn(
-                'pointer-cursor relative flex flex-col rounded-lg border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:ring-0 focus:ring-offset-0 dark:border-gray-700 dark:bg-gray-800 sm:text-sm',
-                'hover:bg-gray-50 radix-state-open:bg-gray-50 dark:hover:bg-gray-700 dark:radix-state-open:bg-gray-700',
+                'pointer-cursor relative flex flex-col rounded-lg border border-black/10 bg-surface-secondary py-2 pl-3 pr-10 text-left focus:ring-0 focus:ring-offset-0 dark:border-gray-700 sm:text-sm',
+                'hover:bg-surface-hover radix-state-open:bg-surface-hover',
                 'min-w-[200px] max-w-[215px] sm:min-w-full sm:max-w-full',
               )}
               aria-label={`Select ${title}`}
@@ -77,7 +77,7 @@ function SelectDropDownPop({
             >
               {' '}
               {showLabel && (
-                <label className="block text-xs text-gray-700 dark:text-gray-500">{title}</label>
+                <label className="block text-xs text-text-secondary">{title}</label>
               )}
               <span className="inline-flex w-full">
                 <span
@@ -98,7 +98,7 @@ function SelectDropDownPop({
                   viewBox="0 0 24 24"
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  className="h-4 w-4 text-gray-400"
+                  className="h-4 w-4 text-text-tertiary"
                   height="1em"
                   width="1em"
                   xmlns="http://www.w3.org/2000/svg"
@@ -114,7 +114,7 @@ function SelectDropDownPop({
               side="bottom"
               align="start"
               className={cn(
-                'z-50 mr-3 mt-2 max-h-[52vh] w-full max-w-[85vw] overflow-hidden overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-700 dark:text-white sm:max-w-full lg:max-h-[52vh]',
+                'z-50 mr-3 mt-2 max-h-[52vh] w-full max-w-[85vw] overflow-hidden overflow-y-auto rounded-lg border border-border-light bg-surface-secondary shadow-lg sm:max-w-full lg:max-h-[52vh]',
                 hasSearchRender && 'relative',
               )}
             >

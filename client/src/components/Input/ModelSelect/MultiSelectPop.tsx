@@ -52,19 +52,19 @@ function MultiSelectPop({
             <button
               data-testid="select-dropdown-button"
               className={cn(
-                'relative flex flex-col rounded-md border border-black/10 bg-white py-2 pl-3 pr-10 text-left focus:outline-none focus:ring-0 focus:ring-offset-0 dark:border-gray-700 dark:bg-gray-800 sm:text-sm',
+                'relative flex flex-col rounded-md border border-black/10 bg-surface-secondary py-2 pl-3 pr-10 text-left focus:outline-none focus:ring-0 focus:ring-offset-0 dark:border-gray-700 sm:text-sm',
                 'pointer-cursor font-normal',
-                'hover:bg-gray-50 radix-state-open:bg-gray-50 dark:hover:bg-gray-700 dark:radix-state-open:bg-gray-700',
+                'hover:bg-surface-hover radix-state-open:bg-surface-hover',
               )}
             >
               {' '}
               {showLabel && (
-                <label className="block text-xs text-gray-700 dark:text-gray-500">{title}</label>
+                <label className="block text-xs text-text-secondary">{title}</label>
               )}
               <span className="inline-flex" id={excludeIds[2]}>
                 <span
                   className={cn(
-                    'flex h-6 items-center gap-1 text-sm text-gray-800 dark:text-white',
+                    'flex h-6 items-center gap-1 text-sm text-text-primary',
                     !showLabel ? 'text-xs' : '',
                   )}
                 >
@@ -96,7 +96,7 @@ function MultiSelectPop({
                   viewBox="0 0 24 24"
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  className="h-4 w-4 text-gray-400"
+                  className="h-4 w-4 text-text-tertiary"
                   height="1em"
                   width="1em"
                   xmlns="http://www.w3.org/2000/svg"
@@ -112,7 +112,7 @@ function MultiSelectPop({
               side="bottom"
               align="center"
               className={cn(
-                'mt-2 max-h-[52vh] min-w-full overflow-hidden overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-700 dark:text-white',
+                'mt-2 max-h-[52vh] min-w-full overflow-hidden overflow-y-auto rounded-lg border border-border-light bg-surface-secondary shadow-lg',
                 hasSearchRender && 'relative',
               )}
             >

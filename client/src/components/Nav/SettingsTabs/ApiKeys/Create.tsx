@@ -66,7 +66,7 @@ export default function Create({ onCreated, onCancel }: CreateProps) {
           <p
             id="api-key-name-error"
             role="alert"
-            className="text-xs text-red-500 dark:text-red-400"
+            className="text-xs text-text-destructive"
           >
             {localize('com_ui_api_key_name_required')}
           </p>
