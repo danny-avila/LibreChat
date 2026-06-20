@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo } from 'react';
+import copy from 'copy-to-clipboard';
 import { useQueryClient } from '@tanstack/react-query';
 import { useMatch, useNavigate } from 'react-router-dom';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import { PermissionTypes, Permissions, QueryKeys } from 'librechat-data-provider';
-import type { TMessage } from 'librechat-data-provider';
 import type { ShortcutBinding } from '~/utils/shortcuts';
 import type { ShortcutOverride } from '~/store/misc';
 import {
@@ -14,7 +14,7 @@ import {
   isMacPlatform,
   parseBinding,
 } from '~/utils/shortcuts';
-import { useArchiveConvoMutation, useDeleteConversationMutation } from '~/data-provider';
+import { useArchiveConvoMutation } from '~/data-provider';
 import { clearMessagesCache } from '~/utils';
 import { mainTextareaId } from '~/common';
 import useNewConvo from './useNewConvo';
@@ -406,13 +406,13 @@ export function useShortcutActions(): ShortcutAction[] {
   const [sidebarExpanded, setSidebarExpanded] = useRecoilState(store.sidebarExpanded);
   const setShowShortcutsDialog = useSetRecoilState(store.showShortcutsDialog);
   const setIsTemporary = useSetRecoilState(store.isTemporary);
+  const setDeleteTarget = useSetRecoilState(store.keyboardDeleteTarget);
   const hasAccessToTemporaryChat = useHasAccess({
     permissionType: PermissionTypes.TEMPORARY_CHAT,
     permission: Permissions.USE,
   });
 
   const archiveMutation = useArchiveConvoMutation();
-  const deleteMutation = useDeleteConversationMutation();
 
   const handleShowShortcuts = useCallback(() => {
     setShowShortcutsDialog((prev) => !prev);
@@ -482,8 +482,7 @@ export function useShortcutActions(): ShortcutAction[] {
     if (!text.trim()) {
       return false;
     }
-    navigator.clipboard.writeText(text.trim());
-    return true;
+    return copy(text.trim(), { format: 'text/plain' });
   }, []);
 
   const handleCopyLastCode = useCallback(() => {
@@ -496,8 +495,7 @@ export function useShortcutActions(): ShortcutAction[] {
     if (!text.trim()) {
       return false;
     }
-    navigator.clipboard.writeText(text.trim());
-    return true;
+    return copy(text.trim(), { format: 'text/plain' });
   }, []);
 
   const handleStopGenerating = useCallback(
@@ -620,31 +618,9 @@ export function useShortcutActions(): ShortcutAction[] {
     if (routeConvoId !== convoId) {
       return false;
     }
-    const messages = queryClient.getQueryData<TMessage[]>([QueryKeys.messages, convoId]);
-    const lastMessage = messages?.[messages.length - 1];
-    deleteMutation.mutate(
-      {
-        conversationId: convoId,
-        thread_id: lastMessage?.thread_id,
-        endpoint: lastMessage?.endpoint,
-        source: 'keyboard',
-      },
-      {
-        onSuccess: () => {
-          newConversation();
-          navigate('/c/new', { replace: true });
-        },
-      },
-    );
+    setDeleteTarget({ conversationId: convoId, title: conversation?.title ?? '' });
     return true;
-  }, [
-    conversation?.conversationId,
-    routeConvoId,
-    queryClient,
-    deleteMutation,
-    newConversation,
-    navigate,
-  ]);
+  }, [conversation?.conversationId, conversation?.title, routeConvoId, setDeleteTarget]);
 
   const handleSubmitMessage = useCallback(() => {
     const btn = document.querySelector<HTMLButtonElement>('[data-testid="send-button"]');

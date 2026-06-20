@@ -62,6 +62,16 @@ const showShortcutsDialog = atom<boolean>({
   default: false,
 });
 
+export type KeyboardDeleteTarget = {
+  conversationId: string;
+  title: string;
+};
+
+const keyboardDeleteTarget = atom<KeyboardDeleteTarget | null>({
+  key: 'keyboardDeleteTarget',
+  default: null,
+});
+
 export type ShortcutOverride = {
   mac: string | null;
   other: string | null;
@@ -86,6 +96,7 @@ export default {
   queriesEnabled,
   isEditingBadges,
   showShortcutsDialog,
+  keyboardDeleteTarget,
   customShortcuts,
   chatBadges,
 };

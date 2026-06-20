@@ -17,6 +17,7 @@ import {
   useFileMap,
 } from '~/hooks';
 import KeyboardShortcutsDialog from '~/components/Nav/KeyboardShortcutsDialog';
+import KeyboardDeleteDialog from '~/components/Nav/KeyboardDeleteDialog';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
 import useKeyboardShortcuts from '~/hooks/useKeyboardShortcuts';
 import { UnifiedSidebar } from '~/components/UnifiedSidebar';
@@ -28,7 +29,12 @@ import store from '~/store';
 /** Isolates keyboard shortcut listeners so they only mount after auth. */
 function KeyboardShortcutsProvider() {
   useKeyboardShortcuts();
-  return <KeyboardShortcutsDialog />;
+  return (
+    <>
+      <KeyboardShortcutsDialog />
+      <KeyboardDeleteDialog />
+    </>
+  );
 }
 
 export default function Root() {
