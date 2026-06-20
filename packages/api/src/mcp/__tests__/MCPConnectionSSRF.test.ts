@@ -23,8 +23,8 @@ import type {
   Response as UndiciResponse,
 } from 'undici';
 import type { Socket } from 'net';
-import { MCPConnection } from '~/mcp/connection';
 import { createSSRFSafeUndiciConnect, resolveHostnameSSRF } from '~/auth';
+import { MCPConnection } from '~/mcp/connection';
 
 type CustomFetch = (input: UndiciRequestInfo, init?: UndiciRequestInit) => Promise<UndiciResponse>;
 type LookupAddress = string | Array<{ address: string; family: number }>;

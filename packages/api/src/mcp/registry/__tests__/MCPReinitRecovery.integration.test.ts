@@ -16,8 +16,8 @@
  */
 
 import * as net from 'net';
-import * as http from 'http';
 import { Keyv } from 'keyv';
+import * as http from 'http';
 import { Agent } from 'undici';
 import { Types } from 'mongoose';
 import { randomUUID } from 'crypto';
