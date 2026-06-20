@@ -25,6 +25,7 @@ export default function KeyboardDeleteDialog() {
     <DeleteButton
       title={target.title}
       conversationId={target.conversationId}
+      currentConversationId={target.conversationId}
       retainView={retainView}
       showDeleteDialog={true}
       setShowDeleteDialog={setShowDeleteDialog}
