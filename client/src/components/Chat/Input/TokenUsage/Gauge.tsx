@@ -17,10 +17,10 @@ function getStrokeClass(percent: number, indeterminate: boolean): string {
     return 'stroke-text-secondary';
   }
   if (percent > 90) {
-    return 'stroke-red-500';
+    return 'stroke-status-error';
   }
   if (percent > 75) {
-    return 'stroke-yellow-500';
+    return 'stroke-status-warning';
   }
   return 'stroke-text-secondary';
 }
