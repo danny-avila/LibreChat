@@ -118,7 +118,9 @@ function CompactStatusDot({ serverStatus, isInitializing }: CompactStatusDotProp
   }
 
   if (!serverStatus) {
-    return <div className="size-3 rounded-full border-2 border-surface-secondary bg-status-neutral" />;
+    return (
+      <div className="size-3 rounded-full border-2 border-surface-secondary bg-status-neutral" />
+    );
   }
 
   const { connectionState, requiresOAuth } = serverStatus;
@@ -145,7 +147,7 @@ function LoadingStatusIcon({ serverName, onCancel, canCancel }: InitializingStat
       <button
         type="button"
         onClick={onCancel}
-        className="group flex size-6 items-center justify-center rounded p-1 hover:bg-red-100 dark:hover:bg-red-900/20"
+        className="group flex size-6 items-center justify-center rounded p-1 hover:bg-status-error-subtle"
         aria-label={localize('com_ui_cancel')}
         title={localize('com_ui_cancel')}
       >

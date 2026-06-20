@@ -145,7 +145,7 @@ const DeleteAccount = ({ disabled = false }: { title?: string; disabled?: boolea
                     setUseBackup(!useBackup);
                     setOtpToken('');
                   }}
-                  className="text-sm text-primary hover:underline"
+                  className="text-sm text-text-primary hover:underline"
                 >
                   {useBackup ? localize('com_ui_use_2fa_code') : localize('com_ui_use_backup_code')}
                 </button>
@@ -182,7 +182,7 @@ const renderDeleteButton = (
   <button
     className={cn(
       'mt-4 flex w-full items-center justify-center rounded-lg bg-surface-tertiary px-4 py-2 transition-all duration-200',
-      isLocked ? 'cursor-not-allowed opacity-30' : 'bg-surface-destructive text-destructive-foreground',
+      isLocked ? 'cursor-not-allowed opacity-30' : 'bg-surface-destructive text-white',
     )}
     onClick={handleDeleteUser}
     disabled={isDeleting || isLocked}

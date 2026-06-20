@@ -111,7 +111,7 @@ export default function DataTableFile<TData, TValue>({
                 deleteFiles({ files: filesToDelete as TFile[], setFiles });
                 setRowSelection({});
               }}
-              className="ml-1 gap-2 dark:hover:bg-gray-850/25 sm:ml-0"
+              className="ml-1 gap-2 hover:bg-surface-hover sm:ml-0"
               disabled={!table.getFilteredSelectedRowModel().rows.length || isDeleting}
             >
               {isDeleting ? (
@@ -161,7 +161,7 @@ export default function DataTableFile<TData, TValue>({
           </div>
         </div>
       </div>
-      <div className="relative mt-3 max-h-[25rem] min-h-0 overflow-y-auto rounded-md border border-black/10 pb-4 dark:border-white/10 sm:min-h-[28rem]">
+      <div className="relative mt-3 max-h-[25rem] min-h-0 overflow-y-auto rounded-md border border-border-light pb-4 sm:min-h-[28rem]">
         <Table className="w-full min-w-[600px] border-separate border-spacing-0">
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
@@ -192,7 +192,7 @@ export default function DataTableFile<TData, TValue>({
                   return (
                     <TableHead
                       key={header.id}
-                      className="align-start sticky top-0 rounded-t border-b border-black/10 bg-surface-secondary px-2 py-1 text-left font-medium text-text-secondary dark:border-white/10 sm:px-4 sm:py-2"
+                      className="align-start sticky top-0 rounded-t border-b border-border-light bg-surface-secondary px-2 py-1 text-left font-medium text-text-secondary sm:px-4 sm:py-2"
                       style={style}
                     >
                       {header.isPlaceholder
@@ -210,7 +210,7 @@ export default function DataTableFile<TData, TValue>({
                 <TableRow
                   key={row.id}
                   data-state={row.getIsSelected() && 'selected'}
-                  className="border-b border-black/10 text-left text-text-secondary dark:border-white/10 [tr:last-child_&]:border-b-0"
+                  className="border-b border-border-light text-left text-text-secondary [tr:last-child_&]:border-b-0"
                 >
                   {row.getVisibleCells().map((cell, index) => {
                     const maxWidth =
@@ -247,7 +247,7 @@ export default function DataTableFile<TData, TValue>({
         </Table>
       </div>
       <div className="ml-4 mr-4 mt-4 flex h-auto items-center justify-end space-x-2 py-4 sm:ml-0 sm:mr-0 sm:h-0">
-        <div className="ml-2 flex-1 text-sm text-muted-foreground">
+        <div className="ml-2 flex-1 text-sm text-text-secondary">
           {localize('com_files_number_selected', {
             0: `${table.getFilteredSelectedRowModel().rows.length}`,
             1: `${table.getFilteredRowModel().rows.length}`,

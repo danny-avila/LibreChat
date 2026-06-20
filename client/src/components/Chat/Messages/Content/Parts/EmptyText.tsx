@@ -4,7 +4,7 @@ import { memo } from 'react';
 const EmptyTextPart = memo(() => {
   return (
     <div className="text-message flex min-h-[20px] flex-col items-start gap-3 overflow-visible">
-      <div className="markdown prose dark:prose-invert light w-full break-words dark:text-text-primary">
+      <div className="markdown prose dark:prose-invert light w-full break-words">
         <div className="absolute">
           <p className="submitting relative">
             <span className="result-thinking" />

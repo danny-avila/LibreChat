@@ -63,7 +63,7 @@ const UploadFileModal = ({ open, onOpenChange }) => {
             </div>
             <div className="flex w-full flex-row justify-evenly sm:w-1/3">
               <Button
-                className="mr-3 w-full rounded-md border border-black bg-white p-0 text-black hover:bg-white"
+                className="mr-3 w-full rounded-md border border-border-medium bg-surface-secondary p-0 text-text-primary hover:bg-surface-hover"
                 onClick={() => {
                   onOpenChange(false);
                 }}
@@ -71,7 +71,7 @@ const UploadFileModal = ({ open, onOpenChange }) => {
                 Cancel
               </Button>
               <Button
-                className="w-full rounded-md border border-black bg-black p-0 text-white"
+                className="w-full rounded-md border border-border-xheavy bg-surface-inverted p-0 text-text-inverted"
                 onClick={() => {
                   console.log('upload file');
                 }}

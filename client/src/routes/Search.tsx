@@ -96,7 +96,7 @@ export default function Search() {
       </div>
       {(messages && messages.length === 0) || messages == null ? (
         <div className="absolute inset-0 flex items-center justify-center">
-          <div className="rounded-lg bg-white p-6 text-lg text-gray-500 dark:border-gray-800/50 dark:bg-gray-800 dark:text-gray-300">
+          <div className="rounded-lg bg-surface-secondary p-6 text-lg text-text-secondary">
             {localize('com_ui_nothing_found')}
           </div>
         </div>

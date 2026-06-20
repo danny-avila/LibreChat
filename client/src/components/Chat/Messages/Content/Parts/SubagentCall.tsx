@@ -465,7 +465,7 @@ export default function SubagentCall({
           <div
             className={cn(
               'flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full',
-              running && !subagentAgent && 'animate-pulse text-primary',
+              running && !subagentAgent && 'animate-pulse text-text-primary',
             )}
             aria-hidden="true"
           >
@@ -640,7 +640,7 @@ function SubagentPrompt({
           aria-expanded={expanded}
           aria-label={toggleLabel}
           title={toggleLabel}
-          className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-text-secondary transition hover:bg-surface-tertiary hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-ring"
+          className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-text-secondary transition hover:bg-surface-tertiary hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-text-primary"
         >
           {expanded ? (
             <Minimize2 size={14} aria-hidden="true" />

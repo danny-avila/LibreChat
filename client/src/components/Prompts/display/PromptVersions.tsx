@@ -26,8 +26,8 @@ const VersionBadge = ({
           className={cn(
             'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
             isProduction
-              ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400'
-              : 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400',
+              ? 'bg-status-success-subtle text-status-success'
+              : 'bg-status-info-subtle text-status-info',
           )}
         >
           {isProduction ? (
@@ -106,7 +106,7 @@ const VersionCard = ({
         className={cn(
           'group mb-2 ml-2 flex flex-1 flex-col rounded-lg border p-3 text-left',
           isSelected
-            ? 'border-green-500/50 bg-green-50/50 dark:bg-green-950/20'
+            ? 'border-status-success-border bg-status-success-subtle'
             : 'border-border-medium bg-transparent hover:border-border-heavy hover:bg-surface-hover',
         )}
         onClick={onClick}
@@ -116,7 +116,7 @@ const VersionCard = ({
           <span
             className={cn(
               'text-sm font-semibold',
-              isSelected ? 'text-green-700 dark:text-green-400' : 'text-text-primary',
+              isSelected ? 'text-status-success' : 'text-text-primary',
             )}
           >
             {localize('com_ui_version_var', { 0: versionNumber })}
