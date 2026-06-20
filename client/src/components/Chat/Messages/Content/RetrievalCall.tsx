@@ -21,6 +21,7 @@ interface FileSource {
   pageRelevance: Record<number, number>;
   fileType?: string;
   fileBytes?: number;
+  source?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -66,6 +67,7 @@ function extractFileSources(attachments?: TAttachment[]): FileSource[] {
           pageRelevance: source.pageRelevance || {},
           fileType: (meta?.fileType as string) || undefined,
           fileBytes: (meta?.fileBytes as number) || undefined,
+          source: (meta?.storageType as string) || undefined,
           metadata: meta,
         });
       }
@@ -90,6 +92,7 @@ interface DisplayResult {
   pageRelevance?: Record<number, number>;
   fileType?: string;
   fileBytes?: number;
+  source?: string;
 }
 
 interface FileMatch {
@@ -97,6 +100,7 @@ interface FileMatch {
   fileName: string;
   fileType?: string;
   fileBytes?: number;
+  source?: string;
 }
 
 function normalizeFilename(filename: string): string {
@@ -140,6 +144,7 @@ function buildFileLookup(
       fileName: source.fileName,
       fileType: source.fileType,
       fileBytes: source.fileBytes,
+      source: source.source,
     });
   }
 
@@ -158,6 +163,7 @@ function buildFileLookup(
       fileName: file.filename,
       fileType: file.type ?? undefined,
       fileBytes: file.bytes,
+      source: file.source,
     });
   }
 
@@ -179,6 +185,7 @@ function mergeRetrievalResults(
       pageRelevance: source.pageRelevance,
       fileType: source.fileType,
       fileBytes: source.fileBytes,
+      source: source.source,
     }));
   }
 
@@ -195,6 +202,7 @@ function mergeRetrievalResults(
       content: result.content,
       fileType: match?.fileType,
       fileBytes: match?.fileBytes,
+      source: match?.source,
     };
   });
 }
@@ -393,6 +401,7 @@ export default function RetrievalCall({
       pages: result.pages,
       pageRelevance: result.pageRelevance,
       fileType: result.fileType,
+      source: result.source,
     };
   }, [displayResults, previewIndex]);
 
@@ -482,6 +491,7 @@ export default function RetrievalCall({
         pages={previewData?.pages}
         pageRelevance={previewData?.pageRelevance}
         fileType={previewData?.fileType}
+        source={previewData?.source}
       />
     </div>
   );
