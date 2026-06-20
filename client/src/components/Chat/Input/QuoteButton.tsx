@@ -10,6 +10,9 @@ import store from '~/store';
 const MESSAGE_SELECTOR = '.message-render';
 /** Max characters captured per excerpt (backend re-caps as defense-in-depth). */
 const MAX_QUOTE_LENGTH = 1500;
+/** Max excerpts queued at once; mirrors the backend `QUOTE_MAX_COUNT` cap so
+ *  the composer never shows more quotes than the model actually receives. */
+const MAX_QUOTE_COUNT = 10;
 /** Vertical gap (px) between the selection and the popup. */
 const POPUP_OFFSET = 8;
 /** Keep the popup this far (px) from the viewport's left/right edges. */
@@ -96,7 +99,11 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
     if (!selection) {
       return;
     }
-    setQuotes((prev) => (prev.includes(selection.text) ? prev : [...prev, selection.text]));
+    setQuotes((prev) =>
+      prev.includes(selection.text) || prev.length >= MAX_QUOTE_COUNT
+        ? prev
+        : [...prev, selection.text],
+    );
     setSelection(null);
     window.getSelection()?.removeAllRanges();
     document.getElementById(mainTextareaId)?.focus();

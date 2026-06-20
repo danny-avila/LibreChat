@@ -122,8 +122,25 @@ export function createMessageFilterPii(options: CreateMessageFilterPiiOptions): 
       next();
       return;
     }
+    /**
+     * Scan the typed text plus any quoted excerpts. Quotes are merged into the
+     * model-facing user message downstream, so they must clear the same filter
+     * (a crafted `quotes` payload would otherwise bypass it).
+     */
+    const candidates: string[] = [];
     const text = req.body?.text;
-    if (typeof text !== 'string' || text.length === 0) {
+    if (typeof text === 'string' && text.length > 0) {
+      candidates.push(text);
+    }
+    const quotes = req.body?.quotes;
+    if (Array.isArray(quotes)) {
+      for (const quote of quotes) {
+        if (typeof quote === 'string' && quote.length > 0) {
+          candidates.push(quote);
+        }
+      }
+    }
+    if (candidates.length === 0) {
       next();
       return;
     }
@@ -132,14 +149,16 @@ export function createMessageFilterPii(options: CreateMessageFilterPiiOptions): 
       next();
       return;
     }
-    const match = findMatch(text, patterns);
-    if (match == null) {
-      next();
-      return;
+    for (const candidate of candidates) {
+      const match = findMatch(candidate, patterns);
+      if (match != null) {
+        res.status(400).json({
+          error: 'message_filter_pii_block',
+          message: `Message contains a ${match.label}. Remove it and try again.`,
+        });
+        return;
+      }
     }
-    res.status(400).json({
-      error: 'message_filter_pii_block',
-      message: `Message contains a ${match.label}. Remove it and try again.`,
-    });
+    next();
   };
 }

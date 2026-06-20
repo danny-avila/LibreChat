@@ -117,6 +117,12 @@ const ChatForm = memo(function ChatForm({
     () => conversation?.conversationId ?? Constants.NEW_CONVO,
     [conversation?.conversationId],
   );
+  /**
+   * The quote feature merges excerpts server-side in `BaseClient.sendMessage`,
+   * which the Assistants endpoints bypass — so hide the UI there rather than
+   * letting users queue quotes the assistant never receives.
+   */
+  const quotesEnabled = useMemo(() => !isAssistantsEndpoint(endpoint), [endpoint]);
 
   const isRTL = useMemo(
     () => (chatDirection != null ? chatDirection?.toLowerCase() === 'rtl' : false),
@@ -253,7 +259,7 @@ const ChatForm = memo(function ChatForm({
     >
       <div className="relative flex h-full flex-1 items-stretch md:flex-col">
         {/* Primary composer owns the selection popup so split-view doesn't double it. */}
-        {index === 0 && <QuoteButton conversationId={conversationId} />}
+        {index === 0 && quotesEnabled && <QuoteButton conversationId={conversationId} />}
         <div className={cn('flex w-full items-center', isRTL && 'flex-row-reverse')}>
           <Mention
             index={index}
@@ -289,7 +295,7 @@ const ChatForm = memo(function ChatForm({
           >
             <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
             <PendingManualSkillsChips conversationId={conversationId} />
-            <PendingQuoteChips conversationId={conversationId} />
+            {quotesEnabled && <PendingQuoteChips conversationId={conversationId} />}
             {/* WIP */}
             <EditBadges
               isEditingChatBadges={isEditingBadges}

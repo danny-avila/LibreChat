@@ -9,12 +9,30 @@ async function moderateText(req, res, next) {
     return next();
   }
   try {
-    const { text } = req.body;
+    const { text, quotes } = req.body;
+
+    /**
+     * Moderate the typed text plus any quoted excerpts. Quotes are merged into
+     * the model-facing user message downstream, so a crafted `quotes` payload
+     * must be moderated too. The moderation API accepts an array of inputs.
+     */
+    const inputs = [];
+    if (typeof text === 'string' && text.length > 0) {
+      inputs.push(text);
+    }
+    if (Array.isArray(quotes)) {
+      for (const quote of quotes) {
+        if (typeof quote === 'string' && quote.length > 0) {
+          inputs.push(quote);
+        }
+      }
+    }
+    const input = inputs.length > 1 ? inputs : (inputs[0] ?? text);
 
     const response = await axios.post(
       process.env.OPENAI_MODERATION_REVERSE_PROXY || 'https://api.openai.com/v1/moderations',
       {
-        input: text,
+        input,
       },
       {
         headers: {
