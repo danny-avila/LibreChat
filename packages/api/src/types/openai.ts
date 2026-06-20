@@ -14,6 +14,8 @@ export type OpenAIModelOptions = Partial<OpenAIParameters>;
  */
 export interface OpenAIConfigOptions {
   modelOptions?: OpenAIModelOptions;
+  /** When false, the client strips image content for models without vision support. */
+  vision?: boolean;
   directEndpoint?: boolean;
   reverseProxyUrl?: string | null;
   defaultQuery?: Record<string, string | undefined>;
@@ -32,6 +34,8 @@ export type OAIClientOptions = Omit<OpenAIClientOptions, 'verbosity'> & {
   include_reasoning?: boolean;
   /** Replays `reasoning_content` on tool-bearing turns (DeepSeek thinking-mode, #13366). */
   includeReasoningContent?: boolean;
+  /** When false, the client strips image content for models without vision support. */
+  vision?: boolean;
   promptCache?: boolean;
   _lc_stream_delay?: number;
   verbosity?: string | null;
