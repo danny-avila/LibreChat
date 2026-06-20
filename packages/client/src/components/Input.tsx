@@ -8,7 +8,7 @@ const Input: React.ForwardRefExoticComponent<InputProps & React.RefAttributes<HT
     return (
       <input
         className={cn(
-          'flex h-10 w-full rounded-lg border border-border-light bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50',
+          'flex h-10 w-full rounded-lg border border-border-light bg-transparent px-3 py-2 text-sm ring-offset-surface-primary placeholder:text-text-secondary focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50',
           className ?? '',
         )}
         ref={ref}

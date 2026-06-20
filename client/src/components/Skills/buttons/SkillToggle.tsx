@@ -28,7 +28,7 @@ function SkillToggle({ enabled, onChange, ariaLabel }: SkillToggleProps) {
       >
         <span
           className={cn(
-            'pointer-events-none mt-0.5 inline-block size-4 rounded-full bg-white shadow-sm transition-transform duration-200',
+            'pointer-events-none mt-0.5 inline-block size-4 rounded-full bg-surface-fixed shadow-sm transition-transform duration-200',
             enabled ? 'translate-x-[1.125rem]' : 'translate-x-0.5',
           )}
         />

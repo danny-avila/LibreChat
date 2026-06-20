@@ -58,7 +58,7 @@ const RenameForm: React.FC<RenameFormProps> = ({
       <div className="flex gap-1" role="toolbar">
         <button
           onClick={() => onCancel()}
-          className="rounded-md p-1 hover:opacity-70 focus:outline-none focus:ring-2 focus:ring-ring"
+          className="rounded-md p-1 hover:opacity-70 focus:outline-none focus:ring-2 focus:ring-text-primary"
           aria-label={localize('com_ui_cancel')}
           type="button"
         >
@@ -66,7 +66,7 @@ const RenameForm: React.FC<RenameFormProps> = ({
         </button>
         <button
           onClick={() => onSubmit(titleInput)}
-          className="rounded-md p-1 hover:opacity-70 focus:outline-none focus:ring-2 focus:ring-ring"
+          className="rounded-md p-1 hover:opacity-70 focus:outline-none focus:ring-2 focus:ring-text-primary"
           aria-label={localize('com_ui_save')}
           type="button"
         >

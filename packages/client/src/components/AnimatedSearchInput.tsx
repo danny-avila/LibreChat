@@ -28,7 +28,7 @@ const AnimatedSearchInput = ({
             <Search
               className={cn(
                 `h-4 w-4 transition-all duration-500 ease-in-out`,
-                isSearching && hasValue ? 'text-blue-400' : 'text-gray-500',
+                isSearching && hasValue ? 'text-blue-400' : 'text-text-secondary',
               )}
             />
           </div>
@@ -40,7 +40,7 @@ const AnimatedSearchInput = ({
             onChange={onChange}
             placeholder={placeholder}
             aria-label={localize('com_ui_search')}
-            className={`peer relative z-20 w-full rounded-lg bg-surface-secondary py-2 pl-10 outline-none backdrop-blur-sm transition-all duration-500 ease-in-out placeholder:text-gray-500 focus:ring-ring`}
+            className={`peer relative z-20 w-full rounded-lg bg-surface-secondary py-2 pl-10 outline-none backdrop-blur-sm transition-all duration-500 ease-in-out placeholder:text-text-secondary focus:ring-text-primary`}
           />
 
           {/* Gradient overlay */}

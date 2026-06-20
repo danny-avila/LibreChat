@@ -110,7 +110,7 @@ const BackupCodesItem: React.FC = () => {
           >
             {Array.isArray(user?.backupCodes) && user?.backupCodes.length > 0 ? (
               <>
-                <div className="border-warning-300 bg-warning-50 dark:border-warning-700 dark:bg-warning-900/20 mb-6 rounded-lg border p-4">
+                <div className="mb-6 rounded-lg border border-status-warning-border bg-status-warning-subtle p-4">
                   <p className="text-sm text-text-secondary">
                     {localize('com_ui_backup_codes_security_info')}
                   </p>
@@ -146,8 +146,8 @@ const BackupCodesItem: React.FC = () => {
                         }}
                         className={`flex flex-col rounded-xl border p-4 backdrop-blur-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                           isUsed
-                            ? 'border-red-200 bg-red-50/80 dark:border-red-800 dark:bg-red-900/20'
-                            : 'border-green-200 bg-green-50/80 dark:border-green-800 dark:bg-green-900/20'
+                            ? 'border-status-error-border bg-status-error-subtle'
+                            : 'border-status-success-border bg-status-success-subtle'
                         } `}
                       >
                         <div className="flex items-center justify-between" aria-hidden="true">
@@ -256,7 +256,7 @@ const BackupCodesItem: React.FC = () => {
                     setUseBackup(!useBackup);
                     setOtpToken('');
                   }}
-                  className="text-sm text-primary hover:underline"
+                  className="text-sm text-text-primary hover:underline"
                 >
                   {useBackup ? localize('com_ui_use_2fa_code') : localize('com_ui_use_backup_code')}
                 </button>

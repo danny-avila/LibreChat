@@ -25,7 +25,7 @@ const MinimalMessages = React.forwardRef(
                     width: '100%',
                   }}
                 >
-                  <div className="flex flex-col pb-9 text-sm dark:bg-transparent">
+                  <div className="flex flex-col pb-9 text-sm">
                     {props.children}
                     <div className="dark:gpt-dark-gray group h-0 w-full flex-shrink-0 dark:border-gray-800/50" />
                   </div>

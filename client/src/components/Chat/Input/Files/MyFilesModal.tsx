@@ -29,7 +29,7 @@ export function MyFilesModal({
     <OGDialog open={open} onOpenChange={onOpenChange} triggerRef={triggerRef}>
       <OGDialogContent
         title={localize('com_nav_my_files')}
-        className="w-11/12 bg-background text-text-primary shadow-2xl"
+        className="w-11/12 bg-surface-primary text-text-primary shadow-2xl"
       >
         <OGDialogHeader>
           <OGDialogTitle>{localize('com_nav_my_files')}</OGDialogTitle>

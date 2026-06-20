@@ -41,7 +41,7 @@ class SourcesErrorBoundary extends Component<Props, State> {
           <div className="mb-2 text-sm text-text-secondary">Sources temporarily unavailable</div>
           <button
             onClick={() => window.location.reload()}
-            className="hover:bg-surface-primary-hover rounded-md bg-surface-primary px-3 py-1 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-ring"
+            className="hover:bg-surface-primary-hover rounded-md bg-surface-primary px-3 py-1 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-text-primary"
             aria-label="Reload the page"
           >
             Refresh

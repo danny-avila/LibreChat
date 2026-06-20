@@ -97,7 +97,7 @@ const InputWithDropdown: React.ForwardRefExoticComponent<
           />
           <button
             type="button"
-            className="text-tertiary absolute inset-y-0 right-0 flex items-center rounded-md px-2 hover:text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring-primary"
+            className="text-tertiary absolute inset-y-0 right-0 flex items-center rounded-md px-2 hover:text-text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring-primary"
             onClick={() => setIsOpen(!isOpen)}
             aria-label={isOpen ? 'Close dropdown' : 'Open dropdown'}
           >
@@ -132,8 +132,8 @@ const InputWithDropdown: React.ForwardRefExoticComponent<
                   'cursor-pointer rounded-md px-3 py-2',
                   'focus:bg-surface-tertiary focus:outline-none focus:ring-1 focus:ring-inset focus:ring-ring-primary',
                   index === highlightedIndex
-                    ? 'bg-surface-active text-primary'
-                    : 'text-secondary hover:bg-surface-tertiary',
+                    ? 'bg-surface-active text-text-primary'
+                    : 'text-text-secondary hover:bg-surface-tertiary',
                 )}
                 onClick={() => handleSelect(option)}
                 onKeyDown={(e) => {

@@ -99,6 +99,12 @@ function createTailwindColors() {
     'surface-destructive': cssVar('--surface-destructive'),
     'surface-destructive-hover': cssVar('--surface-destructive-hover'),
     'surface-chat': cssVar('--surface-chat'),
+    'surface-inverted': cssVar('--surface-inverted'),
+    'surface-inverted-hover': cssVar('--surface-inverted-hover'),
+    'text-inverted': cssVar('--text-inverted'),
+    'surface-fixed': cssVar('--surface-fixed'),
+    'surface-fixed-hover': cssVar('--surface-fixed-hover'),
+    'text-fixed': cssVar('--text-fixed'),
 
     'border-light': cssVar('--border-light'),
     'border-medium': cssVar('--border-medium'),
@@ -123,35 +129,14 @@ function createTailwindColors() {
     'status-neutral-subtle': cssVar('--status-neutral-subtle'),
     'status-neutral-border': cssVar('--status-neutral-border'),
 
-    border: hslVar('--border'),
-    input: hslVar('--input'),
     'switch-unchecked': hslVar('--switch-unchecked'),
-    ring: hslVar('--ring'),
+
+    // Retained for excluded SidePanel/Agents + SidePanel/Builder (pending migration)
     background: hslVar('--background'),
-    foreground: hslVar('--foreground'),
+    ring: hslVar('--ring'),
     primary: {
       DEFAULT: hslVar('--primary'),
       foreground: hslVar('--primary-foreground'),
-    },
-    secondary: {
-      DEFAULT: hslVar('--secondary'),
-      foreground: hslVar('--secondary-foreground'),
-    },
-    destructive: {
-      DEFAULT: hslVar('--destructive'),
-      foreground: hslVar('--destructive-foreground'),
-    },
-    muted: {
-      DEFAULT: hslVar('--muted'),
-      foreground: hslVar('--muted-foreground'),
-    },
-    accent: {
-      DEFAULT: hslVar('--accent'),
-      foreground: hslVar('--accent-foreground'),
-    },
-    card: {
-      DEFAULT: hslVar('--card'),
-      foreground: hslVar('--card-foreground'),
     },
   };
 }

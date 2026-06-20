@@ -63,7 +63,7 @@ const PresetItems: FC<{
             <DialogTrigger asChild>
               <button
                 type="button"
-                className="mr-1 flex h-[32px] cursor-pointer items-center rounded bg-transparent px-2 py-1 text-xs font-medium text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-destructive focus:ring-ring"
+                className="mr-1 flex h-[32px] cursor-pointer items-center rounded bg-transparent px-2 py-1 text-xs font-medium text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-destructive focus:ring-text-primary"
                 aria-label={localize('com_ui_clear_all')}
               >
                 <svg
@@ -152,7 +152,7 @@ const PresetItems: FC<{
                           <Icon
                             context="menu-item"
                             iconURL={getEndpointField(endpointsConfig, preset.endpoint, 'iconURL')}
-                            className="icon-md mr-1 dark:text-text-primary"
+                            className="icon-md mr-1"
                             endpoint={preset.endpoint}
                           />
                         )

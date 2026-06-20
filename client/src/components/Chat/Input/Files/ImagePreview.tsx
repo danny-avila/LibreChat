@@ -115,7 +115,7 @@ const ImagePreview = ({
         type="button"
         className={cn(
           'relative size-14 overflow-hidden rounded-xl transition-shadow',
-          'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary',
+          'focus:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary',
           className,
         )}
         style={style}
