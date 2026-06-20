@@ -1095,6 +1095,9 @@ interface MCPConnectionParams {
   ephemeralConnection?: boolean;
 }
 
+/** Result of an MCP `tools/list` request: one page of tools plus an optional pagination cursor. */
+type MCPListToolsResult = Awaited<ReturnType<Client['listTools']>>;
+
 export class MCPConnection extends EventEmitter {
   public client: Client;
   private options: t.MCPOptions;
@@ -2194,56 +2197,58 @@ export class MCPConnection extends EventEmitter {
     }
   }
 
-  async fetchTools(): Promise<
-    {
-      inputSchema: {
-        [x: string]: unknown;
-        type: 'object';
-        properties?: Record<string, object> | undefined;
-        required?: string[] | undefined;
-      };
-      name: string;
-      description?: string | undefined;
-      outputSchema?:
-        | {
-            [x: string]: unknown;
-            type: 'object';
-            properties?: Record<string, object> | undefined;
-            required?: string[] | undefined;
-          }
-        | undefined;
-      annotations?:
-        | {
-            title?: string | undefined;
-            readOnlyHint?: boolean | undefined;
-            destructiveHint?: boolean | undefined;
-            idempotentHint?: boolean | undefined;
-            openWorldHint?: boolean | undefined;
-          }
-        | undefined;
-      execution?:
-        | {
-            taskSupport?: 'optional' | 'required' | 'forbidden' | undefined;
-          }
-        | undefined;
-      _meta?: Record<string, unknown> | undefined;
-      icons?:
-        | {
-            src: string;
-            mimeType?: string | undefined;
-            sizes?: string[] | undefined;
-            theme?: 'light' | 'dark' | undefined;
-          }[]
-        | undefined;
-      title?: string | undefined;
-    }[]
-  > {
+  /**
+   * Fetches the server's tools, following MCP `tools/list` cursor pagination so a
+   * server that spans multiple pages (e.g. an aggregating gateway exposing many
+   * tools) is loaded in full instead of being truncated to the first page.
+   *
+   * Pagination is bounded by {@link mcpConfig.TOOLS_LIST_MAX_PAGES} and a
+   * repeated-cursor guard. On error, the tools already fetched are returned rather
+   * than discarded, and the method never throws.
+   */
+  async fetchTools(): Promise<MCPListToolsResult['tools']> {
+    const maxPages = mcpConfig.TOOLS_LIST_MAX_PAGES;
+    const allTools: MCPListToolsResult['tools'] = [];
+    const seenCursors = new Set<string>();
+    let cursor: string | undefined;
+
+    for (let page = 1; page <= maxPages; page++) {
+      const result = await this.listToolsPage(cursor);
+      if (result == null) {
+        /** Request failed mid-pagination: return the pages already fetched instead of discarding them. */
+        return allTools;
+      }
+
+      allTools.push(...result.tools);
+
+      const { nextCursor } = result;
+      if (nextCursor == null) {
+        return allTools;
+      }
+      if (seenCursors.has(nextCursor)) {
+        logger.warn(
+          `${this.getLogPrefix()} MCP server returned a repeated tools/list cursor; stopping pagination after ${page} page(s).`,
+        );
+        return allTools;
+      }
+
+      seenCursors.add(nextCursor);
+      cursor = nextCursor;
+    }
+
+    logger.warn(
+      `${this.getLogPrefix()} Reached the tools/list pagination limit of ${maxPages} page(s); some tools may be omitted. Set MCP_TOOLS_LIST_MAX_PAGES higher if this server legitimately exposes more.`,
+    );
+    return allTools;
+  }
+
+  /** Fetches a single `tools/list` page, returning null (and logging) on failure so pagination can stop gracefully. */
+  private async listToolsPage(cursor: string | undefined): Promise<MCPListToolsResult | null> {
     try {
-      const { tools } = await this.client.listTools();
-      return tools;
+      return await this.client.listTools(cursor != null ? { cursor } : undefined);
     } catch (error) {
       this.emitError(error, 'Failed to fetch tools');
-      return [];
+      return null;
     }
   }
 

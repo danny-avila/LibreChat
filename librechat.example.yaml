@@ -169,6 +169,15 @@ interface:
   marketplace:
     use: false
   fileCitations: true
+  # Tools pinned to the prompt bar by default for all users.
+  # Only seeds the initial state — once a user pins/unpins a tool, their choice is kept.
+  # Valid tool keys: artifacts, execute_code, web_search, file_search, skills.
+  # Use 'mcp' (or a specific MCP server name) to pin the MCP servers dropdown.
+  # When omitted, tools start unpinned and the MCP dropdown keeps its default (pinned).
+  # defaultPinnedTools:
+  #   - 'artifacts'
+  #   - 'execute_code'
+  #   - 'mcp'
   # Remote Agents configuration
   # Controls user permissions for remote agents with external API support
   # remoteAgents:

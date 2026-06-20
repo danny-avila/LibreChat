@@ -38,6 +38,7 @@ export interface SettingsContextValue {
   hasAnyPersonalizationFeature: boolean;
   hasMemoryOptOut: boolean;
   hasRemoteAgents: boolean;
+  hasUserProvidedEndpoints: boolean;
   hasMultiConvo: boolean;
   hasPrompts: boolean;
   isLocalProvider: boolean;

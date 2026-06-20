@@ -23,6 +23,9 @@ export const mcpConfig: {
   /** TTL (ms) for OAuth flow state. Must outlive OAUTH_HANDLING_TIMEOUT so the state survives the wait. Default: 15 minutes */
   OAUTH_FLOW_TTL: number;
   CONNECTION_CHECK_TTL: number;
+  /** Max number of `tools/list` pages to request when an MCP server paginates its tool list.
+   * Bounds the pagination loop so a misbehaving server cannot stall tool discovery. Default: 50 */
+  TOOLS_LIST_MAX_PAGES: number;
   /** Idle timeout (ms) after which user connections are disconnected. Default: 15 minutes */
   USER_CONNECTION_IDLE_TIMEOUT: number;
   /** Max connect/disconnect cycles before the circuit breaker trips. Default: 7 */
@@ -47,6 +50,8 @@ export const mcpConfig: {
   /** TTL (ms) for OAuth flow state. Clamped to never fall below OAUTH_HANDLING_TIMEOUT. Default: 15 minutes */
   OAUTH_FLOW_TTL: oauthFlowTtl,
   CONNECTION_CHECK_TTL: math(process.env.MCP_CONNECTION_CHECK_TTL ?? 60000),
+  /** Max number of `tools/list` pages to request when an MCP server paginates its tool list. Clamped to >= 1. Default: 50 */
+  TOOLS_LIST_MAX_PAGES: Math.max(1, math(process.env.MCP_TOOLS_LIST_MAX_PAGES ?? 50)),
   /** Idle timeout (ms) after which user connections are disconnected. Default: 15 minutes */
   USER_CONNECTION_IDLE_TIMEOUT: math(
     process.env.MCP_USER_CONNECTION_IDLE_TIMEOUT ?? 15 * 60 * 1000,

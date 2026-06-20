@@ -376,7 +376,7 @@ describe('MCPServerInspector', () => {
       });
 
       // Mock server with no tools
-      mockConnection.client.listTools = jest.fn().mockResolvedValue({ tools: [] });
+      mockConnection.fetchTools = jest.fn().mockResolvedValue([]);
 
       const result = await MCPServerInspector.inspect('test_server', rawConfig, mockConnection);
 
@@ -462,29 +462,27 @@ describe('MCPServerInspector', () => {
 
   describe('getToolFunctions()', () => {
     it('should convert MCP tools to LibreChat tool functions format', async () => {
-      mockConnection.client.listTools = jest.fn().mockResolvedValue({
-        tools: [
-          {
-            name: 'file_read',
-            description: 'Read a file',
-            inputSchema: {
-              type: 'object',
-              properties: { path: { type: 'string' } },
+      mockConnection.fetchTools = jest.fn().mockResolvedValue([
+        {
+          name: 'file_read',
+          description: 'Read a file',
+          inputSchema: {
+            type: 'object',
+            properties: { path: { type: 'string' } },
+          },
+        },
+        {
+          name: 'file_write',
+          description: 'Write a file',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              path: { type: 'string' },
+              content: { type: 'string' },
             },
           },
-          {
-            name: 'file_write',
-            description: 'Write a file',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                path: { type: 'string' },
-                content: { type: 'string' },
-              },
-            },
-          },
-        ],
-      });
+        },
+      ]);
 
       const result = await MCPServerInspector.getToolFunctions('my_server', mockConnection);
 
@@ -518,7 +516,7 @@ describe('MCPServerInspector', () => {
     });
 
     it('should handle empty tools list', async () => {
-      mockConnection.client.listTools = jest.fn().mockResolvedValue({ tools: [] });
+      mockConnection.fetchTools = jest.fn().mockResolvedValue([]);
 
       const result = await MCPServerInspector.getToolFunctions('my_server', mockConnection);
 
