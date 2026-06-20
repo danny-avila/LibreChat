@@ -1316,4 +1316,52 @@ describe('BaseClient', () => {
       expect(userSave[0].files[0].file_id).toBe('file-abc');
     });
   });
+
+  describe('sendMessage quote references', () => {
+    const getLastUserContent = async () => {
+      const buildResult = await TestClient.buildMessages.mock.results[0].value;
+      const userMessages = buildResult.prompt.filter((m) => m.role === 'user');
+      return userMessages[userMessages.length - 1]?.content;
+    };
+
+    test('merges quoted excerpts into the user text sent to buildMessages', async () => {
+      TestClient.options.req = { body: { quotes: ['the selected text'] } };
+      TestClient.saveMessageToDatabase = jest.fn().mockResolvedValue({ message: {} });
+
+      await TestClient.sendMessage('What does this mean?');
+
+      const content = await getLastUserContent();
+      expect(content).toBe('> the selected text\n\nWhat does this mean?');
+    });
+
+    test('restores the clean user text and persists quotes on the saved message', async () => {
+      TestClient.options.req = { body: { quotes: ['first excerpt', 'second excerpt'] } };
+      TestClient.saveMessageToDatabase = jest.fn().mockResolvedValue({ message: {} });
+
+      await TestClient.sendMessage('Compare these');
+
+      const userSave = TestClient.saveMessageToDatabase.mock.calls.find(
+        ([msg]) => msg.isCreatedByUser,
+      );
+      expect(userSave).toBeDefined();
+      expect(userSave[0].text).toBe('Compare these');
+      expect(userSave[0].quotes).toEqual(['first excerpt', 'second excerpt']);
+    });
+
+    test('leaves the message untouched when no quotes are provided', async () => {
+      TestClient.options.req = { body: {} };
+      TestClient.saveMessageToDatabase = jest.fn().mockResolvedValue({ message: {} });
+
+      await TestClient.sendMessage('Just a question');
+
+      const content = await getLastUserContent();
+      expect(content).toBe('Just a question');
+
+      const userSave = TestClient.saveMessageToDatabase.mock.calls.find(
+        ([msg]) => msg.isCreatedByUser,
+      );
+      expect(userSave[0].text).toBe('Just a question');
+      expect(userSave[0].quotes).toBeUndefined();
+    });
+  });
 });

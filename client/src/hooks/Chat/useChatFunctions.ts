@@ -239,6 +239,25 @@ export default function useChatFunctions({
     [],
   );
 
+  /**
+   * Atomically read + reset the per-conversation queue of quoted excerpts the
+   * user added via the "Add to chat" selection popup. Mirrors
+   * `drainPendingManualSkills`: a single snapshot read + reset so excerpts
+   * added between here and submission are never lost into a reset atom.
+   */
+  const drainPendingQuotes = useRecoilCallback(
+    ({ snapshot, reset }) =>
+      (convoId: string): string[] => {
+        const loadable = snapshot.getLoadable(store.pendingQuotesByConvoId(convoId));
+        const quotes = loadable.state === 'hasValue' ? (loadable.contents as string[]) : [];
+        if (quotes.length > 0) {
+          reset(store.pendingQuotesByConvoId(convoId));
+        }
+        return quotes;
+      },
+    [],
+  );
+
   const ask: TAskFunction = (
     {
       text,
@@ -258,6 +277,7 @@ export default function useChatFunctions({
       overrideFiles,
       targetResponseMessageId,
       overrideManualSkills,
+      overrideQuotes,
       addedConvo,
     } = {},
   ) => {
@@ -313,6 +333,21 @@ export default function useChatFunctions({
         isRegenerate || isContinued || isEdited
           ? []
           : drainPendingManualSkills(conversationId ?? Constants.NEW_CONVO);
+    }
+    /**
+     * Quoted-excerpt resolution mirrors manual skills:
+     *  - Explicit `overrideQuotes` wins (regenerate / resubmit replay the
+     *    original user message's persisted quotes so the same context is sent).
+     *  - Regenerate / continue / edit without an override → empty (those flows
+     *    replay a prior turn; the compose-time atom is left untouched).
+     *  - Fresh submit → drain the per-convo atom into the message.
+     */
+    let quotes = overrideQuotes;
+    if (quotes == null) {
+      quotes =
+        isRegenerate || isContinued || isEdited
+          ? []
+          : drainPendingQuotes(conversationId ?? Constants.NEW_CONVO);
     }
     const isEditOrContinue = isEdited || isContinued;
 
@@ -431,6 +466,13 @@ export default function useChatFunctions({
        * skill resolution reads the top-level `manualSkills` payload field.
        */
       manualSkills: manualSkills.length > 0 ? manualSkills : undefined,
+      /**
+       * Quoted excerpts the user referenced this turn. Persisted on the
+       * message (backend echoes it back on `req.body.quotes`) so `MessageQuotes`
+       * renders the references on the user bubble after reload. The backend
+       * also merges these into the model-facing user text at request time.
+       */
+      quotes: quotes.length > 0 ? quotes : undefined,
     };
 
     const submissionFiles = overrideFiles ?? targetParentMessage?.files;
@@ -609,6 +651,9 @@ export default function useChatFunctions({
            *  this the model sees an unprimed turn even though the pills
            *  still show on the user bubble. */
           overrideManualSkills: parentMessage.manualSkills,
+          /** Carry the original user message's quoted excerpts forward so the
+           *  regenerated response is sent the same referenced context. */
+          overrideQuotes: parentMessage.quotes,
         },
       );
     } else {
