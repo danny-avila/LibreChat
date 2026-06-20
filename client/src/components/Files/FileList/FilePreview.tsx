@@ -44,7 +44,7 @@ export default function FilePreview() {
   const params = useParams();
 
   return (
-    <div className="m-3 bg-white p-2 sm:p-4 md:p-6 lg:p-10">
+    <div className="m-3 bg-surface-primary p-2 sm:p-4 md:p-6 lg:p-10">
       <div className="flex flex-col justify-between md:flex-row">
         <div className="flex flex-col">
           <b className="hidden text-sm md:text-base lg:block lg:text-lg">FILE</b>
@@ -73,18 +73,18 @@ export default function FilePreview() {
       <div className="mt-3 flex flex-col">
         <div className="flex flex-row">
           <span className="flex w-1/2 flex-row items-center sm:w-1/4 md:w-2/5">
-            <InfoIcon className="size-4 text-gray-500" />
+            <InfoIcon className="size-4 text-text-tertiary" />
             &nbsp; File ID
           </span>
-          <span className="w-1/2 text-gray-500 sm:w-3/4 md:w-3/5">{file._id}</span>
+          <span className="w-1/2 text-text-tertiary sm:w-3/4 md:w-3/5">{file._id}</span>
         </div>
         <div className="mt-3 flex flex-row">
           <span className="flex w-1/2 flex-row items-center sm:w-1/4 md:w-2/5">
-            <CircleIcon className="m-0 size-4 p-0 text-gray-500" />
+            <CircleIcon className="m-0 size-4 p-0 text-text-tertiary" />
             &nbsp; Status
           </span>
           <div className="w-1/2 sm:w-3/4 md:w-3/5">
-            <span className="flex w-20 flex-row items-center justify-evenly rounded-full bg-[#f2f8ec] p-1 text-[#91c561]">
+            <span className="flex w-20 flex-row items-center justify-evenly rounded-full bg-status-success-subtle p-1 text-status-success">
               <CheckMark className="m-0 p-0" />
               <div>{file.object}</div>
             </span>
@@ -92,24 +92,24 @@ export default function FilePreview() {
         </div>
         <div className="mt-3 flex flex-row">
           <span className="flex w-1/2 flex-row items-center sm:w-1/4 md:w-2/5">
-            <Clock3Icon className="m-0 size-4 p-0 text-gray-500" />
+            <Clock3Icon className="m-0 size-4 p-0 text-text-tertiary" />
             &nbsp; Purpose
           </span>
-          <span className="w-1/2 text-gray-500 sm:w-3/4 md:w-3/5">{file.message}</span>
+          <span className="w-1/2 text-text-tertiary sm:w-3/4 md:w-3/5">{file.message}</span>
         </div>
         <div className="mt-3 flex flex-row">
           <span className="flex w-1/2 flex-row items-center sm:w-1/4 md:w-2/5">
-            <Clock3Icon className="m-0 size-4 p-0 text-gray-500" />
+            <Clock3Icon className="m-0 size-4 p-0 text-text-tertiary" />
             &nbsp; Size
           </span>
-          <span className="w-1/2 text-gray-500 sm:w-3/4 md:w-3/5">{file.bytes}</span>
+          <span className="w-1/2 text-text-tertiary sm:w-3/4 md:w-3/5">{file.bytes}</span>
         </div>
         <div className="mt-3 flex flex-row">
           <span className="flex w-1/2 flex-row items-center sm:w-1/4 md:w-2/5">
-            <Clock3Icon className="m-0 size-4 p-0 text-gray-500" />
+            <Clock3Icon className="m-0 size-4 p-0 text-text-tertiary" />
             &nbsp; Created At
           </span>
-          <span className="w-1/2 text-gray-500 sm:w-3/4 md:w-3/5">
+          <span className="w-1/2 text-text-tertiary sm:w-3/4 md:w-3/5">
             {file.createdAt?.toString()}
           </span>
         </div>
@@ -133,7 +133,7 @@ export default function FilePreview() {
                 <div className="flex w-3/5 flex-row md:w-1/2 xl:w-1/3">
                   <div className="content-center text-nowrap">{vectors.created_at.toString()}</div>
                   <Button
-                    className="m-0 ml-3 h-full bg-transparent p-0 text-[#666666] hover:bg-slate-200"
+                    className="m-0 ml-3 h-full bg-transparent p-0 text-text-destructive hover:bg-surface-hover"
                     onClick={() => {
                       console.log('Remove from vector store');
                     }}
@@ -161,7 +161,7 @@ export default function FilePreview() {
                 <div className="flex w-3/5 flex-row md:w-1/2 xl:w-1/3">
                   <div className="content-center text-nowrap">{thread.createdAt}</div>
                   <Button
-                    className="m-0 ml-3 h-full bg-transparent p-0 text-[#666666] hover:bg-slate-200"
+                    className="m-0 ml-3 h-full bg-transparent p-0 text-text-destructive hover:bg-surface-hover"
                     onClick={() => {
                       console.log('Remove from thread');
                     }}

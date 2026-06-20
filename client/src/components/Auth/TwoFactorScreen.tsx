@@ -105,7 +105,9 @@ const TwoFactorScreen: React.FC = React.memo(() => {
                 </InputOTP>
               )}
             />
-            {errors.token && <span className="text-sm text-red-500">{errors.token.message}</span>}
+            {errors.token && (
+              <span className="text-sm text-text-destructive">{errors.token.message}</span>
+            )}
           </div>
         )}
         {useBackup && (
@@ -134,7 +136,7 @@ const TwoFactorScreen: React.FC = React.memo(() => {
               )}
             />
             {errors.backupCode && (
-              <span className="text-sm text-red-500">{errors.backupCode.message}</span>
+              <span className="text-sm text-text-destructive">{errors.backupCode.message}</span>
             )}
           </div>
         )}
@@ -144,7 +146,7 @@ const TwoFactorScreen: React.FC = React.memo(() => {
             aria-label={localize('com_auth_continue')}
             data-testid="login-button"
             disabled={isLoading}
-            className="w-full rounded-2xl bg-green-600 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-80 dark:bg-green-600 dark:hover:bg-green-700"
+            className="w-full rounded-2xl bg-surface-submit px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-surface-submit-hover disabled:opacity-80"
           >
             {isLoading ? localize('com_auth_email_verifying_ellipsis') : localize('com_ui_verify')}
           </button>
