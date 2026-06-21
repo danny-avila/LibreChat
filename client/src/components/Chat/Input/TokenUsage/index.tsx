@@ -88,11 +88,16 @@ function TokenUsageIndicator({
           </Ariakit.PopoverDisclosure>
         }
       />
+      {/* Breakdown is read-only, so keep focus on the gauge trigger instead of
+          shifting it onto the non-interactive panel; Escape still closes the
+          popover (the disclosure is a valid Escape target) and focus never
+          leaves the opener. */}
       <Ariakit.Popover
         store={popover}
         gutter={8}
         portal
         unmountOnHide
+        autoFocusOnShow={false}
         aria-label={localize('com_ui_context_usage')}
         className="z-[200] rounded-xl border border-border-medium bg-surface-secondary p-3 shadow-lg focus:outline-none"
       >
