@@ -58,6 +58,9 @@ export const memoryInstructions =
 export const SET_MEMORY_TOOL_NAME = 'set_memory';
 export const DELETE_MEMORY_TOOL_NAME = 'delete_memory';
 
+/** Maximum memory key length, matching the REST memory routes. */
+const MEMORY_KEY_CHAR_LIMIT = 1000;
+
 const SET_MEMORY_DESCRIPTION = 'Saves important information about the user into memory.';
 const DELETE_MEMORY_DESCRIPTION =
   'Deletes specific memory data about the user using the provided key. For updating existing memories, use the `set_memory` tool instead';
@@ -102,12 +105,14 @@ export const createMemoryTool = ({
   userId,
   setMemory,
   validKeys,
+  charLimit,
   tokenLimit,
   totalTokens = 0,
 }: {
   userId: string | ObjectId;
   setMemory: MemoryMethods['setMemory'];
   validKeys?: string[];
+  charLimit?: number;
   tokenLimit?: number;
   totalTokens?: number;
 }): DynamicStructuredTool => {
@@ -133,6 +138,18 @@ export const createMemoryTool = ({
               )}`,
             );
             return [`Invalid key "${key}". Must be one of: ${validKeys.join(', ')}`, undefined];
+          }
+
+          /** Mirror the REST memory routes' size guards so inline writes can't
+           *  persist values the normal memory UI/API would reject. */
+          if (key.length > MEMORY_KEY_CHAR_LIMIT) {
+            return [
+              `Key exceeds maximum length of ${MEMORY_KEY_CHAR_LIMIT} characters.`,
+              undefined,
+            ];
+          }
+          if (charLimit && value.length > charLimit) {
+            return [`Value exceeds maximum length of ${charLimit} characters.`, undefined];
           }
 
           const tokenCount = Tokenizer.getTokenCount(value, 'o200k_base');

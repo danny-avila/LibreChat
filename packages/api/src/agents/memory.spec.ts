@@ -596,6 +596,15 @@ describe('createMemoryTool tokenLimit enforcement', () => {
     expect(setMemory).toHaveBeenCalledTimes(2);
   });
 
+  it('rejects values longer than charLimit without writing', async () => {
+    const setMemory = jest.fn().mockResolvedValue({ ok: true });
+    const tool = createMemoryTool({ userId: 'user-1', setMemory, charLimit: 10 });
+
+    await tool.invoke({ key: 'k1', value: 'this value is far longer than ten characters' });
+
+    expect(setMemory).not.toHaveBeenCalled();
+  });
+
   it('treats a repeat write to the same key as a replacement, not an addition', async () => {
     const setMemory = jest.fn().mockResolvedValue({ ok: true });
     /** ~100 tokens; two distinct keys would exceed the 150 limit, but rewriting

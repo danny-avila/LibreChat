@@ -20,6 +20,7 @@ const {
   Tools,
   Constants,
   Permissions,
+  EModelEndpoint,
   EToolResources,
   PermissionTypes,
 } = require('librechat-data-provider');
@@ -66,6 +67,13 @@ const { getRoleByName, setMemory, deleteMemory, getFormattedMemories } = require
  * @returns {Promise<boolean>}
  */
 async function isMemoryToolUsable(req, writePermissions = []) {
+  /** Re-check the agents `memory` capability at execution time: an admin can
+   *  disable it after agents were created with the marker, and the raw agent in
+   *  the execution context still carries that marker. */
+  const agentsCapabilities = req?.config?.endpoints?.[EModelEndpoint.agents]?.capabilities;
+  if (!Array.isArray(agentsCapabilities) || !agentsCapabilities.includes(Tools.memory)) {
+    return false;
+  }
   if (!isMemoryEnabled(req?.config?.memory)) {
     return false;
   }
@@ -419,6 +427,7 @@ const loadTools = async ({
     } else if (tool === SET_MEMORY_TOOL_NAME) {
       const memoryConfig = options.req?.config?.memory;
       const validKeys = memoryConfig?.validKeys;
+      const charLimit = memoryConfig?.charLimit;
       const tokenLimit = memoryConfig?.tokenLimit;
       requestedTools[tool] = async () => {
         if (
@@ -439,7 +448,14 @@ const loadTools = async ({
             return null;
           }
         }
-        return createMemoryTool({ userId: user, setMemory, validKeys, tokenLimit, totalTokens });
+        return createMemoryTool({
+          userId: user,
+          setMemory,
+          validKeys,
+          charLimit,
+          tokenLimit,
+          totalTokens,
+        });
       };
       continue;
     } else if (tool === DELETE_MEMORY_TOOL_NAME) {
