@@ -1188,7 +1188,7 @@ describe('configSchema langfuse', () => {
         secretKey: 'sk-lf-tenant',
         fanout: {
           enabled: true,
-          baseUrl: 'http://langfuse-fanout-collector:4318',
+          collectorUrl: 'http://langfuse-fanout-collector:4318',
         },
       },
     });

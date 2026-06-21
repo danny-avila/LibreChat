@@ -4,14 +4,12 @@ kind: Deployment
 metadata:
   name: {{ include "librechat.langfuseFanout.fullname" . }}
   labels:
-    {{- include "librechat.labels" . | nindent 4 }}
-    app.kubernetes.io/component: langfuse-fanout
+    {{- include "librechat.langfuseFanout.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.langfuseFanout.replicaCount }}
   selector:
     matchLabels:
-      {{- include "librechat.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: langfuse-fanout
+      {{- include "librechat.langfuseFanout.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       annotations:
@@ -20,8 +18,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       labels:
-        {{- include "librechat.selectorLabels" . | nindent 8 }}
-        app.kubernetes.io/component: langfuse-fanout
+        {{- include "librechat.langfuseFanout.labels" . | nindent 8 }}
         {{- with .Values.langfuseFanout.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

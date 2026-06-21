@@ -58,10 +58,13 @@ export function buildLangfuseConfig({
     const fanoutEnabled =
       fanout?.enabled !== false &&
       (fanout?.enabled === true || process.env.LANGFUSE_FANOUT_ENABLED === 'true');
-    const fanoutBaseUrl =
-      normalizeString(fanout?.baseUrl) ?? normalizeString(process.env.LANGFUSE_FANOUT_BASE_URL);
+    const fanoutCollectorUrl =
+      normalizeString(fanout?.collectorUrl) ??
+      normalizeString(process.env.LANGFUSE_FANOUT_COLLECTOR_URL);
     const baseUrl =
-      fanoutEnabled && fanoutBaseUrl ? fanoutBaseUrl : normalizeString(config?.baseUrl);
+      fanoutEnabled && fanoutCollectorUrl
+        ? fanoutCollectorUrl
+        : normalizeString(config?.baseUrl);
 
     if (baseUrl) {
       langfuse.baseUrl = baseUrl;

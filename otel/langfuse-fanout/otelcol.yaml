@@ -26,11 +26,15 @@ processors:
 
 exporters:
   otlphttp/central:
+    # Langfuse Cloud base URL options: https://cloud.langfuse.com (EU),
+    # https://us.cloud.langfuse.com (US), https://jp.cloud.langfuse.com (JP),
+    # https://hipaa.cloud.langfuse.com (HIPAA).
     endpoint: '${env:LANGFUSE_FANOUT_CENTRAL_BASE_URL}/api/public/otel'
     headers:
       Authorization: '${env:LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER}'
       x-langfuse-ingestion-version: '4'
   otlphttp/tenant:
+    # Use the tenant project's Langfuse Cloud region or self-hosted base URL.
     endpoint: '${env:LANGFUSE_FANOUT_TENANT_BASE_URL}/api/public/otel'
     auth:
       authenticator: headers_setter/tenant_passthrough

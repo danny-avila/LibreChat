@@ -27,8 +27,8 @@ data:
   {{- if and .Values.langfuseFanout.enabled (not (hasKey $configEnv "LANGFUSE_FANOUT_ENABLED")) }}
   LANGFUSE_FANOUT_ENABLED: "true"
   {{- end }}
-  {{- if and .Values.langfuseFanout.enabled (not (hasKey $configEnv "LANGFUSE_FANOUT_BASE_URL")) }}
-  LANGFUSE_FANOUT_BASE_URL: http://{{ include "librechat.langfuseFanout.fullname" . }}.{{ .Release.Namespace | lower }}.svc.cluster.local:{{ .Values.langfuseFanout.service.port }}
+  {{- if and .Values.langfuseFanout.enabled (not (hasKey $configEnv "LANGFUSE_FANOUT_COLLECTOR_URL")) }}
+  LANGFUSE_FANOUT_COLLECTOR_URL: http://{{ include "librechat.langfuseFanout.fullname" . }}.{{ .Release.Namespace | lower }}.svc.cluster.local:{{ .Values.langfuseFanout.service.port }}
   {{- end }}
   {{- if $configEnv }}
   {{- $renderedConfigEnv := $configEnv }}

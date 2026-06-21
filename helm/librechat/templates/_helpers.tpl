@@ -28,13 +28,21 @@ If release name contains chart name it will be used as a full name.
 Common labels
 */}}
 {{- define "librechat.labels" -}}
-helm.sh/chart: {{ include "librechat.chart" . }}
-{{ include "librechat.selectorLabels" . }}
-{{- if .Chart.AppVersion }}
-app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- include "librechat.standardLabels" (dict "root" . "selectorLabels" (include "librechat.selectorLabels" .)) }}
 {{- end }}
-app.kubernetes.io/managed-by: {{ .Release.Service }}
+
+{{/*
+Standard labels for chart-managed workloads.
+*/}}
+{{- define "librechat.standardLabels" -}}
+{{- $root := .root -}}
+helm.sh/chart: {{ include "librechat.chart" $root }}
+{{ .selectorLabels }}
+{{- if $root.Chart.AppVersion }}
+app.kubernetes.io/version: {{ $root.Chart.AppVersion | quote }}
 {{- end }}
+app.kubernetes.io/managed-by: {{ $root.Release.Service }}
+{{- end -}}
 
 {{/*
 Selector labels
@@ -49,6 +57,21 @@ Langfuse fanout collector service name.
 */}}
 {{- define "librechat.langfuseFanout.fullname" -}}
 {{- printf "%s-langfuse-fanout" (include "librechat.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Langfuse fanout collector selector labels.
+*/}}
+{{- define "librechat.langfuseFanout.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "librechat.langfuseFanout.fullname" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{/*
+Langfuse fanout collector labels.
+*/}}
+{{- define "librechat.langfuseFanout.labels" -}}
+{{- include "librechat.standardLabels" (dict "root" . "selectorLabels" (include "librechat.langfuseFanout.selectorLabels" .)) }}
 {{- end }}
 
 {{/*

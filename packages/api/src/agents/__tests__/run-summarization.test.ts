@@ -204,7 +204,7 @@ function makeAppConfig(customEndpoints: TestCustomEndpoint[]): AppConfig {
 beforeEach(() => {
   jest.clearAllMocks();
   delete process.env.LANGFUSE_FANOUT_ENABLED;
-  delete process.env.LANGFUSE_FANOUT_BASE_URL;
+  delete process.env.LANGFUSE_FANOUT_COLLECTOR_URL;
 });
 
 // ---------------------------------------------------------------------------
@@ -1183,7 +1183,7 @@ describe('Langfuse run config', () => {
           secretKey: 'sk-tenant-1',
           fanout: {
             enabled: true,
-            baseUrl: 'http://langfuse-fanout-collector:4318',
+            collectorUrl: 'http://langfuse-fanout-collector:4318',
           },
         },
       } as AppConfig,
@@ -1199,9 +1199,9 @@ describe('Langfuse run config', () => {
     });
   });
 
-  it('uses deployment fanout base URL when tenant app config only contains keys', async () => {
+  it('uses deployment fanout collector URL when tenant app config only contains keys', async () => {
     process.env.LANGFUSE_FANOUT_ENABLED = 'true';
-    process.env.LANGFUSE_FANOUT_BASE_URL = 'http://collector-from-env:4318';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
 
     const callArgs = await callAndCaptureRunConfig({
       tenantId: 'tenant-1',
@@ -1222,7 +1222,7 @@ describe('Langfuse run config', () => {
 
   it('does not route to fanout when deployment fanout is enabled without tenant keys', async () => {
     process.env.LANGFUSE_FANOUT_ENABLED = 'true';
-    process.env.LANGFUSE_FANOUT_BASE_URL = 'http://collector-from-env:4318';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
 
     const callArgs = await callAndCaptureRunConfig({
       tenantId: 'tenant-1',
@@ -1240,7 +1240,7 @@ describe('Langfuse run config', () => {
 
   it('lets tenant fanout.enabled=false override deployment fanout env', async () => {
     process.env.LANGFUSE_FANOUT_ENABLED = 'true';
-    process.env.LANGFUSE_FANOUT_BASE_URL = 'http://collector-from-env:4318';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
 
     const callArgs = await callAndCaptureRunConfig({
       tenantId: 'tenant-1',

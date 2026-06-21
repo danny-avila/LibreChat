@@ -1692,7 +1692,7 @@ export const langfuseConfigSchema = z.object({
   fanout: z
     .object({
       enabled: z.boolean().optional(),
-      baseUrl: z.string().optional(),
+      collectorUrl: z.string().optional(),
     })
     .optional(),
 });

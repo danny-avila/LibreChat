@@ -92,7 +92,7 @@ function getTenantScoreDestination(appConfig?: AppConfig): LangfuseScoreDestinat
 
 /**
  * Score fanout uses Langfuse's direct REST API. Trace fanout may use the OTLP
- * collector via appConfig.langfuse.fanout/base LANGFUSE_FANOUT_BASE_URL.
+ * collector via appConfig.langfuse.fanout.collectorUrl/LANGFUSE_FANOUT_COLLECTOR_URL.
  */
 export function getScoreDestinations(appConfig?: AppConfig): LangfuseScoreDestination[] {
   const destinations = [getCentralScoreDestination(), getTenantScoreDestination(appConfig)].filter(
