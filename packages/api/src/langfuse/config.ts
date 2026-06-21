@@ -1,8 +1,13 @@
 import type { AppConfig } from '@librechat/data-schemas';
 import type { RunConfig } from '@librechat/agents';
-import { normalizeString } from './utils';
+import { isFalseEnv, normalizeString } from './utils';
 
 type LangfuseRunConfig = NonNullable<RunConfig['langfuse']>;
+const TENANT_EXPORT_METADATA_KEY = 'librechat.langfuse.tenant_export.enabled';
+
+function isTenantExportEnabled(): boolean {
+  return !isFalseEnv(process.env.LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED);
+}
 
 function mergeTraceMetadata(
   base: LangfuseRunConfig['metadata'],
@@ -56,23 +61,29 @@ export function buildLangfuseConfig({
   const publicKey = normalizeString(config?.publicKey);
   const secretKey = normalizeString(config?.secretKey);
   const hasTenantCredentials = Boolean(publicKey && secretKey);
-  if (hasTenantCredentials) {
+  const fanout = config?.fanout;
+  const fanoutEnabled =
+    fanout?.enabled !== false &&
+    (fanout?.enabled === true || process.env.LANGFUSE_FANOUT_ENABLED === 'true');
+  const fanoutCollectorUrl =
+    normalizeString(fanout?.collectorUrl) ?? normalizeString(process.env.LANGFUSE_FANOUT_COLLECTOR_URL);
+  const tenantExportEnabled = hasTenantCredentials && fanoutEnabled && isTenantExportEnabled();
+
+  if (hasTenantCredentials && (!fanoutEnabled || tenantExportEnabled)) {
     langfuse.publicKey = publicKey;
     langfuse.secretKey = secretKey;
+  }
 
-    const fanout = config?.fanout;
-    const fanoutEnabled =
-      fanout?.enabled !== false &&
-      (fanout?.enabled === true || process.env.LANGFUSE_FANOUT_ENABLED === 'true');
-    const fanoutCollectorUrl =
-      normalizeString(fanout?.collectorUrl) ??
-      normalizeString(process.env.LANGFUSE_FANOUT_COLLECTOR_URL);
-    const baseUrl =
-      fanoutEnabled && fanoutCollectorUrl ? fanoutCollectorUrl : normalizeString(config?.baseUrl);
+  const baseUrl = fanoutEnabled && fanoutCollectorUrl ? fanoutCollectorUrl : normalizeString(config?.baseUrl);
+  if (baseUrl) {
+    langfuse.baseUrl = baseUrl;
+  }
 
-    if (baseUrl) {
-      langfuse.baseUrl = baseUrl;
-    }
+  if (tenantExportEnabled) {
+    langfuse.metadata = {
+      ...(langfuse.metadata ?? {}),
+      [TENANT_EXPORT_METADATA_KEY]: 'true',
+    };
   }
 
   return langfuse;

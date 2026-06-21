@@ -18,6 +18,14 @@ processors:
     check_interval: 1s
     limit_mib: ${env:LANGFUSE_FANOUT_MEMORY_LIMIT_MIB}
     spike_limit_mib: ${env:LANGFUSE_FANOUT_MEMORY_SPIKE_LIMIT_MIB}
+  filter/tenant_export:
+    error_mode: ignore
+    traces:
+      span:
+        - attributes["langfuse.trace.metadata.librechat.langfuse.tenant_export.enabled"] != "true"
+  batch/central:
+    timeout: 1s
+    send_batch_size: 128
   batch/by_auth:
     timeout: 1s
     send_batch_size: 128
@@ -44,7 +52,11 @@ exporters:
 service:
   extensions: [headers_setter/tenant_passthrough]
   pipelines:
-    traces:
+    traces/central:
       receivers: [otlp]
-      processors: [memory_limiter, batch/by_auth]
-      exporters: [otlphttp/central, otlphttp/tenant]
+      processors: [memory_limiter, batch/central]
+      exporters: [otlphttp/central]
+    traces/tenant:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/tenant_export, batch/by_auth]
+      exporters: [otlphttp/tenant]

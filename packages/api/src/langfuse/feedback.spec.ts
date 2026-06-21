@@ -23,6 +23,7 @@ const langfuseEnvKeys = [
   'LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER',
   'LANGFUSE_FANOUT_CENTRAL_BASE_URL',
   'LANGFUSE_FANOUT_TENANT_BASE_URL',
+  'LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED',
 ];
 let fetchMock: jest.SpiedFunction<typeof fetch>;
 
@@ -263,6 +264,32 @@ describe('Langfuse feedback scores', () => {
       feedback: { rating: 'thumbsUp' },
       appConfig: appConfigWithLangfuse({
         enabled: false,
+        publicKey: 'tenant-public-key',
+        secretKey: 'tenant-secret-key',
+      }),
+    });
+
+    expect(getFetchMock()).toHaveBeenCalledTimes(1);
+    expect(getFetchMock()).toHaveBeenCalledWith(
+      'http://central-langfuse:3000/api/public/scores',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ Authorization: 'Basic central-auth' }),
+      }),
+    );
+  });
+
+  it('skips tenant scores when tenant fanout export is disabled but keeps central scores', async () => {
+    process.env.LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER = 'Basic central-auth';
+    process.env.LANGFUSE_FANOUT_CENTRAL_BASE_URL = 'http://central-langfuse:3000';
+    process.env.LANGFUSE_FANOUT_TENANT_BASE_URL = 'http://tenant-langfuse:3000';
+    process.env.LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED = 'false';
+    const { sendFeedbackScore } = await loadFeedback();
+
+    await sendFeedbackScore({
+      traceId: 'trace-id',
+      feedback: { rating: 'thumbsUp' },
+      appConfig: appConfigWithLangfuse({
         publicKey: 'tenant-public-key',
         secretKey: 'tenant-secret-key',
       }),

@@ -15,6 +15,10 @@ disabled unless you explicitly deploy the fanout collector.
 - The collector also exports the same trace to the tenant Langfuse project by
   forwarding the tenant `Authorization` header that LibreChat attaches to the
   OTLP request.
+- Tenant export is conditional. LibreChat marks traces as tenant-exportable only
+  when tenant keys are configured and `LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED` is
+  not false; unmarked traces are still exported to central but are dropped by
+  the tenant pipeline.
 - User feedback scores use Langfuse's direct REST API. Scores are sent to the
   central project and, when tenant Langfuse keys are configured, the tenant
   project.
@@ -31,6 +35,9 @@ defined in this collector config.
   starts.
 - Tenant Langfuse API keys can be added, changed, or disabled in tenant app
   configuration at runtime without restarting LibreChat or the collector.
+- `LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED=false` can be set on LibreChat as an
+  emergency switch to stop tenant trace and score export while keeping central
+  collector export active.
 - This supports Langfuse Cloud and self-hosted Langfuse as long as the relevant
   central and tenant base URLs are known at collector/server startup.
 - All tenant traces that use deployment-level fanout are sent to the same
@@ -46,6 +53,7 @@ Set the central Langfuse destination in `.env`:
 LANGFUSE_FANOUT_CENTRAL_BASE_URL=https://cloud.langfuse.com
 LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER=Basic <base64-public-key-colon-secret-key>
 LANGFUSE_FANOUT_TENANT_BASE_URL=https://cloud.langfuse.com
+LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED=true
 ```
 
 Langfuse Cloud base URL options:

@@ -1,5 +1,5 @@
 import type { AppConfig } from '@librechat/data-schemas';
-import { normalizeString, toBasicAuthorization } from './utils';
+import { isFalseEnv, normalizeString, toBasicAuthorization } from './utils';
 
 const DEFAULT_BASE_URL = 'https://cloud.langfuse.com';
 
@@ -8,10 +8,6 @@ export type LangfuseScoreDestination = {
   baseUrl: string;
   authorization: string;
 };
-
-function isFalseEnv(value?: string): boolean {
-  return value != null && ['0', 'false', 'no', 'off'].includes(value.trim().toLowerCase());
-}
 
 function isSampleRateEnabled(value?: string): boolean {
   if (value == null || value.trim() === '') {
@@ -66,6 +62,9 @@ function getCentralScoreDestination(): LangfuseScoreDestination | undefined {
 
 function getTenantScoreDestination(appConfig?: AppConfig): LangfuseScoreDestination | undefined {
   if (!isTracingEnabled()) {
+    return undefined;
+  }
+  if (isFalseEnv(process.env.LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED)) {
     return undefined;
   }
 

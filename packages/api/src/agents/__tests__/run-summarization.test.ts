@@ -205,6 +205,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   delete process.env.LANGFUSE_FANOUT_ENABLED;
   delete process.env.LANGFUSE_FANOUT_COLLECTOR_URL;
+  delete process.env.LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED;
 });
 
 // ---------------------------------------------------------------------------
@@ -1194,7 +1195,10 @@ describe('Langfuse run config', () => {
       publicKey: 'pk-tenant-1',
       secretKey: 'sk-tenant-1',
       baseUrl: 'http://langfuse-fanout-collector:4318',
-      metadata: { 'librechat.tenant.id': 'tenant-1' },
+      metadata: {
+        'librechat.tenant.id': 'tenant-1',
+        'librechat.langfuse.tenant_export.enabled': 'true',
+      },
       tags: ['tenant:tenant-1'],
     });
   });
@@ -1217,10 +1221,14 @@ describe('Langfuse run config', () => {
       publicKey: 'pk-tenant-1',
       secretKey: 'sk-tenant-1',
       baseUrl: 'http://collector-from-env:4318',
+      metadata: {
+        'librechat.tenant.id': 'tenant-1',
+        'librechat.langfuse.tenant_export.enabled': 'true',
+      },
     });
   });
 
-  it('does not route to fanout when deployment fanout is enabled without tenant keys', async () => {
+  it('routes central-only traces to the collector when deployment fanout is enabled without tenant keys', async () => {
     process.env.LANGFUSE_FANOUT_ENABLED = 'true';
     process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
 
@@ -1233,6 +1241,30 @@ describe('Langfuse run config', () => {
 
     expect(callArgs.langfuse).toEqual({
       deterministicTraceId: true,
+      baseUrl: 'http://collector-from-env:4318',
+      metadata: { 'librechat.tenant.id': 'tenant-1' },
+      tags: ['tenant:tenant-1'],
+    });
+  });
+
+  it('routes central-only traces to the collector when tenant fanout export is disabled', async () => {
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
+    process.env.LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED = 'false';
+
+    const callArgs = await callAndCaptureRunConfig({
+      tenantId: 'tenant-1',
+      appConfig: {
+        langfuse: {
+          publicKey: 'pk-tenant-1',
+          secretKey: 'sk-tenant-1',
+        },
+      } as AppConfig,
+    });
+
+    expect(callArgs.langfuse).toEqual({
+      deterministicTraceId: true,
+      baseUrl: 'http://collector-from-env:4318',
       metadata: { 'librechat.tenant.id': 'tenant-1' },
       tags: ['tenant:tenant-1'],
     });

@@ -5,6 +5,7 @@ services:
     environment:
       - LANGFUSE_FANOUT_ENABLED=true
       - LANGFUSE_FANOUT_COLLECTOR_URL=http://langfuse-fanout-collector:4318
+      - LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED=${LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED:-true}
     networks:
       - default
       - langfuse-fanout

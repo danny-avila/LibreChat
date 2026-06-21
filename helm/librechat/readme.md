@@ -64,6 +64,10 @@ When enabled, the chart also sets `LANGFUSE_FANOUT_ENABLED` and
 `LANGFUSE_FANOUT_COLLECTOR_URL` for the LibreChat app unless those values are
 already provided in `librechat.configEnv`.
 
+Set `librechat.configEnv.LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED=false` to keep
+central trace export flowing through the collector while disabling tenant trace
+and score export.
+
 Langfuse base URLs are startup configuration for the LibreChat server and
 collector. Tenant API keys can still be added through tenant app configuration at
 runtime without restarting either component.
