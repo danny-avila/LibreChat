@@ -192,6 +192,7 @@ interface:
   #   create: false
   #   share: true
   #   public: true # Allows users to toggle "share with everyone" for their links. Whether anonymous access is permitted is controlled by ALLOW_SHARED_LINKS_PUBLIC.
+  #   snapshotFiles: true # Snapshot files referenced by a shared chat so viewers can preview/download them via the link. Enabled by default; the SHARED_LINKS_SNAPSHOT_FILES env var overrides this.
   # mcpServers:
   # Controls user permissions for MCP (Model Context Protocol) server management
   # - use: Allow users to use configured MCP servers

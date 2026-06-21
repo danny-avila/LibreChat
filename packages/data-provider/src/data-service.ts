@@ -79,15 +79,20 @@ export function getSharedLink(conversationId: string): Promise<t.TSharedLinkGetR
 export function createSharedLink(
   conversationId: string,
   targetMessageId?: string,
+  snapshotFiles?: boolean,
 ): Promise<t.TSharedLinkResponse> {
-  return request.post(endpoints.createSharedLink(conversationId), { targetMessageId });
+  return request.post(endpoints.createSharedLink(conversationId), {
+    targetMessageId,
+    snapshotFiles,
+  });
 }
 
 export function updateSharedLink(
   shareId: string,
   targetMessageId?: string,
+  snapshotFiles?: boolean,
 ): Promise<t.TSharedLinkResponse> {
-  return request.patch(endpoints.updateSharedLink(shareId), { targetMessageId });
+  return request.patch(endpoints.updateSharedLink(shareId), { targetMessageId, snapshotFiles });
 }
 
 export function deleteSharedLink(shareId: string): Promise<m.TDeleteSharedLinkResponse> {
@@ -437,6 +442,11 @@ export const getFilePreview = (fileId: string): Promise<f.TFilePreview> => {
   return request.get(endpoints.filePreview(fileId));
 };
 
+/** Preview status for a snapshotted file served through a shared link. */
+export const getSharedFilePreview = (shareId: string, fileId: string): Promise<f.TFilePreview> => {
+  return request.get(endpoints.sharedFilePreview(shareId, fileId));
+};
+
 export const getAgentFiles = (agentId: string): Promise<f.TFile[]> => {
   return request.get(endpoints.agentFiles(agentId));
 };
@@ -721,6 +731,19 @@ export const getFileDownloadURL = async (
   file_id: string,
 ): Promise<f.FileDownloadURLResponse> => {
   return request.get(`${endpoints.files()}/download-url/${userId}/${file_id}`);
+};
+
+/** Blob download for a snapshotted file served through a shared link. */
+export const getSharedFileDownload = async (
+  shareId: string,
+  file_id: string,
+): Promise<AxiosResponse> => {
+  return request.getResponse(endpoints.sharedFileDownload(shareId, file_id), {
+    responseType: 'blob',
+    headers: {
+      Accept: 'application/octet-stream',
+    },
+  });
 };
 
 export const getCodeOutputDownload = async (url: string): Promise<AxiosResponse> => {

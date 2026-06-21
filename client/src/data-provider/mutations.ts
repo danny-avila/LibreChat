@@ -172,24 +172,32 @@ export const usePinConversationMutation = (
 export const useCreateSharedLinkMutation = (
   options?: t.MutationOptions<
     t.TCreateShareLinkRequest,
-    { conversationId: string; targetMessageId?: string }
+    { conversationId: string; targetMessageId?: string; snapshotFiles?: boolean }
   >,
 ): UseMutationResult<
   t.TSharedLinkResponse,
   unknown,
-  { conversationId: string; targetMessageId?: string },
+  { conversationId: string; targetMessageId?: string; snapshotFiles?: boolean },
   unknown
 > => {
   const queryClient = useQueryClient();
 
   const { onSuccess, ..._options } = options || {};
   return useMutation(
-    ({ conversationId, targetMessageId }: { conversationId: string; targetMessageId?: string }) => {
+    ({
+      conversationId,
+      targetMessageId,
+      snapshotFiles,
+    }: {
+      conversationId: string;
+      targetMessageId?: string;
+      snapshotFiles?: boolean;
+    }) => {
       if (!conversationId) {
         throw new Error('Conversation ID is required');
       }
 
-      return dataService.createSharedLink(conversationId, targetMessageId);
+      return dataService.createSharedLink(conversationId, targetMessageId, snapshotFiles);
     },
     {
       onSuccess: (_data: t.TSharedLinkResponse, vars, context) => {
@@ -203,17 +211,25 @@ export const useCreateSharedLinkMutation = (
 };
 
 export const useUpdateSharedLinkMutation = (
-  options?: t.MutationOptions<t.TUpdateShareLinkRequest, t.TUpdateShareLinkRequest>,
-): UseMutationResult<t.TSharedLinkResponse, unknown, t.TUpdateShareLinkRequest, unknown> => {
+  options?: t.MutationOptions<
+    t.TUpdateShareLinkRequest,
+    t.TUpdateShareLinkRequest & { snapshotFiles?: boolean }
+  >,
+): UseMutationResult<
+  t.TSharedLinkResponse,
+  unknown,
+  t.TUpdateShareLinkRequest & { snapshotFiles?: boolean },
+  unknown
+> => {
   const queryClient = useQueryClient();
 
   const { onSuccess, ..._options } = options || {};
   return useMutation(
-    ({ shareId, targetMessageId }) => {
+    ({ shareId, targetMessageId, snapshotFiles }) => {
       if (!shareId) {
         throw new Error('Share ID is required');
       }
-      return dataService.updateSharedLink(shareId, targetMessageId);
+      return dataService.updateSharedLink(shareId, targetMessageId, snapshotFiles);
     },
     {
       onSuccess: (_data: t.TSharedLinkResponse, vars, context) => {
