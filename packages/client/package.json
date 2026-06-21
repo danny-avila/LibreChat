@@ -36,8 +36,8 @@
     "dev": "tsdown --watch"
   },
   "peerDependencies": {
-    "@ariakit/react": "^0.4.16",
-    "@ariakit/react-core": "^0.4.17",
+    "@ariakit/react": "^0.4.29",
+    "@ariakit/react-core": "^0.4.26",
     "@dicebear/collection": "^9.4.1",
     "@dicebear/core": "^9.4.1",
     "@headlessui/react": "^2.1.2",
