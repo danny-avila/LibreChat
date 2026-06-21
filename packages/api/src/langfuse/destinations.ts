@@ -1,10 +1,5 @@
 import type { AppConfig } from '@librechat/data-schemas';
-import {
-  isEnabledUnlessBlankOrFalse,
-  isFalseEnv,
-  normalizeString,
-  toBasicAuthorization,
-} from './utils';
+import { isFalseEnv, isTrueEnv, normalizeString, toBasicAuthorization } from './utils';
 import { resolveLangfuseTenantDestination } from './tenantDestinations';
 
 const DEFAULT_BASE_URL = 'https://cloud.langfuse.com';
@@ -70,7 +65,7 @@ function getTenantScoreDestination(appConfig?: AppConfig): LangfuseScoreDestinat
   if (!isTracingEnabled()) {
     return undefined;
   }
-  if (!isEnabledUnlessBlankOrFalse(process.env.LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED)) {
+  if (isTrueEnv(process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED)) {
     return undefined;
   }
 

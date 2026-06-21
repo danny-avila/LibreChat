@@ -28,7 +28,7 @@ const langfuseEnvKeys = [
   'LANGFUSE_FANOUT_TENANT_US_BASE_URL',
   'LANGFUSE_FANOUT_TENANT_JP_BASE_URL',
   'LANGFUSE_FANOUT_TENANT_HIPAA_BASE_URL',
-  'LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED',
+  'LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED',
 ];
 let fetchMock: jest.SpiedFunction<typeof fetch>;
 
@@ -341,7 +341,7 @@ describe('Langfuse feedback scores', () => {
     process.env.LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER = 'Basic central-auth';
     process.env.LANGFUSE_FANOUT_CENTRAL_BASE_URL = 'http://central-langfuse:3000';
     process.env.LANGFUSE_FANOUT_TENANT_BASE_URL = 'http://tenant-langfuse:3000';
-    process.env.LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED = 'false';
+    process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED = 'true';
     const { sendFeedbackScore } = await loadFeedback();
 
     await sendFeedbackScore({
@@ -363,10 +363,10 @@ describe('Langfuse feedback scores', () => {
     );
   });
 
-  it('treats blank tenant fanout export env as disabled for scores', async () => {
+  it('does not disable tenant scores for a blank emergency toggle', async () => {
     process.env.LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER = 'Basic central-auth';
     process.env.LANGFUSE_FANOUT_CENTRAL_BASE_URL = 'http://central-langfuse:3000';
-    process.env.LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED = '  ';
+    process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED = '  ';
     const { sendFeedbackScore } = await loadFeedback();
 
     await sendFeedbackScore({
@@ -379,12 +379,19 @@ describe('Langfuse feedback scores', () => {
       }),
     });
 
-    expect(getFetchMock()).toHaveBeenCalledTimes(1);
+    expect(getFetchMock()).toHaveBeenCalledTimes(2);
     expect(getFetchMock()).toHaveBeenCalledWith(
       'http://central-langfuse:3000/api/public/scores',
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({ Authorization: 'Basic central-auth' }),
+      }),
+    );
+    expect(getFetchMock()).toHaveBeenCalledWith(
+      'https://cloud.langfuse.com/api/public/scores',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ Authorization: getTenantAuthorization() }),
       }),
     );
   });

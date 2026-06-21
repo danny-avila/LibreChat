@@ -17,8 +17,8 @@ disabled unless you explicitly deploy the fanout collector.
   Langfuse base URLs, then forwarding the tenant `Authorization` header that
   LibreChat attaches to the OTLP request.
 - Tenant export is conditional. LibreChat marks traces as tenant-exportable only
-  when tenant keys are configured and `LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED` is
-  not false; unmarked traces are still exported to central but are dropped by
+  when tenant keys are configured and `LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED`
+  is not true; unmarked traces are still exported to central but are dropped by
   the tenant pipeline.
 - LibreChat's routing attributes are consumed by the collector and deleted
   before central or tenant export, so they are not forwarded to Langfuse.
@@ -40,10 +40,10 @@ defined in this collector config.
 - Tenant app configuration must set a Langfuse base URL matching one of the
   startup destinations before tenant trace/score export is enabled; keys alone
   are treated as central-only.
-- `LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED=false` or a blank value can be set on
-  LibreChat as an emergency switch to stop tenant trace and score export while
-  keeping central collector export active. When omitted, tenant export defaults
-  to enabled if tenant keys and a known destination are configured.
+- `LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED=true` can be set on LibreChat as an
+  emergency switch to stop tenant trace and score export while keeping central
+  collector export active. When omitted, false, or blank, tenant export remains
+  available if tenant keys and a known destination are configured.
 - This supports Langfuse Cloud and self-hosted Langfuse as long as each allowed
   tenant base URL is configured at LibreChat/collector startup. Runtime tenant
   config selects from those known destinations; it does not inject arbitrary
@@ -67,7 +67,7 @@ LANGFUSE_FANOUT_TENANT_EU_BASE_URL=https://cloud.langfuse.com
 LANGFUSE_FANOUT_TENANT_US_BASE_URL=https://us.cloud.langfuse.com
 LANGFUSE_FANOUT_TENANT_JP_BASE_URL=https://jp.cloud.langfuse.com
 LANGFUSE_FANOUT_TENANT_HIPAA_BASE_URL=https://hipaa.cloud.langfuse.com
-LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED=true
+LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED=false
 ```
 
 Langfuse Cloud base URL options:

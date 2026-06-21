@@ -209,7 +209,7 @@ beforeEach(() => {
   delete process.env.LANGFUSE_FANOUT_ENABLED;
   delete process.env.LANGFUSE_FANOUT_COLLECTOR_URL;
   delete process.env.LANGFUSE_FANOUT_TENANT_DESTINATIONS;
-  delete process.env.LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED;
+  delete process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED;
 });
 
 // ---------------------------------------------------------------------------
@@ -1331,7 +1331,7 @@ describe('Langfuse run config', () => {
     process.env.LANGFUSE_SECRET_KEY = 'sk-central';
     process.env.LANGFUSE_FANOUT_ENABLED = 'true';
     process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
-    process.env.LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED = 'false';
+    process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED = 'true';
 
     const callArgs = await callAndCaptureRunConfig({
       tenantId: 'tenant-1',
@@ -1351,12 +1351,12 @@ describe('Langfuse run config', () => {
     });
   });
 
-  it('treats blank tenant fanout export env as disabled', async () => {
+  it('does not disable tenant fanout export for a blank emergency toggle', async () => {
     process.env.LANGFUSE_PUBLIC_KEY = 'pk-central';
     process.env.LANGFUSE_SECRET_KEY = 'sk-central';
     process.env.LANGFUSE_FANOUT_ENABLED = 'true';
     process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
-    process.env.LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED = '  ';
+    process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED = '  ';
 
     const callArgs = await callAndCaptureRunConfig({
       tenantId: 'tenant-1',
@@ -1373,7 +1373,13 @@ describe('Langfuse run config', () => {
       deterministicTraceId: true,
       baseUrl: 'http://collector-from-env:4318',
       metadata: { 'librechat.tenant.id': 'tenant-1' },
+      publicKey: 'pk-tenant-1',
+      secretKey: 'sk-tenant-1',
       tags: ['tenant:tenant-1'],
+      librechatTraceAttributes: {
+        'librechat.langfuse.tenant_export.enabled': 'true',
+        'librechat.langfuse.destination': 'eu',
+      },
     });
   });
 
