@@ -300,7 +300,15 @@ langfuseFanout:
       name: ""
       key: LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER
   tenant:
-    baseUrl: https://cloud.langfuse.com
+    destinations:
+      eu:
+        baseUrl: https://cloud.langfuse.com
+      us:
+        baseUrl: https://us.cloud.langfuse.com
+      jp:
+        baseUrl: https://jp.cloud.langfuse.com
+      hipaa:
+        baseUrl: https://hipaa.cloud.langfuse.com
   memoryLimitMiB: 256
   memorySpikeLimitMiB: 64
   metadataCardinalityLimit: 1000

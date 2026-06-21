@@ -68,9 +68,9 @@ Set `librechat.configEnv.LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED=false` to keep
 central trace export flowing through the collector while disabling tenant trace
 and score export.
 
-Langfuse base URLs are startup configuration for the LibreChat server and
-collector. Tenant API keys can still be added through tenant app configuration at
-runtime without restarting either component.
+Langfuse tenant base URLs are selected from the startup-configured destination
+map rendered into LibreChat and the collector. Tenant API keys can still be added
+through tenant app configuration at runtime without restarting either component.
 
 See [`otel/langfuse-fanout/README.md`](../../otel/langfuse-fanout/README.md)
 for the central Langfuse secret and values example.

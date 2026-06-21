@@ -1,9 +1,14 @@
 import type { AppConfig } from '@librechat/data-schemas';
 import type { RunConfig } from '@librechat/agents';
+import { resolveLangfuseTenantDestination } from './tenantDestinations';
 import { isFalseEnv, normalizeString } from './utils';
 
 type LangfuseRunConfig = NonNullable<RunConfig['langfuse']>;
-const TENANT_EXPORT_METADATA_KEY = 'librechat.langfuse.tenant_export.enabled';
+type LangfuseRunConfigWithTraceAttributes = LangfuseRunConfig & {
+  librechatTraceAttributes?: Record<string, string | number | boolean | null | undefined>;
+};
+const TENANT_EXPORT_ATTRIBUTE = 'librechat.langfuse.tenant_export.enabled';
+const TENANT_DESTINATION_ATTRIBUTE = 'librechat.langfuse.destination';
 
 function isTenantExportEnabled(): boolean {
   return !isFalseEnv(process.env.LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED);
@@ -39,7 +44,7 @@ export function buildLangfuseConfig({
   const normalizedTenantId = normalizeString(tenantId);
   const config = appConfig?.langfuse;
 
-  const langfuse: LangfuseRunConfig = {
+  const langfuse: LangfuseRunConfigWithTraceAttributes = {
     deterministicTraceId: true,
   };
   const metadata = mergeTraceMetadata(undefined, normalizedTenantId);
@@ -68,7 +73,9 @@ export function buildLangfuseConfig({
   const fanoutCollectorUrl =
     normalizeString(fanout?.collectorUrl) ??
     normalizeString(process.env.LANGFUSE_FANOUT_COLLECTOR_URL);
-  const tenantExportEnabled = hasTenantCredentials && fanoutEnabled && isTenantExportEnabled();
+  const tenantDestination = resolveLangfuseTenantDestination(config?.baseUrl);
+  const tenantExportEnabled =
+    hasTenantCredentials && fanoutEnabled && isTenantExportEnabled() && Boolean(tenantDestination);
 
   if (hasTenantCredentials && (!fanoutEnabled || tenantExportEnabled)) {
     langfuse.publicKey = publicKey;
@@ -82,9 +89,10 @@ export function buildLangfuseConfig({
   }
 
   if (tenantExportEnabled) {
-    langfuse.metadata = {
-      ...(langfuse.metadata ?? {}),
-      [TENANT_EXPORT_METADATA_KEY]: 'true',
+    langfuse.librechatTraceAttributes = {
+      ...(langfuse.librechatTraceAttributes ?? {}),
+      [TENANT_EXPORT_ATTRIBUTE]: 'true',
+      [TENANT_DESTINATION_ATTRIBUTE]: tenantDestination?.key,
     };
   }
 

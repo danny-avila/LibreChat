@@ -13,12 +13,15 @@ disabled unless you explicitly deploy the fanout collector.
 - The collector exports every trace to the central Langfuse project using
   `LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER`.
 - The collector also exports the same trace to the tenant Langfuse project by
-  forwarding the tenant `Authorization` header that LibreChat attaches to the
-  OTLP request.
+  routing a LibreChat-stamped destination key to one of the configured tenant
+  Langfuse base URLs, then forwarding the tenant `Authorization` header that
+  LibreChat attaches to the OTLP request.
 - Tenant export is conditional. LibreChat marks traces as tenant-exportable only
   when tenant keys are configured and `LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED` is
   not false; unmarked traces are still exported to central but are dropped by
   the tenant pipeline.
+- LibreChat's routing attributes are consumed by the collector and deleted
+  before central or tenant export, so they are not forwarded to Langfuse.
 - User feedback scores use Langfuse's direct REST API. Scores are sent to the
   central project and, when tenant Langfuse keys are configured, the tenant
   project.
@@ -30,20 +33,20 @@ defined in this collector config.
 ## Limitations
 
 - Langfuse base URLs are startup configuration. `LANGFUSE_FANOUT_CENTRAL_BASE_URL`
-  and `LANGFUSE_FANOUT_TENANT_BASE_URL` must be known when the collector starts,
-  and `LANGFUSE_FANOUT_COLLECTOR_URL` must be known when the LibreChat server
-  starts.
+  and the tenant destination map must be known when LibreChat and the collector
+  start. Tenant app configuration may choose any configured tenant destination.
 - Tenant Langfuse API keys can be added, changed, or disabled in tenant app
   configuration at runtime without restarting LibreChat or the collector.
+- Tenant app configuration must set a Langfuse base URL matching one of the
+  startup destinations before tenant trace/score export is enabled; keys alone
+  are treated as central-only.
 - `LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED=false` can be set on LibreChat as an
   emergency switch to stop tenant trace and score export while keeping central
   collector export active.
-- This supports Langfuse Cloud and self-hosted Langfuse as long as the relevant
-  central and tenant base URLs are known at collector/server startup.
-- All tenant traces that use deployment-level fanout are sent to the same
-  configured tenant Langfuse base URL. If tenants need different Langfuse hosts,
-  use a shared host known at startup or deploy/configure separate routing for
-  those host groups.
+- This supports Langfuse Cloud and self-hosted Langfuse as long as each allowed
+  tenant base URL is configured at LibreChat/collector startup. Runtime tenant
+  config selects from those known destinations; it does not inject arbitrary
+  export URLs into the collector.
 
 ## Docker Compose
 
@@ -52,18 +55,22 @@ Set the central Langfuse destination in `.env`:
 ```dotenv
 LANGFUSE_FANOUT_CENTRAL_BASE_URL=https://cloud.langfuse.com
 LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER=Basic <base64-public-key-colon-secret-key>
-LANGFUSE_FANOUT_TENANT_BASE_URL=https://cloud.langfuse.com
+LANGFUSE_FANOUT_TENANT_DESTINATIONS=eu=https://cloud.langfuse.com,us=https://us.cloud.langfuse.com,jp=https://jp.cloud.langfuse.com,hipaa=https://hipaa.cloud.langfuse.com
+LANGFUSE_FANOUT_TENANT_EU_BASE_URL=https://cloud.langfuse.com
+LANGFUSE_FANOUT_TENANT_US_BASE_URL=https://us.cloud.langfuse.com
+LANGFUSE_FANOUT_TENANT_JP_BASE_URL=https://jp.cloud.langfuse.com
+LANGFUSE_FANOUT_TENANT_HIPAA_BASE_URL=https://hipaa.cloud.langfuse.com
 LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED=true
 ```
 
 Langfuse Cloud base URL options:
 
-| Region | Base URL |
-|---|---|
-| EU | `https://cloud.langfuse.com` |
-| US | `https://us.cloud.langfuse.com` |
-| JP | `https://jp.cloud.langfuse.com` |
-| HIPAA | `https://hipaa.cloud.langfuse.com` |
+| Region | Base URL                           |
+| ------ | ---------------------------------- |
+| EU     | `https://cloud.langfuse.com`       |
+| US     | `https://us.cloud.langfuse.com`    |
+| JP     | `https://jp.cloud.langfuse.com`    |
+| HIPAA  | `https://hipaa.cloud.langfuse.com` |
 
 Then start LibreChat with the fanout override:
 
@@ -100,7 +107,15 @@ langfuseFanout:
       name: langfuse-central
       key: LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER
   tenant:
-    baseUrl: https://cloud.langfuse.com
+    destinations:
+      eu:
+        baseUrl: https://cloud.langfuse.com
+      us:
+        baseUrl: https://us.cloud.langfuse.com
+      jp:
+        baseUrl: https://jp.cloud.langfuse.com
+      hipaa:
+        baseUrl: https://hipaa.cloud.langfuse.com
 ```
 
 The chart renders the collector Deployment, Service, and collector ConfigMap,
@@ -113,6 +128,9 @@ the LibreChat app ConfigMap when they are not already supplied in
 - The collector only handles traces. Feedback scores go directly to Langfuse's
   REST API from the LibreChat API process.
 - `LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER` must be a full Basic auth header.
-- The tenant and central Langfuse base URLs default to `https://cloud.langfuse.com`.
+- Tenant destinations default to the four Langfuse Cloud regions. Add or override
+  `langfuseFanout.tenant.destinations` in Helm, or set
+  `LANGFUSE_FANOUT_TENANT_DESTINATIONS` plus matching collector base URL env vars
+  in compose, for self-hosted or custom destinations.
 - `LANGFUSE_FANOUT_COLLECTOR_URL` is the local collector URL used by LibreChat,
   not a Langfuse Cloud base URL.

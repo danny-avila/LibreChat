@@ -30,6 +30,13 @@ data:
   {{- if and .Values.langfuseFanout.enabled (not (hasKey $configEnv "LANGFUSE_FANOUT_COLLECTOR_URL")) }}
   LANGFUSE_FANOUT_COLLECTOR_URL: http://{{ include "librechat.langfuseFanout.fullname" . }}.{{ .Release.Namespace | lower }}.svc.cluster.local:{{ .Values.langfuseFanout.service.port }}
   {{- end }}
+  {{- if and .Values.langfuseFanout.enabled (not (hasKey $configEnv "LANGFUSE_FANOUT_TENANT_DESTINATIONS")) }}
+  {{- $tenantDestinations := list }}
+  {{- range $name, $destination := .Values.langfuseFanout.tenant.destinations }}
+  {{- $tenantDestinations = append $tenantDestinations (printf "%s=%s" $name $destination.baseUrl) }}
+  {{- end }}
+  LANGFUSE_FANOUT_TENANT_DESTINATIONS: {{ join "," $tenantDestinations | quote }}
+  {{- end }}
   {{- if $configEnv }}
   {{- $renderedConfigEnv := $configEnv }}
   {{- if and $adminPanelUrl (hasKey $configEnv "ADMIN_PANEL_URL") (not $configAdminPanelUrl) }}
