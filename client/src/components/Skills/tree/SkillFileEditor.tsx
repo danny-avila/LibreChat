@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
-import { Save, FileText, Circle } from 'lucide-react';
 import { Button, Spinner } from '@librechat/client';
+import { Save, FileText, Circle } from 'lucide-react';
 import { useGetSkillNodeContentQuery, useUpdateSkillNodeContentMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -82,7 +82,7 @@ export default function SkillFileEditor({ skillId, nodeId, fileName }: SkillFile
           <Circle
             className={cn(
               'size-2 shrink-0 transition-[opacity,color] duration-200',
-              isDirty ? 'fill-current text-yellow-500 opacity-100' : 'opacity-0',
+              isDirty ? 'fill-current text-status-warning opacity-100' : 'opacity-0',
             )}
             aria-hidden="true"
           />
