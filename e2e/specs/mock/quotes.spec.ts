@@ -176,9 +176,16 @@ test.describe('quote references', () => {
     await expect(popup).toContainText(MOCK_REPLY_TEXT);
     await expect(popup).toContainText(firstMessage);
 
-    // Escape closes it (and Enter was a real keyboard open, no pointer involved).
+    // Opening via keyboard moves focus into the popup (first excerpt's remove ×).
+    await expect(popup.getByRole('button').first()).toBeFocused();
+
+    // Escape closes it and returns focus to the composer (NOT the page top, the
+    // bug this guards against). `document.activeElement` must be a real control.
     await page.keyboard.press('Escape');
     await expect(popup).toBeHidden();
+    await expect(page.getByRole('textbox', { name: 'Message input' })).toBeFocused();
+    const focusTag = await page.evaluate(() => document.activeElement?.tagName ?? 'NONE');
+    expect(focusTag).not.toBe('BODY');
   });
 
   test('re-merges a persisted quote into later-turn history (durable)', async ({ page }) => {

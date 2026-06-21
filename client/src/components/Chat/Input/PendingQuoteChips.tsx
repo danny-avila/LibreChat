@@ -1,6 +1,6 @@
 import { memo, useRef, useState, useEffect, useCallback } from 'react';
+import * as Ariakit from '@ariakit/react';
 import { TextQuote, X } from 'lucide-react';
-import * as Popover from '@radix-ui/react-popover';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -20,10 +20,11 @@ const CLOSE_DELAY_MS = 120;
  * selection, or a collapsed "{n} selections" pill for multiple — so the
  * composer never fills with a row of chips.
  *
- * The collapsed pill is a keyboard-accessible disclosure (a `Popover`): the
- * trigger opens on click / Enter / Space (focus moves into the list, Escape
- * closes, each excerpt's × is tab-navigable), and also opens on hover for mouse
- * users without stealing focus from the composer.
+ * The collapsed pill is an Ariakit `Popover` disclosure: it opens on
+ * click / Enter / Space (keyboard users tab through the excerpts, Escape closes
+ * and Ariakit restores focus to the trigger) and on hover for mouse users.
+ * `autoFocusOnShow` is disabled so opening never pulls focus off the composer;
+ * `autoFocusOnHide` still returns focus to the trigger when focus was inside.
  *
  * Reads + writes `pendingQuotesByConvoId` directly; the atom is drained in
  * `useChatFunctions.ask` on submit, so chips disappear once the message is sent
@@ -34,10 +35,15 @@ function PendingQuoteChips({ conversationId }: { conversationId: string }) {
   const quotes = useRecoilValue(store.pendingQuotesByConvoId(conversationId));
   const setQuotes = useSetRecoilState(store.pendingQuotesByConvoId(conversationId));
 
-  const [open, setOpen] = useState(false);
-  /** Tracks pointer-initiated opens so hover doesn't pull focus off the composer. */
-  const pointerOpenRef = useRef(false);
+  const popover = Ariakit.usePopoverStore({ placement: 'top-start' });
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * Ariakit only restores focus to the trigger on hide when it took focus on
+   * show, so keep `autoFocusOnShow` on for keyboard/click opens (Escape returns
+   * focus to the trigger) and off for hover so it never pulls focus off the
+   * composer mid-typing.
+   */
+  const [focusOnShow, setFocusOnShow] = useState(true);
 
   const cancelClose = useCallback(() => {
     if (closeTimerRef.current != null) {
@@ -47,13 +53,13 @@ function PendingQuoteChips({ conversationId }: { conversationId: string }) {
   }, []);
   const openByPointer = useCallback(() => {
     cancelClose();
-    pointerOpenRef.current = true;
-    setOpen(true);
-  }, [cancelClose]);
+    setFocusOnShow(false);
+    popover.show();
+  }, [cancelClose, popover]);
   const scheduleClose = useCallback(() => {
     cancelClose();
-    closeTimerRef.current = setTimeout(() => setOpen(false), CLOSE_DELAY_MS);
-  }, [cancelClose]);
+    closeTimerRef.current = setTimeout(() => popover.hide(), CLOSE_DELAY_MS);
+  }, [cancelClose, popover]);
 
   useEffect(() => cancelClose, [cancelClose]);
 
@@ -93,82 +99,69 @@ function PendingQuoteChips({ conversationId }: { conversationId: string }) {
           </button>
         </span>
       ) : (
-        <Popover.Root open={open} onOpenChange={setOpen}>
-          <Popover.Anchor asChild>
-            <span
-              role="listitem"
-              className={CHIP_CLASS}
-              onPointerEnter={openByPointer}
-              onPointerLeave={scheduleClose}
+        <>
+          <span
+            role="listitem"
+            className={CHIP_CLASS}
+            onPointerEnter={openByPointer}
+            onPointerLeave={scheduleClose}
+          >
+            <Ariakit.PopoverDisclosure
+              store={popover}
+              className={TRIGGER_CLASS}
+              aria-label={localize('com_ui_quote_selections', { 0: quotes.length })}
+              onClick={() => setFocusOnShow(true)}
             >
-              <button
-                type="button"
-                className={TRIGGER_CLASS}
-                aria-haspopup="dialog"
-                aria-expanded={open}
-                aria-label={localize('com_ui_quote_selections', { 0: quotes.length })}
-                onClick={() => {
-                  pointerOpenRef.current = false;
-                  setOpen((prev) => !prev);
-                }}
-              >
-                <TextQuote className="h-4 w-4 shrink-0 text-cyan-500" aria-hidden="true" />
-                <span className="truncate">
-                  {localize('com_ui_quote_selections', { 0: quotes.length })}
-                </span>
-              </button>
-              <button
-                type="button"
-                aria-label={localize('com_ui_remove_all_quotes')}
-                onClick={clearAll}
-                className={REMOVE_BTN_CLASS}
-              >
-                <X className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
-            </span>
-          </Popover.Anchor>
-          <Popover.Portal>
-            <Popover.Content
-              side="top"
-              align="start"
-              sideOffset={8}
-              data-testid="quote-selections-popup"
-              onPointerEnter={cancelClose}
-              onPointerLeave={scheduleClose}
-              onOpenAutoFocus={(event) => {
-                if (pointerOpenRef.current) {
-                  event.preventDefault();
-                }
-              }}
-              className="z-50 w-80 max-w-[90vw] rounded-xl border border-border-light bg-surface-secondary p-2 text-text-primary shadow-lg outline-none"
+              <TextQuote className="h-4 w-4 shrink-0 text-cyan-500" aria-hidden="true" />
+              <span className="truncate">
+                {localize('com_ui_quote_selections', { 0: quotes.length })}
+              </span>
+            </Ariakit.PopoverDisclosure>
+            <button
+              type="button"
+              aria-label={localize('com_ui_remove_all_quotes')}
+              onClick={clearAll}
+              className={REMOVE_BTN_CLASS}
             >
-              <ul className="flex flex-col gap-1" aria-label={localize('com_ui_referenced_quotes')}>
-                {quotes.map((text, index) => (
-                  <li
-                    key={`${index}-${text.slice(0, 24)}`}
-                    className="flex items-start gap-1.5 rounded-xl px-1.5 py-1 hover:bg-surface-tertiary"
+              <X className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          </span>
+          <Ariakit.Popover
+            store={popover}
+            portal
+            gutter={8}
+            autoFocusOnShow={focusOnShow}
+            data-testid="quote-selections-popup"
+            onPointerEnter={cancelClose}
+            onPointerLeave={scheduleClose}
+            className="z-50 w-80 max-w-[90vw] rounded-xl border border-border-light bg-surface-secondary p-2 text-text-primary shadow-lg outline-none"
+          >
+            <ul className="flex flex-col gap-1" aria-label={localize('com_ui_referenced_quotes')}>
+              {quotes.map((text, index) => (
+                <li
+                  key={`${index}-${text.slice(0, 24)}`}
+                  className="flex items-start gap-1.5 rounded-xl px-1.5 py-1 hover:bg-surface-tertiary"
+                >
+                  <TextQuote
+                    className="mt-0.5 h-3.5 w-3.5 shrink-0 text-text-tertiary"
+                    aria-hidden="true"
+                  />
+                  <span className="line-clamp-2 flex-1 whitespace-pre-wrap break-words text-sm text-text-secondary">
+                    {text}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={localize('com_ui_remove_quote')}
+                    onClick={() => removeAt(index)}
+                    className="mt-0.5 shrink-0 rounded-full p-0.5 text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy"
                   >
-                    <TextQuote
-                      className="mt-0.5 h-3.5 w-3.5 shrink-0 text-text-tertiary"
-                      aria-hidden="true"
-                    />
-                    <span className="line-clamp-2 flex-1 whitespace-pre-wrap break-words text-sm text-text-secondary">
-                      {text}
-                    </span>
-                    <button
-                      type="button"
-                      aria-label={localize('com_ui_remove_quote')}
-                      onClick={() => removeAt(index)}
-                      className="mt-0.5 shrink-0 rounded-full p-0.5 text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy"
-                    >
-                      <X className="h-3.5 w-3.5" aria-hidden="true" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </Popover.Content>
-          </Popover.Portal>
-        </Popover.Root>
+                    <X className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </Ariakit.Popover>
+        </>
       )}
     </div>
   );
