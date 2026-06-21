@@ -203,6 +203,9 @@ function makeAppConfig(customEndpoints: TestCustomEndpoint[]): AppConfig {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  delete process.env.LANGFUSE_PUBLIC_KEY;
+  delete process.env.LANGFUSE_SECRET_KEY;
+  delete process.env.LANGFUSE_BASE_URL;
   delete process.env.LANGFUSE_FANOUT_ENABLED;
   delete process.env.LANGFUSE_FANOUT_COLLECTOR_URL;
   delete process.env.LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED;
@@ -1228,7 +1231,7 @@ describe('Langfuse run config', () => {
     });
   });
 
-  it('routes central-only traces to the collector when deployment fanout is enabled without tenant keys', async () => {
+  it('routes central-only traces to the collector when tenant Langfuse config has no keys', async () => {
     process.env.LANGFUSE_FANOUT_ENABLED = 'true';
     process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
 
@@ -1247,7 +1250,34 @@ describe('Langfuse run config', () => {
     });
   });
 
+  it('keeps central env credentials out of the run config for agents fallback', async () => {
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-central';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-central';
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
+
+    const callArgs = await callAndCaptureRunConfig({
+      tenantId: 'tenant-1',
+      appConfig: {
+        langfuse: {},
+      } as AppConfig,
+    });
+
+    expect(callArgs.langfuse).toEqual({
+      deterministicTraceId: true,
+      baseUrl: 'http://collector-from-env:4318',
+      metadata: { 'librechat.tenant.id': 'tenant-1' },
+      tags: ['tenant:tenant-1'],
+    });
+    expect(callArgs.langfuse).not.toHaveProperty('publicKey');
+    expect(callArgs.langfuse).not.toHaveProperty('secretKey');
+    expect(process.env.LANGFUSE_PUBLIC_KEY).toBe('pk-central');
+    expect(process.env.LANGFUSE_SECRET_KEY).toBe('sk-central');
+  });
+
   it('routes central-only traces to the collector when tenant fanout export is disabled', async () => {
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-central';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-central';
     process.env.LANGFUSE_FANOUT_ENABLED = 'true';
     process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector-from-env:4318';
     process.env.LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED = 'false';
