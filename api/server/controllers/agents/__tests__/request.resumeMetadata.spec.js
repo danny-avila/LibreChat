@@ -86,6 +86,15 @@ jest.mock('@librechat/api', () => ({
   buildMessageFiles: jest.fn(() => []),
   resolveTitleTiming: jest.fn(() => 'immediate'),
   GenerationJobManager: mockGenerationJobManager,
+  getReferencedQuotes: jest.fn((quotes) => {
+    if (!Array.isArray(quotes)) {
+      return null;
+    }
+    const normalized = quotes
+      .filter((quote) => typeof quote === 'string' && quote.trim().length > 0)
+      .map((quote) => quote.trim());
+    return normalized.length > 0 ? normalized : null;
+  }),
   cleanupMCPRequestContext: (...args) => mockCleanupMCPRequestContext(...args),
   createMCPRequestContext: (...args) => mockCreateMCPRequestContext(...args),
   getMCPRequestContext: (...args) => mockGetMCPRequestContext(...args),

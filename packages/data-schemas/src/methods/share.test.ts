@@ -73,6 +73,7 @@ describe('Share Methods', () => {
         feedback: mongoose.Schema.Types.Mixed,
         manualSkills: [String],
         alwaysAppliedSkills: [String],
+        quotes: [String],
         parentMessageId: String,
         attachments: [mongoose.Schema.Types.Mixed],
         files: [mongoose.Schema.Types.Mixed],
@@ -458,6 +459,7 @@ describe('Share Methods', () => {
         feedback: { rating: 'thumbsDown', tag: { key: 'inaccurate' }, text: 'private note' },
         manualSkills: ['research'],
         alwaysAppliedSkills: ['brand-voice'],
+        quotes: ['the quoted excerpt'],
         files: [
           {
             file_id: 'file123',
@@ -511,6 +513,8 @@ describe('Share Methods', () => {
       // Skill badges are non-sensitive UI metadata and should still render.
       expect(shared?.manualSkills).toEqual(['research']);
       expect(shared?.alwaysAppliedSkills).toEqual(['brand-voice']);
+      // Quoted excerpts are non-sensitive UI metadata and should still render in the share view.
+      expect(shared?.quotes).toEqual(['the quoted excerpt']);
 
       // Render metadata (filename/type/dims) is kept, storage internals dropped. The
       // file isn't snapshotted (no backing File record), so its original render URL is

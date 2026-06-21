@@ -2,6 +2,7 @@ import { HumanMessage, AIMessage } from '@langchain/core/messages';
 import { Providers, createTokenCounter, projectAgentContextUsage } from '@librechat/agents';
 import type { TContextProjectionRequest, TContextUsageEvent } from 'librechat-data-provider';
 import type { BaseMessage } from '@langchain/core/messages';
+import { mergeQuotedText } from '~/utils/quotes';
 
 interface ProjectionMessage {
   messageId: string;
@@ -9,6 +10,9 @@ interface ProjectionMessage {
   tokenCount?: number;
   isCreatedByUser?: boolean;
   text?: string;
+  /** Quoted excerpts merged into the model-facing text by the live path; must be
+   *  included here so the context gauge counts the same prompt the model sees. */
+  quotes?: string[];
   /** Compaction marker written by the live path (`agents/usage.ts`); its
    *  presence means the next call sends the summary + tail, not this raw chain. */
   metadata?: { summaryUsedTokens?: number };
@@ -93,7 +97,7 @@ export async function resolveContextProjection(
 
   const stored = await deps.getMessages(
     { conversationId: params.conversationId, user: deps.userId },
-    'messageId parentMessageId tokenCount isCreatedByUser text metadata',
+    'messageId parentMessageId tokenCount isCreatedByUser text quotes metadata',
   );
   const branch = resolveBranch(stored, params.messageId);
   if (branch.length === 0) {
@@ -118,15 +122,25 @@ export async function resolveContextProjection(
   const indexTokenCountMap: Record<string, number> = {};
   for (let i = 0; i < branch.length; i++) {
     const message = branch[i];
-    const text = message.text ?? '';
+    /** Mirror the live path: prepend quoted excerpts into the user text the model
+     *  receives so the gauge counts the same prompt. */
+    const hasQuotes =
+      message.isCreatedByUser === true &&
+      Array.isArray(message.quotes) &&
+      message.quotes.length > 0;
+    const text = hasQuotes
+      ? mergeQuotedText(message.text ?? '', message.quotes ?? [])
+      : (message.text ?? '');
     const lcMessage =
       message.isCreatedByUser === true ? new HumanMessage(text) : new AIMessage(text);
     messages.push(lcMessage);
     /** Recount messages with no stored count (imported / pre-feature) rather
      *  than charging 0 — a real 0 and "unknown" must not collapse, or the
-     *  snapshot-less histories this endpoint targets would under-report. */
+     *  snapshot-less histories this endpoint targets would under-report. Also
+     *  recount quoted messages: a text-only Save edit leaves a stale text-only
+     *  `tokenCount` that omits the quote block, so trust the merged recount. */
     indexTokenCountMap[String(i)] =
-      message.tokenCount != null && message.tokenCount > 0
+      !hasQuotes && message.tokenCount != null && message.tokenCount > 0
         ? message.tokenCount
         : tokenCounter(lcMessage);
   }
