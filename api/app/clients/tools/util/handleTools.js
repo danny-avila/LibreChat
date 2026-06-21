@@ -3,16 +3,14 @@ const { Calculator, createSearchTool, createCodeExecutionTool } = require('@libr
 const {
   checkAccess,
   toolkitParent,
-  isMemoryEnabled,
   createSafeUser,
   mcpToolPattern,
-  createMemoryTool,
   loadWebSearchAuth,
+  buildInlineMemoryTool,
   getCodeApiAuthHeaders,
   buildImageToolContext,
   SET_MEMORY_TOOL_NAME,
   buildWebSearchContext,
-  createDeleteMemoryTool,
   DELETE_MEMORY_TOOL_NAME,
   buildWebSearchDynamicContext,
 } = require('@librechat/api');
@@ -20,7 +18,6 @@ const {
   Tools,
   Constants,
   Permissions,
-  EModelEndpoint,
   EToolResources,
   PermissionTypes,
 } = require('librechat-data-provider');
@@ -55,67 +52,6 @@ const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getMCPServerTools } = require('~/server/services/Config');
 const { getMCPServersRegistry } = require('~/config');
 const { getRoleByName, setMemory, deleteMemory, getFormattedMemories } = require('~/models');
-
-/**
- * Re-checks the full memory gate before constructing inline memory tools.
- * The event-driven executor loads tools by name, so an unsolicited
- * `set_memory`/`delete_memory` call must not bypass the config, opt-out, and
- * permission checks enforced when the tools were registered. `writePermissions`
- * mirror the REST memory routes: writes require CREATE/UPDATE, not just USE.
- * @param {ServerRequest} [req]
- * @param {string[]} [writePermissions]
- * @returns {Promise<boolean>}
- */
-async function isMemoryToolUsable(req, writePermissions = []) {
-  /** Re-check the agents `memory` capability at execution time: an admin can
-   *  disable it after agents were created with the marker, and the raw agent in
-   *  the execution context still carries that marker. */
-  const agentsCapabilities = req?.config?.endpoints?.[EModelEndpoint.agents]?.capabilities;
-  if (!Array.isArray(agentsCapabilities) || !agentsCapabilities.includes(Tools.memory)) {
-    return false;
-  }
-  if (!isMemoryEnabled(req?.config?.memory)) {
-    return false;
-  }
-  if (req?.user?.personalization?.memories === false) {
-    return false;
-  }
-  try {
-    return await checkAccess({
-      user: req.user,
-      permissionType: PermissionTypes.MEMORIES,
-      permissions: [Permissions.USE, ...writePermissions],
-      getRoleByName,
-    });
-  } catch (error) {
-    logger.error('[handleTools] Memory permission check failed:', error);
-    return false;
-  }
-}
-
-/**
- * Whether the agent opted into the LibreChat inline memory capability. The
- * tool-execution context may hold the raw agent (still carrying the `memory`
- * capability marker on `tools`) or the initialized config (marker already
- * expanded into `set_memory`/`delete_memory`, with `memoryToolsRegistered`
- * set). Both are LibreChat-only signals, so this:
- *  - refuses a hallucinated/undeclared memory call on a non-memory agent, and
- *  - does not let an MCP tool that merely shares the `set_memory`/`delete_memory`
- *    name get replaced by the built-in memory mutator.
- * @param {{ tools?: Array<unknown>, memoryToolsRegistered?: boolean }} [agent]
- * @returns {boolean}
- */
-function agentOptedIntoMemory(agent) {
-  if (!agent) {
-    return false;
-  }
-  if (agent.memoryToolsRegistered === true) {
-    return true;
-  }
-  return (agent.tools ?? []).some(
-    (entry) => (typeof entry === 'string' ? entry : entry?.name) === Tools.memory,
-  );
-}
 
 /**
  * Validates the availability and authentication of tools for a user based on environment variables or user-specific plugin authentication values.
@@ -424,55 +360,16 @@ const loadTools = async ({
         });
       };
       continue;
-    } else if (tool === SET_MEMORY_TOOL_NAME) {
-      const memoryConfig = options.req?.config?.memory;
-      const validKeys = memoryConfig?.validKeys;
-      const charLimit = memoryConfig?.charLimit;
-      const tokenLimit = memoryConfig?.tokenLimit;
-      requestedTools[tool] = async () => {
-        if (
-          !agentOptedIntoMemory(agent) ||
-          !(await isMemoryToolUsable(options.req, [Permissions.CREATE, Permissions.UPDATE]))
-        ) {
-          return null;
-        }
-        let totalTokens = 0;
-        if (tokenLimit) {
-          try {
-            const formatted = await getFormattedMemories({ userId: user });
-            totalTokens = formatted?.totalTokens ?? 0;
-          } catch (error) {
-            logger.error('[handleTools] Failed to load memory token count for set_memory', error);
-            /** Fail closed: without the current usage total a configured
-             *  tokenLimit could be silently bypassed. */
-            return null;
-          }
-        }
-        return createMemoryTool({
+    } else if (tool === SET_MEMORY_TOOL_NAME || tool === DELETE_MEMORY_TOOL_NAME) {
+      requestedTools[tool] = () =>
+        buildInlineMemoryTool({
+          toolName: tool,
+          req: options.req,
+          agent,
           userId: user,
-          setMemory,
-          validKeys,
-          charLimit,
-          tokenLimit,
-          totalTokens,
+          memoryMethods: { setMemory, deleteMemory, getFormattedMemories },
+          getRoleByName,
         });
-      };
-      continue;
-    } else if (tool === DELETE_MEMORY_TOOL_NAME) {
-      const memoryConfig = options.req?.config?.memory;
-      requestedTools[tool] = async () => {
-        if (
-          !agentOptedIntoMemory(agent) ||
-          !(await isMemoryToolUsable(options.req, [Permissions.UPDATE]))
-        ) {
-          return null;
-        }
-        return createDeleteMemoryTool({
-          userId: user,
-          deleteMemory,
-          validKeys: memoryConfig?.validKeys,
-        });
-      };
       continue;
     } else if (tool && mcpToolPattern.test(tool)) {
       if (!canUseMCP) {

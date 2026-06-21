@@ -1,10 +1,16 @@
 /** Memories */
 import { z } from 'zod';
-import { Tools } from 'librechat-data-provider';
 import { logger } from '@librechat/data-schemas';
 import { tool } from '@librechat/agents/langchain/tools';
 import { Run, Providers, GraphEvents } from '@librechat/agents';
 import { HumanMessage } from '@librechat/agents/langchain/messages';
+import {
+  Tools,
+  Permissions,
+  EModelEndpoint,
+  PermissionTypes,
+  AgentCapabilities,
+} from 'librechat-data-provider';
 import type {
   OpenAIClientOptions,
   StreamEventData,
@@ -15,14 +21,22 @@ import type {
   LLMConfig,
   LCTool,
 } from '@librechat/agents';
+import type {
+  IRole,
+  ObjectId,
+  MemoryMethods,
+  IUser,
+  FormattedMemoriesResult,
+} from '@librechat/data-schemas';
 import type { BaseMessage, ToolMessage } from '@librechat/agents/langchain/messages';
 import type { DynamicStructuredTool } from '@librechat/agents/langchain/tools';
-import type { ObjectId, MemoryMethods, IUser } from '@librechat/data-schemas';
 import type { TAttachment, MemoryArtifact } from 'librechat-data-provider';
 import type { Response as ServerResponse } from 'express';
-import type { RunLLMConfig } from '~/types';
+import type { ServerRequest, RunLLMConfig } from '~/types';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
 import { resolveConfigHeaders, createSafeUser } from '~/utils';
+import { checkAccess } from '~/middleware/access';
+import { isMemoryEnabled } from '~/memory';
 import Tokenizer from '~/utils/tokenizer';
 
 type RequiredMemoryMethods = Pick<
@@ -406,6 +420,178 @@ export function registerMemoryTools({
     return { toolDefinitions: inputDefinitions, registered };
   }
   return { toolDefinitions: [...inputDefinitions, ...newDefs], registered };
+}
+
+type GetRoleByName = (
+  roleName: string,
+  fieldsToSelect?: string | string[],
+) => Promise<IRole | null>;
+
+type InlineMemoryAgent = { tools?: unknown[]; memoryToolsRegistered?: boolean } | null | undefined;
+
+/**
+ * Whether an agent carries the inline memory tools. Prefers the LibreChat-only
+ * `memoryToolsRegistered` flag set by `initializeAgent`, falling back to the raw
+ * `memory` capability marker on `tools`. This works for both the raw agent and
+ * the initialized config that may be held in the tool-execution context, and
+ * never matches an MCP tool that merely shares the `set_memory`/`delete_memory`
+ * name (that name only collides at the tool level, not the capability marker).
+ */
+export function agentHasInlineMemoryTools(agent: InlineMemoryAgent): boolean {
+  if (!agent) {
+    return false;
+  }
+  if (agent.memoryToolsRegistered === true) {
+    return true;
+  }
+  return (agent.tools ?? []).some(
+    (entry) =>
+      (typeof entry === 'string' ? entry : (entry as { name?: string })?.name) === Tools.memory,
+  );
+}
+
+/**
+ * Request-scoped cache so that multiple memory-enabled agents in one run (and
+ * the run's memory context load) share a single `getFormattedMemories` call
+ * instead of each re-fetching the same user's memories.
+ */
+const requestMemoriesCache = new WeakMap<object, Promise<FormattedMemoriesResult>>();
+
+export function getRequestMemories({
+  req,
+  userId,
+  getFormattedMemories,
+}: {
+  req: object;
+  userId: string | ObjectId;
+  getFormattedMemories: MemoryMethods['getFormattedMemories'];
+}): Promise<FormattedMemoriesResult> {
+  let cached = requestMemoriesCache.get(req);
+  if (!cached) {
+    cached = getFormattedMemories({ userId });
+    requestMemoriesCache.set(req, cached);
+  }
+  return cached;
+}
+
+/**
+ * Re-checks the run-level memory gate at tool-execution time: the agents
+ * `memory` capability is enabled, memory is configured, the user hasn't opted
+ * out, and the user holds the required (write) permissions. The event-driven
+ * executor loads tools by requested name, so this must be re-verified rather
+ * than trusted from registration time.
+ */
+export async function isMemoryToolAllowed({
+  req,
+  writePermissions = [],
+  getRoleByName,
+}: {
+  req: ServerRequest;
+  writePermissions?: Permissions[];
+  getRoleByName: GetRoleByName;
+}): Promise<boolean> {
+  const agentsCapabilities = req?.config?.endpoints?.[EModelEndpoint.agents]?.capabilities;
+  if (
+    !Array.isArray(agentsCapabilities) ||
+    !agentsCapabilities.includes(AgentCapabilities.memory)
+  ) {
+    return false;
+  }
+  if (!isMemoryEnabled(req?.config?.memory)) {
+    return false;
+  }
+  if (!req?.user || req.user.personalization?.memories === false) {
+    return false;
+  }
+  try {
+    return await checkAccess({
+      user: req.user,
+      permissionType: PermissionTypes.MEMORIES,
+      permissions: [Permissions.USE, ...writePermissions],
+      getRoleByName,
+    });
+  } catch (error) {
+    logger.error('[memory] Memory permission check failed', error);
+    return false;
+  }
+}
+
+/**
+ * Builds an inline memory tool instance for the event-driven executor, applying
+ * the full opt-in + permission + config gate. Returns `null` when the call is
+ * not permitted (e.g. a hallucinated/undeclared call, missing write permission,
+ * or a disabled capability), so the executor drops the tool.
+ */
+export async function buildInlineMemoryTool({
+  toolName,
+  req,
+  agent,
+  userId,
+  memoryMethods,
+  getRoleByName,
+}: {
+  toolName: string;
+  req: ServerRequest;
+  agent: InlineMemoryAgent;
+  userId: string | ObjectId;
+  memoryMethods: Pick<MemoryMethods, 'setMemory' | 'deleteMemory' | 'getFormattedMemories'>;
+  getRoleByName: GetRoleByName;
+}): Promise<DynamicStructuredTool | null> {
+  if (!agentHasInlineMemoryTools(agent)) {
+    return null;
+  }
+
+  const memoryConfig = req?.config?.memory;
+  const validKeys = memoryConfig?.validKeys as string[] | undefined;
+
+  if (toolName === DELETE_MEMORY_TOOL_NAME) {
+    const allowed = await isMemoryToolAllowed({
+      req,
+      writePermissions: [Permissions.UPDATE],
+      getRoleByName,
+    });
+    if (!allowed) {
+      return null;
+    }
+    return createDeleteMemoryTool({ userId, deleteMemory: memoryMethods.deleteMemory, validKeys });
+  }
+
+  const allowed = await isMemoryToolAllowed({
+    req,
+    writePermissions: [Permissions.CREATE, Permissions.UPDATE],
+    getRoleByName,
+  });
+  if (!allowed) {
+    return null;
+  }
+
+  const charLimit = memoryConfig?.charLimit as number | undefined;
+  const tokenLimit = memoryConfig?.tokenLimit as number | undefined;
+  let totalTokens = 0;
+  if (tokenLimit) {
+    try {
+      const formatted = await getRequestMemories({
+        req,
+        userId,
+        getFormattedMemories: memoryMethods.getFormattedMemories,
+      });
+      totalTokens = formatted?.totalTokens ?? 0;
+    } catch (error) {
+      logger.error('[memory] Failed to load memory token count for set_memory', error);
+      /** Fail closed: without the current usage total a configured tokenLimit
+       *  could be silently bypassed. */
+      return null;
+    }
+  }
+
+  return createMemoryTool({
+    userId,
+    setMemory: memoryMethods.setMemory,
+    validKeys,
+    charLimit,
+    tokenLimit,
+    totalTokens,
+  });
 }
 
 export class BasicToolEndHandler implements EventHandler {

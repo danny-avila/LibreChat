@@ -33,7 +33,9 @@ const {
   GenerationJobManager,
   getTransactionsConfig,
   resolveRecursionLimit,
+  getRequestMemories,
   createMemoryProcessor,
+  agentHasInlineMemoryTools,
   loadAgent: loadAgentFn,
   createMultiAgentMapper,
   filterMalformedContentParts,
@@ -83,26 +85,6 @@ const db = require('~/models');
 const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
 
 const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
-
-/**
- * Whether an agent carries the inline memory tools. Prefers the authoritative
- * `memoryToolsRegistered` flag set by `initializeAgent` (LibreChat-only, so it
- * never matches an MCP tool that merely shares the `set_memory`/`delete_memory`
- * name), falling back to the raw `memory` capability marker on `tools`.
- * @param {Agent & { memoryToolsRegistered?: boolean }} [agent]
- * @returns {boolean}
- */
-function agentHasInlineMemoryTools(agent) {
-  if (!agent) {
-    return false;
-  }
-  if (agent.memoryToolsRegistered === true) {
-    return true;
-  }
-  return (agent.tools ?? []).some(
-    (entry) => (typeof entry === 'string' ? entry : entry?.name) === AgentCapabilities.memory,
-  );
-}
 
 class AgentClient extends BaseClient {
   constructor(options = {}) {
@@ -625,7 +607,11 @@ class AgentClient extends BaseClient {
 
     if (!isMemoryAgentEnabled(memoryConfig)) {
       try {
-        const { withKeys, withoutKeys } = await db.getFormattedMemories({ userId });
+        const { withKeys, withoutKeys } = await getRequestMemories({
+          req: this.options.req,
+          userId,
+          getFormattedMemories: db.getFormattedMemories,
+        });
         return { withKeys, withoutKeys };
       } catch (error) {
         logger.error(
@@ -745,7 +731,11 @@ class AgentClient extends BaseClient {
     this.processMemory = processMemory;
     let withKeys = withoutKeys;
     try {
-      ({ withKeys } = await db.getFormattedMemories({ userId }));
+      ({ withKeys } = await getRequestMemories({
+        req: this.options.req,
+        userId,
+        getFormattedMemories: db.getFormattedMemories,
+      }));
     } catch (error) {
       logger.error(
         '[api/server/controllers/agents/client.js #useMemory] Error loading keyed memories',
