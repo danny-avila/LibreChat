@@ -68,6 +68,8 @@ LANGFUSE_FANOUT_TENANT_US_BASE_URL=https://us.cloud.langfuse.com
 LANGFUSE_FANOUT_TENANT_JP_BASE_URL=https://jp.cloud.langfuse.com
 LANGFUSE_FANOUT_TENANT_HIPAA_BASE_URL=https://hipaa.cloud.langfuse.com
 LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED=false
+LANGFUSE_FANOUT_BATCH_TIMEOUT=1s
+LANGFUSE_FANOUT_BATCH_SEND_SIZE=128
 ```
 
 Langfuse Cloud base URL options:
@@ -123,6 +125,8 @@ langfuseFanout:
         baseUrl: https://jp.cloud.langfuse.com
       hipaa:
         baseUrl: https://hipaa.cloud.langfuse.com
+  batchTimeout: 1s
+  batchSendSize: 128
 ```
 
 The chart renders the collector Deployment, Service, and collector ConfigMap,
@@ -139,5 +143,8 @@ the LibreChat app ConfigMap when they are not already supplied in
   override `langfuseFanout.tenant.destinations` in Helm for self-hosted or
   custom destinations. Compose's included collector config is static; if you add
   custom destination keys there, update or regenerate `otelcol.yaml` as well.
+- `LANGFUSE_FANOUT_BATCH_TIMEOUT` and `LANGFUSE_FANOUT_BATCH_SEND_SIZE` tune
+  the OTel batch processors. The defaults (`1s`, `128`) favor low latency and
+  modest memory use; high-volume deployments may increase them for throughput.
 - `LANGFUSE_FANOUT_COLLECTOR_URL` is the local collector URL used by LibreChat,
   not a Langfuse Cloud base URL.

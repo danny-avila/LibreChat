@@ -142,6 +142,8 @@ function summarize(config) {
       return [
         destination,
         {
+          timeout: batch?.timeout,
+          sendBatchSize: batch?.send_batch_size,
           metadataKeys: sorted(batch?.metadata_keys),
           metadataCardinalityLimit: batch?.metadata_cardinality_limit,
         },
@@ -158,6 +160,10 @@ function summarize(config) {
     tenantExportFilter: processors['filter/tenant_export']?.traces?.span ?? [],
     dropRoutingAttributes: processors['attributes/drop_librechat_routing']?.actions ?? [],
     centralExporter: exporters['otlphttp/central'] ?? {},
+    centralBatch: {
+      timeout: processors['batch/central']?.timeout,
+      sendBatchSize: processors['batch/central']?.send_batch_size,
+    },
     centralPipeline: pipelines['traces/central'] ?? {},
     tenantRouterPipeline: pipelines['traces/tenant'] ?? {},
     tenantExporters,

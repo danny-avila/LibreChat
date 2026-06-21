@@ -311,6 +311,8 @@ langfuseFanout:
         baseUrl: https://hipaa.cloud.langfuse.com
   memoryLimitMiB: 256
   memorySpikeLimitMiB: 64
+  batchTimeout: 1s
+  batchSendSize: 128
   metadataCardinalityLimit: 1000
   resources: {}
   podAnnotations: {}

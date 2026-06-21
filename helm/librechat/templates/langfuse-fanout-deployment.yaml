@@ -48,6 +48,10 @@ spec:
               value: {{ .Values.langfuseFanout.memoryLimitMiB | quote }}
             - name: LANGFUSE_FANOUT_MEMORY_SPIKE_LIMIT_MIB
               value: {{ .Values.langfuseFanout.memorySpikeLimitMiB | quote }}
+            - name: LANGFUSE_FANOUT_BATCH_TIMEOUT
+              value: {{ .Values.langfuseFanout.batchTimeout | quote }}
+            - name: LANGFUSE_FANOUT_BATCH_SEND_SIZE
+              value: {{ .Values.langfuseFanout.batchSendSize | quote }}
             - name: LANGFUSE_FANOUT_METADATA_CARDINALITY_LIMIT
               value: {{ .Values.langfuseFanout.metadataCardinalityLimit | quote }}
           volumeMounts:

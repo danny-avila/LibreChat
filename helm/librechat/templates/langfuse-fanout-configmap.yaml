@@ -49,12 +49,12 @@ data:
           - key: librechat.langfuse.destination
             action: delete
       batch/central:
-        timeout: 1s
-        send_batch_size: 128
+        timeout: ${env:LANGFUSE_FANOUT_BATCH_TIMEOUT}
+        send_batch_size: ${env:LANGFUSE_FANOUT_BATCH_SEND_SIZE}
       {{- range $name, $_destination := .Values.langfuseFanout.tenant.destinations }}
       batch/by_auth_{{ $name }}:
-        timeout: 1s
-        send_batch_size: 128
+        timeout: ${env:LANGFUSE_FANOUT_BATCH_TIMEOUT}
+        send_batch_size: ${env:LANGFUSE_FANOUT_BATCH_SEND_SIZE}
         metadata_keys: [authorization]
         metadata_cardinality_limit: ${env:LANGFUSE_FANOUT_METADATA_CARDINALITY_LIMIT}
       {{- end }}

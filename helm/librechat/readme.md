@@ -72,6 +72,8 @@ if tenant keys and a known destination are configured.
 Langfuse tenant base URLs are selected from the startup-configured destination
 map rendered into LibreChat and the collector. Tenant API keys can still be added
 through tenant app configuration at runtime without restarting either component.
+Collector batching can be tuned with `langfuseFanout.batchTimeout` and
+`langfuseFanout.batchSendSize`; defaults are `1s` and `128`.
 
 See [`otel/langfuse-fanout/README.md`](../../otel/langfuse-fanout/README.md)
 for the central Langfuse secret and values example.
