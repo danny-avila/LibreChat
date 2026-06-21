@@ -36,9 +36,15 @@ export function buildLangfuseConfig({
 
   const langfuse: LangfuseRunConfig = {
     deterministicTraceId: true,
-    metadata: mergeTraceMetadata(undefined, normalizedTenantId),
-    tags: mergeTags(undefined, normalizedTenantId),
   };
+  const metadata = mergeTraceMetadata(undefined, normalizedTenantId);
+  const tags = mergeTags(undefined, normalizedTenantId);
+  if (metadata) {
+    langfuse.metadata = metadata;
+  }
+  if (tags) {
+    langfuse.tags = tags;
+  }
 
   if (config?.enabled === false) {
     return {
