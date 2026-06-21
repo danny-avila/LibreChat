@@ -595,4 +595,22 @@ describe('createMemoryTool tokenLimit enforcement', () => {
 
     expect(setMemory).toHaveBeenCalledTimes(2);
   });
+
+  it('treats a repeat write to the same key as a replacement, not an addition', async () => {
+    const setMemory = jest.fn().mockResolvedValue({ ok: true });
+    /** ~100 tokens; two distinct keys would exceed the 150 limit, but rewriting
+     *  the same key only replaces its value and must stay within the cap. */
+    const value = 'word '.repeat(100).trim();
+    const tool = createMemoryTool({
+      userId: 'user-1',
+      setMemory,
+      tokenLimit: 150,
+      totalTokens: 0,
+    });
+
+    await tool.invoke({ key: 'k1', value });
+    await tool.invoke({ key: 'k1', value });
+
+    expect(setMemory).toHaveBeenCalledTimes(2);
+  });
 });

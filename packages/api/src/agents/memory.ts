@@ -117,6 +117,10 @@ export const createMemoryTool = ({
    *  check against the same stale total and collectively exceed `tokenLimit`. */
   let currentTotalTokens = totalTokens;
   let writeChain: Promise<unknown> = Promise.resolve();
+  /** Tokens this instance has already committed per key. `set_memory` upserts,
+   *  so a repeat write to the same key REPLACES its value — the running total
+   *  must swap the prior contribution for the new one, not add both. */
+  const writtenTokensByKey = new Map<string, number>();
 
   return tool(
     async ({ key, value }) => {
@@ -132,7 +136,10 @@ export const createMemoryTool = ({
           }
 
           const tokenCount = Tokenizer.getTokenCount(value, 'o200k_base');
-          const remainingTokens = tokenLimit ? tokenLimit - currentTotalTokens : Infinity;
+          /** Total excluding this key's prior in-instance write, so a same-key
+           *  rewrite is measured as a replacement rather than an addition. */
+          const baseTotalTokens = currentTotalTokens - (writtenTokensByKey.get(key) ?? 0);
+          const remainingTokens = tokenLimit ? tokenLimit - baseTotalTokens : Infinity;
 
           if (tokenLimit && remainingTokens <= 0) {
             const errorArtifact: MemoryArtifactRecord = {
@@ -142,17 +149,18 @@ export const createMemoryTool = ({
                 value: JSON.stringify({
                   errorType: 'already_exceeded',
                   tokenCount: Math.abs(remainingTokens),
-                  totalTokens: currentTotalTokens,
+                  totalTokens: baseTotalTokens,
                   tokenLimit: tokenLimit!,
                 }),
-                tokenCount: currentTotalTokens,
+                tokenCount: baseTotalTokens,
               },
             };
             return [`Memory storage exceeded. Cannot save new memories.`, errorArtifact];
           }
 
+          const newTotalTokens = baseTotalTokens + tokenCount;
+
           if (tokenLimit) {
-            const newTotalTokens = currentTotalTokens + tokenCount;
             const newRemainingTokens = tokenLimit - newTotalTokens;
 
             if (newRemainingTokens < 0) {
@@ -166,7 +174,7 @@ export const createMemoryTool = ({
                     totalTokens: newTotalTokens,
                     tokenLimit,
                   }),
-                  tokenCount: currentTotalTokens,
+                  tokenCount: baseTotalTokens,
                 },
               };
               return [`Memory storage would exceed limit. Cannot save this memory.`, errorArtifact];
@@ -185,7 +193,8 @@ export const createMemoryTool = ({
           const result = await setMemory({ userId, key, value, tokenCount });
           if (result.ok) {
             if (tokenLimit) {
-              currentTotalTokens += tokenCount;
+              currentTotalTokens = newTotalTokens;
+              writtenTokensByKey.set(key, tokenCount);
             }
             logger.debug(`Memory set for key "${key}" (${tokenCount} tokens) for user "${userId}"`);
             return [`Memory set for key "${key}" (${tokenCount} tokens)`, artifact];

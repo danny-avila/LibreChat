@@ -86,20 +86,23 @@ async function isMemoryToolUsable(req, writePermissions = []) {
 }
 
 /**
- * Whether the agent actually declared the requested inline memory tool. The
- * event-driven executor loads tools by requested name, so a hallucinated or
- * undeclared `set_memory`/`delete_memory` call (e.g. on an agent that never
- * opted into the memory capability) must not be constructed.
- * @param {{ toolDefinitions?: Array<{ name?: string }>, tools?: Array<unknown> }} [agent]
- * @param {string} toolName
+ * Whether the agent opted into the LibreChat inline memory capability, checked
+ * via the `memory` capability marker on the agent's tools. The raw agent kept
+ * in the tool-execution context retains that marker (not the expanded
+ * `set_memory`/`delete_memory` names), so this:
+ *  - refuses a hallucinated/undeclared memory call on a non-memory agent, and
+ *  - does not let an MCP tool that merely shares the `set_memory`/`delete_memory`
+ *    name get replaced by the built-in memory mutator.
+ * @param {{ tools?: Array<unknown> }} [agent]
  * @returns {boolean}
  */
-function agentDeclaredMemoryTool(agent, toolName) {
+function agentOptedIntoMemory(agent) {
   if (!agent) {
     return false;
   }
-  const declared = (entry) => (typeof entry === 'string' ? entry : entry?.name) === toolName;
-  return (agent.toolDefinitions ?? []).some(declared) || (agent.tools ?? []).some(declared);
+  return (agent.tools ?? []).some(
+    (entry) => (typeof entry === 'string' ? entry : entry?.name) === Tools.memory,
+  );
 }
 
 /**
@@ -415,7 +418,7 @@ const loadTools = async ({
       const tokenLimit = memoryConfig?.tokenLimit;
       requestedTools[tool] = async () => {
         if (
-          !agentDeclaredMemoryTool(agent, SET_MEMORY_TOOL_NAME) ||
+          !agentOptedIntoMemory(agent) ||
           !(await isMemoryToolUsable(options.req, [Permissions.CREATE, Permissions.UPDATE]))
         ) {
           return null;
@@ -439,7 +442,7 @@ const loadTools = async ({
       const memoryConfig = options.req?.config?.memory;
       requestedTools[tool] = async () => {
         if (
-          !agentDeclaredMemoryTool(agent, DELETE_MEMORY_TOOL_NAME) ||
+          !agentOptedIntoMemory(agent) ||
           !(await isMemoryToolUsable(options.req, [Permissions.UPDATE]))
         ) {
           return null;

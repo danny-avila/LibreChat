@@ -10,7 +10,13 @@ import {
   defaultAgentCapabilities,
 } from 'librechat-data-provider';
 import type { MenuItemProps } from '~/common';
-import { useLocalize, useHasAccess, useAgentCapabilities, useAuthContext } from '~/hooks';
+import {
+  useLocalize,
+  useHasAccess,
+  useAuthContext,
+  useHasMemoryAccess,
+  useAgentCapabilities,
+} from '~/hooks';
 import ArtifactsSubMenu from '~/components/Chat/Input/ArtifactsSubMenu';
 import MCPSubMenu from '~/components/Chat/Input/MCPSubMenu';
 import { useGetStartupConfig } from '~/data-provider';
@@ -61,10 +67,7 @@ const ToolsDropdown = ({ disabled }: ToolsDropdownProps) => {
     permission: Permissions.USE,
   });
 
-  const canUseMemory = useHasAccess({
-    permissionType: PermissionTypes.MEMORIES,
-    permission: Permissions.USE,
-  });
+  const canUseMemory = useHasMemoryAccess();
   const showMemory = canUseMemory && memoryEnabled && user?.personalization?.memories !== false;
 
   const [isPopoverActive, setIsPopoverActive] = useState(false);

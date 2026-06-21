@@ -20,11 +20,11 @@ import {
   getIconKey,
   cn,
 } from '~/utils';
+import { useLocalize, useVisibleTools, useHasAccess, useHasMemoryAccess } from '~/hooks';
 import { ToolSelectDialog, MCPToolSelectDialog } from '~/components/Tools';
 import useAgentCapabilities from '~/hooks/Agents/useAgentCapabilities';
 import { useListSkillsQuery, useGetAgentFiles } from '~/data-provider';
 import { useFileMapContext, useAgentPanelContext } from '~/Providers';
-import { useLocalize, useVisibleTools, useHasAccess } from '~/hooks';
 import { SkillSelectDialog } from '~/components/Skills/dialogs';
 import AgentCategorySelector from './AgentCategorySelector';
 import Action from '~/components/SidePanel/Builder/Action';
@@ -114,10 +114,7 @@ export default function AgentConfig() {
     permissionType: PermissionTypes.SKILLS,
     permission: Permissions.USE,
   });
-  const hasMemoryAccess = useHasAccess({
-    permissionType: PermissionTypes.MEMORIES,
-    permission: Permissions.USE,
-  });
+  const hasMemoryAccess = useHasMemoryAccess();
   const showMemory = hasMemoryAccess && memoryEnabled;
   const showSkills = hasSkillsAccess && skillsEnabled;
   const { data: skillsData } = useListSkillsQuery({ limit: 100 }, { enabled: showSkills });

@@ -1,8 +1,8 @@
 import React, { memo } from 'react';
 import { Brain } from 'lucide-react';
 import { CheckboxButton } from '@librechat/client';
-import { Permissions, PermissionTypes, defaultAgentCapabilities } from 'librechat-data-provider';
-import { useLocalize, useHasAccess, useAgentCapabilities, useAuthContext } from '~/hooks';
+import { defaultAgentCapabilities } from 'librechat-data-provider';
+import { useLocalize, useHasMemoryAccess, useAgentCapabilities, useAuthContext } from '~/hooks';
 import { useBadgeRowContext } from '~/Providers';
 
 function Memory() {
@@ -11,10 +11,7 @@ function Memory() {
   const context = useBadgeRowContext();
   const { toggleState: memoryActive, debouncedChange, isPinned } = context?.memory ?? {};
 
-  const canUseMemory = useHasAccess({
-    permissionType: PermissionTypes.MEMORIES,
-    permission: Permissions.USE,
-  });
+  const canUseMemory = useHasMemoryAccess();
 
   const { memoryEnabled } = useAgentCapabilities(
     context?.agentsConfig?.capabilities ?? defaultAgentCapabilities,
