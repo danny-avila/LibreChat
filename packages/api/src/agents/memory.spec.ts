@@ -2,7 +2,7 @@ import { Types } from 'mongoose';
 import { Run, Providers } from '@librechat/agents';
 import type { IUser } from '@librechat/data-schemas';
 import type { Response } from 'express';
-import { processMemory } from './memory';
+import { processMemory, createMemoryTool } from './memory';
 
 jest.mock('~/stream/GenerationJobManager');
 
@@ -558,5 +558,41 @@ describe('Memory Agent Header Resolution', () => {
     const runConfig = (Run.create as jest.Mock).mock.calls[0][0];
 
     expect(runConfig.graphConfig.llmConfig.temperature).toBe(0.7);
+  });
+});
+
+describe('createMemoryTool tokenLimit enforcement', () => {
+  it('serializes parallel set_memory calls so they cannot collectively exceed tokenLimit', async () => {
+    const setMemory = jest.fn().mockResolvedValue({ ok: true });
+    /** ~100 tokens; two of these (≈200) exceed the 150 limit, but each fits alone. */
+    const value = 'word '.repeat(100).trim();
+    const tool = createMemoryTool({
+      userId: 'user-1',
+      setMemory,
+      tokenLimit: 150,
+      totalTokens: 0,
+    });
+
+    await Promise.all([tool.invoke({ key: 'k1', value }), tool.invoke({ key: 'k2', value })]);
+
+    /** Only the first write is committed; the second is rejected against the
+     *  updated running total instead of the stale construction-time total. */
+    expect(setMemory).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows sequential writes that each fit within the remaining capacity', async () => {
+    const setMemory = jest.fn().mockResolvedValue({ ok: true });
+    const value = 'word '.repeat(10).trim();
+    const tool = createMemoryTool({
+      userId: 'user-1',
+      setMemory,
+      tokenLimit: 1000,
+      totalTokens: 0,
+    });
+
+    await tool.invoke({ key: 'k1', value });
+    await tool.invoke({ key: 'k2', value });
+
+    expect(setMemory).toHaveBeenCalledTimes(2);
   });
 });

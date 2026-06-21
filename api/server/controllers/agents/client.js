@@ -595,10 +595,16 @@ class AgentClient extends BaseClient {
     const userId = this.options.req.user.id + '';
     this.processMemory = undefined;
 
+    /** Inline memory tools (the `memory` capability on this agent) let the main
+     *  agent read/write memory itself, so it needs the keyed memory context —
+     *  otherwise `delete_memory` has no visible key to target. */
+    const agentHasMemoryTools =
+      this.options.agent?.tools?.includes(AgentCapabilities.memory) === true;
+
     if (!isMemoryAgentEnabled(memoryConfig)) {
       try {
-        const { withoutKeys } = await db.getFormattedMemories({ userId });
-        return withoutKeys;
+        const { withKeys, withoutKeys } = await db.getFormattedMemories({ userId });
+        return agentHasMemoryTools ? withKeys : withoutKeys;
       } catch (error) {
         logger.error(
           '[api/server/controllers/agents/client.js #useMemory] Error loading memories',
@@ -715,6 +721,17 @@ class AgentClient extends BaseClient {
     });
 
     this.processMemory = processMemory;
+    if (agentHasMemoryTools) {
+      try {
+        const { withKeys } = await db.getFormattedMemories({ userId });
+        return withKeys;
+      } catch (error) {
+        logger.error(
+          '[api/server/controllers/agents/client.js #useMemory] Error loading keyed memories',
+          error,
+        );
+      }
+    }
     return withoutKeys;
   }
 

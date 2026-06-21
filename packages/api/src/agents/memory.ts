@@ -93,6 +93,8 @@ ${tokenLimit ? `\nTOKEN LIMIT: Maximum ${tokenLimit} tokens per memory value.` :
 
 When in doubt, and the user hasn't asked to remember or forget anything, END THE TURN IMMEDIATELY.`;
 
+type MemoryArtifactRecord = Record<Tools.memory, MemoryArtifact>;
+
 /**
  * Creates a memory tool instance with user context
  */
@@ -109,82 +111,98 @@ export const createMemoryTool = ({
   tokenLimit?: number;
   totalTokens?: number;
 }): DynamicStructuredTool => {
-  const remainingTokens = tokenLimit ? tokenLimit - totalTokens : Infinity;
-  const isOverflowing = tokenLimit ? remainingTokens <= 0 : false;
+  /** Running token total, advanced after each successful write. Writes are
+   *  serialized through `writeChain` so multiple `set_memory` calls in one
+   *  event-driven batch (executed in parallel) can't each pass the limit
+   *  check against the same stale total and collectively exceed `tokenLimit`. */
+  let currentTotalTokens = totalTokens;
+  let writeChain: Promise<unknown> = Promise.resolve();
 
   return tool(
     async ({ key, value }) => {
-      try {
-        if (validKeys && validKeys.length > 0 && !validKeys.includes(key)) {
-          logger.warn(
-            `Memory Agent failed to set memory: Invalid key "${key}". Must be one of: ${validKeys.join(
-              ', ',
-            )}`,
-          );
-          return [`Invalid key "${key}". Must be one of: ${validKeys.join(', ')}`, undefined];
-        }
+      const run = async (): Promise<[string, MemoryArtifactRecord?]> => {
+        try {
+          if (validKeys && validKeys.length > 0 && !validKeys.includes(key)) {
+            logger.warn(
+              `Memory Agent failed to set memory: Invalid key "${key}". Must be one of: ${validKeys.join(
+                ', ',
+              )}`,
+            );
+            return [`Invalid key "${key}". Must be one of: ${validKeys.join(', ')}`, undefined];
+          }
 
-        const tokenCount = Tokenizer.getTokenCount(value, 'o200k_base');
+          const tokenCount = Tokenizer.getTokenCount(value, 'o200k_base');
+          const remainingTokens = tokenLimit ? tokenLimit - currentTotalTokens : Infinity;
 
-        if (isOverflowing) {
-          const errorArtifact: Record<Tools.memory, MemoryArtifact> = {
-            [Tools.memory]: {
-              key: 'system',
-              type: 'error',
-              value: JSON.stringify({
-                errorType: 'already_exceeded',
-                tokenCount: Math.abs(remainingTokens),
-                totalTokens: totalTokens,
-                tokenLimit: tokenLimit!,
-              }),
-              tokenCount: totalTokens,
-            },
-          };
-          return [`Memory storage exceeded. Cannot save new memories.`, errorArtifact];
-        }
-
-        if (tokenLimit) {
-          const newTotalTokens = totalTokens + tokenCount;
-          const newRemainingTokens = tokenLimit - newTotalTokens;
-
-          if (newRemainingTokens < 0) {
-            const errorArtifact: Record<Tools.memory, MemoryArtifact> = {
+          if (tokenLimit && remainingTokens <= 0) {
+            const errorArtifact: MemoryArtifactRecord = {
               [Tools.memory]: {
                 key: 'system',
                 type: 'error',
                 value: JSON.stringify({
-                  errorType: 'would_exceed',
-                  tokenCount: Math.abs(newRemainingTokens),
-                  totalTokens: newTotalTokens,
-                  tokenLimit,
+                  errorType: 'already_exceeded',
+                  tokenCount: Math.abs(remainingTokens),
+                  totalTokens: currentTotalTokens,
+                  tokenLimit: tokenLimit!,
                 }),
-                tokenCount: totalTokens,
+                tokenCount: currentTotalTokens,
               },
             };
-            return [`Memory storage would exceed limit. Cannot save this memory.`, errorArtifact];
+            return [`Memory storage exceeded. Cannot save new memories.`, errorArtifact];
           }
-        }
 
-        const artifact: Record<Tools.memory, MemoryArtifact> = {
-          [Tools.memory]: {
-            key,
-            value,
-            tokenCount,
-            type: 'update',
-          },
-        };
+          if (tokenLimit) {
+            const newTotalTokens = currentTotalTokens + tokenCount;
+            const newRemainingTokens = tokenLimit - newTotalTokens;
 
-        const result = await setMemory({ userId, key, value, tokenCount });
-        if (result.ok) {
-          logger.debug(`Memory set for key "${key}" (${tokenCount} tokens) for user "${userId}"`);
-          return [`Memory set for key "${key}" (${tokenCount} tokens)`, artifact];
+            if (newRemainingTokens < 0) {
+              const errorArtifact: MemoryArtifactRecord = {
+                [Tools.memory]: {
+                  key: 'system',
+                  type: 'error',
+                  value: JSON.stringify({
+                    errorType: 'would_exceed',
+                    tokenCount: Math.abs(newRemainingTokens),
+                    totalTokens: newTotalTokens,
+                    tokenLimit,
+                  }),
+                  tokenCount: currentTotalTokens,
+                },
+              };
+              return [`Memory storage would exceed limit. Cannot save this memory.`, errorArtifact];
+            }
+          }
+
+          const artifact: MemoryArtifactRecord = {
+            [Tools.memory]: {
+              key,
+              value,
+              tokenCount,
+              type: 'update',
+            },
+          };
+
+          const result = await setMemory({ userId, key, value, tokenCount });
+          if (result.ok) {
+            if (tokenLimit) {
+              currentTotalTokens += tokenCount;
+            }
+            logger.debug(`Memory set for key "${key}" (${tokenCount} tokens) for user "${userId}"`);
+            return [`Memory set for key "${key}" (${tokenCount} tokens)`, artifact];
+          }
+          logger.warn(`Failed to set memory for key "${key}" for user "${userId}"`);
+          return [`Failed to set memory for key "${key}"`, undefined];
+        } catch (error) {
+          logger.error('Memory Agent failed to set memory', error);
+          return [`Error setting memory for key "${key}"`, undefined];
         }
-        logger.warn(`Failed to set memory for key "${key}" for user "${userId}"`);
-        return [`Failed to set memory for key "${key}"`, undefined];
-      } catch (error) {
-        logger.error('Memory Agent failed to set memory', error);
-        return [`Error setting memory for key "${key}"`, undefined];
-      }
+      };
+
+      const resultPromise = writeChain.then(run, run);
+      /** Keep the chain alive (and non-rejecting) so the next queued call still
+       *  runs even if a prior one threw; `run` already resolves on every path. */
+      writeChain = resultPromise.catch(() => undefined);
+      return resultPromise;
     },
     {
       name: SET_MEMORY_TOOL_NAME,
