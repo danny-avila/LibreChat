@@ -47,6 +47,10 @@ defined in this collector config.
   tenant base URL is configured at LibreChat/collector startup. Runtime tenant
   config selects from those known destinations; it does not inject arbitrary
   export URLs into the collector.
+- The provided Compose collector config is a four-region Langfuse Cloud preset
+  (`eu`, `us`, `jp`, `hipaa`). For self-hosted or additional destination keys,
+  use Helm values or update/generate the collector routing table and exporters
+  in lockstep with `LANGFUSE_FANOUT_TENANT_DESTINATIONS`.
 
 ## Docker Compose
 
@@ -55,6 +59,8 @@ Set the central Langfuse destination in `.env`:
 ```dotenv
 LANGFUSE_FANOUT_CENTRAL_BASE_URL=https://cloud.langfuse.com
 LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER=Basic <base64-public-key-colon-secret-key>
+# Compose's included collector config supports these four destination keys.
+# Do not add a custom key unless the collector routing table also has a matching pipeline/exporter.
 LANGFUSE_FANOUT_TENANT_DESTINATIONS=eu=https://cloud.langfuse.com,us=https://us.cloud.langfuse.com,jp=https://jp.cloud.langfuse.com,hipaa=https://hipaa.cloud.langfuse.com
 LANGFUSE_FANOUT_TENANT_EU_BASE_URL=https://cloud.langfuse.com
 LANGFUSE_FANOUT_TENANT_US_BASE_URL=https://us.cloud.langfuse.com
@@ -128,9 +134,9 @@ the LibreChat app ConfigMap when they are not already supplied in
 - The collector only handles traces. Feedback scores go directly to Langfuse's
   REST API from the LibreChat API process.
 - `LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER` must be a full Basic auth header.
-- Tenant destinations default to the four Langfuse Cloud regions. Add or override
-  `langfuseFanout.tenant.destinations` in Helm, or set
-  `LANGFUSE_FANOUT_TENANT_DESTINATIONS` plus matching collector base URL env vars
-  in compose, for self-hosted or custom destinations.
+- Tenant destinations default to the four Langfuse Cloud regions. Add or
+  override `langfuseFanout.tenant.destinations` in Helm for self-hosted or
+  custom destinations. Compose's included collector config is static; if you add
+  custom destination keys there, update or regenerate `otelcol.yaml` as well.
 - `LANGFUSE_FANOUT_COLLECTOR_URL` is the local collector URL used by LibreChat,
   not a Langfuse Cloud base URL.

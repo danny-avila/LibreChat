@@ -77,7 +77,8 @@ export function buildLangfuseConfig({
   const tenantExportEnabled =
     hasTenantCredentials && fanoutEnabled && isTenantExportEnabled() && Boolean(tenantDestination);
 
-  if (hasTenantCredentials && (!fanoutEnabled || tenantExportEnabled)) {
+  const directTenantExportEnabled = hasTenantCredentials && !fanoutEnabled;
+  if (directTenantExportEnabled || tenantExportEnabled) {
     langfuse.publicKey = publicKey;
     langfuse.secretKey = secretKey;
   }

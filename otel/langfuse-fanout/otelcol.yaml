@@ -79,8 +79,7 @@ exporters:
     headers:
       Authorization: '${env:LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER}'
       x-langfuse-ingestion-version: '4'
-  otlphttp/tenant:
-    # Backward-compatible alias for the EU/default Langfuse destination.
+  otlphttp/tenant_eu:
     endpoint: '${env:LANGFUSE_FANOUT_TENANT_EU_BASE_URL}/api/public/otel'
     auth:
       authenticator: headers_setter/tenant_passthrough
@@ -119,7 +118,7 @@ service:
     traces/tenant_eu:
       receivers: [routing/langfuse_tenant_destination]
       processors: [attributes/drop_librechat_routing, batch/by_auth_eu]
-      exporters: [otlphttp/tenant]
+      exporters: [otlphttp/tenant_eu]
     traces/tenant_us:
       receivers: [routing/langfuse_tenant_destination]
       processors: [attributes/drop_librechat_routing, batch/by_auth_us]
