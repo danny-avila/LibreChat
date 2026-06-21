@@ -889,6 +889,44 @@ describe('Conversation Operations', () => {
       }
     });
 
+    it('converts an active retained (all-mode) conversation when switching to ephemeral', async () => {
+      const conversationId = uuidv4();
+      const retainedUntil = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+      await Conversation.create({
+        conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        title: 'Retained all-mode chat',
+        isTemporary: false,
+        expiredAt: retainedUntil,
+      });
+      await Message().create({
+        messageId: uuidv4(),
+        conversationId,
+        user: 'user123',
+        text: 'retained',
+        isTemporary: false,
+        expiredAt: retainedUntil,
+      });
+
+      await saveConvo(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { conversationId, isArchived: true },
+      );
+
+      const convo = await Conversation.findOne<IConversation>({ conversationId }).lean();
+      expect(convo?.isTemporary).toBe(true);
+      expect(convo?.expiredAt?.getTime()).toBeLessThan(retainedUntil.getTime());
+
+      const messages = await Message().find({ conversationId }).lean();
+      expect(messages).toHaveLength(1);
+      expect(messages[0].isTemporary).toBe(true);
+      expect(messages[0].expiredAt?.getTime()).toBeLessThan(retainedUntil.getTime());
+    });
+
     it('leaves messages untouched when the conversation is already ephemeral', async () => {
       const conversationId = uuidv4();
       const ctx = {
