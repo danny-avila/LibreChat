@@ -12,10 +12,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHART_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPO_ROOT="$(cd "${CHART_DIR}/../.." && pwd)"
 STATIC_CONFIG="${REPO_ROOT}/otel/langfuse-fanout/otelcol.yaml"
+RENDER_CHART_DIR="$(mktemp -d -t librechat-fanout-chart.XXXXXX)"
 RENDERED_FILE="$(mktemp -t librechat-fanout-config-render.XXXXXX)"
 STATIC_SUMMARY="$(mktemp -t librechat-fanout-static-summary.XXXXXX)"
 HELM_SUMMARY="$(mktemp -t librechat-fanout-helm-summary.XXXXXX)"
-trap 'rm -f "${RENDERED_FILE}" "${STATIC_SUMMARY}" "${HELM_SUMMARY}"' EXIT
+trap 'rm -rf "${RENDER_CHART_DIR}"; rm -f "${RENDERED_FILE}" "${STATIC_SUMMARY}" "${HELM_SUMMARY}"' EXIT
 
 if ! command -v helm >/dev/null 2>&1; then
   echo "FAIL: helm not on PATH" >&2
@@ -27,7 +28,14 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
-helm template librechat "${CHART_DIR}" \
+mkdir -p "${RENDER_CHART_DIR}/templates"
+awk '/^dependencies:/{ exit } { print }' "${CHART_DIR}/Chart.yaml" > "${RENDER_CHART_DIR}/Chart.yaml"
+cp "${CHART_DIR}/values.yaml" "${RENDER_CHART_DIR}/values.yaml"
+cp "${CHART_DIR}/templates/_helpers.tpl" "${RENDER_CHART_DIR}/templates/_helpers.tpl"
+cp "${CHART_DIR}/templates/langfuse-fanout-configmap.yaml" \
+  "${RENDER_CHART_DIR}/templates/langfuse-fanout-configmap.yaml"
+
+helm template librechat "${RENDER_CHART_DIR}" \
   --set langfuseFanout.enabled=true \
   --set langfuseFanout.central.authHeaderSecret.name=langfuse-central \
   --show-only templates/langfuse-fanout-configmap.yaml \

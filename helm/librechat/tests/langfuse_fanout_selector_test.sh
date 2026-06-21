@@ -9,15 +9,28 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHART_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPO_ROOT="$(cd "${CHART_DIR}/../.." && pwd)"
+RENDER_CHART_DIR="$(mktemp -d -t librechat-fanout-chart.XXXXXX)"
 RENDERED_FILE="$(mktemp -t librechat-fanout-render.XXXXXX)"
-trap 'rm -f "${RENDERED_FILE}"' EXIT
+trap 'rm -rf "${RENDER_CHART_DIR}"; rm -f "${RENDERED_FILE}"' EXIT
 
 if ! command -v helm >/dev/null 2>&1; then
   echo "FAIL: helm not on PATH" >&2
   exit 1
 fi
 
-helm template librechat "${CHART_DIR}" \
+mkdir -p "${RENDER_CHART_DIR}/templates"
+awk '/^dependencies:/{ exit } { print }' "${CHART_DIR}/Chart.yaml" > "${RENDER_CHART_DIR}/Chart.yaml"
+cp "${CHART_DIR}/values.yaml" "${RENDER_CHART_DIR}/values.yaml"
+cp "${CHART_DIR}/templates/_helpers.tpl" "${RENDER_CHART_DIR}/templates/_helpers.tpl"
+cp "${CHART_DIR}/templates/service.yaml" "${RENDER_CHART_DIR}/templates/service.yaml"
+cp "${CHART_DIR}/templates/langfuse-fanout-service.yaml" \
+  "${RENDER_CHART_DIR}/templates/langfuse-fanout-service.yaml"
+cp "${CHART_DIR}/templates/langfuse-fanout-deployment.yaml" \
+  "${RENDER_CHART_DIR}/templates/langfuse-fanout-deployment.yaml"
+cp "${CHART_DIR}/templates/langfuse-fanout-configmap.yaml" \
+  "${RENDER_CHART_DIR}/templates/langfuse-fanout-configmap.yaml"
+
+helm template librechat "${RENDER_CHART_DIR}" \
   --set langfuseFanout.enabled=true \
   --set langfuseFanout.central.authHeaderSecret.name=langfuse-central \
   --show-only templates/service.yaml \
