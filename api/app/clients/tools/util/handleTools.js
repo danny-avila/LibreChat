@@ -86,6 +86,23 @@ async function isMemoryToolUsable(req, writePermissions = []) {
 }
 
 /**
+ * Whether the agent actually declared the requested inline memory tool. The
+ * event-driven executor loads tools by requested name, so a hallucinated or
+ * undeclared `set_memory`/`delete_memory` call (e.g. on an agent that never
+ * opted into the memory capability) must not be constructed.
+ * @param {{ toolDefinitions?: Array<{ name?: string }>, tools?: Array<unknown> }} [agent]
+ * @param {string} toolName
+ * @returns {boolean}
+ */
+function agentDeclaredMemoryTool(agent, toolName) {
+  if (!agent) {
+    return false;
+  }
+  const declared = (entry) => (typeof entry === 'string' ? entry : entry?.name) === toolName;
+  return (agent.toolDefinitions ?? []).some(declared) || (agent.tools ?? []).some(declared);
+}
+
+/**
  * Validates the availability and authentication of tools for a user based on environment variables or user-specific plugin authentication values.
  * Tools without required authentication or with valid authentication are considered valid.
  *
@@ -397,7 +414,10 @@ const loadTools = async ({
       const validKeys = memoryConfig?.validKeys;
       const tokenLimit = memoryConfig?.tokenLimit;
       requestedTools[tool] = async () => {
-        if (!(await isMemoryToolUsable(options.req, [Permissions.CREATE, Permissions.UPDATE]))) {
+        if (
+          !agentDeclaredMemoryTool(agent, SET_MEMORY_TOOL_NAME) ||
+          !(await isMemoryToolUsable(options.req, [Permissions.CREATE, Permissions.UPDATE]))
+        ) {
           return null;
         }
         let totalTokens = 0;
@@ -407,6 +427,9 @@ const loadTools = async ({
             totalTokens = formatted?.totalTokens ?? 0;
           } catch (error) {
             logger.error('[handleTools] Failed to load memory token count for set_memory', error);
+            /** Fail closed: without the current usage total a configured
+             *  tokenLimit could be silently bypassed. */
+            return null;
           }
         }
         return createMemoryTool({ userId: user, setMemory, validKeys, tokenLimit, totalTokens });
@@ -415,7 +438,10 @@ const loadTools = async ({
     } else if (tool === DELETE_MEMORY_TOOL_NAME) {
       const memoryConfig = options.req?.config?.memory;
       requestedTools[tool] = async () => {
-        if (!(await isMemoryToolUsable(options.req, [Permissions.UPDATE]))) {
+        if (
+          !agentDeclaredMemoryTool(agent, DELETE_MEMORY_TOOL_NAME) ||
+          !(await isMemoryToolUsable(options.req, [Permissions.UPDATE]))
+        ) {
           return null;
         }
         return createDeleteMemoryTool({

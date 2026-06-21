@@ -153,9 +153,12 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
   const skillDbMethods = getSkillDbMethods();
 
   /** Run-level gate for inline memory tools: the `memory` capability must be
-   *  enabled, memory must be configured, and the user must not have opted out
-   *  or lost the `MEMORIES.USE` permission. Agents (or the ephemeral memory
-   *  badge) opt in per-agent via the `memory` marker on `tools`. */
+   *  enabled, memory must be configured, and the user must not have opted out.
+   *  Requires the memory WRITE permissions (CREATE + UPDATE) — both inline tools
+   *  mutate memory — so the tools aren't registered (and shown to the model) for
+   *  read-only-memory roles that the runtime loader would then refuse to build.
+   *  Agents (or the ephemeral memory badge) opt in per-agent via the `memory`
+   *  marker on `tools`. */
   const memoryAvailable =
     enabledCapabilities.has(AgentCapabilities.memory) &&
     isMemoryEnabled(appConfig?.memory) &&
@@ -163,7 +166,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     (await checkAccess({
       user: req.user,
       permissionType: PermissionTypes.MEMORIES,
-      permissions: [Permissions.USE],
+      permissions: [Permissions.USE, Permissions.CREATE, Permissions.UPDATE],
       getRoleByName: db.getRoleByName,
     }));
 
