@@ -21,11 +21,10 @@ let methods: ReturnType<typeof createSystemGrantMethods>;
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
-  await mongoose.connect(mongoServer.getUri());
   SystemGrant =
     mongoose.models.SystemGrant || mongoose.model<t.ISystemGrant>('SystemGrant', systemGrantSchema);
-  await SystemGrant.init();
   methods = createSystemGrantMethods(mongoose);
+  await mongoose.connect(mongoServer.getUri());
 });
 
 afterAll(async () => {

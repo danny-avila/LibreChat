@@ -1,33 +1,45 @@
-const dataSchemasMock = {
-  logger: { info: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() },
-  getTenantId: jest.fn(() => undefined),
-  DEFAULT_SESSION_EXPIRY: 900000,
-  DEFAULT_REFRESH_TOKEN_EXPIRY: 604800000,
-};
-const dataProviderMock = {
-  ErrorTypes: {},
-  SystemRoles: { USER: 'USER', ADMIN: 'ADMIN' },
-  errorsToString: jest.fn(),
-};
-const apiMock = {
-  isEnabled: jest.fn((val) => val === 'true' || val === true),
-  checkEmailConfig: jest.fn(),
-  isEmailDomainAllowed: jest.fn(),
-  math: jest.fn((val, fallback) => (val ? Number(val) : fallback)),
-  shouldUseSecureCookie: jest.fn(() => false),
-  resolveAppConfigForUser: jest.fn(async (_getAppConfig, _user) => ({})),
-  setCloudFrontCookies: jest.fn(() => true),
-  getCloudFrontConfig: jest.fn(() => ({
-    domain: 'https://cdn.example.com',
-    imageSigning: 'cookies',
-    cookieDomain: '.example.com',
-    privateKey: 'test-private-key',
-    keyPairId: 'K123ABC',
-  })),
-  parseCloudFrontCookieScope: jest.fn(() => null),
-  CLOUDFRONT_SCOPE_COOKIE: 'LibreChat-CloudFront-Scope',
-};
-const modelsMock = {
+jest.mock(
+  '@librechat/data-schemas',
+  () => ({
+    logger: { info: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() },
+    getTenantId: jest.fn(() => undefined),
+    DEFAULT_SESSION_EXPIRY: 900000,
+    DEFAULT_REFRESH_TOKEN_EXPIRY: 604800000,
+  }),
+  { virtual: true },
+);
+jest.mock(
+  'librechat-data-provider',
+  () => ({
+    ErrorTypes: {},
+    SystemRoles: { USER: 'USER', ADMIN: 'ADMIN' },
+    errorsToString: jest.fn(),
+  }),
+  { virtual: true },
+);
+jest.mock(
+  '@librechat/api',
+  () => ({
+    isEnabled: jest.fn((val) => val === 'true' || val === true),
+    checkEmailConfig: jest.fn(),
+    isEmailDomainAllowed: jest.fn(),
+    math: jest.fn((val, fallback) => (val ? Number(val) : fallback)),
+    shouldUseSecureCookie: jest.fn(() => false),
+    resolveAppConfigForUser: jest.fn(async (_getAppConfig, _user) => ({})),
+    setCloudFrontCookies: jest.fn(() => true),
+    getCloudFrontConfig: jest.fn(() => ({
+      domain: 'https://cdn.example.com',
+      imageSigning: 'cookies',
+      cookieDomain: '.example.com',
+      privateKey: 'test-private-key',
+      keyPairId: 'K123ABC',
+    })),
+    parseCloudFrontCookieScope: jest.fn(() => null),
+    CLOUDFRONT_SCOPE_COOKIE: 'LibreChat-CloudFront-Scope',
+  }),
+  { virtual: true },
+);
+jest.mock('~/models', () => ({
   findUser: jest.fn(),
   findToken: jest.fn(),
   createUser: jest.fn(),
@@ -42,8 +54,8 @@ const modelsMock = {
   generateToken: jest.fn(),
   deleteUserById: jest.fn(),
   generateRefreshToken: jest.fn(),
-};
-const validatorsMock = {
+}));
+jest.mock('~/strategies/validators', () => ({
   registerSchema: {
     safeParse: jest.fn((user) => ({
       success: true,
@@ -56,18 +68,9 @@ const validatorsMock = {
       },
     })),
   },
-};
-const configMock = { getAppConfig: jest.fn() };
-const serverUtilsMock = { sendEmail: jest.fn() };
-
-jest.resetModules();
-jest.doMock('@librechat/data-schemas', () => dataSchemasMock);
-jest.doMock('librechat-data-provider', () => dataProviderMock);
-jest.doMock('@librechat/api', () => apiMock);
-jest.doMock('~/models', () => modelsMock);
-jest.doMock('~/strategies/validators', () => validatorsMock);
-jest.doMock('~/server/services/Config', () => configMock);
-jest.doMock('~/server/utils', () => serverUtilsMock);
+}));
+jest.mock('~/server/services/Config', () => ({ getAppConfig: jest.fn() }));
+jest.mock('~/server/utils', () => ({ sendEmail: jest.fn() }));
 
 const {
   checkEmailConfig,
@@ -77,9 +80,9 @@ const {
   setCloudFrontCookies,
   getCloudFrontConfig,
   parseCloudFrontCookieScope,
-} = apiMock;
+} = require('@librechat/api');
 const jwt = require('jsonwebtoken');
-const { logger, getTenantId } = dataSchemasMock;
+const { logger, getTenantId } = require('@librechat/data-schemas');
 const {
   findUser,
   findToken,
@@ -92,9 +95,9 @@ const {
   createSession,
   createToken,
   deleteTokens,
-} = modelsMock;
-const { getAppConfig } = configMock;
-const { sendEmail } = serverUtilsMock;
+} = require('~/models');
+const { getAppConfig } = require('~/server/services/Config');
+const { sendEmail } = require('~/server/utils');
 const bcrypt = require('bcryptjs');
 const {
   setOpenIDAuthTokens,
@@ -126,36 +129,6 @@ function mockRequest(sessionData = {}, cookies = {}) {
     cookies,
   };
 }
-
-const originalEnv = { ...process.env };
-const defaultCloudFrontCookieConfig = {
-  domain: 'https://cdn.example.com',
-  imageSigning: 'cookies',
-  cookieDomain: '.example.com',
-  privateKey: 'test-private-key',
-  keyPairId: 'K123ABC',
-};
-
-beforeEach(() => {
-  jest.clearAllMocks();
-  process.env = {
-    ...originalEnv,
-    JWT_REFRESH_SECRET: 'test-refresh-secret',
-    OPENID_REUSE_TOKENS: 'true',
-  };
-  checkEmailConfig.mockReturnValue(false);
-  shouldUseSecureCookie.mockReturnValue(false);
-  isEmailDomainAllowed.mockReturnValue(true);
-  resolveAppConfigForUser.mockResolvedValue({});
-  setCloudFrontCookies.mockReturnValue(true);
-  getCloudFrontConfig.mockReturnValue(defaultCloudFrontCookieConfig);
-  parseCloudFrontCookieScope.mockReturnValue(null);
-  getTenantId.mockReturnValue(undefined);
-});
-
-afterAll(() => {
-  process.env = originalEnv;
-});
 
 describe('setOpenIDAuthTokens', () => {
   const env = process.env;

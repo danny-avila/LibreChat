@@ -1,4 +1,4 @@
-import mongoose, { Mongoose, Types } from 'mongoose';
+import mongoose, { Types } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
 import type { IConfig } from '~/types';
@@ -6,25 +6,24 @@ import { createConfigMethods } from './config';
 import configSchema from '~/schema/config';
 
 let mongoServer: MongoMemoryServer;
-let testMongoose: Mongoose;
 let methods: ReturnType<typeof createConfigMethods>;
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
-  testMongoose = new mongoose.Mongoose();
-  await testMongoose.connect(mongoServer.getUri());
-  testMongoose.model<IConfig>('Config', configSchema.clone());
-  await testMongoose.models.Config.init();
-  methods = createConfigMethods(testMongoose as unknown as typeof mongoose);
+  await mongoose.connect(mongoServer.getUri());
+  if (!mongoose.models.Config) {
+    mongoose.model<IConfig>('Config', configSchema);
+  }
+  methods = createConfigMethods(mongoose);
 });
 
 afterAll(async () => {
-  await testMongoose.disconnect();
+  await mongoose.disconnect();
   await mongoServer.stop();
 });
 
 beforeEach(async () => {
-  await testMongoose.models.Config.deleteMany({});
+  await mongoose.models.Config.deleteMany({});
 });
 
 describe('upsertConfig tombstone preservation', () => {
@@ -62,7 +61,7 @@ describe('upsertConfig tombstone preservation', () => {
       10,
     );
 
-    const count = await testMongoose.models.Config.countDocuments({});
+    const count = await mongoose.models.Config.countDocuments({});
     expect(count).toBe(1);
   });
 
@@ -487,7 +486,7 @@ describe('expectEmpty atomic guard', () => {
     });
     expect(result).toBeTruthy();
 
-    const remaining = await testMongoose.models.Config.countDocuments({});
+    const remaining = await mongoose.models.Config.countDocuments({});
     expect(remaining).toBe(0);
   });
 
@@ -505,12 +504,12 @@ describe('expectEmpty atomic guard', () => {
     });
     expect(result).toBeNull();
 
-    const remaining = await testMongoose.models.Config.countDocuments({});
+    const remaining = await mongoose.models.Config.countDocuments({});
     expect(remaining).toBe(1);
   });
 
   it('deleteConfig with expectEmpty returns null when tombstones is non-empty (doc preserved)', async () => {
-    await testMongoose.models.Config.create({
+    await mongoose.models.Config.create({
       principalType: PrincipalType.ROLE,
       principalId: 'admin',
       principalModel: PrincipalModel.ROLE,
@@ -526,7 +525,7 @@ describe('expectEmpty atomic guard', () => {
     });
     expect(result).toBeNull();
 
-    const remaining = await testMongoose.models.Config.countDocuments({});
+    const remaining = await mongoose.models.Config.countDocuments({});
     expect(remaining).toBe(1);
   });
 

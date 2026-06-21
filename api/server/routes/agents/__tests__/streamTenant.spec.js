@@ -25,16 +25,6 @@ jest.mock('@librechat/api', () => ({
   GenerationJobManager: mockGenerationJobManager,
 }));
 
-jest.mock('@librechat/api/telemetry', () => ({
-  createSseStreamTelemetry: jest.fn(() => ({
-    recordHeadersFlushed: jest.fn(),
-    recordWrite: jest.fn(),
-    recordFinalEventEmitted: jest.fn(),
-    recordErrorEventEmitted: jest.fn(),
-    recordSubscribeFailed: jest.fn(),
-  })),
-}));
-
 jest.mock('~/models', () => ({
   saveMessage: jest.fn(),
 }));
@@ -77,8 +67,7 @@ function mockSubscribeSuccess() {
 
 describe('SSE stream tenant isolation', () => {
   beforeEach(() => {
-    Object.values(mockGenerationJobManager).forEach((mock) => mock.mockReset());
-    mockGenerationJobManager.getActiveJobIdsForUser.mockResolvedValue([]);
+    jest.clearAllMocks();
     mockUserId = 'user-123';
     mockTenantId = undefined;
   });
