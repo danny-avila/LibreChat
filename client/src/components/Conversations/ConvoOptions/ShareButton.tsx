@@ -110,6 +110,11 @@ export default function ShareButton({
                   <span className="text-xs text-text-secondary">
                     {localize('com_ui_share_files_description')}
                   </span>
+                  {shareId && (
+                    <span className="text-xs font-medium text-text-secondary">
+                      {localize('com_ui_share_files_refresh_note')}
+                    </span>
+                  )}
                 </div>
               </div>
             )}
