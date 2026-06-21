@@ -118,7 +118,7 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
           isSubmitting && 'submitting',
           showCursorState && text.length > 0 && 'result-streaming',
           isCreatedByUser && !enableUserMsgMarkdown && 'whitespace-pre-wrap',
-          isCreatedByUser ? 'dark:text-gray-20' : 'dark:text-gray-100',
+          'text-text-primary',
         )}
       >
         {content}
