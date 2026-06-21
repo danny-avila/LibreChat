@@ -153,6 +153,34 @@ test.describe('quote references', () => {
     await expect(messageQuotes(page)).not.toContainText(MOCK_REPLY_TEXT);
   });
 
+  test('opens the selections popup via keyboard and closes on Escape', async ({ page }) => {
+    test.setTimeout(120000);
+    const firstMessage = 'quote target beta';
+    const popup = page.getByTestId('quote-selections-popup');
+
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+
+    const response = await sendMessage(page, firstMessage);
+    expect(response.ok()).toBeTruthy();
+    await expect(mockReply(page)).toBeVisible({ timeout: 20000 });
+    await addQuote(page, MOCK_REPLY_TEXT, 1);
+    await addQuote(page, firstMessage, 2);
+
+    // The collapsed pill is a focusable disclosure: focus + Enter opens it.
+    const trigger = pendingChips(page).getByRole('button', { name: '2 selections' });
+    await trigger.focus();
+    await expect(trigger).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(popup).toBeVisible({ timeout: 5000 });
+    await expect(popup).toContainText(MOCK_REPLY_TEXT);
+    await expect(popup).toContainText(firstMessage);
+
+    // Escape closes it (and Enter was a real keyboard open, no pointer involved).
+    await page.keyboard.press('Escape');
+    await expect(popup).toBeHidden();
+  });
+
   test('re-merges a persisted quote into later-turn history (durable)', async ({ page }) => {
     test.setTimeout(120000);
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
