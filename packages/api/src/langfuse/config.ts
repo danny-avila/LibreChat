@@ -1,7 +1,7 @@
 import type { AppConfig } from '@librechat/data-schemas';
 import type { RunConfig } from '@librechat/agents';
 import { resolveLangfuseTenantDestination } from './tenantDestinations';
-import { isFalseEnv, normalizeString } from './utils';
+import { isEnabledUnlessBlankOrFalse, normalizeString } from './utils';
 
 type LangfuseRunConfig = NonNullable<RunConfig['langfuse']>;
 type LangfuseRunConfigWithTraceAttributes = LangfuseRunConfig & {
@@ -11,7 +11,7 @@ const TENANT_EXPORT_ATTRIBUTE = 'librechat.langfuse.tenant_export.enabled';
 const TENANT_DESTINATION_ATTRIBUTE = 'librechat.langfuse.destination';
 
 function isTenantExportEnabled(): boolean {
-  return !isFalseEnv(process.env.LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED);
+  return isEnabledUnlessBlankOrFalse(process.env.LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED);
 }
 
 function mergeTraceMetadata(

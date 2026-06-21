@@ -40,9 +40,10 @@ defined in this collector config.
 - Tenant app configuration must set a Langfuse base URL matching one of the
   startup destinations before tenant trace/score export is enabled; keys alone
   are treated as central-only.
-- `LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED=false` can be set on LibreChat as an
-  emergency switch to stop tenant trace and score export while keeping central
-  collector export active.
+- `LANGFUSE_FANOUT_TENANT_EXPORT_ENABLED=false` or a blank value can be set on
+  LibreChat as an emergency switch to stop tenant trace and score export while
+  keeping central collector export active. When omitted, tenant export defaults
+  to enabled if tenant keys and a known destination are configured.
 - This supports Langfuse Cloud and self-hosted Langfuse as long as each allowed
   tenant base URL is configured at LibreChat/collector startup. Runtime tenant
   config selects from those known destinations; it does not inject arbitrary
