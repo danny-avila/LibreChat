@@ -122,6 +122,7 @@ export const createMemoryTool = ({
   charLimit,
   tokenLimit,
   totalTokens = 0,
+  onWrite,
 }: {
   userId: string | ObjectId;
   setMemory: MemoryMethods['setMemory'];
@@ -129,6 +130,7 @@ export const createMemoryTool = ({
   charLimit?: number;
   tokenLimit?: number;
   totalTokens?: number;
+  onWrite?: () => void;
 }): DynamicStructuredTool => {
   /** Running token total, advanced after each successful write. Writes are
    *  serialized through `writeChain` so multiple `set_memory` calls in one
@@ -227,6 +229,7 @@ export const createMemoryTool = ({
               currentTotalTokens = newTotalTokens;
               writtenTokensByKey.set(key, tokenCount);
             }
+            onWrite?.();
             logger.debug(`Memory set for key "${key}" (${tokenCount} tokens) for user "${userId}"`);
             return [`Memory set for key "${key}" (${tokenCount} tokens)`, artifact];
           }
@@ -273,10 +276,12 @@ export const createDeleteMemoryTool = ({
   userId,
   deleteMemory,
   validKeys,
+  onWrite,
 }: {
   userId: string | ObjectId;
   deleteMemory: MemoryMethods['deleteMemory'];
   validKeys?: string[];
+  onWrite?: () => void;
 }): DynamicStructuredTool => {
   return tool(
     async ({ key }) => {
@@ -299,6 +304,7 @@ export const createDeleteMemoryTool = ({
 
         const result = await deleteMemory({ userId, key });
         if (result.ok) {
+          onWrite?.();
           logger.debug(`Memory deleted for key "${key}" for user "${userId}"`);
           return [`Memory deleted for key "${key}"`, artifact];
         }
@@ -475,6 +481,16 @@ export function getRequestMemories({
 }
 
 /**
+ * Drops the cached memories for a request so the next {@link getRequestMemories}
+ * re-fetches. Inline `set_memory`/`delete_memory` writes call this on success so
+ * a later tool round in the same response is seeded with the post-write usage
+ * total instead of a stale pre-write one.
+ */
+export function invalidateRequestMemories(req: object): void {
+  requestMemoriesCache.delete(req);
+}
+
+/**
  * Re-checks the run-level memory gate at tool-execution time: the agents
  * `memory` capability is enabled, memory is configured, the user hasn't opted
  * out, and the user holds the required (write) permissions. The event-driven
@@ -553,7 +569,12 @@ export async function buildInlineMemoryTool({
     if (!allowed) {
       return null;
     }
-    return createDeleteMemoryTool({ userId, deleteMemory: memoryMethods.deleteMemory, validKeys });
+    return createDeleteMemoryTool({
+      userId,
+      deleteMemory: memoryMethods.deleteMemory,
+      validKeys,
+      onWrite: () => invalidateRequestMemories(req),
+    });
   }
 
   const allowed = await isMemoryToolAllowed({
@@ -591,6 +612,7 @@ export async function buildInlineMemoryTool({
     charLimit,
     tokenLimit,
     totalTokens,
+    onWrite: () => invalidateRequestMemories(req),
   });
 }
 
