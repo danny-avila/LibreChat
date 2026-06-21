@@ -25,20 +25,33 @@ describe('PendingQuoteChips', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('renders one removable chip per pending quote', () => {
-    renderWithQuotes(['alpha excerpt', 'beta excerpt']);
-    const items = screen.getAllByRole('listitem');
-    expect(items).toHaveLength(2);
-    expect(items[0]).toHaveTextContent('alpha excerpt');
-    expect(items[1]).toHaveTextContent('beta excerpt');
+  it('shows the excerpt text for a single selection', () => {
+    renderWithQuotes(['alpha excerpt']);
+    const chips = screen.getByTestId('pending-quote-chips');
+    expect(chips).toHaveAttribute('data-quote-count', '1');
+    expect(chips).toHaveTextContent('alpha excerpt');
   });
 
-  it('removes a quote when its × button is clicked', () => {
-    renderWithQuotes(['keep me', 'remove me']);
-    const removeButtons = screen.getAllByRole('button', { name: /com_ui_remove_quote/ });
-    fireEvent.click(removeButtons[1]);
-    const items = screen.getAllByRole('listitem');
-    expect(items).toHaveLength(1);
-    expect(items[0]).toHaveTextContent('keep me');
+  it('collapses multiple selections into a single "{n} selections" chip', () => {
+    renderWithQuotes(['alpha excerpt', 'beta excerpt']);
+    const chips = screen.getByTestId('pending-quote-chips');
+    expect(chips).toHaveAttribute('data-quote-count', '2');
+    // Collapsed label (the localize mock renders "<key>:<count>").
+    expect(chips).toHaveTextContent('com_ui_quote_selections:2');
+    // The composer shows ONE chip, not a row of two (the per-excerpt list lives
+    // in the hover popup, which only mounts on hover).
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
+  });
+
+  it('removes the single selection when its × is clicked', () => {
+    const { container } = renderWithQuotes(['only one']);
+    fireEvent.click(screen.getByRole('button', { name: /com_ui_remove_quote/ }));
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('clears all selections from the collapsed chip', () => {
+    const { container } = renderWithQuotes(['first', 'second']);
+    fireEvent.click(screen.getByRole('button', { name: /com_ui_remove_all_quotes/ }));
+    expect(container.firstChild).toBeNull();
   });
 });

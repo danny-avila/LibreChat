@@ -67,7 +67,7 @@ async function addQuote(page: Page, needle: string, expectedCount: number) {
     const button = addToChat(page);
     await expect(button).toBeVisible({ timeout: 3000 });
     await button.click();
-    await expect(pendingChips(page).getByRole('listitem')).toHaveCount(expectedCount);
+    await expect(pendingChips(page)).toHaveAttribute('data-quote-count', String(expectedCount));
   }).toPass({ timeout: 30000 });
 }
 
@@ -108,9 +108,12 @@ test.describe('quote references', () => {
     await expect(messageQuotes(page)).toContainText(MOCK_REPLY_TEXT);
   });
 
-  test('accumulates multiple selections as chips and supports removing one', async ({ page }) => {
+  test('collapses multiple selections into one chip with a hover popup, and removes one', async ({
+    page,
+  }) => {
     test.setTimeout(120000);
     const firstMessage = 'quote target alpha';
+    const popup = page.getByTestId('quote-selections-popup');
 
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
     await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
@@ -123,13 +126,23 @@ test.describe('quote references', () => {
     await addQuote(page, MOCK_REPLY_TEXT, 1);
     await addQuote(page, firstMessage, 2);
 
-    // Remove the reply chip; the user-message chip remains.
-    await pendingChips(page)
+    // Composer shows a single collapsed "2 selections" chip, not a row of two.
+    await expect(pendingChips(page)).toContainText('2 selections');
+
+    // Hovering the collapsed chip reveals a popup listing every excerpt.
+    await pendingChips(page).getByRole('listitem').hover();
+    await expect(popup).toBeVisible({ timeout: 5000 });
+    await expect(popup).toContainText(MOCK_REPLY_TEXT);
+    await expect(popup).toContainText(firstMessage);
+
+    // Remove the reply from the popup; one selection remains and collapses back
+    // to its excerpt text.
+    await popup
       .getByRole('listitem')
       .filter({ hasText: MOCK_REPLY_TEXT })
       .getByRole('button', { name: /remove quote/i })
       .click();
-    await expect(pendingChips(page).getByRole('listitem')).toHaveCount(1);
+    await expect(pendingChips(page)).toHaveAttribute('data-quote-count', '1');
     await expect(pendingChips(page)).toContainText(firstMessage);
     await expect(pendingChips(page)).not.toContainText(MOCK_REPLY_TEXT);
 
