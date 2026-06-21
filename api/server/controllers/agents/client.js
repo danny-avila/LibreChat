@@ -17,8 +17,6 @@ const {
   omitTitleOptions,
   getProviderConfig,
   memoryInstructions,
-  SET_MEMORY_TOOL_NAME,
-  DELETE_MEMORY_TOOL_NAME,
   createTokenCounter,
   applyContextToAgent,
   isMemoryAgentEnabled,
@@ -86,29 +84,24 @@ const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMC
 
 const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
 
-/** Names that mark inline memory tooling on an initialized agent. After
- *  `initializeAgent` the `memory` capability marker is expanded into the
- *  `set_memory`/`delete_memory` definitions, so a string `includes('memory')`
- *  on `agent.tools` (now loaded instances/definitions) no longer matches. */
-const INLINE_MEMORY_TOOL_NAMES = new Set([
-  AgentCapabilities.memory,
-  SET_MEMORY_TOOL_NAME,
-  DELETE_MEMORY_TOOL_NAME,
-]);
-
 /**
- * Whether an initialized agent carries the inline memory tools, checked across
- * both its loaded tool instances and its serializable tool definitions.
- * @param {Agent & { toolDefinitions?: Array<{ name?: string }> }} [agent]
+ * Whether an agent carries the inline memory tools. Prefers the authoritative
+ * `memoryToolsRegistered` flag set by `initializeAgent` (LibreChat-only, so it
+ * never matches an MCP tool that merely shares the `set_memory`/`delete_memory`
+ * name), falling back to the raw `memory` capability marker on `tools`.
+ * @param {Agent & { memoryToolsRegistered?: boolean }} [agent]
  * @returns {boolean}
  */
 function agentHasInlineMemoryTools(agent) {
   if (!agent) {
     return false;
   }
-  const matches = (entry) =>
-    INLINE_MEMORY_TOOL_NAMES.has(typeof entry === 'string' ? entry : entry?.name);
-  return (agent.toolDefinitions ?? []).some(matches) || (agent.tools ?? []).some(matches);
+  if (agent.memoryToolsRegistered === true) {
+    return true;
+  }
+  return (agent.tools ?? []).some(
+    (entry) => (typeof entry === 'string' ? entry : entry?.name) === AgentCapabilities.memory,
+  );
 }
 
 class AgentClient extends BaseClient {
@@ -486,11 +479,14 @@ class AgentClient extends BaseClient {
       }
     }
 
-    /** Memory context (user preferences/memories) */
-    const withoutKeys = await this.useMemory();
-    const memoryContext = withoutKeys
-      ? `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`
-      : undefined;
+    /** Memory context (user preferences/memories). Keyed context (with memory
+     *  keys + token metadata) is reserved for agents that can call
+     *  `delete_memory`; everyone else gets the unkeyed values only. */
+    const memories = await this.useMemory();
+    const buildMemoryContext = (text) =>
+      text ? `${memoryInstructions}\n\n# Existing memory about the user:\n${text}` : undefined;
+    const memoryContext = buildMemoryContext(memories?.withoutKeys);
+    const keyedMemoryContext = buildMemoryContext(memories?.withKeys);
 
     const sharedRunContext = sharedRunContextParts.join('\n\n');
     const memoryAgentEnabled = isMemoryAgentEnabled(this.options.req.config?.memory);
@@ -541,13 +537,13 @@ class AgentClient extends BaseClient {
     await Promise.all(
       allAgents.map(({ agent, agentId }) => {
         const agentRunContextParts = [sharedRunContext];
+        const agentHasMemory = agentHasInlineMemoryTools(agent);
+        const agentMemoryContext = agentHasMemory ? keyedMemoryContext : memoryContext;
         if (
-          memoryContext &&
-          (agentId === this.options.agent.id ||
-            memoryAgentEnabled ||
-            agentHasInlineMemoryTools(agent))
+          agentMemoryContext &&
+          (agentId === this.options.agent.id || memoryAgentEnabled || agentHasMemory)
         ) {
-          agentRunContextParts.push(memoryContext);
+          agentRunContextParts.push(agentMemoryContext);
         }
         const scopedContext = agentScopedContext.get(agentId);
         if (scopedContext) {
@@ -598,7 +594,7 @@ class AgentClient extends BaseClient {
   }
 
   /**
-   * @returns {Promise<string | undefined>}
+   * @returns {Promise<{ withKeys?: string; withoutKeys?: string } | undefined>}
    */
   async useMemory() {
     const user = this.options.req.user;
@@ -627,19 +623,10 @@ class AgentClient extends BaseClient {
     const userId = this.options.req.user.id + '';
     this.processMemory = undefined;
 
-    /** Inline memory tools (the `memory` capability) let an agent read/write
-     *  memory itself, so the run needs the keyed memory context — otherwise
-     *  `delete_memory` has no visible key to target. Checked across the primary
-     *  and every sub-agent, since a handoff agent may carry memory alone. */
-    const agentHasMemoryTools = [
-      this.options.agent,
-      ...(this.agentConfigs ? Array.from(this.agentConfigs.values()) : []),
-    ].some(agentHasInlineMemoryTools);
-
     if (!isMemoryAgentEnabled(memoryConfig)) {
       try {
         const { withKeys, withoutKeys } = await db.getFormattedMemories({ userId });
-        return agentHasMemoryTools ? withKeys : withoutKeys;
+        return { withKeys, withoutKeys };
       } catch (error) {
         logger.error(
           '[api/server/controllers/agents/client.js #useMemory] Error loading memories',
@@ -756,18 +743,16 @@ class AgentClient extends BaseClient {
     });
 
     this.processMemory = processMemory;
-    if (agentHasMemoryTools) {
-      try {
-        const { withKeys } = await db.getFormattedMemories({ userId });
-        return withKeys;
-      } catch (error) {
-        logger.error(
-          '[api/server/controllers/agents/client.js #useMemory] Error loading keyed memories',
-          error,
-        );
-      }
+    let withKeys = withoutKeys;
+    try {
+      ({ withKeys } = await db.getFormattedMemories({ userId }));
+    } catch (error) {
+      logger.error(
+        '[api/server/controllers/agents/client.js #useMemory] Error loading keyed memories',
+        error,
+      );
     }
-    return withoutKeys;
+    return { withKeys, withoutKeys };
   }
 
   /**

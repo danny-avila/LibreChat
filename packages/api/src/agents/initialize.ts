@@ -256,6 +256,12 @@ export type InitializedAgent = Agent & {
   toolDefinitions?: LCTool[];
   /** Precomputed flag indicating if any tools have defer_loading enabled (for efficient runtime checks) */
   hasDeferredTools?: boolean;
+  /** Whether the inline memory tools (`set_memory`/`delete_memory`) were
+   *  registered for this agent. Authoritative LibreChat-only signal of the
+   *  inline memory opt-in for the execution path, since some contexts hold the
+   *  initialized config (the `memory` marker already expanded out of `tools`)
+   *  rather than the raw agent document. */
+  memoryToolsRegistered?: boolean;
   /** Whether the actions capability is enabled (resolved during tool loading) */
   actionsEnabled?: boolean;
   /** Maximum characters allowed in a single tool result before truncation. */
@@ -1058,7 +1064,8 @@ export async function initializeAgent(
    * per-agent opt-in. The runtime instances are created in the tool service.
    */
   const agentRequestsMemory = (agent.tools ?? []).includes(Tools.memory);
-  if (params.memoryAvailable === true && agentRequestsMemory) {
+  const inlineMemoryRegistered = params.memoryAvailable === true && agentRequestsMemory;
+  if (inlineMemoryRegistered) {
     const memoryResult = registerMemoryTools({
       toolRegistry,
       toolDefinitions,
@@ -1248,6 +1255,7 @@ export async function initializeAgent(
     hasDeferredTools,
     actionsEnabled,
     baseContextTokens,
+    memoryToolsRegistered: inlineMemoryRegistered,
     codeEnvAvailable: effectiveCodeEnvAvailable,
     reasoningKey: customEndpointConfig?.customParams?.reasoningKey,
     skillAuthoringAvailable,

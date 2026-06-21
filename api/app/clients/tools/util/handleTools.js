@@ -86,19 +86,23 @@ async function isMemoryToolUsable(req, writePermissions = []) {
 }
 
 /**
- * Whether the agent opted into the LibreChat inline memory capability, checked
- * via the `memory` capability marker on the agent's tools. The raw agent kept
- * in the tool-execution context retains that marker (not the expanded
- * `set_memory`/`delete_memory` names), so this:
+ * Whether the agent opted into the LibreChat inline memory capability. The
+ * tool-execution context may hold the raw agent (still carrying the `memory`
+ * capability marker on `tools`) or the initialized config (marker already
+ * expanded into `set_memory`/`delete_memory`, with `memoryToolsRegistered`
+ * set). Both are LibreChat-only signals, so this:
  *  - refuses a hallucinated/undeclared memory call on a non-memory agent, and
  *  - does not let an MCP tool that merely shares the `set_memory`/`delete_memory`
  *    name get replaced by the built-in memory mutator.
- * @param {{ tools?: Array<unknown> }} [agent]
+ * @param {{ tools?: Array<unknown>, memoryToolsRegistered?: boolean }} [agent]
  * @returns {boolean}
  */
 function agentOptedIntoMemory(agent) {
   if (!agent) {
     return false;
+  }
+  if (agent.memoryToolsRegistered === true) {
+    return true;
   }
   return (agent.tools ?? []).some(
     (entry) => (typeof entry === 'string' ? entry : entry?.name) === Tools.memory,
