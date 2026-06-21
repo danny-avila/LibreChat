@@ -245,14 +245,14 @@ export function createConversationMethods(
         Object.prototype.hasOwnProperty.call(update, 'chatProjectId') ||
         Object.prototype.hasOwnProperty.call(unsetFields, 'chatProjectId');
       let previousChatProjectId: string | null = null;
-      let wasConversationPermanent = false;
+      let parentWasNotTemporary = false;
       if (mayChangeProjectMembership || isForcedRetention) {
         const existing = await Conversation.findOne(
           { conversationId, user: userId },
-          'chatProjectId expiredAt',
-        ).lean<{ chatProjectId?: string | null; expiredAt?: Date | null } | null>();
+          'chatProjectId isTemporary',
+        ).lean<{ chatProjectId?: string | null; isTemporary?: boolean | null } | null>();
         previousChatProjectId = existing?.chatProjectId ?? null;
-        wasConversationPermanent = existing != null && existing.expiredAt == null;
+        parentWasNotTemporary = existing != null && existing.isTemporary !== true;
       }
 
       if (newConversationId) {
@@ -339,7 +339,7 @@ export function createConversationMethods(
       }
 
       const forcedExpiredAt = update.expiredAt;
-      if (isForcedRetention && wasConversationPermanent && forcedExpiredAt instanceof Date) {
+      if (isForcedRetention && parentWasNotTemporary && forcedExpiredAt instanceof Date) {
         const Message = mongoose.models.Message as Model<IMessage>;
         await forceConversationMessagesTemporary(Message, userId, conversationId, forcedExpiredAt);
       }

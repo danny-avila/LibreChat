@@ -33,12 +33,14 @@ export const createFallbackRetentionDate = (now: number = Date.now()): Date =>
   new Date(now + DEFAULT_RETENTION_HOURS * 60 * 60 * 1000);
 
 /**
- * Applies forced-retention deadlines to a conversation's not-yet-expiring messages.
+ * Applies forced-retention deadlines to a conversation's not-yet-temporary messages.
  *
- * Forced (ephemeral) retention must cover existing messages too: a conversation that
- * predates the mode keeps `expiredAt: null` messages that the TTL index never removes,
- * so they would outlive the conversation. Only messages still lacking an expiration are
- * touched, making this a no-op once a conversation has been converted.
+ * Forced (ephemeral) retention must cover existing messages too. A conversation that
+ * predates the mode keeps non-temporary messages — `expiredAt: null` permanent messages,
+ * or `isTemporary: false` messages with a future `expiredAt` carried over from `all`
+ * retention — that outlive the converted conversation. Targeting `isTemporary !== true`
+ * pulls both onto the ephemeral schedule and stays a no-op once a conversation has been
+ * converted.
  */
 export const forceConversationMessagesTemporary = async (
   Message: Model<IMessage>,
@@ -47,7 +49,7 @@ export const forceConversationMessagesTemporary = async (
   expiredAt: Date,
 ): Promise<void> => {
   await Message.updateMany(
-    { conversationId, user: userId, expiredAt: null },
+    { conversationId, user: userId, isTemporary: { $ne: true } },
     { $set: { isTemporary: true, expiredAt } },
   );
 };
