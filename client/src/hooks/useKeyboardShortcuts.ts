@@ -918,6 +918,7 @@ export default function useKeyboardShortcuts() {
   const actions = useShortcutActions();
   const overrides = useRecoilValue(store.customShortcuts);
   const shortcutsDialogOpen = useRecoilValue(store.showShortcutsDialog);
+  const enterToSend = useRecoilValue(store.enterToSend);
 
   const actionMap = useMemo(() => new Map(actions.map((action) => [action.id, action])), [actions]);
 
@@ -962,9 +963,16 @@ export default function useKeyboardShortcuts() {
         tagName === 'INPUT' || tagName === 'TEXTAREA' || target?.isContentEditable === true;
       const isMainTextarea = target?.id === mainTextareaId;
 
+      // The composer natively submits on Ctrl/Cmd+Enter, and on non-shift Enter when
+      // "Enter to send" is on. Only defer to it for those chords; custom Enter-based submit
+      // bindings (e.g. Alt+Enter) must still reach the global handler.
+      const isCtrlEnter = e.key === 'Enter' && (e.ctrlKey || e.metaKey);
+      const isNativeTextareaSubmit =
+        isCtrlEnter || (enterToSend && e.key === 'Enter' && !e.shiftKey);
+
       if (
         matchedId === 'submitMessage' &&
-        ((isMainTextarea && e.key === 'Enter') || (isEditing && !isMainTextarea))
+        ((isMainTextarea && isNativeTextareaSubmit) || (isEditing && !isMainTextarea))
       ) {
         return;
       }
@@ -984,7 +992,7 @@ export default function useKeyboardShortcuts() {
         e.preventDefault();
       }
     },
-    [actionMap, bindingMap, shortcutsDialogOpen],
+    [actionMap, bindingMap, shortcutsDialogOpen, enterToSend],
   );
 
   useEffect(() => {

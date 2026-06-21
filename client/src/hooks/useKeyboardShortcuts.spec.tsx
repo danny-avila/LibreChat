@@ -242,6 +242,67 @@ describe('no-op shortcuts', () => {
   });
 });
 
+function appendSendButton(): jest.Mock {
+  const onClick = jest.fn();
+  const button = document.createElement('button');
+  button.dataset.testid = 'send-button';
+  button.addEventListener('click', onClick);
+  document.body.appendChild(button);
+  return onClick;
+}
+
+function appendMainTextarea(): HTMLTextAreaElement {
+  const textarea = document.createElement('textarea');
+  textarea.id = 'prompt-textarea';
+  document.body.appendChild(textarea);
+  return textarea;
+}
+
+function bindSubmitMessage(binding: string) {
+  window.localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({ submitMessage: { mac: binding, other: binding } }),
+  );
+}
+
+describe('composer submit shortcuts', () => {
+  it('runs a custom Alt+Enter submit binding inside the composer when Enter-to-send is off', () => {
+    window.localStorage.setItem('enterToSend', 'false');
+    bindSubmitMessage('Alt+Enter');
+    renderHarness();
+    const sendClick = appendSendButton();
+    const textarea = appendMainTextarea();
+
+    const event = dispatchKey({ key: 'Enter', altKey: true }, textarea);
+
+    expect(sendClick).toHaveBeenCalledTimes(1);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('defers Ctrl/Cmd+Enter in the composer to the native textarea submit', () => {
+    renderHarness();
+    const sendClick = appendSendButton();
+    const textarea = appendMainTextarea();
+
+    const event = dispatchKey({ key: 'Enter', ctrlKey: true }, textarea);
+
+    expect(sendClick).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('defers a custom Alt+Enter binding to the textarea when Enter-to-send is on', () => {
+    bindSubmitMessage('Alt+Enter');
+    renderHarness();
+    const sendClick = appendSendButton();
+    const textarea = appendMainTextarea();
+
+    const event = dispatchKey({ key: 'Enter', altKey: true }, textarea);
+
+    expect(sendClick).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+  });
+});
+
 describe('delete shortcut confirmation', () => {
   it('opens the delete confirmation instead of deleting immediately', () => {
     const conversation = buildConversation('test-convo', 'My Chat');
