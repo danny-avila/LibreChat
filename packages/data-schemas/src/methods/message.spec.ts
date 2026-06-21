@@ -793,6 +793,46 @@ describe('Message Operations', () => {
       }
     });
 
+    it('converts an active retained (all-mode) parent when switching to ephemeral', async () => {
+      const conversationId = uuidv4();
+      const retainedUntil = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'Retained all-mode chat',
+        isTemporary: false,
+        expiredAt: retainedUntil,
+      });
+      await Message.create({
+        messageId: uuidv4(),
+        conversationId,
+        user: 'user123',
+        text: 'retained',
+        isTemporary: false,
+        expiredAt: retainedUntil,
+      });
+
+      await saveMessage(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { messageId: uuidv4(), conversationId, text: 'branch', user: 'user123' },
+      );
+
+      const convo = await Conversation().findOne({ conversationId }).lean();
+      expect(convo?.isTemporary).toBe(true);
+      expect(convo?.expiredAt?.getTime()).toBeLessThan(retainedUntil.getTime());
+
+      const messages = await getMessages({ conversationId, user: 'user123' });
+      expect(messages).toHaveLength(2);
+      for (const message of messages) {
+        expect(message.isTemporary).toBe(true);
+        expect(message.expiredAt?.getTime()).toBeLessThan(retainedUntil.getTime());
+      }
+    });
+
     it('does not touch the parent conversation outside forced retention', async () => {
       const conversationId = uuidv4();
       await Conversation().create({

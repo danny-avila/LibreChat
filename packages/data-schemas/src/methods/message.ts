@@ -169,7 +169,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       ) {
         const Conversation = mongoose.models.Conversation as Model<IConversation>;
         const convoResult = await Conversation.updateOne(
-          { conversationId, user: userId, expiredAt: null },
+          { conversationId, user: userId, isTemporary: { $ne: true } },
           { $set: { isTemporary: true, expiredAt: forcedExpiredAt } },
         );
         if (convoResult.modifiedCount > 0) {
