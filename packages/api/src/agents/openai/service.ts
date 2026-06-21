@@ -178,6 +178,7 @@ type CreateRunFn = (params: {
   requestBody: Record<string, unknown>;
   user: Record<string, unknown>;
   tenantId?: string;
+  appConfig?: AppConfig;
   tokenCounter?: (message: unknown) => number;
 }) => Promise<{
   Graph?: unknown;

@@ -27,23 +27,27 @@ describe('Convos Routes', () => {
     deleteConvoSharedLinksWithCleanup,
   } = require('@librechat/api');
 
-  beforeAll(() => {
-    convosRouter = require('../convos');
-
-    app = express();
-    app.use(express.json());
+  const createApp = (userId = 'test-user-123') => {
+    const testApp = express();
+    testApp.use(express.json());
 
     /** Mock authenticated user */
-    app.use((req, res, next) => {
-      req.user = { id: 'test-user-123' };
+    testApp.use((req, res, next) => {
+      req.user = { id: userId };
       next();
     });
 
-    app.use('/api/convos', convosRouter);
+    testApp.use('/api/convos', convosRouter);
+    return testApp;
+  };
+
+  beforeAll(() => {
+    convosRouter = require('../convos');
   });
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
+    app = createApp();
   });
 
   describe('DELETE /all', () => {
@@ -146,13 +150,7 @@ describe('Convos Routes', () => {
       jest.clearAllMocks();
 
       /** Second user (simulate different user by modifying middleware) */
-      const app2 = express();
-      app2.use(express.json());
-      app2.use((req, res, next) => {
-        req.user = { id: 'test-user-456' };
-        next();
-      });
-      app2.use('/api/convos', require('../convos'));
+      const app2 = createApp('test-user-456');
 
       deleteConvos.mockResolvedValue({ deletedCount: 7 });
       deleteToolCalls.mockResolvedValue({ deletedCount: 12 });

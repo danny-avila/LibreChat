@@ -11,14 +11,15 @@ const mockLogger = {
   debug: jest.fn(),
 };
 
+let mockOpenIDCallbackAuthenticatorOptions;
 const mockOAuthHandler = jest.fn((_req, res) => res.status(204).end());
 const mockOpenIDCallbackMiddleware = jest.fn((_req, _res, next) => next());
-let mockOpenIDCallbackAuthenticatorOptions;
-const mockCreateOpenIDCallbackAuthenticator = jest.fn((options) => {
+const setMockOpenIDCallbackAuthenticator = (options) => {
   mockOpenIDCallbackAuthenticatorOptions = options;
   return mockOpenIDCallbackMiddleware;
-});
-const mockBuildOAuthFailureLog = jest.fn(({ provider, req, err, info, defaultMessage }) => ({
+};
+const mockCreateOpenIDCallbackAuthenticator = jest.fn(setMockOpenIDCallbackAuthenticator);
+const buildMockOAuthFailureLog = ({ provider, req, err, info, defaultMessage }) => ({
   provider,
   code: err?.code ?? info?.code ?? info?.error ?? req.query?.error,
   name: err?.name ?? info?.name,
@@ -37,17 +38,17 @@ const mockBuildOAuthFailureLog = jest.fn(({ provider, req, err, info, defaultMes
   path: req.path,
   forwarded_for: req.headers?.['x-forwarded-for'],
   user_agent: req.headers?.['user-agent'],
-}));
-const mockGetOAuthFailureMessage = jest.fn(
-  (req) =>
-    req.session?.messages?.pop() ??
-    req.query?.error_description ??
-    req.query?.error ??
-    'OAuth authentication failed',
-);
-const mockRedirectToAuthFailure = jest.fn((res, { clientDomain, authFailedError }) =>
-  res.redirect(`${clientDomain}/login?redirect=false&error=${authFailedError}`),
-);
+});
+const mockBuildOAuthFailureLog = jest.fn(buildMockOAuthFailureLog);
+const getMockOAuthFailureMessage = (req) =>
+  req.session?.messages?.pop() ??
+  req.query?.error_description ??
+  req.query?.error ??
+  'OAuth authentication failed';
+const mockGetOAuthFailureMessage = jest.fn(getMockOAuthFailureMessage);
+const redirectMockToAuthFailure = (res, { clientDomain, authFailedError }) =>
+  res.redirect(`${clientDomain}/login?redirect=false&error=${authFailedError}`);
+const mockRedirectToAuthFailure = jest.fn(redirectMockToAuthFailure);
 const mockPassportAuthenticate = jest.fn(() => (_req, _res, next) => next());
 
 jest.mock('passport', () => ({
@@ -105,8 +106,11 @@ afterAll(() => {
 });
 
 function getOAuthRouter() {
-  jest.resetModules();
-  return require('./oauth');
+  let router;
+  jest.isolateModules(() => {
+    router = require('./oauth');
+  });
+  return router;
 }
 
 function createApp(sessionMessages) {
@@ -126,19 +130,17 @@ function createApp(sessionMessages) {
 
 describe('OAuth route failure logging', () => {
   beforeEach(() => {
-    mockLogger.warn.mockClear();
-    mockLogger.error.mockClear();
-    mockLogger.info.mockClear();
-    mockLogger.debug.mockClear();
-    mockOAuthHandler.mockClear();
-    mockOpenIDCallbackMiddleware.mockClear();
-    mockBuildOAuthFailureLog.mockClear();
-    mockGetOAuthFailureMessage.mockClear();
-    mockRedirectToAuthFailure.mockClear();
-    mockPassportAuthenticate.mockClear();
+    jest.resetModules();
+    jest.clearAllMocks();
+    process.env.DOMAIN_CLIENT = 'http://client.test';
     mockOpenIDCallbackAuthenticatorOptions = undefined;
     mockPassportAuthenticate.mockImplementation(() => (_req, _res, next) => next());
+    mockCreateOpenIDCallbackAuthenticator.mockImplementation(setMockOpenIDCallbackAuthenticator);
     mockOpenIDCallbackMiddleware.mockImplementation((_req, _res, next) => next());
+    mockOAuthHandler.mockImplementation((_req, res) => res.status(204).end());
+    mockBuildOAuthFailureLog.mockImplementation(buildMockOAuthFailureLog);
+    mockGetOAuthFailureMessage.mockImplementation(getMockOAuthFailureMessage);
+    mockRedirectToAuthFailure.mockImplementation(redirectMockToAuthFailure);
   });
 
   it('wires the package OpenID callback middleware into the route', async () => {

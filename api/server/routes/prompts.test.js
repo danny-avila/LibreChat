@@ -56,6 +56,10 @@ function setTestUser(app, user) {
 }
 
 beforeAll(async () => {
+  if (mongoose.connection.readyState !== 0) {
+    await mongoose.disconnect();
+  }
+
   mongoServer = await MongoMemoryServer.create();
   const mongoUri = mongoServer.getUri();
   await mongoose.connect(mongoUri);
@@ -97,8 +101,10 @@ beforeAll(async () => {
   // Set default user
   currentTestUser = testUsers.owner;
 
-  // Import routes after middleware is set up
-  promptRoutes = require('./prompts');
+  // Import routes after middleware is set up and test-local mocks are registered.
+  jest.isolateModules(() => {
+    promptRoutes = require('./prompts');
+  });
   app.use('/api/prompts', promptRoutes);
 });
 

@@ -62,9 +62,7 @@ export function buildLangfuseConfig({
       normalizeString(fanout?.collectorUrl) ??
       normalizeString(process.env.LANGFUSE_FANOUT_COLLECTOR_URL);
     const baseUrl =
-      fanoutEnabled && fanoutCollectorUrl
-        ? fanoutCollectorUrl
-        : normalizeString(config?.baseUrl);
+      fanoutEnabled && fanoutCollectorUrl ? fanoutCollectorUrl : normalizeString(config?.baseUrl);
 
     if (baseUrl) {
       langfuse.baseUrl = baseUrl;

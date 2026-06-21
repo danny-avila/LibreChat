@@ -1,9 +1,9 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const express = require('express');
 const request = require('supertest');
 const zlib = require('zlib');
-const staticCache = require('../staticCache');
 
 const binaryParser = (res, callback) => {
   const chunks = [];
@@ -18,15 +18,9 @@ describe('staticCache', () => {
   let indexFile;
   let manifestFile;
   let swFile;
+  let staticCache;
 
-  beforeAll(() => {
-    // Create a test directory and files
-    testDir = path.join(__dirname, 'test-static');
-    if (!fs.existsSync(testDir)) {
-      fs.mkdirSync(testDir, { recursive: true });
-    }
-
-    // Create test files
+  const createTestFiles = () => {
     testFile = path.join(testDir, 'test.js');
     indexFile = path.join(testDir, 'index.html');
     manifestFile = path.join(testDir, 'manifest.json');
@@ -62,6 +56,10 @@ describe('staticCache', () => {
     const distImagesDir = path.join(testDir, 'dist', 'images');
     fs.mkdirSync(distImagesDir, { recursive: true });
     fs.writeFileSync(path.join(distImagesDir, 'logo.png'), 'fake-png-data');
+  };
+
+  beforeAll(() => {
+    testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'librechat-static-cache-'));
   });
 
   afterAll(() => {
@@ -79,6 +77,15 @@ describe('staticCache', () => {
     delete process.env.STATIC_CACHE_S_MAX_AGE;
     delete process.env.STATIC_CACHE_MAX_AGE;
     delete process.env.ENABLE_STATIC_ASSET_BROTLI;
+
+    if (fs.existsSync(testDir)) {
+      fs.rmSync(testDir, { recursive: true, force: true });
+    }
+    fs.mkdirSync(testDir, { recursive: true });
+    createTestFiles();
+
+    jest.resetModules();
+    staticCache = require('../staticCache');
   });
   describe('cache headers in production', () => {
     beforeEach(() => {
