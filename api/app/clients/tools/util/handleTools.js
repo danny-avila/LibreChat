@@ -59,11 +59,13 @@ const { getRoleByName, setMemory, deleteMemory, getFormattedMemories } = require
  * Re-checks the full memory gate before constructing inline memory tools.
  * The event-driven executor loads tools by name, so an unsolicited
  * `set_memory`/`delete_memory` call must not bypass the config, opt-out, and
- * permission checks enforced when the tools were registered.
+ * permission checks enforced when the tools were registered. `writePermissions`
+ * mirror the REST memory routes: writes require CREATE/UPDATE, not just USE.
  * @param {ServerRequest} [req]
+ * @param {string[]} [writePermissions]
  * @returns {Promise<boolean>}
  */
-async function isMemoryToolUsable(req) {
+async function isMemoryToolUsable(req, writePermissions = []) {
   if (!isMemoryEnabled(req?.config?.memory)) {
     return false;
   }
@@ -74,7 +76,7 @@ async function isMemoryToolUsable(req) {
     return await checkAccess({
       user: req.user,
       permissionType: PermissionTypes.MEMORIES,
-      permissions: [Permissions.USE],
+      permissions: [Permissions.USE, ...writePermissions],
       getRoleByName,
     });
   } catch (error) {
@@ -395,7 +397,7 @@ const loadTools = async ({
       const validKeys = memoryConfig?.validKeys;
       const tokenLimit = memoryConfig?.tokenLimit;
       requestedTools[tool] = async () => {
-        if (!(await isMemoryToolUsable(options.req))) {
+        if (!(await isMemoryToolUsable(options.req, [Permissions.CREATE, Permissions.UPDATE]))) {
           return null;
         }
         let totalTokens = 0;
@@ -413,7 +415,7 @@ const loadTools = async ({
     } else if (tool === DELETE_MEMORY_TOOL_NAME) {
       const memoryConfig = options.req?.config?.memory;
       requestedTools[tool] = async () => {
-        if (!(await isMemoryToolUsable(options.req))) {
+        if (!(await isMemoryToolUsable(options.req, [Permissions.UPDATE]))) {
           return null;
         }
         return createDeleteMemoryTool({

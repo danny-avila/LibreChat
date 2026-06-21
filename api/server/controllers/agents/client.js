@@ -17,6 +17,8 @@ const {
   omitTitleOptions,
   getProviderConfig,
   memoryInstructions,
+  SET_MEMORY_TOOL_NAME,
+  DELETE_MEMORY_TOOL_NAME,
   createTokenCounter,
   applyContextToAgent,
   isMemoryAgentEnabled,
@@ -83,6 +85,31 @@ const db = require('~/models');
 const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
 
 const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
+
+/** Names that mark inline memory tooling on an initialized agent. After
+ *  `initializeAgent` the `memory` capability marker is expanded into the
+ *  `set_memory`/`delete_memory` definitions, so a string `includes('memory')`
+ *  on `agent.tools` (now loaded instances/definitions) no longer matches. */
+const INLINE_MEMORY_TOOL_NAMES = new Set([
+  AgentCapabilities.memory,
+  SET_MEMORY_TOOL_NAME,
+  DELETE_MEMORY_TOOL_NAME,
+]);
+
+/**
+ * Whether an initialized agent carries the inline memory tools, checked across
+ * both its loaded tool instances and its serializable tool definitions.
+ * @param {Agent & { toolDefinitions?: Array<{ name?: string }> }} [agent]
+ * @returns {boolean}
+ */
+function agentHasInlineMemoryTools(agent) {
+  if (!agent) {
+    return false;
+  }
+  const matches = (entry) =>
+    INLINE_MEMORY_TOOL_NAMES.has(typeof entry === 'string' ? entry : entry?.name);
+  return (agent.toolDefinitions ?? []).some(matches) || (agent.tools ?? []).some(matches);
+}
 
 class AgentClient extends BaseClient {
   constructor(options = {}) {
@@ -514,7 +541,12 @@ class AgentClient extends BaseClient {
     await Promise.all(
       allAgents.map(({ agent, agentId }) => {
         const agentRunContextParts = [sharedRunContext];
-        if (memoryContext && (agentId === this.options.agent.id || memoryAgentEnabled)) {
+        if (
+          memoryContext &&
+          (agentId === this.options.agent.id ||
+            memoryAgentEnabled ||
+            agentHasInlineMemoryTools(agent))
+        ) {
           agentRunContextParts.push(memoryContext);
         }
         const scopedContext = agentScopedContext.get(agentId);
@@ -595,11 +627,14 @@ class AgentClient extends BaseClient {
     const userId = this.options.req.user.id + '';
     this.processMemory = undefined;
 
-    /** Inline memory tools (the `memory` capability on this agent) let the main
-     *  agent read/write memory itself, so it needs the keyed memory context —
-     *  otherwise `delete_memory` has no visible key to target. */
-    const agentHasMemoryTools =
-      this.options.agent?.tools?.includes(AgentCapabilities.memory) === true;
+    /** Inline memory tools (the `memory` capability) let an agent read/write
+     *  memory itself, so the run needs the keyed memory context — otherwise
+     *  `delete_memory` has no visible key to target. Checked across the primary
+     *  and every sub-agent, since a handoff agent may carry memory alone. */
+    const agentHasMemoryTools = [
+      this.options.agent,
+      ...(this.agentConfigs ? Array.from(this.agentConfigs.values()) : []),
+    ].some(agentHasInlineMemoryTools);
 
     if (!isMemoryAgentEnabled(memoryConfig)) {
       try {
