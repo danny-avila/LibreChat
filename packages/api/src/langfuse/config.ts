@@ -66,7 +66,8 @@ export function buildLangfuseConfig({
     fanout?.enabled !== false &&
     (fanout?.enabled === true || process.env.LANGFUSE_FANOUT_ENABLED === 'true');
   const fanoutCollectorUrl =
-    normalizeString(fanout?.collectorUrl) ?? normalizeString(process.env.LANGFUSE_FANOUT_COLLECTOR_URL);
+    normalizeString(fanout?.collectorUrl) ??
+    normalizeString(process.env.LANGFUSE_FANOUT_COLLECTOR_URL);
   const tenantExportEnabled = hasTenantCredentials && fanoutEnabled && isTenantExportEnabled();
 
   if (hasTenantCredentials && (!fanoutEnabled || tenantExportEnabled)) {
@@ -74,7 +75,8 @@ export function buildLangfuseConfig({
     langfuse.secretKey = secretKey;
   }
 
-  const baseUrl = fanoutEnabled && fanoutCollectorUrl ? fanoutCollectorUrl : normalizeString(config?.baseUrl);
+  const baseUrl =
+    fanoutEnabled && fanoutCollectorUrl ? fanoutCollectorUrl : normalizeString(config?.baseUrl);
   if (baseUrl) {
     langfuse.baseUrl = baseUrl;
   }
