@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useState } from 'react';
+import { memo, useRef, useState, useEffect, useCallback, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { TextQuote } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
@@ -15,13 +15,15 @@ const MAX_QUOTE_LENGTH = 1500;
 const MAX_QUOTE_COUNT = 10;
 /** Vertical gap (px) between the selection and the popup. */
 const POPUP_OFFSET = 8;
-/** Keep the popup this far (px) from the viewport's left/right edges. */
+/** Keep the popup this far (px) from the viewport edges. */
 const EDGE_MARGIN = 16;
 
 type SelectionState = {
   text: string;
+  /** Viewport-relative anchor of the selection (used to place the button). */
   top: number;
-  left: number;
+  bottom: number;
+  centerX: number;
 };
 
 const resolveMessageElement = (node: Node | null): HTMLElement | null => {
@@ -56,11 +58,9 @@ const readSelection = (): SelectionState | null => {
 
   return {
     text: text.slice(0, MAX_QUOTE_LENGTH),
-    top: Math.max(rect.top - POPUP_OFFSET, POPUP_OFFSET),
-    left: Math.min(
-      Math.max(rect.left + rect.width / 2, EDGE_MARGIN),
-      window.innerWidth - EDGE_MARGIN,
-    ),
+    top: rect.top,
+    bottom: rect.bottom,
+    centerX: rect.left + rect.width / 2,
   };
 };
 
@@ -71,15 +71,24 @@ const readSelection = (): SelectionState | null => {
  * the composer and rides along with the next submission.
  *
  * Rendered through a portal so the `fixed` positioning stays viewport-relative
- * regardless of any transformed ancestor in the composer tree.
+ * regardless of any transformed ancestor in the composer tree. The on-screen
+ * position is computed from the button's measured size (no CSS transform), so it
+ * is clamped accurately to the viewport — flipping below the selection when
+ * there is no room above and keeping its full width within the side margins.
  */
 function QuoteButton({ conversationId }: { conversationId: string }) {
   const localize = useLocalize();
   const [selection, setSelection] = useState<SelectionState | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const setQuotes = useSetRecoilState(store.pendingQuotesByConvoId(conversationId));
 
   useEffect(() => {
-    const updateSelection = () => setSelection(readSelection());
+    const updateSelection = () => {
+      setSelection(readSelection());
+      /** Recompute placement from scratch for the new selection. */
+      setPos(null);
+    };
     const clearSelection = () => setSelection(null);
 
     document.addEventListener('mouseup', updateSelection);
@@ -95,6 +104,24 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
     };
   }, []);
 
+  /** Clamp using the button's real size so it never lands off-screen. Runs
+   *  before paint, so the first visible frame is already in its final spot. */
+  useLayoutEffect(() => {
+    if (!selection || !buttonRef.current) {
+      return;
+    }
+    const { width, height } = buttonRef.current.getBoundingClientRect();
+    const maxLeft = Math.max(EDGE_MARGIN, window.innerWidth - width - EDGE_MARGIN);
+    const left = Math.min(Math.max(selection.centerX - width / 2, EDGE_MARGIN), maxLeft);
+
+    const aboveTop = selection.top - POPUP_OFFSET - height;
+    const belowTop = selection.bottom + POPUP_OFFSET;
+    const maxTop = Math.max(EDGE_MARGIN, window.innerHeight - height - EDGE_MARGIN);
+    const top = aboveTop >= EDGE_MARGIN ? aboveTop : Math.min(belowTop, maxTop);
+
+    setPos({ top: Math.max(top, EDGE_MARGIN), left });
+  }, [selection]);
+
   const addQuote = useCallback(() => {
     if (!selection) {
       return;
@@ -105,6 +132,7 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
         : [...prev, selection.text],
     );
     setSelection(null);
+    setPos(null);
     window.getSelection()?.removeAllRanges();
     document.getElementById(mainTextareaId)?.focus();
   }, [selection, setQuotes]);
@@ -115,6 +143,7 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
 
   return createPortal(
     <button
+      ref={buttonRef}
       type="button"
       /** Keep the selection alive while the click lands. */
       onMouseDown={(e) => e.preventDefault()}
@@ -122,9 +151,10 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
       aria-label={localize('com_ui_add_to_chat')}
       data-testid="add-to-chat-button"
       style={{
-        top: selection.top,
-        left: selection.left,
-        transform: 'translate(-50%, -100%)',
+        top: pos?.top ?? 0,
+        left: pos?.left ?? 0,
+        /** Hidden until measured so it never flashes at an unclamped position. */
+        visibility: pos == null ? 'hidden' : 'visible',
       }}
       className="fixed z-50 inline-flex items-center gap-1.5 rounded-full border border-border-light bg-surface-secondary px-3 py-1.5 text-sm font-medium text-text-primary shadow-lg transition-colors hover:bg-surface-tertiary"
     >
