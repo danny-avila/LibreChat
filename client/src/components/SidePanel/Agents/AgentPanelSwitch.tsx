@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import { AgentPanelProvider, useAgentPanelContext } from '~/Providers/AgentPanelContext';
+import AgentPanelSplash from '~/nj/components/Agents/AgentPanelSplash';
+import { atomWithLocalStorage } from '~/store/utils';
 import { Panel, isEphemeralAgent } from '~/common';
 import VersionPanel from './Version/VersionPanel';
 import ActionsPanel from './ActionsPanel';
@@ -18,6 +20,9 @@ export default function AgentPanelSwitch() {
 function AgentPanelSwitchWithContext() {
   const { activePanel, setCurrentAgentId } = useAgentPanelContext();
   const agentId = useRecoilValue(store.conversationAgentIdByIndex(0));
+  const [showSplashPage, setShowSplashPage] = useRecoilState(
+    atomWithLocalStorage('agentPanelSplashPage', true),
+  );
 
   useEffect(() => {
     const agent_id = agentId ?? '';
@@ -25,6 +30,10 @@ function AgentPanelSwitchWithContext() {
       setCurrentAgentId(agent_id);
     }
   }, [setCurrentAgentId, agentId]);
+
+  if (showSplashPage) {
+    return <AgentPanelSplash setShowSplashPage={setShowSplashPage} />;
+  }
 
   if (activePanel === Panel.actions) {
     return <ActionsPanel />;
