@@ -927,6 +927,43 @@ describe('Conversation Operations', () => {
       expect(messages[0].expiredAt?.getTime()).toBeLessThan(retainedUntil.getTime());
     });
 
+    it('re-caps an already temporary conversation and its messages to a shorter window', async () => {
+      const conversationId = uuidv4();
+      const longerExpiry = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+      await Conversation.create({
+        conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        title: 'Already temporary chat',
+        isTemporary: true,
+        expiredAt: longerExpiry,
+      });
+      await Message().create({
+        messageId: uuidv4(),
+        conversationId,
+        user: 'user123',
+        text: 'older temporary message',
+        isTemporary: true,
+        expiredAt: longerExpiry,
+      });
+
+      await saveConvo(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { conversationId, isArchived: true },
+      );
+
+      const convo = await Conversation.findOne<IConversation>({ conversationId }).lean();
+      expect(convo?.expiredAt?.getTime()).toBeLessThan(longerExpiry.getTime());
+
+      const messages = await Message().find({ conversationId }).lean();
+      expect(messages).toHaveLength(1);
+      expect(messages[0].isTemporary).toBe(true);
+      expect(messages[0].expiredAt?.getTime()).toBeLessThan(longerExpiry.getTime());
+    });
+
     it('leaves messages untouched when the conversation is already ephemeral', async () => {
       const conversationId = uuidv4();
       const ctx = {
