@@ -30,6 +30,10 @@ import { createAclEntryModel } from './aclEntry';
 import { createSystemGrantModel } from './systemGrant';
 import { createGroupModel } from './group';
 import { createConfigModel } from './config';
+import { createSubscriptionModel } from './subscription';
+import { createQuotaModel } from './quota';
+import { createUsageLogModel } from './usageLog';
+import { createAuditLogModel } from './auditLog';
 
 /**
  * Creates all database models for all collections
@@ -68,5 +72,9 @@ export function createModels(mongoose: typeof import('mongoose')) {
     SystemGrant: createSystemGrantModel(mongoose),
     Group: createGroupModel(mongoose),
     Config: createConfigModel(mongoose),
+    Subscription: createSubscriptionModel(mongoose),
+    Quota: createQuotaModel(mongoose),
+    UsageLog: createUsageLogModel(mongoose),
+    AuditLog: createAuditLogModel(mongoose),
   };
 }
