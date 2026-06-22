@@ -8,12 +8,21 @@ import type { ISubscription } from '~/types/subscription';
 import type { IQuota } from '~/types/quota';
 import type { IUsageLog } from '~/types/usageLog';
 import type { IAuditLog } from '~/types/auditLog';
+import { createSubscriptionMethods } from './subscription';
+import { createQuotaMethods } from './quota';
+import { createUsageLogMethods } from './usageLog';
+import { createAuditLogMethods } from './auditLog';
 
 let mongoServer: MongoMemoryServer;
 let Subscription: mongoose.Model<ISubscription>;
 let Quota: mongoose.Model<IQuota>;
 let UsageLog: mongoose.Model<IUsageLog>;
 let AuditLog: mongoose.Model<IAuditLog>;
+
+let subscriptionMethods: ReturnType<typeof createSubscriptionMethods>;
+let quotaMethods: ReturnType<typeof createQuotaMethods>;
+let usageLogMethods: ReturnType<typeof createUsageLogMethods>;
+let auditLogMethods: ReturnType<typeof createAuditLogMethods>;
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
@@ -24,6 +33,11 @@ beforeAll(async () => {
   Quota = mongoose.models.Quota || mongoose.model<IQuota>('Quota', quotaSchema);
   UsageLog = mongoose.models.UsageLog || mongoose.model<IUsageLog>('UsageLog', usageLogSchema);
   AuditLog = mongoose.models.AuditLog || mongoose.model<IAuditLog>('AuditLog', auditLogSchema);
+
+  subscriptionMethods = createSubscriptionMethods(mongoose);
+  quotaMethods = createQuotaMethods(mongoose);
+  usageLogMethods = createUsageLogMethods(mongoose);
+  auditLogMethods = createAuditLogMethods(mongoose);
 });
 
 afterAll(async () => {
@@ -212,6 +226,237 @@ describe('billing schemas', () => {
           payload: {},
         }),
       ).rejects.toThrow();
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Methods tests
+// ---------------------------------------------------------------------------
+
+describe('billing methods', () => {
+  const userId = new mongoose.Types.ObjectId();
+  const adminId = new mongoose.Types.ObjectId();
+  const targetUserId = new mongoose.Types.ObjectId();
+
+  const now = new Date();
+  const periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+  describe('SubscriptionMethods', () => {
+    test('getActiveSubscriptionRecord returns newest non-expired active sub', async () => {
+      const older = new Date(now.getTime() - 1000);
+      const newer = new Date(now.getTime() + 1000);
+
+      await Subscription.create({
+        user_id: userId,
+        plan_code: 'pro_m',
+        status: 'active',
+        source: 'admin',
+        current_period_start: periodStart,
+        current_period_end: older, // already expired
+        external_ref: null,
+        granted_by: adminId,
+        metadata: {},
+      });
+      const activeSub = await Subscription.create({
+        user_id: userId,
+        plan_code: 'trial',
+        status: 'admin_granted',
+        source: 'admin',
+        current_period_start: periodStart,
+        current_period_end: newer,
+        external_ref: null,
+        granted_by: adminId,
+        metadata: {},
+      });
+
+      const result = await subscriptionMethods.getActiveSubscriptionRecord(userId);
+      expect(result).not.toBeNull();
+      expect(result!._id.toString()).toBe(activeSub._id.toString());
+      expect(result!.plan_code).toBe('trial');
+    });
+
+    test('getActiveSubscriptionRecord returns null when no active sub exists', async () => {
+      const otherId = new mongoose.Types.ObjectId();
+      const result = await subscriptionMethods.getActiveSubscriptionRecord(otherId);
+      expect(result).toBeNull();
+    });
+
+    test('expireActiveSubscriptions flips active→expired', async () => {
+      const uid = new mongoose.Types.ObjectId();
+      await Subscription.create({
+        user_id: uid,
+        plan_code: 'pro_m',
+        status: 'active',
+        source: 'admin',
+        current_period_start: periodStart,
+        current_period_end: periodEnd,
+        external_ref: null,
+        granted_by: null,
+        metadata: {},
+      });
+      await Subscription.create({
+        user_id: uid,
+        plan_code: 'trial',
+        status: 'trialing',
+        source: 'admin',
+        current_period_start: periodStart,
+        current_period_end: periodEnd,
+        external_ref: null,
+        granted_by: null,
+        metadata: {},
+      });
+
+      const modified = await subscriptionMethods.expireActiveSubscriptions(uid);
+      expect(modified).toBe(2);
+
+      const remaining = await Subscription.find({ user_id: uid, status: { $in: ['active', 'trialing', 'admin_granted'] } });
+      expect(remaining).toHaveLength(0);
+    });
+
+    test('createSubscription persists a new record', async () => {
+      const uid = new mongoose.Types.ObjectId();
+      const result = await subscriptionMethods.createSubscription({
+        userId: uid,
+        planCode: 'pro_m',
+        status: 'active',
+        source: 'admin',
+        periodStart,
+        periodEnd,
+        grantedBy: adminId,
+        metadata: { note: 'test' },
+      });
+
+      expect(result._id).toBeDefined();
+      expect(result.plan_code).toBe('pro_m');
+      expect(result.status).toBe('active');
+
+      const inDb = await Subscription.findById(result._id).lean();
+      expect(inDb).not.toBeNull();
+    });
+  });
+
+  describe('QuotaMethods', () => {
+    test('incrementQuota allows up to limit, then returns null', async () => {
+      const uid = new mongoose.Types.ObjectId();
+      const limit = 3;
+      const ps = new Date('2026-06-01T00:00:00Z');
+
+      for (let i = 0; i < limit; i++) {
+        const doc = await quotaMethods.incrementQuota({ userId: uid, periodStart: ps, limit });
+        expect(doc).not.toBeNull();
+        expect(doc!.messages_used).toBe(i + 1);
+      }
+
+      const over = await quotaMethods.incrementQuota({ userId: uid, periodStart: ps, limit });
+      expect(over).toBeNull();
+    });
+
+    test('resetQuota sets messages_used to 0', async () => {
+      const uid = new mongoose.Types.ObjectId();
+      const ps = new Date('2026-06-01T00:00:00Z');
+      await quotaMethods.createQuota({ userId: uid, periodStart: ps });
+
+      await Quota.updateOne({ user_id: uid, period_start: ps }, { $set: { messages_used: 5 } });
+      const reset = await quotaMethods.resetQuota({ userId: uid, periodStart: ps });
+      expect(reset).not.toBeNull();
+      expect(reset!.messages_used).toBe(0);
+    });
+
+    /**
+     * Concurrency / race test (spec §10.2):
+     * Fire 20 parallel incrementQuota calls with limit=10.
+     * Exactly 10 should succeed (non-null); 10 should return null.
+     * This proves the atomic filter prevents quota overrun.
+     */
+    test('concurrent incrementQuota: exactly limit succeed (race test)', async () => {
+      const TOTAL = 20;
+      const LIMIT = 10;
+      const uid = new mongoose.Types.ObjectId();
+      const ps = new Date('2026-07-01T00:00:00Z');
+
+      const results = await Promise.all(
+        Array.from({ length: TOTAL }, () =>
+          quotaMethods.incrementQuota({ userId: uid, periodStart: ps, limit: LIMIT }),
+        ),
+      );
+
+      const successes = results.filter((r) => r !== null).length;
+      const failures = results.filter((r) => r === null).length;
+
+      expect(successes).toBe(LIMIT);
+      expect(failures).toBe(TOTAL - LIMIT);
+    }, 15000);
+  });
+
+  describe('UsageLogMethods', () => {
+    test('recordUsage upserts and accumulates tokens/cost', async () => {
+      const uid = new mongoose.Types.ObjectId();
+
+      await usageLogMethods.recordUsage({
+        userId: uid,
+        modelId: 'gpt-4o',
+        promptTokens: 100,
+        completionTokens: 50,
+        costCents: 2,
+      });
+      await usageLogMethods.recordUsage({
+        userId: uid,
+        modelId: 'gpt-4o',
+        promptTokens: 200,
+        completionTokens: 100,
+        costCents: 4,
+      });
+
+      // Should be a single doc with accumulated values
+      const docs = await UsageLog.find({ user_id: uid, model_id: 'gpt-4o' }).lean();
+      expect(docs).toHaveLength(1);
+      expect(docs[0].prompt_tokens).toBe(300);
+      expect(docs[0].completion_tokens).toBe(150);
+      expect(docs[0].estimated_cost_cents).toBe(6);
+      expect(docs[0].call_count).toBe(2);
+    });
+
+    test('recordUsage creates separate docs for different models', async () => {
+      const uid = new mongoose.Types.ObjectId();
+
+      await usageLogMethods.recordUsage({ userId: uid, modelId: 'gpt-4o', promptTokens: 10, completionTokens: 5, costCents: 1 });
+      await usageLogMethods.recordUsage({ userId: uid, modelId: 'claude-3-5-sonnet', promptTokens: 20, completionTokens: 10, costCents: 2 });
+
+      const docs = await UsageLog.find({ user_id: uid }).lean();
+      expect(docs).toHaveLength(2);
+    });
+  });
+
+  describe('AuditLogMethods', () => {
+    test('writeAuditLog persists a record', async () => {
+      const result = await auditLogMethods.writeAuditLog({
+        actorId: adminId,
+        action: 'plan.grant',
+        targetUserId,
+        payload: { plan_code: 'pro_m', days: 30 },
+      });
+
+      expect(result._id).toBeDefined();
+      expect(result.action).toBe('plan.grant');
+
+      const inDb = await AuditLog.findById(result._id).lean();
+      expect(inDb).not.toBeNull();
+      expect(inDb!.action).toBe('plan.grant');
+    });
+
+    test('writeAuditLog stores payload correctly', async () => {
+      const payload = { plan_code: 'trial', days: 7, reason: 'onboarding' };
+      const result = await auditLogMethods.writeAuditLog({
+        actorId: adminId,
+        action: 'plan.trial',
+        targetUserId,
+        payload,
+      });
+
+      const inDb = await AuditLog.findById(result._id).lean();
+      expect(inDb!.payload).toMatchObject(payload);
     });
   });
 });
