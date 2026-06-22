@@ -22,6 +22,7 @@ jest.mock('@librechat/data-schemas', () => ({
   DEFAULT_SESSION_EXPIRY: 60000,
   SystemCapabilities: { ACCESS_ADMIN: 'ACCESS_ADMIN' },
   getTenantId: jest.fn(() => undefined),
+  tenantStorage: { run: jest.fn((ctx, fn) => fn()) },
 }));
 
 jest.mock('@librechat/api', () => {
@@ -410,5 +411,26 @@ describe('admin auth Google refresh route', () => {
     expect(response.body.error_code).toBe('INVALID_PROVIDER');
     expect(applyGoogleAdminRefresh).not.toHaveBeenCalled();
     expect(applyAdminRefresh).not.toHaveBeenCalled();
+  });
+
+  it('re-runs checkBan with the resolved user identity and blocks a banned user', async () => {
+    const middleware = require('~/server/middleware');
+    let banCheckCalls = 0;
+    middleware.checkBan.mockImplementation((req, res, next) => {
+      banCheckCalls++;
+      if (banCheckCalls >= 2 && req.user) {
+        req.banned = true;
+        return res.status(403).json({ message: 'banned' });
+      }
+      return next();
+    });
+
+    const response = await request(app)
+      .post('/api/admin/oauth/refresh')
+      .send({ refresh_token: 'incoming-google-refresh', provider: 'google' });
+
+    expect(response.status).toBe(403);
+    expect(middleware.checkBan).toHaveBeenCalledTimes(2);
+    expect(middleware.checkBan.mock.calls[1][0].user).toEqual({ id: 'user-id' });
   });
 });

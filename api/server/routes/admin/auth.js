@@ -8,6 +8,7 @@ const {
   DEFAULT_SESSION_EXPIRY,
   SystemCapabilities,
   getTenantId,
+  tenantStorage,
 } = require('@librechat/data-schemas');
 const {
   isEnabled,
@@ -22,7 +23,6 @@ const {
   AdminRefreshError,
   buildOpenIDRefreshParams,
   isEmailDomainAllowed,
-  resolveAppConfigForUser,
 } = require('@librechat/api');
 const { loginController } = require('~/server/controllers/auth/LoginController');
 const { hasCapability, requireCapability } = require('~/server/middleware/roles/capabilities');
@@ -74,9 +74,12 @@ function resolveRequestOrigin(req) {
 async function isEmailAllowedForUser(user) {
   if (!user?.email) return false;
   try {
+    const userId = user.id ?? user._id?.toString();
     const appConfig = user.tenantId
-      ? await resolveAppConfigForUser(getAppConfig, user)
-      : await getAppConfig({ role: user.role ?? '' });
+      ? await tenantStorage.run({ tenantId: user.tenantId }, () =>
+          getAppConfig({ role: user.role ?? '', userId, tenantId: user.tenantId }),
+        )
+      : await getAppConfig({ role: user.role ?? '', userId });
     return isEmailDomainAllowed(user.email, appConfig?.registration?.allowedDomains);
   } catch (err) {
     logger.warn(`[admin/oauth/refresh] domain allowlist check failed, denying: ${err?.message}`);
@@ -602,6 +605,9 @@ router.post(
             clientId: process.env.GOOGLE_CLIENT_ID,
             clientSecret: process.env.GOOGLE_CLIENT_SECRET,
           });
+          req.user = { id: result.user._id };
+          await middleware.checkBan(req, res, () => {});
+          if (req.banned || res.headersSent) return;
           return res.json(result);
         } catch (err) {
           if (err instanceof AdminRefreshError) {
@@ -670,6 +676,9 @@ router.post(
             tenantId,
           },
         );
+        req.user = { id: result.user._id };
+        await middleware.checkBan(req, res, () => {});
+        if (req.banned || res.headersSent) return;
         return res.json(result);
       } catch (err) {
         if (err instanceof AdminRefreshError) {

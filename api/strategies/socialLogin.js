@@ -73,6 +73,14 @@ const socialLogin =
           return cb(error);
         }
         if (options.existingUsersOnly && id && !existingUser[providerKey]) {
+          if (existingUser.tenantId) {
+            logger.warn(
+              `[${provider}Login] Admin migrate blocked for tenanted user ${email}: no tenant scope in OAuth callback`,
+            );
+            const tenantError = new Error(ErrorTypes.AUTH_FAILED);
+            tenantError.code = ErrorTypes.AUTH_FAILED;
+            return cb(tenantError);
+          }
           await updateUser(existingUser._id, { [providerKey]: id });
           const verified = await findUser({ _id: existingUser._id, [providerKey]: id });
           if (!verified) {
