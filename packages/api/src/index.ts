@@ -2,6 +2,7 @@ export * from './app';
 /* Billing */
 export * from './billing/plans';
 export * from './billing/applyPlanChange';
+export * from './billing/modelPricing';
 /* Admin */
 export * from './admin';
 export * from './cdn';
