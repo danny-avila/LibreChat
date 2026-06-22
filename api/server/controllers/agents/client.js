@@ -39,6 +39,7 @@ const {
   filterMalformedContentParts,
   countFormattedMessageTokens,
   prependFileContext,
+  prependQuotes,
   hydrateMissingIndexTokenCounts,
   injectSkillPrimes,
   collectFreshSkillPrimeNames,
@@ -377,12 +378,32 @@ class AgentClient extends BaseClient {
         prependFileContext(formattedMessage, message.fileContext);
       }
 
+      /**
+       * Durably re-merge quoted excerpts into every user turn that carries them
+       * (current and historical) so the model receives the referenced context on
+       * every prompt and the token count matches what was persisted. Applied to
+       * the memory copy too so the canonical per-message count includes them.
+       */
+      if (Array.isArray(message.quotes) && message.quotes.length > 0) {
+        prependQuotes(formattedMessage, message.quotes);
+        prependQuotes(memoryFormattedMessage, message.quotes);
+      }
+
       memoryPayload.push(memoryFormattedMessage);
 
       const dbTokenCount = Number(orderedMessages[i].tokenCount);
       const hasDbTokenCount = Number.isFinite(dbTokenCount) && dbTokenCount > 0;
+      /**
+       * Force a recount when the message carries quotes: a plain text-only
+       * "Save" edit recomputes `tokenCount` from `text` alone while leaving
+       * `message.quotes` persisted, so the stored count would undercount the
+       * quote block this turn prepends. Recounting from the quote-merged memory
+       * copy keeps context accounting accurate (and self-heals stale counts).
+       */
       const needsCanonicalTokenCount =
-        !hasDbTokenCount || (this.isVisionModel && (message.image_urls || message.files));
+        !hasDbTokenCount ||
+        (this.isVisionModel && (message.image_urls || message.files)) ||
+        (Array.isArray(message.quotes) && message.quotes.length > 0);
 
       let canonicalTokenCount = hasDbTokenCount ? dbTokenCount : 0;
       if (needsCanonicalTokenCount) {

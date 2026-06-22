@@ -159,6 +159,7 @@ async function abortMessage(req, res) {
           parentMessageId: jobData.userMessage.parentMessageId,
           conversationId: jobData.userMessage.conversationId,
           text: jobData.userMessage.text,
+          quotes: jobData.userMessage.quotes,
           isCreatedByUser: true,
         })
       : null,

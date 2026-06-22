@@ -778,6 +778,7 @@ class GenerationJobManagerClass {
             parentMessageId: jobData.userMessage.parentMessageId,
             conversationId: jobData.conversationId,
             text: jobData.userMessage.text ?? '',
+            quotes: jobData.userMessage.quotes,
             isCreatedByUser: true,
           }
         : null,
@@ -1348,6 +1349,7 @@ class GenerationJobManagerClass {
         parentMessageId: message.parentMessageId,
         conversationId: message.conversationId,
         text: message.text,
+        quotes: message.quotes,
       },
     };
 

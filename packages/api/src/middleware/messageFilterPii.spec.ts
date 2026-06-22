@@ -134,6 +134,52 @@ describe('messageFilterPii middleware', () => {
     expect(capturedRes.status).toBe(400);
   });
 
+  it('rejects with 400 when a quoted excerpt contains a blocked token (clean text)', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      {},
+      { text: 'explain this', quotes: ['leaked sk-proj-FAKE1234567890ABCDEF here'] },
+    );
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+    expect(capturedRes.body).toMatchObject({ error: 'message_filter_pii_block' });
+  });
+
+  it('scans quotes even when req.body.text is empty', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      {},
+      { text: '', quotes: ['api-key: foo123bar'] },
+    );
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+  });
+
+  it('rejects a secret split across a quote and the typed text (merged scan)', () => {
+    // Neither piece matches the api-key pattern alone, but the merged
+    // `> api-key:\n\nsecret` the model receives does (the pattern allows whitespace).
+    const { capturedRes, nextCalls } = runMiddleware({}, { text: 'secret', quotes: ['api-key:'] });
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+    expect(capturedRes.body).toMatchObject({ error: 'message_filter_pii_block' });
+  });
+
+  it('passes through when neither text nor quotes match', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      {},
+      { text: 'hello world', quotes: ['a clean excerpt', 'another clean one'] },
+    );
+    expect(nextCalls).toBe(1);
+    expect(capturedRes.status).toBeUndefined();
+  });
+
+  it('ignores non-string quote entries without throwing', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      {},
+      { text: 'hello world', quotes: [null, 42, '', 'clean'] },
+    );
+    expect(nextCalls).toBe(1);
+    expect(capturedRes.status).toBeUndefined();
+  });
+
   it('returns the same compiled pattern array for repeat calls with the same config (memoization)', () => {
     const config: MessageFilterPiiConfig = {
       customPatterns: [{ id: 'org', label: 'Org token', regex: '\\bORG-[A-Z0-9]{6,}' }],
