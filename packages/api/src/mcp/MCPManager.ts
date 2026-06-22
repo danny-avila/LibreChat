@@ -1,7 +1,12 @@
 import pick from 'lodash/pick';
 import { logger } from '@librechat/data-schemas';
 import { Permissions, PermissionTypes } from 'librechat-data-provider';
-import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
+import {
+  CallToolResultSchema,
+  ReadResourceResultSchema,
+  ErrorCode,
+  McpError,
+} from '@modelcontextprotocol/sdk/types.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
 import type { OboTokenResolver, OboTrustChecker } from '~/mcp/oauth/obo';
@@ -52,6 +57,7 @@ function createOboToolCallErrorMessage(
  */
 export class MCPManager extends UserConnectionManager {
   private static instance: MCPManager | null;
+  private readonly resourceUriCache = new Map<string, Map<string, string>>();
 
   /** Creates and initializes the singleton MCPManager instance */
   public static async createInstance(configs: t.MCPServers): Promise<MCPManager> {
@@ -330,6 +336,35 @@ ${formattedInstructions}
 Please follow these instructions when using tools from the respective MCP servers.`;
   }
 
+  public clearResourceUriCache(serverName?: string): void {
+    if (serverName) {
+      this.resourceUriCache.delete(serverName);
+    } else {
+      this.resourceUriCache.clear();
+    }
+  }
+
+  private async getResourceUri(
+    connection: MCPConnection,
+    serverName: string,
+    toolName: string,
+  ): Promise<string | undefined> {
+    let serverMap = this.resourceUriCache.get(serverName);
+    if (!serverMap) {
+      const tools = await connection.fetchTools();
+      serverMap = new Map<string, string>();
+      for (const tool of tools) {
+        const meta = tool._meta as { ui?: { resourceUri?: string } } | undefined;
+        const uri = meta?.ui?.resourceUri;
+        if (uri) {
+          serverMap.set(tool.name, uri);
+        }
+      }
+      this.resourceUriCache.set(serverName, serverMap);
+    }
+    return serverMap.get(toolName);
+  }
+
   /**
    * Calls a tool on an MCP server, using either a user-specific connection
    * (if userId is provided) or an app-level connection. Updates the last activity timestamp
@@ -532,7 +567,21 @@ Please follow these instructions when using tools from the respective MCP server
         this.updateUserLastActivity(userId);
       }
       this.checkIdleConnections();
-      return formatToolContent(result as t.MCPToolCallResponse, provider);
+      let resourceUri: string | undefined;
+      try {
+        resourceUri = await this.getResourceUri(connection, serverName, toolName);
+        if (resourceUri) {
+          logger.debug(`[MCP][${serverName}][${toolName}] Found resourceUri: ${resourceUri}`);
+        }
+      } catch {
+        // Non-critical -- tools render without the app UI
+      }
+
+      return formatToolContent(result as t.MCPToolCallResponse, provider, {
+        serverName,
+        toolName,
+        resourceUri,
+      });
     } catch (error) {
       // Log with context and re-throw or handle as needed
       logger.error(`${logPrefix}[${toolName}] Tool call failed`, error);
@@ -553,5 +602,84 @@ Please follow these instructions when using tools from the respective MCP server
         }
       }
     }
+  }
+
+  /**
+   * Reads a UI resource from an MCP server.
+   * Used by MCP Apps iframes to fetch additional resources via the host.
+   */
+  async readResource({
+    userId,
+    serverName,
+    uri,
+    user,
+  }: {
+    userId: string;
+    serverName: string;
+    uri: string;
+    user?: import('@librechat/data-schemas').IUser;
+  }): Promise<unknown> {
+    const logPrefix = `[MCP][User: ${userId}][${serverName}]`;
+    const connection = await this.getConnection({ serverName, user });
+
+    if (!(await connection.isConnected())) {
+      throw new McpError(
+        ErrorCode.InternalError,
+        `${logPrefix} Connection is not active. Cannot read resource.`,
+      );
+    }
+
+    const result = await connection.client.request(
+      {
+        method: 'resources/read',
+        params: { uri },
+      },
+      ReadResourceResultSchema,
+      { timeout: connection.timeout },
+    );
+
+    return result;
+  }
+
+  /**
+   * Proxies a tool call from an MCP App iframe to the MCP server.
+   * Unlike callTool, this is a lightweight proxy without provider formatting.
+   */
+  async appToolCall({
+    userId,
+    serverName,
+    toolName,
+    toolArguments,
+    user,
+  }: {
+    userId: string;
+    serverName: string;
+    toolName: string;
+    toolArguments: Record<string, unknown>;
+    user?: import('@librechat/data-schemas').IUser;
+  }): Promise<unknown> {
+    const logPrefix = `[MCP][User: ${userId}][${serverName}]`;
+    const connection = await this.getConnection({ serverName, user });
+
+    if (!(await connection.isConnected())) {
+      throw new McpError(
+        ErrorCode.InternalError,
+        `${logPrefix} Connection is not active. Cannot execute app tool call.`,
+      );
+    }
+
+    const result = await connection.client.request(
+      {
+        method: 'tools/call',
+        params: {
+          name: toolName,
+          arguments: toolArguments,
+        },
+      },
+      CallToolResultSchema,
+      { timeout: connection.timeout },
+    );
+
+    return result;
   }
 }

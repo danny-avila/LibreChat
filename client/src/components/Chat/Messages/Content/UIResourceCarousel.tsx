@@ -1,11 +1,45 @@
 import React, { useState } from 'react';
-import { UIResourceRenderer } from '@mcp-ui/client';
+import { AppRenderer } from '@mcp-ui/client';
 import type { UIResource } from 'librechat-data-provider';
-import { useOptionalMessagesOperations } from '~/Providers';
-import { handleUIAction } from '~/utils';
+import { useMCPAppCallbacks } from '~/hooks/MCP';
+import { getMCPSandboxConfig } from '~/utils/mcpApps';
+import { logger } from '~/utils';
 
 interface UIResourceCarouselProps {
   uiResources: UIResource[];
+}
+
+function MCPAppCard({ resource }: { resource: UIResource }) {
+  const callbacks = useMCPAppCallbacks(resource.serverName ?? '');
+  const handleError = React.useCallback((err: Error) => logger.error('[MCP App]', err), []);
+
+  if (resource.toolName && resource.serverName) {
+    return (
+      <AppRenderer
+        toolName={resource.toolName}
+        sandbox={getMCPSandboxConfig()}
+        html={resource.text}
+        toolResourceUri={resource.uri}
+        onCallTool={callbacks.onCallTool}
+        onReadResource={callbacks.onReadResource}
+        onOpenLink={callbacks.onOpenLink}
+        onError={handleError}
+      />
+    );
+  }
+
+  if (resource.text && (resource.mimeType ?? 'text/html').includes('html')) {
+    return (
+      <iframe
+        srcDoc={resource.text}
+        sandbox="allow-scripts allow-forms"
+        style={{ width: '100%', height: '100%', border: 'none' }}
+        title={resource.uri}
+      />
+    );
+  }
+
+  return null;
 }
 
 const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiResources }) => {
@@ -13,7 +47,6 @@ const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiRe
   const [showRightArrow, setShowRightArrow] = useState(true);
   const [isContainerHovered, setIsContainerHovered] = useState(false);
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
-  const { ask } = useOptionalMessagesOperations();
 
   const handleScroll = React.useCallback(() => {
     if (!scrollContainerRef.current) return;
@@ -108,13 +141,7 @@ const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiRe
               }}
             >
               <div className="flex h-full flex-col">
-                <UIResourceRenderer
-                  resource={uiResource}
-                  onUIAction={async (result) => handleUIAction(result, ask)}
-                  htmlProps={{
-                    autoResizeIframe: { width: true, height: true },
-                  }}
-                />
+                <MCPAppCard resource={uiResource} />
               </div>
             </div>
           );

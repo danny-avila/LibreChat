@@ -72,6 +72,7 @@ export type MCPToolCallResponse =
       _meta?: Record<string, unknown>;
       content?: Array<ToolContentPart>;
       isError?: boolean;
+      structuredContent?: Record<string, unknown>;
     };
 
 export type Provider =

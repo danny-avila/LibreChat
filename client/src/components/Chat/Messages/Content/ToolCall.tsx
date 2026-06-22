@@ -1,22 +1,116 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback, useContext } from 'react';
 import { useRecoilValue } from 'recoil';
-import { Button } from '@librechat/client';
+import { Button, ThemeContext, isDark } from '@librechat/client';
 import { TriangleAlert } from 'lucide-react';
+import { AppRenderer } from '@mcp-ui/client';
 import {
   Constants,
+  Tools,
   dataService,
   actionDelimiter,
   actionDomainSeparator,
 } from 'librechat-data-provider';
-import type { TAttachment } from 'librechat-data-provider';
+import type { TAttachment, UIResource } from 'librechat-data-provider';
 import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
+import { useMCPIconMap, useMCPAppCallbacks } from '~/hooks/MCP';
+import { getMCPSandboxConfig } from '~/utils/mcpApps';
 import { ToolIcon, getToolIconType, isError } from './ToolOutput';
-import { useMCPIconMap } from '~/hooks/MCP';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
 import { logger } from '~/utils';
 import store from '~/store';
+
+const SPINNER_TIMEOUT_MS = 10_000;
+
+const MCPAppView = React.memo(function MCPAppView({
+  app,
+  args,
+  themeMode,
+}: {
+  app: UIResource;
+  args: string | Record<string, unknown>;
+  themeMode: string;
+}) {
+  const [height, setHeight] = useState<number | undefined>(undefined);
+  const [loaded, setLoaded] = useState(false);
+  const callbacks = useMCPAppCallbacks(app.serverName ?? '');
+
+  useEffect(() => {
+    if (loaded) return;
+    const timer = setTimeout(() => setLoaded(true), SPINNER_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [loaded]);
+
+  const toolResult = useMemo(() => {
+    const sc = app.structuredContent;
+    if (!sc || typeof sc !== 'object' || Array.isArray(sc)) return undefined;
+    return { content: [] as [], structuredContent: sc };
+  }, [app.structuredContent]);
+
+  const toolInput = useMemo(() => {
+    try {
+      return typeof args === 'string' ? JSON.parse(args) : args;
+    } catch {
+      return undefined;
+    }
+  }, [args]);
+
+  const hostContext = useMemo(
+    () => ({ theme: isDark(themeMode) ? ('dark' as const) : ('light' as const) }),
+    [themeMode],
+  );
+
+  const hostInfo = useMemo(() => ({ name: 'LibreChat', version: '1.0.0' }), []);
+
+  const handleSizeChanged = useCallback((params: { height?: number; width?: number }) => {
+    if (params.height && params.height > 0) {
+      setHeight(params.height);
+      setLoaded(true);
+    }
+  }, []);
+
+  const handleError = useCallback((err: Error) => logger.error('[MCP App]', err), []);
+
+  return (
+    <div className="my-2" style={height ? { height } : { minHeight: 100 }}>
+      {!loaded && (
+        <div className="flex items-center gap-2 rounded-lg border border-border-light bg-surface-secondary px-4 py-3 text-sm text-text-secondary">
+          <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+            />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+            />
+          </svg>
+          Loading interactive view...
+        </div>
+      )}
+      <AppRenderer
+        toolName={app.toolName ?? ''}
+        sandbox={getMCPSandboxConfig()}
+        toolResourceUri={app.uri}
+        toolResult={toolResult}
+        toolInput={toolInput}
+        hostContext={hostContext}
+        hostInfo={hostInfo}
+        onCallTool={callbacks.onCallTool}
+        onReadResource={callbacks.onReadResource}
+        onOpenLink={callbacks.onOpenLink}
+        onSizeChanged={handleSizeChanged}
+        onError={handleError}
+      />
+    </div>
+  );
+});
 
 export default function ToolCall({
   initialProgress = 0.1,
@@ -42,6 +136,7 @@ export default function ToolCall({
   onExpand?: () => void;
 }) {
   const localize = useLocalize();
+  const { theme: themeMode } = useContext(ThemeContext);
   const autoExpand = useRecoilValue(store.autoExpandTools);
   const hasOutput = (output?.length ?? 0) > 0;
   const [showInfo, setShowInfo] = useState(() => autoExpand && hasOutput);
@@ -158,6 +253,14 @@ export default function ToolCall({
     [args, output],
   );
 
+  const mcpApp = useMemo(() => {
+    const uiResources: UIResource[] =
+      attachments
+        ?.filter((a) => a.type === Tools.ui_resources)
+        .flatMap((a) => (a[Tools.ui_resources] ?? []) as UIResource[]) ?? [];
+    return uiResources.find((r) => r.toolName && r.serverName && !r.text) ?? null;
+  }, [attachments]);
+
   const authDomain = useMemo(() => {
     return parsedAuthUrl?.hostname ?? '';
   }, [parsedAuthUrl]);
@@ -245,7 +348,7 @@ export default function ToolCall({
         <div className="overflow-hidden" ref={expandRef}>
           {hasInfo && (
             <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
-              <ToolCallInfo input={args ?? ''} output={output} attachments={attachments} />
+              <ToolCallInfo input={args ?? ''} output={output} />
             </div>
           )}
         </div>
@@ -270,6 +373,9 @@ export default function ToolCall({
       )}
       {!hideAttachments && attachments && attachments.length > 0 && (
         <AttachmentGroup attachments={attachments} />
+      )}
+      {mcpApp && hasOutput && (
+        <MCPAppView key={mcpApp.resourceId} app={mcpApp} args={_args} themeMode={themeMode} />
       )}
     </>
   );

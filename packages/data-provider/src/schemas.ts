@@ -833,8 +833,12 @@ export type MemoryArtifact = {
 export type UIResource = {
   resourceId: string;
   uri: string;
+  name?: string;
   mimeType?: string;
   text?: string;
+  serverName?: string;
+  toolName?: string;
+  structuredContent?: Record<string, unknown>;
   [key: string]: unknown;
 };
 

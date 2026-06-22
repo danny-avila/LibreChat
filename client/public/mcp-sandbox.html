@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html style="height:100%;margin:0">
+<head>
+  <meta charset="utf-8">
+  <title>MCP App Sandbox</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
+    iframe { width: 100%; height: 100%; border: none; display: block; background: transparent; }
+  </style>
+</head>
+<body>
+  <script>
+    'use strict';
+
+    let innerFrame = null;
+    let innerFrameBlobUrl = null;
+    let trustedOrigin = null;
+    const SANDBOX_PREFIX = 'ui/notifications/sandbox-';
+
+    function notifyReady() {
+      window.parent.postMessage(
+        { jsonrpc: '2.0', method: 'ui/notifications/sandbox-proxy-ready', params: {} },
+        '*'
+      );
+    }
+
+    window.addEventListener('message', (event) => {
+      let msg;
+      try {
+        msg = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+      } catch {
+        return;
+      }
+      if (!msg || msg.jsonrpc !== '2.0') return;
+
+      if (event.source === window.parent) {
+        if (!trustedOrigin) {
+          trustedOrigin = event.origin;
+        } else if (event.origin !== trustedOrigin) {
+          return;
+        }
+
+        if (msg.method === 'ui/notifications/sandbox-resource-ready') {
+          createInnerFrame(msg.params);
+          return;
+        }
+        if (innerFrame && innerFrame.contentWindow) {
+          innerFrame.contentWindow.postMessage(msg, '*');
+        }
+        return;
+      }
+
+      if (innerFrame && event.source === innerFrame.contentWindow) {
+        if (msg.method && msg.method.startsWith(SANDBOX_PREFIX)) {
+          return;
+        }
+        if (trustedOrigin) {
+          window.parent.postMessage(msg, trustedOrigin);
+        }
+      }
+    });
+
+    function createInnerFrame(params) {
+      const { html, csp, permissions } = params;
+
+      if (innerFrameBlobUrl) {
+        URL.revokeObjectURL(innerFrameBlobUrl);
+        innerFrameBlobUrl = null;
+      }
+      if (innerFrame) {
+        innerFrame.remove();
+      }
+
+      innerFrame = document.createElement('iframe');
+
+      // Strip allow-same-origin from the inner frame regardless of what the host requested.
+      // Full cross-origin isolation requires the sandbox proxy to be served from a different
+      // origin than the host; stripping allow-same-origin provides partial mitigation when
+      // the proxy runs same-origin.
+      const requestedTokens = (params.sandbox || 'allow-scripts allow-forms').split(/\s+/).filter(Boolean);
+      innerFrame.sandbox = requestedTokens.filter((t) => t !== 'allow-same-origin').join(' ') || 'allow-scripts';
+
+      const allowParts = [];
+      if (permissions && typeof permissions === 'object') {
+        if (permissions.clipboardWrite) allowParts.push('clipboard-write');
+        if (permissions.camera) allowParts.push('camera');
+        if (permissions.microphone) allowParts.push('microphone');
+        if (permissions.geolocation) allowParts.push('geolocation');
+      }
+      if (allowParts.length > 0) {
+        innerFrame.allow = allowParts.join('; ');
+      }
+
+      const cspMeta = buildCspMeta(csp);
+      const fullHtml = cspMeta ? injectIntoHead(html, cspMeta) : html;
+
+      const blob = new Blob([fullHtml], { type: 'text/html' });
+      innerFrameBlobUrl = URL.createObjectURL(blob);
+      innerFrame.src = innerFrameBlobUrl;
+      innerFrame.style.cssText = 'width:100%;height:100%;border:none;display:block';
+
+      document.body.appendChild(innerFrame);
+    }
+
+    window.addEventListener('beforeunload', () => {
+      if (innerFrameBlobUrl) {
+        URL.revokeObjectURL(innerFrameBlobUrl);
+      }
+    });
+
+    function injectIntoHead(html, injection) {
+      if (/<head[^>]*>/i.test(html)) {
+        return html.replace(/<head([^>]*)>/i, '<head$1>' + injection);
+      }
+      if (/<html[^>]*>/i.test(html)) {
+        return html.replace(/<html([^>]*)>/i, '<html$1><head>' + injection + '</head>');
+      }
+      return '<!DOCTYPE html><html><head>' + injection + '</head><body>' + html + '</body></html>';
+    }
+
+    function buildCspMeta(csp) {
+      if (!csp || typeof csp !== 'object') return '';
+      const policy = buildCspPolicy(csp);
+      if (!policy) return '';
+      return '<meta http-equiv="Content-Security-Policy" content="' + escapeAttr(policy) + '">';
+    }
+
+    function buildCspPolicy(csp) {
+      const resourceDomains = toDomainList(csp.resourceDomains);
+      const connectDomains = toDomainList(csp.connectDomains) || "'none'";
+      const frameDomains = toDomainList(csp.frameDomains) || "'none'";
+
+      return [
+        "default-src 'none'",
+        ("script-src 'unsafe-inline' " + resourceDomains).trim(),
+        ("style-src 'unsafe-inline' " + resourceDomains).trim(),
+        "connect-src " + connectDomains,
+        ("img-src data: blob: " + resourceDomains).trim(),
+        ("font-src " + (resourceDomains || "'none'")).trim(),
+        "frame-src " + frameDomains,
+        "object-src 'none'",
+        "base-uri 'self'"
+      ].join('; ');
+    }
+
+    function toDomainList(value) {
+      return Array.isArray(value) ? value.join(' ') : '';
+    }
+
+    function escapeAttr(str) {
+      return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    notifyReady();
+  </script>
+</body>
+</html>

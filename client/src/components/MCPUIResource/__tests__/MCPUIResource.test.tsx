@@ -2,41 +2,65 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { RecoilRoot } from 'recoil';
 import { MCPUIResource } from '../MCPUIResource';
-import {
-  useMessageContext,
-  useOptionalMessagesConversation,
-  useOptionalMessagesOperations,
-} from '~/Providers';
+import { useOptionalMessagesConversation } from '~/Providers';
+import { useConversationUIResources } from '~/hooks/Messages/useConversationUIResources';
 import { useLocalize } from '~/hooks';
-import { handleUIAction } from '~/utils';
+import type { UIResource } from 'librechat-data-provider';
 
-// Mock dependencies
-jest.mock('~/Providers');
-jest.mock('~/hooks');
-jest.mock('~/utils');
+jest.mock('~/Providers', () => ({
+  useOptionalMessagesConversation: jest.fn(),
+}));
+jest.mock('~/hooks/Messages/useConversationUIResources');
+jest.mock('~/hooks', () => ({
+  useLocalize: jest.fn(),
+}));
+jest.mock('~/hooks/MCP', () => ({
+  useMCPAppCallbacks: () => ({
+    onCallTool: jest.fn(),
+    onReadResource: jest.fn(),
+    onOpenLink: jest.fn(),
+  }),
+}));
 
 jest.mock('@mcp-ui/client', () => ({
-  UIResourceRenderer: ({ resource, onUIAction }: any) => (
+  AppRenderer: ({ toolName, toolResourceUri }: { toolName: string; toolResourceUri: string }) => (
     <div
       data-testid="ui-resource-renderer"
-      data-resource-uri={resource?.uri}
-      onClick={() => onUIAction({ action: 'test' })}
+      data-resource-uri={toolResourceUri}
+      data-tool-name={toolName}
     />
   ),
 }));
 
-const mockUseMessageContext = useMessageContext as jest.MockedFunction<typeof useMessageContext>;
+jest.mock('~/utils/mcpApps', () => ({
+  getMCPSandboxConfig: () => ({ url: new URL('http://localhost/sandbox') }),
+  callMCPAppTool: jest.fn(),
+  readMCPResource: jest.fn(),
+}));
+
+jest.mock('~/utils', () => ({
+  logger: { error: jest.fn() },
+}));
+
 const mockUseMessagesConversation = useOptionalMessagesConversation as jest.MockedFunction<
   typeof useOptionalMessagesConversation
 >;
-const mockUseMessagesOperations = useOptionalMessagesOperations as jest.MockedFunction<
-  typeof useOptionalMessagesOperations
+const mockUseConversationUIResources = useConversationUIResources as jest.MockedFunction<
+  typeof useConversationUIResources
 >;
 const mockUseLocalize = useLocalize as jest.MockedFunction<typeof useLocalize>;
-const mockHandleUIAction = handleUIAction as jest.MockedFunction<typeof handleUIAction>;
+
+const makeResource = (overrides: Partial<UIResource> = {}): UIResource => ({
+  resourceId: 'resource-1',
+  uri: 'ui://test/resource',
+  mimeType: 'text/html',
+  toolName: 'test-tool',
+  serverName: 'test-server',
+  ...overrides,
+});
 
 describe('MCPUIResource', () => {
-  const mockLocalize = (key: string, values?: any) => {
+  const mockLocalize = (key: string, values?: Record<string, string>) => {
     const translations: Record<string, string> = {
       com_ui_ui_resource_not_found: `UI resource ${values?.[0]} not found`,
       com_ui_ui_resource_error: `Error rendering UI resource: ${values?.[0]}`,
@@ -44,78 +68,65 @@ describe('MCPUIResource', () => {
     return translations[key] || key;
   };
 
-  const mockAskFn = jest.fn();
-
   const renderWithRecoil = (ui: React.ReactNode) => render(<RecoilRoot>{ui}</RecoilRoot>);
-
-  // Store the current test's messages so getMessages can return them
-  let currentTestMessages: any[] = [];
 
   beforeEach(() => {
     jest.clearAllMocks();
-    currentTestMessages = [];
-    mockUseMessageContext.mockReturnValue({ messageId: 'msg123' } as any);
     mockUseMessagesConversation.mockReturnValue({
       conversation: { conversationId: 'conv123' },
       conversationId: 'conv123',
-    } as any);
-    mockUseMessagesOperations.mockReturnValue({
-      ask: mockAskFn,
-      getMessages: () => currentTestMessages,
-      regenerate: jest.fn(),
-      handleContinue: jest.fn(),
-      setMessages: jest.fn(),
-    } as any);
-    mockUseLocalize.mockReturnValue(mockLocalize as any);
+    } as ReturnType<typeof useOptionalMessagesConversation>);
+    mockUseConversationUIResources.mockReturnValue(new Map());
+    mockUseLocalize.mockReturnValue(mockLocalize as unknown as ReturnType<typeof useLocalize>);
   });
 
-  describe('resource fetching', () => {
-    it('should fetch and render UI resource from message attachments', () => {
-      currentTestMessages = [
-        {
-          messageId: 'msg123',
-          attachments: [
-            {
-              type: 'ui_resources',
-              ui_resources: [
-                {
-                  resourceId: 'resource-1',
-                  uri: 'ui://test/resource',
-                  mimeType: 'text/html',
-                  text: '<p>Test Resource</p>',
-                },
-              ],
-            },
-          ],
-        },
-      ];
+  describe('rendering', () => {
+    it('renders AppRenderer for resources with toolName and serverName', () => {
+      const resource = makeResource();
+      mockUseConversationUIResources.mockReturnValue(new Map([['resource-1', resource]]));
 
       renderWithRecoil(<MCPUIResource node={{ properties: { resourceId: 'resource-1' } }} />);
 
       const renderer = screen.getByTestId('ui-resource-renderer');
       expect(renderer).toBeInTheDocument();
       expect(renderer).toHaveAttribute('data-resource-uri', 'ui://test/resource');
+      expect(renderer).toHaveAttribute('data-tool-name', 'test-tool');
     });
 
-    it('should show not found message when resourceId does not exist', () => {
-      currentTestMessages = [
-        {
-          messageId: 'msg123',
-          attachments: [
-            {
-              type: 'ui_resources',
-              ui_resources: [
-                {
-                  resourceId: 'resource-1',
-                  uri: 'ui://test/resource',
-                  mimeType: 'text/html',
-                  text: '<p>Test Resource</p>',
-                },
-              ],
-            },
-          ],
-        },
-      ];
+    it('renders inline iframe for resources with html text and no server binding', () => {
+      const resource = makeResource({
+        toolName: undefined,
+        serverName: undefined,
+        text: '<p>Hello</p>',
+      });
+      mockUseConversationUIResources.mockReturnValue(new Map([['resource-1', resource]]));
+
+      renderWithRecoil(<MCPUIResource node={{ properties: { resourceId: 'resource-1' } }} />);
+
+      const iframe = document.querySelector('iframe');
+      expect(iframe).toBeInTheDocument();
+      expect(iframe?.getAttribute('sandbox')).toBe('allow-scripts allow-forms');
+      expect(iframe?.getAttribute('sandbox')).not.toContain('allow-same-origin');
+    });
+
+    it('renders nothing for resources that are not renderable', () => {
+      const resource = makeResource({
+        toolName: undefined,
+        serverName: undefined,
+        mimeType: 'application/json',
+      });
+      mockUseConversationUIResources.mockReturnValue(new Map([['resource-1', resource]]));
+
+      const { container } = renderWithRecoil(
+        <MCPUIResource node={{ properties: { resourceId: 'resource-1' } }} />,
+      );
+      expect(container.firstChild).toBeNull();
+    });
+  });
+
+  describe('not-found handling', () => {
+    it('shows not-found badge when resourceId is missing from the map', () => {
+      mockUseConversationUIResources.mockReturnValue(new Map());
 
       renderWithRecoil(<MCPUIResource node={{ properties: { resourceId: 'nonexistent-id' } }} />);
 
@@ -123,158 +134,16 @@ describe('MCPUIResource', () => {
       expect(screen.queryByTestId('ui-resource-renderer')).not.toBeInTheDocument();
     });
 
-    it('should show not found when no ui_resources attachments', () => {
-      currentTestMessages = [
-        {
-          messageId: 'msg123',
-          attachments: [
-            {
-              type: 'web_search',
-              web_search: { results: [] },
-            },
-          ],
-        },
-      ];
-
-      renderWithRecoil(<MCPUIResource node={{ properties: { resourceId: 'resource-1' } }} />);
-
-      expect(screen.getByText('UI resource resource-1 not found')).toBeInTheDocument();
-    });
-
-    it('should resolve resources by resourceId across conversation messages', () => {
-      mockUseMessageContext.mockReturnValue({ messageId: 'msg-current' } as any);
-      currentTestMessages = [
-        {
-          messageId: 'msg-previous',
-          attachments: [
-            {
-              type: 'ui_resources',
-              ui_resources: [
-                {
-                  resourceId: 'abc123',
-                  uri: 'ui://test/resource-id',
-                  mimeType: 'text/html',
-                  text: '<p>Resource via ID</p>',
-                },
-              ],
-            },
-          ],
-        },
-        {
-          messageId: 'msg-current',
-          attachments: [],
-        },
-      ];
-
-      renderWithRecoil(<MCPUIResource node={{ properties: { resourceId: 'abc123' } }} />);
-
-      const renderer = screen.getByTestId('ui-resource-renderer');
-      expect(renderer).toBeInTheDocument();
-      expect(renderer).toHaveAttribute('data-resource-uri', 'ui://test/resource-id');
-    });
-  });
-
-  describe('UI action handling', () => {
-    it('should handle UI actions with handleUIAction', async () => {
-      currentTestMessages = [
-        {
-          messageId: 'msg123',
-          attachments: [
-            {
-              type: 'ui_resources',
-              ui_resources: [
-                {
-                  resourceId: 'resource-1',
-                  uri: 'ui://test/resource',
-                  mimeType: 'text/html',
-                  text: '<p>Interactive Resource</p>',
-                },
-              ],
-            },
-          ],
-        },
-      ];
-
-      renderWithRecoil(<MCPUIResource node={{ properties: { resourceId: 'resource-1' } }} />);
-
-      const renderer = screen.getByTestId('ui-resource-renderer');
-      renderer.click();
-
-      expect(mockHandleUIAction).toHaveBeenCalledWith({ action: 'test' }, mockAskFn);
-    });
-  });
-
-  describe('edge cases', () => {
-    it('should handle empty messages array', () => {
-      currentTestMessages = [];
-
-      renderWithRecoil(<MCPUIResource node={{ properties: { resourceId: 'resource-1' } }} />);
-
-      expect(screen.getByText('UI resource resource-1 not found')).toBeInTheDocument();
-    });
-
-    it('should handle null messages data', () => {
-      currentTestMessages = [];
-
-      renderWithRecoil(<MCPUIResource node={{ properties: { resourceId: 'resource-1' } }} />);
-
-      expect(screen.getByText('UI resource resource-1 not found')).toBeInTheDocument();
-    });
-
-    it('should handle missing conversation', () => {
-      currentTestMessages = [];
+    it('shows not-found badge when conversationId is absent', () => {
       mockUseMessagesConversation.mockReturnValue({
         conversation: null,
         conversationId: null,
-      } as any);
+      } as ReturnType<typeof useOptionalMessagesConversation>);
+      mockUseConversationUIResources.mockReturnValue(new Map());
 
       renderWithRecoil(<MCPUIResource node={{ properties: { resourceId: 'resource-1' } }} />);
 
       expect(screen.getByText('UI resource resource-1 not found')).toBeInTheDocument();
-    });
-
-    it('should handle multiple attachments of ui_resources type', () => {
-      currentTestMessages = [
-        {
-          messageId: 'msg123',
-          attachments: [
-            {
-              type: 'ui_resources',
-              ui_resources: [
-                {
-                  resourceId: 'resource-1',
-                  uri: 'ui://test/resource1',
-                  mimeType: 'text/html',
-                  text: '<p>Resource 1</p>',
-                },
-              ],
-            },
-            {
-              type: 'ui_resources',
-              ui_resources: [
-                {
-                  resourceId: 'resource-2',
-                  uri: 'ui://test/resource2',
-                  mimeType: 'text/html',
-                  text: '<p>Resource 2</p>',
-                },
-                {
-                  resourceId: 'resource-3',
-                  uri: 'ui://test/resource3',
-                  mimeType: 'text/html',
-                  text: '<p>Resource 3</p>',
-                },
-              ],
-            },
-          ],
-        },
-      ];
-
-      renderWithRecoil(<MCPUIResource node={{ properties: { resourceId: 'resource-2' } }} />);
-
-      const renderer = screen.getByTestId('ui-resource-renderer');
-      expect(renderer).toBeInTheDocument();
-      expect(renderer).toHaveAttribute('data-resource-uri', 'ui://test/resource2');
     });
   });
 });

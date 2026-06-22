@@ -38,7 +38,7 @@
     "@hyperdx/browser": "^0.24.0",
     "@librechat/client": "*",
     "@marsidev/react-turnstile": "^1.1.0",
-    "@mcp-ui/client": "^5.7.0",
+    "@mcp-ui/client": "^7.0.0",
     "@monaco-editor/react": "^4.7.0",
     "@radix-ui/react-accordion": "^1.1.2",
     "@radix-ui/react-alert-dialog": "1.0.2",
