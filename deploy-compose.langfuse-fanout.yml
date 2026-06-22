@@ -6,7 +6,7 @@ services:
       - LANGFUSE_FANOUT_ENABLED=true
       - LANGFUSE_FANOUT_COLLECTOR_URL=http://langfuse-fanout-collector:4318
       - LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED=${LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED-false}
-      - LANGFUSE_FANOUT_TENANT_DESTINATIONS=${LANGFUSE_FANOUT_TENANT_DESTINATIONS:-eu=https://cloud.langfuse.com,us=https://us.cloud.langfuse.com,jp=https://jp.cloud.langfuse.com,hipaa=https://hipaa.cloud.langfuse.com}
+      - LANGFUSE_FANOUT_TENANT_DESTINATIONS=${LANGFUSE_FANOUT_TENANT_DESTINATIONS:-eu=https://cloud.langfuse.com,us=https://us.cloud.langfuse.com,jp=https://jp.cloud.langfuse.com}
     networks:
       - default
       - langfuse-fanout
@@ -23,7 +23,6 @@ services:
       - LANGFUSE_FANOUT_TENANT_EU_BASE_URL=${LANGFUSE_FANOUT_TENANT_EU_BASE_URL:-https://cloud.langfuse.com}
       - LANGFUSE_FANOUT_TENANT_US_BASE_URL=${LANGFUSE_FANOUT_TENANT_US_BASE_URL:-https://us.cloud.langfuse.com}
       - LANGFUSE_FANOUT_TENANT_JP_BASE_URL=${LANGFUSE_FANOUT_TENANT_JP_BASE_URL:-https://jp.cloud.langfuse.com}
-      - LANGFUSE_FANOUT_TENANT_HIPAA_BASE_URL=${LANGFUSE_FANOUT_TENANT_HIPAA_BASE_URL:-https://hipaa.cloud.langfuse.com}
       - LANGFUSE_FANOUT_MEMORY_LIMIT_MIB=${LANGFUSE_FANOUT_MEMORY_LIMIT_MIB:-256}
       - LANGFUSE_FANOUT_MEMORY_SPIKE_LIMIT_MIB=${LANGFUSE_FANOUT_MEMORY_SPIKE_LIMIT_MIB:-64}
       - LANGFUSE_FANOUT_BATCH_TIMEOUT=${LANGFUSE_FANOUT_BATCH_TIMEOUT:-1s}

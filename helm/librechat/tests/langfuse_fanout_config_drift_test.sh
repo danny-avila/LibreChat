@@ -50,7 +50,7 @@ node <<'NODE'
 const fs = require('fs');
 const yaml = require('js-yaml');
 
-const DEFAULT_DESTINATIONS = ['eu', 'hipaa', 'jp', 'us'];
+const DEFAULT_DESTINATIONS = ['eu', 'jp', 'us'];
 
 function fail(message) {
   console.error(`FAIL: ${message}`);

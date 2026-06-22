@@ -307,8 +307,6 @@ langfuseFanout:
         baseUrl: https://us.cloud.langfuse.com
       jp:
         baseUrl: https://jp.cloud.langfuse.com
-      hipaa:
-        baseUrl: https://hipaa.cloud.langfuse.com
   memoryLimitMiB: 256
   memorySpikeLimitMiB: 64
   batchTimeout: 1s

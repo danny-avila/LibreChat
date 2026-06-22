@@ -26,9 +26,6 @@ connectors:
       - context: span
         condition: attributes["librechat.langfuse.destination"] == "jp"
         pipelines: [traces/tenant_jp]
-      - context: span
-        condition: attributes["librechat.langfuse.destination"] == "hipaa"
-        pipelines: [traces/tenant_hipaa]
 
 processors:
   memory_limiter:
@@ -64,17 +61,10 @@ processors:
     send_batch_size: ${env:LANGFUSE_FANOUT_BATCH_SEND_SIZE}
     metadata_keys: [authorization]
     metadata_cardinality_limit: ${env:LANGFUSE_FANOUT_METADATA_CARDINALITY_LIMIT}
-  batch/by_auth_hipaa:
-    timeout: ${env:LANGFUSE_FANOUT_BATCH_TIMEOUT}
-    send_batch_size: ${env:LANGFUSE_FANOUT_BATCH_SEND_SIZE}
-    metadata_keys: [authorization]
-    metadata_cardinality_limit: ${env:LANGFUSE_FANOUT_METADATA_CARDINALITY_LIMIT}
-
 exporters:
   otlphttp/central:
     # Langfuse Cloud base URL options: https://cloud.langfuse.com (EU),
-    # https://us.cloud.langfuse.com (US), https://jp.cloud.langfuse.com (JP),
-    # https://hipaa.cloud.langfuse.com (HIPAA).
+    # https://us.cloud.langfuse.com (US), https://jp.cloud.langfuse.com (JP).
     endpoint: '${env:LANGFUSE_FANOUT_CENTRAL_BASE_URL}/api/public/otel'
     headers:
       Authorization: '${env:LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER}'
@@ -97,13 +87,6 @@ exporters:
       authenticator: headers_setter/tenant_passthrough
     headers:
       x-langfuse-ingestion-version: '4'
-  otlphttp/tenant_hipaa:
-    endpoint: '${env:LANGFUSE_FANOUT_TENANT_HIPAA_BASE_URL}/api/public/otel'
-    auth:
-      authenticator: headers_setter/tenant_passthrough
-    headers:
-      x-langfuse-ingestion-version: '4'
-
 service:
   extensions: [headers_setter/tenant_passthrough]
   pipelines:
@@ -127,7 +110,3 @@ service:
       receivers: [routing/langfuse_tenant_destination]
       processors: [attributes/drop_librechat_routing, batch/by_auth_jp]
       exporters: [otlphttp/tenant_jp]
-    traces/tenant_hipaa:
-      receivers: [routing/langfuse_tenant_destination]
-      processors: [attributes/drop_librechat_routing, batch/by_auth_hipaa]
-      exporters: [otlphttp/tenant_hipaa]

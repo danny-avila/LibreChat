@@ -4,7 +4,6 @@ const DEFAULT_TENANT_DESTINATIONS: Array<[string, string]> = [
   ['eu', 'https://cloud.langfuse.com'],
   ['us', 'https://us.cloud.langfuse.com'],
   ['jp', 'https://jp.cloud.langfuse.com'],
-  ['hipaa', 'https://hipaa.cloud.langfuse.com'],
 ];
 
 const DESTINATIONS_ENV = 'LANGFUSE_FANOUT_TENANT_DESTINATIONS';

@@ -27,7 +27,7 @@ function isTracingEnabled(): boolean {
   );
 }
 
-function getLegacyBaseUrl(): string {
+function getCentralEnvBaseUrl(): string {
   return (
     normalizeString(process.env.LANGFUSE_BASE_URL) ??
     normalizeString(process.env.LANGFUSE_HOST) ??
@@ -41,15 +41,9 @@ function getCentralScoreDestination(): LangfuseScoreDestination | undefined {
     return undefined;
   }
 
-  const fanoutAuthorization = normalizeString(process.env.LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER);
-  if (fanoutAuthorization) {
-    return {
-      name: 'central',
-      baseUrl: normalizeString(process.env.LANGFUSE_FANOUT_CENTRAL_BASE_URL) ?? DEFAULT_BASE_URL,
-      authorization: fanoutAuthorization,
-    };
-  }
-
+  // Central feedback scores are sent directly by the app, not through the
+  // collector, so they use LibreChat's normal central Langfuse credentials.
+  // LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER is intentionally collector-only.
   const publicKey = normalizeString(process.env.LANGFUSE_PUBLIC_KEY);
   const secretKey = normalizeString(process.env.LANGFUSE_SECRET_KEY);
   if (!publicKey || !secretKey) {
@@ -58,7 +52,7 @@ function getCentralScoreDestination(): LangfuseScoreDestination | undefined {
 
   return {
     name: 'central',
-    baseUrl: getLegacyBaseUrl(),
+    baseUrl: getCentralEnvBaseUrl(),
     authorization: toBasicAuthorization(publicKey, secretKey),
   };
 }
