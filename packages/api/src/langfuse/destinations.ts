@@ -1,4 +1,5 @@
 import type { AppConfig } from '@librechat/data-schemas';
+import type { LangfuseFanoutConfig } from './config';
 import { isLangfuseFanoutEnabled, isLangfuseTenantExportEnabled } from './config';
 import { resolveLangfuseTenantDestination } from './tenantDestinations';
 import { isFalseEnv, toBasicAuthorization } from './utils';
@@ -69,11 +70,12 @@ function getTenantScoreDestination(appConfig?: AppConfig): LangfuseScoreDestinat
   if (config?.enabled === false) {
     return undefined;
   }
-  if (!isLangfuseFanoutEnabled(config?.fanout)) {
+  const fanout = config?.fanout as LangfuseFanoutConfig | undefined;
+  if (!isLangfuseFanoutEnabled(fanout)) {
     return undefined;
   }
   const fanoutCollectorUrl =
-    normalizeString(config?.fanout?.collectorUrl) ??
+    normalizeString(fanout?.collectorUrl) ??
     normalizeString(process.env.LANGFUSE_FANOUT_COLLECTOR_URL);
   if (!fanoutCollectorUrl) {
     return undefined;

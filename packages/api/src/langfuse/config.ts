@@ -5,6 +5,10 @@ import { normalizeString } from '~/utils/text';
 import { isTrueEnv } from './utils';
 
 type LangfuseRunConfig = NonNullable<RunConfig['langfuse']>;
+type LangfuseAppConfig = NonNullable<AppConfig['langfuse']>;
+export type LangfuseFanoutConfig = LangfuseAppConfig['fanout'] & {
+  collectorUrl?: string;
+};
 type LangfuseRunConfigWithTraceAttributes = LangfuseRunConfig & {
   librechatTraceAttributes?: Record<string, string | number | boolean | null | undefined>;
 };
@@ -16,7 +20,7 @@ export function isLangfuseTenantExportEnabled(): boolean {
   return !isTrueEnv(process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED);
 }
 
-export function isLangfuseFanoutEnabled(fanout?: AppConfig['langfuse']['fanout']): boolean {
+export function isLangfuseFanoutEnabled(fanout?: LangfuseFanoutConfig): boolean {
   return (
     fanout?.enabled !== false &&
     (fanout?.enabled === true || isTrueEnv(process.env.LANGFUSE_FANOUT_ENABLED))
@@ -89,7 +93,7 @@ export function buildLangfuseConfig({
   const publicKey = normalizeString(config?.publicKey);
   const secretKey = normalizeString(config?.secretKey);
   const hasTenantCredentials = Boolean(publicKey && secretKey);
-  const fanout = config?.fanout;
+  const fanout = config?.fanout as LangfuseFanoutConfig | undefined;
   const fanoutEnabled = isLangfuseFanoutEnabled(fanout);
   const fanoutCollectorUrl =
     normalizeString(fanout?.collectorUrl) ??

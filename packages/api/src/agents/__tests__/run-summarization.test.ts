@@ -1194,7 +1194,7 @@ describe('Langfuse run config', () => {
             collectorUrl: 'http://langfuse-fanout-collector:4318',
           },
         },
-      } as AppConfig,
+      } as unknown as AppConfig,
     });
 
     expect(callArgs.langfuse).toEqual({
