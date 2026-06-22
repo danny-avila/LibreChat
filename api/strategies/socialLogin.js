@@ -59,15 +59,20 @@ const socialLogin =
         refreshToken ? cb(null, user, { refreshToken }) : cb(null, user);
 
       if (existingUser?.provider === provider) {
-        if (id && existingUser[providerKey] && existingUser[providerKey] !== id) {
+        if (
+          options.existingUsersOnly &&
+          id &&
+          existingUser[providerKey] &&
+          existingUser[providerKey] !== id
+        ) {
           logger.warn(
-            `[${provider}Login] Rejected email fallback for ${email}: stored ${providerKey} does not match`,
+            `[${provider}Login] Rejected admin email fallback for ${email}: stored ${providerKey} does not match`,
           );
           const error = new Error(ErrorTypes.AUTH_FAILED);
           error.code = ErrorTypes.AUTH_FAILED;
           return cb(error);
         }
-        if (id && !existingUser[providerKey]) {
+        if (options.existingUsersOnly && id && !existingUser[providerKey]) {
           await updateUser(existingUser._id, { [providerKey]: id });
           existingUser[providerKey] = id;
         }

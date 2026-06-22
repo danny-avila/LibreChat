@@ -21,6 +21,8 @@ const {
   applyGoogleAdminRefresh,
   AdminRefreshError,
   buildOpenIDRefreshParams,
+  isEmailDomainAllowed,
+  resolveAppConfigForUser,
 } = require('@librechat/api');
 const { loginController } = require('~/server/controllers/auth/LoginController');
 const { hasCapability, requireCapability } = require('~/server/middleware/roles/capabilities');
@@ -55,6 +57,20 @@ function buildGoogleAdminRefreshDeps(sessionExpiry) {
         );
       } catch (err) {
         logger.warn(`[admin/oauth/refresh] capability check failed, denying: ${err?.message}`);
+        return false;
+      }
+    },
+    isEmailAllowed: async (user) => {
+      if (!user?.email) return false;
+      try {
+        const appConfig = user.tenantId
+          ? await resolveAppConfigForUser(getAppConfig, user)
+          : await getAppConfig({ baseOnly: true });
+        return isEmailDomainAllowed(user.email, appConfig?.registration?.allowedDomains);
+      } catch (err) {
+        logger.warn(
+          `[admin/oauth/refresh] domain allowlist check failed, denying: ${err?.message}`,
+        );
         return false;
       }
     },

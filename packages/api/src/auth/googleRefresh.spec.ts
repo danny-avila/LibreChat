@@ -69,6 +69,7 @@ describe('applyGoogleAdminRefresh', () => {
       findUsers: jest.fn(),
       getUserById: jest.fn(),
       canAccessAdmin: jest.fn(),
+      isEmailAllowed: jest.fn().mockResolvedValue(true),
       mintToken: jest.fn(),
     };
     originalFetch = global.fetch;
@@ -245,6 +246,22 @@ describe('applyGoogleAdminRefresh', () => {
       code: 'FORBIDDEN',
       status: 403,
     });
+  });
+
+  it('throws FORBIDDEN when isEmailAllowed rejects the refreshed identity', async () => {
+    const user = makeUser();
+    fetchMock.mockResolvedValueOnce(
+      makeOkJson({ access_token: 'new-access', id_token: makeIdToken() }),
+    );
+    deps.findUsers.mockResolvedValue([user]);
+    (deps.isEmailAllowed as jest.Mock).mockResolvedValue(false);
+
+    await expect(applyGoogleAdminRefresh(deps, baseOptions)).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+      status: 403,
+      message: expect.stringContaining('domain'),
+    });
+    expect(deps.canAccessAdmin).not.toHaveBeenCalled();
   });
 
   it('returns the rotated refresh_token when Google supplies one', async () => {

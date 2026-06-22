@@ -35,6 +35,13 @@ export interface GoogleAdminRefreshDeps {
   ) => Promise<IUser[]>;
   getUserById: (id: string, projection: string) => Promise<IUser | null>;
   canAccessAdmin: (user: IUser) => Promise<boolean>;
+  /**
+   * Re-runs the deployment's `registration.allowedDomains` check against the
+   * resolved user's email. Returns true to allow refresh, false to reject.
+   * Mirrors the `isEmailDomainAllowed` call the initial OAuth login enforces
+   * so a domain removed from the allowlist after issuance can't refresh.
+   */
+  isEmailAllowed?: (user: IUser) => Promise<boolean>;
   mintToken: (user: IUser) => Promise<MintedGoogleAdminToken>;
 }
 
@@ -80,15 +87,22 @@ async function resolveSubFromUserinfo(accessToken: string): Promise<string | und
   }
 }
 
-async function fetchGoogleTokenset(options: GoogleAdminRefreshOptions): Promise<GoogleTokenset> {
+interface GoogleAdminRefreshConfiguredOptions extends GoogleAdminRefreshOptions {
+  clientId: string;
+  clientSecret: string;
+}
+
+async function fetchGoogleTokenset(
+  options: GoogleAdminRefreshConfiguredOptions,
+): Promise<GoogleTokenset> {
   let response: Response;
   try {
     response = await fetch(GOOGLE_TOKEN_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
-        client_id: options.clientId ?? '',
-        client_secret: options.clientSecret ?? '',
+        client_id: options.clientId,
+        client_secret: options.clientSecret,
         refresh_token: options.refreshToken,
         grant_type: 'refresh_token',
       }),
@@ -212,9 +226,23 @@ export async function applyGoogleAdminRefresh(
     );
   }
 
-  const tokenset = await fetchGoogleTokenset(options);
+  const configured: GoogleAdminRefreshConfiguredOptions = {
+    ...options,
+    clientId: options.clientId,
+    clientSecret: options.clientSecret,
+  };
+
+  const tokenset = await fetchGoogleTokenset(configured);
   const googleId = await resolveGoogleSub(tokenset);
   const user = await resolveAdminUser(googleId, deps, options);
+
+  if (deps.isEmailAllowed && !(await deps.isEmailAllowed(user))) {
+    throw new AdminRefreshError(
+      'FORBIDDEN',
+      403,
+      'User email domain is not on the deployment allowlist',
+    );
+  }
 
   if (!(await deps.canAccessAdmin(user))) {
     throw new AdminRefreshError('FORBIDDEN', 403, 'User does not have admin access');
