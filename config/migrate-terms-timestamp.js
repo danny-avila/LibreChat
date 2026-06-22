@@ -1,5 +1,6 @@
 const path = require('path');
 const mongoose = require('mongoose');
+const { runAsSystem } = require('@librechat/data-schemas');
 const { User } = require('@librechat/data-schemas').createModels(mongoose);
 const { countUsers } = require('@librechat/data-schemas').createMethods(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
@@ -21,11 +22,15 @@ const connect = require('./connect');
   console.purple('Migrate Terms Acceptance Timestamps');
   console.purple('--------------------------');
 
-  // Count users that need migration
-  const usersToMigrate = await countUsers({
-    termsAccepted: true,
-    $or: [{ termsAcceptedAt: null }, { termsAcceptedAt: { $exists: false } }],
-  });
+  // Count users that need migration. This script spans every tenant, so run
+  // it under system context or the tenant isolation plugin throws under
+  // TENANT_ISOLATION_STRICT=true and scopes to a non-existent tenant otherwise.
+  const usersToMigrate = await runAsSystem(() =>
+    countUsers({
+      termsAccepted: true,
+      $or: [{ termsAcceptedAt: null }, { termsAcceptedAt: { $exists: false } }],
+    }),
+  );
 
   if (usersToMigrate === 0) {
     console.green(
@@ -49,42 +54,46 @@ const connect = require('./connect');
   }
 
   try {
-    // Find all users that need migration and update them
-    const cursor = User.find({
-      termsAccepted: true,
-      $or: [{ termsAcceptedAt: null }, { termsAcceptedAt: { $exists: false } }],
-    }).cursor();
+    // Scan and update across every tenant under system context, matching the
+    // other cross-tenant migrations, so the tenant isolation plugin does not
+    // throw or scope queries to a non-existent tenant.
+    await runAsSystem(async () => {
+      const cursor = User.find({
+        termsAccepted: true,
+        $or: [{ termsAcceptedAt: null }, { termsAcceptedAt: { $exists: false } }],
+      }).cursor();
 
-    let migratedCount = 0;
-    let errorCount = 0;
+      let migratedCount = 0;
+      let errorCount = 0;
 
-    for await (const user of cursor) {
-      try {
-        // Use createdAt as fallback for termsAcceptedAt
-        const termsAcceptedAt = user.createdAt || new Date();
-        if (!user.createdAt) {
-          console.yellow(
-            `Warning: User ${user._id} has no createdAt, using current date for termsAcceptedAt`,
-          );
+      for await (const user of cursor) {
+        try {
+          // Use createdAt as fallback for termsAcceptedAt
+          const termsAcceptedAt = user.createdAt || new Date();
+          if (!user.createdAt) {
+            console.yellow(
+              `Warning: User ${user._id} has no createdAt, using current date for termsAcceptedAt`,
+            );
+          }
+          await User.updateOne({ _id: user._id }, { $set: { termsAcceptedAt } });
+          migratedCount++;
+
+          if (migratedCount % 100 === 0) {
+            console.yellow(`Migrated ${migratedCount} users...`);
+          }
+        } catch (error) {
+          console.red(`Error migrating user ${user._id}: ${error.message}`);
+          errorCount++;
         }
-        await User.updateOne({ _id: user._id }, { $set: { termsAcceptedAt } });
-        migratedCount++;
-
-        if (migratedCount % 100 === 0) {
-          console.yellow(`Migrated ${migratedCount} users...`);
-        }
-      } catch (error) {
-        console.red(`Error migrating user ${user._id}: ${error.message}`);
-        errorCount++;
       }
-    }
 
-    console.green(`Migration complete!`);
-    console.green(`Successfully migrated: ${migratedCount} user(s)`);
-    if (errorCount > 0) {
-      console.red(`Errors encountered: ${errorCount}`);
-      silentExit(1);
-    }
+      console.green(`Migration complete!`);
+      console.green(`Successfully migrated: ${migratedCount} user(s)`);
+      if (errorCount > 0) {
+        console.red(`Errors encountered: ${errorCount}`);
+        silentExit(1);
+      }
+    });
   } catch (error) {
     console.red('Error during migration:', error);
     silentExit(1);
