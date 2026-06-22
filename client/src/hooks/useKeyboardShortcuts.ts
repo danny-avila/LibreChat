@@ -166,10 +166,10 @@ export const shortcutDefinitions = {
   archiveConversation: {
     labelKey: 'com_shortcut_archive_conversation',
     groupKey: 'com_shortcut_group_chat',
-    displayMac: '⌘ ⇧ A',
-    displayOther: 'Ctrl+Shift+A',
-    ariaMac: 'Meta+Shift+A',
-    ariaOther: 'Control+Shift+A',
+    displayMac: '⌘ ⇧ L',
+    displayOther: 'Ctrl+Shift+L',
+    ariaMac: 'Meta+Shift+L',
+    ariaOther: 'Control+Shift+L',
   },
   deleteConversation: {
     labelKey: 'com_shortcut_delete_conversation',
