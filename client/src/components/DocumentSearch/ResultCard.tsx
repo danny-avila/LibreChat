@@ -1,6 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { ChunkPreview, DocumentHit } from '~/data-provider/DocumentSearch';
+import {
+  SourceExternalLink,
+  SourceDisabledLink,
+  SourcePopupLink,
+} from '~/components/Chat/Messages/Content/SourceLinkButtons';
 import { useLocalize } from '~/hooks';
 import { cn, FileTypeIcon, fileExtensionLabel } from '~/utils';
 
@@ -27,10 +32,6 @@ async function fetchImanageLinks(docId: string): Promise<{ fileUrl: string | nul
   };
   imanageLinksCache.set(docId, links);
   return links;
-}
-
-function openPopup(url: string, name: string) {
-  window.open(url, name, 'width=1000,height=800,menubar=no,toolbar=no,location=yes,status=no,scrollbars=yes,resizable=yes');
 }
 
 /** case-insensitive token highlighter */
@@ -130,9 +131,15 @@ interface ChunkRowProps {
   index: number;
   total: number;
   query: string;
+  /**
+   * Document-level iManage preview URL. Used to suppress a redundant per-chunk
+   * link when the chunk carries the same (non page-anchored) URL the card
+   * header already exposes.
+   */
+  docImanageUrl?: string | null;
 }
 
-const ChunkRow: React.FC<ChunkRowProps> = ({ chunk, index, total, query }) => {
+const ChunkRow: React.FC<ChunkRowProps> = ({ chunk, index, total, query, docImanageUrl }) => {
   const [expanded, setExpanded] = useState(false);
   const pageInfo =
     chunk.page_start != null
@@ -142,32 +149,47 @@ const ChunkRow: React.FC<ChunkRowProps> = ({ chunk, index, total, query }) => {
       : null;
   const preview = previewForChunk(chunk, query);
   const expandedText = cleanPreviewText(chunk.content) || chunk.content;
+  const chunkImanageUrl =
+    chunk.imanage_preview_url && chunk.imanage_preview_url !== docImanageUrl
+      ? chunk.imanage_preview_url
+      : null;
 
   return (
     <div className="group/chunk rounded-md border border-transparent px-2 py-2 hover:border-border-light hover:bg-surface-hover">
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          setExpanded((v) => !v);
-        }}
-        aria-expanded={expanded}
-        className="flex w-full items-center gap-2 text-left outline-none focus-visible:ring-1 focus-visible:ring-border-heavy"
-      >
-        <ChevronRight
-          className={cn(
-            'h-3 w-3 shrink-0 text-text-tertiary transition-transform',
-            expanded && 'rotate-90',
+      <div className="flex w-full items-center gap-2">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setExpanded((v) => !v);
+          }}
+          aria-expanded={expanded}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left outline-none focus-visible:ring-1 focus-visible:ring-border-heavy"
+        >
+          <ChevronRight
+            className={cn(
+              'h-3 w-3 shrink-0 text-text-tertiary transition-transform',
+              expanded && 'rotate-90',
+            )}
+            aria-hidden="true"
+          />
+          <span className="inline-flex h-5 shrink-0 items-center rounded bg-surface-secondary px-1.5 text-[10px] font-semibold tabular-nums text-text-secondary">
+            {index + 1}/{total}
+          </span>
+          {pageInfo && (
+            <span className="shrink-0 text-[11px] tabular-nums text-text-tertiary">{pageInfo}</span>
           )}
-          aria-hidden="true"
-        />
-        <span className="inline-flex h-5 shrink-0 items-center rounded bg-surface-secondary px-1.5 text-[10px] font-semibold tabular-nums text-text-secondary">
-          {index + 1}/{total}
-        </span>
-        {pageInfo && (
-          <span className="shrink-0 text-[11px] tabular-nums text-text-tertiary">{pageInfo}</span>
+        </button>
+        {chunkImanageUrl && (
+          <SourceExternalLink
+            href={chunkImanageUrl}
+            label="iM 파일"
+            size="sm"
+            shrink
+            stopPropagation
+          />
         )}
-      </button>
+      </div>
       <div className="mt-1 pl-5">
         {expanded ? (
           <pre className="whitespace-pre-wrap break-words font-sans text-[13px] leading-relaxed text-text-primary">
@@ -259,59 +281,34 @@ const ResultCard: React.FC<ResultCardProps> = ({ hit, query, isSelected, onClick
           </span>
         )}
         {imanageFileUrl && (
-          <a
+          <SourceExternalLink
             href={imanageFileUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-[11px] text-text-secondary hover:bg-surface-hover hover:text-text-primary"
-            aria-label="iManage 파일 보기"
-            title="iManage 파일 보기"
-          >
-            <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-            iM 파일
-          </a>
+            label="iM 파일"
+            size="sm"
+            shrink
+            stopPropagation
+          />
         )}
         {imanageFolderUrl ? (
-          <a
+          <SourceExternalLink
             href={imanageFolderUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-[11px] text-text-secondary hover:bg-surface-hover hover:text-text-primary"
-            aria-label="iManage 폴더 보기"
-            title="iManage 폴더 보기"
-          >
-            <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-            iM 폴더
-          </a>
+            label="iM 폴더"
+            size="sm"
+            shrink
+            stopPropagation
+          />
         ) : imanageFileUrl ? (
-          <button
-            type="button"
-            disabled
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex h-7 shrink-0 cursor-not-allowed items-center gap-1 rounded-md px-2 text-[11px] text-text-tertiary opacity-70"
-            aria-label="iManage 폴더 없음"
-            title="iManage 폴더 없음"
-          >
-            <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-            iM 폴더
-          </button>
+          <SourceDisabledLink label="iM 폴더" size="sm" shrink />
         ) : null}
         {hit.bims_url && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              openPopup(hit.bims_url as string, 'bims_popup');
-            }}
-            className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-[11px] text-text-secondary hover:bg-surface-hover hover:text-text-primary"
-            aria-label="BIMS 보기"
-            title="BIMS 보기"
-          >
-            <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-            BIMS
-          </button>
+          <SourcePopupLink
+            href={hit.bims_url}
+            label="BIMS"
+            popupName="bims_popup"
+            size="sm"
+            shrink
+            stopPropagation
+          />
         )}
       </div>
 
@@ -338,6 +335,7 @@ const ResultCard: React.FC<ResultCardProps> = ({ hit, query, isSelected, onClick
               index={pageStart + i}
               total={displayedChunkCount}
               query={query}
+              docImanageUrl={hit.imanage_preview_url}
             />
           ))}
         </div>

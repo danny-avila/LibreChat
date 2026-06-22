@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRecoilState } from 'recoil';
-import { ExternalLink, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { Button } from '@librechat/client';
 import store from '~/store';
 import { cn, FileTypeIcon } from '~/utils';
+import { SourceExternalLink, SourceDisabledLink, SourcePopupLink } from './SourceLinkButtons';
 import MarkdownLite from './MarkdownLite';
 import type { BklSource } from './ChunkModal';
 
@@ -416,82 +417,17 @@ function ExternalSystemButtons({ source }: { source: BklSource | null }) {
   return (
     <>
       {fileUrl ? (
-        <PanelExternalLink href={fileUrl} label="iM 파일" />
+        <SourceExternalLink href={fileUrl} label="iM 파일" />
       ) : (
-        <PanelDisabledLink label="iM 파일" />
+        <SourceDisabledLink label="iM 파일" />
       )}
       {folderUrl ? (
-        <PanelExternalLink href={folderUrl} label="iM 폴더" />
+        <SourceExternalLink href={folderUrl} label="iM 폴더" />
       ) : (
-        <PanelDisabledLink label="iM 폴더" />
+        <SourceDisabledLink label="iM 폴더" />
       )}
-      {bimsUrl && <PanelPopupLink href={bimsUrl} label="BIMS" popupName="bims_popup" />}
+      {bimsUrl && <SourcePopupLink href={bimsUrl} label="BIMS" popupName="bims_popup" />}
     </>
-  );
-}
-
-function PanelExternalLink({ href, label }: { href: string; label: string }) {
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      title={label}
-      aria-label={label}
-      className={cn(
-        'inline-flex h-8 items-center gap-1 rounded-md px-2',
-        'text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary',
-        'focus-visible:outline-none focus-visible:ring-2',
-        'focus-visible:ring-border-medium',
-      )}
-    >
-      <ExternalLink size={14} aria-hidden="true" />
-      <span>{label}</span>
-    </a>
-  );
-}
-
-function PanelDisabledLink({ label }: { label: string }) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      disabled
-      className={cn(
-        'inline-flex h-8 cursor-not-allowed items-center gap-1 rounded-md px-2',
-        'text-xs text-text-tertiary opacity-70',
-      )}
-    >
-      <ExternalLink size={14} aria-hidden="true" />
-      <span>{label}</span>
-    </button>
-  );
-}
-
-function PanelPopupLink({ href, label, popupName }: { href: string; label: string; popupName: string }) {
-  return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      onClick={() => {
-        window.open(
-          href,
-          popupName,
-          'width=1000,height=800,menubar=no,toolbar=no,location=yes,status=no,scrollbars=yes,resizable=yes',
-        );
-      }}
-      className={cn(
-        'inline-flex h-8 items-center gap-1 rounded-md px-2',
-        'text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary',
-        'focus-visible:outline-none focus-visible:ring-2',
-        'focus-visible:ring-border-medium',
-      )}
-    >
-      <ExternalLink size={14} aria-hidden="true" />
-      <span>{label}</span>
-    </button>
   );
 }
 

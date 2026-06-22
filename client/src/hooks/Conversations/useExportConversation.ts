@@ -1,5 +1,7 @@
+import { jsPDF } from 'jspdf';
 import download from 'downloadjs';
 import { useCallback } from 'react';
+import { toCanvas } from 'html-to-image';
 import { useParams } from 'react-router-dom';
 import exportFromJSON from 'export-from-json';
 import { useQueryClient } from '@tanstack/react-query';
@@ -19,13 +21,7 @@ import type {
 } from 'librechat-data-provider';
 import useBuildMessageTree from '~/hooks/Messages/useBuildMessageTree';
 import { useScreenshot } from '~/hooks/ScreenshotContext';
-import { cleanupPreset } from '~/utils';
-
-type ExportValues = {
-  fieldName: string;
-  fieldValues: string[];
-};
-type ExportEntries = ExportValues[];
+import { cleanupPreset, getBklDisplayText } from '~/utils';
 
 export default function useExportConversation({
   conversation,
@@ -156,6 +152,46 @@ export default function useExportConversation({
     return [sender, JSON.stringify(content)];
   };
 
+  /**
+   * Resolve the user-facing text of a message exactly as the chat UI renders it:
+   * prefer the structured `content[]` text/error parts, fall back to `message.text`,
+   * and strip BKL control tags (citations internals, filter/query-enhance markers).
+   */
+  const getDisplayMessageText = (message: Partial<TMessage> | undefined): string => {
+    if (!message) {
+      return '';
+    }
+
+    if (!message.content) {
+      return getBklDisplayText(message.text ?? '').trim();
+    }
+
+    return message.content
+      .filter((content) => content != null)
+      .map((content) => {
+        if (content.type === ContentTypes.TEXT) {
+          const textPart = content[ContentTypes.TEXT];
+          return typeof textPart === 'string' ? textPart : (textPart?.value ?? '');
+        }
+        if (content.type === ContentTypes.ERROR) {
+          const textPart = content[ContentTypes.TEXT];
+          return typeof textPart === 'object' ? (textPart.value ?? '') : (textPart ?? '');
+        }
+        return '';
+      })
+      .map((text) => getBklDisplayText(text))
+      .filter((text) => text.trim().length > 0)
+      .join('\n\n')
+      .trim();
+  };
+
+  const getDisplaySender = (message: Partial<TMessage>): string => {
+    if (message.sender != null && message.sender.length > 0) {
+      return message.sender;
+    }
+    return message.isCreatedByUser === true ? 'User' : 'Assistant';
+  };
+
   const exportScreenshot = async () => {
     let data;
     try {
@@ -167,9 +203,9 @@ export default function useExportConversation({
     download(data, `${filename}.png`, 'image/png');
   };
 
-  const exportCSV = async () => {
-    const data: Partial<TMessage>[] = [];
+  const escapeCSVField = (value: string): string => `"${value.replace(/"/g, '""')}"`;
 
+  const exportCSV = async () => {
     const messages = await buildMessageTree({
       messageId: conversation?.conversationId,
       message: null,
@@ -178,57 +214,29 @@ export default function useExportConversation({
       recursive: false,
     });
 
-    if (Array.isArray(messages)) {
-      for (const message of messages) {
-        if (!message) {
-          continue;
-        }
-        data.push(message);
+    const list = Array.isArray(messages) ? messages : [messages];
+
+    const columns = ['sender', 'role', 'timestamp', 'model', 'text'];
+    const rows = [columns.map(escapeCSVField).join(',')];
+
+    for (const message of list) {
+      if (!message) {
+        continue;
       }
-    } else {
-      data.push(messages);
+      const fields = [
+        getDisplaySender(message),
+        message.isCreatedByUser === true ? 'user' : 'assistant',
+        message.createdAt ?? '',
+        message.model ?? '',
+        getDisplayMessageText(message),
+      ];
+      rows.push(fields.map(escapeCSVField).join(','));
     }
 
-    exportFromJSON({
-      data: data,
-      fileName: filename,
-      extension: 'csv',
-      exportType: exportFromJSON.types.csv,
-      beforeTableEncode: (entries: ExportEntries | undefined) => [
-        {
-          fieldName: 'sender',
-          fieldValues: entries?.find((e) => e.fieldName == 'sender')?.fieldValues ?? [],
-        },
-        {
-          fieldName: 'text',
-          fieldValues: entries?.find((e) => e.fieldName == 'text')?.fieldValues ?? [],
-        },
-        {
-          fieldName: 'isCreatedByUser',
-          fieldValues: entries?.find((e) => e.fieldName == 'isCreatedByUser')?.fieldValues ?? [],
-        },
-        {
-          fieldName: 'error',
-          fieldValues: entries?.find((e) => e.fieldName == 'error')?.fieldValues ?? [],
-        },
-        {
-          fieldName: 'unfinished',
-          fieldValues: entries?.find((e) => e.fieldName == 'unfinished')?.fieldValues ?? [],
-        },
-        {
-          fieldName: 'messageId',
-          fieldValues: entries?.find((e) => e.fieldName == 'messageId')?.fieldValues ?? [],
-        },
-        {
-          fieldName: 'parentMessageId',
-          fieldValues: entries?.find((e) => e.fieldName == 'parentMessageId')?.fieldValues ?? [],
-        },
-        {
-          fieldName: 'createdAt',
-          fieldValues: entries?.find((e) => e.fieldName == 'createdAt')?.fieldValues ?? [],
-        },
-      ],
-    });
+    /** Prepend a UTF-8 BOM so Excel detects the encoding and renders Korean correctly. */
+    const csv = '\uFEFF' + rows.join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    download(blob, `${filename}.csv`, 'text/csv;charset=utf-8');
   };
 
   const exportMarkdown = async () => {
@@ -376,6 +384,124 @@ export default function useExportConversation({
     download(blob, `${filename}.json`, 'application/json');
   };
 
+  /**
+   * Build an off-screen DOM representation of the conversation for PDF rendering.
+   * Korean glyphs are rendered by the browser's own fonts and captured to a raster
+   * image (see `exportPDF`), so no Hangul-capable font binary needs to be embedded.
+   */
+  const buildPDFNode = (messages: (Partial<TMessage> | undefined)[]): HTMLDivElement => {
+    const container = document.createElement('div');
+    container.style.position = 'fixed';
+    container.style.top = '-10000px';
+    container.style.left = '-10000px';
+    container.style.width = '794px';
+    container.style.boxSizing = 'border-box';
+    container.style.padding = '48px';
+    container.style.backgroundColor = '#ffffff';
+    container.style.color = '#111827';
+    container.style.fontFamily =
+      "'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', 'Segoe UI', system-ui, sans-serif";
+    container.style.fontSize = '14px';
+    container.style.lineHeight = '1.6';
+
+    const title = document.createElement('h1');
+    title.textContent = conversation?.title ?? 'Conversation';
+    title.style.fontSize = '22px';
+    title.style.fontWeight = '700';
+    title.style.margin = '0 0 12px';
+    container.appendChild(title);
+
+    const meta = document.createElement('div');
+    meta.style.fontSize = '12px';
+    meta.style.color = '#6b7280';
+    meta.style.marginBottom = '24px';
+    meta.style.paddingBottom = '16px';
+    meta.style.borderBottom = '1px solid #e5e7eb';
+    const metaLines = [
+      `conversationId: ${conversation?.conversationId ?? ''}`,
+      `endpoint: ${conversation?.endpoint ?? ''}`,
+      `exportAt: ${new Date().toString()}`,
+    ];
+    for (const line of metaLines) {
+      const row = document.createElement('div');
+      row.textContent = line;
+      meta.appendChild(row);
+    }
+    container.appendChild(meta);
+
+    for (const message of messages) {
+      if (!message) {
+        continue;
+      }
+      const text = getDisplayMessageText(message);
+      if (text.length === 0) {
+        continue;
+      }
+      const isUser = message.isCreatedByUser === true;
+
+      const block = document.createElement('div');
+      block.style.marginBottom = '20px';
+
+      const sender = document.createElement('div');
+      sender.textContent = getDisplaySender(message);
+      sender.style.fontWeight = '600';
+      sender.style.marginBottom = '4px';
+      sender.style.color = isUser ? '#1d4ed8' : '#047857';
+      block.appendChild(sender);
+
+      const body = document.createElement('div');
+      body.textContent = text;
+      body.style.whiteSpace = 'pre-wrap';
+      body.style.wordBreak = 'break-word';
+      block.appendChild(body);
+
+      container.appendChild(block);
+    }
+
+    return container;
+  };
+
+  const exportPDF = async () => {
+    const messages = await buildMessageTree({
+      messageId: conversation?.conversationId,
+      message: null,
+      messages: getMessageTree(),
+      branches: Boolean(exportBranches),
+      recursive: false,
+    });
+
+    const list = Array.isArray(messages) ? messages : [messages];
+    const node = buildPDFNode(list);
+    document.body.appendChild(node);
+
+    try {
+      const canvas = await toCanvas(node, { backgroundColor: '#ffffff', pixelRatio: 2 });
+      const imgData = canvas.toDataURL('image/png');
+
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      let heightLeft = imgHeight;
+      let position = 0;
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+
+      while (heightLeft > 0) {
+        position -= pageHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
+      pdf.save(`${filename}.pdf`);
+    } finally {
+      document.body.removeChild(node);
+    }
+  };
+
   const exportConversation = () => {
     if (type === 'json') {
       exportJSON();
@@ -385,6 +511,8 @@ export default function useExportConversation({
       exportMarkdown();
     } else if (type == 'csv') {
       exportCSV();
+    } else if (type == 'pdf') {
+      exportPDF();
     } else if (type == 'screenshot') {
       exportScreenshot();
     }
