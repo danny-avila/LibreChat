@@ -1,7 +1,11 @@
 import { RetentionMode, isForcedTemporaryRetention } from 'librechat-data-provider';
 import type { DeleteResult, FilterQuery, Model } from 'mongoose';
 import type { AppConfig, IConversation, IMessage } from '~/types';
-import { createFallbackRetentionDate, forceConversationMessagesTemporary } from '~/utils/retention';
+import {
+  createFallbackRetentionDate,
+  forceConversationMessagesTemporary,
+  forcedRetentionGapFilter,
+} from '~/utils/retention';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '~/config/winston';
@@ -178,7 +182,11 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       ) {
         const Conversation = mongoose.models.Conversation as Model<IConversation>;
         const convoResult = await Conversation.updateOne(
-          { conversationId, user: userId, isTemporary: { $ne: true } },
+          {
+            conversationId,
+            user: userId,
+            ...forcedRetentionGapFilter<IConversation>(forcedExpiredAt),
+          },
           { $set: { isTemporary: true, expiredAt: forcedExpiredAt } },
         );
         if (convoResult.modifiedCount > 0) {
