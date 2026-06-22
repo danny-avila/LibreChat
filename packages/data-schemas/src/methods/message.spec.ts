@@ -902,6 +902,39 @@ describe('Message Operations', () => {
       expect(saved?.expiredAt?.getTime()).toBeLessThanOrEqual(convo?.expiredAt?.getTime() ?? 0);
     });
 
+    it('backfills lagging messages when the parent already expires sooner', async () => {
+      const conversationId = uuidv4();
+      const parentExpiry = new Date(Date.now() + 60 * 60 * 1000);
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'Ephemeral chat expiring soon',
+        isTemporary: true,
+        expiredAt: parentExpiry,
+      });
+      const laggingMessageId = uuidv4();
+      await Message.create({
+        messageId: laggingMessageId,
+        conversationId,
+        user: 'user123',
+        text: 'older message with no expiry',
+      });
+
+      await saveMessage(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { messageId: uuidv4(), conversationId, text: 'branch', user: 'user123' },
+        { context: 'branch', capExpiryToConversation: true },
+      );
+
+      const lagging = await Message.findOne({ messageId: laggingMessageId }).lean();
+      expect(lagging?.isTemporary).toBe(true);
+      expect(lagging?.expiredAt?.getTime()).toBe(parentExpiry.getTime());
+    });
+
     it('does not cap a normal send save so a following conversation refresh stays aligned', async () => {
       const conversationId = uuidv4();
       const parentExpiry = new Date(Date.now() + 60 * 60 * 1000);
