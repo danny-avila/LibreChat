@@ -8,6 +8,7 @@ import {
   createDeleteMemoryTool,
   getRequestMemories,
   invalidateRequestMemories,
+  agentHasInlineMemoryTools,
 } from './memory';
 
 jest.mock('~/stream/GenerationJobManager');
@@ -660,6 +661,30 @@ describe('createMemoryTool tokenLimit enforcement', () => {
     await tool.invoke({ key: 'k1' });
 
     expect(onWrite).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('agentHasInlineMemoryTools', () => {
+  it('returns false for a nullish agent', () => {
+    expect(agentHasInlineMemoryTools(null)).toBe(false);
+    expect(agentHasInlineMemoryTools(undefined)).toBe(false);
+  });
+
+  it('honors an explicit memoryToolsRegistered flag over the raw marker', () => {
+    /** Initialized config whose registration was denied (memoryAvailable false)
+     *  but whose raw `memory` marker survived in tools must not be treated as
+     *  memory-enabled. */
+    expect(agentHasInlineMemoryTools({ memoryToolsRegistered: false, tools: ['memory'] })).toBe(
+      false,
+    );
+    expect(agentHasInlineMemoryTools({ memoryToolsRegistered: true, tools: [] })).toBe(true);
+  });
+
+  it('falls back to the raw memory marker when no flag is present', () => {
+    expect(agentHasInlineMemoryTools({ tools: ['memory'] })).toBe(true);
+    expect(agentHasInlineMemoryTools({ tools: [{ name: 'memory' }] })).toBe(true);
+    expect(agentHasInlineMemoryTools({ tools: ['execute_code'] })).toBe(false);
+    expect(agentHasInlineMemoryTools({ tools: [] })).toBe(false);
   });
 });
 

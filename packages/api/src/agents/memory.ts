@@ -447,8 +447,12 @@ export function agentHasInlineMemoryTools(agent: InlineMemoryAgent): boolean {
   if (!agent) {
     return false;
   }
-  if (agent.memoryToolsRegistered === true) {
-    return true;
+  /** An initialized config carries an explicit boolean: honor it so an agent
+   *  whose registration was denied (`false`) is not treated as memory-enabled
+   *  just because the raw `memory` marker survives in `tools`. Fall back to the
+   *  marker only for the raw agent, where the flag is absent. */
+  if (typeof agent.memoryToolsRegistered === 'boolean') {
+    return agent.memoryToolsRegistered;
   }
   return (agent.tools ?? []).some(
     (entry) =>
