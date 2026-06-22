@@ -5,6 +5,7 @@ import type { AppConfig, IChatProjectDocument, IConversation, IMessage } from '~
 import type { MessageMethods } from './message';
 import {
   buildRetentionVisibilityFilter,
+  conversationNeedsForcedRetention,
   createFallbackRetentionDate,
   forceConversationMessagesTemporary,
 } from '~/utils/retention';
@@ -245,14 +246,18 @@ export function createConversationMethods(
         Object.prototype.hasOwnProperty.call(update, 'chatProjectId') ||
         Object.prototype.hasOwnProperty.call(unsetFields, 'chatProjectId');
       let previousChatProjectId: string | null = null;
-      let parentWasNotTemporary = false;
+      let parentRetention: { isTemporary?: boolean | null; expiredAt?: Date | null } | null = null;
       if (mayChangeProjectMembership || isForcedRetention) {
         const existing = await Conversation.findOne(
           { conversationId, user: userId },
-          'chatProjectId isTemporary',
-        ).lean<{ chatProjectId?: string | null; isTemporary?: boolean | null } | null>();
+          'chatProjectId isTemporary expiredAt',
+        ).lean<{
+          chatProjectId?: string | null;
+          isTemporary?: boolean | null;
+          expiredAt?: Date | null;
+        } | null>();
         previousChatProjectId = existing?.chatProjectId ?? null;
-        parentWasNotTemporary = existing != null && existing.isTemporary !== true;
+        parentRetention = existing;
       }
 
       if (newConversationId) {
@@ -339,7 +344,11 @@ export function createConversationMethods(
       }
 
       const forcedExpiredAt = update.expiredAt;
-      if (isForcedRetention && parentWasNotTemporary && forcedExpiredAt instanceof Date) {
+      if (
+        isForcedRetention &&
+        forcedExpiredAt instanceof Date &&
+        conversationNeedsForcedRetention(parentRetention, forcedExpiredAt)
+      ) {
         const Message = mongoose.models.Message as Model<IMessage>;
         await forceConversationMessagesTemporary(Message, userId, conversationId, forcedExpiredAt);
       }

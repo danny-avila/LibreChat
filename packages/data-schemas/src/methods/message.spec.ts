@@ -1088,6 +1088,45 @@ describe('Message Operations', () => {
       }
     });
 
+    it('re-caps an already temporary parent and its messages to a shorter ephemeral window', async () => {
+      const conversationId = uuidv4();
+      const longerExpiry = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'Already temporary chat',
+        isTemporary: true,
+        expiredAt: longerExpiry,
+      });
+      await Message.create({
+        messageId: uuidv4(),
+        conversationId,
+        user: 'user123',
+        text: 'older temporary message',
+        isTemporary: true,
+        expiredAt: longerExpiry,
+      });
+
+      await saveMessage(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { messageId: uuidv4(), conversationId, text: 'branch', user: 'user123' },
+      );
+
+      const convo = await Conversation().findOne({ conversationId }).lean();
+      expect(convo?.expiredAt?.getTime()).toBeLessThan(longerExpiry.getTime());
+
+      const messages = await getMessages({ conversationId, user: 'user123' });
+      expect(messages).toHaveLength(2);
+      for (const message of messages) {
+        expect(message.isTemporary).toBe(true);
+        expect(message.expiredAt?.getTime()).toBeLessThan(longerExpiry.getTime());
+      }
+    });
+
     it('does not touch the parent conversation outside forced retention', async () => {
       const conversationId = uuidv4();
       await Conversation().create({

@@ -33,14 +33,51 @@ export const createFallbackRetentionDate = (now: number = Date.now()): Date =>
   new Date(now + DEFAULT_RETENTION_HOURS * 60 * 60 * 1000);
 
 /**
- * Applies forced-retention deadlines to a conversation's not-yet-temporary messages.
+ * Matches retention documents that do not yet conform to a forced (ephemeral) deadline:
+ * not temporary, missing an expiration, or expiring later than the forced window. The
+ * last clause re-caps documents carried over from a longer policy (`all`, or a longer
+ * `temporary` TTL) while leaving already-conforming temporary documents untouched.
+ */
+export const forcedRetentionGapFilter = <
+  T extends RetentionFilterDocument = RetentionFilterDocument,
+>(
+  forcedExpiredAt: Date,
+): FilterQuery<T> =>
+  ({
+    $or: [
+      { isTemporary: { $ne: true } },
+      { expiredAt: null },
+      { expiredAt: { $gt: forcedExpiredAt } },
+    ],
+  }) as FilterQuery<T>;
+
+/**
+ * In-memory counterpart of {@link forcedRetentionGapFilter} for a conversation's prior
+ * state: true when the parent must be re-capped to the forced deadline.
+ */
+export const conversationNeedsForcedRetention = (
+  parent: RetentionFilterDocument | null | undefined,
+  forcedExpiredAt: Date,
+): boolean => {
+  if (parent == null) {
+    return false;
+  }
+  if (parent.isTemporary !== true || parent.expiredAt == null) {
+    return true;
+  }
+  return parent.expiredAt.getTime() > forcedExpiredAt.getTime();
+};
+
+/**
+ * Applies forced-retention deadlines to a conversation's messages that do not yet
+ * conform to the forced window.
  *
  * Forced (ephemeral) retention must cover existing messages too. A conversation that
- * predates the mode keeps non-temporary messages — `expiredAt: null` permanent messages,
- * or `isTemporary: false` messages with a future `expiredAt` carried over from `all`
- * retention — that outlive the converted conversation. Targeting `isTemporary !== true`
- * pulls both onto the ephemeral schedule and stays a no-op once a conversation has been
- * converted.
+ * predates the mode keeps non-conforming messages — `expiredAt: null` permanent messages,
+ * `isTemporary: false` messages carried over from `all` retention, or temporary messages
+ * whose `expiredAt` is later than a newly shortened window — that would otherwise outlive
+ * the converted conversation. The gap filter pulls all of them onto the ephemeral schedule
+ * and stays a no-op once a conversation already conforms.
  */
 export const forceConversationMessagesTemporary = async (
   Message: Model<IMessage>,
@@ -49,7 +86,7 @@ export const forceConversationMessagesTemporary = async (
   expiredAt: Date,
 ): Promise<void> => {
   await Message.updateMany(
-    { conversationId, user: userId, isTemporary: { $ne: true } },
+    { conversationId, user: userId, ...forcedRetentionGapFilter<IMessage>(expiredAt) },
     { $set: { isTemporary: true, expiredAt } },
   );
 };
