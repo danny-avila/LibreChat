@@ -64,6 +64,7 @@ const connect = require('./connect');
       }).cursor();
 
       let migratedCount = 0;
+      let skippedCount = 0;
       let errorCount = 0;
 
       for await (const user of cursor) {
@@ -75,11 +76,24 @@ const connect = require('./connect');
               `Warning: User ${user._id} has no createdAt, using current date for termsAcceptedAt`,
             );
           }
-          await User.updateOne({ _id: user._id }, { $set: { termsAcceptedAt } });
-          migratedCount++;
+          // Only backfill while the timestamp is still missing. If the user
+          // accepted through the API between the cursor read and this write,
+          // the filter no longer matches and their real timestamp is kept.
+          const result = await User.updateOne(
+            {
+              _id: user._id,
+              $or: [{ termsAcceptedAt: null }, { termsAcceptedAt: { $exists: false } }],
+            },
+            { $set: { termsAcceptedAt } },
+          );
 
-          if (migratedCount % 100 === 0) {
-            console.yellow(`Migrated ${migratedCount} users...`);
+          if (result.modifiedCount > 0) {
+            migratedCount++;
+            if (migratedCount % 100 === 0) {
+              console.yellow(`Migrated ${migratedCount} users...`);
+            }
+          } else {
+            skippedCount++;
           }
         } catch (error) {
           console.red(`Error migrating user ${user._id}: ${error.message}`);
@@ -89,6 +103,11 @@ const connect = require('./connect');
 
       console.green(`Migration complete!`);
       console.green(`Successfully migrated: ${migratedCount} user(s)`);
+      if (skippedCount > 0) {
+        console.yellow(
+          `Skipped ${skippedCount} user(s) who accepted concurrently during migration.`,
+        );
+      }
       if (errorCount > 0) {
         console.red(`Errors encountered: ${errorCount}`);
         silentExit(1);
