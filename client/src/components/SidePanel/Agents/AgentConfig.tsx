@@ -25,12 +25,15 @@ import AgentCategorySelector from './AgentCategorySelector';
 import Action from '~/components/SidePanel/Builder/Action';
 import { useLocalize, useVisibleTools, useScopeOverrideFeatureAccess } from '~/hooks';
 import { Panel, isEphemeralAgent } from '~/common';
-import { useListSkillsQuery, useGetAgentFiles } from '~/data-provider';
+import { useListSkillsQuery, useGetAgentFiles, useGetStartupConfig } from '~/data-provider';
 import { icons } from '~/hooks/Endpoint/Icons';
 import Instructions from './Instructions';
 import AgentAvatar from './AgentAvatar';
 import FileContext from './FileContext';
 import SearchForm from './Search/Form';
+import GoogleDriveForm from './GoogleDrive/Form';
+import GoogleMailForm from './GoogleMail/Form';
+import GoogleCalendarForm from './GoogleCalendar/Form';
 import FileSearch from './FileSearch';
 import Artifacts from './Artifacts';
 import AgentTool from './AgentTool';
@@ -100,6 +103,8 @@ export default function AgentConfig() {
   const hasSkillsAccess = useScopeOverrideFeatureAccess(PermissionTypes.SKILLS);
   const showSkills = hasSkillsAccess && skillsEnabled;
   const { data: skillsData } = useListSkillsQuery({ limit: 100 }, { enabled: showSkills });
+  const { data: startupConfig } = useGetStartupConfig();
+  const integrationsEnabled = startupConfig?.integrationsEnabled === true;
   const skillsMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const skill of skillsData?.skills ?? []) {
@@ -321,7 +326,8 @@ export default function AgentConfig() {
           fileSearchEnabled ||
           artifactsEnabled ||
           contextEnabled ||
-          webSearchEnabled) && (
+          webSearchEnabled ||
+          integrationsEnabled) && (
           <div className="mb-4 flex w-full flex-col items-start gap-3">
             <label className="text-token-text-primary block text-sm font-medium">
               {localize('com_assistants_capabilities')}
@@ -330,6 +336,10 @@ export default function AgentConfig() {
             {codeEnabled && <CodeForm agent_id={agent_id} files={code_files} />}
             {/* Web Search */}
             {webSearchEnabled && <SearchForm />}
+            {/* Google Drive */}
+            {integrationsEnabled && <GoogleDriveForm />}
+            {integrationsEnabled && <GoogleMailForm />}
+            {integrationsEnabled && <GoogleCalendarForm />}
             {/* File Context */}
             {contextEnabled && <FileContext agent_id={agent_id} files={context_files} />}
             {/* Artifacts */}

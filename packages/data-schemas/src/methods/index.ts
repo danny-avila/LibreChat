@@ -63,6 +63,7 @@ import { createAgentMethods, type AgentMethods, type AgentDeps } from './agent';
 /* Config */
 import { createConfigMethods, type ConfigMethods } from './config';
 import { createTenantMethods, type TenantMethods } from './tenant';
+import { createNangoConnectionMethods, type NangoConnectionMethods } from './nangoConnection';
 
 export { RoleConflictError, DEFAULT_REFRESH_TOKEN_EXPIRY, DEFAULT_SESSION_EXPIRY };
 export { tokenValues, cacheTokenValues, premiumTokenValues, defaultRate };
@@ -100,7 +101,8 @@ export type AllMethods = UserMethods &
   SkillMethods &
   AgentMethods &
   ConfigMethods &
-  TenantMethods;
+  TenantMethods &
+  NangoConnectionMethods;
 
 /** Dependencies injected from the api layer into createMethods */
 export interface CreateMethodsDeps {
@@ -231,6 +233,7 @@ export function createMethods(
     /* Config */
     ...createConfigMethods(mongoose),
     ...createTenantMethods(mongoose),
+    ...createNangoConnectionMethods(mongoose),
   };
 }
 
@@ -277,4 +280,5 @@ export type {
   AgentMethods,
   ConfigMethods,
   TenantMethods,
+  NangoConnectionMethods,
 };

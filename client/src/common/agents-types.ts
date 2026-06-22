@@ -1,4 +1,4 @@
-import { AgentCapabilities, ArtifactModes } from 'librechat-data-provider';
+import { AgentCapabilities, ArtifactModes, Tools } from 'librechat-data-provider';
 import type {
   AgentModelParameters,
   AgentSubagentsConfig,
@@ -26,6 +26,9 @@ export type TAgentCapabilities = {
   [AgentCapabilities.execute_code]: boolean;
   [AgentCapabilities.end_after_tools]?: boolean;
   [AgentCapabilities.hide_sequential_outputs]?: boolean;
+  [Tools.google_drive]?: boolean;
+  [Tools.google_mail]?: boolean;
+  [Tools.google_calendar]?: boolean;
 };
 
 export type AgentForm = {

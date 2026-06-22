@@ -492,3 +492,34 @@ export const getAllEffectivePermissions = (resourceType: ResourceType) =>
 // SharePoint Graph API Token
 export const graphToken = (scopes: string) =>
   `${BASE_URL}/api/auth/graph-token?scopes=${encodeURIComponent(scopes)}`;
+
+const integrationsRoot = `${BASE_URL}/api/integrations`;
+
+export const integrations = () => `${integrationsRoot}/`;
+
+export const integrationStatus = (providerKey: string) =>
+  `${integrationsRoot}/${providerKey}/status`;
+
+export const integrationConnectSession = (providerKey: string) =>
+  `${integrationsRoot}/${providerKey}/connect-session`;
+
+export const integrationSync = (providerKey: string) => `${integrationsRoot}/${providerKey}/sync`;
+
+export const integrationDisconnect = (providerKey: string) => `${integrationsRoot}/${providerKey}`;
+
+export const integrationFiles = (providerKey: string) => `${integrationsRoot}/${providerKey}/files`;
+
+export const integrationFilesDownload = (providerKey: string) =>
+  `${integrationsRoot}/${providerKey}/files/download`;
+
+export const integrationMessages = (providerKey: string) =>
+  `${integrationsRoot}/${providerKey}/messages`;
+
+export const integrationMessagesAttach = (providerKey: string) =>
+  `${integrationsRoot}/${providerKey}/messages/attach`;
+
+export const integrationEvents = (providerKey: string) =>
+  `${integrationsRoot}/${providerKey}/events`;
+
+export const integrationEventsAttach = (providerKey: string) =>
+  `${integrationsRoot}/${providerKey}/events/attach`;

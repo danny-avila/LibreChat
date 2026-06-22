@@ -37,6 +37,9 @@ const {
 } = require('../');
 const { createMCPTool, createMCPTools, resolveConfigServers } = require('~/server/services/MCP');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
+const { createGoogleDriveTool } = require('./googleDrive');
+const { createGoogleMailTool } = require('./googleMail');
+const { createGoogleCalendarTool } = require('./googleCalendar');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
@@ -342,6 +345,21 @@ const loadTools = async ({
           onGetHighlights,
           logger,
         });
+      };
+      continue;
+    } else if (tool === Tools.google_drive) {
+      requestedTools[tool] = async () => {
+        return createGoogleDriveTool({ user: options.req.user });
+      };
+      continue;
+    } else if (tool === Tools.google_mail) {
+      requestedTools[tool] = async () => {
+        return createGoogleMailTool({ user: options.req.user });
+      };
+      continue;
+    } else if (tool === Tools.google_calendar) {
+      requestedTools[tool] = async () => {
+        return createGoogleCalendarTool({ user: options.req.user });
       };
       continue;
     } else if (tool && mcpToolPattern.test(tool)) {

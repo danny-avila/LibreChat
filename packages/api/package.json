@@ -107,6 +107,7 @@
     "@librechat/agents": "^3.1.90",
     "@librechat/data-schemas": "*",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@nangohq/node": "^0.70.8",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/instrumentation-express": "^0.56.0",
     "@opentelemetry/instrumentation-http": "^0.207.0",
@@ -148,5 +149,8 @@
     "undici": "^7.24.1",
     "yauzl": "^3.2.1",
     "zod": "^3.22.4"
+  },
+  "dependencies": {
+    "@nangohq/frontend": "^0.70.7"
   }
 }

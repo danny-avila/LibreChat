@@ -40,6 +40,8 @@ export const SystemCapabilities = {
   /** Reserved — not yet enforced by any middleware. */
   READ_ASSISTANTS: 'read:assistants',
   MANAGE_ASSISTANTS: 'manage:assistants',
+  READ_INTEGRATIONS: 'read:integrations',
+  MANAGE_INTEGRATIONS: 'manage:integrations',
 } as const;
 
 /**
@@ -56,6 +58,7 @@ export const CapabilityImplications: Partial<Record<BaseSystemCapability, BaseSy
     [SystemCapabilities.MANAGE_PROMPTS]: [SystemCapabilities.READ_PROMPTS],
     [SystemCapabilities.MANAGE_SKILLS]: [SystemCapabilities.READ_SKILLS],
     [SystemCapabilities.MANAGE_ASSISTANTS]: [SystemCapabilities.READ_ASSISTANTS],
+    [SystemCapabilities.MANAGE_INTEGRATIONS]: [SystemCapabilities.READ_INTEGRATIONS],
   };
 
 // ---------------------------------------------------------------------------
@@ -214,6 +217,11 @@ export const CAPABILITY_CATEGORIES: CapabilityCategory[] = [
       SystemCapabilities.READ_ASSISTANTS,
       SystemCapabilities.MANAGE_MCP_SERVERS,
     ],
+  },
+  {
+    key: 'integrations',
+    labelKey: 'com_cap_cat_integrations',
+    capabilities: [SystemCapabilities.MANAGE_INTEGRATIONS, SystemCapabilities.READ_INTEGRATIONS],
   },
   {
     key: 'system',

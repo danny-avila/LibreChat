@@ -5,6 +5,9 @@ const {
   getBalanceConfig,
   getCloudFrontConfig,
   sanitizeModelSpecs,
+  isNangoConfigured,
+  getNangoHost,
+  getNangoConnectUrl,
 } = require('@librechat/api');
 const { defaultSocialLogins } = require('librechat-data-provider');
 const { logger, getTenantId, SystemCapabilities } = require('@librechat/data-schemas');
@@ -195,6 +198,9 @@ router.get('/', async function (req, res) {
       sharePointBaseUrl: process.env.SHAREPOINT_BASE_URL,
       sharePointPickerGraphScope: process.env.SHAREPOINT_PICKER_GRAPH_SCOPE,
       sharePointPickerSharePointScope: process.env.SHAREPOINT_PICKER_SHAREPOINT_SCOPE,
+      integrationsEnabled: isNangoConfigured(),
+      nangoHost: isNangoConfigured() ? getNangoHost() : undefined,
+      nangoConnectUrl: isNangoConfigured() ? getNangoConnectUrl() : undefined,
       conversationImportMaxFileSize: process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES
         ? parseInt(process.env.CONVERSATION_IMPORT_MAX_FILE_SIZE_BYTES, 10)
         : 0,

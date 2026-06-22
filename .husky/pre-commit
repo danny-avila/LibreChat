@@ -1,4 +1,5 @@
 #!/bin/sh
 [ -n "$CI" ] && exit 0
 npx lint-staged --config ./.husky/lint-staged.config.js
+npx tsc --noEmit -p packages/api/tsconfig.json
 npm run test:all

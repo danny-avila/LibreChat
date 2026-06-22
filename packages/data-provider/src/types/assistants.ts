@@ -27,6 +27,9 @@ export enum Tools {
   skill = 'skill',
   read_file = 'read_file',
   bash_tool = 'bash_tool',
+  google_drive = 'google_drive',
+  google_mail = 'google_mail',
+  google_calendar = 'google_calendar',
 }
 
 export enum EToolResources {

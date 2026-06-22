@@ -39,6 +39,8 @@
     "@marsidev/react-turnstile": "^1.1.0",
     "@mcp-ui/client": "^5.7.0",
     "@monaco-editor/react": "^4.7.0",
+    "@nangohq/frontend": "^0.70.7",
+    "@nangohq/node": "^0.70.8",
     "@radix-ui/react-accordion": "^1.1.2",
     "@radix-ui/react-alert-dialog": "1.0.2",
     "@radix-ui/react-checkbox": "^1.0.3",

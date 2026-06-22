@@ -1108,6 +1108,12 @@ export type TStartupConfig = {
   sharePointBaseUrl?: string;
   sharePointPickerGraphScope?: string;
   sharePointPickerSharePointScope?: string;
+  /** True when Nango OAuth integrations are configured on the server. */
+  integrationsEnabled?: boolean;
+  /** Self-hosted Nango API host for Connect UI. */
+  nangoHost?: string;
+  /** Connect UI base URL (defaults to NANGO_HOST when unset). */
+  nangoConnectUrl?: string;
   openidReuseTokens?: boolean;
   allowAccountDeletion: boolean;
   /** True when the authenticated user may open the external admin panel. */

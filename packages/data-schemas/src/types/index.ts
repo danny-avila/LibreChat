@@ -31,6 +31,7 @@ export * from './aclEntry';
 export * from './systemGrant';
 export * from './group';
 export * from './tenant';
+export * from './integration';
 /* Config */
 export * from './config';
 /* Admin */

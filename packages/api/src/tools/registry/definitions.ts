@@ -350,6 +350,54 @@ export const fileSearchSchema: ExtendedJsonSchema = {
   required: ['query'],
 };
 
+/** Google Drive tool JSON schema */
+export const googleDriveSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    query: {
+      type: 'string',
+      description:
+        'Optional search query to find files in the connected Google Drive account. Leave empty to list recently modified files.',
+    },
+    page_size: {
+      type: 'number',
+      description: 'Maximum number of files to return (1-20). Defaults to 10.',
+    },
+  },
+};
+
+/** Gmail tool JSON schema */
+export const googleMailSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    query: {
+      type: 'string',
+      description:
+        'Optional Gmail search query (same syntax as Gmail search box). Leave empty to list recent messages.',
+    },
+    page_size: {
+      type: 'number',
+      description: 'Maximum number of messages to return (1-20). Defaults to 10.',
+    },
+  },
+};
+
+/** Google Calendar tool JSON schema */
+export const googleCalendarSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    query: {
+      type: 'string',
+      description:
+        'Optional free-text search for calendar events. Leave empty to list upcoming events.',
+    },
+    page_size: {
+      type: 'number',
+      description: 'Maximum number of events to return (1-20). Defaults to 10.',
+    },
+  },
+};
+
 /** Tool definitions registry - maps tool names to their definitions */
 export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
   google: {
@@ -423,6 +471,27 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     schema: fileSearchSchema,
     toolType: 'builtin',
     responseFormat: 'content_and_artifact',
+  },
+  google_drive: {
+    name: 'google_drive',
+    description:
+      'Search and list files in the connected user Google Drive account. Returns file names, IDs, MIME types, modification times, and web links.',
+    schema: googleDriveSchema,
+    toolType: 'builtin',
+  },
+  google_mail: {
+    name: 'google_mail',
+    description:
+      'Search and list emails in the connected user Gmail account. Returns subject, sender, date, and snippet.',
+    schema: googleMailSchema,
+    toolType: 'builtin',
+  },
+  google_calendar: {
+    name: 'google_calendar',
+    description:
+      'Search and list upcoming events in the connected user Google Calendar. Returns titles, times, locations, and links.',
+    schema: googleCalendarSchema,
+    toolType: 'builtin',
   },
   image_gen_oai: {
     name: oaiToolkit.image_gen_oai.name,

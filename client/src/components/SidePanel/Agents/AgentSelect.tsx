@@ -60,6 +60,9 @@ function AgentSelect({
         [AgentCapabilities.execute_code]: false,
         [AgentCapabilities.end_after_tools]: false,
         [AgentCapabilities.hide_sequential_outputs]: false,
+        [Tools.google_drive]: false,
+        [Tools.google_mail]: false,
+        [Tools.google_calendar]: false,
       };
 
       const agentTools: string[] = [];
