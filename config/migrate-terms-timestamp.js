@@ -76,12 +76,13 @@ const connect = require('./connect');
               `Warning: User ${user._id} has no createdAt, using current date for termsAcceptedAt`,
             );
           }
-          // Only backfill while the timestamp is still missing. If the user
-          // accepted through the API between the cursor read and this write,
-          // the filter no longer matches and their real timestamp is kept.
+          // Only backfill users who are still accepted and have no timestamp.
+          // If they accept through the API or get reset between the cursor read
+          // and this write, the filter no longer matches and their state is kept.
           const result = await User.updateOne(
             {
               _id: user._id,
+              termsAccepted: true,
               $or: [{ termsAcceptedAt: null }, { termsAcceptedAt: { $exists: false } }],
             },
             { $set: { termsAcceptedAt } },
@@ -105,7 +106,7 @@ const connect = require('./connect');
       console.green(`Successfully migrated: ${migratedCount} user(s)`);
       if (skippedCount > 0) {
         console.yellow(
-          `Skipped ${skippedCount} user(s) who accepted concurrently during migration.`,
+          `Skipped ${skippedCount} user(s) whose terms state changed during migration.`,
         );
       }
       if (errorCount > 0) {
