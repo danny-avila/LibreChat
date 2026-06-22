@@ -1,10 +1,17 @@
 import { RetentionMode, isForcedTemporaryRetention } from 'librechat-data-provider';
 import type { FilterQuery, Model, SortOrder } from 'mongoose';
 import type { DeleteResult } from 'mongoose';
-import type { AppConfig, IChatProjectDocument, IConversation, IMessage } from '~/types';
+import type {
+  AppConfig,
+  IChatProjectDocument,
+  IConversation,
+  IMessage,
+  ISharedLink,
+} from '~/types';
 import type { MessageMethods } from './message';
 import {
   buildRetentionVisibilityFilter,
+  capConversationSharedLinks,
   conversationNeedsForcedRetention,
   createFallbackRetentionDate,
   forceConversationMessagesTemporary,
@@ -350,7 +357,9 @@ export function createConversationMethods(
         conversationNeedsForcedRetention(parentRetention, forcedExpiredAt)
       ) {
         const Message = mongoose.models.Message as Model<IMessage>;
+        const SharedLink = mongoose.models.SharedLink as Model<ISharedLink>;
         await forceConversationMessagesTemporary(Message, userId, conversationId, forcedExpiredAt);
+        await capConversationSharedLinks(SharedLink, userId, conversationId, forcedExpiredAt);
       }
 
       if (
