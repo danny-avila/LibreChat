@@ -162,6 +162,22 @@ describe('global shortcut dispatch', () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
+  it('ignores shortcuts while focus is inside an open menu overlay', () => {
+    const { getByTestId } = renderHarness();
+    const before = getByTestId('sidebar').textContent;
+    const menu = document.createElement('div');
+    menu.setAttribute('role', 'menu');
+    const item = document.createElement('button');
+    item.setAttribute('role', 'menuitem');
+    menu.appendChild(item);
+    document.body.appendChild(menu);
+
+    const event = dispatchKey({ key: 's', ctrlKey: true, shiftKey: true }, item);
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(getByTestId('sidebar').textContent).toBe(before);
+  });
+
   it('does not prevent the native event when the action is a no-op', () => {
     renderHarness();
 

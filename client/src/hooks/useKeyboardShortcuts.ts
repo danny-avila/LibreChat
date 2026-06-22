@@ -314,6 +314,16 @@ function anyModalOpen(): boolean {
   return false;
 }
 
+/**
+ * Ariakit menus/popovers render a focus-trapped `role="menu"`/`role="listbox"` overlay rather
+ * than a dialog, so they slip past {@link anyModalOpen}. When one is open its focused item is
+ * the key event target, so checking the target's ancestry catches it without false positives
+ * from hidden menus elsewhere in the tree.
+ */
+function isWithinOpenMenu(target: HTMLElement | null): boolean {
+  return target instanceof Element && target.closest('[role="menu"], [role="listbox"]') != null;
+}
+
 function isUnavailableElement(el: HTMLElement): boolean {
   return (
     el.getAttribute('aria-disabled') === 'true' ||
@@ -948,15 +958,16 @@ export default function useKeyboardShortcuts() {
         return;
       }
 
+      const target = e.target as HTMLElement | null;
+
       if (shortcutsDialogOpen) {
         if (matchedId !== 'showShortcuts') {
           return;
         }
-      } else if (anyModalOpen()) {
+      } else if (anyModalOpen() || isWithinOpenMenu(target)) {
         return;
       }
 
-      const target = e.target as HTMLElement | null;
       const tagName = target?.tagName;
       const isEditing =
         tagName === 'INPUT' || tagName === 'TEXTAREA' || target?.isContentEditable === true;
