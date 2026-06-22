@@ -1,8 +1,9 @@
-import { memo, useRef } from 'react';
+import { memo, useRef, useState } from 'react';
 import * as Menu from '@ariakit/react/menu';
-import { LogOut } from 'lucide-react';
-import { DropdownMenuSeparator, Avatar } from '@librechat/client';
+import { Archive, LogOut } from 'lucide-react';
+import { DropdownMenuSeparator, OGDialog, OGDialogTemplate, Avatar } from '@librechat/client';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
+import ArchivedChatsTable from './SettingsTabs/General/ArchivedChatsTable';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
 
@@ -16,6 +17,7 @@ function AccountSettings() {
     enabled: !!isAuthenticated && startupConfig?.balance?.enabled,
   });
   const accountSettingsButtonRef = useRef<HTMLButtonElement>(null);
+  const [isArchiveOpen, setIsArchiveOpen] = useState(false);
 
   return (
     <Menu.MenuProvider>
@@ -57,12 +59,29 @@ function AccountSettings() {
             <DropdownMenuSeparator />
           </>
         )}
-        {/* BKL: 내 파일 / 도움말 / 설정 메뉴 항목 제거. 로그아웃만 노출. */}
+        {/* BKL: 내 파일 / 도움말 / 설정 메뉴 항목 제거. 보관된 채팅 관리와 로그아웃만 노출. */}
+        <Menu.MenuItem
+          onClick={() => setIsArchiveOpen(true)}
+          className="select-item text-sm"
+          aria-label={localize('com_nav_archived_chats')}
+        >
+          <Archive className="icon-md" aria-hidden="true" />
+          {localize('com_nav_archived_chats')}
+        </Menu.MenuItem>
+        <DropdownMenuSeparator />
         <Menu.MenuItem onClick={() => logout()} className="select-item text-sm">
           <LogOut className="icon-md" aria-hidden="true" />
           {localize('com_nav_log_out')}
         </Menu.MenuItem>
       </Menu.Menu>
+      <OGDialog open={isArchiveOpen} onOpenChange={setIsArchiveOpen}>
+        <OGDialogTemplate
+          title={localize('com_nav_archived_chats')}
+          className="max-w-[1000px]"
+          showCancelButton={false}
+          main={<ArchivedChatsTable onOpenChange={setIsArchiveOpen} />}
+        />
+      </OGDialog>
     </Menu.MenuProvider>
   );
 }

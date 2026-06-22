@@ -2,6 +2,7 @@ const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
 const { EModelEndpoint, Constants, ForkOptions } = require('librechat-data-provider');
 const { createImportBatchBuilder } = require('./importBatchBuilder');
+const { remapBklChatSources } = require('~/server/services/bklChatSources');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getConvo } = require('~/models/Conversation');
 const { getMessages } = require('~/models/Message');
@@ -128,7 +129,7 @@ async function forkConversation({
       messagesToClone = getMessagesUpToTargetLevel(originalMessages, targetMessageId);
     }
 
-    cloneMessagesWithTimestamps(messagesToClone, importBatchBuilder);
+    const idMapping = cloneMessagesWithTimestamps(messagesToClone, importBatchBuilder);
 
     const result = importBatchBuilder.finishConversation(
       newTitle || originalConvo.title,
@@ -136,6 +137,7 @@ async function forkConversation({
       originalConvo,
     );
     await importBatchBuilder.saveBatch();
+    await remapBklChatSources(idMapping, result.conversation?.conversationId);
     logger.debug(
       `user: ${requestUserId} | New conversation "${
         newTitle || originalConvo.title
@@ -381,7 +383,7 @@ async function duplicateConversation({ userId, conversationId }) {
   const importBatchBuilder = createImportBatchBuilder(userId);
   importBatchBuilder.startConversation(originalConvo.endpoint ?? EModelEndpoint.openAI);
 
-  cloneMessagesWithTimestamps(messagesToClone, importBatchBuilder);
+  const idMapping = cloneMessagesWithTimestamps(messagesToClone, importBatchBuilder);
 
   const result = importBatchBuilder.finishConversation(
     originalConvo.title,
@@ -389,6 +391,7 @@ async function duplicateConversation({ userId, conversationId }) {
     originalConvo,
   );
   await importBatchBuilder.saveBatch();
+  await remapBklChatSources(idMapping, result.conversation?.conversationId);
   logger.debug(
     `user: ${userId} | New conversation "${originalConvo.title}" duplicated from conversation ID ${conversationId}`,
   );

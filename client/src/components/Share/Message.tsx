@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useAtomValue } from 'jotai';
 import type { TMessageProps } from '~/common';
 import MinimalHoverButtons from '~/components/Chat/Messages/MinimalHoverButtons';
@@ -10,7 +11,7 @@ import { MessageContext } from '~/Providers';
 import { useAttachments } from '~/hooks';
 
 import MultiMessage from './MultiMessage';
-import { cn } from '~/utils';
+import { cn, extractBklRidFromMessage, registerBklRid } from '~/utils';
 
 import Icon from './MessageIcon';
 export default function Message(props: TMessageProps) {
@@ -29,6 +30,16 @@ export default function Message(props: TMessageProps) {
     messageId: message?.messageId,
     attachments: message?.attachments,
   });
+
+  // Shared messages carry the durable `<!-- bkl_rid -->` marker in their text
+  // (anonymization only changes `messageId`), so register it here — the same
+  // way normal chat does in MessageRender — to let `[N]` citations resolve
+  // sources via `/bkl/v1/sources/{request_id}` in the read-only share view.
+  const bklRid = useMemo(() => {
+    const rid = extractBklRidFromMessage(message);
+    registerBklRid(message?.messageId ?? '', rid);
+    return rid;
+  }, [message]);
 
   if (!message) {
     return null;
@@ -52,7 +63,11 @@ export default function Message(props: TMessageProps) {
 
   return (
     <>
-      <div className="text-token-text-primary w-full border-0 bg-transparent dark:border-0 dark:bg-transparent">
+      <div
+        id={messageId || undefined}
+        data-bkl-rid={bklRid ?? undefined}
+        className="text-token-text-primary w-full border-0 bg-transparent dark:border-0 dark:bg-transparent"
+      >
         <div className="m-auto justify-center p-4 py-2 md:gap-6">
           <div className="final-completion group mx-auto flex flex-1 gap-3 md:max-w-[47rem] md:px-5 lg:px-1 xl:max-w-[55rem] xl:px-5">
             <div className="relative flex flex-shrink-0 flex-col items-end">

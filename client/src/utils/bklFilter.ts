@@ -1,4 +1,54 @@
+import type { TMessage } from 'librechat-data-provider';
 import type { PeriodFilterState, PeriodFilterPreset, ExtensionGroup } from '~/store/filters';
+
+const BKL_RID_RE = /<!-- bkl_rid:([a-zA-Z0-9_-]+) -->/;
+
+/**
+ * Pull the durable BKL `request_id` out of an assistant message.
+ *
+ * The backend embeds `<!-- bkl_rid:<id> -->` into the answer text, so the id
+ * travels with the message through duplicate/fork/branch and share (which only
+ * change `messageId`). This lets citation lookup prefer the stable request id
+ * over the volatile `messageId`.
+ */
+export const extractBklRidFromMessage = (message?: TMessage | null): string | null => {
+  if (!message) {
+    return null;
+  }
+
+  const fromText = message.text?.match(BKL_RID_RE)?.[1];
+  if (fromText) {
+    return fromText;
+  }
+
+  if (!Array.isArray(message.content)) {
+    return null;
+  }
+
+  for (const part of message.content) {
+    if (part?.type !== 'text') {
+      continue;
+    }
+    const raw = (part as Record<string, unknown>).text;
+    const textValue = typeof raw === 'string' ? raw : (raw as { value?: string } | null)?.value;
+    const fromContent = textValue?.match(BKL_RID_RE)?.[1];
+    if (fromContent) {
+      return fromContent;
+    }
+  }
+
+  return null;
+};
+
+/** Register a message's BKL `request_id` so `BklCitation` can resolve sources. */
+export const registerBklRid = (messageId: string, rid: string | null): void => {
+  if (!messageId || !rid) {
+    return;
+  }
+  const win = window as unknown as { __bklRids?: Record<string, string> };
+  win.__bklRids = win.__bklRids ?? {};
+  win.__bklRids[messageId] = rid;
+};
 
 const toISO = (d: Date): string => {
   const y = d.getFullYear();

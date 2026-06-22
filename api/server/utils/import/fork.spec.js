@@ -14,6 +14,10 @@ jest.mock('~/models/ConversationTag', () => ({
   bulkIncrementTagCounts: jest.fn(),
 }));
 
+jest.mock('~/server/services/bklChatSources', () => ({
+  remapBklChatSources: jest.fn().mockResolvedValue(undefined),
+}));
+
 let mockIdCounter = 0;
 jest.mock('uuid', () => {
   return {

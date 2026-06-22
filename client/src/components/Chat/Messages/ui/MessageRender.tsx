@@ -11,46 +11,10 @@ import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import SubRow from '~/components/Chat/Messages/SubRow';
-import { cn, getMessageAriaLabel } from '~/utils';
+import { cn, getMessageAriaLabel, extractBklRidFromMessage, registerBklRid } from '~/utils';
 import { fontSizeAtom } from '~/store/fontSize';
 import { MessageContext } from '~/Providers';
 import store from '~/store';
-
-function extractBklRidFromMessage(message?: TMessage): string | null {
-  if (!message) {
-    return null;
-  }
-
-  const RID_RE = /<!-- bkl_rid:([a-zA-Z0-9_-]+) -->/;
-
-  const fromText = message.text?.match(RID_RE)?.[1];
-  if (fromText) {
-    return fromText;
-  }
-
-  if (!Array.isArray(message.content)) {
-    return null;
-  }
-
-  for (const part of message.content) {
-    if (part?.type !== 'text') {
-      continue;
-    }
-    // Server/DB format: { text: { value: "..." } }
-    // Streaming delta format: { text: "..." }
-    const raw = (part as Record<string, unknown>).text;
-    const textValue = typeof raw === 'string' ? raw : (raw as { value?: string } | null)?.value;
-    if (!textValue) {
-      continue;
-    }
-    const fromContent = textValue.match(RID_RE)?.[1];
-    if (fromContent) {
-      return fromContent;
-    }
-  }
-
-  return null;
-}
 
 function formatMs(ms: number): string {
   return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
@@ -178,11 +142,7 @@ const MessageRender = memo(function MessageRender({
   const messageId = msg?.messageId ?? '';
   const bklRid = useMemo(() => {
     const rid = extractBklRidFromMessage(msg);
-    if (rid && messageId) {
-      const win = window as any;
-      win.__bklRids = win.__bklRids ?? {};
-      win.__bklRids[messageId] = rid;
-    }
+    registerBklRid(messageId, rid);
     return rid;
   }, [msg, messageId]);
   const activeSource = useMemo(() => {
