@@ -36,7 +36,7 @@ describe('expired file sweep helpers', () => {
       endpoints: {
         [EModelEndpoint.assistants]: { version: 'v3' },
       },
-    } as AppConfig);
+    } as unknown as AppConfig);
 
     const result = await sweepExpiredFiles(
       { appConfig: {} as AppConfig, loadAppConfig, limit: 1 },

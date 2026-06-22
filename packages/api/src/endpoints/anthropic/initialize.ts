@@ -26,8 +26,7 @@ export async function initializeAnthropic({
   let credentials: Record<string, unknown> = {};
   let vertexOptions: { region?: string; projectId?: string } | undefined;
 
-  /** @type {undefined | import('librechat-data-provider').TVertexAIConfig} */
-  const vertexConfig = appConfig?.endpoints?.[EModelEndpoint.anthropic]?.vertexConfig;
+  const vertexConfig = appConfig?.endpoints?.[EModelEndpoint.anthropic]?.vertex;
 
   // Check for Vertex AI configuration: YAML config takes priority over env var
   // When vertexConfig exists and enabled is not explicitly false, Vertex AI is enabled

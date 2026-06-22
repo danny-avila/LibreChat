@@ -1,5 +1,4 @@
 import {
-  AuthType,
   EModelEndpoint,
   isAgentsEndpoint,
   orderEndpointsConfig,
@@ -51,27 +50,8 @@ export function createEndpointsConfigService(deps: EndpointsConfigDeps) {
       mergedConfig[EModelEndpoint.azureOpenAI] = { userProvide: false };
     }
 
-    if (appConfig.endpoints?.[EModelEndpoint.anthropic]?.vertexConfig?.enabled) {
+    if (appConfig.endpoints?.[EModelEndpoint.anthropic]?.vertex?.enabled) {
       mergedConfig[EModelEndpoint.anthropic] = { userProvide: false };
-    }
-
-    if (appConfig.endpoints?.[EModelEndpoint.azureOpenAI]?.assistants) {
-      mergedConfig[EModelEndpoint.azureAssistants] = { userProvide: false };
-    }
-
-    if (
-      mergedConfig[EModelEndpoint.assistants] &&
-      appConfig?.endpoints?.[EModelEndpoint.assistants]
-    ) {
-      const { disableBuilder, retrievalModels, capabilities, version } =
-        appConfig.endpoints[EModelEndpoint.assistants];
-      mergedConfig[EModelEndpoint.assistants] = {
-        ...mergedConfig[EModelEndpoint.assistants],
-        version: version != null ? String(version) : undefined,
-        retrievalModels,
-        disableBuilder,
-        capabilities,
-      };
     }
 
     if (mergedConfig[EModelEndpoint.agents] && appConfig?.endpoints?.[EModelEndpoint.agents]) {
@@ -82,42 +62,6 @@ export function createEndpointsConfigService(deps: EndpointsConfigDeps) {
         allowedProviders,
         disableBuilder,
         capabilities,
-      };
-    }
-
-    if (
-      mergedConfig[EModelEndpoint.azureAssistants] &&
-      appConfig?.endpoints?.[EModelEndpoint.azureAssistants]
-    ) {
-      const { disableBuilder, retrievalModels, capabilities, version } =
-        appConfig.endpoints[EModelEndpoint.azureAssistants];
-      mergedConfig[EModelEndpoint.azureAssistants] = {
-        ...mergedConfig[EModelEndpoint.azureAssistants],
-        version: version != null ? String(version) : undefined,
-        retrievalModels,
-        disableBuilder,
-        capabilities,
-      };
-    }
-
-    if (mergedConfig[EModelEndpoint.bedrock] && appConfig?.endpoints?.[EModelEndpoint.bedrock]) {
-      const { availableRegions } = appConfig.endpoints[EModelEndpoint.bedrock] as {
-        availableRegions?: string[];
-      };
-      mergedConfig[EModelEndpoint.bedrock] = {
-        ...mergedConfig[EModelEndpoint.bedrock],
-        availableRegions,
-      };
-    }
-
-    if (mergedConfig[EModelEndpoint.bedrock]) {
-      mergedConfig[EModelEndpoint.bedrock] = {
-        ...mergedConfig[EModelEndpoint.bedrock],
-        userProvideAccessKeyId: process.env.BEDROCK_AWS_ACCESS_KEY_ID === AuthType.USER_PROVIDED,
-        userProvideSecretAccessKey:
-          process.env.BEDROCK_AWS_SECRET_ACCESS_KEY === AuthType.USER_PROVIDED,
-        userProvideSessionToken: process.env.BEDROCK_AWS_SESSION_TOKEN === AuthType.USER_PROVIDED,
-        userProvideBearerToken: process.env.BEDROCK_AWS_BEARER_TOKEN === AuthType.USER_PROVIDED,
       };
     }
 

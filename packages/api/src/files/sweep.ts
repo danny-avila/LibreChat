@@ -95,7 +95,9 @@ export function hasExpiredFileEndpointConfig(appConfig: AppConfig | undefined, s
     return Boolean(appConfig?.endpoints?.[EModelEndpoint.azureOpenAI]?.assistants);
   }
 
-  return Boolean(appConfig?.endpoints?.[EModelEndpoint.assistants]);
+  return Boolean(
+    (appConfig?.endpoints as Record<string, unknown> | undefined)?.[EModelEndpoint.assistants],
+  );
 }
 
 export function getConfiguredExpiredFileAssistantVersion({

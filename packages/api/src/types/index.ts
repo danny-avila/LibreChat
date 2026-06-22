@@ -1,7 +1,6 @@
 export * from './anthropic';
 export * from './azure';
 export * from './balance';
-export * from './bedrock';
 export * from './endpoints';
 export * from './error';
 export * from './events';
