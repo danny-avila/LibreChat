@@ -21,7 +21,7 @@ export function MCPUIResource(props: MCPUIResourceProps) {
   const { conversationId } = useOptionalMessagesConversation();
   const conversationResourceMap = useConversationUIResources(conversationId ?? undefined);
   const uiResource = conversationResourceMap.get(resourceId ?? '');
-  const callbacks = useMCPAppCallbacks(uiResource?.serverName ?? '');
+  const callbacks = useMCPAppCallbacks((uiResource?.serverName as string | undefined) ?? '');
 
   if (!uiResource) {
     return (
@@ -38,7 +38,7 @@ export function MCPUIResource(props: MCPUIResourceProps) {
       return (
         <span className="mx-1 inline-block w-full align-middle">
           <AppRenderer
-            toolName={uiResource.toolName}
+            toolName={(uiResource.toolName as string | undefined) ?? ''}
             sandbox={getMCPSandboxConfig()}
             toolResourceUri={uiResource.uri}
             onCallTool={callbacks.onCallTool}

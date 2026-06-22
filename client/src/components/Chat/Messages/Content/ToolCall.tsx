@@ -1,8 +1,8 @@
 import React, { useMemo, useState, useEffect, useCallback, useContext } from 'react';
 import { useRecoilValue } from 'recoil';
-import { Button, ThemeContext, isDark } from '@librechat/client';
 import { TriangleAlert } from 'lucide-react';
 import { AppRenderer } from '@mcp-ui/client';
+import { Button, ThemeContext, isDark } from '@librechat/client';
 import {
   Constants,
   Tools,
@@ -12,9 +12,9 @@ import {
 } from 'librechat-data-provider';
 import type { TAttachment, UIResource } from 'librechat-data-provider';
 import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
+import { ToolIcon, getToolIconType, isError } from './ToolOutput';
 import { useMCPIconMap, useMCPAppCallbacks } from '~/hooks/MCP';
 import { getMCPSandboxConfig } from '~/utils/mcpApps';
-import { ToolIcon, getToolIconType, isError } from './ToolOutput';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
@@ -34,7 +34,7 @@ const MCPAppView = React.memo(function MCPAppView({
 }) {
   const [height, setHeight] = useState<number | undefined>(undefined);
   const [loaded, setLoaded] = useState(false);
-  const callbacks = useMCPAppCallbacks(app.serverName ?? '');
+  const callbacks = useMCPAppCallbacks((app.serverName as string | undefined) ?? '');
 
   useEffect(() => {
     if (loaded) return;
@@ -43,9 +43,9 @@ const MCPAppView = React.memo(function MCPAppView({
   }, [loaded]);
 
   const toolResult = useMemo(() => {
-    const sc = app.structuredContent;
+    const sc = app.structuredContent as Record<string, unknown> | undefined | null;
     if (!sc || typeof sc !== 'object' || Array.isArray(sc)) return undefined;
-    return { content: [] as [], structuredContent: sc };
+    return { content: [], structuredContent: sc };
   }, [app.structuredContent]);
 
   const toolInput = useMemo(() => {
@@ -60,8 +60,6 @@ const MCPAppView = React.memo(function MCPAppView({
     () => ({ theme: isDark(themeMode) ? ('dark' as const) : ('light' as const) }),
     [themeMode],
   );
-
-  const hostInfo = useMemo(() => ({ name: 'LibreChat', version: '1.0.0' }), []);
 
   const handleSizeChanged = useCallback((params: { height?: number; width?: number }) => {
     if (params.height && params.height > 0) {
@@ -95,13 +93,12 @@ const MCPAppView = React.memo(function MCPAppView({
         </div>
       )}
       <AppRenderer
-        toolName={app.toolName ?? ''}
+        toolName={(app.toolName as string | undefined) ?? ''}
         sandbox={getMCPSandboxConfig()}
         toolResourceUri={app.uri}
         toolResult={toolResult}
         toolInput={toolInput}
         hostContext={hostContext}
-        hostInfo={hostInfo}
         onCallTool={callbacks.onCallTool}
         onReadResource={callbacks.onReadResource}
         onOpenLink={callbacks.onOpenLink}

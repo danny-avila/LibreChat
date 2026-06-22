@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { AppRenderer } from '@mcp-ui/client';
 import type { UIResource } from 'librechat-data-provider';
-import { useMCPAppCallbacks } from '~/hooks/MCP';
 import { getMCPSandboxConfig } from '~/utils/mcpApps';
+import { useMCPAppCallbacks } from '~/hooks/MCP';
 import { logger } from '~/utils';
 
 interface UIResourceCarouselProps {
@@ -10,13 +10,13 @@ interface UIResourceCarouselProps {
 }
 
 function MCPAppCard({ resource }: { resource: UIResource }) {
-  const callbacks = useMCPAppCallbacks(resource.serverName ?? '');
+  const callbacks = useMCPAppCallbacks((resource.serverName as string | undefined) ?? '');
   const handleError = React.useCallback((err: Error) => logger.error('[MCP App]', err), []);
 
   if (resource.toolName && resource.serverName) {
     return (
       <AppRenderer
-        toolName={resource.toolName}
+        toolName={(resource.toolName as string | undefined) ?? ''}
         sandbox={getMCPSandboxConfig()}
         html={resource.text}
         toolResourceUri={resource.uri}
