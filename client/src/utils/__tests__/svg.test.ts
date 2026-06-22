@@ -66,6 +66,28 @@ describe('isMonochromeSvg', () => {
         '<svg viewBox="0 0 24 24"><path d="M0 0h24v24H0z" fill="#fff" /><path fill="#000" d="M6 6h12v12H6z" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(false);
     });
+
+    it('rejects an explicit light fill combined with a default-black glyph', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><path d="M0 0h24v24H0z" fill="#fff" /><path d="M6 6h12v12H6z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('still tints an explicit black fill combined with a default-black glyph', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><path d="M2 2h4v4H2z" fill="#000" /><path d="M6 6h12v12H6z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('does not add an implicit fill for an explicitly stroked path', () => {
+      const svg = '<svg viewBox="0 0 24 24"><path d="M4 12h16" stroke="#333" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('inherits an ancestor fill instead of assuming the default black', () => {
+      const svg = '<svg viewBox="0 0 24 24"><g fill="#333"><path d="M4 4h16v16H4z" /></g></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
   });
 
   describe('multi-color icons (colors preserved)', () => {
