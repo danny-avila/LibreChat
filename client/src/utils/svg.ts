@@ -196,7 +196,7 @@ function isOpaqueRect(rect: Element): boolean {
 function hasOpaqueBackground(root: Element): boolean {
   const { width, height } = canvasSize(root);
   for (const rect of Array.from(root.querySelectorAll('rect'))) {
-    if (!isOpaqueRect(rect)) {
+    if (!isOpaqueRect(rect) || inNonRenderingContainer(rect, root)) {
       continue;
     }
     if ((readDimension(rect, 'x') ?? 0) > 0 || (readDimension(rect, 'y') ?? 0) > 0) {
@@ -229,7 +229,7 @@ function colorsFromStyleBlocks(root: Element): string[] {
 function collectColors(root: Element): string[] {
   const colors: string[] = [];
   for (const el of [root, ...Array.from(root.querySelectorAll('*'))]) {
-    if (el.nodeName.toLowerCase() === 'style') {
+    if (el.nodeName.toLowerCase() === 'style' || inNonRenderingContainer(el, root)) {
       continue;
     }
     for (const prop of PAINT_PROPS) {
@@ -272,16 +272,20 @@ function inNonRenderingContainer(el: Element, root: Element): boolean {
   return false;
 }
 
+/** Path commands beyond a lone move, i.e. the path actually draws a segment. */
+const PATH_DRAW_COMMAND = /[lhvcsqtaz]/i;
+
 /**
- * True when a shape encloses a fillable area, so its default fill is actually
- * painted. Open paths (and paths with no `d`) enclose nothing, so their default
- * fill is invisible even when the shape is stroked.
+ * True when a shape can render a fillable area, so its default fill is painted.
+ * SVG closes open subpaths when filling, so any path that draws a segment is
+ * counted (conservatively, since computing exact area is unreliable); a path with
+ * no `d` or only a move command, by contrast, paints nothing.
  */
 function rendersFillArea(el: Element): boolean {
   const tag = el.nodeName.toLowerCase();
   if (tag === 'path') {
     const d = el.getAttribute('d');
-    return d != null && /[zZ]/.test(d);
+    return d != null && PATH_DRAW_COMMAND.test(d);
   }
   if (tag === 'text') {
     return (el.textContent ?? '').trim().length > 0;
