@@ -9,7 +9,7 @@ type UploadFileProps = {
 export default function UploadFileButton({ onClick }: UploadFileProps) {
   return (
     <div className="w-full">
-      <Button className="w-full bg-surface-inverted px-3 text-text-inverted" onClick={onClick}>
+      <Button className="w-full bg-black px-3 text-white" onClick={onClick}>
         <PlusIcon className="h-4 w-4 font-bold" />
         &nbsp; <span className="text-nowrap">Upload New File</span>
       </Button>

@@ -113,8 +113,7 @@ export default function MemoryCardActions({ memory }: MemoryCardActionsProps) {
           }
           selection={{
             selectHandler: confirmDelete,
-            selectClasses:
-              'bg-surface-destructive text-white hover:bg-surface-destructive-hover',
+            selectClasses: 'bg-surface-destructive text-white hover:bg-surface-destructive-hover',
             selectText: localize('com_ui_delete'),
           }}
         />

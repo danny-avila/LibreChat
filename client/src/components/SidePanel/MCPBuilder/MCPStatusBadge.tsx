@@ -38,10 +38,7 @@ export default function MCPStatusBadge({
       <div
         role="status"
         aria-live="polite"
-        className={cn(
-          badgeBaseClass,
-          'bg-status-info-subtle text-status-info',
-        )}
+        className={cn(badgeBaseClass, 'bg-status-info-subtle text-status-info')}
       >
         <Spinner className="size-3" />
         <span>{localize('com_nav_mcp_status_initializing')}</span>
@@ -61,10 +58,7 @@ export default function MCPStatusBadge({
       <div
         role="status"
         aria-live="polite"
-        className={cn(
-          badgeBaseClass,
-          'bg-status-info-subtle text-status-info',
-        )}
+        className={cn(badgeBaseClass, 'bg-status-info-subtle text-status-info')}
       >
         <Spinner className="size-3" />
         <span>{localize('com_nav_mcp_status_connecting')}</span>
@@ -79,10 +73,7 @@ export default function MCPStatusBadge({
       return (
         <div
           role="status"
-          className={cn(
-            badgeBaseClass,
-            'bg-status-warning-subtle text-status-warning',
-          )}
+          className={cn(badgeBaseClass, 'bg-status-warning-subtle text-status-warning')}
         >
           <PlugZap className="size-3" aria-hidden="true" />
           <span>{localize('com_nav_mcp_status_needs_auth')}</span>
@@ -93,10 +84,7 @@ export default function MCPStatusBadge({
     return (
       <div
         role="status"
-        className={cn(
-          badgeBaseClass,
-          'bg-status-neutral-subtle text-status-neutral',
-        )}
+        className={cn(badgeBaseClass, 'bg-status-neutral-subtle text-status-neutral')}
       >
         <span>{localize('com_nav_mcp_status_disconnected')}</span>
       </div>
@@ -106,10 +94,7 @@ export default function MCPStatusBadge({
   // Error state - red
   if (connectionState === 'error') {
     return (
-      <div
-        role="status"
-        className={cn(badgeBaseClass, 'bg-status-error-subtle text-status-error')}
-      >
+      <div role="status" className={cn(badgeBaseClass, 'bg-status-error-subtle text-status-error')}>
         <span>{localize('com_nav_mcp_status_error')}</span>
       </div>
     );
@@ -120,10 +105,7 @@ export default function MCPStatusBadge({
     return (
       <div
         role="status"
-        className={cn(
-          badgeBaseClass,
-          'bg-status-success-subtle text-status-success',
-        )}
+        className={cn(badgeBaseClass, 'bg-status-success-subtle text-status-success')}
       >
         <Check className="size-3" aria-hidden="true" />
         <span>{localize('com_nav_mcp_status_connected')}</span>
