@@ -169,6 +169,37 @@ export function isValidBinding(binding: ShortcutBinding): {
   return { valid: false, reason: 'noModifier' };
 }
 
+export type ComposerEnterAction = 'submit' | 'newline' | 'none';
+
+/**
+ * Resolves what an Enter press should do in the composer when `submitMessage` has been rebound.
+ * The configured chord submits; a bare Enter still submits when "Enter to send" is on; any other
+ * non-shift Enter inserts a newline. Returns `none` for Shift+Enter and non-Enter keys so the
+ * caller leaves the browser's default behavior untouched.
+ */
+export function resolveSubmitOverrideAction(
+  eventBinding: ShortcutBinding | null,
+  submitOverride: ShortcutBinding | null,
+  enterToSend: boolean,
+): ComposerEnterAction {
+  if (!eventBinding || eventBinding.key !== 'Enter') {
+    return 'none';
+  }
+  const matchesChord =
+    submitOverride != null &&
+    submitOverride.key === 'Enter' &&
+    bindingHash(eventBinding) === bindingHash(submitOverride);
+  const isPlainEnter =
+    !eventBinding.meta && !eventBinding.ctrl && !eventBinding.alt && !eventBinding.shift;
+  if (matchesChord || (isPlainEnter && enterToSend)) {
+    return 'submit';
+  }
+  if (!eventBinding.shift) {
+    return 'newline';
+  }
+  return 'none';
+}
+
 export function isCancelKey(e: KeyboardEvent): boolean {
   return e.key === 'Escape' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
 }

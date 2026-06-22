@@ -9,6 +9,7 @@ import {
   isValidBinding,
   bindingTokens,
   bindingToString,
+  resolveSubmitOverrideAction,
   bindingFromEvent,
   bindingDisplayKeys,
   bindingDisplayString,
@@ -168,6 +169,44 @@ describe('isValidBinding', () => {
   it('rejects unmodified and shift-only printable keys', () => {
     expect(isValidBinding(makeBinding({ key: 'A' })).valid).toBe(false);
     expect(isValidBinding(makeBinding({ shift: true, key: 'A' })).valid).toBe(false);
+  });
+});
+
+describe('resolveSubmitOverrideAction', () => {
+  const altEnter = makeBinding({ alt: true, key: 'Enter' });
+
+  it('submits when the event matches the configured chord', () => {
+    expect(resolveSubmitOverrideAction(altEnter, altEnter, false)).toBe('submit');
+  });
+
+  it('newlines on the default Ctrl+Enter once the chord has been rebound', () => {
+    const ctrlEnter = makeBinding({ ctrl: true, key: 'Enter' });
+    expect(resolveSubmitOverrideAction(ctrlEnter, altEnter, false)).toBe('newline');
+    expect(resolveSubmitOverrideAction(ctrlEnter, altEnter, true)).toBe('newline');
+  });
+
+  it('still submits a bare Enter when Enter-to-send is on', () => {
+    const plainEnter = makeBinding({ key: 'Enter' });
+    expect(resolveSubmitOverrideAction(plainEnter, altEnter, true)).toBe('submit');
+    expect(resolveSubmitOverrideAction(plainEnter, altEnter, false)).toBe('newline');
+  });
+
+  it('treats an unbound submit shortcut as disabled while keeping Enter-to-send', () => {
+    const ctrlEnter = makeBinding({ ctrl: true, key: 'Enter' });
+    const plainEnter = makeBinding({ key: 'Enter' });
+    expect(resolveSubmitOverrideAction(ctrlEnter, null, false)).toBe('newline');
+    expect(resolveSubmitOverrideAction(plainEnter, null, true)).toBe('submit');
+    expect(resolveSubmitOverrideAction(plainEnter, null, false)).toBe('newline');
+  });
+
+  it('leaves Shift+Enter and non-Enter keys to the default behavior', () => {
+    expect(
+      resolveSubmitOverrideAction(makeBinding({ shift: true, key: 'Enter' }), altEnter, true),
+    ).toBe('none');
+    expect(resolveSubmitOverrideAction(makeBinding({ ctrl: true, key: 'J' }), altEnter, true)).toBe(
+      'none',
+    );
+    expect(resolveSubmitOverrideAction(null, altEnter, true)).toBe('none');
   });
 });
 
