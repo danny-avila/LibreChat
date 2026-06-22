@@ -599,6 +599,18 @@ endpoints:
       # NOTE: For Mistral, it is necessary to drop the following parameters or you will encounter a 422 Error:
       dropParams: ['stop', 'user', 'frequency_penalty', 'presence_penalty']
 
+    - name: 'nearai'
+      apiKey: '${NEARAI_API_KEY}'
+      baseURL: 'https://cloud-api.near.ai/v1'
+      models:
+        default:
+          - 'z-ai/glm-5.2'
+          - 'deepseek-ai/DeepSeek-V4-Flash'
+        fetch: true
+      titleConvo: true
+      titleModel: 'z-ai/glm-5.2'
+      modelDisplayLabel: 'NEAR AI Cloud'
+
     # OpenRouter Example
     - name: 'OpenRouter'
       # For `apiKey` and `baseURL`, you can use environment variables that you define.
