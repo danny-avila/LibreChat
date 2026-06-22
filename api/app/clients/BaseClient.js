@@ -584,6 +584,7 @@ class BaseClient {
       );
     }
 
+    this.sanitizeBedrockPayload(payload);
     const { completion, metadata } = await this.sendCompletion(payload, opts);
     if (this.abortController) {
       this.abortController.requestCompleted = true;
@@ -1143,11 +1144,42 @@ class BaseClient {
     return mergedContent.concat(newCompletion.slice(1));
   }
 
+  sanitizeBedrockPayload(payload) {
+    const provider = this.options.agent?.provider ?? this.options.endpoint;
+
+    if (provider !== EModelEndpoint.bedrock || !Array.isArray(payload?.messages)) {
+      return;
+    }
+
+    payload.messages = payload.messages
+      .map((message) => {
+        if (!Array.isArray(message.content)) {
+          return message;
+        }
+
+        const content = message.content.filter((block) => {
+          const text = block?.reasoningContent?.reasoningText?.text;
+          return text !== null && text !== undefined && text !== '';
+        });
+
+        if (content.length === 0) {
+          return null;
+        }
+
+        return {
+          ...message,
+          content,
+        };
+      })
+      .filter(Boolean);
+  }
+
+
   async sendPayload(payload, opts = {}) {
     if (opts && typeof opts === 'object') {
       this.setOptions(opts);
     }
-
+    this.sanitizeBedrockPayload(payload);
     return await this.sendCompletion(payload, opts);
   }
 
