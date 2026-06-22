@@ -79,14 +79,38 @@ describe('isMonochromeSvg', () => {
       expect(isMonochromeSvg(svg)).toBe(true);
     });
 
-    it('does not add an implicit fill for an explicitly stroked path', () => {
+    it('does not add an implicit fill for a stroked open path (no enclosed area)', () => {
       const svg = '<svg viewBox="0 0 24 24"><path d="M4 12h16" stroke="#333" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('rejects a closed stroked path that still renders its default black fill', () => {
+      const svg = '<svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z" stroke="#fff" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
     });
 
     it('inherits an ancestor fill instead of assuming the default black', () => {
       const svg = '<svg viewBox="0 0 24 24"><g fill="#333"><path d="M4 4h16v16H4z" /></g></svg>';
       expect(isMonochromeSvg(svg)).toBe(true);
+    });
+  });
+
+  describe('currentColor (a visible, theme-following tone)', () => {
+    it('tints an icon painted entirely with currentColor', () => {
+      const svg = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 4h16v16H4z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('preserves currentColor mixed with an explicit light paint', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><path d="M0 0h24v24H0z" fill="#fff" /><path fill="currentColor" d="M6 6h12v12H6z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('preserves currentColor mixed with a default-black glyph', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M2 2h4v4H2z" /><path d="M6 6h12v12H6z" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
     });
   });
 
