@@ -114,15 +114,12 @@ describe('MemoryInfo', () => {
       const errorMessage = screen.getByText(
         'Cannot save - would exceed limit by 50 tokens. Delete existing memories to make space.',
       );
-      const errorContainer = errorMessage.closest('div');
+      const errorContainer = errorMessage.closest('[role="alert"]');
 
-      expect(errorContainer).toHaveClass('rounded-md');
-      expect(errorContainer).toHaveClass('bg-red-50');
+      expect(errorContainer).toHaveClass('bg-status-error-subtle');
+      expect(errorContainer).toHaveClass('text-status-error');
+      expect(errorContainer).toHaveClass('border-status-error-border');
       expect(errorContainer).toHaveClass('p-3');
-      expect(errorContainer).toHaveClass('text-sm');
-      expect(errorContainer).toHaveClass('text-red-800');
-      expect(errorContainer).toHaveClass('dark:bg-red-900/20');
-      expect(errorContainer).toHaveClass('dark:text-red-400');
     });
   });
 
