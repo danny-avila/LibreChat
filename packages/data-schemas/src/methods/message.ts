@@ -2,7 +2,6 @@ import { RetentionMode, isForcedTemporaryRetention } from 'librechat-data-provid
 import type { DeleteResult, FilterQuery, Model } from 'mongoose';
 import type { AppConfig, IConversation, IMessage } from '~/types';
 import {
-  conversationNeedsForcedRetention,
   createFallbackRetentionDate,
   forceConversationMessagesTemporary,
   forcedRetentionGapFilter,
@@ -23,7 +22,7 @@ export interface MessageMethods {
   saveMessage(
     ctx: { userId: string; isTemporary?: boolean; interfaceConfig?: AppConfig['interfaceConfig'] },
     params: Partial<IMessage> & { newMessageId?: string },
-    metadata?: { context?: string },
+    metadata?: { context?: string; capExpiryToConversation?: boolean },
   ): Promise<IMessage | null | undefined>;
   bulkSaveMessages(
     messages: Array<Partial<IMessage>>,
@@ -85,7 +84,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       interfaceConfig?: AppConfig['interfaceConfig'];
     },
     params: Partial<IMessage> & { newMessageId?: string },
-    metadata?: { context?: string },
+    metadata?: { context?: string; capExpiryToConversation?: boolean },
   ) {
     if (!userId) {
       throw new Error('User not authenticated');
@@ -151,19 +150,28 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
 
       const forcedExpiredAt = update.expiredAt;
       const isForcedRetention = isForcedTemporaryRetention(interfaceConfig?.retentionMode);
-      let parentRetention: { isTemporary?: boolean | null; expiredAt?: Date | null } | null = null;
-      if (isForcedRetention && forcedExpiredAt instanceof Date) {
+      /**
+       * Message-only saves (branch/artifact/abort) never run `saveConvo`, so the new
+       * message must not outlive a parent that already expires sooner. Callers that DO
+       * refresh the conversation afterward must not opt in, otherwise the message keeps
+       * the stale deadline and the TTL index deletes it before the refreshed conversation.
+       */
+      if (
+        isForcedRetention &&
+        forcedExpiredAt instanceof Date &&
+        metadata?.capExpiryToConversation === true
+      ) {
         const Conversation = mongoose.models.Conversation as Model<IConversation>;
-        parentRetention = await Conversation.findOne(
+        const parent = await Conversation.findOne(
           { conversationId, user: userId },
           'isTemporary expiredAt',
         ).lean<{ isTemporary?: boolean | null; expiredAt?: Date | null } | null>();
         if (
-          parentRetention?.isTemporary === true &&
-          parentRetention.expiredAt != null &&
-          parentRetention.expiredAt.getTime() < forcedExpiredAt.getTime()
+          parent?.isTemporary === true &&
+          parent.expiredAt != null &&
+          parent.expiredAt.getTime() < forcedExpiredAt.getTime()
         ) {
-          update.expiredAt = parentRetention.expiredAt;
+          update.expiredAt = parent.expiredAt;
         }
       }
 
@@ -186,11 +194,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         message.isTemporary = false;
       }
 
-      if (
-        isForcedRetention &&
-        forcedExpiredAt instanceof Date &&
-        conversationNeedsForcedRetention(parentRetention, forcedExpiredAt)
-      ) {
+      if (isForcedRetention && forcedExpiredAt instanceof Date) {
         const Conversation = mongoose.models.Conversation as Model<IConversation>;
         const convoResult = await Conversation.updateOne(
           {
