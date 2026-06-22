@@ -4,7 +4,7 @@ const yaml = require('js-yaml');
 const keyBy = require('lodash/keyBy');
 const { loadYaml } = require('@librechat/api');
 const { Providers } = require('@librechat/agents');
-const { logger } = require('@librechat/data-schemas');
+const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
   configSchema,
   paramSettings,
@@ -183,7 +183,7 @@ https://www.librechat.ai/docs/configuration/stt_tts`);
           'No custom categories `list` provided; only default-category toggling will run.',
         );
       }
-      await syncCategories(customCategoriesList, enableDefaultCategories);
+      await runAsSystem(() => syncCategories(customCategoriesList, enableDefaultCategories));
     }
   }
 
