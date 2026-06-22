@@ -71,6 +71,19 @@ function resolveRequestOrigin(req) {
   }
 }
 
+async function isEmailAllowedForUser(user) {
+  if (!user?.email) return false;
+  try {
+    const appConfig = user.tenantId
+      ? await resolveAppConfigForUser(getAppConfig, user)
+      : await getAppConfig({ role: user.role ?? '' });
+    return isEmailDomainAllowed(user.email, appConfig?.registration?.allowedDomains);
+  } catch (err) {
+    logger.warn(`[admin/oauth/refresh] domain allowlist check failed, denying: ${err?.message}`);
+    return false;
+  }
+}
+
 function buildAdminRefreshClosures(sessionExpiry) {
   return {
     canAccessAdmin: async (user) => {
@@ -88,6 +101,7 @@ function buildAdminRefreshClosures(sessionExpiry) {
         return false;
       }
     },
+    isEmailAllowed: isEmailAllowedForUser,
     mintToken: async (user) => ({
       token: await generateToken(user, sessionExpiry),
       expiresAt: Date.now() + sessionExpiry,
@@ -100,20 +114,6 @@ function buildGoogleAdminRefreshDeps(sessionExpiry) {
     findUsers,
     getUserById,
     ...buildAdminRefreshClosures(sessionExpiry),
-    isEmailAllowed: async (user) => {
-      if (!user?.email) return false;
-      try {
-        const appConfig = user.tenantId
-          ? await resolveAppConfigForUser(getAppConfig, user)
-          : await getAppConfig({ baseOnly: true });
-        return isEmailDomainAllowed(user.email, appConfig?.registration?.allowedDomains);
-      } catch (err) {
-        logger.warn(
-          `[admin/oauth/refresh] domain allowlist check failed, denying: ${err?.message}`,
-        );
-        return false;
-      }
-    },
   };
 }
 
@@ -564,6 +564,7 @@ router.post('/oauth/exchange', middleware.loginLimiter, async (req, res) => {
 router.post(
   '/oauth/refresh',
   middleware.loginLimiter,
+  middleware.checkBan,
   preAuthTenantMiddleware,
   async (req, res) => {
     try {
