@@ -11,7 +11,8 @@ CHART_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPO_ROOT="$(cd "${CHART_DIR}/../.." && pwd)"
 RENDER_CHART_DIR="$(mktemp -d -t librechat-fanout-chart.XXXXXX)"
 RENDERED_FILE="$(mktemp -t librechat-fanout-render.XXXXXX)"
-trap 'rm -rf "${RENDER_CHART_DIR}"; rm -f "${RENDERED_FILE}"' EXIT
+INVALID_RENDER_ERROR="$(mktemp -t librechat-fanout-invalid-key.XXXXXX)"
+trap 'rm -rf "${RENDER_CHART_DIR}"; rm -f "${RENDERED_FILE}" "${INVALID_RENDER_ERROR}"' EXIT
 
 if ! command -v helm >/dev/null 2>&1; then
   echo "FAIL: helm not on PATH" >&2
@@ -38,6 +39,22 @@ helm template librechat "${RENDER_CHART_DIR}" \
   --show-only templates/langfuse-fanout-deployment.yaml \
   --show-only templates/langfuse-fanout-configmap.yaml \
   > "${RENDERED_FILE}"
+
+if helm template librechat "${RENDER_CHART_DIR}" \
+  --set langfuseFanout.enabled=true \
+  --set langfuseFanout.central.authHeaderSecret.name=langfuse-central \
+  --set langfuseFanout.tenant.destinations.EU.baseUrl=https://cloud.langfuse.com \
+  --show-only templates/langfuse-fanout-configmap.yaml \
+  > /dev/null 2> "${INVALID_RENDER_ERROR}"; then
+  echo "FAIL: Helm accepted invalid uppercase Langfuse fanout destination key" >&2
+  exit 1
+fi
+
+if ! grep -q 'langfuseFanout.tenant.destinations key "EU" is invalid' "${INVALID_RENDER_ERROR}"; then
+  echo "FAIL: invalid destination key render did not explain the key contract" >&2
+  cat "${INVALID_RENDER_ERROR}" >&2
+  exit 1
+fi
 
 if ! command -v node >/dev/null 2>&1; then
   echo "FAIL: node not on PATH" >&2

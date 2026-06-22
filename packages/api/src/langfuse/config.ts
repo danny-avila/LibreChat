@@ -1,8 +1,8 @@
 import type { AppConfig } from '@librechat/data-schemas';
 import type { RunConfig } from '@librechat/agents';
 import { resolveLangfuseTenantDestination } from './tenantDestinations';
+import { isTrueEnv, normalizeBoolean } from './utils';
 import { normalizeString } from '~/utils/text';
-import { isTrueEnv } from './utils';
 
 type LangfuseRunConfig = NonNullable<RunConfig['langfuse']>;
 type LangfuseAppConfig = NonNullable<AppConfig['langfuse']>;
@@ -21,10 +21,8 @@ export function isLangfuseTenantExportEnabled(): boolean {
 }
 
 export function isLangfuseFanoutEnabled(fanout?: LangfuseFanoutConfig): boolean {
-  return (
-    fanout?.enabled !== false &&
-    (fanout?.enabled === true || isTrueEnv(process.env.LANGFUSE_FANOUT_ENABLED))
-  );
+  const enabled = normalizeBoolean(fanout?.enabled);
+  return enabled !== false && (enabled === true || isTrueEnv(process.env.LANGFUSE_FANOUT_ENABLED));
 }
 
 function mergeTraceMetadata(
@@ -83,7 +81,7 @@ export function buildLangfuseConfig({
     langfuse.tags = tags;
   }
 
-  if (config?.enabled === false) {
+  if (normalizeBoolean(config?.enabled) === false) {
     return {
       ...langfuse,
       enabled: false,

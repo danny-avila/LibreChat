@@ -41,6 +41,7 @@ spec:
                   name: {{ required "langfuseFanout.central.authHeaderSecret.name is required when langfuseFanout.enabled=true" .Values.langfuseFanout.central.authHeaderSecret.name | quote }}
                   key: {{ .Values.langfuseFanout.central.authHeaderSecret.key | quote }}
             {{- range $name, $destination := .Values.langfuseFanout.tenant.destinations }}
+            {{- include "librechat.langfuseFanout.validateDestinationKey" $name }}
             - name: LANGFUSE_FANOUT_TENANT_{{ $name | upper | replace "-" "_" }}_BASE_URL
               value: {{ $destination.baseUrl | quote }}
             {{- end }}

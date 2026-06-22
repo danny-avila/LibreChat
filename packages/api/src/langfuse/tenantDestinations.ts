@@ -99,8 +99,7 @@ export function getLangfuseTenantDestinations(): LangfuseTenantDestination[] {
 export function resolveLangfuseTenantDestination(
   baseUrl: unknown,
 ): LangfuseTenantDestination | undefined {
-  const normalizedBaseUrl =
-    normalizeBaseUrl(baseUrl) ?? normalizeBaseUrl(process.env[LEGACY_TENANT_BASE_URL_ENV]);
+  const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
 
   if (!normalizedBaseUrl) {
     return undefined;

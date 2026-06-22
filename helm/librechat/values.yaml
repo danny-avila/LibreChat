@@ -300,6 +300,8 @@ langfuseFanout:
       name: ""
       key: LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER
   tenant:
+    # Destination map keys are emitted by LibreChat as trace attributes and
+    # matched by the collector. Use lowercase keys matching ^[a-z][a-z0-9_-]*$.
     destinations:
       eu:
         baseUrl: https://cloud.langfuse.com

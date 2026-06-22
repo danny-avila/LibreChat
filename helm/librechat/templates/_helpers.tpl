@@ -75,6 +75,18 @@ Langfuse fanout collector labels.
 {{- end }}
 
 {{/*
+Validate Langfuse fanout destination keys. LibreChat normalizes destination
+keys to lowercase before putting them on trace attributes, so Helm values must
+already use the same lowercase key shape for collector routing to match.
+*/}}
+{{- define "librechat.langfuseFanout.validateDestinationKey" -}}
+{{- $name := printf "%v" . -}}
+{{- if not (regexMatch "^[a-z][a-z0-9_-]*$" $name) -}}
+{{- fail (printf "langfuseFanout.tenant.destinations key %q is invalid; use lowercase keys matching ^[a-z][a-z0-9_-]*$ so LibreChat trace attributes match collector routes" $name) -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 RAG Selector labels
 */}}
 {{- define "rag.selectorLabels" -}}

@@ -27,6 +27,7 @@ data:
         error_mode: ignore
         table:
           {{- range $name, $_destination := .Values.langfuseFanout.tenant.destinations }}
+          {{- include "librechat.langfuseFanout.validateDestinationKey" $name }}
           - context: span
             condition: attributes["librechat.langfuse.destination"] == {{ $name | quote }}
             pipelines: [traces/tenant_{{ $name }}]
@@ -52,6 +53,7 @@ data:
         timeout: ${env:LANGFUSE_FANOUT_BATCH_TIMEOUT}
         send_batch_size: ${env:LANGFUSE_FANOUT_BATCH_SEND_SIZE}
       {{- range $name, $_destination := .Values.langfuseFanout.tenant.destinations }}
+      {{- include "librechat.langfuseFanout.validateDestinationKey" $name }}
       batch/by_auth_{{ $name }}:
         timeout: ${env:LANGFUSE_FANOUT_BATCH_TIMEOUT}
         send_batch_size: ${env:LANGFUSE_FANOUT_BATCH_SEND_SIZE}
@@ -68,6 +70,7 @@ data:
           Authorization: "${env:LANGFUSE_FANOUT_CENTRAL_AUTH_HEADER}"
           x-langfuse-ingestion-version: "4"
       {{- range $name, $_destination := .Values.langfuseFanout.tenant.destinations }}
+      {{- include "librechat.langfuseFanout.validateDestinationKey" $name }}
       otlphttp/tenant_{{ $name }}:
         endpoint: "${env:LANGFUSE_FANOUT_TENANT_{{ $name | upper | replace "-" "_" }}_BASE_URL}/api/public/otel"
         auth:
@@ -88,6 +91,7 @@ data:
           processors: [memory_limiter, filter/tenant_export]
           exporters: [routing/langfuse_tenant_destination]
         {{- range $name, $_destination := .Values.langfuseFanout.tenant.destinations }}
+        {{- include "librechat.langfuseFanout.validateDestinationKey" $name }}
         traces/tenant_{{ $name }}:
           receivers: [routing/langfuse_tenant_destination]
           processors: [attributes/drop_librechat_routing, batch/by_auth_{{ $name }}]
