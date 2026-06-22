@@ -224,21 +224,16 @@ const streamSharedFile = async (req, res, file, requestedDisposition) => {
 };
 
 if (allowSharedLinks) {
-  router.get(
-    '/:shareId/config',
-    optionalJwtAuth,
-    canAccessSharedLink,
-    async (_req, res) => {
-      try {
-        const payload = await getShareStartupPayload();
-        res.set('Cache-Control', 'private, no-store');
-        res.status(200).json(payload);
-      } catch (error) {
-        logger.error('Error getting shared startup config:', error);
-        res.status(500).json({ message: 'Error getting shared startup config' });
-      }
-    },
-  );
+  router.get('/:shareId/config', optionalJwtAuth, canAccessSharedLink, async (_req, res) => {
+    try {
+      const payload = await getShareStartupPayload();
+      res.set('Cache-Control', 'private, no-store');
+      res.status(200).json(payload);
+    } catch (error) {
+      logger.error('Error getting shared startup config:', error);
+      res.status(500).json({ message: 'Error getting shared startup config' });
+    }
+  });
 
   router.get(
     '/:shareId',

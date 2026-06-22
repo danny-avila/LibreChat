@@ -91,8 +91,11 @@ jest.mock('~/server/utils/files', () => ({
   getContentDisposition: jest.fn((name, disposition = 'attachment') => `${disposition}; ${name}`),
 }));
 
-jest.mock('~/server/middleware/canAccessSharedLink', () => (...args) =>
-  mockCanAccessSharedLink(...args),
+jest.mock(
+  '~/server/middleware/canAccessSharedLink',
+  () =>
+    (...args) =>
+      mockCanAccessSharedLink(...args),
 );
 jest.mock('~/server/middleware/optionalShareFileAuth', () => (_req, _res, next) => next());
 jest.mock('~/server/middleware/optionalJwtAuth', () => (req, _res, next) => next());

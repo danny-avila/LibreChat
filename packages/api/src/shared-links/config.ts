@@ -1,17 +1,8 @@
-import type { TSharedLinkStartupConfig } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
+import type { TSharedLinkStartupConfig } from 'librechat-data-provider';
 import { isEnabled } from '~/utils';
 
-type SharedLinkStartupEnv = Partial<
-  Pick<
-    NodeJS.ProcessEnv,
-    | 'ANALYTICS_GTM_ID'
-    | 'APP_TITLE'
-    | 'CUSTOM_FOOTER'
-    | 'SANDPACK_BUNDLER_URL'
-    | 'SANDPACK_STATIC_BUNDLER_URL'
-  >
->;
+type SharedLinkStartupEnv = NodeJS.ProcessEnv;
 
 /**
  * Whether shared links should snapshot the files referenced by the shared chat
