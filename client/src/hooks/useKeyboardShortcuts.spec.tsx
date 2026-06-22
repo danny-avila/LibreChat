@@ -266,7 +266,7 @@ function bindSubmitMessage(binding: string) {
 }
 
 describe('composer submit shortcuts', () => {
-  it('runs a custom Alt+Enter submit binding inside the composer when Enter-to-send is off', () => {
+  it('defers a custom Alt+Enter submit binding in the composer to the textarea', () => {
     window.localStorage.setItem('enterToSend', 'false');
     bindSubmitMessage('Alt+Enter');
     renderHarness();
@@ -275,8 +275,8 @@ describe('composer submit shortcuts', () => {
 
     const event = dispatchKey({ key: 'Enter', altKey: true }, textarea);
 
-    expect(sendClick).toHaveBeenCalledTimes(1);
-    expect(event.defaultPrevented).toBe(true);
+    expect(sendClick).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
   });
 
   it('defers Ctrl/Cmd+Enter in the composer to the native textarea submit', () => {
@@ -290,16 +290,15 @@ describe('composer submit shortcuts', () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
-  it('defers a custom Alt+Enter binding to the textarea when Enter-to-send is on', () => {
+  it('runs a custom Alt+Enter submit binding outside the composer', () => {
     bindSubmitMessage('Alt+Enter');
     renderHarness();
     const sendClick = appendSendButton();
-    const textarea = appendMainTextarea();
 
-    const event = dispatchKey({ key: 'Enter', altKey: true }, textarea);
+    const event = dispatchKey({ key: 'Enter', altKey: true });
 
-    expect(sendClick).not.toHaveBeenCalled();
-    expect(event.defaultPrevented).toBe(false);
+    expect(sendClick).toHaveBeenCalledTimes(1);
+    expect(event.defaultPrevented).toBe(true);
   });
 });
 

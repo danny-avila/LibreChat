@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useMemo } from 'react';
 import debounce from 'lodash/debounce';
 import { useRecoilValue, useRecoilState } from 'recoil';
 import type { TEndpointOption } from 'librechat-data-provider';
@@ -10,6 +10,7 @@ import {
   getEntity,
   checkIfScrollable,
 } from '~/utils';
+import { bindingHash, parseBinding, isMacPlatform, bindingFromEvent } from '~/utils/shortcuts';
 import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
 import { useLatestMessage } from '~/hooks/Messages/useLatestMessage';
 import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
@@ -44,6 +45,21 @@ export default function useTextarea({
   const assistantMap = useAssistantsMapContext();
   const checkHealth = useInteractionHealthCheck();
   const enterToSend = useRecoilValue(store.enterToSend);
+  const customShortcuts = useRecoilValue(store.customShortcuts);
+
+  /**
+   * Effective submit binding when it has been rebound to an Enter-based chord the textarea does
+   * not otherwise treat as submit (e.g. Alt+Enter). Handling it here keeps the composer from
+   * inserting a newline before the global shortcut handler can act.
+   */
+  const customSubmitBinding = useMemo(() => {
+    const override = customShortcuts['submitMessage'];
+    if (!override) {
+      return null;
+    }
+    const binding = parseBinding(isMacPlatform ? override.mac : override.other);
+    return binding?.key === 'Enter' ? binding : null;
+  }, [customShortcuts]);
 
   const { index, conversation, isSubmitting, filesLoading, setFilesLoading } = useChatContext();
   const latestMessage = useLatestMessage(index);
@@ -165,6 +181,15 @@ export default function useTextarea({
       // NOTE: isComposing and e.key behave differently in Safari compared to other browsers, forcing us to use e.keyCode instead
       const isComposingInput = isComposing.current || e.key === 'Process' || e.keyCode === 229;
 
+      if (customSubmitBinding && !isComposingInput) {
+        const eventBinding = bindingFromEvent(e.nativeEvent);
+        if (eventBinding && bindingHash(eventBinding) === bindingHash(customSubmitBinding)) {
+          e.preventDefault();
+          submitButtonRef.current?.click();
+          return;
+        }
+      }
+
       if (isNonShiftEnter && filesLoading) {
         e.preventDefault();
       }
@@ -200,6 +225,7 @@ export default function useTextarea({
       checkHealth,
       filesLoading,
       enterToSend,
+      customSubmitBinding,
       setIsScrollable,
       textAreaRef,
       submitButtonRef,
