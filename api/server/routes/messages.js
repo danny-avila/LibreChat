@@ -182,7 +182,7 @@ router.post('/branch', configMiddleware, async (req, res) => {
         interfaceConfig: req?.config?.interfaceConfig,
       },
       newMessage,
-      { context: 'POST /api/messages/branch' },
+      { context: 'POST /api/messages/branch', capExpiryToConversation: true },
     );
 
     if (!savedMessage) {
@@ -263,7 +263,7 @@ router.post('/artifact/:messageId', configMiddleware, async (req, res) => {
         content: message.content,
         user: req.user.id,
       },
-      { context: 'POST /api/messages/artifact/:messageId' },
+      { context: 'POST /api/messages/artifact/:messageId', capExpiryToConversation: true },
     );
 
     res.status(200).json({
