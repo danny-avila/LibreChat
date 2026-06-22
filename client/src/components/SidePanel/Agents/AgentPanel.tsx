@@ -580,7 +580,7 @@ export default function AgentPanel() {
                 <p className="text-token-text-secondary">{localize('com_agents_no_access')}</p>
                 {/* NJ: Give users a way to edit their own copy of an agent */}
                 <Button variant="submit" className="mt-4" onClick={handleDuplicate}>
-                  Duplicate & edit<span className="sr-only"> agent {agentQuery?.data?.name}</span>
+                  Duplicate<span className="sr-only"> agent {agentQuery?.data?.name}</span>
                 </Button>
               </div>
             </div>
