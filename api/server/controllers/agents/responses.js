@@ -46,6 +46,7 @@ const {
   sendResponsesErrorResponse,
   createResponsesEventHandlers,
   createAggregatorEventHandlers,
+  getLangfuseUserId,
 } = require('@librechat/api');
 const {
   createResponsesToolEndCallback,
@@ -793,7 +794,7 @@ const createResponse = async (req, res) => {
         runName: 'AgentRun',
         configurable: {
           thread_id: conversationId,
-          user_id: userId,
+          user_id: getLangfuseUserId(req.user) ?? userId,
           user: createSafeUser(req.user),
           requestBody: {
             messageId: responseId,
@@ -970,7 +971,7 @@ const createResponse = async (req, res) => {
         runName: 'AgentRun',
         configurable: {
           thread_id: conversationId,
-          user_id: userId,
+          user_id: getLangfuseUserId(req.user) ?? userId,
           user: createSafeUser(req.user),
           requestBody: {
             messageId: responseId,

@@ -35,6 +35,7 @@ const {
   resolveAgentScopedSkillIds,
   createOpenAIContentAggregator,
   isChatCompletionValidationFailure,
+  getLangfuseUserId,
 } = require('@librechat/api');
 const {
   buildSummarizationHandlers,
@@ -757,7 +758,7 @@ const OpenAIChatCompletionController = async (req, res) => {
       runName: 'AgentRun',
       configurable: {
         thread_id: conversationId,
-        user_id: userId,
+        user_id: getLangfuseUserId(req.user) ?? userId,
         user: createSafeUser(req.user),
         requestBody: {
           messageId: responseId,
