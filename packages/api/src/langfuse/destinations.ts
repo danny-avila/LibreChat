@@ -1,6 +1,7 @@
 import type { AppConfig } from '@librechat/data-schemas';
-import { isFalseEnv, isTrueEnv, normalizeString, toBasicAuthorization } from './utils';
 import { resolveLangfuseTenantDestination } from './tenantDestinations';
+import { isFalseEnv, isTrueEnv, toBasicAuthorization } from './utils';
+import { normalizeString } from '~/utils/text';
 
 const DEFAULT_BASE_URL = 'https://cloud.langfuse.com';
 

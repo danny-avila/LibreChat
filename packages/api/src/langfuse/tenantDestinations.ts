@@ -1,4 +1,4 @@
-import { normalizeString } from './utils';
+import { normalizeString } from '~/utils/text';
 
 const DEFAULT_TENANT_DESTINATIONS: Array<[string, string]> = [
   ['eu', 'https://cloud.langfuse.com'],

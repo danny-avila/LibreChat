@@ -1,7 +1,8 @@
 import type { AppConfig } from '@librechat/data-schemas';
 import type { RunConfig } from '@librechat/agents';
 import { resolveLangfuseTenantDestination } from './tenantDestinations';
-import { isTrueEnv, normalizeString } from './utils';
+import { normalizeString } from '~/utils/text';
+import { isTrueEnv } from './utils';
 
 type LangfuseRunConfig = NonNullable<RunConfig['langfuse']>;
 type LangfuseRunConfigWithTraceAttributes = LangfuseRunConfig & {

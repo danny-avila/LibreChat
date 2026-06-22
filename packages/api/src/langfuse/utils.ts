@@ -1,7 +1,3 @@
-export function normalizeString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
-}
-
 export function isFalseEnv(value?: string): boolean {
   return value != null && ['0', 'false', 'no', 'off'].includes(value.trim().toLowerCase());
 }
