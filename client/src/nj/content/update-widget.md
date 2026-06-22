@@ -1,19 +1,19 @@
 # Date (as month/day/year)
 
-6/17/26
+6/23/26
 
 # Title
 
-New chat management features are here!
+Use Agents for Repeated Tasks and Skills! 
 
 # Description
 
-We heard you\! You can now organize chats into project folders, and pin your favorites to the top.
+Save time with agents for repetitive tasks and specialized skills\! Agents remember your prompts and attached files, so they are perfect for tasks that you do regularly.  
 
 # Release notes link text
 
-See more info here
+See the [How to Build & Use Agents Guide](https://ai-assistant.nj.gov/nj/agent-guide). 
 
 # Release notes link
 
-https://ai-assistant.nj.gov/nj/release-notes
+[https://ai-assistant.nj.gov/nj/agent-guide](https://ai-assistant.nj.gov/nj/agent-guide)   
