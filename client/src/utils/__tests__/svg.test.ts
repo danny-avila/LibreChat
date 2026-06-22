@@ -125,6 +125,26 @@ describe('isMonochromeSvg', () => {
     });
   });
 
+  describe('content referenced through <use>', () => {
+    it('preserves a chromatic logo rendered through a referenced symbol', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><symbol id="logo"><path fill="#f00" d="M4 4h16v16H4z" /></symbol></defs><use href="#logo" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('preserves a multi-tone glyph defined in defs and rendered through use', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><g id="g"><path fill="#fff" d="M0 0h24v24H0z" /><path fill="#000" d="M6 6h12v12H6z" /></g></defs><use href="#g" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('tints a monochrome glyph defined in defs and rendered through use', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><path id="p" fill="#333" d="M4 4h16v16H4z" /></defs><use href="#p" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+  });
+
   describe('multi-color icons (colors preserved)', () => {
     it('treats a saturated hex color as multi-color', () => {
       const svg = '<svg><path fill="#ff0000" /></svg>';
