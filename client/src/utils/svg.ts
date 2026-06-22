@@ -8,8 +8,12 @@ import DOMPurify from 'dompurify';
  * with regexes.
  */
 
-/** Color keywords that carry no chromatic information and are ignored. */
-const IGNORABLE_COLORS = new Set(['none', 'transparent', 'inherit', 'currentcolor']);
+/** Color keywords that paint nothing (or defer) and so contribute no tone. */
+const IGNORABLE_COLORS = new Set(['none', 'transparent', 'inherit']);
+
+/** `currentColor` is a visible paint that follows the theme; it has no fixed level. */
+const CURRENT_COLOR = 'currentcolor';
+const CURRENT_COLOR_TONE = -1;
 
 /** Named CSS grayscale colors mapped to their 0-255 level. Unknown names are chromatic. */
 const GRAY_LEVELS = new Map<string, number>([
@@ -269,24 +273,45 @@ function inNonRenderingContainer(el: Element, root: Element): boolean {
 }
 
 /**
- * True when a rendered shape paints with SVG's default black fill: it has no
- * explicit fill or stroke, inherits no fill from an ancestor, and is not a
- * non-rendering template. Such a shape contributes a black tone that explicit
- * paint values alone do not capture. Skipped when a `<style>` block is present,
- * since a CSS rule may color the shape and cannot be resolved without matching.
+ * True when a shape encloses a fillable area, so its default fill is actually
+ * painted. Open paths (and paths with no `d`) enclose nothing, so their default
+ * fill is invisible even when the shape is stroked.
+ */
+function rendersFillArea(el: Element): boolean {
+  const tag = el.nodeName.toLowerCase();
+  if (tag === 'path') {
+    const d = el.getAttribute('d');
+    return d != null && /[zZ]/.test(d);
+  }
+  if (tag === 'text') {
+    return (el.textContent ?? '').trim().length > 0;
+  }
+  return true;
+}
+
+/**
+ * True when a rendered shape paints with SVG's default black fill: it sets no
+ * explicit fill, inherits none from an ancestor, is not a non-rendering template,
+ * and encloses a fillable area. A stroke does not suppress the default fill, so a
+ * closed stroked shape still renders black. Such a shape contributes a black tone
+ * that explicit paint values alone do not capture. Skipped when a `<style>` block
+ * is present, since a CSS rule may color the shape and cannot be resolved without
+ * matching.
  */
 function hasDefaultBlackShape(root: Element): boolean {
   if (root.querySelector('style') != null) {
     return false;
   }
   for (const el of Array.from(root.querySelectorAll(FILLABLE_SHAPES))) {
-    if (readPaint(el, 'fill') != null || readPaint(el, 'stroke') != null) {
+    if (readPaint(el, 'fill') != null) {
       continue;
     }
     if (inheritsExplicitFill(el) || inNonRenderingContainer(el, root)) {
       continue;
     }
-    return true;
+    if (rendersFillArea(el)) {
+      return true;
+    }
   }
   return false;
 }
@@ -312,6 +337,10 @@ export function isMonochromeSvg(svg: string): boolean {
   }
   const levels = new Set<number>();
   for (const color of collectColors(root)) {
+    if (color === CURRENT_COLOR) {
+      levels.add(CURRENT_COLOR_TONE);
+      continue;
+    }
     const level = grayLevel(color);
     if (level === null) {
       return false;
