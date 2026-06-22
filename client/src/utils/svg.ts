@@ -31,6 +31,12 @@ const GRAY_LEVELS = new Map<string, number>([
 /** Paint properties whose color values determine whether an SVG is monochrome. */
 const PAINT_PROPS = ['fill', 'stroke', 'stop-color'];
 
+/** Area shapes that render with SVG's default black fill when none is supplied. */
+const FILLABLE_SHAPES = 'path, rect, circle, ellipse, polygon, text';
+
+/** Containers whose descendants are templates and never render on their own. */
+const NON_RENDERING = new Set(['defs', 'clippath', 'mask', 'symbol', 'marker', 'pattern']);
+
 /** Matches color declarations inside a `<style>` block. */
 const CSS_COLOR_REGEX = /(?:fill|stroke|stop-color|color)\s*:\s*([^;}]+)/gi;
 
@@ -235,6 +241,56 @@ function collectColors(root: Element): string[] {
     .filter((color) => color.length > 0 && !IGNORABLE_COLORS.has(color));
 }
 
+/** True when the element or any ancestor sets an explicit `fill` (inherited by SVG). */
+function inheritsExplicitFill(el: Element): boolean {
+  let current: Element | null = el;
+  while (current != null) {
+    const fill = readPaint(current, 'fill');
+    if (fill != null && fill.trim() !== '') {
+      return true;
+    }
+    if (current.nodeName.toLowerCase() === 'svg') {
+      break;
+    }
+    current = current.parentElement;
+  }
+  return false;
+}
+
+function inNonRenderingContainer(el: Element, root: Element): boolean {
+  let current = el.parentElement;
+  while (current != null && current !== root) {
+    if (NON_RENDERING.has(current.nodeName.toLowerCase())) {
+      return true;
+    }
+    current = current.parentElement;
+  }
+  return false;
+}
+
+/**
+ * True when a rendered shape paints with SVG's default black fill: it has no
+ * explicit fill or stroke, inherits no fill from an ancestor, and is not a
+ * non-rendering template. Such a shape contributes a black tone that explicit
+ * paint values alone do not capture. Skipped when a `<style>` block is present,
+ * since a CSS rule may color the shape and cannot be resolved without matching.
+ */
+function hasDefaultBlackShape(root: Element): boolean {
+  if (root.querySelector('style') != null) {
+    return false;
+  }
+  for (const el of Array.from(root.querySelectorAll(FILLABLE_SHAPES))) {
+    if (readPaint(el, 'fill') != null || readPaint(el, 'stroke') != null) {
+      continue;
+    }
+    if (inheritsExplicitFill(el) || inNonRenderingContainer(el, root)) {
+      continue;
+    }
+    return true;
+  }
+  return false;
+}
+
 /**
  * Returns true when an SVG can be safely tinted to match the theme: it embeds no
  * raster (`<image>`) or foreign (`<foreignObject>`) content, has no opaque
@@ -254,17 +310,16 @@ export function isMonochromeSvg(svg: string): boolean {
   if (hasOpaqueBackground(root)) {
     return false;
   }
-  const colors = collectColors(root);
-  if (colors.length === 0) {
-    return true;
-  }
   const levels = new Set<number>();
-  for (const color of colors) {
+  for (const color of collectColors(root)) {
     const level = grayLevel(color);
     if (level === null) {
       return false;
     }
     levels.add(level);
+  }
+  if (hasDefaultBlackShape(root)) {
+    levels.add(0);
   }
   return levels.size <= 1;
 }
