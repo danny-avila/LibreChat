@@ -9,7 +9,7 @@ import type {
   UpdateFilter,
   UpdateResult,
 } from 'mongodb';
-import type { IChatProject, IConversation, IMessage } from '../types';
+import type { IChatProject, IConversation, IMessage, ISharedLink } from '../types';
 import { ConversationMethods, createConversationMethods } from './conversation';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import { createModels } from '../models';
@@ -1552,6 +1552,35 @@ describe('Conversation Operations', () => {
 
       const reloaded = await Message().findById(lateMessage._id).lean();
       expect(reloaded?.expiredAt ?? null).toBeNull();
+    });
+
+    it('caps an existing permanent shared link when ephemeral converts a conversation', async () => {
+      const SharedLink = mongoose.models.SharedLink as mongoose.Model<ISharedLink>;
+      await SharedLink.deleteMany({});
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        title: 'Existing permanent chat',
+      });
+      const share = await SharedLink.create({
+        conversationId,
+        user: 'user123',
+        shareId: uuidv4(),
+      });
+      expect(share.expiredAt ?? null).toBeNull();
+
+      await saveConvo(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { conversationId, isArchived: true },
+      );
+
+      const reloaded = await SharedLink.findOne({ conversationId }).lean();
+      expect(reloaded?.expiredAt).toBeInstanceOf(Date);
     });
   });
 
