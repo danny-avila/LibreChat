@@ -20,6 +20,7 @@ interface GoogleTokenset {
 
 interface IdTokenClaims {
   sub?: string;
+  aud?: string | string[];
 }
 
 export interface MintedGoogleAdminToken {
@@ -70,7 +71,7 @@ async function resolveSubFromUserinfo(accessToken: string): Promise<string | und
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!response.ok) {
-      logger.warn('[adminGoogleRefresh] userinfo fallback returned non-OK', {
+      logger.warn('[admin/oauth/refresh] userinfo fallback returned non-OK', {
         status: response.status,
       });
       return undefined;
@@ -79,7 +80,7 @@ async function resolveSubFromUserinfo(accessToken: string): Promise<string | und
     return typeof body?.sub === 'string' ? body.sub : undefined;
   } catch (err) {
     const error = err as { name?: string; message?: string };
-    logger.warn('[adminGoogleRefresh] userinfo fallback failed', {
+    logger.warn('[admin/oauth/refresh] userinfo fallback failed', {
       name: error?.name,
       message: error?.message,
     });
@@ -109,7 +110,7 @@ async function fetchGoogleTokenset(
     });
   } catch (err) {
     const error = err as { name?: string; message?: string };
-    logger.warn('[adminGoogleRefresh] token endpoint request failed', {
+    logger.warn('[admin/oauth/refresh] token endpoint request failed', {
       name: error?.name,
       message: error?.message,
     });
@@ -117,7 +118,7 @@ async function fetchGoogleTokenset(
   }
 
   if (!response.ok) {
-    logger.warn('[adminGoogleRefresh] Google rejected refresh grant', {
+    logger.warn('[admin/oauth/refresh] Google rejected refresh grant', {
       status: response.status,
     });
     throw new AdminRefreshError('REFRESH_FAILED', 401, 'Refresh failed');
@@ -127,7 +128,7 @@ async function fetchGoogleTokenset(
     return (await response.json()) as GoogleTokenset;
   } catch (err) {
     const error = err as { name?: string; message?: string };
-    logger.warn('[adminGoogleRefresh] Google returned non-JSON body', {
+    logger.warn('[admin/oauth/refresh] Google returned non-JSON body', {
       name: error?.name,
       message: error?.message,
     });
@@ -135,7 +136,7 @@ async function fetchGoogleTokenset(
   }
 }
 
-async function resolveGoogleSub(tokenset: GoogleTokenset): Promise<string> {
+async function resolveGoogleSub(tokenset: GoogleTokenset, clientId?: string): Promise<string> {
   if (typeof tokenset.access_token !== 'string') {
     throw new AdminRefreshError(
       'IDP_INCOMPLETE',
@@ -147,6 +148,17 @@ async function resolveGoogleSub(tokenset: GoogleTokenset): Promise<string> {
   let sub: string | undefined;
   if (typeof tokenset.id_token === 'string') {
     const claims = decodeJwtPayload(tokenset.id_token);
+    if (clientId && claims?.aud !== undefined) {
+      const aud = claims.aud;
+      const audOk = Array.isArray(aud) ? aud.includes(clientId) : aud === clientId;
+      if (!audOk) {
+        throw new AdminRefreshError(
+          'ISSUER_MISMATCH',
+          401,
+          'id_token aud does not match configured client',
+        );
+      }
+    }
     if (typeof claims?.sub === 'string') {
       sub = claims.sub;
     }
@@ -193,10 +205,18 @@ async function resolveAdminUser(
   const filter = (
     options.tenantId ? { googleId, tenantId: options.tenantId } : { googleId }
   ) as FilterQuery<IUser>;
-  const [found] = await deps.findUsers(filter, SAFE_USER_PROJECTION, {
+  const matches = await deps.findUsers(filter, SAFE_USER_PROJECTION, {
     sort: { updatedAt: -1 },
-    limit: 1,
+    limit: 2,
   });
+  if (matches.length > 1) {
+    logger.error('[admin/oauth/refresh] ambiguous googleId match', {
+      googleId,
+      tenantId: options.tenantId,
+    });
+    throw new AdminRefreshError('USER_ID_MISMATCH', 401, 'Ambiguous identity');
+  }
+  const [found] = matches;
   if (!found) {
     throw new AdminRefreshError('USER_NOT_FOUND', 401, 'No user found for the refreshed identity');
   }
@@ -233,7 +253,7 @@ export async function applyGoogleAdminRefresh(
   };
 
   const tokenset = await fetchGoogleTokenset(configured);
-  const googleId = await resolveGoogleSub(tokenset);
+  const googleId = await resolveGoogleSub(tokenset, configured.clientId);
   const user = await resolveAdminUser(googleId, deps, options);
 
   if (deps.isEmailAllowed && !(await deps.isEmailAllowed(user))) {
@@ -249,6 +269,12 @@ export async function applyGoogleAdminRefresh(
   }
 
   const minted = await deps.mintToken(user);
+
+  if (tokenset.refresh_token && tokenset.refresh_token !== options.refreshToken) {
+    logger.info(
+      '[admin/oauth/refresh] Google rotated the refresh token; client must persist the new value',
+    );
+  }
 
   return {
     token: minted.token,

@@ -177,6 +177,37 @@ describe('socialLogin', () => {
       expect(callback).toHaveBeenCalledWith(null, existingUser);
     });
 
+    it('does not migrate the provider id on the chat path (only admin path migrates)', async () => {
+      const { updateUser } = require('~/models');
+      const provider = 'google';
+      const googleId = 'google-user-chat';
+      const email = 'chat@example.com';
+
+      const existingUser = {
+        _id: 'chatUser',
+        email: email,
+        provider: 'google',
+      };
+
+      findUser.mockResolvedValueOnce(null).mockResolvedValueOnce(existingUser);
+
+      const mockProfile = {
+        id: googleId,
+        emails: [{ value: email, verified: true }],
+        photos: [{ value: 'https://example.com/avatar.png' }],
+        name: { givenName: 'Chat', familyName: 'User' },
+      };
+
+      const loginFn = socialLogin(provider, mockGetProfileDetails);
+      const callback = jest.fn();
+
+      await loginFn(null, null, null, mockProfile, callback);
+
+      expect(updateUser).not.toHaveBeenCalled();
+      expect(handleExistingUser).toHaveBeenCalled();
+      expect(callback).toHaveBeenCalledWith(null, existingUser);
+    });
+
     it('migrates the missing provider id when finding by email fallback (admin path)', async () => {
       const { updateUser } = require('~/models');
       const provider = 'google';
@@ -425,6 +456,36 @@ describe('socialLogin', () => {
       expect(callback).toHaveBeenCalledWith(
         expect.objectContaining({ message: 'Email domain not allowed' }),
       );
+    });
+
+    it('does not forward the refresh token as authInfo for non-google providers', async () => {
+      const provider = 'github';
+      const githubId = 'gh-user-123';
+      const email = 'user@example.com';
+
+      const existingUser = {
+        _id: 'ghUser',
+        email,
+        provider: 'github',
+        githubId,
+      };
+
+      findUser.mockResolvedValue(existingUser);
+
+      const mockProfile = {
+        id: githubId,
+        emails: [{ value: email, verified: true }],
+        photos: [{ value: 'https://example.com/avatar.png' }],
+        name: { givenName: 'GitHub', familyName: 'User' },
+      };
+
+      const loginFn = socialLogin(provider, mockGetProfileDetails);
+      const callback = jest.fn();
+
+      await loginFn(null, 'github-refresh-token', null, mockProfile, callback);
+
+      expect(callback).toHaveBeenCalledWith(null, existingUser);
+      expect(callback).not.toHaveBeenCalledWith(null, existingUser, expect.anything());
     });
 
     it('passes the IdP refresh token through as authInfo when present', async () => {

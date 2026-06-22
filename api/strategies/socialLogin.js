@@ -56,7 +56,7 @@ const socialLogin =
       }
 
       const passResult = (user) =>
-        refreshToken ? cb(null, user, { refreshToken }) : cb(null, user);
+        refreshToken && provider === 'google' ? cb(null, user, { refreshToken }) : cb(null, user);
 
       if (existingUser?.provider === provider) {
         if (
@@ -74,6 +74,15 @@ const socialLogin =
         }
         if (options.existingUsersOnly && id && !existingUser[providerKey]) {
           await updateUser(existingUser._id, { [providerKey]: id });
+          const verified = await findUser({ _id: existingUser._id, [providerKey]: id });
+          if (!verified) {
+            logger.warn(
+              `[${provider}Login] Admin migrate superseded by concurrent write, denying: ${email}`,
+            );
+            const concurrentError = new Error(ErrorTypes.AUTH_FAILED);
+            concurrentError.code = ErrorTypes.AUTH_FAILED;
+            return cb(concurrentError);
+          }
           existingUser[providerKey] = id;
         }
         await handleExistingUser(existingUser, avatarUrl, appConfig, email);

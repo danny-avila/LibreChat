@@ -10,6 +10,7 @@ jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
   logger: {
     debug: jest.fn(),
+    error: jest.fn(),
     info: jest.fn(),
     warn: jest.fn(),
   },
@@ -150,6 +151,21 @@ describe('applyGoogleAdminRefresh', () => {
     });
   });
 
+  it('throws ISSUER_MISMATCH when the id_token aud does not match the configured clientId', async () => {
+    fetchMock.mockResolvedValueOnce(
+      makeOkJson({
+        access_token: 'new-access',
+        id_token: makeIdToken({ sub: SUB, aud: 'wrong-client' }),
+      }),
+    );
+
+    await expect(applyGoogleAdminRefresh(deps, baseOptions)).rejects.toMatchObject({
+      code: 'ISSUER_MISMATCH',
+      status: 401,
+    });
+    expect(deps.findUsers).not.toHaveBeenCalled();
+  });
+
   it('falls back to the userinfo endpoint when id_token is absent', async () => {
     const user = makeUser();
     fetchMock
@@ -220,6 +236,18 @@ describe('applyGoogleAdminRefresh', () => {
         tenantId: 'tenant-b',
       }),
     ).rejects.toMatchObject({ code: 'TENANT_MISMATCH', status: 401 });
+  });
+
+  it('throws USER_ID_MISMATCH when multiple users share the same googleId', async () => {
+    fetchMock.mockResolvedValueOnce(
+      makeOkJson({ access_token: 'new-access', id_token: makeIdToken() }),
+    );
+    deps.findUsers.mockResolvedValue([makeUser(), makeUser({ email: 'other@example.com' })]);
+
+    await expect(applyGoogleAdminRefresh(deps, baseOptions)).rejects.toMatchObject({
+      code: 'USER_ID_MISMATCH',
+      status: 401,
+    });
   });
 
   it('throws USER_NOT_FOUND when no admin user matches the refreshed googleId', async () => {

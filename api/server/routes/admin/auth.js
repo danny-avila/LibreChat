@@ -41,46 +41,6 @@ const middleware = require('~/server/middleware');
 
 const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
 
-function buildGoogleAdminRefreshDeps(sessionExpiry) {
-  return {
-    findUsers,
-    getUserById,
-    canAccessAdmin: async (user) => {
-      try {
-        return await hasCapability(
-          {
-            id: user.id ?? user._id?.toString(),
-            role: user.role ?? '',
-            tenantId: user.tenantId,
-          },
-          SystemCapabilities.ACCESS_ADMIN,
-        );
-      } catch (err) {
-        logger.warn(`[admin/oauth/refresh] capability check failed, denying: ${err?.message}`);
-        return false;
-      }
-    },
-    isEmailAllowed: async (user) => {
-      if (!user?.email) return false;
-      try {
-        const appConfig = user.tenantId
-          ? await resolveAppConfigForUser(getAppConfig, user)
-          : await getAppConfig({ baseOnly: true });
-        return isEmailDomainAllowed(user.email, appConfig?.registration?.allowedDomains);
-      } catch (err) {
-        logger.warn(
-          `[admin/oauth/refresh] domain allowlist check failed, denying: ${err?.message}`,
-        );
-        return false;
-      }
-    },
-    mintToken: async (user) => ({
-      token: await generateToken(user, sessionExpiry),
-      expiresAt: Date.now() + sessionExpiry,
-    }),
-  };
-}
-
 const setBalanceConfig = createSetBalanceConfig({
   getAppConfig,
   findBalanceByUser,
@@ -109,6 +69,52 @@ function resolveRequestOrigin(req) {
   } catch {
     return undefined;
   }
+}
+
+function buildAdminRefreshClosures(sessionExpiry) {
+  return {
+    canAccessAdmin: async (user) => {
+      try {
+        return await hasCapability(
+          {
+            id: user.id ?? user._id?.toString(),
+            role: user.role ?? '',
+            tenantId: user.tenantId,
+          },
+          SystemCapabilities.ACCESS_ADMIN,
+        );
+      } catch (err) {
+        logger.warn(`[admin/oauth/refresh] capability check failed, denying: ${err?.message}`);
+        return false;
+      }
+    },
+    mintToken: async (user) => ({
+      token: await generateToken(user, sessionExpiry),
+      expiresAt: Date.now() + sessionExpiry,
+    }),
+  };
+}
+
+function buildGoogleAdminRefreshDeps(sessionExpiry) {
+  return {
+    findUsers,
+    getUserById,
+    ...buildAdminRefreshClosures(sessionExpiry),
+    isEmailAllowed: async (user) => {
+      if (!user?.email) return false;
+      try {
+        const appConfig = user.tenantId
+          ? await resolveAppConfigForUser(getAppConfig, user)
+          : await getAppConfig({ baseOnly: true });
+        return isEmailDomainAllowed(user.email, appConfig?.registration?.allowedDomains);
+      } catch (err) {
+        logger.warn(
+          `[admin/oauth/refresh] domain allowlist check failed, denying: ${err?.message}`,
+        );
+        return false;
+      }
+    },
+  };
 }
 
 router.post(
@@ -654,27 +660,7 @@ router.post(
           {
             findUsers,
             getUserById,
-            canAccessAdmin: async (user) => {
-              try {
-                return await hasCapability(
-                  {
-                    id: user.id ?? user._id?.toString(),
-                    role: user.role ?? '',
-                    tenantId: user.tenantId,
-                  },
-                  SystemCapabilities.ACCESS_ADMIN,
-                );
-              } catch (err) {
-                logger.warn(
-                  `[admin/oauth/refresh] capability check failed, denying: ${err?.message}`,
-                );
-                return false;
-              }
-            },
-            mintToken: async (user) => ({
-              token: await generateToken(user, sessionExpiry),
-              expiresAt: Date.now() + sessionExpiry,
-            }),
+            ...buildAdminRefreshClosures(sessionExpiry),
           },
           {
             userId: normalizedUserId,

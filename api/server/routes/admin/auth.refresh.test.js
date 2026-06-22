@@ -296,7 +296,15 @@ describe('admin auth Google refresh route', () => {
     expect(response.body).toEqual({
       token: 'admin-jwt',
       refreshToken: 'rotated-refresh',
-      user: expect.objectContaining({ provider: 'google' }),
+      user: expect.objectContaining({
+        _id: 'user-id',
+        id: 'user-id',
+        email: 'admin@example.com',
+        name: 'Admin',
+        username: 'admin',
+        role: 'ADMIN',
+        provider: 'google',
+      }),
       expiresAt: 1234567890,
     });
     expect(applyGoogleAdminRefresh).toHaveBeenCalledWith(
@@ -313,6 +321,45 @@ describe('admin auth Google refresh route', () => {
         clientId: 'google-client-id',
         clientSecret: 'google-client-secret',
       },
+    );
+  });
+
+  it('forwards the tenant id from getTenantId() to the helper', async () => {
+    const { getTenantId } = require('@librechat/data-schemas');
+    getTenantId.mockReturnValueOnce('tenant-x');
+
+    const response = await request(app)
+      .post('/api/admin/oauth/refresh')
+      .send({ refresh_token: 'incoming-google-refresh', provider: 'google' });
+
+    expect(response.status).toBe(200);
+    expect(applyGoogleAdminRefresh).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ tenantId: 'tenant-x' }),
+    );
+  });
+
+  it('canAccessAdmin closure calls hasCapability with the normalized user id', async () => {
+    const { hasCapability } = require('~/server/middleware/roles/capabilities');
+    let capturedDeps;
+    applyGoogleAdminRefresh.mockImplementationOnce(async (deps) => {
+      capturedDeps = deps;
+      return {
+        token: 'jwt',
+        refreshToken: 'r',
+        user: { id: 'u', _id: 'u', email: 'e@e.com', name: '', username: '', role: 'ADMIN' },
+        expiresAt: 0,
+      };
+    });
+
+    await request(app)
+      .post('/api/admin/oauth/refresh')
+      .send({ refresh_token: 'google-refresh', provider: 'google' });
+
+    await capturedDeps.canAccessAdmin({ id: 'user-1', role: 'ADMIN', tenantId: 'tenant-a' });
+    expect(hasCapability).toHaveBeenCalledWith(
+      { id: 'user-1', role: 'ADMIN', tenantId: 'tenant-a' },
+      'ACCESS_ADMIN',
     );
   });
 
