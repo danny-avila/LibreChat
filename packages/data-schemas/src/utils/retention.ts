@@ -1,5 +1,5 @@
 import type { FilterQuery, Model } from 'mongoose';
-import type { IMessage } from '~/types';
+import type { IConversation, IMessage } from '~/types';
 import { DEFAULT_RETENTION_HOURS } from './tempChatRetention';
 
 export type RetentionFilterDocument = {
@@ -89,4 +89,26 @@ export const forceConversationMessagesTemporary = async (
     { conversationId, user: userId, ...forcedRetentionGapFilter<IMessage>(expiredAt) },
     { $set: { isTemporary: true, expiredAt } },
   );
+};
+
+/**
+ * Converts or re-caps a parent conversation to the forced deadline and, when that first
+ * brings the conversation into the forced window, backfills its lagging messages. Shared
+ * by every forced-retention message-write path so a single conversation/message rule is
+ * enforced regardless of which save touched the chat.
+ */
+export const cascadeForcedConversationRetention = async (
+  Conversation: Model<IConversation>,
+  Message: Model<IMessage>,
+  userId: string,
+  conversationId: string,
+  forcedExpiredAt: Date,
+): Promise<void> => {
+  const convoResult = await Conversation.updateOne(
+    { conversationId, user: userId, ...forcedRetentionGapFilter<IConversation>(forcedExpiredAt) },
+    { $set: { isTemporary: true, expiredAt: forcedExpiredAt } },
+  );
+  if (convoResult.modifiedCount > 0) {
+    await forceConversationMessagesTemporary(Message, userId, conversationId, forcedExpiredAt);
+  }
 };

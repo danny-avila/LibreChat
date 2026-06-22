@@ -1,11 +1,7 @@
 import { RetentionMode, isForcedTemporaryRetention } from 'librechat-data-provider';
 import type { DeleteResult, FilterQuery, Model } from 'mongoose';
 import type { AppConfig, IConversation, IMessage } from '~/types';
-import {
-  createFallbackRetentionDate,
-  forceConversationMessagesTemporary,
-  forcedRetentionGapFilter,
-} from '~/utils/retention';
+import { cascadeForcedConversationRetention, createFallbackRetentionDate } from '~/utils/retention';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '~/config/winston';
@@ -42,6 +38,11 @@ export interface MessageMethods {
     message: Partial<IMessage> & { newMessageId?: string },
     metadata?: { context?: string },
   ): Promise<Partial<IMessage>>;
+  applyForcedRetention(
+    ctx: { userId: string; interfaceConfig?: AppConfig['interfaceConfig'] },
+    params: { conversationId: string; messageId: string },
+    metadata?: { context?: string; capExpiryToConversation?: boolean },
+  ): Promise<void>;
   deleteMessagesSince(
     userId: string,
     params: { messageId: string; conversationId: string },
@@ -196,22 +197,13 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
 
       if (isForcedRetention && forcedExpiredAt instanceof Date) {
         const Conversation = mongoose.models.Conversation as Model<IConversation>;
-        const convoResult = await Conversation.updateOne(
-          {
-            conversationId,
-            user: userId,
-            ...forcedRetentionGapFilter<IConversation>(forcedExpiredAt),
-          },
-          { $set: { isTemporary: true, expiredAt: forcedExpiredAt } },
+        await cascadeForcedConversationRetention(
+          Conversation,
+          Message,
+          userId,
+          conversationId,
+          forcedExpiredAt,
         );
-        if (convoResult.modifiedCount > 0) {
-          await forceConversationMessagesTemporary(
-            Message,
-            userId,
-            conversationId,
-            forcedExpiredAt,
-          );
-        }
       }
 
       return message.toObject();
@@ -367,6 +359,60 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   }
 
   /**
+   * Enforces forced (ephemeral) retention on an existing message and its parent
+   * conversation. Message-write paths that only update a row — edits, feedback — bypass
+   * the `saveMessage`/`saveConvo` enforcement, so an older permanent chat touched after an
+   * install switches to ephemeral would otherwise stay visible and never expire.
+   */
+  async function applyForcedRetention(
+    { userId, interfaceConfig }: { userId: string; interfaceConfig?: AppConfig['interfaceConfig'] },
+    { conversationId, messageId }: { conversationId: string; messageId: string },
+    metadata?: { context?: string; capExpiryToConversation?: boolean },
+  ): Promise<void> {
+    if (!isForcedTemporaryRetention(interfaceConfig?.retentionMode)) {
+      return;
+    }
+
+    let forcedExpiredAt: Date;
+    try {
+      forcedExpiredAt = createTempChatExpirationDate(interfaceConfig);
+    } catch (err) {
+      logger.error('Error creating temporary chat expiration date:', err);
+      logger.info(`---\`applyForcedRetention\` context: ${metadata?.context}`);
+      forcedExpiredAt = createFallbackRetentionDate();
+    }
+
+    const Message = mongoose.models.Message as Model<IMessage>;
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+
+    if (metadata?.capExpiryToConversation === true) {
+      const parent = await Conversation.findOne(
+        { conversationId, user: userId },
+        'isTemporary expiredAt',
+      ).lean<{ isTemporary?: boolean | null; expiredAt?: Date | null } | null>();
+      if (
+        parent?.isTemporary === true &&
+        parent.expiredAt != null &&
+        parent.expiredAt.getTime() < forcedExpiredAt.getTime()
+      ) {
+        forcedExpiredAt = parent.expiredAt;
+      }
+    }
+
+    await Message.updateOne(
+      { messageId, user: userId },
+      { $set: { isTemporary: true, expiredAt: forcedExpiredAt } },
+    );
+    await cascadeForcedConversationRetention(
+      Conversation,
+      Message,
+      userId,
+      conversationId,
+      forcedExpiredAt,
+    );
+  }
+
+  /**
    * Deletes messages in a conversation since a specific message.
    */
   async function deleteMessagesSince(
@@ -502,6 +548,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     recordMessage,
     updateMessageText,
     updateMessage,
+    applyForcedRetention,
     deleteMessagesSince,
     getMessages,
     getMessage,

@@ -22,6 +22,7 @@ let Message: mongoose.Model<IMessage>;
 let saveMessage: ReturnType<typeof createMessageMethods>['saveMessage'];
 let getMessages: ReturnType<typeof createMessageMethods>['getMessages'];
 let updateMessage: ReturnType<typeof createMessageMethods>['updateMessage'];
+let applyForcedRetention: ReturnType<typeof createMessageMethods>['applyForcedRetention'];
 let deleteMessages: ReturnType<typeof createMessageMethods>['deleteMessages'];
 let bulkSaveMessages: ReturnType<typeof createMessageMethods>['bulkSaveMessages'];
 let updateMessageText: ReturnType<typeof createMessageMethods>['updateMessageText'];
@@ -40,6 +41,7 @@ beforeAll(async () => {
   saveMessage = methods.saveMessage;
   getMessages = methods.getMessages;
   updateMessage = methods.updateMessage;
+  applyForcedRetention = methods.applyForcedRetention;
   deleteMessages = methods.deleteMessages;
   bulkSaveMessages = methods.bulkSaveMessages;
   updateMessageText = methods.updateMessageText;
@@ -942,6 +944,75 @@ describe('Message Operations', () => {
 
       const convo = await Conversation().findOne({ conversationId }).lean();
       expect(convo?.expiredAt ?? null).toBeNull();
+    });
+  });
+
+  describe('applyForcedRetention', () => {
+    const Conversation = () => mongoose.models.Conversation as mongoose.Model<IConversation>;
+
+    beforeEach(async () => {
+      await Conversation().deleteMany({});
+    });
+
+    it('converts a permanent message and its conversation when editing under ephemeral mode', async () => {
+      const conversationId = uuidv4();
+      const editedMessageId = uuidv4();
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'Existing permanent chat',
+      });
+      await Message.create([
+        { messageId: editedMessageId, conversationId, user: 'user123', text: 'first' },
+        { messageId: uuidv4(), conversationId, user: 'user123', text: 'second' },
+      ]);
+
+      await applyForcedRetention(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { conversationId, messageId: editedMessageId },
+        { context: 'edit', capExpiryToConversation: true },
+      );
+
+      const convo = await Conversation().findOne({ conversationId }).lean();
+      expect(convo?.isTemporary).toBe(true);
+      expect(convo?.expiredAt).toBeInstanceOf(Date);
+
+      const messages = await getMessages({ conversationId, user: 'user123' });
+      expect(messages).toHaveLength(2);
+      for (const message of messages) {
+        expect(message.isTemporary).toBe(true);
+        expect(message.expiredAt).toBeInstanceOf(Date);
+      }
+    });
+
+    it('is a no-op outside forced retention', async () => {
+      const conversationId = uuidv4();
+      const messageId = uuidv4();
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'Existing permanent chat',
+      });
+      await Message.create({ messageId, conversationId, user: 'user123', text: 'first' });
+
+      await applyForcedRetention(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.TEMPORARY },
+        },
+        { conversationId, messageId },
+        { context: 'edit', capExpiryToConversation: true },
+      );
+
+      const convo = await Conversation().findOne({ conversationId }).lean();
+      expect(convo?.expiredAt ?? null).toBeNull();
+      const message = await Message.findOne({ messageId }).lean();
+      expect(message?.expiredAt ?? null).toBeNull();
     });
   });
 

@@ -56,6 +56,7 @@ const sendError = async (req, res, options, callback) => {
       { ...errorMessage, user },
       {
         context: 'api/server/utils/streamResponse.js - sendError',
+        capExpiryToConversation: true,
       },
     );
   }
