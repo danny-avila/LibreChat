@@ -93,7 +93,7 @@ describe('createSetBalanceConfig', () => {
       expect(balanceRecord?.refillIntervalValue).toBe(30);
       expect(balanceRecord?.refillIntervalUnit).toBe('days');
       expect(balanceRecord?.refillAmount).toBe(500);
-      expect(balanceRecord?.lastRefill).toBeInstanceOf(Date);
+      expect(balanceRecord?.lastRefill).toBeUndefined();
       expect((res.locals as { balanceConfigEnabled?: boolean }).balanceConfigEnabled).toBe(true);
       expect((res.locals as { balanceData?: IBalance }).balanceData?.tokenCredits).toBe(1000);
     });
@@ -210,18 +210,14 @@ describe('createSetBalanceConfig', () => {
   });
 
   describe('Edge Case: Auto-refill without lastRefill', () => {
-    test('should initialize lastRefill when enabling auto-refill for existing user without lastRefill', async () => {
+    test('should not seed lastRefill when enabling auto-refill for existing user without lastRefill', async () => {
       const userId = new mongoose.Types.ObjectId();
 
-      // Create existing balance record without lastRefill
-      // Note: We need to unset lastRefill after creation since the schema has a default
       const doc = await Balance.create({
         user: userId,
         tokenCredits: 500,
         autoRefillEnabled: false,
       });
-
-      // Remove lastRefill to simulate existing user without it
       await Balance.updateOne({ _id: doc._id }, { $unset: { lastRefill: 1 } });
 
       const getAppConfig = jest.fn().mockResolvedValue({
@@ -244,22 +240,15 @@ describe('createSetBalanceConfig', () => {
       const req = createMockRequest(userId);
       const res = createMockResponse();
 
-      const beforeTime = new Date();
       await middleware(req as ServerRequest, res as ServerResponse, mockNext);
-      const afterTime = new Date();
 
       expect(mockNext).toHaveBeenCalled();
 
       const balanceRecord = await Balance.findOne({ user: userId });
       expect(balanceRecord).toBeTruthy();
-      expect(balanceRecord?.tokenCredits).toBe(500); // Should not change existing credits
+      expect(balanceRecord?.tokenCredits).toBe(500);
       expect(balanceRecord?.autoRefillEnabled).toBe(true);
-      expect(balanceRecord?.lastRefill).toBeInstanceOf(Date);
-
-      // Verify lastRefill was set to current time
-      const lastRefillTime = balanceRecord?.lastRefill?.getTime() || 0;
-      expect(lastRefillTime).toBeGreaterThanOrEqual(beforeTime.getTime());
-      expect(lastRefillTime).toBeLessThanOrEqual(afterTime.getTime());
+      expect(balanceRecord?.lastRefill).toBeUndefined();
     });
 
     test('should not update lastRefill if it already exists', async () => {
@@ -349,8 +338,7 @@ describe('createSetBalanceConfig', () => {
       const balanceRecord = await Balance.findOne({ user: userId });
       expect(balanceRecord).toBeTruthy();
       expect(balanceRecord?.autoRefillEnabled).toBe(true);
-      expect(balanceRecord?.lastRefill).toBeInstanceOf(Date);
-      // This should have fixed the issue - user should no longer get the error
+      expect(balanceRecord?.lastRefill).toBeUndefined();
     });
 
     test('should not set lastRefill when auto-refill is disabled', async () => {
@@ -382,8 +370,7 @@ describe('createSetBalanceConfig', () => {
       expect(balanceRecord).toBeTruthy();
       expect(balanceRecord?.tokenCredits).toBe(1000);
       expect(balanceRecord?.autoRefillEnabled).toBe(false);
-      // lastRefill should have default value from schema
-      expect(balanceRecord?.lastRefill).toBeInstanceOf(Date);
+      expect(balanceRecord?.lastRefill).toBeUndefined();
     });
 
     test('should pass user identity when resolving balance config', async () => {
@@ -698,7 +685,7 @@ describe('createSetBalanceConfig', () => {
         const balanceRecord = await Balance.findOne({ user: userId });
         expect(balanceRecord?.refillIntervalUnit).toBe(unit);
         expect(balanceRecord?.refillIntervalValue).toBe(10);
-        expect(balanceRecord?.lastRefill).toBeInstanceOf(Date);
+        expect(balanceRecord?.lastRefill).toBeUndefined();
       },
     );
   });
