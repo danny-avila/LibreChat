@@ -111,9 +111,15 @@ describe('createAgentChatCompletion - MCP permission user propagation', () => {
 
   it('forwards appConfig and tenantId to createRun', async () => {
     const appConfig = {
+      endpoints: {
+        agents: { capabilities: ['execute_code'] },
+      },
       langfuse: {
         publicKey: 'pk-tenant-1',
         secretKey: 'sk-tenant-1',
+      },
+      interfaceConfig: {
+        modelSelect: true,
       },
     };
     deps.appConfig = appConfig as never;
@@ -128,6 +134,10 @@ describe('createAgentChatCompletion - MCP permission user propagation', () => {
     expect(createRun).toHaveBeenCalledTimes(1);
     const runArgs = createRun.mock.calls[0][0] as CreateRunArgs;
     expect(runArgs.tenantId).toBe('tenant-1');
-    expect(runArgs.appConfig).toBe(appConfig);
+    expect(runArgs.appConfig).toEqual({
+      endpoints: appConfig.endpoints,
+      langfuse: appConfig.langfuse,
+    });
+    expect(runArgs.appConfig).not.toHaveProperty('interfaceConfig');
   });
 });

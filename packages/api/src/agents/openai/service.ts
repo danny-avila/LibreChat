@@ -178,7 +178,7 @@ type CreateRunFn = (params: {
   requestBody: Record<string, unknown>;
   user: Record<string, unknown>;
   tenantId?: string;
-  appConfig?: AppConfig;
+  appConfig?: Pick<AppConfig, 'endpoints' | 'langfuse'>;
   tokenCounter?: (message: unknown) => number;
 }) => Promise<{
   Graph?: unknown;
@@ -529,7 +529,12 @@ export async function createAgentChatCompletion(
         },
         user: safeUser,
         tenantId: typeof reqUser?.tenantId === 'string' ? reqUser.tenantId : undefined,
-        appConfig: deps.appConfig,
+        appConfig: deps.appConfig
+          ? {
+              endpoints: deps.appConfig.endpoints,
+              langfuse: deps.appConfig.langfuse,
+            }
+          : undefined,
       });
 
       if (run) {
