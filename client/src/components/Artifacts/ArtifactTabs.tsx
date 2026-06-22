@@ -3,12 +3,12 @@ import * as Tabs from '@radix-ui/react-tabs';
 import type { SandpackPreviewRef } from '@codesandbox/sandpack-react/unstyled';
 import type { editor } from 'monaco-editor';
 import type { Artifact } from '~/common';
-import { useCodeState } from '~/Providers/EditorContext';
+import { useGetSharedStartupConfig, useGetStartupConfig } from '~/data-provider';
 import useArtifactProps from '~/hooks/Artifacts/useArtifactProps';
 import { ArtifactCodeEditor } from './ArtifactCodeEditor';
-import { useShareContext } from '~/Providers';
-import { useGetSharedStartupConfig, useGetStartupConfig } from '~/data-provider';
+import { useCodeState } from '~/Providers/EditorContext';
 import { ArtifactPreview } from './ArtifactPreview';
+import { useShareContext } from '~/Providers';
 
 export default function ArtifactTabs({
   artifact,

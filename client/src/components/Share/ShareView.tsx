@@ -18,9 +18,9 @@ import {
 } from '@librechat/client';
 import { ThemeSelector, LangSelector } from '~/components/Nav/SettingsTabs/General/Selectors';
 import { ShareMessagesProvider } from './ShareMessagesProvider';
+import { useGetSharedStartupConfig } from '~/data-provider';
 import { ShareArtifactsContainer } from './ShareArtifacts';
 import { useLocalize, useDocumentTitle } from '~/hooks';
-import { useGetSharedStartupConfig } from '~/data-provider';
 import { ShareContext } from '~/Providers';
 import MessagesView from './MessagesView';
 import Footer from '../Chat/Footer';

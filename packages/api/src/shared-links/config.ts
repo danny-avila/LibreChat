@@ -1,5 +1,5 @@
-import type { AppConfig } from '@librechat/data-schemas';
 import type { TSharedLinkStartupConfig } from 'librechat-data-provider';
+import type { AppConfig } from '@librechat/data-schemas';
 import { isEnabled } from '~/utils';
 
 type SharedLinkStartupEnv = NodeJS.ProcessEnv;
