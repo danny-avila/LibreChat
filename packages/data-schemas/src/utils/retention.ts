@@ -1,5 +1,5 @@
 import type { FilterQuery, Model } from 'mongoose';
-import type { IConversation, IMessage } from '~/types';
+import type { IConversation, IMessage, ISharedLink } from '~/types';
 import { DEFAULT_RETENTION_HOURS } from './tempChatRetention';
 
 export type RetentionFilterDocument = {
@@ -92,6 +92,29 @@ export const forceConversationMessagesTemporary = async (
 };
 
 /**
+ * Caps a conversation's shared links to the forced deadline. A share embeds a snapshot of
+ * the conversation (message refs and file snapshots) and its TTL index keys off `expiredAt`
+ * alone, so a permanent share (`expiredAt: null`) created before forced retention would stay
+ * publicly readable after the conversation and messages expire. Only links with no
+ * expiration or a later one are touched, so it is a no-op once a conversation conforms.
+ */
+export const capConversationSharedLinks = async (
+  SharedLink: Model<ISharedLink>,
+  userId: string,
+  conversationId: string,
+  forcedExpiredAt: Date,
+): Promise<void> => {
+  await SharedLink.updateMany(
+    {
+      conversationId,
+      user: userId,
+      $or: [{ expiredAt: null }, { expiredAt: { $gt: forcedExpiredAt } }],
+    },
+    { $set: { expiredAt: forcedExpiredAt } },
+  );
+};
+
+/**
  * Caps a message-only forced save to a parent that already expires sooner than the freshly
  * computed window. Returns the parent's earlier deadline (so the message cannot outlive it)
  * and backfills the conversation's lagging messages to that deadline — the cascade leaves
@@ -102,6 +125,7 @@ export const forceConversationMessagesTemporary = async (
 export const capForcedRetentionToParent = async (
   Conversation: Model<IConversation>,
   Message: Model<IMessage>,
+  SharedLink: Model<ISharedLink>,
   userId: string,
   conversationId: string,
   forcedExpiredAt: Date,
@@ -116,6 +140,7 @@ export const capForcedRetentionToParent = async (
     parent.expiredAt.getTime() < forcedExpiredAt.getTime()
   ) {
     await forceConversationMessagesTemporary(Message, userId, conversationId, parent.expiredAt);
+    await capConversationSharedLinks(SharedLink, userId, conversationId, parent.expiredAt);
     return parent.expiredAt;
   }
   return forcedExpiredAt;
@@ -130,6 +155,7 @@ export const capForcedRetentionToParent = async (
 export const cascadeForcedConversationRetention = async (
   Conversation: Model<IConversation>,
   Message: Model<IMessage>,
+  SharedLink: Model<ISharedLink>,
   userId: string,
   conversationId: string,
   forcedExpiredAt: Date,
@@ -140,5 +166,6 @@ export const cascadeForcedConversationRetention = async (
   );
   if (convoResult.modifiedCount > 0) {
     await forceConversationMessagesTemporary(Message, userId, conversationId, forcedExpiredAt);
+    await capConversationSharedLinks(SharedLink, userId, conversationId, forcedExpiredAt);
   }
 };

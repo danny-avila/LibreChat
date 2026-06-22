@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { RetentionMode } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import type { IConversation, IMessage } from '..';
+import type { IConversation, IMessage, ISharedLink } from '..';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import { createMessageMethods } from './message';
 import { createModels } from '../models';
@@ -1232,6 +1232,31 @@ describe('Message Operations', () => {
 
       const convo = await Conversation().findOne({ conversationId }).lean();
       expect(convo?.expiredAt ?? null).toBeNull();
+    });
+
+    it('caps an existing permanent shared link when converting via a message save', async () => {
+      const SharedLink = mongoose.models.SharedLink as mongoose.Model<ISharedLink>;
+      await SharedLink.deleteMany({});
+      const conversationId = uuidv4();
+      await Conversation().create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'openAI',
+        title: 'Existing permanent chat',
+      });
+      await SharedLink.create({ conversationId, user: 'user123', shareId: uuidv4() });
+
+      await saveMessage(
+        {
+          userId: 'user123',
+          interfaceConfig: { temporaryChatRetention: 24, retentionMode: RetentionMode.EPHEMERAL },
+        },
+        { messageId: uuidv4(), conversationId, text: 'branch', user: 'user123' },
+        { context: 'branch', capExpiryToConversation: true },
+      );
+
+      const reloaded = await SharedLink.findOne({ conversationId }).lean();
+      expect(reloaded?.expiredAt).toBeInstanceOf(Date);
     });
   });
 
