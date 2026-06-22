@@ -79,13 +79,24 @@ describe('isMonochromeSvg', () => {
       expect(isMonochromeSvg(svg)).toBe(true);
     });
 
-    it('does not add an implicit fill for a stroked open path (no enclosed area)', () => {
-      const svg = '<svg viewBox="0 0 24 24"><path d="M4 12h16" stroke="#333" /></svg>';
+    it('tints a line-art icon that disables its fill', () => {
+      const svg = '<svg viewBox="0 0 24 24"><path d="M4 12h16" fill="none" stroke="#333" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(true);
     });
 
     it('rejects a closed stroked path that still renders its default black fill', () => {
       const svg = '<svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z" stroke="#fff" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('rejects an open stroked path that does not disable its default fill', () => {
+      const svg = '<svg viewBox="0 0 24 24"><path d="M6 6h12v12H6" stroke="#fff" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(false);
+    });
+
+    it('rejects a default-black open path combined with an explicit light shape', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><path d="M0 0h24v24H0" fill="#fff" /><path d="M6 6h12v12H6" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(false);
     });
 
@@ -181,6 +192,18 @@ describe('isMonochromeSvg', () => {
     it('ignores a transparent background rect', () => {
       const svg =
         '<svg viewBox="0 0 24 24"><rect width="24" height="24" fill="none" /><path fill="#333" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('ignores a full-canvas rect inside a clipPath template', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><clipPath id="c"><rect width="24" height="24" /></clipPath></defs><path fill="#000" d="M4 4h16v16H4z" clip-path="url(#c)" /></svg>';
+      expect(isMonochromeSvg(svg)).toBe(true);
+    });
+
+    it('ignores a full-canvas rect inside a mask template', () => {
+      const svg =
+        '<svg viewBox="0 0 24 24"><defs><mask id="m"><rect width="24" height="24" fill="#fff" /></mask></defs><path fill="#333" d="M4 4h16v16H4z" mask="url(#m)" /></svg>';
       expect(isMonochromeSvg(svg)).toBe(true);
     });
 
